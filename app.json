@@ -1,0 +1,63 @@
+{
+  "expo": {
+    "name": "DarkMoney",
+    "slug": "darkmoney",
+    "version": "1.0.0",
+    "scheme": "darkmoney",
+    "orientation": "portrait",
+    "icon": "./assets/images/logo-darkmoney.png",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.darkmoney.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/logo-darkmoney.png",
+        "backgroundColor": "#0F172A"
+      },
+      "package": "com.darkmoney.app"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "./assets/images/logo-darkmoney.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/logo-darkmoney.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#0F172A"
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "sounds": []
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "DarkMoney necesita acceso a la cámara para adjuntar comprobantes."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "DarkMoney necesita acceso a tus fotos para adjuntar comprobantes."
+        }
+      ],
+      "expo-local-authentication",
+      "expo-secure-store"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
