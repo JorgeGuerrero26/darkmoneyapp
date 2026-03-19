@@ -14,7 +14,7 @@ import { useAuth } from "../lib/auth-context";
 import { humanizeError } from "../lib/errors";
 import { Input } from "../components/ui/Input";
 import { Button } from "../components/ui/Button";
-import { COLORS, FONT_SIZE, FONT_WEIGHT, SPACING } from "../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../constants/theme";
 
 const POPULAR_CURRENCIES = ["PEN", "USD", "EUR", "MXN", "COP", "ARS", "BRL", "CLP"];
 
@@ -121,17 +121,20 @@ export default function OnboardingScreen() {
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1, backgroundColor: COLORS.bg },
+  flex: { flex: 1, backgroundColor: COLORS.canvas },
   container: { flexGrow: 1, paddingHorizontal: SPACING.xl, gap: SPACING.xxl },
   header: { alignItems: "center", gap: SPACING.sm },
   emoji: { fontSize: 56 },
-  title: { fontSize: FONT_SIZE.xxl, fontWeight: FONT_WEIGHT.bold, color: COLORS.text, textAlign: "center" },
-  subtitle: { fontSize: FONT_SIZE.md, color: COLORS.textMuted, textAlign: "center", lineHeight: 22 },
-  errorBanner: { backgroundColor: COLORS.dangerMuted, borderRadius: 8, padding: SPACING.md, borderWidth: 1, borderColor: COLORS.danger },
-  errorBannerText: { color: COLORS.danger, fontSize: FONT_SIZE.sm },
+  title: { fontFamily: FONT_FAMILY.heading, fontSize: FONT_SIZE.xxl, color: COLORS.ink, textAlign: "center" },
+  subtitle: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.md, color: COLORS.storm, textAlign: "center", lineHeight: 22 },
+  errorBanner: {
+    backgroundColor: GLASS.dangerBg, borderRadius: RADIUS.md,
+    padding: SPACING.md, borderWidth: 1, borderColor: GLASS.dangerBorder,
+  },
+  errorBannerText: { fontFamily: FONT_FAMILY.bodyMedium, color: COLORS.rosewood, fontSize: FONT_SIZE.sm },
   form: { gap: SPACING.xl },
-  currencyLabel: { fontSize: FONT_SIZE.sm, color: COLORS.textMuted, fontWeight: "500", marginBottom: SPACING.xs },
-  currencyHint: { fontSize: FONT_SIZE.xs, color: COLORS.textDisabled, marginBottom: SPACING.md },
+  currencyLabel: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.sm, color: COLORS.storm, marginBottom: SPACING.xs },
+  currencyHint: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm, opacity: 0.6, marginBottom: SPACING.md },
   currencyGrid: { flexDirection: "row", flexWrap: "wrap", gap: SPACING.sm, marginBottom: SPACING.md },
   currencyButton: { minWidth: 60 },
   customCurrencyInput: {},
