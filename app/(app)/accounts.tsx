@@ -1,4 +1,4 @@
-import { Plus } from "lucide-react-native";
+import { FAB } from "../../components/ui/FAB";
 import { useCallback, useMemo, useState } from "react";
 import {
   RefreshControl,
@@ -99,13 +99,7 @@ export default function AccountsScreen() {
         ) : null}
       </ScrollView>
 
-      <TouchableOpacity
-        style={[styles.fab, { bottom: insets.bottom + 16 }]}
-        activeOpacity={0.85}
-        onPress={() => setFormVisible(true)}
-      >
-        <Plus size={22} color="#FFF" />
-      </TouchableOpacity>
+      <FAB onPress={() => setFormVisible(true)} bottom={insets.bottom + 16} />
 
       <AccountForm
         visible={formVisible}
@@ -132,19 +126,4 @@ const styles = StyleSheet.create({
   summaryAmount: { fontSize: FONT_SIZE.lg, fontFamily: FONT_FAMILY.heading, color: COLORS.ink },
   archivedSection: { marginTop: SPACING.md },
   archivedLabel: { fontSize: FONT_SIZE.sm, color: COLORS.storm, fontFamily: FONT_FAMILY.bodyMedium },
-  fab: {
-    position: "absolute",
-    right: SPACING.lg,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: COLORS.primary,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 8,
-  },
 });

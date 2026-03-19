@@ -69,7 +69,7 @@ export function MovementRow({ movement, baseCurrencyCode, onPress }: Props) {
       ? COLORS.ember
       : COLORS.ink;
 
-  const prefix = isIncome(movement.movementType) ? "+" : movement.movementType === "transfer" ? "" : "-";
+  const prefix = isIncome(movement.movementType) ? "+" : movement.movementType === "transfer" ? "" : "−";
   const statusBadge = STATUS_BADGE[movement.status];
   const typeLabel = TYPE_LABEL[movement.movementType] ?? movement.movementType;
 
@@ -78,9 +78,9 @@ export function MovementRow({ movement, baseCurrencyCode, onPress }: Props) {
       style={({ pressed }) => [styles.row, pressed && styles.pressed]}
       onPress={onPress}
     >
-      {/* Category / type icon */}
-      <View style={[styles.iconWrap, { backgroundColor: iconColor + "18" }]}>
-        <Icon size={18} color={iconColor} />
+      {/* Icon */}
+      <View style={[styles.iconWrap, { backgroundColor: iconColor + "15" }]}>
+        <Icon size={17} color={iconColor} />
       </View>
 
       {/* Description + meta */}
@@ -89,17 +89,19 @@ export function MovementRow({ movement, baseCurrencyCode, onPress }: Props) {
           {movement.description || "Sin descripción"}
         </Text>
         <View style={styles.metaRow}>
-          <View style={[styles.typeBadge, { backgroundColor: iconColor + "18" }]}>
+          <View style={[styles.typeBadge, { backgroundColor: iconColor + "15" }]}>
             <Text style={[styles.typeLabel, { color: iconColor }]}>{typeLabel}</Text>
           </View>
           {movement.category ? (
-            <Text style={styles.meta} numberOfLines={1}>· {movement.category}</Text>
+            <Text style={styles.meta} numberOfLines={1}>{movement.category}</Text>
           ) : null}
           <Text style={styles.meta}>
-            · {format(new Date(movement.occurredAt), "d MMM", { locale: es })}
+            {format(new Date(movement.occurredAt), "d MMM", { locale: es })}
           </Text>
           {statusBadge ? (
-            <Text style={[styles.meta, { color: statusBadge.color }]}>· {statusBadge.label}</Text>
+            <View style={[styles.statusBadge, { backgroundColor: statusBadge.color + "15" }]}>
+              <Text style={[styles.statusLabel, { color: statusBadge.color }]}>{statusBadge.label}</Text>
+            </View>
           ) : null}
         </View>
       </View>
@@ -116,25 +118,23 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: SPACING.md,
+    paddingVertical: SPACING.lg,
     paddingHorizontal: SPACING.lg,
     gap: SPACING.md,
-    borderBottomWidth: 0.5,
-    borderBottomColor: GLASS.separator,
   },
   pressed: {
     backgroundColor: GLASS.card,
   },
   iconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: RADIUS.lg,
+    width: 42,
+    height: 42,
+    borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
   },
   info: {
     flex: 1,
-    gap: 4,
+    gap: 5,
   },
   description: {
     fontFamily: FONT_FAMILY.bodyMedium,
@@ -144,19 +144,28 @@ const styles = StyleSheet.create({
   metaRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    gap: 5,
     flexWrap: "wrap",
   },
   typeBadge: {
     borderRadius: RADIUS.full,
-    paddingHorizontal: 6,
-    paddingVertical: 1,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
   },
   typeLabel: {
-    fontFamily: FONT_FAMILY.bodySemibold,
+    fontFamily: FONT_FAMILY.bodyMedium,
     fontSize: 10,
-    textTransform: "uppercase",
-    letterSpacing: 0.3,
+    letterSpacing: 0.1,
+  },
+  statusBadge: {
+    borderRadius: RADIUS.full,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  statusLabel: {
+    fontFamily: FONT_FAMILY.bodyMedium,
+    fontSize: 10,
+    letterSpacing: 0.1,
   },
   meta: {
     fontFamily: FONT_FAMILY.body,
@@ -164,7 +173,7 @@ const styles = StyleSheet.create({
     color: COLORS.storm,
   },
   amount: {
-    fontFamily: FONT_FAMILY.bodySemibold,
+    fontFamily: FONT_FAMILY.heading,
     fontSize: FONT_SIZE.sm,
   },
 });

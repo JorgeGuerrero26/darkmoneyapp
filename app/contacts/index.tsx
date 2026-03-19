@@ -1,4 +1,4 @@
-import { Plus } from "lucide-react-native";
+import { FAB } from "../../components/ui/FAB";
 import { useState } from "react";
 import {
   Alert,
@@ -125,15 +125,7 @@ export default function ContactsScreen() {
         ) : null}
       </ScrollView>
 
-      {/* FAB */}
-      <TouchableOpacity
-        style={[styles.fab, { bottom: insets.bottom + 16 }]}
-        activeOpacity={0.85}
-        onPress={() => setCreateFormVisible(true)}
-        accessibilityLabel="Nuevo contacto"
-      >
-        <Plus size={22} color="#FFF" />
-      </TouchableOpacity>
+      <FAB onPress={() => setCreateFormVisible(true)} bottom={insets.bottom + 16} />
 
       <ContactForm
         visible={createFormVisible}
@@ -173,19 +165,4 @@ const styles = StyleSheet.create({
   archivedCard: { opacity: 0.5, padding: SPACING.md },
   archivedName: { flex: 1, fontSize: FONT_SIZE.md, color: COLORS.storm },
   restoreText: { fontSize: FONT_SIZE.xs, color: COLORS.primary },
-  fab: {
-    position: "absolute",
-    right: SPACING.lg,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: COLORS.primary,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 8,
-  },
 });

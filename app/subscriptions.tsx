@@ -1,4 +1,4 @@
-import { Plus } from "lucide-react-native";
+import { FAB } from "../components/ui/FAB";
 import { useCallback, useState } from "react";
 import {
   Alert,
@@ -180,15 +180,7 @@ export default function SubscriptionsScreen() {
         ) : null}
       </ScrollView>
 
-      {/* FAB */}
-      <TouchableOpacity
-        style={[styles.fab, { bottom: insets.bottom + 16 }]}
-        activeOpacity={0.85}
-        onPress={() => setCreateFormVisible(true)}
-        accessibilityLabel="Nueva suscripción"
-      >
-        <Plus size={22} color="#FFF" />
-      </TouchableOpacity>
+      <FAB onPress={() => setCreateFormVisible(true)} bottom={insets.bottom + 16} />
 
       <SubscriptionForm
         visible={createFormVisible}
@@ -241,19 +233,4 @@ const styles = StyleSheet.create({
   actionBtnText: { fontSize: FONT_SIZE.xs, fontFamily: FONT_FAMILY.bodyMedium },
   actionBtnTextSecondary: { color: COLORS.storm },
   actionBtnTextDanger: { color: COLORS.danger },
-  fab: {
-    position: "absolute",
-    right: SPACING.lg,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: COLORS.primary,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 8,
-  },
 });

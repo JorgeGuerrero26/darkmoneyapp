@@ -1,4 +1,4 @@
-import { Plus } from "lucide-react-native";
+import { FAB } from "../../components/ui/FAB";
 import { useCallback, useState } from "react";
 import {
   RefreshControl,
@@ -100,13 +100,7 @@ export default function BudgetsScreen() {
         )}
       </ScrollView>
 
-      <TouchableOpacity
-        style={[styles.fab, { bottom: insets.bottom + 16 }]}
-        activeOpacity={0.85}
-        onPress={() => setFormVisible(true)}
-      >
-        <Plus size={22} color="#FFF" />
-      </TouchableOpacity>
+      <FAB onPress={() => setFormVisible(true)} bottom={insets.bottom + 16} />
 
       <BudgetForm
         visible={formVisible}
@@ -190,20 +184,5 @@ const styles = StyleSheet.create({
     color: COLORS.storm,
     textTransform: "uppercase",
     letterSpacing: 0.5,
-  },
-  fab: {
-    position: "absolute",
-    right: SPACING.lg,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: COLORS.primary,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 8,
   },
 });

@@ -1,4 +1,5 @@
-import { Plus, Users } from "lucide-react-native";
+import { Users } from "lucide-react-native";
+import { FAB } from "../components/ui/FAB";
 import { useCallback, useState } from "react";
 import {
   RefreshControl,
@@ -144,15 +145,7 @@ export default function ObligationsScreen() {
         )}
       </ScrollView>
 
-      {/* FAB */}
-      <TouchableOpacity
-        style={[styles.fab, { bottom: insets.bottom + 16 }]}
-        activeOpacity={0.85}
-        onPress={() => setCreateFormVisible(true)}
-        accessibilityLabel="Nueva obligación"
-      >
-        <Plus size={22} color="#FFF" />
-      </TouchableOpacity>
+      <FAB onPress={() => setCreateFormVisible(true)} bottom={insets.bottom + 16} />
 
       {/* Create form */}
       <ObligationForm
@@ -202,21 +195,6 @@ const styles = StyleSheet.create({
   actionBtnSecondary: { backgroundColor: "transparent", borderWidth: 1, borderColor: GLASS.cardBorder },
   actionBtnText: { fontSize: FONT_SIZE.sm, fontFamily: FONT_FAMILY.bodyMedium, color: "#FFFFFF" },
   actionBtnTextSecondary: { color: COLORS.storm },
-  fab: {
-    position: "absolute",
-    right: SPACING.lg,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: COLORS.primary,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 8,
-  },
   sharedBadge: {
     alignSelf: "flex-start",
     backgroundColor: COLORS.income + "22",

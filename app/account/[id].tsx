@@ -1,4 +1,5 @@
-import { Plus, CreditCard, Wallet, Landmark, PiggyBank, TrendingUp, Banknote } from "lucide-react-native";
+import { CreditCard, Wallet, Landmark, PiggyBank, TrendingUp, Banknote } from "lucide-react-native";
+import { FAB } from "../../components/ui/FAB";
 import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -175,14 +176,7 @@ export default function AccountDetailScreen() {
         contentContainerStyle={movements.length === 0 ? styles.emptyContainer : undefined}
       />
 
-      {/* FAB */}
-      <TouchableOpacity
-        style={[styles.fab, { bottom: insets.bottom + 16 }]}
-        activeOpacity={0.85}
-        onPress={() => setMovementFormVisible(true)}
-      >
-        <Plus size={22} color="#FFF" />
-      </TouchableOpacity>
+      <FAB onPress={() => setMovementFormVisible(true)} bottom={insets.bottom + 16} />
 
       {/* Edit account form */}
       {account ? (
@@ -248,19 +242,4 @@ const styles = StyleSheet.create({
   separator: { height: 1, backgroundColor: COLORS.border, marginLeft: SPACING.lg + 36 + SPACING.md },
   footer: { padding: SPACING.lg, alignItems: "center" },
   emptyContainer: { flexGrow: 1 },
-  fab: {
-    position: "absolute",
-    right: SPACING.lg,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: COLORS.primary,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 8,
-  },
 });

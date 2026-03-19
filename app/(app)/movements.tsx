@@ -1,4 +1,5 @@
-import { Plus, X } from "lucide-react-native";
+import { Search, SlidersHorizontal, X } from "lucide-react-native";
+import { FAB } from "../../components/ui/FAB";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -89,12 +90,12 @@ export default function MovementsScreen() {
       ]).start();
     }
   }, [filterSheetOpen, filterOverlayOpacity, filterSheetY]);
+
   const [formVisible, setFormVisible] = useState(false);
   const [searchText, setSearchText] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Debounce search input 400ms
   useEffect(() => {
     if (searchTimer.current) clearTimeout(searchTimer.current);
     searchTimer.current = setTimeout(() => setDebouncedSearch(searchText.trim()), 400);
@@ -126,7 +127,15 @@ export default function MovementsScreen() {
   );
 
   const baseCurrency = activeWorkspace?.baseCurrencyCode ?? profile?.baseCurrencyCode ?? "PEN";
-  const extraFiltersCount = [activeDatePreset, activeCategoryId, activeAccountId].filter(Boolean).length;
+
+  // Extra filters: everything except type (which lives in the main pill row)
+  const extraFiltersCount = [
+    activeDatePreset,
+    activeCategoryId,
+    activeAccountId,
+    activeStatusFilter !== "all" ? activeStatusFilter : null,
+  ].filter(Boolean).length;
+
   const hasFilters = activeTypeFilter !== "all" || activeStatusFilter !== "all" || extraFiltersCount > 0 || Boolean(debouncedSearch);
 
   const accounts = snapshot?.accounts.filter((a) => !a.isArchived) ?? [];
@@ -144,30 +153,6 @@ export default function MovementsScreen() {
     setActiveAccountId(null);
   }
 
-  function renderFilterPills(
-    options: { label: string; value: string }[],
-    active: string,
-    onSelect: (v: string) => void,
-  ) {
-    return (
-      <View style={styles.pillRowWrap}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pillRow}>
-          {options.map((opt) => (
-            <TouchableOpacity
-              key={opt.value}
-              style={[styles.pill, active === opt.value && styles.pillActive]}
-              onPress={() => onSelect(opt.value)}
-            >
-              <Text style={[styles.pillText, active === opt.value && styles.pillTextActive]}>
-                {opt.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </View>
-    );
-  }
-
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
       <ScreenHeader
@@ -178,6 +163,10 @@ export default function MovementsScreen() {
             onPress={() => setFilterSheetOpen(true)}
             accessibilityLabel="Filtros"
           >
+            <SlidersHorizontal
+              size={14}
+              color={extraFiltersCount > 0 ? COLORS.primary : COLORS.storm}
+            />
             <Text style={[styles.filterBtnText, extraFiltersCount > 0 && styles.filterBtnTextActive]}>
               {extraFiltersCount > 0 ? `Filtros (${extraFiltersCount})` : "Filtros"}
             </Text>
@@ -187,6 +176,7 @@ export default function MovementsScreen() {
 
       {/* Search bar */}
       <View style={styles.searchWrap}>
+        <Search size={15} color={COLORS.storm} />
         <TextInput
           style={styles.searchInput}
           value={searchText}
@@ -194,23 +184,42 @@ export default function MovementsScreen() {
           placeholder="Buscar movimientos…"
           placeholderTextColor={COLORS.textDisabled}
           returnKeyType="search"
-          clearButtonMode="while-editing"
         />
         {searchText.length > 0 ? (
-          <TouchableOpacity style={styles.searchClear} onPress={() => setSearchText("")} accessibilityLabel="Limpiar búsqueda">
-            <X size={16} color={COLORS.storm} />
+          <TouchableOpacity onPress={() => setSearchText("")} accessibilityLabel="Limpiar búsqueda">
+            <X size={15} color={COLORS.storm} />
           </TouchableOpacity>
         ) : null}
       </View>
 
-      {/* Type + Status pills */}
-      {renderFilterPills(TYPE_FILTERS, activeTypeFilter, (v) => setActiveTypeFilter(v as FilterType))}
-      {renderFilterPills(STATUS_FILTERS, activeStatusFilter, (v) => setActiveStatusFilter(v as FilterStatus))}
+      {/* Type filter — segmented pill row */}
+      <View style={styles.segmentedWrap}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.segmentedRow}>
+          {TYPE_FILTERS.map((opt) => (
+            <TouchableOpacity
+              key={opt.value}
+              style={[styles.pill, activeTypeFilter === opt.value && styles.pillActive]}
+              onPress={() => setActiveTypeFilter(opt.value as FilterType)}
+            >
+              <Text style={[styles.pillText, activeTypeFilter === opt.value && styles.pillTextActive]}>
+                {opt.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
 
-      {/* Active filter summary bar */}
-      {(activeDatePreset || activeCategoryId || activeAccountId) ? (
+      {/* Active filter chips */}
+      {(activeDatePreset || activeCategoryId || activeAccountId || activeStatusFilter !== "all") ? (
         <View style={styles.activeFiltersBar}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.activeFiltersPills}>
+            {activeStatusFilter !== "all" ? (
+              <TouchableOpacity style={styles.activeFilterChip} onPress={() => setActiveStatusFilter("all")}>
+                <Text style={styles.activeFilterChipText}>
+                  {STATUS_FILTERS.find((f) => f.value === activeStatusFilter)?.label ?? "Estado"} ×
+                </Text>
+              </TouchableOpacity>
+            ) : null}
             {activeDatePreset ? (
               <TouchableOpacity style={styles.activeFilterChip} onPress={() => setActiveDatePreset(null)}>
                 <Text style={styles.activeFilterChipText}>{activeDatePreset} ×</Text>
@@ -231,7 +240,7 @@ export default function MovementsScreen() {
               </TouchableOpacity>
             ) : null}
             <TouchableOpacity onPress={clearAllFilters}>
-              <Text style={styles.clearAll}>Limpiar todo</Text>
+              <Text style={styles.clearAll}>Limpiar</Text>
             </TouchableOpacity>
           </ScrollView>
         </View>
@@ -250,7 +259,21 @@ export default function MovementsScreen() {
             style={[styles.filterSheet, { paddingBottom: insets.bottom + SPACING.lg, transform: [{ translateY: filterSheetY }] }]}
             onStartShouldSetResponder={() => true}
           >
-            <Text style={styles.filterSheetTitle}>Filtros adicionales</Text>
+            <View style={styles.filterSheetHandle} />
+            <Text style={styles.filterSheetTitle}>Filtros</Text>
+
+            <Text style={styles.filterSectionLabel}>Estado</Text>
+            <View style={styles.filterPillWrap}>
+              {STATUS_FILTERS.map((f) => (
+                <TouchableOpacity
+                  key={f.value}
+                  style={[styles.pill, activeStatusFilter === f.value && styles.pillActive]}
+                  onPress={() => setActiveStatusFilter(f.value as FilterStatus)}
+                >
+                  <Text style={[styles.pillText, activeStatusFilter === f.value && styles.pillTextActive]}>{f.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
 
             <Text style={styles.filterSectionLabel}>Período</Text>
             <View style={styles.filterPillWrap}>
@@ -361,7 +384,7 @@ export default function MovementsScreen() {
             <View style={styles.skeletonList}>
               {[...Array(8)].map((_, i) => (
                 <View key={i} style={styles.skeletonRow}>
-                  <Skeleton width={40} height={40} borderRadius={20} />
+                  <Skeleton width={42} height={42} borderRadius={14} />
                   <View style={styles.skeletonRowText}>
                     <Skeleton width="60%" height={14} />
                     <Skeleton width="40%" height={12} style={{ marginTop: 6 }} />
@@ -389,15 +412,7 @@ export default function MovementsScreen() {
         contentContainerStyle={allMovements.length === 0 ? styles.emptyContainer : undefined}
       />
 
-      {/* FAB */}
-      <TouchableOpacity
-        style={[styles.fab, { bottom: insets.bottom + 16 }]}
-        activeOpacity={0.85}
-        onPress={() => setFormVisible(true)}
-        accessibilityLabel="Nuevo movimiento"
-      >
-        <Plus size={22} color="#FFF" />
-      </TouchableOpacity>
+      <FAB onPress={() => setFormVisible(true)} bottom={insets.bottom + 16} />
 
       <MovementForm
         visible={formVisible}
@@ -413,86 +428,80 @@ export default function MovementsScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: COLORS.bg },
-  pillRowWrap: { height: 48, justifyContent: "center" },
-  pillRow: { paddingHorizontal: SPACING.lg, gap: SPACING.sm, alignItems: "center" },
-  pill: {
-    height: 36,
-    paddingHorizontal: SPACING.lg,
+
+  // Search
+  searchWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginHorizontal: SPACING.lg,
+    marginTop: SPACING.xs,
+    marginBottom: SPACING.sm,
+    backgroundColor: GLASS.card,
+    borderRadius: RADIUS.md,
+    paddingHorizontal: SPACING.md,
+    gap: SPACING.sm,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.ink,
+    fontFamily: FONT_FAMILY.body,
+    paddingVertical: SPACING.md,
+  },
+
+  // Filter button (header right)
+  filterBtn: {
+    height: 34,
+    paddingHorizontal: SPACING.md,
     borderRadius: RADIUS.full,
     backgroundColor: GLASS.card,
-    borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 5,
+  },
+  filterBtnActive: { backgroundColor: COLORS.primary + "18" },
+  filterBtnText: { fontSize: FONT_SIZE.xs, color: COLORS.storm, fontFamily: FONT_FAMILY.bodyMedium },
+  filterBtnTextActive: { color: COLORS.primary },
+
+  // Type pill row
+  segmentedWrap: { height: 44, justifyContent: "center" },
+  segmentedRow: { paddingHorizontal: SPACING.lg, gap: SPACING.xs, alignItems: "center" },
+  pill: {
+    height: 32,
+    paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.full,
+    backgroundColor: GLASS.card,
     alignItems: "center",
     justifyContent: "center",
   },
-  pillActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  pillText: { fontSize: FONT_SIZE.sm, color: COLORS.storm, fontFamily: FONT_FAMILY.bodyMedium, includeFontPadding: false },
-  pillTextActive: { color: "#FFFFFF" },
-  separator: { height: 1, backgroundColor: GLASS.separator, marginLeft: SPACING.lg + 36 + SPACING.md },
+  pillActive: { backgroundColor: COLORS.primary },
+  pillText: { fontSize: FONT_SIZE.xs, color: COLORS.storm, fontFamily: FONT_FAMILY.bodyMedium, includeFontPadding: false },
+  pillTextActive: { color: "#FFFFFF", fontFamily: FONT_FAMILY.bodySemibold },
+
+  // Active filter chips
+  activeFiltersBar: { paddingVertical: SPACING.xs },
+  activeFiltersPills: { paddingHorizontal: SPACING.lg, gap: SPACING.xs, alignItems: "center" },
+  activeFilterChip: {
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 3,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.primary + "18",
+  },
+  activeFilterChipText: { fontSize: FONT_SIZE.xs, color: COLORS.primary, fontFamily: FONT_FAMILY.bodyMedium },
+  clearAll: { fontSize: FONT_SIZE.xs, color: COLORS.storm, fontFamily: FONT_FAMILY.body, paddingHorizontal: SPACING.xs },
+
+  // List
+  separator: { height: 0.5, backgroundColor: GLASS.separator, marginLeft: SPACING.lg + 42 + SPACING.md },
   footer: { padding: SPACING.lg, alignItems: "center" },
   emptyContainer: { flexGrow: 1 },
   skeletonList: { padding: SPACING.md, gap: SPACING.md },
   skeletonRow: { flexDirection: "row", alignItems: "center", gap: SPACING.md },
   skeletonRowText: { flex: 1, gap: 6 },
-  fab: {
-    position: "absolute",
-    right: SPACING.lg,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: COLORS.primary,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  searchWrap: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginHorizontal: SPACING.lg,
-    marginVertical: SPACING.sm,
-    backgroundColor: COLORS.bgInput,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: GLASS.cardBorder,
-    paddingHorizontal: SPACING.md,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: FONT_SIZE.md,
-    color: COLORS.ink,
-    paddingVertical: SPACING.sm,
-  },
-  searchClear: { padding: 4 },
-  filterBtn: {
-    height: 36,
-    paddingHorizontal: SPACING.lg,
-    borderRadius: RADIUS.full,
-    borderWidth: 1,
-    borderColor: GLASS.cardBorder,
-    backgroundColor: GLASS.card,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  filterBtnActive: { borderColor: COLORS.primary, backgroundColor: COLORS.primary + "22" },
-  filterBtnText: { fontSize: FONT_SIZE.sm, color: COLORS.storm, fontFamily: FONT_FAMILY.bodyMedium },
-  filterBtnTextActive: { color: COLORS.primary },
-  activeFiltersBar: { paddingVertical: SPACING.xs },
-  activeFiltersPills: { paddingHorizontal: SPACING.lg, gap: SPACING.sm, alignItems: "center" },
-  activeFilterChip: {
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 3,
-    borderRadius: RADIUS.full,
-    backgroundColor: COLORS.primary + "22",
-    borderWidth: 1,
-    borderColor: COLORS.primary + "55",
-  },
-  activeFilterChipText: { fontSize: FONT_SIZE.xs, color: COLORS.primary },
-  clearAll: { fontSize: FONT_SIZE.xs, color: COLORS.storm, paddingHorizontal: SPACING.xs },
-  filterOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.5)" },
+
+
+  // Filter sheet
+  filterOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.55)" },
   filterSheet: {
     position: "absolute",
     bottom: 0,
@@ -505,9 +514,33 @@ const styles = StyleSheet.create({
     gap: SPACING.md,
     maxHeight: "80%",
   },
-  filterSheetTitle: { fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.heading, color: COLORS.ink, textAlign: "center" },
-  filterSectionLabel: { fontSize: FONT_SIZE.xs, fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.storm, textTransform: "uppercase", letterSpacing: 0.5 },
+  filterSheetHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: GLASS.handle,
+    alignSelf: "center",
+    marginBottom: SPACING.xs,
+  },
+  filterSheetTitle: {
+    fontSize: FONT_SIZE.md,
+    fontFamily: FONT_FAMILY.heading,
+    color: COLORS.ink,
+    textAlign: "center",
+  },
+  filterSectionLabel: {
+    fontSize: FONT_SIZE.xs,
+    fontFamily: FONT_FAMILY.bodyMedium,
+    color: COLORS.storm,
+    letterSpacing: 0.2,
+  },
   filterPillWrap: { flexDirection: "row", flexWrap: "wrap", gap: SPACING.sm },
-  applyBtn: { backgroundColor: COLORS.primary, borderRadius: RADIUS.md, paddingVertical: SPACING.md, alignItems: "center", marginTop: SPACING.sm },
-  applyBtnText: { color: "#FFF", fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.bodySemibold },
+  applyBtn: {
+    backgroundColor: COLORS.primary,
+    borderRadius: RADIUS.md,
+    paddingVertical: SPACING.md,
+    alignItems: "center",
+    marginTop: SPACING.sm,
+  },
+  applyBtnText: { color: "#FFF", fontSize: FONT_SIZE.sm, fontFamily: FONT_FAMILY.bodySemibold },
 });

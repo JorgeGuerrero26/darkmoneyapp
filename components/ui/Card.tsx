@@ -41,12 +41,12 @@ const styles = StyleSheet.create({
     backgroundColor: GLASS.card,
     borderRadius: RADIUS.xl,
     padding: SPACING.lg,
-    borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderWidth: 0.5,
+    borderColor: GLASS.separator,
   },
   cardActive: {
     backgroundColor: GLASS.cardActive,
-    borderColor: GLASS.cardActiveBorder,
+    borderColor: "rgba(107,228,197,0.15)",
   },
   pressed: {
     opacity: 0.82,
