@@ -225,16 +225,19 @@ function HeroCard({
 
       {/* Income / Expense row */}
       <View style={subStyles.heroFlow}>
-        <View style={subStyles.heroFlowItem}>
-          <View style={[subStyles.heroFlowDot, { backgroundColor: COLORS.pine }]} />
+        <View style={[subStyles.heroFlowItem, { borderRightWidth: 0.5, borderRightColor: GLASS.separator, paddingRight: SPACING.lg }]}>
+          <View style={[subStyles.heroFlowIconWrap, { backgroundColor: COLORS.pine + "22" }]}>
+            <View style={[subStyles.heroFlowDot, { backgroundColor: COLORS.pine }]} />
+          </View>
           <Text style={subStyles.heroFlowLabel}>Ingresos</Text>
           <Text style={[subStyles.heroFlowAmt, { color: COLORS.pine }]}>
             {formatCurrency(income, currency)}
           </Text>
         </View>
-        <View style={subStyles.heroSep} />
-        <View style={subStyles.heroFlowItem}>
-          <View style={[subStyles.heroFlowDot, { backgroundColor: COLORS.rosewood }]} />
+        <View style={[subStyles.heroFlowItem, { paddingLeft: SPACING.lg }]}>
+          <View style={[subStyles.heroFlowIconWrap, { backgroundColor: COLORS.rosewood + "22" }]}>
+            <View style={[subStyles.heroFlowDot, { backgroundColor: COLORS.rosewood }]} />
+          </View>
           <Text style={subStyles.heroFlowLabel}>Gastos</Text>
           <Text style={[subStyles.heroFlowAmt, { color: COLORS.rosewood }]}>
             {formatCurrency(expense, currency)}
@@ -918,22 +921,24 @@ const subStyles = StyleSheet.create({
   },
   heroPeriodRow: {
     flexDirection: "row",
-    gap: SPACING.xs,
-    marginBottom: SPACING.xs,
+    gap: 3,
+    marginBottom: SPACING.sm,
+    backgroundColor: "rgba(0,0,0,0.25)",
+    borderRadius: RADIUS.full,
+    padding: 3,
+    alignSelf: "flex-start",
   },
   heroPeriodBtn: {
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 4,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: 5,
     borderRadius: RADIUS.full,
     backgroundColor: "transparent",
   },
   heroPeriodBtnActive: {
-    backgroundColor: GLASS.cardActive,
-    borderWidth: 1,
-    borderColor: GLASS.cardActiveBorder,
+    backgroundColor: COLORS.pine,
   },
-  heroPeriodText: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
-  heroPeriodTextActive: { fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.pine },
+  heroPeriodText: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.xs, color: COLORS.storm },
+  heroPeriodTextActive: { fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.canvas },
   heroLabel: {
     fontFamily: FONT_FAMILY.bodySemibold,
     fontSize: FONT_SIZE.xs,
@@ -958,14 +963,20 @@ const subStyles = StyleSheet.create({
   heroNetText: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.xs },
   heroFlow: {
     flexDirection: "row",
-    alignItems: "center",
     marginTop: SPACING.md,
     paddingTop: SPACING.md,
     borderTopWidth: 0.5,
     borderTopColor: GLASS.separator,
   },
-  heroFlowItem: { flex: 1, gap: 3 },
-  heroFlowDot: { width: 6, height: 6, borderRadius: 3 },
+  heroFlowItem: { flex: 1, gap: 4 },
+  heroFlowIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  heroFlowDot: { width: 8, height: 8, borderRadius: 4 },
   heroFlowLabel: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
   heroFlowAmt: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.md },
   heroSep: { width: 0.5, height: 44, backgroundColor: GLASS.separator, marginHorizontal: SPACING.lg },
