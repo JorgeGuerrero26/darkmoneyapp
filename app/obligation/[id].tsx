@@ -31,7 +31,7 @@ import { Input } from "../../components/ui/Input";
 import { Button } from "../../components/ui/Button";
 import { formatCurrency } from "../../components/ui/AmountDisplay";
 import { useToast } from "../../hooks/useToast";
-import { COLORS, FONT_SIZE, FONT_WEIGHT, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
 
 const EVENT_LABEL: Record<string, string> = {
   opening: "Apertura",
@@ -199,7 +199,7 @@ export default function ObligationDetailScreen() {
                     </Text>
                     {ev.notes ? <Text style={styles.eventNotes}>{ev.notes}</Text> : null}
                   </View>
-                  <Text style={[styles.eventAmount, { color: ev.eventType === "payment" ? COLORS.income : COLORS.text }]}>
+                  <Text style={[styles.eventAmount, { color: ev.eventType === "payment" ? COLORS.income : COLORS.ink }]}>
                     {ev.eventType === "payment" ? "+" : ""}{formatCurrency(ev.amount, obligation.currencyCode)}
                   </Text>
                 </View>
@@ -281,59 +281,59 @@ function Divider() {
 
 const rowStyles = StyleSheet.create({
   row: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: SPACING.md },
-  label: { fontSize: FONT_SIZE.sm, color: COLORS.textMuted, flex: 1 },
-  value: { fontSize: FONT_SIZE.sm, color: COLORS.text, fontWeight: FONT_WEIGHT.medium, flex: 2, textAlign: "right" },
-  divider: { height: 1, backgroundColor: COLORS.border, marginVertical: SPACING.sm },
+  label: { fontSize: FONT_SIZE.sm, color: COLORS.storm, flex: 1 },
+  value: { fontSize: FONT_SIZE.sm, color: COLORS.ink, fontFamily: FONT_FAMILY.bodyMedium, flex: 2, textAlign: "right" },
+  divider: { height: 1, backgroundColor: GLASS.separator, marginVertical: SPACING.sm },
 });
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: COLORS.bg },
   content: { padding: SPACING.lg, gap: SPACING.md, paddingBottom: SPACING.xl },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  errorText: { color: COLORS.textMuted, fontSize: FONT_SIZE.md },
+  errorText: { color: COLORS.storm, fontSize: FONT_SIZE.md },
   headerActions: { flexDirection: "row", alignItems: "center", gap: SPACING.sm },
   shareBtn: {
     paddingHorizontal: SPACING.sm, paddingVertical: 4,
     borderRadius: RADIUS.full, borderWidth: 1, borderColor: COLORS.income + "88",
   },
-  shareBtnText: { fontSize: FONT_SIZE.xs, color: COLORS.income, fontWeight: FONT_WEIGHT.medium },
+  shareBtnText: { fontSize: FONT_SIZE.xs, color: COLORS.income, fontFamily: FONT_FAMILY.bodyMedium },
   editBtn: {
     paddingHorizontal: SPACING.sm, paddingVertical: 4,
     borderRadius: RADIUS.full, borderWidth: 1, borderColor: COLORS.primary,
   },
-  editBtnText: { fontSize: FONT_SIZE.xs, color: COLORS.primary, fontWeight: FONT_WEIGHT.medium },
+  editBtnText: { fontSize: FONT_SIZE.xs, color: COLORS.primary, fontFamily: FONT_FAMILY.bodyMedium },
   back: { fontSize: FONT_SIZE.sm, color: COLORS.primary },
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
   shareSheet: {
-    backgroundColor: COLORS.bgCard,
+    backgroundColor: COLORS.mist,
     borderTopLeftRadius: RADIUS.xl,
     borderTopRightRadius: RADIUS.xl,
     padding: SPACING.lg,
     gap: SPACING.md,
   },
-  shareSheetTitle: { fontSize: FONT_SIZE.lg, fontWeight: FONT_WEIGHT.bold, color: COLORS.text, textAlign: "center" },
-  shareSheetSub: { fontSize: FONT_SIZE.sm, color: COLORS.textMuted, textAlign: "center", marginTop: -SPACING.sm },
+  shareSheetTitle: { fontSize: FONT_SIZE.lg, fontFamily: FONT_FAMILY.heading, color: COLORS.ink, textAlign: "center" },
+  shareSheetSub: { fontSize: FONT_SIZE.sm, color: COLORS.storm, textAlign: "center", marginTop: -SPACING.sm },
   heroCard: { alignItems: "center", gap: SPACING.xs, paddingVertical: SPACING.xl },
-  directionBadge: { fontSize: FONT_SIZE.sm, fontWeight: FONT_WEIGHT.semibold, textTransform: "uppercase", letterSpacing: 0.5 },
-  counterparty: { fontSize: FONT_SIZE.md, color: COLORS.textMuted },
-  pendingAmount: { fontSize: 36, fontWeight: FONT_WEIGHT.bold, marginTop: SPACING.sm },
-  pendingLabel: { fontSize: FONT_SIZE.sm, color: COLORS.textMuted },
+  directionBadge: { fontSize: FONT_SIZE.sm, fontFamily: FONT_FAMILY.bodySemibold, textTransform: "uppercase", letterSpacing: 0.5 },
+  counterparty: { fontSize: FONT_SIZE.md, color: COLORS.storm },
+  pendingAmount: { fontSize: 36, fontFamily: FONT_FAMILY.heading, marginTop: SPACING.sm },
+  pendingLabel: { fontSize: FONT_SIZE.sm, color: COLORS.storm },
   progress: { width: "100%", marginTop: SPACING.md },
-  progressLabel: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted },
+  progressLabel: { fontSize: FONT_SIZE.xs, color: COLORS.storm },
   section: { gap: SPACING.sm },
   sectionTitle: {
-    fontSize: FONT_SIZE.xs, fontWeight: FONT_WEIGHT.semibold,
-    color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: 0.5,
+    fontSize: FONT_SIZE.xs, fontFamily: FONT_FAMILY.bodySemibold,
+    color: COLORS.storm, textTransform: "uppercase", letterSpacing: 0.5,
   },
   eventRow: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    paddingVertical: SPACING.sm, borderBottomWidth: 1, borderBottomColor: COLORS.border,
+    paddingVertical: SPACING.sm, borderBottomWidth: 1, borderBottomColor: GLASS.separator,
   },
   eventInfo: { gap: 2, flex: 1 },
-  eventType: { fontSize: FONT_SIZE.sm, fontWeight: FONT_WEIGHT.medium, color: COLORS.text },
-  eventDate: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted },
+  eventType: { fontSize: FONT_SIZE.sm, fontFamily: FONT_FAMILY.bodyMedium, color: COLORS.ink },
+  eventDate: { fontSize: FONT_SIZE.xs, color: COLORS.storm },
   eventNotes: { fontSize: FONT_SIZE.xs, color: COLORS.textDisabled },
-  eventAmount: { fontSize: FONT_SIZE.md, fontWeight: FONT_WEIGHT.semibold },
+  eventAmount: { fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.bodySemibold },
   payBtn: {
     backgroundColor: COLORS.primary,
     borderRadius: RADIUS.md,
@@ -341,5 +341,5 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: SPACING.sm,
   },
-  payBtnText: { color: "#FFFFFF", fontSize: FONT_SIZE.md, fontWeight: FONT_WEIGHT.semibold },
+  payBtnText: { color: "#FFFFFF", fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.bodySemibold },
 });

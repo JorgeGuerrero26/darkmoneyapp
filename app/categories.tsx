@@ -91,7 +91,7 @@ export default function CategoriesScreen() {
                 style={styles.iconActionBtn}
                 onPress={() => handleToggleActive(cat)}
               >
-                <Text style={[styles.iconActionText, { color: cat.isActive ? COLORS.textMuted : COLORS.income }]}>
+                <Text style={[styles.iconActionText, { color: cat.isActive ? COLORS.storm : COLORS.income }]}>
                   {cat.isActive ? "✕" : "✓"}
                 </Text>
               </TouchableOpacity>

@@ -198,7 +198,7 @@ export default function MovementsScreen() {
         />
         {searchText.length > 0 ? (
           <TouchableOpacity style={styles.searchClear} onPress={() => setSearchText("")} accessibilityLabel="Limpiar búsqueda">
-            <X size={16} color={COLORS.textMuted} />
+            <X size={16} color={COLORS.storm} />
           </TouchableOpacity>
         ) : null}
       </View>
@@ -457,7 +457,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.bgInput,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: GLASS.cardBorder,
     paddingHorizontal: SPACING.md,
   },
   searchInput: {

@@ -88,7 +88,7 @@ export default function MoreScreen() {
                 <Text style={styles.menuSubtitle}>{item.subtitle}</Text>
               </View>
               {item.badge ? <Badge count={item.badge} /> : null}
-              <ChevronRight size={16} color={COLORS.textMuted} />
+              <ChevronRight size={16} color={COLORS.storm} />
             </View>
           </Card>
         ))}

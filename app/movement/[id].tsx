@@ -14,7 +14,7 @@ import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { Card } from "../../components/ui/Card";
 import { AmountDisplay } from "../../components/ui/AmountDisplay";
 import { MovementForm } from "../../components/forms/MovementForm";
-import { COLORS, FONT_SIZE, FONT_WEIGHT, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
 
 const TYPE_LABEL: Record<string, string> = {
   expense: "Gasto",
@@ -37,7 +37,7 @@ const STATUS_LABEL: Record<string, string> = {
 const STATUS_COLOR: Record<string, string> = {
   posted: COLORS.income,
   pending: COLORS.warning,
-  planned: COLORS.textMuted,
+  planned: COLORS.storm,
   voided: COLORS.textDisabled,
 };
 
@@ -132,8 +132,8 @@ export default function MovementDetailScreen() {
               size="xl"
             />
             <View style={styles.statusBadge}>
-              <View style={[styles.statusDot, { backgroundColor: STATUS_COLOR[movement.status] ?? COLORS.textMuted }]} />
-              <Text style={[styles.statusText, { color: STATUS_COLOR[movement.status] ?? COLORS.textMuted }]}>
+              <View style={[styles.statusDot, { backgroundColor: STATUS_COLOR[movement.status] ?? COLORS.storm }]} />
+              <Text style={[styles.statusText, { color: STATUS_COLOR[movement.status] ?? COLORS.storm }]}>
                 {STATUS_LABEL[movement.status] ?? movement.status}
               </Text>
             </View>
@@ -253,26 +253,26 @@ function Divider() {
 
 const rowStyles = StyleSheet.create({
   row: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: SPACING.md },
-  label: { fontSize: FONT_SIZE.sm, color: COLORS.textMuted, flex: 1 },
-  value: { fontSize: FONT_SIZE.sm, color: COLORS.text, fontWeight: FONT_WEIGHT.medium, flex: 2, textAlign: "right" },
-  divider: { height: 1, backgroundColor: COLORS.border, marginVertical: SPACING.sm },
+  label: { fontSize: FONT_SIZE.sm, color: COLORS.storm, flex: 1 },
+  value: { fontSize: FONT_SIZE.sm, color: COLORS.ink, fontFamily: FONT_FAMILY.bodyMedium, flex: 2, textAlign: "right" },
+  divider: { height: 1, backgroundColor: GLASS.separator, marginVertical: SPACING.sm },
 });
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: COLORS.bg },
   content: { padding: SPACING.lg, gap: SPACING.md },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  errorText: { color: COLORS.textMuted, fontSize: FONT_SIZE.md },
+  errorText: { color: COLORS.storm, fontSize: FONT_SIZE.md },
   back: { fontSize: FONT_SIZE.sm, color: COLORS.primary },
   heroCard: { alignItems: "center", gap: SPACING.sm, paddingVertical: SPACING.xl },
-  typeLabel: { fontSize: FONT_SIZE.sm, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: 0.5 },
+  typeLabel: { fontSize: FONT_SIZE.sm, color: COLORS.storm, textTransform: "uppercase", letterSpacing: 0.5 },
   statusBadge: { flexDirection: "row", alignItems: "center", gap: 6 },
   statusDot: { width: 8, height: 8, borderRadius: 4 },
-  statusText: { fontSize: FONT_SIZE.sm, fontWeight: FONT_WEIGHT.medium },
+  statusText: { fontSize: FONT_SIZE.sm, fontFamily: FONT_FAMILY.bodyMedium },
   sectionTitle: {
     fontSize: FONT_SIZE.xs,
-    fontWeight: FONT_WEIGHT.semibold,
-    color: COLORS.textMuted,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    color: COLORS.storm,
     textTransform: "uppercase",
     letterSpacing: 0.5,
     marginBottom: SPACING.sm,
@@ -286,7 +286,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.primary,
   },
-  editBtnText: { fontSize: FONT_SIZE.xs, color: COLORS.primary, fontWeight: FONT_WEIGHT.medium },
+  editBtnText: { fontSize: FONT_SIZE.xs, color: COLORS.primary, fontFamily: FONT_FAMILY.bodyMedium },
   voidBtn: {
     paddingHorizontal: SPACING.sm,
     paddingVertical: 4,
@@ -294,7 +294,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.danger + "88",
   },
-  voidBtnText: { fontSize: FONT_SIZE.xs, color: COLORS.danger, fontWeight: FONT_WEIGHT.medium },
+  voidBtnText: { fontSize: FONT_SIZE.xs, color: COLORS.danger, fontFamily: FONT_FAMILY.bodyMedium },
   duplicateBtn: {
     paddingHorizontal: SPACING.sm,
     paddingVertical: 4,
@@ -302,5 +302,5 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.transfer + "88",
   },
-  duplicateBtnText: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted, fontWeight: FONT_WEIGHT.medium },
+  duplicateBtnText: { fontSize: FONT_SIZE.xs, color: COLORS.storm, fontFamily: FONT_FAMILY.bodyMedium },
 });

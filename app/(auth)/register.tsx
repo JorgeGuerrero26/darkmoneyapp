@@ -189,12 +189,12 @@ const styles = StyleSheet.create({
   header: { gap: SPACING.xs },
   title: {
     fontSize: FONT_SIZE.xxl,
-    fontWeight: FONT_WEIGHT.bold,
-    color: COLORS.text,
+    fontFamily: FONT_FAMILY.heading,
+    color: COLORS.ink,
   },
   subtitle: {
     fontSize: FONT_SIZE.md,
-    color: COLORS.textMuted,
+    color: COLORS.storm,
   },
   form: { gap: SPACING.lg },
   errorBanner: {
@@ -214,29 +214,29 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  footerText: { color: COLORS.textMuted, fontSize: FONT_SIZE.sm },
-  footerLink: { color: COLORS.primary, fontSize: FONT_SIZE.sm, fontWeight: FONT_WEIGHT.semibold },
+  footerText: { color: COLORS.storm, fontSize: FONT_SIZE.sm },
+  footerLink: { color: COLORS.primary, fontSize: FONT_SIZE.sm, fontFamily: FONT_FAMILY.bodySemibold },
   // Confirmation screen
   confirmEmoji: { fontSize: 56, marginBottom: SPACING.lg },
   confirmTitle: {
     fontSize: FONT_SIZE.xxl,
-    fontWeight: FONT_WEIGHT.bold,
-    color: COLORS.text,
+    fontFamily: FONT_FAMILY.heading,
+    color: COLORS.ink,
     marginBottom: SPACING.md,
   },
   confirmDesc: {
     fontSize: FONT_SIZE.md,
-    color: COLORS.textMuted,
+    color: COLORS.storm,
     textAlign: "center",
     lineHeight: 22,
     marginBottom: SPACING.xl,
   },
-  emailHighlight: { color: COLORS.primary, fontWeight: FONT_WEIGHT.semibold },
+  emailHighlight: { color: COLORS.primary, fontFamily: FONT_FAMILY.bodySemibold },
   backButton: {
     paddingVertical: SPACING.md,
     paddingHorizontal: SPACING.xl,
     backgroundColor: COLORS.primary,
     borderRadius: 10,
   },
-  backButtonText: { color: "#FFF", fontWeight: FONT_WEIGHT.semibold, fontSize: FONT_SIZE.md },
+  backButtonText: { color: "#FFF", fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.md },
 });
