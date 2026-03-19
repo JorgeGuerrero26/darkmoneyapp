@@ -1,8 +1,15 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Slot, useRouter, useSegments } from "expo-router";
+import { useFonts } from "expo-font";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect } from "react";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { Outfit_600SemiBold } from "@expo-google-fonts/outfit";
+import {
+  Manrope_400Regular,
+  Manrope_500Medium,
+  Manrope_600SemiBold,
+} from "@expo-google-fonts/manrope";
 
 import { AuthProvider, useAuth } from "../lib/auth-context";
 import { WorkspaceProvider, useWorkspace } from "../lib/workspace-context";
@@ -13,6 +20,17 @@ import { usePushNotifications, scheduleSubscriptionReminders } from "../hooks/us
 import { BiometricLock } from "../components/ui/BiometricLock";
 
 SplashScreen.preventAutoHideAsync();
+
+function FontLoader({ children }: { children: React.ReactNode }) {
+  const [fontsLoaded] = useFonts({
+    Outfit_600SemiBold,
+    Manrope_400Regular,
+    Manrope_500Medium,
+    Manrope_600SemiBold,
+  });
+  if (!fontsLoaded) return null;
+  return <>{children}</>;
+}
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -96,17 +114,19 @@ function NavigationGuard() {
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
-      <QueryClientProvider client={queryClient}>
-        <AuthProvider>
-          <WorkspaceProvider>
-            <OfflineBanner />
-            <NotificationSetup />
-            <NavigationGuard />
-            <BiometricLock />
-            <ToastContainer />
-          </WorkspaceProvider>
-        </AuthProvider>
-      </QueryClientProvider>
+      <FontLoader>
+        <QueryClientProvider client={queryClient}>
+          <AuthProvider>
+            <WorkspaceProvider>
+              <OfflineBanner />
+              <NotificationSetup />
+              <NavigationGuard />
+              <BiometricLock />
+              <ToastContainer />
+            </WorkspaceProvider>
+          </AuthProvider>
+        </QueryClientProvider>
+      </FontLoader>
     </SafeAreaProvider>
   );
 }

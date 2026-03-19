@@ -1,88 +1,128 @@
+// ─── Color palette ───────────────────────────────────────────────────────────
 export const COLORS = {
-  // Brand accents
-  primary: "#6be4c5",       // pine — verde agua (botones primarios, focus)
-  primaryDark: "#4bc9a8",
-  primaryLight: "#a8f0de",
-  secondary: "#8ea5ff",     // ember — azul lavanda
-  gold: "#d7be7b",          // gold — alertas, notificaciones
-  danger: "#ff8f9e",        // rosewood — error/peligro
-  dangerMuted: "#4a1a22",
+  // Backgrounds — darkest to lightest
+  canvas:  "#05070B",   // root bg
+  void:    "#090D12",   // sheets / modals
+  shell:   "#0F141B",   // sidebars / navbars / tab bar
+  mist:    "#141B24",   // cards
 
-  // Backgrounds (de más oscuro a más claro)
-  bgDeep: "#05070b",        // canvas
-  bgVoid: "#090d12",        // void
-  bg: "#0f141b",            // shell — fondo principal de la app
-  bgCard: "#141b24",        // mist — cards
-  bgCardHover: "#1a2333",
-  bgInput: "#141b24",
-  bgModal: "#141b24",
+  // Aliases (keep compatibility with existing screens)
+  bgDeep:  "#05070B",
+  bgVoid:  "#090D12",
+  bg:      "#0F141B",
+  bgCard:  "#141B24",
+  bgInput: "#141B24",
+  bgModal: "#090D12",
 
   // Text
-  text: "#f5f7fb",          // ink — texto principal
-  textMuted: "#96a2b5",     // storm — secundario / placeholders
-  textDisabled: "#4a5568",
-  textInverse: "#05070b",
+  ink:     "#F5F7FB",   // primary text
+  storm:   "#96A2B5",   // secondary / placeholders / muted icons
+  text:    "#F5F7FB",
+  textMuted:    "#96A2B5",
+  textDisabled: "#4A5568",
+  textInverse:  "#05070B",
 
-  // Status
-  success: "#6be4c5",       // pine
-  successMuted: "#0d2e27",
-  warning: "#d7be7b",       // gold
-  warningMuted: "#2e2510",
-  info: "#8ea5ff",          // ember
-  infoMuted: "#1a2040",
+  // Accents
+  pine:     "#6BE4C5",  // primary action, success, focus
+  ember:    "#8EA5FF",  // info, secondary, pending
+  gold:     "#D7BE7B",  // alerts, warnings, due dates
+  rosewood: "#FF8F9E",  // errors, danger, destructive
+
+  // Aliases
+  primary:     "#6BE4C5",
+  primaryDark: "#4BC9A8",
+  secondary:   "#8EA5FF",
+  danger:      "#FF8F9E",
+  dangerMuted: "rgba(255,143,158,0.12)",
+  success:     "#6BE4C5",
+  successMuted: "rgba(107,228,197,0.12)",
+  warning:     "#D7BE7B",
+  warningMuted: "rgba(215,190,123,0.12)",
+  info:        "#8EA5FF",
+  infoMuted:   "rgba(142,165,255,0.12)",
 
   // Financial
-  income: "#6be4c5",
-  expense: "#ff8f9e",
-  transfer: "#8ea5ff",
-  neutral: "#96a2b5",
-
-  // Borders
-  border: "#1e2a38",
-  borderLight: "#141b24",
+  income:   "#6BE4C5",
+  expense:  "#FF8F9E",
+  transfer: "#8EA5FF",
+  neutral:  "#96A2B5",
 
   // Budget progress
-  budgetGood: "#6be4c5",
-  budgetWarn: "#d7be7b",
-  budgetOver: "#ff8f9e",
+  budgetGood: "#6BE4C5",
+  budgetWarn: "#D7BE7B",
+  budgetOver: "#FF8F9E",
 
   // Tab bar
-  tabActive: "#6be4c5",
-  tabInactive: "#96a2b5",
-  tabBar: "#0f141b",
+  tabActive:   "#6BE4C5",
+  tabInactive: "#96A2B5",
+  tabBar:      "#0F141B",
+
+  // Legacy border (solid fallback)
+  border:      "rgba(255,255,255,0.10)",
+  borderLight: "rgba(255,255,255,0.06)",
 };
 
+// ─── Glassmorphism surfaces ───────────────────────────────────────────────────
+export const GLASS = {
+  card:             "rgba(255,255,255,0.04)",
+  cardBorder:       "rgba(255,255,255,0.10)",
+  cardActive:       "rgba(107,228,197,0.08)",
+  cardActiveBorder: "rgba(107,228,197,0.25)",
+  input:            "rgba(255,255,255,0.04)",
+  inputBorder:      "rgba(255,255,255,0.10)",
+  inputFocus:       "rgba(107,228,197,0.25)",
+  sheetBorder:      "rgba(255,255,255,0.08)",
+  tabBorder:        "rgba(255,255,255,0.08)",
+  separator:        "rgba(255,255,255,0.06)",
+  handle:           "rgba(255,255,255,0.15)",
+  dangerBorder:     "rgba(255,143,158,0.25)",
+  dangerBg:         "rgba(255,143,158,0.12)",
+};
+
+// ─── Spacing ──────────────────────────────────────────────────────────────────
 export const SPACING = {
-  xs: 4,
-  sm: 8,
-  md: 12,
-  lg: 16,
-  xl: 20,
-  xxl: 24,
+  xs:   4,
+  sm:   8,
+  md:   12,
+  lg:   16,
+  xl:   20,
+  xxl:  24,
   xxxl: 32,
 };
 
+// ─── Border radius ────────────────────────────────────────────────────────────
 export const RADIUS = {
-  sm: 6,
-  md: 10,
-  lg: 14,
-  xl: 20,
-  full: 9999,
+  sm:   12,    // mini chips / tags
+  md:   18,    // buttons, inputs, fields
+  lg:   22,    // icon avatars / account icons
+  xl:   28,    // cards, modals, sheets
+  full: 9999,  // badges, status pills
 };
 
+// ─── Font sizes ───────────────────────────────────────────────────────────────
 export const FONT_SIZE = {
-  xs: 11,
-  sm: 13,
-  md: 15,
-  lg: 17,
-  xl: 20,
-  xxl: 24,
-  xxxl: 30,
+  xs:   11,
+  sm:   13,
+  md:   15,
+  lg:   17,
+  xl:   20,
+  xxl:  24,
+  xxxl: 32,
 };
 
+// ─── Font weights ─────────────────────────────────────────────────────────────
 export const FONT_WEIGHT = {
-  regular: "400" as const,
-  medium: "500" as const,
+  regular:  "400" as const,
+  medium:   "500" as const,
   semibold: "600" as const,
-  bold: "700" as const,
+  bold:     "700" as const,
+};
+
+// ─── Font families ────────────────────────────────────────────────────────────
+// Loaded via @expo-google-fonts in app/_layout.tsx
+export const FONT_FAMILY = {
+  heading:      "Outfit_600SemiBold",   // titles, KPIs
+  body:         "Manrope_400Regular",   // body text, descriptions
+  bodyMedium:   "Manrope_500Medium",    // labels, subtitles
+  bodySemibold: "Manrope_600SemiBold",  // caps labels, button text
 };

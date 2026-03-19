@@ -1,4 +1,4 @@
-import { forwardRef } from "react";
+import { forwardRef, useState } from "react";
 import {
   StyleSheet,
   Text,
@@ -8,7 +8,7 @@ import {
   type StyleProp,
   type ViewStyle,
 } from "react-native";
-import { COLORS, FONT_SIZE, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
 
 type Props = TextInputProps & {
   label?: string;
@@ -18,16 +18,25 @@ type Props = TextInputProps & {
 };
 
 export const Input = forwardRef<TextInput, Props>(function Input(
-  { label, error, hint, containerStyle, style, ...rest },
+  { label, error, hint, containerStyle, style, onFocus, onBlur, ...rest },
   ref,
 ) {
+  const [focused, setFocused] = useState(false);
+
   return (
     <View style={[styles.container, containerStyle]}>
       {label ? <Text style={styles.label}>{label}</Text> : null}
       <TextInput
         ref={ref}
-        style={[styles.input, error ? styles.inputError : null, style]}
-        placeholderTextColor={COLORS.textDisabled}
+        style={[
+          styles.input,
+          focused && styles.inputFocused,
+          error ? styles.inputError : null,
+          style,
+        ]}
+        placeholderTextColor={COLORS.storm}
+        onFocus={(e) => { setFocused(true); onFocus?.(e); }}
+        onBlur={(e) => { setFocused(false); onBlur?.(e); }}
         {...rest}
       />
       {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -41,29 +50,35 @@ const styles = StyleSheet.create({
     gap: SPACING.xs,
   },
   label: {
+    fontFamily: FONT_FAMILY.bodyMedium,
     fontSize: FONT_SIZE.sm,
-    color: COLORS.textMuted,
-    fontWeight: "500",
+    color: COLORS.storm,
   },
   input: {
-    backgroundColor: COLORS.bgInput,
+    backgroundColor: GLASS.input,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: GLASS.inputBorder,
     paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm + 2,
-    color: COLORS.text,
+    paddingVertical: SPACING.sm + 4,
+    color: COLORS.ink,
+    fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.md,
   },
+  inputFocused: {
+    borderColor: GLASS.inputFocus,
+  },
   inputError: {
-    borderColor: COLORS.danger,
+    borderColor: GLASS.dangerBorder,
   },
   error: {
+    fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.xs,
-    color: COLORS.danger,
+    color: COLORS.rosewood,
   },
   hint: {
+    fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.xs,
-    color: COLORS.textMuted,
+    color: COLORS.storm,
   },
 });

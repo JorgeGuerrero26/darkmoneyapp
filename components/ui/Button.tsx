@@ -8,7 +8,7 @@ import {
   type ViewStyle,
 } from "react-native";
 import * as Haptics from "expo-haptics";
-import { COLORS, FONT_SIZE, FONT_WEIGHT, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
 
 type Variant = "primary" | "secondary" | "ghost" | "danger";
 type Size = "sm" | "md" | "lg";
@@ -59,7 +59,7 @@ export function Button({
       {loading ? (
         <ActivityIndicator
           size="small"
-          color={variant === "primary" ? COLORS.textInverse : COLORS.primary}
+          color={variant === "primary" ? COLORS.canvas : COLORS.pine}
         />
       ) : (
         <Text style={[styles.label, styles[`${variant}Label`], styles[`${size}Label`]]}>
@@ -79,34 +79,39 @@ const styles = StyleSheet.create({
   },
   // Variants
   primary: {
-    backgroundColor: COLORS.primary,
+    backgroundColor: COLORS.pine,
   },
   secondary: {
-    backgroundColor: COLORS.bgCard,
+    backgroundColor: GLASS.card,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: GLASS.cardBorder,
   },
   ghost: {
-    backgroundColor: "transparent",
+    backgroundColor: GLASS.card,
+    borderWidth: 1,
+    borderColor: GLASS.cardBorder,
   },
   danger: {
-    backgroundColor: COLORS.danger,
+    backgroundColor: GLASS.dangerBg,
+    borderWidth: 1,
+    borderColor: GLASS.dangerBorder,
   },
   // Sizes
-  sm: { paddingVertical: SPACING.xs, paddingHorizontal: SPACING.md },
-  md: { paddingVertical: SPACING.sm + 2, paddingHorizontal: SPACING.lg },
-  lg: { paddingVertical: SPACING.md, paddingHorizontal: SPACING.xl },
+  sm: { paddingVertical: SPACING.xs + 2, paddingHorizontal: SPACING.md },
+  md: { paddingVertical: SPACING.md, paddingHorizontal: SPACING.xl },
+  lg: { paddingVertical: SPACING.md + 2, paddingHorizontal: SPACING.xxl },
   // States
-  disabled: { opacity: 0.5 },
-  pressed: { opacity: 0.8 },
+  disabled: { opacity: 0.45 },
+  pressed:  { opacity: 0.78 },
   // Labels
   label: {
-    fontWeight: FONT_WEIGHT.semibold,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.md,
   },
-  primaryLabel: { color: "#FFFFFF" },
-  secondaryLabel: { color: COLORS.text },
-  ghostLabel: { color: COLORS.primary },
-  dangerLabel: { color: "#FFFFFF" },
+  primaryLabel:   { color: COLORS.canvas },
+  secondaryLabel: { color: COLORS.ink },
+  ghostLabel:     { color: COLORS.ink },
+  dangerLabel:    { color: COLORS.rosewood },
   smLabel: { fontSize: FONT_SIZE.sm },
   mdLabel: { fontSize: FONT_SIZE.md },
   lgLabel: { fontSize: FONT_SIZE.lg },
