@@ -17,6 +17,10 @@ Notifications.setNotificationHandler({
 async function registerForPushNotifications(): Promise<string | null> {
   if (!Constants.isDevice) return null; // Won't work in simulator
 
+  // Push tokens are not supported in Expo Go SDK 53+
+  const isExpoGo = Constants.executionEnvironment === "storeClient";
+  if (isExpoGo) return null;
+
   const { status: existingStatus } = await Notifications.getPermissionsAsync();
   let finalStatus = existingStatus;
 

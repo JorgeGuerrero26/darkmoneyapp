@@ -1,3 +1,4 @@
+import { Plus } from "lucide-react-native";
 import { useCallback, useState } from "react";
 import {
   Alert,
@@ -186,7 +187,7 @@ export default function SubscriptionsScreen() {
         onPress={() => setCreateFormVisible(true)}
         accessibilityLabel="Nueva suscripción"
       >
-        <Text style={styles.fabIcon}>+</Text>
+        <Plus size={22} color="#FFF" />
       </TouchableOpacity>
 
       <SubscriptionForm
@@ -255,5 +256,4 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 8,
   },
-  fabIcon: { color: "#FFFFFF", fontSize: 28, fontWeight: "300", lineHeight: 32 },
 });

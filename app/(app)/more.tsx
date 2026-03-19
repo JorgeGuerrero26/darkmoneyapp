@@ -1,6 +1,9 @@
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import {
+  Bell, Users, Banknote, RefreshCw, Tag, Settings, ChevronRight, type LucideIcon,
+} from "lucide-react-native";
 
 import { useAuth } from "../../lib/auth-context";
 import { useNotificationsQuery } from "../../services/queries/workspace-data";
@@ -10,7 +13,7 @@ import { Badge } from "../../components/ui/Badge";
 import { COLORS, FONT_SIZE, FONT_WEIGHT, SPACING } from "../../constants/theme";
 
 type MenuItem = {
-  emoji: string;
+  Icon: LucideIcon;
   title: string;
   subtitle: string;
   route: string;
@@ -27,38 +30,38 @@ export default function MoreScreen() {
 
   const menuItems: MenuItem[] = [
     {
-      emoji: "🔔",
+      Icon: Bell,
       title: "Notificaciones",
       subtitle: unreadCount > 0 ? `${unreadCount} sin leer` : "Sin notificaciones nuevas",
       route: "/notifications",
       badge: unreadCount,
     },
     {
-      emoji: "👥",
+      Icon: Users,
       title: "Contactos",
       subtitle: "Clientes, proveedores y más",
       route: "/contacts/",
     },
     {
-      emoji: "💸",
+      Icon: Banknote,
       title: "Créditos y Deudas",
       subtitle: "Obligaciones activas",
       route: "/obligations",
     },
     {
-      emoji: "🔄",
+      Icon: RefreshCw,
       title: "Suscripciones",
       subtitle: "Pagos recurrentes",
       route: "/subscriptions",
     },
     {
-      emoji: "🏷️",
+      Icon: Tag,
       title: "Categorías",
       subtitle: "Organiza tus movimientos",
       route: "/categories",
     },
     {
-      emoji: "⚙️",
+      Icon: Settings,
       title: "Configuración",
       subtitle: "Perfil, workspace y preferencias",
       route: "/settings",
@@ -77,13 +80,15 @@ export default function MoreScreen() {
             style={styles.menuCard}
           >
             <View style={styles.menuRow}>
-              <Text style={styles.menuEmoji}>{item.emoji}</Text>
+              <View style={styles.iconWrap}>
+                <item.Icon size={18} color={COLORS.primary} />
+              </View>
               <View style={styles.menuInfo}>
                 <Text style={styles.menuTitle}>{item.title}</Text>
                 <Text style={styles.menuSubtitle}>{item.subtitle}</Text>
               </View>
               {item.badge ? <Badge count={item.badge} /> : null}
-              <Text style={styles.chevron}>›</Text>
+              <ChevronRight size={16} color={COLORS.textMuted} />
             </View>
           </Card>
         ))}
@@ -108,11 +113,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: SPACING.md,
   },
-  menuEmoji: { fontSize: 24, width: 36, textAlign: "center" },
+  iconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: COLORS.bgCard,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   menuInfo: { flex: 1, gap: 2 },
   menuTitle: { fontSize: FONT_SIZE.md, fontWeight: FONT_WEIGHT.medium, color: COLORS.text },
   menuSubtitle: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted },
-  chevron: { fontSize: FONT_SIZE.xl, color: COLORS.textMuted, fontWeight: "300" },
   signOutButton: {
     marginTop: SPACING.lg,
     paddingVertical: SPACING.md,

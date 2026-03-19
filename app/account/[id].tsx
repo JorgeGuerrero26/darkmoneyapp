@@ -1,3 +1,4 @@
+import { Plus, CreditCard, Wallet, Landmark, PiggyBank, TrendingUp, Banknote } from "lucide-react-native";
 import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -31,7 +32,19 @@ const ACCOUNT_TYPE_LABEL: Record<string, string> = {
   credit_card: "Tarjeta de crédito",
   investment: "Inversión",
   loan: "Préstamo",
+  loan_wallet: "Cartera préstamos",
   other: "Otro",
+};
+
+const ACCOUNT_TYPE_ICON: Record<string, typeof CreditCard> = {
+  credit_card: CreditCard,
+  cash: Banknote,
+  savings: PiggyBank,
+  investment: TrendingUp,
+  bank: Landmark,
+  loan: Wallet,
+  loan_wallet: Wallet,
+  other: Wallet,
 };
 
 export default function AccountDetailScreen() {
@@ -84,7 +97,7 @@ export default function AccountDetailScreen() {
                 <Text style={styles.editBtnText}>Editar</Text>
               </TouchableOpacity>
             ) : null}
-            <TouchableOpacity onPress={() => router.back()}>
+            <TouchableOpacity onPress={() => router.replace("/(app)/accounts")}>
               <Text style={styles.back}>‹ Volver</Text>
             </TouchableOpacity>
           </View>
@@ -95,8 +108,8 @@ export default function AccountDetailScreen() {
       {account ? (
         <View style={styles.summaryCard}>
           <View style={styles.summaryRow}>
-            <View style={styles.iconContainer}>
-              <Text style={styles.iconText}>{account.icon ?? "💳"}</Text>
+            <View style={[styles.iconContainer, { backgroundColor: account.color + "33" }]}>
+              {(() => { const Icon = ACCOUNT_TYPE_ICON[account.type] ?? Wallet; return <Icon size={22} color={account.color} />; })()}
             </View>
             <View style={styles.summaryInfo}>
               <Text style={styles.accountName}>{account.name}</Text>
@@ -168,7 +181,7 @@ export default function AccountDetailScreen() {
         activeOpacity={0.85}
         onPress={() => setMovementFormVisible(true)}
       >
-        <Text style={styles.fabIcon}>+</Text>
+        <Plus size={22} color="#FFF" />
       </TouchableOpacity>
 
       {/* Edit account form */}
@@ -223,7 +236,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  iconText: { fontSize: 20 },
   summaryInfo: { flex: 1, gap: 2 },
   accountName: { fontSize: FONT_SIZE.md, fontWeight: FONT_WEIGHT.semibold, color: COLORS.text },
   accountMeta: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted },
@@ -251,5 +263,4 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 8,
   },
-  fabIcon: { color: "#FFFFFF", fontSize: 28, fontWeight: "300", lineHeight: 32 },
 });

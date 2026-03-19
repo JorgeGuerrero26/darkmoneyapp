@@ -1,4 +1,5 @@
 import { StyleSheet, Text, TouchableOpacity, View, type StyleProp, type ViewStyle } from "react-native";
+import { Inbox, Search } from "lucide-react-native";
 import { COLORS, FONT_SIZE, RADIUS, SPACING } from "../../constants/theme";
 
 type Variant = "empty" | "no-results";
@@ -11,14 +12,12 @@ type Props = {
   action?: { label: string; onPress: () => void };
 };
 
-const DEFAULTS: Record<Variant, { title: string; description: string; emoji: string }> = {
+const DEFAULTS: Record<Variant, { title: string; description: string }> = {
   empty: {
-    emoji: "📭",
     title: "Sin datos aún",
     description: "No hay nada que mostrar. Crea el primero.",
   },
   "no-results": {
-    emoji: "🔍",
     title: "Sin resultados",
     description: "Ningún elemento coincide con los filtros aplicados.",
   },
@@ -26,10 +25,13 @@ const DEFAULTS: Record<Variant, { title: string; description: string; emoji: str
 
 export function EmptyState({ variant = "empty", title, description, style, action }: Props) {
   const defaults = DEFAULTS[variant];
+  const Icon = variant === "no-results" ? Search : Inbox;
 
   return (
     <View style={[styles.container, style]}>
-      <Text style={styles.emoji}>{defaults.emoji}</Text>
+      <View style={styles.iconWrap}>
+        <Icon size={32} color={COLORS.textMuted} />
+      </View>
       <Text style={styles.title}>{title ?? defaults.title}</Text>
       <Text style={styles.description}>{description ?? defaults.description}</Text>
       {action ? (
@@ -49,9 +51,9 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.xxxl,
     paddingHorizontal: SPACING.xl,
   },
-  emoji: {
-    fontSize: 40,
+  iconWrap: {
     marginBottom: SPACING.lg,
+    opacity: 0.5,
   },
   title: {
     fontSize: FONT_SIZE.lg,

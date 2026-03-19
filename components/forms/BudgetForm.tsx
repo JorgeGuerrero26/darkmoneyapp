@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import {
-  Alert,
+  Modal,
   ScrollView,
   StyleSheet,
   Switch,
@@ -66,6 +66,7 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget }: Props) {
 
   const [nameError, setNameError] = useState("");
   const [amountError, setAmountError] = useState("");
+  const [discardVisible, setDiscardVisible] = useState(false);
 
   useEffect(() => {
     if (!visible) return;
@@ -110,10 +111,7 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget }: Props) {
 
   function handleClose() {
     if (name.trim() || limitAmount) {
-      Alert.alert("¿Descartar cambios?", "Los datos ingresados se perderán.", [
-        { text: "Continuar", style: "cancel" },
-        { text: "Descartar", style: "destructive", onPress: onClose },
-      ]);
+      setDiscardVisible(true);
     } else {
       onClose();
     }
@@ -168,6 +166,7 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget }: Props) {
   const activeAccounts = snapshot?.accounts.filter((a) => !a.isArchived) ?? [];
 
   return (
+    <>
     <BottomSheet
       visible={visible}
       onClose={handleClose}
@@ -350,6 +349,24 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget }: Props) {
         style={styles.submitBtn}
       />
     </BottomSheet>
+
+    <Modal transparent visible={discardVisible} animationType="fade" onRequestClose={() => setDiscardVisible(false)}>
+      <View style={styles.discardOverlay}>
+        <View style={styles.discardCard}>
+          <Text style={styles.discardTitle}>¿Descartar cambios?</Text>
+          <Text style={styles.discardBody}>Los datos ingresados se perderán.</Text>
+          <View style={styles.discardActions}>
+            <TouchableOpacity style={styles.discardCancel} onPress={() => setDiscardVisible(false)}>
+              <Text style={styles.discardCancelText}>Continuar editando</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.discardConfirm} onPress={() => { setDiscardVisible(false); onClose(); }}>
+              <Text style={styles.discardConfirmText}>Descartar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+    </>
   );
 }
 
@@ -402,4 +419,58 @@ const styles = StyleSheet.create({
   switchLabel: { fontSize: FONT_SIZE.sm, fontWeight: FONT_WEIGHT.medium, color: COLORS.text },
   switchDesc: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted },
   submitBtn: { marginTop: SPACING.sm },
+  discardOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: SPACING.xl,
+  },
+  discardCard: {
+    width: "100%",
+    backgroundColor: COLORS.bgCard,
+    borderRadius: RADIUS.xl,
+    padding: SPACING.xl,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    gap: SPACING.sm,
+  },
+  discardTitle: {
+    fontSize: FONT_SIZE.lg,
+    fontWeight: FONT_WEIGHT.bold,
+    color: COLORS.text,
+    textAlign: "center",
+  },
+  discardBody: {
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.textMuted,
+    textAlign: "center",
+    marginBottom: SPACING.sm,
+  },
+  discardActions: { gap: SPACING.sm },
+  discardConfirm: {
+    backgroundColor: COLORS.danger + "22",
+    borderWidth: 1,
+    borderColor: COLORS.danger + "66",
+    borderRadius: RADIUS.md,
+    paddingVertical: SPACING.md,
+    alignItems: "center",
+  },
+  discardConfirmText: {
+    fontSize: FONT_SIZE.md,
+    fontWeight: FONT_WEIGHT.semibold,
+    color: COLORS.danger,
+  },
+  discardCancel: {
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: RADIUS.md,
+    paddingVertical: SPACING.md,
+    alignItems: "center",
+  },
+  discardCancelText: {
+    fontSize: FONT_SIZE.md,
+    fontWeight: FONT_WEIGHT.medium,
+    color: COLORS.textMuted,
+  },
 });

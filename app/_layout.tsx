@@ -6,7 +6,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { AuthProvider, useAuth } from "../lib/auth-context";
 import { WorkspaceProvider, useWorkspace } from "../lib/workspace-context";
-import { useWorkspaceSnapshotQuery } from "../services/queries/workspace-data";
+import { useWorkspaceSnapshotQuery, useUserWorkspacesQuery } from "../services/queries/workspace-data";
 import { OfflineBanner } from "../components/layout/OfflineBanner";
 import { ToastContainer } from "../components/ui/Toast";
 import { usePushNotifications, scheduleSubscriptionReminders } from "../hooks/usePushNotifications";
@@ -25,7 +25,19 @@ const queryClient = new QueryClient({
 
 function NotificationSetup() {
   const { profile } = useAuth();
-  const { activeWorkspaceId } = useWorkspace();
+  const { activeWorkspaceId, setWorkspaces, setActiveWorkspaceId } = useWorkspace();
+
+  // Bootstrap: load workspaces on login so activeWorkspaceId can be set
+  const { data: workspaces } = useUserWorkspacesQuery(profile?.id);
+  useEffect(() => {
+    if (!workspaces?.length) return;
+    setWorkspaces(workspaces);
+    if (activeWorkspaceId === null) {
+      const def = workspaces.find((w) => w.isDefaultWorkspace) ?? workspaces[0];
+      if (def) setActiveWorkspaceId(def.id);
+    }
+  }, [workspaces, activeWorkspaceId, setWorkspaces, setActiveWorkspaceId]);
+
   const { data: snapshot } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
 
   usePushNotifications(profile?.id);

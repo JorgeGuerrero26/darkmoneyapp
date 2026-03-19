@@ -1,20 +1,13 @@
 import { Tabs } from "expo-router";
-import { Text, View } from "react-native";
+import { View } from "react-native";
+import { Home, ArrowLeftRight, WalletCards, BarChart3, LayoutGrid } from "lucide-react-native";
 
 import { COLORS } from "../../constants/theme";
 import { useNotificationsQuery } from "../../services/queries/workspace-data";
 import { useAuth } from "../../lib/auth-context";
 import { Badge } from "../../components/ui/Badge";
 
-function TabIcon({ emoji, label }: { emoji: string; label: string }) {
-  return (
-    <View style={{ alignItems: "center", gap: 1 }}>
-      <Text style={{ fontSize: 22 }}>{emoji}</Text>
-    </View>
-  );
-}
-
-function MoreTabIcon({ emoji }: { emoji: string }) {
+function MoreTabIcon({ color }: { color: string }) {
   const { user } = useAuth();
   const { data: notifications } = useNotificationsQuery(user?.id ?? null);
   const unreadCount = (notifications ?? []).filter((n) => n.status !== "read").length;
@@ -22,7 +15,7 @@ function MoreTabIcon({ emoji }: { emoji: string }) {
   return (
     <View style={{ alignItems: "center" }}>
       <View>
-        <Text style={{ fontSize: 22 }}>{emoji}</Text>
+        <LayoutGrid size={22} color={color} />
         {unreadCount > 0 ? (
           <View style={{ position: "absolute", top: -4, right: -8 }}>
             <Badge count={unreadCount} />
@@ -53,37 +46,35 @@ export default function AppLayout() {
         name="dashboard"
         options={{
           title: "Inicio",
-          tabBarIcon: ({ focused }) => (
-            <TabIcon emoji="🏠" label="Inicio" />
-          ),
+          tabBarIcon: ({ color }) => <Home size={22} color={color} />,
         }}
       />
       <Tabs.Screen
         name="movements"
         options={{
           title: "Movimientos",
-          tabBarIcon: () => <TabIcon emoji="↕" label="Movimientos" />,
+          tabBarIcon: ({ color }) => <ArrowLeftRight size={22} color={color} />,
         }}
       />
       <Tabs.Screen
         name="accounts"
         options={{
           title: "Cuentas",
-          tabBarIcon: () => <TabIcon emoji="💳" label="Cuentas" />,
+          tabBarIcon: ({ color }) => <WalletCards size={22} color={color} />,
         }}
       />
       <Tabs.Screen
         name="budgets"
         options={{
           title: "Presupuestos",
-          tabBarIcon: () => <TabIcon emoji="📊" label="Presupuestos" />,
+          tabBarIcon: ({ color }) => <BarChart3 size={22} color={color} />,
         }}
       />
       <Tabs.Screen
         name="more"
         options={{
           title: "Más",
-          tabBarIcon: () => <MoreTabIcon emoji="⋯" />,
+          tabBarIcon: ({ color }) => <MoreTabIcon color={color} />,
         }}
       />
     </Tabs>

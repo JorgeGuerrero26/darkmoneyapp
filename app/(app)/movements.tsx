@@ -1,6 +1,9 @@
+import { Plus, X } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Animated,
+  Dimensions,
   FlatList,
   Modal,
   Pressable,
@@ -12,6 +15,8 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+
+const SCREEN_HEIGHT = Dimensions.get("window").height;
 import { useRouter } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -68,6 +73,22 @@ export default function MovementsScreen() {
   const [activeCategoryId, setActiveCategoryId] = useState<number | null>(null);
   const [activeAccountId, setActiveAccountId] = useState<number | null>(null);
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
+  const filterOverlayOpacity = useRef(new Animated.Value(0)).current;
+  const filterSheetY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
+
+  useEffect(() => {
+    if (filterSheetOpen) {
+      Animated.parallel([
+        Animated.timing(filterOverlayOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
+        Animated.spring(filterSheetY, { toValue: 0, tension: 65, friction: 11, useNativeDriver: true }),
+      ]).start();
+    } else {
+      Animated.parallel([
+        Animated.timing(filterOverlayOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
+        Animated.timing(filterSheetY, { toValue: SCREEN_HEIGHT, duration: 250, useNativeDriver: true }),
+      ]).start();
+    }
+  }, [filterSheetOpen, filterOverlayOpacity, filterSheetY]);
   const [formVisible, setFormVisible] = useState(false);
   const [searchText, setSearchText] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -129,19 +150,21 @@ export default function MovementsScreen() {
     onSelect: (v: string) => void,
   ) {
     return (
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pillRow}>
-        {options.map((opt) => (
-          <TouchableOpacity
-            key={opt.value}
-            style={[styles.pill, active === opt.value && styles.pillActive]}
-            onPress={() => onSelect(opt.value)}
-          >
-            <Text style={[styles.pillText, active === opt.value && styles.pillTextActive]}>
-              {opt.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+      <View style={styles.pillRowWrap}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pillRow}>
+          {options.map((opt) => (
+            <TouchableOpacity
+              key={opt.value}
+              style={[styles.pill, active === opt.value && styles.pillActive]}
+              onPress={() => onSelect(opt.value)}
+            >
+              <Text style={[styles.pillText, active === opt.value && styles.pillTextActive]}>
+                {opt.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
     );
   }
 
@@ -175,7 +198,7 @@ export default function MovementsScreen() {
         />
         {searchText.length > 0 ? (
           <TouchableOpacity style={styles.searchClear} onPress={() => setSearchText("")} accessibilityLabel="Limpiar búsqueda">
-            <Text style={styles.searchClearText}>×</Text>
+            <X size={16} color={COLORS.textMuted} />
           </TouchableOpacity>
         ) : null}
       </View>
@@ -218,12 +241,13 @@ export default function MovementsScreen() {
       <Modal
         visible={filterSheetOpen}
         transparent
-        animationType="slide"
+        animationType="none"
         onRequestClose={() => setFilterSheetOpen(false)}
       >
-        <Pressable style={styles.filterOverlay} onPress={() => setFilterSheetOpen(false)}>
-          <View
-            style={[styles.filterSheet, { paddingBottom: insets.bottom + SPACING.lg }]}
+        <Animated.View style={[styles.filterOverlay, { opacity: filterOverlayOpacity }]}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setFilterSheetOpen(false)} />
+          <Animated.View
+            style={[styles.filterSheet, { paddingBottom: insets.bottom + SPACING.lg, transform: [{ translateY: filterSheetY }] }]}
             onStartShouldSetResponder={() => true}
           >
             <Text style={styles.filterSheetTitle}>Filtros adicionales</Text>
@@ -303,8 +327,8 @@ export default function MovementsScreen() {
             >
               <Text style={styles.applyBtnText}>Aplicar</Text>
             </TouchableOpacity>
-          </View>
-        </Pressable>
+          </Animated.View>
+        </Animated.View>
       </Modal>
 
       <FlatList
@@ -367,12 +391,12 @@ export default function MovementsScreen() {
 
       {/* FAB */}
       <TouchableOpacity
-        style={[styles.fab, { bottom: insets.bottom + 80 }]}
+        style={[styles.fab, { bottom: insets.bottom + 16 }]}
         activeOpacity={0.85}
         onPress={() => setFormVisible(true)}
         accessibilityLabel="Nuevo movimiento"
       >
-        <Text style={styles.fabIcon}>+</Text>
+        <Plus size={22} color="#FFF" />
       </TouchableOpacity>
 
       <MovementForm
@@ -389,17 +413,20 @@ export default function MovementsScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: COLORS.bg },
-  pillRow: { paddingHorizontal: SPACING.lg, paddingVertical: SPACING.sm, gap: SPACING.sm },
+  pillRowWrap: { height: 48, justifyContent: "center" },
+  pillRow: { paddingHorizontal: SPACING.lg, gap: SPACING.sm, alignItems: "center" },
   pill: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs + 2,
+    height: 36,
+    paddingHorizontal: SPACING.lg,
     borderRadius: RADIUS.full,
     backgroundColor: COLORS.bgCard,
     borderWidth: 1,
     borderColor: COLORS.border,
+    alignItems: "center",
+    justifyContent: "center",
   },
   pillActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  pillText: { fontSize: FONT_SIZE.sm, color: COLORS.textMuted, fontWeight: FONT_WEIGHT.medium },
+  pillText: { fontSize: FONT_SIZE.sm, color: COLORS.textMuted, fontWeight: FONT_WEIGHT.medium, includeFontPadding: false },
   pillTextActive: { color: "#FFFFFF" },
   separator: { height: 1, backgroundColor: COLORS.border, marginLeft: SPACING.lg + 36 + SPACING.md },
   footer: { padding: SPACING.lg, alignItems: "center" },
@@ -422,7 +449,6 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 8,
   },
-  fabIcon: { color: "#FFFFFF", fontSize: 28, fontWeight: "300", lineHeight: 32 },
   searchWrap: {
     flexDirection: "row",
     alignItems: "center",
@@ -441,17 +467,18 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.sm,
   },
   searchClear: { padding: 4 },
-  searchClearText: { fontSize: 18, color: COLORS.textMuted, lineHeight: 22 },
   filterBtn: {
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 4,
+    height: 36,
+    paddingHorizontal: SPACING.lg,
     borderRadius: RADIUS.full,
     borderWidth: 1,
     borderColor: COLORS.border,
     backgroundColor: COLORS.bgCard,
+    alignItems: "center",
+    justifyContent: "center",
   },
   filterBtnActive: { borderColor: COLORS.primary, backgroundColor: COLORS.primary + "22" },
-  filterBtnText: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted, fontWeight: FONT_WEIGHT.medium },
+  filterBtnText: { fontSize: FONT_SIZE.sm, color: COLORS.textMuted, fontWeight: FONT_WEIGHT.medium },
   filterBtnTextActive: { color: COLORS.primary },
   activeFiltersBar: { paddingVertical: SPACING.xs },
   activeFiltersPills: { paddingHorizontal: SPACING.lg, gap: SPACING.sm, alignItems: "center" },
@@ -465,8 +492,12 @@ const styles = StyleSheet.create({
   },
   activeFilterChipText: { fontSize: FONT_SIZE.xs, color: COLORS.primary },
   clearAll: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted, paddingHorizontal: SPACING.xs },
-  filterOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
+  filterOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.5)" },
   filterSheet: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
     backgroundColor: COLORS.bgCard,
     borderTopLeftRadius: RADIUS.xl,
     borderTopRightRadius: RADIUS.xl,

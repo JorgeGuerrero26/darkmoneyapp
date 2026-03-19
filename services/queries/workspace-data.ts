@@ -55,7 +55,6 @@ type AccountBalanceRow = {
   account_id: number;
   workspace_id: number;
   current_balance: NumericLike;
-  current_balance_in_base_currency: NumericLike;
 };
 
 type BudgetProgressRow = {
@@ -96,16 +95,19 @@ type ObligationSummaryRow = {
   status: ObligationStatus;
   title: string;
   counterparty_id: number | null;
-  counterparty_name: string | null;
   settlement_account_id: number | null;
-  settlement_account_name: string | null;
   currency_code: string;
-  principal_amount: NumericLike;
-  principal_amount_in_base_currency: NumericLike;
-  current_principal_amount: NumericLike;
-  current_principal_amount_in_base_currency: NumericLike;
+  principal_initial_amount: NumericLike;
+  principal_increase_total: NumericLike;
+  principal_decrease_total: NumericLike;
+  principal_current_amount: NumericLike;
+  interest_total: NumericLike;
+  fee_total: NumericLike;
+  adjustment_total: NumericLike;
+  discount_total: NumericLike;
+  writeoff_total: NumericLike;
+  payment_total: NumericLike;
   pending_amount: NumericLike;
-  pending_amount_in_base_currency: NumericLike;
   progress_percent: NumericLike;
   start_date: string;
   due_date: string | null;
@@ -116,7 +118,9 @@ type ObligationSummaryRow = {
   notes: string | null;
   payment_count: number;
   last_payment_date: string | null;
-  installment_label: string;
+  last_event_date: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 type ObligationEventRow = {
@@ -240,22 +244,18 @@ function mapObligation(
     title: row.title,
     direction: row.direction,
     originType: row.origin_type,
-    counterparty:
-      row.counterparty_name ??
-      (row.counterparty_id ? counterpartyMap.get(row.counterparty_id) ?? "" : ""),
+    counterparty: row.counterparty_id ? counterpartyMap.get(row.counterparty_id) ?? "" : "",
     counterpartyId: row.counterparty_id,
     settlementAccountId: row.settlement_account_id,
-    settlementAccountName: row.settlement_account_name,
+    settlementAccountName: null,
     status: row.status,
     currencyCode: row.currency_code,
-    principalAmount: toNum(row.principal_amount),
-    principalAmountInBaseCurrency: toNum(row.principal_amount_in_base_currency),
-    currentPrincipalAmount: toNum(row.current_principal_amount),
-    currentPrincipalAmountInBaseCurrency: toNum(
-      row.current_principal_amount_in_base_currency,
-    ),
+    principalAmount: toNum(row.principal_initial_amount),
+    principalAmountInBaseCurrency: toNum(row.principal_initial_amount),
+    currentPrincipalAmount: toNum(row.principal_current_amount),
+    currentPrincipalAmountInBaseCurrency: toNum(row.principal_current_amount),
     pendingAmount: toNum(row.pending_amount),
-    pendingAmountInBaseCurrency: toNum(row.pending_amount_in_base_currency),
+    pendingAmountInBaseCurrency: toNum(row.pending_amount),
     progressPercent: toNum(row.progress_percent),
     startDate: row.start_date,
     dueDate: row.due_date,
@@ -266,7 +266,7 @@ function mapObligation(
     notes: row.notes,
     paymentCount: row.payment_count,
     lastPaymentDate: row.last_payment_date,
-    installmentLabel: row.installment_label,
+    installmentLabel: null,
     events: obligationEvents,
   };
 }
@@ -361,7 +361,7 @@ async function fetchWorkspaceSnapshot(
       .order("sort_order", { ascending: true }),
     supabase
       .from("v_account_balances")
-      .select("account_id, workspace_id, current_balance, current_balance_in_base_currency")
+      .select("account_id, workspace_id, current_balance")
       .eq("workspace_id", activeWorkspaceId),
     supabase
       .from("categories")
@@ -382,7 +382,7 @@ async function fetchWorkspaceSnapshot(
       .order("name", { ascending: true }),
     supabase
       .from("v_obligation_summary")
-      .select("id, workspace_id, direction, origin_type, status, title, counterparty_id, counterparty_name, settlement_account_id, settlement_account_name, currency_code, principal_amount, principal_amount_in_base_currency, current_principal_amount, current_principal_amount_in_base_currency, pending_amount, pending_amount_in_base_currency, progress_percent, start_date, due_date, installment_amount, installment_count, interest_rate, description, notes, payment_count, last_payment_date, installment_label")
+      .select("*")
       .eq("workspace_id", activeWorkspaceId)
       .in("status", ["active", "draft"]),
     supabase
@@ -452,7 +452,7 @@ async function fetchWorkspaceSnapshot(
       currencyCode: row.currency_code,
       openingBalance: toNum(row.opening_balance),
       currentBalance: toNum(balance?.current_balance ?? null),
-      currentBalanceInBaseCurrency: toNum(balance?.current_balance_in_base_currency ?? null),
+      currentBalanceInBaseCurrency: toNum(balance?.current_balance ?? null),
       includeInNetWorth: row.include_in_net_worth,
       lastActivity: row.updated_at,
       color: row.color ?? "#6366F1",
@@ -505,6 +505,32 @@ async function fetchWorkspaceSnapshot(
   };
 }
 
+// ─── Workspace list init (no activeWorkspaceId needed) ────────────────────────
+
+async function fetchUserWorkspaces(userId: string) {
+  if (!supabase) throw new Error("Supabase no está configurado.");
+  const [membershipsResult, workspacesResult] = await Promise.all([
+    supabase.from("workspace_members").select("workspace_id, role, is_default_workspace, joined_at").eq("user_id", userId),
+    supabase.from("workspaces").select("id, owner_user_id, name, kind, base_currency_code, description, is_archived"),
+  ]);
+  const memberRows = (membershipsResult.data ?? []) as WorkspaceMemberRow[];
+  const workspaceRows = (workspacesResult.data ?? []) as WorkspaceRow[];
+  const memberIds = new Set(memberRows.map((m) => m.workspace_id));
+  return workspaceRows
+    .filter((w) => memberIds.has(w.id))
+    .map((w) => mapWorkspace(w, memberRows.find((m) => m.workspace_id === w.id)!));
+}
+
+export function useUserWorkspacesQuery(userId: string | null | undefined) {
+  return useQuery({
+    queryKey: ["user-workspaces", userId],
+    queryFn: () => fetchUserWorkspaces(userId!),
+    enabled: Boolean(userId),
+    staleTime: 120_000,
+    retry: 1,
+  });
+}
+
 export function useWorkspaceSnapshotQuery(
   profile: AppProfile | null,
   activeWorkspaceId: number | null,
@@ -513,6 +539,50 @@ export function useWorkspaceSnapshotQuery(
     queryKey: ["workspace-snapshot", activeWorkspaceId, profile?.id],
     queryFn: () => fetchWorkspaceSnapshot(profile!.id, activeWorkspaceId!),
     enabled: Boolean(profile?.id && activeWorkspaceId),
+    staleTime: 60_000,
+    retry: 1,
+  });
+}
+
+// ─── Dashboard movements query ────────────────────────────────────────────────
+
+export type DashboardMovementRow = {
+  id: number;
+  movementType: string;
+  status: string;
+  occurredAt: string;
+  sourceAmount: number;
+  destinationAmount: number;
+  categoryId: number | null;
+  counterpartyId: number | null;
+};
+
+export function useDashboardMovementsQuery(workspaceId: number | null) {
+  return useQuery({
+    queryKey: ["dashboard-movements", workspaceId],
+    queryFn: async (): Promise<DashboardMovementRow[]> => {
+      if (!supabase || !workspaceId) return [];
+      const since = new Date();
+      since.setDate(since.getDate() - 90);
+      const { data, error } = await supabase
+        .from("movements")
+        .select("id, movement_type, status, occurred_at, source_amount, destination_amount, category_id, counterparty_id")
+        .eq("workspace_id", workspaceId)
+        .gte("occurred_at", since.toISOString())
+        .order("occurred_at", { ascending: false });
+      if (error) throw new Error(error.message ?? "Error al cargar movimientos");
+      return (data ?? []).map((row: any): DashboardMovementRow => ({
+        id: row.id,
+        movementType: row.movement_type,
+        status: row.status,
+        occurredAt: row.occurred_at,
+        sourceAmount: toNum(row.source_amount),
+        destinationAmount: toNum(row.destination_amount),
+        categoryId: row.category_id ?? null,
+        counterpartyId: row.counterparty_id ?? null,
+      }));
+    },
+    enabled: Boolean(workspaceId),
     staleTime: 60_000,
     retry: 1,
   });
@@ -560,7 +630,7 @@ async function createMovement(
     counterparty_id: input.counterpartyId ?? null,
     obligation_id: input.obligationId ?? null,
     subscription_id: input.subscriptionId ?? null,
-    metadata: input.metadata ?? null,
+    metadata: input.metadata ?? {},
   };
 
   const { data, error } = await supabase
@@ -571,7 +641,7 @@ async function createMovement(
     )
     .single();
 
-  if (error) throw error;
+  if (error) throw new Error(error.message ?? "Error al guardar el movimiento");
   const row = data as any;
   return {
     id: row.id,
@@ -637,10 +707,12 @@ export function useCreateAccountMutation(workspaceId: number | null) {
           include_in_net_worth: input.includeInNetWorth,
           color: input.color,
           icon: input.icon,
+          sort_order: 0,
+          is_archived: false,
         })
         .select("id")
         .single();
-      if (error) throw error;
+      if (error) throw new Error(error.message ?? "Error de base de datos");
       return data as { id: number };
     },
     onSuccess: () => {
@@ -666,7 +738,7 @@ export function useUpdateAccountMutation(workspaceId: number | null) {
         })
         .eq("id", id)
         .eq("workspace_id", workspaceId);
-      if (error) throw error;
+      if (error) throw new Error(error.message ?? "Error de base de datos");
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
@@ -711,7 +783,7 @@ export function useCreateBudgetMutation(workspaceId: number | null) {
         })
         .select("id")
         .single();
-      if (error) throw error;
+      if (error) throw new Error(error.message ?? "Error de base de datos");
       return data as { id: number };
     },
     onSuccess: () => {
@@ -752,7 +824,7 @@ export function useUpdateMovementMutation(workspaceId: number | null) {
         .update(payload)
         .eq("id", id)
         .eq("workspace_id", workspaceId);
-      if (error) throw error;
+      if (error) throw new Error(error.message ?? "Error de base de datos");
     },
     onSuccess: (_data, { id }) => {
       void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
@@ -772,7 +844,7 @@ export function useVoidMovementMutation(workspaceId: number | null) {
         .update({ status: "voided" })
         .eq("id", id)
         .eq("workspace_id", workspaceId);
-      if (error) throw error;
+      if (error) throw new Error(error.message ?? "Error de base de datos");
     },
     onSuccess: (_data, id) => {
       void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
@@ -807,7 +879,7 @@ export function useUpdateBudgetMutation(workspaceId: number | null) {
         .update(payload)
         .eq("id", id)
         .eq("workspace_id", workspaceId);
-      if (error) throw error;
+      if (error) throw new Error(error.message ?? "Error de base de datos");
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
@@ -825,7 +897,7 @@ export function useDeleteBudgetMutation(workspaceId: number | null) {
         .delete()
         .eq("id", id)
         .eq("workspace_id", workspaceId);
-      if (error) throw error;
+      if (error) throw new Error(error.message ?? "Error de base de datos");
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
@@ -845,7 +917,7 @@ export function useArchiveAccountMutation(workspaceId: number | null) {
         .update({ is_archived: archived })
         .eq("id", id)
         .eq("workspace_id", workspaceId);
-      if (error) throw error;
+      if (error) throw new Error(error.message ?? "Error de base de datos");
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
@@ -899,7 +971,7 @@ export function useCreateObligationMutation(workspaceId: number | null) {
         })
         .select("id")
         .single();
-      if (error) throw error;
+      if (error) throw new Error(error.message ?? "Error de base de datos");
       return data as { id: number };
     },
     onSuccess: () => {
@@ -928,7 +1000,7 @@ export function useUpdateObligationMutation(workspaceId: number | null) {
         .update(payload)
         .eq("id", id)
         .eq("workspace_id", workspaceId);
-      if (error) throw error;
+      if (error) throw new Error(error.message ?? "Error de base de datos");
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
@@ -954,15 +1026,17 @@ export function useCreateObligationPaymentMutation(workspaceId: number | null) {
       const { data, error } = await supabase
         .from("obligation_events")
         .insert({
+          workspace_id: workspaceId,
           obligation_id: input.obligationId,
           event_type: "payment",
           event_date: input.paymentDate,
           amount: input.amount,
           notes: input.notes ?? null,
+          metadata: {},
         })
         .select("id")
         .single();
-      if (error) throw error;
+      if (error) throw new Error(error.message ?? "Error de base de datos");
       // If requested, also create a movement linked to this obligation
       if (input.createMovement && input.accountId) {
         const { error: mvErr } = await supabase
@@ -976,6 +1050,7 @@ export function useCreateObligationPaymentMutation(workspaceId: number | null) {
             source_account_id: input.accountId,
             source_amount: input.amount,
             obligation_id: input.obligationId,
+            metadata: {},
           });
         if (mvErr) throw mvErr;
       }
@@ -992,7 +1067,6 @@ export function useCreateObligationPaymentMutation(workspaceId: number | null) {
 
 export type SubscriptionFormInput = {
   name: string;
-  vendor?: string | null;
   vendorPartyId?: number | null;
   accountId?: number | null;
   categoryId?: number | null;
@@ -1019,7 +1093,6 @@ export function useCreateSubscriptionMutation(workspaceId: number | null) {
         .insert({
           workspace_id: workspaceId,
           name: input.name,
-          vendor: input.vendor ?? null,
           vendor_party_id: input.vendorPartyId ?? null,
           account_id: input.accountId ?? null,
           category_id: input.categoryId ?? null,
@@ -1029,6 +1102,7 @@ export function useCreateSubscriptionMutation(workspaceId: number | null) {
           interval_count: input.intervalCount,
           day_of_month: input.dayOfMonth ?? null,
           start_date: input.startDate,
+          next_due_date: input.startDate,
           end_date: input.endDate ?? null,
           remind_days_before: input.remindDaysBefore,
           auto_create_movement: input.autoCreateMovement,
@@ -1038,7 +1112,7 @@ export function useCreateSubscriptionMutation(workspaceId: number | null) {
         })
         .select("id")
         .single();
-      if (error) throw error;
+      if (error) throw new Error(error.message ?? "Error de base de datos");
       return data as { id: number };
     },
     onSuccess: () => {
@@ -1054,7 +1128,7 @@ export function useUpdateSubscriptionMutation(workspaceId: number | null) {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const payload: Record<string, unknown> = {};
       if (input.name !== undefined) payload.name = input.name;
-      if (input.vendor !== undefined) payload.vendor = input.vendor;
+      if (input.vendorPartyId !== undefined) payload.vendor_party_id = input.vendorPartyId;
       if (input.accountId !== undefined) payload.account_id = input.accountId;
       if (input.categoryId !== undefined) payload.category_id = input.categoryId;
       if (input.amount !== undefined) payload.amount = input.amount;
@@ -1073,7 +1147,7 @@ export function useUpdateSubscriptionMutation(workspaceId: number | null) {
         .update(payload)
         .eq("id", id)
         .eq("workspace_id", workspaceId);
-      if (error) throw error;
+      if (error) throw new Error(error.message ?? "Error de base de datos");
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
@@ -1091,7 +1165,7 @@ export function useDeleteSubscriptionMutation(workspaceId: number | null) {
         .delete()
         .eq("id", id)
         .eq("workspace_id", workspaceId);
-      if (error) throw error;
+      if (error) throw new Error(error.message ?? "Error de base de datos");
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
@@ -1125,10 +1199,11 @@ export function useCreateCategoryMutation(workspaceId: number | null) {
           icon: input.icon ?? null,
           is_active: true,
           is_system: false,
+          sort_order: 0,
         })
         .select("id")
         .single();
-      if (error) throw error;
+      if (error) throw new Error(error.message ?? "Error de base de datos");
       return data as { id: number };
     },
     onSuccess: () => {
@@ -1153,7 +1228,7 @@ export function useUpdateCategoryMutation(workspaceId: number | null) {
         .update(payload)
         .eq("id", id)
         .eq("workspace_id", workspaceId);
-      if (error) throw error;
+      if (error) throw new Error(error.message ?? "Error de base de datos");
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
@@ -1191,7 +1266,7 @@ export function useCreateCounterpartyMutation(workspaceId: number | null) {
         })
         .select("id")
         .single();
-      if (error) throw error;
+      if (error) throw new Error(error.message ?? "Error de base de datos");
       return data as { id: number };
     },
     onSuccess: () => {
@@ -1219,7 +1294,7 @@ export function useUpdateCounterpartyMutation(workspaceId: number | null) {
         .update(payload)
         .eq("id", id)
         .eq("workspace_id", workspaceId);
-      if (error) throw error;
+      if (error) throw new Error(error.message ?? "Error de base de datos");
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
@@ -1241,7 +1316,7 @@ export function useNotificationsQuery(userId: string | null) {
         .eq("user_id", userId)
         .order("scheduled_for", { ascending: false })
         .limit(100);
-      if (error) throw error;
+      if (error) throw new Error(error.message ?? "Error de base de datos");
       return (data ?? []).map((row: any) => ({
         id: row.id,
         title: row.title,
@@ -1267,7 +1342,7 @@ export function useMarkNotificationReadMutation(userId: string | null) {
         .from("notifications")
         .update({ status: "read", read_at: new Date().toISOString() })
         .eq("id", notificationId);
-      if (error) throw error;
+      if (error) throw new Error(error.message ?? "Error de base de datos");
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["notifications", userId] });
@@ -1285,7 +1360,7 @@ export function useMarkAllNotificationsReadMutation(userId: string | null) {
         .update({ status: "read", read_at: new Date().toISOString() })
         .eq("user_id", userId)
         .neq("status", "read");
-      if (error) throw error;
+      if (error) throw new Error(error.message ?? "Error de base de datos");
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["notifications", userId] });
@@ -1298,7 +1373,7 @@ export function useMarkAllNotificationsReadMutation(userId: string | null) {
 async function invokeEdgeFunction<T>(name: string, body: Record<string, unknown>): Promise<T> {
   if (!supabase) throw new Error("Supabase no está configurado.");
   const { data, error } = await supabase.functions.invoke<T>(name, { body });
-  if (error) throw error;
+  if (error) throw new Error(error.message ?? "Error de base de datos");
   return data as T;
 }
 

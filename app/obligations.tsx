@@ -1,3 +1,4 @@
+import { Plus, Users } from "lucide-react-native";
 import { useCallback, useState } from "react";
 import {
   RefreshControl,
@@ -88,7 +89,7 @@ export default function ObligationsScreen() {
 
             {sharedObligationIds.has(ob.id) ? (
               <View style={styles.sharedBadge}>
-                <Text style={styles.sharedBadgeText}>👥 Compartida</Text>
+                <Users size={11} color={COLORS.income} /><Text style={styles.sharedBadgeText}>Compartida</Text>
               </View>
             ) : null}
 
@@ -150,7 +151,7 @@ export default function ObligationsScreen() {
         onPress={() => setCreateFormVisible(true)}
         accessibilityLabel="Nueva obligación"
       >
-        <Text style={styles.fabIcon}>+</Text>
+        <Plus size={22} color="#FFF" />
       </TouchableOpacity>
 
       {/* Create form */}
@@ -216,7 +217,6 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 8,
   },
-  fabIcon: { color: "#FFFFFF", fontSize: 28, fontWeight: "300", lineHeight: 32 },
   sharedBadge: {
     alignSelf: "flex-start",
     backgroundColor: COLORS.income + "22",

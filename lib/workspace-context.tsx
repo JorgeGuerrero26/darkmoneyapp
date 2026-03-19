@@ -24,6 +24,7 @@ type WorkspaceContextValue = {
   setActiveWorkspaceId: (id: number) => void;
   activeWorkspace: Workspace | null;
   setWorkspaces: (workspaces: Workspace[]) => void;
+  workspaces: Workspace[];
 };
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
@@ -47,6 +48,7 @@ export function WorkspaceProvider({ children }: PropsWithChildren) {
     setActiveWorkspaceId,
     activeWorkspace,
     setWorkspaces,
+    workspaces,
   };
 
   return (

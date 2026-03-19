@@ -1,4 +1,5 @@
 import { StyleSheet, Text, View } from "react-native";
+import { AlertTriangle, ArrowRight } from "lucide-react-native";
 import { formatCurrency } from "../ui/AmountDisplay";
 import { COLORS, FONT_SIZE, FONT_WEIGHT, RADIUS, SPACING } from "../../constants/theme";
 
@@ -21,7 +22,10 @@ export function BalanceImpactPreview({
   return (
     <View style={[styles.container, isNegative && styles.containerWarning]}>
       {isNegative && (
-        <Text style={styles.warning}>⚠ El saldo quedaría negativo</Text>
+        <View style={styles.warningRow}>
+          <AlertTriangle size={13} color={COLORS.danger} />
+          <Text style={styles.warning}>El saldo quedaría negativo</Text>
+        </View>
       )}
       <Text style={styles.accountLabel}>{label}</Text>
       <View style={styles.row}>
@@ -31,7 +35,7 @@ export function BalanceImpactPreview({
             {formatCurrency(currentBalance, currencyCode)}
           </Text>
         </View>
-        <Text style={styles.arrow}>→</Text>
+        <ArrowRight size={16} color={COLORS.textMuted} />
         <View style={styles.col}>
           <Text style={styles.balanceLabel}>Proyectado</Text>
           <Text
@@ -61,6 +65,11 @@ const styles = StyleSheet.create({
     borderColor: COLORS.danger,
     backgroundColor: COLORS.dangerMuted,
   },
+  warningRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
   warning: {
     fontSize: FONT_SIZE.sm,
     color: COLORS.danger,
@@ -82,7 +91,6 @@ const styles = StyleSheet.create({
     fontWeight: FONT_WEIGHT.semibold,
     color: COLORS.text,
   },
-  arrow: { fontSize: FONT_SIZE.lg, color: COLORS.textMuted },
   positive: { color: COLORS.income },
   negative: { color: COLORS.danger },
   neutral: { color: COLORS.text },

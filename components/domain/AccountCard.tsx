@@ -1,4 +1,5 @@
 import { StyleSheet, Text, View } from "react-native";
+import { CreditCard, Wallet, Landmark, PiggyBank, TrendingUp, Banknote } from "lucide-react-native";
 import { Card } from "../ui/Card";
 import { AmountDisplay, formatCurrency } from "../ui/AmountDisplay";
 import { COLORS, FONT_SIZE, FONT_WEIGHT, RADIUS, SPACING } from "../../constants/theme";
@@ -16,18 +17,32 @@ const ACCOUNT_TYPE_LABELS: Record<string, string> = {
   cash: "Efectivo",
   investment: "Inversión",
   loan: "Préstamo",
+  loan_wallet: "Cartera préstamos",
+  bank: "Banco",
   other: "Otro",
+};
+
+const ACCOUNT_TYPE_ICON: Record<string, typeof CreditCard> = {
+  credit_card: CreditCard,
+  cash: Banknote,
+  savings: PiggyBank,
+  investment: TrendingUp,
+  bank: Landmark,
+  loan: Wallet,
+  loan_wallet: Wallet,
+  other: Wallet,
 };
 
 export function AccountCard({ account, onPress }: Props) {
   const typeLabel = ACCOUNT_TYPE_LABELS[account.type] ?? account.type;
   const isNegative = account.currentBalance < 0;
+  const AccountIcon = ACCOUNT_TYPE_ICON[account.type] ?? Wallet;
 
   return (
     <Card onPress={onPress} style={styles.card}>
       <View style={styles.header}>
         <View style={[styles.iconWrap, { backgroundColor: account.color + "33" }]}>
-          <Text style={[styles.icon, { color: account.color }]}>💳</Text>
+          <AccountIcon size={18} color={account.color} />
         </View>
         <View style={styles.info}>
           <Text style={styles.name} numberOfLines={1}>
@@ -63,9 +78,6 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.md,
     alignItems: "center",
     justifyContent: "center",
-  },
-  icon: {
-    fontSize: 20,
   },
   info: {
     flex: 1,

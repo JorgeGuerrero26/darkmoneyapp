@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 
+import { X, Plus } from "lucide-react-native";
 import { supabase } from "../../lib/supabase";
 import { useWorkspace } from "../../lib/workspace-context";
 import { COLORS, FONT_SIZE, FONT_WEIGHT, RADIUS, SPACING } from "../../constants/theme";
@@ -160,14 +161,14 @@ export function AttachmentPicker({ movementId, attachments, onChange }: Props) {
               </View>
             ) : (
               <TouchableOpacity style={styles.thumbRemove} onPress={() => removeAttachment(idx)} accessibilityLabel="Eliminar adjunto">
-                <Text style={styles.thumbRemoveText}>×</Text>
+                <X size={12} color="#FFF" />
               </TouchableOpacity>
             )}
           </View>
         ))}
         {attachments.length < 5 ? (
           <TouchableOpacity style={styles.addBtn} onPress={showAddOptions} disabled={uploading}>
-            <Text style={styles.addBtnIcon}>+</Text>
+            <Plus size={20} color={COLORS.textMuted} />
             <Text style={styles.addBtnText}>Adjuntar</Text>
           </TouchableOpacity>
         ) : null}

@@ -1,4 +1,5 @@
 import { StyleSheet, Text, View } from "react-native";
+import { AlertTriangle, Zap } from "lucide-react-native";
 import { Card } from "../ui/Card";
 import { ProgressBar } from "../ui/ProgressBar";
 import { formatCurrency } from "../ui/AmountDisplay";
@@ -47,9 +48,15 @@ export function BudgetCard({ budget, onPress }: Props) {
       </View>
 
       {budget.isOverLimit ? (
-        <Text style={styles.overLimitLabel}>⚠ Presupuesto excedido</Text>
+        <View style={styles.alertRow}>
+          <AlertTriangle size={12} color={COLORS.danger} />
+          <Text style={styles.overLimitLabel}>Presupuesto excedido</Text>
+        </View>
       ) : budget.isNearLimit ? (
-        <Text style={styles.nearLimitLabel}>⚡ Cerca del límite</Text>
+        <View style={styles.alertRow}>
+          <Zap size={12} color={COLORS.warning} />
+          <Text style={styles.nearLimitLabel}>Cerca del límite</Text>
+        </View>
       ) : null}
     </Card>
   );
@@ -97,16 +104,20 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.sm,
     color: COLORS.textMuted,
   },
+  alertRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: SPACING.sm,
+  },
   overLimitLabel: {
     fontSize: FONT_SIZE.xs,
     color: COLORS.danger,
     fontWeight: FONT_WEIGHT.semibold,
-    marginTop: SPACING.sm,
   },
   nearLimitLabel: {
     fontSize: FONT_SIZE.xs,
     color: COLORS.warning,
     fontWeight: FONT_WEIGHT.semibold,
-    marginTop: SPACING.sm,
   },
 });

@@ -1,51 +1,55 @@
 export const COLORS = {
-  // Brand
-  primary: "#6366F1",
-  primaryDark: "#4F46E5",
-  primaryLight: "#A5B4FC",
+  // Brand accents
+  primary: "#6be4c5",       // pine — verde agua (botones primarios, focus)
+  primaryDark: "#4bc9a8",
+  primaryLight: "#a8f0de",
+  secondary: "#8ea5ff",     // ember — azul lavanda
+  gold: "#d7be7b",          // gold — alertas, notificaciones
+  danger: "#ff8f9e",        // rosewood — error/peligro
+  dangerMuted: "#4a1a22",
 
-  // Background
-  bg: "#0F172A",
-  bgCard: "#1E293B",
-  bgCardHover: "#263348",
-  bgInput: "#1E293B",
-  bgModal: "#1E293B",
+  // Backgrounds (de más oscuro a más claro)
+  bgDeep: "#05070b",        // canvas
+  bgVoid: "#090d12",        // void
+  bg: "#0f141b",            // shell — fondo principal de la app
+  bgCard: "#141b24",        // mist — cards
+  bgCardHover: "#1a2333",
+  bgInput: "#141b24",
+  bgModal: "#141b24",
 
   // Text
-  text: "#F1F5F9",
-  textMuted: "#94A3B8",
-  textDisabled: "#475569",
-  textInverse: "#0F172A",
+  text: "#f5f7fb",          // ink — texto principal
+  textMuted: "#96a2b5",     // storm — secundario / placeholders
+  textDisabled: "#4a5568",
+  textInverse: "#05070b",
 
   // Status
-  success: "#22C55E",
-  successMuted: "#14532D",
-  warning: "#F59E0B",
-  warningMuted: "#78350F",
-  danger: "#EF4444",
-  dangerMuted: "#7F1D1D",
-  info: "#3B82F6",
-  infoMuted: "#1E3A5F",
+  success: "#6be4c5",       // pine
+  successMuted: "#0d2e27",
+  warning: "#d7be7b",       // gold
+  warningMuted: "#2e2510",
+  info: "#8ea5ff",          // ember
+  infoMuted: "#1a2040",
 
   // Financial
-  income: "#22C55E",
-  expense: "#EF4444",
-  transfer: "#6366F1",
-  neutral: "#94A3B8",
+  income: "#6be4c5",
+  expense: "#ff8f9e",
+  transfer: "#8ea5ff",
+  neutral: "#96a2b5",
 
   // Borders
-  border: "#334155",
-  borderLight: "#1E293B",
+  border: "#1e2a38",
+  borderLight: "#141b24",
 
   // Budget progress
-  budgetGood: "#22C55E",
-  budgetWarn: "#F59E0B",
-  budgetOver: "#EF4444",
+  budgetGood: "#6be4c5",
+  budgetWarn: "#d7be7b",
+  budgetOver: "#ff8f9e",
 
   // Tab bar
-  tabActive: "#6366F1",
-  tabInactive: "#64748B",
-  tabBar: "#0F172A",
+  tabActive: "#6be4c5",
+  tabInactive: "#96a2b5",
+  tabBar: "#0f141b",
 };
 
 export const SPACING = {

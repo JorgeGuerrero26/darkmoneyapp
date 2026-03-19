@@ -11,6 +11,7 @@ import {
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { format, parseISO, isValid } from "date-fns";
 import { es } from "date-fns/locale";
+import { CalendarDays } from "lucide-react-native";
 import { COLORS, FONT_SIZE, FONT_WEIGHT, RADIUS, SPACING } from "../../constants/theme";
 
 type Props = {
@@ -76,7 +77,7 @@ export function DatePickerInput({
         <Text style={[styles.inputText, !value && styles.placeholder]}>
           {displayText || placeholder}
         </Text>
-        <Text style={styles.calendarIcon}>📅</Text>
+        <CalendarDays size={16} color={COLORS.textMuted} />
       </TouchableOpacity>
 
       {/* Android: inline picker shown directly */}
@@ -153,9 +154,6 @@ const styles = StyleSheet.create({
   },
   placeholder: {
     color: COLORS.textDisabled,
-  },
-  calendarIcon: {
-    fontSize: 16,
   },
   overlay: {
     flex: 1,

@@ -17,7 +17,13 @@
         "foregroundImage": "./assets/images/logo-darkmoney.png",
         "backgroundColor": "#0F172A"
       },
-      "package": "com.darkmoney.app"
+      "package": "com.darkmoney.app",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -58,6 +64,12 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "1290814f-9ea0-4f55-9973-3a3c32178cc5"
+      }
     }
   }
 }

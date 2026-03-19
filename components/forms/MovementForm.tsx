@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ArrowDownCircle, ArrowUpCircle, ArrowLeftRight } from "lucide-react-native";
 import type { TextInput } from "react-native";
 import {
-  Alert,
+  Modal,
   ScrollView,
   StyleSheet,
   Text,
@@ -53,10 +54,10 @@ type FormState = {
   notes: string;
 };
 
-const TYPE_OPTIONS: { type: MovementType; label: string; emoji: string; color: string }[] = [
-  { type: "expense",  label: "Gasto",       emoji: "↓", color: COLORS.expense  },
-  { type: "income",   label: "Ingreso",      emoji: "↑", color: COLORS.income   },
-  { type: "transfer", label: "Transferencia", emoji: "⇄", color: COLORS.transfer },
+const TYPE_OPTIONS: { type: MovementType; label: string; Icon: typeof ArrowDownCircle; color: string }[] = [
+  { type: "expense",  label: "Gasto",        Icon: ArrowDownCircle, color: COLORS.expense  },
+  { type: "income",   label: "Ingreso",       Icon: ArrowUpCircle,   color: COLORS.income   },
+  { type: "transfer", label: "Transferencia", Icon: ArrowLeftRight,  color: COLORS.transfer },
 ];
 
 const STATUS_OPTIONS: { status: MovementStatus; label: string }[] = [
@@ -97,6 +98,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   const descriptionRef = useRef<TextInput>(null);
 
   const [step, setStep] = useState<Step>(1);
+  const [discardVisible, setDiscardVisible] = useState(false);
   const [form, setForm] = useState<FormState>(() => getInitialForm(defaultType));
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -264,10 +266,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
 
   function handleClose() {
     if (form.description || form.sourceAmount || form.destinationAmount) {
-      Alert.alert("¿Descartar cambios?", "Se perderán los datos ingresados.", [
-        { text: "Cancelar", style: "cancel" },
-        { text: "Descartar", style: "destructive", onPress: onClose },
-      ]);
+      setDiscardVisible(true);
     } else {
       onClose();
     }
@@ -280,6 +279,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     : "Descripción y categoría";
 
   return (
+    <>
     <BottomSheet
       visible={visible}
       onClose={handleClose}
@@ -309,7 +309,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
                 ]}
                 onPress={() => patch({ movementType: opt.type })}
               >
-                <Text style={[styles.typeEmoji, { color: opt.color }]}>{opt.emoji}</Text>
+                <opt.Icon size={28} color={opt.color} />
                 <Text style={[styles.typeLabel, form.movementType === opt.type && { color: opt.color }]}>
                   {opt.label}
                 </Text>
@@ -482,6 +482,25 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         </View>
       )}
     </BottomSheet>
+
+    {/* Discard confirmation modal */}
+    <Modal transparent visible={discardVisible} animationType="fade" onRequestClose={() => setDiscardVisible(false)}>
+      <View style={styles.discardOverlay}>
+        <View style={styles.discardCard}>
+          <Text style={styles.discardTitle}>¿Descartar cambios?</Text>
+          <Text style={styles.discardBody}>Los datos ingresados se perderán.</Text>
+          <View style={styles.discardActions}>
+            <TouchableOpacity style={styles.discardCancel} onPress={() => setDiscardVisible(false)}>
+              <Text style={styles.discardCancelText}>Continuar editando</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.discardConfirm} onPress={() => { setDiscardVisible(false); onClose(); }}>
+              <Text style={styles.discardConfirmText}>Descartar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+    </>
   );
 }
 
@@ -604,7 +623,6 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.bgCard,
     gap: SPACING.xs,
   },
-  typeEmoji: { fontSize: 24 },
   typeLabel: {
     fontSize: FONT_SIZE.sm,
     fontWeight: FONT_WEIGHT.semibold,
@@ -673,4 +691,63 @@ const styles = StyleSheet.create({
   categoryChipTextActive: { color: "#FFF" },
   notesInput: { height: 72, textAlignVertical: "top" },
   fieldError: { fontSize: FONT_SIZE.xs, color: COLORS.danger },
+  discardOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: SPACING.xl,
+  },
+  discardCard: {
+    backgroundColor: COLORS.bgCard,
+    borderRadius: RADIUS.xl,
+    padding: SPACING.xl,
+    width: "100%",
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    gap: SPACING.sm,
+  },
+  discardTitle: {
+    fontSize: FONT_SIZE.lg,
+    fontWeight: FONT_WEIGHT.bold,
+    color: COLORS.text,
+  },
+  discardBody: {
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.textMuted,
+    lineHeight: 20,
+  },
+  discardActions: {
+    flexDirection: "row",
+    gap: SPACING.sm,
+    marginTop: SPACING.md,
+  },
+  discardCancel: {
+    flex: 1,
+    paddingVertical: SPACING.md,
+    borderRadius: RADIUS.md,
+    alignItems: "center",
+    backgroundColor: COLORS.bgDeep,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  discardCancelText: {
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.text,
+    fontWeight: FONT_WEIGHT.medium,
+  },
+  discardConfirm: {
+    flex: 1,
+    paddingVertical: SPACING.md,
+    borderRadius: RADIUS.md,
+    alignItems: "center",
+    backgroundColor: COLORS.dangerMuted,
+    borderWidth: 1,
+    borderColor: COLORS.danger,
+  },
+  discardConfirmText: {
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.danger,
+    fontWeight: FONT_WEIGHT.semibold,
+  },
 });

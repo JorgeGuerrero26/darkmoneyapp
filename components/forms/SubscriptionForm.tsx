@@ -143,7 +143,6 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
           id: editSubscription.id,
           input: {
             name: name.trim(),
-            vendor: vendor.trim() || null,
             amount: parsed,
             currencyCode,
             frequency,
@@ -161,7 +160,6 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
       } else {
         await createMutation.mutateAsync({
           name: name.trim(),
-          vendor: vendor.trim() || null,
           amount: parsed,
           currencyCode,
           frequency,

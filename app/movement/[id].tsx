@@ -105,7 +105,7 @@ export default function MovementDetailScreen() {
                 </TouchableOpacity>
               </>
             ) : null}
-            <TouchableOpacity onPress={() => router.back()} accessibilityLabel="Volver">
+            <TouchableOpacity onPress={() => router.replace("/(app)/movements")} accessibilityLabel="Volver">
               <Text style={styles.back}>‹ Volver</Text>
             </TouchableOpacity>
           </View>

@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import {
-  Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -15,6 +14,7 @@ import {
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as LocalAuthentication from "expo-local-authentication";
+import * as SecureStore from "expo-secure-store";
 
 import { useAuth } from "../lib/auth-context";
 import { useWorkspace, useWorkspaceListStore } from "../lib/workspace-context";
@@ -55,16 +55,74 @@ export default function SettingsScreen() {
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   // ── Biometrics ───────────────────────────────────────────────────────────
+  const SECURE_EMAIL_KEY = "darkmoney_bio_email";
+  const SECURE_PASS_KEY = "darkmoney_bio_password";
+
   const [biometricAvailable, setBiometricAvailable] = useState(false);
+  const [bioCredsStored, setBioCredsStored] = useState(false);
   const { biometricEnabled, setBiometricEnabled } = useUiStore();
+
+  // Password setup modal (shown after biometric auth when enabling)
+  const [bioSetupVisible, setBioSetupVisible] = useState(false);
+  const [bioSetupPassword, setBioSetupPassword] = useState("");
+  const [bioSetupError, setBioSetupError] = useState("");
 
   useEffect(() => {
     void (async () => {
       const hasHardware = await LocalAuthentication.hasHardwareAsync();
       const isEnrolled = await LocalAuthentication.isEnrolledAsync();
       setBiometricAvailable(hasHardware && isEnrolled);
+      if (hasHardware && isEnrolled) {
+        const stored = await SecureStore.getItemAsync(SECURE_EMAIL_KEY);
+        setBioCredsStored(Boolean(stored));
+      }
     })();
   }, []);
+
+  async function handleBiometricToggle(newValue: boolean) {
+    if (newValue) {
+      const result = await LocalAuthentication.authenticateAsync({
+        promptMessage: "Confirma tu huella para activar el acceso biométrico",
+        fallbackLabel: "Usar contraseña",
+        disableDeviceFallback: false,
+      });
+      if (result.success) {
+        setBioSetupPassword("");
+        setBioSetupError("");
+        setBioSetupVisible(true);
+      }
+    } else {
+      setBiometricEnabled(false);
+      await SecureStore.deleteItemAsync(SECURE_EMAIL_KEY);
+      await SecureStore.deleteItemAsync(SECURE_PASS_KEY);
+      setBioCredsStored(false);
+    }
+  }
+
+  async function handleBioSetupConfirm() {
+    if (!bioSetupPassword.trim()) {
+      setBioSetupError("Ingresa tu contraseña para continuar");
+      return;
+    }
+    setBioSetupError("");
+    const email = profile?.email ?? "";
+    await SecureStore.setItemAsync(SECURE_EMAIL_KEY, email);
+    await SecureStore.setItemAsync(SECURE_PASS_KEY, bioSetupPassword);
+    setBiometricEnabled(true);
+    setBioCredsStored(true);
+    setBioSetupVisible(false);
+    setBioSetupPassword("");
+    showToast("Acceso con huella activado", "success");
+  }
+
+  function handleBioSetupCancel() {
+    setBioSetupVisible(false);
+    setBioSetupPassword("");
+    setBioSetupError("");
+  }
+
+  // ── Sign out dialog ───────────────────────────────────────────────────────
+  const [signOutVisible, setSignOutVisible] = useState(false);
 
   // ── Workspace invite sheet ────────────────────────────────────────────────
   const [inviteSheetOpen, setInviteSheetOpen] = useState(false);
@@ -151,10 +209,7 @@ export default function SettingsScreen() {
   }
 
   function handleSignOut() {
-    Alert.alert("Cerrar sesión", "¿Estás seguro de que quieres salir?", [
-      { text: "Cancelar", style: "cancel" },
-      { text: "Salir", style: "destructive", onPress: () => void signOut() },
-    ]);
+    setSignOutVisible(true);
   }
 
   const canInvite = activeWorkspace?.role === "owner" || activeWorkspace?.role === "admin";
@@ -223,12 +278,16 @@ export default function SettingsScreen() {
               <Text style={styles.sectionTitle}>Seguridad</Text>
               <View style={styles.switchRow}>
                 <View style={styles.switchInfo}>
-                  <Text style={styles.switchLabel}>Bloqueo biométrico</Text>
-                  <Text style={styles.switchDesc}>Bloquea la app al pasar a segundo plano</Text>
+                  <Text style={styles.switchLabel}>Acceso con huella digital</Text>
+                  <Text style={styles.switchDesc}>
+                    {bioCredsStored
+                      ? "Activo · puedes entrar sin contraseña"
+                      : "Inicia sesión tocando tu huella"}
+                  </Text>
                 </View>
                 <Switch
-                  value={biometricEnabled}
-                  onValueChange={setBiometricEnabled}
+                  value={biometricEnabled && bioCredsStored}
+                  onValueChange={(v) => void handleBiometricToggle(v)}
                   trackColor={{ false: COLORS.border, true: COLORS.primary }}
                   thumbColor="#FFFFFF"
                 />
@@ -237,11 +296,86 @@ export default function SettingsScreen() {
           ) : null}
 
           {/* Sign out */}
-          <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
+          <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut} activeOpacity={0.8}>
             <Text style={styles.signOutText}>Cerrar sesión</Text>
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Biometric setup — password prompt */}
+      <Modal
+        visible={bioSetupVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={handleBioSetupCancel}
+      >
+        <View style={styles.soOverlay}>
+          <View style={styles.soCard}>
+            <View style={[styles.soIconWrap, { backgroundColor: COLORS.primary + "22" }]}>
+              <Text style={styles.soIcon}>🫆</Text>
+            </View>
+            <Text style={styles.soTitle}>Activar acceso con huella</Text>
+            <Text style={styles.soBody}>
+              Ingresa tu contraseña una vez para vincularla a tu huella digital. No la guardaremos en ningún servidor.
+            </Text>
+            <Input
+              label="Contraseña"
+              value={bioSetupPassword}
+              onChangeText={setBioSetupPassword}
+              secureTextEntry
+              autoCapitalize="none"
+              autoComplete="off"
+              importantForAutofill="no"
+              error={bioSetupError}
+              containerStyle={styles.bioSetupInput}
+            />
+            <TouchableOpacity
+              style={[styles.soConfirm, { backgroundColor: COLORS.primary }]}
+              onPress={() => void handleBioSetupConfirm()}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.soConfirmText}>Activar huella digital</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.soCancel} onPress={handleBioSetupCancel}>
+              <Text style={styles.soCancelText}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Sign out confirmation modal */}
+      <Modal
+        visible={signOutVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSignOutVisible(false)}
+      >
+        <View style={styles.soOverlay}>
+          <View style={styles.soCard}>
+            <View style={styles.soIconWrap}>
+              <Text style={styles.soIcon}>👋</Text>
+            </View>
+            <Text style={styles.soTitle}>¿Cerrar sesión?</Text>
+            <Text style={styles.soBody}>
+              Se cerrará tu sesión en este dispositivo. Podrás volver a ingresar cuando quieras.
+            </Text>
+            <TouchableOpacity
+              style={styles.soConfirm}
+              onPress={() => { setSignOutVisible(false); void signOut(); }}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.soConfirmText}>Cerrar sesión</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.soCancel}
+              onPress={() => setSignOutVisible(false)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.soCancelText}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* ── Invite member sheet ───────────────────────────────────────── */}
       <Modal visible={inviteSheetOpen} transparent animationType="slide" onRequestClose={() => setInviteSheetOpen(false)}>
@@ -426,4 +560,64 @@ const styles = StyleSheet.create({
   rolePillActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
   rolePillText: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted, fontWeight: FONT_WEIGHT.medium },
   rolePillTextActive: { color: "#FFF" },
+  // Sign out modal
+  soOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.7)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: SPACING.xl,
+  },
+  soCard: {
+    width: "100%",
+    backgroundColor: COLORS.bgCard,
+    borderRadius: RADIUS.xl,
+    padding: SPACING.xl,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    alignItems: "center",
+    gap: SPACING.sm,
+  },
+  soIconWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: COLORS.dangerMuted,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: SPACING.xs,
+  },
+  soIcon: { fontSize: 32 },
+  soTitle: {
+    fontSize: FONT_SIZE.lg,
+    fontWeight: FONT_WEIGHT.bold,
+    color: COLORS.text,
+    textAlign: "center",
+  },
+  soBody: {
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.textMuted,
+    textAlign: "center",
+    lineHeight: 20,
+    marginBottom: SPACING.sm,
+  },
+  soConfirm: {
+    width: "100%",
+    backgroundColor: COLORS.danger,
+    borderRadius: RADIUS.md,
+    paddingVertical: SPACING.md,
+    alignItems: "center",
+  },
+  soConfirmText: {
+    fontSize: FONT_SIZE.md,
+    fontWeight: FONT_WEIGHT.semibold,
+    color: "#FFFFFF",
+  },
+  soCancel: {
+    width: "100%",
+    paddingVertical: SPACING.sm,
+    alignItems: "center",
+  },
+  soCancelText: { fontSize: FONT_SIZE.md, color: COLORS.textMuted },
+  bioSetupInput: { width: "100%", alignSelf: "stretch" },
 });

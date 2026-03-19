@@ -3,9 +3,17 @@
  * to human-readable Spanish strings.
  */
 export function humanizeError(err: unknown): string {
-  if (!(err instanceof Error)) return "Error desconocido";
+  // Supabase PostgrestError is not instanceof Error — extract message manually
+  const msg: string =
+    err instanceof Error
+      ? (err.message ?? "")
+      : typeof err === "object" && err !== null && "message" in err
+        ? String((err as Record<string, unknown>).message ?? "")
+        : typeof err === "string"
+          ? err
+          : "";
 
-  const msg = err.message ?? "";
+  if (!msg) return "Error desconocido";
 
   // Supabase PostgreSQL error codes (embedded in message)
   if (msg.includes("23505") || msg.includes("unique") || msg.includes("duplicate")) {

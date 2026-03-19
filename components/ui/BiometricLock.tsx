@@ -1,5 +1,6 @@
 import { useCallback, useEffect } from "react";
 import { AppState, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Lock } from "lucide-react-native";
 import * as LocalAuthentication from "expo-local-authentication";
 
 import { useUiStore } from "../../store/ui-store";
@@ -60,7 +61,7 @@ export function BiometricLock() {
   return (
     <View style={styles.overlay}>
       <View style={styles.card}>
-        <Text style={styles.lockIcon}>🔒</Text>
+        <Lock size={48} color={COLORS.primary} style={styles.lockIcon} />
         <Text style={styles.title}>App bloqueada</Text>
         <Text style={styles.subtitle}>Autentícate para continuar</Text>
         <TouchableOpacity style={styles.btn} onPress={() => void authenticate()}>

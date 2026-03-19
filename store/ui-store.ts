@@ -10,17 +10,21 @@ export type Toast = {
   variant: ToastVariant;
 };
 
+export type DashboardMode = "simple" | "advanced";
+
 type UiState = {
   toasts: Toast[];
   isBiometricLocked: boolean;
   biometricEnabled: boolean;
   lastMovementAccountId: number | null;
   lastMovementCategoryId: number | null;
+  dashboardMode: DashboardMode;
   showToast: (message: string, variant?: ToastVariant) => void;
   dismissToast: (id: string) => void;
   setBiometricLocked: (locked: boolean) => void;
   setBiometricEnabled: (enabled: boolean) => void;
   setLastMovementDefaults: (accountId: number | null, categoryId: number | null) => void;
+  setDashboardMode: (mode: DashboardMode) => void;
 };
 
 export const useUiStore = create<UiState>()(
@@ -31,6 +35,7 @@ export const useUiStore = create<UiState>()(
       biometricEnabled: false,
       lastMovementAccountId: null,
       lastMovementCategoryId: null,
+      dashboardMode: "simple",
 
       showToast: (message, variant = "success") =>
         set((state) => ({
@@ -49,6 +54,7 @@ export const useUiStore = create<UiState>()(
       setBiometricEnabled: (enabled) => set({ biometricEnabled: enabled }),
       setLastMovementDefaults: (accountId, categoryId) =>
         set({ lastMovementAccountId: accountId, lastMovementCategoryId: categoryId }),
+      setDashboardMode: (mode) => set({ dashboardMode: mode }),
     }),
     {
       name: "darkmoney-ui",
@@ -56,6 +62,7 @@ export const useUiStore = create<UiState>()(
       partialize: (state) => ({
         lastMovementAccountId: state.lastMovementAccountId,
         lastMovementCategoryId: state.lastMovementCategoryId,
+        dashboardMode: state.dashboardMode,
       }),
     },
   ),

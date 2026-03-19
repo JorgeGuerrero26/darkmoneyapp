@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   RefreshControl,
   ScrollView,
@@ -10,21 +10,659 @@ import {
 import { useRouter } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { format, startOfMonth, endOfMonth, isWithinInterval, addDays } from "date-fns";
+import {
+  format,
+  startOfMonth,
+  endOfMonth,
+  subMonths,
+  subDays,
+  startOfDay,
+  addDays,
+} from "date-fns";
 import { es } from "date-fns/locale";
+import {
+  CreditCard, Wallet, Landmark, PiggyBank, TrendingUp, Banknote,
+  type LucideIcon,
+} from "lucide-react-native";
 
 import { useAuth } from "../../lib/auth-context";
 import { useWorkspace } from "../../lib/workspace-context";
-import { useWorkspaceSnapshotQuery } from "../../services/queries/workspace-data";
+import {
+  useWorkspaceSnapshotQuery,
+  useDashboardMovementsQuery,
+  type DashboardMovementRow,
+} from "../../services/queries/workspace-data";
+import { useUiStore } from "../../store/ui-store";
 import { Card } from "../../components/ui/Card";
-import { BudgetCard } from "../../components/domain/BudgetCard";
+import { ProgressBar } from "../../components/ui/ProgressBar";
 import { SkeletonCard } from "../../components/ui/Skeleton";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { formatCurrency } from "../../components/ui/AmountDisplay";
 import { MovementForm } from "../../components/forms/MovementForm";
 import { WorkspaceSelector } from "../../components/layout/WorkspaceSelector";
-import { COLORS, FONT_SIZE, FONT_WEIGHT, SPACING } from "../../constants/theme";
-import { UPCOMING_DAYS_WINDOW } from "../../constants/config";
+import { COLORS, FONT_SIZE, FONT_WEIGHT, RADIUS, SPACING } from "../../constants/theme";
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const ADMIN_EMAILS = new Set(["joradrianmori@gmail.com"]);
+const UPCOMING_DAYS = 30;
+
+type Period = "this_month" | "last_30";
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function useIsPro(email?: string | null): boolean {
+  if (!email) return false;
+  return ADMIN_EMAILS.has(email.toLowerCase());
+}
+
+function pctChange(current: number, prev: number) {
+  if (prev === 0) return null;
+  return ((current - prev) / Math.abs(prev)) * 100;
+}
+
+const INCOME_TYPES = new Set(["income", "refund"]);
+const EXPENSE_TYPES = new Set(["expense", "subscription_payment", "obligation_payment"]);
+
+function isIncome(m: DashboardMovementRow) {
+  return INCOME_TYPES.has(m.movementType) && m.status === "posted";
+}
+function isExpense(m: DashboardMovementRow) {
+  return EXPENSE_TYPES.has(m.movementType) && m.status === "posted";
+}
+function incomeAmt(m: DashboardMovementRow) {
+  return m.destinationAmount || m.sourceAmount || 0;
+}
+function expenseAmt(m: DashboardMovementRow) {
+  return m.sourceAmount || m.destinationAmount || 0;
+}
+
+function inRange(m: DashboardMovementRow, start: Date, end: Date) {
+  const d = new Date(m.occurredAt);
+  return d >= start && d <= end;
+}
+
+function useDashboardStats(movements: DashboardMovementRow[], period: Period) {
+  return useMemo(() => {
+    const now = new Date();
+    let curStart: Date, curEnd: Date, prevStart: Date, prevEnd: Date;
+
+    if (period === "this_month") {
+      curStart = startOfMonth(now);
+      curEnd = now;
+      const prev = subMonths(now, 1);
+      prevStart = startOfMonth(prev);
+      prevEnd = endOfMonth(prev);
+    } else {
+      curStart = subDays(now, 29);
+      curEnd = now;
+      prevStart = subDays(now, 59);
+      prevEnd = subDays(now, 30);
+    }
+
+    const cur = movements.filter((m) => inRange(m, curStart, curEnd));
+    const prev = movements.filter((m) => inRange(m, prevStart, prevEnd));
+
+    const income = cur.filter(isIncome).reduce((s, m) => s + incomeAmt(m), 0);
+    const expense = cur.filter(isExpense).reduce((s, m) => s + expenseAmt(m), 0);
+    const net = income - expense;
+
+    const prevIncome = prev.filter(isIncome).reduce((s, m) => s + incomeAmt(m), 0);
+    const prevExpense = prev.filter(isExpense).reduce((s, m) => s + expenseAmt(m), 0);
+
+    // Daily chart — last 7 days
+    const chartDays = Array.from({ length: 7 }, (_, i) => {
+      const d = subDays(now, 6 - i);
+      const ds = startOfDay(d);
+      const de = new Date(ds.getTime() + 86_400_000 - 1);
+      const dayMvs = movements.filter((m) => inRange(m, ds, de));
+      return {
+        label: format(d, "dd/M"),
+        income: dayMvs.filter(isIncome).reduce((s, m) => s + incomeAmt(m), 0),
+        expense: dayMvs.filter(isExpense).reduce((s, m) => s + expenseAmt(m), 0),
+      };
+    });
+
+    // Monthly pulse — last 6 months
+    const monthlyPulse = Array.from({ length: 6 }, (_, i) => {
+      const mDate = subMonths(now, 5 - i);
+      const mStart = startOfMonth(mDate);
+      const mEnd = i === 5 ? now : endOfMonth(mDate);
+      const mMvs = movements.filter((m) => inRange(m, mStart, mEnd));
+      return {
+        label: format(mDate, "MMM", { locale: es }),
+        income: mMvs.filter(isIncome).reduce((s, m) => s + incomeAmt(m), 0),
+        expense: mMvs.filter(isExpense).reduce((s, m) => s + expenseAmt(m), 0),
+      };
+    });
+
+    // Category breakdown — current period, expenses only
+    const catTotals = new Map<number | null, number>();
+    for (const m of cur.filter(isExpense)) {
+      const k = m.categoryId;
+      catTotals.set(k, (catTotals.get(k) ?? 0) + expenseAmt(m));
+    }
+
+    return {
+      curStart, curEnd, income, expense, net,
+      prevIncome, prevExpense,
+      chartDays, monthlyPulse, catTotals,
+    };
+  }, [movements, period]);
+}
+
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+function SectionTitle({ children }: { children: string }) {
+  return <Text style={subStyles.sectionTitle}>{children}</Text>;
+}
+
+// Mode + Period toggles
+function ModeToggle({
+  mode, setMode, isPro,
+}: { mode: string; setMode: (m: "simple" | "advanced") => void; isPro: boolean }) {
+  return (
+    <View style={subStyles.toggleRow}>
+      <TouchableOpacity
+        style={[subStyles.toggleBtn, mode === "simple" && subStyles.toggleBtnActive]}
+        onPress={() => setMode("simple")}
+      >
+        <Text style={[subStyles.toggleText, mode === "simple" && subStyles.toggleTextActive]}>
+          Simple
+        </Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={[subStyles.toggleBtn, mode === "advanced" && subStyles.toggleBtnActive]}
+        onPress={() => setMode("advanced")}
+      >
+        <Text style={[subStyles.toggleText, mode === "advanced" && subStyles.toggleTextActive]}>
+          Avanzado
+        </Text>
+        {!isPro && <Text style={subStyles.proBadge}> PRO</Text>}
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function PeriodToggle({ period, setPeriod }: { period: Period; setPeriod: (p: Period) => void }) {
+  return (
+    <View style={subStyles.toggleRow}>
+      {(["this_month", "last_30"] as Period[]).map((p) => (
+        <TouchableOpacity
+          key={p}
+          style={[subStyles.toggleBtn, period === p && subStyles.toggleBtnActive]}
+          onPress={() => setPeriod(p)}
+        >
+          <Text style={[subStyles.toggleText, period === p && subStyles.toggleTextActive]}>
+            {p === "this_month" ? "Este mes" : "Últimos 30 d"}
+          </Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+}
+
+// KPI 2×2 grid
+function KpiGrid({
+  netWorth, income, expense, net, currency,
+  prevIncome, prevExpense,
+}: {
+  netWorth: number; income: number; expense: number; net: number;
+  currency: string; prevIncome: number; prevExpense: number;
+}) {
+  const incomePct = pctChange(income, prevIncome);
+  const expPct = pctChange(expense, prevExpense);
+
+  return (
+    <View style={subStyles.kpiGrid}>
+      <KpiCard label="Patrimonio neto" value={netWorth} currency={currency} large />
+      <KpiCard
+        label="Ingresos" value={income} currency={currency}
+        change={incomePct} higherIsGood
+      />
+      <KpiCard
+        label="Gastos" value={expense} currency={currency}
+        change={expPct} higherIsGood={false}
+      />
+      <KpiCard
+        label="Neto" value={net} currency={currency}
+        valueColor={net >= 0 ? COLORS.income : COLORS.expense}
+      />
+    </View>
+  );
+}
+
+function KpiCard({
+  label, value, currency, change, higherIsGood, large, valueColor,
+}: {
+  label: string; value: number; currency: string;
+  change?: number | null; higherIsGood?: boolean;
+  large?: boolean; valueColor?: string;
+}) {
+  const isGood = change !== null && change !== undefined
+    ? (higherIsGood ? change >= 0 : change <= 0)
+    : null;
+  const changeColor = isGood === null ? COLORS.textMuted : isGood ? COLORS.income : COLORS.expense;
+  const arrow = change == null ? null : change >= 0 ? "↑" : "↓";
+
+  return (
+    <View style={[subStyles.kpiCard, large && subStyles.kpiCardLarge]}>
+      <Text style={subStyles.kpiLabel}>{label}</Text>
+      <Text style={[subStyles.kpiValue, large && subStyles.kpiValueLarge, valueColor ? { color: valueColor } : null]}>
+        {formatCurrency(value, currency)}
+      </Text>
+      {change !== null && change !== undefined ? (
+        <Text style={[subStyles.kpiChange, { color: changeColor }]}>
+          {arrow} {Math.abs(change).toFixed(1)}% vs anterior
+        </Text>
+      ) : (
+        <Text style={subStyles.kpiChangePlaceholder}> </Text>
+      )}
+    </View>
+  );
+}
+
+// Mini bar chart (7 days)
+function MiniBarChart({ data }: { data: { label: string; income: number; expense: number }[] }) {
+  const maxVal = Math.max(...data.flatMap((d) => [d.income, d.expense]), 1);
+  const BAR_HEIGHT = 56;
+
+  return (
+    <Card>
+      <SectionTitle>Últimos 7 días</SectionTitle>
+      <View style={subStyles.chartRow}>
+        {data.map((d, i) => (
+          <View key={i} style={subStyles.chartCol}>
+            <View style={[subStyles.chartBars, { height: BAR_HEIGHT }]}>
+              <View
+                style={[
+                  subStyles.chartBar,
+                  { height: Math.max((d.income / maxVal) * BAR_HEIGHT, d.income > 0 ? 3 : 0), backgroundColor: COLORS.income },
+                ]}
+              />
+              <View
+                style={[
+                  subStyles.chartBar,
+                  { height: Math.max((d.expense / maxVal) * BAR_HEIGHT, d.expense > 0 ? 3 : 0), backgroundColor: COLORS.expense },
+                ]}
+              />
+            </View>
+            <Text style={subStyles.chartLabel}>{d.label}</Text>
+          </View>
+        ))}
+      </View>
+      <View style={subStyles.chartLegend}>
+        <View style={subStyles.legendItem}>
+          <View style={[subStyles.legendDot, { backgroundColor: COLORS.income }]} />
+          <Text style={subStyles.legendText}>Ingresos</Text>
+        </View>
+        <View style={subStyles.legendItem}>
+          <View style={[subStyles.legendDot, { backgroundColor: COLORS.expense }]} />
+          <Text style={subStyles.legendText}>Gastos</Text>
+        </View>
+      </View>
+    </Card>
+  );
+}
+
+// Accounts horizontal scroll
+const ICON_MAP: Record<string, LucideIcon> = {
+  credit_card: CreditCard, cash: Banknote, savings: PiggyBank,
+  investment: TrendingUp, bank: Landmark, loan: Wallet,
+};
+
+function AccountsScroll({ accounts, onPress }: {
+  accounts: { id: number; name: string; type: string; currentBalance: number; currencyCode: string; color: string }[];
+  onPress: (id: number) => void;
+}) {
+  if (accounts.length === 0) return null;
+  return (
+    <View>
+      <SectionTitle>Cuentas</SectionTitle>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        <View style={subStyles.accountsRow}>
+          {accounts.map((a) => {
+            const Icon = ICON_MAP[a.type] ?? Wallet;
+            return (
+              <TouchableOpacity
+                key={a.id}
+                style={subStyles.accountChip}
+                onPress={() => onPress(a.id)}
+                activeOpacity={0.75}
+              >
+                <View style={[subStyles.accountChipIcon, { backgroundColor: a.color + "33" }]}>
+                  <Icon size={16} color={a.color} />
+                </View>
+                <Text style={subStyles.accountChipName} numberOfLines={1}>{a.name}</Text>
+                <Text style={[subStyles.accountChipBalance, a.currentBalance < 0 && { color: COLORS.expense }]}>
+                  {formatCurrency(a.currentBalance, a.currencyCode)}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </ScrollView>
+    </View>
+  );
+}
+
+// Upcoming section (obligations + subscriptions, next 30 days)
+function UpcomingSection({
+  obligations, subscriptions, router,
+}: {
+  obligations: { id: number; title: string; dueDate: string | null; pendingAmount: number; currencyCode: string }[];
+  subscriptions: { id: number; name: string; nextDueDate: string; amount: number; currencyCode: string }[];
+  router: ReturnType<typeof useRouter>;
+}) {
+  const now = new Date();
+  const limit = addDays(now, UPCOMING_DAYS);
+
+  type UpcomingItem = { key: string; label: string; amount: number; currency: string; date: Date; onPress: () => void };
+  const items: UpcomingItem[] = [];
+
+  for (const ob of obligations) {
+    if (!ob.dueDate) continue;
+    const d = new Date(ob.dueDate);
+    if (d >= now && d <= limit) {
+      items.push({
+        key: `ob-${ob.id}`, label: ob.title, amount: ob.pendingAmount,
+        currency: ob.currencyCode, date: d,
+        onPress: () => router.push(`/obligation/${ob.id}`),
+      });
+    }
+  }
+  for (const sub of subscriptions) {
+    const d = new Date(sub.nextDueDate);
+    if (d >= now && d <= limit) {
+      items.push({
+        key: `sub-${sub.id}`, label: sub.name, amount: sub.amount,
+        currency: sub.currencyCode, date: d,
+        onPress: () => router.push(`/subscription/${sub.id}`),
+      });
+    }
+  }
+
+  items.sort((a, b) => a.date.getTime() - b.date.getTime());
+  const visible = items.slice(0, 5);
+
+  if (visible.length === 0) return null;
+  return (
+    <View>
+      <SectionTitle>Próximos vencimientos</SectionTitle>
+      {visible.map((item) => (
+        <TouchableOpacity key={item.key} style={subStyles.upcomingRow} onPress={item.onPress} activeOpacity={0.75}>
+          <View style={subStyles.upcomingLeft}>
+            <Text style={subStyles.upcomingLabel} numberOfLines={1}>{item.label}</Text>
+            <Text style={subStyles.upcomingDate}>
+              {format(item.date, "d MMM", { locale: es })}
+            </Text>
+          </View>
+          <Text style={subStyles.upcomingAmount}>
+            {formatCurrency(item.amount, item.currency)}
+          </Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+}
+
+// Budget alerts section
+function BudgetsSection({
+  budgets, router,
+}: {
+  budgets: { id: number; name: string; usedPercent: number; alertPercent: number; spentAmount: number; limitAmount: number; currencyCode: string; isOverLimit: boolean; isNearLimit: boolean }[];
+  router: ReturnType<typeof useRouter>;
+}) {
+  const alert = budgets.filter((b) => b.isOverLimit || b.isNearLimit);
+  if (alert.length === 0) return null;
+  return (
+    <View>
+      <SectionTitle>Presupuestos con alerta</SectionTitle>
+      {alert.map((b) => (
+        <TouchableOpacity
+          key={b.id}
+          style={subStyles.budgetRow}
+          onPress={() => router.push("/(app)/budgets")}
+          activeOpacity={0.8}
+        >
+          <View style={subStyles.budgetHeader}>
+            <Text style={subStyles.budgetName} numberOfLines={1}>{b.name}</Text>
+            <Text style={[subStyles.budgetPct, b.isOverLimit ? { color: COLORS.expense } : { color: COLORS.warning }]}>
+              {Math.round(b.usedPercent)}%
+            </Text>
+          </View>
+          <ProgressBar percent={b.usedPercent} alertPercent={b.alertPercent} height={6} />
+          <Text style={subStyles.budgetMeta}>
+            {formatCurrency(b.spentAmount, b.currencyCode)} de {formatCurrency(b.limitAmount, b.currencyCode)}
+          </Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+}
+
+// ─── Advanced widgets ─────────────────────────────────────────────────────────
+
+function ObligationsSection({
+  obligations, router,
+}: {
+  obligations: { id: number; title: string; direction: string; pendingAmount: number; currencyCode: string; counterparty: string }[];
+  router: ReturnType<typeof useRouter>;
+}) {
+  const receivable = obligations.filter((o) => o.direction === "receivable").slice(0, 3);
+  const payable = obligations.filter((o) => o.direction === "payable").slice(0, 3);
+  if (receivable.length === 0 && payable.length === 0) return null;
+
+  function renderGroup(title: string, items: typeof obligations, color: string) {
+    if (items.length === 0) return null;
+    return (
+      <View style={{ marginBottom: SPACING.sm }}>
+        <Text style={[subStyles.obGroupTitle, { color }]}>{title}</Text>
+        {items.map((o) => (
+          <TouchableOpacity
+            key={o.id}
+            style={subStyles.obRow}
+            onPress={() => router.push(`/obligation/${o.id}`)}
+            activeOpacity={0.75}
+          >
+            <View style={subStyles.obLeft}>
+              <Text style={subStyles.obTitle} numberOfLines={1}>{o.title}</Text>
+              <Text style={subStyles.obCounterparty} numberOfLines={1}>{o.counterparty}</Text>
+            </View>
+            <Text style={[subStyles.obAmount, { color }]}>
+              {formatCurrency(o.pendingAmount, o.currencyCode)}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    );
+  }
+
+  return (
+    <Card>
+      <SectionTitle>Créditos y deudas</SectionTitle>
+      {renderGroup("Por cobrar", receivable, COLORS.income)}
+      {renderGroup("Por pagar", payable, COLORS.expense)}
+    </Card>
+  );
+}
+
+function CategoryBreakdown({
+  catTotals, categories, currency,
+}: {
+  catTotals: Map<number | null, number>;
+  categories: { id: number; name: string }[];
+  currency: string;
+}) {
+  const catMap = new Map(categories.map((c) => [c.id, c.name]));
+  const entries = Array.from(catTotals.entries())
+    .map(([id, total]) => ({ name: catMap.get(id ?? -1) ?? "Sin categoría", total }))
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 5);
+  if (entries.length === 0) return null;
+  const maxTotal = entries[0].total;
+
+  return (
+    <Card>
+      <SectionTitle>Gastos por categoría</SectionTitle>
+      {entries.map((e, i) => (
+        <View key={i} style={subStyles.catRow}>
+          <View style={subStyles.catLabelRow}>
+            <Text style={subStyles.catName} numberOfLines={1}>{e.name}</Text>
+            <Text style={subStyles.catAmount}>{formatCurrency(e.total, currency)}</Text>
+          </View>
+          <View style={subStyles.catTrack}>
+            <View style={[subStyles.catFill, { width: `${(e.total / maxTotal) * 100}%` }]} />
+          </View>
+        </View>
+      ))}
+    </Card>
+  );
+}
+
+function MonthlyPulse({ data, currency }: {
+  data: { label: string; income: number; expense: number }[];
+  currency: string;
+}) {
+  const maxVal = Math.max(...data.flatMap((d) => [d.income, d.expense]), 1);
+  const BAR_HEIGHT = 64;
+  return (
+    <Card>
+      <SectionTitle>Pulso mensual (6 meses)</SectionTitle>
+      <View style={subStyles.chartRow}>
+        {data.map((d, i) => (
+          <View key={i} style={subStyles.chartCol}>
+            <View style={[subStyles.chartBars, { height: BAR_HEIGHT }]}>
+              <View style={[subStyles.chartBar, { height: Math.max((d.income / maxVal) * BAR_HEIGHT, d.income > 0 ? 3 : 0), backgroundColor: COLORS.income + "cc" }]} />
+              <View style={[subStyles.chartBar, { height: Math.max((d.expense / maxVal) * BAR_HEIGHT, d.expense > 0 ? 3 : 0), backgroundColor: COLORS.expense + "cc" }]} />
+            </View>
+            <Text style={subStyles.chartLabel}>{d.label}</Text>
+          </View>
+        ))}
+      </View>
+    </Card>
+  );
+}
+
+function SubscriptionsSummary({
+  subscriptions, currency,
+}: {
+  subscriptions: { id: number; name: string; amount: number; currencyCode: string; frequency: string; intervalCount: number }[];
+  currency: string;
+}) {
+  const active = subscriptions.filter((s) => true).slice(0, 4);
+  if (active.length === 0) return null;
+
+  function toMonthly(amount: number, freq: string, interval: number): number {
+    if (freq === "monthly") return amount / interval;
+    if (freq === "yearly") return amount / (12 * interval);
+    if (freq === "weekly") return (amount * 4.345) / interval;
+    if (freq === "quarterly") return amount / (3 * interval);
+    if (freq === "daily") return (amount * 30) / interval;
+    return amount;
+  }
+
+  const totalMonthly = subscriptions.reduce(
+    (sum, s) => sum + toMonthly(s.amount, s.frequency, s.intervalCount), 0,
+  );
+
+  return (
+    <Card>
+      <View style={subStyles.subHeader}>
+        <SectionTitle>Suscripciones activas</SectionTitle>
+        <Text style={subStyles.subTotal}>{formatCurrency(totalMonthly, currency)}/mes</Text>
+      </View>
+      {active.map((s) => (
+        <View key={s.id} style={subStyles.subRow}>
+          <Text style={subStyles.subName} numberOfLines={1}>{s.name}</Text>
+          <Text style={subStyles.subAmt}>{formatCurrency(toMonthly(s.amount, s.frequency, s.intervalCount), s.currencyCode)}/mes</Text>
+        </View>
+      ))}
+    </Card>
+  );
+}
+
+function HealthScore({
+  netWorth, income, expense, obligations, netWorthThreeMonthExpense,
+}: {
+  netWorth: number; income: number; expense: number;
+  obligations: { direction: string; pendingAmount: number; dueDate: string | null; status: string }[];
+  netWorthThreeMonthExpense: number;
+}) {
+  const now = new Date();
+  const totalPayable = obligations
+    .filter((o) => o.direction === "payable" && o.status === "active")
+    .reduce((s, o) => s + o.pendingAmount, 0);
+  const overdueCount = obligations.filter(
+    (o) => o.direction === "payable" && o.status === "active" && o.dueDate && new Date(o.dueDate) < now,
+  ).length;
+
+  const savingsRate = income > 0 ? (income - expense) / income : 0;
+  const coverageMonths = expense > 0 ? netWorth / expense : 12;
+  const debtToIncome = income > 0 ? totalPayable / income : 0;
+
+  function scoreFor(value: number, thresholds: [number, number, number]): number {
+    if (value >= thresholds[0]) return 100;
+    if (value >= thresholds[1]) return 75;
+    if (value >= thresholds[2]) return 50;
+    return 25;
+  }
+
+  const s1 = scoreFor(savingsRate, [0.2, 0.1, 0]);
+  const s2 = scoreFor(coverageMonths, [6, 3, 1]);
+  const s3 = scoreFor(1 - Math.min(debtToIncome, 1.5) / 1.5, [0.8, 0.5, 0.2]);
+  const s4 = overdueCount === 0 ? 100 : overdueCount === 1 ? 75 : overdueCount === 2 ? 50 : 25;
+  const score = Math.round((s1 + s2 + s3 + s4) / 4);
+
+  const scoreColor =
+    score >= 80 ? COLORS.income : score >= 60 ? COLORS.warning : COLORS.expense;
+
+  const indicators = [
+    { label: "Tasa de ahorro", value: s1, desc: `${(savingsRate * 100).toFixed(1)}% del ingreso` },
+    { label: "Meses de cobertura", value: s2, desc: `${coverageMonths.toFixed(1)} meses` },
+    { label: "Relación deuda/ingreso", value: s3, desc: `${(debtToIncome * 100).toFixed(1)}%` },
+    { label: "Obligaciones al día", value: s4, desc: overdueCount === 0 ? "Sin vencidas" : `${overdueCount} vencidas` },
+  ];
+
+  return (
+    <Card>
+      <View style={subStyles.healthHeader}>
+        <SectionTitle>Salud financiera</SectionTitle>
+        <View style={[subStyles.healthScore, { borderColor: scoreColor + "55" }]}>
+          <Text style={[subStyles.healthScoreNum, { color: scoreColor }]}>{score}</Text>
+          <Text style={subStyles.healthScoreOf}>/100</Text>
+        </View>
+      </View>
+      {indicators.map((ind) => (
+        <View key={ind.label} style={subStyles.healthRow}>
+          <View style={subStyles.healthLabelRow}>
+            <Text style={subStyles.healthLabel}>{ind.label}</Text>
+            <Text style={subStyles.healthDesc}>{ind.desc}</Text>
+          </View>
+          <View style={subStyles.healthTrack}>
+            <View style={[subStyles.healthFill, { width: `${ind.value}%`, backgroundColor: ind.value >= 75 ? COLORS.income : ind.value >= 50 ? COLORS.warning : COLORS.expense }]} />
+          </View>
+        </View>
+      ))}
+    </Card>
+  );
+}
+
+function ProGate() {
+  return (
+    <Card>
+      <View style={subStyles.proGate}>
+        <Text style={subStyles.proGateIcon}>⚡</Text>
+        <Text style={subStyles.proGateTitle}>Dashboard Avanzado</Text>
+        <Text style={subStyles.proGateBody}>
+          Accede a análisis detallados, gráficos avanzados, salud financiera y más con el plan Pro.
+        </Text>
+      </View>
+    </Card>
+  );
+}
+
+// ─── Main screen ──────────────────────────────────────────────────────────────
 
 export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
@@ -32,86 +670,49 @@ export default function DashboardScreen() {
   const queryClient = useQueryClient();
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace, setWorkspaces } = useWorkspace();
+  const { dashboardMode, setDashboardMode } = useUiStore();
 
+  const [period, setPeriod] = useState<Period>("this_month");
   const [formVisible, setFormVisible] = useState(false);
 
-  const { data: snapshot, isLoading, error, refetch } = useWorkspaceSnapshotQuery(
-    profile,
-    activeWorkspaceId,
-  );
+  const isPro = useIsPro(profile?.email);
 
-  // Sync workspace list to context so selector works
-  if (snapshot?.workspaces) {
-    setWorkspaces(snapshot.workspaces);
-  }
+  const { data: snapshot, isLoading: snapLoading } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
+  const { data: movements = [] } = useDashboardMovementsQuery(activeWorkspaceId);
+
+  useEffect(() => {
+    if (snapshot?.workspaces?.length) setWorkspaces(snapshot.workspaces);
+  }, [snapshot?.workspaces, setWorkspaces]);
 
   const baseCurrency = activeWorkspace?.baseCurrencyCode ?? profile?.baseCurrencyCode ?? "PEN";
 
-  // Total net worth (accounts with includeInNetWorth = true)
-  const totalNetWorth = useMemo(() => {
+  const netWorth = useMemo(() => {
     if (!snapshot) return 0;
     return snapshot.accounts
       .filter((a) => a.includeInNetWorth && !a.isArchived)
       .reduce((sum, a) => sum + (a.currentBalanceInBaseCurrency ?? a.currentBalance), 0);
   }, [snapshot]);
 
-  // Monthly cashflow
-  const { monthlyIncome, monthlyExpense } = useMemo(() => {
-    if (!snapshot) return { monthlyIncome: 0, monthlyExpense: 0 };
-    const now = new Date();
-    const start = startOfMonth(now);
-    const end = endOfMonth(now);
-    let income = 0;
-    let expense = 0;
-    // We use subscription amounts as proxy since movements are paginated separately
-    for (const sub of snapshot.subscriptions) {
-      const next = new Date(sub.nextDueDate);
-      if (isWithinInterval(next, { start, end })) {
-        expense += sub.amountInBaseCurrency ?? sub.amount;
-      }
-    }
-    return { monthlyIncome: income, monthlyExpense: expense };
-  }, [snapshot]);
-
-  // Upcoming subscriptions (next 7 days)
-  const upcomingSubscriptions = useMemo(() => {
-    if (!snapshot) return [];
-    const now = new Date();
-    const limit = addDays(now, UPCOMING_DAYS_WINDOW);
-    return snapshot.subscriptions.filter((s) => {
-      const due = new Date(s.nextDueDate);
-      return due >= now && due <= limit;
-    });
-  }, [snapshot]);
-
-  // Budget alerts
-  const alertBudgets = useMemo(() => {
-    if (!snapshot) return [];
-    return snapshot.budgets.filter((b) => b.isNearLimit || b.isOverLimit);
-  }, [snapshot]);
-
-  // Obligations summary
-  const obligationsSummary = useMemo(() => {
-    if (!snapshot) return { receivable: 0, payable: 0 };
-    const active = snapshot.obligations.filter((o) => o.status === "active");
-    return {
-      receivable: active.filter((o) => o.direction === "receivable").length,
-      payable: active.filter((o) => o.direction === "payable").length,
-    };
-  }, [snapshot]);
+  const stats = useDashboardStats(movements, period);
 
   const onRefresh = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+    void queryClient.invalidateQueries({ queryKey: ["dashboard-movements"] });
   }, [queryClient]);
 
-  if (isLoading) {
+  const activeAccounts = useMemo(
+    () => (snapshot?.accounts ?? []).filter((a) => !a.isArchived),
+    [snapshot],
+  );
+
+  const isAdvanced = dashboardMode === "advanced";
+
+  if (snapLoading) {
     return (
       <View style={[styles.screen, { paddingTop: insets.top }]}>
         <ScreenHeader title="Inicio" />
         <ScrollView contentContainerStyle={styles.content}>
-          <SkeletonCard />
-          <SkeletonCard />
-          <SkeletonCard />
+          <SkeletonCard /><SkeletonCard /><SkeletonCard />
         </ScrollView>
       </View>
     );
@@ -121,100 +722,87 @@ export default function DashboardScreen() {
     <View style={[styles.screen, { paddingTop: insets.top }]}>
       <ScreenHeader
         title={activeWorkspace?.name ?? "Inicio"}
-        subtitle={`${format(new Date(), "MMMM yyyy", { locale: es })}`}
+        subtitle={format(new Date(), "MMMM yyyy", { locale: es })}
         rightAction={<WorkspaceSelector />}
       />
 
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={
-          <RefreshControl
-            refreshing={isLoading}
-            onRefresh={onRefresh}
-            tintColor={COLORS.primary}
-          />
+          <RefreshControl refreshing={snapLoading} onRefresh={onRefresh} tintColor={COLORS.primary} />
         }
       >
-        {/* Net Worth card */}
-        <Card>
-          <Text style={styles.cardLabel}>Patrimonio neto</Text>
-          <Text style={styles.netWorthAmount}>
-            {formatCurrency(totalNetWorth, baseCurrency)}
-          </Text>
-          <Text style={styles.cardMeta}>{baseCurrency} · Solo cuentas incluidas</Text>
-        </Card>
+        {/* Controls */}
+        <View style={styles.controls}>
+          <ModeToggle mode={dashboardMode} setMode={setDashboardMode} isPro={isPro} />
+          <PeriodToggle period={period} setPeriod={setPeriod} />
+        </View>
 
-        {/* Upcoming subscriptions */}
-        {upcomingSubscriptions.length > 0 ? (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Próximas suscripciones</Text>
-            {upcomingSubscriptions.map((sub) => (
-              <Card key={sub.id} style={styles.subCard} onPress={() => router.push(`/subscription/${sub.id}`)}>
-                <View style={styles.subRow}>
-                  <Text style={styles.subName} numberOfLines={1}>{sub.name}</Text>
-                  <Text style={styles.subAmount}>
-                    {formatCurrency(sub.amount, sub.currencyCode)}
-                  </Text>
-                </View>
-                <Text style={styles.subDate}>
-                  Vence {format(new Date(sub.nextDueDate), "d MMM", { locale: es })}
-                </Text>
-              </Card>
-            ))}
-          </View>
-        ) : null}
+        {/* KPI grid */}
+        <KpiGrid
+          netWorth={netWorth}
+          income={stats.income}
+          expense={stats.expense}
+          net={stats.net}
+          currency={baseCurrency}
+          prevIncome={stats.prevIncome}
+          prevExpense={stats.prevExpense}
+        />
+
+        {/* Mini chart */}
+        <MiniBarChart data={stats.chartDays} />
+
+        {/* Accounts */}
+        <AccountsScroll
+          accounts={activeAccounts}
+          onPress={(id) => router.push(`/account/${id}`)}
+        />
+
+        {/* Upcoming */}
+        <UpcomingSection
+          obligations={snapshot?.obligations ?? []}
+          subscriptions={snapshot?.subscriptions ?? []}
+          router={router}
+        />
 
         {/* Budget alerts */}
-        {alertBudgets.length > 0 ? (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Alertas de presupuesto</Text>
-            {alertBudgets.map((budget) => (
-              <BudgetCard key={budget.id} budget={budget} onPress={() => router.push("/(app)/budgets")} />
-            ))}
-          </View>
-        ) : null}
+        <BudgetsSection budgets={snapshot?.budgets ?? []} router={router} />
 
-        {/* Obligations summary */}
-        {(obligationsSummary.receivable > 0 || obligationsSummary.payable > 0) ? (
-          <Card onPress={() => router.push("/(app)/more")}>
-            <Text style={styles.cardLabel}>Créditos y deudas activos</Text>
-            <View style={styles.obRow}>
-              {obligationsSummary.receivable > 0 ? (
-                <View style={styles.obItem}>
-                  <Text style={[styles.obCount, { color: COLORS.income }]}>
-                    {obligationsSummary.receivable}
-                  </Text>
-                  <Text style={styles.obLabel}>por cobrar</Text>
-                </View>
-              ) : null}
-              {obligationsSummary.payable > 0 ? (
-                <View style={styles.obItem}>
-                  <Text style={[styles.obCount, { color: COLORS.expense }]}>
-                    {obligationsSummary.payable}
-                  </Text>
-                  <Text style={styles.obLabel}>por pagar</Text>
-                </View>
-              ) : null}
-            </View>
-          </Card>
-        ) : null}
+        {/* ── Advanced section ── */}
+        {isAdvanced && !isPro && <ProGate />}
 
-        {/* Empty state */}
-        {!alertBudgets.length && !upcomingSubscriptions.length && (
-          <View style={styles.emptyHint}>
-            <Text style={styles.emptyText}>
-              Todo en orden 👍{"\n"}Crea movimientos con el botón + en la pestaña Movimientos.
-            </Text>
-          </View>
+        {isAdvanced && isPro && (
+          <>
+            <ObligationsSection obligations={snapshot?.obligations ?? []} router={router} />
+
+            <CategoryBreakdown
+              catTotals={stats.catTotals}
+              categories={snapshot?.categories ?? []}
+              currency={baseCurrency}
+            />
+
+            <MonthlyPulse data={stats.monthlyPulse} currency={baseCurrency} />
+
+            <SubscriptionsSummary
+              subscriptions={snapshot?.subscriptions ?? []}
+              currency={baseCurrency}
+            />
+
+            <HealthScore
+              netWorth={netWorth}
+              income={stats.income}
+              expense={stats.expense}
+              obligations={snapshot?.obligations ?? []}
+              netWorthThreeMonthExpense={netWorth / Math.max(stats.expense, 1)}
+            />
+          </>
         )}
       </ScrollView>
 
-      {/* FAB */}
       <TouchableOpacity
-        style={[styles.fab, { bottom: insets.bottom + 80 }]}
+        style={[styles.fab, { bottom: insets.bottom + 16 }]}
         onPress={() => setFormVisible(true)}
         activeOpacity={0.85}
-        accessibilityLabel="Nuevo movimiento"
       >
         <Text style={styles.fabIcon}>+</Text>
       </TouchableOpacity>
@@ -225,42 +813,207 @@ export default function DashboardScreen() {
         onSuccess={() => {
           setFormVisible(false);
           void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+          void queryClient.invalidateQueries({ queryKey: ["dashboard-movements"] });
         }}
       />
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: COLORS.bg },
-  content: { padding: SPACING.lg, gap: SPACING.md },
-  cardLabel: { fontSize: FONT_SIZE.sm, color: COLORS.textMuted, marginBottom: SPACING.xs },
-  netWorthAmount: {
-    fontSize: FONT_SIZE.xxxl,
-    fontWeight: FONT_WEIGHT.bold,
-    color: COLORS.text,
-    marginBottom: SPACING.xs,
-  },
-  cardMeta: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted },
-  section: { gap: SPACING.sm },
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
+const subStyles = StyleSheet.create({
   sectionTitle: {
-    fontSize: FONT_SIZE.sm,
+    fontSize: FONT_SIZE.xs,
     fontWeight: FONT_WEIGHT.semibold,
     color: COLORS.textMuted,
     textTransform: "uppercase",
-    letterSpacing: 0.5,
+    letterSpacing: 0.6,
+    marginBottom: SPACING.sm,
   },
-  subCard: { padding: SPACING.md },
-  subRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  subName: { fontSize: FONT_SIZE.sm, fontWeight: FONT_WEIGHT.medium, color: COLORS.text, flex: 1 },
-  subAmount: { fontSize: FONT_SIZE.sm, fontWeight: FONT_WEIGHT.semibold, color: COLORS.expense },
-  subDate: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted, marginTop: 2 },
-  obRow: { flexDirection: "row", gap: SPACING.xl, marginTop: SPACING.sm },
-  obItem: { alignItems: "center" },
-  obCount: { fontSize: FONT_SIZE.xxl, fontWeight: FONT_WEIGHT.bold },
-  obLabel: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted },
-  emptyHint: { alignItems: "center", paddingVertical: SPACING.xl },
-  emptyText: { color: COLORS.textMuted, fontSize: FONT_SIZE.sm, textAlign: "center", lineHeight: 22 },
+
+  // Toggles
+  toggleRow: {
+    flexDirection: "row",
+    backgroundColor: COLORS.bgInput,
+    borderRadius: RADIUS.md,
+    padding: 3,
+    gap: 3,
+  },
+  toggleBtn: {
+    flex: 1,
+    paddingVertical: SPACING.xs + 2,
+    borderRadius: RADIUS.sm,
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "center",
+  },
+  toggleBtnActive: {
+    backgroundColor: COLORS.bgCard,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  toggleText: { fontSize: FONT_SIZE.sm, color: COLORS.textMuted, fontWeight: FONT_WEIGHT.medium },
+  toggleTextActive: { color: COLORS.text, fontWeight: FONT_WEIGHT.semibold },
+  proBadge: { fontSize: FONT_SIZE.xs - 1, color: COLORS.gold, fontWeight: FONT_WEIGHT.bold },
+
+  // KPI
+  kpiGrid: { flexDirection: "row", flexWrap: "wrap", gap: SPACING.sm },
+  kpiCard: {
+    flex: 1,
+    minWidth: "45%",
+    backgroundColor: COLORS.bgCard,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: SPACING.md,
+    gap: 4,
+  },
+  kpiCardLarge: {},
+  kpiLabel: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted, fontWeight: FONT_WEIGHT.medium },
+  kpiValue: { fontSize: FONT_SIZE.md, fontWeight: FONT_WEIGHT.bold, color: COLORS.text },
+  kpiValueLarge: { fontSize: FONT_SIZE.lg },
+  kpiChange: { fontSize: FONT_SIZE.xs, fontWeight: FONT_WEIGHT.medium },
+  kpiChangePlaceholder: { fontSize: FONT_SIZE.xs },
+
+  // Chart
+  chartRow: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: 4,
+    marginTop: SPACING.sm,
+    marginBottom: SPACING.xs,
+  },
+  chartCol: { flex: 1, alignItems: "center", gap: 4 },
+  chartBars: { flexDirection: "row", alignItems: "flex-end", gap: 1, width: "100%" },
+  chartBar: { flex: 1, borderRadius: 2, minHeight: 0 },
+  chartLabel: { fontSize: 9, color: COLORS.textMuted, textAlign: "center" },
+  chartLegend: { flexDirection: "row", gap: SPACING.lg, marginTop: SPACING.xs },
+  legendItem: { flexDirection: "row", alignItems: "center", gap: 4 },
+  legendDot: { width: 8, height: 8, borderRadius: 4 },
+  legendText: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted },
+
+  // Accounts
+  accountsRow: { flexDirection: "row", gap: SPACING.sm, paddingVertical: SPACING.xs },
+  accountChip: {
+    backgroundColor: COLORS.bgCard,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: SPACING.md,
+    alignItems: "center",
+    gap: SPACING.xs,
+    minWidth: 100,
+    maxWidth: 130,
+  },
+  accountChipIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: RADIUS.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  accountChipName: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted, textAlign: "center" },
+  accountChipBalance: { fontSize: FONT_SIZE.sm, fontWeight: FONT_WEIGHT.bold, color: COLORS.text, textAlign: "center" },
+
+  // Upcoming
+  upcomingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: SPACING.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  upcomingLeft: { flex: 1, gap: 2 },
+  upcomingLabel: { fontSize: FONT_SIZE.sm, fontWeight: FONT_WEIGHT.medium, color: COLORS.text },
+  upcomingDate: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted },
+  upcomingAmount: { fontSize: FONT_SIZE.sm, fontWeight: FONT_WEIGHT.semibold, color: COLORS.expense },
+
+  // Budgets
+  budgetRow: {
+    backgroundColor: COLORS.bgCard,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: SPACING.md,
+    gap: SPACING.xs,
+    marginBottom: SPACING.sm,
+  },
+  budgetHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  budgetName: { flex: 1, fontSize: FONT_SIZE.sm, fontWeight: FONT_WEIGHT.medium, color: COLORS.text },
+  budgetPct: { fontSize: FONT_SIZE.sm, fontWeight: FONT_WEIGHT.bold },
+  budgetMeta: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted },
+
+  // Obligations advanced
+  obGroupTitle: { fontSize: FONT_SIZE.xs, fontWeight: FONT_WEIGHT.semibold, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: SPACING.xs },
+  obRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: SPACING.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+    gap: SPACING.sm,
+  },
+  obLeft: { flex: 1, gap: 2 },
+  obTitle: { fontSize: FONT_SIZE.sm, fontWeight: FONT_WEIGHT.medium, color: COLORS.text },
+  obCounterparty: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted },
+  obAmount: { fontSize: FONT_SIZE.md, fontWeight: FONT_WEIGHT.bold },
+
+  // Category breakdown
+  catRow: { gap: SPACING.xs, marginBottom: SPACING.sm },
+  catLabelRow: { flexDirection: "row", justifyContent: "space-between" },
+  catName: { fontSize: FONT_SIZE.sm, color: COLORS.text, flex: 1 },
+  catAmount: { fontSize: FONT_SIZE.sm, fontWeight: FONT_WEIGHT.semibold, color: COLORS.expense },
+  catTrack: { height: 6, backgroundColor: COLORS.border, borderRadius: RADIUS.full, overflow: "hidden" },
+  catFill: { height: 6, backgroundColor: COLORS.expense + "99", borderRadius: RADIUS.full },
+
+  // Subscriptions summary
+  subHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: SPACING.sm },
+  subTotal: { fontSize: FONT_SIZE.md, fontWeight: FONT_WEIGHT.bold, color: COLORS.expense },
+  subRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingVertical: SPACING.xs + 2,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  subName: { flex: 1, fontSize: FONT_SIZE.sm, color: COLORS.text },
+  subAmt: { fontSize: FONT_SIZE.sm, color: COLORS.textMuted },
+
+  // Health score
+  healthHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: SPACING.sm },
+  healthScore: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    borderWidth: 2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  healthScoreNum: { fontSize: FONT_SIZE.lg, fontWeight: FONT_WEIGHT.bold, lineHeight: FONT_SIZE.lg + 2 },
+  healthScoreOf: { fontSize: 9, color: COLORS.textMuted, lineHeight: 11 },
+  healthRow: { gap: 4, marginBottom: SPACING.sm },
+  healthLabelRow: { flexDirection: "row", justifyContent: "space-between" },
+  healthLabel: { fontSize: FONT_SIZE.xs, color: COLORS.text, fontWeight: FONT_WEIGHT.medium },
+  healthDesc: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted },
+  healthTrack: { height: 5, backgroundColor: COLORS.border, borderRadius: RADIUS.full, overflow: "hidden" },
+  healthFill: { height: 5, borderRadius: RADIUS.full },
+
+  // Pro gate
+  proGate: { alignItems: "center", padding: SPACING.xl, gap: SPACING.sm },
+  proGateIcon: { fontSize: 32 },
+  proGateTitle: { fontSize: FONT_SIZE.lg, fontWeight: FONT_WEIGHT.bold, color: COLORS.text },
+  proGateBody: { fontSize: FONT_SIZE.sm, color: COLORS.textMuted, textAlign: "center", lineHeight: 20 },
+});
+
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: COLORS.bg },
+  content: { padding: SPACING.lg, gap: SPACING.lg, paddingBottom: 100 },
+  controls: { gap: SPACING.sm },
   fab: {
     position: "absolute",
     right: SPACING.lg,
@@ -276,5 +1029,10 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 8,
   },
-  fabIcon: { color: "#FFFFFF", fontSize: 28, fontWeight: "300", lineHeight: 32 },
+  fabIcon: {
+    fontSize: 28,
+    color: COLORS.textInverse,
+    fontWeight: FONT_WEIGHT.medium,
+    lineHeight: 32,
+  },
 });

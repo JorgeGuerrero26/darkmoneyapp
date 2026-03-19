@@ -1,3 +1,4 @@
+import { CheckCircle2 } from "lucide-react-native";
 import { useEffect, useState } from "react";
 import {
   KeyboardAvoidingView,
@@ -75,7 +76,7 @@ export default function ResetPasswordScreen() {
   if (done) {
     return (
       <View style={[styles.flex, styles.centered, { paddingTop: insets.top }]}>
-        <Text style={{ fontSize: 56 }}>✅</Text>
+        <CheckCircle2 size={56} color={COLORS.primary} />
         <Text style={styles.title}>Contraseña actualizada</Text>
         <Text style={styles.subtitle}>Redirigiendo...</Text>
       </View>

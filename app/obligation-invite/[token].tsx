@@ -1,3 +1,4 @@
+import { CheckCircle2 } from "lucide-react-native";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -77,7 +78,7 @@ export default function ObligationInviteScreen() {
           <Card><Text style={styles.errorText}>{error}</Text></Card>
         ) : accepted ? (
           <View style={styles.centered}>
-            <Text style={{ fontSize: 56 }}>✅</Text>
+            <CheckCircle2 size={56} color={COLORS.primary} />
             <Text style={styles.successText}>¡Acceso concedido!</Text>
           </View>
         ) : invite ? (

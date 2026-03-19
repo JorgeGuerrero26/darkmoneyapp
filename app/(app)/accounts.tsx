@@ -1,3 +1,4 @@
+import { Plus } from "lucide-react-native";
 import { useCallback, useMemo, useState } from "react";
 import {
   RefreshControl,
@@ -99,11 +100,11 @@ export default function AccountsScreen() {
       </ScrollView>
 
       <TouchableOpacity
-        style={[styles.fab, { bottom: insets.bottom + 80 }]}
+        style={[styles.fab, { bottom: insets.bottom + 16 }]}
         activeOpacity={0.85}
         onPress={() => setFormVisible(true)}
       >
-        <Text style={styles.fabIcon}>+</Text>
+        <Plus size={22} color="#FFF" />
       </TouchableOpacity>
 
       <AccountForm
@@ -146,5 +147,4 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 8,
   },
-  fabIcon: { color: "#FFFFFF", fontSize: 28, fontWeight: "300", lineHeight: 32 },
 });

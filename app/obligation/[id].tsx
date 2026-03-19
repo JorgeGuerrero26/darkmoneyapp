@@ -50,7 +50,7 @@ export default function ObligationDetailScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { profile } = useAuth();
-  const { activeWorkspaceId } = useWorkspace();
+  const { activeWorkspaceId, activeWorkspace } = useWorkspace();
 
   const { showToast } = useToast();
   const [editFormVisible, setEditFormVisible] = useState(false);

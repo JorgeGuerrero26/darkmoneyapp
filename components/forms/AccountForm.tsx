@@ -1,6 +1,10 @@
+import {
+  Wallet2, Landmark, PiggyBank, CreditCard, TrendingUp, Briefcase, Banknote,
+  type LucideIcon,
+} from "lucide-react-native";
 import { useEffect, useState } from "react";
 import {
-  Alert,
+  Modal,
   ScrollView,
   StyleSheet,
   Switch,
@@ -22,22 +26,33 @@ import { Button } from "../ui/Button";
 import { CurrencyInput } from "../ui/CurrencyInput";
 import { COLORS, FONT_SIZE, FONT_WEIGHT, RADIUS, SPACING } from "../../constants/theme";
 
-const ACCOUNT_TYPES = [
-  { label: "Efectivo", value: "cash" },
-  { label: "Banco", value: "bank" },
-  { label: "Ahorro", value: "savings" },
-  { label: "Tarjeta de crédito", value: "credit_card" },
-  { label: "Inversión", value: "investment" },
-  { label: "Préstamo", value: "loan" },
-  { label: "Otro", value: "other" },
+// ── Icon picker ────────────────────────────────────────────────────────────────
+const ACCOUNT_ICONS: { value: string; Icon: LucideIcon }[] = [
+  { value: "wallet",       Icon: Wallet2 },
+  { value: "landmark",     Icon: Landmark },
+  { value: "piggy-bank",   Icon: PiggyBank },
+  { value: "credit-card",  Icon: CreditCard },
+  { value: "trending-up",  Icon: TrendingUp },
+  { value: "briefcase",    Icon: Briefcase },
+  { value: "banknote",     Icon: Banknote },
 ];
 
+// ── Color picker ───────────────────────────────────────────────────────────────
 const ACCOUNT_COLORS = [
-  "#6366F1", "#10B981", "#F59E0B", "#EF4444",
-  "#3B82F6", "#8B5CF6", "#EC4899", "#14B8A6",
+  "#1b6a58", "#2d9076", "#4566d6", "#6f82f1",
+  "#b48b34", "#d39d3a", "#8f3e3e", "#c55f5f",
+  "#8366f2", "#9c7dff", "#c46a31", "#6b7280",
 ];
 
-const ACCOUNT_ICONS = ["💳", "🏦", "💰", "📈", "🏠", "🚗", "💼", "🌐"];
+const ACCOUNT_TYPES = [
+  { label: "Efectivo",       value: "cash" },
+  { label: "Banco",          value: "bank" },
+  { label: "Ahorro",         value: "savings" },
+  { label: "Tarjeta",        value: "credit_card" },
+  { label: "Inversión",      value: "investment" },
+  { label: "Préstamo",       value: "loan" },
+  { label: "Otro",           value: "other" },
+];
 
 const POPULAR_CURRENCIES = ["PEN", "USD", "EUR", "MXN", "COP", "ARS", "CLP", "BRL"];
 
@@ -63,21 +78,23 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
   const [openingBalance, setOpeningBalance] = useState("0");
   const [includeInNetWorth, setIncludeInNetWorth] = useState(true);
   const [color, setColor] = useState(ACCOUNT_COLORS[0]);
-  const [icon, setIcon] = useState(ACCOUNT_ICONS[0]);
-
+  const [icon, setIcon] = useState(ACCOUNT_ICONS[0].value);
   const [nameError, setNameError] = useState("");
+  const [discardVisible, setDiscardVisible] = useState(false);
+
   const isDirty = name.trim() !== (editAccount?.name ?? "");
 
-  // Populate form when editing
   useEffect(() => {
+    if (!visible) return;
     if (editAccount) {
       setName(editAccount.name);
       setType(editAccount.type);
       setCurrencyCode(editAccount.currencyCode);
-      setOpeningBalance("0"); // opening balance not editable on edit
+      setOpeningBalance("0");
       setIncludeInNetWorth(editAccount.includeInNetWorth);
       setColor(editAccount.color ?? ACCOUNT_COLORS[0]);
-      setIcon(editAccount.icon ?? ACCOUNT_ICONS[0]);
+      const iconValue = editAccount.icon ?? ACCOUNT_ICONS[0].value;
+      setIcon(ACCOUNT_ICONS.find((i) => i.value === iconValue) ? iconValue : ACCOUNT_ICONS[0].value);
     } else {
       setName("");
       setType("bank");
@@ -85,17 +102,15 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
       setOpeningBalance("0");
       setIncludeInNetWorth(true);
       setColor(ACCOUNT_COLORS[0]);
-      setIcon(ACCOUNT_ICONS[0]);
+      setIcon(ACCOUNT_ICONS[0].value);
     }
     setNameError("");
+    setCustomCurrency("");
   }, [editAccount, visible, defaultCurrency]);
 
   function handleClose() {
     if (isDirty) {
-      Alert.alert("¿Descartar cambios?", "Los cambios no guardados se perderán.", [
-        { text: "Continuar editando", style: "cancel" },
-        { text: "Descartar", style: "destructive", onPress: onClose },
-      ]);
+      setDiscardVisible(true);
     } else {
       onClose();
     }
@@ -107,9 +122,7 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
       setNameError("El nombre es obligatorio");
       return;
     }
-
     const resolvedCurrency = customCurrency.trim().toUpperCase() || currencyCode;
-
     const input: AccountFormInput = {
       name: name.trim(),
       type,
@@ -119,7 +132,6 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
       color,
       icon,
     };
-
     try {
       if (editAccount) {
         await updateMutation.mutateAsync({ id: editAccount.id, input });
@@ -136,149 +148,242 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
     }
   }
 
-  const isLoading = createMutation.isPending || updateMutation.isPending;
+  const selectedIcon = ACCOUNT_ICONS.find((i) => i.value === icon) ?? ACCOUNT_ICONS[0];
 
   return (
-    <BottomSheet
-      visible={visible}
-      onClose={handleClose}
-      title={editAccount ? "Editar cuenta" : "Nueva cuenta"}
-      snapHeight={0.9}
-    >
-      {/* Icon + Color row */}
-      <View style={styles.sectionRow}>
-        <View style={styles.sectionHalf}>
+    <>
+      <BottomSheet
+        visible={visible}
+        onClose={handleClose}
+        title={editAccount ? "Editar cuenta" : "Nueva cuenta"}
+        snapHeight={0.92}
+      >
+        {/* Preview + icon + color */}
+        <View style={styles.previewRow}>
+          <View style={[styles.previewIcon, { backgroundColor: color + "33" }]}>
+            <selectedIcon.Icon size={28} color={color} />
+          </View>
+          <View style={styles.previewInfo}>
+            <Text style={styles.previewName} numberOfLines={1}>
+              {name.trim() || "Nueva cuenta"}
+            </Text>
+            <Text style={styles.previewType}>
+              {ACCOUNT_TYPES.find((t) => t.value === type)?.label ?? type}
+            </Text>
+          </View>
+        </View>
+
+        {/* Icon picker */}
+        <View>
           <Text style={styles.sectionLabel}>Ícono</Text>
+          <View style={styles.iconGrid}>
+            {ACCOUNT_ICONS.map((item) => (
+              <TouchableOpacity
+                key={item.value}
+                style={[
+                  styles.iconBtn,
+                  icon === item.value && { borderColor: color, backgroundColor: color + "22" },
+                ]}
+                onPress={() => setIcon(item.value)}
+              >
+                <item.Icon size={22} color={icon === item.value ? color : COLORS.textMuted} />
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        {/* Color picker */}
+        <View>
+          <Text style={styles.sectionLabel}>Color</Text>
+          <View style={styles.colorGrid}>
+            {ACCOUNT_COLORS.map((c) => (
+              <TouchableOpacity
+                key={c}
+                style={[
+                  styles.colorDot,
+                  { backgroundColor: c },
+                  color === c && styles.colorDotActive,
+                ]}
+                onPress={() => setColor(c)}
+              />
+            ))}
+          </View>
+        </View>
+
+        {/* Name */}
+        <View>
+          <Text style={styles.sectionLabel}>Nombre *</Text>
+          <TextInput
+            style={[styles.textInput, nameError ? styles.textInputError : null]}
+            value={name}
+            onChangeText={(t) => { setName(t); setNameError(""); }}
+            placeholder="Ej. BCP Soles, Efectivo casa"
+            placeholderTextColor={COLORS.textDisabled}
+          />
+          {nameError ? <Text style={styles.fieldError}>{nameError}</Text> : null}
+        </View>
+
+        {/* Type */}
+        <View>
+          <Text style={styles.sectionLabel}>Tipo</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View style={styles.iconRow}>
-              {ACCOUNT_ICONS.map((ic) => (
+            <View style={styles.pillRow}>
+              {ACCOUNT_TYPES.map((t) => (
                 <TouchableOpacity
-                  key={ic}
-                  style={[styles.iconBtn, icon === ic && styles.iconBtnActive]}
-                  onPress={() => setIcon(ic)}
+                  key={t.value}
+                  style={[styles.pill, type === t.value && styles.pillActive]}
+                  onPress={() => setType(t.value)}
                 >
-                  <Text style={styles.iconText}>{ic}</Text>
+                  <Text style={[styles.pillText, type === t.value && styles.pillTextActive]}>
+                    {t.label}
+                  </Text>
                 </TouchableOpacity>
               ))}
             </View>
           </ScrollView>
         </View>
-      </View>
 
-      {/* Color */}
-      <View>
-        <Text style={styles.sectionLabel}>Color</Text>
-        <View style={styles.colorRow}>
-          {ACCOUNT_COLORS.map((c) => (
-            <TouchableOpacity
-              key={c}
-              style={[styles.colorDot, { backgroundColor: c }, color === c && styles.colorDotActive]}
-              onPress={() => setColor(c)}
-            />
-          ))}
+        {/* Currency */}
+        <View>
+          <Text style={styles.sectionLabel}>Moneda</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <View style={styles.pillRow}>
+              {POPULAR_CURRENCIES.map((c) => (
+                <TouchableOpacity
+                  key={c}
+                  style={[styles.pill, currencyCode === c && !customCurrency && styles.pillActive]}
+                  onPress={() => { setCurrencyCode(c); setCustomCurrency(""); }}
+                >
+                  <Text style={[styles.pillText, currencyCode === c && !customCurrency && styles.pillTextActive]}>
+                    {c}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </ScrollView>
+          <TextInput
+            style={[styles.textInput, { marginTop: SPACING.sm }]}
+            value={customCurrency}
+            onChangeText={(t) => setCustomCurrency(t.toUpperCase())}
+            placeholder="Otra moneda (ej. JPY)"
+            placeholderTextColor={COLORS.textDisabled}
+            maxLength={5}
+            autoCapitalize="characters"
+          />
         </View>
-      </View>
 
-      {/* Name */}
-      <View>
-        <Text style={styles.sectionLabel}>Nombre *</Text>
-        <TextInput
-          style={[styles.textInput, nameError ? styles.textInputError : null]}
-          value={name}
-          onChangeText={(t) => { setName(t); setNameError(""); }}
-          placeholder="Ej. BCP Soles, Efectivo casa"
-          placeholderTextColor={COLORS.textDisabled}
-        />
-        {nameError ? <Text style={styles.fieldError}>{nameError}</Text> : null}
-      </View>
+        {/* Opening balance — only on create */}
+        {!editAccount ? (
+          <CurrencyInput
+            label="Saldo inicial"
+            value={openingBalance}
+            onChangeText={setOpeningBalance}
+            currencyCode={customCurrency.trim().toUpperCase() || currencyCode}
+          />
+        ) : null}
 
-      {/* Type */}
-      <View>
-        <Text style={styles.sectionLabel}>Tipo</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <View style={styles.pillRow}>
-            {ACCOUNT_TYPES.map((t) => (
-              <TouchableOpacity
-                key={t.value}
-                style={[styles.pill, type === t.value && styles.pillActive]}
-                onPress={() => setType(t.value)}
-              >
-                <Text style={[styles.pillText, type === t.value && styles.pillTextActive]}>
-                  {t.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
+        {/* Include in net worth */}
+        <View style={styles.switchRow}>
+          <View style={styles.switchInfo}>
+            <Text style={styles.switchLabel}>Incluir en patrimonio neto</Text>
+            <Text style={styles.switchDesc}>Afecta el balance total del dashboard</Text>
           </View>
-        </ScrollView>
-      </View>
-
-      {/* Currency */}
-      <View>
-        <Text style={styles.sectionLabel}>Moneda</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <View style={styles.pillRow}>
-            {POPULAR_CURRENCIES.map((c) => (
-              <TouchableOpacity
-                key={c}
-                style={[styles.pill, currencyCode === c && !customCurrency && styles.pillActive]}
-                onPress={() => { setCurrencyCode(c); setCustomCurrency(""); }}
-              >
-                <Text style={[styles.pillText, currencyCode === c && !customCurrency && styles.pillTextActive]}>
-                  {c}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </ScrollView>
-        <TextInput
-          style={[styles.textInput, { marginTop: SPACING.sm }]}
-          value={customCurrency}
-          onChangeText={(t) => setCustomCurrency(t.toUpperCase())}
-          placeholder="Otra moneda (ej. JPY)"
-          placeholderTextColor={COLORS.textDisabled}
-          maxLength={5}
-          autoCapitalize="characters"
-        />
-      </View>
-
-      {/* Opening balance — only on create */}
-      {!editAccount ? (
-        <CurrencyInput
-          label="Saldo inicial"
-          value={openingBalance}
-          onChangeText={setOpeningBalance}
-          currencyCode={customCurrency.trim().toUpperCase() || currencyCode}
-        />
-      ) : null}
-
-      {/* Include in net worth */}
-      <View style={styles.switchRow}>
-        <View style={styles.switchInfo}>
-          <Text style={styles.switchLabel}>Incluir en patrimonio neto</Text>
-          <Text style={styles.switchDesc}>Afecta el balance total del dashboard</Text>
+          <Switch
+            value={includeInNetWorth}
+            onValueChange={setIncludeInNetWorth}
+            trackColor={{ false: COLORS.border, true: COLORS.primary }}
+            thumbColor="#FFFFFF"
+          />
         </View>
-        <Switch
-          value={includeInNetWorth}
-          onValueChange={setIncludeInNetWorth}
-          trackColor={{ false: COLORS.border, true: COLORS.primary }}
-          thumbColor="#FFFFFF"
-        />
-      </View>
 
-      {/* Submit */}
-      <Button
-        label={editAccount ? "Guardar cambios" : "Crear cuenta"}
-        onPress={handleSubmit}
-        loading={isLoading}
-        style={styles.submitBtn}
-      />
-    </BottomSheet>
+        <Button
+          label={editAccount ? "Guardar cambios" : "Crear cuenta"}
+          onPress={handleSubmit}
+          loading={createMutation.isPending || updateMutation.isPending}
+          style={styles.submitBtn}
+        />
+      </BottomSheet>
+
+      {/* Discard dialog */}
+      <Modal transparent visible={discardVisible} animationType="fade" onRequestClose={() => setDiscardVisible(false)}>
+        <View style={styles.discardOverlay}>
+          <View style={styles.discardCard}>
+            <Text style={styles.discardTitle}>¿Descartar cambios?</Text>
+            <Text style={styles.discardBody}>Los cambios no guardados se perderán.</Text>
+            <View style={styles.discardActions}>
+              <TouchableOpacity style={styles.discardCancel} onPress={() => setDiscardVisible(false)}>
+                <Text style={styles.discardCancelText}>Continuar editando</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.discardConfirm} onPress={() => { setDiscardVisible(false); onClose(); }}>
+                <Text style={styles.discardConfirmText}>Descartar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  sectionRow: { flexDirection: "row", gap: SPACING.md },
-  sectionHalf: { flex: 1 },
+  // Preview
+  previewRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.md,
+    backgroundColor: COLORS.bg,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.md,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  previewIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: RADIUS.lg,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  previewInfo: { flex: 1 },
+  previewName: { fontSize: FONT_SIZE.md, fontWeight: FONT_WEIGHT.semibold, color: COLORS.text },
+  previewType: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted, marginTop: 2 },
+
+  // Icon picker
+  iconGrid: {
+    flexDirection: "row",
+    gap: SPACING.sm,
+    flexWrap: "wrap",
+  },
+  iconBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.bgInput,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: "transparent",
+  },
+
+  // Color picker
+  colorGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: SPACING.sm,
+  },
+  colorDot: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 2,
+    borderColor: "transparent",
+  },
+  colorDotActive: {
+    borderColor: COLORS.text,
+    borderWidth: 3,
+  },
+
+  // Form fields
   sectionLabel: {
     fontSize: FONT_SIZE.xs,
     fontWeight: FONT_WEIGHT.semibold,
@@ -287,28 +392,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginBottom: SPACING.xs,
   },
-  iconRow: { flexDirection: "row", gap: SPACING.sm },
-  iconBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: RADIUS.md,
-    backgroundColor: COLORS.bgInput,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 2,
-    borderColor: "transparent",
-  },
-  iconBtnActive: { borderColor: COLORS.primary },
-  iconText: { fontSize: 20 },
-  colorRow: { flexDirection: "row", flexWrap: "wrap", gap: SPACING.sm },
-  colorDot: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    borderWidth: 2,
-    borderColor: "transparent",
-  },
-  colorDotActive: { borderColor: COLORS.text, borderWidth: 3 },
   textInput: {
     backgroundColor: COLORS.bgInput,
     borderRadius: RADIUS.md,
@@ -347,4 +430,60 @@ const styles = StyleSheet.create({
   switchLabel: { fontSize: FONT_SIZE.sm, fontWeight: FONT_WEIGHT.medium, color: COLORS.text },
   switchDesc: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted },
   submitBtn: { marginTop: SPACING.sm },
+
+  // Discard dialog
+  discardOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: SPACING.xl,
+  },
+  discardCard: {
+    width: "100%",
+    backgroundColor: COLORS.bgCard,
+    borderRadius: RADIUS.xl,
+    padding: SPACING.xl,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    gap: SPACING.sm,
+  },
+  discardTitle: {
+    fontSize: FONT_SIZE.lg,
+    fontWeight: FONT_WEIGHT.bold,
+    color: COLORS.text,
+    textAlign: "center",
+  },
+  discardBody: {
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.textMuted,
+    textAlign: "center",
+    marginBottom: SPACING.sm,
+  },
+  discardActions: { gap: SPACING.sm },
+  discardConfirm: {
+    backgroundColor: COLORS.danger + "22",
+    borderWidth: 1,
+    borderColor: COLORS.danger + "66",
+    borderRadius: RADIUS.md,
+    paddingVertical: SPACING.md,
+    alignItems: "center",
+  },
+  discardConfirmText: {
+    fontSize: FONT_SIZE.md,
+    fontWeight: FONT_WEIGHT.semibold,
+    color: COLORS.danger,
+  },
+  discardCancel: {
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: RADIUS.md,
+    paddingVertical: SPACING.md,
+    alignItems: "center",
+  },
+  discardCancelText: {
+    fontSize: FONT_SIZE.md,
+    fontWeight: FONT_WEIGHT.medium,
+    color: COLORS.textMuted,
+  },
 });

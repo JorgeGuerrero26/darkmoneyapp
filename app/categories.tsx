@@ -1,3 +1,4 @@
+import { Plus } from "lucide-react-native";
 import { useState } from "react";
 import {
   Alert,
@@ -140,7 +141,7 @@ export default function CategoriesScreen() {
         onPress={() => setCreateFormVisible(true)}
         accessibilityLabel="Nueva categoría"
       >
-        <Text style={styles.fabIcon}>+</Text>
+        <Plus size={22} color="#FFF" />
       </TouchableOpacity>
 
       <CategoryForm
@@ -212,5 +213,4 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 8,
   },
-  fabIcon: { color: "#FFFFFF", fontSize: 28, fontWeight: "300", lineHeight: 32 },
 });

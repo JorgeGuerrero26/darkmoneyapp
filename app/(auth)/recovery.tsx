@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ArrowLeft } from "lucide-react-native";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -108,7 +109,8 @@ export default function RecoveryScreen() {
 
         <Link href="/(auth)/login" asChild>
           <TouchableOpacity style={styles.backLink}>
-            <Text style={styles.backLinkText}>← Volver al inicio de sesión</Text>
+            <ArrowLeft size={14} color={COLORS.primary} />
+            <Text style={styles.backLinkText}>Volver al inicio de sesión</Text>
           </TouchableOpacity>
         </Link>
       </ScrollView>
@@ -128,7 +130,7 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: COLORS.danger,
   },
   errorBannerText: { color: COLORS.danger, fontSize: FONT_SIZE.sm },
-  backLink: { alignItems: "center", paddingVertical: SPACING.sm },
+  backLink: { flexDirection: "row", alignItems: "center", gap: 4, paddingVertical: SPACING.sm },
   backLinkText: { color: COLORS.primary, fontSize: FONT_SIZE.sm },
   backButton: { paddingVertical: SPACING.md, paddingHorizontal: SPACING.xl, backgroundColor: COLORS.primary, borderRadius: 10 },
   backButtonText: { color: "#FFF", fontWeight: FONT_WEIGHT.semibold, fontSize: FONT_SIZE.md },

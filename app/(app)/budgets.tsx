@@ -1,6 +1,6 @@
+import { Plus } from "lucide-react-native";
 import { useCallback, useState } from "react";
 import {
-  Alert,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -23,6 +23,7 @@ import { SkeletonCard } from "../../components/ui/Skeleton";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { BudgetForm } from "../../components/forms/BudgetForm";
+import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { useToast } from "../../hooks/useToast";
 import { COLORS, FONT_SIZE, FONT_WEIGHT, RADIUS, SPACING } from "../../constants/theme";
 
@@ -31,6 +32,7 @@ export default function BudgetsScreen() {
   const queryClient = useQueryClient();
   const [formVisible, setFormVisible] = useState(false);
   const [editBudget, setEditBudget] = useState<BudgetOverview | null>(null);
+  const [deleteBudget, setDeleteBudget] = useState<BudgetOverview | null>(null);
   const { profile } = useAuth();
   const { activeWorkspaceId } = useWorkspace();
   const { showToast } = useToast();
@@ -99,11 +101,11 @@ export default function BudgetsScreen() {
       </ScrollView>
 
       <TouchableOpacity
-        style={[styles.fab, { bottom: insets.bottom + 80 }]}
+        style={[styles.fab, { bottom: insets.bottom + 16 }]}
         activeOpacity={0.85}
         onPress={() => setFormVisible(true)}
       >
-        <Text style={styles.fabIcon}>+</Text>
+        <Plus size={22} color="#FFF" />
       </TouchableOpacity>
 
       <BudgetForm
@@ -117,21 +119,27 @@ export default function BudgetsScreen() {
         onSuccess={() => setEditBudget(null)}
         editBudget={editBudget ?? undefined}
       />
+      <ConfirmDialog
+        visible={Boolean(deleteBudget)}
+        title="Eliminar presupuesto"
+        body={deleteBudget ? `¿Eliminar "${deleteBudget.name}"? Esta acción no se puede deshacer.` : ""}
+        confirmLabel="Eliminar"
+        cancelLabel="Cancelar"
+        onCancel={() => setDeleteBudget(null)}
+        onConfirm={() => {
+          if (!deleteBudget) return;
+          deleteMutation.mutate(deleteBudget.id, {
+            onSuccess: () => showToast("Presupuesto eliminado", "success"),
+            onError: (e) => showToast(e.message, "error"),
+          });
+          setDeleteBudget(null);
+        }}
+      />
     </View>
   );
 
   function handleDelete(budget: BudgetOverview) {
-    Alert.alert("Eliminar presupuesto", `¿Eliminar "${budget.name}"?`, [
-      { text: "Cancelar", style: "cancel" },
-      {
-        text: "Eliminar",
-        style: "destructive",
-        onPress: () => deleteMutation.mutate(budget.id, {
-          onSuccess: () => showToast("Presupuesto eliminado", "success"),
-          onError: (e) => showToast(e.message, "error"),
-        }),
-      },
-    ]);
+    setDeleteBudget(budget);
   }
 }
 
@@ -157,10 +165,10 @@ function BudgetActions({
 }
 
 const actionStyles = StyleSheet.create({
-  row: { flexDirection: "row", gap: SPACING.sm, marginTop: -SPACING.sm, marginBottom: SPACING.sm },
+  row: { flexDirection: "row", gap: SPACING.sm, marginTop: SPACING.md, marginBottom: SPACING.md },
   btn: {
     flex: 1,
-    paddingVertical: SPACING.xs + 2,
+    paddingVertical: SPACING.sm,
     borderRadius: RADIUS.md,
     alignItems: "center",
     borderWidth: 1,
@@ -198,5 +206,4 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 8,
   },
-  fabIcon: { color: "#FFFFFF", fontSize: 28, fontWeight: "300", lineHeight: 32 },
 });
