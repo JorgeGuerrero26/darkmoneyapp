@@ -79,27 +79,23 @@ const EXPENSE_TYPES = new Set(["expense", "subscription_payment", "obligation_pa
 function isIncome(m: DashboardMovementRow) {
   if (m.status !== "posted") return false;
   if (INCOME_TYPES.has(m.movementType)) return true;
-  if (m.movementType === "adjustment") {
-    return (m.destinationAmountInBaseCurrency ?? m.destinationAmount) > (m.sourceAmountInBaseCurrency ?? m.sourceAmount);
-  }
+  if (m.movementType === "adjustment") return m.destinationAmount > m.sourceAmount;
   return false;
 }
 
 function isExpense(m: DashboardMovementRow) {
   if (m.status !== "posted") return false;
   if (EXPENSE_TYPES.has(m.movementType)) return true;
-  if (m.movementType === "adjustment") {
-    return (m.sourceAmountInBaseCurrency ?? m.sourceAmount) >= (m.destinationAmountInBaseCurrency ?? m.destinationAmount);
-  }
+  if (m.movementType === "adjustment") return m.sourceAmount >= m.destinationAmount;
   return false;
 }
 
 function incomeAmt(m: DashboardMovementRow): number {
-  return m.destinationAmountInBaseCurrency ?? m.destinationAmount ?? m.sourceAmountInBaseCurrency ?? m.sourceAmount ?? 0;
+  return m.destinationAmount || m.sourceAmount || 0;
 }
 
 function expenseAmt(m: DashboardMovementRow): number {
-  return m.sourceAmountInBaseCurrency ?? m.sourceAmount ?? m.destinationAmountInBaseCurrency ?? m.destinationAmount ?? 0;
+  return m.sourceAmount || m.destinationAmount || 0;
 }
 
 function inRange(m: DashboardMovementRow, start: Date, end: Date) {
