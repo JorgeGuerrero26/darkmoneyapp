@@ -23,7 +23,7 @@ import { SkeletonCard } from "../components/ui/Skeleton";
 import { ScreenHeader } from "../components/layout/ScreenHeader";
 import { CategoryForm } from "../components/forms/CategoryForm";
 import { useToast } from "../hooks/useToast";
-import { COLORS, FONT_SIZE, FONT_WEIGHT, RADIUS, SPACING } from "../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../constants/theme";
 
 const KIND_LABELS: Record<string, string> = {
   income: "Ingreso",
@@ -165,8 +165,8 @@ const styles = StyleSheet.create({
   section: { gap: SPACING.sm },
   sectionTitle: {
     fontSize: FONT_SIZE.xs,
-    fontWeight: FONT_WEIGHT.semibold,
-    color: COLORS.textMuted,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    color: COLORS.storm,
     textTransform: "uppercase",
     letterSpacing: 0.5,
     paddingVertical: SPACING.xs,
@@ -176,9 +176,9 @@ const styles = StyleSheet.create({
   cardRow: { flexDirection: "row", alignItems: "center", gap: SPACING.sm },
   colorDot: { width: 10, height: 10, borderRadius: 5 },
   cardInfo: { flex: 1 },
-  name: { fontSize: FONT_SIZE.md, fontWeight: FONT_WEIGHT.medium, color: COLORS.text },
-  nameMuted: { color: COLORS.textMuted },
-  kind: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted, marginTop: 2 },
+  name: { fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.bodyMedium, color: COLORS.ink },
+  nameMuted: { color: COLORS.storm },
+  kind: { fontSize: FONT_SIZE.xs, color: COLORS.storm, marginTop: 2 },
   cardActions: { flexDirection: "row", gap: SPACING.xs },
   iconActionBtn: {
     width: 32,
@@ -188,12 +188,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  iconActionText: { fontSize: FONT_SIZE.md, color: COLORS.textMuted },
+  iconActionText: { fontSize: FONT_SIZE.md, color: COLORS.storm },
   systemBadge: {
     fontSize: FONT_SIZE.xs,
     color: COLORS.textDisabled,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: GLASS.cardBorder,
     paddingHorizontal: SPACING.sm,
     paddingVertical: 2,
     borderRadius: RADIUS.full,

@@ -1,6 +1,7 @@
-import { StyleSheet, Text, TouchableOpacity, View, type StyleProp, type ViewStyle } from "react-native";
+import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
 import { Inbox, Search } from "lucide-react-native";
-import { COLORS, FONT_SIZE, RADIUS, SPACING } from "../../constants/theme";
+import { Button } from "./Button";
+import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
 
 type Variant = "empty" | "no-results";
 
@@ -30,14 +31,18 @@ export function EmptyState({ variant = "empty", title, description, style, actio
   return (
     <View style={[styles.container, style]}>
       <View style={styles.iconWrap}>
-        <Icon size={32} color={COLORS.textMuted} />
+        <Icon size={28} color={COLORS.storm} />
       </View>
       <Text style={styles.title}>{title ?? defaults.title}</Text>
       <Text style={styles.description}>{description ?? defaults.description}</Text>
       {action ? (
-        <TouchableOpacity style={styles.actionBtn} onPress={action.onPress}>
-          <Text style={styles.actionBtnText}>{action.label}</Text>
-        </TouchableOpacity>
+        <Button
+          label={action.label}
+          onPress={action.onPress}
+          variant="ghost"
+          size="sm"
+          style={styles.actionBtn}
+        />
       ) : null}
     </View>
   );
@@ -50,34 +55,33 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingVertical: SPACING.xxxl,
     paddingHorizontal: SPACING.xl,
+    gap: SPACING.sm,
   },
   iconWrap: {
-    marginBottom: SPACING.lg,
-    opacity: 0.5,
+    width: 56,
+    height: 56,
+    borderRadius: RADIUS.lg,
+    backgroundColor: GLASS.card,
+    borderWidth: 1,
+    borderColor: GLASS.cardBorder,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: SPACING.sm,
   },
   title: {
+    fontFamily: FONT_FAMILY.heading,
     fontSize: FONT_SIZE.lg,
-    fontWeight: "600",
-    color: COLORS.text,
-    marginBottom: SPACING.sm,
+    color: COLORS.ink,
     textAlign: "center",
   },
   description: {
+    fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.sm,
-    color: COLORS.textMuted,
+    color: COLORS.storm,
     textAlign: "center",
     lineHeight: 20,
   },
   actionBtn: {
-    marginTop: SPACING.lg,
-    backgroundColor: COLORS.primary,
-    borderRadius: RADIUS.md,
-    paddingVertical: SPACING.sm + 2,
-    paddingHorizontal: SPACING.xl,
-  },
-  actionBtnText: {
-    color: "#FFFFFF",
-    fontSize: FONT_SIZE.sm,
-    fontWeight: "600",
+    marginTop: SPACING.sm,
   },
 });

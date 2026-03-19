@@ -23,7 +23,7 @@ import { Card } from "../../components/ui/Card";
 import { SkeletonCard } from "../../components/ui/Skeleton";
 import { ContactForm } from "../../components/forms/ContactForm";
 import { useToast } from "../../hooks/useToast";
-import { COLORS, FONT_SIZE, FONT_WEIGHT, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
 
 const TYPE_EMOJI: Record<string, string> = {
   person: "👤", company: "🏢", merchant: "🏪",
@@ -158,20 +158,20 @@ const styles = StyleSheet.create({
   },
   avatarText: { fontSize: 18 },
   info: { flex: 1 },
-  name: { fontSize: FONT_SIZE.md, fontWeight: FONT_WEIGHT.medium, color: COLORS.text },
-  type: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted, marginTop: 2 },
+  name: { fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.bodyMedium, color: COLORS.ink },
+  type: { fontSize: FONT_SIZE.xs, color: COLORS.storm, marginTop: 2 },
   archiveBtn: {
     paddingHorizontal: SPACING.sm,
     paddingVertical: 4,
     borderRadius: RADIUS.full,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: GLASS.cardBorder,
   },
-  archiveBtnText: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted },
+  archiveBtnText: { fontSize: FONT_SIZE.xs, color: COLORS.storm },
   archivedSection: { marginTop: SPACING.md, gap: SPACING.sm },
-  archivedLabel: { fontSize: FONT_SIZE.sm, color: COLORS.textMuted, fontWeight: FONT_WEIGHT.medium },
+  archivedLabel: { fontSize: FONT_SIZE.sm, color: COLORS.storm, fontFamily: FONT_FAMILY.bodyMedium },
   archivedCard: { opacity: 0.5, padding: SPACING.md },
-  archivedName: { flex: 1, fontSize: FONT_SIZE.md, color: COLORS.textMuted },
+  archivedName: { flex: 1, fontSize: FONT_SIZE.md, color: COLORS.storm },
   restoreText: { fontSize: FONT_SIZE.xs, color: COLORS.primary },
   fab: {
     position: "absolute",

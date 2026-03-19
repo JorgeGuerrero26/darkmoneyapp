@@ -15,7 +15,7 @@ import { useAuth } from "../../lib/auth-context";
 import { humanizeError } from "../../lib/errors";
 import { Input } from "../../components/ui/Input";
 import { Button } from "../../components/ui/Button";
-import { COLORS, FONT_SIZE, FONT_WEIGHT, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING } from "../../constants/theme";
 
 type FormErrors = {
   fullName?: string;

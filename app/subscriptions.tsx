@@ -30,7 +30,7 @@ import { ScreenHeader } from "../components/layout/ScreenHeader";
 import { SubscriptionForm } from "../components/forms/SubscriptionForm";
 import { formatCurrency } from "../components/ui/AmountDisplay";
 import { useToast } from "../hooks/useToast";
-import { COLORS, FONT_SIZE, FONT_WEIGHT, RADIUS, SPACING } from "../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../constants/theme";
 
 export default function SubscriptionsScreen() {
   const insets = useSafeAreaInsets();
@@ -211,22 +211,22 @@ const styles = StyleSheet.create({
   section: { gap: SPACING.sm },
   sectionTitle: {
     fontSize: FONT_SIZE.sm,
-    fontWeight: FONT_WEIGHT.semibold,
-    color: COLORS.textMuted,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    color: COLORS.storm,
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
   row: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: SPACING.sm },
   info: { flex: 1, gap: 2 },
-  name: { fontSize: FONT_SIZE.md, fontWeight: FONT_WEIGHT.semibold, color: COLORS.text },
-  vendor: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted },
+  name: { fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.ink },
+  vendor: { fontSize: FONT_SIZE.xs, color: COLORS.storm },
   amounts: { alignItems: "flex-end", gap: 2 },
-  amount: { fontSize: FONT_SIZE.md, fontWeight: FONT_WEIGHT.bold, color: COLORS.expense },
-  amountMuted: { color: COLORS.textMuted },
-  freq: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted },
+  amount: { fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.heading, color: COLORS.expense },
+  amountMuted: { color: COLORS.storm },
+  freq: { fontSize: FONT_SIZE.xs, color: COLORS.storm },
   metaRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: SPACING.sm },
-  nextDue: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted },
-  monthly: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted },
+  nextDue: { fontSize: FONT_SIZE.xs, color: COLORS.storm },
+  monthly: { fontSize: FONT_SIZE.xs, color: COLORS.storm },
   actions: { flexDirection: "row", gap: SPACING.sm },
   actionBtn: {
     flex: 1,
@@ -234,12 +234,12 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.md,
     alignItems: "center",
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: GLASS.cardBorder,
   },
   actionBtnSecondary: { backgroundColor: "transparent" },
   actionBtnDanger: { backgroundColor: "transparent", borderColor: COLORS.danger + "66" },
-  actionBtnText: { fontSize: FONT_SIZE.xs, fontWeight: FONT_WEIGHT.medium },
-  actionBtnTextSecondary: { color: COLORS.textMuted },
+  actionBtnText: { fontSize: FONT_SIZE.xs, fontFamily: FONT_FAMILY.bodyMedium },
+  actionBtnTextSecondary: { color: COLORS.storm },
   actionBtnTextDanger: { color: COLORS.danger },
   fab: {
     position: "absolute",

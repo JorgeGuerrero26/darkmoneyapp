@@ -3,7 +3,7 @@ import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useUiStore } from "../../store/ui-store";
-import { COLORS, FONT_SIZE, FONT_WEIGHT, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
 import { TOAST_DURATION_MS } from "../../constants/config";
 
 export function ToastContainer() {
@@ -130,10 +130,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: SPACING.md,
-    backgroundColor: COLORS.bgCard,
+    backgroundColor: COLORS.mist,
     borderRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: GLASS.cardBorder,
     borderLeftWidth: 3,
     paddingVertical: SPACING.md,
     paddingRight: SPACING.lg,
@@ -159,14 +159,14 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   icon: {
+    fontFamily: FONT_FAMILY.bodySemibold,
     fontSize: FONT_SIZE.sm,
-    fontWeight: FONT_WEIGHT.bold,
   },
   message: {
     flex: 1,
+    fontFamily: FONT_FAMILY.bodyMedium,
     fontSize: FONT_SIZE.sm,
-    fontWeight: FONT_WEIGHT.medium,
-    color: COLORS.text,
+    color: COLORS.ink,
     lineHeight: 18,
   },
 });

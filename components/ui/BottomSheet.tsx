@@ -12,7 +12,8 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { COLORS, FONT_SIZE, FONT_WEIGHT, RADIUS, SPACING } from "../../constants/theme";
+import { X } from "lucide-react-native";
+import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
 
 const SCREEN_HEIGHT = Dimensions.get("window").height;
 const DISMISS_THRESHOLD = 80;
@@ -25,16 +26,9 @@ type Props = {
   snapHeight?: number;
 };
 
-export function BottomSheet({
-  visible,
-  onClose,
-  title,
-  children,
-  snapHeight = 0.75,
-}: Props) {
+export function BottomSheet({ visible, onClose, title, children, snapHeight = 0.75 }: Props) {
   const insets = useSafeAreaInsets();
   const translateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
-  // Track whether we're mid-swipe to avoid double-animating
   const isSwiping = useRef(false);
 
   useEffect(() => {
@@ -47,7 +41,6 @@ export function BottomSheet({
         friction: 11,
       }).start();
     } else if (!isSwiping.current) {
-      // Only run close animation if not already being dismissed by swipe
       Animated.timing(translateY, {
         toValue: SCREEN_HEIGHT,
         duration: 250,
@@ -114,8 +107,8 @@ export function BottomSheet({
         {title ? (
           <View style={styles.header}>
             <Text style={styles.title}>{title}</Text>
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-              <Text style={styles.closeText}>✕</Text>
+            <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={12}>
+              <X size={18} color={COLORS.storm} />
             </TouchableOpacity>
           </View>
         ) : null}
@@ -135,19 +128,20 @@ export function BottomSheet({
 const styles = StyleSheet.create({
   overlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.55)",
+    backgroundColor: "rgba(0,0,0,0.6)",
   },
   sheet: {
     position: "absolute",
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: COLORS.bgCard,
+    backgroundColor: COLORS.void,
     borderTopLeftRadius: RADIUS.xl,
     borderTopRightRadius: RADIUS.xl,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderBottomWidth: 0,
+    borderTopWidth: 0.5,
+    borderLeftWidth: 0.5,
+    borderRightWidth: 0.5,
+    borderColor: GLASS.sheetBorder,
   },
   handleWrap: {
     alignItems: "center",
@@ -155,26 +149,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.xxxl,
   },
   handle: {
-    width: 40,
+    width: 36,
     height: 4,
     borderRadius: 2,
-    backgroundColor: COLORS.border,
+    backgroundColor: GLASS.handle,
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: SPACING.lg,
     paddingBottom: SPACING.md,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    borderBottomWidth: 0.5,
+    borderBottomColor: GLASS.sheetBorder,
   },
   title: {
     flex: 1,
+    fontFamily: FONT_FAMILY.heading,
     fontSize: FONT_SIZE.lg,
-    fontWeight: FONT_WEIGHT.bold,
-    color: COLORS.text,
+    color: COLORS.ink,
   },
   closeBtn: { padding: SPACING.xs },
-  closeText: { fontSize: FONT_SIZE.md, color: COLORS.textMuted },
   content: { padding: SPACING.lg, gap: SPACING.md },
 });

@@ -21,7 +21,7 @@ import { EmptyState } from "../../components/ui/EmptyState";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { formatCurrency } from "../../components/ui/AmountDisplay";
 import { AccountForm } from "../../components/forms/AccountForm";
-import { COLORS, FONT_SIZE, FONT_WEIGHT, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, SPACING } from "../../constants/theme";
 
 export default function AccountsScreen() {
   const insets = useSafeAreaInsets();
@@ -125,13 +125,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingBottom: SPACING.sm,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    borderBottomColor: GLASS.separator,
     marginBottom: SPACING.sm,
   },
-  summaryLabel: { fontSize: FONT_SIZE.sm, color: COLORS.textMuted },
-  summaryAmount: { fontSize: FONT_SIZE.lg, fontWeight: FONT_WEIGHT.bold, color: COLORS.text },
+  summaryLabel: { fontSize: FONT_SIZE.sm, color: COLORS.storm },
+  summaryAmount: { fontSize: FONT_SIZE.lg, fontFamily: FONT_FAMILY.heading, color: COLORS.ink },
   archivedSection: { marginTop: SPACING.md },
-  archivedLabel: { fontSize: FONT_SIZE.sm, color: COLORS.textMuted, fontWeight: FONT_WEIGHT.medium },
+  archivedLabel: { fontSize: FONT_SIZE.sm, color: COLORS.storm, fontFamily: FONT_FAMILY.bodyMedium },
   fab: {
     position: "absolute",
     right: SPACING.lg,

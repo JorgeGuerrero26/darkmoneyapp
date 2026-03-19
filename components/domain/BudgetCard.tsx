@@ -3,7 +3,7 @@ import { AlertTriangle, Zap } from "lucide-react-native";
 import { Card } from "../ui/Card";
 import { ProgressBar } from "../ui/ProgressBar";
 import { formatCurrency } from "../ui/AmountDisplay";
-import { COLORS, FONT_SIZE, FONT_WEIGHT, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING } from "../../constants/theme";
 import type { BudgetOverview } from "../../types/domain";
 
 type Props = {
@@ -13,25 +13,21 @@ type Props = {
 
 export function BudgetCard({ budget, onPress }: Props) {
   const statusColor = budget.isOverLimit
-    ? COLORS.danger
+    ? COLORS.rosewood
     : budget.isNearLimit
-      ? COLORS.warning
-      : COLORS.success;
+      ? COLORS.gold
+      : COLORS.pine;
 
   return (
     <Card onPress={onPress}>
       <View style={styles.header}>
         <View style={styles.info}>
-          <Text style={styles.name} numberOfLines={1}>
-            {budget.name}
-          </Text>
+          <Text style={styles.name} numberOfLines={1}>{budget.name}</Text>
           <Text style={styles.scope}>{budget.scopeLabel}</Text>
         </View>
-        <View style={styles.amounts}>
-          <Text style={[styles.percent, { color: statusColor }]}>
-            {Math.round(budget.usedPercent)}%
-          </Text>
-        </View>
+        <Text style={[styles.percent, { color: statusColor }]}>
+          {Math.round(budget.usedPercent)}%
+        </Text>
       </View>
 
       <View style={styles.progressWrap}>
@@ -49,13 +45,13 @@ export function BudgetCard({ budget, onPress }: Props) {
 
       {budget.isOverLimit ? (
         <View style={styles.alertRow}>
-          <AlertTriangle size={12} color={COLORS.danger} />
-          <Text style={styles.overLimitLabel}>Presupuesto excedido</Text>
+          <AlertTriangle size={12} color={COLORS.rosewood} />
+          <Text style={[styles.alertLabel, { color: COLORS.rosewood }]}>Presupuesto excedido</Text>
         </View>
       ) : budget.isNearLimit ? (
         <View style={styles.alertRow}>
-          <Zap size={12} color={COLORS.warning} />
-          <Text style={styles.nearLimitLabel}>Cerca del límite</Text>
+          <Zap size={12} color={COLORS.gold} />
+          <Text style={[styles.alertLabel, { color: COLORS.gold }]}>Cerca del límite</Text>
         </View>
       ) : null}
     </Card>
@@ -71,23 +67,21 @@ const styles = StyleSheet.create({
   },
   info: {
     flex: 1,
-    gap: 2,
+    gap: 3,
   },
   name: {
+    fontFamily: FONT_FAMILY.bodySemibold,
     fontSize: FONT_SIZE.md,
-    fontWeight: FONT_WEIGHT.semibold,
-    color: COLORS.text,
+    color: COLORS.ink,
   },
   scope: {
+    fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.xs,
-    color: COLORS.textMuted,
-  },
-  amounts: {
-    alignItems: "flex-end",
+    color: COLORS.storm,
   },
   percent: {
-    fontSize: FONT_SIZE.xl,
-    fontWeight: FONT_WEIGHT.bold,
+    fontFamily: FONT_FAMILY.heading,
+    fontSize: FONT_SIZE.xxl,
   },
   progressWrap: {
     marginBottom: SPACING.sm,
@@ -97,12 +91,14 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   spent: {
+    fontFamily: FONT_FAMILY.bodyMedium,
     fontSize: FONT_SIZE.sm,
-    color: COLORS.text,
+    color: COLORS.ink,
   },
   limit: {
+    fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.sm,
-    color: COLORS.textMuted,
+    color: COLORS.storm,
   },
   alertRow: {
     flexDirection: "row",
@@ -110,14 +106,8 @@ const styles = StyleSheet.create({
     gap: 4,
     marginTop: SPACING.sm,
   },
-  overLimitLabel: {
+  alertLabel: {
+    fontFamily: FONT_FAMILY.bodySemibold,
     fontSize: FONT_SIZE.xs,
-    color: COLORS.danger,
-    fontWeight: FONT_WEIGHT.semibold,
-  },
-  nearLimitLabel: {
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.warning,
-    fontWeight: FONT_WEIGHT.semibold,
   },
 });

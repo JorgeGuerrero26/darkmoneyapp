@@ -30,7 +30,7 @@ import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { ScreenHeader } from "../components/layout/ScreenHeader";
 import { useToast } from "../hooks/useToast";
-import { COLORS, FONT_SIZE, FONT_WEIGHT, RADIUS, SPACING } from "../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../constants/theme";
 import type { WorkspaceRole } from "../types/domain";
 
 const ROLE_OPTIONS: { label: string; value: Exclude<WorkspaceRole, "owner"> }[] = [
@@ -471,8 +471,8 @@ const styles = StyleSheet.create({
   content: { padding: SPACING.lg, gap: SPACING.lg, paddingBottom: SPACING.xxxl },
   sectionTitle: {
     fontSize: FONT_SIZE.sm,
-    fontWeight: FONT_WEIGHT.semibold,
-    color: COLORS.textMuted,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    color: COLORS.storm,
     textTransform: "uppercase",
     letterSpacing: 0.5,
     marginBottom: SPACING.md,
@@ -487,7 +487,7 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     marginBottom: SPACING.lg,
   },
-  avatarText: { fontSize: FONT_SIZE.xxl, fontWeight: FONT_WEIGHT.bold, color: "#FFF" },
+  avatarText: { fontSize: FONT_SIZE.xxl, fontFamily: FONT_FAMILY.heading, color: "#FFF" },
   form: { gap: SPACING.md },
   disabledInput: { opacity: 0.5 },
   saveButton: { marginTop: SPACING.lg },
@@ -499,13 +499,13 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingVertical: SPACING.sm,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    borderBottomColor: GLASS.separator,
   },
   wsRowActive: { backgroundColor: COLORS.primary + "11", marginHorizontal: -SPACING.md, paddingHorizontal: SPACING.md, borderRadius: RADIUS.sm },
   wsInfo: { gap: 2 },
-  wsName: { fontSize: FONT_SIZE.md, fontWeight: FONT_WEIGHT.medium, color: COLORS.text },
-  wsKind: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted },
-  wsActiveBadge: { fontSize: FONT_SIZE.xs, color: COLORS.primary, fontWeight: FONT_WEIGHT.semibold },
+  wsName: { fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.bodyMedium, color: COLORS.ink },
+  wsKind: { fontSize: FONT_SIZE.xs, color: COLORS.storm },
+  wsActiveBadge: { fontSize: FONT_SIZE.xs, color: COLORS.primary, fontFamily: FONT_FAMILY.bodySemibold },
   wsActions: { flexDirection: "row", gap: SPACING.sm, marginTop: SPACING.md, flexWrap: "wrap" },
   wsActionBtn: {
     paddingHorizontal: SPACING.md,
@@ -514,7 +514,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.primary,
   },
-  wsActionText: { fontSize: FONT_SIZE.sm, color: COLORS.primary, fontWeight: FONT_WEIGHT.medium },
+  wsActionText: { fontSize: FONT_SIZE.sm, color: COLORS.primary, fontFamily: FONT_FAMILY.bodyMedium },
   signOutButton: {
     paddingVertical: SPACING.md,
     alignItems: "center",
@@ -523,27 +523,27 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.danger,
   },
-  signOutText: { color: COLORS.danger, fontWeight: FONT_WEIGHT.semibold, fontSize: FONT_SIZE.md },
+  signOutText: { color: COLORS.danger, fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.md },
   switchRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   switchInfo: { flex: 1, gap: 2, marginRight: SPACING.md },
-  switchLabel: { fontSize: FONT_SIZE.sm, fontWeight: FONT_WEIGHT.medium, color: COLORS.text },
-  switchDesc: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted },
+  switchLabel: { fontSize: FONT_SIZE.sm, fontFamily: FONT_FAMILY.bodyMedium, color: COLORS.ink },
+  switchDesc: { fontSize: FONT_SIZE.xs, color: COLORS.storm },
   // Sheet styles
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
   sheet: {
-    backgroundColor: COLORS.bgCard,
+    backgroundColor: COLORS.mist,
     borderTopLeftRadius: RADIUS.xl,
     borderTopRightRadius: RADIUS.xl,
     padding: SPACING.lg,
     gap: SPACING.md,
   },
-  sheetTitle: { fontSize: FONT_SIZE.lg, fontWeight: FONT_WEIGHT.bold, color: COLORS.text, textAlign: "center" },
-  sheetSubtitle: { fontSize: FONT_SIZE.sm, color: COLORS.textMuted, textAlign: "center", marginTop: -SPACING.sm },
+  sheetTitle: { fontSize: FONT_SIZE.lg, fontFamily: FONT_FAMILY.heading, color: COLORS.ink, textAlign: "center" },
+  sheetSubtitle: { fontSize: FONT_SIZE.sm, color: COLORS.storm, textAlign: "center", marginTop: -SPACING.sm },
   sheetBtn: { marginTop: SPACING.sm },
   fieldLabel: {
     fontSize: FONT_SIZE.xs,
-    fontWeight: FONT_WEIGHT.semibold,
-    color: COLORS.textMuted,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    color: COLORS.storm,
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
@@ -554,11 +554,11 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.xs + 2,
     borderRadius: RADIUS.full,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: GLASS.cardBorder,
     alignItems: "center",
   },
   rolePillActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  rolePillText: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted, fontWeight: FONT_WEIGHT.medium },
+  rolePillText: { fontSize: FONT_SIZE.xs, color: COLORS.storm, fontFamily: FONT_FAMILY.bodyMedium },
   rolePillTextActive: { color: "#FFF" },
   // Sign out modal
   soOverlay: {
@@ -570,11 +570,11 @@ const styles = StyleSheet.create({
   },
   soCard: {
     width: "100%",
-    backgroundColor: COLORS.bgCard,
+    backgroundColor: COLORS.mist,
     borderRadius: RADIUS.xl,
     padding: SPACING.xl,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: GLASS.sheetBorder,
     alignItems: "center",
     gap: SPACING.sm,
   },
@@ -590,13 +590,13 @@ const styles = StyleSheet.create({
   soIcon: { fontSize: 32 },
   soTitle: {
     fontSize: FONT_SIZE.lg,
-    fontWeight: FONT_WEIGHT.bold,
-    color: COLORS.text,
+    fontFamily: FONT_FAMILY.heading,
+    color: COLORS.ink,
     textAlign: "center",
   },
   soBody: {
     fontSize: FONT_SIZE.sm,
-    color: COLORS.textMuted,
+    color: COLORS.storm,
     textAlign: "center",
     lineHeight: 20,
     marginBottom: SPACING.sm,
@@ -610,7 +610,7 @@ const styles = StyleSheet.create({
   },
   soConfirmText: {
     fontSize: FONT_SIZE.md,
-    fontWeight: FONT_WEIGHT.semibold,
+    fontFamily: FONT_FAMILY.bodySemibold,
     color: "#FFFFFF",
   },
   soCancel: {
@@ -618,6 +618,6 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.sm,
     alignItems: "center",
   },
-  soCancelText: { fontSize: FONT_SIZE.md, color: COLORS.textMuted },
+  soCancelText: { fontSize: FONT_SIZE.md, color: COLORS.storm },
   bioSetupInput: { width: "100%", alignSelf: "stretch" },
 });

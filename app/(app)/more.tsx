@@ -10,7 +10,7 @@ import { useNotificationsQuery } from "../../services/queries/workspace-data";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { Card } from "../../components/ui/Card";
 import { Badge } from "../../components/ui/Badge";
-import { COLORS, FONT_SIZE, FONT_WEIGHT, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, SPACING } from "../../constants/theme";
 
 type MenuItem = {
   Icon: LucideIcon;
@@ -117,13 +117,13 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 10,
-    backgroundColor: COLORS.bgCard,
+    backgroundColor: GLASS.card,
     alignItems: "center",
     justifyContent: "center",
   },
   menuInfo: { flex: 1, gap: 2 },
-  menuTitle: { fontSize: FONT_SIZE.md, fontWeight: FONT_WEIGHT.medium, color: COLORS.text },
-  menuSubtitle: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted },
+  menuTitle: { fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.bodyMedium, color: COLORS.ink },
+  menuSubtitle: { fontSize: FONT_SIZE.xs, color: COLORS.storm },
   signOutButton: {
     marginTop: SPACING.lg,
     paddingVertical: SPACING.md,
@@ -133,5 +133,5 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.danger,
   },
-  signOutText: { color: COLORS.danger, fontWeight: FONT_WEIGHT.semibold, fontSize: FONT_SIZE.md },
+  signOutText: { color: COLORS.danger, fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.md },
 });

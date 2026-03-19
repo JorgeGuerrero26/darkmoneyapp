@@ -25,7 +25,7 @@ import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { BudgetForm } from "../../components/forms/BudgetForm";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { useToast } from "../../hooks/useToast";
-import { COLORS, FONT_SIZE, FONT_WEIGHT, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
 
 export default function BudgetsScreen() {
   const insets = useSafeAreaInsets();
@@ -172,12 +172,12 @@ const actionStyles = StyleSheet.create({
     borderRadius: RADIUS.md,
     alignItems: "center",
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: GLASS.cardBorder,
   },
   editBtn: {},
   deleteBtn: { borderColor: COLORS.danger + "66" },
-  editText: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted, fontWeight: FONT_WEIGHT.medium },
-  deleteText: { fontSize: FONT_SIZE.xs, color: COLORS.danger, fontWeight: FONT_WEIGHT.medium },
+  editText: { fontSize: FONT_SIZE.xs, color: COLORS.storm, fontFamily: FONT_FAMILY.bodyMedium },
+  deleteText: { fontSize: FONT_SIZE.xs, color: COLORS.danger, fontFamily: FONT_FAMILY.bodyMedium },
 });
 
 const styles = StyleSheet.create({
@@ -186,8 +186,8 @@ const styles = StyleSheet.create({
   section: { gap: SPACING.sm },
   sectionTitle: {
     fontSize: FONT_SIZE.sm,
-    fontWeight: FONT_WEIGHT.semibold,
-    color: COLORS.textMuted,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    color: COLORS.storm,
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },

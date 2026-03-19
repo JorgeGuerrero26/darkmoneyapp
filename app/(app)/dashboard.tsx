@@ -40,7 +40,7 @@ import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { formatCurrency } from "../../components/ui/AmountDisplay";
 import { MovementForm } from "../../components/forms/MovementForm";
 import { WorkspaceSelector } from "../../components/layout/WorkspaceSelector";
-import { COLORS, FONT_SIZE, FONT_WEIGHT, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -824,9 +824,9 @@ export default function DashboardScreen() {
 
 const subStyles = StyleSheet.create({
   sectionTitle: {
+    fontFamily: FONT_FAMILY.bodySemibold,
     fontSize: FONT_SIZE.xs,
-    fontWeight: FONT_WEIGHT.semibold,
-    color: COLORS.textMuted,
+    color: COLORS.storm,
     textTransform: "uppercase",
     letterSpacing: 0.6,
     marginBottom: SPACING.sm,
@@ -835,8 +835,10 @@ const subStyles = StyleSheet.create({
   // Toggles
   toggleRow: {
     flexDirection: "row",
-    backgroundColor: COLORS.bgInput,
+    backgroundColor: GLASS.card,
     borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: GLASS.cardBorder,
     padding: 3,
     gap: 3,
   },
@@ -849,35 +851,32 @@ const subStyles = StyleSheet.create({
     justifyContent: "center",
   },
   toggleBtnActive: {
-    backgroundColor: COLORS.bgCard,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.15,
-    shadowRadius: 2,
-    elevation: 2,
+    backgroundColor: GLASS.cardActive,
+    borderWidth: 1,
+    borderColor: GLASS.cardActiveBorder,
   },
-  toggleText: { fontSize: FONT_SIZE.sm, color: COLORS.textMuted, fontWeight: FONT_WEIGHT.medium },
-  toggleTextActive: { color: COLORS.text, fontWeight: FONT_WEIGHT.semibold },
-  proBadge: { fontSize: FONT_SIZE.xs - 1, color: COLORS.gold, fontWeight: FONT_WEIGHT.bold },
+  toggleText: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.sm, color: COLORS.storm },
+  toggleTextActive: { fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.ink },
+  proBadge: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.xs - 1, color: COLORS.gold },
 
   // KPI
   kpiGrid: { flexDirection: "row", flexWrap: "wrap", gap: SPACING.sm },
   kpiCard: {
     flex: 1,
     minWidth: "45%",
-    backgroundColor: COLORS.bgCard,
-    borderRadius: RADIUS.lg,
+    backgroundColor: GLASS.card,
+    borderRadius: RADIUS.xl,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: GLASS.cardBorder,
     padding: SPACING.md,
     gap: 4,
   },
   kpiCardLarge: {},
-  kpiLabel: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted, fontWeight: FONT_WEIGHT.medium },
-  kpiValue: { fontSize: FONT_SIZE.md, fontWeight: FONT_WEIGHT.bold, color: COLORS.text },
+  kpiLabel: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.xs, color: COLORS.storm, textTransform: "uppercase", letterSpacing: 0.3 },
+  kpiValue: { fontFamily: FONT_FAMILY.heading, fontSize: FONT_SIZE.md, color: COLORS.ink },
   kpiValueLarge: { fontSize: FONT_SIZE.lg },
-  kpiChange: { fontSize: FONT_SIZE.xs, fontWeight: FONT_WEIGHT.medium },
-  kpiChangePlaceholder: { fontSize: FONT_SIZE.xs },
+  kpiChange: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.xs },
+  kpiChangePlaceholder: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs },
 
   // Chart
   chartRow: {
@@ -890,19 +889,19 @@ const subStyles = StyleSheet.create({
   chartCol: { flex: 1, alignItems: "center", gap: 4 },
   chartBars: { flexDirection: "row", alignItems: "flex-end", gap: 1, width: "100%" },
   chartBar: { flex: 1, borderRadius: 2, minHeight: 0 },
-  chartLabel: { fontSize: 9, color: COLORS.textMuted, textAlign: "center" },
+  chartLabel: { fontFamily: FONT_FAMILY.body, fontSize: 9, color: COLORS.storm, textAlign: "center" },
   chartLegend: { flexDirection: "row", gap: SPACING.lg, marginTop: SPACING.xs },
   legendItem: { flexDirection: "row", alignItems: "center", gap: 4 },
   legendDot: { width: 8, height: 8, borderRadius: 4 },
-  legendText: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted },
+  legendText: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
 
   // Accounts
   accountsRow: { flexDirection: "row", gap: SPACING.sm, paddingVertical: SPACING.xs },
   accountChip: {
-    backgroundColor: COLORS.bgCard,
-    borderRadius: RADIUS.lg,
+    backgroundColor: GLASS.card,
+    borderRadius: RADIUS.xl,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: GLASS.cardBorder,
     padding: SPACING.md,
     alignItems: "center",
     gap: SPACING.xs,
@@ -912,12 +911,12 @@ const subStyles = StyleSheet.create({
   accountChipIcon: {
     width: 36,
     height: 36,
-    borderRadius: RADIUS.md,
+    borderRadius: RADIUS.lg,
     alignItems: "center",
     justifyContent: "center",
   },
-  accountChipName: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted, textAlign: "center" },
-  accountChipBalance: { fontSize: FONT_SIZE.sm, fontWeight: FONT_WEIGHT.bold, color: COLORS.text, textAlign: "center" },
+  accountChipName: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm, textAlign: "center" },
+  accountChipBalance: { fontFamily: FONT_FAMILY.heading, fontSize: FONT_SIZE.sm, color: COLORS.ink, textAlign: "center" },
 
   // Upcoming
   upcomingRow: {
@@ -925,64 +924,64 @@ const subStyles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingVertical: SPACING.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    borderBottomWidth: 0.5,
+    borderBottomColor: GLASS.separator,
   },
   upcomingLeft: { flex: 1, gap: 2 },
-  upcomingLabel: { fontSize: FONT_SIZE.sm, fontWeight: FONT_WEIGHT.medium, color: COLORS.text },
-  upcomingDate: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted },
-  upcomingAmount: { fontSize: FONT_SIZE.sm, fontWeight: FONT_WEIGHT.semibold, color: COLORS.expense },
+  upcomingLabel: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.sm, color: COLORS.ink },
+  upcomingDate: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
+  upcomingAmount: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.sm, color: COLORS.rosewood },
 
   // Budgets
   budgetRow: {
-    backgroundColor: COLORS.bgCard,
-    borderRadius: RADIUS.lg,
+    backgroundColor: GLASS.card,
+    borderRadius: RADIUS.xl,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: GLASS.cardBorder,
     padding: SPACING.md,
     gap: SPACING.xs,
     marginBottom: SPACING.sm,
   },
   budgetHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  budgetName: { flex: 1, fontSize: FONT_SIZE.sm, fontWeight: FONT_WEIGHT.medium, color: COLORS.text },
-  budgetPct: { fontSize: FONT_SIZE.sm, fontWeight: FONT_WEIGHT.bold },
-  budgetMeta: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted },
+  budgetName: { flex: 1, fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.sm, color: COLORS.ink },
+  budgetPct: { fontFamily: FONT_FAMILY.heading, fontSize: FONT_SIZE.sm },
+  budgetMeta: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
 
   // Obligations advanced
-  obGroupTitle: { fontSize: FONT_SIZE.xs, fontWeight: FONT_WEIGHT.semibold, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: SPACING.xs },
+  obGroupTitle: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.xs, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: SPACING.xs },
   obRow: {
     flexDirection: "row",
     alignItems: "center",
     paddingVertical: SPACING.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    borderBottomWidth: 0.5,
+    borderBottomColor: GLASS.separator,
     gap: SPACING.sm,
   },
   obLeft: { flex: 1, gap: 2 },
-  obTitle: { fontSize: FONT_SIZE.sm, fontWeight: FONT_WEIGHT.medium, color: COLORS.text },
-  obCounterparty: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted },
-  obAmount: { fontSize: FONT_SIZE.md, fontWeight: FONT_WEIGHT.bold },
+  obTitle: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.sm, color: COLORS.ink },
+  obCounterparty: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
+  obAmount: { fontFamily: FONT_FAMILY.heading, fontSize: FONT_SIZE.md },
 
   // Category breakdown
   catRow: { gap: SPACING.xs, marginBottom: SPACING.sm },
   catLabelRow: { flexDirection: "row", justifyContent: "space-between" },
-  catName: { fontSize: FONT_SIZE.sm, color: COLORS.text, flex: 1 },
-  catAmount: { fontSize: FONT_SIZE.sm, fontWeight: FONT_WEIGHT.semibold, color: COLORS.expense },
-  catTrack: { height: 6, backgroundColor: COLORS.border, borderRadius: RADIUS.full, overflow: "hidden" },
-  catFill: { height: 6, backgroundColor: COLORS.expense + "99", borderRadius: RADIUS.full },
+  catName: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.sm, color: COLORS.ink, flex: 1 },
+  catAmount: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.sm, color: COLORS.rosewood },
+  catTrack: { height: 6, backgroundColor: GLASS.card, borderRadius: RADIUS.full, overflow: "hidden", borderWidth: 0.5, borderColor: GLASS.cardBorder },
+  catFill: { height: 6, backgroundColor: COLORS.rosewood + "88", borderRadius: RADIUS.full },
 
   // Subscriptions summary
   subHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: SPACING.sm },
-  subTotal: { fontSize: FONT_SIZE.md, fontWeight: FONT_WEIGHT.bold, color: COLORS.expense },
+  subTotal: { fontFamily: FONT_FAMILY.heading, fontSize: FONT_SIZE.md, color: COLORS.rosewood },
   subRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     paddingVertical: SPACING.xs + 2,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    borderBottomWidth: 0.5,
+    borderBottomColor: GLASS.separator,
   },
-  subName: { flex: 1, fontSize: FONT_SIZE.sm, color: COLORS.text },
-  subAmt: { fontSize: FONT_SIZE.sm, color: COLORS.textMuted },
+  subName: { flex: 1, fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.sm, color: COLORS.ink },
+  subAmt: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.storm },
 
   // Health score
   healthHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: SPACING.sm },
@@ -994,24 +993,24 @@ const subStyles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  healthScoreNum: { fontSize: FONT_SIZE.lg, fontWeight: FONT_WEIGHT.bold, lineHeight: FONT_SIZE.lg + 2 },
-  healthScoreOf: { fontSize: 9, color: COLORS.textMuted, lineHeight: 11 },
+  healthScoreNum: { fontFamily: FONT_FAMILY.heading, fontSize: FONT_SIZE.lg, lineHeight: FONT_SIZE.lg + 2 },
+  healthScoreOf: { fontFamily: FONT_FAMILY.body, fontSize: 9, color: COLORS.storm, lineHeight: 11 },
   healthRow: { gap: 4, marginBottom: SPACING.sm },
   healthLabelRow: { flexDirection: "row", justifyContent: "space-between" },
-  healthLabel: { fontSize: FONT_SIZE.xs, color: COLORS.text, fontWeight: FONT_WEIGHT.medium },
-  healthDesc: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted },
-  healthTrack: { height: 5, backgroundColor: COLORS.border, borderRadius: RADIUS.full, overflow: "hidden" },
+  healthLabel: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.xs, color: COLORS.ink },
+  healthDesc: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
+  healthTrack: { height: 5, backgroundColor: GLASS.card, borderRadius: RADIUS.full, overflow: "hidden", borderWidth: 0.5, borderColor: GLASS.cardBorder },
   healthFill: { height: 5, borderRadius: RADIUS.full },
 
   // Pro gate
   proGate: { alignItems: "center", padding: SPACING.xl, gap: SPACING.sm },
   proGateIcon: { fontSize: 32 },
-  proGateTitle: { fontSize: FONT_SIZE.lg, fontWeight: FONT_WEIGHT.bold, color: COLORS.text },
-  proGateBody: { fontSize: FONT_SIZE.sm, color: COLORS.textMuted, textAlign: "center", lineHeight: 20 },
+  proGateTitle: { fontFamily: FONT_FAMILY.heading, fontSize: FONT_SIZE.lg, color: COLORS.ink },
+  proGateBody: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.storm, textAlign: "center", lineHeight: 20 },
 });
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: COLORS.bg },
+  screen: { flex: 1, backgroundColor: COLORS.canvas },
   content: { padding: SPACING.lg, gap: SPACING.lg, paddingBottom: 100 },
   controls: { gap: SPACING.sm },
   fab: {
@@ -1020,19 +1019,19 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: COLORS.primary,
+    backgroundColor: COLORS.pine,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: COLORS.primary,
+    shadowColor: COLORS.pine,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4,
     shadowRadius: 8,
     elevation: 8,
   },
   fabIcon: {
+    fontFamily: FONT_FAMILY.heading,
     fontSize: 28,
-    color: COLORS.textInverse,
-    fontWeight: FONT_WEIGHT.medium,
-    lineHeight: 32,
+    color: COLORS.canvas,
+    lineHeight: 34,
   },
 });

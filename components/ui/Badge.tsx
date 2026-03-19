@@ -1,5 +1,5 @@
 import { StyleSheet, Text, View } from "react-native";
-import { COLORS, FONT_SIZE, RADIUS } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS } from "../../constants/theme";
 
 type Props = {
   count: number;
@@ -18,7 +18,7 @@ export function Badge({ count }: Props) {
 
 const styles = StyleSheet.create({
   badge: {
-    backgroundColor: COLORS.danger,
+    backgroundColor: COLORS.gold,
     borderRadius: RADIUS.full,
     minWidth: 18,
     height: 18,
@@ -27,8 +27,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   label: {
-    color: "#FFFFFF",
+    fontFamily: FONT_FAMILY.bodySemibold,
+    color: COLORS.canvas,
     fontSize: FONT_SIZE.xs - 1,
-    fontWeight: "700",
   },
 });

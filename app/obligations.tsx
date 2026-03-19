@@ -27,7 +27,7 @@ import { ScreenHeader } from "../components/layout/ScreenHeader";
 import { ObligationForm } from "../components/forms/ObligationForm";
 import { PaymentForm } from "../components/forms/PaymentForm";
 import { formatCurrency } from "../components/ui/AmountDisplay";
-import { COLORS, FONT_SIZE, FONT_WEIGHT, RADIUS, SPACING } from "../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../constants/theme";
 
 export default function ObligationsScreen() {
   const insets = useSafeAreaInsets();
@@ -184,12 +184,12 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: COLORS.bg },
   content: { padding: SPACING.lg, gap: SPACING.md, paddingBottom: 100 },
   section: { gap: SPACING.sm },
-  sectionTitle: { fontSize: FONT_SIZE.sm, fontWeight: FONT_WEIGHT.semibold, textTransform: "uppercase", letterSpacing: 0.5 },
+  sectionTitle: { fontSize: FONT_SIZE.sm, fontFamily: FONT_FAMILY.bodySemibold, textTransform: "uppercase", letterSpacing: 0.5 },
   obHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 },
-  obTitle: { flex: 1, fontSize: FONT_SIZE.md, fontWeight: FONT_WEIGHT.semibold, color: COLORS.text },
-  obAmount: { fontSize: FONT_SIZE.md, fontWeight: FONT_WEIGHT.bold },
-  obCounterparty: { fontSize: FONT_SIZE.sm, color: COLORS.textMuted, marginBottom: SPACING.sm },
-  obProgress: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted, marginTop: 4 },
+  obTitle: { flex: 1, fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.ink },
+  obAmount: { fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.heading },
+  obCounterparty: { fontSize: FONT_SIZE.sm, color: COLORS.storm, marginBottom: SPACING.sm },
+  obProgress: { fontSize: FONT_SIZE.xs, color: COLORS.storm, marginTop: 4 },
   obDue: { fontSize: FONT_SIZE.xs, color: COLORS.warning, marginTop: 2 },
   obActions: { flexDirection: "row", gap: SPACING.sm, marginTop: SPACING.sm },
   actionBtn: {
@@ -199,9 +199,9 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
     alignItems: "center",
   },
-  actionBtnSecondary: { backgroundColor: "transparent", borderWidth: 1, borderColor: COLORS.border },
-  actionBtnText: { fontSize: FONT_SIZE.sm, fontWeight: FONT_WEIGHT.medium, color: "#FFFFFF" },
-  actionBtnTextSecondary: { color: COLORS.textMuted },
+  actionBtnSecondary: { backgroundColor: "transparent", borderWidth: 1, borderColor: GLASS.cardBorder },
+  actionBtnText: { fontSize: FONT_SIZE.sm, fontFamily: FONT_FAMILY.bodyMedium, color: "#FFFFFF" },
+  actionBtnTextSecondary: { color: COLORS.storm },
   fab: {
     position: "absolute",
     right: SPACING.lg,
@@ -224,5 +224,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.sm,
     paddingVertical: 2,
   },
-  sharedBadgeText: { fontSize: FONT_SIZE.xs, color: COLORS.income, fontWeight: FONT_WEIGHT.medium },
+  sharedBadgeText: { fontSize: FONT_SIZE.xs, color: COLORS.income, fontFamily: FONT_FAMILY.bodyMedium },
 });

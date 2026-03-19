@@ -1,8 +1,8 @@
 import { StyleSheet, Text, View } from "react-native";
 import { CreditCard, Wallet, Landmark, PiggyBank, TrendingUp, Banknote } from "lucide-react-native";
 import { Card } from "../ui/Card";
-import { AmountDisplay, formatCurrency } from "../ui/AmountDisplay";
-import { COLORS, FONT_SIZE, FONT_WEIGHT, RADIUS, SPACING } from "../../constants/theme";
+import { formatCurrency } from "../ui/AmountDisplay";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING } from "../../constants/theme";
 import type { AccountSummary } from "../../types/domain";
 
 type Props = {
@@ -11,26 +11,26 @@ type Props = {
 };
 
 const ACCOUNT_TYPE_LABELS: Record<string, string> = {
-  checking: "Cuenta corriente",
-  savings: "Ahorro",
+  checking:    "Cuenta corriente",
+  savings:     "Ahorro",
   credit_card: "Tarjeta de crédito",
-  cash: "Efectivo",
-  investment: "Inversión",
-  loan: "Préstamo",
+  cash:        "Efectivo",
+  investment:  "Inversión",
+  loan:        "Préstamo",
   loan_wallet: "Cartera préstamos",
-  bank: "Banco",
-  other: "Otro",
+  bank:        "Banco",
+  other:       "Otro",
 };
 
 const ACCOUNT_TYPE_ICON: Record<string, typeof CreditCard> = {
   credit_card: CreditCard,
-  cash: Banknote,
-  savings: PiggyBank,
-  investment: TrendingUp,
-  bank: Landmark,
-  loan: Wallet,
+  cash:        Banknote,
+  savings:     PiggyBank,
+  investment:  TrendingUp,
+  bank:        Landmark,
+  loan:        Wallet,
   loan_wallet: Wallet,
-  other: Wallet,
+  other:       Wallet,
 };
 
 export function AccountCard({ account, onPress }: Props) {
@@ -40,24 +40,22 @@ export function AccountCard({ account, onPress }: Props) {
 
   return (
     <Card onPress={onPress} style={styles.card}>
-      <View style={styles.header}>
-        <View style={[styles.iconWrap, { backgroundColor: account.color + "33" }]}>
-          <AccountIcon size={18} color={account.color} />
+      <View style={styles.row}>
+        {/* Colored icon — radius 22pt per spec */}
+        <View style={[styles.iconWrap, { backgroundColor: account.color + "22" }]}>
+          <AccountIcon size={20} color={account.color} />
         </View>
+
+        {/* Name + type */}
         <View style={styles.info}>
-          <Text style={styles.name} numberOfLines={1}>
-            {account.name}
-          </Text>
-          <Text style={styles.type}>{typeLabel}</Text>
+          <Text style={styles.name} numberOfLines={1}>{account.name}</Text>
+          <Text style={styles.sub}>{typeLabel} · {account.currencyCode}</Text>
         </View>
-        <View style={styles.balanceWrap}>
-          <Text
-            style={[styles.balance, isNegative ? styles.balanceNegative : styles.balancePositive]}
-          >
-            {formatCurrency(account.currentBalance, account.currencyCode)}
-          </Text>
-          <Text style={styles.currency}>{account.currencyCode}</Text>
-        </View>
+
+        {/* Balance */}
+        <Text style={[styles.balance, isNegative && styles.balanceNeg]}>
+          {formatCurrency(account.currentBalance, account.currencyCode)}
+        </Text>
       </View>
     </Card>
   );
@@ -67,47 +65,38 @@ const styles = StyleSheet.create({
   card: {
     padding: SPACING.md,
   },
-  header: {
+  row: {
     flexDirection: "row",
     alignItems: "center",
     gap: SPACING.md,
   },
   iconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: RADIUS.md,
+    width: 44,
+    height: 44,
+    borderRadius: RADIUS.lg,  // 22pt
     alignItems: "center",
     justifyContent: "center",
   },
   info: {
     flex: 1,
-    gap: 2,
+    gap: 3,
   },
   name: {
+    fontFamily: FONT_FAMILY.bodySemibold,
     fontSize: FONT_SIZE.sm,
-    fontWeight: FONT_WEIGHT.semibold,
-    color: COLORS.text,
+    color: COLORS.ink,
   },
-  type: {
+  sub: {
+    fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.xs,
-    color: COLORS.textMuted,
-  },
-  balanceWrap: {
-    alignItems: "flex-end",
-    gap: 2,
+    color: COLORS.storm,
   },
   balance: {
+    fontFamily: FONT_FAMILY.heading,
     fontSize: FONT_SIZE.md,
-    fontWeight: FONT_WEIGHT.bold,
+    color: COLORS.ink,
   },
-  balancePositive: {
-    color: COLORS.text,
-  },
-  balanceNegative: {
-    color: COLORS.danger,
-  },
-  currency: {
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.textMuted,
+  balanceNeg: {
+    color: COLORS.rosewood,
   },
 });

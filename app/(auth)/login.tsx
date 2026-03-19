@@ -20,7 +20,7 @@ import { useUiStore } from "../../store/ui-store";
 import { humanizeError } from "../../lib/errors";
 import { Input } from "../../components/ui/Input";
 import { Button } from "../../components/ui/Button";
-import { COLORS, FONT_SIZE, FONT_WEIGHT, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
 
 const SECURE_EMAIL_KEY = "darkmoney_bio_email";
 const SECURE_PASS_KEY = "darkmoney_bio_password";
@@ -281,7 +281,7 @@ const styles = StyleSheet.create({
     shadowColor: "#6be4c5", shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.6, shadowRadius: 24, elevation: 12,
   },
-  subtitle: { fontSize: FONT_SIZE.md, color: COLORS.textMuted },
+  subtitle: { fontSize: FONT_SIZE.md, color: COLORS.storm },
   form: { gap: SPACING.lg },
   errorBanner: {
     backgroundColor: COLORS.dangerMuted, borderRadius: 8,
@@ -301,20 +301,20 @@ const styles = StyleSheet.create({
     padding: SPACING.lg,
   },
   bioBtnIcon: { fontSize: 32 },
-  bioBtnTitle: { fontSize: FONT_SIZE.md, fontWeight: FONT_WEIGHT.semibold, color: COLORS.primary },
-  bioBtnSub: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted, marginTop: 2 },
+  bioBtnTitle: { fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.primary },
+  bioBtnSub: { fontSize: FONT_SIZE.xs, color: COLORS.storm, marginTop: 2 },
 
   // Divider
   divider: { flexDirection: "row", alignItems: "center", gap: SPACING.sm },
-  dividerLine: { flex: 1, height: 1, backgroundColor: COLORS.border },
-  dividerText: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted },
+  dividerLine: { flex: 1, height: 1, backgroundColor: GLASS.separator },
+  dividerText: { fontSize: FONT_SIZE.xs, color: COLORS.storm },
 
   submitButton: { marginTop: SPACING.sm },
   forgotLink: { alignItems: "center", paddingVertical: SPACING.sm },
   linkText: { color: COLORS.primary, fontSize: FONT_SIZE.sm },
   footer: { flexDirection: "row", justifyContent: "center", alignItems: "center" },
-  footerText: { color: COLORS.textMuted, fontSize: FONT_SIZE.sm },
-  footerLink: { color: COLORS.primary, fontSize: FONT_SIZE.sm, fontWeight: FONT_WEIGHT.semibold },
+  footerText: { color: COLORS.storm, fontSize: FONT_SIZE.sm },
+  footerLink: { color: COLORS.primary, fontSize: FONT_SIZE.sm, fontFamily: FONT_FAMILY.bodySemibold },
 
   // Enable biometric dialog
   dialogOverlay: {
@@ -322,27 +322,27 @@ const styles = StyleSheet.create({
     alignItems: "center", justifyContent: "center", padding: SPACING.xl,
   },
   dialogCard: {
-    width: "100%", backgroundColor: COLORS.bgCard,
+    width: "100%", backgroundColor: COLORS.mist,
     borderRadius: RADIUS.xl, padding: SPACING.xl,
-    borderWidth: 1, borderColor: COLORS.border,
+    borderWidth: 1, borderColor: GLASS.sheetBorder,
     alignItems: "center", gap: SPACING.sm,
   },
   dialogIcon: { fontSize: 48, marginBottom: SPACING.xs },
   dialogTitle: {
-    fontSize: FONT_SIZE.lg, fontWeight: FONT_WEIGHT.bold,
-    color: COLORS.text, textAlign: "center",
+    fontSize: FONT_SIZE.lg, fontFamily: FONT_FAMILY.heading,
+    color: COLORS.ink, textAlign: "center",
   },
   dialogBody: {
-    fontSize: FONT_SIZE.sm, color: COLORS.textMuted,
+    fontSize: FONT_SIZE.sm, color: COLORS.storm,
     textAlign: "center", lineHeight: 20, marginBottom: SPACING.sm,
   },
   dialogConfirm: {
     width: "100%", backgroundColor: COLORS.primary,
     borderRadius: RADIUS.md, paddingVertical: SPACING.md, alignItems: "center",
   },
-  dialogConfirmText: { fontSize: FONT_SIZE.md, fontWeight: FONT_WEIGHT.semibold, color: COLORS.textInverse },
+  dialogConfirmText: { fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.textInverse },
   dialogCancel: {
     width: "100%", paddingVertical: SPACING.sm, alignItems: "center",
   },
-  dialogCancelText: { fontSize: FONT_SIZE.md, color: COLORS.textMuted },
+  dialogCancelText: { fontSize: FONT_SIZE.md, color: COLORS.storm },
 });

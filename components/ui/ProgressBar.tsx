@@ -1,7 +1,5 @@
-import { StyleSheet, View } from "react-native";
-import { COLORS, RADIUS } from "../../constants/theme";
-
-import type { StyleProp, ViewStyle } from "react-native";
+import { StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
+import { COLORS, GLASS, RADIUS } from "../../constants/theme";
 
 type Props = {
   percent: number; // 0–100
@@ -10,24 +8,17 @@ type Props = {
   style?: StyleProp<ViewStyle>;
 };
 
-export function ProgressBar({ percent, alertPercent = 80, height = 8, style }: Props) {
+export function ProgressBar({ percent, alertPercent = 80, height = 6, style }: Props) {
   const clamped = Math.min(Math.max(percent, 0), 100);
 
-  let fillColor = COLORS.budgetGood;
-  if (clamped >= 100) fillColor = COLORS.budgetOver;
-  else if (clamped >= alertPercent) fillColor = COLORS.budgetWarn;
+  let fillColor = COLORS.pine;
+  if (clamped >= 100) fillColor = COLORS.rosewood;
+  else if (clamped >= alertPercent) fillColor = COLORS.gold;
 
   return (
     <View style={[styles.track, { height }, style]}>
       <View
-        style={[
-          styles.fill,
-          {
-            width: `${clamped}%`,
-            backgroundColor: fillColor,
-            height,
-          },
-        ]}
+        style={[styles.fill, { width: `${clamped}%`, backgroundColor: fillColor, height }]}
       />
     </View>
   );
@@ -36,9 +27,11 @@ export function ProgressBar({ percent, alertPercent = 80, height = 8, style }: P
 const styles = StyleSheet.create({
   track: {
     width: "100%",
-    backgroundColor: COLORS.border,
+    backgroundColor: GLASS.card,
     borderRadius: RADIUS.full,
     overflow: "hidden",
+    borderWidth: 0.5,
+    borderColor: GLASS.cardBorder,
   },
   fill: {
     borderRadius: RADIUS.full,
