@@ -16,7 +16,7 @@ import { Button } from "../ui/Button";
 import { CurrencyInput } from "../ui/CurrencyInput";
 import { DatePickerInput } from "../ui/DatePickerInput";
 import { formatCurrency } from "../ui/AmountDisplay";
-import { COLORS, FONT_SIZE, FONT_WEIGHT, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
 
 type Props = {
   visible: boolean;
@@ -187,57 +187,57 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation }: Props) 
 
 const styles = StyleSheet.create({
   obligationInfo: {
-    backgroundColor: COLORS.bgCard,
+    backgroundColor: GLASS.card,
     borderRadius: RADIUS.md,
     padding: SPACING.md,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: GLASS.cardBorder,
     gap: 4,
   },
-  obligationTitle: { fontSize: FONT_SIZE.md, fontWeight: FONT_WEIGHT.semibold, color: COLORS.text },
-  obligationMeta: { fontSize: FONT_SIZE.sm, color: COLORS.textMuted },
+  obligationTitle: { fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.ink },
+  obligationMeta: { fontSize: FONT_SIZE.sm, color: COLORS.storm },
   label: {
     fontSize: FONT_SIZE.xs,
-    fontWeight: FONT_WEIGHT.semibold,
-    color: COLORS.textMuted,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    color: COLORS.storm,
     textTransform: "uppercase",
     letterSpacing: 0.5,
     marginBottom: SPACING.xs,
   },
   textInput: {
-    backgroundColor: COLORS.bgInput,
+    backgroundColor: GLASS.card,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: GLASS.cardBorder,
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
     fontSize: FONT_SIZE.md,
-    color: COLORS.text,
+    color: COLORS.ink,
   },
   switchRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: COLORS.bgCard,
+    backgroundColor: GLASS.card,
     borderRadius: RADIUS.md,
     padding: SPACING.md,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: GLASS.cardBorder,
   },
   switchInfo: { flex: 1, gap: 2, marginRight: SPACING.md },
-  switchLabel: { fontSize: FONT_SIZE.sm, fontWeight: FONT_WEIGHT.medium, color: COLORS.text },
-  switchDesc: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted },
+  switchLabel: { fontSize: FONT_SIZE.sm, fontFamily: FONT_FAMILY.bodyMedium, color: COLORS.ink },
+  switchDesc: { fontSize: FONT_SIZE.xs, color: COLORS.storm },
   pillRow: { flexDirection: "row", gap: SPACING.sm },
   pill: {
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.xs + 2,
     borderRadius: RADIUS.full,
-    backgroundColor: COLORS.bgCard,
+    backgroundColor: GLASS.card,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: GLASS.cardBorder,
   },
-  pillActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  pillText: { fontSize: FONT_SIZE.sm, color: COLORS.textMuted, fontWeight: FONT_WEIGHT.medium },
-  pillTextActive: { color: "#FFFFFF" },
+  pillActive: { backgroundColor: COLORS.pine, borderColor: COLORS.pine },
+  pillText: { fontSize: FONT_SIZE.sm, color: COLORS.storm, fontFamily: FONT_FAMILY.bodyMedium },
+  pillTextActive: { color: COLORS.canvas },
   submitBtn: { marginTop: SPACING.sm },
 });

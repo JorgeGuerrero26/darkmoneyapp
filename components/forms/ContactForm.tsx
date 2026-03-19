@@ -12,7 +12,7 @@ import {
 import type { CounterpartyOverview } from "../../types/domain";
 import { BottomSheet } from "../ui/BottomSheet";
 import { Button } from "../ui/Button";
-import { COLORS, FONT_SIZE, FONT_WEIGHT, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
 
 const TYPE_OPTIONS: { value: CounterpartyFormInput["type"]; label: string; emoji: string }[] = [
   { value: "person",   label: "Persona",   emoji: "👤" },
@@ -216,21 +216,21 @@ export function ContactForm({ visible, onClose, onSuccess, editContact }: Props)
 const styles = StyleSheet.create({
   label: {
     fontSize: FONT_SIZE.xs,
-    fontWeight: FONT_WEIGHT.semibold,
-    color: COLORS.textMuted,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    color: COLORS.storm,
     textTransform: "uppercase",
     letterSpacing: 0.5,
     marginBottom: SPACING.xs,
   },
   textInput: {
-    backgroundColor: COLORS.bgInput,
+    backgroundColor: GLASS.card,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: GLASS.cardBorder,
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
     fontSize: FONT_SIZE.md,
-    color: COLORS.text,
+    color: COLORS.ink,
   },
   textArea: { minHeight: 72 },
   inputError: { borderColor: COLORS.danger },
@@ -244,12 +244,12 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.sm,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bgCard,
+    borderColor: GLASS.cardBorder,
+    backgroundColor: GLASS.card,
   },
-  typeBtnActive: { borderColor: COLORS.primary, backgroundColor: COLORS.primary + "22" },
+  typeBtnActive: { borderColor: GLASS.cardActiveBorder, backgroundColor: GLASS.cardActive },
   typeEmoji: { fontSize: 16 },
-  typeLabel: { fontSize: FONT_SIZE.sm, color: COLORS.textMuted, fontWeight: FONT_WEIGHT.medium },
-  typeLabelActive: { color: COLORS.primary },
+  typeLabel: { fontSize: FONT_SIZE.sm, color: COLORS.storm, fontFamily: FONT_FAMILY.bodyMedium },
+  typeLabelActive: { color: COLORS.pine },
   submitBtn: { marginTop: SPACING.sm },
 });

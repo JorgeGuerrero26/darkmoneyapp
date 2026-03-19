@@ -25,7 +25,7 @@ import { BottomSheet } from "../ui/BottomSheet";
 import { Button } from "../ui/Button";
 import { CurrencyInput } from "../ui/CurrencyInput";
 import { DatePickerInput } from "../ui/DatePickerInput";
-import { COLORS, FONT_SIZE, FONT_WEIGHT, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
 
 const POPULAR_CURRENCIES = ["PEN", "USD", "EUR", "MXN", "COP", "ARS", "CLP", "BRL"];
 
@@ -447,21 +447,21 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation }: 
 const styles = StyleSheet.create({
   label: {
     fontSize: FONT_SIZE.xs,
-    fontWeight: FONT_WEIGHT.semibold,
-    color: COLORS.textMuted,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    color: COLORS.storm,
     textTransform: "uppercase",
     letterSpacing: 0.5,
     marginBottom: SPACING.xs,
   },
   textInput: {
-    backgroundColor: COLORS.bgInput,
+    backgroundColor: GLASS.card,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: GLASS.cardBorder,
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
     fontSize: FONT_SIZE.md,
-    color: COLORS.text,
+    color: COLORS.ink,
   },
   textArea: { minHeight: 72 },
   inputError: { borderColor: COLORS.danger },
@@ -476,24 +476,24 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.md,
     borderRadius: RADIUS.md,
     borderWidth: 2,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bgCard,
+    borderColor: GLASS.cardBorder,
+    backgroundColor: GLASS.card,
   },
   directionEmoji: { fontSize: FONT_SIZE.xl },
-  directionLabel: { fontSize: FONT_SIZE.sm, fontWeight: FONT_WEIGHT.semibold, color: COLORS.textMuted },
+  directionLabel: { fontSize: FONT_SIZE.sm, fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.storm },
   pillRow: { flexDirection: "row", gap: SPACING.sm },
   pillWrap: { flexDirection: "row", flexWrap: "wrap", gap: SPACING.sm },
   pill: {
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.xs + 2,
     borderRadius: RADIUS.full,
-    backgroundColor: COLORS.bgCard,
+    backgroundColor: GLASS.card,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: GLASS.cardBorder,
   },
-  pillActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  pillText: { fontSize: FONT_SIZE.sm, color: COLORS.textMuted, fontWeight: FONT_WEIGHT.medium },
-  pillTextActive: { color: "#FFFFFF" },
+  pillActive: { backgroundColor: COLORS.pine, borderColor: COLORS.pine },
+  pillText: { fontSize: FONT_SIZE.sm, color: COLORS.storm, fontFamily: FONT_FAMILY.bodyMedium },
+  pillTextActive: { color: COLORS.canvas },
   twoCol: { flexDirection: "row", gap: SPACING.md },
   colHalf: { flex: 1 },
   submitBtn: { marginTop: SPACING.sm },

@@ -14,7 +14,7 @@ import {
 import type { CategoryOverview } from "../../types/domain";
 import { BottomSheet } from "../ui/BottomSheet";
 import { Button } from "../ui/Button";
-import { COLORS, FONT_SIZE, FONT_WEIGHT, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
 
 const KIND_OPTIONS = [
   { value: "expense", label: "Gasto" },
@@ -223,21 +223,21 @@ export function CategoryForm({ visible, onClose, onSuccess, editCategory }: Prop
 const styles = StyleSheet.create({
   label: {
     fontSize: FONT_SIZE.xs,
-    fontWeight: FONT_WEIGHT.semibold,
-    color: COLORS.textMuted,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    color: COLORS.storm,
     textTransform: "uppercase",
     letterSpacing: 0.5,
     marginBottom: SPACING.xs,
   },
   textInput: {
-    backgroundColor: COLORS.bgInput,
+    backgroundColor: GLASS.card,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: GLASS.cardBorder,
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
     fontSize: FONT_SIZE.md,
-    color: COLORS.text,
+    color: COLORS.ink,
   },
   inputError: { borderColor: COLORS.danger },
   fieldError: { fontSize: FONT_SIZE.xs, color: COLORS.danger, marginTop: 4 },
@@ -246,13 +246,13 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: RADIUS.md,
-    backgroundColor: COLORS.bgInput,
+    backgroundColor: GLASS.card,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 2,
     borderColor: "transparent",
   },
-  iconBtnActive: { borderColor: COLORS.primary },
+  iconBtnActive: { borderColor: COLORS.pine },
   iconText: { fontSize: 22 },
   colorRow: { flexDirection: "row", flexWrap: "wrap", gap: SPACING.sm },
   colorDot: {
@@ -262,19 +262,19 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: "transparent",
   },
-  colorDotActive: { borderColor: COLORS.text, borderWidth: 3 },
+  colorDotActive: { borderColor: COLORS.ink, borderWidth: 3 },
   pillRow: { flexDirection: "row", gap: SPACING.sm },
   pillWrap: { flexDirection: "row", flexWrap: "wrap", gap: SPACING.sm },
   pill: {
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.xs + 2,
     borderRadius: RADIUS.full,
-    backgroundColor: COLORS.bgCard,
+    backgroundColor: GLASS.card,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: GLASS.cardBorder,
   },
-  pillActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  pillText: { fontSize: FONT_SIZE.sm, color: COLORS.textMuted, fontWeight: FONT_WEIGHT.medium },
-  pillTextActive: { color: "#FFFFFF" },
+  pillActive: { backgroundColor: COLORS.pine, borderColor: COLORS.pine },
+  pillText: { fontSize: FONT_SIZE.sm, color: COLORS.storm, fontFamily: FONT_FAMILY.bodyMedium },
+  pillTextActive: { color: COLORS.canvas },
   submitBtn: { marginTop: SPACING.sm },
 });

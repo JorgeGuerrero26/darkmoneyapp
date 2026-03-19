@@ -24,7 +24,7 @@ import type { AccountSummary } from "../../types/domain";
 import { BottomSheet } from "../ui/BottomSheet";
 import { Button } from "../ui/Button";
 import { CurrencyInput } from "../ui/CurrencyInput";
-import { COLORS, FONT_SIZE, FONT_WEIGHT, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
 
 // ── Icon picker ────────────────────────────────────────────────────────────────
 const ACCOUNT_ICONS: { value: string; Icon: LucideIcon }[] = [
@@ -331,11 +331,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: SPACING.md,
-    backgroundColor: COLORS.bg,
+    backgroundColor: GLASS.card,
     borderRadius: RADIUS.lg,
     padding: SPACING.md,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: GLASS.cardBorder,
   },
   previewIcon: {
     width: 52,
@@ -345,8 +345,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   previewInfo: { flex: 1 },
-  previewName: { fontSize: FONT_SIZE.md, fontWeight: FONT_WEIGHT.semibold, color: COLORS.text },
-  previewType: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted, marginTop: 2 },
+  previewName: { fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.ink },
+  previewType: { fontSize: FONT_SIZE.xs, color: COLORS.storm, marginTop: 2 },
 
   // Icon picker
   iconGrid: {
@@ -358,7 +358,7 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: RADIUS.md,
-    backgroundColor: COLORS.bgInput,
+    backgroundColor: GLASS.card,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 2,
@@ -379,28 +379,28 @@ const styles = StyleSheet.create({
     borderColor: "transparent",
   },
   colorDotActive: {
-    borderColor: COLORS.text,
+    borderColor: COLORS.ink,
     borderWidth: 3,
   },
 
   // Form fields
   sectionLabel: {
     fontSize: FONT_SIZE.xs,
-    fontWeight: FONT_WEIGHT.semibold,
-    color: COLORS.textMuted,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    color: COLORS.storm,
     textTransform: "uppercase",
     letterSpacing: 0.5,
     marginBottom: SPACING.xs,
   },
   textInput: {
-    backgroundColor: COLORS.bgInput,
+    backgroundColor: GLASS.card,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: GLASS.cardBorder,
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
     fontSize: FONT_SIZE.md,
-    color: COLORS.text,
+    color: COLORS.ink,
   },
   textInputError: { borderColor: COLORS.danger },
   fieldError: { fontSize: FONT_SIZE.xs, color: COLORS.danger, marginTop: 4 },
@@ -409,26 +409,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.xs + 2,
     borderRadius: RADIUS.full,
-    backgroundColor: COLORS.bgCard,
+    backgroundColor: GLASS.card,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: GLASS.cardBorder,
   },
-  pillActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  pillText: { fontSize: FONT_SIZE.sm, color: COLORS.textMuted, fontWeight: FONT_WEIGHT.medium },
-  pillTextActive: { color: "#FFFFFF" },
+  pillActive: { backgroundColor: COLORS.pine, borderColor: COLORS.pine },
+  pillText: { fontSize: FONT_SIZE.sm, color: COLORS.storm, fontFamily: FONT_FAMILY.bodyMedium },
+  pillTextActive: { color: COLORS.canvas },
   switchRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: COLORS.bgCard,
+    backgroundColor: GLASS.card,
     borderRadius: RADIUS.md,
     padding: SPACING.md,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: GLASS.cardBorder,
   },
   switchInfo: { flex: 1, gap: 2, marginRight: SPACING.md },
-  switchLabel: { fontSize: FONT_SIZE.sm, fontWeight: FONT_WEIGHT.medium, color: COLORS.text },
-  switchDesc: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted },
+  switchLabel: { fontSize: FONT_SIZE.sm, fontFamily: FONT_FAMILY.bodyMedium, color: COLORS.ink },
+  switchDesc: { fontSize: FONT_SIZE.xs, color: COLORS.storm },
   submitBtn: { marginTop: SPACING.sm },
 
   // Discard dialog
@@ -441,49 +441,49 @@ const styles = StyleSheet.create({
   },
   discardCard: {
     width: "100%",
-    backgroundColor: COLORS.bgCard,
+    backgroundColor: GLASS.card,
     borderRadius: RADIUS.xl,
     padding: SPACING.xl,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: GLASS.cardBorder,
     gap: SPACING.sm,
   },
   discardTitle: {
     fontSize: FONT_SIZE.lg,
-    fontWeight: FONT_WEIGHT.bold,
-    color: COLORS.text,
+    fontFamily: FONT_FAMILY.heading,
+    color: COLORS.ink,
     textAlign: "center",
   },
   discardBody: {
     fontSize: FONT_SIZE.sm,
-    color: COLORS.textMuted,
+    color: COLORS.storm,
     textAlign: "center",
     marginBottom: SPACING.sm,
   },
   discardActions: { gap: SPACING.sm },
   discardConfirm: {
-    backgroundColor: COLORS.danger + "22",
+    backgroundColor: GLASS.dangerBg,
     borderWidth: 1,
-    borderColor: COLORS.danger + "66",
+    borderColor: GLASS.dangerBorder,
     borderRadius: RADIUS.md,
     paddingVertical: SPACING.md,
     alignItems: "center",
   },
   discardConfirmText: {
     fontSize: FONT_SIZE.md,
-    fontWeight: FONT_WEIGHT.semibold,
+    fontFamily: FONT_FAMILY.bodySemibold,
     color: COLORS.danger,
   },
   discardCancel: {
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: GLASS.cardBorder,
     borderRadius: RADIUS.md,
     paddingVertical: SPACING.md,
     alignItems: "center",
   },
   discardCancelText: {
     fontSize: FONT_SIZE.md,
-    fontWeight: FONT_WEIGHT.medium,
-    color: COLORS.textMuted,
+    fontFamily: FONT_FAMILY.bodyMedium,
+    color: COLORS.storm,
   },
 });
