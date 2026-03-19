@@ -158,6 +158,7 @@ export default function LoginScreen() {
               style={styles.logo}
               resizeMode="contain"
             />
+            <Text style={styles.appName}>DarkMoney</Text>
             <Text style={styles.subtitle}>Inicia sesión en tu cuenta</Text>
           </View>
 
@@ -273,52 +274,53 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1, backgroundColor: COLORS.bg },
+  flex: { flex: 1, backgroundColor: COLORS.canvas },
   container: { flexGrow: 1, paddingHorizontal: SPACING.xl, gap: SPACING.xxl },
-  header: { alignItems: "center", gap: SPACING.sm },
+  header: { alignItems: "center", gap: SPACING.md },
   logo: {
     width: 160, height: 160, borderRadius: 80, overflow: "hidden",
-    shadowColor: "#6be4c5", shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.6, shadowRadius: 24, elevation: 12,
+    shadowColor: COLORS.pine, shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5, shadowRadius: 32, elevation: 12,
   },
-  subtitle: { fontSize: FONT_SIZE.md, color: COLORS.storm },
+  appName: { fontFamily: FONT_FAMILY.heading, fontSize: FONT_SIZE.xxl, color: COLORS.ink, letterSpacing: 0.5 },
+  subtitle: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.md, color: COLORS.storm },
   form: { gap: SPACING.lg },
   errorBanner: {
-    backgroundColor: COLORS.dangerMuted, borderRadius: 8,
-    padding: SPACING.md, borderWidth: 1, borderColor: COLORS.danger,
+    backgroundColor: GLASS.dangerBg, borderRadius: RADIUS.md,
+    padding: SPACING.md, borderWidth: 1, borderColor: GLASS.dangerBorder,
   },
-  errorBannerText: { color: COLORS.danger, fontSize: FONT_SIZE.sm },
+  errorBannerText: { fontFamily: FONT_FAMILY.bodyMedium, color: COLORS.rosewood, fontSize: FONT_SIZE.sm },
 
   // Biometric button
   bioBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: SPACING.md,
-    backgroundColor: COLORS.primary + "18",
-    borderRadius: RADIUS.lg,
-    borderWidth: 1.5,
-    borderColor: COLORS.primary + "55",
+    backgroundColor: GLASS.cardActive,
+    borderRadius: RADIUS.xl,
+    borderWidth: 1,
+    borderColor: GLASS.cardActiveBorder,
     padding: SPACING.lg,
   },
   bioBtnIcon: { fontSize: 32 },
-  bioBtnTitle: { fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.primary },
-  bioBtnSub: { fontSize: FONT_SIZE.xs, color: COLORS.storm, marginTop: 2 },
+  bioBtnTitle: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.md, color: COLORS.pine },
+  bioBtnSub: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm, marginTop: 2 },
 
   // Divider
   divider: { flexDirection: "row", alignItems: "center", gap: SPACING.sm },
-  dividerLine: { flex: 1, height: 1, backgroundColor: GLASS.separator },
-  dividerText: { fontSize: FONT_SIZE.xs, color: COLORS.storm },
+  dividerLine: { flex: 1, height: 0.5, backgroundColor: GLASS.separator },
+  dividerText: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
 
-  submitButton: { marginTop: SPACING.sm },
+  submitButton: { marginTop: SPACING.xs },
   forgotLink: { alignItems: "center", paddingVertical: SPACING.sm },
-  linkText: { color: COLORS.primary, fontSize: FONT_SIZE.sm },
+  linkText: { fontFamily: FONT_FAMILY.bodyMedium, color: COLORS.pine, fontSize: FONT_SIZE.sm },
   footer: { flexDirection: "row", justifyContent: "center", alignItems: "center" },
-  footerText: { color: COLORS.storm, fontSize: FONT_SIZE.sm },
-  footerLink: { color: COLORS.primary, fontSize: FONT_SIZE.sm, fontFamily: FONT_FAMILY.bodySemibold },
+  footerText: { fontFamily: FONT_FAMILY.body, color: COLORS.storm, fontSize: FONT_SIZE.sm },
+  footerLink: { fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.pine, fontSize: FONT_SIZE.sm },
 
   // Enable biometric dialog
   dialogOverlay: {
-    flex: 1, backgroundColor: "rgba(0,0,0,0.7)",
+    flex: 1, backgroundColor: "rgba(0,0,0,0.75)",
     alignItems: "center", justifyContent: "center", padding: SPACING.xl,
   },
   dialogCard: {
@@ -329,20 +331,20 @@ const styles = StyleSheet.create({
   },
   dialogIcon: { fontSize: 48, marginBottom: SPACING.xs },
   dialogTitle: {
-    fontSize: FONT_SIZE.lg, fontFamily: FONT_FAMILY.heading,
+    fontFamily: FONT_FAMILY.heading, fontSize: FONT_SIZE.lg,
     color: COLORS.ink, textAlign: "center",
   },
   dialogBody: {
-    fontSize: FONT_SIZE.sm, color: COLORS.storm,
+    fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.storm,
     textAlign: "center", lineHeight: 20, marginBottom: SPACING.sm,
   },
   dialogConfirm: {
-    width: "100%", backgroundColor: COLORS.primary,
+    width: "100%", backgroundColor: COLORS.pine,
     borderRadius: RADIUS.md, paddingVertical: SPACING.md, alignItems: "center",
   },
-  dialogConfirmText: { fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.textInverse },
+  dialogConfirmText: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.md, color: COLORS.canvas },
   dialogCancel: {
     width: "100%", paddingVertical: SPACING.sm, alignItems: "center",
   },
-  dialogCancelText: { fontSize: FONT_SIZE.md, color: COLORS.storm },
+  dialogCancelText: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.md, color: COLORS.storm },
 });
