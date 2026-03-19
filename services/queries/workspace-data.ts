@@ -553,6 +553,10 @@ export type DashboardMovementRow = {
   occurredAt: string;
   sourceAmount: number;
   destinationAmount: number;
+  sourceAmountInBaseCurrency: number | null;
+  destinationAmountInBaseCurrency: number | null;
+  sourceAccountId: number | null;
+  destinationAccountId: number | null;
   categoryId: number | null;
   counterpartyId: number | null;
 };
@@ -566,7 +570,7 @@ export function useDashboardMovementsQuery(workspaceId: number | null) {
       since.setDate(since.getDate() - 90);
       const { data, error } = await supabase
         .from("movements")
-        .select("id, movement_type, status, occurred_at, source_amount, destination_amount, category_id, counterparty_id")
+        .select("id, movement_type, status, occurred_at, source_amount, destination_amount, source_amount_in_base_currency, destination_amount_in_base_currency, source_account_id, destination_account_id, category_id, counterparty_id")
         .eq("workspace_id", workspaceId)
         .gte("occurred_at", since.toISOString())
         .order("occurred_at", { ascending: false });
@@ -578,6 +582,10 @@ export function useDashboardMovementsQuery(workspaceId: number | null) {
         occurredAt: row.occurred_at,
         sourceAmount: toNum(row.source_amount),
         destinationAmount: toNum(row.destination_amount),
+        sourceAmountInBaseCurrency: row.source_amount_in_base_currency != null ? toNum(row.source_amount_in_base_currency) : null,
+        destinationAmountInBaseCurrency: row.destination_amount_in_base_currency != null ? toNum(row.destination_amount_in_base_currency) : null,
+        sourceAccountId: row.source_account_id ?? null,
+        destinationAccountId: row.destination_account_id ?? null,
         categoryId: row.category_id ?? null,
         counterpartyId: row.counterparty_id ?? null,
       }));

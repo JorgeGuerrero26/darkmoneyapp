@@ -17,11 +17,15 @@ import {
   subMonths,
   subDays,
   startOfDay,
+  startOfWeek,
   addDays,
+  getDay,
+  differenceInDays,
 } from "date-fns";
 import { es } from "date-fns/locale";
 import {
   CreditCard, Wallet, Landmark, PiggyBank, TrendingUp, Banknote,
+  AlertTriangle, AlertCircle, Clock, Tag, ArrowRight,
   type LucideIcon,
 } from "lucide-react-native";
 
@@ -41,13 +45,21 @@ import { formatCurrency } from "../../components/ui/AmountDisplay";
 import { MovementForm } from "../../components/forms/MovementForm";
 import { WorkspaceSelector } from "../../components/layout/WorkspaceSelector";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
+import { FAB } from "../../components/ui/FAB";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const ADMIN_EMAILS = new Set(["joradrianmori@gmail.com"]);
 const UPCOMING_DAYS = 30;
 
-type Period = "this_month" | "last_30";
+type Period = "today" | "week" | "month" | "last_30";
+
+const PERIOD_LABELS: Record<Period, string> = {
+  today: "Hoy",
+  week: "Semana",
+  month: "Mes",
+  last_30: "30 días",
+};
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -65,16 +77,29 @@ const INCOME_TYPES = new Set(["income", "refund"]);
 const EXPENSE_TYPES = new Set(["expense", "subscription_payment", "obligation_payment"]);
 
 function isIncome(m: DashboardMovementRow) {
-  return INCOME_TYPES.has(m.movementType) && m.status === "posted";
+  if (m.status !== "posted") return false;
+  if (INCOME_TYPES.has(m.movementType)) return true;
+  if (m.movementType === "adjustment") {
+    return (m.destinationAmountInBaseCurrency ?? m.destinationAmount) > (m.sourceAmountInBaseCurrency ?? m.sourceAmount);
+  }
+  return false;
 }
+
 function isExpense(m: DashboardMovementRow) {
-  return EXPENSE_TYPES.has(m.movementType) && m.status === "posted";
+  if (m.status !== "posted") return false;
+  if (EXPENSE_TYPES.has(m.movementType)) return true;
+  if (m.movementType === "adjustment") {
+    return (m.sourceAmountInBaseCurrency ?? m.sourceAmount) >= (m.destinationAmountInBaseCurrency ?? m.destinationAmount);
+  }
+  return false;
 }
-function incomeAmt(m: DashboardMovementRow) {
-  return m.destinationAmount || m.sourceAmount || 0;
+
+function incomeAmt(m: DashboardMovementRow): number {
+  return m.destinationAmountInBaseCurrency ?? m.destinationAmount ?? m.sourceAmountInBaseCurrency ?? m.sourceAmount ?? 0;
 }
-function expenseAmt(m: DashboardMovementRow) {
-  return m.sourceAmount || m.destinationAmount || 0;
+
+function expenseAmt(m: DashboardMovementRow): number {
+  return m.sourceAmountInBaseCurrency ?? m.sourceAmount ?? m.destinationAmountInBaseCurrency ?? m.destinationAmount ?? 0;
 }
 
 function inRange(m: DashboardMovementRow, start: Date, end: Date) {
@@ -82,23 +107,45 @@ function inRange(m: DashboardMovementRow, start: Date, end: Date) {
   return d >= start && d <= end;
 }
 
+function getPeriodBounds(period: Period, now: Date): { curStart: Date; curEnd: Date; prevStart: Date; prevEnd: Date } {
+  if (period === "today") {
+    const curStart = startOfDay(now);
+    const curEnd = now;
+    const yesterday = subDays(now, 1);
+    const prevStart = startOfDay(yesterday);
+    const prevEnd = yesterday;
+    return { curStart, curEnd, prevStart, prevEnd };
+  }
+  if (period === "week") {
+    const curStart = startOfWeek(now, { weekStartsOn: 1 });
+    const curEnd = now;
+    const daysSinceStart = differenceInDays(now, curStart);
+    const prevStart = subDays(curStart, 7);
+    const prevEnd = subDays(now, 7);
+    void daysSinceStart;
+    return { curStart, curEnd, prevStart, prevEnd };
+  }
+  if (period === "month") {
+    const curStart = startOfMonth(now);
+    const curEnd = now;
+    const prevMonthDate = subMonths(now, 1);
+    const prevStart = startOfMonth(prevMonthDate);
+    const dayOfMonth = now.getDate();
+    const prevEnd = new Date(prevMonthDate.getFullYear(), prevMonthDate.getMonth(), dayOfMonth, now.getHours(), now.getMinutes(), now.getSeconds());
+    return { curStart, curEnd, prevStart, prevEnd };
+  }
+  // last_30
+  const curStart = subDays(now, 29);
+  const curEnd = now;
+  const prevStart = subDays(now, 59);
+  const prevEnd = subDays(now, 30);
+  return { curStart, curEnd, prevStart, prevEnd };
+}
+
 function useDashboardStats(movements: DashboardMovementRow[], period: Period) {
   return useMemo(() => {
     const now = new Date();
-    let curStart: Date, curEnd: Date, prevStart: Date, prevEnd: Date;
-
-    if (period === "this_month") {
-      curStart = startOfMonth(now);
-      curEnd = now;
-      const prev = subMonths(now, 1);
-      prevStart = startOfMonth(prev);
-      prevEnd = endOfMonth(prev);
-    } else {
-      curStart = subDays(now, 29);
-      curEnd = now;
-      prevStart = subDays(now, 59);
-      prevEnd = subDays(now, 30);
-    }
+    const { curStart, curEnd, prevStart, prevEnd } = getPeriodBounds(period, now);
 
     const cur = movements.filter((m) => inRange(m, curStart, curEnd));
     const prev = movements.filter((m) => inRange(m, prevStart, prevEnd));
@@ -143,10 +190,17 @@ function useDashboardStats(movements: DashboardMovementRow[], period: Period) {
       catTotals.set(k, (catTotals.get(k) ?? 0) + expenseAmt(m));
     }
 
+    // Previous period category totals
+    const prevCatTotals = new Map<number | null, number>();
+    for (const m of prev.filter(isExpense)) {
+      const k = m.categoryId;
+      prevCatTotals.set(k, (prevCatTotals.get(k) ?? 0) + expenseAmt(m));
+    }
+
     return {
       curStart, curEnd, income, expense, net,
       prevIncome, prevExpense,
-      chartDays, monthlyPulse, catTotals,
+      chartDays, monthlyPulse, catTotals, prevCatTotals,
     };
   }, [movements, period]);
 }
@@ -192,20 +246,19 @@ function HeroCard({
   period: Period; setPeriod: (p: Period) => void;
 }) {
   const net = income - expense;
+  const allPeriods: Period[] = ["today", "week", "month", "last_30"];
   return (
     <View style={subStyles.heroCard}>
-      <View style={subStyles.heroGlow} />
-
-      {/* Period toggle compact */}
+      {/* Period toggle compact — 4 pills */}
       <View style={subStyles.heroPeriodRow}>
-        {(["this_month", "last_30"] as Period[]).map((p) => (
+        {allPeriods.map((p) => (
           <TouchableOpacity
             key={p}
             style={[subStyles.heroPeriodBtn, period === p && subStyles.heroPeriodBtnActive]}
             onPress={() => setPeriod(p)}
           >
             <Text style={[subStyles.heroPeriodText, period === p && subStyles.heroPeriodTextActive]}>
-              {p === "this_month" ? "Este mes" : "30 días"}
+              {PERIOD_LABELS[p]}
             </Text>
           </TouchableOpacity>
         ))}
@@ -366,7 +419,7 @@ function AccountsScroll({ accounts, onPress }: {
                 activeOpacity={0.75}
               >
                 <View style={[subStyles.accountChipIcon, { backgroundColor: a.color + "33" }]}>
-                  <Icon size={16} color={a.color} />
+                  <Icon size={14} color={a.color} />
                 </View>
                 <Text style={subStyles.accountChipName} numberOfLines={1}>{a.name}</Text>
                 <Text style={[subStyles.accountChipBalance, a.currentBalance < 0 && { color: COLORS.expense }]}>
@@ -473,6 +526,146 @@ function BudgetsSection({
         </TouchableOpacity>
       ))}
     </View>
+  );
+}
+
+// ─── Simple widgets: ReceivableLeaders + PayableLeaders ───────────────────────
+
+function ReceivableLeaders({
+  obligations, router,
+}: {
+  obligations: { id: number; title: string; direction: string; status: string; counterparty: string; pendingAmount: number; currencyCode: string }[];
+  router: ReturnType<typeof useRouter>;
+}) {
+  const items = obligations
+    .filter((o) => o.direction === "receivable" && o.status === "active")
+    .sort((a, b) => b.pendingAmount - a.pendingAmount)
+    .slice(0, 3);
+  if (items.length === 0) return null;
+
+  return (
+    <View style={[subStyles.leadersCard, { borderColor: COLORS.pine + "33" }]}>
+      <Text style={[subStyles.leadersTitle, { color: COLORS.pine }]}>Por cobrar</Text>
+      {items.map((o, i) => (
+        <TouchableOpacity
+          key={o.id}
+          style={[subStyles.leadersRow, i < items.length - 1 && subStyles.leadersSep]}
+          onPress={() => router.push(`/obligation/${o.id}`)}
+          activeOpacity={0.75}
+        >
+          <Text style={subStyles.leadersName} numberOfLines={1}>{o.counterparty}</Text>
+          <Text style={[subStyles.leadersAmt, { color: COLORS.pine }]}>
+            {formatCurrency(o.pendingAmount, o.currencyCode)}
+          </Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+}
+
+function PayableLeaders({
+  obligations, router,
+}: {
+  obligations: { id: number; title: string; direction: string; status: string; counterparty: string; pendingAmount: number; currencyCode: string }[];
+  router: ReturnType<typeof useRouter>;
+}) {
+  const items = obligations
+    .filter((o) => o.direction === "payable" && o.status === "active")
+    .sort((a, b) => b.pendingAmount - a.pendingAmount)
+    .slice(0, 3);
+  if (items.length === 0) return null;
+
+  return (
+    <View style={[subStyles.leadersCard, { borderColor: COLORS.rosewood + "33" }]}>
+      <Text style={[subStyles.leadersTitle, { color: COLORS.rosewood }]}>Por pagar</Text>
+      {items.map((o, i) => (
+        <TouchableOpacity
+          key={o.id}
+          style={[subStyles.leadersRow, i < items.length - 1 && subStyles.leadersSep]}
+          onPress={() => router.push(`/obligation/${o.id}`)}
+          activeOpacity={0.75}
+        >
+          <Text style={subStyles.leadersName} numberOfLines={1}>{o.counterparty}</Text>
+          <Text style={[subStyles.leadersAmt, { color: COLORS.rosewood }]}>
+            {formatCurrency(o.pendingAmount, o.currencyCode)}
+          </Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+}
+
+function LeadersRow({
+  obligations, router,
+}: {
+  obligations: { id: number; title: string; direction: string; status: string; counterparty: string; pendingAmount: number; currencyCode: string }[];
+  router: ReturnType<typeof useRouter>;
+}) {
+  const hasReceivable = obligations.some((o) => o.direction === "receivable" && o.status === "active");
+  const hasPayable = obligations.some((o) => o.direction === "payable" && o.status === "active");
+  if (!hasReceivable && !hasPayable) return null;
+
+  return (
+    <View style={subStyles.leadersRowContainer}>
+      <ReceivableLeaders obligations={obligations} router={router} />
+      <PayableLeaders obligations={obligations} router={router} />
+    </View>
+  );
+}
+
+// Category comparison (current vs prev period) — Simple widget
+function CategoryComparison({
+  catTotals, prevCatTotals, categories, currency,
+}: {
+  catTotals: Map<number | null, number>;
+  prevCatTotals: Map<number | null, number>;
+  categories: { id: number; name: string }[];
+  currency: string;
+}) {
+  const catMap = new Map(categories.map((c) => [c.id, c.name]));
+
+  // Collect all category keys that appear in either period
+  const allKeys = new Set<number | null>([...catTotals.keys(), ...prevCatTotals.keys()]);
+  const entries = Array.from(allKeys)
+    .map((id) => ({
+      name: catMap.get(id ?? -1) ?? "Sin categoría",
+      current: catTotals.get(id) ?? 0,
+      prev: prevCatTotals.get(id) ?? 0,
+    }))
+    .sort((a, b) => b.current - a.current)
+    .slice(0, 5);
+
+  if (entries.length === 0) return null;
+  const maxVal = Math.max(...entries.flatMap((e) => [e.current, e.prev]), 1);
+
+  return (
+    <Card>
+      <SectionTitle>Comparación de gastos por categoría</SectionTitle>
+      <View style={subStyles.catCompLegend}>
+        <View style={subStyles.legendItem}>
+          <View style={[subStyles.legendDot, { backgroundColor: COLORS.rosewood }]} />
+          <Text style={subStyles.legendText}>Actual</Text>
+        </View>
+        <View style={subStyles.legendItem}>
+          <View style={[subStyles.legendDot, { backgroundColor: COLORS.storm }]} />
+          <Text style={subStyles.legendText}>Anterior</Text>
+        </View>
+      </View>
+      {entries.map((e, i) => (
+        <View key={i} style={subStyles.catCompRow}>
+          <Text style={subStyles.catCompName} numberOfLines={1}>{e.name}</Text>
+          <View style={subStyles.catCompBars}>
+            <View style={subStyles.catCompBarTrack}>
+              <View style={[subStyles.catCompBarFill, { width: `${(e.current / maxVal) * 100}%`, backgroundColor: COLORS.rosewood + "99" }]} />
+            </View>
+            <View style={subStyles.catCompBarTrack}>
+              <View style={[subStyles.catCompBarFill, { width: `${(e.prev / maxVal) * 100}%`, backgroundColor: COLORS.storm + "66" }]} />
+            </View>
+          </View>
+          <Text style={subStyles.catCompAmt}>{formatCurrency(e.current, currency)}</Text>
+        </View>
+      ))}
+    </Card>
   );
 }
 
@@ -683,6 +876,435 @@ function HealthScore({
   );
 }
 
+// Alert center — anomalies detection
+type AlertItem = {
+  key: string;
+  icon: LucideIcon;
+  color: string;
+  message: string;
+};
+
+function AlertCenter({
+  budgets, obligations, subscriptions, movements,
+}: {
+  budgets: { id: number; name: string; isOverLimit: boolean }[];
+  obligations: { id: number; title: string; dueDate: string | null; status: string }[];
+  subscriptions: { id: number; name: string; nextDueDate: string }[];
+  movements: DashboardMovementRow[];
+}) {
+  const now = new Date();
+  const in3Days = addDays(now, 3);
+
+  const alerts: AlertItem[] = [];
+
+  // Budgets over limit
+  for (const b of budgets.filter((b) => b.isOverLimit)) {
+    alerts.push({
+      key: `budget-${b.id}`,
+      icon: AlertCircle,
+      color: COLORS.rosewood,
+      message: `Presupuesto "${b.name}" excedido`,
+    });
+  }
+
+  // Overdue obligations
+  for (const o of obligations) {
+    if (o.status === "active" && o.dueDate && new Date(o.dueDate) < now) {
+      alerts.push({
+        key: `ob-overdue-${o.id}`,
+        icon: AlertTriangle,
+        color: COLORS.rosewood,
+        message: `Obligación vencida: "${o.title}"`,
+      });
+    }
+  }
+
+  // Subscriptions due in next 3 days
+  for (const s of subscriptions) {
+    const d = new Date(s.nextDueDate);
+    if (d >= now && d <= in3Days) {
+      alerts.push({
+        key: `sub-due-${s.id}`,
+        icon: Clock,
+        color: COLORS.gold,
+        message: `Suscripción próxima: "${s.name}" el ${format(d, "d MMM", { locale: es })}`,
+      });
+    }
+  }
+
+  // Movements without category (expense/income type)
+  const noCatCount = movements.filter(
+    (m) => m.categoryId === null && (EXPENSE_TYPES.has(m.movementType) || INCOME_TYPES.has(m.movementType)) && m.status === "posted",
+  ).length;
+  if (noCatCount > 0) {
+    alerts.push({
+      key: "no-cat",
+      icon: Tag,
+      color: COLORS.gold,
+      message: `${noCatCount} movimiento${noCatCount !== 1 ? "s" : ""} sin categoría`,
+    });
+  }
+
+  return (
+    <Card>
+      <SectionTitle>Centro de alertas</SectionTitle>
+      {alerts.length === 0 ? (
+        <Text style={subStyles.alertEmpty}>Sin alertas activas</Text>
+      ) : (
+        alerts.map((a) => {
+          const Icon = a.icon;
+          return (
+            <View key={a.key} style={subStyles.alertRow}>
+              <Icon size={14} color={a.color} />
+              <Text style={[subStyles.alertText, { color: a.color }]}>{a.message}</Text>
+            </View>
+          );
+        })
+      )}
+    </Card>
+  );
+}
+
+// Obligation watch — full list with aging
+function ObligationWatch({
+  obligations, router,
+}: {
+  obligations: { id: number; title: string; direction: string; status: string; counterparty: string; pendingAmount: number; currencyCode: string; dueDate: string | null }[];
+  router: ReturnType<typeof useRouter>;
+}) {
+  const now = new Date();
+  const active = obligations.filter((o) => o.status === "active");
+  if (active.length === 0) return null;
+
+  const receivable = active.filter((o) => o.direction === "receivable");
+  const payable = active.filter((o) => o.direction === "payable");
+
+  function agingText(dueDate: string | null): { text: string; color: string } {
+    if (!dueDate) return { text: "Sin fecha", color: COLORS.storm };
+    const d = new Date(dueDate);
+    const days = differenceInDays(d, now);
+    if (days < 0) return { text: `${Math.abs(days)}d vencida`, color: COLORS.rosewood };
+    if (days === 0) return { text: "Hoy", color: COLORS.gold };
+    return { text: `en ${days}d`, color: COLORS.storm };
+  }
+
+  function renderGroup(title: string, items: typeof active, color: string) {
+    if (items.length === 0) return null;
+    return (
+      <View style={{ marginBottom: SPACING.sm }}>
+        <Text style={[subStyles.obGroupTitle, { color }]}>{title}</Text>
+        {items.map((o) => {
+          const aging = agingText(o.dueDate);
+          return (
+            <TouchableOpacity
+              key={o.id}
+              style={subStyles.obRow}
+              onPress={() => router.push(`/obligation/${o.id}`)}
+              activeOpacity={0.75}
+            >
+              <View style={subStyles.obLeft}>
+                <Text style={subStyles.obTitle} numberOfLines={1}>{o.title}</Text>
+                <Text style={subStyles.obCounterparty} numberOfLines={1}>{o.counterparty}</Text>
+              </View>
+              <View style={{ alignItems: "flex-end", gap: 2 }}>
+                <Text style={[subStyles.obAmount, { color }]}>
+                  {formatCurrency(o.pendingAmount, o.currencyCode)}
+                </Text>
+                <Text style={[subStyles.obCounterparty, { color: aging.color }]}>{aging.text}</Text>
+              </View>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    );
+  }
+
+  return (
+    <Card>
+      <SectionTitle>Seguimiento de obligaciones</SectionTitle>
+      {renderGroup("Por cobrar", receivable, COLORS.pine)}
+      {renderGroup("Por pagar", payable, COLORS.rosewood)}
+    </Card>
+  );
+}
+
+// Weekly pattern — average expense per day of week
+function WeeklyPattern({ movements }: { movements: DashboardMovementRow[] }) {
+  const DAY_LABELS = ["Lu", "Ma", "Mi", "Ju", "Vi", "Sá", "Do"];
+
+  // getDay returns 0=Sun..6=Sat. We want Mon=0..Sun=6
+  const byDay = Array.from({ length: 7 }, () => ({ total: 0, count: 0 }));
+  const weekSet = new Set<string>();
+
+  for (const m of movements.filter(isExpense)) {
+    const d = new Date(m.occurredAt);
+    const jsDay = getDay(d); // 0=Sun
+    const idx = jsDay === 0 ? 6 : jsDay - 1; // Mon=0..Sun=6
+    byDay[idx].total += expenseAmt(m);
+    // track unique weeks for averaging
+    const weekKey = `${d.getFullYear()}-${format(startOfWeek(d, { weekStartsOn: 1 }), "MM-dd")}`;
+    weekSet.add(weekKey);
+  }
+
+  const weekCount = Math.max(weekSet.size, 1);
+  const averages = byDay.map((d) => d.total / weekCount);
+  const maxAvg = Math.max(...averages, 1);
+  const BAR_HEIGHT = 56;
+
+  if (averages.every((a) => a === 0)) return null;
+
+  return (
+    <Card>
+      <SectionTitle>Patrón semanal de gastos</SectionTitle>
+      <View style={subStyles.chartRow}>
+        {averages.map((avg, i) => (
+          <View key={i} style={subStyles.chartCol}>
+            <View style={[subStyles.chartBars, { height: BAR_HEIGHT, justifyContent: "flex-end" }]}>
+              <View
+                style={[
+                  subStyles.weeklyBar,
+                  { height: Math.max((avg / maxAvg) * BAR_HEIGHT, avg > 0 ? 3 : 0) },
+                ]}
+              />
+            </View>
+            <Text style={subStyles.chartLabel}>{DAY_LABELS[i]}</Text>
+          </View>
+        ))}
+      </View>
+    </Card>
+  );
+}
+
+// Transfer snapshot — top 3 transfer routes
+function TransferSnapshot({
+  movements, accounts,
+}: {
+  movements: DashboardMovementRow[];
+  accounts: { id: number; name: string }[];
+}) {
+  const accMap = new Map(accounts.map((a) => [a.id, a.name]));
+
+  // Group by (sourceAccountId, destinationAccountId)
+  const routeMap = new Map<string, { srcId: number; dstId: number; total: number; count: number }>();
+  for (const m of movements.filter((m) => m.movementType === "transfer" && m.status === "posted")) {
+    if (!m.sourceAccountId || !m.destinationAccountId) continue;
+    const key = `${m.sourceAccountId}-${m.destinationAccountId}`;
+    const existing = routeMap.get(key);
+    if (existing) {
+      existing.total += expenseAmt(m);
+      existing.count++;
+    } else {
+      routeMap.set(key, { srcId: m.sourceAccountId, dstId: m.destinationAccountId, total: expenseAmt(m), count: 1 });
+    }
+  }
+
+  const routes = Array.from(routeMap.values())
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 3);
+
+  if (routes.length === 0) return null;
+
+  return (
+    <Card>
+      <SectionTitle>Rutas de transferencia</SectionTitle>
+      {routes.map((r, i) => {
+        const srcName = accMap.get(r.srcId) ?? `Cuenta ${r.srcId}`;
+        const dstName = accMap.get(r.dstId) ?? `Cuenta ${r.dstId}`;
+        return (
+          <View key={i} style={[subStyles.transferRow, i < routes.length - 1 && subStyles.leadersSep]}>
+            <View style={subStyles.transferRoute}>
+              <Text style={subStyles.transferAcct} numberOfLines={1}>{srcName}</Text>
+              <ArrowRight size={12} color={COLORS.storm} />
+              <Text style={subStyles.transferAcct} numberOfLines={1}>{dstName}</Text>
+            </View>
+            <Text style={subStyles.transferAmt}>{formatCurrency(r.total, "")}</Text>
+          </View>
+        );
+      })}
+    </Card>
+  );
+}
+
+// Data quality widget
+function DataQuality({ movements }: { movements: DashboardMovementRow[] }) {
+  const relevant = movements.filter(
+    (m) => (EXPENSE_TYPES.has(m.movementType) || INCOME_TYPES.has(m.movementType)) && m.status === "posted",
+  );
+  const noCat = relevant.filter((m) => m.categoryId === null).length;
+  const noCounterparty = relevant.filter((m) => m.counterpartyId === null).length;
+
+  if (noCat === 0 && noCounterparty === 0) return null;
+
+  return (
+    <Card>
+      <SectionTitle>Calidad de datos</SectionTitle>
+      {noCat > 0 && (
+        <View style={subStyles.dqRow}>
+          <Tag size={13} color={COLORS.gold} />
+          <Text style={subStyles.dqText}>{noCat} movimiento{noCat !== 1 ? "s" : ""} sin categoría</Text>
+        </View>
+      )}
+      {noCounterparty > 0 && (
+        <View style={subStyles.dqRow}>
+          <AlertCircle size={13} color={COLORS.storm} />
+          <Text style={subStyles.dqText}>{noCounterparty} movimiento{noCounterparty !== 1 ? "s" : ""} sin contraparte</Text>
+        </View>
+      )}
+    </Card>
+  );
+}
+
+// Currency exposure widget
+function CurrencyExposure({
+  accounts,
+}: {
+  accounts: { id: number; name: string; currencyCode: string; currentBalance: number; isArchived: boolean }[];
+}) {
+  const active = accounts.filter((a) => !a.isArchived && a.currentBalance > 0);
+  if (active.length === 0) return null;
+
+  const byCode = new Map<string, number>();
+  for (const a of active) {
+    byCode.set(a.currencyCode, (byCode.get(a.currencyCode) ?? 0) + a.currentBalance);
+  }
+
+  const total = Array.from(byCode.values()).reduce((s, v) => s + v, 0);
+  if (total <= 0) return null;
+
+  const TINTS = [COLORS.pine, COLORS.ember, COLORS.gold, COLORS.rosewood, COLORS.storm];
+  const entries = Array.from(byCode.entries()).sort((a, b) => b[1] - a[1]);
+
+  return (
+    <Card>
+      <SectionTitle>Exposición por moneda</SectionTitle>
+      {entries.map(([code, amount], i) => {
+        const pct = (amount / total) * 100;
+        const color = TINTS[i % TINTS.length];
+        return (
+          <View key={code} style={subStyles.currencyRow}>
+            <View style={subStyles.currencyLabel}>
+              <View style={[subStyles.currencyDot, { backgroundColor: color }]} />
+              <Text style={subStyles.currencyCode}>{code}</Text>
+              <Text style={subStyles.currencyPct}>{pct.toFixed(1)}%</Text>
+            </View>
+            <View style={subStyles.currencyTrack}>
+              <View style={[subStyles.currencyFill, { width: `${pct}%`, backgroundColor: color + "99" }]} />
+            </View>
+          </View>
+        );
+      })}
+    </Card>
+  );
+}
+
+// Period radar — 5 compact readings
+function PeriodRadar({
+  income, expense, catTotals, categories, curStart, curEnd, movements,
+}: {
+  income: number;
+  expense: number;
+  catTotals: Map<number | null, number>;
+  categories: { id: number; name: string }[];
+  curStart: Date;
+  curEnd: Date;
+  movements: DashboardMovementRow[];
+}) {
+  const catMap = new Map(categories.map((c) => [c.id, c.name]));
+  const savingsRate = income > 0 ? ((income - expense) / income) * 100 : 0;
+
+  // Top expense category
+  let topCatName = "—";
+  let topCatAmt = 0;
+  for (const [id, total] of catTotals.entries()) {
+    if (total > topCatAmt) {
+      topCatAmt = total;
+      topCatName = catMap.get(id ?? -1) ?? "Sin categoría";
+    }
+  }
+
+  // Days in period
+  const daysInPeriod = Math.max(differenceInDays(curEnd, curStart), 1);
+
+  // Days with no expense
+  const expenseDays = new Set<string>();
+  for (const m of movements.filter(isExpense)) {
+    if (inRange(m, curStart, curEnd)) {
+      expenseDays.add(format(new Date(m.occurredAt), "yyyy-MM-dd"));
+    }
+  }
+  const daysWithoutExpense = daysInPeriod - expenseDays.size;
+
+  // Average daily expense
+  const avgDaily = expense / daysInPeriod;
+
+  // Movements without category
+  const noCatCount = movements.filter(
+    (m) => inRange(m, curStart, curEnd) && m.categoryId === null && isExpense(m),
+  ).length;
+
+  const items = [
+    { label: "Tasa de ahorro", value: `${savingsRate.toFixed(1)}%` },
+    { label: "Mayor gasto", value: topCatAmt > 0 ? `${topCatName}` : "—" },
+    { label: "Días sin gastar", value: `${Math.max(daysWithoutExpense, 0)}` },
+    { label: "Promedio diario", value: formatCurrency(avgDaily, "") },
+    { label: "Mov. sin categoría", value: `${noCatCount}` },
+  ];
+
+  return (
+    <Card>
+      <SectionTitle>Resumen del período</SectionTitle>
+      <View style={subStyles.radarGrid}>
+        {items.map((item, i) => (
+          <View key={i} style={subStyles.radarItem}>
+            <Text style={subStyles.radarLabel}>{item.label}</Text>
+            <Text style={subStyles.radarValue}>{item.value}</Text>
+          </View>
+        ))}
+      </View>
+    </Card>
+  );
+}
+
+// Activity timeline
+function ActivityTimeline({ snapshot }: { snapshot: any }) {
+  const log: any[] = snapshot?.activityLog ?? [];
+  if (log.length === 0) return null;
+
+  const items = log.slice(0, 12);
+
+  function iconFor(entityType: string): LucideIcon {
+    if (entityType === "movement") return Banknote;
+    if (entityType === "obligation") return AlertCircle;
+    if (entityType === "subscription") return Clock;
+    return Tag;
+  }
+
+  return (
+    <Card>
+      <SectionTitle>Actividad reciente</SectionTitle>
+      {items.map((entry: any, i: number) => {
+        const Icon = iconFor(entry.entity_type ?? "");
+        const d = entry.created_at ? new Date(entry.created_at) : null;
+        return (
+          <View key={i} style={[subStyles.timelineRow, i < items.length - 1 && subStyles.leadersSep]}>
+            <Icon size={14} color={COLORS.storm} />
+            <View style={subStyles.timelineContent}>
+              <Text style={subStyles.timelineDesc} numberOfLines={2}>
+                {entry.description ?? `${entry.action ?? ""} ${entry.entity_type ?? ""}`}
+              </Text>
+              {d && (
+                <Text style={subStyles.timelineDate}>
+                  {format(d, "d MMM HH:mm", { locale: es })}
+                </Text>
+              )}
+            </View>
+          </View>
+        );
+      })}
+    </Card>
+  );
+}
+
 function ProGate() {
   return (
     <Card>
@@ -707,7 +1329,7 @@ export default function DashboardScreen() {
   const { activeWorkspaceId, activeWorkspace, setWorkspaces } = useWorkspace();
   const { dashboardMode, setDashboardMode } = useUiStore();
 
-  const [period, setPeriod] = useState<Period>("this_month");
+  const [period, setPeriod] = useState<Period>("month");
   const [formVisible, setFormVisible] = useState(false);
 
   const isPro = useIsPro(profile?.email);
@@ -767,10 +1389,10 @@ export default function DashboardScreen() {
           <RefreshControl refreshing={snapLoading} onRefresh={onRefresh} tintColor={COLORS.primary} />
         }
       >
-        {/* Mode toggle */}
+        {/* 1. Mode toggle */}
         <ModeToggle mode={dashboardMode} setMode={setDashboardMode} isPro={isPro} />
 
-        {/* Hero balance */}
+        {/* 2. Hero balance (period selector inside) */}
         <HeroCard
           netWorth={netWorth}
           income={stats.income}
@@ -780,7 +1402,7 @@ export default function DashboardScreen() {
           setPeriod={setPeriod}
         />
 
-        {/* Flow KPI row */}
+        {/* 3. Flow KPI row */}
         <FlowRow
           income={stats.income}
           expense={stats.expense}
@@ -790,45 +1412,81 @@ export default function DashboardScreen() {
           prevExpense={stats.prevExpense}
         />
 
-        {/* Mini chart */}
+        {/* 4. Mini chart */}
         <MiniBarChart data={stats.chartDays} />
 
-        {/* Accounts */}
+        {/* 5. Accounts */}
         <AccountsScroll
           accounts={activeAccounts}
           onPress={(id) => router.push(`/account/${id}`)}
         />
 
-        {/* Upcoming */}
+        {/* 6. Receivable + Payable leaders */}
+        <LeadersRow obligations={snapshot?.obligations ?? []} router={router} />
+
+        {/* 7. Upcoming */}
         <UpcomingSection
           obligations={snapshot?.obligations ?? []}
           subscriptions={snapshot?.subscriptions ?? []}
           router={router}
         />
 
-        {/* Budget alerts */}
+        {/* 8. Budget alerts */}
         <BudgetsSection budgets={snapshot?.budgets ?? []} router={router} />
+
+        {/* 9. Category comparison (simple) */}
+        <CategoryComparison
+          catTotals={stats.catTotals}
+          prevCatTotals={stats.prevCatTotals}
+          categories={snapshot?.categories ?? []}
+          currency={baseCurrency}
+        />
 
         {/* ── Advanced section ── */}
         {isAdvanced && !isPro && <ProGate />}
 
         {isAdvanced && isPro && (
           <>
-            <ObligationsSection obligations={snapshot?.obligations ?? []} router={router} />
-
+            {/* 10. Category breakdown (detail) */}
             <CategoryBreakdown
               catTotals={stats.catTotals}
               categories={snapshot?.categories ?? []}
               currency={baseCurrency}
             />
 
+            {/* 11. Obligations section */}
+            <ObligationsSection obligations={snapshot?.obligations ?? []} router={router} />
+
+            {/* 12. Alert center */}
+            <AlertCenter
+              budgets={snapshot?.budgets ?? []}
+              obligations={snapshot?.obligations ?? []}
+              subscriptions={snapshot?.subscriptions ?? []}
+              movements={movements}
+            />
+
+            {/* 13. Obligation watch */}
+            <ObligationWatch obligations={snapshot?.obligations ?? []} router={router} />
+
+            {/* 14. Weekly pattern */}
+            <WeeklyPattern movements={movements} />
+
+            {/* 15. Transfer snapshot */}
+            <TransferSnapshot
+              movements={movements}
+              accounts={activeAccounts}
+            />
+
+            {/* 16. Monthly pulse */}
             <MonthlyPulse data={stats.monthlyPulse} currency={baseCurrency} />
 
+            {/* 17. Subscriptions summary */}
             <SubscriptionsSummary
               subscriptions={snapshot?.subscriptions ?? []}
               currency={baseCurrency}
             />
 
+            {/* 18. Health score */}
             <HealthScore
               netWorth={netWorth}
               income={stats.income}
@@ -836,17 +1494,31 @@ export default function DashboardScreen() {
               obligations={snapshot?.obligations ?? []}
               netWorthThreeMonthExpense={netWorth / Math.max(stats.expense, 1)}
             />
+
+            {/* 19. Currency exposure */}
+            <CurrencyExposure accounts={snapshot?.accounts ?? []} />
+
+            {/* 20. Period radar */}
+            <PeriodRadar
+              income={stats.income}
+              expense={stats.expense}
+              catTotals={stats.catTotals}
+              categories={snapshot?.categories ?? []}
+              curStart={stats.curStart}
+              curEnd={stats.curEnd}
+              movements={movements}
+            />
+
+            {/* 21. Data quality */}
+            <DataQuality movements={movements} />
+
+            {/* 22. Activity timeline */}
+            <ActivityTimeline snapshot={snapshot} />
           </>
         )}
       </ScrollView>
 
-      <TouchableOpacity
-        style={[styles.fab, { bottom: insets.bottom + 16 }]}
-        onPress={() => setFormVisible(true)}
-        activeOpacity={0.85}
-      >
-        <Text style={styles.fabIcon}>+</Text>
-      </TouchableOpacity>
+      <FAB onPress={() => setFormVisible(true)} bottom={insets.bottom + 16} />
 
       <MovementForm
         visible={formVisible}
@@ -878,8 +1550,8 @@ const subStyles = StyleSheet.create({
     flexDirection: "row",
     backgroundColor: GLASS.card,
     borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderWidth: 0.5,
+    borderColor: GLASS.separator,
     padding: 3,
     gap: 3,
   },
@@ -893,8 +1565,8 @@ const subStyles = StyleSheet.create({
   },
   toggleBtnActive: {
     backgroundColor: GLASS.cardActive,
-    borderWidth: 1,
-    borderColor: GLASS.cardActiveBorder,
+    borderWidth: 0.5,
+    borderColor: "rgba(107,228,197,0.15)",
   },
   toggleText: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.sm, color: COLORS.storm },
   toggleTextActive: { fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.ink },
@@ -905,19 +1577,10 @@ const subStyles = StyleSheet.create({
     backgroundColor: GLASS.card,
     borderRadius: RADIUS.xl,
     borderWidth: 1,
-    borderColor: GLASS.cardActiveBorder,
+    borderColor: GLASS.cardBorder,
     padding: SPACING.xl,
     gap: SPACING.xs,
     overflow: "hidden",
-    shadowColor: COLORS.pine,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.18,
-    shadowRadius: 28,
-    elevation: 8,
-  },
-  heroGlow: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: GLASS.cardActive,
   },
   heroPeriodRow: {
     flexDirection: "row",
@@ -929,7 +1592,7 @@ const subStyles = StyleSheet.create({
     alignSelf: "flex-start",
   },
   heroPeriodBtn: {
-    paddingHorizontal: SPACING.md,
+    paddingHorizontal: SPACING.sm,
     paddingVertical: 5,
     borderRadius: RADIUS.full,
     backgroundColor: "transparent",
@@ -940,11 +1603,10 @@ const subStyles = StyleSheet.create({
   heroPeriodText: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.xs, color: COLORS.storm },
   heroPeriodTextActive: { fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.canvas },
   heroLabel: {
-    fontFamily: FONT_FAMILY.bodySemibold,
+    fontFamily: FONT_FAMILY.bodyMedium,
     fontSize: FONT_SIZE.xs,
     color: COLORS.storm,
-    textTransform: "uppercase",
-    letterSpacing: 0.8,
+    letterSpacing: 0.3,
   },
   heroValue: {
     fontFamily: FONT_FAMILY.heading,
@@ -987,8 +1649,6 @@ const subStyles = StyleSheet.create({
     flex: 1,
     backgroundColor: GLASS.card,
     borderRadius: RADIUS.xl,
-    borderWidth: 1,
-    borderColor: GLASS.cardBorder,
     padding: SPACING.md,
     gap: 3,
     overflow: "hidden",
@@ -996,7 +1656,7 @@ const subStyles = StyleSheet.create({
   kpiAccent: {
     ...StyleSheet.absoluteFillObject,
   },
-  kpiLabel: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: 9, color: COLORS.storm, textTransform: "uppercase", letterSpacing: 0.4 },
+  kpiLabel: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: 10, color: COLORS.storm, letterSpacing: 0.2 },
   kpiValue: { fontFamily: FONT_FAMILY.heading, fontSize: FONT_SIZE.sm },
   kpiChange: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: 9 },
   kpiChangePlaceholder: { fontFamily: FONT_FAMILY.body, fontSize: 9 },
@@ -1023,8 +1683,6 @@ const subStyles = StyleSheet.create({
   accountChip: {
     backgroundColor: GLASS.card,
     borderRadius: RADIUS.xl,
-    borderWidth: 1,
-    borderColor: GLASS.cardBorder,
     padding: SPACING.md,
     alignItems: "center",
     gap: SPACING.xs,
@@ -1032,9 +1690,9 @@ const subStyles = StyleSheet.create({
     maxWidth: 130,
   },
   accountChipIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: RADIUS.lg,
+    width: 30,
+    height: 30,
+    borderRadius: RADIUS.md,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -1059,8 +1717,6 @@ const subStyles = StyleSheet.create({
   budgetRow: {
     backgroundColor: GLASS.card,
     borderRadius: RADIUS.xl,
-    borderWidth: 1,
-    borderColor: GLASS.cardBorder,
     padding: SPACING.md,
     gap: SPACING.xs,
     marginBottom: SPACING.sm,
@@ -1070,8 +1726,30 @@ const subStyles = StyleSheet.create({
   budgetPct: { fontFamily: FONT_FAMILY.heading, fontSize: FONT_SIZE.sm },
   budgetMeta: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
 
+  // Leaders (receivable/payable top 3)
+  leadersRowContainer: { flexDirection: "row", gap: SPACING.sm },
+  leadersCard: {
+    flex: 1,
+    backgroundColor: GLASS.card,
+    borderRadius: RADIUS.xl,
+    borderWidth: 1,
+    padding: SPACING.md,
+    gap: SPACING.xs,
+  },
+  leadersTitle: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+    marginBottom: SPACING.xs,
+  },
+  leadersRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: SPACING.xs },
+  leadersSep: { borderBottomWidth: 0.5, borderBottomColor: GLASS.separator },
+  leadersName: { flex: 1, fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.xs, color: COLORS.ink, paddingRight: 4 },
+  leadersAmt: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.xs },
+
   // Obligations advanced
-  obGroupTitle: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.xs, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: SPACING.xs },
+  obGroupTitle: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.xs, letterSpacing: 0.2, marginBottom: SPACING.xs },
   obRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -1090,8 +1768,17 @@ const subStyles = StyleSheet.create({
   catLabelRow: { flexDirection: "row", justifyContent: "space-between" },
   catName: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.sm, color: COLORS.ink, flex: 1 },
   catAmount: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.sm, color: COLORS.rosewood },
-  catTrack: { height: 6, backgroundColor: GLASS.card, borderRadius: RADIUS.full, overflow: "hidden", borderWidth: 0.5, borderColor: GLASS.cardBorder },
+  catTrack: { height: 6, backgroundColor: "rgba(255,255,255,0.07)", borderRadius: RADIUS.full, overflow: "hidden" },
   catFill: { height: 6, backgroundColor: COLORS.rosewood + "88", borderRadius: RADIUS.full },
+
+  // Category comparison
+  catCompLegend: { flexDirection: "row", gap: SPACING.lg, marginBottom: SPACING.sm },
+  catCompRow: { flexDirection: "row", alignItems: "center", gap: SPACING.sm, marginBottom: SPACING.sm },
+  catCompName: { width: 80, fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.xs, color: COLORS.ink },
+  catCompBars: { flex: 1, gap: 3 },
+  catCompBarTrack: { height: 6, backgroundColor: "rgba(255,255,255,0.07)", borderRadius: RADIUS.full, overflow: "hidden" },
+  catCompBarFill: { height: 6, borderRadius: RADIUS.full },
+  catCompAmt: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: 10, color: COLORS.rosewood, width: 60, textAlign: "right" },
 
   // Subscriptions summary
   subHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: SPACING.sm },
@@ -1122,8 +1809,58 @@ const subStyles = StyleSheet.create({
   healthLabelRow: { flexDirection: "row", justifyContent: "space-between" },
   healthLabel: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.xs, color: COLORS.ink },
   healthDesc: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
-  healthTrack: { height: 5, backgroundColor: GLASS.card, borderRadius: RADIUS.full, overflow: "hidden", borderWidth: 0.5, borderColor: GLASS.cardBorder },
+  healthTrack: { height: 5, backgroundColor: "rgba(255,255,255,0.07)", borderRadius: RADIUS.full, overflow: "hidden" },
   healthFill: { height: 5, borderRadius: RADIUS.full },
+
+  // Alert center
+  alertEmpty: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.storm },
+  alertRow: { flexDirection: "row", alignItems: "center", gap: SPACING.sm, paddingVertical: SPACING.xs },
+  alertText: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.sm, flex: 1 },
+
+  // Weekly pattern
+  weeklyBar: {
+    flex: 1,
+    backgroundColor: COLORS.rosewood + "99",
+    borderTopLeftRadius: 3,
+    borderTopRightRadius: 3,
+  },
+
+  // Transfer snapshot
+  transferRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: SPACING.sm },
+  transferRoute: { flex: 1, flexDirection: "row", alignItems: "center", gap: 4 },
+  transferAcct: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.xs, color: COLORS.ink, flexShrink: 1 },
+  transferAmt: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.xs, color: COLORS.storm },
+
+  // Data quality
+  dqRow: { flexDirection: "row", alignItems: "center", gap: SPACING.sm, paddingVertical: SPACING.xs },
+  dqText: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.sm, color: COLORS.storm, flex: 1 },
+
+  // Currency exposure
+  currencyRow: { gap: SPACING.xs, marginBottom: SPACING.sm },
+  currencyLabel: { flexDirection: "row", alignItems: "center", gap: SPACING.sm },
+  currencyDot: { width: 8, height: 8, borderRadius: 4 },
+  currencyCode: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.xs, color: COLORS.ink },
+  currencyPct: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm, marginLeft: "auto" },
+  currencyTrack: { height: 6, backgroundColor: "rgba(255,255,255,0.07)", borderRadius: RADIUS.full, overflow: "hidden" },
+  currencyFill: { height: 6, borderRadius: RADIUS.full },
+
+  // Period radar
+  radarGrid: { flexDirection: "row", flexWrap: "wrap", gap: SPACING.sm },
+  radarItem: {
+    width: "47%",
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderRadius: RADIUS.sm,
+    padding: SPACING.sm,
+    gap: 3,
+  },
+  radarLabel: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
+  radarValue: { fontFamily: FONT_FAMILY.heading, fontSize: FONT_SIZE.sm, color: COLORS.ink },
+
+  // Activity timeline
+  timelineRow: { flexDirection: "row", alignItems: "flex-start", gap: SPACING.sm, paddingVertical: SPACING.sm },
+  timelineContent: { flex: 1, gap: 2 },
+  timelineDesc: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.sm, color: COLORS.ink },
+  timelineDate: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
 
   // Pro gate
   proGate: { alignItems: "center", padding: SPACING.xl, gap: SPACING.sm },
@@ -1134,26 +1871,5 @@ const subStyles = StyleSheet.create({
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: COLORS.canvas },
-  content: { padding: SPACING.lg, gap: SPACING.lg, paddingBottom: 100 },
-  fab: {
-    position: "absolute",
-    right: SPACING.lg,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: COLORS.pine,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: COLORS.pine,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  fabIcon: {
-    fontFamily: FONT_FAMILY.heading,
-    fontSize: 28,
-    color: COLORS.canvas,
-    lineHeight: 34,
-  },
+  content: { padding: SPACING.lg, gap: SPACING.xl, paddingBottom: 100 },
 });
