@@ -157,7 +157,7 @@ function SectionTitle({ children }: { children: string }) {
   return <Text style={subStyles.sectionTitle}>{children}</Text>;
 }
 
-// Mode + Period toggles
+// Mode toggle
 function ModeToggle({
   mode, setMode, isPro,
 }: { mode: string; setMode: (m: "simple" | "advanced") => void; isPro: boolean }) {
@@ -184,76 +184,108 @@ function ModeToggle({
   );
 }
 
-function PeriodToggle({ period, setPeriod }: { period: Period; setPeriod: (p: Period) => void }) {
+// Hero balance card (prominent net worth + period income/expense)
+function HeroCard({
+  netWorth, income, expense, currency, period, setPeriod,
+}: {
+  netWorth: number; income: number; expense: number; currency: string;
+  period: Period; setPeriod: (p: Period) => void;
+}) {
+  const net = income - expense;
   return (
-    <View style={subStyles.toggleRow}>
-      {(["this_month", "last_30"] as Period[]).map((p) => (
-        <TouchableOpacity
-          key={p}
-          style={[subStyles.toggleBtn, period === p && subStyles.toggleBtnActive]}
-          onPress={() => setPeriod(p)}
-        >
-          <Text style={[subStyles.toggleText, period === p && subStyles.toggleTextActive]}>
-            {p === "this_month" ? "Este mes" : "Últimos 30 d"}
+    <View style={subStyles.heroCard}>
+      <View style={subStyles.heroGlow} />
+
+      {/* Period toggle compact */}
+      <View style={subStyles.heroPeriodRow}>
+        {(["this_month", "last_30"] as Period[]).map((p) => (
+          <TouchableOpacity
+            key={p}
+            style={[subStyles.heroPeriodBtn, period === p && subStyles.heroPeriodBtnActive]}
+            onPress={() => setPeriod(p)}
+          >
+            <Text style={[subStyles.heroPeriodText, period === p && subStyles.heroPeriodTextActive]}>
+              {p === "this_month" ? "Este mes" : "30 días"}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      <Text style={subStyles.heroLabel}>Patrimonio neto</Text>
+      <Text style={subStyles.heroValue} numberOfLines={1} adjustsFontSizeToFit>
+        {formatCurrency(netWorth, currency)}
+      </Text>
+
+      {/* Net flow pill */}
+      <View style={[subStyles.heroNetPill, { backgroundColor: net >= 0 ? COLORS.pine + "22" : COLORS.rosewood + "22" }]}>
+        <Text style={[subStyles.heroNetText, { color: net >= 0 ? COLORS.pine : COLORS.rosewood }]}>
+          {net >= 0 ? "+" : ""}{formatCurrency(net, currency)} neto
+        </Text>
+      </View>
+
+      {/* Income / Expense row */}
+      <View style={subStyles.heroFlow}>
+        <View style={subStyles.heroFlowItem}>
+          <View style={[subStyles.heroFlowDot, { backgroundColor: COLORS.pine }]} />
+          <Text style={subStyles.heroFlowLabel}>Ingresos</Text>
+          <Text style={[subStyles.heroFlowAmt, { color: COLORS.pine }]}>
+            {formatCurrency(income, currency)}
           </Text>
-        </TouchableOpacity>
-      ))}
+        </View>
+        <View style={subStyles.heroSep} />
+        <View style={subStyles.heroFlowItem}>
+          <View style={[subStyles.heroFlowDot, { backgroundColor: COLORS.rosewood }]} />
+          <Text style={subStyles.heroFlowLabel}>Gastos</Text>
+          <Text style={[subStyles.heroFlowAmt, { color: COLORS.rosewood }]}>
+            {formatCurrency(expense, currency)}
+          </Text>
+        </View>
+      </View>
     </View>
   );
 }
 
-// KPI 2×2 grid
-function KpiGrid({
-  netWorth, income, expense, net, currency,
-  prevIncome, prevExpense,
+// KPI row — 3 compact cards (income %, expense %, net)
+function FlowRow({
+  income, expense, net, currency, prevIncome, prevExpense,
 }: {
-  netWorth: number; income: number; expense: number; net: number;
+  income: number; expense: number; net: number;
   currency: string; prevIncome: number; prevExpense: number;
 }) {
   const incomePct = pctChange(income, prevIncome);
   const expPct = pctChange(expense, prevExpense);
 
   return (
-    <View style={subStyles.kpiGrid}>
-      <KpiCard label="Patrimonio neto" value={netWorth} currency={currency} large />
-      <KpiCard
-        label="Ingresos" value={income} currency={currency}
-        change={incomePct} higherIsGood
-      />
-      <KpiCard
-        label="Gastos" value={expense} currency={currency}
-        change={expPct} higherIsGood={false}
-      />
-      <KpiCard
-        label="Neto" value={net} currency={currency}
-        valueColor={net >= 0 ? COLORS.income : COLORS.expense}
-      />
+    <View style={subStyles.kpiRow}>
+      <FlowCard label="Ingresos" value={income} currency={currency} change={incomePct} higherIsGood accent={COLORS.pine} />
+      <FlowCard label="Gastos" value={expense} currency={currency} change={expPct} higherIsGood={false} accent={COLORS.rosewood} />
+      <FlowCard label="Neto" value={net} currency={currency} accent={net >= 0 ? COLORS.pine : COLORS.rosewood} />
     </View>
   );
 }
 
-function KpiCard({
-  label, value, currency, change, higherIsGood, large, valueColor,
+function FlowCard({
+  label, value, currency, change, higherIsGood, accent,
 }: {
   label: string; value: number; currency: string;
-  change?: number | null; higherIsGood?: boolean;
-  large?: boolean; valueColor?: string;
+  change?: number | null; higherIsGood?: boolean; accent: string;
 }) {
   const isGood = change !== null && change !== undefined
     ? (higherIsGood ? change >= 0 : change <= 0)
     : null;
-  const changeColor = isGood === null ? COLORS.textMuted : isGood ? COLORS.income : COLORS.expense;
+  const changeColor = isGood === null ? COLORS.storm : isGood ? COLORS.pine : COLORS.rosewood;
   const arrow = change == null ? null : change >= 0 ? "↑" : "↓";
 
   return (
-    <View style={[subStyles.kpiCard, large && subStyles.kpiCardLarge]}>
+    <View style={subStyles.kpiCard}>
+      <View style={[subStyles.kpiAccent, { backgroundColor: accent + "33" }]} />
       <Text style={subStyles.kpiLabel}>{label}</Text>
-      <Text style={[subStyles.kpiValue, large && subStyles.kpiValueLarge, valueColor ? { color: valueColor } : null]}>
+      <Text style={[subStyles.kpiValue, { color: accent }]} numberOfLines={1} adjustsFontSizeToFit>
         {formatCurrency(value, currency)}
       </Text>
       {change !== null && change !== undefined ? (
         <Text style={[subStyles.kpiChange, { color: changeColor }]}>
-          {arrow} {Math.abs(change).toFixed(1)}% vs anterior
+          {arrow} {Math.abs(change).toFixed(1)}%
         </Text>
       ) : (
         <Text style={subStyles.kpiChangePlaceholder}> </Text>
@@ -732,15 +764,21 @@ export default function DashboardScreen() {
           <RefreshControl refreshing={snapLoading} onRefresh={onRefresh} tintColor={COLORS.primary} />
         }
       >
-        {/* Controls */}
-        <View style={styles.controls}>
-          <ModeToggle mode={dashboardMode} setMode={setDashboardMode} isPro={isPro} />
-          <PeriodToggle period={period} setPeriod={setPeriod} />
-        </View>
+        {/* Mode toggle */}
+        <ModeToggle mode={dashboardMode} setMode={setDashboardMode} isPro={isPro} />
 
-        {/* KPI grid */}
-        <KpiGrid
+        {/* Hero balance */}
+        <HeroCard
           netWorth={netWorth}
+          income={stats.income}
+          expense={stats.expense}
+          currency={baseCurrency}
+          period={period}
+          setPeriod={setPeriod}
+        />
+
+        {/* Flow KPI row */}
+        <FlowRow
           income={stats.income}
           expense={stats.expense}
           net={stats.net}
@@ -832,7 +870,7 @@ const subStyles = StyleSheet.create({
     marginBottom: SPACING.sm,
   },
 
-  // Toggles
+  // Mode toggle
   toggleRow: {
     flexDirection: "row",
     backgroundColor: GLASS.card,
@@ -859,24 +897,98 @@ const subStyles = StyleSheet.create({
   toggleTextActive: { fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.ink },
   proBadge: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.xs - 1, color: COLORS.gold },
 
-  // KPI
-  kpiGrid: { flexDirection: "row", flexWrap: "wrap", gap: SPACING.sm },
+  // Hero card
+  heroCard: {
+    backgroundColor: GLASS.card,
+    borderRadius: RADIUS.xl,
+    borderWidth: 1,
+    borderColor: GLASS.cardActiveBorder,
+    padding: SPACING.xl,
+    gap: SPACING.xs,
+    overflow: "hidden",
+    shadowColor: COLORS.pine,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.18,
+    shadowRadius: 28,
+    elevation: 8,
+  },
+  heroGlow: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: GLASS.cardActive,
+  },
+  heroPeriodRow: {
+    flexDirection: "row",
+    gap: SPACING.xs,
+    marginBottom: SPACING.xs,
+  },
+  heroPeriodBtn: {
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 4,
+    borderRadius: RADIUS.full,
+    backgroundColor: "transparent",
+  },
+  heroPeriodBtnActive: {
+    backgroundColor: GLASS.cardActive,
+    borderWidth: 1,
+    borderColor: GLASS.cardActiveBorder,
+  },
+  heroPeriodText: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
+  heroPeriodTextActive: { fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.pine },
+  heroLabel: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+  },
+  heroValue: {
+    fontFamily: FONT_FAMILY.heading,
+    fontSize: 38,
+    color: COLORS.ink,
+    letterSpacing: -0.5,
+    marginTop: 2,
+  },
+  heroNetPill: {
+    alignSelf: "flex-start",
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 3,
+    borderRadius: RADIUS.full,
+    marginTop: SPACING.xs,
+  },
+  heroNetText: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.xs },
+  heroFlow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: SPACING.md,
+    paddingTop: SPACING.md,
+    borderTopWidth: 0.5,
+    borderTopColor: GLASS.separator,
+  },
+  heroFlowItem: { flex: 1, gap: 3 },
+  heroFlowDot: { width: 6, height: 6, borderRadius: 3 },
+  heroFlowLabel: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
+  heroFlowAmt: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.md },
+  heroSep: { width: 0.5, height: 44, backgroundColor: GLASS.separator, marginHorizontal: SPACING.lg },
+
+  // KPI row
+  kpiRow: { flexDirection: "row", gap: SPACING.sm },
   kpiCard: {
     flex: 1,
-    minWidth: "45%",
     backgroundColor: GLASS.card,
     borderRadius: RADIUS.xl,
     borderWidth: 1,
     borderColor: GLASS.cardBorder,
     padding: SPACING.md,
-    gap: 4,
+    gap: 3,
+    overflow: "hidden",
   },
-  kpiCardLarge: {},
-  kpiLabel: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.xs, color: COLORS.storm, textTransform: "uppercase", letterSpacing: 0.3 },
-  kpiValue: { fontFamily: FONT_FAMILY.heading, fontSize: FONT_SIZE.md, color: COLORS.ink },
-  kpiValueLarge: { fontSize: FONT_SIZE.lg },
-  kpiChange: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.xs },
-  kpiChangePlaceholder: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs },
+  kpiAccent: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  kpiLabel: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: 9, color: COLORS.storm, textTransform: "uppercase", letterSpacing: 0.4 },
+  kpiValue: { fontFamily: FONT_FAMILY.heading, fontSize: FONT_SIZE.sm },
+  kpiChange: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: 9 },
+  kpiChangePlaceholder: { fontFamily: FONT_FAMILY.body, fontSize: 9 },
 
   // Chart
   chartRow: {
@@ -888,7 +1000,7 @@ const subStyles = StyleSheet.create({
   },
   chartCol: { flex: 1, alignItems: "center", gap: 4 },
   chartBars: { flexDirection: "row", alignItems: "flex-end", gap: 1, width: "100%" },
-  chartBar: { flex: 1, borderRadius: 2, minHeight: 0 },
+  chartBar: { flex: 1, borderTopLeftRadius: 3, borderTopRightRadius: 3, minHeight: 0 },
   chartLabel: { fontFamily: FONT_FAMILY.body, fontSize: 9, color: COLORS.storm, textAlign: "center" },
   chartLegend: { flexDirection: "row", gap: SPACING.lg, marginTop: SPACING.xs },
   legendItem: { flexDirection: "row", alignItems: "center", gap: 4 },
@@ -1012,7 +1124,6 @@ const subStyles = StyleSheet.create({
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: COLORS.canvas },
   content: { padding: SPACING.lg, gap: SPACING.lg, paddingBottom: 100 },
-  controls: { gap: SPACING.sm },
   fab: {
     position: "absolute",
     right: SPACING.lg,
