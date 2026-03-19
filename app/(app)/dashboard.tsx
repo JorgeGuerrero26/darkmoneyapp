@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   RefreshControl,
   ScrollView,
@@ -29,6 +29,7 @@ import {
   type LucideIcon,
 } from "lucide-react-native";
 
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth } from "../../lib/auth-context";
 import { useWorkspace } from "../../lib/workspace-context";
 import {
@@ -36,6 +37,7 @@ import {
   useDashboardMovementsQuery,
   type DashboardMovementRow,
 } from "../../services/queries/workspace-data";
+import type { ExchangeRateSummary } from "../../types/domain";
 import { useUiStore } from "../../store/ui-store";
 import { Card } from "../../components/ui/Card";
 import { ProgressBar } from "../../components/ui/ProgressBar";
@@ -90,14 +92,6 @@ function isExpense(m: DashboardMovementRow) {
   return false;
 }
 
-function incomeAmt(m: DashboardMovementRow): number {
-  return m.destinationAmount || m.sourceAmount || 0;
-}
-
-function expenseAmt(m: DashboardMovementRow): number {
-  return m.sourceAmount || m.destinationAmount || 0;
-}
-
 function inRange(m: DashboardMovementRow, start: Date, end: Date) {
   const d = new Date(m.occurredAt);
   return d >= start && d <= end;
@@ -138,7 +132,61 @@ function getPeriodBounds(period: Period, now: Date): { curStart: Date; curEnd: D
   return { curStart, curEnd, prevStart, prevEnd };
 }
 
-function useDashboardStats(movements: DashboardMovementRow[], period: Period) {
+// ─── Exchange rate helpers ─────────────────────────────────────────────────────
+
+const DASHBOARD_CURRENCY_KEY = "darkmoney.dashboard.displayCurrency";
+
+function buildExchangeRateMap(rates: ExchangeRateSummary[]): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const r of rates) {
+    const key = `${r.fromCurrencyCode.toUpperCase()}:${r.toCurrencyCode.toUpperCase()}`;
+    if (!map.has(key) && r.rate > 0) map.set(key, r.rate);
+  }
+  return map;
+}
+
+function resolveRate(map: Map<string, number>, from: string, to: string): number {
+  if (from === to) return 1;
+  const direct = map.get(`${from}:${to}`);
+  if (direct) return direct;
+  const inverse = map.get(`${to}:${from}`);
+  if (inverse) return 1 / inverse;
+  return 1; // no rate found → keep original
+}
+
+function convertAmt(
+  amount: number,
+  fromCurrency: string | null | undefined,
+  toCurrency: string,
+  map: Map<string, number>,
+): number {
+  if (!fromCurrency) return amount;
+  return amount * resolveRate(map, fromCurrency.toUpperCase(), toCurrency.toUpperCase());
+}
+
+// ─── Stats ────────────────────────────────────────────────────────────────────
+
+type ConversionCtx = {
+  accountCurrencyMap: Map<number, string>;
+  exchangeRateMap: Map<string, number>;
+  displayCurrency: string;
+};
+
+function incomeAmt(m: DashboardMovementRow, ctx: ConversionCtx): number {
+  const raw = m.destinationAmount || m.sourceAmount || 0;
+  const accountId = m.destinationAccountId ?? m.sourceAccountId;
+  const currency = accountId ? ctx.accountCurrencyMap.get(accountId) : undefined;
+  return convertAmt(raw, currency, ctx.displayCurrency, ctx.exchangeRateMap);
+}
+
+function expenseAmt(m: DashboardMovementRow, ctx: ConversionCtx): number {
+  const raw = m.sourceAmount || m.destinationAmount || 0;
+  const accountId = m.sourceAccountId ?? m.destinationAccountId;
+  const currency = accountId ? ctx.accountCurrencyMap.get(accountId) : undefined;
+  return convertAmt(raw, currency, ctx.displayCurrency, ctx.exchangeRateMap);
+}
+
+function useDashboardStats(movements: DashboardMovementRow[], period: Period, ctx: ConversionCtx) {
   return useMemo(() => {
     const now = new Date();
     const { curStart, curEnd, prevStart, prevEnd } = getPeriodBounds(period, now);
@@ -146,12 +194,12 @@ function useDashboardStats(movements: DashboardMovementRow[], period: Period) {
     const cur = movements.filter((m) => inRange(m, curStart, curEnd));
     const prev = movements.filter((m) => inRange(m, prevStart, prevEnd));
 
-    const income = cur.filter(isIncome).reduce((s, m) => s + incomeAmt(m), 0);
-    const expense = cur.filter(isExpense).reduce((s, m) => s + expenseAmt(m), 0);
+    const income = cur.filter(isIncome).reduce((s, m) => s + incomeAmt(m, ctx), 0);
+    const expense = cur.filter(isExpense).reduce((s, m) => s + expenseAmt(m, ctx), 0);
     const net = income - expense;
 
-    const prevIncome = prev.filter(isIncome).reduce((s, m) => s + incomeAmt(m), 0);
-    const prevExpense = prev.filter(isExpense).reduce((s, m) => s + expenseAmt(m), 0);
+    const prevIncome = prev.filter(isIncome).reduce((s, m) => s + incomeAmt(m, ctx), 0);
+    const prevExpense = prev.filter(isExpense).reduce((s, m) => s + expenseAmt(m, ctx), 0);
 
     // Daily chart — last 7 days
     const chartDays = Array.from({ length: 7 }, (_, i) => {
@@ -161,8 +209,8 @@ function useDashboardStats(movements: DashboardMovementRow[], period: Period) {
       const dayMvs = movements.filter((m) => inRange(m, ds, de));
       return {
         label: format(d, "dd/M"),
-        income: dayMvs.filter(isIncome).reduce((s, m) => s + incomeAmt(m), 0),
-        expense: dayMvs.filter(isExpense).reduce((s, m) => s + expenseAmt(m), 0),
+        income: dayMvs.filter(isIncome).reduce((s, m) => s + incomeAmt(m, ctx), 0),
+        expense: dayMvs.filter(isExpense).reduce((s, m) => s + expenseAmt(m, ctx), 0),
       };
     });
 
@@ -174,8 +222,8 @@ function useDashboardStats(movements: DashboardMovementRow[], period: Period) {
       const mMvs = movements.filter((m) => inRange(m, mStart, mEnd));
       return {
         label: format(mDate, "MMM", { locale: es }),
-        income: mMvs.filter(isIncome).reduce((s, m) => s + incomeAmt(m), 0),
-        expense: mMvs.filter(isExpense).reduce((s, m) => s + expenseAmt(m), 0),
+        income: mMvs.filter(isIncome).reduce((s, m) => s + incomeAmt(m, ctx), 0),
+        expense: mMvs.filter(isExpense).reduce((s, m) => s + expenseAmt(m, ctx), 0),
       };
     });
 
@@ -183,14 +231,14 @@ function useDashboardStats(movements: DashboardMovementRow[], period: Period) {
     const catTotals = new Map<number | null, number>();
     for (const m of cur.filter(isExpense)) {
       const k = m.categoryId;
-      catTotals.set(k, (catTotals.get(k) ?? 0) + expenseAmt(m));
+      catTotals.set(k, (catTotals.get(k) ?? 0) + expenseAmt(m, ctx));
     }
 
     // Previous period category totals
     const prevCatTotals = new Map<number | null, number>();
     for (const m of prev.filter(isExpense)) {
       const k = m.categoryId;
-      prevCatTotals.set(k, (prevCatTotals.get(k) ?? 0) + expenseAmt(m));
+      prevCatTotals.set(k, (prevCatTotals.get(k) ?? 0) + expenseAmt(m, ctx));
     }
 
     return {
@@ -198,7 +246,7 @@ function useDashboardStats(movements: DashboardMovementRow[], period: Period) {
       prevIncome, prevExpense,
       chartDays, monthlyPulse, catTotals, prevCatTotals,
     };
-  }, [movements, period]);
+  }, [movements, period, ctx]);
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -237,27 +285,46 @@ function ModeToggle({
 // Hero balance card (prominent net worth + period income/expense)
 function HeroCard({
   netWorth, income, expense, currency, period, setPeriod,
+  currencyOptions, onCurrencyChange,
 }: {
   netWorth: number; income: number; expense: number; currency: string;
   period: Period; setPeriod: (p: Period) => void;
+  currencyOptions: string[]; onCurrencyChange: (c: string) => void;
 }) {
   const net = income - expense;
   const allPeriods: Period[] = ["today", "week", "month", "last_30"];
   return (
     <View style={subStyles.heroCard}>
-      {/* Period toggle compact — 4 pills */}
-      <View style={subStyles.heroPeriodRow}>
-        {allPeriods.map((p) => (
-          <TouchableOpacity
-            key={p}
-            style={[subStyles.heroPeriodBtn, period === p && subStyles.heroPeriodBtnActive]}
-            onPress={() => setPeriod(p)}
-          >
-            <Text style={[subStyles.heroPeriodText, period === p && subStyles.heroPeriodTextActive]}>
-              {PERIOD_LABELS[p]}
-            </Text>
-          </TouchableOpacity>
-        ))}
+      {/* Top row: period pills + currency pills */}
+      <View style={subStyles.heroTopRow}>
+        <View style={subStyles.heroPeriodRow}>
+          {allPeriods.map((p) => (
+            <TouchableOpacity
+              key={p}
+              style={[subStyles.heroPeriodBtn, period === p && subStyles.heroPeriodBtnActive]}
+              onPress={() => setPeriod(p)}
+            >
+              <Text style={[subStyles.heroPeriodText, period === p && subStyles.heroPeriodTextActive]}>
+                {PERIOD_LABELS[p]}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        {currencyOptions.length > 1 && (
+          <View style={subStyles.heroCurrencyRow}>
+            {currencyOptions.map((c) => (
+              <TouchableOpacity
+                key={c}
+                style={[subStyles.heroCurrencyBtn, currency === c && subStyles.heroCurrencyBtnActive]}
+                onPress={() => onCurrencyChange(c)}
+              >
+                <Text style={[subStyles.heroCurrencyText, currency === c && subStyles.heroCurrencyTextActive]}>
+                  {c}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
       </View>
 
       <Text style={subStyles.heroLabel}>Patrimonio neto</Text>
@@ -1025,7 +1092,7 @@ function ObligationWatch({
 }
 
 // Weekly pattern — average expense per day of week
-function WeeklyPattern({ movements }: { movements: DashboardMovementRow[] }) {
+function WeeklyPattern({ movements, ctx }: { movements: DashboardMovementRow[]; ctx: ConversionCtx }) {
   const DAY_LABELS = ["Lu", "Ma", "Mi", "Ju", "Vi", "Sá", "Do"];
 
   // getDay returns 0=Sun..6=Sat. We want Mon=0..Sun=6
@@ -1036,7 +1103,7 @@ function WeeklyPattern({ movements }: { movements: DashboardMovementRow[] }) {
     const d = new Date(m.occurredAt);
     const jsDay = getDay(d); // 0=Sun
     const idx = jsDay === 0 ? 6 : jsDay - 1; // Mon=0..Sun=6
-    byDay[idx].total += expenseAmt(m);
+    byDay[idx].total += expenseAmt(m, ctx);
     // track unique weeks for averaging
     const weekKey = `${d.getFullYear()}-${format(startOfWeek(d, { weekStartsOn: 1 }), "MM-dd")}`;
     weekSet.add(weekKey);
@@ -1073,10 +1140,11 @@ function WeeklyPattern({ movements }: { movements: DashboardMovementRow[] }) {
 
 // Transfer snapshot — top 3 transfer routes
 function TransferSnapshot({
-  movements, accounts,
+  movements, accounts, ctx,
 }: {
   movements: DashboardMovementRow[];
   accounts: { id: number; name: string }[];
+  ctx: ConversionCtx;
 }) {
   const accMap = new Map(accounts.map((a) => [a.id, a.name]));
 
@@ -1087,10 +1155,10 @@ function TransferSnapshot({
     const key = `${m.sourceAccountId}-${m.destinationAccountId}`;
     const existing = routeMap.get(key);
     if (existing) {
-      existing.total += expenseAmt(m);
+      existing.total += expenseAmt(m, ctx);
       existing.count++;
     } else {
-      routeMap.set(key, { srcId: m.sourceAccountId, dstId: m.destinationAccountId, total: expenseAmt(m), count: 1 });
+      routeMap.set(key, { srcId: m.sourceAccountId, dstId: m.destinationAccountId, total: expenseAmt(m, ctx), count: 1 });
     }
   }
 
@@ -1327,6 +1395,8 @@ export default function DashboardScreen() {
 
   const [period, setPeriod] = useState<Period>("month");
   const [formVisible, setFormVisible] = useState(false);
+  const [displayCurrency, setDisplayCurrency] = useState<string | null>(null);
+  const currencyLoadedRef = useRef(false);
 
   const isPro = useIsPro(profile?.email);
 
@@ -1339,14 +1409,69 @@ export default function DashboardScreen() {
 
   const baseCurrency = activeWorkspace?.baseCurrencyCode ?? profile?.baseCurrencyCode ?? "PEN";
 
+  // Build exchange rate map from snapshot
+  const exchangeRateMap = useMemo(
+    () => buildExchangeRateMap(snapshot?.exchangeRates ?? []),
+    [snapshot?.exchangeRates],
+  );
+
+  // Map accountId → currencyCode for movement conversion
+  const accountCurrencyMap = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const a of snapshot?.accounts ?? []) map.set(a.id, a.currencyCode);
+    return map;
+  }, [snapshot?.accounts]);
+
+  // Currency options: all currencies present in workspace that have exchange rates
+  const currencyOptions = useMemo(() => {
+    const all = new Set<string>();
+    all.add(baseCurrency);
+    for (const a of snapshot?.accounts ?? []) all.add(a.currencyCode.toUpperCase());
+    for (const o of snapshot?.obligations ?? []) all.add(o.currencyCode.toUpperCase());
+    for (const s of snapshot?.subscriptions ?? []) all.add(s.currencyCode.toUpperCase());
+    return Array.from(all).filter((c) =>
+      c === baseCurrency.toUpperCase() ||
+      resolveRate(exchangeRateMap, baseCurrency.toUpperCase(), c) !== 1 ||
+      c === baseCurrency.toUpperCase(),
+    );
+  }, [baseCurrency, exchangeRateMap, snapshot]);
+
+  // Load persisted currency once
+  useEffect(() => {
+    if (currencyLoadedRef.current) return;
+    currencyLoadedRef.current = true;
+    void AsyncStorage.getItem(DASHBOARD_CURRENCY_KEY).then((stored) => {
+      if (stored && currencyOptions.includes(stored)) setDisplayCurrency(stored);
+      else setDisplayCurrency(baseCurrency);
+    });
+  }, [baseCurrency, currencyOptions]);
+
+  // Persist currency selection
+  const handleCurrencyChange = useCallback((c: string) => {
+    setDisplayCurrency(c);
+    void AsyncStorage.setItem(DASHBOARD_CURRENCY_KEY, c);
+  }, []);
+
+  const activeCurrency = displayCurrency ?? baseCurrency;
+
+  // Conversion context passed to all amount functions
+  const conversionCtx = useMemo<ConversionCtx>(
+    () => ({ accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }),
+    [accountCurrencyMap, exchangeRateMap, activeCurrency],
+  );
+
+  // Net worth: sum balances converted to display currency
   const netWorth = useMemo(() => {
     if (!snapshot) return 0;
     return snapshot.accounts
       .filter((a) => a.includeInNetWorth && !a.isArchived)
-      .reduce((sum, a) => sum + (a.currentBalanceInBaseCurrency ?? a.currentBalance), 0);
-  }, [snapshot]);
+      .reduce((sum, a) => {
+        const amt = a.currentBalanceInBaseCurrency ?? a.currentBalance;
+        return sum + convertAmt(amt, baseCurrency, activeCurrency, exchangeRateMap);
+      }, 0);
+  }, [snapshot, baseCurrency, activeCurrency, exchangeRateMap]);
 
-  const stats = useDashboardStats(movements, period);
+  const stats = useDashboardStats(movements, period, conversionCtx);
 
   const onRefresh = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
@@ -1388,14 +1513,16 @@ export default function DashboardScreen() {
         {/* 1. Mode toggle */}
         <ModeToggle mode={dashboardMode} setMode={setDashboardMode} isPro={isPro} />
 
-        {/* 2. Hero balance (period selector inside) */}
+        {/* 2. Hero balance (period + currency selector inside) */}
         <HeroCard
           netWorth={netWorth}
           income={stats.income}
           expense={stats.expense}
-          currency={baseCurrency}
+          currency={activeCurrency}
           period={period}
           setPeriod={setPeriod}
+          currencyOptions={currencyOptions}
+          onCurrencyChange={handleCurrencyChange}
         />
 
         {/* 3. Flow KPI row */}
@@ -1403,7 +1530,7 @@ export default function DashboardScreen() {
           income={stats.income}
           expense={stats.expense}
           net={stats.net}
-          currency={baseCurrency}
+          currency={activeCurrency}
           prevIncome={stats.prevIncome}
           prevExpense={stats.prevExpense}
         />
@@ -1435,7 +1562,7 @@ export default function DashboardScreen() {
           catTotals={stats.catTotals}
           prevCatTotals={stats.prevCatTotals}
           categories={snapshot?.categories ?? []}
-          currency={baseCurrency}
+          currency={activeCurrency}
         />
 
         {/* ── Advanced section ── */}
@@ -1447,7 +1574,7 @@ export default function DashboardScreen() {
             <CategoryBreakdown
               catTotals={stats.catTotals}
               categories={snapshot?.categories ?? []}
-              currency={baseCurrency}
+              currency={activeCurrency}
             />
 
             {/* 11. Obligations section */}
@@ -1465,21 +1592,22 @@ export default function DashboardScreen() {
             <ObligationWatch obligations={snapshot?.obligations ?? []} router={router} />
 
             {/* 14. Weekly pattern */}
-            <WeeklyPattern movements={movements} />
+            <WeeklyPattern movements={movements} ctx={conversionCtx} />
 
             {/* 15. Transfer snapshot */}
             <TransferSnapshot
               movements={movements}
               accounts={activeAccounts}
+              ctx={conversionCtx}
             />
 
             {/* 16. Monthly pulse */}
-            <MonthlyPulse data={stats.monthlyPulse} currency={baseCurrency} />
+            <MonthlyPulse data={stats.monthlyPulse} currency={activeCurrency} />
 
             {/* 17. Subscriptions summary */}
             <SubscriptionsSummary
               subscriptions={snapshot?.subscriptions ?? []}
-              currency={baseCurrency}
+              currency={activeCurrency}
             />
 
             {/* 18. Health score */}
@@ -1578,10 +1706,17 @@ const subStyles = StyleSheet.create({
     gap: SPACING.xs,
     overflow: "hidden",
   },
+  heroTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: SPACING.sm,
+    gap: SPACING.sm,
+    flexWrap: "wrap",
+  },
   heroPeriodRow: {
     flexDirection: "row",
     gap: 3,
-    marginBottom: SPACING.sm,
     backgroundColor: "rgba(0,0,0,0.25)",
     borderRadius: RADIUS.full,
     padding: 3,
@@ -1598,6 +1733,24 @@ const subStyles = StyleSheet.create({
   },
   heroPeriodText: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.xs, color: COLORS.storm },
   heroPeriodTextActive: { fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.canvas },
+  heroCurrencyRow: {
+    flexDirection: "row",
+    gap: 3,
+    backgroundColor: "rgba(0,0,0,0.25)",
+    borderRadius: RADIUS.full,
+    padding: 3,
+  },
+  heroCurrencyBtn: {
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 5,
+    borderRadius: RADIUS.full,
+    backgroundColor: "transparent",
+  },
+  heroCurrencyBtnActive: {
+    backgroundColor: COLORS.ember,
+  },
+  heroCurrencyText: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.xs, color: COLORS.storm },
+  heroCurrencyTextActive: { fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.canvas },
   heroLabel: {
     fontFamily: FONT_FAMILY.bodyMedium,
     fontSize: FONT_SIZE.xs,
