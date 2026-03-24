@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDownCircle, ArrowUpCircle, ArrowLeftRight } from "lucide-react-native";
 import type { TextInput } from "react-native";
 import {
-  Modal,
   ScrollView,
   StyleSheet,
   Text,
@@ -13,6 +12,7 @@ import {
 import { useUiStore } from "../../store/ui-store";
 import { useWorkspace } from "../../lib/workspace-context";
 import { humanizeError } from "../../lib/errors";
+import { todayPeru, dateStrToISO, isoToDateStr } from "../../lib/date";
 import {
   useWorkspaceSnapshotQuery,
   useCreateMovementMutation,
@@ -21,14 +21,16 @@ import {
 import { useAuth } from "../../lib/auth-context";
 import { useToast } from "../../hooks/useToast";
 import { BottomSheet } from "../ui/BottomSheet";
+import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { CurrencyInput } from "../ui/CurrencyInput";
 import { BalanceImpactPreview } from "../domain/BalanceImpactPreview";
 import { AttachmentPicker, type Attachment } from "../domain/AttachmentPicker";
 import { DatePickerInput } from "../ui/DatePickerInput";
+import { sortByName } from "../../lib/sort-locale";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
-import type { MovementType, MovementStatus, MovementRecord, AccountSummary, CategorySummary } from "../../types/domain";
+import type { MovementType, MovementStatus, MovementRecord, AccountSummary, CategorySummary, CounterpartySummary } from "../../types/domain";
 
 type Props = {
   visible: boolean;
@@ -50,6 +52,7 @@ type FormState = {
   destinationAmount: string;
   description: string;
   categoryId: number | null;
+  counterpartyId: number | null;
   occurredAt: string;
   notes: string;
 };
@@ -76,7 +79,8 @@ function getInitialForm(defaultType: MovementType): FormState {
     destinationAmount: "",
     description: "",
     categoryId: null,
-    occurredAt: new Date().toISOString().split("T")[0],
+    counterpartyId: null,
+    occurredAt: todayPeru(),
     notes: "",
   };
 }
@@ -107,14 +111,39 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   const baseCurrency = activeWorkspace?.baseCurrencyCode ?? "PEN";
   const accounts = snapshot?.accounts ?? [];
   const categories = snapshot?.categories ?? [];
+  const counterparties = snapshot?.counterparties ?? [];
+
+  const activeAccountsSorted = useMemo(
+    () => sortByName(accounts.filter((a) => !a.isArchived)),
+    [accounts],
+  );
+  /** En transferencia: destino ≠ origen. En ingreso no hay cuenta origen en el flujo: mostrar todas las activas. */
+  const destinationAccountsSorted = useMemo(() => {
+    const active = sortByName(accounts.filter((a) => !a.isArchived));
+    if (form.movementType === "transfer" && form.sourceAccountId != null) {
+      return active.filter((a) => a.id !== form.sourceAccountId);
+    }
+    return active;
+  }, [accounts, form.sourceAccountId, form.movementType]);
+  const categoriesForPicker = useMemo(() => {
+    const filtered = categories.filter(
+      (c) =>
+        c.isActive &&
+        (c.kind === "both" ||
+          (form.movementType === "income" && c.kind === "income") ||
+          (form.movementType !== "income" && c.kind === "expense")),
+    );
+    return sortByName(filtered);
+  }, [categories, form.movementType]);
+  const counterpartiesSorted = useMemo(() => sortByName(counterparties), [counterparties]);
 
   // Reset on open / populate when editing
   useEffect(() => {
     if (!visible) return;
     if (editMovement) {
       const occurredDate = editMovement.occurredAt
-        ? new Date(editMovement.occurredAt).toISOString().split("T")[0]
-        : new Date().toISOString().split("T")[0];
+        ? isoToDateStr(editMovement.occurredAt)
+        : todayPeru();
       setForm({
         movementType: editMovement.movementType,
         status: editMovement.status,
@@ -124,6 +153,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         destinationAmount: editMovement.destinationAmount ? String(editMovement.destinationAmount) : "",
         description: editMovement.description ?? "",
         categoryId: editMovement.categoryId ?? null,
+        counterpartyId: null,
         occurredAt: occurredDate,
         notes: editMovement.notes ?? "",
       });
@@ -155,6 +185,13 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   const destinationAccount = accounts.find((a) => a.id === form.destinationAccountId) ?? null;
   const sourceAmountNum = parseFloat(form.sourceAmount) || 0;
   const destinationAmountNum = parseFloat(form.destinationAmount) || 0;
+
+  // Transfer: destination amount only needed when currencies differ
+  const transferCurrenciesDiffer =
+    form.movementType === "transfer" &&
+    sourceAccount !== null &&
+    destinationAccount !== null &&
+    sourceAccount.currencyCode !== destinationAccount.currencyCode;
 
   const projectedSourceBalance = useMemo(() => {
     if (!sourceAccount || sourceAmountNum <= 0) return null;
@@ -198,10 +235,37 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   }
 
   function validateStep3(): boolean {
-    const newErrors: typeof errors = {};
-    if (!form.description.trim()) newErrors.description = "La descripción es requerida";
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    // Description is optional — auto-generated on submit if empty
+    setErrors({});
+    return true;
+  }
+
+  // Auto-generate description if user left it empty
+  function buildDescription(): string {
+    if (form.description.trim()) return form.description.trim();
+    const parts: string[] = [];
+    if (form.categoryId) {
+      const cat = categories.find((c) => c.id === form.categoryId);
+      if (cat) parts.push(cat.name);
+    }
+    if (form.counterpartyId) {
+      const cp = counterparties.find((c) => c.id === form.counterpartyId);
+      if (cp) parts.push(cp.name);
+    }
+    const account = form.movementType === "income" ? destinationAccount : sourceAccount;
+    if (account) parts.push(account.name);
+    if (parts.length > 0) return parts.join(" · ");
+    const labels: Record<MovementType, string> = {
+      expense: "Gasto",
+      income: "Ingreso",
+      transfer: "Transferencia",
+      obligation_opening: "Apertura de obligación",
+      obligation_payment: "Pago de obligación",
+      subscription_payment: "Pago de suscripción",
+      refund: "Reembolso",
+      adjustment: "Ajuste",
+    };
+    return labels[form.movementType] ?? form.movementType;
   }
 
   function goNext() {
@@ -222,15 +286,16 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     }
 
     try {
+      const autoDesc = buildDescription();
       if (isEditing && editMovement) {
         await updateMovement.mutateAsync({
           id: editMovement.id,
           input: {
             status: form.status,
-            description: form.description.trim(),
+            description: autoDesc,
             notes: form.notes.trim() || null,
             categoryId: form.categoryId,
-            occurredAt: new Date(form.occurredAt).toISOString(),
+            occurredAt: dateStrToISO(form.occurredAt),
             sourceAmount: form.sourceAmount ? parseFloat(form.sourceAmount) : undefined,
             destinationAmount: form.destinationAmount ? parseFloat(form.destinationAmount) : undefined,
           },
@@ -239,18 +304,26 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
       } else {
         const isIncome = form.movementType === "income";
         const isTransfer = form.movementType === "transfer";
+        // For same-currency transfers, destAmount = sourceAmount
+        const effectiveDestAmount = isTransfer && !transferCurrenciesDiffer
+          ? sourceAmountNum
+          : destinationAmountNum;
+        const effectiveFxRate = isTransfer && transferCurrenciesDiffer && sourceAmountNum > 0
+          ? effectiveDestAmount / sourceAmountNum
+          : null;
         const payload = {
           movementType: form.movementType,
-          status: form.status,
-          occurredAt: new Date(form.occurredAt).toISOString(),
-          description: form.description.trim(),
+          status: isTransfer ? "posted" as const : form.status,
+          occurredAt: dateStrToISO(form.occurredAt),
+          description: autoDesc,
           notes: form.notes.trim() || null,
           sourceAccountId: isIncome ? null : form.sourceAccountId,
           sourceAmount: isIncome ? null : sourceAmountNum,
           destinationAccountId: isIncome || isTransfer ? form.destinationAccountId : null,
-          destinationAmount: isIncome ? destinationAmountNum : isTransfer ? destinationAmountNum : null,
-          fxRate: isTransfer && sourceAmountNum > 0 ? destinationAmountNum / sourceAmountNum : null,
+          destinationAmount: isIncome ? destinationAmountNum : isTransfer ? effectiveDestAmount : null,
+          fxRate: effectiveFxRate,
           categoryId: form.categoryId,
+          counterpartyId: form.counterpartyId,
         };
         const created = await createMovement.mutateAsync(payload);
         setSavedMovementId(created.id);
@@ -300,37 +373,55 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>Tipo</Text>
           <View style={styles.typeGrid}>
-            {TYPE_OPTIONS.map((opt) => (
-              <TouchableOpacity
-                key={opt.type}
-                style={[
-                  styles.typeButton,
-                  form.movementType === opt.type && { borderColor: opt.color, backgroundColor: opt.color + "22" },
-                ]}
-                onPress={() => patch({ movementType: opt.type })}
-              >
-                <opt.Icon size={28} color={opt.color} />
-                <Text style={[styles.typeLabel, form.movementType === opt.type && { color: opt.color }]}>
-                  {opt.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
+            {TYPE_OPTIONS.map((opt) => {
+              const isActive = form.movementType === opt.type;
+              return (
+                <View
+                  key={opt.type}
+                  style={[
+                    styles.typeButtonWrap,
+                    isActive && {
+                      borderColor: opt.color + "AA",
+                      borderTopColor: opt.color + "CC",
+                    },
+                  ]}
+                >
+                  <TouchableOpacity
+                    style={styles.typeButtonInner}
+                    onPress={() => patch({ movementType: opt.type })}
+                    activeOpacity={0.75}
+                  >
+                    <opt.Icon size={26} color={isActive ? opt.color : COLORS.storm} />
+                    <Text style={[styles.typeLabel, isActive && { color: opt.color }]}>
+                      {opt.label}
+                    </Text>
+                    {isActive && <View style={[styles.typeActiveDot, { backgroundColor: opt.color }]} />}
+                  </TouchableOpacity>
+                </View>
+              );
+            })}
           </View>
 
-          <Text style={[styles.sectionLabel, { marginTop: SPACING.md }]}>Estado</Text>
-          <View style={styles.statusRow}>
-            {STATUS_OPTIONS.map((opt) => (
-              <TouchableOpacity
-                key={opt.status}
-                style={[styles.statusPill, form.status === opt.status && styles.statusPillActive]}
-                onPress={() => patch({ status: opt.status })}
-              >
-                <Text style={[styles.statusText, form.status === opt.status && styles.statusTextActive]}>
-                  {opt.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+          {/* Status — hidden for transfers (always posted) */}
+          {form.movementType !== "transfer" ? (
+            <>
+              <Text style={[styles.sectionLabel, { marginTop: SPACING.md }]}>Estado</Text>
+              <View style={styles.statusRow}>
+                {STATUS_OPTIONS.map((opt) => (
+                  <TouchableOpacity
+                    key={opt.status}
+                    style={[styles.statusPill, form.status === opt.status && styles.statusPillActive]}
+                    onPress={() => patch({ status: opt.status })}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={[styles.statusText, form.status === opt.status && styles.statusTextActive]}>
+                      {opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </>
+          ) : null}
 
           <Button label="Siguiente →" onPress={goNext} style={styles.btn} />
         </View>
@@ -351,7 +442,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
               />
               <AccountPicker
                 label="Cuenta origen"
-                accounts={accounts.filter((a) => !a.isArchived)}
+                accounts={activeAccountsSorted}
                 selectedId={form.sourceAccountId}
                 onSelect={(id) => patch({ sourceAccountId: id })}
                 error={errors.sourceAccountId as string | undefined}
@@ -359,18 +450,17 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
             </>
           )}
 
-          {/* Destination amount / account (for income and transfer) */}
+          {/* Destination account + amount (income, transfer) */}
           {(form.movementType === "income" || form.movementType === "transfer") && (
             <>
-              {form.movementType === "transfer" && (
-                <CurrencyInput
-                  label="Monto destino"
-                  value={form.destinationAmount}
-                  onChangeText={(v) => patch({ destinationAmount: v })}
-                  currencyCode={destinationAccount?.currencyCode ?? baseCurrency}
-                  error={errors.destinationAmount}
-                />
-              )}
+              <AccountPicker
+                label="Cuenta destino"
+                accounts={destinationAccountsSorted}
+                selectedId={form.destinationAccountId}
+                onSelect={(id) => patch({ destinationAccountId: id })}
+                error={errors.destinationAccountId as string | undefined}
+              />
+              {/* Income amount */}
               {form.movementType === "income" && (
                 <CurrencyInput
                   label="Monto"
@@ -380,15 +470,23 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
                   error={errors.destinationAmount}
                 />
               )}
-              <AccountPicker
-                label="Cuenta destino"
-                accounts={accounts.filter(
-                  (a) => !a.isArchived && a.id !== form.sourceAccountId,
-                )}
-                selectedId={form.destinationAccountId}
-                onSelect={(id) => patch({ destinationAccountId: id })}
-                error={errors.destinationAccountId as string | undefined}
-              />
+              {/* Transfer destination amount — only when currencies differ */}
+              {form.movementType === "transfer" && transferCurrenciesDiffer && (
+                <CurrencyInput
+                  label={`Monto destino (${destinationAccount?.currencyCode ?? ""})`}
+                  value={form.destinationAmount}
+                  onChangeText={(v) => patch({ destinationAmount: v })}
+                  currencyCode={destinationAccount?.currencyCode ?? baseCurrency}
+                  error={errors.destinationAmount}
+                />
+              )}
+              {form.movementType === "transfer" && !transferCurrenciesDiffer && sourceAccount && destinationAccount && (
+                <View style={styles.sameCurrencyNote}>
+                  <Text style={styles.sameCurrencyText}>
+                    Misma moneda ({sourceAccount.currencyCode}) — el monto se transfiere igual.
+                  </Text>
+                </View>
+              )}
             </>
           )}
 
@@ -417,15 +515,14 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         </View>
       )}
 
-      {/* ── STEP 3: description + category + date ── */}
+      {/* ── STEP 3: description + category + counterparty + date ── */}
       {step === 3 && (
         <View style={styles.section}>
           <Input
-            label="Descripción"
-            placeholder="¿En qué gastaste?"
+            label="Descripción (opcional)"
+            placeholder="Se genera automáticamente si la dejas vacía"
             value={form.description}
             onChangeText={(v) => patch({ description: v })}
-            error={errors.description}
             autoFocus
             ref={descriptionRef}
             returnKeyType="next"
@@ -434,15 +531,16 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
 
           <CategoryPicker
             label="Categoría (opcional)"
-            categories={categories.filter(
-              (c) =>
-                c.isActive &&
-                (c.kind === "both" ||
-                  (form.movementType === "income" && c.kind === "income") ||
-                  (form.movementType !== "income" && c.kind === "expense")),
-            )}
+            categories={categoriesForPicker}
             selectedId={form.categoryId}
             onSelect={(id) => patch({ categoryId: id })}
+          />
+
+          <CounterpartyPicker
+            label="Contraparte (opcional)"
+            counterparties={counterpartiesSorted}
+            selectedId={form.counterpartyId}
+            onSelect={(id) => patch({ counterpartyId: id })}
           />
 
           <DatePickerInput
@@ -483,23 +581,15 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
       )}
     </BottomSheet>
 
-    {/* Discard confirmation modal */}
-    <Modal transparent visible={discardVisible} animationType="fade" onRequestClose={() => setDiscardVisible(false)}>
-      <View style={styles.discardOverlay}>
-        <View style={styles.discardCard}>
-          <Text style={styles.discardTitle}>¿Descartar cambios?</Text>
-          <Text style={styles.discardBody}>Los datos ingresados se perderán.</Text>
-          <View style={styles.discardActions}>
-            <TouchableOpacity style={styles.discardCancel} onPress={() => setDiscardVisible(false)}>
-              <Text style={styles.discardCancelText}>Continuar editando</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.discardConfirm} onPress={() => { setDiscardVisible(false); onClose(); }}>
-              <Text style={styles.discardConfirmText}>Descartar</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </Modal>
+    <ConfirmDialog
+      visible={discardVisible}
+      title="¿Descartar cambios?"
+      body="Los datos ingresados se perderán."
+      confirmLabel="Descartar"
+      cancelLabel="Continuar editando"
+      onCancel={() => setDiscardVisible(false)}
+      onConfirm={() => { setDiscardVisible(false); onClose(); }}
+    />
     </>
   );
 }
@@ -549,6 +639,46 @@ function AccountPicker({
   );
 }
 
+function CounterpartyPicker({
+  label,
+  counterparties,
+  selectedId,
+  onSelect,
+}: {
+  label: string;
+  counterparties: CounterpartySummary[];
+  selectedId: number | null;
+  onSelect: (id: number | null) => void;
+}) {
+  if (counterparties.length === 0) return null;
+  return (
+    <View style={styles.pickerWrap}>
+      <Text style={styles.sectionLabel}>{label}</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.accountRow}>
+        <TouchableOpacity
+          style={[styles.categoryChip, selectedId === null && styles.categoryChipActive]}
+          onPress={() => onSelect(null)}
+        >
+          <Text style={[styles.categoryChipText, selectedId === null && styles.categoryChipTextActive]}>
+            Ninguna
+          </Text>
+        </TouchableOpacity>
+        {counterparties.map((cp) => (
+          <TouchableOpacity
+            key={cp.id}
+            style={[styles.categoryChip, selectedId === cp.id && styles.categoryChipActive]}
+            onPress={() => onSelect(cp.id)}
+          >
+            <Text style={[styles.categoryChipText, selectedId === cp.id && styles.categoryChipTextActive]}>
+              {cp.name}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+    </View>
+  );
+}
+
 function CategoryPicker({
   label,
   categories,
@@ -593,59 +723,87 @@ const styles = StyleSheet.create({
   stepRow: {
     flexDirection: "row",
     justifyContent: "center",
-    gap: SPACING.sm,
+    gap: 6,
     marginBottom: SPACING.md,
+    alignItems: "center",
   },
   stepDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: GLASS.separator,
+    width: 24,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "rgba(255,255,255,0.12)",
   },
-  stepDotActive: { backgroundColor: COLORS.pine },
+  stepDotActive: {
+    backgroundColor: COLORS.pine,
+    width: 32,
+    shadowColor: COLORS.pine,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 6,
+  },
   section: { gap: SPACING.md },
   sectionLabel: {
-    fontSize: FONT_SIZE.sm,
+    fontSize: FONT_SIZE.xs,
     color: COLORS.storm,
-    fontFamily: FONT_FAMILY.bodyMedium,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
   },
   typeGrid: {
     flexDirection: "row",
     gap: SPACING.sm,
   },
-  typeButton: {
+  typeButtonWrap: {
+    flex: 1,
+    borderRadius: RADIUS.lg,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+    backgroundColor: GLASS.card,
+  },
+  typeButtonInner: {
     flex: 1,
     alignItems: "center",
-    paddingVertical: SPACING.lg,
-    borderRadius: RADIUS.md,
-    borderWidth: 1.5,
-    borderColor: GLASS.cardBorder,
-    backgroundColor: GLASS.card,
-    gap: SPACING.xs,
+    paddingVertical: SPACING.xl,
+    gap: SPACING.sm,
+    backgroundColor: "transparent",
+  },
+  typeActiveDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    marginTop: 2,
   },
   typeLabel: {
     fontSize: FONT_SIZE.sm,
     fontFamily: FONT_FAMILY.bodySemibold,
     color: COLORS.storm,
+    letterSpacing: 0.2,
   },
   statusRow: {
     flexDirection: "row",
     gap: SPACING.sm,
   },
   statusPill: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs + 2,
+    flex: 1,
+    alignItems: "center",
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs + 3,
     borderRadius: RADIUS.full,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: "rgba(255,255,255,0.11)",
     backgroundColor: GLASS.card,
   },
   statusPillActive: {
-    backgroundColor: COLORS.pine,
-    borderColor: COLORS.pine,
+    backgroundColor: COLORS.pine + "28",
+    borderColor: COLORS.pine + "99",
+    shadowColor: COLORS.pine,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.20,
+    shadowRadius: 8,
   },
   statusText: { fontSize: FONT_SIZE.sm, color: COLORS.storm, fontFamily: FONT_FAMILY.bodyMedium },
-  statusTextActive: { color: COLORS.canvas },
+  statusTextActive: { color: COLORS.pine, fontFamily: FONT_FAMILY.bodySemibold },
   btn: { marginTop: SPACING.sm },
   navRow: {
     flexDirection: "row",
@@ -662,11 +820,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
     borderRadius: RADIUS.md,
-    borderWidth: 1.5,
-    borderColor: GLASS.cardBorder,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
     backgroundColor: GLASS.card,
     gap: 2,
     minWidth: 100,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 3,
   },
   accountChipName: {
     fontSize: FONT_SIZE.sm,
@@ -677,77 +840,35 @@ const styles = StyleSheet.create({
   emptyPicker: { fontSize: FONT_SIZE.sm, color: COLORS.storm },
   categoryChip: {
     paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs + 2,
+    paddingVertical: SPACING.xs + 3,
     borderRadius: RADIUS.full,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: "rgba(255,255,255,0.11)",
     backgroundColor: GLASS.card,
   },
   categoryChipActive: {
-    backgroundColor: COLORS.pine,
-    borderColor: COLORS.pine,
+    backgroundColor: COLORS.pine + "28",
+    borderColor: COLORS.pine + "99",
+    shadowColor: COLORS.pine,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
   },
   categoryChipText: { fontSize: FONT_SIZE.sm, color: COLORS.storm },
-  categoryChipTextActive: { color: COLORS.canvas },
+  categoryChipTextActive: { color: COLORS.pine, fontFamily: FONT_FAMILY.bodySemibold },
   notesInput: { height: 72, textAlignVertical: "top" },
   fieldError: { fontSize: FONT_SIZE.xs, color: COLORS.danger },
-  discardOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: SPACING.xl,
-  },
-  discardCard: {
+  sameCurrencyNote: {
     backgroundColor: GLASS.card,
-    borderRadius: RADIUS.xl,
-    padding: SPACING.xl,
-    width: "100%",
+    borderRadius: RADIUS.md,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
     borderWidth: 1,
     borderColor: GLASS.cardBorder,
-    gap: SPACING.sm,
   },
-  discardTitle: {
-    fontSize: FONT_SIZE.lg,
-    fontFamily: FONT_FAMILY.heading,
-    color: COLORS.ink,
-  },
-  discardBody: {
-    fontSize: FONT_SIZE.sm,
+  sameCurrencyText: {
+    fontSize: FONT_SIZE.xs,
     color: COLORS.storm,
-    lineHeight: 20,
-  },
-  discardActions: {
-    flexDirection: "row",
-    gap: SPACING.sm,
-    marginTop: SPACING.md,
-  },
-  discardCancel: {
-    flex: 1,
-    paddingVertical: SPACING.md,
-    borderRadius: RADIUS.md,
-    alignItems: "center",
-    backgroundColor: COLORS.canvas,
-    borderWidth: 1,
-    borderColor: GLASS.cardBorder,
-  },
-  discardCancelText: {
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.ink,
-    fontFamily: FONT_FAMILY.bodyMedium,
-  },
-  discardConfirm: {
-    flex: 1,
-    paddingVertical: SPACING.md,
-    borderRadius: RADIUS.md,
-    alignItems: "center",
-    backgroundColor: GLASS.dangerBg,
-    borderWidth: 1,
-    borderColor: GLASS.dangerBorder,
-  },
-  discardConfirmText: {
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.danger,
-    fontFamily: FONT_FAMILY.bodySemibold,
+    fontFamily: FONT_FAMILY.body,
   },
 });

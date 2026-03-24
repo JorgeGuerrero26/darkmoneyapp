@@ -19,12 +19,14 @@ type UiState = {
   lastMovementAccountId: number | null;
   lastMovementCategoryId: number | null;
   dashboardMode: DashboardMode;
+  dashboardScrollY: number;
   showToast: (message: string, variant?: ToastVariant) => void;
   dismissToast: (id: string) => void;
   setBiometricLocked: (locked: boolean) => void;
   setBiometricEnabled: (enabled: boolean) => void;
   setLastMovementDefaults: (accountId: number | null, categoryId: number | null) => void;
   setDashboardMode: (mode: DashboardMode) => void;
+  setDashboardScrollY: (y: number) => void;
 };
 
 export const useUiStore = create<UiState>()(
@@ -36,6 +38,7 @@ export const useUiStore = create<UiState>()(
       lastMovementAccountId: null,
       lastMovementCategoryId: null,
       dashboardMode: "simple",
+      dashboardScrollY: 0,
 
       showToast: (message, variant = "success") =>
         set((state) => ({
@@ -55,6 +58,7 @@ export const useUiStore = create<UiState>()(
       setLastMovementDefaults: (accountId, categoryId) =>
         set({ lastMovementAccountId: accountId, lastMovementCategoryId: categoryId }),
       setDashboardMode: (mode) => set({ dashboardMode: mode }),
+      setDashboardScrollY: (y) => set({ dashboardScrollY: y }),
     }),
     {
       name: "darkmoney-ui",

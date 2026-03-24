@@ -59,7 +59,7 @@ export function Button({
       {loading ? (
         <ActivityIndicator
           size="small"
-          color={variant === "primary" ? COLORS.canvas : COLORS.pine}
+          color={variant === "primary" ? COLORS.textInverse : COLORS.pine}
         />
       ) : (
         <Text style={[styles.label, styles[`${variant}Label`], styles[`${size}Label`]]}>
@@ -108,7 +108,7 @@ const styles = StyleSheet.create({
     fontFamily: FONT_FAMILY.bodySemibold,
     fontSize: FONT_SIZE.md,
   },
-  primaryLabel:   { color: COLORS.canvas },
+  primaryLabel:   { color: COLORS.textInverse },
   secondaryLabel: { color: COLORS.ink },
   ghostLabel:     { color: COLORS.ink },
   dangerLabel:    { color: COLORS.rosewood },

@@ -20,8 +20,16 @@ import { humanizeError } from "../../lib/errors";
 import {
   useWorkspaceSnapshotQuery,
   useCreateObligationShareInviteMutation,
+  useSharedObligationsQuery,
 } from "../../services/queries/workspace-data";
-import type { ObligationSummary } from "../../types/domain";
+import type { ObligationSummary, SharedObligationSummary } from "../../types/domain";
+import {
+  obligationHistoryEventColor,
+  obligationPendingDirectionBadge,
+  obligationProgressPaidAdjective,
+  obligationRegisterMoneyActionTitle,
+  obligationViewerActsAsCollector,
+} from "../../lib/obligation-viewer-labels";
 import { Card } from "../../components/ui/Card";
 import { ProgressBar } from "../../components/ui/ProgressBar";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
@@ -33,7 +41,7 @@ import { formatCurrency } from "../../components/ui/AmountDisplay";
 import { useToast } from "../../hooks/useToast";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
 
-const EVENT_LABEL: Record<string, string> = {
+const EVENT_LABEL_PAYABLE: Record<string, string> = {
   opening: "Apertura",
   payment: "Pago",
   principal_increase: "Aumento de capital",
@@ -61,9 +69,10 @@ export default function ObligationDetailScreen() {
   const shareMutation = useCreateObligationShareInviteMutation(activeWorkspaceId);
 
   const { data: snapshot, isLoading } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
+  const { data: sharedObligations = [], isLoading: sharedLoading } = useSharedObligationsQuery(profile?.id);
 
   async function handleShare() {
-    if (!shareEmail.trim() || !obligation || !activeWorkspaceId) return;
+    if (!shareEmail.trim() || !obligation || !activeWorkspaceId || isSharedViewer) return;
     try {
       const result = await shareMutation.mutateAsync({
         workspaceId: activeWorkspaceId,
@@ -83,22 +92,42 @@ export default function ObligationDetailScreen() {
     }
   }
 
-  const obligation: ObligationSummary | null = useMemo(
-    () => snapshot?.obligations.find((o) => o.id === parseInt(id ?? "0")) ?? null,
-    [snapshot, id],
+  const obligationIdNum = useMemo(() => parseInt(id ?? "0", 10), [id]);
+
+  const obligation: ObligationSummary | SharedObligationSummary | null = useMemo(() => {
+    const fromSnap = snapshot?.obligations.find((o) => o.id === obligationIdNum) ?? null;
+    if (fromSnap) return fromSnap;
+    return sharedObligations.find((o) => o.id === obligationIdNum) ?? null;
+  }, [snapshot, sharedObligations, obligationIdNum]);
+
+  const isSharedViewer = Boolean(
+    obligation && "viewerMode" in obligation && obligation.viewerMode === "shared_viewer",
   );
+
+  const pageLoading = isLoading || (!obligation && sharedLoading);
 
   const isReceivable = obligation?.direction === "receivable";
   const dirColor = isReceivable ? COLORS.income : COLORS.expense;
+  const eventLabels = useMemo(() => {
+    if (!obligation) return EVENT_LABEL_PAYABLE;
+    const paymentWord = obligationViewerActsAsCollector(obligation.direction, isSharedViewer)
+      ? "Cobro"
+      : "Pago";
+    return { ...EVENT_LABEL_PAYABLE, payment: paymentWord };
+  }, [obligation, isSharedViewer]);
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
       <ScreenHeader
         title={obligation?.title ?? "Obligación"}
-        subtitle={activeWorkspace?.name}
+        subtitle={
+          isSharedViewer && obligation && "share" in obligation
+            ? `Compartido · ${(obligation as SharedObligationSummary).share.ownerDisplayName?.trim() || "Otro usuario"}`
+            : activeWorkspace?.name
+        }
         rightAction={
           <View style={styles.headerActions}>
-            {obligation ? (
+            {obligation && !isSharedViewer ? (
               <>
                 <TouchableOpacity style={styles.shareBtn} onPress={() => { setShareEmail(""); setShareSheetOpen(true); }}>
                   <Text style={styles.shareBtnText}>Compartir</Text>
@@ -115,7 +144,7 @@ export default function ObligationDetailScreen() {
         }
       />
 
-      {isLoading ? (
+      {pageLoading ? (
         <View style={styles.center}><ActivityIndicator color={COLORS.primary} /></View>
       ) : !obligation ? (
         <View style={styles.center}><Text style={styles.errorText}>No encontrada</Text></View>
@@ -124,7 +153,7 @@ export default function ObligationDetailScreen() {
           {/* Hero */}
           <Card style={styles.heroCard}>
             <Text style={[styles.directionBadge, { color: dirColor }]}>
-              {isReceivable ? "↑ Por cobrar" : "↓ Por pagar"}
+              {obligationPendingDirectionBadge(obligation.direction, isSharedViewer)}
             </Text>
             <Text style={styles.counterparty}>{obligation.counterparty || "Sin contacto"}</Text>
             <Text style={[styles.pendingAmount, { color: dirColor }]}>
@@ -133,7 +162,8 @@ export default function ObligationDetailScreen() {
             <Text style={styles.pendingLabel}>pendiente</Text>
             <ProgressBar percent={obligation.progressPercent} alertPercent={100} style={styles.progress} />
             <Text style={styles.progressLabel}>
-              {Math.round(obligation.progressPercent)}% pagado de{" "}
+              {Math.round(obligation.progressPercent)}%{" "}
+              {obligationProgressPaidAdjective(obligation.direction, isSharedViewer)} de{" "}
               {formatCurrency(obligation.principalAmount, obligation.currencyCode)}
             </Text>
           </Card>
@@ -178,10 +208,16 @@ export default function ObligationDetailScreen() {
                 <DetailRow label="Cuenta de liquidación" value={obligation.settlementAccountName} />
               </>
             ) : null}
-            {obligation.description ? (
+            {obligation.description?.trim() ? (
               <>
                 <Divider />
-                <DetailRow label="Descripción" value={obligation.description} />
+                <DetailRow label="Descripción" value={obligation.description.trim()} />
+              </>
+            ) : null}
+            {obligation.notes?.trim() ? (
+              <>
+                <Divider />
+                <DetailRow label="Notas" value={obligation.notes.trim()} />
               </>
             ) : null}
           </Card>
@@ -190,27 +226,39 @@ export default function ObligationDetailScreen() {
           {obligation.events.length > 0 ? (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Historial de eventos</Text>
-              {obligation.events.map((ev) => (
-                <View key={ev.id} style={styles.eventRow}>
-                  <View style={styles.eventInfo}>
-                    <Text style={styles.eventType}>{EVENT_LABEL[ev.eventType] ?? ev.eventType}</Text>
-                    <Text style={styles.eventDate}>
-                      {format(new Date(ev.eventDate), "d MMM yyyy", { locale: es })}
+              {obligation.events.map((ev) => {
+                const evTint = obligationHistoryEventColor(
+                  ev.eventType,
+                  obligation.direction,
+                  isSharedViewer,
+                );
+                return (
+                  <View key={ev.id} style={styles.eventRow}>
+                    <View style={styles.eventInfo}>
+                      <Text style={[styles.eventType, { color: evTint }]}>
+                        {eventLabels[ev.eventType] ?? ev.eventType}
+                      </Text>
+                      <Text style={styles.eventDate}>
+                        {format(new Date(ev.eventDate), "d MMM yyyy", { locale: es })}
+                      </Text>
+                      {ev.notes ? <Text style={styles.eventNotes}>{ev.notes}</Text> : null}
+                    </View>
+                    <Text style={[styles.eventAmount, { color: evTint }]}>
+                      {ev.eventType === "payment" ? "+" : ""}
+                      {formatCurrency(ev.amount, obligation.currencyCode)}
                     </Text>
-                    {ev.notes ? <Text style={styles.eventNotes}>{ev.notes}</Text> : null}
                   </View>
-                  <Text style={[styles.eventAmount, { color: ev.eventType === "payment" ? COLORS.income : COLORS.ink }]}>
-                    {ev.eventType === "payment" ? "+" : ""}{formatCurrency(ev.amount, obligation.currencyCode)}
-                  </Text>
-                </View>
-              ))}
+                );
+              })}
             </View>
           ) : null}
 
           {/* Register payment */}
           {obligation.status === "active" ? (
             <TouchableOpacity style={styles.payBtn} onPress={() => setPaymentFormVisible(true)}>
-              <Text style={styles.payBtnText}>Registrar pago</Text>
+              <Text style={styles.payBtnText}>
+                {obligationRegisterMoneyActionTitle(obligation.direction, isSharedViewer)}
+              </Text>
             </TouchableOpacity>
           ) : null}
         </ScrollView>

@@ -1,15 +1,15 @@
 // ─── Color palette ───────────────────────────────────────────────────────────
 export const COLORS = {
   // Backgrounds — darkest to lightest
-  canvas:  "#05070B",   // root bg
+  canvas:  "transparent",   // root bg
   void:    "#090D12",   // sheets / modals
   shell:   "#0F141B",   // sidebars / navbars / tab bar
   mist:    "#141B24",   // cards
 
   // Aliases (keep compatibility with existing screens)
-  bgDeep:  "#05070B",
+  bgDeep:  "transparent",
   bgVoid:  "#090D12",
-  bg:      "#0F141B",
+  bg:      "transparent",
   bgCard:  "#141B24",
   bgInput: "#141B24",
   bgModal: "#090D12",
@@ -64,19 +64,19 @@ export const COLORS = {
 
 // ─── Glassmorphism surfaces ───────────────────────────────────────────────────
 export const GLASS = {
-  card:             "rgba(255,255,255,0.04)",
-  cardBorder:       "rgba(255,255,255,0.10)",
-  cardActive:       "rgba(107,228,197,0.08)",
-  cardActiveBorder: "rgba(107,228,197,0.25)",
-  input:            "rgba(255,255,255,0.04)",
-  inputBorder:      "rgba(255,255,255,0.10)",
-  inputFocus:       "rgba(107,228,197,0.25)",
-  sheetBorder:      "rgba(255,255,255,0.08)",
-  tabBorder:        "rgba(255,255,255,0.08)",
-  separator:        "rgba(255,255,255,0.06)",
-  handle:           "rgba(255,255,255,0.15)",
-  dangerBorder:     "rgba(255,143,158,0.25)",
-  dangerBg:         "rgba(255,143,158,0.12)",
+  card:             "rgba(10,14,20,0.78)",
+  cardBorder:       "rgba(255,255,255,0.18)",
+  cardActive:       "rgba(107,228,197,0.10)",
+  cardActiveBorder: "rgba(107,228,197,0.35)",
+  input:            "rgba(10,14,20,0.70)",
+  inputBorder:      "rgba(255,255,255,0.14)",
+  inputFocus:       "rgba(107,228,197,0.30)",
+  sheetBorder:      "rgba(255,255,255,0.14)",
+  tabBorder:        "rgba(255,255,255,0.12)",
+  separator:        "rgba(255,255,255,0.10)",
+  handle:           "rgba(255,255,255,0.20)",
+  dangerBorder:     "rgba(255,143,158,0.30)",
+  dangerBg:         "rgba(255,143,158,0.14)",
 };
 
 // ─── Spacing ──────────────────────────────────────────────────────────────────

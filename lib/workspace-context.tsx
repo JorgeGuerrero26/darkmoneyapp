@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect } from "react";
+import { createContext, useContext } from "react";
 import type { PropsWithChildren } from "react";
 import { create } from "zustand";
 
@@ -21,7 +21,7 @@ export const useWorkspaceListStore = create<WorkspaceListState>((set) => ({
 
 type WorkspaceContextValue = {
   activeWorkspaceId: number | null;
-  setActiveWorkspaceId: (id: number) => void;
+  setActiveWorkspaceId: (id: number | null) => void;
   activeWorkspace: Workspace | null;
   setWorkspaces: (workspaces: Workspace[]) => void;
   workspaces: Workspace[];
@@ -36,12 +36,8 @@ export function WorkspaceProvider({ children }: PropsWithChildren) {
   const activeWorkspace =
     workspaces.find((w) => w.id === activeWorkspaceId) ?? null;
 
-  // Auto-select first default workspace if none is active yet
-  useEffect(() => {
-    if (activeWorkspaceId !== null || workspaces.length === 0) return;
-    const defaultWs = workspaces.find((w) => w.isDefaultWorkspace) ?? workspaces[0];
-    if (defaultWs) setActiveWorkspaceId(defaultWs.id);
-  }, [workspaces, activeWorkspaceId, setActiveWorkspaceId]);
+  // La selección inicial / validación del workspace activo vive en NotificationSetup (_layout)
+  // para no duplicar efectos con Zustand y evitar bucles de actualización.
 
   const value: WorkspaceContextValue = {
     activeWorkspaceId,

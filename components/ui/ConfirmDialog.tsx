@@ -1,4 +1,5 @@
 import { Modal, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { BlurView } from "expo-blur";
 import { COLORS, FONT_SIZE, FONT_WEIGHT, RADIUS, SPACING } from "../../constants/theme";
 
 type Props = {
@@ -25,6 +26,7 @@ export function ConfirmDialog({
   return (
     <Modal transparent visible={visible} animationType="fade" onRequestClose={onCancel}>
       <View style={styles.overlay}>
+        <BlurView intensity={45} tint="dark" style={StyleSheet.absoluteFillObject} />
         <View style={styles.card}>
           <Text style={styles.title}>{title}</Text>
           {body ? <Text style={styles.body}>{body}</Text> : null}
@@ -50,19 +52,30 @@ export function ConfirmDialog({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.6)",
+    backgroundColor: "rgba(0,0,0,0.45)",
     alignItems: "center",
     justifyContent: "center",
     padding: SPACING.xl,
   },
   card: {
     width: "100%",
-    backgroundColor: COLORS.bgCard,
+    backgroundColor: "rgba(10,14,20,0.92)",
     borderRadius: RADIUS.xl,
     padding: SPACING.xl,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    borderTopWidth: 1,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderBottomWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.20)",
+    borderLeftColor: "rgba(255,255,255,0.12)",
+    borderRightColor: "rgba(255,255,255,0.08)",
+    borderBottomColor: "rgba(255,255,255,0.05)",
     gap: SPACING.sm,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.55,
+    shadowRadius: 28,
+    elevation: 20,
   },
   title: {
     fontSize: FONT_SIZE.lg,

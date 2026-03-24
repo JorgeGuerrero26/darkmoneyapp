@@ -1,6 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
-  Modal,
   ScrollView,
   StyleSheet,
   Switch,
@@ -21,8 +20,10 @@ import {
 } from "../../services/queries/workspace-data";
 import type { BudgetOverview } from "../../types/domain";
 import { BottomSheet } from "../ui/BottomSheet";
+import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { Button } from "../ui/Button";
 import { CurrencyInput } from "../ui/CurrencyInput";
+import { sortByName } from "../../lib/sort-locale";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
 
 const POPULAR_CURRENCIES = ["PEN", "USD", "EUR", "MXN", "COP", "ARS", "CLP", "BRL"];
@@ -159,11 +160,18 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget }: Props) {
     }
   }
 
-  const expenseCategories = snapshot?.categories.filter(
-    (c) => c.kind === "expense" || c.kind === "both"
-  ) ?? [];
+  const expenseCategories = useMemo(
+    () =>
+      sortByName(
+        snapshot?.categories.filter((c) => c.isActive && (c.kind === "expense" || c.kind === "both")) ?? [],
+      ),
+    [snapshot?.categories],
+  );
 
-  const activeAccounts = snapshot?.accounts.filter((a) => !a.isArchived) ?? [];
+  const activeAccounts = useMemo(
+    () => sortByName(snapshot?.accounts.filter((a) => !a.isArchived) ?? []),
+    [snapshot?.accounts],
+  );
 
   return (
     <>
@@ -350,22 +358,15 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget }: Props) {
       />
     </BottomSheet>
 
-    <Modal transparent visible={discardVisible} animationType="fade" onRequestClose={() => setDiscardVisible(false)}>
-      <View style={styles.discardOverlay}>
-        <View style={styles.discardCard}>
-          <Text style={styles.discardTitle}>¿Descartar cambios?</Text>
-          <Text style={styles.discardBody}>Los datos ingresados se perderán.</Text>
-          <View style={styles.discardActions}>
-            <TouchableOpacity style={styles.discardCancel} onPress={() => setDiscardVisible(false)}>
-              <Text style={styles.discardCancelText}>Continuar editando</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.discardConfirm} onPress={() => { setDiscardVisible(false); onClose(); }}>
-              <Text style={styles.discardConfirmText}>Descartar</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </Modal>
+    <ConfirmDialog
+      visible={discardVisible}
+      title="¿Descartar cambios?"
+      body="Los datos ingresados se perderán."
+      confirmLabel="Descartar"
+      cancelLabel="Continuar editando"
+      onCancel={() => setDiscardVisible(false)}
+      onConfirm={() => { setDiscardVisible(false); onClose(); }}
+    />
     </>
   );
 }
@@ -403,7 +404,7 @@ const styles = StyleSheet.create({
   },
   pillActive: { backgroundColor: COLORS.pine, borderColor: COLORS.pine },
   pillText: { fontSize: FONT_SIZE.sm, color: COLORS.storm, fontFamily: FONT_FAMILY.bodyMedium },
-  pillTextActive: { color: COLORS.canvas },
+  pillTextActive: { color: COLORS.textInverse },
   periodRange: { fontSize: FONT_SIZE.xs, color: COLORS.storm, marginTop: SPACING.xs },
   switchRow: {
     flexDirection: "row",
@@ -419,58 +420,4 @@ const styles = StyleSheet.create({
   switchLabel: { fontSize: FONT_SIZE.sm, fontFamily: FONT_FAMILY.bodyMedium, color: COLORS.ink },
   switchDesc: { fontSize: FONT_SIZE.xs, color: COLORS.storm },
   submitBtn: { marginTop: SPACING.sm },
-  discardOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: SPACING.xl,
-  },
-  discardCard: {
-    width: "100%",
-    backgroundColor: GLASS.card,
-    borderRadius: RADIUS.xl,
-    padding: SPACING.xl,
-    borderWidth: 1,
-    borderColor: GLASS.cardBorder,
-    gap: SPACING.sm,
-  },
-  discardTitle: {
-    fontSize: FONT_SIZE.lg,
-    fontFamily: FONT_FAMILY.heading,
-    color: COLORS.ink,
-    textAlign: "center",
-  },
-  discardBody: {
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.storm,
-    textAlign: "center",
-    marginBottom: SPACING.sm,
-  },
-  discardActions: { gap: SPACING.sm },
-  discardConfirm: {
-    backgroundColor: GLASS.dangerBg,
-    borderWidth: 1,
-    borderColor: GLASS.dangerBorder,
-    borderRadius: RADIUS.md,
-    paddingVertical: SPACING.md,
-    alignItems: "center",
-  },
-  discardConfirmText: {
-    fontSize: FONT_SIZE.md,
-    fontFamily: FONT_FAMILY.bodySemibold,
-    color: COLORS.danger,
-  },
-  discardCancel: {
-    borderWidth: 1,
-    borderColor: GLASS.cardBorder,
-    borderRadius: RADIUS.md,
-    paddingVertical: SPACING.md,
-    alignItems: "center",
-  },
-  discardCancelText: {
-    fontSize: FONT_SIZE.md,
-    fontFamily: FONT_FAMILY.bodyMedium,
-    color: COLORS.storm,
-  },
 });

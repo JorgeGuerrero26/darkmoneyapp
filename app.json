@@ -5,7 +5,7 @@
     "version": "1.0.0",
     "scheme": "darkmoney",
     "orientation": "portrait",
-    "icon": "./assets/images/logo-darkmoney.png",
+    "icon": "./assets/images/app-icon.png",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
@@ -14,8 +14,8 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/logo-darkmoney.png",
-        "backgroundColor": "#0F172A"
+        "foregroundImage": "./assets/images/app-icon-playstore.png",
+        "backgroundColor": "#05070B"
       },
       "package": "com.darkmoney.app",
       "permissions": [
@@ -28,7 +28,7 @@
     "web": {
       "bundler": "metro",
       "output": "static",
-      "favicon": "./assets/images/logo-darkmoney.png"
+      "favicon": "./assets/images/app-icon.png"
     },
     "plugins": [
       "expo-router",
@@ -36,7 +36,7 @@
         "expo-splash-screen",
         {
           "image": "./assets/images/logo-darkmoney.png",
-          "imageWidth": 200,
+          "imageWidth": 250,
           "resizeMode": "contain",
           "backgroundColor": "#05070B"
         }

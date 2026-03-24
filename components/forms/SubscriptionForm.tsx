@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from "react";
-import { Alert, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { CalendarClock, CalendarPlus, CalendarX2 } from "lucide-react-native";
 import { format } from "date-fns";
-
 import { useWorkspace } from "../../lib/workspace-context";
 import { useAuth } from "../../lib/auth-context";
 import { humanizeError } from "../../lib/errors";
@@ -15,8 +15,10 @@ import {
 import type { SubscriptionSummary } from "../../types/domain";
 import { BottomSheet } from "../ui/BottomSheet";
 import { Button } from "../ui/Button";
+import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { CurrencyInput } from "../ui/CurrencyInput";
-import { DatePickerInput } from "../ui/DatePickerInput";
+import { FormDateField } from "./FormDateField";
+import { sortByName } from "../../lib/sort-locale";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
 
 const POPULAR_CURRENCIES = ["PEN", "USD", "EUR", "MXN", "COP", "ARS", "CLP", "BRL"];
@@ -27,6 +29,17 @@ const FREQUENCY_OPTIONS: { value: SubscriptionFormInput["frequency"]; label: str
   { value: "quarterly", label: "Trimestral" },
   { value: "yearly",    label: "Anual" },
   { value: "daily",     label: "Diario" },
+  { value: "custom",    label: "Personalizado" },
+];
+
+const WEEKDAY_OPTIONS: { value: number; label: string }[] = [
+  { value: 0, label: "Dom" },
+  { value: 1, label: "Lun" },
+  { value: 2, label: "Mar" },
+  { value: 3, label: "Mié" },
+  { value: 4, label: "Jue" },
+  { value: 5, label: "Vie" },
+  { value: 6, label: "Sáb" },
 ];
 
 const REMIND_OPTIONS = [
@@ -56,70 +69,100 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
   const isEditing = Boolean(editSubscription);
 
   const [name, setName] = useState("");
-  const [vendor, setVendor] = useState("");
+  const [vendorPartyId, setVendorPartyId] = useState<number | null>(null);
   const [amount, setAmount] = useState("");
   const [currencyCode, setCurrencyCode] = useState(defaultCurrency);
   const [frequency, setFrequency] = useState<SubscriptionFormInput["frequency"]>("monthly");
   const [intervalCount, setIntervalCount] = useState("1");
   const [dayOfMonth, setDayOfMonth] = useState("");
+  const [dayOfWeek, setDayOfWeek] = useState<number | null>(null);
   const [startDate, setStartDate] = useState(today);
+  const [nextDueDate, setNextDueDate] = useState(today);
   const [endDate, setEndDate] = useState("");
   const [accountId, setAccountId] = useState<number | null>(null);
   const [categoryId, setCategoryId] = useState<number | null>(null);
   const [remindDaysBefore, setRemindDaysBefore] = useState(3);
   const [autoCreateMovement, setAutoCreateMovement] = useState(false);
   const [description, setDescription] = useState("");
+  const [notes, setNotes] = useState("");
 
   const [nameError, setNameError] = useState("");
   const [amountError, setAmountError] = useState("");
+  const [showDiscard, setShowDiscard] = useState(false);
 
   const nameRef = useRef<TextInput>(null);
-  const vendorRef = useRef<TextInput>(null);
   const descriptionRef = useRef<TextInput>(null);
 
   useEffect(() => {
     if (!visible) return;
     if (editSubscription) {
       setName(editSubscription.name);
-      setVendor(editSubscription.vendor ?? "");
+      setVendorPartyId(editSubscription.vendorPartyId ?? null);
       setAmount(String(editSubscription.amount));
       setCurrencyCode(editSubscription.currencyCode);
       setFrequency(editSubscription.frequency);
       setIntervalCount(String(editSubscription.intervalCount));
       setDayOfMonth(editSubscription.dayOfMonth ? String(editSubscription.dayOfMonth) : "");
+      setDayOfWeek(
+        editSubscription.dayOfWeek !== undefined && editSubscription.dayOfWeek !== null
+          ? editSubscription.dayOfWeek
+          : null,
+      );
       setStartDate(editSubscription.startDate);
+      setNextDueDate(editSubscription.nextDueDate);
       setEndDate(editSubscription.endDate ?? "");
       setAccountId(editSubscription.accountId ?? null);
       setCategoryId(editSubscription.categoryId ?? null);
       setRemindDaysBefore(editSubscription.remindDaysBefore);
       setAutoCreateMovement(editSubscription.autoCreateMovement);
       setDescription(editSubscription.description ?? "");
+      setNotes(editSubscription.notes ?? "");
     } else {
       setName("");
-      setVendor("");
+      setVendorPartyId(null);
       setAmount("");
       setCurrencyCode(defaultCurrency);
       setFrequency("monthly");
       setIntervalCount("1");
       setDayOfMonth("");
+      setDayOfWeek(null);
       setStartDate(today);
+      setNextDueDate(today);
       setEndDate("");
       setAccountId(null);
       setCategoryId(null);
       setRemindDaysBefore(3);
       setAutoCreateMovement(false);
       setDescription("");
+      setNotes("");
     }
     setNameError("");
     setAmountError("");
   }, [visible, editSubscription, defaultCurrency, today]);
 
   function handleClose() {
-    if (name.trim() || amount) {
-      Alert.alert("¿Descartar cambios?", "Se perderán los datos ingresados.", [
-        { text: "Continuar", style: "cancel" },
-        { text: "Descartar", style: "destructive", onPress: onClose },
-      ]);
+    const es = editSubscription;
+    const isDirty = isEditing && es
+      ? (name.trim() !== es.name.trim() ||
+         vendorPartyId !== (es.vendorPartyId ?? null) ||
+         amount !== String(es.amount) ||
+         currencyCode !== es.currencyCode ||
+         frequency !== es.frequency ||
+         intervalCount !== String(es.intervalCount) ||
+         (dayOfMonth || "") !== (es.dayOfMonth != null ? String(es.dayOfMonth) : "") ||
+         dayOfWeek !== (es.dayOfWeek ?? null) ||
+         startDate !== es.startDate ||
+         nextDueDate !== es.nextDueDate ||
+         (endDate || "") !== (es.endDate ?? "") ||
+         accountId !== (es.accountId ?? null) ||
+         categoryId !== (es.categoryId ?? null) ||
+         remindDaysBefore !== es.remindDaysBefore ||
+         autoCreateMovement !== es.autoCreateMovement ||
+         (description.trim() || "") !== (es.description?.trim() ?? "") ||
+         (notes.trim() || "") !== (es.notes?.trim() ?? ""))
+      : Boolean(name.trim() || amount);
+    if (isDirty) {
+      setShowDiscard(true);
     } else {
       onClose();
     }
@@ -128,50 +171,102 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
   async function handleSubmit() {
     setNameError("");
     setAmountError("");
-    let valid = true;
-    if (!name.trim()) { setNameError("El nombre es obligatorio"); valid = false; }
-    const parsed = parseFloat(amount);
-    if (!amount || isNaN(parsed) || parsed <= 0) { setAmountError("Ingresa un monto válido"); valid = false; }
-    if (!valid) {
-      if (!name.trim()) nameRef.current?.focus();
+    if (!name.trim()) {
+      setNameError("El nombre es obligatorio");
+      nameRef.current?.focus();
       return;
     }
+    const parsed = parseFloat(amount.replace(",", "."));
+    if (!amount.trim() || Number.isNaN(parsed) || parsed <= 0) {
+      setAmountError("Ingresa un monto mayor a 0");
+      return;
+    }
+
+    if (!startDate?.trim()) {
+      showToast("La fecha de inicio es obligatoria", "error");
+      return;
+    }
+    if (!nextDueDate?.trim()) {
+      showToast("El próximo vencimiento es obligatorio", "error");
+      return;
+    }
+    if (nextDueDate < startDate) {
+      showToast("El próximo vencimiento debe ser igual o posterior al inicio", "error");
+      return;
+    }
+    if (endDate.trim() && endDate < startDate) {
+      showToast("La fecha de fin no puede ser anterior al inicio", "error");
+      return;
+    }
+
+    const ic = parseInt(intervalCount, 10);
+    if (!Number.isFinite(ic) || ic < 1) {
+      showToast("Intervalo inválido", "error");
+      return;
+    }
+
+    let resolvedDayOfMonth: number | null = null;
+    if (frequency === "monthly" || frequency === "quarterly" || frequency === "yearly") {
+      if (dayOfMonth.trim()) {
+        const dom = parseInt(dayOfMonth, 10);
+        if (!Number.isFinite(dom) || dom < 1 || dom > 31) {
+          showToast("Día del mes entre 1 y 31", "error");
+          return;
+        }
+        resolvedDayOfMonth = dom;
+      }
+    }
+
+    let resolvedDayOfWeek: number | null = null;
+    if (frequency === "weekly" && dayOfWeek !== null) {
+      if (dayOfWeek < 0 || dayOfWeek > 6) {
+        showToast("Día de la semana inválido (0–6)", "error");
+        return;
+      }
+      resolvedDayOfWeek = dayOfWeek;
+    }
+
+    if (remindDaysBefore < 0 || !Number.isFinite(remindDaysBefore)) {
+      showToast("Días de recordatorio inválidos", "error");
+      return;
+    }
+
+    const cc = currencyCode.trim().toUpperCase();
+    if (!cc) {
+      showToast("Indica una moneda", "error");
+      return;
+    }
+
+    const payloadBase = {
+      name: name.trim(),
+      vendorPartyId,
+      amount: parsed,
+      currencyCode: cc,
+      frequency,
+      intervalCount: ic,
+      dayOfMonth: resolvedDayOfMonth,
+      dayOfWeek: frequency === "weekly" ? resolvedDayOfWeek : null,
+      startDate,
+      nextDueDate,
+      endDate: endDate.trim() ? endDate : null,
+      accountId,
+      categoryId,
+      remindDaysBefore,
+      autoCreateMovement,
+      description: description.trim() ? description.trim() : null,
+      notes: notes.trim() ? notes.trim() : null,
+    };
 
     try {
       if (isEditing && editSubscription) {
         await updateMutation.mutateAsync({
           id: editSubscription.id,
-          input: {
-            name: name.trim(),
-            amount: parsed,
-            currencyCode,
-            frequency,
-            intervalCount: parseInt(intervalCount) || 1,
-            dayOfMonth: dayOfMonth ? parseInt(dayOfMonth) : null,
-            endDate: endDate || null,
-            accountId,
-            categoryId,
-            remindDaysBefore,
-            autoCreateMovement,
-            description: description.trim() || null,
-          },
+          input: payloadBase,
         });
         showToast("Suscripción actualizada", "success");
       } else {
         await createMutation.mutateAsync({
-          name: name.trim(),
-          amount: parsed,
-          currencyCode,
-          frequency,
-          intervalCount: parseInt(intervalCount) || 1,
-          dayOfMonth: dayOfMonth ? parseInt(dayOfMonth) : null,
-          startDate,
-          endDate: endDate || null,
-          accountId,
-          categoryId,
-          remindDaysBefore,
-          autoCreateMovement,
-          description: description.trim() || null,
+          ...payloadBase,
         });
         showToast("Suscripción creada", "success");
       }
@@ -182,17 +277,31 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
     }
   }
 
-  const activeAccounts = snapshot?.accounts.filter((a) => !a.isArchived) ?? [];
-  const expenseCategories = snapshot?.categories.filter((c) => c.kind === "expense" || c.kind === "both") ?? [];
+  const activeAccounts = useMemo(
+    () => sortByName(snapshot?.accounts.filter((a) => !a.isArchived) ?? []),
+    [snapshot?.accounts],
+  );
+  const expenseCategories = useMemo(
+    () =>
+      sortByName(
+        snapshot?.categories.filter((c) => c.isActive && (c.kind === "expense" || c.kind === "both")) ?? [],
+      ),
+    [snapshot?.categories],
+  );
+  const counterparties = useMemo(
+    () => sortByName(snapshot?.counterparties ?? []),
+    [snapshot?.counterparties],
+  );
   const isLoading = createMutation.isPending || updateMutation.isPending;
 
   return (
-    <BottomSheet
-      visible={visible}
-      onClose={handleClose}
-      title={isEditing ? "Editar suscripción" : "Nueva suscripción"}
-      snapHeight={0.95}
-    >
+    <>
+      <BottomSheet
+        visible={visible}
+        onClose={handleClose}
+        title={isEditing ? "Editar suscripción" : "Nueva suscripción"}
+        snapHeight={0.95}
+      >
       {/* Name */}
       <View>
         <Text style={styles.label}>Nombre *</Text>
@@ -204,25 +313,37 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
           placeholder="Ej. Netflix, Spotify, Adobe CC"
           placeholderTextColor={COLORS.textDisabled}
           returnKeyType="next"
-          onSubmitEditing={() => vendorRef.current?.focus()}
         />
         {nameError ? <Text style={styles.fieldError}>{nameError}</Text> : null}
       </View>
 
-      {/* Vendor */}
-      <View>
-        <Text style={styles.label}>Proveedor (opcional)</Text>
-        <TextInput
-          ref={vendorRef}
-          style={styles.textInput}
-          value={vendor}
-          onChangeText={setVendor}
-          placeholder="Empresa que cobra"
-          placeholderTextColor={COLORS.textDisabled}
-          returnKeyType="next"
-          onSubmitEditing={() => descriptionRef.current?.focus()}
-        />
-      </View>
+      {/* Vendor (counterparty picker) */}
+      {counterparties.length > 0 ? (
+        <View>
+          <Text style={styles.label}>Proveedor (opcional)</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <View style={styles.pillRow}>
+              <TouchableOpacity
+                style={[styles.pill, vendorPartyId === null && styles.pillActive]}
+                onPress={() => setVendorPartyId(null)}
+              >
+                <Text style={[styles.pillText, vendorPartyId === null && styles.pillTextActive]}>Ninguno</Text>
+              </TouchableOpacity>
+              {counterparties.map((cp) => (
+                <TouchableOpacity
+                  key={cp.id}
+                  style={[styles.pill, vendorPartyId === cp.id && styles.pillActive]}
+                  onPress={() => setVendorPartyId(cp.id)}
+                >
+                  <Text style={[styles.pillText, vendorPartyId === cp.id && styles.pillTextActive]}>
+                    {cp.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </ScrollView>
+        </View>
+      ) : null}
 
       {/* Currency */}
       <View>
@@ -297,21 +418,89 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
         ) : null}
       </View>
 
-      {/* Dates */}
-      {!isEditing ? (
-        <DatePickerInput
-          label="Fecha de inicio"
-          value={startDate}
-          onChange={setStartDate}
-        />
+      {frequency === "weekly" ? (
+        <View>
+          <Text style={styles.label}>Día de la semana (opcional)</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <View style={styles.pillRow}>
+              <TouchableOpacity
+                style={[styles.pill, dayOfWeek === null && styles.pillActive]}
+                onPress={() => setDayOfWeek(null)}
+              >
+                <Text style={[styles.pillText, dayOfWeek === null && styles.pillTextActive]}>—</Text>
+              </TouchableOpacity>
+              {WEEKDAY_OPTIONS.map((w) => (
+                <TouchableOpacity
+                  key={w.value}
+                  style={[styles.pill, dayOfWeek === w.value && styles.pillActive]}
+                  onPress={() => setDayOfWeek(w.value)}
+                >
+                  <Text style={[styles.pillText, dayOfWeek === w.value && styles.pillTextActive]}>{w.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </ScrollView>
+        </View>
       ) : null}
 
-      <DatePickerInput
-        label="Fecha de fin (opcional)"
+      {/* Fechas — campos con ayuda y selector unificado */}
+      <View style={styles.datesBlock}>
+        <View style={styles.datesIntro}>
+          <Text style={styles.datesIntroTitle}>Fechas de la suscripción</Text>
+          <Text style={styles.datesIntroBody}>
+            Toca cada bloque para elegir fecha. En «Fin» puedes dejar vacío: usa el botón ✕ al lado o «Quitar» dentro del calendario.
+          </Text>
+        </View>
+
+      <FormDateField
+        title="Inicio del cobro"
+        description="Desde qué día cuenta esta suscripción: suele ser la primera factura, el alta del servicio o la fecha que quieras tomar como referencia. Sirve para que vencimiento y fin tengan sentido frente a ese inicio."
+        required
+        value={startDate}
+        onChange={setStartDate}
+        placeholder="Elegir fecha de inicio"
+        Icon={CalendarPlus}
+        accentColor={COLORS.primary}
+      />
+
+      <FormDateField
+        title="Próximo vencimiento"
+        description="El próximo día en que vence o se renueva el pago. Es la fecha que verás en listados, recordatorios y lógica de «próximo cobro»."
+        required
+        value={nextDueDate}
+        onChange={setNextDueDate}
+        placeholder="Elegir próximo vencimiento"
+        minimumDate={
+          startDate
+            ? (() => {
+                const p = startDate.split("-").map(Number);
+                return new Date(p[0], p[1] - 1, p[2]);
+              })()
+            : undefined
+        }
+        Icon={CalendarClock}
+        accentColor={COLORS.gold}
+      />
+
+      <FormDateField
+        title="Fin de la suscripción"
+        description="Solo si hay una fecha de baja o fin de contrato. Si la suscripción es indefinida o aún no sabes cuándo termina, déjalo vacío (sin límite hasta que la pauses o canceles en estado)."
+        optional
         value={endDate}
         onChange={setEndDate}
-        optional
+        placeholder="Sin fecha de fin — opcional"
+        minimumDate={
+          startDate
+            ? (() => {
+                const p = startDate.split("-").map(Number);
+                return new Date(p[0], p[1] - 1, p[2]);
+              })()
+            : undefined
+        }
+        Icon={CalendarX2}
+        accentColor={COLORS.secondary}
       />
+      </View>
 
       {/* Account */}
       {activeAccounts.length > 0 ? (
@@ -409,10 +598,23 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
           style={styles.textInput}
           value={description}
           onChangeText={setDescription}
-          placeholder="Notas sobre esta suscripción"
+          placeholder="Resumen visible en listados"
           placeholderTextColor={COLORS.textDisabled}
-          returnKeyType="done"
+          returnKeyType="next"
           blurOnSubmit
+        />
+      </View>
+
+      <View>
+        <Text style={styles.label}>Notas internas (opcional)</Text>
+        <TextInput
+          style={[styles.textInput, styles.notesInput]}
+          value={notes}
+          onChangeText={setNotes}
+          placeholder="Notas adicionales"
+          placeholderTextColor={COLORS.textDisabled}
+          multiline
+          textAlignVertical="top"
         />
       </View>
 
@@ -423,6 +625,17 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
         style={styles.submitBtn}
       />
     </BottomSheet>
+
+    <ConfirmDialog
+      visible={showDiscard}
+      title="¿Descartar cambios?"
+      body="Se perderán los datos ingresados."
+      confirmLabel="Descartar"
+      cancelLabel="Continuar"
+      onCancel={() => setShowDiscard(false)}
+      onConfirm={() => { setShowDiscard(false); onClose(); }}
+    />
+  </>
   );
 }
 
@@ -459,7 +672,7 @@ const styles = StyleSheet.create({
   },
   pillActive: { backgroundColor: COLORS.pine, borderColor: COLORS.pine },
   pillText: { fontSize: FONT_SIZE.sm, color: COLORS.storm, fontFamily: FONT_FAMILY.bodyMedium },
-  pillTextActive: { color: COLORS.canvas },
+  pillTextActive: { color: COLORS.textInverse },
   twoCol: { flexDirection: "row", gap: SPACING.md },
   colHalf: { flex: 1 },
   switchRow: {
@@ -476,4 +689,20 @@ const styles = StyleSheet.create({
   switchLabel: { fontSize: FONT_SIZE.sm, fontFamily: FONT_FAMILY.bodyMedium, color: COLORS.ink },
   switchDesc: { fontSize: FONT_SIZE.xs, color: COLORS.storm },
   submitBtn: { marginTop: SPACING.sm },
+  datesBlock: { gap: SPACING.md },
+  datesIntro: {
+    gap: SPACING.xs,
+  },
+  datesIntroTitle: {
+    fontSize: FONT_SIZE.sm,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    color: COLORS.ink,
+  },
+  datesIntroBody: {
+    fontSize: FONT_SIZE.xs,
+    fontFamily: FONT_FAMILY.body,
+    color: COLORS.storm,
+    lineHeight: 18,
+  },
+  notesInput: { minHeight: 88, paddingTop: SPACING.sm },
 });

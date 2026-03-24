@@ -141,11 +141,28 @@ export type AccountSummary = {
   isArchived: boolean;
 };
 
+/** Catálogo en snapshot (pickers); campos extra opcionales para compatibilidad. */
 export type CategorySummary = {
   id: number;
   name: string;
   kind: CategoryKind;
   isActive: boolean;
+  workspaceId?: number;
+  parentId?: number | null;
+  parentName?: string | null;
+  color?: string | null;
+  icon?: string | null;
+  sortOrder?: number;
+  isSystem?: boolean;
+};
+
+/** Movimientos publicados con categoría (analíticas desde snapshot). */
+export type CategoryPostedMovement = {
+  id: number;
+  categoryId: number;
+  occurredAt: string;
+  sourceAmount: number | null;
+  destinationAmount: number | null;
 };
 
 export type CategoryOverview = CategorySummary & {
@@ -200,14 +217,15 @@ export type CounterpartySummary = {
   name: string;
   type: CounterpartyType;
   isArchived: boolean;
-};
-
-export type CounterpartyOverview = CounterpartySummary & {
-  workspaceId: number;
+  /** Presente cuando viene del snapshot / detalle */
   phone?: string | null;
   email?: string | null;
   documentNumber?: string | null;
   notes?: string | null;
+};
+
+export type CounterpartyOverview = CounterpartySummary & {
+  workspaceId: number;
   roles: CounterpartyRoleType[];
   receivableCount: number;
   receivablePrincipalTotal: number;
@@ -345,6 +363,15 @@ export type ObligationShareInviteDetails = {
   paymentCount: number;
 };
 
+/** Movimientos publicados vinculados a suscripciones (snapshot, sin APIs extra). */
+export type SubscriptionPostedMovement = {
+  id: number;
+  subscriptionId: number;
+  occurredAt: string;
+  sourceAmount: number | null;
+  destinationAmount: number | null;
+};
+
 export type SubscriptionSummary = {
   id: number;
   workspaceId: number;
@@ -382,6 +409,19 @@ export type NotificationItem = {
   kind: string;
   channel?: string;
   readAt?: string | null;
+};
+
+/** Invitaciones obligation_shares pendientes para el usuario actual (lista en Notificaciones). */
+export type PendingObligationShareInviteItem = {
+  id: number;
+  workspaceId: number;
+  obligationId: number;
+  token: string;
+  ownerDisplayName: string | null;
+  invitedEmail: string;
+  message: string | null;
+  updatedAt: string;
+  obligationTitle: string | null;
 };
 
 export type AttachmentSummary = {

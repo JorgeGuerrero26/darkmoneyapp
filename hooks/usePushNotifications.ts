@@ -1,9 +1,10 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { Platform } from "react-native";
 import * as Notifications from "expo-notifications";
 import Constants from "expo-constants";
 
 import { supabase } from "../lib/supabase";
+import { calendarDaysFromTodayLocal } from "../lib/subscription-helpers";
 
 // Configure how notifications are displayed when app is in foreground
 Notifications.setNotificationHandler({
@@ -11,6 +12,8 @@ Notifications.setNotificationHandler({
     shouldShowAlert: true,
     shouldPlaySound: true,
     shouldSetBadge: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
   }),
 });
 
@@ -53,9 +56,24 @@ async function saveTokenToSupabase(userId: string, token: string) {
     );
 }
 
-export function usePushNotifications(userId?: string) {
+export type PushNotificationHandlers = {
+  /** Toque en recordatorio local / push con data.type === obligation_share_invite */
+  onObligationShareInviteTap?: (token: string) => void;
+};
+
+export function usePushNotifications(userId?: string, handlers?: PushNotificationHandlers) {
   const notificationListener = useRef<Notifications.EventSubscription | null>(null);
   const responseListener = useRef<Notifications.EventSubscription | null>(null);
+  const onInviteTapRef = useRef(handlers?.onObligationShareInviteTap);
+  onInviteTapRef.current = handlers?.onObligationShareInviteTap;
+
+  const handleResponse = useCallback((response: Notifications.NotificationResponse) => {
+    const data = response.notification.request.content.data as Record<string, unknown> | undefined;
+    if (!data) return;
+    if (data.type === "obligation_share_invite" && typeof data.token === "string") {
+      onInviteTapRef.current?.(data.token);
+    }
+  }, []);
 
   useEffect(() => {
     if (!userId) return;
@@ -65,25 +83,24 @@ export function usePushNotifications(userId?: string) {
       if (token) void saveTokenToSupabase(userId, token);
     });
 
-    // Listen for notifications received while app is open
     notificationListener.current = Notifications.addNotificationReceivedListener(() => {
-      // Could update badge count here if needed
+      // Badge / invalidación en foreground si hiciera falta
     });
 
-    // Listen for user tapping a notification
-    responseListener.current = Notifications.addNotificationResponseReceivedListener(() => {
-      // Could navigate to specific screen based on notification data
-    });
+    responseListener.current = Notifications.addNotificationResponseReceivedListener(handleResponse);
 
     return () => {
       notificationListener.current?.remove();
       responseListener.current?.remove();
     };
-  }, [userId]);
+  }, [userId, handleResponse]);
 }
 
 // ── Schedule local reminders for upcoming subscriptions ──────────────────────
 
+/**
+ * Paridad con bandeja: activas; aviso si diffDays ≤ max(1, remindDaysBefore) y diffDays ≥ -1.
+ */
 export async function scheduleSubscriptionReminders(
   subscriptions: Array<{
     id: number;
@@ -92,7 +109,6 @@ export async function scheduleSubscriptionReminders(
     remindDaysBefore: number;
   }>,
 ) {
-  // Cancel all previous subscription reminders
   const scheduled = await Notifications.getAllScheduledNotificationsAsync();
   for (const notif of scheduled) {
     if (String(notif.content.data?.type) === "subscription_reminder") {
@@ -103,14 +119,21 @@ export async function scheduleSubscriptionReminders(
   const now = new Date();
 
   for (const sub of subscriptions) {
-    if (sub.remindDaysBefore <= 0) continue;
+    const diffDays = calendarDaysFromTodayLocal(sub.nextDueDate);
+    const remindWindow = Math.max(1, sub.remindDaysBefore);
+    if (diffDays > remindWindow || diffDays < -1) continue;
 
-    const dueDate = new Date(sub.nextDueDate);
-    const reminderDate = new Date(dueDate);
-    reminderDate.setDate(reminderDate.getDate() - sub.remindDaysBefore);
-    reminderDate.setHours(9, 0, 0, 0); // 9 AM
+    const parts = sub.nextDueDate.split("-").map(Number);
+    const dueDate =
+      parts.length === 3 && !parts.some((n) => Number.isNaN(n))
+        ? new Date(parts[0], parts[1] - 1, parts[2])
+        : new Date(sub.nextDueDate);
 
-    if (reminderDate <= now) continue; // already passed
+    const windowStart = new Date(dueDate);
+    windowStart.setDate(windowStart.getDate() - remindWindow);
+    windowStart.setHours(9, 0, 0, 0);
+
+    const triggerDate = windowStart > now ? windowStart : new Date(now.getTime() + 60_000);
 
     await Notifications.scheduleNotificationAsync({
       content: {
@@ -118,7 +141,7 @@ export async function scheduleSubscriptionReminders(
         body: `"${sub.name}" vence el ${dueDate.toLocaleDateString("es", { day: "numeric", month: "long" })}`,
         data: { type: "subscription_reminder", subscriptionId: sub.id },
       },
-      trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: reminderDate },
+      trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: triggerDate },
     });
   }
 }

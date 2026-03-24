@@ -14,6 +14,7 @@ import { Link } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as LocalAuthentication from "expo-local-authentication";
 import * as SecureStore from "expo-secure-store";
+import { Eye, EyeOff, CheckSquare, Square } from "lucide-react-native";
 
 import { useAuth } from "../../lib/auth-context";
 import { useUiStore } from "../../store/ui-store";
@@ -24,6 +25,9 @@ import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../co
 
 const SECURE_EMAIL_KEY = "darkmoney_bio_email";
 const SECURE_PASS_KEY = "darkmoney_bio_password";
+const REMEMBER_EMAIL_KEY = "darkmoney_remember_email";
+const REMEMBER_PASS_KEY = "darkmoney_remember_password";
+const REMEMBER_FLAG_KEY = "darkmoney_remember_me";
 
 type FormErrors = { email?: string; password?: string; general?: string };
 
@@ -34,6 +38,8 @@ export default function LoginScreen() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({});
   const [isLoading, setIsLoading] = useState(false);
   const [isBioLoading, setIsBioLoading] = useState(false);
@@ -47,7 +53,7 @@ export default function LoginScreen() {
   // Pending credentials waiting for user decision
   const [pendingCreds, setPendingCreds] = useState<{ email: string; password: string } | null>(null);
 
-  // On mount: check biometric hardware + stored credentials
+  // On mount: check biometric hardware + stored credentials + remember me
   useEffect(() => {
     void (async () => {
       const hasHardware = await LocalAuthentication.hasHardwareAsync();
@@ -58,6 +64,16 @@ export default function LoginScreen() {
       if (available) {
         const stored = await SecureStore.getItemAsync(SECURE_EMAIL_KEY);
         setBioCredsStored(Boolean(stored));
+      }
+
+      // Load remembered credentials
+      const flag = await SecureStore.getItemAsync(REMEMBER_FLAG_KEY);
+      if (flag === "true") {
+        const savedEmail = await SecureStore.getItemAsync(REMEMBER_EMAIL_KEY);
+        const savedPass = await SecureStore.getItemAsync(REMEMBER_PASS_KEY);
+        if (savedEmail) setEmail(savedEmail);
+        if (savedPass) setPassword(savedPass);
+        setRememberMe(true);
       }
     })();
   }, []);
@@ -110,6 +126,18 @@ export default function LoginScreen() {
     setErrors({});
     try {
       await signIn(email.trim(), password);
+
+      // Persist or clear "remember me" credentials
+      if (rememberMe) {
+        await SecureStore.setItemAsync(REMEMBER_EMAIL_KEY, email.trim());
+        await SecureStore.setItemAsync(REMEMBER_PASS_KEY, password);
+        await SecureStore.setItemAsync(REMEMBER_FLAG_KEY, "true");
+      } else {
+        await SecureStore.deleteItemAsync(REMEMBER_EMAIL_KEY);
+        await SecureStore.deleteItemAsync(REMEMBER_PASS_KEY);
+        await SecureStore.deleteItemAsync(REMEMBER_FLAG_KEY);
+      }
+
       // After successful login, offer to enable biometric if available and not already set up
       if (bioAvailable && !bioCredsStored) {
         setPendingCreds({ email: email.trim(), password });
@@ -213,13 +241,40 @@ export default function LoginScreen() {
               value={password}
               onChangeText={setPassword}
               error={errors.password}
-              secureTextEntry
+              secureTextEntry={!showPassword}
               autoCapitalize="none"
               autoComplete="off"
               importantForAutofill="no"
               returnKeyType="done"
               onSubmitEditing={handleLogin}
+              rightElement={
+                <TouchableOpacity
+                  onPress={() => setShowPassword((v) => !v)}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  activeOpacity={0.7}
+                >
+                  {showPassword
+                    ? <EyeOff size={18} color={COLORS.storm} />
+                    : <Eye size={18} color={COLORS.storm} />
+                  }
+                </TouchableOpacity>
+              }
             />
+
+            {/* Remember me */}
+            <TouchableOpacity
+              style={styles.rememberRow}
+              onPress={() => setRememberMe((v) => !v)}
+              activeOpacity={0.7}
+            >
+              {rememberMe
+                ? <CheckSquare size={18} color={COLORS.pine} />
+                : <Square size={18} color={COLORS.storm} />
+              }
+              <Text style={[styles.rememberText, rememberMe && styles.rememberTextActive]}>
+                Recordar contraseña
+              </Text>
+            </TouchableOpacity>
 
             <Button
               label="Iniciar sesión"
@@ -311,6 +366,21 @@ const styles = StyleSheet.create({
   dividerLine: { flex: 1, height: 0.5, backgroundColor: GLASS.separator },
   dividerText: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
 
+  rememberRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+    marginTop: -SPACING.xs,
+  },
+  rememberText: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.storm,
+  },
+  rememberTextActive: {
+    color: COLORS.pine,
+    fontFamily: FONT_FAMILY.bodyMedium,
+  },
   submitButton: { marginTop: SPACING.xs },
   forgotLink: { alignItems: "center", paddingVertical: SPACING.sm },
   linkText: { fontFamily: FONT_FAMILY.bodyMedium, color: COLORS.pine, fontSize: FONT_SIZE.sm },
@@ -342,7 +412,7 @@ const styles = StyleSheet.create({
     width: "100%", backgroundColor: COLORS.pine,
     borderRadius: RADIUS.md, paddingVertical: SPACING.md, alignItems: "center",
   },
-  dialogConfirmText: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.md, color: COLORS.canvas },
+  dialogConfirmText: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.md, color: COLORS.textInverse },
   dialogCancel: {
     width: "100%", paddingVertical: SPACING.sm, alignItems: "center",
   },

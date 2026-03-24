@@ -28,7 +28,7 @@ const styles = StyleSheet.create({
   },
   label: {
     fontFamily: FONT_FAMILY.bodySemibold,
-    color: COLORS.canvas,
+    color: COLORS.textInverse,
     fontSize: FONT_SIZE.xs - 1,
   },
 });

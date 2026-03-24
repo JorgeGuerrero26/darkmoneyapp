@@ -1,10 +1,11 @@
 import {
   Wallet2, Landmark, PiggyBank, CreditCard, TrendingUp, Briefcase, Banknote,
+  Archive, ArchiveRestore, Trash2, Clock,
   type LucideIcon,
 } from "lucide-react-native";
-import { useEffect, useState } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useEffect, useRef, useState } from "react";
 import {
-  Modal,
   ScrollView,
   StyleSheet,
   Switch,
@@ -13,20 +14,31 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { format } from "date-fns";
+import { es } from "date-fns/locale";
+
 import { useWorkspace } from "../../lib/workspace-context";
+import { useAuth } from "../../lib/auth-context";
 import { useToast } from "../../hooks/useToast";
+import { humanizeError } from "../../lib/errors";
+import { parseDisplayDate } from "../../lib/date";
+import { sortByLabel } from "../../lib/sort-locale";
 import {
   useCreateAccountMutation,
   useUpdateAccountMutation,
+  useDeleteAccountMutation,
+  useArchiveAccountMutation,
   type AccountFormInput,
 } from "../../services/queries/workspace-data";
 import type { AccountSummary } from "../../types/domain";
 import { BottomSheet } from "../ui/BottomSheet";
+import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { Button } from "../ui/Button";
 import { CurrencyInput } from "../ui/CurrencyInput";
+import { formatCurrency } from "../ui/AmountDisplay";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
 
-// ── Icon picker ────────────────────────────────────────────────────────────────
+// ── Icon picker ────────────────────────────────────────────────────────────
 const ACCOUNT_ICONS: { value: string; Icon: LucideIcon }[] = [
   { value: "wallet",       Icon: Wallet2 },
   { value: "landmark",     Icon: Landmark },
@@ -37,24 +49,37 @@ const ACCOUNT_ICONS: { value: string; Icon: LucideIcon }[] = [
   { value: "banknote",     Icon: Banknote },
 ];
 
-// ── Color picker ───────────────────────────────────────────────────────────────
+// ── Color palette ──────────────────────────────────────────────────────────
 const ACCOUNT_COLORS = [
   "#1b6a58", "#2d9076", "#4566d6", "#6f82f1",
   "#b48b34", "#d39d3a", "#8f3e3e", "#c55f5f",
   "#8366f2", "#9c7dff", "#c46a31", "#6b7280",
 ];
 
-const ACCOUNT_TYPES = [
-  { label: "Efectivo",       value: "cash" },
-  { label: "Banco",          value: "bank" },
-  { label: "Ahorro",         value: "savings" },
-  { label: "Tarjeta",        value: "credit_card" },
-  { label: "Inversión",      value: "investment" },
-  { label: "Préstamo",       value: "loan" },
-  { label: "Otro",           value: "other" },
-];
+// ── Type presets (default icon + color per account type) ──────────────────
+const TYPE_PRESETS: Record<string, { icon: string; color: string }> = {
+  cash:        { icon: "banknote",    color: "#b48b34" },
+  bank:        { icon: "landmark",    color: "#4566d6" },
+  savings:     { icon: "piggy-bank",  color: "#1b6a58" },
+  credit_card: { icon: "credit-card", color: "#8f3e3e" },
+  investment:  { icon: "trending-up", color: "#8366f2" },
+  loan:        { icon: "briefcase",   color: "#c46a31" },
+  other:       { icon: "wallet",      color: "#6b7280" },
+};
+
+const ACCOUNT_TYPES = sortByLabel([
+  { label: "Efectivo", value: "cash" },
+  { label: "Banco", value: "bank" },
+  { label: "Ahorro", value: "savings" },
+  { label: "Tarjeta", value: "credit_card" },
+  { label: "Inversión", value: "investment" },
+  { label: "Préstamo", value: "loan" },
+  { label: "Otro", value: "other" },
+]);
 
 const POPULAR_CURRENCIES = ["PEN", "USD", "EUR", "MXN", "COP", "ARS", "CLP", "BRL"];
+
+const DRAFT_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
 type Props = {
   visible: boolean;
@@ -65,9 +90,12 @@ type Props = {
 
 export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props) {
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
+  const { user } = useAuth();
   const { showToast } = useToast();
   const createMutation = useCreateAccountMutation(activeWorkspaceId);
   const updateMutation = useUpdateAccountMutation(activeWorkspaceId);
+  const deleteMutation = useDeleteAccountMutation(activeWorkspaceId);
+  const archiveMutation = useArchiveAccountMutation(activeWorkspaceId);
 
   const defaultCurrency = activeWorkspace?.baseCurrencyCode ?? "PEN";
 
@@ -77,39 +105,130 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
   const [customCurrency, setCustomCurrency] = useState("");
   const [openingBalance, setOpeningBalance] = useState("0");
   const [includeInNetWorth, setIncludeInNetWorth] = useState(true);
-  const [color, setColor] = useState(ACCOUNT_COLORS[0]);
-  const [icon, setIcon] = useState(ACCOUNT_ICONS[0].value);
+  const [color, setColor] = useState(TYPE_PRESETS["bank"].color);
+  const [icon, setIcon] = useState(TYPE_PRESETS["bank"].icon);
+
+  // Track manual customization so type-change presets don't overwrite user's choice
+  const colorCustomized = useRef(false);
+  const iconCustomized = useRef(false);
+
   const [nameError, setNameError] = useState("");
   const [discardVisible, setDiscardVisible] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [archiveConfirm, setArchiveConfirm] = useState(false);
 
-  const isDirty = name.trim() !== (editAccount?.name ?? "");
+  // ── Draft key ────────────────────────────────────────────────────────────
+  const draftKey = `account_form_draft_${activeWorkspaceId}_${user?.id ?? ""}`;
 
+  // ── Dirty check ──────────────────────────────────────────────────────────
+  function isDirty() {
+    if (!editAccount) {
+      return name.trim() !== "" || openingBalance !== "0";
+    }
+    return (
+      name.trim() !== editAccount.name ||
+      type !== editAccount.type ||
+      color !== (editAccount.color ?? TYPE_PRESETS["bank"].color) ||
+      icon !== (editAccount.icon ?? TYPE_PRESETS["bank"].icon) ||
+      includeInNetWorth !== editAccount.includeInNetWorth ||
+      openingBalance !== String(editAccount.openingBalance ?? 0)
+    );
+  }
+
+  // ── Draft persistence ─────────────────────────────────────────────────────
+  const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function saveDraft() {
+    if (!visible || editAccount) return; // only for new accounts
+    const draft = { name, type, color, icon, currencyCode, customCurrency, openingBalance, includeInNetWorth, ts: Date.now() };
+    void AsyncStorage.setItem(draftKey, JSON.stringify(draft));
+  }
+
+  async function loadDraft() {
+    if (editAccount) return;
+    try {
+      const raw = await AsyncStorage.getItem(draftKey);
+      if (!raw) return;
+      const draft = JSON.parse(raw);
+      if (!draft || Date.now() - draft.ts > DRAFT_TTL_MS) {
+        await AsyncStorage.removeItem(draftKey);
+        return;
+      }
+      setName(draft.name ?? "");
+      setType(draft.type ?? "bank");
+      setColor(draft.color ?? TYPE_PRESETS["bank"].color);
+      setIcon(draft.icon ?? TYPE_PRESETS["bank"].icon);
+      setCurrencyCode(draft.currencyCode ?? defaultCurrency);
+      setCustomCurrency(draft.customCurrency ?? "");
+      setOpeningBalance(draft.openingBalance ?? "0");
+      setIncludeInNetWorth(draft.includeInNetWorth ?? true);
+      colorCustomized.current = true;
+      iconCustomized.current = true;
+    } catch { /* ignore */ }
+  }
+
+  async function clearDraft() {
+    await AsyncStorage.removeItem(draftKey);
+  }
+
+  // ── Initialize form ───────────────────────────────────────────────────────
   useEffect(() => {
     if (!visible) return;
+    colorCustomized.current = false;
+    iconCustomized.current = false;
+
     if (editAccount) {
       setName(editAccount.name);
       setType(editAccount.type);
       setCurrencyCode(editAccount.currencyCode);
-      setOpeningBalance("0");
+      setOpeningBalance(String(editAccount.openingBalance ?? 0));
       setIncludeInNetWorth(editAccount.includeInNetWorth);
-      setColor(editAccount.color ?? ACCOUNT_COLORS[0]);
-      const iconValue = editAccount.icon ?? ACCOUNT_ICONS[0].value;
-      setIcon(ACCOUNT_ICONS.find((i) => i.value === iconValue) ? iconValue : ACCOUNT_ICONS[0].value);
+      setColor(editAccount.color ?? TYPE_PRESETS[editAccount.type]?.color ?? ACCOUNT_COLORS[0]);
+      const iconVal = editAccount.icon ?? ACCOUNT_ICONS[0].value;
+      setIcon(ACCOUNT_ICONS.find((i) => i.value === iconVal) ? iconVal : ACCOUNT_ICONS[0].value);
+      colorCustomized.current = true;
+      iconCustomized.current = true;
     } else {
+      // Reset then try to load draft
       setName("");
       setType("bank");
       setCurrencyCode(defaultCurrency);
       setOpeningBalance("0");
       setIncludeInNetWorth(true);
-      setColor(ACCOUNT_COLORS[0]);
-      setIcon(ACCOUNT_ICONS[0].value);
+      setColor(TYPE_PRESETS["bank"].color);
+      setIcon(TYPE_PRESETS["bank"].icon);
+      setCustomCurrency("");
+      void loadDraft();
     }
     setNameError("");
-    setCustomCurrency("");
-  }, [editAccount, visible, defaultCurrency]);
+  }, [editAccount, visible]);
+
+  // ── Debounced draft save ──────────────────────────────────────────────────
+  useEffect(() => {
+    if (!visible || editAccount) return;
+    if (draftTimer.current) clearTimeout(draftTimer.current);
+    draftTimer.current = setTimeout(saveDraft, 800);
+    return () => { if (draftTimer.current) clearTimeout(draftTimer.current); };
+  }, [name, type, color, icon, currencyCode, customCurrency, openingBalance, includeInNetWorth, visible]);
+
+  // ── Type change with preset auto-apply ────────────────────────────────────
+  function handleTypeChange(newType: string) {
+    const prevPreset = TYPE_PRESETS[type] ?? TYPE_PRESETS["other"];
+    const newPreset = TYPE_PRESETS[newType] ?? TYPE_PRESETS["other"];
+    setType(newType);
+    // Only auto-apply if user hasn't manually customized
+    if (!iconCustomized.current || icon === prevPreset.icon) {
+      setIcon(newPreset.icon);
+      iconCustomized.current = false;
+    }
+    if (!colorCustomized.current || color === prevPreset.color) {
+      setColor(newPreset.color);
+      colorCustomized.current = false;
+    }
+  }
 
   function handleClose() {
-    if (isDirty) {
+    if (isDirty()) {
       setDiscardVisible(true);
     } else {
       onClose();
@@ -123,11 +242,12 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
       return;
     }
     const resolvedCurrency = customCurrency.trim().toUpperCase() || currencyCode;
+    const parsedBalance = parseFloat(openingBalance);
     const input: AccountFormInput = {
       name: name.trim(),
       type,
       currencyCode: resolvedCurrency,
-      openingBalance: parseFloat(openingBalance) || 0,
+      openingBalance: isNaN(parsedBalance) ? 0 : parsedBalance,
       includeInNetWorth,
       color,
       icon,
@@ -135,20 +255,33 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
     try {
       if (editAccount) {
         await updateMutation.mutateAsync({ id: editAccount.id, input });
-        showToast("Cuenta actualizada", "success");
+        showToast("Cuenta actualizada ✓", "success");
       } else {
         await createMutation.mutateAsync(input);
-        showToast("Cuenta creada", "success");
+        await clearDraft();
+        showToast("Cuenta creada ✓", "success");
       }
       onSuccess?.();
       onClose();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Error desconocido";
-      showToast(msg, "error");
+      showToast(humanizeError(err), "error");
+    }
+  }
+
+  async function handleArchiveToggle() {
+    if (!editAccount) return;
+    try {
+      await archiveMutation.mutateAsync({ id: editAccount.id, archived: !editAccount.isArchived });
+      showToast(editAccount.isArchived ? "Cuenta restaurada ✓" : "Cuenta archivada ✓", "success");
+      setArchiveConfirm(false);
+      onClose();
+    } catch (err: unknown) {
+      showToast(humanizeError(err), "error");
     }
   }
 
   const selectedIcon = ACCOUNT_ICONS.find((i) => i.value === icon) ?? ACCOUNT_ICONS[0];
+  const resolvedCurrency = customCurrency.trim().toUpperCase() || currencyCode;
 
   return (
     <>
@@ -156,9 +289,9 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
         visible={visible}
         onClose={handleClose}
         title={editAccount ? "Editar cuenta" : "Nueva cuenta"}
-        snapHeight={0.92}
+        snapHeight={0.94}
       >
-        {/* Preview + icon + color */}
+        {/* Live preview */}
         <View style={styles.previewRow}>
           <View style={[styles.previewIcon, { backgroundColor: color + "33" }]}>
             <selectedIcon.Icon size={28} color={color} />
@@ -168,10 +301,28 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
               {name.trim() || "Nueva cuenta"}
             </Text>
             <Text style={styles.previewType}>
-              {ACCOUNT_TYPES.find((t) => t.value === type)?.label ?? type}
+              {ACCOUNT_TYPES.find((t) => t.value === type)?.label ?? type} · {resolvedCurrency}
             </Text>
           </View>
+          {editAccount ? (
+            <View style={styles.balanceChip}>
+              <Text style={styles.balanceChipLabel}>Saldo actual</Text>
+              <Text style={[styles.balanceChipAmount, editAccount.currentBalance < 0 && { color: COLORS.expense }]}>
+                {formatCurrency(editAccount.currentBalance, editAccount.currencyCode)}
+              </Text>
+            </View>
+          ) : null}
         </View>
+
+        {/* Last activity (edit only) */}
+        {editAccount?.lastActivity ? (
+          <View style={styles.infoRow}>
+            <Clock size={12} color={COLORS.storm} />
+            <Text style={styles.infoText}>
+              Última actividad: {format(parseDisplayDate(editAccount.lastActivity), "d MMM yyyy", { locale: es })}
+            </Text>
+          </View>
+        ) : null}
 
         {/* Icon picker */}
         <View>
@@ -184,9 +335,12 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
                   styles.iconBtn,
                   icon === item.value && { borderColor: color, backgroundColor: color + "22" },
                 ]}
-                onPress={() => setIcon(item.value)}
+                onPress={() => {
+                  setIcon(item.value);
+                  iconCustomized.current = true;
+                }}
               >
-                <item.Icon size={22} color={icon === item.value ? color : COLORS.textMuted} />
+                <item.Icon size={22} color={icon === item.value ? color : COLORS.storm} />
               </TouchableOpacity>
             ))}
           </View>
@@ -204,7 +358,10 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
                   { backgroundColor: c },
                   color === c && styles.colorDotActive,
                 ]}
-                onPress={() => setColor(c)}
+                onPress={() => {
+                  setColor(c);
+                  colorCustomized.current = true;
+                }}
               />
             ))}
           </View>
@@ -218,7 +375,7 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
             value={name}
             onChangeText={(t) => { setName(t); setNameError(""); }}
             placeholder="Ej. BCP Soles, Efectivo casa"
-            placeholderTextColor={COLORS.textDisabled}
+            placeholderTextColor={COLORS.storm}
           />
           {nameError ? <Text style={styles.fieldError}>{nameError}</Text> : null}
         </View>
@@ -232,7 +389,7 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
                 <TouchableOpacity
                   key={t.value}
                   style={[styles.pill, type === t.value && styles.pillActive]}
-                  onPress={() => setType(t.value)}
+                  onPress={() => handleTypeChange(t.value)}
                 >
                   <Text style={[styles.pillText, type === t.value && styles.pillTextActive]}>
                     {t.label}
@@ -266,20 +423,23 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
             value={customCurrency}
             onChangeText={(t) => setCustomCurrency(t.toUpperCase())}
             placeholder="Otra moneda (ej. JPY)"
-            placeholderTextColor={COLORS.textDisabled}
+            placeholderTextColor={COLORS.storm}
             maxLength={5}
             autoCapitalize="characters"
           />
         </View>
 
-        {/* Opening balance — only on create */}
-        {!editAccount ? (
-          <CurrencyInput
-            label="Saldo inicial"
-            value={openingBalance}
-            onChangeText={setOpeningBalance}
-            currencyCode={customCurrency.trim().toUpperCase() || currencyCode}
-          />
+        {/* Opening balance */}
+        <CurrencyInput
+          label={editAccount ? "Saldo inicial (base)" : "Saldo inicial"}
+          value={openingBalance}
+          onChangeText={setOpeningBalance}
+          currencyCode={resolvedCurrency}
+        />
+        {editAccount ? (
+          <Text style={styles.openingBalanceHint}>
+            El saldo actual se calcula como saldo inicial + movimientos confirmados.
+          </Text>
         ) : null}
 
         {/* Include in net worth */}
@@ -291,42 +451,99 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
           <Switch
             value={includeInNetWorth}
             onValueChange={setIncludeInNetWorth}
-            trackColor={{ false: COLORS.border, true: COLORS.primary }}
+            trackColor={{ false: COLORS.storm + "44", true: COLORS.primary + "88" }}
             thumbColor="#FFFFFF"
           />
         </View>
 
+        {/* Submit */}
         <Button
           label={editAccount ? "Guardar cambios" : "Crear cuenta"}
           onPress={handleSubmit}
           loading={createMutation.isPending || updateMutation.isPending}
           style={styles.submitBtn}
         />
+
+        {/* Archive / restore (only in edit mode) */}
+        {editAccount ? (
+          <TouchableOpacity
+            style={[styles.secondaryBtn, editAccount.isArchived && styles.secondaryBtnActive]}
+            onPress={() => setArchiveConfirm(true)}
+            activeOpacity={0.8}
+          >
+            {editAccount.isArchived
+              ? <ArchiveRestore size={14} color={COLORS.pine} strokeWidth={2} />
+              : <Archive size={14} color={COLORS.storm} strokeWidth={2} />}
+            <Text style={[styles.secondaryBtnText, editAccount.isArchived && { color: COLORS.pine }]}>
+              {editAccount.isArchived ? "Restaurar cuenta" : "Archivar cuenta"}
+            </Text>
+          </TouchableOpacity>
+        ) : null}
+
+        {/* Permanent delete — only when archived */}
+        {editAccount?.isArchived ? (
+          <TouchableOpacity
+            style={styles.dangerBtn}
+            onPress={() => setDeleteConfirm(true)}
+            activeOpacity={0.8}
+          >
+            <Trash2 size={14} color={COLORS.danger} strokeWidth={2} />
+            <Text style={styles.dangerBtnText}>Eliminar permanentemente</Text>
+          </TouchableOpacity>
+        ) : null}
       </BottomSheet>
 
-      {/* Discard dialog */}
-      <Modal transparent visible={discardVisible} animationType="fade" onRequestClose={() => setDiscardVisible(false)}>
-        <View style={styles.discardOverlay}>
-          <View style={styles.discardCard}>
-            <Text style={styles.discardTitle}>¿Descartar cambios?</Text>
-            <Text style={styles.discardBody}>Los cambios no guardados se perderán.</Text>
-            <View style={styles.discardActions}>
-              <TouchableOpacity style={styles.discardCancel} onPress={() => setDiscardVisible(false)}>
-                <Text style={styles.discardCancelText}>Continuar editando</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.discardConfirm} onPress={() => { setDiscardVisible(false); onClose(); }}>
-                <Text style={styles.discardConfirmText}>Descartar</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      {/* Discard changes */}
+      <ConfirmDialog
+        visible={discardVisible}
+        title="¿Descartar cambios?"
+        body="Los cambios no guardados se perderán."
+        confirmLabel="Descartar"
+        cancelLabel="Continuar editando"
+        onCancel={() => setDiscardVisible(false)}
+        onConfirm={() => { setDiscardVisible(false); onClose(); }}
+      />
+
+      {/* Archive / restore confirmation */}
+      <ConfirmDialog
+        visible={archiveConfirm}
+        title={editAccount?.isArchived ? "¿Restaurar cuenta?" : "¿Archivar cuenta?"}
+        body={
+          editAccount?.isArchived
+            ? "La cuenta volverá a aparecer en tu lista activa y en el patrimonio neto."
+            : "La cuenta quedará oculta. Sus movimientos históricos se conservarán intactos y podrás restaurarla después."
+        }
+        confirmLabel={editAccount?.isArchived ? "Sí, restaurar" : "Sí, archivar"}
+        cancelLabel="Cancelar"
+        onCancel={() => setArchiveConfirm(false)}
+        onConfirm={handleArchiveToggle}
+      />
+
+      {/* Permanent delete */}
+      <ConfirmDialog
+        visible={deleteConfirm}
+        title="Eliminar cuenta"
+        body="Esta acción es irreversible. Si tiene movimientos vinculados, la eliminación fallará y los datos se conservarán."
+        confirmLabel="Eliminar"
+        cancelLabel="Cancelar"
+        onCancel={() => setDeleteConfirm(false)}
+        onConfirm={async () => {
+          if (!editAccount) return;
+          setDeleteConfirm(false);
+          try {
+            await deleteMutation.mutateAsync(editAccount.id);
+            showToast("Cuenta eliminada", "success");
+            onClose();
+          } catch (err: unknown) {
+            showToast(humanizeError(err), "error");
+          }
+        }}
+      />
     </>
   );
 }
 
 const styles = StyleSheet.create({
-  // Preview
   previewRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -335,7 +552,10 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.lg,
     padding: SPACING.md,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderTopColor: "rgba(255,255,255,0.14)",
+    borderLeftColor: "rgba(255,255,255,0.08)",
+    borderRightColor: "rgba(255,255,255,0.06)",
+    borderBottomColor: "rgba(255,255,255,0.04)",
   },
   previewIcon: {
     width: 52,
@@ -343,10 +563,54 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.lg,
     alignItems: "center",
     justifyContent: "center",
+    flexShrink: 0,
   },
   previewInfo: { flex: 1 },
-  previewName: { fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.ink },
-  previewType: { fontSize: FONT_SIZE.xs, color: COLORS.storm, marginTop: 2 },
+  previewName: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.md,
+    color: COLORS.ink,
+  },
+  previewType: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    marginTop: 2,
+  },
+  balanceChip: {
+    alignItems: "flex-end",
+    gap: 2,
+    flexShrink: 0,
+  },
+  balanceChipLabel: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: 10,
+    color: COLORS.storm,
+  },
+  balanceChipAmount: {
+    fontFamily: FONT_FAMILY.heading,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.income,
+  },
+  infoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 2,
+  },
+  infoText: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+  },
+  openingBalanceHint: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    fontStyle: "italic",
+    paddingHorizontal: 2,
+    marginTop: -SPACING.xs,
+  },
 
   // Icon picker
   iconGrid: {
@@ -355,21 +619,21 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
   },
   iconBtn: {
-    width: 48,
-    height: 48,
+    width: 44,
+    height: 44,
     borderRadius: RADIUS.md,
     backgroundColor: GLASS.card,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 2,
-    borderColor: "transparent",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
   },
 
   // Color picker
   colorGrid: {
     flexDirection: "row",
-    flexWrap: "wrap",
     gap: SPACING.sm,
+    flexWrap: "wrap",
   },
   colorDot: {
     width: 36,
@@ -383,7 +647,6 @@ const styles = StyleSheet.create({
     borderWidth: 3,
   },
 
-  // Form fields
   sectionLabel: {
     fontSize: FONT_SIZE.xs,
     fontFamily: FONT_FAMILY.bodySemibold,
@@ -398,9 +661,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: GLASS.cardBorder,
     paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
+    paddingVertical: SPACING.sm + 2,
     fontSize: FONT_SIZE.md,
     color: COLORS.ink,
+    fontFamily: FONT_FAMILY.body,
   },
   textInputError: { borderColor: COLORS.danger },
   fieldError: { fontSize: FONT_SIZE.xs, color: COLORS.danger, marginTop: 4 },
@@ -415,7 +679,7 @@ const styles = StyleSheet.create({
   },
   pillActive: { backgroundColor: COLORS.pine, borderColor: COLORS.pine },
   pillText: { fontSize: FONT_SIZE.sm, color: COLORS.storm, fontFamily: FONT_FAMILY.bodyMedium },
-  pillTextActive: { color: COLORS.canvas },
+  pillTextActive: { color: COLORS.textInverse },
   switchRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -430,60 +694,42 @@ const styles = StyleSheet.create({
   switchLabel: { fontSize: FONT_SIZE.sm, fontFamily: FONT_FAMILY.bodyMedium, color: COLORS.ink },
   switchDesc: { fontSize: FONT_SIZE.xs, color: COLORS.storm },
   submitBtn: { marginTop: SPACING.sm },
-
-  // Discard dialog
-  discardOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.6)",
+  secondaryBtn: {
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    padding: SPACING.xl,
-  },
-  discardCard: {
-    width: "100%",
-    backgroundColor: GLASS.card,
-    borderRadius: RADIUS.xl,
-    padding: SPACING.xl,
+    gap: SPACING.xs,
+    marginTop: SPACING.xs,
+    paddingVertical: SPACING.sm + 2,
+    borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
-    gap: SPACING.sm,
+    borderColor: "rgba(255,255,255,0.12)",
+    backgroundColor: "rgba(255,255,255,0.04)",
   },
-  discardTitle: {
-    fontSize: FONT_SIZE.lg,
-    fontFamily: FONT_FAMILY.heading,
-    color: COLORS.ink,
-    textAlign: "center",
+  secondaryBtnActive: {
+    borderColor: COLORS.pine + "55",
+    backgroundColor: COLORS.pine + "12",
   },
-  discardBody: {
+  secondaryBtnText: {
+    fontFamily: FONT_FAMILY.bodyMedium,
     fontSize: FONT_SIZE.sm,
     color: COLORS.storm,
-    textAlign: "center",
-    marginBottom: SPACING.sm,
   },
-  discardActions: { gap: SPACING.sm },
-  discardConfirm: {
-    backgroundColor: GLASS.dangerBg,
-    borderWidth: 1,
-    borderColor: GLASS.dangerBorder,
-    borderRadius: RADIUS.md,
-    paddingVertical: SPACING.md,
+  dangerBtn: {
+    flexDirection: "row",
     alignItems: "center",
-  },
-  discardConfirmText: {
-    fontSize: FONT_SIZE.md,
-    fontFamily: FONT_FAMILY.bodySemibold,
-    color: COLORS.danger,
-  },
-  discardCancel: {
-    borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    justifyContent: "center",
+    gap: SPACING.xs,
+    marginTop: SPACING.xs,
+    paddingVertical: SPACING.sm + 2,
     borderRadius: RADIUS.md,
-    paddingVertical: SPACING.md,
-    alignItems: "center",
+    borderWidth: 1,
+    borderColor: COLORS.danger + "44",
+    backgroundColor: COLORS.danger + "10",
   },
-  discardCancelText: {
-    fontSize: FONT_SIZE.md,
+  dangerBtnText: {
     fontFamily: FONT_FAMILY.bodyMedium,
-    color: COLORS.storm,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.danger,
   },
 });

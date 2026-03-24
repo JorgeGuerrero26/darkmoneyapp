@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useMemo, useState, useCallback } from "react";
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { BarChart3 } from "lucide-react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { format } from "date-fns";
@@ -15,10 +16,18 @@ import {
 import type { SubscriptionSummary } from "../../types/domain";
 import { Card } from "../../components/ui/Card";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
+import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { SubscriptionForm } from "../../components/forms/SubscriptionForm";
 import { formatCurrency } from "../../components/ui/AmountDisplay";
 import { useToast } from "../../hooks/useToast";
 import { COLORS, FONT_SIZE, FONT_WEIGHT, RADIUS, SPACING } from "../../constants/theme";
+import { SubscriptionAnalyticsModal } from "../../components/domain/SubscriptionAnalyticsModal";
+
+function formatYmdLocal(ymd: string, pattern: string) {
+  const p = ymd.split("-").map(Number);
+  if (p.length !== 3 || p.some((n) => Number.isNaN(n))) return ymd;
+  return format(new Date(p[0], p[1] - 1, p[2]), pattern, { locale: es });
+}
 
 export default function SubscriptionDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -29,6 +38,8 @@ export default function SubscriptionDetailScreen() {
   const { showToast } = useToast();
 
   const [editFormVisible, setEditFormVisible] = useState(false);
+  const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
+  const [analyticsOpen, setAnalyticsOpen] = useState(false);
 
   const { data: snapshot, isLoading } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const updateMutation = useUpdateSubscriptionMutation(activeWorkspaceId);
@@ -39,7 +50,9 @@ export default function SubscriptionDetailScreen() {
     [snapshot, id],
   );
 
-  function handleTogglePause() {
+  const postedMovements = snapshot?.subscriptionPostedMovements ?? [];
+
+  const handleTogglePause = useCallback(() => {
     if (!subscription) return;
     const newStatus = subscription.status === "active" ? "paused" : "active";
     updateMutation.mutate(
@@ -49,21 +62,18 @@ export default function SubscriptionDetailScreen() {
         onError: (e) => showToast(e.message, "error"),
       },
     );
-  }
+  }, [subscription, updateMutation, showToast]);
 
-  function handleDelete() {
+  function confirmDeleteSubscription() {
     if (!subscription) return;
-    Alert.alert("Eliminar suscripción", `¿Eliminar "${subscription.name}"?`, [
-      { text: "Cancelar", style: "cancel" },
-      {
-        text: "Eliminar",
-        style: "destructive",
-        onPress: () => deleteMutation.mutate(subscription.id, {
-          onSuccess: () => { showToast("Eliminada", "success"); router.back(); },
-          onError: (e) => showToast(e.message, "error"),
-        }),
+    deleteMutation.mutate(subscription.id, {
+      onSuccess: () => {
+        setDeleteConfirmVisible(false);
+        showToast("Suscripción eliminada", "success");
+        router.back();
       },
-    ]);
+      onError: (e) => showToast(e.message, "error"),
+    });
   }
 
   const monthlyCost = subscription
@@ -82,9 +92,14 @@ export default function SubscriptionDetailScreen() {
         rightAction={
           <View style={styles.headerActions}>
             {subscription ? (
-              <TouchableOpacity style={styles.editBtn} onPress={() => setEditFormVisible(true)}>
-                <Text style={styles.editBtnText}>Editar</Text>
-              </TouchableOpacity>
+              <>
+                <TouchableOpacity style={styles.editBtn} onPress={() => setAnalyticsOpen(true)}>
+                  <Text style={styles.editBtnText}>Análisis</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.editBtn} onPress={() => setEditFormVisible(true)}>
+                  <Text style={styles.editBtnText}>Editar</Text>
+                </TouchableOpacity>
+              </>
             ) : null}
             <TouchableOpacity onPress={() => router.back()}>
               <Text style={styles.back}>‹ Volver</Text>
@@ -116,13 +131,13 @@ export default function SubscriptionDetailScreen() {
           {/* Details */}
           <Card>
             {subscription.vendor ? <><DetailRow label="Proveedor" value={subscription.vendor} /><Divider /></> : null}
-            <DetailRow label="Próximo cobro" value={format(new Date(subscription.nextDueDate), "d 'de' MMMM yyyy", { locale: es })} />
+            <DetailRow label="Próximo cobro" value={formatYmdLocal(subscription.nextDueDate, "d 'de' MMMM yyyy")} />
             <Divider />
-            <DetailRow label="Inicio" value={format(new Date(subscription.startDate), "d MMM yyyy", { locale: es })} />
+            <DetailRow label="Inicio" value={formatYmdLocal(subscription.startDate, "d MMM yyyy")} />
             {subscription.endDate ? (
               <>
                 <Divider />
-                <DetailRow label="Fin" value={format(new Date(subscription.endDate), "d MMM yyyy", { locale: es })} />
+                <DetailRow label="Fin" value={formatYmdLocal(subscription.endDate, "d MMM yyyy")} />
               </>
             ) : null}
             {subscription.accountName ? (
@@ -147,6 +162,12 @@ export default function SubscriptionDetailScreen() {
                 <DetailRow label="Descripción" value={subscription.description} />
               </>
             ) : null}
+            {subscription.notes ? (
+              <>
+                <Divider />
+                <DetailRow label="Notas" value={subscription.notes} />
+              </>
+            ) : null}
           </Card>
 
           {/* Actions */}
@@ -161,7 +182,7 @@ export default function SubscriptionDetailScreen() {
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.actionBtn, styles.actionBtnDanger]}
-              onPress={handleDelete}
+              onPress={() => setDeleteConfirmVisible(true)}
             >
               <Text style={[styles.actionBtnText, styles.actionBtnTextDanger]}>Eliminar</Text>
             </TouchableOpacity>
@@ -174,6 +195,29 @@ export default function SubscriptionDetailScreen() {
         onClose={() => setEditFormVisible(false)}
         onSuccess={() => setEditFormVisible(false)}
         editSubscription={subscription ?? undefined}
+      />
+
+      <SubscriptionAnalyticsModal
+        visible={analyticsOpen && Boolean(subscription)}
+        onClose={() => setAnalyticsOpen(false)}
+        subscription={subscription}
+        movements={postedMovements}
+        baseCurrencyCode={activeWorkspace?.baseCurrencyCode ?? "PEN"}
+      />
+
+      <ConfirmDialog
+        visible={deleteConfirmVisible && Boolean(subscription)}
+        title="Eliminar suscripción"
+        body={
+          subscription
+            ? `¿Eliminar «${subscription.name}»? Esta acción no se puede deshacer.`
+            : undefined
+        }
+        confirmLabel="Eliminar"
+        cancelLabel="Cancelar"
+        destructive
+        onCancel={() => setDeleteConfirmVisible(false)}
+        onConfirm={confirmDeleteSubscription}
       />
     </View>
   );
@@ -201,6 +245,7 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   errorText: { color: COLORS.textMuted, fontSize: FONT_SIZE.md },
   headerActions: { flexDirection: "row", alignItems: "center", gap: SPACING.sm },
+  editBtnRow: { flexDirection: "row", alignItems: "center", gap: 4 },
   editBtn: {
     paddingHorizontal: SPACING.sm, paddingVertical: 4,
     borderRadius: RADIUS.full, borderWidth: 1, borderColor: COLORS.primary,

@@ -12,16 +12,17 @@ import {
 import type { CounterpartyOverview } from "../../types/domain";
 import { BottomSheet } from "../ui/BottomSheet";
 import { Button } from "../ui/Button";
+import { sortByLabel } from "../../lib/sort-locale";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
 
-const TYPE_OPTIONS: { value: CounterpartyFormInput["type"]; label: string; emoji: string }[] = [
-  { value: "person",   label: "Persona",   emoji: "👤" },
-  { value: "company",  label: "Empresa",   emoji: "🏢" },
-  { value: "merchant", label: "Comercio",  emoji: "🏪" },
-  { value: "service",  label: "Servicio",  emoji: "⚙️" },
-  { value: "bank",     label: "Banco",     emoji: "🏦" },
-  { value: "other",    label: "Otro",      emoji: "◦" },
-];
+const TYPE_OPTIONS: { value: CounterpartyFormInput["type"]; label: string; emoji: string }[] = sortByLabel([
+  { value: "person", label: "Persona", emoji: "👤" },
+  { value: "company", label: "Empresa", emoji: "🏢" },
+  { value: "merchant", label: "Comercio", emoji: "🏪" },
+  { value: "service", label: "Servicio", emoji: "⚙️" },
+  { value: "bank", label: "Banco", emoji: "🏦" },
+  { value: "other", label: "Otro", emoji: "◦" },
+]);
 
 type Props = {
   visible: boolean;
@@ -65,10 +66,24 @@ export function ContactForm({ visible, onClose, onSuccess, editContact }: Props)
       setNotes("");
     }
     setNameError("");
-  }, [visible, editContact]);
+  }, [visible, editContact?.id, editContact?.name, editContact?.type, editContact?.phone, editContact?.email, editContact?.documentNumber, editContact?.notes]);
+
+  function hasUnsavedChanges() {
+    if (!isEditing || !editContact) {
+      return Boolean(name.trim() || phone.trim() || email.trim() || documentNumber.trim() || notes.trim());
+    }
+    return (
+      name.trim() !== (editContact.name ?? "").trim() ||
+      type !== editContact.type ||
+      phone.trim() !== (editContact.phone ?? "").trim() ||
+      email.trim() !== (editContact.email ?? "").trim() ||
+      documentNumber.trim() !== (editContact.documentNumber ?? "").trim() ||
+      notes.trim() !== (editContact.notes ?? "").trim()
+    );
+  }
 
   function handleClose() {
-    if (name.trim() && name !== (editContact?.name ?? "")) {
+    if (hasUnsavedChanges()) {
       Alert.alert("¿Descartar cambios?", "", [
         { text: "Continuar", style: "cancel" },
         { text: "Descartar", style: "destructive", onPress: onClose },

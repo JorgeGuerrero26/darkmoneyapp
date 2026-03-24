@@ -41,14 +41,30 @@ const styles = StyleSheet.create({
     backgroundColor: GLASS.card,
     borderRadius: RADIUS.xl,
     padding: SPACING.lg,
-    borderWidth: 0.5,
-    borderColor: GLASS.separator,
+    // Non-uniform borders — top edge brighter (specular reflection of light from above)
+    borderTopWidth: 1,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderBottomWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.20)",    // brightest — light hits top
+    borderLeftColor: "rgba(255,255,255,0.12)",   // medium — side light
+    borderRightColor: "rgba(255,255,255,0.09)",  // slightly dimmer
+    borderBottomColor: "rgba(255,255,255,0.05)", // dimmest — opposite to light source
+    // Deep diffuse shadow for floating depth
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.48,
+    shadowRadius: 20,
+    elevation: 10,
   },
   cardActive: {
     backgroundColor: GLASS.cardActive,
-    borderColor: "rgba(107,228,197,0.15)",
+    borderTopColor: "rgba(107,228,197,0.38)",
+    borderLeftColor: "rgba(107,228,197,0.25)",
+    borderRightColor: "rgba(107,228,197,0.20)",
+    borderBottomColor: "rgba(107,228,197,0.14)",
   },
   pressed: {
-    opacity: 0.82,
+    opacity: 0.80,
   },
 });

@@ -1,8 +1,10 @@
 import type { Session, User } from "@supabase/supabase-js";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
+import type { MutableRefObject } from "react";
 import type { PropsWithChildren } from "react";
 
 import { supabase, isSupabaseConfigured } from "./supabase";
+import { clearSessionScopedClientState } from "./session-data-reset";
 
 type ProfileRow = {
   id: string;
@@ -38,6 +40,12 @@ type AuthContextValue = {
   session: Session | null;
   user: User | null;
   profile: AppProfile | null;
+  /**
+   * true si al arrancar la app `getSession()` ya devolvió sesión (usuario vuelve con sesión guardada).
+   * false si arrancó sin sesión (p. ej. acaba de iniciar sesión con email/contraseña).
+   * Lo usa BiometricLock para no hacer signOut tras un login nuevo cuando no hay timestamp de background.
+   */
+  hadSessionAtLaunchRef: MutableRefObject<boolean>;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (input: SignUpInput) => Promise<{ needsEmailConfirmation: boolean }>;
   resetPassword: (email: string) => Promise<void>;
@@ -140,6 +148,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<AppProfile | null>(null);
   const hasResolvedInitialSession = useRef(false);
+  const hadSessionAtLaunchRef = useRef(false);
+  /** Login/registro antes de que resuelva el primer `getSession()` (evita marcar "sesión al arranque" por carrera). */
+  const authBeforeInitialGetSessionRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -156,6 +167,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
       if (!nextSession?.user) {
         setProfile(null);
+        clearSessionScopedClientState();
         setIsLoading(false);
         return;
       }
@@ -177,13 +189,30 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
     void supabase.auth
       .getSession()
-      .then(({ data }) => {
+      .then(async ({ data }) => {
+        if (cancelled) return;
+
         hasResolvedInitialSession.current = true;
-        return syncSession(data.session, { blockUi: true });
+
+        // Carrera típica en primer login: el usuario entra antes de que termine este getSession.
+        // El resultado puede llegar como null y syncSession(null) borraría la sesión recién creada.
+        let nextSession = data.session;
+        if (!nextSession && authBeforeInitialGetSessionRef.current) {
+          const { data: fresh } = await supabase.auth.getSession();
+          nextSession = fresh.session;
+        }
+
+        hadSessionAtLaunchRef.current = authBeforeInitialGetSessionRef.current
+          ? false
+          : Boolean(nextSession);
+
+        await syncSession(nextSession, { blockUi: true });
+        authBeforeInitialGetSessionRef.current = false;
       })
       .catch(() => {
         if (!cancelled) {
           hasResolvedInitialSession.current = true;
+          authBeforeInitialGetSessionRef.current = false;
           setIsLoading(false);
         }
       });
@@ -203,14 +232,29 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
   async function signIn(email: string, password: string) {
     if (!supabase) throw new Error("Supabase no está configurado.");
+    if (!hasResolvedInitialSession.current) {
+      authBeforeInitialGetSessionRef.current = true;
+    }
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
     setSession(data.session);
     setUser(data.user);
+    // Cargar perfil aquí: si SIGNED_IN llegó antes de hasResolvedInitialSession, onAuthStateChange no hizo syncSession.
+    if (data.session?.user) {
+      try {
+        const nextProfile = await ensureProfile(data.session.user);
+        setProfile(nextProfile);
+      } catch {
+        setProfile(buildFallbackProfile(data.session.user));
+      }
+    }
   }
 
   async function signUp(input: SignUpInput) {
     if (!supabase) throw new Error("Supabase no está configurado.");
+    if (!hasResolvedInitialSession.current) {
+      authBeforeInitialGetSessionRef.current = true;
+    }
 
     const { data, error } = await supabase.auth.signUp({
       email: input.email,
@@ -242,6 +286,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     if (!supabase) return;
     const { error } = await supabase.auth.signOut();
     if (error) throw error;
+    clearSessionScopedClientState();
     setSession(null);
     setUser(null);
     setProfile(null);
@@ -311,6 +356,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     session,
     user,
     profile,
+    hadSessionAtLaunchRef,
     signIn,
     signUp,
     resetPassword,

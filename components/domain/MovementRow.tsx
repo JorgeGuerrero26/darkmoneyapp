@@ -14,12 +14,14 @@ import {
 
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
 import { formatCurrency } from "../ui/AmountDisplay";
+import { parseDisplayDate } from "../../lib/date";
 import type { MovementRecord } from "../../types/domain";
 
 type Props = {
   movement: MovementRecord;
   baseCurrencyCode: string;
   onPress?: () => void;
+  onLongPress?: () => void;
 };
 
 type IconConfig = { Icon: typeof Circle; color: string };
@@ -54,7 +56,7 @@ const STATUS_BADGE: Record<string, { label: string; color: string }> = {
 
 const isIncome = (type: string) => type === "income" || type === "refund";
 
-export function MovementRow({ movement, baseCurrencyCode, onPress }: Props) {
+export function MovementRow({ movement, baseCurrencyCode, onPress, onLongPress }: Props) {
   const config = TYPE_ICON[movement.movementType] ?? { Icon: Circle, color: COLORS.storm };
   const { Icon, color: iconColor } = config;
 
@@ -77,6 +79,8 @@ export function MovementRow({ movement, baseCurrencyCode, onPress }: Props) {
     <Pressable
       style={({ pressed }) => [styles.row, pressed && styles.pressed]}
       onPress={onPress}
+      onLongPress={onLongPress}
+      delayLongPress={400}
     >
       {/* Icon */}
       <View style={[styles.iconWrap, { backgroundColor: iconColor + "15" }]}>
@@ -96,7 +100,7 @@ export function MovementRow({ movement, baseCurrencyCode, onPress }: Props) {
             <Text style={styles.meta} numberOfLines={1}>{movement.category}</Text>
           ) : null}
           <Text style={styles.meta}>
-            {format(new Date(movement.occurredAt), "d MMM", { locale: es })}
+            {format(parseDisplayDate(movement.occurredAt), "d MMM", { locale: es })}
           </Text>
           {statusBadge ? (
             <View style={[styles.statusBadge, { backgroundColor: statusBadge.color + "15" }]}>
@@ -118,17 +122,31 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: SPACING.lg,
+    paddingVertical: SPACING.md + 2,
     paddingHorizontal: SPACING.lg,
     gap: SPACING.md,
+    // Subtle glass surface — less pronounced than main cards
+    backgroundColor: "rgba(255,255,255,0.018)",
+    borderRadius: RADIUS.md,
+    marginHorizontal: SPACING.sm,
+    marginVertical: 2,
+    borderTopWidth: 0.5,
+    borderLeftWidth: 0.5,
+    borderRightWidth: 0.5,
+    borderBottomWidth: 0.5,
+    borderTopColor: "rgba(255,255,255,0.10)",
+    borderLeftColor: "rgba(255,255,255,0.06)",
+    borderRightColor: "rgba(255,255,255,0.05)",
+    borderBottomColor: "rgba(255,255,255,0.03)",
   },
   pressed: {
-    backgroundColor: GLASS.card,
+    backgroundColor: "rgba(255,255,255,0.055)",
+    opacity: 0.88,
   },
   iconWrap: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
+    width: 40,
+    height: 40,
+    borderRadius: 13,
     alignItems: "center",
     justifyContent: "center",
   },

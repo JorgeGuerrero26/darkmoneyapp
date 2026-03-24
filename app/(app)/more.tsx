@@ -2,7 +2,7 @@ import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-nati
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
-  Bell, Users, Banknote, RefreshCw, Tag, Settings, ChevronRight, type LucideIcon,
+  Bell, Users, BarChart3, RefreshCw, Tag, Settings, ChevronRight, type LucideIcon,
 } from "lucide-react-native";
 
 import { useAuth } from "../../lib/auth-context";
@@ -43,10 +43,10 @@ export default function MoreScreen() {
       route: "/contacts/",
     },
     {
-      Icon: Banknote,
-      title: "Créditos y Deudas",
-      subtitle: "Obligaciones activas",
-      route: "/obligations",
+      Icon: BarChart3,
+      title: "Presupuestos",
+      subtitle: "Controla tus gastos por categoría",
+      route: "/(app)/budgets",
     },
     {
       Icon: RefreshCw,

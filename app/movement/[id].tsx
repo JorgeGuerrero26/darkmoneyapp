@@ -9,6 +9,7 @@ import { es } from "date-fns/locale";
 import { useMovementQuery } from "../../services/queries/movements";
 import { useVoidMovementMutation } from "../../services/queries/workspace-data";
 import { useWorkspace } from "../../lib/workspace-context";
+import { parseDisplayDate } from "../../lib/date";
 import { useToast } from "../../hooks/useToast";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { Card } from "../../components/ui/Card";
@@ -42,7 +43,7 @@ const STATUS_COLOR: Record<string, string> = {
 };
 
 export default function MovementDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, from } = useLocalSearchParams<{ id: string; from?: string }>();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -105,7 +106,10 @@ export default function MovementDetailScreen() {
                 </TouchableOpacity>
               </>
             ) : null}
-            <TouchableOpacity onPress={() => router.replace("/(app)/movements")} accessibilityLabel="Volver">
+            <TouchableOpacity
+              onPress={() => from === "movements" ? router.replace("/(app)/movements") : router.back()}
+              accessibilityLabel="Volver"
+            >
               <Text style={styles.back}>‹ Volver</Text>
             </TouchableOpacity>
           </View>
@@ -145,7 +149,7 @@ export default function MovementDetailScreen() {
             <Divider />
             <DetailRow
               label="Fecha"
-              value={format(new Date(movement.occurredAt), "d 'de' MMMM yyyy, HH:mm", { locale: es })}
+              value={format(parseDisplayDate(movement.occurredAt), "d 'de' MMMM yyyy", { locale: es })}
             />
             {movement.categoryId ? (
               <>

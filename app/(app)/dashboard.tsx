@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useFocusEffect } from "expo-router";
 import {
   RefreshControl,
   ScrollView,
@@ -17,6 +18,7 @@ import {
   subMonths,
   subDays,
   startOfDay,
+  endOfDay,
   startOfWeek,
   addDays,
   getDay,
@@ -35,6 +37,8 @@ import { useWorkspace } from "../../lib/workspace-context";
 import {
   useWorkspaceSnapshotQuery,
   useDashboardMovementsQuery,
+  useSharedObligationsQuery,
+  mergeWorkspaceAndSharedObligations,
   type DashboardMovementRow,
 } from "../../services/queries/workspace-data";
 import type { ExchangeRateSummary } from "../../types/domain";
@@ -48,6 +52,7 @@ import { MovementForm } from "../../components/forms/MovementForm";
 import { WorkspaceSelector } from "../../components/layout/WorkspaceSelector";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
 import { FAB } from "../../components/ui/FAB";
+import { DayMovementsSheet, type DaySheetMode } from "../../components/dashboard/DayMovementsSheet";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -90,6 +95,10 @@ function isExpense(m: DashboardMovementRow) {
   if (EXPENSE_TYPES.has(m.movementType)) return true;
   if (m.movementType === "adjustment") return m.sourceAmount >= m.destinationAmount;
   return false;
+}
+
+function isTransfer(m: DashboardMovementRow) {
+  return m.status === "posted" && m.movementType === "transfer";
 }
 
 function inRange(m: DashboardMovementRow, start: Date, end: Date) {
@@ -186,6 +195,23 @@ function expenseAmt(m: DashboardMovementRow, ctx: ConversionCtx): number {
   return convertAmt(raw, currency, ctx.displayCurrency, ctx.exchangeRateMap);
 }
 
+function transferAmt(m: DashboardMovementRow, ctx: ConversionCtx): number {
+  const raw = m.sourceAmount || m.destinationAmount || 0;
+  const accountId = m.sourceAccountId ?? m.destinationAccountId;
+  const currency = accountId ? ctx.accountCurrencyMap.get(accountId) : undefined;
+  return convertAmt(raw, currency, ctx.displayCurrency, ctx.exchangeRateMap);
+}
+
+type DashboardChartDay = {
+  label: string;
+  dateKey: string;
+  dayStart: Date;
+  dayEnd: Date;
+  income: number;
+  expense: number;
+  transferTotal: number;
+};
+
 function useDashboardStats(movements: DashboardMovementRow[], period: Period, ctx: ConversionCtx) {
   return useMemo(() => {
     const now = new Date();
@@ -201,16 +227,20 @@ function useDashboardStats(movements: DashboardMovementRow[], period: Period, ct
     const prevIncome = prev.filter(isIncome).reduce((s, m) => s + incomeAmt(m, ctx), 0);
     const prevExpense = prev.filter(isExpense).reduce((s, m) => s + expenseAmt(m, ctx), 0);
 
-    // Daily chart — last 7 days
-    const chartDays = Array.from({ length: 7 }, (_, i) => {
+    // Daily chart — last 7 days (con metadatos para detalle al tocar)
+    const chartDays: DashboardChartDay[] = Array.from({ length: 7 }, (_, i) => {
       const d = subDays(now, 6 - i);
       const ds = startOfDay(d);
-      const de = new Date(ds.getTime() + 86_400_000 - 1);
+      const de = endOfDay(d);
       const dayMvs = movements.filter((m) => inRange(m, ds, de));
       return {
         label: format(d, "dd/M"),
+        dateKey: format(d, "yyyy-MM-dd"),
+        dayStart: ds,
+        dayEnd: de,
         income: dayMvs.filter(isIncome).reduce((s, m) => s + incomeAmt(m, ctx), 0),
         expense: dayMvs.filter(isExpense).reduce((s, m) => s + expenseAmt(m, ctx), 0),
+        transferTotal: dayMvs.filter(isTransfer).reduce((s, m) => s + transferAmt(m, ctx), 0),
       };
     });
 
@@ -397,7 +427,7 @@ function FlowCard({
 
   return (
     <View style={subStyles.kpiCard}>
-      <View style={[subStyles.kpiAccent, { backgroundColor: accent + "33" }]} />
+      <View style={[subStyles.kpiAccent, { backgroundColor: accent + "14" }]} />
       <Text style={subStyles.kpiLabel}>{label}</Text>
       <Text style={[subStyles.kpiValue, { color: accent }]} numberOfLines={1} adjustsFontSizeToFit>
         {formatCurrency(value, currency)}
@@ -413,17 +443,33 @@ function FlowCard({
   );
 }
 
-// Mini bar chart (7 days)
-function MiniBarChart({ data }: { data: { label: string; income: number; expense: number }[] }) {
+// Mini bar chart (7 days) — toque abre detalle con ahorro del día y movimientos
+function MiniBarChart({
+  data,
+  onSelectDay,
+}: {
+  data: DashboardChartDay[];
+  onSelectDay: (day: DashboardChartDay) => void;
+}) {
   const maxVal = Math.max(...data.flatMap((d) => [d.income, d.expense]), 1);
   const BAR_HEIGHT = 56;
 
   return (
     <Card>
-      <SectionTitle>Últimos 7 días</SectionTitle>
+      <SectionTitle>Últimos 7 días — flujo diario</SectionTitle>
+      <Text style={subStyles.chronoHint}>
+        Toca un día: verás ingresos, gastos, ahorro del día (neto) y cada movimiento que lo explica.
+      </Text>
       <View style={subStyles.chartRow}>
-        {data.map((d, i) => (
-          <View key={i} style={subStyles.chartCol}>
+        {data.map((d) => (
+          <TouchableOpacity
+            key={d.dateKey}
+            style={subStyles.chartCol}
+            onPress={() => onSelectDay(d)}
+            activeOpacity={0.72}
+            accessibilityRole="button"
+            accessibilityLabel={`${d.label}, ver detalle del día`}
+          >
             <View style={[subStyles.chartBars, { height: BAR_HEIGHT }]}>
               <View
                 style={[
@@ -439,7 +485,7 @@ function MiniBarChart({ data }: { data: { label: string; income: number; expense
               />
             </View>
             <Text style={subStyles.chartLabel}>{d.label}</Text>
-          </View>
+          </TouchableOpacity>
         ))}
       </View>
       <View style={subStyles.chartLegend}>
@@ -451,6 +497,64 @@ function MiniBarChart({ data }: { data: { label: string; income: number; expense
           <View style={[subStyles.legendDot, { backgroundColor: COLORS.expense }]} />
           <Text style={subStyles.legendText}>Gastos</Text>
         </View>
+      </View>
+    </Card>
+  );
+}
+
+/** Una sola barra por día (gastos, ingresos o transferencias) con detalle al tocar */
+function ChronologyStrip({
+  title,
+  hint,
+  mode,
+  data,
+  barColor,
+  getValue,
+  onSelectDay,
+}: {
+  title: string;
+  hint: string;
+  mode: DaySheetMode;
+  data: DashboardChartDay[];
+  barColor: string;
+  getValue: (d: DashboardChartDay) => number;
+  onSelectDay: (day: DashboardChartDay, sheetMode: DaySheetMode) => void;
+}) {
+  const vals = data.map(getValue);
+  const maxVal = Math.max(...vals, 1);
+  const BAR_HEIGHT = 56;
+
+  return (
+    <Card>
+      <SectionTitle>{title}</SectionTitle>
+      <Text style={subStyles.chronoHint}>{hint}</Text>
+      <View style={subStyles.chartRow}>
+        {data.map((d) => {
+          const v = getValue(d);
+          return (
+            <TouchableOpacity
+              key={d.dateKey}
+              style={subStyles.chartCol}
+              onPress={() => onSelectDay(d, mode)}
+              activeOpacity={0.72}
+              accessibilityRole="button"
+              accessibilityLabel={`${d.label}, ${title}`}
+            >
+              <View style={[subStyles.chartBars, { height: BAR_HEIGHT, justifyContent: "flex-end" }]}>
+                <View
+                  style={{
+                    width: "100%",
+                    height: Math.max((v / maxVal) * BAR_HEIGHT, v > 0 ? 3 : 0),
+                    backgroundColor: barColor,
+                    borderTopLeftRadius: 3,
+                    borderTopRightRadius: 3,
+                  }}
+                />
+              </View>
+              <Text style={subStyles.chartLabel}>{d.label}</Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
     </Card>
   );
@@ -1391,17 +1495,43 @@ export default function DashboardScreen() {
   const queryClient = useQueryClient();
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace, setWorkspaces } = useWorkspace();
-  const { dashboardMode, setDashboardMode } = useUiStore();
+  const { dashboardMode, setDashboardMode, dashboardScrollY, setDashboardScrollY } = useUiStore();
+  const scrollRef = useRef<import("react-native").ScrollView>(null);
+  const scrollSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Restaurar posición de scroll cuando el dashboard recupera el foco
+  useFocusEffect(
+    useCallback(() => {
+      if (dashboardScrollY > 0) {
+        // Pequeño delay para que el layout esté listo
+        const t = setTimeout(() => {
+          scrollRef.current?.scrollTo({ y: dashboardScrollY, animated: false });
+        }, 80);
+        return () => clearTimeout(t);
+      }
+    }, [dashboardScrollY]),
+  );
 
   const [period, setPeriod] = useState<Period>("month");
   const [formVisible, setFormVisible] = useState(false);
+  const [daySheet, setDaySheet] = useState<{
+    dayStart: Date;
+    dayEnd: Date;
+    mode: DaySheetMode;
+  } | null>(null);
   const [displayCurrency, setDisplayCurrency] = useState<string | null>(null);
   const currencyLoadedRef = useRef(false);
 
   const isPro = useIsPro(profile?.email);
 
   const { data: snapshot, isLoading: snapLoading } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
-  const { data: movements = [] } = useDashboardMovementsQuery(activeWorkspaceId);
+  const { data: movements = [] } = useDashboardMovementsQuery(activeWorkspaceId, profile?.id);
+  const { data: sharedObligations = [] } = useSharedObligationsQuery(profile?.id);
+
+  const obligationsMerged = useMemo(
+    () => mergeWorkspaceAndSharedObligations(snapshot?.obligations ?? [], sharedObligations),
+    [snapshot?.obligations, sharedObligations],
+  );
 
   useEffect(() => {
     if (snapshot?.workspaces?.length) setWorkspaces(snapshot.workspaces);
@@ -1427,14 +1557,14 @@ export default function DashboardScreen() {
     const all = new Set<string>();
     all.add(baseCurrency);
     for (const a of snapshot?.accounts ?? []) all.add(a.currencyCode.toUpperCase());
-    for (const o of snapshot?.obligations ?? []) all.add(o.currencyCode.toUpperCase());
+    for (const o of obligationsMerged) all.add(o.currencyCode.toUpperCase());
     for (const s of snapshot?.subscriptions ?? []) all.add(s.currencyCode.toUpperCase());
     return Array.from(all).filter((c) =>
       c === baseCurrency.toUpperCase() ||
       resolveRate(exchangeRateMap, baseCurrency.toUpperCase(), c) !== 1 ||
       c === baseCurrency.toUpperCase(),
     );
-  }, [baseCurrency, exchangeRateMap, snapshot]);
+  }, [baseCurrency, exchangeRateMap, snapshot, obligationsMerged]);
 
   // Load persisted currency once
   useEffect(() => {
@@ -1476,12 +1606,25 @@ export default function DashboardScreen() {
   const onRefresh = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
     void queryClient.invalidateQueries({ queryKey: ["dashboard-movements"] });
+    void queryClient.invalidateQueries({ queryKey: ["shared-obligations"] });
   }, [queryClient]);
 
   const activeAccounts = useMemo(
     () => (snapshot?.accounts ?? []).filter((a) => !a.isArchived),
     [snapshot],
   );
+
+  const categoryMap = useMemo(() => {
+    const m = new Map<number, string>();
+    for (const c of snapshot?.categories ?? []) m.set(c.id, c.name);
+    return m;
+  }, [snapshot?.categories]);
+
+  const accountMap = useMemo(() => {
+    const m = new Map<number, string>();
+    for (const a of snapshot?.accounts ?? []) m.set(a.id, a.name);
+    return m;
+  }, [snapshot?.accounts]);
 
   const isAdvanced = dashboardMode === "advanced";
 
@@ -1505,7 +1648,14 @@ export default function DashboardScreen() {
       />
 
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={styles.content}
+        scrollEventThrottle={16}
+        onScroll={(e) => {
+          const y = e.nativeEvent.contentOffset.y;
+          if (scrollSaveTimer.current) clearTimeout(scrollSaveTimer.current);
+          scrollSaveTimer.current = setTimeout(() => setDashboardScrollY(y), 200);
+        }}
         refreshControl={
           <RefreshControl refreshing={snapLoading} onRefresh={onRefresh} tintColor={COLORS.primary} />
         }
@@ -1535,21 +1685,51 @@ export default function DashboardScreen() {
           prevExpense={stats.prevExpense}
         />
 
-        {/* 4. Mini chart */}
-        <MiniBarChart data={stats.chartDays} />
+        {/* 4. Mini chart + detalle por día */}
+        <MiniBarChart
+          data={stats.chartDays}
+          onSelectDay={(d) => setDaySheet({ dayStart: d.dayStart, dayEnd: d.dayEnd, mode: "all" })}
+        />
+        <ChronologyStrip
+          title="Cronología de gastos"
+          hint="Últimos 7 días · toca un día para ver cada gasto de esa fecha"
+          mode="expense"
+          data={stats.chartDays}
+          barColor={COLORS.expense}
+          getValue={(d) => d.expense}
+          onSelectDay={(d, mode) => setDaySheet({ dayStart: d.dayStart, dayEnd: d.dayEnd, mode })}
+        />
+        <ChronologyStrip
+          title="Cronología de ingresos"
+          hint="Últimos 7 días · toca un día para ver cada ingreso"
+          mode="income"
+          data={stats.chartDays}
+          barColor={COLORS.income}
+          getValue={(d) => d.income}
+          onSelectDay={(d, mode) => setDaySheet({ dayStart: d.dayStart, dayEnd: d.dayEnd, mode })}
+        />
+        <ChronologyStrip
+          title="Cronología de transferencias"
+          hint="Últimos 7 días · toca un día para ver transferencias entre cuentas"
+          mode="transfer"
+          data={stats.chartDays}
+          barColor={COLORS.secondary}
+          getValue={(d) => d.transferTotal}
+          onSelectDay={(d, mode) => setDaySheet({ dayStart: d.dayStart, dayEnd: d.dayEnd, mode })}
+        />
 
         {/* 5. Accounts */}
         <AccountsScroll
           accounts={activeAccounts}
-          onPress={(id) => router.push(`/account/${id}`)}
+          onPress={(id) => router.push(`/account/${id}?from=dashboard`)}
         />
 
         {/* 6. Receivable + Payable leaders */}
-        <LeadersRow obligations={snapshot?.obligations ?? []} router={router} />
+        <LeadersRow obligations={obligationsMerged} router={router} />
 
         {/* 7. Upcoming */}
         <UpcomingSection
-          obligations={snapshot?.obligations ?? []}
+          obligations={obligationsMerged}
           subscriptions={snapshot?.subscriptions ?? []}
           router={router}
         />
@@ -1578,18 +1758,18 @@ export default function DashboardScreen() {
             />
 
             {/* 11. Obligations section */}
-            <ObligationsSection obligations={snapshot?.obligations ?? []} router={router} />
+            <ObligationsSection obligations={obligationsMerged} router={router} />
 
             {/* 12. Alert center */}
             <AlertCenter
               budgets={snapshot?.budgets ?? []}
-              obligations={snapshot?.obligations ?? []}
+              obligations={obligationsMerged}
               subscriptions={snapshot?.subscriptions ?? []}
               movements={movements}
             />
 
             {/* 13. Obligation watch */}
-            <ObligationWatch obligations={snapshot?.obligations ?? []} router={router} />
+            <ObligationWatch obligations={obligationsMerged} router={router} />
 
             {/* 14. Weekly pattern */}
             <WeeklyPattern movements={movements} ctx={conversionCtx} />
@@ -1615,7 +1795,7 @@ export default function DashboardScreen() {
               netWorth={netWorth}
               income={stats.income}
               expense={stats.expense}
-              obligations={snapshot?.obligations ?? []}
+              obligations={obligationsMerged}
               netWorthThreeMonthExpense={netWorth / Math.max(stats.expense, 1)}
             />
 
@@ -1653,6 +1833,24 @@ export default function DashboardScreen() {
           void queryClient.invalidateQueries({ queryKey: ["dashboard-movements"] });
         }}
       />
+
+      {daySheet ? (
+        <DayMovementsSheet
+          visible
+          onClose={() => setDaySheet(null)}
+          dayStart={daySheet.dayStart}
+          dayEnd={daySheet.dayEnd}
+          mode={daySheet.mode}
+          movements={movements}
+          ctx={conversionCtx}
+          categoryMap={categoryMap}
+          accountMap={accountMap}
+          onMovementPress={(id) => {
+            setDaySheet(null);
+            router.push(`/movement/${id}?from=dashboard`);
+          }}
+        />
+      ) : null}
     </View>
   );
 }
@@ -1674,10 +1872,21 @@ const subStyles = StyleSheet.create({
     flexDirection: "row",
     backgroundColor: GLASS.card,
     borderRadius: RADIUS.md,
-    borderWidth: 0.5,
-    borderColor: GLASS.separator,
     padding: 3,
     gap: 3,
+    borderTopWidth: 1,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderBottomWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.18)",
+    borderLeftColor: "rgba(255,255,255,0.10)",
+    borderRightColor: "rgba(255,255,255,0.08)",
+    borderBottomColor: "rgba(255,255,255,0.05)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.40,
+    shadowRadius: 10,
+    elevation: 7,
   },
   toggleBtn: {
     flex: 1,
@@ -1696,15 +1905,25 @@ const subStyles = StyleSheet.create({
   toggleTextActive: { fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.ink },
   proBadge: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.xs - 1, color: COLORS.gold },
 
-  // Hero card
+  // Hero card — most prominent, gets the full premium glass treatment
   heroCard: {
     backgroundColor: GLASS.card,
     borderRadius: RADIUS.xl,
-    borderWidth: 1,
-    borderColor: GLASS.cardBorder,
     padding: SPACING.xl,
     gap: SPACING.xs,
-    overflow: "hidden",
+    borderTopWidth: 1,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderBottomWidth: 1,
+    borderTopColor: "rgba(107,228,197,0.22)",
+    borderLeftColor: "rgba(255,255,255,0.14)",
+    borderRightColor: "rgba(255,255,255,0.10)",
+    borderBottomColor: "rgba(255,255,255,0.05)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.52,
+    shadowRadius: 24,
+    elevation: 14,
   },
   heroTopRow: {
     flexDirection: "row",
@@ -1732,7 +1951,7 @@ const subStyles = StyleSheet.create({
     backgroundColor: COLORS.pine,
   },
   heroPeriodText: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.xs, color: COLORS.storm },
-  heroPeriodTextActive: { fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.canvas },
+  heroPeriodTextActive: { fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.textInverse },
   heroCurrencyRow: {
     flexDirection: "row",
     gap: 3,
@@ -1750,7 +1969,7 @@ const subStyles = StyleSheet.create({
     backgroundColor: COLORS.ember,
   },
   heroCurrencyText: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.xs, color: COLORS.storm },
-  heroCurrencyTextActive: { fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.canvas },
+  heroCurrencyTextActive: { fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.textInverse },
   heroLabel: {
     fontFamily: FONT_FAMILY.bodyMedium,
     fontSize: FONT_SIZE.xs,
@@ -1801,6 +2020,19 @@ const subStyles = StyleSheet.create({
     padding: SPACING.md,
     gap: 3,
     overflow: "hidden",
+    borderTopWidth: 1,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderBottomWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.20)",
+    borderLeftColor: "rgba(255,255,255,0.12)",
+    borderRightColor: "rgba(255,255,255,0.08)",
+    borderBottomColor: "rgba(255,255,255,0.04)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.45,
+    shadowRadius: 16,
+    elevation: 10,
   },
   kpiAccent: {
     ...StyleSheet.absoluteFillObject,
@@ -1822,6 +2054,13 @@ const subStyles = StyleSheet.create({
   chartBars: { flexDirection: "row", alignItems: "flex-end", gap: 1, width: "100%" },
   chartBar: { flex: 1, borderTopLeftRadius: 3, borderTopRightRadius: 3, minHeight: 0 },
   chartLabel: { fontFamily: FONT_FAMILY.body, fontSize: 9, color: COLORS.storm, textAlign: "center" },
+  chronoHint: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    lineHeight: 17,
+    marginBottom: SPACING.xs,
+  },
   chartLegend: { flexDirection: "row", gap: SPACING.lg, marginTop: SPACING.xs },
   legendItem: { flexDirection: "row", alignItems: "center", gap: 4 },
   legendDot: { width: 8, height: 8, borderRadius: 4 },
@@ -1837,6 +2076,19 @@ const subStyles = StyleSheet.create({
     gap: SPACING.xs,
     minWidth: 100,
     maxWidth: 130,
+    borderTopWidth: 1,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderBottomWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.20)",
+    borderLeftColor: "rgba(255,255,255,0.12)",
+    borderRightColor: "rgba(255,255,255,0.08)",
+    borderBottomColor: "rgba(255,255,255,0.04)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.42,
+    shadowRadius: 12,
+    elevation: 7,
   },
   accountChipIcon: {
     width: 30,
@@ -1869,6 +2121,19 @@ const subStyles = StyleSheet.create({
     padding: SPACING.md,
     gap: SPACING.xs,
     marginBottom: SPACING.sm,
+    borderTopWidth: 1,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderBottomWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.20)",
+    borderLeftColor: "rgba(255,255,255,0.12)",
+    borderRightColor: "rgba(255,255,255,0.08)",
+    borderBottomColor: "rgba(255,255,255,0.04)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.45,
+    shadowRadius: 16,
+    elevation: 10,
   },
   budgetHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   budgetName: { flex: 1, fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.sm, color: COLORS.ink },
@@ -1881,9 +2146,21 @@ const subStyles = StyleSheet.create({
     flex: 1,
     backgroundColor: GLASS.card,
     borderRadius: RADIUS.xl,
-    borderWidth: 1,
     padding: SPACING.md,
     gap: SPACING.xs,
+    borderTopWidth: 1,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderBottomWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.20)",
+    borderLeftColor: "rgba(255,255,255,0.12)",
+    borderRightColor: "rgba(255,255,255,0.08)",
+    borderBottomColor: "rgba(255,255,255,0.04)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.45,
+    shadowRadius: 16,
+    elevation: 10,
   },
   leadersTitle: {
     fontFamily: FONT_FAMILY.bodySemibold,

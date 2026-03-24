@@ -2,6 +2,7 @@ import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 
 import { supabase } from "../../lib/supabase";
 import { MOVEMENTS_PAGE_SIZE } from "../../constants/config";
+import { filterDateFrom, filterDateTo } from "../../lib/date";
 import type { MovementRecord, MovementStatus, MovementType } from "../../types/domain";
 
 export type MovementFilters = {
@@ -37,12 +38,13 @@ async function fetchMovementsPage(
     )
     .eq("workspace_id", workspaceId)
     .order("occurred_at", { ascending: false })
+    .order("id", { ascending: false })
     .range(from, to);
 
   if (filters.type) query = query.eq("movement_type", filters.type);
   if (filters.status) query = query.eq("status", filters.status);
-  if (filters.dateFrom) query = query.gte("occurred_at", filters.dateFrom);
-  if (filters.dateTo) query = query.lte("occurred_at", filters.dateTo);
+  if (filters.dateFrom) query = query.gte("occurred_at", filterDateFrom(filters.dateFrom));
+  if (filters.dateTo) query = query.lte("occurred_at", filterDateTo(filters.dateTo));
   if (filters.accountId) {
     query = query.or(
       `source_account_id.eq.${filters.accountId},destination_account_id.eq.${filters.accountId}`,
@@ -97,7 +99,13 @@ export function useMovementQuery(movementId?: number | null) {
       const { data, error } = await supabase
         .from("movements")
         .select(
-          "id, workspace_id, movement_type, status, occurred_at, description, notes, source_account_id, source_amount, destination_account_id, destination_amount, fx_rate, category_id, counterparty_id, obligation_id, subscription_id, metadata",
+          `id, workspace_id, movement_type, status, occurred_at, description, notes,
+           source_account_id, source_amount, destination_account_id, destination_amount,
+           fx_rate, category_id, counterparty_id, obligation_id, subscription_id, metadata,
+           source_account:accounts!movements_source_account_id_fkey(name),
+           destination_account:accounts!movements_destination_account_id_fkey(name),
+           category:categories(name),
+           counterparty:counterparties(name)`,
         )
         .eq("id", movementId!)
         .single();
@@ -110,16 +118,16 @@ export function useMovementQuery(movementId?: number | null) {
         status: row.status,
         description: row.description,
         notes: row.notes,
-        category: "",
+        category: row.category?.name ?? "",
         categoryId: row.category_id,
-        counterparty: "",
+        counterparty: row.counterparty?.name ?? "",
         counterpartyId: row.counterparty_id,
         occurredAt: row.occurred_at,
         sourceAccountId: row.source_account_id,
-        sourceAccountName: null,
+        sourceAccountName: row.source_account?.name ?? null,
         sourceAmount: row.source_amount ? Number(row.source_amount) : null,
         destinationAccountId: row.destination_account_id,
-        destinationAccountName: null,
+        destinationAccountName: row.destination_account?.name ?? null,
         destinationAmount: row.destination_amount ? Number(row.destination_amount) : null,
         fxRate: row.fx_rate ? Number(row.fx_rate) : null,
         obligationId: row.obligation_id,
@@ -135,9 +143,11 @@ export function useMovementQuery(movementId?: number | null) {
 export function usePaginatedMovements(
   workspaceId?: number | null,
   filters: MovementFilters = {},
+  /** Incluir en la clave para no reutilizar caché de otro usuario con el mismo workspaceId */
+  userScopeKey?: string | null,
 ) {
   return useInfiniteQuery({
-    queryKey: ["movements", workspaceId, filters],
+    queryKey: ["movements", userScopeKey ?? null, workspaceId, filters],
     queryFn: ({ pageParam = 0 }) =>
       fetchMovementsPage(workspaceId!, pageParam as number, filters),
     initialPageParam: 0,

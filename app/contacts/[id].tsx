@@ -73,14 +73,29 @@ export default function ContactDetailScreen() {
             {contact.isArchived ? <Text style={styles.archivedBadge}>Archivado</Text> : null}
           </Card>
 
-          {/* Contact info */}
-          {contact.phone || contact.email || contact.documentNumber ? (
-            <Card>
-              {contact.phone ? <><DetailRow label="Teléfono" value={contact.phone} /><Divider /></> : null}
-              {contact.email ? <><DetailRow label="Email" value={contact.email} /><Divider /></> : null}
-              {contact.documentNumber ? <DetailRow label="Doc." value={contact.documentNumber} /> : null}
-            </Card>
-          ) : null}
+          {/* Datos de contacto */}
+          <Card>
+            <Text style={styles.sectionTitle}>Datos de contacto</Text>
+            {(() => {
+              const rows: { label: string; value: string }[] = [];
+              if (contact.phone?.trim()) rows.push({ label: "Teléfono", value: contact.phone.trim() });
+              if (contact.email?.trim()) rows.push({ label: "Correo", value: contact.email.trim() });
+              if (contact.documentNumber?.trim()) {
+                rows.push({ label: "DNI / RUC", value: contact.documentNumber.trim() });
+              }
+              if (rows.length === 0) {
+                return (
+                  <Text style={styles.emptyContactHint}>Sin teléfono, correo ni documento registrados.</Text>
+                );
+              }
+              return rows.map((r, i) => (
+                <View key={r.label}>
+                  {i > 0 ? <Divider /> : null}
+                  <DetailRow label={r.label} value={r.value} />
+                </View>
+              ));
+            })()}
+          </Card>
 
           {/* Financial summary */}
           {(contact.receivableCount > 0 || contact.payableCount > 0 || contact.movementCount > 0) ? (
@@ -212,4 +227,5 @@ const styles = StyleSheet.create({
   flowLabel: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted },
   flowAmount: { fontSize: FONT_SIZE.sm, fontWeight: FONT_WEIGHT.semibold },
   notes: { fontSize: FONT_SIZE.sm, color: COLORS.text, lineHeight: 20 },
+  emptyContactHint: { fontSize: FONT_SIZE.sm, color: COLORS.textMuted, fontStyle: "italic" },
 });

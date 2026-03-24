@@ -1,6 +1,8 @@
 import { FAB } from "../../components/ui/FAB";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import {
+  Animated,
+  PanResponder,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -8,7 +10,9 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { Trash2 } from "lucide-react-native";
 import { useQueryClient } from "@tanstack/react-query";
+import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAuth } from "../../lib/auth-context";
@@ -25,11 +29,12 @@ import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { BudgetForm } from "../../components/forms/BudgetForm";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { useToast } from "../../hooks/useToast";
-import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING } from "../../constants/theme";
 
 export default function BudgetsScreen() {
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
+  const router = useRouter();
   const [formVisible, setFormVisible] = useState(false);
   const [editBudget, setEditBudget] = useState<BudgetOverview | null>(null);
   const [deleteBudget, setDeleteBudget] = useState<BudgetOverview | null>(null);
@@ -50,7 +55,7 @@ export default function BudgetsScreen() {
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
-      <ScreenHeader title="Presupuestos" />
+      <ScreenHeader title="Presupuestos" onBack={() => router.replace("/(app)/more")} />
 
       <ScrollView
         contentContainerStyle={styles.content}
@@ -75,10 +80,12 @@ export default function BudgetsScreen() {
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>⚠ Requieren atención</Text>
                 {alertBudgets.map((b) => (
-                  <View key={b.id}>
-                    <BudgetCard budget={b} />
-                    <BudgetActions budget={b} onEdit={() => setEditBudget(b)} onDelete={handleDelete} />
-                  </View>
+                  <SwipeableBudgetRow
+                    key={b.id}
+                    budget={b}
+                    onEdit={() => setEditBudget(b)}
+                    onDelete={() => handleDelete(b)}
+                  />
                 ))}
               </View>
             ) : null}
@@ -89,10 +96,12 @@ export default function BudgetsScreen() {
                   <Text style={styles.sectionTitle}>✓ En buen estado</Text>
                 ) : null}
                 {okBudgets.map((b) => (
-                  <View key={b.id}>
-                    <BudgetCard budget={b} />
-                    <BudgetActions budget={b} onEdit={() => setEditBudget(b)} onDelete={handleDelete} />
-                  </View>
+                  <SwipeableBudgetRow
+                    key={b.id}
+                    budget={b}
+                    onEdit={() => setEditBudget(b)}
+                    onDelete={() => handleDelete(b)}
+                  />
                 ))}
               </View>
             ) : null}
@@ -137,41 +146,116 @@ export default function BudgetsScreen() {
   }
 }
 
-function BudgetActions({
+const REVEAL_WIDTH = 82;
+
+function SwipeableBudgetRow({
   budget,
   onEdit,
   onDelete,
 }: {
   budget: BudgetOverview;
   onEdit: () => void;
-  onDelete: (b: BudgetOverview) => void;
+  onDelete: () => void;
 }) {
+  const translateX = useRef(new Animated.Value(0)).current;
+  const isOpen = useRef(false);
+
+  const actionOpacity = translateX.interpolate({
+    inputRange: [-REVEAL_WIDTH, -16, 0],
+    outputRange: [1, 0.6, 0],
+    extrapolate: "clamp",
+  });
+
+  const snapTo = (toValue: number, cb?: () => void) => {
+    isOpen.current = toValue !== 0;
+    Animated.spring(translateX, {
+      toValue,
+      useNativeDriver: true,
+      tension: 80,
+      friction: 11,
+    }).start(cb);
+  };
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, { dx, dy }) =>
+        Math.abs(dx) > Math.abs(dy) * 1.5 && Math.abs(dx) > 10,
+      onPanResponderGrant: () => { translateX.stopAnimation(); },
+      onPanResponderMove: (_, { dx }) => {
+        const base = isOpen.current ? -REVEAL_WIDTH : 0;
+        const next = Math.max(-REVEAL_WIDTH * 1.4, Math.min(0, base + dx));
+        translateX.setValue(next);
+      },
+      onPanResponderRelease: (_, { dx, vx }) => {
+        const base = isOpen.current ? -REVEAL_WIDTH : 0;
+        const finalX = base + dx;
+        if (finalX < -REVEAL_WIDTH / 2 || vx < -0.4) {
+          snapTo(-REVEAL_WIDTH);
+        } else {
+          snapTo(0);
+        }
+      },
+    })
+  ).current;
+
+  function handleCardPress() {
+    if (isOpen.current) { snapTo(0); return; }
+    onEdit();
+  }
+
+  function handleDeletePress() {
+    snapTo(0, onDelete);
+  }
+
   return (
-    <View style={actionStyles.row}>
-      <TouchableOpacity style={[actionStyles.btn, actionStyles.editBtn]} onPress={onEdit}>
-        <Text style={actionStyles.editText}>Editar</Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={[actionStyles.btn, actionStyles.deleteBtn]} onPress={() => onDelete(budget)}>
-        <Text style={actionStyles.deleteText}>Eliminar</Text>
-      </TouchableOpacity>
+    <View style={swipeStyles.container}>
+      <Animated.View style={[swipeStyles.actionBg, { opacity: actionOpacity }]}>
+        <TouchableOpacity style={swipeStyles.actionBtn} onPress={handleDeletePress} activeOpacity={0.8}>
+          <Trash2 size={20} color={COLORS.danger} strokeWidth={2} />
+          <Text style={swipeStyles.actionLabel}>Eliminar</Text>
+        </TouchableOpacity>
+      </Animated.View>
+
+      <Animated.View
+        style={{ transform: [{ translateX }] }}
+        {...panResponder.panHandlers}
+      >
+        <BudgetCard budget={budget} onPress={handleCardPress} />
+      </Animated.View>
     </View>
   );
 }
 
-const actionStyles = StyleSheet.create({
-  row: { flexDirection: "row", gap: SPACING.sm, marginTop: SPACING.md, marginBottom: SPACING.md },
-  btn: {
-    flex: 1,
-    paddingVertical: SPACING.sm,
-    borderRadius: RADIUS.md,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+const swipeStyles = StyleSheet.create({
+  container: {
+    position: "relative",
+    overflow: "hidden",
+    borderRadius: RADIUS.xl,
   },
-  editBtn: {},
-  deleteBtn: { borderColor: COLORS.danger + "66" },
-  editText: { fontSize: FONT_SIZE.xs, color: COLORS.storm, fontFamily: FONT_FAMILY.bodyMedium },
-  deleteText: { fontSize: FONT_SIZE.xs, color: COLORS.danger, fontFamily: FONT_FAMILY.bodyMedium },
+  actionBg: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    width: REVEAL_WIDTH,
+    backgroundColor: COLORS.danger + "30",
+    justifyContent: "center",
+    alignItems: "center",
+    borderTopLeftRadius: RADIUS.xl,
+    borderBottomLeftRadius: RADIUS.xl,
+  },
+  actionBtn: {
+    flex: 1,
+    width: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+  },
+  actionLabel: {
+    fontSize: FONT_SIZE.xs,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    color: COLORS.danger,
+  },
 });
 
 const styles = StyleSheet.create({

@@ -1,29 +1,41 @@
 import { Tabs } from "expo-router";
-import { View } from "react-native";
-import { Home, ArrowLeftRight, WalletCards, BarChart3, LayoutGrid } from "lucide-react-native";
+import { StyleSheet, View } from "react-native";
+import { Home, ArrowLeftRight, WalletCards, Scale, LayoutGrid } from "lucide-react-native";
+import { BlurView } from "expo-blur";
 
-import { COLORS, FONT_FAMILY, GLASS } from "../../constants/theme";
-import { useNotificationsQuery } from "../../services/queries/workspace-data";
+import { COLORS, FONT_FAMILY, GLASS, RADIUS, SPACING } from "../../constants/theme";
+import { useNotificationsQuery, usePendingObligationShareInvitesQuery } from "../../services/queries/workspace-data";
 import { useAuth } from "../../lib/auth-context";
 import { Badge } from "../../components/ui/Badge";
 
+function TabBarBackground() {
+  return (
+    <View style={StyleSheet.absoluteFillObject}>
+      <BlurView intensity={32} tint="dark" style={StyleSheet.absoluteFillObject} />
+      {/* Dark overlay */}
+      <View style={[StyleSheet.absoluteFillObject, { backgroundColor: "rgba(7,11,20,0.82)" }]} />
+      {/* Top specular line */}
+      <View style={styles.topBorder} />
+    </View>
+  );
+}
+
 function TabIcon({ icon, color, focused }: { icon: React.ReactNode; color: string; focused: boolean }) {
   return (
-    <View style={{ alignItems: "center", gap: 4 }}>
-      {icon}
-      {focused ? (
-        <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: COLORS.pine }} />
-      ) : (
-        <View style={{ width: 4, height: 4 }} />
-      )}
+    <View style={styles.tabIconWrap}>
+      <View style={[styles.tabIconPill, focused && styles.tabIconPillActive]}>
+        {icon}
+      </View>
     </View>
   );
 }
 
 function MoreTabIcon({ color, focused }: { color: string; focused: boolean }) {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { data: notifications } = useNotificationsQuery(user?.id ?? null);
+  const { data: pendingInvites = [] } = usePendingObligationShareInvitesQuery(user?.id, profile?.email);
   const unreadCount = (notifications ?? []).filter((n) => n.status !== "read").length;
+  const badgeCount = unreadCount + pendingInvites.length;
 
   return (
     <TabIcon
@@ -32,9 +44,9 @@ function MoreTabIcon({ color, focused }: { color: string; focused: boolean }) {
       icon={
         <View>
           <LayoutGrid size={22} color={color} />
-          {unreadCount > 0 ? (
+          {badgeCount > 0 ? (
             <View style={{ position: "absolute", top: -4, right: -8 }}>
-              <Badge count={unreadCount} />
+              <Badge count={badgeCount} />
             </View>
           ) : null}
         </View>
@@ -48,14 +60,16 @@ export default function AppLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
+        contentStyle: { backgroundColor: "transparent" },
         tabBarStyle: {
-          backgroundColor: COLORS.shell,
-          borderTopColor: GLASS.tabBorder,
-          borderTopWidth: 0.5,
-          height: 60,
+          backgroundColor: "transparent",
+          borderTopWidth: 0,
+          elevation: 0,
+          height: 64,
           paddingBottom: 8,
-          paddingTop: 8,
+          paddingTop: 6,
         },
+        tabBarBackground: () => <TabBarBackground />,
         tabBarActiveTintColor: COLORS.pine,
         tabBarInactiveTintColor: COLORS.storm,
         tabBarShowLabel: false,
@@ -86,10 +100,10 @@ export default function AppLayout() {
         }}
       />
       <Tabs.Screen
-        name="budgets"
+        name="obligations"
         options={{
           tabBarIcon: ({ color, focused }) => (
-            <TabIcon focused={focused} color={color} icon={<BarChart3 size={22} color={color} />} />
+            <TabIcon focused={focused} color={color} icon={<Scale size={22} color={color} />} />
           ),
         }}
       />
@@ -99,6 +113,41 @@ export default function AppLayout() {
           tabBarIcon: ({ color, focused }) => <MoreTabIcon color={color} focused={focused} />,
         }}
       />
+      {/* Screens inside (app) that should NOT appear in the tab bar */}
+      <Tabs.Screen name="budgets" options={{ href: null }} />
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  topBorder: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 0.75,
+    backgroundColor: "rgba(255,255,255,0.14)",
+  },
+  tabIconWrap: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  tabIconPill: {
+    width: 48,
+    height: 36,
+    borderRadius: RADIUS.lg,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "transparent",
+  },
+  tabIconPillActive: {
+    backgroundColor: COLORS.pine + "1A",   // 10% mint
+    borderWidth: 1,
+    borderColor: COLORS.pine + "33",       // 20% mint border
+    shadowColor: COLORS.pine,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.30,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+});

@@ -11,6 +11,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { BlurView } from "expo-blur";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { X } from "lucide-react-native";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
@@ -29,25 +30,40 @@ type Props = {
 export function BottomSheet({ visible, onClose, title, children, snapHeight = 0.75 }: Props) {
   const insets = useSafeAreaInsets();
   const translateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
+  const backdropOpacity = useRef(new Animated.Value(0)).current;
   const isSwiping = useRef(false);
 
   useEffect(() => {
     if (visible) {
       isSwiping.current = false;
-      Animated.spring(translateY, {
-        toValue: 0,
-        useNativeDriver: true,
-        tension: 65,
-        friction: 11,
-      }).start();
+      Animated.parallel([
+        Animated.timing(backdropOpacity, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.spring(translateY, {
+          toValue: 0,
+          useNativeDriver: true,
+          tension: 58,
+          friction: 13,
+        }),
+      ]).start();
     } else if (!isSwiping.current) {
-      Animated.timing(translateY, {
-        toValue: SCREEN_HEIGHT,
-        duration: 250,
-        useNativeDriver: true,
-      }).start();
+      Animated.parallel([
+        Animated.timing(backdropOpacity, {
+          toValue: 0,
+          duration: 240,
+          useNativeDriver: true,
+        }),
+        Animated.timing(translateY, {
+          toValue: SCREEN_HEIGHT,
+          duration: 260,
+          useNativeDriver: true,
+        }),
+      ]).start();
     }
-  }, [visible, translateY]);
+  }, [visible, translateY, backdropOpacity]);
 
   const panResponder = useRef(
     PanResponder.create({
@@ -59,11 +75,18 @@ export function BottomSheet({ visible, onClose, title, children, snapHeight = 0.
       onPanResponderRelease: (_, { dy, vy }) => {
         if (dy > DISMISS_THRESHOLD || vy > 0.5) {
           isSwiping.current = true;
-          Animated.timing(translateY, {
-            toValue: SCREEN_HEIGHT,
-            duration: 220,
-            useNativeDriver: true,
-          }).start(() => {
+          Animated.parallel([
+            Animated.timing(backdropOpacity, {
+              toValue: 0,
+              duration: 220,
+              useNativeDriver: true,
+            }),
+            Animated.timing(translateY, {
+              toValue: SCREEN_HEIGHT,
+              duration: 240,
+              useNativeDriver: true,
+            }),
+          ]).start(() => {
             isSwiping.current = false;
             onClose();
           });
@@ -87,17 +110,33 @@ export function BottomSheet({ visible, onClose, title, children, snapHeight = 0.
       onRequestClose={onClose}
       statusBarTranslucent
     >
-      <Pressable style={styles.overlay} onPress={onClose} />
+      {/* Animated backdrop: blur + dark dim */}
+      <Animated.View style={[StyleSheet.absoluteFillObject, { opacity: backdropOpacity }]}>
+        <BlurView
+          intensity={22}
+          tint="dark"
+          style={StyleSheet.absoluteFillObject}
+        />
+        <Pressable
+          style={[StyleSheet.absoluteFillObject, styles.backdropDim]}
+          onPress={onClose}
+        />
+      </Animated.View>
+
+      {/* Sheet */}
       <Animated.View
         style={[
           styles.sheet,
           {
             maxHeight: SCREEN_HEIGHT * snapHeight,
-            paddingBottom: insets.bottom + SPACING.md,
+            paddingBottom: insets.bottom + SPACING.lg,
             transform: [{ translateY }],
           },
         ]}
       >
+        {/* Top specular edge highlight */}
+        <View style={styles.topSpecular} pointerEvents="none" />
+
         {/* Drag handle */}
         <View style={styles.handleWrap} {...panResponder.panHandlers}>
           <View style={styles.handle} />
@@ -108,7 +147,9 @@ export function BottomSheet({ visible, onClose, title, children, snapHeight = 0.
           <View style={styles.header}>
             <Text style={styles.title}>{title}</Text>
             <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={12}>
-              <X size={18} color={COLORS.storm} />
+              <View style={styles.closeBtnInner}>
+                <X size={16} color={COLORS.storm} />
+              </View>
             </TouchableOpacity>
           </View>
         ) : null}
@@ -126,22 +167,40 @@ export function BottomSheet({ visible, onClose, title, children, snapHeight = 0.
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.6)",
+  backdropDim: {
+    backgroundColor: "rgba(0,0,0,0.45)",
   },
   sheet: {
     position: "absolute",
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: COLORS.void,
+    backgroundColor: "rgba(7,11,20,0.96)",
     borderTopLeftRadius: RADIUS.xl,
     borderTopRightRadius: RADIUS.xl,
-    borderTopWidth: 0.5,
-    borderLeftWidth: 0.5,
-    borderRightWidth: 0.5,
-    borderColor: GLASS.sheetBorder,
+    // Non-uniform border: top edge brighter (specular reflection on glass)
+    borderTopWidth: 1,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.22)",
+    borderLeftColor: "rgba(255,255,255,0.12)",
+    borderRightColor: "rgba(255,255,255,0.12)",
+    // Deep upward shadow
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -8 },
+    shadowOpacity: 0.55,
+    shadowRadius: 28,
+    elevation: 22,
+  },
+  // Thin bright strip at the very top edge — simulates specular glass reflection
+  topSpecular: {
+    position: "absolute",
+    top: 0,
+    left: 28,
+    right: 28,
+    height: 1,
+    backgroundColor: "rgba(255,255,255,0.30)",
+    borderRadius: 1,
   },
   handleWrap: {
     alignItems: "center",
@@ -149,10 +208,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.xxxl,
   },
   handle: {
-    width: 36,
+    width: 40,
     height: 4,
     borderRadius: 2,
-    backgroundColor: GLASS.handle,
+    backgroundColor: "rgba(255,255,255,0.18)",
   },
   header: {
     flexDirection: "row",
@@ -160,14 +219,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.lg,
     paddingBottom: SPACING.md,
     borderBottomWidth: 0.5,
-    borderBottomColor: GLASS.sheetBorder,
+    borderBottomColor: "rgba(255,255,255,0.08)",
   },
   title: {
     flex: 1,
     fontFamily: FONT_FAMILY.heading,
     fontSize: FONT_SIZE.lg,
     color: COLORS.ink,
+    letterSpacing: -0.3,
   },
   closeBtn: { padding: SPACING.xs },
+  closeBtnInner: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   content: { padding: SPACING.lg, gap: SPACING.md },
 });
