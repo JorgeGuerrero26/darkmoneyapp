@@ -50,8 +50,10 @@ import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { formatCurrency } from "../../components/ui/AmountDisplay";
 import { MovementForm } from "../../components/forms/MovementForm";
 import { WorkspaceSelector } from "../../components/layout/WorkspaceSelector";
+import { GestureDetector } from "react-native-gesture-handler";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
 import { FAB } from "../../components/ui/FAB";
+import { useSwipeTab } from "../../hooks/useSwipeTab";
 import { DayMovementsSheet, type DaySheetMode } from "../../components/dashboard/DayMovementsSheet";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -1603,11 +1605,18 @@ export default function DashboardScreen() {
 
   const stats = useDashboardStats(movements, period, conversionCtx);
 
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
   const onRefresh = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
-    void queryClient.invalidateQueries({ queryKey: ["dashboard-movements"] });
-    void queryClient.invalidateQueries({ queryKey: ["shared-obligations"] });
+    setIsRefreshing(true);
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] }),
+      queryClient.invalidateQueries({ queryKey: ["dashboard-movements"] }),
+      queryClient.invalidateQueries({ queryKey: ["shared-obligations"] }),
+    ]).finally(() => setIsRefreshing(false));
   }, [queryClient]);
+
+  const swipeGesture = useSwipeTab();
 
   const activeAccounts = useMemo(
     () => (snapshot?.accounts ?? []).filter((a) => !a.isArchived),
@@ -1640,6 +1649,7 @@ export default function DashboardScreen() {
   }
 
   return (
+    <GestureDetector gesture={swipeGesture}>
     <View style={[styles.screen, { paddingTop: insets.top }]}>
       <ScreenHeader
         title={activeWorkspace?.name ?? "Inicio"}
@@ -1657,7 +1667,7 @@ export default function DashboardScreen() {
           scrollSaveTimer.current = setTimeout(() => setDashboardScrollY(y), 200);
         }}
         refreshControl={
-          <RefreshControl refreshing={snapLoading} onRefresh={onRefresh} tintColor={COLORS.primary} />
+          <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor={COLORS.pine} />
         }
       >
         {/* 1. Mode toggle */}
@@ -1852,6 +1862,7 @@ export default function DashboardScreen() {
         />
       ) : null}
     </View>
+    </GestureDetector>
   );
 }
 

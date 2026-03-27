@@ -1,3 +1,4 @@
+import { GestureDetector } from "react-native-gesture-handler";
 import { FAB } from "../../components/ui/FAB";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -35,6 +36,7 @@ import { useToast } from "../../hooks/useToast";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { ObligationAnalyticsModal } from "../../components/domain/ObligationAnalyticsModal";
 import type {
+  ObligationEventSummary,
   ObligationShareSummary,
   ObligationSummary,
   ObligationStatus,
@@ -50,6 +52,7 @@ import { PaymentForm } from "../../components/forms/PaymentForm";
 import { PrincipalAdjustmentForm } from "../../components/forms/PrincipalAdjustmentForm";
 import { formatCurrency } from "../../components/ui/AmountDisplay";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
+import { useSwipeTab } from "../../hooks/useSwipeTab";
 
 // ─── Status config ───────────────────────────────────────────────────────────
 
@@ -291,6 +294,7 @@ function SwipeableObligationRow({
 // ─── Screen ──────────────────────────────────────────────────────────────────
 
 export default function ObligationsScreen() {
+  const swipeGesture = useSwipeTab();
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
   const { profile } = useAuth();
@@ -318,6 +322,14 @@ export default function ObligationsScreen() {
   const [analyticsObligation, setAnalyticsObligation] = useState<
     ObligationSummary | SharedObligationSummary | null
   >(null);
+
+  // Event editing from analytics modal
+  const [editEventObligation, setEditEventObligation] = useState<
+    ObligationSummary | SharedObligationSummary | null
+  >(null);
+  const [editingEventForPayment, setEditingEventForPayment] = useState<ObligationEventSummary | undefined>(undefined);
+  const [editingEventForAdjustment, setEditingEventForAdjustment] = useState<ObligationEventSummary | undefined>(undefined);
+  const [adjustEventMode, setAdjustEventMode] = useState<"increase" | "decrease">("increase");
 
   // Undo-delete: hidden list of ids pending actual deletion
   const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<number>>(new Set());
@@ -381,7 +393,26 @@ export default function ObligationsScreen() {
     setAdjustObligation(ob);
   }
 
+  function handleEventTap(ev: ObligationEventSummary) {
+    const ob = analyticsObligation;
+    if (!ob) return;
+    setAnalyticsObligation(null);
+    if (ev.eventType === "payment") {
+      setEditEventObligation(ob);
+      setEditingEventForPayment(ev);
+    } else if (ev.eventType === "principal_increase") {
+      setEditEventObligation(ob);
+      setAdjustEventMode("increase");
+      setEditingEventForAdjustment(ev);
+    } else if (ev.eventType === "principal_decrease") {
+      setEditEventObligation(ob);
+      setAdjustEventMode("decrease");
+      setEditingEventForAdjustment(ev);
+    }
+  }
+
   return (
+    <GestureDetector gesture={swipeGesture}>
     <View style={[styles.screen, { paddingTop: insets.top }]}>
       <ScreenHeader title="Créditos y Deudas" />
 
@@ -497,17 +528,19 @@ export default function ObligationsScreen() {
         onAdjust={openAdjust}
       />
       <PaymentForm
-        visible={Boolean(paymentObligation)}
-        onClose={() => setPaymentObligation(null)}
-        onSuccess={() => setPaymentObligation(null)}
-        obligation={paymentObligation}
+        visible={Boolean(paymentObligation) || Boolean(editingEventForPayment)}
+        onClose={() => { setPaymentObligation(null); setEditingEventForPayment(undefined); setEditEventObligation(null); }}
+        onSuccess={() => { setPaymentObligation(null); setEditingEventForPayment(undefined); setEditEventObligation(null); }}
+        obligation={paymentObligation ?? editEventObligation}
+        editEvent={editingEventForPayment}
       />
       <PrincipalAdjustmentForm
-        visible={Boolean(adjustObligation)}
-        mode={adjustMode}
-        obligation={adjustObligation}
-        onClose={() => setAdjustObligation(null)}
-        onSuccess={() => setAdjustObligation(null)}
+        visible={Boolean(adjustObligation) || Boolean(editingEventForAdjustment)}
+        mode={editingEventForAdjustment ? adjustEventMode : adjustMode}
+        obligation={adjustObligation ?? editEventObligation}
+        onClose={() => { setAdjustObligation(null); setEditingEventForAdjustment(undefined); setEditEventObligation(null); }}
+        onSuccess={() => { setAdjustObligation(null); setEditingEventForAdjustment(undefined); setEditEventObligation(null); }}
+        editEvent={editingEventForAdjustment}
       />
 
       {/* Undo-delete banner */}
@@ -529,8 +562,10 @@ export default function ObligationsScreen() {
         visible={Boolean(analyticsObligation)}
         obligation={analyticsObligation}
         onClose={() => setAnalyticsObligation(null)}
+        onEventTap={handleEventTap}
       />
     </View>
+    </GestureDetector>
   );
 }
 

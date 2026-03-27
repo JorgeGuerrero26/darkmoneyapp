@@ -1,3 +1,4 @@
+import { GestureDetector } from "react-native-gesture-handler";
 import { useCallback, useMemo, useState } from "react";
 import {
   RefreshControl,
@@ -36,6 +37,7 @@ import { useToast } from "../../hooks/useToast";
 import { humanizeError } from "../../lib/errors";
 import { shareCsvAsFile } from "../../lib/share-csv-file";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
+import { useSwipeTab } from "../../hooks/useSwipeTab";
 import type { AccountSummary } from "../../types/domain";
 
 const TYPE_FILTERS = [
@@ -63,6 +65,7 @@ function buildAccountCSV(accounts: AccountSummary[]): string {
 }
 
 export default function AccountsScreen() {
+  const swipeGesture = useSwipeTab();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -160,6 +163,7 @@ export default function AccountsScreen() {
   const selectedAccounts = allAccounts.filter((a) => selectedIds.has(a.id));
 
   return (
+    <GestureDetector gesture={swipeGesture}>
     <View style={[styles.screen, { paddingTop: insets.top }]}>
       {/* Header */}
       <ScreenHeader
@@ -344,6 +348,7 @@ export default function AccountsScreen() {
         onConfirm={executeBulkArchive}
       />
     </View>
+    </GestureDetector>
   );
 }
 

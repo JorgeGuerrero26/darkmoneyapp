@@ -1,3 +1,4 @@
+import { GestureDetector } from "react-native-gesture-handler";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -11,6 +12,7 @@ import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { Card } from "../../components/ui/Card";
 import { Badge } from "../../components/ui/Badge";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, SPACING } from "../../constants/theme";
+import { useSwipeTab } from "../../hooks/useSwipeTab";
 
 type MenuItem = {
   Icon: LucideIcon;
@@ -21,6 +23,7 @@ type MenuItem = {
 };
 
 export default function MoreScreen() {
+  const swipeGesture = useSwipeTab();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { user, signOut } = useAuth();
@@ -69,6 +72,7 @@ export default function MoreScreen() {
   ];
 
   return (
+    <GestureDetector gesture={swipeGesture}>
     <View style={[styles.screen, { paddingTop: insets.top }]}>
       <ScreenHeader title="Más" />
 
@@ -101,6 +105,7 @@ export default function MoreScreen() {
         </TouchableOpacity>
       </ScrollView>
     </View>
+    </GestureDetector>
   );
 }
 

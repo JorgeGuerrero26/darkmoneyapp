@@ -1,3 +1,4 @@
+import { GestureDetector } from "react-native-gesture-handler";
 import { Download, Search, SlidersHorizontal, Trash2, X } from "lucide-react-native";
 import { DatePickerInput } from "../../components/ui/DatePickerInput";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -41,6 +42,7 @@ import { isoToDateStr } from "../../lib/date";
 import { shareCsvAsFile } from "../../lib/share-csv-file";
 import { sortByName } from "../../lib/sort-locale";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
+import { useSwipeTab } from "../../hooks/useSwipeTab";
 import type { MovementRecord, MovementType, MovementStatus } from "../../types/domain";
 
 type FilterType = MovementType | "all";
@@ -98,6 +100,7 @@ function buildCSV(movements: MovementRecord[]): string {
 }
 
 export default function MovementsScreen() {
+  const swipeGesture = useSwipeTab();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -290,6 +293,7 @@ export default function MovementsScreen() {
   );
 
   return (
+    <GestureDetector gesture={swipeGesture}>
     <View style={[styles.screen, { paddingTop: insets.top }]}>
       {/* Header */}
       <ScreenHeader
@@ -676,6 +680,7 @@ export default function MovementsScreen() {
         onConfirm={executeBulkDelete}
       />
     </View>
+    </GestureDetector>
   );
 }
 
