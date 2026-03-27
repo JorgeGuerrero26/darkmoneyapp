@@ -18,6 +18,7 @@ import {
 } from "lucide-react-native";
 import { format } from "date-fns";
 
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth } from "../../lib/auth-context";
 import { useWorkspace } from "../../lib/workspace-context";
 import {
@@ -64,6 +65,26 @@ function buildAccountCSV(accounts: AccountSummary[]): string {
   return BOM + [headers.join(","), ...rows].join("\n");
 }
 
+const ACCOUNTS_CURRENCY_KEY = "darkmoney.accounts.displayCurrency";
+
+function buildRateMap(rates: { fromCurrencyCode: string; toCurrencyCode: string; rate: number }[]) {
+  const map = new Map<string, number>();
+  for (const r of rates) {
+    const key = `${r.fromCurrencyCode.toUpperCase()}:${r.toCurrencyCode.toUpperCase()}`;
+    if (!map.has(key) && r.rate > 0) map.set(key, r.rate);
+  }
+  return map;
+}
+
+function resolveConversion(map: Map<string, number>, from: string, to: string): number {
+  if (from === to) return 1;
+  const direct = map.get(`${from}:${to}`);
+  if (direct) return direct;
+  const inverse = map.get(`${to}:${from}`);
+  if (inverse) return 1 / inverse;
+  return 1;
+}
+
 export default function AccountsScreen() {
   const swipeGesture = useSwipeTab();
   const insets = useSafeAreaInsets();
@@ -75,6 +96,41 @@ export default function AccountsScreen() {
 
   const { data: snapshot, isLoading } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const archiveAccount = useArchiveAccountMutation(activeWorkspaceId);
+
+  // ── Currency display ──────────────────────────────────────────────────────
+  const [displayCurrency, setDisplayCurrency] = useState<string | null>(null);
+  const baseCurrency = (activeWorkspace?.baseCurrencyCode ?? profile?.baseCurrencyCode ?? "PEN").toUpperCase();
+
+  const exchangeRateMap = useMemo(
+    () => buildRateMap(snapshot?.exchangeRates ?? []),
+    [snapshot?.exchangeRates],
+  );
+
+  const currencyOptions = useMemo(() => {
+    const all = new Set<string>([baseCurrency]);
+    for (const a of snapshot?.accounts ?? []) all.add(a.currencyCode.toUpperCase());
+    return Array.from(all).filter(
+      (c) => c === baseCurrency || resolveConversion(exchangeRateMap, baseCurrency, c) !== 1 || resolveConversion(exchangeRateMap, c, baseCurrency) !== 1,
+    );
+  }, [baseCurrency, exchangeRateMap, snapshot?.accounts]);
+
+  // Load persisted currency
+  const [currencyLoaded, setCurrencyLoaded] = useState(false);
+  useMemo(() => {
+    if (currencyLoaded) return;
+    void AsyncStorage.getItem(ACCOUNTS_CURRENCY_KEY).then((stored) => {
+      setDisplayCurrency(stored && currencyOptions.includes(stored) ? stored : baseCurrency);
+      setCurrencyLoaded(true);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [baseCurrency]);
+
+  const activeCurrency = displayCurrency ?? baseCurrency;
+
+  function handleCurrencyChange(c: string) {
+    setDisplayCurrency(c);
+    void AsyncStorage.setItem(ACCOUNTS_CURRENCY_KEY, c);
+  }
 
   // ── UI state ──────────────────────────────────────────────────────────────
   const [formVisible, setFormVisible] = useState(false);
@@ -107,11 +163,14 @@ export default function AccountsScreen() {
     const accounts = snapshot?.accounts ?? [];
     const netWorth = accounts
       .filter((a) => !a.isArchived && a.includeInNetWorth)
-      .reduce((sum, a) => sum + (a.currentBalanceInBaseCurrency ?? a.currentBalance), 0);
+      .reduce((sum, a) => {
+        // currentBalanceInBaseCurrency is already converted to workspace base currency
+        const inBase = a.currentBalanceInBaseCurrency ?? a.currentBalance;
+        // Then convert from baseCurrency → activeCurrency
+        return sum + inBase * resolveConversion(exchangeRateMap, baseCurrency, activeCurrency);
+      }, 0);
     return { allAccounts: accounts, totalNetWorth: netWorth };
-  }, [snapshot]);
-
-  const baseCurrency = activeWorkspace?.baseCurrencyCode ?? profile?.baseCurrencyCode ?? "PEN";
+  }, [snapshot, exchangeRateMap, baseCurrency, activeCurrency]);
 
   const filtered = useMemo(() => {
     const q = searchText.toLowerCase();
@@ -261,9 +320,28 @@ export default function AccountsScreen() {
       >
         {/* Net worth */}
         {!selectMode && activeFiltered.length > 0 ? (
-          <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Patrimonio neto</Text>
-            <Text style={styles.summaryAmount}>{formatCurrency(totalNetWorth, baseCurrency)}</Text>
+          <View style={styles.summaryCard}>
+            <View style={styles.summaryRow}>
+              <View>
+                <Text style={styles.summaryLabel}>Patrimonio neto</Text>
+                <Text style={styles.summaryAmount}>{formatCurrency(totalNetWorth, activeCurrency)}</Text>
+              </View>
+              {currencyOptions.length > 1 && (
+                <View style={styles.currencyPills}>
+                  {currencyOptions.map((c) => (
+                    <TouchableOpacity
+                      key={c}
+                      style={[styles.currencyPill, activeCurrency === c && styles.currencyPillActive]}
+                      onPress={() => handleCurrencyChange(c)}
+                    >
+                      <Text style={[styles.currencyPillText, activeCurrency === c && styles.currencyPillTextActive]}>
+                        {c}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </View>
           </View>
         ) : null}
 
@@ -445,17 +523,36 @@ const styles = StyleSheet.create({
   },
   bulkBtnText: { fontSize: FONT_SIZE.xs, color: COLORS.storm, fontFamily: FONT_FAMILY.bodyMedium },
 
+  summaryCard: {
+    backgroundColor: GLASS.card,
+    borderRadius: RADIUS.xl,
+    borderWidth: 1,
+    borderColor: GLASS.cardBorder,
+    padding: SPACING.md,
+    marginBottom: SPACING.xs,
+  },
   summaryRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingBottom: SPACING.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: GLASS.separator,
-    marginBottom: SPACING.xs,
   },
-  summaryLabel: { fontSize: FONT_SIZE.sm, color: COLORS.storm },
-  summaryAmount: { fontSize: FONT_SIZE.lg, fontFamily: FONT_FAMILY.heading, color: COLORS.ink },
+  summaryLabel: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.xs, color: COLORS.storm, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 2 },
+  summaryAmount: { fontSize: FONT_SIZE.xl, fontFamily: FONT_FAMILY.heading, color: COLORS.ink },
+  currencyPills: { flexDirection: "row", gap: 4 },
+  currencyPill: {
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 5,
+    borderRadius: RADIUS.full,
+    backgroundColor: GLASS.card,
+    borderWidth: 1,
+    borderColor: GLASS.cardBorder,
+  },
+  currencyPillActive: {
+    backgroundColor: COLORS.pine + "22",
+    borderColor: COLORS.pine + "55",
+  },
+  currencyPillText: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.xs, color: COLORS.storm },
+  currencyPillTextActive: { fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.pine },
 
   archivedHeader: {
     flexDirection: "row",
