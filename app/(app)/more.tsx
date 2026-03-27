@@ -3,7 +3,7 @@ import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-nati
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
-  Bell, Users, BarChart3, RefreshCw, Tag, Settings, ChevronRight, type LucideIcon,
+  Bell, Users, BarChart3, RefreshCw, Tag, Settings, ArrowLeftRight, ChevronRight, type LucideIcon,
 } from "lucide-react-native";
 
 import { useAuth } from "../../lib/auth-context";
@@ -62,6 +62,12 @@ export default function MoreScreen() {
       title: "Categorías",
       subtitle: "Organiza tus movimientos",
       route: "/categories",
+    },
+    {
+      Icon: ArrowLeftRight,
+      title: "Tipos de cambio",
+      subtitle: "Tasas para conversión de monedas",
+      route: "/exchange-rates",
     },
     {
       Icon: Settings,

@@ -18,6 +18,13 @@ import {
   useCreateMovementMutation,
   useUpdateMovementMutation,
 } from "../../services/queries/workspace-data";
+import { useMovementPatternsQuery } from "../../services/queries/movement-patterns";
+import {
+  buildPatternMaps,
+  suggestCategoryFromDescription,
+  suggestCategoryFromCounterparty,
+  suggestCounterpartyFromCategory,
+} from "../../lib/movement-patterns";
 import { useAuth } from "../../lib/auth-context";
 import { useToast } from "../../hooks/useToast";
 import { BottomSheet } from "../ui/BottomSheet";
@@ -28,6 +35,7 @@ import { CurrencyInput } from "../ui/CurrencyInput";
 import { BalanceImpactPreview } from "../domain/BalanceImpactPreview";
 import { AttachmentPicker, type Attachment } from "../domain/AttachmentPicker";
 import { DatePickerInput } from "../ui/DatePickerInput";
+import { SmartSuggestion } from "../ui/SmartSuggestion";
 import { sortByName } from "../../lib/sort-locale";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
 import type { MovementType, MovementStatus, MovementRecord, AccountSummary, CategorySummary, CounterpartySummary } from "../../types/domain";
@@ -90,11 +98,21 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
   const { showToast } = useToast();
 
-  const { lastMovementAccountId, lastMovementCategoryId, setLastMovementDefaults } = useUiStore();
+  const { lastMovementAccountId, setLastMovementAccountId } = useUiStore();
 
   const { data: snapshot } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const createMovement = useCreateMovementMutation(activeWorkspaceId);
   const updateMovement = useUpdateMovementMutation(activeWorkspaceId);
+
+  // ── Smart suggestions ─────────────────────────────────────────────────────
+  const { data: patternMovements } = useMovementPatternsQuery(activeWorkspaceId);
+  const patternMaps = useMemo(
+    () => (patternMovements ? buildPatternMaps(patternMovements) : null),
+    [patternMovements],
+  );
+  const [catSuggestionId, setCatSuggestionId] = useState<number | null>(null);
+  const [cpSuggestionId, setCpSuggestionId] = useState<number | null>(null);
+  const descDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isEditing = Boolean(editMovement);
 
@@ -137,6 +155,51 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   }, [categories, form.movementType]);
   const counterpartiesSorted = useMemo(() => sortByName(counterparties), [counterparties]);
 
+  // ── Suggestion effects ────────────────────────────────────────────────────
+
+  // Description / counterparty → suggest category (only when no category is selected yet)
+  useEffect(() => {
+    if (!patternMaps || form.categoryId !== null) {
+      setCatSuggestionId(null);
+      return;
+    }
+    if (descDebounceRef.current) clearTimeout(descDebounceRef.current);
+
+    const trimmed = form.description.trim();
+    if (trimmed.length > 2) {
+      descDebounceRef.current = setTimeout(() => {
+        let suggested = suggestCategoryFromDescription(trimmed, patternMaps);
+        if (!suggested && form.counterpartyId !== null) {
+          suggested = suggestCategoryFromCounterparty(form.counterpartyId, patternMaps);
+        }
+        setCatSuggestionId(suggested);
+      }, 350);
+    } else if (form.counterpartyId !== null) {
+      const suggested = suggestCategoryFromCounterparty(form.counterpartyId, patternMaps);
+      setCatSuggestionId(suggested);
+    } else {
+      setCatSuggestionId(null);
+    }
+
+    return () => { if (descDebounceRef.current) clearTimeout(descDebounceRef.current); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.description, form.categoryId, form.counterpartyId, patternMaps]);
+
+  // Category → suggest counterparty (only when no counterparty is selected yet)
+  useEffect(() => {
+    if (!patternMaps || form.counterpartyId !== null || form.categoryId === null) {
+      setCpSuggestionId(null);
+      return;
+    }
+    const suggested = suggestCounterpartyFromCategory(form.categoryId, patternMaps);
+    setCpSuggestionId(suggested);
+  }, [form.categoryId, form.counterpartyId, patternMaps]);
+
+  // Reset suggestions when form closes or step changes
+  useEffect(() => {
+    if (!visible) { setCatSuggestionId(null); setCpSuggestionId(null); }
+  }, [visible]);
+
   // Reset on open / populate when editing
   useEffect(() => {
     if (!visible) return;
@@ -163,11 +226,6 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
       const initial = getInitialForm(defaultType);
       if (initialAccountId) {
         initial.sourceAccountId = initialAccountId;
-      } else if (lastMovementAccountId) {
-        initial.sourceAccountId = lastMovementAccountId;
-      }
-      if (lastMovementCategoryId) {
-        initial.categoryId = lastMovementCategoryId;
       }
       setForm(initial);
     }
@@ -328,7 +386,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         const created = await createMovement.mutateAsync(payload);
         setSavedMovementId(created.id);
         showToast("Movimiento guardado ✓", "success");
-        setLastMovementDefaults(form.sourceAccountId, form.categoryId);
+        setLastMovementAccountId(form.sourceAccountId);
       }
       onSuccess?.();
       onClose();
@@ -516,7 +574,14 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
       )}
 
       {/* ── STEP 3: description + category + counterparty + date ── */}
-      {step === 3 && (
+      {step === 3 && (() => {
+        const catSuggestion = catSuggestionId !== null
+          ? categoriesForPicker.find((c) => c.id === catSuggestionId) ?? null
+          : null;
+        const cpSuggestion = cpSuggestionId !== null
+          ? counterpartiesSorted.find((c) => c.id === cpSuggestionId) ?? null
+          : null;
+        return (
         <View style={styles.section}>
           <Input
             label="Descripción (opcional)"
@@ -535,6 +600,12 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
             selectedId={form.categoryId}
             onSelect={(id) => patch({ categoryId: id })}
           />
+          {catSuggestion ? (
+            <SmartSuggestion
+              label={catSuggestion.name}
+              onApply={() => patch({ categoryId: catSuggestion.id })}
+            />
+          ) : null}
 
           <CounterpartyPicker
             label="Contraparte (opcional)"
@@ -542,6 +613,12 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
             selectedId={form.counterpartyId}
             onSelect={(id) => patch({ counterpartyId: id })}
           />
+          {cpSuggestion ? (
+            <SmartSuggestion
+              label={cpSuggestion.name}
+              onApply={() => patch({ counterpartyId: cpSuggestion.id })}
+            />
+          ) : null}
 
           <DatePickerInput
             label="Fecha"
@@ -578,7 +655,8 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
             />
           </View>
         </View>
-      )}
+        );
+      })()}
     </BottomSheet>
 
     <ConfirmDialog

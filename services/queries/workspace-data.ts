@@ -657,6 +657,26 @@ async function fetchWorkspaceSnapshot(
   const activeWsRow = workspaceRows.find((w) => w.id === activeWorkspaceId);
   const baseCurrency = (activeWsRow?.base_currency_code ?? "PEN").toUpperCase();
 
+  // Build exchange rate map and apply currency conversion to account balances
+  const _rateMap = new Map<string, number>();
+  for (const r of exchangeRates) {
+    const key = `${r.fromCurrencyCode.toUpperCase()}:${r.toCurrencyCode.toUpperCase()}`;
+    if (!_rateMap.has(key) && r.rate > 0) _rateMap.set(key, r.rate);
+  }
+  function _resolveRate(from: string, to: string): number {
+    if (from === to) return 1;
+    const direct = _rateMap.get(`${from}:${to}`);
+    if (direct) return direct;
+    const inverse = _rateMap.get(`${to}:${from}`);
+    if (inverse) return 1 / inverse;
+    return 1;
+  }
+  for (const acc of accounts) {
+    const from = acc.currencyCode.toUpperCase();
+    if (from === baseCurrency) continue;
+    acc.currentBalanceInBaseCurrency = acc.currentBalance * _resolveRate(from, baseCurrency);
+  }
+
   const subscriptionPostedMovements: SubscriptionPostedMovement[] = subscriptionMovementsResult.error
     ? []
     : (subscriptionMovementsResult.data ?? []).map((row: any) => ({
@@ -1597,6 +1617,67 @@ export function useCreatePrincipalAdjustmentMutation(workspaceId: number | null)
   });
 }
 
+// ─── Obligation event update / delete ────────────────────────────────────────
+
+export type UpdateObligationEventInput = {
+  eventId: number;
+  obligationId: number;
+  amount: number;
+  eventDate: string;
+  installmentNo?: number | null;
+  description?: string | null;
+  notes?: string | null;
+  reason?: string | null;
+};
+
+export function useUpdateObligationEventMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: UpdateObligationEventInput) => {
+      if (!supabase) throw new Error("Supabase no disponible.");
+      const { error } = await supabase
+        .from("obligation_events")
+        .update({
+          amount: input.amount,
+          event_date: input.eventDate,
+          installment_no: input.installmentNo ?? null,
+          description: input.description?.trim() || null,
+          notes: input.notes?.trim() || null,
+          reason: input.reason?.trim() || null,
+        })
+        .eq("id", input.eventId);
+      if (error) throw new Error(error.message ?? "Error de base de datos");
+    },
+    onSuccess: (_data, variables) => {
+      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+      void queryClient.invalidateQueries({ queryKey: ["obligation-events", variables.obligationId] });
+    },
+  });
+}
+
+export type DeleteObligationEventInput = {
+  eventId: number;
+  obligationId: number;
+};
+
+export function useDeleteObligationEventMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: DeleteObligationEventInput) => {
+      if (!supabase) throw new Error("Supabase no disponible.");
+      const { error } = await supabase
+        .from("obligation_events")
+        .delete()
+        .eq("id", input.eventId);
+      if (error) throw new Error(error.message ?? "Error de base de datos");
+    },
+    onSuccess: (_data, variables) => {
+      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+      void queryClient.invalidateQueries({ queryKey: ["obligation-events", variables.obligationId] });
+    },
+  });
+}
+
 // ─── Subscription mutations ───────────────────────────────────────────────────
 
 export type SubscriptionFormInput = {
@@ -2006,7 +2087,7 @@ export function useNotificationsQuery(userId: string | null) {
       if (!supabase || !userId) return [];
       const { data, error } = await supabase
         .from("notifications")
-        .select("id, title, body, status, scheduled_for, kind, channel, read_at")
+        .select("id, title, body, status, scheduled_for, kind, channel, read_at, related_entity_type, related_entity_id")
         .eq("user_id", userId)
         .order("scheduled_for", { ascending: false })
         .limit(100);
@@ -2020,6 +2101,8 @@ export function useNotificationsQuery(userId: string | null) {
         kind: row.kind,
         channel: row.channel,
         readAt: row.read_at,
+        relatedEntityType: row.related_entity_type,
+        relatedEntityId: row.related_entity_id,
       }));
     },
     enabled: Boolean(userId),
@@ -2545,6 +2628,78 @@ export function useCreateObligationShareInviteMutation(workspaceId?: number | nu
       if (workspaceId) {
         void queryClient.invalidateQueries({ queryKey: ["obligation-shares", workspaceId] });
       }
+    },
+  });
+}
+
+// ─── Exchange Rates CRUD ───────────────────────────────────────────────────────
+
+export type ExchangeRateRecord = {
+  id: number;
+  fromCurrencyCode: string;
+  toCurrencyCode: string;
+  rate: number;
+  effectiveAt: string;
+  source: string | null;
+  notes: string | null;
+};
+
+export function useExchangeRatesQuery() {
+  return useQuery({
+    queryKey: ["exchange-rates"],
+    queryFn: async () => {
+      if (!supabase) throw new Error("Supabase no configurado");
+      const { data, error } = await supabase
+        .from("exchange_rates")
+        .select("id, from_currency_code, to_currency_code, rate, effective_at, source, notes")
+        .order("effective_at", { ascending: false });
+      if (error) throw new Error(error.message);
+      return (data ?? []).map((row: any) => ({
+        id: row.id as number,
+        fromCurrencyCode: row.from_currency_code as string,
+        toCurrencyCode: row.to_currency_code as string,
+        rate: toNum(row.rate),
+        effectiveAt: row.effective_at as string,
+        source: row.source as string | null,
+        notes: row.notes as string | null,
+      })) as ExchangeRateRecord[];
+    },
+  });
+}
+
+export function useCreateExchangeRateMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { fromCurrencyCode: string; toCurrencyCode: string; rate: number; notes?: string }) => {
+      if (!supabase) throw new Error("Supabase no configurado");
+      const { error } = await supabase.from("exchange_rates").insert({
+        from_currency_code: input.fromCurrencyCode.toUpperCase().trim(),
+        to_currency_code: input.toCurrencyCode.toUpperCase().trim(),
+        rate: input.rate,
+        effective_at: new Date().toISOString(),
+        source: "manual",
+        notes: input.notes?.trim() ?? null,
+      });
+      if (error) throw new Error(error.message);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["exchange-rates"] });
+      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+    },
+  });
+}
+
+export function useDeleteExchangeRateMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: number) => {
+      if (!supabase) throw new Error("Supabase no configurado");
+      const { error } = await supabase.from("exchange_rates").delete().eq("id", id);
+      if (error) throw new Error(error.message);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["exchange-rates"] });
+      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
     },
   });
 }
