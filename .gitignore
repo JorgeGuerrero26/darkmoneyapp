@@ -10,6 +10,10 @@ web-build/
 android/
 ios/
 
+# Gradle local cache
+.gradle-local/
+.gradle/
+
 # Environment variables
 .env
 .env.local
