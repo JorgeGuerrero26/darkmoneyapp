@@ -1,9 +1,10 @@
 import { useRef } from "react";
 import { Animated, PanResponder, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { CreditCard, Wallet, Landmark, PiggyBank, TrendingUp, Banknote, Archive, ArchiveRestore, BarChart2 } from "lucide-react-native";
+import { Archive, ArchiveRestore, BarChart2 } from "lucide-react-native";
 import { Card } from "../ui/Card";
 import { formatCurrency } from "../ui/AmountDisplay";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
+import { getAccountIcon } from "../../lib/account-icons";
 import type { AccountSummary } from "../../types/domain";
 
 type Props = {
@@ -28,17 +29,6 @@ const ACCOUNT_TYPE_LABELS: Record<string, string> = {
   other:       "Otro",
 };
 
-const ACCOUNT_TYPE_ICON: Record<string, typeof CreditCard> = {
-  credit_card: CreditCard,
-  cash:        Banknote,
-  savings:     PiggyBank,
-  investment:  TrendingUp,
-  bank:        Landmark,
-  loan:        Wallet,
-  loan_wallet: Wallet,
-  other:       Wallet,
-};
-
 const REVEAL_WIDTH = 82;
 
 function AccountCardContent({
@@ -50,7 +40,7 @@ function AccountCardContent({
 }) {
   const typeLabel = ACCOUNT_TYPE_LABELS[account.type] ?? account.type;
   const isNegative = account.currentBalance < 0;
-  const AccountIcon = ACCOUNT_TYPE_ICON[account.type] ?? Wallet;
+  const AccountIcon = getAccountIcon(account.icon, account.type);
 
   return (
     <View style={styles.row}>
@@ -177,7 +167,6 @@ export function AccountCard({ account, onPress, onArchive, onRestore, onAnalytic
       >
         <Card
           onPress={handleCardPress}
-          onLongPress={selectMode !== undefined ? undefined : undefined}
           style={styles.card}
         >
           <AccountCardContent account={account} onAnalytics={onAnalytics} />

@@ -12,6 +12,9 @@ const TABS = [
 ] as const;
 
 const TAB_SEGMENTS = ["dashboard", "movements", "accounts", "obligations", "more"];
+const EDGE_SWIPE_WIDTH = 28;
+const EDGE_TRIGGER_DISTANCE = 72;
+const EDGE_TRIGGER_VELOCITY = 320;
 
 export function useSwipeTab() {
   const router = useRouter();
@@ -33,24 +36,33 @@ export function useSwipeTab() {
     }
   }, []);
 
-  const gesture = useMemo(
-    () =>
-      Gesture.Pan()
-        // Require clear horizontal intent before activating
-        .activeOffsetX([-50, 50])
-        // Fail if vertical movement detected first (preserves ScrollView scrolling)
-        .failOffsetY([-20, 20])
-        .onEnd((e) => {
-          "worklet";
-          // Require both distance AND velocity to avoid accidental triggers
-          if (e.translationX < -60 && e.velocityX < -250) {
-            runOnJS(navigate)("next");
-          } else if (e.translationX > 60 && e.velocityX > 250) {
-            runOnJS(navigate)("prev");
-          }
-        }),
-    [navigate],
-  );
+  const gesture = useMemo(() => {
+    const prevGesture = Gesture.Pan()
+      .hitSlop({ left: 0, width: EDGE_SWIPE_WIDTH })
+      .activeOffsetX(24)
+      .failOffsetY([-12, 12])
+      .shouldCancelWhenOutside(true)
+      .onEnd((e) => {
+        "worklet";
+        if (e.translationX > EDGE_TRIGGER_DISTANCE && e.velocityX > EDGE_TRIGGER_VELOCITY) {
+          runOnJS(navigate)("prev");
+        }
+      });
+
+    const nextGesture = Gesture.Pan()
+      .hitSlop({ right: 0, width: EDGE_SWIPE_WIDTH })
+      .activeOffsetX(-24)
+      .failOffsetY([-12, 12])
+      .shouldCancelWhenOutside(true)
+      .onEnd((e) => {
+        "worklet";
+        if (e.translationX < -EDGE_TRIGGER_DISTANCE && e.velocityX < -EDGE_TRIGGER_VELOCITY) {
+          runOnJS(navigate)("next");
+        }
+      });
+
+    return Gesture.Race(prevGesture, nextGesture);
+  }, [navigate]);
 
   return gesture;
 }

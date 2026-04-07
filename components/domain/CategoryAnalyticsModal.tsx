@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import {
+  Animated,
   Modal,
   ScrollView,
   StyleSheet,
@@ -14,6 +15,7 @@ import { es } from "date-fns/locale";
 import type { CategoryOverview, CategoryPostedMovement } from "../../types/domain";
 import { movementAmountForSubscriptionAnalytics } from "../../lib/subscription-helpers";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
+import { useDismissibleSheet } from "../ui/useDismissibleSheet";
 
 type Props = {
   visible: boolean;
@@ -36,6 +38,7 @@ function ymLabel(ym: string): string {
 
 export function CategoryAnalyticsModal({ visible, onClose, category, movements }: Props) {
   const insets = useSafeAreaInsets();
+  const { backdropStyle, panHandlers, sheetStyle } = useDismissibleSheet({ visible, onClose });
 
   const filtered = useMemo(() => {
     if (!category) return [];
@@ -75,10 +78,10 @@ export function CategoryAnalyticsModal({ visible, onClose, category, movements }
   if (!category) return null;
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={styles.backdrop}>
-        <View style={[styles.sheet, { paddingBottom: insets.bottom + SPACING.md }]}>
-          <View style={styles.header}>
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <Animated.View style={[styles.backdrop, backdropStyle]}>
+        <Animated.View style={[styles.sheet, { paddingBottom: insets.bottom + SPACING.md }, sheetStyle]}>
+          <View style={styles.header} {...panHandlers}>
             <Text style={styles.title} numberOfLines={2}>
               Análisis · {category.name}
             </Text>
@@ -121,8 +124,8 @@ export function CategoryAnalyticsModal({ visible, onClose, category, movements }
               Montos según importes del movimiento en moneda registrada; datos del snapshot (posted + categoría).
             </Text>
           </ScrollView>
-        </View>
-      </View>
+        </Animated.View>
+      </Animated.View>
     </Modal>
   );
 }

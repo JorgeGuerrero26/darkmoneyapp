@@ -1,5 +1,9 @@
+import { useRouter, useFocusEffect } from "expo-router";
+import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { GestureDetector } from "react-native-gesture-handler";
+import * as Haptics from "expo-haptics";
 import { FAB } from "../../components/ui/FAB";
+import { UndoBanner } from "../../components/ui/UndoBanner";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -7,6 +11,7 @@ import {
   PanResponder,
   RefreshControl,
   ScrollView,
+  SectionList,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -14,10 +19,13 @@ import {
 } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Users, CreditCard, TrendingUp, TrendingDown, Trash2, BarChart2 } from "lucide-react-native";
+import { Users, CreditCard, TrendingUp, TrendingDown, Trash2, BarChart2, Archive } from "lucide-react-native";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { useAuth } from "../../lib/auth-context";
+import { removeAttachmentFile } from "../../lib/entity-attachments";
+import { humanizeError } from "../../lib/errors";
+import { parseDisplayDate } from "../../lib/date";
 import { useWorkspace } from "../../lib/workspace-context";
 import {
   buildShareByObligationId,
@@ -28,13 +36,24 @@ import {
 import { obligationSwipeActionLabel } from "../../lib/obligation-viewer-labels";
 import {
   useWorkspaceSnapshotQuery,
+  useDeleteObligationEventMutation,
   useDeleteObligationMutation,
+  useArchiveObligationMutation,
   useObligationSharesQuery,
   useSharedObligationsQuery,
+  usePendingPaymentRequestCountsQuery,
 } from "../../services/queries/workspace-data";
+import {
+  type EntityAttachmentFile,
+  useObligationEventAttachmentsQuery,
+  useMovementAttachmentsQuery,
+} from "../../services/queries/attachments";
+import { PaymentRequestForm } from "../../components/forms/PaymentRequestForm";
 import { useToast } from "../../hooks/useToast";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { ObligationAnalyticsModal } from "../../components/domain/ObligationAnalyticsModal";
+import { AttachmentPreviewModal } from "../../components/domain/AttachmentPreviewModal";
+import { ObligationEventActionSheet } from "../../components/domain/ObligationEventActionSheet";
 import type {
   ObligationEventSummary,
   ObligationShareSummary,
@@ -47,6 +66,7 @@ import { ProgressBar } from "../../components/ui/ProgressBar";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { SkeletonCard } from "../../components/ui/Skeleton";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
+import { Button } from "../../components/ui/Button";
 import { ObligationForm } from "../../components/forms/ObligationForm";
 import { PaymentForm } from "../../components/forms/PaymentForm";
 import { PrincipalAdjustmentForm } from "../../components/forms/PrincipalAdjustmentForm";
@@ -64,6 +84,37 @@ const STATUS_COLORS: Record<ObligationStatus, string> = {
   cancelled: COLORS.storm,
   defaulted: COLORS.warning,
 };
+
+const ANALYTICS_EVENT_LABELS: Record<string, string> = {
+  opening: "Apertura",
+  payment: "Pago",
+  principal_increase: "Aumento de capital",
+  principal_decrease: "Reducción de capital",
+  interest: "Interés",
+  fee: "Cargo",
+  discount: "Descuento",
+  adjustment: "Ajuste",
+  writeoff: "Castigo",
+};
+
+const ANALYTICS_EDITABLE_TYPES = new Set(["payment", "principal_increase", "principal_decrease"]);
+
+const UNDO_DELETE_MS = 5000;
+
+function mergePreviewAttachments(
+  eventAttachments: EntityAttachmentFile[],
+  movementAttachments: EntityAttachmentFile[],
+): EntityAttachmentFile[] {
+  const merged: EntityAttachmentFile[] = [];
+  const seen = new Set<string>();
+  for (const attachment of [...eventAttachments, ...movementAttachments]) {
+    const key = attachment.fileName || attachment.filePath;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(attachment);
+  }
+  return merged;
+}
 
 type FilterChip = { id: string; label: string };
 const FILTER_CHIPS: FilterChip[] = [
@@ -89,20 +140,31 @@ type SwipeableObligationRowProps = {
   obligationShare?: ObligationShareSummary | null;
   /** Obligación de otro usuario compartida contigo (no eliminar / no es “tuya”). */
   isSharedWithMe?: boolean;
-  onEdit: () => void;
+  /** Número de solicitudes de pago pendientes (badge rojo). */
+  pendingRequestCount?: number;
+  onOpenDetail: () => void;
   onPayment: () => void;
   onDelete: () => void;
   onAnalytics: () => void;
+  deleteActionLabel?: string;
+  deleteActionColor?: string;
+  deleteActionBg?: string;
+  deleteActionIcon?: typeof Trash2;
 };
 
 function SwipeableObligationRow({
   obligation,
   obligationShare,
   isSharedWithMe,
-  onEdit,
+  pendingRequestCount = 0,
+  onOpenDetail,
   onPayment,
   onDelete,
   onAnalytics,
+  deleteActionLabel = "Eliminar",
+  deleteActionColor = COLORS.danger,
+  deleteActionBg = COLORS.danger + "28",
+  deleteActionIcon: DeleteActionIcon = Trash2,
 }: SwipeableObligationRowProps) {
   const translateX = useRef(new Animated.Value(0)).current;
   // "right" = swiped right (pay), "left" = swiped left (delete), null = closed
@@ -147,8 +209,10 @@ function SwipeableObligationRow({
         const base = openDir.current === "right" ? REVEAL_W : openDir.current === "left" ? -REVEAL_W : 0;
         const finalX = base + dx;
         if (finalX > REVEAL_W / 2 || vx > 0.4) {
+          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
           snapTo(REVEAL_W);
         } else if (!isSharedWithMe && (finalX < -REVEAL_W / 2 || vx < -0.4)) {
+          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
           snapTo(-REVEAL_W);
         } else {
           snapTo(0);
@@ -159,7 +223,17 @@ function SwipeableObligationRow({
 
   function handleCardPress() {
     if (openDir.current !== null) { snapTo(0); return; }
-    onEdit();
+    onOpenDetail();
+  }
+
+  function handlePayPress() {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    snapTo(0, onPayment);
+  }
+
+  function handleDeletePress() {
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    snapTo(0, onDelete);
   }
 
   const isPaid = obligation.status === "paid" || obligation.status === "cancelled";
@@ -182,7 +256,7 @@ function SwipeableObligationRow({
     <View style={swipeStyles.container}>
       {/* LEFT action (pay) — revealed by swiping RIGHT */}
       <Animated.View style={[swipeStyles.payBg, { opacity: payOpacity }]}>
-        <TouchableOpacity style={swipeStyles.actionBtn} onPress={() => snapTo(0, onPayment)} activeOpacity={0.8}>
+        <TouchableOpacity style={swipeStyles.actionBtn} onPress={handlePayPress} activeOpacity={0.8}>
           <CreditCard size={20} color={COLORS.pine} strokeWidth={2} />
           <Text style={[swipeStyles.actionLabel, { color: COLORS.pine }]}>{paySwipeLabel}</Text>
         </TouchableOpacity>
@@ -190,10 +264,10 @@ function SwipeableObligationRow({
 
       {/* RIGHT action (delete) — revealed by swiping LEFT; no aplica a compartidos contigo */}
       {!isSharedWithMe ? (
-        <Animated.View style={[swipeStyles.deleteBg, { opacity: deleteOpacity }]}>
-          <TouchableOpacity style={swipeStyles.actionBtn} onPress={() => snapTo(0, onDelete)} activeOpacity={0.8}>
-            <Trash2 size={20} color={COLORS.danger} strokeWidth={2} />
-            <Text style={[swipeStyles.actionLabel, { color: COLORS.danger }]}>Eliminar</Text>
+        <Animated.View style={[swipeStyles.deleteBg, { opacity: deleteOpacity, backgroundColor: deleteActionBg }]}>
+          <TouchableOpacity style={swipeStyles.actionBtn} onPress={handleDeletePress} activeOpacity={0.8}>
+            <DeleteActionIcon size={20} color={deleteActionColor} strokeWidth={2} />
+            <Text style={[swipeStyles.actionLabel, { color: deleteActionColor }]}>{deleteActionLabel}</Text>
           </TouchableOpacity>
         </Animated.View>
       ) : null}
@@ -205,7 +279,14 @@ function SwipeableObligationRow({
       >
         <Card onPress={handleCardPress} style={swipeStyles.card}>
           <View style={swipeStyles.header}>
-            <Text style={swipeStyles.title} numberOfLines={1}>{obligation.title}</Text>
+            <View style={swipeStyles.titleWrap}>
+              <Text style={swipeStyles.title} numberOfLines={1}>{obligation.title}</Text>
+              {pendingRequestCount > 0 ? (
+                <TouchableOpacity style={swipeStyles.pendingBadge} onPress={onAnalytics} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Text style={swipeStyles.pendingBadgeText}>{pendingRequestCount}</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
             <View style={swipeStyles.headerRight}>
               <TouchableOpacity onPress={onAnalytics} style={swipeStyles.analyticsBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                 <BarChart2 size={14} color={COLORS.storm} strokeWidth={2} />
@@ -278,7 +359,7 @@ function SwipeableObligationRow({
                 <Text style={swipeStyles.progressText}>{Math.round(obligation.progressPercent)}% pagado</Text>
                 {obligation.dueDate ? (
                   <Text style={swipeStyles.dueDate}>
-                    Vence {format(new Date(obligation.dueDate), "d MMM yyyy", { locale: es })}
+                    Vence {format(parseDisplayDate(obligation.dueDate), "d MMM yyyy", { locale: es })}
                   </Text>
                 ) : null}
               </View>
@@ -291,21 +372,29 @@ function SwipeableObligationRow({
   );
 }
 
+function canDeleteObligation(ob: ObligationSummary) {
+  return ob.events.every((event) => event.eventType === "opening");
+}
+
 // ─── Screen ──────────────────────────────────────────────────────────────────
 
-export default function ObligationsScreen() {
+function ObligationsScreen() {
   const swipeGesture = useSwipeTab();
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const queryClient = useQueryClient();
-  const { profile } = useAuth();
+  const { profile, session } = useAuth();
   const { activeWorkspaceId } = useWorkspace();
   const { showToast } = useToast();
   const deleteMutation = useDeleteObligationMutation(activeWorkspaceId);
+  const archiveMutation = useArchiveObligationMutation(activeWorkspaceId);
+  const deleteEventMutation = useDeleteObligationEventMutation();
 
   const { data: snapshot, isLoading } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const { data: obligationShares = [] } = useObligationSharesQuery(activeWorkspaceId);
   const { data: sharedObligations = [], isLoading: sharedLoading, isFetching: sharedFetching } =
-    useSharedObligationsQuery(profile?.id);
+    useSharedObligationsQuery(session?.user?.id ?? null);
+  const { data: pendingRequestCounts } = usePendingPaymentRequestCountsQuery(activeWorkspaceId);
 
   const shareByObligationId = useMemo(
     () => buildShareByObligationId(obligationShares),
@@ -314,11 +403,12 @@ export default function ObligationsScreen() {
 
   const [activeFilter, setActiveFilter] = useState("all");
   const [createFormVisible, setCreateFormVisible] = useState(false);
-  const [editObligation, setEditObligation] = useState<ObligationSummary | null>(null);
   const [paymentObligation, setPaymentObligation] = useState<ObligationSummary | null>(null);
+  const [paymentRequestObligation, setPaymentRequestObligation] = useState<SharedObligationSummary | null>(null);
   const [adjustObligation, setAdjustObligation] = useState<ObligationSummary | null>(null);
   const [adjustMode, setAdjustMode] = useState<"increase" | "decrease">("increase");
   const [deleteTarget, setDeleteTarget] = useState<ObligationSummary | null>(null);
+  const [archiveTarget, setArchiveTarget] = useState<ObligationSummary | null>(null);
   const [analyticsObligation, setAnalyticsObligation] = useState<
     ObligationSummary | SharedObligationSummary | null
   >(null);
@@ -330,24 +420,89 @@ export default function ObligationsScreen() {
   const [editingEventForPayment, setEditingEventForPayment] = useState<ObligationEventSummary | undefined>(undefined);
   const [editingEventForAdjustment, setEditingEventForAdjustment] = useState<ObligationEventSummary | undefined>(undefined);
   const [adjustEventMode, setAdjustEventMode] = useState<"increase" | "decrease">("increase");
+  const [selectedAnalyticsEvent, setSelectedAnalyticsEvent] = useState<ObligationEventSummary | null>(null);
+  const [selectedAnalyticsEventObligation, setSelectedAnalyticsEventObligation] = useState<
+    ObligationSummary | SharedObligationSummary | null
+  >(null);
+  const [analyticsEventMenuVisible, setAnalyticsEventMenuVisible] = useState(false);
+  const [analyticsAttachmentPreviewVisible, setAnalyticsAttachmentPreviewVisible] = useState(false);
+  const [deletingAnalyticsAttachmentPath, setDeletingAnalyticsAttachmentPath] = useState<string | null>(null);
+  const [analyticsConfirmDeleteVisible, setAnalyticsConfirmDeleteVisible] = useState(false);
+  const {
+    data: selectedAnalyticsEventAttachments = [],
+    isLoading: selectedAnalyticsEventAttachmentsLoading,
+  } = useObligationEventAttachmentsQuery(
+    selectedAnalyticsEvent ? selectedAnalyticsEventObligation?.workspaceId ?? null : null,
+    selectedAnalyticsEvent?.id ?? null,
+  );
+  const {
+    data: selectedAnalyticsMovementAttachments = [],
+    isLoading: selectedAnalyticsMovementAttachmentsLoading,
+  } = useMovementAttachmentsQuery(
+    selectedAnalyticsEvent?.movementId ? selectedAnalyticsEventObligation?.workspaceId ?? null : null,
+    selectedAnalyticsEvent?.movementId ?? null,
+  );
+  const selectedAnalyticsPreviewAttachments = useMemo(
+    () => mergePreviewAttachments(selectedAnalyticsEventAttachments, selectedAnalyticsMovementAttachments),
+    [selectedAnalyticsEventAttachments, selectedAnalyticsMovementAttachments],
+  );
+  const selectedAnalyticsPreviewAttachmentsLoading =
+    selectedAnalyticsEventAttachmentsLoading ||
+    (selectedAnalyticsEvent?.movementId != null && selectedAnalyticsMovementAttachmentsLoading);
 
   // Undo-delete: hidden list of ids pending actual deletion
   const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<number>>(new Set());
+  const [pendingDeleteDeadlines, setPendingDeleteDeadlines] = useState<Record<number, number>>({});
+  const [undoNow, setUndoNow] = useState(() => Date.now());
   const deleteTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+  const pendingDeleteItems = useRef<Map<number, ObligationSummary>>(new Map());
+
+  async function handleArchiveObligation(ob: ObligationSummary) {
+    if (ob.status === "cancelled") {
+      showToast("La obligación ya está archivada", "success");
+      return;
+    }
+    try {
+      await archiveMutation.mutateAsync({ id: ob.id, archived: true });
+      showToast("Obligación archivada. Para eliminarla, primero borra sus eventos.", "success");
+    } catch (err: unknown) {
+      showToast(humanizeError(err), "error");
+    }
+  }
+
+  const finalizeDelete = useCallback((id: number) => {
+    const pending = pendingDeleteItems.current.get(id);
+    const timer = deleteTimers.current.get(id);
+    if (timer) clearTimeout(timer);
+    deleteTimers.current.delete(id);
+    pendingDeleteItems.current.delete(id);
+    setPendingDeleteDeadlines((prev) => {
+      if (!(id in prev)) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    setPendingDeleteIds((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+    if (!pending) return;
+    deleteMutation.mutate(pending.id, {
+      onError: (e) => showToast(e.message, "error"),
+    });
+  }, [deleteMutation, showToast]);
 
   function startUndoDelete(ob: ObligationSummary) {
+    const deadline = Date.now() + UNDO_DELETE_MS;
+    setUndoNow(Date.now());
+    pendingDeleteItems.current.set(ob.id, ob);
     setPendingDeleteIds((prev) => new Set(prev).add(ob.id));
+    setPendingDeleteDeadlines((prev) => ({ ...prev, [ob.id]: deadline }));
     const timer = setTimeout(() => {
-      deleteMutation.mutate(ob.id, {
-        onError: (e) => showToast(e.message, "error"),
-      });
-      setPendingDeleteIds((prev) => {
-        const next = new Set(prev);
-        next.delete(ob.id);
-        return next;
-      });
-      deleteTimers.current.delete(ob.id);
-    }, 5000);
+      finalizeDelete(ob.id);
+    }, UNDO_DELETE_MS);
     deleteTimers.current.set(ob.id, timer);
   }
 
@@ -355,6 +510,13 @@ export default function ObligationsScreen() {
     const timer = deleteTimers.current.get(id);
     if (timer) clearTimeout(timer);
     deleteTimers.current.delete(id);
+    pendingDeleteItems.current.delete(id);
+    setPendingDeleteDeadlines((prev) => {
+      if (!(id in prev)) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
     setPendingDeleteIds((prev) => {
       const next = new Set(prev);
       next.delete(id);
@@ -367,6 +529,27 @@ export default function ObligationsScreen() {
     return () => { deleteTimers.current.forEach(clearTimeout); };
   }, []);
 
+  useEffect(() => {
+    if (Object.keys(pendingDeleteDeadlines).length === 0) return;
+    const interval = setInterval(() => setUndoNow(Date.now()), 100);
+    return () => clearInterval(interval);
+  }, [pendingDeleteDeadlines]);
+
+  useEffect(() => {
+    const expiredIds = Object.entries(pendingDeleteDeadlines)
+      .filter(([, deadline]) => deadline <= undoNow)
+      .map(([id]) => Number(id));
+    expiredIds.forEach((id) => finalizeDelete(id));
+  }, [finalizeDelete, pendingDeleteDeadlines, undoNow]);
+
+  function handleObligationRemoveAction(ob: ObligationSummary) {
+    if (canDeleteObligation(ob)) {
+      startUndoDelete(ob);
+      return;
+    }
+    setArchiveTarget(ob);
+  }
+
   const obligations = snapshot?.obligations ?? [];
 
   function passesFilter(ob: ObligationSummary | SharedObligationSummary) {
@@ -377,10 +560,28 @@ export default function ObligationsScreen() {
 
   const filtered = obligations.filter((ob) => passesFilter(ob));
   const filteredShared = sharedObligations.filter((ob) => passesFilter(ob));
+  const liveAnalyticsObligation = useMemo(() => {
+    if (!analyticsObligation) return null;
+    const isSharedAnalytics =
+      "viewerMode" in analyticsObligation &&
+      (analyticsObligation as SharedObligationSummary).viewerMode === "shared_viewer";
+    if (isSharedAnalytics) {
+      return (
+        sharedObligations.find(
+          (ob) =>
+            ob.id === analyticsObligation.id &&
+            ob.workspaceId === analyticsObligation.workspaceId,
+        ) ?? analyticsObligation
+      );
+    }
+    return obligations.find((ob) => ob.id === analyticsObligation.id) ?? analyticsObligation;
+  }, [analyticsObligation, obligations, sharedObligations]);
 
   const listRefreshing = isLoading || sharedFetching;
 
-  const onRefresh = useCallback(() => {
+  const refreshTriggeredRef = useRef(false);
+  const onRefreshOrig = useCallback(() => {
+    refreshTriggeredRef.current = true;
     void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
     void queryClient.invalidateQueries({ queryKey: ["shared-obligations"] });
     if (activeWorkspaceId) {
@@ -388,26 +589,195 @@ export default function ObligationsScreen() {
     }
   }, [queryClient, activeWorkspaceId]);
 
+  useFocusEffect(
+    useCallback(() => {
+      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+      void queryClient.invalidateQueries({ queryKey: ["shared-obligations"] });
+    }, [queryClient]),
+  );
+
+  useEffect(() => {
+    if (!listRefreshing && refreshTriggeredRef.current) {
+      refreshTriggeredRef.current = false;
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
+  }, [listRefreshing]);
+
+  const workspaceData = useMemo(
+    () => filtered.filter((ob) => !pendingDeleteIds.has(ob.id)),
+    [filtered, pendingDeleteIds],
+  );
+
+  const obligationSections = useMemo(() => {
+    type OblSection = {
+      key: "workspace" | "shared";
+      label: string;
+      hint?: string;
+      data: (ObligationSummary | SharedObligationSummary)[];
+    };
+    const sections: OblSection[] = [];
+    if (workspaceData.length > 0) {
+      sections.push({ key: "workspace", label: "Tu workspace", data: workspaceData });
+    }
+    if (filteredShared.length > 0) {
+      sections.push({
+        key: "shared",
+        label: "Compartidos contigo",
+        hint: "Créditos o deudas que otro usuario compartió contigo (invitación aceptada).",
+        data: filteredShared,
+      });
+    }
+    return sections;
+  }, [workspaceData, filteredShared]);
+
+
+  const renderObligationItem = useCallback(
+    ({ item, section }: { item: ObligationSummary | SharedObligationSummary; section: { key: string } }) => {
+      if (section.key === "shared") {
+        const ob = item as SharedObligationSummary;
+        return (
+          <SwipeableObligationRow
+            obligation={ob}
+            obligationShare={ob.share}
+            isSharedWithMe
+            onOpenDetail={() => router.push(`/obligation/${ob.id}`)}
+            onPayment={() => setPaymentRequestObligation(ob)}
+            onDelete={() => {}}
+            onAnalytics={() => setAnalyticsObligation(ob)}
+          />
+        );
+      }
+      const ob = item as ObligationSummary;
+      const allowDelete = canDeleteObligation(ob);
+      return (
+        <SwipeableObligationRow
+          obligation={ob}
+          obligationShare={shareByObligationId.get(ob.id) ?? null}
+          pendingRequestCount={pendingRequestCounts?.get(ob.id) ?? 0}
+          onOpenDetail={() => router.push(`/obligation/${ob.id}`)}
+          onPayment={() => setPaymentObligation(ob)}
+          onDelete={() => handleObligationRemoveAction(ob)}
+          onAnalytics={() => setAnalyticsObligation(ob)}
+          deleteActionLabel={allowDelete ? "Eliminar" : ob.status === "cancelled" ? "Archivada" : "Archivar"}
+          deleteActionColor={allowDelete ? COLORS.danger : COLORS.storm}
+          deleteActionBg={allowDelete ? COLORS.danger + "28" : COLORS.storm + "22"}
+          deleteActionIcon={allowDelete ? Trash2 : Archive}
+        />
+      );
+    },
+    [router, shareByObligationId, pendingRequestCounts, handleObligationRemoveAction],
+  );
+
   function openAdjust(ob: ObligationSummary, mode: "increase" | "decrease") {
     setAdjustMode(mode);
     setAdjustObligation(ob);
   }
 
   function handleEventTap(ev: ObligationEventSummary) {
-    const ob = analyticsObligation;
+    const ob = liveAnalyticsObligation;
     if (!ob) return;
-    setAnalyticsObligation(null);
-    if (ev.eventType === "payment") {
-      setEditEventObligation(ob);
-      setEditingEventForPayment(ev);
-    } else if (ev.eventType === "principal_increase") {
-      setEditEventObligation(ob);
+    setSelectedAnalyticsEvent(ev);
+    setSelectedAnalyticsEventObligation(ob);
+    setAnalyticsAttachmentPreviewVisible(false);
+    setAnalyticsEventMenuVisible(true);
+  }
+
+  function handleAnalyticsEditEvent() {
+    if (!selectedAnalyticsEvent || !selectedAnalyticsEventObligation) return;
+    setAnalyticsEventMenuVisible(false);
+    if (selectedAnalyticsEvent.eventType === "payment") {
+      setEditEventObligation(selectedAnalyticsEventObligation);
+      setEditingEventForPayment(selectedAnalyticsEvent);
+    } else if (selectedAnalyticsEvent.eventType === "principal_increase") {
+      setEditEventObligation(selectedAnalyticsEventObligation);
       setAdjustEventMode("increase");
-      setEditingEventForAdjustment(ev);
-    } else if (ev.eventType === "principal_decrease") {
-      setEditEventObligation(ob);
+      setEditingEventForAdjustment(selectedAnalyticsEvent);
+    } else if (selectedAnalyticsEvent.eventType === "principal_decrease") {
+      setEditEventObligation(selectedAnalyticsEventObligation);
       setAdjustEventMode("decrease");
-      setEditingEventForAdjustment(ev);
+      setEditingEventForAdjustment(selectedAnalyticsEvent);
+    }
+  }
+
+  function handleAnalyticsDeleteEvent() {
+    if (!selectedAnalyticsEvent || !selectedAnalyticsEventObligation) return;
+    deleteEventMutation.mutate(
+      {
+        eventId: selectedAnalyticsEvent.id,
+        obligationId: selectedAnalyticsEventObligation.id,
+        movementId: selectedAnalyticsEvent.movementId,
+        ownerUserId: profile?.id,
+        obligationTitle: selectedAnalyticsEventObligation.title,
+        amount: selectedAnalyticsEvent.amount,
+        eventType: selectedAnalyticsEvent.eventType,
+        eventDate: selectedAnalyticsEvent.eventDate,
+      },
+      {
+        onSuccess: (data) => {
+          setAnalyticsConfirmDeleteVisible(false);
+          setSelectedAnalyticsEvent(null);
+          setSelectedAnalyticsEventObligation(null);
+          showToast(
+            data?.deletedOwnerMovementId ? "Evento y movimiento eliminados" : "Evento eliminado",
+            "success",
+          );
+        },
+        onError: (err) => showToast(humanizeError(err), "error"),
+      },
+    );
+  }
+
+  async function handleDeleteAnalyticsAttachment(
+    attachment: EntityAttachmentFile,
+  ) {
+    if (!selectedAnalyticsEvent || !selectedAnalyticsEventObligation) return;
+    try {
+      setDeletingAnalyticsAttachmentPath(attachment.filePath);
+      await removeAttachmentFile({
+        filePath: attachment.filePath,
+        mirrorTargets: attachment.filePath.includes("/movement/")
+          ? [
+              {
+                workspaceId: selectedAnalyticsEventObligation.workspaceId,
+                entityType: "obligation-event",
+                entityId: selectedAnalyticsEvent.id,
+              },
+            ]
+          : selectedAnalyticsEvent.movementId != null
+            ? [
+                {
+                  workspaceId: selectedAnalyticsEventObligation.workspaceId,
+                  entityType: "movement",
+                  entityId: selectedAnalyticsEvent.movementId,
+                },
+              ]
+            : [],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: [
+          "entity-attachments",
+          selectedAnalyticsEventObligation.workspaceId,
+          "obligation-event",
+          selectedAnalyticsEvent.id,
+        ],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["entity-attachment-counts", selectedAnalyticsEventObligation.workspaceId, "obligation-event"],
+      });
+      if (selectedAnalyticsEvent.movementId != null) {
+        await queryClient.invalidateQueries({
+          queryKey: [
+            "movement-attachments",
+            selectedAnalyticsEventObligation.workspaceId,
+            selectedAnalyticsEvent.movementId,
+          ],
+        });
+      }
+      showToast("Comprobante eliminado", "success");
+    } catch (err: unknown) {
+      showToast(humanizeError(err), "error");
+    } finally {
+      setDeletingAnalyticsAttachmentPath(null);
     }
   }
 
@@ -436,81 +806,55 @@ export default function ObligationsScreen() {
         ))}
       </ScrollView>
 
-      <ScrollView
-        contentContainerStyle={styles.content}
-        refreshControl={
-          <RefreshControl refreshing={listRefreshing} onRefresh={onRefresh} tintColor={COLORS.primary} />
-        }
-      >
-        {isLoading ? (
-          <>
-            <SkeletonCard /><SkeletonCard /><SkeletonCard />
-          </>
-        ) : (
-          <>
-            {filtered.filter((ob) => !pendingDeleteIds.has(ob.id)).length === 0 &&
-            filteredShared.length === 0 &&
-            !sharedLoading ? (
-              <EmptyState
-                title="Sin obligaciones"
-                description="Registra préstamos, deudas y créditos aquí. Las que otros compartan contigo aparecen abajo en «Compartidos contigo»."
-                action={
-                  activeFilter === "all"
-                    ? { label: "Nueva obligación", onPress: () => setCreateFormVisible(true) }
-                    : undefined
-                }
-              />
+      <SectionList
+        sections={obligationSections}
+        keyExtractor={(item) => `${(item as SharedObligationSummary).workspaceId ?? ""}-${item.id}`}
+        renderItem={renderObligationItem}
+        renderSectionHeader={({ section }) => (
+          <View>
+            <Text style={styles.sectionLabel}>{section.label}</Text>
+            {section.hint ? (
+              <Text style={styles.sectionHint}>{section.hint}</Text>
             ) : null}
-
-            {filtered.filter((ob) => !pendingDeleteIds.has(ob.id)).length > 0 ? (
-              <>
-                <Text style={styles.sectionLabel}>Tu workspace</Text>
-                {filtered
-                  .filter((ob) => !pendingDeleteIds.has(ob.id))
-                  .map((ob) => (
-                    <SwipeableObligationRow
-                      key={`w-${ob.id}`}
-                      obligation={ob}
-                      obligationShare={shareByObligationId.get(ob.id) ?? null}
-                      onEdit={() => setEditObligation(ob)}
-                      onPayment={() => setPaymentObligation(ob)}
-                      onDelete={() => startUndoDelete(ob)}
-                      onAnalytics={() => setAnalyticsObligation(ob)}
-                    />
-                  ))}
-              </>
-            ) : null}
-
-            {sharedLoading && filteredShared.length === 0 ? (
-              <View style={styles.sharedLoading}>
-                <ActivityIndicator color={COLORS.primary} />
-                <Text style={styles.sharedLoadingText}>Cargando compartidos contigo…</Text>
-              </View>
-            ) : null}
-
-            {filteredShared.length > 0 ? (
-              <>
-                <Text style={styles.sectionLabel}>Compartidos contigo</Text>
-                <Text style={styles.sectionHint}>
-                  Créditos o deudas que otro usuario compartió contigo (invitación aceptada).
-                </Text>
-                {filteredShared.map((ob) => (
-                  <SwipeableObligationRow
-                    key={`s-${ob.workspaceId}-${ob.id}`}
-                    obligation={ob}
-                    obligationShare={ob.share}
-                    isSharedWithMe
-                    onEdit={() => setEditObligation(ob)}
-                    onPayment={() => setPaymentObligation(ob)}
-                    onDelete={() => {}}
-                    onAnalytics={() => setAnalyticsObligation(ob)}
-                  />
-                ))}
-              </>
-            ) : null}
-          </>
+          </View>
         )}
-      </ScrollView>
+        stickySectionHeadersEnabled={false}
+        ListHeaderComponent={
+          isLoading ? (
+            <>
+              <SkeletonCard /><SkeletonCard /><SkeletonCard />
+            </>
+          ) : sharedLoading && filteredShared.length === 0 && obligationSections.length === 0 ? (
+            <View style={styles.sharedLoading}>
+              <ActivityIndicator color={COLORS.primary} />
+              <Text style={styles.sharedLoadingText}>Cargando compartidos contigo…</Text>
+            </View>
+          ) : null
+        }
+        ListEmptyComponent={
+          !isLoading && workspaceData.length === 0 && filteredShared.length === 0 && !sharedLoading ? (
+            <EmptyState
+              title="Sin obligaciones"
+              description="Registra préstamos, deudas y créditos aquí. Las que otros compartan contigo aparecen abajo en «Compartidos contigo»."
+              action={
+                activeFilter === "all"
+                  ? { label: "Nueva obligación", onPress: () => setCreateFormVisible(true) }
+                  : undefined
+              }
+            />
+          ) : null
+        }
+        ItemSeparatorComponent={() => <View style={{ height: SPACING.sm }} />}
+        SectionSeparatorComponent={() => <View style={{ height: SPACING.md }} />}
+        refreshControl={
+          <RefreshControl refreshing={listRefreshing} onRefresh={onRefreshOrig} tintColor={COLORS.primary} />
+        }
+        removeClippedSubviews
+        maxToRenderPerBatch={10}
+        windowSize={5}
+        initialNumToRender={15}
+        contentContainerStyle={styles.listContent}
+      />
 
       <FAB onPress={() => setCreateFormVisible(true)} bottom={insets.bottom + 16} />
 
@@ -520,13 +864,14 @@ export default function ObligationsScreen() {
         onClose={() => setCreateFormVisible(false)}
         onSuccess={() => setCreateFormVisible(false)}
       />
-      <ObligationForm
-        visible={Boolean(editObligation)}
-        onClose={() => setEditObligation(null)}
-        onSuccess={() => setEditObligation(null)}
-        editObligation={editObligation ?? undefined}
-        onAdjust={openAdjust}
-      />
+      {paymentRequestObligation ? (
+        <PaymentRequestForm
+          visible={Boolean(paymentRequestObligation)}
+          onClose={() => setPaymentRequestObligation(null)}
+          onSuccess={() => setPaymentRequestObligation(null)}
+          obligation={paymentRequestObligation}
+        />
+      ) : null}
       <PaymentForm
         visible={Boolean(paymentObligation) || Boolean(editingEventForPayment)}
         onClose={() => { setPaymentObligation(null); setEditingEventForPayment(undefined); setEditEventObligation(null); }}
@@ -544,26 +889,145 @@ export default function ObligationsScreen() {
       />
 
       {/* Undo-delete banner */}
-      {pendingDeleteIds.size > 0 ? (
-        <View style={styles.undoBanner}>
-          <Text style={styles.undoText}>
-            {pendingDeleteIds.size === 1 ? "Obligación eliminada" : `${pendingDeleteIds.size} obligaciones eliminadas`}
-          </Text>
-          <TouchableOpacity
-            onPress={() => pendingDeleteIds.forEach((id) => undoDelete(id))}
-            style={styles.undoBtn}
-          >
-            <Text style={styles.undoBtnText}>Deshacer</Text>
-          </TouchableOpacity>
-        </View>
-      ) : null}
+      <UndoBanner
+        visible={pendingDeleteIds.size > 0}
+        message={pendingDeleteIds.size === 1 ? "Obligación eliminada" : `${pendingDeleteIds.size} obligaciones eliminadas`}
+        onUndo={() => pendingDeleteIds.forEach((id) => undoDelete(id))}
+        durationMs={5000}
+        bottomOffset={90}
+      />
 
       <ObligationAnalyticsModal
         visible={Boolean(analyticsObligation)}
-        obligation={analyticsObligation}
+        obligation={liveAnalyticsObligation}
         onClose={() => setAnalyticsObligation(null)}
         onEventTap={handleEventTap}
+        userId={profile?.id}
       />
+      <ObligationEventActionSheet
+        visible={analyticsEventMenuVisible}
+        onClose={() => setAnalyticsEventMenuVisible(false)}
+        eventTitle={
+          ANALYTICS_EVENT_LABELS[selectedAnalyticsEvent?.eventType ?? ""] ?? selectedAnalyticsEvent?.eventType
+        }
+        dateLabel={
+          selectedAnalyticsEvent
+            ? format(parseDisplayDate(selectedAnalyticsEvent.eventDate), "d MMM yyyy", { locale: es })
+            : null
+        }
+        amountLabel={
+          selectedAnalyticsEvent
+            ? formatCurrency(
+                selectedAnalyticsEvent.amount,
+                selectedAnalyticsEventObligation?.currencyCode ?? "",
+              )
+            : null
+        }
+        description={selectedAnalyticsEvent?.description ?? null}
+        notes={selectedAnalyticsEvent?.notes ?? null}
+        notices={
+          selectedAnalyticsPreviewAttachmentsLoading
+            ? [
+                {
+                  key: "checking-attachments",
+                  text: "Comprobando si este evento tiene comprobantes...",
+                  tone: "info" as const,
+                },
+              ]
+            : []
+        }
+        quickActions={
+          selectedAnalyticsPreviewAttachments.length > 0
+            ? [
+                {
+                  key: "attachments",
+                  label:
+                    selectedAnalyticsPreviewAttachments.length === 1
+                      ? "Ver comprobante"
+                      : `Ver ${selectedAnalyticsPreviewAttachments.length} comprobantes`,
+                  onPress: () => {
+                    setAnalyticsEventMenuVisible(false);
+                    setAnalyticsAttachmentPreviewVisible(true);
+                  },
+                  variant: "secondary" as const,
+                },
+              ]
+            : []
+        }
+        actions={[
+          ...(selectedAnalyticsEvent && ANALYTICS_EDITABLE_TYPES.has(selectedAnalyticsEvent.eventType)
+            ? [
+                {
+                  key: "edit",
+                  label: "Editar",
+                  onPress: handleAnalyticsEditEvent,
+                  variant: "primary" as const,
+                },
+              ]
+            : []),
+          {
+            key: "delete",
+            label: "Eliminar",
+            variant: "ghost" as const,
+            onPress: () => {
+              setAnalyticsEventMenuVisible(false);
+              setAnalyticsConfirmDeleteVisible(true);
+            },
+          },
+        ]}
+      />
+
+      <AttachmentPreviewModal
+        visible={analyticsAttachmentPreviewVisible}
+        attachments={selectedAnalyticsPreviewAttachments}
+        onClose={() => setAnalyticsAttachmentPreviewVisible(false)}
+        onDeleteAttachment={handleDeleteAnalyticsAttachment}
+        deletingAttachmentPath={deletingAnalyticsAttachmentPath}
+        isLoading={selectedAnalyticsPreviewAttachmentsLoading}
+        insets={insets}
+        title="Comprobantes del evento"
+      />
+
+      <ConfirmDialog
+        visible={Boolean(archiveTarget)}
+        title={archiveTarget?.status === "cancelled" ? "Ya archivada" : "¿Archivar obligación?"}
+        body={
+          archiveTarget
+            ? archiveTarget.status === "cancelled"
+              ? `"${archiveTarget.title}" ya está archivada.`
+              : `Se archivará "${archiveTarget.title}". No se elimina — puedes filtrar por estado "Cancelada" para verla.`
+            : ""
+        }
+        confirmLabel={archiveTarget?.status === "cancelled" ? "Entendido" : "Archivar"}
+        cancelLabel="Cancelar"
+        onCancel={() => setArchiveTarget(null)}
+        onConfirm={() => {
+          const target = archiveTarget;
+          setArchiveTarget(null);
+          if (target && target.status !== "cancelled") void handleArchiveObligation(target);
+        }}
+      />
+
+      <ConfirmDialog
+        visible={analyticsConfirmDeleteVisible}
+        title="¿Eliminar evento?"
+        body={
+          selectedAnalyticsEvent?.movementId
+            ? "Se eliminará el evento y el movimiento contable vinculado."
+            : "Este evento será eliminado permanentemente."
+        }
+        confirmLabel="Eliminar"
+        cancelLabel="Cancelar"
+        onCancel={() => setAnalyticsConfirmDeleteVisible(false)}
+        onConfirm={handleAnalyticsDeleteEvent}
+      >
+        {selectedAnalyticsEvent && selectedAnalyticsEventObligation ? (
+          <EventDeleteImpact
+            event={selectedAnalyticsEvent}
+            obligation={selectedAnalyticsEventObligation}
+          />
+        ) : null}
+      </ConfirmDialog>
     </View>
     </GestureDetector>
   );
@@ -632,12 +1096,33 @@ const swipeStyles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
+  titleWrap: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.xs,
+    marginRight: SPACING.sm,
+  },
   title: {
     flex: 1,
     fontSize: FONT_SIZE.md,
     fontFamily: FONT_FAMILY.bodySemibold,
     color: COLORS.ink,
-    marginRight: SPACING.sm,
+  },
+  pendingBadge: {
+    backgroundColor: COLORS.danger,
+    borderRadius: RADIUS.full,
+    minWidth: 18,
+    height: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 4,
+  },
+  pendingBadgeText: {
+    color: "#FFF",
+    fontSize: 10,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    includeFontPadding: false,
   },
   amount: {
     fontSize: FONT_SIZE.md,
@@ -689,14 +1174,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.lg,
     paddingVertical: SPACING.sm,
     gap: SPACING.sm,
+    alignItems: "center",
   },
   filterChip: {
     paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs + 2,
+    minHeight: 38,
     borderRadius: RADIUS.full,
     backgroundColor: GLASS.card,
     borderWidth: 1,
     borderColor: GLASS.cardBorder,
+    alignItems: "center",
+    justifyContent: "center",
   },
   filterChipActive: {
     backgroundColor: COLORS.pine + "22",
@@ -704,11 +1192,14 @@ const styles = StyleSheet.create({
   },
   filterChipText: {
     fontSize: FONT_SIZE.sm,
+    lineHeight: FONT_SIZE.sm + 4,
     fontFamily: FONT_FAMILY.bodyMedium,
     color: COLORS.storm,
+    includeFontPadding: false,
+    textAlignVertical: "center",
   },
   filterChipTextActive: { color: COLORS.pine },
-  content: { padding: SPACING.lg, gap: SPACING.sm, paddingBottom: 100 },
+  listContent: { padding: SPACING.lg, paddingBottom: 100 },
   sectionLabel: {
     fontSize: FONT_SIZE.xs,
     fontFamily: FONT_FAMILY.bodySemibold,
@@ -737,43 +1228,90 @@ const styles = StyleSheet.create({
     color: COLORS.storm,
     fontFamily: FONT_FAMILY.body,
   },
-  undoBanner: {
-    position: "absolute",
-    bottom: 90,
-    left: SPACING.lg,
-    right: SPACING.lg,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: "rgba(20,26,34,0.97)",
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.18)",
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm + 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-    elevation: 10,
+  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
+  eventMenuSheet: {
+    backgroundColor: COLORS.mist,
+    borderTopLeftRadius: RADIUS.xl,
+    borderTopRightRadius: RADIUS.xl,
+    padding: SPACING.lg,
+    gap: SPACING.sm,
   },
-  undoText: {
-    fontFamily: FONT_FAMILY.body,
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.ink,
-    flex: 1,
+  eventMenuHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: COLORS.border,
+    alignSelf: "center",
+    marginBottom: SPACING.xs,
   },
-  undoBtn: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: 4,
-    backgroundColor: COLORS.primary + "22",
-    borderRadius: RADIUS.full,
-    borderWidth: 1,
-    borderColor: COLORS.primary + "55",
-  },
-  undoBtnText: {
+  eventMenuTitle: {
+    fontSize: FONT_SIZE.md,
     fontFamily: FONT_FAMILY.bodySemibold,
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.pine,
+    color: COLORS.ink,
+    textAlign: "center",
   },
+  eventMenuSub: {
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.storm,
+    textAlign: "center",
+    marginBottom: SPACING.xs,
+  },
+  eventMenuBtn: { marginTop: SPACING.xs },
+  eventMenuDeleteBtn: { borderColor: COLORS.expense + "66" },
 });
+
+function EventDeleteImpact({
+  event,
+  obligation,
+}: {
+  event: ObligationEventSummary;
+  obligation: ObligationSummary | SharedObligationSummary;
+}) {
+  if (event.eventType !== "payment") return null;
+  const projectedPending = obligation.pendingAmount + event.amount;
+  const currency = obligation.currencyCode;
+  const fmt = (n: number) =>
+    `${currency} ${n.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return (
+    <View style={evImpactStyles.container}>
+      <View style={evImpactStyles.row}>
+        <Text style={evImpactStyles.label}>Pendiente obligación</Text>
+        <View style={evImpactStyles.values}>
+          <Text style={evImpactStyles.from}>{fmt(obligation.pendingAmount)}</Text>
+          <Text style={evImpactStyles.arrow}>→</Text>
+          <Text style={evImpactStyles.to}>{fmt(projectedPending)}</Text>
+        </View>
+      </View>
+      {event.movementId ? (
+        <Text style={evImpactStyles.note}>El movimiento contable vinculado también se eliminará.</Text>
+      ) : null}
+    </View>
+  );
+}
+
+const evImpactStyles = StyleSheet.create({
+  container: {
+    marginTop: SPACING.xs,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.08)",
+    paddingTop: SPACING.sm,
+    gap: SPACING.xs,
+  },
+  row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: SPACING.sm },
+  label: { fontSize: FONT_SIZE.xs, color: COLORS.storm },
+  values: { flexDirection: "row", alignItems: "center", gap: SPACING.xs },
+  from: { fontSize: FONT_SIZE.xs, color: COLORS.textDisabled },
+  arrow: { fontSize: FONT_SIZE.xs, color: COLORS.textDisabled },
+  to: { fontSize: FONT_SIZE.xs, fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.warning },
+  note: { fontSize: FONT_SIZE.xs, color: COLORS.textDisabled, fontStyle: "italic" },
+});
+
+export default function ObligationsScreenRoot() {
+  return (
+    <ErrorBoundary>
+      <ObligationsScreen />
+    </ErrorBoundary>
+  );
+}
+
+

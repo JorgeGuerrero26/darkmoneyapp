@@ -2,6 +2,8 @@ import { StyleSheet, Text, TouchableOpacity, View, type StyleProp, type ViewStyl
 import { ChevronLeft } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, SPACING } from "../../constants/theme";
+import { PlanStatusBadge } from "../ui/PlanStatusBadge";
+import { useHaptics } from "../../hooks/useHaptics";
 
 type Props = {
   title: string;
@@ -10,10 +12,20 @@ type Props = {
   onBack?: () => void;
   style?: StyleProp<ViewStyle>;
   withSafeArea?: boolean;
+  showPlanBadge?: boolean;
 };
 
-export function ScreenHeader({ title, subtitle, rightAction, onBack, style, withSafeArea = false }: Props) {
+export function ScreenHeader({
+  title,
+  subtitle,
+  rightAction,
+  onBack,
+  style,
+  withSafeArea = false,
+  showPlanBadge = false,
+}: Props) {
   const insets = useSafeAreaInsets();
+  const haptics = useHaptics();
 
   return (
     <View
@@ -24,7 +36,11 @@ export function ScreenHeader({ title, subtitle, rightAction, onBack, style, with
       ]}
     >
       {onBack ? (
-        <TouchableOpacity onPress={onBack} style={styles.backBtn} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+        <TouchableOpacity
+          onPress={() => { haptics.light(); onBack(); }}
+          style={styles.backBtn}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+        >
           <ChevronLeft size={22} color={COLORS.ink} strokeWidth={2} />
         </TouchableOpacity>
       ) : null}
@@ -32,10 +48,15 @@ export function ScreenHeader({ title, subtitle, rightAction, onBack, style, with
         <Text style={styles.title} numberOfLines={1}>
           {title}
         </Text>
-        {subtitle ? (
-          <Text style={styles.subtitle} numberOfLines={1}>
-            {subtitle}
-          </Text>
+        {(subtitle || showPlanBadge) ? (
+          <View style={styles.metaRow}>
+            {subtitle ? (
+              <Text style={styles.subtitle} numberOfLines={1}>
+                {subtitle}
+              </Text>
+            ) : null}
+            {showPlanBadge ? <PlanStatusBadge /> : null}
+          </View>
         ) : null}
       </View>
       {rightAction ? <View style={styles.right}>{rightAction}</View> : null}
@@ -80,9 +101,17 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.xl,
     color: COLORS.ink,
   },
+  metaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+    flexWrap: "wrap",
+    marginTop: 2,
+  },
   subtitle: {
     fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.sm,
     color: COLORS.storm,
+    flexShrink: 1,
   },
 });

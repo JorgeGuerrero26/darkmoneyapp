@@ -273,6 +273,7 @@ export type ObligationEventSummary = {
   id: number;
   eventType: ObligationEventType;
   eventDate: string;
+  createdAt?: string | null;
   amount: number;
   installmentNo?: number | null;
   reason?: string | null;
@@ -409,6 +410,47 @@ export type NotificationItem = {
   kind: string;
   channel?: string;
   readAt?: string | null;
+  relatedEntityType?: string | null;
+  relatedEntityId?: number | null;
+  payload?: JsonValue | null;
+};
+
+export type ObligationEventViewerLink = {
+  id: number;
+  obligationId: number;
+  eventId: number;
+  shareId: number;
+  linkedByUserId: string;
+  viewerWorkspaceId?: number | null;
+  accountId?: number | null;
+  accountName?: string | null;
+  movementId?: number | null;
+  createdAt: string;
+};
+
+export type ObligationPaymentRequestStatus = "pending" | "accepted" | "rejected";
+
+export type ObligationPaymentRequest = {
+  id: number;
+  obligationId: number;
+  workspaceId: number;
+  shareId: number;
+  requestedByUserId: string;
+  requestedByDisplayName?: string | null;
+  amount: number;
+  paymentDate: string;
+  installmentNo?: number | null;
+  description?: string | null;
+  notes?: string | null;
+  status: ObligationPaymentRequestStatus;
+  rejectionReason?: string | null;
+  /** Cuenta pre-seleccionada por el viewer al crear la solicitud */
+  viewerAccountId?: number | null;
+  viewerAccountName?: string | null;
+  viewerWorkspaceId?: number | null;
+  acceptedEventId?: number | null;
+  createdAt: string;
+  updatedAt: string;
 };
 
 /** Invitaciones obligation_shares pendientes para el usuario actual (lista en Notificaciones). */

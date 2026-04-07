@@ -1,17 +1,19 @@
-import { useEffect, useMemo, useState } from "react";
-import { ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from "react-native";
-import { TrendingUp, TrendingDown, ArrowRight } from "lucide-react-native";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { TrendingUp, TrendingDown, ArrowRight, AlertCircle } from "lucide-react-native";
 
 import { useAuth } from "../../lib/auth-context";
 import { useWorkspace } from "../../lib/workspace-context";
 import { todayPeru } from "../../lib/date";
 import { humanizeError } from "../../lib/errors";
 import { useToast } from "../../hooks/useToast";
+import { useHaptics } from "../../hooks/useHaptics";
 import {
   useCreatePrincipalAdjustmentMutation,
+  useUpdateObligationEventMutation,
   useWorkspaceSnapshotQuery,
 } from "../../services/queries/workspace-data";
-import type { ObligationSummary } from "../../types/domain";
+import type { ObligationEventSummary, ObligationSummary } from "../../types/domain";
 import { BottomSheet } from "../ui/BottomSheet";
 import { Button } from "../ui/Button";
 import { CurrencyInput } from "../ui/CurrencyInput";
@@ -20,7 +22,6 @@ import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { formatCurrency } from "../ui/AmountDisplay";
 import { sortByName } from "../../lib/sort-locale";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
-import { TextInput } from "react-native";
 
 type Mode = "increase" | "decrease";
 
@@ -30,15 +31,23 @@ type Props = {
   obligation: ObligationSummary | null;
   onClose: () => void;
   onSuccess?: () => void;
+  /** Presente cuando se edita un evento existente en lugar de crear uno nuevo */
+  editEvent?: ObligationEventSummary;
 };
 
-export function PrincipalAdjustmentForm({ visible, mode, obligation, onClose, onSuccess }: Props) {
+export function PrincipalAdjustmentForm({ visible, mode, obligation, onClose, onSuccess, editEvent }: Props) {
   const { activeWorkspaceId } = useWorkspace();
   const { profile } = useAuth();
   const { showToast } = useToast();
+  const haptics = useHaptics();
   const adjustmentWorkspaceId = obligation?.workspaceId ?? activeWorkspaceId ?? null;
   const mutation = useCreatePrincipalAdjustmentMutation(adjustmentWorkspaceId);
+  const updateEventMutation = useUpdateObligationEventMutation();
   const { data: snapshot } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
+  const isEditMode = Boolean(editEvent);
+  const scrollRef = useRef<ScrollView>(null);
+  const amountRef = useRef<TextInput>(null);
+  const accountSectionYRef = useRef(0);
 
   const today = todayPeru();
   const [amount, setAmount] = useState("");
@@ -47,7 +56,10 @@ export function PrincipalAdjustmentForm({ visible, mode, obligation, onClose, on
   const [createMovement, setCreateMovement] = useState(false);
   const [accountId, setAccountId] = useState<number | null>(null);
   const [amountError, setAmountError] = useState("");
+  const [accountError, setAccountError] = useState("");
+  const [submitError, setSubmitError] = useState("");
   const [showDiscard, setShowDiscard] = useState(false);
+  const initialRef = useRef({ amount: "", reason: "" });
 
   const activeAccounts = useMemo(
     () => sortByName(snapshot?.accounts.filter((a) => !a.isArchived) ?? []),
@@ -67,16 +79,34 @@ export function PrincipalAdjustmentForm({ visible, mode, obligation, onClose, on
 
   useEffect(() => {
     if (!visible || !obligation) return;
-    setAmount("");
-    setEventDate(today);
-    setReason("");
-    setCreateMovement(false);
-    setAccountId(obligation.settlementAccountId ?? null);
-    setAmountError("");
-  }, [visible, obligation, today]);
+    if (editEvent) {
+      const initReason = editEvent.reason ?? editEvent.notes ?? "";
+      setAmount(String(editEvent.amount));
+      setEventDate(editEvent.eventDate);
+      setReason(initReason);
+      setCreateMovement(false);
+      setAccountId(null);
+      setAmountError("");
+      setAccountError("");
+      setSubmitError("");
+      initialRef.current = { amount: String(editEvent.amount), reason: initReason };
+    } else {
+      setAmount("");
+      setEventDate(today);
+      setReason("");
+      setCreateMovement(false);
+      setAccountId(obligation.settlementAccountId ?? null);
+      setAmountError("");
+      setAccountError("");
+      setSubmitError("");
+      initialRef.current = { amount: "", reason: "" };
+    }
+  }, [visible, obligation, editEvent, today]);
 
   function handleClose() {
-    const isDirty = Boolean(amount || reason.trim());
+    const isDirty = isEditMode
+      ? (amount !== initialRef.current.amount || reason.trim() !== initialRef.current.reason)
+      : Boolean(amount || reason.trim());
     if (isDirty) {
       setShowDiscard(true);
     } else {
@@ -86,31 +116,60 @@ export function PrincipalAdjustmentForm({ visible, mode, obligation, onClose, on
 
   async function handleSubmit() {
     setAmountError("");
+    setAccountError("");
+    setSubmitError("");
     const parsed = parseFloat(amount);
     if (!amount || isNaN(parsed) || parsed <= 0) {
+      haptics.error();
       setAmountError("Ingresa un monto válido");
+      scrollRef.current?.scrollTo({ y: 0, animated: true });
+      setTimeout(() => amountRef.current?.focus(), 250);
+      return;
+    }
+    if (!isEditMode && createMovement && activeAccounts.length > 0 && accountId == null) {
+      haptics.error();
+      setAccountError("Selecciona una cuenta o desactiva el movimiento en cuenta");
+      scrollRef.current?.scrollTo({ y: Math.max(0, accountSectionYRef.current - 24), animated: true });
       return;
     }
     if (!obligation) return;
     try {
-      await mutation.mutateAsync({
-        obligationId: obligation.id,
-        mode,
-        amount: parsed,
-        eventDate,
-        reason: reason.trim() || null,
-        createMovement,
-        accountId: createMovement ? accountId : null,
-      });
-      showToast(isIncrease ? "Monto aumentado" : "Monto reducido", "success");
+      if (isEditMode && editEvent) {
+        await updateEventMutation.mutateAsync({
+          eventId: editEvent.id,
+          obligationId: obligation.id,
+          amount: parsed,
+          eventDate,
+          reason: reason.trim() || null,
+          eventType: editEvent.eventType,
+          currencyCode: obligation.currencyCode,
+          obligationTitle: obligation.title,
+        });
+        showToast(isIncrease ? "Aumento actualizado ✓" : "Reducción actualizada ✓", "success");
+      } else {
+        await mutation.mutateAsync({
+          obligationId: obligation.id,
+          mode,
+          amount: parsed,
+          eventDate,
+          reason: reason.trim() || null,
+          createMovement,
+          accountId: createMovement ? accountId : null,
+        });
+        showToast(isIncrease ? "Monto aumentado" : "Monto reducido", "success");
+      }
+      haptics.success();
       onSuccess?.();
       onClose();
     } catch (err: unknown) {
-      showToast(humanizeError(err), "error");
+      haptics.error();
+      setSubmitError(humanizeError(err));
     }
   }
 
-  const title = isIncrease ? "Agregar monto" : "Reducir monto";
+  const title = isEditMode
+    ? (isIncrease ? "Editar aumento" : "Editar reducción")
+    : (isIncrease ? "Agregar monto" : "Reducir monto");
   const accentColor = isIncrease ? COLORS.income : COLORS.expense;
   const Icon = isIncrease ? TrendingUp : TrendingDown;
   const description = isIncrease
@@ -123,8 +182,8 @@ export function PrincipalAdjustmentForm({ visible, mode, obligation, onClose, on
 
   return (
     <>
-      <BottomSheet visible={visible} onClose={handleClose} title={title} snapHeight={0.7}>
-        {obligation ? (
+      <BottomSheet visible={visible} onClose={handleClose} title={title} snapHeight={0.7} scrollRef={scrollRef}>
+        {obligation && !isEditMode ? (
           <View style={styles.infoBox}>
             {/* Title row */}
             <View style={styles.infoRow}>
@@ -161,6 +220,7 @@ export function PrincipalAdjustmentForm({ visible, mode, obligation, onClose, on
         ) : null}
 
         <CurrencyInput
+          ref={amountRef}
           label={isIncrease ? "Monto a agregar *" : "Monto a reducir *"}
           value={amount}
           onChangeText={(t) => { setAmount(t); setAmountError(""); }}
@@ -186,49 +246,65 @@ export function PrincipalAdjustmentForm({ visible, mode, obligation, onClose, on
           />
         </View>
 
-        {/* Account movement toggle */}
-        <View style={styles.switchRow}>
-          <View style={styles.switchInfo}>
-            <Text style={styles.switchLabel}>Registrar movimiento en cuenta</Text>
-            <Text style={styles.switchDesc}>
-              {isIncrease
-                ? "Crea un ingreso real que afecta el saldo"
-                : "Crea un gasto real que afecta el saldo"}
-            </Text>
-          </View>
-          <Switch
-            value={createMovement}
-            onValueChange={setCreateMovement}
-            trackColor={{ false: COLORS.storm + "44", true: accentColor + "88" }}
-            thumbColor="#FFFFFF"
-          />
-        </View>
-
-        {createMovement && activeAccounts.length > 0 ? (
-          <View>
-            <Text style={styles.label}>Cuenta</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View style={styles.pillRow}>
-                {activeAccounts.map((acc) => (
-                  <TouchableOpacity
-                    key={acc.id}
-                    style={[styles.pill, accountId === acc.id && { borderColor: accentColor, backgroundColor: accentColor + "18" }]}
-                    onPress={() => setAccountId(acc.id)}
-                  >
-                    <Text style={[styles.pillText, accountId === acc.id && { color: accentColor }]}>
-                      {acc.name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+        {/* Account movement toggle — solo en modo crear */}
+        {!isEditMode && (
+          <>
+            <View style={styles.switchRow}>
+              <View style={styles.switchInfo}>
+                <Text style={styles.switchLabel}>Registrar movimiento en cuenta</Text>
+                <Text style={styles.switchDesc}>
+                  {isIncrease
+                    ? "Crea un ingreso real que afecta el saldo"
+                    : "Crea un gasto real que afecta el saldo"}
+                </Text>
               </View>
-            </ScrollView>
+              <Switch
+                value={createMovement}
+                onValueChange={(value) => {
+                  setCreateMovement(value);
+                  if (!value) setAccountError("");
+                }}
+                trackColor={{ false: COLORS.storm + "44", true: accentColor + "88" }}
+                thumbColor="#FFFFFF"
+              />
+            </View>
+            {createMovement && activeAccounts.length > 0 ? (
+              <View onLayout={(event) => { accountSectionYRef.current = event.nativeEvent.layout.y; }}>
+                <Text style={styles.label}>Cuenta</Text>
+                <View style={[styles.pillWrap, accountError ? styles.pillWrapError : null]}>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                    <View style={styles.pillRow}>
+                      {activeAccounts.map((acc) => (
+                        <TouchableOpacity
+                          key={acc.id}
+                          style={[styles.pill, accountId === acc.id && { borderColor: accentColor, backgroundColor: accentColor + "18" }]}
+                          onPress={() => { setAccountId(acc.id); setAccountError(""); }}
+                        >
+                          <Text style={[styles.pillText, accountId === acc.id && { color: accentColor }]}>
+                            {acc.name}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </ScrollView>
+                </View>
+                {accountError ? <Text style={styles.fieldError}>{accountError}</Text> : null}
+              </View>
+            ) : null}
+          </>
+        )}
+
+        {submitError ? (
+          <View style={styles.submitErrorBanner}>
+            <AlertCircle size={16} color={COLORS.danger} strokeWidth={2} />
+            <Text style={styles.submitErrorText}>{submitError}</Text>
           </View>
         ) : null}
 
         <Button
-          label={isIncrease ? "Confirmar aumento" : "Confirmar reducción"}
+          label={isEditMode ? "Guardar cambios" : (isIncrease ? "Confirmar aumento" : "Confirmar reducción")}
           onPress={handleSubmit}
-          loading={mutation.isPending}
+          loading={mutation.isPending || updateEventMutation.isPending}
           style={styles.submitBtn}
         />
       </BottomSheet>
@@ -301,6 +377,23 @@ const styles = StyleSheet.create({
     color: COLORS.ink,
   },
   submitBtn: { marginTop: SPACING.sm },
+  submitErrorBanner: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: SPACING.sm,
+    padding: SPACING.md,
+    borderRadius: RADIUS.lg,
+    backgroundColor: COLORS.danger + "18",
+    borderWidth: 1,
+    borderColor: COLORS.danger + "44",
+  },
+  submitErrorText: {
+    flex: 1,
+    fontFamily: FONT_FAMILY.bodyMedium,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.danger,
+    lineHeight: 20,
+  },
   switchRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -314,6 +407,12 @@ const styles = StyleSheet.create({
   switchInfo: { flex: 1, marginRight: SPACING.md },
   switchLabel: { fontSize: FONT_SIZE.sm, fontFamily: FONT_FAMILY.bodyMedium, color: COLORS.ink },
   switchDesc: { fontSize: FONT_SIZE.xs, color: COLORS.storm, marginTop: 2 },
+  pillWrap: { borderRadius: RADIUS.md },
+  pillWrapError: {
+    borderWidth: 1,
+    borderColor: COLORS.danger,
+    padding: SPACING.xs,
+  },
   pillRow: { flexDirection: "row", gap: SPACING.xs },
   pill: {
     paddingHorizontal: SPACING.md,
@@ -324,4 +423,9 @@ const styles = StyleSheet.create({
     borderColor: GLASS.cardBorder,
   },
   pillText: { fontSize: FONT_SIZE.sm, fontFamily: FONT_FAMILY.bodyMedium, color: COLORS.storm },
+  fieldError: {
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.danger,
+    marginTop: 4,
+  },
 });

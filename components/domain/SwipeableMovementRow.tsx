@@ -1,5 +1,6 @@
-import { useRef } from "react";
+import { memo, useRef } from "react";
 import { Animated, PanResponder, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import * as Haptics from "expo-haptics";
 import { CheckCircle2, Circle, Trash2 } from "lucide-react-native";
 
 import { MovementRow } from "./MovementRow";
@@ -11,6 +12,7 @@ const REVEAL_WIDTH = 80;
 type Props = {
   movement: MovementRecord;
   baseCurrencyCode: string;
+  attachmentCount?: number;
   onPress?: () => void;
   onLongPress?: () => void;
   onDelete?: () => void;
@@ -18,8 +20,8 @@ type Props = {
   selected?: boolean;
 };
 
-export function SwipeableMovementRow({
-  movement, baseCurrencyCode, onPress, onLongPress, onDelete, selectMode, selected,
+export const SwipeableMovementRow = memo(function SwipeableMovementRow({
+  movement, baseCurrencyCode, attachmentCount, onPress, onLongPress, onDelete, selectMode, selected,
 }: Props) {
   const translateX = useRef(new Animated.Value(0)).current;
   const isOpen = useRef(false);
@@ -54,6 +56,7 @@ export function SwipeableMovementRow({
         const base = isOpen.current ? -REVEAL_WIDTH : 0;
         const finalX = base + dx;
         if (finalX < -REVEAL_WIDTH / 2 || vx < -0.4) {
+          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
           snapTo(-REVEAL_WIDTH);
         } else {
           snapTo(0);
@@ -68,6 +71,7 @@ export function SwipeableMovementRow({
   }
 
   function handleDeletePress() {
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     snapTo(0, onDelete);
   }
 
@@ -103,6 +107,7 @@ export function SwipeableMovementRow({
           <MovementRow
             movement={movement}
             baseCurrencyCode={baseCurrencyCode}
+            attachmentCount={attachmentCount}
             onPress={handleCardPress}
             onLongPress={onLongPress}
           />
@@ -110,7 +115,7 @@ export function SwipeableMovementRow({
       </Animated.View>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: {

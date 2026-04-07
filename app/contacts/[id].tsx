@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -19,7 +20,7 @@ const TYPE_LABEL: Record<string, string> = {
   service: "Servicio", bank: "Banco", other: "Otro",
 };
 
-export default function ContactDetailScreen() {
+function ContactDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -229,3 +230,11 @@ const styles = StyleSheet.create({
   notes: { fontSize: FONT_SIZE.sm, color: COLORS.text, lineHeight: 20 },
   emptyContactHint: { fontSize: FONT_SIZE.sm, color: COLORS.textMuted, fontStyle: "italic" },
 });
+
+export default function ContactDetailScreenRoot() {
+  return (
+    <ErrorBoundary>
+      <ContactDetailScreen />
+    </ErrorBoundary>
+  );
+}

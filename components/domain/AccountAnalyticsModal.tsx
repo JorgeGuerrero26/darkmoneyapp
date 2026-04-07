@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import {
   ActivityIndicator,
+  Animated,
   Modal,
   Pressable,
   ScrollView,
@@ -9,7 +10,6 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { BlurView } from "expo-blur";
 import {
   X, TrendingUp, TrendingDown, ArrowLeftRight,
   Layers, CheckCircle2, AlertTriangle, Clock,
@@ -19,11 +19,15 @@ import { es } from "date-fns/locale";
 
 import { formatCurrency } from "../ui/AmountDisplay";
 import { ProgressBar } from "../ui/ProgressBar";
+import { RingChart, type RingSegment } from "../ui/RingChart";
+import { SparkLine } from "../ui/SparkLine";
 import { parseDisplayDate } from "../../lib/date";
 import { useAccountAnalyticsQuery } from "../../services/queries/workspace-data";
 import { useWorkspace } from "../../lib/workspace-context";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
 import type { AccountSummary } from "../../types/domain";
+import { SafeBlurView } from "../ui/SafeBlurView";
+import { useDismissibleSheet } from "../ui/useDismissibleSheet";
 
 type Props = {
   visible: boolean;
@@ -44,6 +48,7 @@ const STATUS_COLOR: Record<string, string> = {
 
 export function AccountAnalyticsModal({ visible, account, onClose }: Props) {
   const { activeWorkspaceId } = useWorkspace();
+  const { backdropStyle, panHandlers, sheetStyle } = useDismissibleSheet({ visible, onClose });
   const { data: movements = [], isLoading } = useAccountAnalyticsQuery(
     activeWorkspaceId,
     visible ? (account?.id ?? null) : null,
@@ -110,19 +115,64 @@ export function AccountAnalyticsModal({ visible, account, onClose }: Props) {
   // ── 8 most recent movements ──────────────────────────────────────────
   const recentMovements = useMemo(() => movements.slice(0, 8), [movements]);
 
+  // ── Historical balance (running total, oldest→newest) ───────────────
+  const balanceHistory = useMemo(() => {
+    if (!account || movements.length === 0) return [];
+    // movements come newest-first (DESC). Reconstruct balance going backwards.
+    let bal = account.currentBalance;
+    const points: number[] = [bal];
+    for (const m of movements) {
+      if (m.destinationAccountId === account.id && m.destinationAmount != null) {
+        bal -= m.destinationAmount; // undo income
+      }
+      if (m.sourceAccountId === account.id && m.sourceAmount != null) {
+        bal += m.sourceAmount; // undo expense
+      }
+      points.push(bal);
+    }
+    return points.reverse(); // oldest to newest
+  }, [movements, account]);
+
+  // ── Income/expense ring segments ────────────────────────────────────
+  const ratioSegments = useMemo<RingSegment[]>(() => {
+    if (metrics.totalIn <= 0 && metrics.totalOut <= 0) return [];
+    return [
+      { key: "in",  value: metrics.totalIn,  color: COLORS.income },
+      { key: "out", value: metrics.totalOut, color: COLORS.expense },
+    ];
+  }, [metrics.totalIn, metrics.totalOut]);
+
+  // ── Day-of-week spending pattern ────────────────────────────────────
+  const { dowSpending, maxDowSpend } = useMemo(() => {
+    const sums = new Array(7).fill(0) as number[];
+    for (const m of movements) {
+      if (m.sourceAccountId !== account?.id || m.sourceAmount == null) continue;
+      if (m.movementType === "transfer") continue;
+      sums[parseDisplayDate(m.occurredAt).getDay()] += m.sourceAmount;
+    }
+    // Mon–Sun order (getDay: 0=Sun, 1=Mon…6=Sat)
+    const order = [1, 2, 3, 4, 5, 6, 0];
+    const labels = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
+    const dowSpending = order.map((i, idx) => ({ label: labels[idx], total: sums[i] }));
+    return { dowSpending, maxDowSpend: Math.max(...sums, 1) };
+  }, [movements, account]);
+
   if (!account) return null;
 
   const isPositiveFlow = metrics.netFlow >= 0;
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.overlay} onPress={onClose}>
-        <BlurView intensity={25} tint="dark" style={StyleSheet.absoluteFill} />
-      </Pressable>
+      <Animated.View style={[styles.overlay, backdropStyle]}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose}>
+          <SafeBlurView intensity={25} tint="dark" style={StyleSheet.absoluteFill} />
+        </Pressable>
+      </Animated.View>
 
       <View style={styles.sheet} pointerEvents="box-none">
-        <View style={styles.card}>
-          <View style={styles.handle} />
+        <Animated.View style={[styles.card, sheetStyle]}>
+          <View {...panHandlers}>
+            <View style={styles.handle} />
 
           {/* Header */}
           <View style={styles.header}>
@@ -138,6 +188,7 @@ export function AccountAnalyticsModal({ visible, account, onClose }: Props) {
             <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
               <X size={18} color={COLORS.storm} />
             </TouchableOpacity>
+          </View>
           </View>
 
           {isLoading ? (
@@ -167,6 +218,69 @@ export function AccountAnalyticsModal({ visible, account, onClose }: Props) {
                   </View>
                 ))}
               </View>
+
+              {/* Income / expense ratio ring */}
+              {ratioSegments.length > 0 ? (
+                <View style={styles.section}>
+                  <Text style={styles.sectionTitle}>Distribución entradas/salidas</Text>
+                  <View style={styles.ratioRow}>
+                    <RingChart segments={ratioSegments} size={96} thickness={16} />
+                    <View style={styles.ratioStats}>
+                      {[
+                        { label: "Entradas", value: metrics.totalIn, color: COLORS.income },
+                        { label: "Salidas",  value: metrics.totalOut, color: COLORS.expense },
+                      ].map((item) => {
+                        const total = metrics.totalIn + metrics.totalOut;
+                        const pct = total > 0 ? Math.round((item.value / total) * 100) : 0;
+                        return (
+                          <View key={item.label} style={styles.ratioStatRow}>
+                            <View style={[styles.ratioDot, { backgroundColor: item.color }]} />
+                            <View style={styles.ratioStatText}>
+                              <Text style={[styles.ratioStatValue, { color: item.color }]}>
+                                {pct}%
+                              </Text>
+                              <Text style={styles.ratioStatLabel}>{item.label}</Text>
+                            </View>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  </View>
+                </View>
+              ) : null}
+
+              {/* Historical balance sparkline */}
+              {balanceHistory.length > 1 ? (
+                <View style={styles.section}>
+                  <Text style={styles.sectionTitle}>Evolución del saldo</Text>
+                  <View style={styles.balanceSparkCard}>
+                    <View style={styles.balanceSparkRow}>
+                      <View>
+                        <Text style={styles.balanceSparkLabel}>Primer registro</Text>
+                        <Text style={[styles.balanceSparkValue, { color: balanceHistory[0] >= 0 ? COLORS.income : COLORS.expense }]}>
+                          {formatCurrency(balanceHistory[0], currency)}
+                        </Text>
+                      </View>
+                      <SparkLine
+                        values={balanceHistory}
+                        width={140}
+                        height={52}
+                        positiveColor={COLORS.income}
+                        negativeColor={COLORS.expense}
+                      />
+                      <View style={{ alignItems: "flex-end" }}>
+                        <Text style={styles.balanceSparkLabel}>Actual</Text>
+                        <Text style={[styles.balanceSparkValue, { color: account.currentBalance >= 0 ? COLORS.income : COLORS.expense }]}>
+                          {formatCurrency(account.currentBalance, currency)}
+                        </Text>
+                      </View>
+                    </View>
+                    <Text style={styles.balanceSparkHint}>
+                      Basado en los últimos {movements.length} movimientos registrados
+                    </Text>
+                  </View>
+                </View>
+              ) : null}
 
               {/* Monthly flow chart */}
               <View style={styles.section}>
@@ -221,6 +335,32 @@ export function AccountAnalyticsModal({ visible, account, onClose }: Props) {
                 </View>
               ) : null}
 
+              {/* Day-of-week spending pattern */}
+              {dowSpending.some((d) => d.total > 0) ? (
+                <View style={styles.section}>
+                  <Text style={styles.sectionTitle}>Gasto por día de semana</Text>
+                  <View style={styles.dowChart}>
+                    {dowSpending.map((d) => {
+                      const pct = Math.round((d.total / maxDowSpend) * 100);
+                      return (
+                        <View key={d.label} style={styles.dowBar}>
+                          <View style={styles.dowTrack}>
+                            <View
+                              style={[
+                                styles.dowFill,
+                                { height: `${pct}%` as any },
+                                pct === 100 && styles.dowFillPeak,
+                              ]}
+                            />
+                          </View>
+                          <Text style={styles.dowLabel}>{d.label}</Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                </View>
+              ) : null}
+
               {/* Recent movements */}
               {recentMovements.length > 0 ? (
                 <View style={styles.section}>
@@ -252,7 +392,7 @@ export function AccountAnalyticsModal({ visible, account, onClose }: Props) {
               )}
             </ScrollView>
           )}
-        </View>
+        </Animated.View>
       </View>
     </Modal>
   );
@@ -462,5 +602,85 @@ const styles = StyleSheet.create({
     color: COLORS.storm,
     textAlign: "center",
     paddingVertical: SPACING.lg,
+  },
+
+  // Balance history sparkline
+  balanceSparkCard: {
+    backgroundColor: GLASS.card,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: GLASS.cardBorder,
+    padding: SPACING.md,
+    gap: SPACING.xs,
+  },
+  balanceSparkRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  balanceSparkLabel: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    marginBottom: 2,
+  },
+  balanceSparkValue: {
+    fontFamily: FONT_FAMILY.heading,
+    fontSize: FONT_SIZE.sm,
+  },
+  balanceSparkHint: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: 10,
+    color: COLORS.textDisabled,
+    textAlign: "center",
+  },
+
+  // Ratio ring
+  ratioRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.lg,
+  },
+  ratioStats: { flex: 1, gap: SPACING.sm },
+  ratioStatRow: { flexDirection: "row", alignItems: "center", gap: SPACING.sm },
+  ratioDot: { width: 10, height: 10, borderRadius: RADIUS.full },
+  ratioStatText: { flex: 1 },
+  ratioStatValue: { fontFamily: FONT_FAMILY.heading, fontSize: FONT_SIZE.lg },
+  ratioStatLabel: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm, marginTop: 1 },
+
+  // Day-of-week chart
+  dowChart: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: SPACING.xs,
+    height: 64,
+  },
+  dowBar: {
+    flex: 1,
+    alignItems: "center",
+    gap: 4,
+    height: "100%",
+    justifyContent: "flex-end",
+  },
+  dowTrack: {
+    flex: 1,
+    width: "100%",
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderRadius: 4,
+    overflow: "hidden",
+  },
+  dowFill: {
+    width: "100%",
+    backgroundColor: COLORS.expense + "99",
+    borderRadius: 4,
+    minHeight: 2,
+  },
+  dowFillPeak: { backgroundColor: COLORS.expense },
+  dowLabel: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: 9,
+    color: COLORS.storm,
+    textTransform: "capitalize",
   },
 });

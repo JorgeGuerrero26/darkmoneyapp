@@ -1,5 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as Notifications from "expo-notifications";
+import { getNotificationsModule } from "./notifications-runtime";
+
+const Notifications = getNotificationsModule();
 
 const STORAGE_PREFIX = "darkmoney_scheduled_invite_notif_id:";
 
@@ -12,6 +14,7 @@ export async function scheduleObligationInviteDeferredReminder(
   token: string,
   delaySeconds = 3600,
 ): Promise<void> {
+  if (!Notifications) return;
   const existing = await AsyncStorage.getItem(storageKey(token));
   if (existing) {
     try {
@@ -39,6 +42,7 @@ export async function scheduleObligationInviteDeferredReminder(
 }
 
 export async function cancelObligationInviteScheduledReminder(token: string): Promise<void> {
+  if (!Notifications) return;
   const existing = await AsyncStorage.getItem(storageKey(token));
   if (!existing) return;
   try {

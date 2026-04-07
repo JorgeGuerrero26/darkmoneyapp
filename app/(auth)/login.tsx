@@ -14,13 +14,14 @@ import { Link } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as LocalAuthentication from "expo-local-authentication";
 import * as SecureStore from "expo-secure-store";
-import { Eye, EyeOff, CheckSquare, Square } from "lucide-react-native";
+import { Eye, EyeOff, CheckSquare, Square, Fingerprint } from "lucide-react-native";
 
 import { useAuth } from "../../lib/auth-context";
 import { useUiStore } from "../../store/ui-store";
 import { humanizeError } from "../../lib/errors";
 import { Input } from "../../components/ui/Input";
 import { Button } from "../../components/ui/Button";
+import { SafeBlurView } from "../../components/ui/SafeBlurView";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
 
 const SECURE_EMAIL_KEY = "darkmoney_bio_email";
@@ -205,8 +206,10 @@ export default function LoginScreen() {
                 disabled={isBioLoading}
                 activeOpacity={0.8}
               >
-                <Text style={styles.bioBtnIcon}>🫆</Text>
-                <View>
+                <View style={styles.bioBtnIconWrap}>
+                  <Fingerprint size={26} color={COLORS.primary} strokeWidth={1.5} />
+                </View>
+                <View style={styles.bioBtnContent}>
                   <Text style={styles.bioBtnTitle}>Acceder con huella digital</Text>
                   <Text style={styles.bioBtnSub}>Toca para autenticarte</Text>
                 </View>
@@ -309,18 +312,33 @@ export default function LoginScreen() {
         onRequestClose={handleDeclineBiometric}
       >
         <View style={styles.dialogOverlay}>
+          <SafeBlurView intensity={30} tint="dark" style={StyleSheet.absoluteFillObject} />
           <View style={styles.dialogCard}>
-            <Text style={styles.dialogIcon}>🫆</Text>
-            <Text style={styles.dialogTitle}>Acceso rápido con huella</Text>
-            <Text style={styles.dialogBody}>
-              Activa el acceso con huella digital para no tener que escribir tu contraseña cada vez que abras la app.
-            </Text>
-            <TouchableOpacity style={styles.dialogConfirm} onPress={() => void handleEnableBiometric()}>
-              <Text style={styles.dialogConfirmText}>Activar huella digital</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.dialogCancel} onPress={handleDeclineBiometric}>
-              <Text style={styles.dialogCancelText}>Ahora no</Text>
-            </TouchableOpacity>
+            <View style={styles.dialogIconRing}>
+              <View style={styles.dialogIconInner}>
+                <Fingerprint size={40} color={COLORS.primary} strokeWidth={1.5} />
+              </View>
+            </View>
+            <View style={styles.dialogTextBlock}>
+              <Text style={styles.dialogTitle}>Acceso rápido con huella</Text>
+              <Text style={styles.dialogBody}>
+                Activa el acceso con huella digital para no tener que escribir tu contraseña cada vez que abras la app.
+              </Text>
+            </View>
+            <Button
+              label="Activar huella digital"
+              variant="primary"
+              size="lg"
+              style={styles.dialogBtn}
+              onPress={() => void handleEnableBiometric()}
+            />
+            <Button
+              label="Ahora no"
+              variant="ghost"
+              size="md"
+              style={styles.dialogBtn}
+              onPress={handleDeclineBiometric}
+            />
           </View>
         </View>
       </Modal>
@@ -355,9 +373,20 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.xl,
     borderWidth: 1,
     borderColor: GLASS.cardActiveBorder,
-    padding: SPACING.lg,
+    padding: SPACING.md,
+    paddingRight: SPACING.lg,
   },
-  bioBtnIcon: { fontSize: 32 },
+  bioBtnIconWrap: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: "rgba(107,228,197,0.12)",
+    borderWidth: 1,
+    borderColor: GLASS.cardActiveBorder,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  bioBtnContent: { flex: 1 },
   bioBtnTitle: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.md, color: COLORS.pine },
   bioBtnSub: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm, marginTop: 2 },
 
@@ -390,31 +419,62 @@ const styles = StyleSheet.create({
 
   // Enable biometric dialog
   dialogOverlay: {
-    flex: 1, backgroundColor: "rgba(0,0,0,0.75)",
-    alignItems: "center", justifyContent: "center", padding: SPACING.xl,
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: SPACING.xl,
   },
   dialogCard: {
-    width: "100%", backgroundColor: COLORS.mist,
-    borderRadius: RADIUS.xl, padding: SPACING.xl,
-    borderWidth: 1, borderColor: GLASS.sheetBorder,
-    alignItems: "center", gap: SPACING.sm,
+    width: "100%",
+    backgroundColor: "rgba(9,13,18,0.96)",
+    borderRadius: RADIUS.xl,
+    paddingHorizontal: SPACING.xl,
+    paddingVertical: SPACING.xxxl,
+    borderWidth: 1,
+    borderColor: GLASS.cardBorder,
+    alignItems: "center",
+    gap: SPACING.xl,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.1,
+    shadowRadius: 30,
+    elevation: 20,
   },
-  dialogIcon: { fontSize: 48, marginBottom: SPACING.xs },
+  dialogIconRing: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: GLASS.cardActive,
+    borderWidth: 1.5,
+    borderColor: GLASS.cardActiveBorder,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+  },
+  dialogIconInner: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: "rgba(107,228,197,0.08)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  dialogTextBlock: { alignItems: "center", gap: SPACING.xs },
   dialogTitle: {
-    fontFamily: FONT_FAMILY.heading, fontSize: FONT_SIZE.lg,
-    color: COLORS.ink, textAlign: "center",
+    fontFamily: FONT_FAMILY.heading,
+    fontSize: FONT_SIZE.xl,
+    color: COLORS.ink,
+    textAlign: "center",
   },
   dialogBody: {
-    fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.storm,
-    textAlign: "center", lineHeight: 20, marginBottom: SPACING.sm,
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.storm,
+    textAlign: "center",
+    lineHeight: 20,
   },
-  dialogConfirm: {
-    width: "100%", backgroundColor: COLORS.pine,
-    borderRadius: RADIUS.md, paddingVertical: SPACING.md, alignItems: "center",
-  },
-  dialogConfirmText: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.md, color: COLORS.textInverse },
-  dialogCancel: {
-    width: "100%", paddingVertical: SPACING.sm, alignItems: "center",
-  },
-  dialogCancelText: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.md, color: COLORS.storm },
+  dialogBtn: { alignSelf: "stretch" },
 });

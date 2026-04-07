@@ -3,6 +3,7 @@
  * PERU_OFFSET_MS: cuántos ms hay que RESTAR al UTC para obtener hora Perú.
  */
 const PERU_OFFSET_MS = 5 * 60 * 60 * 1000;
+const YMD_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** "YYYY-MM-DD" para HOY en hora de Perú (no en UTC del dispositivo) */
 export function todayPeru(): string {
@@ -42,6 +43,7 @@ export function dateStrToISO(dateStr: string): string {
  *   "2025-03-20T00:00:00Z" → "2025-03-19" (7 pm Perú día ant.) — dato viejo mal guardado
  */
 export function isoToDateStr(isoString: string): string {
+  if (YMD_ONLY_RE.test(isoString)) return isoString;
   const peruMs = new Date(isoString).getTime() - PERU_OFFSET_MS;
   return new Date(peruMs).toISOString().slice(0, 10);
 }
@@ -51,6 +53,10 @@ export function isoToDateStr(isoString: string): string {
  * Parsea solo la parte de fecha (ignora la hora) para evitar desfases en render.
  */
 export function parseDisplayDate(isoString: string): Date {
+  if (YMD_ONLY_RE.test(isoString)) {
+    const [y, m, d] = isoString.split("-").map(Number);
+    return new Date(y, m - 1, d);
+  }
   const s = isoToDateStr(isoString);
   const [y, m, d] = s.split("-").map(Number);
   return new Date(y, m - 1, d);

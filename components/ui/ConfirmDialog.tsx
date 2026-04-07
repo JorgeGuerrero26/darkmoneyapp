@@ -1,11 +1,13 @@
-import { Modal, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { BlurView } from "expo-blur";
-import { COLORS, FONT_SIZE, FONT_WEIGHT, RADIUS, SPACING } from "../../constants/theme";
+import { Modal, StyleSheet, Text, View } from "react-native";
+import { COLORS, FONT_SIZE, RADIUS, SPACING } from "../../constants/theme";
+import { SafeBlurView } from "./SafeBlurView";
+import { Button } from "./Button";
 
 type Props = {
   visible: boolean;
   title: string;
   body?: string;
+  children?: React.ReactNode;
   confirmLabel?: string;
   cancelLabel?: string;
   onConfirm: () => void;
@@ -17,6 +19,7 @@ export function ConfirmDialog({
   visible,
   title,
   body,
+  children,
   confirmLabel = "Confirmar",
   cancelLabel = "Cancelar",
   onConfirm,
@@ -26,22 +29,24 @@ export function ConfirmDialog({
   return (
     <Modal transparent visible={visible} animationType="fade" onRequestClose={onCancel}>
       <View style={styles.overlay}>
-        <BlurView intensity={45} tint="dark" style={StyleSheet.absoluteFillObject} />
+        <SafeBlurView intensity={45} tint="dark" style={StyleSheet.absoluteFillObject} />
         <View style={styles.card}>
           <Text style={styles.title}>{title}</Text>
           {body ? <Text style={styles.body}>{body}</Text> : null}
+          {children ?? null}
           <View style={styles.actions}>
-            <TouchableOpacity style={styles.cancelBtn} onPress={onCancel}>
-              <Text style={styles.cancelText}>{cancelLabel}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.confirmBtn, destructive ? styles.destructiveBtn : styles.primaryBtn]}
+            <Button
+              label={confirmLabel}
+              variant={destructive ? "danger" : "primary"}
+              size="lg"
               onPress={onConfirm}
-            >
-              <Text style={[styles.confirmText, destructive ? styles.destructiveText : styles.primaryText]}>
-                {confirmLabel}
-              </Text>
-            </TouchableOpacity>
+            />
+            <Button
+              label={cancelLabel}
+              variant="ghost"
+              size="md"
+              onPress={onCancel}
+            />
           </View>
         </View>
       </View>
@@ -79,7 +84,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: FONT_SIZE.lg,
-    fontWeight: FONT_WEIGHT.bold,
+    fontWeight: "700",
     color: COLORS.text,
     textAlign: "center",
   },
@@ -90,36 +95,4 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.sm,
   },
   actions: { gap: SPACING.sm },
-  confirmBtn: {
-    borderWidth: 1,
-    borderRadius: RADIUS.md,
-    paddingVertical: SPACING.md,
-    alignItems: "center",
-  },
-  destructiveBtn: {
-    backgroundColor: COLORS.danger + "22",
-    borderColor: COLORS.danger + "66",
-  },
-  primaryBtn: {
-    backgroundColor: COLORS.primary + "22",
-    borderColor: COLORS.primary + "66",
-  },
-  confirmText: {
-    fontSize: FONT_SIZE.md,
-    fontWeight: FONT_WEIGHT.semibold,
-  },
-  destructiveText: { color: COLORS.danger },
-  primaryText: { color: COLORS.primary },
-  cancelBtn: {
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: RADIUS.md,
-    paddingVertical: SPACING.md,
-    alignItems: "center",
-  },
-  cancelText: {
-    fontSize: FONT_SIZE.md,
-    fontWeight: FONT_WEIGHT.medium,
-    color: COLORS.textMuted,
-  },
 });

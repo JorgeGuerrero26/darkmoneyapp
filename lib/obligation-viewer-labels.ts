@@ -18,7 +18,8 @@ export function obligationViewerActsAsCollector(
 export function obligationSwipeActionLabel(
   direction: ObligationDirection,
   isSharedViewer: boolean,
-): "Cobrar" | "Pagar" {
+): "Cobrar" | "Pagar" | "Solicitar" {
+  if (isSharedViewer) return "Solicitar";
   return obligationViewerActsAsCollector(direction, isSharedViewer) ? "Cobrar" : "Pagar";
 }
 
@@ -33,7 +34,7 @@ export function analyticsPaymentCountMetricLabel(
   direction: ObligationDirection,
   isSharedViewer: boolean,
 ): string {
-  return obligationViewerActsAsCollector(direction, isSharedViewer) ? "N° cobros" : "N° pagos";
+  return obligationViewerActsAsCollector(direction, isSharedViewer) ? "Nro. cobros" : "Nro. pagos";
 }
 
 export function analyticsChartSectionTitle(
@@ -44,9 +45,9 @@ export function analyticsChartSectionTitle(
   const base = obligationViewerActsAsCollector(direction, isSharedViewer)
     ? "Cobros por mes"
     : "Pagos por mes";
-  if (scope === "6") return `${base} (últimos 6 meses)`;
-  if (scope === "12") return `${base} (últimos 12 meses)`;
-  return `${base} (histórico completo)`;
+  if (scope === "6") return `${base} (ultimos 6 meses)`;
+  if (scope === "12") return `${base} (ultimos 12 meses)`;
+  return `${base} (historico completo)`;
 }
 
 export function analyticsInstallmentsDoneAdj(
@@ -76,7 +77,7 @@ export function obligationPendingDirectionBadge(
   direction: ObligationDirection,
   isSharedViewer: boolean,
 ): string {
-  return obligationViewerActsAsCollector(direction, isSharedViewer) ? "↑ Por cobrar" : "↓ Por pagar";
+  return obligationViewerActsAsCollector(direction, isSharedViewer) ? "Por cobrar" : "Por pagar";
 }
 
 export function obligationRegisterMoneyActionTitle(

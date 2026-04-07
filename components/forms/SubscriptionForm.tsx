@@ -1,23 +1,27 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
-import { CalendarClock, CalendarPlus, CalendarX2 } from "lucide-react-native";
+import { CalendarClock, CalendarPlus, CalendarX2, AlertCircle } from "lucide-react-native";
 import { format } from "date-fns";
 import { useWorkspace } from "../../lib/workspace-context";
 import { useAuth } from "../../lib/auth-context";
 import { humanizeError } from "../../lib/errors";
 import { useToast } from "../../hooks/useToast";
+import { useHaptics } from "../../hooks/useHaptics";
 import {
   useCreateSubscriptionMutation,
   useUpdateSubscriptionMutation,
   useWorkspaceSnapshotQuery,
   type SubscriptionFormInput,
 } from "../../services/queries/workspace-data";
+import { useMovementPatternsQuery } from "../../services/queries/movement-patterns";
+import { buildPatternMaps, suggestCategoryFromDescription, suggestAccountFromCounterparty } from "../../lib/movement-patterns";
 import type { SubscriptionSummary } from "../../types/domain";
 import { BottomSheet } from "../ui/BottomSheet";
 import { Button } from "../ui/Button";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { CurrencyInput } from "../ui/CurrencyInput";
 import { FormDateField } from "./FormDateField";
+import { SmartSuggestion } from "../ui/SmartSuggestion";
 import { sortByName } from "../../lib/sort-locale";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
 
@@ -60,9 +64,19 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
   const { profile } = useAuth();
   const { showToast } = useToast();
+  const haptics = useHaptics();
   const createMutation = useCreateSubscriptionMutation(activeWorkspaceId);
   const updateMutation = useUpdateSubscriptionMutation(activeWorkspaceId);
   const { data: snapshot } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
+
+  const { data: patternMovements } = useMovementPatternsQuery(activeWorkspaceId);
+  const patternMaps = useMemo(
+    () => (patternMovements ? buildPatternMaps(patternMovements) : null),
+    [patternMovements],
+  );
+  const [catSuggestionId, setCatSuggestionId] = useState<number | null>(null);
+  const [accSuggestionId, setAccSuggestionId] = useState<number | null>(null);
+  const nameDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const defaultCurrency = activeWorkspace?.baseCurrencyCode ?? "PEN";
   const today = format(new Date(), "yyyy-MM-dd");
@@ -88,6 +102,7 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
 
   const [nameError, setNameError] = useState("");
   const [amountError, setAmountError] = useState("");
+  const [submitError, setSubmitError] = useState("");
   const [showDiscard, setShowDiscard] = useState(false);
 
   const nameRef = useRef<TextInput>(null);
@@ -138,6 +153,7 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
     }
     setNameError("");
     setAmountError("");
+    setSubmitError("");
   }, [visible, editSubscription, defaultCurrency, today]);
 
   function handleClose() {
@@ -171,37 +187,44 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
   async function handleSubmit() {
     setNameError("");
     setAmountError("");
+    setSubmitError("");
     if (!name.trim()) {
+      haptics.error();
       setNameError("El nombre es obligatorio");
       nameRef.current?.focus();
       return;
     }
     const parsed = parseFloat(amount.replace(",", "."));
     if (!amount.trim() || Number.isNaN(parsed) || parsed <= 0) {
+      haptics.error();
       setAmountError("Ingresa un monto mayor a 0");
       return;
     }
 
     if (!startDate?.trim()) {
-      showToast("La fecha de inicio es obligatoria", "error");
+      haptics.error();
+      setSubmitError("La fecha de inicio es obligatoria");
       return;
     }
     if (!nextDueDate?.trim()) {
-      showToast("El próximo vencimiento es obligatorio", "error");
+      haptics.error();
+      setSubmitError("El próximo vencimiento es obligatorio");
       return;
     }
     if (nextDueDate < startDate) {
-      showToast("El próximo vencimiento debe ser igual o posterior al inicio", "error");
+      haptics.error();
+      setSubmitError("El próximo vencimiento debe ser igual o posterior al inicio");
       return;
     }
     if (endDate.trim() && endDate < startDate) {
-      showToast("La fecha de fin no puede ser anterior al inicio", "error");
+      haptics.error();
+      setSubmitError("La fecha de fin no puede ser anterior al inicio");
       return;
     }
 
     const ic = parseInt(intervalCount, 10);
     if (!Number.isFinite(ic) || ic < 1) {
-      showToast("Intervalo inválido", "error");
+      setSubmitError("Intervalo inválido");
       return;
     }
 
@@ -210,7 +233,7 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
       if (dayOfMonth.trim()) {
         const dom = parseInt(dayOfMonth, 10);
         if (!Number.isFinite(dom) || dom < 1 || dom > 31) {
-          showToast("Día del mes entre 1 y 31", "error");
+          setSubmitError("Día del mes entre 1 y 31");
           return;
         }
         resolvedDayOfMonth = dom;
@@ -220,20 +243,20 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
     let resolvedDayOfWeek: number | null = null;
     if (frequency === "weekly" && dayOfWeek !== null) {
       if (dayOfWeek < 0 || dayOfWeek > 6) {
-        showToast("Día de la semana inválido (0–6)", "error");
+        setSubmitError("Día de la semana inválido (0–6)");
         return;
       }
       resolvedDayOfWeek = dayOfWeek;
     }
 
     if (remindDaysBefore < 0 || !Number.isFinite(remindDaysBefore)) {
-      showToast("Días de recordatorio inválidos", "error");
+      setSubmitError("Días de recordatorio inválidos");
       return;
     }
 
     const cc = currencyCode.trim().toUpperCase();
     if (!cc) {
-      showToast("Indica una moneda", "error");
+      setSubmitError("Indica una moneda");
       return;
     }
 
@@ -270,10 +293,12 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
         });
         showToast("Suscripción creada", "success");
       }
+      haptics.success();
       onSuccess?.();
       onClose();
     } catch (err: unknown) {
-      showToast(humanizeError(err), "error");
+      haptics.error();
+      setSubmitError(humanizeError(err));
     }
   }
 
@@ -293,6 +318,28 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
     [snapshot?.counterparties],
   );
   const isLoading = createMutation.isPending || updateMutation.isPending;
+
+  // Name → suggest category (debounced)
+  useEffect(() => {
+    if (nameDebounceRef.current) clearTimeout(nameDebounceRef.current);
+    if (!patternMaps || categoryId !== null) { setCatSuggestionId(null); return; }
+    const trimmed = name.trim();
+    if (trimmed.length < 3) { setCatSuggestionId(null); return; }
+    nameDebounceRef.current = setTimeout(() => {
+      setCatSuggestionId(suggestCategoryFromDescription(trimmed, patternMaps));
+    }, 350);
+    return () => { if (nameDebounceRef.current) clearTimeout(nameDebounceRef.current); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [name, categoryId, patternMaps]);
+
+  // Vendor (counterparty) → suggest account
+  useEffect(() => {
+    if (!patternMaps || accountId !== null || vendorPartyId === null) {
+      setAccSuggestionId(null);
+      return;
+    }
+    setAccSuggestionId(suggestAccountFromCounterparty(vendorPartyId, patternMaps));
+  }, [vendorPartyId, accountId, patternMaps]);
 
   return (
     <>
@@ -504,7 +551,7 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
 
       {/* Account */}
       {activeAccounts.length > 0 ? (
-        <View>
+        <View style={{ gap: SPACING.xs }}>
           <Text style={styles.label}>Cuenta de débito (opcional)</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             <View style={styles.pillRow}>
@@ -527,12 +574,18 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
               ))}
             </View>
           </ScrollView>
+          {accSuggestionId !== null ? (() => {
+            const acc = activeAccounts.find((a) => a.id === accSuggestionId);
+            return acc ? (
+              <SmartSuggestion label={acc.name} onApply={() => setAccountId(acc.id)} />
+            ) : null;
+          })() : null}
         </View>
       ) : null}
 
       {/* Category */}
       {expenseCategories.length > 0 ? (
-        <View>
+        <View style={{ gap: SPACING.xs }}>
           <Text style={styles.label}>Categoría (opcional)</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             <View style={styles.pillRow}>
@@ -555,6 +608,12 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
               ))}
             </View>
           </ScrollView>
+          {catSuggestionId !== null ? (() => {
+            const cat = expenseCategories.find((c) => c.id === catSuggestionId);
+            return cat ? (
+              <SmartSuggestion label={cat.name} onApply={() => setCategoryId(cat.id)} />
+            ) : null;
+          })() : null}
         </View>
       ) : null}
 
@@ -617,6 +676,13 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
           textAlignVertical="top"
         />
       </View>
+
+      {submitError ? (
+        <View style={styles.submitErrorBanner}>
+          <AlertCircle size={16} color={COLORS.danger} strokeWidth={2} />
+          <Text style={styles.submitErrorText}>{submitError}</Text>
+        </View>
+      ) : null}
 
       <Button
         label={isEditing ? "Guardar cambios" : "Crear suscripción"}
@@ -689,6 +755,23 @@ const styles = StyleSheet.create({
   switchLabel: { fontSize: FONT_SIZE.sm, fontFamily: FONT_FAMILY.bodyMedium, color: COLORS.ink },
   switchDesc: { fontSize: FONT_SIZE.xs, color: COLORS.storm },
   submitBtn: { marginTop: SPACING.sm },
+  submitErrorBanner: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: SPACING.sm,
+    padding: SPACING.md,
+    borderRadius: RADIUS.lg,
+    backgroundColor: COLORS.danger + "18",
+    borderWidth: 1,
+    borderColor: COLORS.danger + "44",
+  },
+  submitErrorText: {
+    flex: 1,
+    fontFamily: FONT_FAMILY.bodyMedium,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.danger,
+    lineHeight: 20,
+  },
   datesBlock: { gap: SPACING.md },
   datesIntro: {
     gap: SPACING.xs,

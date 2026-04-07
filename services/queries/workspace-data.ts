@@ -1,9 +1,16 @@
-import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
+﻿import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { InteractionManager } from "react-native";
 import type { WorkspaceInvitationStatus } from "../../types/domain";
 
-import { supabase } from "../../lib/supabase";
-import { dateStrToISO } from "../../lib/date";
+import { UNIVERSAL_LINK_HOST } from "../../constants/config";
+import { supabase, supabaseAnonKey, supabaseUrl } from "../../lib/supabase";
+import { dateStrToISO, filterDateFrom, filterDateTo } from "../../lib/date";
+import {
+  mirrorObligationEventAttachmentsToMovement,
+  type AttachmentLike,
+} from "../../lib/entity-attachments";
 import { sortObligationEventsNewestFirst } from "../../lib/sort-obligation-events";
+import { useUiStore } from "../../store/ui-store";
 import {
   convertAmountToWorkspaceBase,
   subscriptionFrequencyListLabel,
@@ -30,6 +37,9 @@ import type {
   ObligationShareSummary,
   SharedObligationSummary,
   PendingObligationShareInviteItem,
+  ObligationPaymentRequest,
+  ObligationEventViewerLink,
+  UserEntitlementSummary,
   SubscriptionFrequency,
   CategoryPostedMovement,
   SubscriptionPostedMovement,
@@ -47,7 +57,310 @@ function toNum(val: NumericLike): number {
   return isNaN(n) ? 0 : n;
 }
 
-// ─── Row types ────────────────────────────────────────────────────────────────
+function formatSupabaseError(error: {
+  code?: string | null;
+  message?: string | null;
+  details?: string | null;
+  hint?: string | null;
+}) {
+  return [error.code, error.message, error.details, error.hint]
+    .filter((part): part is string => Boolean(part && part.trim()))
+    .join(" | ");
+}
+
+function isDuplicateConstraintMessage(message: string | null | undefined): boolean {
+  const normalized = message?.toLowerCase() ?? "";
+  return (
+    normalized.includes("23505") ||
+    normalized.includes("unique") ||
+    normalized.includes("duplicate") ||
+    normalized.includes("duplicado") ||
+    normalized.includes("already exists") ||
+    normalized.includes("ya existe") ||
+    normalized.includes("ya existen") ||
+    normalized.includes("registro existente")
+  );
+}
+
+function buildHostedAppUrl(): string | null {
+  const host = UNIVERSAL_LINK_HOST.trim();
+  if (!host) return null;
+  if (/^https?:\/\//i.test(host)) return host.replace(/\/+$/, "");
+  return `https://${host.replace(/^\/+/, "").replace(/\/+$/, "")}`;
+}
+
+const FALLBACK_PRO_EMAILS = new Set(["joradrianmori@gmail.com"]);
+
+function hasFallbackProAccess(email?: string | null): boolean {
+  return Boolean(email && FALLBACK_PRO_EMAILS.has(email.trim().toLowerCase()));
+}
+
+type BackgroundRefreshNotice = {
+  message: string;
+  description?: string;
+};
+
+const DEFAULT_BACKGROUND_REFRESH_NOTICE: BackgroundRefreshNotice = {
+  message: "Actualizando datos",
+  description: "Puedes seguir usando la app mientras sincronizamos balances y listados.",
+};
+
+function runBackgroundQueryRefresh(
+  queryClient: QueryClient,
+  queryKeys: Array<readonly unknown[]>,
+  notice: BackgroundRefreshNotice = DEFAULT_BACKGROUND_REFRESH_NOTICE,
+) {
+  let noticeId: string | null = null;
+  const showTimer = setTimeout(() => {
+    noticeId = useUiStore.getState().showActivityNotice(notice.message, notice.description);
+  }, 220);
+
+  InteractionManager.runAfterInteractions(() => {
+    void Promise.all(queryKeys.map((queryKey) => queryClient.invalidateQueries({ queryKey })))
+      .catch(() => undefined)
+      .finally(() => {
+        clearTimeout(showTimer);
+        if (noticeId) {
+          useUiStore.getState().dismissActivityNotice(noticeId);
+        }
+      });
+  });
+}
+
+function buildFallbackEntitlement(
+  userId: string | null | undefined,
+  email?: string | null,
+): UserEntitlementSummary {
+  const proAccessEnabled = hasFallbackProAccess(email);
+  return {
+    userId: userId ?? "",
+    planCode: proAccessEnabled ? "pro" : "free",
+    proAccessEnabled,
+    billingStatus: null,
+    billingProvider: null,
+    providerCustomerId: null,
+    providerSubscriptionId: null,
+    currentPeriodStart: null,
+    currentPeriodEnd: null,
+    cancelAtPeriodEnd: false,
+    manualOverride: proAccessEnabled,
+  };
+}
+
+function edgeFunctionFallbackMessage(name: string, response?: Response): string {
+  const status = response?.status ?? null;
+  if (status === 404) return `La funciÃ³n ${name} no estÃ¡ disponible.`;
+  if (status === 401) return "Tu sesiÃ³n expirÃ³. Vuelve a iniciar sesiÃ³n.";
+  if (status === 403) return `La funciÃ³n ${name} devolviÃ³ 403. Puede ser permisos o plan Pro.`;
+  if (status != null) return `La funciÃ³n ${name} devolviÃ³ error (${status}).`;
+  return `No se pudo completar la funciÃ³n ${name}.`;
+}
+
+function logEdgeFunctionDebug(name: string, meta: Record<string, unknown>) {
+  const stage = typeof meta.stage === "string" ? meta.stage : "";
+  const responseStatus = typeof meta.responseStatus === "number" ? meta.responseStatus : null;
+  const isFailureStage =
+    stage.includes("error") ||
+    stage.includes("mismatch") ||
+    stage.includes("missing-token") ||
+    stage.includes("invalid") ||
+    stage.includes("failed");
+  const shouldWarn = isFailureStage || (responseStatus != null && responseStatus >= 400);
+  if (!shouldWarn) return;
+  if (__DEV__) console.warn(`[EdgeFunction:${name}]`, meta);
+}
+
+function decodeJwtPayload(token: string | null | undefined): Record<string, unknown> | null {
+  if (!token) return null;
+  const parts = token.split(".");
+  if (parts.length < 2) return null;
+  try {
+    const normalized = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized + "=".repeat((4 - (normalized.length % 4 || 4)) % 4);
+    const decoded = globalThis.atob ? globalThis.atob(padded) : null;
+    if (!decoded) return null;
+    return JSON.parse(decoded) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function extractSupabaseProjectRef(rawUrl: string | null | undefined): string | null {
+  if (!rawUrl?.trim()) return null;
+  try {
+    const hostname = new URL(rawUrl).hostname.trim().toLowerCase();
+    const projectRef = hostname.split(".")[0]?.trim();
+    return projectRef || null;
+  } catch {
+    const match = rawUrl.match(/^https?:\/\/([^.]+)\./i);
+    return match?.[1]?.trim().toLowerCase() || null;
+  }
+}
+
+function extractJwtProjectRef(payload: Record<string, unknown> | null): string | null {
+  if (!payload) return null;
+  const directRef =
+    typeof payload.ref === "string" && payload.ref.trim()
+      ? payload.ref.trim().toLowerCase()
+      : null;
+  if (directRef) return directRef;
+
+  const issuer = typeof payload.iss === "string" ? payload.iss.trim() : "";
+  if (!issuer) return null;
+  return extractSupabaseProjectRef(issuer);
+}
+
+async function clearLocalSessionSilently() {
+  if (!supabase) return;
+  try {
+    await supabase.auth.signOut({ scope: "local" });
+  } catch {
+    try {
+      await supabase.auth.signOut();
+    } catch {
+      // Ignore cleanup failures.
+    }
+  }
+}
+
+async function readEdgeFunctionErrorMessage(
+  name: string,
+  error: unknown,
+  response?: Response,
+): Promise<string> {
+  const targetResponse =
+    response ??
+    (typeof error === "object" &&
+    error !== null &&
+    "context" in error &&
+    (error as { context?: unknown }).context instanceof Response
+      ? (error as { context: Response }).context
+      : undefined);
+
+  if (targetResponse) {
+    try {
+      const contentType = targetResponse.headers.get("content-type")?.toLowerCase() ?? "";
+      if (contentType.includes("application/json")) {
+        const payload = (await targetResponse.clone().json()) as Record<string, unknown>;
+        const jsonMessage = [
+          typeof payload.error === "string" ? payload.error : null,
+          typeof payload.message === "string" ? payload.message : null,
+          typeof payload.details === "string" ? payload.details : null,
+          typeof payload.hint === "string" ? payload.hint : null,
+        ].find((value): value is string => Boolean(value?.trim()));
+        if (jsonMessage) return jsonMessage;
+      }
+
+      const text = (await targetResponse.clone().text()).trim();
+      if (text) return text;
+    } catch {
+      // Ignore parse failures and fallback below.
+    }
+  }
+
+  if (error instanceof Error && error.message?.trim()) {
+    return error.message;
+  }
+
+  return edgeFunctionFallbackMessage(name, targetResponse);
+}
+
+async function fetchNextObligationInstallmentNo(obligationId: number): Promise<number> {
+  if (!supabase) throw new Error("Supabase no disponible.");
+
+  const { data, error } = await supabase
+    .from("obligation_events")
+    .select("installment_no")
+    .eq("obligation_id", obligationId)
+    .eq("event_type", "payment")
+    .not("installment_no", "is", null)
+    .order("installment_no", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(error.message ?? "Error al calcular la siguiente cuota");
+  return Number((data as { installment_no?: number | null } | null)?.installment_no ?? 0) + 1;
+}
+
+async function insertObligationPaymentEventWithFallback(input: {
+  obligationId: number;
+  paymentDate: string;
+  amount: number;
+  installmentNo?: number | null;
+  description?: string | null;
+  notes?: string | null;
+  metadata?: JsonValue;
+}): Promise<{ id: number; installmentNoApplied: boolean; appliedInstallmentNo: number | null }> {
+  if (!supabase) throw new Error("Supabase no disponible.");
+
+  const payload = {
+    obligation_id: input.obligationId,
+    event_type: "payment" as const,
+    event_date: input.paymentDate,
+    amount: input.amount,
+    installment_no: input.installmentNo ?? null,
+    description: input.description?.trim() || null,
+    notes: input.notes ?? null,
+    metadata: input.metadata ?? {},
+  };
+
+  const { data, error } = await supabase
+    .from("obligation_events")
+    .insert(payload)
+    .select("id")
+    .single();
+  if (!error) {
+    return {
+      id: (data as { id: number }).id,
+      installmentNoApplied: input.installmentNo != null,
+      appliedInstallmentNo: input.installmentNo ?? null,
+    };
+  }
+
+  if (input.installmentNo != null && isDuplicateConstraintMessage(error.message)) {
+    const nextInstallmentNo = await fetchNextObligationInstallmentNo(input.obligationId);
+    if (nextInstallmentNo > input.installmentNo) {
+      const { data: nextData, error: nextErr } = await supabase
+        .from("obligation_events")
+        .insert({
+          ...payload,
+          installment_no: nextInstallmentNo,
+        })
+        .select("id")
+        .single();
+      if (!nextErr) {
+        return {
+          id: (nextData as { id: number }).id,
+          installmentNoApplied: true,
+          appliedInstallmentNo: nextInstallmentNo,
+        };
+      }
+      if (!isDuplicateConstraintMessage(nextErr.message)) {
+        throw new Error(nextErr.message ?? "Error de base de datos");
+      }
+    }
+
+    const { data: retryData, error: retryErr } = await supabase
+      .from("obligation_events")
+      .insert({
+        ...payload,
+        installment_no: null,
+      })
+      .select("id")
+      .single();
+    if (!retryErr) {
+      return {
+        id: (retryData as { id: number }).id,
+        installmentNoApplied: false,
+        appliedInstallmentNo: null,
+      };
+    }
+    throw new Error(retryErr.message ?? "Error de base de datos");
+  }
+
+  throw new Error(error.message ?? "Error de base de datos");
+}
+
+// â”€â”€â”€ Row types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 type WorkspaceMemberRow = {
   workspace_id: number;
@@ -143,6 +456,7 @@ type ObligationEventRow = {
   obligation_id: number;
   event_type: ObligationEventSummary["eventType"];
   event_date: string;
+  created_at?: string | null;
   amount: NumericLike;
   installment_no: number | null;
   reason: string | null;
@@ -183,7 +497,7 @@ type ExchangeRateRow = {
   effective_at: string;
 };
 
-// ─── Mappers ──────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Mappers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function mapWorkspace(row: WorkspaceRow, memberRow: WorkspaceMemberRow): Workspace {
   return {
@@ -244,6 +558,7 @@ function mapObligation(
         id: e.id,
         eventType: e.event_type,
         eventDate: e.event_date,
+        createdAt: e.created_at ?? null,
         amount: toNum(e.amount),
         installmentNo: e.installment_no,
         reason: e.reason,
@@ -294,6 +609,7 @@ function mapObligationEventRowsToSummaries(rows: ObligationEventRow[]): Obligati
       id: e.id,
       eventType: e.event_type,
       eventDate: e.event_date,
+      createdAt: e.created_at ?? null,
       amount: toNum(e.amount),
       installmentNo: e.installment_no,
       reason: e.reason,
@@ -311,7 +627,7 @@ async function fetchObligationEventsByObligationId(obligationId: number): Promis
   const { data, error } = await supabase
     .from("obligation_events")
     .select(
-      "id, obligation_id, event_type, event_date, amount, installment_no, reason, description, notes, movement_id, created_by_user_id, metadata",
+      "id, obligation_id, event_type, event_date, created_at, amount, installment_no, reason, description, notes, movement_id, created_by_user_id, metadata",
     )
     .eq("obligation_id", obligationId);
   if (error) throw new Error(error.message ?? "Error al cargar eventos");
@@ -375,7 +691,7 @@ type CounterpartyDbRow = {
   notes: string | null;
 };
 
-/** Fila de `counterparties` → overview para snapshot (métricas financieras: 0 hasta enlazar v_counterparty_summary). */
+/** Fila de `counterparties` â†’ overview para snapshot (mÃ©tricas financieras: 0 hasta enlazar v_counterparty_summary). */
 function mapCounterpartyFromRow(row: CounterpartyDbRow): CounterpartyOverview {
   return {
     id: row.id,
@@ -411,29 +727,95 @@ const FREQUENCY_LABELS: Record<SubscriptionFrequency, string> = {
   custom: "Personalizado",
 };
 
-// ─── Snapshot query ───────────────────────────────────────────────────────────
+// â”€â”€â”€ Snapshot query â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type WorkspaceSnapshot = {
   workspaces: Workspace[];
   accounts: AccountSummary[];
-  /** Catálogo completo (activas e inactivas), orden sort_order + name. */
+  /** CatÃ¡logo completo (activas e inactivas), orden sort_order + name. */
   categories: CategorySummary[];
   budgets: BudgetOverview[];
   obligations: ObligationSummary[];
   subscriptions: SubscriptionSummary[];
-  /** Movimientos posted con subscription_id (analíticas sin query extra). */
+  /** Movimientos posted con subscription_id (analÃ­ticas sin query extra). */
   subscriptionPostedMovements: SubscriptionPostedMovement[];
-  /** Movimientos posted con category_id (analíticas categorías). */
+  /** Movimientos posted con category_id (analÃ­ticas categorÃ­as). */
   categoryPostedMovements: CategoryPostedMovement[];
   counterparties: CounterpartyOverview[];
   exchangeRates: ExchangeRateSummary[];
 };
 
+export function useUserEntitlementQuery(userId?: string | null, email?: string | null) {
+  return useQuery({
+    queryKey: ["user-entitlement", userId ?? null, email?.trim().toLowerCase() ?? null],
+    enabled: Boolean(supabase && userId),
+    staleTime: 60_000,
+    placeholderData: (previousData) => previousData,
+    queryFn: async (): Promise<UserEntitlementSummary> => {
+      const fallback = buildFallbackEntitlement(userId, email);
+      if (!supabase || !userId) return fallback;
+
+      const { data, error } = await supabase
+        .from("user_entitlements")
+        .select(
+          "user_id, plan_code, pro_access_enabled, billing_status, billing_provider, provider_customer_id, provider_subscription_id, current_period_start, current_period_end, cancel_at_period_end, manual_override",
+        )
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (error) {
+        const normalized = error.message?.toLowerCase() ?? "";
+        const relationMissing =
+          normalized.includes("user_entitlements") &&
+          (
+            normalized.includes("does not exist") ||
+            normalized.includes("could not find") ||
+            normalized.includes("schema cache")
+          );
+        if (relationMissing) return fallback;
+        throw new Error(error.message ?? "No se pudo comprobar tu plan.");
+      }
+
+      if (!data) return fallback;
+
+      const row = data as Record<string, unknown>;
+      const planCode = row.plan_code === "pro" ? "pro" : fallback.planCode;
+      const proAccessEnabled =
+        typeof row.pro_access_enabled === "boolean"
+          ? row.pro_access_enabled
+          : planCode === "pro" || fallback.proAccessEnabled;
+
+      return {
+        userId: typeof row.user_id === "string" ? row.user_id : fallback.userId,
+        planCode,
+        proAccessEnabled,
+        billingStatus: typeof row.billing_status === "string" ? row.billing_status : null,
+        billingProvider: typeof row.billing_provider === "string" ? row.billing_provider : null,
+        providerCustomerId:
+          typeof row.provider_customer_id === "string" ? row.provider_customer_id : null,
+        providerSubscriptionId:
+          typeof row.provider_subscription_id === "string" ? row.provider_subscription_id : null,
+        currentPeriodStart:
+          typeof row.current_period_start === "string" ? row.current_period_start : null,
+        currentPeriodEnd:
+          typeof row.current_period_end === "string" ? row.current_period_end : null,
+        cancelAtPeriodEnd: Boolean(row.cancel_at_period_end),
+        manualOverride: Boolean(row.manual_override),
+      } satisfies UserEntitlementSummary;
+    },
+  });
+}
+
 async function fetchWorkspaceSnapshot(
   userId: string,
   activeWorkspaceId: number,
 ): Promise<WorkspaceSnapshot> {
-  if (!supabase) throw new Error("Supabase no está configurado.");
+  if (!supabase) throw new Error("Supabase no estÃ¡ configurado.");
+
+  // Limit movement history to last 2 years to keep payload manageable
+  const twoYearsAgo = new Date();
+  twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
+  const twoYearsAgoIso = twoYearsAgo.toISOString().slice(0, 10);
 
   // Parallel fetch of all workspace data
   const [
@@ -460,7 +842,6 @@ async function fetchWorkspaceSnapshot(
       .from("accounts")
       .select("id, workspace_id, name, type, currency_code, opening_balance, include_in_net_worth, color, icon, is_archived, sort_order, created_at, updated_at")
       .eq("workspace_id", activeWorkspaceId)
-      .eq("is_archived", false)
       .order("sort_order", { ascending: true }),
     supabase
       .from("v_account_balances")
@@ -486,14 +867,12 @@ async function fetchWorkspaceSnapshot(
     supabase
       .from("v_obligation_summary")
       .select("*")
-      .eq("workspace_id", activeWorkspaceId)
-      .in("status", ["active", "draft"]),
-    // Descripción/notas desde la tabla base: v_obligation_summary a veces no incluye estas columnas.
+      .eq("workspace_id", activeWorkspaceId),
+    // DescripciÃ³n/notas desde la tabla base: v_obligation_summary a veces no incluye estas columnas.
     supabase
       .from("obligations")
       .select("id, description, notes")
-      .eq("workspace_id", activeWorkspaceId)
-      .in("status", ["active", "draft"]),
+      .eq("workspace_id", activeWorkspaceId),
     supabase
       .from("subscriptions")
       .select("id, workspace_id, name, vendor_party_id, account_id, category_id, currency_code, amount, frequency, interval_count, day_of_month, day_of_week, start_date, next_due_date, end_date, status, remind_days_before, auto_create_movement, description, notes")
@@ -505,16 +884,18 @@ async function fetchWorkspaceSnapshot(
       .eq("workspace_id", activeWorkspaceId)
       .not("subscription_id", "is", null)
       .eq("status", "posted")
+      .gte("occurred_at", twoYearsAgoIso)
       .order("occurred_at", { ascending: false })
-      .limit(5000),
+      .limit(1000),
     supabase
       .from("movements")
       .select("id, category_id, status, occurred_at, source_amount, destination_amount")
       .eq("workspace_id", activeWorkspaceId)
       .not("category_id", "is", null)
       .eq("status", "posted")
+      .gte("occurred_at", twoYearsAgoIso)
       .order("occurred_at", { ascending: false })
-      .limit(5000),
+      .limit(1000),
     supabase
       .from("v_latest_exchange_rates")
       .select("from_currency_code, to_currency_code, rate, effective_at"),
@@ -532,7 +913,7 @@ async function fetchWorkspaceSnapshot(
     const { data: evData, error: evError } = await supabase
       .from("obligation_events")
       .select(
-        "id, obligation_id, event_type, event_date, amount, installment_no, reason, description, notes, movement_id, created_by_user_id, metadata",
+        "id, obligation_id, event_type, event_date, created_at, amount, installment_no, reason, description, notes, movement_id, created_by_user_id, metadata",
       )
       .in("obligation_id", obligationIdsForEvents)
       .order("event_date", { ascending: false })
@@ -730,9 +1111,9 @@ function maxIsoDate(a: string | null | undefined, b: string | null | undefined):
   return a >= b ? a : b;
 }
 
-/** Lista enriquecida (conteos, última actividad) — pantalla Categorías. */
+/** Lista enriquecida (conteos, Ãºltima actividad) â€” pantalla CategorÃ­as. */
 async function fetchCategoriesOverview(workspaceId: number): Promise<CategoryOverview[]> {
-  if (!supabase) throw new Error("Supabase no está configurado.");
+  if (!supabase) throw new Error("Supabase no estÃ¡ configurado.");
 
   const [catRes, movRes, subRes] = await Promise.all([
     supabase
@@ -753,7 +1134,7 @@ async function fetchCategoriesOverview(workspaceId: number): Promise<CategoryOve
       .not("category_id", "is", null),
   ]);
 
-  if (catRes.error) throw new Error(catRes.error.message ?? "Error al cargar categorías");
+  if (catRes.error) throw new Error(catRes.error.message ?? "Error al cargar categorÃ­as");
 
   const rows = (catRes.data ?? []) as {
     id: number;
@@ -832,10 +1213,10 @@ export function useCategoriesOverviewQuery(profile: AppProfile | null, workspace
   });
 }
 
-// ─── Workspace list init (no activeWorkspaceId needed) ────────────────────────
+// â”€â”€â”€ Workspace list init (no activeWorkspaceId needed) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function fetchUserWorkspaces(userId: string) {
-  if (!supabase) throw new Error("Supabase no está configurado.");
+  if (!supabase) throw new Error("Supabase no estÃ¡ configurado.");
   const [membershipsResult, workspacesResult] = await Promise.all([
     supabase.from("workspace_members").select("workspace_id, role, is_default_workspace, joined_at").eq("user_id", userId),
     supabase.from("workspaces").select("id, owner_user_id, name, kind, base_currency_code, description, is_archived"),
@@ -866,12 +1247,12 @@ export function useWorkspaceSnapshotQuery(
     queryKey: ["workspace-snapshot", activeWorkspaceId, profile?.id],
     queryFn: () => fetchWorkspaceSnapshot(profile!.id, activeWorkspaceId!),
     enabled: Boolean(profile?.id && activeWorkspaceId),
-    staleTime: 60_000,
+    staleTime: 5 * 60_000,
     retry: 1,
   });
 }
 
-// ─── Dashboard movements query ────────────────────────────────────────────────
+// â”€â”€â”€ Dashboard movements query â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type DashboardMovementRow = {
   id: number;
@@ -884,7 +1265,7 @@ export type DashboardMovementRow = {
   destinationAccountId: number | null;
   categoryId: number | null;
   counterpartyId: number | null;
-  /** Para listados en dashboard (detalle por día) */
+  /** Para listados en dashboard (detalle por dÃ­a) */
   description: string;
 };
 
@@ -926,7 +1307,7 @@ export function useDashboardMovementsQuery(
   });
 }
 
-// ─── Movement mutations ───────────────────────────────────────────────────────
+// â”€â”€â”€ Movement mutations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type MovementFormInput = {
   movementType: MovementType;
@@ -950,7 +1331,7 @@ async function createMovement(
   workspaceId: number,
   input: MovementFormInput,
 ): Promise<MovementRecord> {
-  if (!supabase) throw new Error("Supabase no está configurado.");
+  if (!supabase) throw new Error("Supabase no estÃ¡ configurado.");
 
   const payload: Record<string, unknown> = {
     workspace_id: workspaceId,
@@ -979,7 +1360,7 @@ async function createMovement(
     )
     .single();
 
-  if (error) throw new Error(error.message ?? "Error al guardar el movimiento");
+  if (error) throw new Error(formatSupabaseError(error) || "Error al guardar el movimiento");
   const row = data as any;
   return {
     id: row.id,
@@ -1011,13 +1392,15 @@ export function useCreateMovementMutation(workspaceId: number | null) {
   return useMutation({
     mutationFn: (input: MovementFormInput) => createMovement(workspaceId!, input),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
-      void queryClient.invalidateQueries({ queryKey: ["movements"] });
+      runBackgroundQueryRefresh(queryClient, [
+        ["workspace-snapshot"],
+        ["movements"],
+      ]);
     },
   });
 }
 
-// ─── Account mutations ────────────────────────────────────────────────────────
+// â”€â”€â”€ Account mutations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type AccountFormInput = {
   name: string;
@@ -1050,11 +1433,11 @@ export function useCreateAccountMutation(workspaceId: number | null) {
         })
         .select("id")
         .single();
-      if (error) throw new Error(error.message ?? "Error de base de datos");
+      if (error) throw new Error(formatSupabaseError(error) || "Error de base de datos");
       return data as { id: number };
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+      runBackgroundQueryRefresh(queryClient, [["workspace-snapshot"]]);
     },
   });
 }
@@ -1080,12 +1463,12 @@ export function useUpdateAccountMutation(workspaceId: number | null) {
       if (error) throw new Error(error.message ?? "Error de base de datos");
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+      runBackgroundQueryRefresh(queryClient, [["workspace-snapshot"]]);
     },
   });
 }
 
-// ─── Budget mutations ─────────────────────────────────────────────────────────
+// â”€â”€â”€ Budget mutations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type BudgetFormInput = {
   name: string;
@@ -1126,12 +1509,12 @@ export function useCreateBudgetMutation(workspaceId: number | null) {
       return data as { id: number };
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+      runBackgroundQueryRefresh(queryClient, [["workspace-snapshot"]]);
     },
   });
 }
 
-// ─── Movement mutations (update / void) ──────────────────────────────────────
+// â”€â”€â”€ Movement mutations (update / void) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type MovementUpdateInput = {
   description?: string;
@@ -1165,10 +1548,36 @@ export function useUpdateMovementMutation(workspaceId: number | null) {
         .eq("workspace_id", workspaceId);
       if (error) throw new Error(error.message ?? "Error de base de datos");
     },
+    onMutate: async ({ id, input }) => {
+      await queryClient.cancelQueries({ queryKey: ["movement", id] });
+      const previous = queryClient.getQueryData(["movement", id]);
+      queryClient.setQueryData(["movement", id], (old: Record<string, unknown> | undefined) => {
+        if (!old) return old;
+        return {
+          ...old,
+          ...(input.description !== undefined && { description: input.description }),
+          ...(input.notes !== undefined && { notes: input.notes }),
+          ...(input.categoryId !== undefined && { categoryId: input.categoryId }),
+          ...(input.counterpartyId !== undefined && { counterpartyId: input.counterpartyId }),
+          ...(input.occurredAt !== undefined && { occurredAt: input.occurredAt }),
+          ...(input.status !== undefined && { status: input.status }),
+          ...(input.sourceAmount !== undefined && { sourceAmount: input.sourceAmount }),
+          ...(input.destinationAmount !== undefined && { destinationAmount: input.destinationAmount }),
+        };
+      });
+      return { previous };
+    },
+    onError: (_err, { id }, context) => {
+      if (context?.previous !== undefined) {
+        queryClient.setQueryData(["movement", id], context.previous);
+      }
+    },
     onSuccess: (_data, { id }) => {
-      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
-      void queryClient.invalidateQueries({ queryKey: ["movements"] });
-      void queryClient.invalidateQueries({ queryKey: ["movement", id] });
+      runBackgroundQueryRefresh(queryClient, [
+        ["workspace-snapshot"],
+        ["movements"],
+        ["movement", id],
+      ]);
     },
   });
 }
@@ -1185,15 +1594,31 @@ export function useVoidMovementMutation(workspaceId: number | null) {
         .eq("workspace_id", workspaceId);
       if (error) throw new Error(error.message ?? "Error de base de datos");
     },
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: ["movement", id] });
+      const previous = queryClient.getQueryData(["movement", id]);
+      queryClient.setQueryData(["movement", id], (old: Record<string, unknown> | undefined) => {
+        if (!old) return old;
+        return { ...old, status: "voided" };
+      });
+      return { previous };
+    },
+    onError: (_err, id, context) => {
+      if (context?.previous !== undefined) {
+        queryClient.setQueryData(["movement", id], context.previous);
+      }
+    },
     onSuccess: (_data, id) => {
-      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
-      void queryClient.invalidateQueries({ queryKey: ["movements"] });
-      void queryClient.invalidateQueries({ queryKey: ["movement", id] });
+      runBackgroundQueryRefresh(queryClient, [
+        ["workspace-snapshot"],
+        ["movements"],
+        ["movement", id],
+      ]);
     },
   });
 }
 
-// ─── Budget mutations (update / delete) ──────────────────────────────────────
+// â”€â”€â”€ Budget mutations (update / delete) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type BudgetUpdateInput = Partial<BudgetFormInput>;
 
@@ -1221,7 +1646,7 @@ export function useUpdateBudgetMutation(workspaceId: number | null) {
       if (error) throw new Error(error.message ?? "Error de base de datos");
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+      runBackgroundQueryRefresh(queryClient, [["workspace-snapshot"]]);
     },
   });
 }
@@ -1238,13 +1663,27 @@ export function useDeleteBudgetMutation(workspaceId: number | null) {
         .eq("workspace_id", workspaceId);
       if (error) throw new Error(error.message ?? "Error de base de datos");
     },
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: ["workspace-snapshot"] });
+      const previousEntries = queryClient.getQueriesData<WorkspaceSnapshot>({ queryKey: ["workspace-snapshot"] });
+      queryClient.setQueriesData<WorkspaceSnapshot>({ queryKey: ["workspace-snapshot"] }, (old) => {
+        if (!old) return old;
+        return { ...old, budgets: old.budgets.filter((b) => b.id !== id) };
+      });
+      return { previousEntries };
+    },
+    onError: (_err, _id, context) => {
+      for (const [key, value] of (context?.previousEntries ?? [])) {
+        queryClient.setQueryData(key, value);
+      }
+    },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+      runBackgroundQueryRefresh(queryClient, [["workspace-snapshot"]]);
     },
   });
 }
 
-// ─── Movement delete mutation ─────────────────────────────────────────────────
+// â”€â”€â”€ Movement delete mutation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function useDeleteMovementMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
@@ -1258,14 +1697,36 @@ export function useDeleteMovementMutation(workspaceId: number | null) {
         .eq("workspace_id", workspaceId);
       if (error) throw new Error(error.message ?? "Error de base de datos");
     },
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: ["movements"] });
+      const previousPages = queryClient.getQueriesData<{ pages: { data: { id: number }[] }[] }>({ queryKey: ["movements"] });
+      queryClient.setQueriesData<{ pages: { data: { id: number }[] }[]; pageParams: unknown[] }>(
+        { queryKey: ["movements"] },
+        (old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            pages: old.pages.map((page) => ({
+              ...page,
+              data: page.data.filter((m) => m.id !== id),
+            })),
+          };
+        },
+      );
+      return { previousPages };
+    },
+    onError: (_err, _id, context) => {
+      for (const [key, value] of (context?.previousPages ?? [])) {
+        queryClient.setQueryData(key, value);
+      }
+    },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
-      void queryClient.invalidateQueries({ queryKey: ["movements"] });
+      runBackgroundQueryRefresh(queryClient, [["workspace-snapshot"], ["movements"]]);
     },
   });
 }
 
-// ─── Account mutations (archive) ─────────────────────────────────────────────
+// â”€â”€â”€ Account mutations (archive) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function useArchiveAccountMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
@@ -1279,8 +1740,25 @@ export function useArchiveAccountMutation(workspaceId: number | null) {
         .eq("workspace_id", workspaceId);
       if (error) throw new Error(error.message ?? "Error de base de datos");
     },
+    onMutate: async ({ id, archived }) => {
+      await queryClient.cancelQueries({ queryKey: ["workspace-snapshot"] });
+      const previousEntries = queryClient.getQueriesData<WorkspaceSnapshot>({ queryKey: ["workspace-snapshot"] });
+      queryClient.setQueriesData<WorkspaceSnapshot>({ queryKey: ["workspace-snapshot"] }, (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          accounts: old.accounts.map((a) => a.id === id ? { ...a, isArchived: archived } : a),
+        };
+      });
+      return { previousEntries };
+    },
+    onError: (_err, _vars, context) => {
+      for (const [key, value] of (context?.previousEntries ?? [])) {
+        queryClient.setQueryData(key, value);
+      }
+    },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+      runBackgroundQueryRefresh(queryClient, [["workspace-snapshot"]]);
     },
   });
 }
@@ -1297,13 +1775,27 @@ export function useDeleteAccountMutation(workspaceId: number | null) {
         .eq("workspace_id", workspaceId);
       if (error) throw new Error(error.message ?? "Error de base de datos");
     },
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: ["workspace-snapshot"] });
+      const previousEntries = queryClient.getQueriesData<WorkspaceSnapshot>({ queryKey: ["workspace-snapshot"] });
+      queryClient.setQueriesData<WorkspaceSnapshot>({ queryKey: ["workspace-snapshot"] }, (old) => {
+        if (!old) return old;
+        return { ...old, accounts: old.accounts.filter((a) => a.id !== id) };
+      });
+      return { previousEntries };
+    },
+    onError: (_err, _id, context) => {
+      for (const [key, value] of (context?.previousEntries ?? [])) {
+        queryClient.setQueryData(key, value);
+      }
+    },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+      runBackgroundQueryRefresh(queryClient, [["workspace-snapshot"]]);
     },
   });
 }
 
-// ─── Account analytics ────────────────────────────────────────────────────────
+// â”€â”€â”€ Account analytics â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type AccountMovementAnalytics = {
   id: number;
@@ -1356,12 +1848,15 @@ export function useAccountAnalyticsQuery(
   });
 }
 
-// ─── Obligation mutations ─────────────────────────────────────────────────────
+// â”€â”€â”€ Obligation mutations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type ObligationFormInput = {
+  userId: string;
   title: string;
   direction: "receivable" | "payable";
   originType: "cash_loan" | "sale_financed" | "purchase_financed" | "manual";
+  openingImpact?: "none" | "inflow" | "outflow";
+  openingAccountId?: number | null;
   counterpartyId?: number | null;
   settlementAccountId?: number | null;
   currencyCode: string;
@@ -1380,6 +1875,15 @@ export function useDeleteObligationMutation(workspaceId: number | null) {
   return useMutation({
     mutationFn: async (id: number) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
+      const { count, error: eventsError } = await supabase
+        .from("obligation_events")
+        .select("id", { head: true, count: "exact" })
+        .eq("obligation_id", id)
+        .neq("event_type", "opening");
+      if (eventsError) throw new Error(eventsError.message ?? "Error al validar la obligaciÃ³n");
+      if ((count ?? 0) > 0) {
+        throw new Error("No puedes eliminar esta obligaciÃ³n porque tiene eventos. ArchÃ­vala o elimina sus eventos primero.");
+      }
       const { error } = await supabase
         .from("obligations")
         .delete()
@@ -1396,6 +1900,30 @@ export function useDeleteObligationMutation(workspaceId: number | null) {
   });
 }
 
+export function useArchiveObligationMutation(workspaceId: number | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, archived }: { id: number; archived: boolean }) => {
+      if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
+      const nextStatus: ObligationStatus = archived ? "cancelled" : "active";
+      const { error } = await supabase
+        .from("obligations")
+        .update({ status: nextStatus })
+        .eq("id", id)
+        .eq("workspace_id", workspaceId);
+      if (error) throw new Error(error.message ?? "Error de base de datos");
+    },
+    onSuccess: () => {
+      runBackgroundQueryRefresh(
+        queryClient,
+        workspaceId
+          ? [["workspace-snapshot"], ["obligation-active-share"], ["obligation-shares", workspaceId]]
+          : [["workspace-snapshot"], ["obligation-active-share"]],
+      );
+    },
+  });
+}
+
 export function useCreateObligationMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   return useMutation({
@@ -1405,6 +1933,8 @@ export function useCreateObligationMutation(workspaceId: number | null) {
         .from("obligations")
         .insert({
           workspace_id: workspaceId,
+          created_by_user_id: input.userId,
+          updated_by_user_id: input.userId,
           title: input.title,
           direction: input.direction,
           origin_type: input.originType,
@@ -1424,7 +1954,30 @@ export function useCreateObligationMutation(workspaceId: number | null) {
         .select("id")
         .single();
       if (error) throw new Error(error.message ?? "Error de base de datos");
-      return data as { id: number };
+      const created = data as { id: number };
+
+      // Create opening movement when cash actually moved at obligation start
+      const openingImpact = input.openingImpact ?? "none";
+      if (openingImpact !== "none" && input.openingAccountId) {
+        const isInflow = openingImpact === "inflow";
+        const openingDesc = input.direction === "receivable"
+          ? `PrÃ©stamo entregado: ${input.title}`
+          : `Dinero recibido: ${input.title}`;
+        await createMovement(workspaceId, {
+          movementType: "obligation_opening" as MovementType,
+          status: "posted",
+          occurredAt: `${input.startDate}T12:00:00`,
+          description: openingDesc,
+          notes: null,
+          sourceAccountId: isInflow ? null : input.openingAccountId,
+          sourceAmount: isInflow ? null : input.principalAmount,
+          destinationAccountId: isInflow ? input.openingAccountId : null,
+          destinationAmount: isInflow ? input.principalAmount : null,
+          obligationId: created.id,
+        });
+      }
+
+      return created;
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
@@ -1458,12 +2011,13 @@ export function useUpdateObligationMutation(workspaceId: number | null) {
         .eq("workspace_id", workspaceId);
       if (error) throw new Error(error.message ?? "Error de base de datos");
     },
-    onSuccess: async () => {
-      await queryClient.refetchQueries({ queryKey: ["workspace-snapshot"] });
-      void queryClient.invalidateQueries({ queryKey: ["obligation-active-share"] });
-      if (workspaceId) {
-        void queryClient.invalidateQueries({ queryKey: ["obligation-shares", workspaceId] });
-      }
+    onSuccess: () => {
+      runBackgroundQueryRefresh(
+        queryClient,
+        workspaceId
+          ? [["workspace-snapshot"], ["obligation-active-share"], ["obligation-shares", workspaceId]]
+          : [["workspace-snapshot"], ["obligation-active-share"]],
+      );
     },
   });
 }
@@ -1477,8 +2031,9 @@ export type ObligationPaymentInput = {
   description?: string | null;
   notes?: string | null;
   createMovement: boolean;
-  /** Si es "receivable" (me deben), textos automáticos usan “cobro”. */
+  /** Si es "receivable" (me deben), textos automÃ¡ticos usan â€œcobroâ€. */
   direction?: ObligationDirection;
+  attachments?: AttachmentLike[];
 };
 
 async function fetchObligationWorkspaceId(obligationId: number): Promise<number> {
@@ -1488,7 +2043,7 @@ async function fetchObligationWorkspaceId(obligationId: number): Promise<number>
     .select("workspace_id")
     .eq("id", obligationId)
     .single();
-  if (error) throw new Error(error.message ?? "Obligación no encontrada");
+  if (error) throw new Error(error.message ?? "ObligaciÃ³n no encontrada");
   const ws = toNum(data?.workspace_id);
   if (!ws) throw new Error("Workspace no disponible.");
   return ws;
@@ -1501,51 +2056,124 @@ export function useCreateObligationPaymentMutation(workspaceId: number | null) {
       if (!supabase) throw new Error("Supabase no disponible.");
       const wsId = await fetchObligationWorkspaceId(input.obligationId);
       if (workspaceId != null && workspaceId !== wsId) {
-        throw new Error("La obligación no pertenece al workspace activo.");
+        throw new Error("La obligaciÃ³n no pertenece al workspace activo.");
       }
       const isReceivable = input.direction === "receivable";
       const autoDesc =
         input.description?.trim() ||
-        (isReceivable ? `Cobro obligación #${input.obligationId}` : `Pago obligación #${input.obligationId}`);
-      // Register as obligation_event of type "payment"
-      const { data, error } = await supabase
-        .from("obligation_events")
-        .insert({
-          obligation_id: input.obligationId,
-          event_type: "payment",
-          event_date: input.paymentDate,
-          amount: input.amount,
-          installment_no: input.installmentNo ?? null,
-          description: input.description?.trim() || null,
-          notes: input.notes ?? null,
-          metadata: {},
-        })
-        .select("id")
-        .single();
-      if (error) throw new Error(error.message ?? "Error de base de datos");
+        (isReceivable ? `Cobro obligaciÃ³n #${input.obligationId}` : `Pago obligaciÃ³n #${input.obligationId}`);
+      const { id: eventId, installmentNoApplied } = await insertObligationPaymentEventWithFallback({
+        obligationId: input.obligationId,
+        paymentDate: input.paymentDate,
+        amount: input.amount,
+        installmentNo: input.installmentNo,
+        description: input.description,
+        notes: input.notes,
+        metadata: {},
+      });
+      let ownerMovementId: number | null = null;
       // If requested, also create a movement linked to this obligation
       if (input.createMovement && input.accountId) {
-        const { error: mvErr } = await supabase
+        const movementPayload: Record<string, unknown> = {
+          workspace_id: wsId,
+          movement_type: "obligation_payment",
+          status: "posted",
+          occurred_at: dateStrToISO(input.paymentDate),
+          description: autoDesc,
+          obligation_id: input.obligationId,
+          metadata: { obligation_event_id: eventId },
+        };
+        if (isReceivable) {
+          movementPayload.destination_account_id = input.accountId;
+          movementPayload.destination_amount = input.amount;
+        } else {
+          movementPayload.source_account_id = input.accountId;
+          movementPayload.source_amount = input.amount;
+        }
+        const { data: mvData, error: mvErr } = await supabase
           .from("movements")
-          .insert({
-            workspace_id: wsId,
-            movement_type: "obligation_payment",
-            status: "posted",
-            occurred_at: dateStrToISO(input.paymentDate),
-            description: autoDesc,
-            source_account_id: input.accountId,
-            source_amount: input.amount,
-            obligation_id: input.obligationId,
-            metadata: {},
-          });
+          .insert(movementPayload)
+          .select("id")
+          .single();
         if (mvErr) throw mvErr;
+        ownerMovementId = (mvData as { id: number }).id;
+        await attachMovementToObligationEvent(eventId, ownerMovementId);
       }
-      return data as { id: number };
+      return {
+        id: eventId,
+        movementId: ownerMovementId,
+        workspaceId: wsId,
+        installmentNoApplied,
+      };
     },
-    onSuccess: (_data, variables) => {
-      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
-      void queryClient.invalidateQueries({ queryKey: ["movements"] });
-      void queryClient.invalidateQueries({ queryKey: ["obligation-events", variables.obligationId] });
+    onSuccess: (data, variables) => {
+      const queryKeys: Array<readonly unknown[]> = [
+        ["workspace-snapshot"],
+        ["movements"],
+        ["obligation-events", variables.obligationId],
+        ["entity-attachments", data.workspaceId, "obligation-event", data.id],
+      ];
+      if (data.movementId) {
+        queryKeys.push(["movement-attachments", data.workspaceId, data.movementId]);
+      }
+      runBackgroundQueryRefresh(queryClient, queryKeys, {
+        message: "Actualizando pago",
+        description: "Estamos sincronizando el historial y los balances en segundo plano.",
+      });
+    },
+  });
+}
+
+// â”€â”€â”€ Link existing movement to obligation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+export function useLinkMovementToObligationMutation(workspaceId: number | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      movementId,
+      obligationId,
+      amount,
+      paymentDate,
+      description,
+      installmentNo,
+    }: {
+      movementId: number;
+      obligationId: number;
+      amount: number;
+      paymentDate: string;
+      description?: string | null;
+      installmentNo?: number | null;
+    }) => {
+      if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
+      // 1. Create obligation_event of type "payment" linked to this movement
+      const { error: evError } = await supabase
+        .from("obligation_events")
+        .insert({
+          obligation_id: obligationId,
+          event_type: "payment",
+          event_date: paymentDate,
+          amount,
+          movement_id: movementId,
+          description: description?.trim() || null,
+          installment_no: installmentNo ?? null,
+          metadata: {},
+        });
+      if (evError) throw new Error(evError.message ?? "Error al crear evento de obligaciÃ³n");
+      // 2. Tag the movement with the obligation id
+      const { error: mvError } = await supabase
+        .from("movements")
+        .update({ obligation_id: obligationId })
+        .eq("id", movementId)
+        .eq("workspace_id", workspaceId);
+      if (mvError) throw new Error(mvError.message ?? "Error al vincular movimiento");
+    },
+    onSuccess: (_data, { movementId, obligationId }) => {
+      runBackgroundQueryRefresh(queryClient, [
+        ["workspace-snapshot"],
+        ["movements"],
+        ["movement", movementId],
+        ["obligation-events", obligationId],
+      ]);
     },
   });
 }
@@ -1568,7 +2196,7 @@ export function useCreatePrincipalAdjustmentMutation(workspaceId: number | null)
       if (!supabase) throw new Error("Supabase no disponible.");
       const wsId = await fetchObligationWorkspaceId(input.obligationId);
       if (workspaceId != null && workspaceId !== wsId) {
-        throw new Error("La obligación no pertenece al workspace activo.");
+        throw new Error("La obligaciÃ³n no pertenece al workspace activo.");
       }
       const eventType = input.mode === "increase" ? "principal_increase" : "principal_decrease";
       const { data, error } = await supabase
@@ -1585,13 +2213,14 @@ export function useCreatePrincipalAdjustmentMutation(workspaceId: number | null)
         .select("id")
         .single();
       if (error) throw new Error(error.message ?? "Error de base de datos");
+      const eventId = (data as { id: number }).id;
       // Optionally create a linked account movement
       if (input.createMovement && input.accountId) {
         const movType = input.mode === "increase" ? "income" : "expense";
         const desc = input.mode === "increase"
           ? `Aumento de principal #${input.obligationId}`
-          : `Reducción de principal #${input.obligationId}`;
-        const { error: mvErr } = await supabase
+          : `ReducciÃ³n de principal #${input.obligationId}`;
+        const { data: mvData, error: mvErr } = await supabase
           .from("movements")
           .insert({
             workspace_id: wsId,
@@ -1603,21 +2232,29 @@ export function useCreatePrincipalAdjustmentMutation(workspaceId: number | null)
               ? { destination_account_id: input.accountId, destination_amount: input.amount }
               : { source_account_id: input.accountId, source_amount: input.amount }),
             obligation_id: input.obligationId,
-            metadata: {},
-          });
+            metadata: { obligation_event_id: eventId },
+          })
+          .select("id")
+          .single();
         if (mvErr) throw mvErr;
+        await attachMovementToObligationEvent(eventId, (mvData as { id: number }).id);
       }
-      return data as { id: number };
+      return { id: eventId };
     },
-    onSuccess: (_data, variables) => {
-      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
-      void queryClient.invalidateQueries({ queryKey: ["movements"] });
-      void queryClient.invalidateQueries({ queryKey: ["obligation-events", variables.obligationId] });
+    onSuccess: (data, variables) => {
+      runBackgroundQueryRefresh(queryClient, [
+        ["workspace-snapshot"],
+        ["movements"],
+        ["obligation-events", variables.obligationId],
+      ], {
+        message: "Actualizando deuda o crÃ©dito",
+        description: "Estamos sincronizando el evento y los balances asociados en segundo plano.",
+      });
     },
   });
 }
 
-// ─── Obligation event update / delete ────────────────────────────────────────
+// â”€â”€â”€ Obligation event update / delete â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type UpdateObligationEventInput = {
   eventId: number;
@@ -1628,29 +2265,376 @@ export type UpdateObligationEventInput = {
   description?: string | null;
   notes?: string | null;
   reason?: string | null;
+  movementId?: number | null;
+  accountId?: number | null;
+  createMovement?: boolean;
+  direction?: ObligationDirection;
+  eventType?: string | null;
+  currencyCode?: string | null;
+  obligationTitle?: string | null;
 };
+
+type UpdateObligationEventSyncResult = {
+  movementId: number | null;
+  workspaceId: number;
+  removedMovementId: number | null;
+  syncedViewerMovementIds: number[];
+};
+
+async function resolveMovementAccountId(movementId: number | null | undefined): Promise<number | null> {
+  if (!supabase || !movementId) return null;
+  const { data, error } = await supabase
+    .from("movements")
+    .select("source_account_id, destination_account_id")
+    .eq("id", movementId)
+    .maybeSingle();
+  if (error) {
+    throw new Error(error.message ?? "Error al cargar la cuenta del movimiento");
+  }
+  const row = data as { source_account_id?: NumericLike; destination_account_id?: NumericLike } | null;
+  const sourceAccountId = toNum(row?.source_account_id ?? null);
+  if (sourceAccountId) return sourceAccountId;
+  const destinationAccountId = toNum(row?.destination_account_id ?? null);
+  return destinationAccountId || null;
+}
+
+async function syncViewerLinkedMovementsForEvent(input: {
+  eventId: number;
+  obligationId: number;
+  obligationWorkspaceId: number;
+  amount: number;
+  eventDate: string;
+  description?: string | null;
+  direction: ObligationDirection;
+  obligationTitle?: string | null;
+}) {
+  if (!supabase) throw new Error("Supabase no disponible.");
+
+  const viewerLinks = await fetchViewerLinksForEvent(input.eventId);
+  if (viewerLinks.length === 0) return [] as number[];
+
+  const viewerIsDebtor = input.direction === "receivable";
+  const autoDesc =
+    input.description?.trim() ||
+    (viewerIsDebtor
+      ? `Pago vinculado: ${input.obligationTitle?.trim() || `Obligacion #${input.obligationId}`}`
+      : `Cobro vinculado: ${input.obligationTitle?.trim() || `Obligacion #${input.obligationId}`}`);
+
+  const syncedMovementIds: number[] = [];
+
+  for (const link of viewerLinks) {
+    const viewerWorkspaceId = link.viewer_workspace_id != null ? Number(link.viewer_workspace_id) : null;
+    let accountId = link.account_id != null ? Number(link.account_id) : null;
+    if (!accountId && link.movement_id) {
+      accountId = await resolveMovementAccountId(link.movement_id);
+    }
+    if (!viewerWorkspaceId || !accountId) continue;
+
+    const movementPayload: Record<string, unknown> = {
+      workspace_id: viewerWorkspaceId,
+      movement_type: "obligation_payment",
+      status: "posted",
+      occurred_at: dateStrToISO(input.eventDate),
+      description: autoDesc,
+      obligation_id: null,
+      metadata: { obligation_id: input.obligationId, obligation_event_id: input.eventId },
+      source_account_id: viewerIsDebtor ? accountId : null,
+      source_amount: viewerIsDebtor ? input.amount : null,
+      destination_account_id: viewerIsDebtor ? null : accountId,
+      destination_amount: viewerIsDebtor ? null : input.amount,
+    };
+
+    let movementId = link.movement_id != null ? Number(link.movement_id) : null;
+    if (movementId) {
+      const { error: movementUpdateError } = await supabase
+        .from("movements")
+        .update(movementPayload)
+        .eq("id", movementId);
+      if (movementUpdateError) {
+        throw new Error(movementUpdateError.message ?? "Error al actualizar movimiento del viewer");
+      }
+    } else {
+      const { data: movementData, error: movementInsertError } = await supabase
+        .from("movements")
+        .insert(movementPayload)
+        .select("id")
+        .single();
+      if (movementInsertError) {
+        throw new Error(movementInsertError.message ?? "Error al crear movimiento del viewer");
+      }
+      movementId = toNum((movementData as { id: NumericLike }).id);
+      const { error: linkUpdateError } = await supabase
+        .from("obligation_event_viewer_links")
+        .update({
+          account_id: accountId,
+          movement_id: movementId,
+        })
+        .eq("id", link.id);
+      if (linkUpdateError) {
+        throw new Error(linkUpdateError.message ?? "Error al actualizar vinculo del viewer");
+      }
+    }
+
+    if (movementId) {
+      syncedMovementIds.push(movementId);
+      try {
+        await mirrorObligationEventAttachmentsToMovement({
+          workspaceId: input.obligationWorkspaceId,
+          targetWorkspaceId: viewerWorkspaceId,
+          eventId: input.eventId,
+          movementId,
+        });
+      } catch (error) {
+        console.warn("[syncViewerLinkedMovementsForEvent] attachment mirror failed", error);
+      }
+    }
+  }
+
+  return syncedMovementIds;
+}
+
+async function notifyAcceptedViewersObligationEventUpdated(input: {
+  obligationId: number;
+  eventId: number;
+  amount: number;
+  eventDate: string;
+  installmentNo?: number | null;
+  description?: string | null;
+  notes?: string | null;
+  currencyCode?: string | null;
+  eventType?: string | null;
+  obligationTitle?: string | null;
+  currentAmount?: number | null;
+  currentEventDate?: string | null;
+  currentInstallmentNo?: number | null;
+  currentDescription?: string | null;
+  currentNotes?: string | null;
+}) {
+  if (!supabase) throw new Error("Supabase no disponible.");
+
+  const { data: shareRows, error: shareRowsError } = await supabase
+    .from("obligation_shares")
+    .select("invited_user_id")
+    .eq("obligation_id", input.obligationId)
+    .eq("status", "accepted");
+  if (shareRowsError) {
+    throw new Error(shareRowsError.message ?? "Error al cargar viewers de la obligacion");
+  }
+
+  const viewerIds = (shareRows ?? [])
+    .map((row) => (row as { invited_user_id?: string | null }).invited_user_id ?? null)
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+  if (viewerIds.length === 0) return;
+
+  const amountLabel = formatNotificationCurrency(input.amount, input.currencyCode);
+  const payload = eventEditPayload({
+    obligationId: input.obligationId,
+    eventId: input.eventId,
+    currencyCode: input.currencyCode,
+    eventType: input.eventType,
+    obligationTitle: input.obligationTitle,
+    currentAmount: input.currentAmount,
+    currentEventDate: input.currentEventDate,
+    currentInstallmentNo: input.currentInstallmentNo,
+    currentDescription: input.currentDescription,
+    currentNotes: input.currentNotes,
+    proposedAmount: input.amount,
+    proposedEventDate: input.eventDate,
+    proposedInstallmentNo: input.installmentNo ?? null,
+    proposedDescription: input.description?.trim() || null,
+    proposedNotes: input.notes?.trim() || null,
+  });
+
+  await Promise.all(
+    viewerIds.map((viewerUserId) =>
+      createOrRefreshNotificationRow({
+        user_id: viewerUserId,
+        channel: "in_app",
+        status: "pending",
+        kind: "obligation_event_updated",
+        title: "Evento actualizado",
+        body: `Se actualizo un evento${amountLabel}${input.obligationTitle ? ` en "${input.obligationTitle}"` : ""}.`,
+        scheduled_for: new Date().toISOString(),
+        related_entity_type: "obligation_event",
+        related_entity_id: input.eventId,
+        payload,
+      }),
+    ),
+  );
+}
+
+async function updateObligationEventAndSyncMovements(
+  input: UpdateObligationEventInput,
+): Promise<UpdateObligationEventSyncResult> {
+  if (!supabase) throw new Error("Supabase no disponible.");
+
+  const { data: currentEventRow, error: currentEventError } = await supabase
+    .from("obligation_events")
+    .select("amount, event_date, installment_no, description, notes, event_type")
+    .eq("id", input.eventId)
+    .maybeSingle();
+  if (currentEventError) {
+    throw new Error(currentEventError.message ?? "Error al cargar el evento");
+  }
+  const currentEvent = currentEventRow as {
+    amount?: NumericLike | null;
+    event_date?: string | null;
+    installment_no?: NumericLike | null;
+    description?: string | null;
+    notes?: string | null;
+    event_type?: string | null;
+  } | null;
+
+  const { error } = await supabase
+    .from("obligation_events")
+    .update({
+      amount: input.amount,
+      event_date: input.eventDate,
+      installment_no: input.installmentNo ?? null,
+      description: input.description?.trim() || null,
+      notes: input.notes?.trim() || null,
+      reason: input.reason?.trim() || null,
+    })
+    .eq("id", input.eventId);
+  if (error) throw new Error(error.message ?? "Error de base de datos");
+
+  const workspaceId = await fetchObligationWorkspaceId(input.obligationId);
+  const shouldSyncPaymentMovement =
+    input.direction != null &&
+    (input.movementId != null || input.accountId != null || input.createMovement != null);
+
+  if (!shouldSyncPaymentMovement) {
+    return {
+      movementId: input.movementId ?? null,
+      workspaceId,
+      removedMovementId: null,
+      syncedViewerMovementIds: [],
+    };
+  }
+
+  const isReceivable = input.direction === "receivable";
+  const autoDesc =
+    input.description?.trim() ||
+    (isReceivable
+      ? `Cobro obligacion #${input.obligationId}`
+      : `Pago obligacion #${input.obligationId}`);
+
+  const createMovement = input.createMovement ?? Boolean(input.movementId ?? input.accountId);
+  const resolvedAccountId =
+    input.accountId ?? (input.movementId ? await resolveMovementAccountId(input.movementId) : null);
+
+  let movementId = input.movementId ?? null;
+  let removedMovementId: number | null = null;
+
+  if (createMovement && resolvedAccountId) {
+    const movementPayload: Record<string, unknown> = {
+      workspace_id: workspaceId,
+      movement_type: "obligation_payment",
+      status: "posted",
+      occurred_at: dateStrToISO(input.eventDate),
+      description: autoDesc,
+      obligation_id: input.obligationId,
+      metadata: { obligation_event_id: input.eventId },
+      source_account_id: isReceivable ? null : resolvedAccountId,
+      source_amount: isReceivable ? null : input.amount,
+      destination_account_id: isReceivable ? resolvedAccountId : null,
+      destination_amount: isReceivable ? input.amount : null,
+    };
+
+    if (movementId) {
+      const { error: movementUpdateError } = await supabase
+        .from("movements")
+        .update(movementPayload)
+        .eq("id", movementId);
+      if (movementUpdateError) {
+        throw new Error(movementUpdateError.message ?? "Error al actualizar movimiento vinculado");
+      }
+    } else {
+      const { data: movementData, error: movementInsertError } = await supabase
+        .from("movements")
+        .insert(movementPayload)
+        .select("id")
+        .single();
+      if (movementInsertError) {
+        throw new Error(movementInsertError.message ?? "Error al crear movimiento vinculado");
+      }
+      movementId = toNum((movementData as { id: NumericLike }).id);
+      await attachMovementToObligationEvent(input.eventId, movementId);
+    }
+  } else if (!createMovement && movementId) {
+    const { error: movementDeleteError } = await supabase
+      .from("movements")
+      .delete()
+      .eq("id", movementId);
+    if (movementDeleteError) {
+      throw new Error(movementDeleteError.message ?? "Error al eliminar movimiento vinculado");
+    }
+    const { error: unlinkError } = await supabase
+      .from("obligation_events")
+      .update({ movement_id: null })
+      .eq("id", input.eventId);
+    if (unlinkError) {
+      throw new Error(unlinkError.message ?? "Error al desvincular movimiento del evento");
+    }
+    removedMovementId = movementId;
+    movementId = null;
+  }
+
+  const syncedViewerMovementIds = await syncViewerLinkedMovementsForEvent({
+    eventId: input.eventId,
+    obligationId: input.obligationId,
+    obligationWorkspaceId: workspaceId,
+    amount: input.amount,
+    eventDate: input.eventDate,
+    description: input.description,
+    direction: input.direction,
+  });
+
+  await notifyAcceptedViewersObligationEventUpdated({
+    obligationId: input.obligationId,
+    eventId: input.eventId,
+    amount: input.amount,
+    eventDate: input.eventDate,
+    installmentNo: input.installmentNo ?? null,
+    description: input.description ?? null,
+    notes: input.notes ?? null,
+    currencyCode: input.currencyCode ?? null,
+    eventType: input.eventType ?? currentEvent?.event_type ?? null,
+    obligationTitle: input.obligationTitle ?? null,
+    currentAmount: toNum(currentEvent?.amount ?? null),
+    currentEventDate: currentEvent?.event_date ?? null,
+    currentInstallmentNo: toNum(currentEvent?.installment_no ?? null),
+    currentDescription: currentEvent?.description ?? null,
+    currentNotes: currentEvent?.notes ?? null,
+  });
+
+  return {
+    movementId,
+    workspaceId,
+    removedMovementId,
+    syncedViewerMovementIds,
+  };
+}
 
 export function useUpdateObligationEventMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (input: UpdateObligationEventInput) => {
-      if (!supabase) throw new Error("Supabase no disponible.");
-      const { error } = await supabase
-        .from("obligation_events")
-        .update({
-          amount: input.amount,
-          event_date: input.eventDate,
-          installment_no: input.installmentNo ?? null,
-          description: input.description?.trim() || null,
-          notes: input.notes?.trim() || null,
-          reason: input.reason?.trim() || null,
-        })
-        .eq("id", input.eventId);
-      if (error) throw new Error(error.message ?? "Error de base de datos");
-    },
-    onSuccess: (_data, variables) => {
-      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
-      void queryClient.invalidateQueries({ queryKey: ["obligation-events", variables.obligationId] });
+    mutationFn: (input: UpdateObligationEventInput) => updateObligationEventAndSyncMovements(input),
+    onSuccess: (data, variables) => {
+      const queryKeys: Array<readonly unknown[]> = [
+        ["workspace-snapshot"],
+        ["movements"],
+        ["obligation-events", variables.obligationId],
+      ];
+      if (data?.movementId) queryKeys.push(["movement", data.movementId]);
+      if (data?.removedMovementId) queryKeys.push(["movement", data.removedMovementId]);
+      for (const syncedViewerMovementId of data?.syncedViewerMovementIds ?? []) {
+        queryKeys.push(["movement", syncedViewerMovementId]);
+      }
+      runBackgroundQueryRefresh(queryClient, queryKeys, {
+        message: "Actualizando evento",
+        description: "Estamos sincronizando el historial de la deuda o crÃ©dito en segundo plano.",
+      });
     },
   });
 }
@@ -1658,27 +2642,1300 @@ export function useUpdateObligationEventMutation() {
 export type DeleteObligationEventInput = {
   eventId: number;
   obligationId: number;
+  workspaceId?: number | null;
+  movementId?: number | null;
+  ownerUserId?: string | null;
+  obligationTitle?: string | null;
+  amount?: number | null;
+  eventType?: string | null;
+  eventDate?: string | null;
 };
+
+type EventDeleteRequestPayload = {
+  obligationId: number;
+  eventId: number;
+  amount?: number | null;
+  currencyCode?: string | null;
+  eventType?: string | null;
+  eventDate?: string | null;
+  obligationTitle?: string | null;
+  requestedByUserId?: string | null;
+  requestedByDisplayName?: string | null;
+  rejectionReason?: string | null;
+  responseStatus?: "accepted" | "rejected" | null;
+};
+
+type EventEditRequestPayload = {
+  obligationId: number;
+  eventId: number;
+  currencyCode?: string | null;
+  eventType?: string | null;
+  obligationTitle?: string | null;
+  requestedByUserId?: string | null;
+  requestedByDisplayName?: string | null;
+  rejectionReason?: string | null;
+  responseStatus?: "accepted" | "rejected" | null;
+  currentAmount?: number | null;
+  currentEventDate?: string | null;
+  currentInstallmentNo?: number | null;
+  currentDescription?: string | null;
+  currentNotes?: string | null;
+  proposedAmount?: number | null;
+  proposedEventDate?: string | null;
+  proposedInstallmentNo?: number | null;
+  proposedDescription?: string | null;
+  proposedNotes?: string | null;
+};
+
+type ViewerEventLinkRow = {
+  id: number;
+  movement_id: number | null;
+  linked_by_user_id: string | null;
+  account_id: number | null;
+  viewer_workspace_id: number | null;
+};
+
+type OwnerMovementLookupRow = {
+  id: number;
+  movement_type: MovementType;
+  source_amount: NumericLike;
+  destination_amount: NumericLike;
+  description: string | null;
+  metadata: JsonValue | null;
+};
+
+function eventDeletePayload(input: {
+  obligationId: number;
+  eventId: number;
+  amount?: number | null;
+  currencyCode?: string | null;
+  eventType?: string | null;
+  eventDate?: string | null;
+  obligationTitle?: string | null;
+  requestedByUserId?: string | null;
+  requestedByDisplayName?: string | null;
+  rejectionReason?: string | null;
+  responseStatus?: "accepted" | "rejected" | null;
+}): EventDeleteRequestPayload {
+  return {
+    obligationId: input.obligationId,
+    eventId: input.eventId,
+    amount: input.amount ?? null,
+    currencyCode: input.currencyCode?.trim().toUpperCase() || null,
+    eventType: input.eventType ?? null,
+    eventDate: input.eventDate ?? null,
+    obligationTitle: input.obligationTitle ?? null,
+    requestedByUserId: input.requestedByUserId ?? null,
+    requestedByDisplayName: input.requestedByDisplayName ?? null,
+    rejectionReason: input.rejectionReason ?? null,
+    responseStatus: input.responseStatus ?? null,
+  };
+}
+
+function eventEditPayload(input: {
+  obligationId: number;
+  eventId: number;
+  currencyCode?: string | null;
+  eventType?: string | null;
+  obligationTitle?: string | null;
+  requestedByUserId?: string | null;
+  requestedByDisplayName?: string | null;
+  rejectionReason?: string | null;
+  responseStatus?: "accepted" | "rejected" | null;
+  currentAmount?: number | null;
+  currentEventDate?: string | null;
+  currentInstallmentNo?: number | null;
+  currentDescription?: string | null;
+  currentNotes?: string | null;
+  proposedAmount?: number | null;
+  proposedEventDate?: string | null;
+  proposedInstallmentNo?: number | null;
+  proposedDescription?: string | null;
+  proposedNotes?: string | null;
+}): EventEditRequestPayload {
+  return {
+    obligationId: input.obligationId,
+    eventId: input.eventId,
+    currencyCode: input.currencyCode?.trim().toUpperCase() || null,
+    eventType: input.eventType ?? null,
+    obligationTitle: input.obligationTitle ?? null,
+    requestedByUserId: input.requestedByUserId ?? null,
+    requestedByDisplayName: input.requestedByDisplayName ?? null,
+    rejectionReason: input.rejectionReason ?? null,
+    responseStatus: input.responseStatus ?? null,
+    currentAmount: input.currentAmount ?? null,
+    currentEventDate: input.currentEventDate ?? null,
+    currentInstallmentNo: input.currentInstallmentNo ?? null,
+    currentDescription: input.currentDescription ?? null,
+    currentNotes: input.currentNotes ?? null,
+    proposedAmount: input.proposedAmount ?? null,
+    proposedEventDate: input.proposedEventDate ?? null,
+    proposedInstallmentNo: input.proposedInstallmentNo ?? null,
+    proposedDescription: input.proposedDescription ?? null,
+    proposedNotes: input.proposedNotes ?? null,
+  };
+}
+
+function readEventDeletePayload(value: JsonValue | null | undefined): EventDeleteRequestPayload | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const raw = value as Record<string, JsonValue>;
+  const obligationId = typeof raw.obligationId === "number" ? raw.obligationId : Number(raw.obligationId ?? 0);
+  const eventId = typeof raw.eventId === "number" ? raw.eventId : Number(raw.eventId ?? 0);
+  if (!obligationId || !eventId) return null;
+  return {
+    obligationId,
+    eventId,
+    amount:
+      typeof raw.amount === "number"
+        ? raw.amount
+        : raw.amount == null
+          ? null
+          : Number(raw.amount),
+    currencyCode: typeof raw.currencyCode === "string" ? raw.currencyCode.trim().toUpperCase() : null,
+    eventType: typeof raw.eventType === "string" ? raw.eventType : null,
+    eventDate: typeof raw.eventDate === "string" ? raw.eventDate : null,
+    obligationTitle: typeof raw.obligationTitle === "string" ? raw.obligationTitle : null,
+    requestedByUserId: typeof raw.requestedByUserId === "string" ? raw.requestedByUserId : null,
+    requestedByDisplayName:
+      typeof raw.requestedByDisplayName === "string" ? raw.requestedByDisplayName : null,
+    rejectionReason: typeof raw.rejectionReason === "string" ? raw.rejectionReason : null,
+    responseStatus:
+      raw.responseStatus === "accepted" || raw.responseStatus === "rejected"
+        ? raw.responseStatus
+        : null,
+  };
+}
+
+function readEventEditPayload(value: JsonValue | null | undefined): EventEditRequestPayload | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const raw = value as Record<string, JsonValue>;
+  const obligationId = typeof raw.obligationId === "number" ? raw.obligationId : Number(raw.obligationId ?? 0);
+  const eventId = typeof raw.eventId === "number" ? raw.eventId : Number(raw.eventId ?? 0);
+  if (!obligationId || !eventId) return null;
+  return {
+    obligationId,
+    eventId,
+    currencyCode: typeof raw.currencyCode === "string" ? raw.currencyCode.trim().toUpperCase() : null,
+    eventType: typeof raw.eventType === "string" ? raw.eventType : null,
+    obligationTitle: typeof raw.obligationTitle === "string" ? raw.obligationTitle : null,
+    requestedByUserId: typeof raw.requestedByUserId === "string" ? raw.requestedByUserId : null,
+    requestedByDisplayName:
+      typeof raw.requestedByDisplayName === "string" ? raw.requestedByDisplayName : null,
+    rejectionReason: typeof raw.rejectionReason === "string" ? raw.rejectionReason : null,
+    responseStatus:
+      raw.responseStatus === "accepted" || raw.responseStatus === "rejected"
+        ? raw.responseStatus
+        : null,
+    currentAmount:
+      typeof raw.currentAmount === "number"
+        ? raw.currentAmount
+        : raw.currentAmount == null
+          ? null
+          : Number(raw.currentAmount),
+    currentEventDate: typeof raw.currentEventDate === "string" ? raw.currentEventDate : null,
+    currentInstallmentNo:
+      typeof raw.currentInstallmentNo === "number"
+        ? raw.currentInstallmentNo
+        : raw.currentInstallmentNo == null
+          ? null
+          : Number(raw.currentInstallmentNo),
+    currentDescription:
+      typeof raw.currentDescription === "string" ? raw.currentDescription : null,
+    currentNotes: typeof raw.currentNotes === "string" ? raw.currentNotes : null,
+    proposedAmount:
+      typeof raw.proposedAmount === "number"
+        ? raw.proposedAmount
+        : raw.proposedAmount == null
+          ? null
+          : Number(raw.proposedAmount),
+    proposedEventDate: typeof raw.proposedEventDate === "string" ? raw.proposedEventDate : null,
+    proposedInstallmentNo:
+      typeof raw.proposedInstallmentNo === "number"
+        ? raw.proposedInstallmentNo
+        : raw.proposedInstallmentNo == null
+          ? null
+          : Number(raw.proposedInstallmentNo),
+    proposedDescription:
+      typeof raw.proposedDescription === "string" ? raw.proposedDescription : null,
+    proposedNotes: typeof raw.proposedNotes === "string" ? raw.proposedNotes : null,
+  };
+}
+
+async function fetchViewerLinksForEvent(eventId: number): Promise<ViewerEventLinkRow[]> {
+  if (!supabase) throw new Error("Supabase no disponible.");
+  const { data, error } = await supabase
+    .from("obligation_event_viewer_links")
+    .select("id, movement_id, linked_by_user_id, account_id, viewer_workspace_id")
+    .eq("event_id", eventId);
+  if (error) throw new Error(error.message ?? "Error al cargar vÃ­nculos del evento");
+  return (data ?? []) as ViewerEventLinkRow[];
+}
+
+async function deleteViewerLinksForEvent(eventId: number): Promise<ViewerEventLinkRow[]> {
+  if (!supabase) throw new Error("Supabase no disponible.");
+  const viewerLinks = await fetchViewerLinksForEvent(eventId);
+  for (const link of viewerLinks) {
+    if (link.movement_id) {
+      const { error: mvErr } = await supabase
+        .from("movements")
+        .delete()
+        .eq("id", link.movement_id);
+      if (mvErr) throw new Error(mvErr.message ?? "Error al eliminar movimiento asociado del viewer");
+    }
+  }
+  if (viewerLinks.length > 0) {
+    const { error: linkErr } = await supabase
+      .from("obligation_event_viewer_links")
+      .delete()
+      .eq("event_id", eventId);
+    if (linkErr) throw new Error(linkErr.message ?? "Error al limpiar vÃ­nculos del evento");
+  }
+  return viewerLinks;
+}
+
+function movementTypeForObligationEvent(eventType: string | null | undefined): MovementType | null {
+  switch (eventType) {
+    case "payment":
+      return "obligation_payment";
+    case "principal_increase":
+      return "income";
+    case "principal_decrease":
+      return "expense";
+    default:
+      return null;
+  }
+}
+
+function readMovementMetadataEventId(value: JsonValue | null | undefined): number | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const raw = value as Record<string, JsonValue>;
+  const movementEventId =
+    typeof raw.obligation_event_id === "number"
+      ? raw.obligation_event_id
+      : Number(raw.obligation_event_id ?? 0);
+  return Number.isFinite(movementEventId) && movementEventId > 0 ? movementEventId : null;
+}
+
+async function attachMovementToObligationEvent(eventId: number, movementId: number) {
+  if (!supabase) throw new Error("Supabase no disponible.");
+  const { error } = await supabase
+    .from("obligation_events")
+    .update({ movement_id: movementId })
+    .eq("id", eventId);
+  if (error) {
+    console.warn("[attachMovementToObligationEvent]", {
+      eventId,
+      movementId,
+      message: error.message ?? "Error al vincular evento y movimiento",
+    });
+  }
+}
+
+async function resolveOwnerMovementIdForObligationEvent(
+  input: DeleteObligationEventInput,
+): Promise<number | null> {
+  if (!supabase) throw new Error("Supabase no disponible.");
+  if (input.movementId) return input.movementId;
+
+  const { data: eventRow, error: eventErr } = await supabase
+    .from("obligation_events")
+    .select("movement_id, event_date, amount, event_type, description")
+    .eq("id", input.eventId)
+    .maybeSingle();
+  if (eventErr) throw new Error(eventErr.message ?? "Error al cargar el evento");
+
+  const eventMovementId = toNum((eventRow as { movement_id: NumericLike } | null)?.movement_id ?? null);
+  if (eventMovementId) return eventMovementId;
+
+  const eventDate =
+    typeof (eventRow as { event_date?: string | null } | null)?.event_date === "string"
+      ? (eventRow as { event_date: string }).event_date
+      : input.eventDate ?? null;
+  const eventAmount =
+    (eventRow as { amount?: NumericLike | null } | null)?.amount != null
+      ? toNum((eventRow as { amount: NumericLike }).amount)
+      : input.amount ?? null;
+  const eventType =
+    typeof (eventRow as { event_type?: string | null } | null)?.event_type === "string"
+      ? (eventRow as { event_type: string }).event_type
+      : input.eventType ?? null;
+  const eventDescription =
+    typeof (eventRow as { description?: string | null } | null)?.description === "string"
+      ? (eventRow as { description: string }).description.trim().toLowerCase()
+      : "";
+  if (!eventDate) return null;
+
+  let query = supabase
+    .from("movements")
+    .select("id, movement_type, source_amount, destination_amount, description, metadata")
+    .eq("obligation_id", input.obligationId)
+    .gte("occurred_at", filterDateFrom(eventDate))
+    .lte("occurred_at", filterDateTo(eventDate))
+    .order("id", { ascending: false })
+    .limit(25);
+
+  const movementType = movementTypeForObligationEvent(eventType);
+  if (movementType) {
+    query = query.eq("movement_type", movementType);
+  }
+
+  const { data: movementRows, error: movementErr } = await query;
+  if (movementErr) throw new Error(movementErr.message ?? "Error al buscar el movimiento vinculado");
+
+  const candidates = (movementRows ?? []) as OwnerMovementLookupRow[];
+  const metadataMatch = candidates.find((row) => readMovementMetadataEventId(row.metadata) === input.eventId);
+  if (metadataMatch) return toNum(metadataMatch.id);
+
+  if (eventAmount == null) return null;
+  const normalizedAmount = Math.abs(eventAmount);
+  const amountMatches = candidates.filter((row) => {
+    const sourceAmount = Math.abs(toNum(row.source_amount));
+    const destinationAmount = Math.abs(toNum(row.destination_amount));
+    return sourceAmount === normalizedAmount || destinationAmount === normalizedAmount;
+  });
+  if (amountMatches.length === 1) return toNum(amountMatches[0].id);
+
+  const obligationTitleNeedle = input.obligationTitle?.trim().toLowerCase() ?? "";
+  const descriptiveMatches = amountMatches.filter((row) => {
+    const description = row.description?.trim().toLowerCase() ?? "";
+    if (!description) return false;
+    return Boolean(
+      (obligationTitleNeedle && description.includes(obligationTitleNeedle)) ||
+      (eventDescription && description.includes(eventDescription)),
+    );
+  });
+  if (descriptiveMatches.length === 1) return toNum(descriptiveMatches[0].id);
+
+  return null;
+}
+
+async function markNotificationReadByEntity(
+  userId: string | null | undefined,
+  kind: string,
+  entityType: string,
+  entityId: number,
+) {
+  if (!supabase || !userId) return;
+  await supabase
+    .from("notifications")
+    .update({ status: "read", read_at: new Date().toISOString() })
+    .eq("user_id", userId)
+    .eq("kind", kind)
+    .eq("related_entity_type", entityType)
+    .eq("related_entity_id", entityId);
+}
+
+async function resolveViewerDeletePendingNotification(
+  userId: string | null | undefined,
+  eventId: number,
+  responseStatus: "accepted" | "rejected",
+  rejectionReason?: string | null,
+) {
+  if (!supabase || !userId) return;
+  const nowIso = new Date().toISOString();
+  const { data, error } = await supabase
+    .from("notifications")
+    .select("id, payload")
+    .eq("user_id", userId)
+    .eq("kind", "obligation_event_delete_pending")
+    .eq("related_entity_type", "obligation_event")
+    .eq("related_entity_id", eventId);
+  if (error) {
+    console.warn("[resolveViewerDeletePendingNotification]", error.message ?? error);
+    return;
+  }
+
+  for (const row of (data ?? []) as { id: number; payload: JsonValue | null }[]) {
+    const payload = readEventDeletePayload(row.payload);
+    const updatePayload = payload
+      ? eventDeletePayload({
+          ...payload,
+          rejectionReason:
+            responseStatus === "rejected" ? rejectionReason?.trim() || null : payload.rejectionReason ?? null,
+          responseStatus,
+        })
+      : row.payload;
+    const { error: updateErr } = await supabase
+      .from("notifications")
+      .update({
+        status: "read",
+        read_at: nowIso,
+        payload: updatePayload,
+      })
+      .eq("id", row.id);
+    if (updateErr) {
+      console.warn("[resolveViewerDeletePendingNotification]", updateErr.message ?? updateErr);
+    }
+  }
+}
+
+async function resolveOwnerDeleteRequestNotification(
+  userId: string | null | undefined,
+  eventId: number,
+  responseStatus: "accepted" | "rejected",
+  rejectionReason?: string | null,
+) {
+  if (!supabase || !userId) return;
+  const nowIso = new Date().toISOString();
+  const { data, error } = await supabase
+    .from("notifications")
+    .select("id, payload")
+    .eq("user_id", userId)
+    .eq("kind", "obligation_event_delete_request")
+    .eq("related_entity_type", "obligation_event")
+    .eq("related_entity_id", eventId);
+  if (error) {
+    console.warn("[resolveOwnerDeleteRequestNotification]", error.message ?? error);
+    return;
+  }
+
+  for (const row of (data ?? []) as { id: number; payload: JsonValue | null }[]) {
+    const payload = readEventDeletePayload(row.payload);
+    const updatePayload = payload
+      ? eventDeletePayload({
+          ...payload,
+          rejectionReason:
+            responseStatus === "rejected" ? rejectionReason?.trim() || null : payload.rejectionReason ?? null,
+          responseStatus,
+        })
+      : row.payload;
+    const { error: updateErr } = await supabase
+      .from("notifications")
+      .update({
+        status: "read",
+        read_at: nowIso,
+        payload: updatePayload,
+      })
+      .eq("id", row.id);
+    if (updateErr) {
+      console.warn("[resolveOwnerDeleteRequestNotification]", updateErr.message ?? updateErr);
+    }
+  }
+}
+
+async function resolveViewerEditPendingNotification(
+  userId: string | null | undefined,
+  eventId: number,
+  responseStatus: "accepted" | "rejected",
+  rejectionReason?: string | null,
+) {
+  if (!supabase || !userId) return;
+  const nowIso = new Date().toISOString();
+  const { data, error } = await supabase
+    .from("notifications")
+    .select("id, payload")
+    .eq("user_id", userId)
+    .eq("kind", "obligation_event_edit_pending")
+    .eq("related_entity_type", "obligation_event")
+    .eq("related_entity_id", eventId);
+  if (error) {
+    console.warn("[resolveViewerEditPendingNotification]", error.message ?? error);
+    return;
+  }
+
+  for (const row of (data ?? []) as { id: number; payload: JsonValue | null }[]) {
+    const payload = readEventEditPayload(row.payload);
+    const updatePayload = payload
+      ? eventEditPayload({
+          ...payload,
+          rejectionReason:
+            responseStatus === "rejected" ? rejectionReason?.trim() || null : payload.rejectionReason ?? null,
+          responseStatus,
+        })
+      : row.payload;
+    const { error: updateErr } = await supabase
+      .from("notifications")
+      .update({
+        status: "read",
+        read_at: nowIso,
+        payload: updatePayload,
+      })
+      .eq("id", row.id);
+    if (updateErr) {
+      console.warn("[resolveViewerEditPendingNotification]", updateErr.message ?? updateErr);
+    }
+  }
+}
+
+async function resolveOwnerEditRequestNotification(
+  userId: string | null | undefined,
+  eventId: number,
+  responseStatus: "accepted" | "rejected",
+  rejectionReason?: string | null,
+) {
+  if (!supabase || !userId) return;
+  const nowIso = new Date().toISOString();
+  const { data, error } = await supabase
+    .from("notifications")
+    .select("id, payload")
+    .eq("user_id", userId)
+    .eq("kind", "obligation_event_edit_request")
+    .eq("related_entity_type", "obligation_event")
+    .eq("related_entity_id", eventId);
+  if (error) {
+    console.warn("[resolveOwnerEditRequestNotification]", error.message ?? error);
+    return;
+  }
+
+  for (const row of (data ?? []) as { id: number; payload: JsonValue | null }[]) {
+    const payload = readEventEditPayload(row.payload);
+    const updatePayload = payload
+      ? eventEditPayload({
+          ...payload,
+          rejectionReason:
+            responseStatus === "rejected" ? rejectionReason?.trim() || null : payload.rejectionReason ?? null,
+          responseStatus,
+        })
+      : row.payload;
+    const { error: updateErr } = await supabase
+      .from("notifications")
+      .update({
+        status: "read",
+        read_at: nowIso,
+        payload: updatePayload,
+      })
+      .eq("id", row.id);
+    if (updateErr) {
+      console.warn("[resolveOwnerEditRequestNotification]", updateErr.message ?? updateErr);
+    }
+  }
+}
+
+type NotificationRefreshInput = {
+  user_id: string;
+  channel: "in_app";
+  status: "pending" | "sent" | "read" | "failed";
+  kind: string;
+  title: string;
+  body: string;
+  scheduled_for: string;
+  related_entity_type: string;
+  related_entity_id: number;
+  payload?: JsonValue | null;
+};
+
+async function createOrRefreshNotificationRow(row: NotificationRefreshInput) {
+  if (!supabase) throw new Error("Supabase no disponible.");
+
+  const { data: existing, error: findErr } = await supabase
+    .from("notifications")
+    .select("id")
+    .eq("user_id", row.user_id)
+    .eq("kind", row.kind)
+    .eq("related_entity_type", row.related_entity_type)
+    .eq("related_entity_id", row.related_entity_id)
+    .order("id", { ascending: false });
+  if (findErr) {
+    throw new Error(findErr.message ?? "Error al comprobar la notificaciÃ³n");
+  }
+
+  if ((existing?.length ?? 0) > 0) {
+    const { error: updateErr } = await supabase
+      .from("notifications")
+      .update({
+        channel: row.channel,
+        status: row.status,
+        title: row.title,
+        body: row.body,
+        scheduled_for: row.scheduled_for,
+        payload: row.payload ?? null,
+        read_at: row.status === "read" ? row.scheduled_for : null,
+      })
+      .eq("user_id", row.user_id)
+      .eq("kind", row.kind)
+      .eq("related_entity_type", row.related_entity_type)
+      .eq("related_entity_id", row.related_entity_id);
+    if (updateErr) {
+      throw new Error(updateErr.message ?? "Error al actualizar la notificaciÃ³n");
+    }
+    return;
+  }
+
+  const { error: insertErr } = await supabase
+    .from("notifications")
+    .insert({
+      ...row,
+      payload: row.payload ?? null,
+    });
+  if (insertErr) {
+    throw new Error(insertErr.message ?? "Error al crear la notificaciÃ³n");
+  }
+}
 
 export function useDeleteObligationEventMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (input: DeleteObligationEventInput) => {
       if (!supabase) throw new Error("Supabase no disponible.");
+
+      const ownerMovementId = await resolveOwnerMovementIdForObligationEvent(input);
+      const viewerLinks = await deleteViewerLinksForEvent(input.eventId);
+      const deleteRequesterPayloads: EventDeleteRequestPayload[] = [];
+      if (input.ownerUserId) {
+        const { data: notifRows } = await supabase
+          .from("notifications")
+          .select("payload")
+          .eq("user_id", input.ownerUserId)
+          .eq("kind", "obligation_event_delete_request")
+          .eq("related_entity_type", "obligation_event")
+          .eq("related_entity_id", input.eventId);
+        for (const row of (notifRows ?? []) as { payload: JsonValue | null }[]) {
+          const payload = readEventDeletePayload(row.payload);
+          if (payload?.requestedByUserId) deleteRequesterPayloads.push(payload);
+        }
+      }
+      const acceptedViewerIds = new Set<string>();
+      const { data: shareRows, error: shareRowsError } = await supabase
+        .from("obligation_shares")
+        .select("invited_user_id")
+        .eq("obligation_id", input.obligationId)
+        .eq("status", "accepted");
+      if (shareRowsError) {
+        throw new Error(shareRowsError.message ?? "Error al cargar viewers de la obligaciÃ³n");
+      }
+      for (const row of (shareRows ?? []) as Array<{ invited_user_id: string | null }>) {
+        if (typeof row.invited_user_id === "string" && row.invited_user_id.trim().length > 0) {
+          acceptedViewerIds.add(row.invited_user_id);
+        }
+      }
+
       const { error } = await supabase
         .from("obligation_events")
         .delete()
         .eq("id", input.eventId);
       if (error) throw new Error(error.message ?? "Error de base de datos");
+      if (ownerMovementId) {
+        const { error: mvErr } = await supabase
+          .from("movements")
+          .delete()
+          .eq("id", ownerMovementId);
+        if (mvErr) throw new Error(mvErr.message ?? "Error al eliminar movimiento vinculado");
+      }
+
+      if (input.ownerUserId) {
+        void resolveOwnerDeleteRequestNotification(input.ownerUserId, input.eventId, "accepted");
+      }
+
+      const requestViewerIds = new Set(
+        deleteRequesterPayloads
+          .map((payload) => payload.requestedByUserId)
+          .filter((value): value is string => Boolean(value)),
+      );
+      const linkedViewerIds = new Set(
+        viewerLinks
+          .map((link) => link.linked_by_user_id)
+          .filter((value): value is string => typeof value === "string" && value.length > 0),
+      );
+      const allViewerIds = new Set<string>([
+        ...acceptedViewerIds,
+        ...requestViewerIds,
+        ...linkedViewerIds,
+      ]);
+
+      for (const viewerUserId of requestViewerIds) {
+        void markNotificationReadByEntity(
+          viewerUserId,
+          "obligation_event_delete_pending",
+          "obligation_event",
+          input.eventId,
+        );
+        void resolveViewerDeletePendingNotification(
+          viewerUserId,
+          input.eventId,
+          "accepted",
+        );
+      }
+
+      const payload = eventDeletePayload({
+        obligationId: input.obligationId,
+        eventId: input.eventId,
+        amount: input.amount,
+        eventType: input.eventType,
+        eventDate: input.eventDate,
+        obligationTitle: input.obligationTitle,
+      });
+
+      const amountLabel = formatNotificationCurrency(input.amount ?? null, input.currencyCode ?? null);
+
+      const acceptedNotifs: NotificationRefreshInput[] = [...requestViewerIds].map((viewerUserId) => ({
+        user_id: viewerUserId,
+        channel: "in_app",
+        status: "pending",
+        kind: "obligation_event_delete_accepted",
+        title: "EliminaciÃ³n aprobada",
+        body: `Se eliminÃ³ el evento${amountLabel}${input.obligationTitle ? ` en "${input.obligationTitle}"` : ""}.`,
+        scheduled_for: new Date().toISOString(),
+        related_entity_type: "obligation_event",
+        related_entity_id: input.eventId,
+        payload,
+      }));
+      if (acceptedNotifs.length > 0) {
+        await Promise.all(
+          acceptedNotifs.map((notification) => createOrRefreshNotificationRow(notification)),
+        );
+      }
+
+      const otherViewerIds = [...allViewerIds].filter((viewerUserId) => !requestViewerIds.has(viewerUserId));
+      if (otherViewerIds.length > 0) {
+        await Promise.all(
+          otherViewerIds.map((viewerUserId) =>
+            createOrRefreshNotificationRow({
+              user_id: viewerUserId,
+              channel: "in_app",
+              status: "pending",
+              kind: "obligation_event_deleted",
+              title: "Evento eliminado",
+              body: `Se eliminÃ³ un evento${amountLabel}${input.obligationTitle ? ` en "${input.obligationTitle}"` : ""}.`,
+              scheduled_for: new Date().toISOString(),
+              related_entity_type: "obligation_event",
+              related_entity_id: input.eventId,
+              payload,
+            }),
+          ),
+        );
+      }
+      return { deletedOwnerMovementId: ownerMovementId };
     },
-    onSuccess: (_data, variables) => {
+    onSuccess: (data, variables) => {
       void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
       void queryClient.invalidateQueries({ queryKey: ["obligation-events", variables.obligationId] });
+      void queryClient.invalidateQueries({ queryKey: ["shared-obligations"] });
+      void queryClient.invalidateQueries({ queryKey: ["notifications"] });
+      void queryClient.invalidateQueries({ queryKey: ["obligation-event-viewer-links", variables.obligationId] });
+      void queryClient.invalidateQueries({ queryKey: ["movements"] });
+      if (data?.deletedOwnerMovementId) {
+        void queryClient.invalidateQueries({ queryKey: ["movement", data.deletedOwnerMovementId] });
+      }
+      // Refresh attachment counts and lists so both the detail and list screens stay in sync
+      const wsId = variables.workspaceId ?? null;
+      void queryClient.invalidateQueries({ queryKey: ["entity-attachment-counts", wsId, "obligation-event"] });
+      void queryClient.invalidateQueries({ queryKey: ["entity-attachments", wsId, "obligation-event", variables.eventId] });
     },
   });
 }
 
-// ─── Subscription mutations ───────────────────────────────────────────────────
+export type CreateObligationEventDeleteRequestInput = {
+  obligationId: number;
+  eventId: number;
+  amount: number;
+  currencyCode: string;
+  eventType: string;
+  eventDate: string;
+  ownerUserId: string;
+  viewerUserId: string;
+  viewerDisplayName?: string | null;
+  obligationTitle?: string | null;
+};
+
+function formatNotificationCurrency(amount: number | null | undefined, currencyCode: string | null | undefined) {
+  if (amount == null) return "";
+  const normalizedCode = currencyCode?.trim().toUpperCase();
+  if (!normalizedCode) return ` de ${amount}`;
+  try {
+    return ` de ${new Intl.NumberFormat("es-PE", {
+      style: "currency",
+      currency: normalizedCode,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(amount)}`;
+  } catch {
+    return ` de ${normalizedCode} ${amount.toFixed(2)}`;
+  }
+}
+
+export function useCreateObligationEventDeleteRequestMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: CreateObligationEventDeleteRequestInput) => {
+      if (!supabase) throw new Error("Supabase no disponible.");
+      const client = supabase;
+
+      const payload = eventDeletePayload({
+        obligationId: input.obligationId,
+        eventId: input.eventId,
+        amount: input.amount,
+        currencyCode: input.currencyCode,
+        eventType: input.eventType,
+        eventDate: input.eventDate,
+        obligationTitle: input.obligationTitle,
+        requestedByUserId: input.viewerUserId,
+        requestedByDisplayName: input.viewerDisplayName,
+      });
+      const ownerName = input.viewerDisplayName?.trim() || "El visualizador";
+      const now = new Date().toISOString();
+      const amountLabel = formatNotificationCurrency(input.amount, input.currencyCode);
+
+      async function createOrRefreshNotification(row: {
+        user_id: string;
+        channel: "in_app";
+        status: "pending";
+        kind: string;
+        title: string;
+        body: string;
+        scheduled_for: string;
+        related_entity_type: string;
+        related_entity_id: number;
+        payload: EventDeleteRequestPayload;
+      }) {
+        const { data: existing, error: findErr } = await client
+          .from("notifications")
+          .select("id")
+          .eq("user_id", row.user_id)
+          .eq("kind", row.kind)
+          .eq("related_entity_type", row.related_entity_type)
+          .eq("related_entity_id", row.related_entity_id)
+          .order("id", { ascending: false });
+        if (findErr) throw new Error(findErr.message ?? "Error al comprobar la notificaciÃ³n");
+
+        if ((existing?.length ?? 0) > 0) {
+          const { error: updateErr } = await client
+            .from("notifications")
+            .update({
+              channel: row.channel,
+              status: row.status,
+              title: row.title,
+              body: row.body,
+              scheduled_for: row.scheduled_for,
+              payload: row.payload,
+              read_at: null,
+            })
+            .eq("user_id", row.user_id)
+            .eq("kind", row.kind)
+            .eq("related_entity_type", row.related_entity_type)
+            .eq("related_entity_id", row.related_entity_id);
+          if (updateErr) throw new Error(updateErr.message ?? "Error al actualizar la notificaciÃ³n");
+          return;
+        }
+
+        const { error: insertErr } = await client
+          .from("notifications")
+          .insert(row);
+        if (insertErr) throw new Error(insertErr.message ?? "Error al crear la notificaciÃ³n");
+      }
+
+      await createOrRefreshNotification({
+        user_id: input.ownerUserId,
+        channel: "in_app",
+        status: "pending",
+        kind: "obligation_event_delete_request",
+        title: "Solicitud de eliminaciÃ³n",
+        body: `${ownerName} solicitÃ³ eliminar un evento${amountLabel}${input.obligationTitle ? ` en "${input.obligationTitle}"` : ""}.`,
+        scheduled_for: now,
+        related_entity_type: "obligation_event",
+        related_entity_id: input.eventId,
+        payload,
+      });
+
+      await createOrRefreshNotification({
+        user_id: input.viewerUserId,
+        channel: "in_app",
+        status: "pending",
+        kind: "obligation_event_delete_pending",
+        title: "Solicitud enviada",
+        body: `Tu solicitud para eliminar este evento quedÃ³ pendiente${input.obligationTitle ? ` en "${input.obligationTitle}"` : ""}.`,
+        scheduled_for: now,
+        related_entity_type: "obligation_event",
+        related_entity_id: input.eventId,
+        payload,
+      });
+      return;
+
+      const { error: ownerErr } = await client
+        .from("notifications")
+        .upsert(
+          {
+            user_id: input.ownerUserId,
+            channel: "in_app",
+            status: "pending",
+            kind: "obligation_event_delete_request",
+            title: "Solicitud de eliminaciÃ³n",
+            body: `${ownerName} solicitÃ³ eliminar un evento${amountLabel}${input.obligationTitle ? ` en "${input.obligationTitle}"` : ""}.`,
+            scheduled_for: now,
+            related_entity_type: "obligation_event",
+            related_entity_id: input.eventId,
+            payload,
+          },
+          { onConflict: "user_id,related_entity_type,related_entity_id,kind" },
+        );
+      if (ownerErr) throw new Error(ownerErr!.message ?? "Error al crear la solicitud");
+
+      const { error: viewerErr } = await client
+        .from("notifications")
+        .upsert(
+          {
+            user_id: input.viewerUserId,
+            channel: "in_app",
+            status: "pending",
+            kind: "obligation_event_delete_pending",
+            title: "Solicitud enviada",
+            body: `Tu solicitud para eliminar este evento quedÃ³ pendiente${input.obligationTitle ? ` en "${input.obligationTitle}"` : ""}.`,
+            scheduled_for: now,
+            related_entity_type: "obligation_event",
+            related_entity_id: input.eventId,
+            payload,
+          },
+          { onConflict: "user_id,related_entity_type,related_entity_id,kind" },
+        );
+      if (viewerErr) throw new Error(viewerErr!.message ?? "Error al registrar tu solicitud");
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
+}
+
+export type RejectObligationEventDeleteRequestInput = {
+  obligationId: number;
+  eventId: number;
+  ownerUserId: string;
+  viewerUserId: string;
+  amount?: number | null;
+  eventType?: string | null;
+  eventDate?: string | null;
+  obligationTitle?: string | null;
+  rejectionReason?: string | null;
+};
+
+export function useRejectObligationEventDeleteRequestMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: RejectObligationEventDeleteRequestInput) => {
+      if (!supabase) throw new Error("Supabase no disponible.");
+      const now = new Date().toISOString();
+
+      await resolveOwnerDeleteRequestNotification(
+        input.ownerUserId,
+        input.eventId,
+        "rejected",
+        input.rejectionReason,
+      );
+      await markNotificationReadByEntity(
+        input.viewerUserId,
+        "obligation_event_delete_pending",
+        "obligation_event",
+        input.eventId,
+      );
+      await resolveViewerDeletePendingNotification(
+        input.viewerUserId,
+        input.eventId,
+        "rejected",
+        input.rejectionReason,
+      );
+
+      const payload = eventDeletePayload({
+        obligationId: input.obligationId,
+        eventId: input.eventId,
+        amount: input.amount,
+        eventType: input.eventType,
+        eventDate: input.eventDate,
+        obligationTitle: input.obligationTitle,
+        rejectionReason: input.rejectionReason,
+      });
+
+      await createOrRefreshNotificationRow({
+        user_id: input.viewerUserId,
+        channel: "in_app",
+        status: "pending",
+        kind: "obligation_event_delete_rejected",
+        title: "Solicitud rechazada",
+        body: `No se aprobÃ³ la eliminaciÃ³n del evento${input.rejectionReason?.trim() ? `. Motivo: ${input.rejectionReason.trim()}` : ""}.`,
+        scheduled_for: now,
+        related_entity_type: "obligation_event",
+        related_entity_id: input.eventId,
+        payload,
+      });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
+}
+
+export type CreateObligationEventEditRequestInput = {
+  obligationId: number;
+  eventId: number;
+  currencyCode: string;
+  eventType: string;
+  ownerUserId: string;
+  viewerUserId: string;
+  viewerDisplayName?: string | null;
+  obligationTitle?: string | null;
+  currentAmount: number;
+  currentEventDate: string;
+  currentInstallmentNo?: number | null;
+  currentDescription?: string | null;
+  currentNotes?: string | null;
+  proposedAmount: number;
+  proposedEventDate: string;
+  proposedInstallmentNo?: number | null;
+  proposedDescription?: string | null;
+  proposedNotes?: string | null;
+};
+
+export type AcceptObligationEventEditRequestInput = {
+  obligationId: number;
+  eventId: number;
+  ownerUserId: string;
+  viewerUserId: string;
+  obligationTitle?: string | null;
+  currencyCode?: string | null;
+  eventType: string;
+  direction?: ObligationDirection;
+  currentAmount?: number | null;
+  currentEventDate?: string | null;
+  currentInstallmentNo?: number | null;
+  currentDescription?: string | null;
+  currentNotes?: string | null;
+  proposedAmount: number;
+  proposedEventDate: string;
+  proposedInstallmentNo?: number | null;
+  proposedDescription?: string | null;
+  proposedNotes?: string | null;
+};
+
+export type RejectObligationEventEditRequestInput = {
+  obligationId: number;
+  eventId: number;
+  ownerUserId: string;
+  viewerUserId: string;
+  currencyCode?: string | null;
+  obligationTitle?: string | null;
+  currentAmount?: number | null;
+  currentEventDate?: string | null;
+  currentInstallmentNo?: number | null;
+  currentDescription?: string | null;
+  currentNotes?: string | null;
+  proposedAmount?: number | null;
+  proposedEventDate?: string | null;
+  proposedInstallmentNo?: number | null;
+  proposedDescription?: string | null;
+  proposedNotes?: string | null;
+  rejectionReason?: string | null;
+};
+
+export function useCreateObligationEventEditRequestMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: CreateObligationEventEditRequestInput) => {
+      if (!supabase) throw new Error("Supabase no disponible.");
+      const now = new Date().toISOString();
+      const amountLabel = formatNotificationCurrency(input.proposedAmount, input.currencyCode);
+      const ownerName = input.viewerDisplayName?.trim() || "El visualizador";
+      const payload = eventEditPayload({
+        obligationId: input.obligationId,
+        eventId: input.eventId,
+        currencyCode: input.currencyCode,
+        eventType: input.eventType,
+        obligationTitle: input.obligationTitle,
+        requestedByUserId: input.viewerUserId,
+        requestedByDisplayName: input.viewerDisplayName,
+        currentAmount: input.currentAmount,
+        currentEventDate: input.currentEventDate,
+        currentInstallmentNo: input.currentInstallmentNo,
+        currentDescription: input.currentDescription,
+        currentNotes: input.currentNotes,
+        proposedAmount: input.proposedAmount,
+        proposedEventDate: input.proposedEventDate,
+        proposedInstallmentNo: input.proposedInstallmentNo,
+        proposedDescription: input.proposedDescription,
+        proposedNotes: input.proposedNotes,
+      });
+
+      await createOrRefreshNotificationRow({
+        user_id: input.ownerUserId,
+        channel: "in_app",
+        status: "pending",
+        kind: "obligation_event_edit_request",
+        title: "Solicitud de edicion",
+        body: `${ownerName} solicito editar un evento${amountLabel}${input.obligationTitle ? ` en "${input.obligationTitle}"` : ""}.`,
+        scheduled_for: now,
+        related_entity_type: "obligation_event",
+        related_entity_id: input.eventId,
+        payload,
+      });
+
+      await createOrRefreshNotificationRow({
+        user_id: input.viewerUserId,
+        channel: "in_app",
+        status: "pending",
+        kind: "obligation_event_edit_pending",
+        title: "Solicitud enviada",
+        body: `Tu solicitud para editar este evento quedo pendiente${input.obligationTitle ? ` en "${input.obligationTitle}"` : ""}.`,
+        scheduled_for: now,
+        related_entity_type: "obligation_event",
+        related_entity_id: input.eventId,
+        payload,
+      });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
+}
+
+export function useAcceptObligationEventEditRequestMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: AcceptObligationEventEditRequestInput) => {
+      if (!supabase) throw new Error("Supabase no disponible.");
+      const now = new Date().toISOString();
+      const { data: eventRow, error: eventError } = await supabase
+        .from("obligation_events")
+        .select("movement_id")
+        .eq("id", input.eventId)
+        .maybeSingle();
+      if (eventError) {
+        throw new Error(eventError.message ?? "Error al cargar el evento");
+      }
+      if (!eventRow) {
+        throw new Error("El evento ya no esta disponible.");
+      }
+
+      const ownerMovementId = toNum((eventRow as { movement_id?: NumericLike | null }).movement_id ?? null) || null;
+      const ownerAccountId = await resolveMovementAccountId(ownerMovementId);
+      const syncResult = await updateObligationEventAndSyncMovements({
+        eventId: input.eventId,
+        obligationId: input.obligationId,
+        amount: input.proposedAmount,
+        eventDate: input.proposedEventDate,
+        installmentNo: input.proposedInstallmentNo ?? null,
+        description: input.proposedDescription ?? null,
+        notes: input.proposedNotes ?? null,
+        movementId: ownerMovementId,
+        accountId: ownerAccountId,
+        createMovement: ownerMovementId != null,
+        direction: input.eventType === "payment" ? input.direction : undefined,
+      });
+
+      await resolveOwnerEditRequestNotification(input.ownerUserId, input.eventId, "accepted");
+      await markNotificationReadByEntity(
+        input.viewerUserId,
+        "obligation_event_edit_pending",
+        "obligation_event",
+        input.eventId,
+      );
+      await resolveViewerEditPendingNotification(input.viewerUserId, input.eventId, "accepted");
+
+      const payload = eventEditPayload({
+        obligationId: input.obligationId,
+        eventId: input.eventId,
+        currencyCode: input.currencyCode,
+        eventType: input.eventType,
+        obligationTitle: input.obligationTitle,
+        responseStatus: "accepted",
+        currentAmount: input.currentAmount,
+        currentEventDate: input.currentEventDate,
+        currentInstallmentNo: input.currentInstallmentNo,
+        currentDescription: input.currentDescription,
+        currentNotes: input.currentNotes,
+        proposedAmount: input.proposedAmount,
+        proposedEventDate: input.proposedEventDate,
+        proposedInstallmentNo: input.proposedInstallmentNo,
+        proposedDescription: input.proposedDescription,
+        proposedNotes: input.proposedNotes,
+      });
+
+      await createOrRefreshNotificationRow({
+        user_id: input.viewerUserId,
+        channel: "in_app",
+        status: "pending",
+        kind: "obligation_event_edit_accepted",
+        title: "Edicion aprobada",
+        body: `Se aprobo la edicion del evento${input.obligationTitle ? ` en "${input.obligationTitle}"` : ""}.`,
+        scheduled_for: now,
+        related_entity_type: "obligation_event",
+        related_entity_id: input.eventId,
+        payload,
+      });
+
+      return syncResult;
+    },
+    onSuccess: (data, variables) => {
+      const queryKeys: Array<readonly unknown[]> = [
+        ["workspace-snapshot"],
+        ["movements"],
+        ["obligation-events", variables.obligationId],
+        ["notifications"],
+        ["shared-obligations"],
+      ];
+      if (data?.movementId) queryKeys.push(["movement", data.movementId]);
+      if (data?.removedMovementId) queryKeys.push(["movement", data.removedMovementId]);
+      for (const syncedViewerMovementId of data?.syncedViewerMovementIds ?? []) {
+        queryKeys.push(["movement", syncedViewerMovementId]);
+      }
+      runBackgroundQueryRefresh(queryClient, queryKeys, {
+        message: "Aprobando edicion",
+        description: "Estamos sincronizando el evento y los movimientos relacionados.",
+      });
+    },
+  });
+}
+
+export function useRejectObligationEventEditRequestMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: RejectObligationEventEditRequestInput) => {
+      if (!supabase) throw new Error("Supabase no disponible.");
+      const now = new Date().toISOString();
+
+      await resolveOwnerEditRequestNotification(
+        input.ownerUserId,
+        input.eventId,
+        "rejected",
+        input.rejectionReason,
+      );
+      await markNotificationReadByEntity(
+        input.viewerUserId,
+        "obligation_event_edit_pending",
+        "obligation_event",
+        input.eventId,
+      );
+      await resolveViewerEditPendingNotification(
+        input.viewerUserId,
+        input.eventId,
+        "rejected",
+        input.rejectionReason,
+      );
+
+      const payload = eventEditPayload({
+        obligationId: input.obligationId,
+        eventId: input.eventId,
+        currencyCode: input.currencyCode,
+        obligationTitle: input.obligationTitle,
+        rejectionReason: input.rejectionReason,
+        responseStatus: "rejected",
+        currentAmount: input.currentAmount,
+        currentEventDate: input.currentEventDate,
+        currentInstallmentNo: input.currentInstallmentNo,
+        currentDescription: input.currentDescription,
+        currentNotes: input.currentNotes,
+        proposedAmount: input.proposedAmount,
+        proposedEventDate: input.proposedEventDate,
+        proposedInstallmentNo: input.proposedInstallmentNo,
+        proposedDescription: input.proposedDescription,
+        proposedNotes: input.proposedNotes,
+      });
+
+      await createOrRefreshNotificationRow({
+        user_id: input.viewerUserId,
+        channel: "in_app",
+        status: "pending",
+        kind: "obligation_event_edit_rejected",
+        title: "Edicion rechazada",
+        body: `No se aprobo la edicion del evento${input.rejectionReason?.trim() ? `. Motivo: ${input.rejectionReason.trim()}` : ""}.`,
+        scheduled_for: now,
+        related_entity_type: "obligation_event",
+        related_entity_id: input.eventId,
+        payload,
+      });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
+}
+
+// â”€â”€â”€ Subscription mutations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type SubscriptionFormInput = {
   name: string;
@@ -1692,7 +3949,7 @@ export type SubscriptionFormInput = {
   dayOfMonth?: number | null;
   dayOfWeek?: number | null;
   startDate: string;
-  /** Próximo vencimiento (YYYY-MM-DD). */
+  /** PrÃ³ximo vencimiento (YYYY-MM-DD). */
   nextDueDate: string;
   endDate?: string | null;
   remindDaysBefore: number;
@@ -1707,9 +3964,9 @@ export function useCreateSubscriptionMutation(workspaceId: number | null) {
     mutationFn: async (input: SubscriptionFormInput) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const { data: authData, error: authErr } = await supabase.auth.getUser();
-      if (authErr) throw new Error(authErr.message ?? "No se pudo verificar la sesión");
+      if (authErr) throw new Error(authErr.message ?? "No se pudo verificar la sesiÃ³n");
       const uid = authData.user?.id;
-      if (!uid) throw new Error("No hay sesión");
+      if (!uid) throw new Error("No hay sesiÃ³n");
 
       const { data, error } = await supabase
         .from("subscriptions")
@@ -1796,7 +4053,7 @@ export function useDeleteSubscriptionMutation(workspaceId: number | null) {
         .eq("subscription_id", id);
       if (countErr) throw new Error(countErr.message ?? "Error al comprobar movimientos");
       if ((count ?? 0) > 0) {
-        throw new Error("No se puede eliminar: hay movimientos vinculados a esta suscripción.");
+        throw new Error("No se puede eliminar: hay movimientos vinculados a esta suscripciÃ³n.");
       }
 
       const { error: occErr } = await supabase
@@ -1820,16 +4077,32 @@ export function useDeleteSubscriptionMutation(workspaceId: number | null) {
         .eq("workspace_id", workspaceId);
       if (error) throw new Error(error.message ?? "Error de base de datos");
     },
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: ["workspace-snapshot"] });
+      const previousEntries = queryClient.getQueriesData<WorkspaceSnapshot>({ queryKey: ["workspace-snapshot"] });
+      queryClient.setQueriesData<WorkspaceSnapshot>({ queryKey: ["workspace-snapshot"] }, (old) => {
+        if (!old) return old;
+        return { ...old, subscriptions: old.subscriptions.filter((s) => s.id !== id) };
+      });
+      return { previousEntries };
+    },
+    onError: (_err, _id, context) => {
+      for (const [key, value] of (context?.previousEntries ?? [])) {
+        queryClient.setQueryData(key, value);
+      }
+    },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
     },
   });
 }
 
-// ─── Category mutations ───────────────────────────────────────────────────────
+// â”€â”€â”€ Category mutations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function invalidateCategoryRelatedQueries(queryClient: QueryClient, workspaceId: number | null) {
-  void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+  // Mark snapshot stale but don't trigger an immediate expensive refetch â€”
+  // category name changes don't affect balances and will be picked up next navigation.
+  void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"], refetchType: "none" });
   if (workspaceId != null) {
     void queryClient.invalidateQueries({ queryKey: ["categories-overview", workspaceId] });
   }
@@ -1851,9 +4124,9 @@ export function useCreateCategoryMutation(workspaceId: number | null) {
     mutationFn: async (input: CategoryFormInput) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const { data: authData, error: authErr } = await supabase.auth.getUser();
-      if (authErr) throw new Error(authErr.message ?? "No se pudo verificar la sesión");
+      if (authErr) throw new Error(authErr.message ?? "No se pudo verificar la sesiÃ³n");
       const uid = authData.user?.id;
-      if (!uid) throw new Error("No hay sesión");
+      if (!uid) throw new Error("No hay sesiÃ³n");
 
       const { data: maxRow, error: maxErr } = await supabase
         .from("categories")
@@ -1862,7 +4135,7 @@ export function useCreateCategoryMutation(workspaceId: number | null) {
         .order("sort_order", { ascending: false })
         .limit(1)
         .maybeSingle();
-      if (maxErr) throw new Error(maxErr.message ?? "Error al leer orden de categorías");
+      if (maxErr) throw new Error(maxErr.message ?? "Error al leer orden de categorÃ­as");
       const maxSort = maxRow?.sort_order != null ? toNum(maxRow.sort_order as NumericLike) : 0;
 
       const clientSort = input.sortOrder;
@@ -1903,11 +4176,11 @@ export function useUpdateCategoryMutation(workspaceId: number | null) {
     mutationFn: async ({ id, input }: { id: number; input: Partial<CategoryFormInput> }) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       if (input.parentId !== undefined && input.parentId === id) {
-        throw new Error("La categoría no puede ser su propia categoría padre.");
+        throw new Error("La categorÃ­a no puede ser su propia categorÃ­a padre.");
       }
 
       const { data: authData, error: authErr } = await supabase.auth.getUser();
-      if (authErr) throw new Error(authErr.message ?? "No se pudo verificar la sesión");
+      if (authErr) throw new Error(authErr.message ?? "No se pudo verificar la sesiÃ³n");
       const uid = authData.user?.id ?? null;
 
       const payload: Record<string, unknown> = { updated_by_user_id: uid };
@@ -1932,14 +4205,14 @@ export function useUpdateCategoryMutation(workspaceId: number | null) {
   });
 }
 
-/** Solo activar / desactivar (toggle rápido en lista). */
+/** Solo activar / desactivar (toggle rÃ¡pido en lista). */
 export function useToggleCategoryMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, isActive }: { id: number; isActive: boolean }) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const { data: authData, error: authErr } = await supabase.auth.getUser();
-      if (authErr) throw new Error(authErr.message ?? "No se pudo verificar la sesión");
+      if (authErr) throw new Error(authErr.message ?? "No se pudo verificar la sesiÃ³n");
       const uid = authData.user?.id ?? null;
       const { error } = await supabase
         .from("categories")
@@ -1966,10 +4239,10 @@ export function useDeleteCategoryMutation(workspaceId: number | null) {
         .eq("id", id)
         .eq("workspace_id", workspaceId)
         .maybeSingle();
-      if (catErr) throw new Error(catErr.message ?? "Error al cargar categoría");
-      if (!catRow) throw new Error("Categoría no encontrada.");
+      if (catErr) throw new Error(catErr.message ?? "Error al cargar categorÃ­a");
+      if (!catRow) throw new Error("CategorÃ­a no encontrada.");
       if ((catRow as { is_system?: boolean }).is_system) {
-        throw new Error("No se puede eliminar una categoría base del sistema.");
+        throw new Error("No se puede eliminar una categorÃ­a base del sistema.");
       }
 
       const { count: movCount, error: movErr } = await supabase
@@ -1979,7 +4252,7 @@ export function useDeleteCategoryMutation(workspaceId: number | null) {
         .eq("category_id", id);
       if (movErr) throw new Error(movErr.message ?? "Error al comprobar movimientos");
       if ((movCount ?? 0) > 0) {
-        throw new Error("No se puede eliminar: hay movimientos que usan esta categoría.");
+        throw new Error("No se puede eliminar: hay movimientos que usan esta categorÃ­a.");
       }
 
       const { count: subCount, error: subErr } = await supabase
@@ -1989,7 +4262,7 @@ export function useDeleteCategoryMutation(workspaceId: number | null) {
         .eq("category_id", id);
       if (subErr) throw new Error(subErr.message ?? "Error al comprobar suscripciones");
       if ((subCount ?? 0) > 0) {
-        throw new Error("No se puede eliminar: hay suscripciones que usan esta categoría.");
+        throw new Error("No se puede eliminar: hay suscripciones que usan esta categorÃ­a.");
       }
 
       const { count: childCount, error: childErr } = await supabase
@@ -1997,9 +4270,9 @@ export function useDeleteCategoryMutation(workspaceId: number | null) {
         .select("*", { count: "exact", head: true })
         .eq("workspace_id", workspaceId)
         .eq("parent_id", id);
-      if (childErr) throw new Error(childErr.message ?? "Error al comprobar subcategorías");
+      if (childErr) throw new Error(childErr.message ?? "Error al comprobar subcategorÃ­as");
       if ((childCount ?? 0) > 0) {
-        throw new Error("No se puede eliminar: existen subcategorías. Reasígnalas o elimínalas primero.");
+        throw new Error("No se puede eliminar: existen subcategorÃ­as. ReasÃ­gnalas o elimÃ­nalas primero.");
       }
 
       const { error } = await supabase.from("categories").delete().eq("id", id).eq("workspace_id", workspaceId);
@@ -2011,7 +4284,7 @@ export function useDeleteCategoryMutation(workspaceId: number | null) {
   });
 }
 
-// ─── Counterparty (contact) mutations ────────────────────────────────────────
+// â”€â”€â”€ Counterparty (contact) mutations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type CounterpartyFormInput = {
   name: string;
@@ -2045,7 +4318,7 @@ export function useCreateCounterpartyMutation(workspaceId: number | null) {
       return data as { id: number };
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"], refetchType: "none" });
       void queryClient.invalidateQueries({ queryKey: ["counterparties"] });
     },
   });
@@ -2072,13 +4345,54 @@ export function useUpdateCounterpartyMutation(workspaceId: number | null) {
       if (error) throw new Error(error.message ?? "Error de base de datos");
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"], refetchType: "none" });
       void queryClient.invalidateQueries({ queryKey: ["counterparties"] });
     },
   });
 }
 
-// ─── Notification queries ─────────────────────────────────────────────────────
+export function useDeleteCounterpartyMutation(workspaceId: number | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: number) => {
+      if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
+
+      const [{ count: movementCount, error: movementError }, { count: obligationCount, error: obligationError }] =
+        await Promise.all([
+          supabase
+            .from("movements")
+            .select("id", { count: "exact", head: true })
+            .eq("workspace_id", workspaceId)
+            .eq("counterparty_id", id),
+          supabase
+            .from("obligations")
+            .select("id", { count: "exact", head: true })
+            .eq("workspace_id", workspaceId)
+            .eq("counterparty_id", id),
+        ]);
+
+      if (movementError) throw new Error(movementError.message ?? "Error al validar movimientos del contacto");
+      if (obligationError) throw new Error(obligationError.message ?? "Error al validar obligaciones del contacto");
+
+      if ((movementCount ?? 0) > 0 || (obligationCount ?? 0) > 0) {
+        throw new Error("No puedes eliminar este contacto porque tiene movimientos o crÃ©ditos/deudas asociados. ArchÃ­valo en su lugar.");
+      }
+
+      const { error } = await supabase
+        .from("counterparties")
+        .delete()
+        .eq("id", id)
+        .eq("workspace_id", workspaceId);
+      if (error) throw new Error(error.message ?? "Error de base de datos");
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"], refetchType: "none" });
+      void queryClient.invalidateQueries({ queryKey: ["counterparties"] });
+    },
+  });
+}
+
+// â”€â”€â”€ Notification queries â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function useNotificationsQuery(userId: string | null) {
   return useQuery({
@@ -2087,7 +4401,7 @@ export function useNotificationsQuery(userId: string | null) {
       if (!supabase || !userId) return [];
       const { data, error } = await supabase
         .from("notifications")
-        .select("id, title, body, status, scheduled_for, kind, channel, read_at, related_entity_type, related_entity_id")
+        .select("id, title, body, status, scheduled_for, kind, channel, read_at, related_entity_type, related_entity_id, payload")
         .eq("user_id", userId)
         .order("scheduled_for", { ascending: false })
         .limit(100);
@@ -2103,10 +4417,15 @@ export function useNotificationsQuery(userId: string | null) {
         readAt: row.read_at,
         relatedEntityType: row.related_entity_type,
         relatedEntityId: row.related_entity_id,
+        payload: (row.payload as JsonValue | null) ?? null,
       }));
     },
     enabled: Boolean(userId),
-    staleTime: 30_000,
+    staleTime: 5_000,
+    refetchOnMount: "always",
+    refetchOnReconnect: true,
+    refetchOnWindowFocus: true,
+    refetchInterval: userId ? 10_000 : false,
   });
 }
 
@@ -2114,7 +4433,7 @@ export function useMarkNotificationReadMutation(userId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (notificationId: number) => {
-      if (!supabase) throw new Error("Supabase no está configurado.");
+      if (!supabase) throw new Error("Supabase no estÃ¡ configurado.");
       const { error } = await supabase
         .from("notifications")
         .update({ status: "read", read_at: new Date().toISOString() })
@@ -2145,16 +4464,377 @@ export function useMarkAllNotificationsReadMutation(userId: string | null) {
   });
 }
 
-// ─── Edge Function helper ─────────────────────────────────────────────────────
-
-async function invokeEdgeFunction<T>(name: string, body: Record<string, unknown>): Promise<T> {
-  if (!supabase) throw new Error("Supabase no está configurado.");
-  const { data, error } = await supabase.functions.invoke<T>(name, { body });
-  if (error) throw new Error(error.message ?? "Error de base de datos");
-  return data as T;
+export function useMarkNotificationUnreadMutation(userId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (notificationId: number) => {
+      if (!supabase) throw new Error("Supabase no estÃ¡ configurado.");
+      const { error } = await supabase
+        .from("notifications")
+        .update({ status: "sent", read_at: null })
+        .eq("id", notificationId);
+      if (error) throw new Error(error.message ?? "Error de base de datos");
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["notifications", userId] });
+    },
+  });
 }
 
-// ─── Workspace creation ───────────────────────────────────────────────────────
+export function useMarkAllNotificationsUnreadMutation(userId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      if (!supabase || !userId) throw new Error("Usuario no disponible.");
+      const { error } = await supabase
+        .from("notifications")
+        .update({ status: "sent", read_at: null })
+        .eq("user_id", userId)
+        .eq("status", "read");
+      if (error) throw new Error(error.message ?? "Error de base de datos");
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["notifications", userId] });
+    },
+  });
+}
+
+export function useMarkNotificationsReadMutation(userId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (notificationIds: number[]) => {
+      if (!supabase) throw new Error("Supabase no estÃ¡ configurado.");
+      if (!notificationIds.length) return;
+      const { error } = await supabase
+        .from("notifications")
+        .update({ status: "read", read_at: new Date().toISOString() })
+        .in("id", notificationIds);
+      if (error) throw new Error(error.message ?? "Error de base de datos");
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["notifications", userId] });
+    },
+  });
+}
+
+export function useMarkNotificationsUnreadMutation(userId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (notificationIds: number[]) => {
+      if (!supabase) throw new Error("Supabase no estÃ¡ configurado.");
+      if (!notificationIds.length) return;
+      const { error } = await supabase
+        .from("notifications")
+        .update({ status: "sent", read_at: null })
+        .in("id", notificationIds);
+      if (error) throw new Error(error.message ?? "Error de base de datos");
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["notifications", userId] });
+    },
+  });
+}
+
+// â”€â”€â”€ Edge Function helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+async function invokeEdgeFunction<T>(name: string, body: Record<string, unknown>): Promise<T> {
+  if (!supabase) throw new Error("Supabase no estÃ¡ configurado.");
+  let accessToken: string | null = null;
+  let activeSession: Awaited<ReturnType<typeof supabase.auth.getSession>>["data"]["session"] | null = null;
+  const configuredProjectRef = extractSupabaseProjectRef(supabaseUrl);
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError) {
+    logEdgeFunctionDebug(name, {
+      stage: "get-session-error",
+      error: sessionError.message ?? String(sessionError),
+    });
+    throw new Error(sessionError.message ?? "No se pudo validar tu sesiÃ³n.");
+  }
+  activeSession = sessionData.session ?? null;
+  accessToken = activeSession?.access_token ?? null;
+
+  const currentExp =
+    Number(activeSession?.expires_at ?? decodeJwtPayload(accessToken)?.exp ?? 0) || 0;
+  const shouldRefreshSoon = currentExp > 0 && currentExp <= Math.floor(Date.now() / 1000) + 60;
+  const initialTokenPayload = decodeJwtPayload(accessToken);
+  const initialTokenProjectRef = extractJwtProjectRef(initialTokenPayload);
+  const shouldRefreshForProjectMismatch =
+    Boolean(configuredProjectRef && initialTokenProjectRef && configuredProjectRef !== initialTokenProjectRef);
+
+  if (accessToken && (shouldRefreshSoon || shouldRefreshForProjectMismatch)) {
+    if (shouldRefreshForProjectMismatch) {
+      logEdgeFunctionDebug(name, {
+        stage: "token-project-mismatch-before-refresh",
+        configuredProjectRef,
+        tokenProjectRef: initialTokenProjectRef,
+        tokenIssuer:
+          typeof initialTokenPayload?.iss === "string" ? initialTokenPayload.iss : null,
+        userId: activeSession?.user?.id ?? null,
+      });
+    }
+    const { data: refreshedData, error: refreshError } = await supabase.auth.refreshSession();
+    if (refreshError) {
+      logEdgeFunctionDebug(name, {
+        stage: "refresh-session-before-invoke-error",
+        error: refreshError.message ?? String(refreshError),
+        userId: activeSession?.user?.id ?? null,
+        expiresAt: activeSession?.expires_at ?? null,
+      });
+      throw new Error(refreshError.message ?? "Tu sesiÃ³n expirÃ³. Vuelve a iniciar sesiÃ³n.");
+    }
+    activeSession = refreshedData.session ?? activeSession;
+    accessToken = activeSession?.access_token ?? accessToken;
+  }
+
+  if (!accessToken) {
+    logEdgeFunctionDebug(name, {
+      stage: "missing-token-before-refresh",
+      userId: activeSession?.user?.id ?? null,
+      expiresAt: activeSession?.expires_at ?? null,
+      bodyKeys: Object.keys(body),
+    });
+    const { data: refreshedData, error: refreshError } = await supabase.auth.refreshSession();
+    if (refreshError) {
+      logEdgeFunctionDebug(name, {
+        stage: "refresh-session-error",
+        error: refreshError.message ?? String(refreshError),
+        userId: activeSession?.user?.id ?? null,
+        expiresAt: activeSession?.expires_at ?? null,
+      });
+      throw new Error(refreshError.message ?? "Tu sesiÃ³n expirÃ³. Vuelve a iniciar sesiÃ³n.");
+    }
+    activeSession = refreshedData.session ?? null;
+    accessToken = activeSession?.access_token ?? null;
+  }
+
+  if (!accessToken) {
+    logEdgeFunctionDebug(name, {
+      stage: "missing-token-after-refresh",
+      userId: activeSession?.user?.id ?? null,
+      expiresAt: activeSession?.expires_at ?? null,
+      bodyKeys: Object.keys(body),
+    });
+    throw new Error("Tu sesiÃ³n expirÃ³. Vuelve a iniciar sesiÃ³n.");
+  }
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error("Falta configurar Supabase en esta app.");
+  }
+
+  let tokenPayload = decodeJwtPayload(accessToken);
+  let tokenProjectRef = extractJwtProjectRef(tokenPayload);
+  if (configuredProjectRef && tokenProjectRef && configuredProjectRef !== tokenProjectRef) {
+    logEdgeFunctionDebug(name, {
+      stage: "token-project-mismatch-after-refresh",
+      configuredProjectRef,
+      tokenProjectRef,
+      tokenIssuer: typeof tokenPayload?.iss === "string" ? tokenPayload.iss : null,
+      userId: activeSession?.user?.id ?? null,
+      expiresAt: activeSession?.expires_at ?? null,
+    });
+    await clearLocalSessionSilently();
+    throw new Error(
+      "La sesiÃ³n guardada pertenece a otro proyecto de Supabase. Cierra sesiÃ³n e ingresa otra vez.",
+    );
+  }
+
+  const validateCurrentAuth = async (stage: string) => {
+    const { data: authData, error: authError } = await supabase!.auth.getUser();
+    logEdgeFunctionDebug(name, {
+      stage,
+      authError: authError?.message ?? null,
+      authUserId: authData.user?.id ?? null,
+      sessionUserId: activeSession?.user?.id ?? null,
+      configuredProjectRef,
+      tokenProjectRef,
+      tokenIssuer: typeof tokenPayload?.iss === "string" ? tokenPayload.iss : null,
+      expiresAt: activeSession?.expires_at ?? null,
+    });
+    return { authData, authError };
+  };
+
+  let { authData, authError } = await validateCurrentAuth("validate-user-before-invoke");
+  if (authError || !authData.user) {
+    const { data: refreshedData, error: refreshError } = await supabase.auth.refreshSession();
+    if (refreshError) {
+      logEdgeFunctionDebug(name, {
+        stage: "refresh-session-after-get-user-error",
+        error: refreshError.message ?? String(refreshError),
+        userId: activeSession?.user?.id ?? null,
+        configuredProjectRef,
+        tokenProjectRef,
+      });
+      throw new Error(refreshError.message ?? authError?.message ?? "Tu sesiÃ³n expirÃ³. Vuelve a iniciar sesiÃ³n.");
+    }
+    activeSession = refreshedData.session ?? activeSession;
+    accessToken = activeSession?.access_token ?? accessToken;
+    tokenPayload = decodeJwtPayload(accessToken);
+    tokenProjectRef = extractJwtProjectRef(tokenPayload);
+
+    if (configuredProjectRef && tokenProjectRef && configuredProjectRef !== tokenProjectRef) {
+      logEdgeFunctionDebug(name, {
+        stage: "token-project-mismatch-after-get-user-refresh",
+        configuredProjectRef,
+        tokenProjectRef,
+        tokenIssuer: typeof tokenPayload?.iss === "string" ? tokenPayload.iss : null,
+        userId: activeSession?.user?.id ?? null,
+      });
+      await clearLocalSessionSilently();
+      throw new Error(
+        "La sesiÃ³n guardada pertenece a otro proyecto de Supabase. Cierra sesiÃ³n e ingresa otra vez.",
+      );
+    }
+
+    ({ authData, authError } = await validateCurrentAuth("validate-user-after-refresh"));
+    if (authError || !authData.user) {
+      if ((authError?.message ?? "").toLowerCase().includes("invalid jwt")) {
+        await clearLocalSessionSilently();
+      }
+      throw new Error(authError?.message ?? "Tu sesiÃ³n expirÃ³. Vuelve a iniciar sesiÃ³n.");
+    }
+  }
+
+  if (activeSession?.user?.id && authData.user?.id && activeSession.user.id !== authData.user.id) {
+    logEdgeFunctionDebug(name, {
+      stage: "session-user-mismatch",
+      sessionUserId: activeSession.user.id,
+      authUserId: authData.user.id,
+      configuredProjectRef,
+      tokenProjectRef,
+    });
+  }
+
+  const { data: latestSessionData } = await supabase.auth.getSession();
+  activeSession = latestSessionData.session ?? activeSession;
+  accessToken = activeSession?.access_token ?? accessToken;
+  tokenPayload = decodeJwtPayload(accessToken);
+  tokenProjectRef = extractJwtProjectRef(tokenPayload);
+
+  const endpoint = `${supabaseUrl.replace(/\/+$/, "")}/functions/v1/${name}`;
+  const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+  const timeoutId = controller ? setTimeout(() => controller.abort(), 15_000) : null;
+
+  let response: Response;
+  try {
+    response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: supabaseAnonKey,
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify(body),
+      signal: controller?.signal,
+    });
+  } catch (error) {
+    if (timeoutId) clearTimeout(timeoutId);
+    const message =
+      error instanceof Error && error.name === "AbortError"
+        ? "La solicitud tardÃ³ demasiado. Intenta de nuevo."
+        : "No pudimos conectarnos al servidor. Revisa tu internet e intenta de nuevo.";
+    logEdgeFunctionDebug(name, {
+      stage: "network-error",
+      message,
+      rawError: error instanceof Error ? error.message : String(error),
+      userId: activeSession?.user?.id ?? null,
+      expiresAt: activeSession?.expires_at ?? null,
+      configuredProjectRef,
+      tokenProjectRef,
+      tokenIssuer: typeof tokenPayload?.iss === "string" ? tokenPayload.iss : null,
+      invitedEmail: typeof body.invitedEmail === "string" ? body.invitedEmail : null,
+      workspaceId: typeof body.workspaceId === "number" ? body.workspaceId : body.workspaceId ?? null,
+      obligationId: typeof body.obligationId === "number" ? body.obligationId : body.obligationId ?? null,
+      appUrl: typeof body.appUrl === "string" ? body.appUrl : body.appUrl ?? null,
+    });
+    throw new Error(message);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+
+  if (!response.ok) {
+    const message = await readEdgeFunctionErrorMessage(name, undefined, response);
+    const shouldRetryViaClient =
+      response.status === 401 &&
+      message.toLowerCase().includes("invalid jwt");
+
+    if (shouldRetryViaClient) {
+      logEdgeFunctionDebug(name, {
+        stage: "invoke-error-retrying-via-client",
+        message,
+        responseStatus: response.status ?? null,
+        userId: activeSession?.user?.id ?? null,
+        expiresAt: activeSession?.expires_at ?? null,
+        configuredProjectRef,
+        tokenProjectRef,
+        tokenIssuer: typeof tokenPayload?.iss === "string" ? tokenPayload.iss : null,
+        invitedEmail: typeof body.invitedEmail === "string" ? body.invitedEmail : null,
+        workspaceId: typeof body.workspaceId === "number" ? body.workspaceId : body.workspaceId ?? null,
+        obligationId: typeof body.obligationId === "number" ? body.obligationId : body.obligationId ?? null,
+        appUrl: typeof body.appUrl === "string" ? body.appUrl : body.appUrl ?? null,
+      });
+
+      const { data: clientData, error: clientError } = await supabase.functions.invoke<T>(name, {
+        body,
+      });
+
+      if (!clientError) {
+        logEdgeFunctionDebug(name, {
+          stage: "client-invoke-success",
+          userId: activeSession?.user?.id ?? null,
+          expiresAt: activeSession?.expires_at ?? null,
+          configuredProjectRef,
+          tokenProjectRef,
+          tokenIssuer: typeof tokenPayload?.iss === "string" ? tokenPayload.iss : null,
+          invitedEmail: typeof body.invitedEmail === "string" ? body.invitedEmail : null,
+          workspaceId: typeof body.workspaceId === "number" ? body.workspaceId : body.workspaceId ?? null,
+          obligationId: typeof body.obligationId === "number" ? body.obligationId : body.obligationId ?? null,
+          appUrl: typeof body.appUrl === "string" ? body.appUrl : body.appUrl ?? null,
+        });
+        return clientData as T;
+      }
+
+      logEdgeFunctionDebug(name, {
+        stage: "client-invoke-error",
+        message: clientError.message ?? String(clientError),
+        userId: activeSession?.user?.id ?? null,
+        expiresAt: activeSession?.expires_at ?? null,
+        configuredProjectRef,
+        tokenProjectRef,
+        tokenIssuer: typeof tokenPayload?.iss === "string" ? tokenPayload.iss : null,
+        invitedEmail: typeof body.invitedEmail === "string" ? body.invitedEmail : null,
+        workspaceId: typeof body.workspaceId === "number" ? body.workspaceId : body.workspaceId ?? null,
+        obligationId: typeof body.obligationId === "number" ? body.obligationId : body.obligationId ?? null,
+        appUrl: typeof body.appUrl === "string" ? body.appUrl : body.appUrl ?? null,
+      });
+    }
+
+    logEdgeFunctionDebug(name, {
+      stage: "invoke-error",
+      message,
+      responseStatus: response.status ?? null,
+      contentType: response.headers.get("content-type") ?? null,
+      relayError: response.headers.get("x-relay-error") ?? null,
+      userId: activeSession?.user?.id ?? null,
+      expiresAt: activeSession?.expires_at ?? null,
+      configuredProjectRef,
+      tokenProjectRef,
+      tokenIssuer: typeof tokenPayload?.iss === "string" ? tokenPayload.iss : null,
+      invitedEmail: typeof body.invitedEmail === "string" ? body.invitedEmail : null,
+      workspaceId: typeof body.workspaceId === "number" ? body.workspaceId : body.workspaceId ?? null,
+      obligationId: typeof body.obligationId === "number" ? body.obligationId : body.obligationId ?? null,
+      appUrl: typeof body.appUrl === "string" ? body.appUrl : body.appUrl ?? null,
+    });
+    throw new Error(message);
+  }
+
+  const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+  if (!contentType.includes("application/json")) {
+    return {} as T;
+  }
+  return (await response.json()) as T;
+}
+
+// â”€â”€â”€ Workspace creation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type CreateSharedWorkspaceInput = {
   name: string;
@@ -2181,7 +4861,7 @@ export function useCreateSharedWorkspaceMutation() {
   });
 }
 
-// ─── Workspace invitation ─────────────────────────────────────────────────────
+// â”€â”€â”€ Workspace invitation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type WorkspaceInvitationInput = {
   workspaceId: number;
@@ -2203,6 +4883,7 @@ export type WorkspaceInvitationResult = {
 
 export function useCreateWorkspaceInvitationMutation(workspaceId?: number | null) {
   const queryClient = useQueryClient();
+  const appUrl = buildHostedAppUrl();
   return useMutation({
     mutationFn: async (input: WorkspaceInvitationInput) => {
       const response = await invokeEdgeFunction<{
@@ -2218,11 +4899,11 @@ export function useCreateWorkspaceInvitationMutation(workspaceId?: number | null
           invitedEmail: input.invitedEmail,
           role: input.role,
           note: input.note ?? null,
-          appUrl: null,
+          appUrl,
         },
       );
       if (!response.ok || !response.invitedEmail) {
-        throw new Error(response.error ?? "No se pudo enviar la invitación.");
+        throw new Error(response.error ?? "No se pudo enviar la invitaciÃ³n.");
       }
       return {
         invitationId: response.invitationId ?? null,
@@ -2241,7 +4922,7 @@ export function useCreateWorkspaceInvitationMutation(workspaceId?: number | null
   });
 }
 
-// ─── Obligation active share (pending / accepted) ───────────────────────────────
+// â”€â”€â”€ Obligation active share (pending / accepted) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function mapObligationShareRow(r: Record<string, unknown>): ObligationShareSummary {
   return {
@@ -2285,7 +4966,7 @@ export function useObligationActiveShareQuery(
         .order("updated_at", { ascending: false })
         .limit(1)
         .maybeSingle();
-      if (error) throw new Error(error.message ?? "Error al cargar compartición");
+      if (error) throw new Error(error.message ?? "Error al cargar comparticiÃ³n");
       if (!data) return null;
       return mapObligationShareRow(data as Record<string, unknown>);
     },
@@ -2314,13 +4995,13 @@ export function useObligationSharesQuery(workspaceId: number | null | undefined)
   });
 }
 
-// ─── Obligaciones compartidas contigo (edge list-shared-obligations) ─────────
+// â”€â”€â”€ Obligaciones compartidas contigo (edge list-shared-obligations) â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function copyIfMissing(target: Record<string, unknown>, snake: string, camel: string) {
   if (target[snake] === undefined && target[camel] !== undefined) target[snake] = target[camel];
 }
 
-/** Normaliza fila share snake_case si la edge devolvió camelCase. */
+/** Normaliza fila share snake_case si la edge devolviÃ³ camelCase. */
 function obligationShareRecordToSnake(input: Record<string, unknown>): Record<string, unknown> {
   const o = { ...input };
   copyIfMissing(o, "workspace_id", "workspaceId");
@@ -2380,23 +5061,23 @@ function obligationRowFromUnknown(o: Record<string, unknown>): ObligationSummary
     counterparty_id: o.counterparty_id != null ? Number(o.counterparty_id) : null,
     settlement_account_id: o.settlement_account_id != null ? Number(o.settlement_account_id) : null,
     currency_code: String(o.currency_code ?? "PEN"),
-    principal_initial_amount: o.principal_initial_amount ?? 0,
-    principal_increase_total: o.principal_increase_total ?? 0,
-    principal_decrease_total: o.principal_decrease_total ?? 0,
-    principal_current_amount: o.principal_current_amount ?? 0,
-    interest_total: o.interest_total ?? 0,
-    fee_total: o.fee_total ?? 0,
-    adjustment_total: o.adjustment_total ?? 0,
-    discount_total: o.discount_total ?? 0,
-    writeoff_total: o.writeoff_total ?? 0,
-    payment_total: o.payment_total ?? 0,
-    pending_amount: o.pending_amount ?? 0,
-    progress_percent: o.progress_percent ?? 0,
+    principal_initial_amount: (o.principal_initial_amount as NumericLike) ?? 0,
+    principal_increase_total: (o.principal_increase_total as NumericLike) ?? 0,
+    principal_decrease_total: (o.principal_decrease_total as NumericLike) ?? 0,
+    principal_current_amount: (o.principal_current_amount as NumericLike) ?? 0,
+    interest_total: (o.interest_total as NumericLike) ?? 0,
+    fee_total: (o.fee_total as NumericLike) ?? 0,
+    adjustment_total: (o.adjustment_total as NumericLike) ?? 0,
+    discount_total: (o.discount_total as NumericLike) ?? 0,
+    writeoff_total: (o.writeoff_total as NumericLike) ?? 0,
+    payment_total: (o.payment_total as NumericLike) ?? 0,
+    pending_amount: (o.pending_amount as NumericLike) ?? 0,
+    progress_percent: (o.progress_percent as NumericLike) ?? 0,
     start_date: String(o.start_date ?? ""),
     due_date: o.due_date != null ? String(o.due_date) : null,
-    installment_amount: o.installment_amount ?? null,
+    installment_amount: (o.installment_amount as NumericLike) ?? null,
     installment_count: o.installment_count != null ? Number(o.installment_count) : null,
-    interest_rate: o.interest_rate ?? null,
+    interest_rate: (o.interest_rate as NumericLike) ?? null,
     description: o.description != null ? String(o.description) : null,
     notes: o.notes != null ? String(o.notes) : null,
     payment_count: Number(o.payment_count ?? 0),
@@ -2413,6 +5094,7 @@ function eventRowFromUnknown(e: Record<string, unknown>): ObligationEventRow | n
   copyIfMissing(e, "obligation_id", "obligationId");
   copyIfMissing(e, "event_type", "eventType");
   copyIfMissing(e, "event_date", "eventDate");
+  copyIfMissing(e, "created_at", "createdAt");
   copyIfMissing(e, "installment_no", "installmentNo");
   copyIfMissing(e, "movement_id", "movementId");
   copyIfMissing(e, "created_by_user_id", "createdByUserId");
@@ -2421,7 +5103,8 @@ function eventRowFromUnknown(e: Record<string, unknown>): ObligationEventRow | n
     obligation_id: Number(e.obligation_id),
     event_type: e.event_type as ObligationEventSummary["eventType"],
     event_date: String(e.event_date ?? ""),
-    amount: e.amount ?? 0,
+    created_at: e.created_at != null ? String(e.created_at) : null,
+    amount: (e.amount as NumericLike) ?? 0,
     installment_no: e.installment_no != null ? Number(e.installment_no) : null,
     reason: e.reason != null ? String(e.reason) : null,
     description: e.description != null ? String(e.description) : null,
@@ -2481,6 +5164,15 @@ function parseSharedObligationItem(item: unknown): SharedObligationSummary | nul
 }
 
 async function fetchSharedObligations(): Promise<SharedObligationSummary[]> {
+  if (!supabase) return [];
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError) {
+    throw new Error(sessionError.message ?? "No se pudo validar tu sesiÃ³n.");
+  }
+  if (!sessionData.session?.user?.id) {
+    return [];
+  }
+
   const response = (await invokeEdgeFunction<Record<string, unknown>>("list-shared-obligations", {})) ?? {};
 
   if (response.ok === false) {
@@ -2524,7 +5216,7 @@ export function mergeWorkspaceAndSharedObligations(
   return [...byId.values()];
 }
 
-/** Eventos de una obligación (útil cuando el resumen compartido no trae `events` completos). */
+/** Eventos de una obligaciÃ³n (Ãºtil cuando el resumen compartido no trae `events` completos). */
 export function useObligationEventsQuery(
   obligationId: number | null | undefined,
   enabled: boolean,
@@ -2574,7 +5266,7 @@ export function usePendingObligationShareInvitesQuery(
   });
 }
 
-// ─── Obligation share invite ──────────────────────────────────────────────────
+// â”€â”€â”€ Obligation share invite â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type ObligationShareInviteInput = {
   workspaceId: number;
@@ -2593,6 +5285,7 @@ export type ObligationShareInviteResult = {
 
 export function useCreateObligationShareInviteMutation(workspaceId?: number | null) {
   const queryClient = useQueryClient();
+  const appUrl = buildHostedAppUrl();
   return useMutation({
     mutationFn: async (input: ObligationShareInviteInput) => {
       const response = await invokeEdgeFunction<{
@@ -2607,11 +5300,11 @@ export function useCreateObligationShareInviteMutation(workspaceId?: number | nu
           obligationId: input.obligationId,
           invitedEmail: input.invitedEmail,
           message: input.message ?? null,
-          appUrl: null,
+          appUrl,
         },
       );
       if (!response.ok || !response.shareId || !response.invitedEmail) {
-        throw new Error(response.error ?? "No se pudo compartir la obligación.");
+        throw new Error(response.error ?? "No se pudo compartir la obligaciÃ³n.");
       }
       return {
         shareId: response.shareId,
@@ -2632,7 +5325,7 @@ export function useCreateObligationShareInviteMutation(workspaceId?: number | nu
   });
 }
 
-// ─── Exchange Rates CRUD ───────────────────────────────────────────────────────
+// â”€â”€â”€ Exchange Rates CRUD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type ExchangeRateRecord = {
   id: number;
@@ -2703,3 +5396,805 @@ export function useDeleteExchangeRateMutation() {
     },
   });
 }
+
+// â”€â”€â”€ Obligation Payment Requests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+function rowToPaymentRequest(row: Record<string, unknown>): ObligationPaymentRequest {
+  return {
+    id: Number(row.id),
+    obligationId: Number(row.obligation_id),
+    workspaceId: Number(row.workspace_id),
+    shareId: Number(row.share_id),
+    requestedByUserId: String(row.requested_by_user_id ?? ""),
+    requestedByDisplayName: (row.requested_by_display_name as string | null) ?? null,
+    amount: toNum(row.amount as NumericLike),
+    paymentDate: String(row.payment_date ?? ""),
+    installmentNo: row.installment_no != null ? Number(row.installment_no) : null,
+    description: (row.description as string | null) ?? null,
+    notes: (row.notes as string | null) ?? null,
+    status: (row.status as ObligationPaymentRequest["status"]) ?? "pending",
+    rejectionReason: (row.rejection_reason as string | null) ?? null,
+    viewerAccountId: row.viewer_account_id != null ? Number(row.viewer_account_id) : null,
+    viewerAccountName: (row.viewer_account_name as string | null) ?? null,
+    viewerWorkspaceId: row.viewer_workspace_id != null ? Number(row.viewer_workspace_id) : null,
+    acceptedEventId: row.accepted_event_id != null ? Number(row.accepted_event_id) : null,
+    createdAt: String(row.created_at ?? ""),
+    updatedAt: String(row.updated_at ?? ""),
+  };
+}
+
+/** Todas las solicitudes pendientes del workspace (para mostrar badges en la lista). */
+export function usePendingPaymentRequestCountsQuery(workspaceId: number | null | undefined) {
+  return useQuery({
+    queryKey: ["obligation-payment-request-counts", workspaceId ?? null],
+    enabled: Boolean(supabase && workspaceId != null),
+    staleTime: 20_000,
+    queryFn: async (): Promise<Map<number, number>> => {
+      if (!supabase || !workspaceId) return new Map();
+      const { data, error } = await supabase
+        .from("obligation_payment_requests")
+        .select("obligation_id")
+        .eq("workspace_id", workspaceId)
+        .eq("status", "pending");
+      if (error) throw new Error(error.message ?? "Error al cargar solicitudes");
+      const counts = new Map<number, number>();
+      for (const row of (data ?? []) as { obligation_id: number }[]) {
+        const id = Number(row.obligation_id);
+        counts.set(id, (counts.get(id) ?? 0) + 1);
+      }
+      return counts;
+    },
+  });
+}
+
+/** Solicitudes enviadas por el viewer para una obligaciÃ³n (vista del shared viewer). */
+export function useViewerPaymentRequestsQuery(
+  obligationId: number | null | undefined,
+  userId: string | null | undefined,
+) {
+  return useQuery({
+    queryKey: ["viewer-payment-requests", obligationId ?? null, userId ?? null],
+    enabled: Boolean(supabase && obligationId != null && userId != null),
+    staleTime: 15_000,
+    queryFn: async (): Promise<ObligationPaymentRequest[]> => {
+      if (!supabase || !obligationId || !userId) return [];
+      const { data, error } = await supabase
+        .from("obligation_payment_requests")
+        .select("id, obligation_id, workspace_id, share_id, requested_by_user_id, requested_by_display_name, amount, payment_date, installment_no, description, notes, status, rejection_reason, viewer_account_id, viewer_workspace_id, accepted_event_id, created_at, updated_at")
+        .eq("obligation_id", obligationId)
+        .eq("requested_by_user_id", userId)
+        .order("created_at", { ascending: false });
+      if (error) throw new Error(error.message ?? "Error al cargar solicitudes");
+      return (data ?? []).map((row: Record<string, unknown>) => rowToPaymentRequest(row));
+    },
+  });
+}
+
+/** Solicitudes de pago pendientes para una obligaciÃ³n (vista del owner). */
+export function useObligationPaymentRequestsQuery(obligationId: number | null | undefined) {
+  return useQuery({
+    queryKey: ["obligation-payment-requests", obligationId ?? null],
+    enabled: Boolean(supabase && obligationId != null),
+    staleTime: 20_000,
+    queryFn: async (): Promise<ObligationPaymentRequest[]> => {
+      if (!supabase || !obligationId) return [];
+      const { data, error } = await supabase
+        .from("obligation_payment_requests")
+        .select("id, obligation_id, workspace_id, share_id, requested_by_user_id, requested_by_display_name, amount, payment_date, installment_no, description, notes, status, rejection_reason, viewer_account_id, viewer_workspace_id, accepted_event_id, created_at, updated_at")
+        .eq("obligation_id", obligationId)
+        .order("created_at", { ascending: false });
+      if (error) throw new Error(error.message ?? "Error al cargar solicitudes");
+      return (data ?? []).map((row: Record<string, unknown>) => rowToPaymentRequest(row));
+    },
+  });
+}
+
+export type PaymentRequestInput = {
+  obligationId: number;
+  shareId: number;
+  workspaceId: number;
+  requestedByUserId: string;
+  requestedByDisplayName?: string | null;
+  amount: number;
+  paymentDate: string;
+  installmentNo?: number | null;
+  description?: string | null;
+  notes?: string | null;
+  /** Cuenta del viewer donde se reflejarÃ¡ el movimiento al aceptarse */
+  viewerAccountId?: number | null;
+  viewerWorkspaceId?: number | null;
+  /** Owner user id â€” used to send in-app notification */
+  ownerUserId?: string | null;
+  obligationTitle?: string | null;
+};
+
+/** Shared viewer envÃ­a una solicitud de pago/cobro al owner. */
+export function useCreatePaymentRequestMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: PaymentRequestInput) => {
+      if (!supabase) throw new Error("Supabase no disponible.");
+      const client = supabase;
+      const { data, error } = await client
+        .from("obligation_payment_requests")
+        .insert({
+          obligation_id: input.obligationId,
+          share_id: input.shareId,
+          workspace_id: input.workspaceId,
+          requested_by_user_id: input.requestedByUserId,
+          requested_by_display_name: input.requestedByDisplayName ?? null,
+          amount: input.amount,
+          payment_date: input.paymentDate,
+          installment_no: input.installmentNo ?? null,
+          description: input.description?.trim() || null,
+          notes: input.notes?.trim() || null,
+          status: "pending",
+          viewer_account_id: input.viewerAccountId ?? null,
+          viewer_workspace_id: input.viewerWorkspaceId ?? null,
+        })
+        .select("id")
+        .single();
+      if (error) throw new Error(error.message ?? "Error al enviar solicitud");
+      const requestId = (data as { id: number }).id;
+      if (input.ownerUserId) {
+        const senderName = input.requestedByDisplayName ?? "Un usuario";
+        const desc = input.description?.trim();
+        const obligationLabel = input.obligationTitle?.trim()
+          ? ` en "${input.obligationTitle.trim()}"`
+          : "";
+        const row = {
+          user_id: input.ownerUserId,
+          channel: "in_app" as const,
+          status: "pending" as const,
+          kind: "obligation_payment_request",
+          title: `Solicitud pendiente${obligationLabel}`,
+          body: desc
+            ? `${senderName} solicitÃ³ un pago de ${input.amount} Â· ${desc}`
+            : `${senderName} enviÃ³ una solicitud de pago de ${input.amount}${input.obligationTitle ? ` para "${input.obligationTitle}"` : ""}.`,
+          scheduled_for: new Date().toISOString(),
+          related_entity_type: "obligation_payment_request",
+          related_entity_id: requestId,
+          payload: {
+            shareId: input.shareId,
+            requestId,
+            obligationId: input.obligationId,
+            obligationTitle: input.obligationTitle ?? null,
+          },
+        };
+
+        try {
+          const { data: existing, error: findErr } = await client
+            .from("notifications")
+            .select("id")
+            .eq("user_id", row.user_id)
+            .eq("kind", row.kind)
+            .eq("related_entity_type", row.related_entity_type)
+            .eq("related_entity_id", row.related_entity_id)
+            .order("id", { ascending: false })
+            .limit(1);
+          if (findErr) throw new Error(findErr.message ?? "Error al comprobar la notificaciÃ³n");
+
+          if ((existing?.length ?? 0) > 0) {
+            const { error: updateErr } = await client
+              .from("notifications")
+              .update({
+                channel: row.channel,
+                status: row.status,
+                title: row.title,
+                body: row.body,
+                scheduled_for: row.scheduled_for,
+                payload: row.payload,
+                read_at: null,
+              })
+              .eq("user_id", row.user_id)
+              .eq("kind", row.kind)
+              .eq("related_entity_type", row.related_entity_type)
+              .eq("related_entity_id", row.related_entity_id);
+            if (updateErr) throw new Error(updateErr.message ?? "Error al actualizar la notificaciÃ³n");
+          } else {
+            const { error: notificationErr } = await client
+              .from("notifications")
+              .insert(row);
+            if (notificationErr) throw new Error(notificationErr.message ?? "Error al crear la notificaciÃ³n");
+          }
+        } catch (notificationErr) {
+          console.warn("[PaymentRequestNotification]", notificationErr);
+        }
+      }
+      return { id: requestId };
+    },
+    onSuccess: (data, variables) => {
+      // Notify the obligation owner about the new request
+      if (false) {
+        const senderName = variables.requestedByDisplayName ?? "Un usuario";
+        const desc = variables.description?.trim();
+        const obligationLabel = variables.obligationTitle?.trim()
+          ? ` en "${variables.obligationTitle?.trim() ?? ""}"`
+          : "";
+        void supabase?.from("notifications").insert({
+          user_id: variables.ownerUserId,
+          channel: "in_app",
+          status: "pending",
+          kind: "obligation_payment_request",
+          title: `Solicitud pendiente${obligationLabel}`,
+          body: desc
+            ? `${senderName} solicitÃ³ un pago de ${variables.amount} Â· ${desc}`
+            : `${senderName} enviÃ³ una solicitud de pago de ${variables.amount}${variables.obligationTitle ? ` para "${variables.obligationTitle}"` : ""}.`,
+          scheduled_for: new Date().toISOString(),
+          related_entity_type: "obligation_payment_request",
+          related_entity_id: data.id,
+          payload: {
+            shareId: variables.shareId,
+            requestId: data.id,
+            obligationId: variables.obligationId,
+            obligationTitle: variables.obligationTitle ?? null,
+          },
+        });
+      }
+      void queryClient.invalidateQueries({ queryKey: ["obligation-payment-requests", variables.obligationId] });
+      void queryClient.invalidateQueries({ queryKey: ["obligation-payment-request-counts"] });
+      void queryClient.invalidateQueries({ queryKey: ["shared-obligations"] });
+      void queryClient.invalidateQueries({ queryKey: ["notifications"] });
+      if (variables.ownerUserId) {
+        void queryClient.invalidateQueries({ queryKey: ["notifications", variables.ownerUserId] });
+      }
+    },
+  });
+}
+
+export type AcceptPaymentRequestInput = {
+  requestId: number;
+  obligationId: number;
+  workspaceId: number;
+  amount: number;
+  paymentDate: string;
+  installmentNo?: number | null;
+  description?: string | null;
+  accountId?: number | null;
+  createMovement: boolean;
+  direction?: ObligationDirection;
+  obligationTitle?: string;
+  /** Cuenta del viewer (guardada en la solicitud) para auto-crear su movimiento */
+  viewerAccountId?: number | null;
+  viewerWorkspaceId?: number | null;
+  viewerUserId?: string | null;
+  ownerUserId?: string | null;
+  shareId?: number | null;
+};
+
+/** Owner acepta la solicitud â†’ crea evento + movimiento del owner + movimiento del viewer â†’ actualiza status. */
+export function useAcceptPaymentRequestMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: AcceptPaymentRequestInput) => {
+      if (!supabase) throw new Error("Supabase no disponible.");
+      const nowIso = new Date().toISOString();
+      const isReceivable = input.direction === "receivable";
+      const autoDesc =
+        input.description?.trim() ||
+        (isReceivable ? `Cobro: ${input.obligationTitle ?? `obligaciÃ³n #${input.obligationId}`}` : `Pago: ${input.obligationTitle ?? `obligaciÃ³n #${input.obligationId}`}`);
+
+      const { id: eventId } = await insertObligationPaymentEventWithFallback({
+        obligationId: input.obligationId,
+        paymentDate: input.paymentDate,
+        amount: input.amount,
+        installmentNo: input.installmentNo,
+        description: input.description,
+        notes: null,
+        metadata: { from_payment_request: input.requestId },
+      });
+
+      // 2. Create owner's movement if they have a settlement account
+      let ownerMovementId: number | null = null;
+      if (input.createMovement && input.accountId) {
+        const movementPayload: Record<string, unknown> = {
+          workspace_id: input.workspaceId,
+          movement_type: "obligation_payment",
+          status: "posted",
+          occurred_at: dateStrToISO(input.paymentDate),
+          description: autoDesc,
+          obligation_id: input.obligationId,
+          metadata: { obligation_event_id: eventId },
+        };
+        if (isReceivable) {
+          movementPayload.destination_account_id = input.accountId;
+          movementPayload.destination_amount = input.amount;
+        } else {
+          movementPayload.source_account_id = input.accountId;
+          movementPayload.source_amount = input.amount;
+        }
+        const { data: mvData, error: mvError } = await supabase
+          .from("movements")
+          .insert(movementPayload)
+          .select("id")
+          .single();
+        if (mvError) throw new Error(mvError.message ?? "Error al crear movimiento");
+        ownerMovementId = (mvData as { id: number }).id;
+        await attachMovementToObligationEvent(eventId, ownerMovementId);
+      }
+
+      // 3. Mark request as accepted and store the created event id
+      // NOTE: viewer's movement is created by the viewer themselves (separate mutation)
+      // because the owner cannot insert into the viewer's workspace due to RLS.
+      const { error: upError } = await supabase
+        .from("obligation_payment_requests")
+        .update({
+          status: "accepted",
+          accepted_event_id: eventId,
+          updated_at: nowIso,
+        })
+        .eq("id", input.requestId);
+      if (upError) throw new Error(upError.message ?? "Error al actualizar solicitud");
+
+      if (input.ownerUserId) {
+        void supabase
+          .from("notifications")
+          .update({
+            status: "read",
+            read_at: nowIso,
+            title: "Solicitud aceptada",
+            body: input.obligationTitle
+              ? `Ya aceptaste la solicitud en "${input.obligationTitle}".`
+              : "Ya aceptaste esta solicitud.",
+            payload: {
+              requestId: input.requestId,
+              obligationId: input.obligationId,
+              obligationTitle: input.obligationTitle ?? null,
+              responseStatus: "accepted",
+              acceptedEventId: eventId,
+              respondedAt: nowIso,
+            },
+          })
+          .eq("user_id", input.ownerUserId)
+          .eq("kind", "obligation_payment_request")
+          .eq("related_entity_type", "obligation_payment_request")
+          .eq("related_entity_id", input.requestId);
+      }
+
+      // 4. Notify the viewer that their request was accepted
+      if (input.viewerUserId) {
+        const recentCutoffIso = new Date(Date.now() - 5 * 60_000).toISOString();
+        const acceptedBody = input.viewerAccountId
+          ? `Tu solicitud de ${input.amount} fue aceptada${input.obligationTitle ? ` para "${input.obligationTitle}"` : ""} y se registrarÃ¡ en tu cuenta.`
+          : `Tu solicitud de ${input.amount} fue aceptada${input.obligationTitle ? ` para "${input.obligationTitle}"` : ""}. Puedes asociar el movimiento a una cuenta desde el historial.`;
+
+        void supabase
+          .from("notifications")
+          .update({ status: "read", read_at: nowIso })
+          .eq("user_id", input.viewerUserId)
+          .eq("kind", "obligation_event_unlinked")
+          .eq("related_entity_id", input.obligationId)
+          .eq("status", "pending")
+          .gte("scheduled_for", recentCutoffIso);
+
+        void supabase
+          .from("notifications")
+          .insert({
+            user_id: input.viewerUserId,
+            channel: "in_app",
+            status: "pending",
+            kind: "obligation_request_accepted",
+            title: "Solicitud aceptada",
+            body: acceptedBody,
+            scheduled_for: nowIso,
+            related_entity_type: "obligation_payment_request",
+            related_entity_id: input.requestId,
+            payload: {
+              requestId: input.requestId,
+              eventId,
+              obligationId: input.obligationId,
+              obligationTitle: input.obligationTitle ?? null,
+              viewerAccountId: input.viewerAccountId ?? null,
+              acceptedEventId: eventId,
+              requiresAccountLink: input.viewerAccountId == null,
+            },
+          });
+      }
+
+      return { eventId, ownerMovementId };
+    },
+    onSuccess: (_data, variables) => {
+      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+      void queryClient.invalidateQueries({ queryKey: ["movements"] });
+      void queryClient.invalidateQueries({ queryKey: ["obligation-events", variables.obligationId] });
+      void queryClient.invalidateQueries({ queryKey: ["obligation-payment-requests", variables.obligationId] });
+      void queryClient.invalidateQueries({ queryKey: ["obligation-payment-request-counts"] });
+      void queryClient.invalidateQueries({ queryKey: ["viewer-payment-requests", variables.obligationId] });
+      void queryClient.invalidateQueries({ queryKey: ["shared-obligations"] });
+      void queryClient.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
+}
+
+/** Owner rechaza la solicitud. */
+export function useRejectPaymentRequestMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      requestId,
+      obligationId,
+      rejectionReason,
+      viewerUserId,
+      ownerUserId,
+      amount,
+      obligationTitle,
+    }: {
+      requestId: number;
+      obligationId: number;
+      rejectionReason?: string | null;
+      viewerUserId?: string | null;
+      ownerUserId?: string | null;
+      amount?: number | null;
+      obligationTitle?: string | null;
+    }) => {
+      if (!supabase) throw new Error("Supabase no disponible.");
+      const { error } = await supabase
+        .from("obligation_payment_requests")
+        .update({
+          status: "rejected",
+          rejection_reason: rejectionReason?.trim() || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", requestId);
+      if (error) throw new Error(error.message ?? "Error al rechazar solicitud");
+
+      if (ownerUserId) {
+        void supabase
+          .from("notifications")
+          .update({
+            status: "read",
+            read_at: new Date().toISOString(),
+            title: "Solicitud rechazada",
+            body: obligationTitle
+              ? `Ya rechazaste la solicitud en "${obligationTitle}".`
+              : "Ya rechazaste esta solicitud.",
+            payload: {
+              requestId,
+              obligationId,
+              obligationTitle: obligationTitle ?? null,
+              responseStatus: "rejected",
+              rejectionReason: rejectionReason?.trim() || null,
+              respondedAt: new Date().toISOString(),
+            },
+          })
+          .eq("user_id", ownerUserId)
+          .eq("kind", "obligation_payment_request")
+          .eq("related_entity_type", "obligation_payment_request")
+          .eq("related_entity_id", requestId);
+      }
+
+      // Notify the viewer that their request was rejected
+      if (viewerUserId) {
+        void supabase
+          .from("notifications")
+          .insert({
+            user_id: viewerUserId,
+            channel: "in_app",
+            status: "pending",
+            kind: "obligation_request_rejected",
+            title: "Solicitud rechazada",
+            body: `Tu solicitud${amount != null ? ` de ${amount}` : ""} fue rechazada${obligationTitle ? ` para "${obligationTitle}"` : ""}${rejectionReason?.trim() ? `. Motivo: ${rejectionReason.trim()}` : ""}.`,
+            scheduled_for: new Date().toISOString(),
+            related_entity_type: "obligation_payment_request",
+            related_entity_id: requestId,
+            payload: {
+              requestId,
+              obligationId,
+              obligationTitle: obligationTitle ?? null,
+            },
+          });
+      }
+    },
+    onSuccess: (_data, variables) => {
+      void queryClient.invalidateQueries({ queryKey: ["obligation-payment-requests", variables.obligationId] });
+      void queryClient.invalidateQueries({ queryKey: ["obligation-payment-request-counts"] });
+      void queryClient.invalidateQueries({ queryKey: ["viewer-payment-requests", variables.obligationId] });
+      void queryClient.invalidateQueries({ queryKey: ["shared-obligations"] });
+      void queryClient.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
+}
+
+// â”€â”€â”€ Obligation Event Viewer Links â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+/** Links ya creados por el viewer para esta obligaciÃ³n (quÃ© eventos ya vinculÃ³ a sus cuentas). */
+export function useObligationEventViewerLinksQuery(
+  obligationId: number | null | undefined,
+  shareId: number | null | undefined,
+) {
+  return useQuery({
+    queryKey: ["obligation-event-viewer-links", obligationId ?? null, shareId ?? null],
+    enabled: Boolean(supabase && obligationId != null && shareId != null),
+    staleTime: 20_000,
+    queryFn: async (): Promise<ObligationEventViewerLink[]> => {
+      if (!supabase || !obligationId || !shareId) return [];
+      const { data, error } = await supabase
+        .from("obligation_event_viewer_links")
+        .select("id, obligation_id, event_id, share_id, linked_by_user_id, viewer_workspace_id, account_id, movement_id, created_at")
+        .eq("obligation_id", obligationId)
+        .eq("share_id", shareId);
+      if (error) throw new Error(error.message ?? "Error al cargar vÃ­nculos");
+      return (data ?? []).map((row: Record<string, unknown>) => ({
+        id: Number(row.id),
+        obligationId: Number(row.obligation_id),
+        eventId: Number(row.event_id),
+        shareId: Number(row.share_id),
+        linkedByUserId: String(row.linked_by_user_id ?? ""),
+        viewerWorkspaceId: row.viewer_workspace_id != null ? Number(row.viewer_workspace_id) : null,
+        accountId: row.account_id != null ? Number(row.account_id) : null,
+        accountName: null,
+        movementId: row.movement_id != null ? Number(row.movement_id) : null,
+        createdAt: String(row.created_at ?? ""),
+      }));
+    },
+  });
+}
+
+export type LinkEventToAccountInput = {
+  obligationId: number;
+  obligationWorkspaceId: number;
+  eventId: number;
+  shareId: number;
+  linkedByUserId: string;
+  viewerWorkspaceId: number;
+  accountId: number;
+  amount: number;
+  eventDate: string;
+  description?: string | null;
+  /** Direction of the ORIGINAL obligation (owner's perspective) */
+  obligationDirection: ObligationDirection;
+  obligationTitle: string;
+  currencyCode: string;
+};
+
+/**
+ * Shared viewer asocia un evento de pago a una de sus cuentas.
+ * Crea un movimiento en el workspace del viewer y registra el link.
+ */
+export function useLinkEventToAccountMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: LinkEventToAccountInput) => {
+      if (!supabase) throw new Error("Supabase no disponible.");
+
+      // From viewer's perspective:
+      // - receivable owner â†’ viewer is debtor â†’ paid â†’ outflow from viewer's account
+      // - payable owner    â†’ viewer is creditor â†’ collected â†’ inflow to viewer's account
+      const viewerIsDebtor = input.obligationDirection === "receivable";
+      const autoDesc = input.description?.trim() ||
+        (viewerIsDebtor
+          ? `Pago vinculado: ${input.obligationTitle}`
+          : `Cobro vinculado: ${input.obligationTitle}`);
+
+      const movementPayload: Record<string, unknown> = {
+        workspace_id: input.viewerWorkspaceId,
+        movement_type: "obligation_payment",
+        status: "posted",
+        occurred_at: dateStrToISO(input.eventDate),
+        description: autoDesc,
+        obligation_id: null,
+        metadata: { obligation_id: input.obligationId, obligation_event_id: input.eventId },
+      };
+
+      if (viewerIsDebtor) {
+        // outflow
+        movementPayload.source_account_id = input.accountId;
+        movementPayload.source_amount = input.amount;
+      } else {
+        // inflow
+        movementPayload.destination_account_id = input.accountId;
+        movementPayload.destination_amount = input.amount;
+      }
+
+      const { data: mvData, error: mvError } = await supabase
+        .from("movements")
+        .insert(movementPayload)
+        .select("id")
+        .single();
+      if (mvError) throw new Error(mvError.message ?? "Error al crear movimiento");
+      const movementId = (mvData as { id: number }).id;
+
+      // Record the link
+      const { error: linkError } = await supabase
+        .from("obligation_event_viewer_links")
+        .insert({
+          obligation_id: input.obligationId,
+          event_id: input.eventId,
+          share_id: input.shareId,
+          linked_by_user_id: input.linkedByUserId,
+          viewer_workspace_id: input.viewerWorkspaceId,
+          account_id: input.accountId,
+          movement_id: movementId,
+        });
+      if (linkError) throw new Error(linkError.message ?? "Error al guardar vÃ­nculo");
+
+      let attachmentSyncError: string | null = null;
+      try {
+        await mirrorObligationEventAttachmentsToMovement({
+          workspaceId: input.obligationWorkspaceId,
+          targetWorkspaceId: input.viewerWorkspaceId,
+          eventId: input.eventId,
+          movementId,
+        });
+      } catch (error) {
+        attachmentSyncError =
+          error instanceof Error
+            ? error.message
+            : "El movimiento se creo, pero no pudimos copiar los comprobantes.";
+      }
+
+      return { movementId, attachmentSyncError };
+    },
+    onSuccess: (data, variables) => {
+      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+      void queryClient.invalidateQueries({ queryKey: ["movements"] });
+      void queryClient.invalidateQueries({ queryKey: ["obligation-event-viewer-links", variables.obligationId, variables.shareId] });
+      void queryClient.invalidateQueries({ queryKey: ["notifications"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["movement-attachments", variables.viewerWorkspaceId, data.movementId],
+      });
+    },
+  });
+}
+
+export function useUpsertLinkEventToAccountMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: LinkEventToAccountInput) => {
+      if (!supabase) throw new Error("Supabase no disponible.");
+      const client = supabase;
+
+      const viewerIsDebtor = input.obligationDirection === "receivable";
+      const autoDesc = input.description?.trim() ||
+        (viewerIsDebtor
+          ? `Pago vinculado: ${input.obligationTitle}`
+          : `Cobro vinculado: ${input.obligationTitle}`);
+
+      const movementPayload: Record<string, unknown> = {
+        workspace_id: input.viewerWorkspaceId,
+        movement_type: "obligation_payment",
+        status: "posted",
+        occurred_at: dateStrToISO(input.eventDate),
+        description: autoDesc,
+        obligation_id: null,
+        metadata: { obligation_id: input.obligationId, obligation_event_id: input.eventId },
+        source_account_id: viewerIsDebtor ? input.accountId : null,
+        source_amount: viewerIsDebtor ? input.amount : null,
+        destination_account_id: viewerIsDebtor ? null : input.accountId,
+        destination_amount: viewerIsDebtor ? null : input.amount,
+      };
+
+      const { data: existingLinks, error: existingErr } = await client
+        .from("obligation_event_viewer_links")
+        .select("id, movement_id, viewer_workspace_id")
+        .eq("obligation_id", input.obligationId)
+        .eq("event_id", input.eventId)
+        .eq("share_id", input.shareId)
+        .order("id", { ascending: false })
+        .limit(1);
+      if (existingErr) throw new Error(existingErr.message ?? "Error al comprobar vÃ­nculo existente");
+
+      const existingLink = (existingLinks ?? [])[0] as
+        | { id: number; movement_id: number | null; viewer_workspace_id: number | null }
+        | undefined;
+
+      let movementId = existingLink?.movement_id ?? null;
+      if (movementId) {
+        const { error: mvUpdateErr } = await client
+          .from("movements")
+          .update(movementPayload)
+          .eq("id", movementId);
+        if (mvUpdateErr) throw new Error(mvUpdateErr.message ?? "Error al actualizar movimiento");
+      } else {
+        const { data: mvData, error: mvError } = await client
+          .from("movements")
+          .insert({
+            ...movementPayload,
+            workspace_id: existingLink?.viewer_workspace_id ?? input.viewerWorkspaceId,
+          })
+          .select("id")
+          .single();
+        if (mvError) throw new Error(mvError.message ?? "Error al crear movimiento");
+        movementId = (mvData as { id: number }).id;
+      }
+
+      if (existingLink?.id) {
+        const { error: linkUpdateError } = await client
+          .from("obligation_event_viewer_links")
+          .update({
+            linked_by_user_id: input.linkedByUserId,
+            viewer_workspace_id: existingLink.viewer_workspace_id ?? input.viewerWorkspaceId,
+            account_id: input.accountId,
+            movement_id: movementId,
+          })
+          .eq("id", existingLink.id);
+        if (linkUpdateError) throw new Error(linkUpdateError.message ?? "Error al actualizar vÃ­nculo");
+      } else {
+        const { error: linkError } = await client
+          .from("obligation_event_viewer_links")
+          .insert({
+            obligation_id: input.obligationId,
+            event_id: input.eventId,
+            share_id: input.shareId,
+            linked_by_user_id: input.linkedByUserId,
+            viewer_workspace_id: input.viewerWorkspaceId,
+            account_id: input.accountId,
+            movement_id: movementId,
+          });
+        if (linkError) throw new Error(linkError.message ?? "Error al guardar vÃ­nculo");
+      }
+
+      let attachmentSyncError: string | null = null;
+      if (movementId) {
+        try {
+          await mirrorObligationEventAttachmentsToMovement({
+            workspaceId: input.obligationWorkspaceId,
+            targetWorkspaceId: existingLink?.viewer_workspace_id ?? input.viewerWorkspaceId,
+            eventId: input.eventId,
+            movementId,
+          });
+        } catch (error) {
+          attachmentSyncError =
+            error instanceof Error
+              ? error.message
+              : "El movimiento se creo, pero no pudimos copiar los comprobantes.";
+        }
+      }
+
+      return { movementId, updatedExisting: Boolean(existingLink?.id), attachmentSyncError };
+    },
+    onSuccess: (data, variables) => {
+      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+      void queryClient.invalidateQueries({ queryKey: ["movements"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["obligation-event-viewer-links", variables.obligationId, variables.shareId],
+      });
+      void queryClient.invalidateQueries({ queryKey: ["notifications"] });
+      if (data.movementId) {
+        void queryClient.invalidateQueries({
+          queryKey: ["movement-attachments", variables.viewerWorkspaceId, data.movementId],
+        });
+      }
+    },
+  });
+}
+
+export type DeleteViewerEventLinkInput = {
+  linkId: number;
+  movementId?: number | null;
+  obligationId: number;
+  shareId?: number | null;
+};
+
+export function useDeleteViewerEventLinkMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: DeleteViewerEventLinkInput) => {
+      if (!supabase) throw new Error("Supabase no disponible.");
+      if (input.movementId) {
+        const { error: mvErr } = await supabase
+          .from("movements")
+          .delete()
+          .eq("id", input.movementId);
+        if (mvErr) throw new Error(mvErr.message ?? "Error al eliminar movimiento del viewer");
+      }
+
+      const { error: linkErr } = await supabase
+        .from("obligation_event_viewer_links")
+        .delete()
+        .eq("id", input.linkId);
+      if (linkErr) throw new Error(linkErr.message ?? "Error al eliminar vÃ­nculo del evento");
+    },
+    onSuccess: (_data, variables) => {
+      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+      void queryClient.invalidateQueries({ queryKey: ["movements"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["obligation-event-viewer-links", variables.obligationId, variables.shareId ?? null],
+      });
+      void queryClient.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
+}
+
+
+

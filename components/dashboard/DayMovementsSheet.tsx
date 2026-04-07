@@ -1,13 +1,22 @@
 import type { ReactNode } from "react";
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useMemo } from "react";
+import { Animated, Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import { X } from "lucide-react-native";
+import { Paperclip, X } from "lucide-react-native";
 
 import type { DashboardMovementRow } from "../../services/queries/workspace-data";
+import { useMovementAttachmentCountsQuery } from "../../services/queries/attachments";
 import { formatCurrency } from "../ui/AmountDisplay";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
+import {
+  movementActsAsExpense,
+  movementActsAsIncome,
+  movementDisplayAccountId,
+  movementDisplayAmount,
+} from "../../lib/movement-display";
+import { useDismissibleSheet } from "../ui/useDismissibleSheet";
 
 export type ConversionCtx = {
   accountCurrencyMap: Map<number, string>;
@@ -15,21 +24,16 @@ export type ConversionCtx = {
   displayCurrency: string;
 };
 
-const INCOME_TYPES = new Set(["income", "refund"]);
-const EXPENSE_TYPES = new Set(["expense", "subscription_payment", "obligation_payment"]);
-
 function isIncome(m: DashboardMovementRow) {
   if (m.status !== "posted") return false;
-  if (INCOME_TYPES.has(m.movementType)) return true;
-  if (m.movementType === "adjustment") return m.destinationAmount > m.sourceAmount;
-  return false;
+  if (m.movementType === "obligation_opening") return false;
+  return movementActsAsIncome(m);
 }
 
 function isExpense(m: DashboardMovementRow) {
   if (m.status !== "posted") return false;
-  if (EXPENSE_TYPES.has(m.movementType)) return true;
-  if (m.movementType === "adjustment") return m.sourceAmount >= m.destinationAmount;
-  return false;
+  if (m.movementType === "obligation_opening") return false;
+  return movementActsAsExpense(m);
 }
 
 function isTransfer(m: DashboardMovementRow) {
@@ -58,22 +62,22 @@ function convertAmt(
 }
 
 function incomeAmt(m: DashboardMovementRow, ctx: ConversionCtx): number {
-  const raw = m.destinationAmount || m.sourceAmount || 0;
-  const accountId = m.destinationAccountId ?? m.sourceAccountId;
+  const raw = movementDisplayAmount(m);
+  const accountId = movementDisplayAccountId(m);
   const currency = accountId ? ctx.accountCurrencyMap.get(accountId) : undefined;
   return convertAmt(raw, currency, ctx.displayCurrency, ctx.exchangeRateMap);
 }
 
 function expenseAmt(m: DashboardMovementRow, ctx: ConversionCtx): number {
-  const raw = m.sourceAmount || m.destinationAmount || 0;
-  const accountId = m.sourceAccountId ?? m.destinationAccountId;
+  const raw = movementDisplayAmount(m);
+  const accountId = movementDisplayAccountId(m);
   const currency = accountId ? ctx.accountCurrencyMap.get(accountId) : undefined;
   return convertAmt(raw, currency, ctx.displayCurrency, ctx.exchangeRateMap);
 }
 
 function transferAmt(m: DashboardMovementRow, ctx: ConversionCtx): number {
-  const raw = m.sourceAmount || m.destinationAmount || 0;
-  const accountId = m.sourceAccountId ?? m.destinationAccountId;
+  const raw = movementDisplayAmount(m);
+  const accountId = movementDisplayAccountId(m);
   const currency = accountId ? ctx.accountCurrencyMap.get(accountId) : undefined;
   return convertAmt(raw, currency, ctx.displayCurrency, ctx.exchangeRateMap);
 }
@@ -102,6 +106,7 @@ type Props = {
   categoryMap: Map<number, string>;
   accountMap: Map<number, string>;
   onMovementPress: (id: number) => void;
+  workspaceId?: number | null;
 };
 
 export function DayMovementsSheet({
@@ -115,11 +120,19 @@ export function DayMovementsSheet({
   categoryMap,
   accountMap,
   onMovementPress,
+  workspaceId,
 }: Props) {
   const insets = useSafeAreaInsets();
-  const inDay = movements.filter((m) => inRange(m, dayStart, dayEnd)).sort(
-    (a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime(),
+  const { backdropStyle, panHandlers, sheetStyle } = useDismissibleSheet({ visible, onClose });
+  const inDay = useMemo(
+    () => movements.filter((m) => inRange(m, dayStart, dayEnd)).sort(
+      (a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime(),
+    ),
+    [movements, dayStart, dayEnd],
   );
+
+  const inDayIds = useMemo(() => inDay.map((m) => m.id), [inDay]);
+  const { data: attachmentCounts = {} } = useMovementAttachmentCountsQuery(workspaceId, inDayIds);
 
   const incomes = inDay.filter(isIncome);
   const expenses = inDay.filter(isExpense);
@@ -137,6 +150,7 @@ export function DayMovementsSheet({
     const accDst = m.destinationAccountId != null ? accountMap.get(m.destinationAccountId) : null;
     const typeLabel = TYPE_LABEL[m.movementType] ?? m.movementType;
     const timeStr = format(new Date(m.occurredAt), "HH:mm", { locale: es });
+    const attCount = attachmentCounts[m.id] ?? 0;
     return (
       <TouchableOpacity
         key={m.id}
@@ -148,12 +162,20 @@ export function DayMovementsSheet({
           <Text style={styles.movTitle} numberOfLines={2}>
             {m.description?.trim() || `Movimiento #${m.id}`}
           </Text>
-          <Text style={styles.movMeta}>
-            {typeLabel}
-            {cat ? ` · ${cat}` : ""}
-            {m.movementType === "transfer" && accSrc && accDst ? ` · ${accSrc} → ${accDst}` : ""}
-            {` · ${timeStr}`}
-          </Text>
+          <View style={styles.movMetaRow}>
+            <Text style={styles.movMeta}>
+              {typeLabel}
+              {cat ? ` · ${cat}` : ""}
+              {m.movementType === "transfer" && accSrc && accDst ? ` · ${accSrc} → ${accDst}` : ""}
+              {` · ${timeStr}`}
+            </Text>
+            {attCount > 0 ? (
+              <View style={styles.attBadge}>
+                <Paperclip size={9} color={COLORS.storm} />
+                {attCount > 1 ? <Text style={styles.attBadgeText}>{attCount}</Text> : null}
+              </View>
+            ) : null}
+          </View>
         </View>
         <Text style={[styles.movAmount, { color: amountColor }]}>{formatCurrency(amount, ctx.displayCurrency)}</Text>
       </TouchableOpacity>
@@ -175,11 +197,11 @@ export function DayMovementsSheet({
   const listTransfer = showAll || mode === "transfer";
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.overlay}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Animated.View style={[styles.overlay, backdropStyle]}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, SPACING.lg) }]}>
-          <View style={styles.sheetGrab}>
+        <Animated.View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, SPACING.lg) }, sheetStyle]}>
+          <View style={styles.sheetGrab} {...panHandlers}>
             <View style={styles.handle} />
             <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={12}>
               <X size={22} color={COLORS.storm} strokeWidth={2} />
@@ -249,8 +271,8 @@ export function DayMovementsSheet({
 
             <Text style={styles.footerHint}>Toca un movimiento para ver el detalle.</Text>
           </ScrollView>
-        </View>
-      </View>
+        </Animated.View>
+      </Animated.View>
     </Modal>
   );
 }
@@ -371,11 +393,33 @@ const styles = StyleSheet.create({
     fontFamily: FONT_FAMILY.bodyMedium,
     color: COLORS.ink,
   },
+  movMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    flexWrap: "wrap",
+    marginTop: 2,
+  },
   movMeta: {
     fontSize: FONT_SIZE.xs,
     color: COLORS.storm,
-    marginTop: 2,
     fontFamily: FONT_FAMILY.body,
+  },
+  attBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: RADIUS.full,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderWidth: 0.5,
+    borderColor: "rgba(255,255,255,0.10)",
+  },
+  attBadgeText: {
+    fontFamily: FONT_FAMILY.bodyMedium,
+    fontSize: 9,
+    color: COLORS.storm,
   },
   movAmount: {
     fontSize: FONT_SIZE.sm,

@@ -1,20 +1,23 @@
 import * as Haptics from "expo-haptics";
+import { InteractionManager } from "react-native";
 import { useUiStore } from "../store/ui-store";
 import type { ToastVariant } from "../store/ui-store";
 
 export function useToast() {
-  const { showToast: storeShowToast, dismissToast } = useUiStore();
+  const { showToast: storeShowToast, dismissToast, triggerSuccessGlow } = useUiStore();
 
   function showToast(message: string, variant?: ToastVariant) {
-    // Fire haptic matching the toast variant
     if (variant === "success") {
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      triggerSuccessGlow();
     } else if (variant === "error") {
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     } else if (variant === "warning") {
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     }
-    storeShowToast(message, variant);
+    InteractionManager.runAfterInteractions(() => {
+      storeShowToast(message, variant);
+    });
   }
 
   return { showToast, dismissToast };

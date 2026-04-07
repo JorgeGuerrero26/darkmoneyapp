@@ -1,17 +1,18 @@
 import { Tabs } from "expo-router";
+import { memo } from "react";
 import { StyleSheet, View } from "react-native";
 import { Home, ArrowLeftRight, WalletCards, Scale, LayoutGrid } from "lucide-react-native";
-import { BlurView } from "expo-blur";
 
 import { COLORS, FONT_FAMILY, GLASS, RADIUS, SPACING } from "../../constants/theme";
 import { useNotificationsQuery, usePendingObligationShareInvitesQuery } from "../../services/queries/workspace-data";
 import { useAuth } from "../../lib/auth-context";
 import { Badge } from "../../components/ui/Badge";
+import { SafeBlurView } from "../../components/ui/SafeBlurView";
 
 function TabBarBackground() {
   return (
     <View style={StyleSheet.absoluteFillObject}>
-      <BlurView intensity={32} tint="dark" style={StyleSheet.absoluteFillObject} />
+      <SafeBlurView intensity={32} tint="dark" style={StyleSheet.absoluteFillObject} />
       {/* Dark overlay */}
       <View style={[StyleSheet.absoluteFillObject, { backgroundColor: "rgba(7,11,20,0.82)" }]} />
       {/* Top specular line */}
@@ -30,7 +31,7 @@ function TabIcon({ icon, color, focused }: { icon: React.ReactNode; color: strin
   );
 }
 
-function MoreTabIcon({ color, focused }: { color: string; focused: boolean }) {
+const MoreTabIcon = memo(function MoreTabIcon({ color, focused }: { color: string; focused: boolean }) {
   const { user, profile } = useAuth();
   const { data: notifications } = useNotificationsQuery(user?.id ?? null);
   const { data: pendingInvites = [] } = usePendingObligationShareInvitesQuery(user?.id, profile?.email);
@@ -45,7 +46,7 @@ function MoreTabIcon({ color, focused }: { color: string; focused: boolean }) {
         <View>
           <LayoutGrid size={22} color={color} />
           {badgeCount > 0 ? (
-            <View style={{ position: "absolute", top: -4, right: -8 }}>
+            <View style={styles.badgeAnchor}>
               <Badge count={badgeCount} />
             </View>
           ) : null}
@@ -53,14 +54,14 @@ function MoreTabIcon({ color, focused }: { color: string; focused: boolean }) {
       }
     />
   );
-}
+});
 
 export default function AppLayout() {
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        contentStyle: { backgroundColor: "transparent" },
+        freezeOnBlur: true,
         tabBarStyle: {
           backgroundColor: "transparent",
           borderTopWidth: 0,
@@ -69,7 +70,7 @@ export default function AppLayout() {
           paddingBottom: 8,
           paddingTop: 6,
         },
-        tabBarBackground: () => <TabBarBackground />,
+        tabBarBackground: TabBarBackground,
         tabBarActiveTintColor: COLORS.pine,
         tabBarInactiveTintColor: COLORS.storm,
         tabBarShowLabel: false,
@@ -139,6 +140,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "transparent",
+  },
+  badgeAnchor: {
+    position: "absolute",
+    top: -4,
+    right: -8,
   },
   tabIconPillActive: {
     backgroundColor: COLORS.pine + "1A",   // 10% mint

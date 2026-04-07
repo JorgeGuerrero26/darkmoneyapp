@@ -7,6 +7,7 @@ import {
   Text,
   TouchableOpacity,
   View,
+  InteractionManager,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
@@ -26,18 +27,20 @@ import {
 } from "date-fns";
 import { es } from "date-fns/locale";
 import {
-  CreditCard, Wallet, Landmark, PiggyBank, TrendingUp, Banknote,
-  AlertTriangle, AlertCircle, Clock, Tag, ArrowRight,
+  AlertTriangle, AlertCircle, Clock, Tag, ArrowRight, Bell, Banknote,
+  Brain, Lock, Sparkles, Target, TrendingUp,
   type LucideIcon,
 } from "lucide-react-native";
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth } from "../../lib/auth-context";
-import { useWorkspace } from "../../lib/workspace-context";
+import { useWorkspace, useWorkspaceListStore } from "../../lib/workspace-context";
 import {
   useWorkspaceSnapshotQuery,
   useDashboardMovementsQuery,
   useSharedObligationsQuery,
+  useNotificationsQuery,
+  useUserEntitlementQuery,
   mergeWorkspaceAndSharedObligations,
   type DashboardMovementRow,
 } from "../../services/queries/workspace-data";
@@ -53,12 +56,23 @@ import { WorkspaceSelector } from "../../components/layout/WorkspaceSelector";
 import { GestureDetector } from "react-native-gesture-handler";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
 import { FAB } from "../../components/ui/FAB";
+import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { useSwipeTab } from "../../hooks/useSwipeTab";
 import { DayMovementsSheet, type DaySheetMode } from "../../components/dashboard/DayMovementsSheet";
+import {
+  movementActsAsExpense,
+  movementActsAsIncome,
+  movementDisplayAccountId,
+  movementDisplayAmount,
+} from "../../lib/movement-display";
+import { getAccountIcon } from "../../lib/account-icons";
+import { parseDisplayDate } from "../../lib/date";
+import { RingChart, type RingSegment } from "../../components/ui/RingChart";
+import { SparkLine } from "../../components/ui/SparkLine";
+import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const ADMIN_EMAILS = new Set(["joradrianmori@gmail.com"]);
 const UPCOMING_DAYS = 30;
 
 type Period = "today" | "week" | "month" | "last_30";
@@ -72,35 +86,36 @@ const PERIOD_LABELS: Record<Period, string> = {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function useIsPro(email?: string | null): boolean {
-  if (!email) return false;
-  return ADMIN_EMAILS.has(email.toLowerCase());
-}
-
 function pctChange(current: number, prev: number) {
   if (prev === 0) return null;
   return ((current - prev) / Math.abs(prev)) * 100;
 }
 
-const INCOME_TYPES = new Set(["income", "refund"]);
-const EXPENSE_TYPES = new Set(["expense", "subscription_payment", "obligation_payment"]);
-
 function isIncome(m: DashboardMovementRow) {
   if (m.status !== "posted") return false;
-  if (INCOME_TYPES.has(m.movementType)) return true;
-  if (m.movementType === "adjustment") return m.destinationAmount > m.sourceAmount;
-  return false;
+  if (m.movementType === "obligation_opening") return false;
+  return movementActsAsIncome(m);
 }
 
 function isExpense(m: DashboardMovementRow) {
   if (m.status !== "posted") return false;
-  if (EXPENSE_TYPES.has(m.movementType)) return true;
-  if (m.movementType === "adjustment") return m.sourceAmount >= m.destinationAmount;
-  return false;
+  if (m.movementType === "obligation_opening") return false;
+  return movementActsAsExpense(m);
 }
 
 function isTransfer(m: DashboardMovementRow) {
   return m.status === "posted" && m.movementType === "transfer";
+}
+
+function isCategorizedCashflow(m: DashboardMovementRow) {
+  if (m.status !== "posted") return false;
+  return (
+    m.movementType === "income" ||
+    m.movementType === "refund" ||
+    m.movementType === "expense" ||
+    m.movementType === "subscription_payment" ||
+    m.movementType === "obligation_payment"
+  );
 }
 
 function inRange(m: DashboardMovementRow, start: Date, end: Date) {
@@ -184,22 +199,22 @@ type ConversionCtx = {
 };
 
 function incomeAmt(m: DashboardMovementRow, ctx: ConversionCtx): number {
-  const raw = m.destinationAmount || m.sourceAmount || 0;
-  const accountId = m.destinationAccountId ?? m.sourceAccountId;
+  const raw = movementDisplayAmount(m);
+  const accountId = movementDisplayAccountId(m);
   const currency = accountId ? ctx.accountCurrencyMap.get(accountId) : undefined;
   return convertAmt(raw, currency, ctx.displayCurrency, ctx.exchangeRateMap);
 }
 
 function expenseAmt(m: DashboardMovementRow, ctx: ConversionCtx): number {
-  const raw = m.sourceAmount || m.destinationAmount || 0;
-  const accountId = m.sourceAccountId ?? m.destinationAccountId;
+  const raw = movementDisplayAmount(m);
+  const accountId = movementDisplayAccountId(m);
   const currency = accountId ? ctx.accountCurrencyMap.get(accountId) : undefined;
   return convertAmt(raw, currency, ctx.displayCurrency, ctx.exchangeRateMap);
 }
 
 function transferAmt(m: DashboardMovementRow, ctx: ConversionCtx): number {
-  const raw = m.sourceAmount || m.destinationAmount || 0;
-  const accountId = m.sourceAccountId ?? m.destinationAccountId;
+  const raw = movementDisplayAmount(m);
+  const accountId = movementDisplayAccountId(m);
   const currency = accountId ? ctx.accountCurrencyMap.get(accountId) : undefined;
   return convertAmt(raw, currency, ctx.displayCurrency, ctx.exchangeRateMap);
 }
@@ -279,6 +294,200 @@ function useDashboardStats(movements: DashboardMovementRow[], period: Period, ct
       chartDays, monthlyPulse, catTotals, prevCatTotals,
     };
   }, [movements, period, ctx]);
+}
+
+type DashboardReviewInbox = {
+  uncategorizedCount: number;
+  pendingMovementsCount: number;
+  duplicateExpenseGroups: number;
+  subscriptionsAttentionCount: number;
+  obligationsWithoutPlanCount: number;
+  staleObligationsCount: number;
+  overdueObligationsCount: number;
+  totalIssues: number;
+};
+
+function buildReviewInboxSnapshot(
+  movements: DashboardMovementRow[],
+  subscriptions: Array<{ accountId?: number | null; nextDueDate: string; status: string }>,
+  obligations: Array<{
+    pendingAmount: number;
+    dueDate: string | null;
+    installmentCount?: number | null;
+    installmentAmount?: number | null;
+    lastPaymentDate?: string | null;
+    startDate?: string | null;
+    status: string;
+  }>,
+): DashboardReviewInbox {
+  const today = new Date();
+  const uncategorizedCount = movements.filter(
+    (movement) =>
+      movement.status === "posted" &&
+      isCategorizedCashflow(movement) &&
+      movement.categoryId == null,
+  ).length;
+
+  const pendingMovementsCount = movements.filter((movement) => movement.status === "pending").length;
+
+  const duplicateGroups = new Map<string, number>();
+  for (const movement of movements) {
+    if (!isExpense(movement)) continue;
+    const label = movement.description.trim().toLowerCase() || "sin-descripcion";
+    const key = `${movement.occurredAt.slice(0, 10)}|${movementDisplayAmount(movement).toFixed(2)}|${label}`;
+    duplicateGroups.set(key, (duplicateGroups.get(key) ?? 0) + 1);
+  }
+  const duplicateExpenseGroups = Array.from(duplicateGroups.values()).filter((count) => count > 1).length;
+
+  const subscriptionsAttentionCount = subscriptions.filter((subscription) => {
+    if (subscription.status !== "active") return false;
+    const dueDate = parseDisplayDate(subscription.nextDueDate);
+    return !subscription.accountId || dueDate < today;
+  }).length;
+
+  const activeObligations = obligations.filter(
+    (obligation) => obligation.pendingAmount > 0.009 && obligation.status !== "paid",
+  );
+
+  const obligationsWithoutPlanCount = activeObligations.filter(
+    (obligation) =>
+      !obligation.dueDate &&
+      !(obligation.installmentCount && obligation.installmentCount > 0) &&
+      !(obligation.installmentAmount && obligation.installmentAmount > 0),
+  ).length;
+
+  const staleObligationsCount = activeObligations.filter((obligation) => {
+    const referenceDate = obligation.lastPaymentDate ?? obligation.startDate;
+    if (!referenceDate) return true;
+    return differenceInDays(today, parseDisplayDate(referenceDate)) > 50;
+  }).length;
+
+  const overdueObligationsCount = activeObligations.filter(
+    (obligation) => obligation.dueDate && parseDisplayDate(obligation.dueDate) < today,
+  ).length;
+
+  const totalIssues =
+    uncategorizedCount +
+    pendingMovementsCount +
+    duplicateExpenseGroups +
+    subscriptionsAttentionCount +
+    obligationsWithoutPlanCount +
+    staleObligationsCount +
+    overdueObligationsCount;
+
+  return {
+    duplicateExpenseGroups,
+    obligationsWithoutPlanCount,
+    overdueObligationsCount,
+    pendingMovementsCount,
+    staleObligationsCount,
+    subscriptionsAttentionCount,
+    totalIssues,
+    uncategorizedCount,
+  };
+}
+
+type FutureFlowWindow = {
+  days: number;
+  expectedInflow: number;
+  expectedOutflow: number;
+  estimatedBalance: number;
+  scheduledCount: number;
+  receivableCount: number;
+  payableCount: number;
+};
+
+function convertDashboardCurrency(
+  amount: number,
+  fromCurrency: string,
+  displayCurrency: string,
+  exchangeRateMap: Map<string, number>,
+) {
+  return convertAmt(amount, fromCurrency, displayCurrency, exchangeRateMap);
+}
+
+function buildFutureFlowWindows(
+  obligations: Array<{
+    direction: string;
+    pendingAmount: number;
+    installmentAmount?: number | null;
+    currencyCode: string;
+    dueDate: string | null;
+    status: string;
+  }>,
+  subscriptions: Array<{
+    amount: number;
+    currencyCode: string;
+    nextDueDate: string;
+    status: string;
+  }>,
+  displayCurrency: string,
+  exchangeRateMap: Map<string, number>,
+  currentVisibleBalance: number,
+): FutureFlowWindow[] {
+  const today = new Date();
+
+  function obligationDueAmount(obligation: {
+    pendingAmount: number;
+    installmentAmount?: number | null;
+  }) {
+    if (obligation.installmentAmount && obligation.installmentAmount > 0) {
+      return Math.min(obligation.pendingAmount, obligation.installmentAmount);
+    }
+    return obligation.pendingAmount;
+  }
+
+  return [7, 15, 30].map((days) => {
+    const horizon = addDays(today, days);
+    let expectedInflow = 0;
+    let expectedOutflow = 0;
+    let receivableCount = 0;
+    let payableCount = 0;
+    let scheduledCount = 0;
+
+    for (const obligation of obligations) {
+      if (!obligation.dueDate || obligation.pendingAmount <= 0.009 || obligation.status === "paid") continue;
+      const dueDate = parseDisplayDate(obligation.dueDate);
+      if (dueDate < today || dueDate > horizon) continue;
+      const convertedAmount = convertDashboardCurrency(
+        obligationDueAmount(obligation),
+        obligation.currencyCode,
+        displayCurrency,
+        exchangeRateMap,
+      );
+      scheduledCount += 1;
+      if (obligation.direction === "receivable") {
+        receivableCount += 1;
+        expectedInflow += convertedAmount;
+      } else {
+        payableCount += 1;
+        expectedOutflow += convertedAmount;
+      }
+    }
+
+    for (const subscription of subscriptions) {
+      if (subscription.status !== "active") continue;
+      const dueDate = parseDisplayDate(subscription.nextDueDate);
+      if (dueDate < today || dueDate > horizon) continue;
+      scheduledCount += 1;
+      expectedOutflow += convertDashboardCurrency(
+        subscription.amount,
+        subscription.currencyCode,
+        displayCurrency,
+        exchangeRateMap,
+      );
+    }
+
+    return {
+      days,
+      estimatedBalance: currentVisibleBalance + expectedInflow - expectedOutflow,
+      expectedInflow,
+      expectedOutflow,
+      payableCount,
+      receivableCount,
+      scheduledCount,
+    };
+  });
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -511,6 +720,7 @@ function ChronologyStrip({
   mode,
   data,
   barColor,
+  currency,
   getValue,
   onSelectDay,
 }: {
@@ -519,16 +729,25 @@ function ChronologyStrip({
   mode: DaySheetMode;
   data: DashboardChartDay[];
   barColor: string;
+  currency: string;
   getValue: (d: DashboardChartDay) => number;
   onSelectDay: (day: DashboardChartDay, sheetMode: DaySheetMode) => void;
 }) {
   const vals = data.map(getValue);
   const maxVal = Math.max(...vals, 1);
+  const total = vals.reduce((a, b) => a + b, 0);
   const BAR_HEIGHT = 56;
 
   return (
     <Card>
-      <SectionTitle>{title}</SectionTitle>
+      <View style={subStyles.chronoHeader}>
+        <SectionTitle>{title}</SectionTitle>
+        {total > 0 ? (
+          <Text style={[subStyles.chronoTotal, { color: barColor }]}>
+            {formatCurrency(total, currency)}
+          </Text>
+        ) : null}
+      </View>
       <Text style={subStyles.chronoHint}>{hint}</Text>
       <View style={subStyles.chartRow}>
         {data.map((d) => {
@@ -562,25 +781,19 @@ function ChronologyStrip({
   );
 }
 
-// Accounts horizontal scroll
-const ICON_MAP: Record<string, LucideIcon> = {
-  credit_card: CreditCard, cash: Banknote, savings: PiggyBank,
-  investment: TrendingUp, bank: Landmark, loan: Wallet,
-};
-
 function AccountsScroll({ accounts, onPress }: {
-  accounts: { id: number; name: string; type: string; currentBalance: number; currencyCode: string; color: string }[];
-  onPress: (id: number) => void;
-}) {
+    accounts: { id: number; name: string; type: string; icon: string; currentBalance: number; currencyCode: string; color: string }[];
+    onPress: (id: number) => void;
+  }) {
   if (accounts.length === 0) return null;
   return (
     <View>
       <SectionTitle>Cuentas</SectionTitle>
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-        <View style={subStyles.accountsRow}>
-          {accounts.map((a) => {
-            const Icon = ICON_MAP[a.type] ?? Wallet;
-            return (
+          <View style={subStyles.accountsRow}>
+            {accounts.map((a) => {
+              const Icon = getAccountIcon(a.icon, a.type);
+              return (
               <TouchableOpacity
                 key={a.id}
                 style={subStyles.accountChip}
@@ -679,7 +892,7 @@ function BudgetsSection({
         <TouchableOpacity
           key={b.id}
           style={subStyles.budgetRow}
-          onPress={() => router.push("/(app)/budgets")}
+          onPress={() => router.push("/(app)/budgets?from=dashboard")}
           activeOpacity={0.8}
         >
           <View style={subStyles.budgetHeader}>
@@ -838,7 +1051,374 @@ function CategoryComparison({
   );
 }
 
+// ─── New visual widgets ───────────────────────────────────────────────────────
+
+function AccountsBreakdown({
+  accounts,
+  displayCurrency,
+  baseCurrency,
+  exchangeRateMap,
+}: {
+  accounts: { id: number; name: string; color: string; currentBalance: number; currentBalanceInBaseCurrency?: number | null; isArchived: boolean; includeInNetWorth: boolean }[];
+  displayCurrency: string;
+  baseCurrency: string;
+  exchangeRateMap: Map<string, number>;
+}) {
+  const eligible = accounts.filter((a) => !a.isArchived && a.includeInNetWorth);
+  if (eligible.length === 0) return null;
+
+  const withBalances = eligible.map((a) => {
+    const raw = a.currentBalanceInBaseCurrency ?? a.currentBalance;
+    const converted = Math.max(convertAmt(raw, baseCurrency, displayCurrency, exchangeRateMap), 0);
+    return { ...a, converted };
+  });
+
+  const total = withBalances.reduce((s, a) => s + a.converted, 0);
+  if (total <= 0) return null;
+
+  const sorted = [...withBalances].sort((a, b) => b.converted - a.converted);
+  const top5 = sorted.slice(0, 5).filter((a) => a.converted > 0);
+  const otherTotal = sorted.slice(5).reduce((s, a) => s + a.converted, 0);
+
+  const segments: RingSegment[] = top5.map((a) => ({
+    key: String(a.id),
+    value: a.converted,
+    color: a.color,
+  }));
+  if (otherTotal > 0) {
+    segments.push({ key: "other", value: otherTotal, color: COLORS.storm + "66" });
+  }
+
+  return (
+    <Card>
+      <SectionTitle>Distribución por cuenta</SectionTitle>
+      <View style={subStyles.breakdownWrap}>
+        <RingChart segments={segments} size={108} thickness={20} />
+        <View style={subStyles.breakdownLegend}>
+          {top5.map((a) => (
+            <View key={a.id} style={subStyles.breakdownItem}>
+              <View style={[subStyles.breakdownDot, { backgroundColor: a.color }]} />
+              <Text style={subStyles.breakdownName} numberOfLines={1}>{a.name}</Text>
+              <Text style={[subStyles.breakdownPct, { color: a.color }]}>
+                {((a.converted / total) * 100).toFixed(1)}%
+              </Text>
+            </View>
+          ))}
+          {otherTotal > 0 && (
+            <View style={subStyles.breakdownItem}>
+              <View style={[subStyles.breakdownDot, { backgroundColor: COLORS.storm }]} />
+              <Text style={subStyles.breakdownName}>Otros</Text>
+              <Text style={[subStyles.breakdownPct, { color: COLORS.storm }]}>
+                {((otherTotal / total) * 100).toFixed(1)}%
+              </Text>
+            </View>
+          )}
+        </View>
+      </View>
+    </Card>
+  );
+}
+
+function SavingsTrendCard({
+  monthlyPulse,
+  currency,
+}: {
+  monthlyPulse: { label: string; income: number; expense: number }[];
+  currency: string;
+}) {
+  const netValues = monthlyPulse.map((m) => m.income - m.expense);
+  if (netValues.every((v) => v === 0)) return null;
+
+  const lastNet = netValues[netValues.length - 1];
+  const firstNet = netValues[0];
+  const trendUp = lastNet >= firstNet;
+
+  return (
+    <Card>
+      <View style={subStyles.trendHeader}>
+        <SectionTitle>Ahorro mensual (6 meses)</SectionTitle>
+        <Text style={[subStyles.trendBadge, { color: trendUp ? COLORS.pine : COLORS.rosewood }]}>
+          {trendUp ? "↑" : "↓"} tendencia
+        </Text>
+      </View>
+      <View style={subStyles.trendBody}>
+        <SparkLine
+          values={netValues}
+          width={156}
+          height={64}
+          positiveColor={COLORS.pine}
+          negativeColor={COLORS.rosewood}
+        />
+        <View style={subStyles.trendLegend}>
+          {monthlyPulse.map((m, i) => {
+            const net = m.income - m.expense;
+            return (
+              <View key={i} style={subStyles.trendRow}>
+                <Text style={subStyles.trendLabel}>{m.label}</Text>
+                <Text style={[subStyles.trendNet, { color: net >= 0 ? COLORS.pine : COLORS.rosewood }]}>
+                  {net >= 0 ? "+" : ""}{formatCurrency(net, currency)}
+                </Text>
+              </View>
+            );
+          })}
+        </View>
+      </View>
+    </Card>
+  );
+}
+
 // ─── Advanced widgets ─────────────────────────────────────────────────────────
+
+function ReviewInbox({
+  movements,
+  subscriptions,
+  obligations,
+  router,
+}: {
+  movements: DashboardMovementRow[];
+  subscriptions: Array<{ id: number; name: string; accountId?: number | null; nextDueDate: string; status: string }>;
+  obligations: Array<{
+    id: number;
+    title: string;
+    pendingAmount: number;
+    dueDate: string | null;
+    installmentCount?: number | null;
+    installmentAmount?: number | null;
+    lastPaymentDate?: string | null;
+    startDate?: string;
+    status: string;
+  }>;
+  router: ReturnType<typeof useRouter>;
+}) {
+  const review = useMemo(
+    () => buildReviewInboxSnapshot(movements, subscriptions, obligations),
+    [movements, obligations, subscriptions],
+  );
+
+  const items = [
+    { key: "uncategorized", count: review.uncategorizedCount, title: "Sin categoria", detail: "Movimientos aplicados que aun no clasificas.", route: "/movements", icon: Tag, tone: COLORS.warning },
+    { key: "pending", count: review.pendingMovementsCount, title: "Pendientes de aplicar", detail: "Todavia no impactan el saldo real.", route: "/movements", icon: Clock, tone: COLORS.warning },
+    { key: "duplicates", count: review.duplicateExpenseGroups, title: "Posibles duplicados", detail: "Mismo dia, monto y descripcion en gastos.", route: "/movements", icon: AlertTriangle, tone: COLORS.warning },
+    { key: "subscriptions", count: review.subscriptionsAttentionCount, title: "Suscripciones por revisar", detail: "Sin cuenta ligada o con vencimiento pasado.", route: "/subscriptions", icon: Bell, tone: COLORS.secondary },
+    { key: "without-plan", count: review.obligationsWithoutPlanCount, title: "Cartera sin plan claro", detail: "Saldo vivo sin cuota ni fecha concreta.", route: "/obligations", icon: Banknote, tone: COLORS.warning },
+    { key: "stale", count: review.staleObligationsCount, title: "Cartera sin actividad reciente", detail: "Mas de 50 dias sin eventos nuevos.", route: "/obligations", icon: AlertCircle, tone: COLORS.storm },
+    { key: "overdue", count: review.overdueObligationsCount, title: "Cobros o pagos vencidos", detail: "Compromisos con fecha pasada y saldo pendiente.", route: "/obligations", icon: AlertTriangle, tone: COLORS.expense },
+  ].filter((item) => item.count > 0);
+
+  return (
+    <Card>
+      <SectionTitle>Por revisar</SectionTitle>
+      {items.length === 0 ? (
+        <View style={subStyles.richEmptyState}>
+          <Sparkles size={18} color={COLORS.income} />
+          <Text style={subStyles.richEmptyTitle}>Bandeja al dia</Text>
+          <Text style={subStyles.richEmptyBody}>No vemos pendientes fuertes en categorias, duplicados, suscripciones ni cartera.</Text>
+        </View>
+      ) : (
+        <View style={subStyles.reviewList}>
+          {items.map((item) => (
+            <TouchableOpacity key={item.key} style={subStyles.reviewItem} onPress={() => router.push(item.route as never)} activeOpacity={0.82}>
+              <View style={[subStyles.reviewItemIconWrap, { backgroundColor: item.tone + "16" }]}>
+                <item.icon size={15} color={item.tone} />
+              </View>
+              <View style={subStyles.reviewItemCopy}>
+                <Text style={subStyles.reviewItemTitle}>{item.title}</Text>
+                <Text style={subStyles.reviewItemBody}>{item.detail}</Text>
+              </View>
+              <View style={subStyles.reviewItemRight}>
+                <Text style={subStyles.reviewItemCount}>{item.count}</Text>
+                <ArrowRight size={14} color={COLORS.storm} />
+              </View>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+    </Card>
+  );
+}
+
+function FutureFlowPreview({
+  obligations,
+  subscriptions,
+  displayCurrency,
+  exchangeRateMap,
+  currentVisibleBalance,
+}: {
+  obligations: Array<{ direction: string; pendingAmount: number; installmentAmount?: number | null; currencyCode: string; dueDate: string | null; status: string }>;
+  subscriptions: Array<{ amount: number; currencyCode: string; nextDueDate: string; status: string }>;
+  displayCurrency: string;
+  exchangeRateMap: Map<string, number>;
+  currentVisibleBalance: number;
+}) {
+  const windows = useMemo(
+    () => buildFutureFlowWindows(obligations, subscriptions, displayCurrency, exchangeRateMap, currentVisibleBalance),
+    [currentVisibleBalance, displayCurrency, exchangeRateMap, obligations, subscriptions],
+  );
+
+  return (
+    <Card>
+      <SectionTitle>Flujo futuro</SectionTitle>
+      <View style={subStyles.futureWindowList}>
+        {windows.map((window) => (
+          <View key={window.days} style={subStyles.futureWindowCard}>
+            <View style={subStyles.futureWindowTop}>
+              <Text style={subStyles.futureWindowLabel}>Proximos {window.days} dias</Text>
+              <Text style={[subStyles.futureWindowNet, { color: window.expectedInflow >= window.expectedOutflow ? COLORS.income : COLORS.expense }]}>
+                {formatCurrency(window.expectedInflow - window.expectedOutflow, displayCurrency)}
+              </Text>
+            </View>
+            <View style={subStyles.futureWindowStats}>
+              <Text style={subStyles.futureWindowMeta}>Entra {formatCurrency(window.expectedInflow, displayCurrency)}</Text>
+              <Text style={subStyles.futureWindowMeta}>Sale {formatCurrency(window.expectedOutflow, displayCurrency)}</Text>
+            </View>
+            <Text style={subStyles.futureWindowBalance}>Caja estimada: {formatCurrency(window.estimatedBalance, displayCurrency)}</Text>
+            <Text style={subStyles.futureWindowHint}>{window.receivableCount} por recibir · {window.payableCount} por pagar · {window.scheduledCount} compromisos</Text>
+          </View>
+        ))}
+      </View>
+    </Card>
+  );
+}
+
+function LearningPanel({ movements }: { movements: DashboardMovementRow[] }) {
+  const learning = useMemo(() => {
+    const posted = movements.filter((movement) => movement.status === "posted");
+    const useful = posted.filter((movement) => movement.movementType !== "obligation_opening");
+    const categorizedBase = useful.filter(isCategorizedCashflow);
+    const categorizedCount = categorizedBase.filter((movement) => movement.categoryId != null).length;
+    const categorizedRate = categorizedBase.length > 0 ? categorizedCount / categorizedBase.length : 0;
+    const oldest = useful[useful.length - 1];
+    const historyDays = oldest ? Math.max(1, differenceInDays(new Date(), new Date(oldest.occurredAt))) : 0;
+    const readinessScore = Math.round(Math.min(1, useful.length / 120) * 40 + Math.min(1, historyDays / 120) * 25 + categorizedRate * 35);
+    const phases = [
+      { step: 1, title: "Base", description: "La app ya puede leer totales y ritmos simples.", progress: Math.min(1, useful.length / 10) },
+      { step: 2, title: "Patrones", description: "Empieza a distinguir habitos y semanas raras.", progress: Math.min(1, Math.min(useful.length / 30, historyDays / 30)) },
+      { step: 3, title: "Proyecciones", description: "Ya puede estimar presion futura con mas confianza.", progress: Math.min(1, Math.min(useful.length / 70, historyDays / 60, categorizedRate / 0.6)) },
+      { step: 4, title: "Alertas finas", description: "Lista para senales mas finas y anomalias.", progress: Math.min(1, Math.min(useful.length / 120, historyDays / 120, categorizedRate / 0.82)) },
+    ];
+    const insights: string[] = [];
+    if (categorizedRate < 0.55) insights.push("Tus categorias aun necesitan trabajo para que las comparaciones sean mas confiables.");
+    if (useful.length < 25) insights.push("Todavia falta un poco de historia para detectar habitos mas estables.");
+    if (historyDays >= 45 && categorizedRate >= 0.6) insights.push("Ya hay una base decente para empezar a notar patrones y presion futura.");
+    if (insights.length === 0) insights.push("La base del workspace ya esta suficientemente sana para lecturas mas finas.");
+    return { categorizedRate, historyDays, insights, phases, readinessScore, usefulCount: useful.length };
+  }, [movements]);
+
+  return (
+    <Card>
+      <SectionTitle>Aprendiendo de ti</SectionTitle>
+      <View style={subStyles.learningTopGrid}>
+        <View style={subStyles.learningMetricCard}><Brain size={16} color={COLORS.primary} /><Text style={subStyles.learningMetricValue}>{learning.usefulCount}</Text><Text style={subStyles.learningMetricLabel}>Movimientos utiles</Text></View>
+        <View style={subStyles.learningMetricCard}><Clock size={16} color={COLORS.secondary} /><Text style={subStyles.learningMetricValue}>{learning.historyDays} d</Text><Text style={subStyles.learningMetricLabel}>Historia observada</Text></View>
+        <View style={subStyles.learningMetricCard}><Tag size={16} color={COLORS.warning} /><Text style={subStyles.learningMetricValue}>{Math.round(learning.categorizedRate * 100)}%</Text><Text style={subStyles.learningMetricLabel}>Categorias utiles</Text></View>
+        <View style={subStyles.learningMetricCard}><Sparkles size={16} color={COLORS.income} /><Text style={subStyles.learningMetricValue}>{learning.readinessScore}%</Text><Text style={subStyles.learningMetricLabel}>Confianza actual</Text></View>
+      </View>
+      <View style={subStyles.phaseList}>
+        {learning.phases.map((phase) => (
+          <View key={phase.step} style={subStyles.phaseCard}>
+            <View style={subStyles.phaseHeader}>
+              <Text style={subStyles.phaseTitle}>Fase {phase.step} · {phase.title}</Text>
+              <Text style={subStyles.phasePct}>{Math.round(phase.progress * 100)}%</Text>
+            </View>
+            <Text style={subStyles.phaseBody}>{phase.description}</Text>
+            <View style={subStyles.phaseTrack}>
+              <View style={[subStyles.phaseFill, { width: `${Math.max(6, phase.progress * 100)}%` }]} />
+            </View>
+          </View>
+        ))}
+      </View>
+      <View style={subStyles.learningInsightList}>
+        {learning.insights.map((insight) => (
+          <View key={insight} style={subStyles.learningInsightRow}>
+            <Sparkles size={14} color={COLORS.gold} />
+            <Text style={subStyles.learningInsightText}>{insight}</Text>
+          </View>
+        ))}
+      </View>
+    </Card>
+  );
+}
+
+function ProCommandCenter({
+  movements,
+  obligations,
+  subscriptions,
+  displayCurrency,
+  exchangeRateMap,
+  currentVisibleBalance,
+  router,
+  accountCurrencyMap,
+}: {
+  movements: DashboardMovementRow[];
+  obligations: Array<{ id: number; title: string; direction: string; pendingAmount: number; installmentAmount?: number | null; currencyCode: string; dueDate: string | null; status: string; lastPaymentDate?: string | null; startDate?: string }>;
+  subscriptions: Array<{ id: number; name: string; amount: number; currencyCode: string; nextDueDate: string; accountId?: number | null; status: string }>;
+  displayCurrency: string;
+  exchangeRateMap: Map<string, number>;
+  currentVisibleBalance: number;
+  router: ReturnType<typeof useRouter>;
+  accountCurrencyMap: Map<number, string>;
+}) {
+  const review = useMemo(() => buildReviewInboxSnapshot(movements, subscriptions, obligations), [movements, obligations, subscriptions]);
+  const windows = useMemo(() => buildFutureFlowWindows(obligations, subscriptions, displayCurrency, exchangeRateMap, currentVisibleBalance), [currentVisibleBalance, displayCurrency, exchangeRateMap, obligations, subscriptions]);
+  const monthToDate = useMemo(() => {
+    const now = new Date();
+    const start = startOfMonth(now);
+    const income = movements.filter((movement) => inRange(movement, start, now) && isIncome(movement)).reduce((sum, movement) => sum + incomeAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency }), 0);
+    const expense = movements.filter((movement) => inRange(movement, start, now) && isExpense(movement)).reduce((sum, movement) => sum + expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency }), 0);
+    return { net: income - expense, daysElapsed: Math.max(1, differenceInDays(now, start) + 1) };
+  }, [accountCurrencyMap, displayCurrency, exchangeRateMap, movements]);
+  const daysInMonth = differenceInDays(endOfMonth(new Date()), startOfMonth(new Date())) + 1;
+  const monthEndEstimate = currentVisibleBalance + (monthToDate.net / monthToDate.daysElapsed) * (daysInMonth - monthToDate.daysElapsed);
+  const weekWindow = windows[0];
+  const actions = [
+    review.overdueObligationsCount > 0 ? { key: "overdue", title: "Resolver vencimientos", detail: `${review.overdueObligationsCount} cobros o pagos ya estan fuera de fecha.`, route: "/obligations" } : null,
+    review.pendingMovementsCount > 0 ? { key: "pending", title: "Aplicar cola pendiente", detail: `${review.pendingMovementsCount} movimientos aun no impactan tus saldos.`, route: "/movements" } : null,
+    review.uncategorizedCount > 0 ? { key: "uncategorized", title: "Categorizar gastos e ingresos", detail: `${review.uncategorizedCount} movimientos siguen sin categoria.`, route: "/movements" } : null,
+    review.subscriptionsAttentionCount > 0 ? { key: "subscriptions", title: "Confirmar suscripciones", detail: `${review.subscriptionsAttentionCount} cargos fijos necesitan cuenta o fecha revisada.`, route: "/subscriptions" } : null,
+  ].filter(Boolean) as Array<{ key: string; title: string; detail: string; route: string }>;
+  const recommendation = review.overdueObligationsCount > 0 ? "Tu prioridad mas rentable hoy es limpiar vencimientos de cartera antes de que se arrastre mas el desfase." : weekWindow.expectedOutflow > weekWindow.expectedInflow ? "La proxima semana sale mas dinero del que entra: revisa compromisos y mueve foco a liquidez." : review.uncategorizedCount > 0 ? "Con unas cuantas categorias mas, el dashboard puede darte comparativos y senales mucho mas finas." : "No vemos friccion fuerte: aprovecha para ordenar metas, presupuestos o suscripciones.";
+
+  return (
+    <Card>
+      <SectionTitle>Acciones y foco</SectionTitle>
+      {actions.length === 0 ? (
+        <View style={subStyles.richEmptyState}>
+          <Target size={18} color={COLORS.income} />
+          <Text style={subStyles.richEmptyTitle}>Sin urgencias fuertes</Text>
+          <Text style={subStyles.richEmptyBody}>Buen momento para afinar metas, presupuestos o limpiar detalles pequenos del workspace.</Text>
+        </View>
+      ) : (
+        <View style={subStyles.commandActions}>
+          {actions.slice(0, 3).map((action) => (
+            <TouchableOpacity key={action.key} style={subStyles.commandActionRow} onPress={() => router.push(action.route as never)} activeOpacity={0.82}>
+              <View style={subStyles.commandActionCopy}>
+                <Text style={subStyles.commandActionTitle}>{action.title}</Text>
+                <Text style={subStyles.commandActionBody}>{action.detail}</Text>
+              </View>
+              <ArrowRight size={15} color={COLORS.storm} />
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+      <View style={subStyles.commandMetricGrid}>
+        <View style={subStyles.commandMetricCard}>
+          <Text style={subStyles.commandMetricLabel}>Presion 7 dias</Text>
+          <Text style={subStyles.commandMetricValue}>{formatCurrency(weekWindow.expectedInflow - weekWindow.expectedOutflow, displayCurrency)}</Text>
+          <Text style={subStyles.commandMetricHint}>Entra {formatCurrency(weekWindow.expectedInflow, displayCurrency)} · sale {formatCurrency(weekWindow.expectedOutflow, displayCurrency)}</Text>
+        </View>
+        <View style={subStyles.commandMetricCard}>
+          <Text style={subStyles.commandMetricLabel}>Caja estimada fin de mes</Text>
+          <Text style={subStyles.commandMetricValue}>{formatCurrency(monthEndEstimate, displayCurrency)}</Text>
+          <Text style={subStyles.commandMetricHint}>Extrapola el neto diario del mes en curso.</Text>
+        </View>
+      </View>
+      <View style={subStyles.commandRecommendation}>
+        <TrendingUp size={16} color={COLORS.gold} />
+        <Text style={subStyles.commandRecommendationText}>{recommendation}</Text>
+      </View>
+    </Card>
+  );
+}
 
 function ObligationsSection({
   obligations, router,
@@ -1103,7 +1683,7 @@ function AlertCenter({
 
   // Movements without category (expense/income type)
   const noCatCount = movements.filter(
-    (m) => m.categoryId === null && (EXPENSE_TYPES.has(m.movementType) || INCOME_TYPES.has(m.movementType)) && m.status === "posted",
+    (m) => m.categoryId === null && isCategorizedCashflow(m),
   ).length;
   if (noCatCount > 0) {
     alerts.push({
@@ -1298,7 +1878,7 @@ function TransferSnapshot({
 // Data quality widget
 function DataQuality({ movements }: { movements: DashboardMovementRow[] }) {
   const relevant = movements.filter(
-    (m) => (EXPENSE_TYPES.has(m.movementType) || INCOME_TYPES.has(m.movementType)) && m.status === "posted",
+    (m) => isCategorizedCashflow(m),
   );
   const noCat = relevant.filter((m) => m.categoryId === null).length;
   const noCounterparty = relevant.filter((m) => m.counterpartyId === null).length;
@@ -1477,26 +2057,52 @@ function ActivityTimeline({ snapshot }: { snapshot: any }) {
 
 function ProGate() {
   return (
-    <Card>
-      <View style={subStyles.proGate}>
-        <Text style={subStyles.proGateIcon}>⚡</Text>
-        <Text style={subStyles.proGateTitle}>Dashboard Avanzado</Text>
-        <Text style={subStyles.proGateBody}>
-          Accede a análisis detallados, gráficos avanzados, salud financiera y más con el plan Pro.
-        </Text>
+    <View style={subStyles.proGate}>
+      <View style={subStyles.proGateIconWrap}>
+        <Lock size={16} color={COLORS.gold} strokeWidth={1.8} />
       </View>
-    </Card>
+      <View style={subStyles.proGateText}>
+        <Text style={subStyles.proGateTitle}>Dashboard Avanzado</Text>
+        <Text style={subStyles.proGateBody}>Análisis detallado, gráficos y salud financiera</Text>
+      </View>
+      <View style={subStyles.proGateBadge}>
+        <Text style={subStyles.proGateBadgeText}>PRO</Text>
+      </View>
+    </View>
   );
 }
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
-export default function DashboardScreen() {
+function ProGateLoading() {
+  return (
+    <View style={subStyles.proGate}>
+      <View style={subStyles.proGateIconWrap}>
+        <Lock size={16} color={COLORS.storm} strokeWidth={1.8} />
+      </View>
+      <View style={subStyles.proGateText}>
+        <Text style={subStyles.proGateTitle}>Dashboard Avanzado</Text>
+        <Text style={subStyles.proGateBody}>Verificando acceso…</Text>
+      </View>
+      <View style={[subStyles.proGateBadge, subStyles.proGateBadgeMuted]}>
+        <Text style={[subStyles.proGateBadgeText, { color: COLORS.storm }]}>PRO</Text>
+      </View>
+    </View>
+  );
+}
+
+function DashboardScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { profile } = useAuth();
+  const { profile, session, signOut } = useAuth();
   const { activeWorkspaceId, activeWorkspace, setWorkspaces } = useWorkspace();
+
+  const [signOutVisible, setSignOutVisible] = useState(false);
+
+  function handleSignOut() {
+    setSignOutVisible(true);
+  }
   const { dashboardMode, setDashboardMode, dashboardScrollY, setDashboardScrollY } = useUiStore();
   const scrollRef = useRef<import("react-native").ScrollView>(null);
   const scrollSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1524,11 +2130,12 @@ export default function DashboardScreen() {
   const [displayCurrency, setDisplayCurrency] = useState<string | null>(null);
   const currencyLoadedRef = useRef(false);
 
-  const isPro = useIsPro(profile?.email);
+  const entitlementQuery = useUserEntitlementQuery(session?.user?.id ?? profile?.id ?? null, profile?.email);
+  const isPro = entitlementQuery.data?.proAccessEnabled ?? false;
 
   const { data: snapshot, isLoading: snapLoading } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const { data: movements = [] } = useDashboardMovementsQuery(activeWorkspaceId, profile?.id);
-  const { data: sharedObligations = [] } = useSharedObligationsQuery(profile?.id);
+  const { data: sharedObligations = [] } = useSharedObligationsQuery(session?.user?.id ?? null);
 
   const obligationsMerged = useMemo(
     () => mergeWorkspaceAndSharedObligations(snapshot?.obligations ?? [], sharedObligations),
@@ -1539,7 +2146,14 @@ export default function DashboardScreen() {
     if (snapshot?.workspaces?.length) setWorkspaces(snapshot.workspaces);
   }, [snapshot?.workspaces, setWorkspaces]);
 
-  const baseCurrency = activeWorkspace?.baseCurrencyCode ?? profile?.baseCurrencyCode ?? "PEN";
+  const snapshotActiveWorkspace = useMemo(
+    () => snapshot?.workspaces?.find((workspace) => workspace.id === activeWorkspaceId) ?? null,
+    [snapshot?.workspaces, activeWorkspaceId],
+  );
+
+  const resolvedActiveWorkspace = activeWorkspace ?? snapshotActiveWorkspace;
+  const baseCurrency = resolvedActiveWorkspace?.baseCurrencyCode ?? profile?.baseCurrencyCode ?? "PEN";
+  const workspaceDisplayName = resolvedActiveWorkspace?.name ?? "Tu workspace";
 
   // Build exchange rate map from snapshot
   const exchangeRateMap = useMemo(
@@ -1636,11 +2250,17 @@ export default function DashboardScreen() {
   }, [snapshot?.accounts]);
 
   const isAdvanced = dashboardMode === "advanced";
+  const isCheckingAdvancedAccess = isAdvanced && entitlementQuery.isLoading && !entitlementQuery.data;
+  const shouldShowAdvancedProGate = isAdvanced && !isCheckingAdvancedAccess && !isPro;
 
   if (snapLoading) {
     return (
       <View style={[styles.screen, { paddingTop: insets.top }]}>
-        <ScreenHeader title="Inicio" />
+        <ScreenHeader
+          title={`Hola, ${profile?.fullName?.split(" ")[0] ?? "usuario"}`}
+          subtitle={`${workspaceDisplayName} · ${format(new Date(), "d MMM yyyy", { locale: es })}`}
+          showPlanBadge
+        />
         <ScrollView contentContainerStyle={styles.content}>
           <SkeletonCard /><SkeletonCard /><SkeletonCard />
         </ScrollView>
@@ -1652,9 +2272,10 @@ export default function DashboardScreen() {
     <GestureDetector gesture={swipeGesture}>
     <View style={[styles.screen, { paddingTop: insets.top }]}>
       <ScreenHeader
-        title={activeWorkspace?.name ?? "Inicio"}
-        subtitle={format(new Date(), "MMMM yyyy", { locale: es })}
-        rightAction={<WorkspaceSelector />}
+        title={`Hola, ${profile?.fullName?.split(" ")[0] ?? "usuario"}`}
+        subtitle={`${workspaceDisplayName} · ${format(new Date(), "d MMM yyyy", { locale: es })}`}
+        rightAction={<DashboardHeaderRight onSignOut={handleSignOut} />}
+        showPlanBadge
       />
 
       <ScrollView
@@ -1672,6 +2293,8 @@ export default function DashboardScreen() {
       >
         {/* 1. Mode toggle */}
         <ModeToggle mode={dashboardMode} setMode={setDashboardMode} isPro={isPro} />
+        {isCheckingAdvancedAccess ? <ProGateLoading /> : shouldShowAdvancedProGate ? <ProGate /> : (
+          <>
 
         {/* 2. Hero balance (period + currency selector inside) */}
         <HeroCard
@@ -1706,6 +2329,7 @@ export default function DashboardScreen() {
           mode="expense"
           data={stats.chartDays}
           barColor={COLORS.expense}
+          currency={activeCurrency}
           getValue={(d) => d.expense}
           onSelectDay={(d, mode) => setDaySheet({ dayStart: d.dayStart, dayEnd: d.dayEnd, mode })}
         />
@@ -1715,6 +2339,7 @@ export default function DashboardScreen() {
           mode="income"
           data={stats.chartDays}
           barColor={COLORS.income}
+          currency={activeCurrency}
           getValue={(d) => d.income}
           onSelectDay={(d, mode) => setDaySheet({ dayStart: d.dayStart, dayEnd: d.dayEnd, mode })}
         />
@@ -1724,6 +2349,7 @@ export default function DashboardScreen() {
           mode="transfer"
           data={stats.chartDays}
           barColor={COLORS.secondary}
+          currency={activeCurrency}
           getValue={(d) => d.transferTotal}
           onSelectDay={(d, mode) => setDaySheet({ dayStart: d.dayStart, dayEnd: d.dayEnd, mode })}
         />
@@ -1732,6 +2358,14 @@ export default function DashboardScreen() {
         <AccountsScroll
           accounts={activeAccounts}
           onPress={(id) => router.push(`/account/${id}?from=dashboard`)}
+        />
+
+        {/* 5b. Accounts distribution ring chart */}
+        <AccountsBreakdown
+          accounts={snapshot?.accounts ?? []}
+          displayCurrency={activeCurrency}
+          baseCurrency={baseCurrency}
+          exchangeRateMap={exchangeRateMap}
         />
 
         {/* 6. Receivable + Payable leaders */}
@@ -1755,11 +2389,40 @@ export default function DashboardScreen() {
           currency={activeCurrency}
         />
 
-        {/* ── Advanced section ── */}
-        {isAdvanced && !isPro && <ProGate />}
+        {/* 10. Savings trend sparkline */}
+        <SavingsTrendCard monthlyPulse={stats.monthlyPulse} currency={activeCurrency} />
 
+        {/* ── Advanced section ── */}
         {isAdvanced && isPro && (
           <>
+            <ReviewInbox
+              movements={movements}
+              subscriptions={snapshot?.subscriptions ?? []}
+              obligations={obligationsMerged}
+              router={router}
+            />
+
+            <ProCommandCenter
+              movements={movements}
+              obligations={obligationsMerged}
+              subscriptions={snapshot?.subscriptions ?? []}
+              displayCurrency={activeCurrency}
+              exchangeRateMap={exchangeRateMap}
+              currentVisibleBalance={netWorth}
+              router={router}
+              accountCurrencyMap={accountCurrencyMap}
+            />
+
+            <FutureFlowPreview
+              obligations={obligationsMerged}
+              subscriptions={snapshot?.subscriptions ?? []}
+              displayCurrency={activeCurrency}
+              exchangeRateMap={exchangeRateMap}
+              currentVisibleBalance={netWorth}
+            />
+
+            <LearningPanel movements={movements} />
+
             {/* 10. Category breakdown (detail) */}
             <CategoryBreakdown
               catTotals={stats.catTotals}
@@ -1830,6 +2493,8 @@ export default function DashboardScreen() {
             <ActivityTimeline snapshot={snapshot} />
           </>
         )}
+          </>
+        )}
       </ScrollView>
 
       <FAB onPress={() => setFormVisible(true)} bottom={insets.bottom + 16} />
@@ -1839,8 +2504,9 @@ export default function DashboardScreen() {
         onClose={() => setFormVisible(false)}
         onSuccess={() => {
           setFormVisible(false);
-          void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
-          void queryClient.invalidateQueries({ queryKey: ["dashboard-movements"] });
+          InteractionManager.runAfterInteractions(() => {
+            void queryClient.invalidateQueries({ queryKey: ["dashboard-movements"] });
+          });
         }}
       />
 
@@ -1855,12 +2521,23 @@ export default function DashboardScreen() {
           ctx={conversionCtx}
           categoryMap={categoryMap}
           accountMap={accountMap}
+          workspaceId={activeWorkspaceId}
           onMovementPress={(id) => {
             setDaySheet(null);
             router.push(`/movement/${id}?from=dashboard`);
           }}
         />
       ) : null}
+      <ConfirmDialog
+        visible={signOutVisible}
+        title="Cerrar sesión"
+        body="¿Estás seguro que deseas salir de tu cuenta?"
+        confirmLabel="Salir"
+        cancelLabel="Cancelar"
+        destructive
+        onCancel={() => setSignOutVisible(false)}
+        onConfirm={() => { setSignOutVisible(false); void signOut(); }}
+      />
     </View>
     </GestureDetector>
   );
@@ -2065,6 +2742,16 @@ const subStyles = StyleSheet.create({
   chartBars: { flexDirection: "row", alignItems: "flex-end", gap: 1, width: "100%" },
   chartBar: { flex: 1, borderTopLeftRadius: 3, borderTopRightRadius: 3, minHeight: 0 },
   chartLabel: { fontFamily: FONT_FAMILY.body, fontSize: 9, color: COLORS.storm, textAlign: "center" },
+  chronoHeader: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    justifyContent: "space-between",
+    marginBottom: 2,
+  },
+  chronoTotal: {
+    fontFamily: FONT_FAMILY.heading,
+    fontSize: FONT_SIZE.md,
+  },
   chronoHint: {
     fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.xs,
@@ -2299,14 +2986,434 @@ const subStyles = StyleSheet.create({
   timelineDesc: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.sm, color: COLORS.ink },
   timelineDate: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
 
+  // Review inbox + command center + learning
+  richEmptyState: {
+    alignItems: "center",
+    justifyContent: "center",
+    gap: SPACING.xs,
+    paddingVertical: SPACING.lg,
+  },
+  richEmptyTitle: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.md,
+    color: COLORS.ink,
+  },
+  richEmptyBody: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.storm,
+    textAlign: "center",
+    lineHeight: 20,
+  },
+  reviewList: {
+    gap: SPACING.sm,
+  },
+  reviewItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+    padding: SPACING.md,
+    borderRadius: RADIUS.xl,
+    backgroundColor: GLASS.card,
+    borderWidth: 1,
+    borderColor: GLASS.cardBorder,
+  },
+  reviewItemIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: RADIUS.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  reviewItemCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  reviewItemTitle: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.ink,
+  },
+  reviewItemBody: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    lineHeight: 17,
+  },
+  reviewItemRight: {
+    alignItems: "center",
+    gap: 4,
+  },
+  reviewItemCount: {
+    fontFamily: FONT_FAMILY.heading,
+    fontSize: FONT_SIZE.md,
+    color: COLORS.ink,
+  },
+  futureWindowList: {
+    gap: SPACING.sm,
+  },
+  futureWindowCard: {
+    padding: SPACING.md,
+    borderRadius: RADIUS.xl,
+    backgroundColor: GLASS.card,
+    borderWidth: 1,
+    borderColor: GLASS.cardBorder,
+    gap: SPACING.xs,
+  },
+  futureWindowTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: SPACING.sm,
+  },
+  futureWindowLabel: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.ink,
+  },
+  futureWindowNet: {
+    fontFamily: FONT_FAMILY.heading,
+    fontSize: FONT_SIZE.md,
+  },
+  futureWindowStats: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: SPACING.sm,
+  },
+  futureWindowMeta: {
+    flex: 1,
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+  },
+  futureWindowBalance: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.ink,
+  },
+  futureWindowHint: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+  },
+  learningTopGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: SPACING.sm,
+    marginBottom: SPACING.sm,
+  },
+  learningMetricCard: {
+    flex: 1,
+    minWidth: "45%",
+    padding: SPACING.md,
+    borderRadius: RADIUS.xl,
+    backgroundColor: GLASS.card,
+    borderWidth: 1,
+    borderColor: GLASS.cardBorder,
+    gap: 4,
+  },
+  learningMetricValue: {
+    fontFamily: FONT_FAMILY.heading,
+    fontSize: FONT_SIZE.md,
+    color: COLORS.ink,
+  },
+  learningMetricLabel: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+  },
+  phaseList: {
+    gap: SPACING.sm,
+  },
+  phaseCard: {
+    padding: SPACING.md,
+    borderRadius: RADIUS.xl,
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    gap: SPACING.xs,
+  },
+  phaseHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: SPACING.sm,
+  },
+  phaseTitle: {
+    flex: 1,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.ink,
+  },
+  phasePct: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.primary,
+  },
+  phaseBody: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    lineHeight: 18,
+  },
+  phaseTrack: {
+    height: 6,
+    borderRadius: RADIUS.full,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    overflow: "hidden",
+  },
+  phaseFill: {
+    height: 6,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.primary,
+  },
+  learningInsightList: {
+    gap: SPACING.xs,
+    marginTop: SPACING.sm,
+  },
+  learningInsightRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: SPACING.xs,
+  },
+  learningInsightText: {
+    flex: 1,
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.storm,
+    lineHeight: 20,
+  },
+  commandActions: {
+    gap: SPACING.sm,
+    marginBottom: SPACING.md,
+  },
+  commandActionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+    padding: SPACING.md,
+    borderRadius: RADIUS.xl,
+    backgroundColor: GLASS.card,
+    borderWidth: 1,
+    borderColor: GLASS.cardBorder,
+  },
+  commandActionCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  commandActionTitle: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.ink,
+  },
+  commandActionBody: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    lineHeight: 17,
+  },
+  commandMetricGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: SPACING.sm,
+  },
+  commandMetricCard: {
+    flex: 1,
+    minWidth: "45%",
+    padding: SPACING.md,
+    borderRadius: RADIUS.xl,
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    gap: 4,
+  },
+  commandMetricLabel: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+  },
+  commandMetricValue: {
+    fontFamily: FONT_FAMILY.heading,
+    fontSize: FONT_SIZE.md,
+    color: COLORS.ink,
+  },
+  commandMetricHint: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    lineHeight: 17,
+  },
+  commandRecommendation: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: SPACING.sm,
+    marginTop: SPACING.md,
+    padding: SPACING.md,
+    borderRadius: RADIUS.xl,
+    backgroundColor: COLORS.gold + "12",
+    borderWidth: 1,
+    borderColor: COLORS.gold + "22",
+  },
+  commandRecommendationText: {
+    flex: 1,
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.ink,
+    lineHeight: 20,
+  },
+
+  // Accounts breakdown ring
+  breakdownWrap: { flexDirection: "row", alignItems: "center", gap: SPACING.lg },
+  breakdownLegend: { flex: 1, gap: SPACING.xs + 1 },
+  breakdownItem: { flexDirection: "row", alignItems: "center", gap: SPACING.xs },
+  breakdownDot: { width: 8, height: 8, borderRadius: 4, flexShrink: 0 },
+  breakdownName: { flex: 1, fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.xs, color: COLORS.ink },
+  breakdownPct: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.xs },
+
+  // Savings trend sparkline
+  trendHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: SPACING.xs },
+  trendBadge: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.xs },
+  trendBody: { flexDirection: "row", alignItems: "center", gap: SPACING.md },
+  trendLegend: { flex: 1, gap: 3 },
+  trendRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  trendLabel: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm, textTransform: "capitalize" },
+  trendNet: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.xs },
+
   // Pro gate
-  proGate: { alignItems: "center", padding: SPACING.xl, gap: SPACING.sm },
-  proGateIcon: { fontSize: 32 },
-  proGateTitle: { fontFamily: FONT_FAMILY.heading, fontSize: FONT_SIZE.lg, color: COLORS.ink },
-  proGateBody: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.storm, textAlign: "center", lineHeight: 20 },
+  proGate: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.lg,
+    backgroundColor: "rgba(215,190,123,0.06)",
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: "rgba(215,190,123,0.15)",
+  },
+  proGateIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: RADIUS.full,
+    backgroundColor: "rgba(215,190,123,0.10)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  proGateText: { flex: 1, gap: 2 },
+  proGateTitle: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.sm, color: COLORS.ink },
+  proGateBody: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm, lineHeight: 16 },
+  proGateBadge: {
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 3,
+    borderRadius: RADIUS.full,
+    backgroundColor: "rgba(215,190,123,0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(215,190,123,0.35)",
+  },
+  proGateBadgeMuted: {
+    backgroundColor: "rgba(150,162,181,0.10)",
+    borderColor: "rgba(150,162,181,0.20)",
+  },
+  proGateBadgeText: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: 10,
+    color: COLORS.gold,
+    letterSpacing: 0.8,
+  },
 });
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: COLORS.canvas },
   content: { padding: SPACING.lg, gap: SPACING.xl, paddingBottom: 100 },
 });
+
+// ─── Dashboard header right actions ───────────────────────────────────────────
+
+function DashboardHeaderRight({ onSignOut }: { onSignOut: () => void }) {
+  const { profile } = useAuth();
+  const { workspaces } = useWorkspaceListStore();
+  const router = useRouter();
+  const { data: notifications = [] } = useNotificationsQuery(profile?.id ?? null);
+  const unreadCount = (notifications as { readAt: string | null }[]).filter((n) => !n.readAt).length;
+
+  return (
+    <View style={hdrStyles.row}>
+      {workspaces.length > 1 && <WorkspaceSelector />}
+      <TouchableOpacity
+        style={hdrStyles.iconBtn}
+        onPress={() => router.push("/notifications")}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+      >
+        <Bell size={19} color={COLORS.storm} strokeWidth={2} />
+        {unreadCount > 0 && (
+          <View style={hdrStyles.badge}>
+            <Text style={hdrStyles.badgeText}>{unreadCount > 9 ? "9+" : String(unreadCount)}</Text>
+          </View>
+        )}
+      </TouchableOpacity>
+      <TouchableOpacity style={hdrStyles.avatar} onPress={onSignOut}>
+        <Text style={hdrStyles.avatarText}>{profile?.initials ?? "?"}</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+const hdrStyles = StyleSheet.create({
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+  },
+  iconBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: RADIUS.lg,
+    backgroundColor: GLASS.card,
+    borderWidth: 1,
+    borderColor: GLASS.cardBorder,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  badge: {
+    position: "absolute",
+    top: -4,
+    right: -4,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: COLORS.danger,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 3,
+  },
+  badgeText: {
+    fontSize: 9,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    color: "#FFFFFF",
+    lineHeight: 12,
+  },
+  avatar: {
+    width: 36,
+    height: 36,
+    borderRadius: RADIUS.lg,
+    backgroundColor: COLORS.primary + "22",
+    borderWidth: 1,
+    borderColor: COLORS.primary + "55",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarText: {
+    fontSize: FONT_SIZE.xs,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    color: COLORS.primary,
+    letterSpacing: 0.5,
+  },
+});
+
+export default function DashboardScreenRoot() {
+  return (
+    <ErrorBoundary>
+      <DashboardScreen />
+    </ErrorBoundary>
+  );
+}

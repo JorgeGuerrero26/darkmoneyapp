@@ -12,6 +12,7 @@ import { format, startOfMonth, endOfMonth, addMonths } from "date-fns";
 import { useWorkspace } from "../../lib/workspace-context";
 import { useAuth } from "../../lib/auth-context";
 import { useToast } from "../../hooks/useToast";
+import { useHaptics } from "../../hooks/useHaptics";
 import {
   useCreateBudgetMutation,
   useUpdateBudgetMutation,
@@ -46,6 +47,7 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget }: Props) {
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
   const { profile } = useAuth();
   const { showToast } = useToast();
+  const haptics = useHaptics();
   const createMutation = useCreateBudgetMutation(activeWorkspaceId);
   const updateMutation = useUpdateBudgetMutation(activeWorkspaceId);
   const { data: snapshot } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
@@ -111,7 +113,19 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget }: Props) {
   }
 
   function handleClose() {
-    if (name.trim() || limitAmount) {
+    const isDirty = isEditing && editBudget
+      ? name.trim() !== editBudget.name.trim() ||
+        limitAmount !== String(editBudget.limitAmount) ||
+        currencyCode !== editBudget.currencyCode ||
+        alertPercent !== editBudget.alertPercent ||
+        categoryId !== (editBudget.categoryId ?? null) ||
+        accountId !== (editBudget.accountId ?? null) ||
+        rolloverEnabled !== editBudget.rolloverEnabled ||
+        periodStart !== editBudget.periodStart ||
+        periodEnd !== editBudget.periodEnd ||
+        notes.trim() !== (editBudget.notes ?? "").trim()
+      : Boolean(name.trim() || limitAmount);
+    if (isDirty) {
       setDiscardVisible(true);
     } else {
       onClose();
@@ -129,7 +143,7 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget }: Props) {
       setAmountError("Ingresa un monto válido mayor a 0");
       valid = false;
     }
-    if (!valid) return;
+    if (!valid) { haptics.error(); return; }
 
     const input: BudgetFormInput = {
       name: name.trim(),
@@ -152,9 +166,11 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget }: Props) {
         await createMutation.mutateAsync(input);
         showToast("Presupuesto creado", "success");
       }
+      haptics.success();
       onSuccess?.();
       onClose();
     } catch (err: unknown) {
+      haptics.error();
       const msg = err instanceof Error ? err.message : "Error desconocido";
       showToast(msg, "error");
     }

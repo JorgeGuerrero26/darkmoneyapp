@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import {
+  Animated,
   Modal,
   ScrollView,
   StyleSheet,
@@ -18,6 +19,7 @@ import {
 } from "../../lib/subscription-helpers";
 import { formatCurrency } from "../ui/AmountDisplay";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
+import { useDismissibleSheet } from "../ui/useDismissibleSheet";
 
 type Props = {
   visible: boolean;
@@ -47,6 +49,7 @@ export function SubscriptionAnalyticsModal({
   baseCurrencyCode,
 }: Props) {
   const insets = useSafeAreaInsets();
+  const { backdropStyle, panHandlers, sheetStyle } = useDismissibleSheet({ visible, onClose });
 
   const filtered = useMemo(() => {
     if (!subscription) return [];
@@ -104,10 +107,10 @@ export function SubscriptionAnalyticsModal({
   if (!subscription) return null;
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={styles.backdrop}>
-        <View style={[styles.sheet, { paddingBottom: insets.bottom + SPACING.md }]}>
-          <View style={styles.header}>
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <Animated.View style={[styles.backdrop, backdropStyle]}>
+        <Animated.View style={[styles.sheet, { paddingBottom: insets.bottom + SPACING.md }, sheetStyle]}>
+          <View style={styles.header} {...panHandlers}>
             <Text style={styles.title} numberOfLines={2}>
               Análisis · {subscription.name}
             </Text>
@@ -163,8 +166,8 @@ export function SubscriptionAnalyticsModal({
               Datos del snapshot: solo movimientos con estado publicado vinculados a esta suscripción.
             </Text>
           </ScrollView>
-        </View>
-      </View>
+        </Animated.View>
+      </Animated.View>
     </Modal>
   );
 }

@@ -1,4 +1,4 @@
-import { CreditCard, Wallet, Landmark, PiggyBank, TrendingUp, Banknote, Archive, ArchiveRestore } from "lucide-react-native";
+import { Archive, ArchiveRestore } from "lucide-react-native";
 import { FAB } from "../../components/ui/FAB";
 import { useCallback, useMemo, useState } from "react";
 import {
@@ -18,7 +18,9 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../../lib/auth-context";
 import { useWorkspace } from "../../lib/workspace-context";
 import { useWorkspaceSnapshotQuery, useArchiveAccountMutation, useDeleteMovementMutation } from "../../services/queries/workspace-data";
+import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { usePaginatedMovements } from "../../services/queries/movements";
+import { useMovementAttachmentCountsQuery } from "../../services/queries/attachments";
 import { SwipeableMovementRow } from "../../components/domain/SwipeableMovementRow";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { EmptyState } from "../../components/ui/EmptyState";
@@ -28,6 +30,7 @@ import { MovementForm } from "../../components/forms/MovementForm";
 import { formatCurrency } from "../../components/ui/AmountDisplay";
 import { useToast } from "../../hooks/useToast";
 import { humanizeError } from "../../lib/errors";
+import { getAccountIcon } from "../../lib/account-icons";
 import { COLORS, FONT_FAMILY, FONT_SIZE, FONT_WEIGHT, GLASS, RADIUS, SPACING } from "../../constants/theme";
 
 const ACCOUNT_TYPE_LABEL: Record<string, string> = {
@@ -41,18 +44,7 @@ const ACCOUNT_TYPE_LABEL: Record<string, string> = {
   other: "Otro",
 };
 
-const ACCOUNT_TYPE_ICON: Record<string, typeof CreditCard> = {
-  credit_card: CreditCard,
-  cash: Banknote,
-  savings: PiggyBank,
-  investment: TrendingUp,
-  bank: Landmark,
-  loan: Wallet,
-  loan_wallet: Wallet,
-  other: Wallet,
-};
-
-export default function AccountDetailScreen() {
+function AccountDetailScreen() {
   const { id, from } = useLocalSearchParams<{ id: string; from?: string }>();
 
   function handleBack() {
@@ -97,8 +89,6 @@ export default function AccountDetailScreen() {
     [data],
   );
 
-  const baseCurrency = activeWorkspace?.baseCurrencyCode ?? profile?.baseCurrencyCode ?? "PEN";
-
   const onRefresh = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ["movements"] });
     void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
@@ -118,6 +108,21 @@ export default function AccountDetailScreen() {
       setArchiveConfirmVisible(false);
     }
   }
+
+  const baseCurrency = activeWorkspace?.baseCurrencyCode ?? profile?.baseCurrencyCode ?? "PEN";
+
+  const movementIds = useMemo(() => movements.map((m) => m.id), [movements]);
+  const { data: movementAttachmentCounts = {} } = useMovementAttachmentCountsQuery(activeWorkspaceId, movementIds);
+
+  const renderMovementItem = useCallback(({ item }: { item: Parameters<typeof SwipeableMovementRow>[0]["movement"] }) => (
+    <SwipeableMovementRow
+      movement={item}
+      baseCurrencyCode={baseCurrency}
+      attachmentCount={movementAttachmentCounts[item.id] ?? 0}
+      onPress={() => router.push(`/movement/${item.id}`)}
+      onDelete={() => setDeleteMovementTarget({ id: item.id, description: item.description })}
+    />
+  ), [baseCurrency, movementAttachmentCounts, router]);
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
@@ -157,7 +162,10 @@ export default function AccountDetailScreen() {
         <View style={styles.summaryCard}>
           <View style={styles.summaryRow}>
             <View style={[styles.iconContainer, { backgroundColor: account.color + "33" }]}>
-              {(() => { const Icon = ACCOUNT_TYPE_ICON[account.type] ?? Wallet; return <Icon size={22} color={account.color} />; })()}
+              {(() => {
+                const Icon = getAccountIcon(account.icon, account.type);
+                return <Icon size={22} color={account.color} />;
+              })()}
             </View>
             <View style={styles.summaryInfo}>
               <Text style={styles.accountName}>{account.name}</Text>
@@ -186,14 +194,11 @@ export default function AccountDetailScreen() {
       <FlatList
         data={movements}
         keyExtractor={(item) => String(item.id)}
-        renderItem={({ item }) => (
-          <SwipeableMovementRow
-            movement={item}
-            baseCurrencyCode={baseCurrency}
-            onPress={() => router.push(`/movement/${item.id}`)}
-            onDelete={() => setDeleteMovementTarget({ id: item.id, description: item.description })}
-          />
-        )}
+        renderItem={renderMovementItem}
+        removeClippedSubviews
+        maxToRenderPerBatch={10}
+        windowSize={5}
+        initialNumToRender={15}
         ItemSeparatorComponent={undefined}
         refreshControl={
           <RefreshControl
@@ -479,3 +484,11 @@ const styles = StyleSheet.create({
     color: COLORS.storm,
   },
 });
+
+export default function AccountDetailScreenRoot() {
+  return (
+    <ErrorBoundary>
+      <AccountDetailScreen />
+    </ErrorBoundary>
+  );
+}

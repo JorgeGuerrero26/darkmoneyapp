@@ -12,5 +12,5 @@ export function clearSessionScopedClientState() {
   queryClient.clear();
   useWorkspaceStore.getState().clearActiveWorkspaceId();
   useWorkspaceListStore.getState().setWorkspaces([]);
-  useUiStore.getState().setLastMovementDefaults(null, null);
+  useUiStore.getState().setLastMovementAccountId(null);
 }

@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 
 import { useWorkspace } from "../../lib/workspace-context";
 import { useToast } from "../../hooks/useToast";
+import { useHaptics } from "../../hooks/useHaptics";
 import { humanizeError } from "../../lib/errors";
 import {
   useCreateCounterpartyMutation,
@@ -12,6 +13,7 @@ import {
 import type { CounterpartyOverview } from "../../types/domain";
 import { BottomSheet } from "../ui/BottomSheet";
 import { Button } from "../ui/Button";
+import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { sortByLabel } from "../../lib/sort-locale";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
 
@@ -34,6 +36,7 @@ type Props = {
 export function ContactForm({ visible, onClose, onSuccess, editContact }: Props) {
   const { activeWorkspaceId } = useWorkspace();
   const { showToast } = useToast();
+  const haptics = useHaptics();
   const createMutation = useCreateCounterpartyMutation(activeWorkspaceId);
   const updateMutation = useUpdateCounterpartyMutation(activeWorkspaceId);
 
@@ -47,6 +50,7 @@ export function ContactForm({ visible, onClose, onSuccess, editContact }: Props)
   const [notes, setNotes] = useState("");
 
   const [nameError, setNameError] = useState("");
+  const [showDiscardDialog, setShowDiscardDialog] = useState(false);
 
   useEffect(() => {
     if (!visible) return;
@@ -84,10 +88,7 @@ export function ContactForm({ visible, onClose, onSuccess, editContact }: Props)
 
   function handleClose() {
     if (hasUnsavedChanges()) {
-      Alert.alert("¿Descartar cambios?", "", [
-        { text: "Continuar", style: "cancel" },
-        { text: "Descartar", style: "destructive", onPress: onClose },
-      ]);
+      setShowDiscardDialog(true);
     } else {
       onClose();
     }
@@ -95,7 +96,7 @@ export function ContactForm({ visible, onClose, onSuccess, editContact }: Props)
 
   async function handleSubmit() {
     setNameError("");
-    if (!name.trim()) { setNameError("El nombre es obligatorio"); return; }
+    if (!name.trim()) { haptics.error(); setNameError("El nombre es obligatorio"); return; }
 
     const input: CounterpartyFormInput = {
       name: name.trim(),
@@ -110,14 +111,17 @@ export function ContactForm({ visible, onClose, onSuccess, editContact }: Props)
       if (isEditing && editContact) {
         await updateMutation.mutateAsync({ id: editContact.id, input });
         showToast("Contacto actualizado", "success");
+        haptics.success();
         onSuccess?.();
       } else {
         const result = await createMutation.mutateAsync(input);
         showToast("Contacto creado", "success");
+        haptics.success();
         onSuccess?.(result.id);
       }
       onClose();
     } catch (err: unknown) {
+      haptics.error();
       showToast(humanizeError(err), "error");
     }
   }
@@ -125,6 +129,17 @@ export function ContactForm({ visible, onClose, onSuccess, editContact }: Props)
   const isLoading = createMutation.isPending || updateMutation.isPending;
 
   return (
+    <>
+    <ConfirmDialog
+      visible={showDiscardDialog}
+      title="¿Descartar cambios?"
+      body="Perderás los cambios que no hayas guardado."
+      confirmLabel="Descartar"
+      cancelLabel="Continuar editando"
+      destructive
+      onConfirm={() => { setShowDiscardDialog(false); onClose(); }}
+      onCancel={() => setShowDiscardDialog(false)}
+    />
     <BottomSheet
       visible={visible}
       onClose={handleClose}
@@ -225,6 +240,7 @@ export function ContactForm({ visible, onClose, onSuccess, editContact }: Props)
         style={styles.submitBtn}
       />
     </BottomSheet>
+    </>
   );
 }
 

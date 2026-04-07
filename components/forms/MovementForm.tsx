@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDownCircle, ArrowUpCircle, ArrowLeftRight } from "lucide-react-native";
+import { ArrowDownCircle, ArrowUpCircle, ArrowLeftRight, AlertCircle } from "lucide-react-native";
 import type { TextInput } from "react-native";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   ScrollView,
   StyleSheet,
@@ -10,6 +11,10 @@ import {
 } from "react-native";
 
 import { useUiStore } from "../../store/ui-store";
+import {
+  mirrorMovementAttachmentsToObligationEvent,
+  promoteDraftAttachmentsToEntity,
+} from "../../lib/entity-attachments";
 import { useWorkspace } from "../../lib/workspace-context";
 import { humanizeError } from "../../lib/errors";
 import { todayPeru, dateStrToISO, isoToDateStr } from "../../lib/date";
@@ -18,6 +23,7 @@ import {
   useCreateMovementMutation,
   useUpdateMovementMutation,
 } from "../../services/queries/workspace-data";
+import { useMovementAttachmentsQuery } from "../../services/queries/movements";
 import { useMovementPatternsQuery } from "../../services/queries/movement-patterns";
 import {
   buildPatternMaps,
@@ -27,6 +33,7 @@ import {
 } from "../../lib/movement-patterns";
 import { useAuth } from "../../lib/auth-context";
 import { useToast } from "../../hooks/useToast";
+import { useHaptics } from "../../hooks/useHaptics";
 import { BottomSheet } from "../ui/BottomSheet";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { Button } from "../ui/Button";
@@ -65,6 +72,13 @@ type FormState = {
   notes: string;
 };
 
+function readMovementLinkedEventId(metadata: unknown): number | null {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
+  const raw = metadata as Record<string, unknown>;
+  const eventId = Number(raw.obligation_event_id ?? 0);
+  return Number.isFinite(eventId) && eventId > 0 ? eventId : null;
+}
+
 const TYPE_OPTIONS: { type: MovementType; label: string; Icon: typeof ArrowDownCircle; color: string }[] = [
   { type: "expense",  label: "Gasto",        Icon: ArrowDownCircle, color: COLORS.expense  },
   { type: "income",   label: "Ingreso",       Icon: ArrowUpCircle,   color: COLORS.income   },
@@ -97,14 +111,28 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
   const { showToast } = useToast();
+  const haptics = useHaptics();
+  const queryClient = useQueryClient();
 
-  const { lastMovementAccountId, setLastMovementAccountId } = useUiStore();
+  const {
+    lastMovementAccountId,
+    setLastMovementAccountId,
+    showActivityNotice,
+    dismissActivityNotice,
+  } = useUiStore();
 
   const { data: snapshot } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const createMovement = useCreateMovementMutation(activeWorkspaceId);
   const updateMovement = useUpdateMovementMutation(activeWorkspaceId);
+  const {
+    data: editMovementAttachments = [],
+    isLoading: editMovementAttachmentsLoading,
+  } = useMovementAttachmentsQuery(
+    visible && editMovement ? editMovement.workspaceId : null,
+    visible && editMovement ? editMovement.id : null,
+  );
 
-  // ── Smart suggestions ─────────────────────────────────────────────────────
+  // -- Smart suggestions -----------------------------------------------------
   const { data: patternMovements } = useMovementPatternsQuery(activeWorkspaceId);
   const patternMaps = useMemo(
     () => (patternMovements ? buildPatternMaps(patternMovements) : null),
@@ -115,6 +143,10 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   const descDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isEditing = Boolean(editMovement);
+  const linkedEventId = useMemo(
+    () => readMovementLinkedEventId(editMovement?.metadata),
+    [editMovement?.metadata],
+  );
 
   const notesRef = useRef<TextInput>(null);
   const descriptionRef = useRef<TextInput>(null);
@@ -123,8 +155,20 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   const [discardVisible, setDiscardVisible] = useState(false);
   const [form, setForm] = useState<FormState>(() => getInitialForm(defaultType));
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
+  const [submitError, setSubmitError] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [savedMovementId, setSavedMovementId] = useState<number | undefined>(editMovement?.id);
+  const attachmentsHydratedRef = useRef<string | null>(null);
+  const initialAttachmentSignatureRef = useRef("::ready");
+
+  const attachmentSignature = useMemo(() => {
+    const persisted = attachments
+      .filter((attachment) => attachment.storagePath)
+      .map((attachment) => attachment.storagePath as string)
+      .sort()
+      .join("|");
+    return `${persisted}::${attachments.some((attachment) => attachment.isUploading) ? "uploading" : "ready"}`;
+  }, [attachments]);
 
   const baseCurrency = activeWorkspace?.baseCurrencyCode ?? "PEN";
   const accounts = snapshot?.accounts ?? [];
@@ -135,7 +179,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     () => sortByName(accounts.filter((a) => !a.isArchived)),
     [accounts],
   );
-  /** En transferencia: destino ≠ origen. En ingreso no hay cuenta origen en el flujo: mostrar todas las activas. */
+  /** En transferencia: destino ? origen. En ingreso no hay cuenta origen en el flujo: mostrar todas las activas. */
   const destinationAccountsSorted = useMemo(() => {
     const active = sortByName(accounts.filter((a) => !a.isArchived));
     if (form.movementType === "transfer" && form.sourceAccountId != null) {
@@ -155,9 +199,9 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   }, [categories, form.movementType]);
   const counterpartiesSorted = useMemo(() => sortByName(counterparties), [counterparties]);
 
-  // ── Suggestion effects ────────────────────────────────────────────────────
+  // -- Suggestion effects ----------------------------------------------------
 
-  // Description / counterparty → suggest category (only when no category is selected yet)
+  // Description / counterparty ? suggest category (only when no category is selected yet)
   useEffect(() => {
     if (!patternMaps || form.categoryId !== null) {
       setCatSuggestionId(null);
@@ -185,7 +229,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.description, form.categoryId, form.counterpartyId, patternMaps]);
 
-  // Category → suggest counterparty (only when no counterparty is selected yet)
+  // Category ? suggest counterparty (only when no counterparty is selected yet)
   useEffect(() => {
     if (!patternMaps || form.counterpartyId !== null || form.categoryId === null) {
       setCpSuggestionId(null);
@@ -203,6 +247,8 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   // Reset on open / populate when editing
   useEffect(() => {
     if (!visible) return;
+    attachmentsHydratedRef.current = null;
+    initialAttachmentSignatureRef.current = "::ready";
     if (editMovement) {
       const occurredDate = editMovement.occurredAt
         ? isoToDateStr(editMovement.occurredAt)
@@ -220,7 +266,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         occurredAt: occurredDate,
         notes: editMovement.notes ?? "",
       });
-      setStep(3); // Edit jumps straight to details step
+      setStep(2); // Edit opens on amount/account first
     } else {
       setStep(1);
       const initial = getInitialForm(defaultType);
@@ -230,9 +276,28 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
       setForm(initial);
     }
     setErrors({});
+    setSubmitError("");
     setAttachments([]);
     setSavedMovementId(editMovement?.id);
   }, [visible, editMovement, defaultType, initialAccountId]);
+
+  useEffect(() => {
+    if (!visible || !isEditing || !editMovement || editMovementAttachmentsLoading) return;
+    const sourceKey = `${editMovement.id}:${editMovementAttachments.map((attachment) => attachment.filePath).join("|")}`;
+    if (attachmentsHydratedRef.current === sourceKey) return;
+
+    const hydratedAttachments = editMovementAttachments.map((attachment) => ({
+      uri: attachment.signedUrl,
+      storagePath: attachment.filePath,
+      isUploading: false,
+    }));
+    attachmentsHydratedRef.current = sourceKey;
+    initialAttachmentSignatureRef.current = `${hydratedAttachments
+      .map((attachment) => attachment.storagePath ?? "")
+      .sort()
+      .join("|")}::ready`;
+    setAttachments(hydratedAttachments);
+  }, [editMovement, editMovementAttachments, editMovementAttachmentsLoading, isEditing, visible]);
 
   function patch(partial: Partial<FormState>) {
     setForm((prev) => ({ ...prev, ...partial }));
@@ -251,17 +316,33 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     destinationAccount !== null &&
     sourceAccount.currencyCode !== destinationAccount.currencyCode;
 
+  // When editing a posted movement, currentBalance already reflects the original movement.
+  // We must reverse it first, then apply the new amount to get the correct projection.
+  const editOriginalSourceAmt =
+    isEditing && editMovement?.status === "posted" ? (editMovement.sourceAmount ?? 0) : 0;
+  const editOriginalDestAmt =
+    isEditing && editMovement?.status === "posted" ? (editMovement.destinationAmount ?? 0) : 0;
+
   const projectedSourceBalance = useMemo(() => {
     if (!sourceAccount || sourceAmountNum <= 0) return null;
-    return form.movementType === "income"
-      ? sourceAccount.currentBalance + sourceAmountNum
-      : sourceAccount.currentBalance - sourceAmountNum;
-  }, [sourceAccount, sourceAmountNum, form.movementType]);
+    if (form.movementType === "income") {
+      return sourceAccount.currentBalance + sourceAmountNum;
+    }
+    // expense / transfer source: reverse original amount, then apply new
+    return (sourceAccount.currentBalance + editOriginalSourceAmt) - sourceAmountNum;
+  }, [sourceAccount, sourceAmountNum, form.movementType, editOriginalSourceAmt]);
 
   const projectedDestBalance = useMemo(() => {
-    if (!destinationAccount || destinationAmountNum <= 0) return null;
-    return destinationAccount.currentBalance + destinationAmountNum;
-  }, [destinationAccount, destinationAmountNum]);
+    if (!destinationAccount) return null;
+    const effectiveNewAmt =
+      form.movementType === "transfer" && !transferCurrenciesDiffer
+        ? sourceAmountNum
+        : destinationAmountNum;
+    if (effectiveNewAmt <= 0) return null;
+    // destination: reverse original, apply new
+    return (destinationAccount.currentBalance - editOriginalDestAmt) + effectiveNewAmt;
+  }, [destinationAccount, destinationAmountNum, sourceAmountNum, form.movementType, transferCurrenciesDiffer, editOriginalDestAmt]);
+  const hasAttachmentChanges = attachmentSignature !== initialAttachmentSignatureRef.current;
 
   // --- Validation per step ---
   function validateStep1(): boolean {
@@ -293,7 +374,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   }
 
   function validateStep3(): boolean {
-    // Description is optional — auto-generated on submit if empty
+    // Description is optional · auto-generated on submit if empty
     setErrors({});
     return true;
   }
@@ -327,24 +408,27 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   }
 
   function goNext() {
-    if (step === 1 && validateStep1()) setStep(2);
-    else if (step === 2 && validateStep2()) setStep(3);
+    if (step === 1 && validateStep1()) { haptics.selection(); setStep(2); }
+    else if (step === 2 && validateStep2()) { haptics.selection(); setStep(3); }
+    else haptics.error();
   }
 
   function goBack() {
-    if (step === 2) setStep(1);
-    else if (step === 3) setStep(2);
+    if (step === 2) { haptics.light(); setStep(1); }
+    else if (step === 3) { haptics.light(); setStep(2); }
   }
 
   async function handleSubmit() {
+    setSubmitError("");
     if (!validateStep3()) {
-      // focus first error
+      haptics.error();
       descriptionRef.current?.focus();
       return;
     }
 
     try {
       const autoDesc = buildDescription();
+      let backgroundAttachmentSync: (() => void) | null = null;
       if (isEditing && editMovement) {
         await updateMovement.mutateAsync({
           id: editMovement.id,
@@ -358,7 +442,37 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
             destinationAmount: form.destinationAmount ? parseFloat(form.destinationAmount) : undefined,
           },
         });
-        showToast("Movimiento actualizado ✓", "success");
+        if (activeWorkspaceId && linkedEventId && hasAttachmentChanges) {
+          backgroundAttachmentSync = () => {
+            const noticeId = showActivityNotice(
+              "Sincronizando comprobantes",
+              "Puedes seguir usando la app mientras actualizamos el evento vinculado.",
+            );
+            void mirrorMovementAttachmentsToObligationEvent({
+              workspaceId: activeWorkspaceId,
+              movementId: editMovement.id,
+              eventId: linkedEventId,
+            })
+              .then(() => {
+                void Promise.all([
+                  queryClient.invalidateQueries({
+                    queryKey: ["movement-attachments", activeWorkspaceId, editMovement.id],
+                  }),
+                  queryClient.invalidateQueries({
+                    queryKey: ["entity-attachments", activeWorkspaceId, "obligation-event", linkedEventId],
+                  }),
+                  queryClient.invalidateQueries({
+                    queryKey: ["entity-attachment-counts", activeWorkspaceId, "obligation-event"],
+                  }),
+                ]);
+              })
+              .catch((attachmentError) => {
+                showToast(humanizeError(attachmentError), "error");
+              })
+              .finally(() => dismissActivityNotice(noticeId));
+          };
+        }
+        showToast("Movimiento actualizado", "success");
       } else {
         const isIncome = form.movementType === "income";
         const isTransfer = form.movementType === "transfer";
@@ -385,18 +499,66 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         };
         const created = await createMovement.mutateAsync(payload);
         setSavedMovementId(created.id);
-        showToast("Movimiento guardado ✓", "success");
+        // Los comprobantes se sincronizan después de cerrar el formulario para no bloquear la UI.
+        showToast("Movimiento guardado", "success");
         setLastMovementAccountId(form.sourceAccountId);
+        if (attachments.length > 0 && activeWorkspaceId) {
+          backgroundAttachmentSync = () => {
+            const noticeId = showActivityNotice(
+              "Sincronizando comprobantes",
+              "Puedes seguir usando la app mientras terminamos de copiar las imágenes.",
+            );
+            void promoteDraftAttachmentsToEntity({
+              attachments,
+              workspaceId: activeWorkspaceId,
+              entityType: "movement",
+              entityId: created.id,
+            })
+              .then(() => {
+                void queryClient.invalidateQueries({
+                  queryKey: ["movement-attachments", activeWorkspaceId, created.id],
+                });
+              })
+              .catch((attachmentError) => {
+                showToast(humanizeError(attachmentError), "error");
+              })
+              .finally(() => dismissActivityNotice(noticeId));
+          };
+        }
       }
+      haptics.success();
       onSuccess?.();
       onClose();
+      backgroundAttachmentSync?.();
     } catch (err: unknown) {
-      showToast(humanizeError(err), "error");
+      haptics.error();
+      setSubmitError(humanizeError(err));
     }
   }
 
   function handleClose() {
-    if (form.description || form.sourceAmount || form.destinationAmount) {
+    let isDirty: boolean;
+    if (isEditing && editMovement) {
+      const origOccurredAt = editMovement.occurredAt ? isoToDateStr(editMovement.occurredAt) : todayPeru();
+      isDirty =
+        form.description !== (editMovement.description ?? "") ||
+        form.sourceAmount !== (editMovement.sourceAmount ? String(editMovement.sourceAmount) : "") ||
+        form.destinationAmount !== (editMovement.destinationAmount ? String(editMovement.destinationAmount) : "") ||
+        form.status !== editMovement.status ||
+        form.categoryId !== (editMovement.categoryId ?? null) ||
+        form.notes !== (editMovement.notes ?? "") ||
+        form.occurredAt !== origOccurredAt ||
+        attachmentSignature !== initialAttachmentSignatureRef.current;
+    } else {
+      isDirty = Boolean(
+        form.description ||
+        form.sourceAmount ||
+        form.destinationAmount ||
+        attachments.length > 0,
+      );
+    }
+
+    if (isDirty) {
       setDiscardVisible(true);
     } else {
       onClose();
@@ -404,10 +566,14 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   }
 
   const stepTitle = isEditing
-    ? "Editar movimiento"
+    ? step === 1
+      ? "Editar movimiento - tipo"
+      : step === 2
+        ? "Editar movimiento - monto y cuenta"
+        : "Editar movimiento - descripcion y categoria"
     : step === 1 ? "Tipo de movimiento"
     : step === 2 ? "Monto y cuenta"
-    : "Descripción y categoría";
+    : "Descripcion y categoria";
 
   return (
     <>
@@ -417,7 +583,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
       title={stepTitle}
       snapHeight={0.85}
     >
-      {/* Step indicator — hidden when editing */}
+      {/* Step indicator · hidden when editing */}
       {!isEditing ? (
         <View style={styles.stepRow}>
           {([1, 2, 3] as Step[]).map((s) => (
@@ -426,7 +592,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         </View>
       ) : null}
 
-      {/* ── STEP 1: type + status ── */}
+      {/* -- STEP 1: type + status -- */}
       {step === 1 && (
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>Tipo</Text>
@@ -460,7 +626,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
             })}
           </View>
 
-          {/* Status — hidden for transfers (always posted) */}
+          {/* Status · hidden for transfers (always posted) */}
           {form.movementType !== "transfer" ? (
             <>
               <Text style={[styles.sectionLabel, { marginTop: SPACING.md }]}>Estado</Text>
@@ -485,7 +651,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         </View>
       )}
 
-      {/* ── STEP 2: amount + accounts ── */}
+      {/* -- STEP 2: amount + accounts -- */}
       {step === 2 && (
         <View style={styles.section}>
           {/* Source amount / account (for expense and transfer) */}
@@ -528,7 +694,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
                   error={errors.destinationAmount}
                 />
               )}
-              {/* Transfer destination amount — only when currencies differ */}
+              {/* Transfer destination amount · only when currencies differ */}
               {form.movementType === "transfer" && transferCurrenciesDiffer && (
                 <CurrencyInput
                   label={`Monto destino (${destinationAccount?.currencyCode ?? ""})`}
@@ -541,7 +707,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
               {form.movementType === "transfer" && !transferCurrenciesDiffer && sourceAccount && destinationAccount && (
                 <View style={styles.sameCurrencyNote}>
                   <Text style={styles.sameCurrencyText}>
-                    Misma moneda ({sourceAccount.currencyCode}) — el monto se transfiere igual.
+                    Misma moneda ({sourceAccount.currencyCode}) · el monto se transfiere igual.
                   </Text>
                 </View>
               )}
@@ -573,7 +739,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         </View>
       )}
 
-      {/* ── STEP 3: description + category + counterparty + date ── */}
+      {/* -- STEP 3: description + category + counterparty + date -- */}
       {step === 3 && (() => {
         const catSuggestion = catSuggestionId !== null
           ? categoriesForPicker.find((c) => c.id === catSuggestionId) ?? null
@@ -643,7 +809,15 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
             movementId={savedMovementId}
             attachments={attachments}
             onChange={setAttachments}
+            isHydratingExisting={isEditing && editMovementAttachmentsLoading}
           />
+
+          {submitError ? (
+            <View style={styles.submitErrorBanner}>
+              <AlertCircle size={16} color={COLORS.danger} strokeWidth={2} />
+              <Text style={styles.submitErrorText}>{submitError}</Text>
+            </View>
+          ) : null}
 
           <View style={styles.navRow}>
             <Button label="← Atrás" variant="ghost" onPress={goBack} style={styles.btnHalf} />
@@ -672,7 +846,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   );
 }
 
-// ── Sub-components ────────────────────────────────────────────────────────────
+// -- Sub-components ------------------------------------------------------------
 
 function AccountPicker({
   label,
@@ -796,7 +970,7 @@ function CategoryPicker({
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
+// --- Styles -------------------------------------------------------------------
 const styles = StyleSheet.create({
   stepRow: {
     flexDirection: "row",
@@ -949,4 +1123,22 @@ const styles = StyleSheet.create({
     color: COLORS.storm,
     fontFamily: FONT_FAMILY.body,
   },
+  submitErrorBanner: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: SPACING.sm,
+    padding: SPACING.md,
+    borderRadius: RADIUS.lg,
+    backgroundColor: COLORS.danger + "18",
+    borderWidth: 1,
+    borderColor: COLORS.danger + "44",
+  },
+  submitErrorText: {
+    flex: 1,
+    fontFamily: FONT_FAMILY.bodyMedium,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.danger,
+    lineHeight: 20,
+  },
 });
+

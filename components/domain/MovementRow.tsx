@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -10,16 +11,24 @@ import {
   RotateCcw,
   SlidersHorizontal,
   Circle,
+  Paperclip,
 } from "lucide-react-native";
 
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
 import { formatCurrency } from "../ui/AmountDisplay";
 import { parseDisplayDate } from "../../lib/date";
 import type { MovementRecord } from "../../types/domain";
+import {
+  movementActsAsIncome,
+  movementDisplayAmount,
+  movementDisplayColor,
+  movementDisplayPrefix,
+} from "../../lib/movement-display";
 
 type Props = {
   movement: MovementRecord;
   baseCurrencyCode: string;
+  attachmentCount?: number;
   onPress?: () => void;
   onLongPress?: () => void;
 };
@@ -54,24 +63,29 @@ const STATUS_BADGE: Record<string, { label: string; color: string }> = {
   voided:  { label: "Anulado",     color: COLORS.rosewood },
 };
 
-const isIncome = (type: string) => type === "income" || type === "refund";
-
-export function MovementRow({ movement, baseCurrencyCode, onPress, onLongPress }: Props) {
+export const MovementRow = memo(function MovementRow({ movement, baseCurrencyCode, attachmentCount = 0, onPress, onLongPress }: Props) {
   const config = TYPE_ICON[movement.movementType] ?? { Icon: Circle, color: COLORS.storm };
-  const { Icon, color: iconColor } = config;
-
-  const amount = isIncome(movement.movementType)
-    ? (movement.destinationAmount ?? movement.sourceAmount ?? 0)
-    : (movement.sourceAmount ?? movement.destinationAmount ?? 0);
+  const { Icon } = config;
+  const amount = movementDisplayAmount(movement);
+  const displayColor = movementDisplayColor(movement);
+  const iconColor = movement.movementType === "obligation_payment" ? displayColor : config.color;
 
   const currencyCode = movement.sourceCurrencyCode ?? movement.destinationCurrencyCode ?? baseCurrencyCode;
-  const amountColor = isIncome(movement.movementType)
-    ? COLORS.pine
-    : movement.movementType === "transfer"
-      ? COLORS.ember
-      : COLORS.ink;
+  const amountColor = movement.movementType === "obligation_payment"
+    ? displayColor
+    : movementActsAsIncome(movement)
+      ? COLORS.pine
+      : movement.movementType === "transfer"
+        ? COLORS.ember
+        : COLORS.ink;
 
-  const prefix = isIncome(movement.movementType) ? "+" : movement.movementType === "transfer" ? "" : "−";
+  const prefix = movement.movementType === "obligation_payment"
+    ? movementDisplayPrefix(movement)
+    : movementActsAsIncome(movement)
+      ? "+"
+      : movement.movementType === "transfer"
+        ? ""
+        : "-";
   const statusBadge = STATUS_BADGE[movement.status];
   const typeLabel = TYPE_LABEL[movement.movementType] ?? movement.movementType;
 
@@ -107,6 +121,14 @@ export function MovementRow({ movement, baseCurrencyCode, onPress, onLongPress }
               <Text style={[styles.statusLabel, { color: statusBadge.color }]}>{statusBadge.label}</Text>
             </View>
           ) : null}
+          {attachmentCount > 0 ? (
+            <View style={styles.attachmentBadge}>
+              <Paperclip size={9} color={COLORS.storm} />
+              {attachmentCount > 1 ? (
+                <Text style={styles.attachmentBadgeText}>{attachmentCount}</Text>
+              ) : null}
+            </View>
+          ) : null}
         </View>
       </View>
 
@@ -116,7 +138,7 @@ export function MovementRow({ movement, baseCurrencyCode, onPress, onLongPress }
       </Text>
     </Pressable>
   );
-}
+});
 
 const styles = StyleSheet.create({
   row: {
@@ -190,8 +212,25 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.xs,
     color: COLORS.storm,
   },
+  attachmentBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: RADIUS.full,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderWidth: 0.5,
+    borderColor: "rgba(255,255,255,0.10)",
+  },
+  attachmentBadgeText: {
+    fontFamily: FONT_FAMILY.bodyMedium,
+    fontSize: 9,
+    color: COLORS.storm,
+  },
   amount: {
     fontFamily: FONT_FAMILY.heading,
     fontSize: FONT_SIZE.sm,
   },
 });
+

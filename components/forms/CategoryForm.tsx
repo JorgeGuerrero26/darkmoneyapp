@@ -5,6 +5,7 @@ import { useWorkspace } from "../../lib/workspace-context";
 import { useAuth } from "../../lib/auth-context";
 import { humanizeError } from "../../lib/errors";
 import { useToast } from "../../hooks/useToast";
+import { useHaptics } from "../../hooks/useHaptics";
 import {
   useCreateCategoryMutation,
   useUpdateCategoryMutation,
@@ -54,6 +55,7 @@ export function CategoryForm({ visible, onClose, onSuccess, editCategory }: Prop
   const { activeWorkspaceId } = useWorkspace();
   const { profile } = useAuth();
   const { showToast } = useToast();
+  const haptics = useHaptics();
   const createMutation = useCreateCategoryMutation(activeWorkspaceId);
   const updateMutation = useUpdateCategoryMutation(activeWorkspaceId);
   const { data: snapshot } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
@@ -131,10 +133,12 @@ export function CategoryForm({ visible, onClose, onSuccess, editCategory }: Prop
     setNameError("");
     const trimmed = name.trim();
     if (!trimmed) {
+      haptics.error();
       setNameError("El nombre es obligatorio");
       return;
     }
     if (trimmed.length > 80) {
+      haptics.error();
       showToast("El nombre no puede superar 80 caracteres", "error");
       return;
     }
@@ -145,6 +149,7 @@ export function CategoryForm({ visible, onClose, onSuccess, editCategory }: Prop
     } else {
       const so = parseInt(sortOrder, 10);
       if (!Number.isFinite(so) || so < 0) {
+        haptics.error();
         showToast("El orden debe ser un número ≥ 0", "error");
         return;
       }
@@ -152,6 +157,7 @@ export function CategoryForm({ visible, onClose, onSuccess, editCategory }: Prop
     }
 
     if (isEditing && editCategory && parentId === editCategory.id) {
+      haptics.error();
       showToast("La categoría no puede ser su propia padre", "error");
       return;
     }
@@ -183,9 +189,11 @@ export function CategoryForm({ visible, onClose, onSuccess, editCategory }: Prop
         });
         showToast("Categoría creada", "success");
       }
+      haptics.success();
       onSuccess?.();
       onClose();
     } catch (err: unknown) {
+      haptics.error();
       showToast(humanizeError(err), "error");
     }
   }

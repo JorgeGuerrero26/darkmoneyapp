@@ -1,10 +1,13 @@
 import { FAB } from "../../components/ui/FAB";
-import { useCallback, useRef, useState } from "react";
+import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
+import { UndoBanner } from "../../components/ui/UndoBanner";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import * as Haptics from "expo-haptics";
 import {
   Animated,
   PanResponder,
   RefreshControl,
-  ScrollView,
+  SectionList,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -12,7 +15,8 @@ import {
 } from "react-native";
 import { Trash2 } from "lucide-react-native";
 import { useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { useNavigation } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAuth } from "../../lib/auth-context";
@@ -27,87 +31,164 @@ import { SkeletonCard } from "../../components/ui/Skeleton";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { BudgetForm } from "../../components/forms/BudgetForm";
-import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { useToast } from "../../hooks/useToast";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING } from "../../constants/theme";
 
-export default function BudgetsScreen() {
+function BudgetsScreen() {
+  const { from } = useLocalSearchParams<{ from?: string }>();
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
   const router = useRouter();
+  const navigation = useNavigation();
   const [formVisible, setFormVisible] = useState(false);
   const [editBudget, setEditBudget] = useState<BudgetOverview | null>(null);
-  const [deleteBudget, setDeleteBudget] = useState<BudgetOverview | null>(null);
   const { profile } = useAuth();
   const { activeWorkspaceId } = useWorkspace();
   const { showToast } = useToast();
   const deleteMutation = useDeleteBudgetMutation(activeWorkspaceId);
+  const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<number>>(new Set());
+  const [pendingDeleteLabels, setPendingDeleteLabels] = useState<Record<number, string>>({});
+  const deleteTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+
+  function startUndoDelete(budget: BudgetOverview) {
+    setPendingDeleteIds((prev) => new Set(prev).add(budget.id));
+    setPendingDeleteLabels((prev) => ({ ...prev, [budget.id]: budget.name }));
+    const timer = setTimeout(() => {
+      deleteMutation.mutate(budget.id, {
+        onError: (e) => showToast(e.message, "error"),
+      });
+      setPendingDeleteIds((prev) => { const n = new Set(prev); n.delete(budget.id); return n; });
+      deleteTimers.current.delete(budget.id);
+    }, 5000);
+    deleteTimers.current.set(budget.id, timer);
+  }
+
+  function undoDelete(id: number) {
+    const timer = deleteTimers.current.get(id);
+    if (timer) clearTimeout(timer);
+    deleteTimers.current.delete(id);
+    setPendingDeleteIds((prev) => { const n = new Set(prev); n.delete(id); return n; });
+  }
+
+  useEffect(() => () => { deleteTimers.current.forEach(clearTimeout); }, []);
 
   const { data: snapshot, isLoading } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
 
   const budgets = snapshot?.budgets ?? [];
-  const alertBudgets = budgets.filter((b) => b.isOverLimit || b.isNearLimit);
-  const okBudgets = budgets.filter((b) => !b.isOverLimit && !b.isNearLimit);
+  const alertBudgets = budgets.filter((b) => !pendingDeleteIds.has(b.id) && (b.isOverLimit || b.isNearLimit));
+  const okBudgets = budgets.filter((b) => !pendingDeleteIds.has(b.id) && !b.isOverLimit && !b.isNearLimit);
+  const isHandlingBackRef = useRef(false);
 
+  const returnRoute = useMemo(() => {
+    if (from === "dashboard") return "/(app)/dashboard";
+    if (from === "notifications") return "/notifications";
+    return "/(app)/more";
+  }, [from]);
+
+  const handleBack = useCallback(() => {
+    if (isHandlingBackRef.current) return;
+    isHandlingBackRef.current = true;
+    router.replace(returnRoute as any);
+  }, [returnRoute, router]);
+
+  const refreshTriggeredRef = useRef(false);
   const onRefresh = useCallback(() => {
+    refreshTriggeredRef.current = true;
     void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
   }, [queryClient]);
 
+  useEffect(() => {
+    if (!isLoading && refreshTriggeredRef.current) {
+      refreshTriggeredRef.current = false;
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
+  }, [isLoading]);
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener("beforeRemove", (event) => {
+      const actionType = event.data.action.type;
+      const isBackAction =
+        actionType === "GO_BACK" ||
+        actionType === "POP" ||
+        actionType === "POP_TO_TOP";
+      if (!isBackAction || isHandlingBackRef.current) return;
+      event.preventDefault();
+      handleBack();
+    });
+
+    return unsubscribe;
+  }, [handleBack, navigation]);
+
+  const handleDelete = useCallback((budget: BudgetOverview) => {
+    startUndoDelete(budget);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const budgetSections = useMemo(() => {
+    const sections: Array<{ key: string; title: string; data: BudgetOverview[] }> = [];
+    if (alertBudgets.length > 0) {
+      sections.push({ key: "alert", title: "⚠ Requieren atención", data: alertBudgets });
+    }
+    if (okBudgets.length > 0) {
+      sections.push({
+        key: "ok",
+        title: alertBudgets.length > 0 ? "✓ En buen estado" : "",
+        data: okBudgets,
+      });
+    }
+    return sections;
+  }, [alertBudgets, okBudgets]);
+
+  const renderBudgetItem = useCallback(({ item }: { item: BudgetOverview }) => (
+    <SwipeableBudgetRow
+      budget={item}
+      onEdit={() => setEditBudget(item)}
+      onDelete={() => handleDelete(item)}
+    />
+  ), [handleDelete]);
+
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
-      <ScreenHeader title="Presupuestos" onBack={() => router.replace("/(app)/more")} />
+      <ScreenHeader title="Presupuestos" onBack={handleBack} />
 
-      <ScrollView
-        contentContainerStyle={styles.content}
+      <SectionList
+        sections={budgetSections}
+        keyExtractor={(item) => String(item.id)}
+        renderItem={renderBudgetItem}
+        renderSectionHeader={({ section }) =>
+          section.title ? (
+            <Text style={styles.sectionTitle}>{section.title}</Text>
+          ) : null
+        }
+        stickySectionHeadersEnabled={false}
+        ListHeaderComponent={
+          isLoading ? (
+            <>
+              <SkeletonCard />
+              <SkeletonCard />
+            </>
+          ) : null
+        }
+        ListEmptyComponent={
+          !isLoading ? (
+            <EmptyState
+              title="Sin presupuestos"
+              description="Crea un presupuesto para controlar tus gastos."
+              action={{ label: "Nuevo presupuesto", onPress: () => setFormVisible(true) }}
+            />
+          ) : null
+        }
+        ItemSeparatorComponent={() => <View style={{ height: SPACING.sm }} />}
+        SectionSeparatorComponent={() => <View style={{ height: SPACING.md }} />}
         refreshControl={
           <RefreshControl refreshing={isLoading} onRefresh={onRefresh} tintColor={COLORS.primary} />
         }
-      >
-        {isLoading ? (
-          <>
-            <SkeletonCard />
-            <SkeletonCard />
-          </>
-        ) : budgets.length === 0 ? (
-          <EmptyState
-            title="Sin presupuestos"
-            description="Crea un presupuesto para controlar tus gastos."
-            action={{ label: "Nuevo presupuesto", onPress: () => setFormVisible(true) }}
-          />
-        ) : (
-          <>
-            {alertBudgets.length > 0 ? (
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>⚠ Requieren atención</Text>
-                {alertBudgets.map((b) => (
-                  <SwipeableBudgetRow
-                    key={b.id}
-                    budget={b}
-                    onEdit={() => setEditBudget(b)}
-                    onDelete={() => handleDelete(b)}
-                  />
-                ))}
-              </View>
-            ) : null}
-
-            {okBudgets.length > 0 ? (
-              <View style={styles.section}>
-                {alertBudgets.length > 0 ? (
-                  <Text style={styles.sectionTitle}>✓ En buen estado</Text>
-                ) : null}
-                {okBudgets.map((b) => (
-                  <SwipeableBudgetRow
-                    key={b.id}
-                    budget={b}
-                    onEdit={() => setEditBudget(b)}
-                    onDelete={() => handleDelete(b)}
-                  />
-                ))}
-              </View>
-            ) : null}
-          </>
-        )}
-      </ScrollView>
+        removeClippedSubviews
+        maxToRenderPerBatch={10}
+        windowSize={5}
+        initialNumToRender={15}
+        contentContainerStyle={styles.listContent}
+      />
 
       <FAB onPress={() => setFormVisible(true)} bottom={insets.bottom + 16} />
 
@@ -122,28 +203,18 @@ export default function BudgetsScreen() {
         onSuccess={() => setEditBudget(null)}
         editBudget={editBudget ?? undefined}
       />
-      <ConfirmDialog
-        visible={Boolean(deleteBudget)}
-        title="Eliminar presupuesto"
-        body={deleteBudget ? `¿Eliminar "${deleteBudget.name}"? Esta acción no se puede deshacer.` : ""}
-        confirmLabel="Eliminar"
-        cancelLabel="Cancelar"
-        onCancel={() => setDeleteBudget(null)}
-        onConfirm={() => {
-          if (!deleteBudget) return;
-          deleteMutation.mutate(deleteBudget.id, {
-            onSuccess: () => showToast("Presupuesto eliminado", "success"),
-            onError: (e) => showToast(e.message, "error"),
-          });
-          setDeleteBudget(null);
-        }}
+      <UndoBanner
+        visible={pendingDeleteIds.size > 0}
+        message={pendingDeleteIds.size === 1
+          ? `Presupuesto "${Object.values(pendingDeleteLabels).at(-1) ?? ""}" eliminado`
+          : `${pendingDeleteIds.size} presupuestos eliminados`}
+        onUndo={() => pendingDeleteIds.forEach((id) => undoDelete(id))}
+        durationMs={5000}
+        bottomOffset={insets.bottom + 80}
       />
     </View>
   );
 
-  function handleDelete(budget: BudgetOverview) {
-    setDeleteBudget(budget);
-  }
 }
 
 const REVEAL_WIDTH = 82;
@@ -260,8 +331,7 @@ const swipeStyles = StyleSheet.create({
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: COLORS.bg },
-  content: { padding: SPACING.lg, gap: SPACING.md },
-  section: { gap: SPACING.sm },
+  listContent: { padding: SPACING.lg, paddingBottom: 100 },
   sectionTitle: {
     fontSize: FONT_SIZE.sm,
     fontFamily: FONT_FAMILY.bodySemibold,
@@ -270,3 +340,11 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
 });
+
+export default function BudgetsScreenRoot() {
+  return (
+    <ErrorBoundary>
+      <BudgetsScreen />
+    </ErrorBoundary>
+  );
+}

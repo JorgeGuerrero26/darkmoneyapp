@@ -1,4 +1,5 @@
 import { useMemo, useState, useCallback } from "react";
+import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { BarChart3 } from "lucide-react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -29,7 +30,7 @@ function formatYmdLocal(ymd: string, pattern: string) {
   return format(new Date(p[0], p[1] - 1, p[2]), pattern, { locale: es });
 }
 
-export default function SubscriptionDetailScreen() {
+function SubscriptionDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -274,3 +275,11 @@ const styles = StyleSheet.create({
   actionBtnTextSecondary: { color: COLORS.textMuted },
   actionBtnTextDanger: { color: COLORS.danger },
 });
+
+export default function SubscriptionDetailScreenRoot() {
+  return (
+    <ErrorBoundary>
+      <SubscriptionDetailScreen />
+    </ErrorBoundary>
+  );
+}

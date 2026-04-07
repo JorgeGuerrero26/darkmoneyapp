@@ -2,8 +2,10 @@ import { useEffect, useRef } from "react";
 import {
   Animated,
   Dimensions,
+  KeyboardAvoidingView,
   Modal,
   PanResponder,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,10 +13,10 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { BlurView } from "expo-blur";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { X } from "lucide-react-native";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
+import { SafeBlurView } from "./SafeBlurView";
 
 const SCREEN_HEIGHT = Dimensions.get("window").height;
 const DISMISS_THRESHOLD = 80;
@@ -25,9 +27,10 @@ type Props = {
   title?: string;
   children: React.ReactNode;
   snapHeight?: number;
+  scrollRef?: React.RefObject<ScrollView | null>;
 };
 
-export function BottomSheet({ visible, onClose, title, children, snapHeight = 0.75 }: Props) {
+export function BottomSheet({ visible, onClose, title, children, snapHeight = 0.75, scrollRef }: Props) {
   const insets = useSafeAreaInsets();
   const translateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
@@ -67,8 +70,8 @@ export function BottomSheet({ visible, onClose, title, children, snapHeight = 0.
 
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, { dx, dy }) => dy > 6 && Math.abs(dy) > Math.abs(dx),
       onPanResponderMove: (_, { dy }) => {
         if (dy > 0) translateY.setValue(dy);
       },
@@ -112,7 +115,7 @@ export function BottomSheet({ visible, onClose, title, children, snapHeight = 0.
     >
       {/* Animated backdrop: blur + dark dim */}
       <Animated.View style={[StyleSheet.absoluteFillObject, { opacity: backdropOpacity }]}>
-        <BlurView
+        <SafeBlurView
           intensity={22}
           tint="dark"
           style={StyleSheet.absoluteFillObject}
@@ -123,7 +126,11 @@ export function BottomSheet({ visible, onClose, title, children, snapHeight = 0.
         />
       </Animated.View>
 
-      {/* Sheet */}
+      {/* Sheet — wrapped in KAV so content pushes up when keyboard appears */}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={styles.keyboardContainer}
+      >
       <Animated.View
         style={[
           styles.sheet,
@@ -137,24 +144,27 @@ export function BottomSheet({ visible, onClose, title, children, snapHeight = 0.
         {/* Top specular edge highlight */}
         <View style={styles.topSpecular} pointerEvents="none" />
 
-        {/* Drag handle */}
-        <View style={styles.handleWrap} {...panResponder.panHandlers}>
-          <View style={styles.handle} />
+        <View {...panResponder.panHandlers}>
+          {/* Drag handle */}
+          <View style={styles.handleWrap}>
+            <View style={styles.handle} />
+          </View>
+
+          {/* Header */}
+          {title ? (
+            <View style={styles.header}>
+              <Text style={styles.title}>{title}</Text>
+              <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={12}>
+                <View style={styles.closeBtnInner}>
+                  <X size={16} color={COLORS.storm} />
+                </View>
+              </TouchableOpacity>
+            </View>
+          ) : null}
         </View>
 
-        {/* Header */}
-        {title ? (
-          <View style={styles.header}>
-            <Text style={styles.title}>{title}</Text>
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={12}>
-              <View style={styles.closeBtnInner}>
-                <X size={16} color={COLORS.storm} />
-              </View>
-            </TouchableOpacity>
-          </View>
-        ) : null}
-
         <ScrollView
+          ref={scrollRef as React.RefObject<ScrollView> | undefined}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.content}
@@ -162,11 +172,18 @@ export function BottomSheet({ visible, onClose, title, children, snapHeight = 0.
           {children}
         </ScrollView>
       </Animated.View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
+  keyboardContainer: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
   backdropDim: {
     backgroundColor: "rgba(0,0,0,0.45)",
   },

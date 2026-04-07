@@ -1,11 +1,18 @@
 import { StyleSheet, Text, type StyleProp, type TextStyle } from "react-native";
 import { COLORS, FONT_SIZE, FONT_WEIGHT } from "../../constants/theme";
 import type { MovementType } from "../../types/domain";
+import {
+  movementDisplayAmount,
+  movementDisplayColor,
+  movementDisplayPrefix,
+} from "../../lib/movement-display";
 
 type Props = {
   amount: number;
   currencyCode: string;
   movementType?: MovementType;
+  sourceAmount?: number | null;
+  destinationAmount?: number | null;
   size?: "sm" | "md" | "lg" | "xl";
   style?: StyleProp<TextStyle>;
 };
@@ -23,21 +30,46 @@ export function formatCurrency(amount: number, currencyCode: string): string {
   }
 }
 
-export function AmountDisplay({ amount, currencyCode, movementType, size = "md", style }: Props) {
+export function AmountDisplay({
+  amount,
+  currencyCode,
+  movementType,
+  sourceAmount,
+  destinationAmount,
+  size = "md",
+  style,
+}: Props) {
   let color = COLORS.text;
   let prefix = "";
+  let displayAmount = Math.abs(amount);
 
-  if (movementType === "income" || movementType === "refund") {
+  if (movementType === "obligation_payment") {
+    color = movementDisplayColor({
+      movementType,
+      sourceAmount,
+      destinationAmount,
+    });
+    prefix = movementDisplayPrefix({
+      movementType,
+      sourceAmount,
+      destinationAmount,
+    });
+    displayAmount = movementDisplayAmount({
+      movementType,
+      sourceAmount,
+      destinationAmount,
+    });
+  } else if (movementType === "income" || movementType === "refund") {
     color = COLORS.income;
     prefix = "+";
-  } else if (movementType === "expense" || movementType === "subscription_payment" || movementType === "obligation_payment") {
+  } else if (movementType === "expense" || movementType === "subscription_payment") {
     color = COLORS.expense;
     prefix = "-";
   } else if (movementType === "transfer") {
     color = COLORS.transfer;
   }
 
-  const formatted = formatCurrency(Math.abs(amount), currencyCode);
+  const formatted = formatCurrency(displayAmount, currencyCode);
 
   return (
     <Text style={[styles.base, styles[size], { color }, style]}>

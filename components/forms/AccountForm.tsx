@@ -1,8 +1,4 @@
-import {
-  Wallet2, Landmark, PiggyBank, CreditCard, TrendingUp, Briefcase, Banknote,
-  Archive, ArchiveRestore, Trash2, Clock,
-  type LucideIcon,
-} from "lucide-react-native";
+import { Archive, ArchiveRestore, Trash2, Clock } from "lucide-react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -20,7 +16,9 @@ import { es } from "date-fns/locale";
 import { useWorkspace } from "../../lib/workspace-context";
 import { useAuth } from "../../lib/auth-context";
 import { useToast } from "../../hooks/useToast";
+import { useHaptics } from "../../hooks/useHaptics";
 import { humanizeError } from "../../lib/errors";
+import { ACCOUNT_ICON_OPTIONS, getAccountIcon, getAccountIconOption } from "../../lib/account-icons";
 import { parseDisplayDate } from "../../lib/date";
 import { sortByLabel } from "../../lib/sort-locale";
 import {
@@ -39,16 +37,6 @@ import { formatCurrency } from "../ui/AmountDisplay";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
 
 // ── Icon picker ────────────────────────────────────────────────────────────
-const ACCOUNT_ICONS: { value: string; Icon: LucideIcon }[] = [
-  { value: "wallet",       Icon: Wallet2 },
-  { value: "landmark",     Icon: Landmark },
-  { value: "piggy-bank",   Icon: PiggyBank },
-  { value: "credit-card",  Icon: CreditCard },
-  { value: "trending-up",  Icon: TrendingUp },
-  { value: "briefcase",    Icon: Briefcase },
-  { value: "banknote",     Icon: Banknote },
-];
-
 // ── Color palette ──────────────────────────────────────────────────────────
 const ACCOUNT_COLORS = [
   "#1b6a58", "#2d9076", "#4566d6", "#6f82f1",
@@ -92,6 +80,7 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
   const { user } = useAuth();
   const { showToast } = useToast();
+  const haptics = useHaptics();
   const createMutation = useCreateAccountMutation(activeWorkspaceId);
   const updateMutation = useUpdateAccountMutation(activeWorkspaceId);
   const deleteMutation = useDeleteAccountMutation(activeWorkspaceId);
@@ -184,8 +173,8 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
       setOpeningBalance(String(editAccount.openingBalance ?? 0));
       setIncludeInNetWorth(editAccount.includeInNetWorth);
       setColor(editAccount.color ?? TYPE_PRESETS[editAccount.type]?.color ?? ACCOUNT_COLORS[0]);
-      const iconVal = editAccount.icon ?? ACCOUNT_ICONS[0].value;
-      setIcon(ACCOUNT_ICONS.find((i) => i.value === iconVal) ? iconVal : ACCOUNT_ICONS[0].value);
+      const iconVal = editAccount.icon ?? ACCOUNT_ICON_OPTIONS[0].value;
+      setIcon(getAccountIconOption(iconVal)?.value ?? ACCOUNT_ICON_OPTIONS[0].value);
       colorCustomized.current = true;
       iconCustomized.current = true;
     } else {
@@ -238,6 +227,7 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
   async function handleSubmit() {
     setNameError("");
     if (!name.trim()) {
+      haptics.error();
       setNameError("El nombre es obligatorio");
       return;
     }
@@ -261,9 +251,11 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
         await clearDraft();
         showToast("Cuenta creada ✓", "success");
       }
+      haptics.success();
       onSuccess?.();
       onClose();
     } catch (err: unknown) {
+      haptics.error();
       showToast(humanizeError(err), "error");
     }
   }
@@ -280,7 +272,7 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
     }
   }
 
-  const selectedIcon = ACCOUNT_ICONS.find((i) => i.value === icon) ?? ACCOUNT_ICONS[0];
+  const SelectedIcon = getAccountIcon(icon, type);
   const resolvedCurrency = customCurrency.trim().toUpperCase() || currencyCode;
 
   return (
@@ -294,7 +286,7 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
         {/* Live preview */}
         <View style={styles.previewRow}>
           <View style={[styles.previewIcon, { backgroundColor: color + "33" }]}>
-            <selectedIcon.Icon size={28} color={color} />
+            <SelectedIcon size={28} color={color} />
           </View>
           <View style={styles.previewInfo}>
             <Text style={styles.previewName} numberOfLines={1}>
@@ -328,7 +320,7 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
         <View>
           <Text style={styles.sectionLabel}>Ícono</Text>
           <View style={styles.iconGrid}>
-            {ACCOUNT_ICONS.map((item) => (
+            {ACCOUNT_ICON_OPTIONS.map((item) => (
               <TouchableOpacity
                 key={item.value}
                 style={[
@@ -339,6 +331,8 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
                   setIcon(item.value);
                   iconCustomized.current = true;
                 }}
+                accessibilityRole="button"
+                accessibilityLabel={`Seleccionar icono ${item.label}`}
               >
                 <item.Icon size={22} color={icon === item.value ? color : COLORS.storm} />
               </TouchableOpacity>

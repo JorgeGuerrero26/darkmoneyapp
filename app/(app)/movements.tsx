@@ -1,5 +1,8 @@
 import { GestureDetector } from "react-native-gesture-handler";
-import { Download, Search, SlidersHorizontal, Trash2, X } from "lucide-react-native";
+import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
+import { Download, Search, SlidersHorizontal, Trash2, TrendingDown, TrendingUp, X } from "lucide-react-native";
+import * as Haptics from "expo-haptics";
+import { formatCurrency } from "../../components/ui/AmountDisplay";
 import { DatePickerInput } from "../../components/ui/DatePickerInput";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -19,7 +22,7 @@ import {
 } from "react-native";
 
 const SCREEN_HEIGHT = Dimensions.get("window").height;
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { startOfMonth, endOfMonth, subMonths, format } from "date-fns";
@@ -27,8 +30,9 @@ import { es } from "date-fns/locale";
 
 import { useAuth } from "../../lib/auth-context";
 import { useWorkspace } from "../../lib/workspace-context";
-import { useWorkspaceSnapshotQuery } from "../../services/queries/workspace-data";
+import { useWorkspaceSnapshotQuery, type WorkspaceSnapshot } from "../../services/queries/workspace-data";
 import { usePaginatedMovements } from "../../services/queries/movements";
+import { useMovementAttachmentCountsQuery } from "../../services/queries/attachments";
 import { SwipeableMovementRow } from "../../components/domain/SwipeableMovementRow";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { Skeleton } from "../../components/ui/Skeleton";
@@ -36,9 +40,11 @@ import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { MovementForm } from "../../components/forms/MovementForm";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { FAB } from "../../components/ui/FAB";
+import { UndoBanner } from "../../components/ui/UndoBanner";
 import { useDeleteMovementMutation } from "../../services/queries/workspace-data";
 import { useToast } from "../../hooks/useToast";
 import { isoToDateStr } from "../../lib/date";
+import { buildDateRangeNotice } from "../../lib/date-range-notice";
 import { shareCsvAsFile } from "../../lib/share-csv-file";
 import { sortByName } from "../../lib/sort-locale";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
@@ -53,6 +59,8 @@ const TYPE_FILTERS: { label: string; value: FilterType }[] = [
   { label: "Ingresos", value: "income" },
   { label: "Gastos", value: "expense" },
   { label: "Transferencias", value: "transfer" },
+  { label: "Obligaciones", value: "obligation_payment" },
+  { label: "Suscripciones", value: "subscription_payment" },
 ];
 
 const STATUS_FILTERS: { label: string; value: FilterStatus }[] = [
@@ -99,7 +107,7 @@ function buildCSV(movements: MovementRecord[]): string {
   return BOM + [headers.join(","), ...rows].join("\n");
 }
 
-export default function MovementsScreen() {
+function MovementsScreen() {
   const swipeGesture = useSwipeTab();
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -183,18 +191,29 @@ export default function MovementsScreen() {
     return () => { if (searchTimer.current) clearTimeout(searchTimer.current); };
   }, [searchText]);
 
+  // ── Delete confirm with impact ────────────────────────────────────────────
+  const [deleteTarget, setDeleteTarget] = useState<MovementRecord | null>(null);
+
+  const confirmDelete = useCallback((item: MovementRecord) => { setDeleteTarget(item); }, []);
+  function cancelDelete() { setDeleteTarget(null); }
+  function executeDelete() {
+    if (!deleteTarget) return;
+    setDeleteTarget(null);
+    startUndoDelete(deleteTarget);
+  }
+
   // ── Multi-select ──────────────────────────────────────────────────────────
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
 
-  function toggleSelect(id: number) {
+  const toggleSelect = useCallback((id: number) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
-  }
+  }, []);
 
   function exitSelectMode() {
     setSelectMode(false);
@@ -231,7 +250,31 @@ export default function MovementsScreen() {
     [data, pendingDeleteIds],
   );
 
+  const allMovementIds = useMemo(() => allMovements.map((m) => m.id), [allMovements]);
+  const { data: movementAttachmentCounts = {} } = useMovementAttachmentCountsQuery(activeWorkspaceId, allMovementIds);
+
   const baseCurrency = activeWorkspace?.baseCurrencyCode ?? profile?.baseCurrencyCode ?? "PEN";
+
+  const filterSummary = useMemo(() => {
+    let incomeTotal = 0;
+    let expenseTotal = 0;
+    let incomeCount = 0;
+    let expenseCount = 0;
+    for (const m of allMovements) {
+      if (m.movementType === "income") {
+        incomeTotal += m.destinationAmountInBaseCurrency ?? m.destinationAmount ?? 0;
+        incomeCount++;
+      } else if (
+        m.movementType === "expense" ||
+        m.movementType === "obligation_payment" ||
+        m.movementType === "subscription_payment"
+      ) {
+        expenseTotal += m.sourceAmountInBaseCurrency ?? m.sourceAmount ?? 0;
+        expenseCount++;
+      }
+    }
+    return { incomeTotal, expenseTotal, incomeCount, expenseCount, net: incomeTotal - expenseTotal };
+  }, [allMovements]);
 
   const extraFiltersCount = [
     activeDatePreset,
@@ -241,6 +284,16 @@ export default function MovementsScreen() {
   ].filter(Boolean).length;
 
   const hasFilters = activeTypeFilter !== "all" || activeStatusFilter !== "all" || extraFiltersCount > 0 || Boolean(debouncedSearch);
+  const activeDateRangeNotice = useMemo(() => {
+    const from = isCustomRange ? customDateFrom.trim() || null : selectedPreset?.from ?? null;
+    const to = isCustomRange ? customDateTo.trim() || null : selectedPreset?.to ?? null;
+    return buildDateRangeNotice({
+      subject: "movimientos",
+      from,
+      to,
+      allMessage: "Mostrando todos los movimientos disponibles.",
+    });
+  }, [customDateFrom, customDateTo, isCustomRange, selectedPreset]);
 
   const accountsSorted = useMemo(
     () => sortByName(snapshot?.accounts.filter((a) => !a.isArchived) ?? []),
@@ -251,9 +304,24 @@ export default function MovementsScreen() {
     [snapshot?.categories],
   );
 
+  const refreshTriggeredRef = useRef(false);
   const onRefresh = useCallback(() => {
+    refreshTriggeredRef.current = true;
     void queryClient.invalidateQueries({ queryKey: ["movements"] });
   }, [queryClient]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void queryClient.invalidateQueries({ queryKey: ["movements"] });
+    }, [queryClient]),
+  );
+
+  useEffect(() => {
+    if (!isLoading && refreshTriggeredRef.current) {
+      refreshTriggeredRef.current = false;
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
+  }, [isLoading]);
 
   function clearAllFilters() {
     setActiveTypeFilter("all");
@@ -291,6 +359,30 @@ export default function MovementsScreen() {
     () => allMovements.filter((m) => selectedIds.has(m.id)),
     [allMovements, selectedIds],
   );
+
+  const renderItem = useCallback(({ item }: { item: MovementRecord }) => (
+    <SwipeableMovementRow
+      movement={item}
+      baseCurrencyCode={baseCurrency}
+      attachmentCount={movementAttachmentCounts[item.id] ?? 0}
+      selected={selectedIds.has(item.id)}
+      selectMode={selectMode}
+      onPress={() => {
+        if (selectMode) {
+          toggleSelect(item.id);
+        } else {
+          router.push(`/movement/${item.id}?from=movements`);
+        }
+      }}
+      onLongPress={() => {
+        if (!selectMode) {
+          setSelectMode(true);
+          toggleSelect(item.id);
+        }
+      }}
+      onDelete={() => confirmDelete(item)}
+    />
+  ), [baseCurrency, movementAttachmentCounts, selectedIds, selectMode, toggleSelect, confirmDelete, router]);
 
   return (
     <GestureDetector gesture={swipeGesture}>
@@ -405,6 +497,49 @@ export default function MovementsScreen() {
               <Text style={styles.clearAll}>Limpiar</Text>
             </TouchableOpacity>
           </ScrollView>
+        </View>
+      ) : null}
+
+      {!selectMode ? (
+        <View style={styles.dateRangeHintWrap}>
+          <Text style={styles.dateRangeHintText}>{activeDateRangeNotice}</Text>
+        </View>
+      ) : null}
+
+      {/* Summary bar */}
+      {!selectMode && allMovements.length > 0 ? (
+        <View style={styles.summaryBar}>
+          <View style={styles.summaryItem}>
+            <TrendingUp size={11} color={COLORS.income} strokeWidth={2.5} />
+            <Text style={[styles.summaryValue, { color: COLORS.income }]}>
+              {formatCurrency(filterSummary.incomeTotal, baseCurrency)}
+            </Text>
+            <Text style={styles.summaryCount}>{filterSummary.incomeCount} mov</Text>
+          </View>
+          <View style={styles.summarySep} />
+          <View style={styles.summaryItem}>
+            <TrendingDown size={11} color={COLORS.expense} strokeWidth={2.5} />
+            <Text style={[styles.summaryValue, { color: COLORS.expense }]}>
+              {formatCurrency(filterSummary.expenseTotal, baseCurrency)}
+            </Text>
+            <Text style={styles.summaryCount}>{filterSummary.expenseCount} mov</Text>
+          </View>
+          <View style={styles.summarySep} />
+          <View style={styles.summaryItem}>
+            <Text
+              style={[
+                styles.summaryNet,
+                { color: filterSummary.net >= 0 ? COLORS.income : COLORS.expense },
+              ]}
+            >
+              {filterSummary.net >= 0 ? "+" : "−"}
+              {formatCurrency(Math.abs(filterSummary.net), baseCurrency)}
+            </Text>
+            <Text style={styles.summaryCount}>neto</Text>
+          </View>
+          {hasNextPage ? (
+            <Text style={styles.summaryPartial}>parcial ↓</Text>
+          ) : null}
         </View>
       ) : null}
 
@@ -572,28 +707,11 @@ export default function MovementsScreen() {
       <FlatList
         data={allMovements}
         keyExtractor={(item) => String(item.id)}
-        renderItem={({ item }) => (
-          <SwipeableMovementRow
-            movement={item}
-            baseCurrencyCode={baseCurrency}
-            selected={selectedIds.has(item.id)}
-            selectMode={selectMode}
-            onPress={() => {
-              if (selectMode) {
-                toggleSelect(item.id);
-              } else {
-                router.push(`/movement/${item.id}?from=movements`);
-              }
-            }}
-            onLongPress={() => {
-              if (!selectMode) {
-                setSelectMode(true);
-                toggleSelect(item.id);
-              }
-            }}
-            onDelete={() => startUndoDelete(item)}
-          />
-        )}
+        renderItem={renderItem}
+        removeClippedSubviews
+        maxToRenderPerBatch={10}
+        windowSize={5}
+        initialNumToRender={15}
         refreshControl={
           <RefreshControl refreshing={isLoading && !isFetchingNextPage} onRefresh={onRefresh} tintColor={COLORS.primary} />
         }
@@ -604,7 +722,12 @@ export default function MovementsScreen() {
         ListFooterComponent={
           isFetchingNextPage ? (
             <View style={styles.footer}>
-              <ActivityIndicator color={COLORS.primary} />
+              <ActivityIndicator color={COLORS.primary} size="small" />
+              <Text style={styles.footerText}>Cargando más...</Text>
+            </View>
+          ) : !hasNextPage && allMovements.length > 0 ? (
+            <View style={styles.footer}>
+              <Text style={styles.footerEnd}>· · ·</Text>
             </View>
           ) : null
         }
@@ -642,19 +765,13 @@ export default function MovementsScreen() {
       />
 
       {/* Undo-delete banner */}
-      {pendingDeleteIds.size > 0 ? (
-        <View style={[styles.undoBanner, { bottom: insets.bottom + 80 }]}>
-          <Text style={styles.undoText}>
-            {pendingDeleteIds.size === 1 ? "Movimiento eliminado" : `${pendingDeleteIds.size} movimientos eliminados`}
-          </Text>
-          <TouchableOpacity
-            onPress={() => pendingDeleteIds.forEach((id) => undoDelete(id))}
-            style={styles.undoBtn}
-          >
-            <Text style={styles.undoBtnText}>Deshacer</Text>
-          </TouchableOpacity>
-        </View>
-      ) : null}
+      <UndoBanner
+        visible={pendingDeleteIds.size > 0}
+        message={pendingDeleteIds.size === 1 ? "Movimiento eliminado" : `${pendingDeleteIds.size} movimientos eliminados`}
+        onUndo={() => pendingDeleteIds.forEach((id) => undoDelete(id))}
+        durationMs={5000}
+        bottomOffset={insets.bottom + 80}
+      />
 
       {!selectMode ? (
         <FAB onPress={() => setFormVisible(true)} bottom={insets.bottom + 16} />
@@ -663,10 +780,6 @@ export default function MovementsScreen() {
       <MovementForm
         visible={formVisible}
         onClose={() => setFormVisible(false)}
-        onSuccess={() => {
-          setFormVisible(false);
-          void queryClient.invalidateQueries({ queryKey: ["movements"] });
-        }}
       />
 
       {/* Bulk delete confirm */}
@@ -679,6 +792,21 @@ export default function MovementsScreen() {
         onCancel={() => setBulkDeleteConfirm(false)}
         onConfirm={executeBulkDelete}
       />
+
+      {/* Single delete confirm with balance impact */}
+      <ConfirmDialog
+        visible={deleteTarget !== null}
+        title="¿Eliminar movimiento?"
+        body="Se eliminará permanentemente. Tienes 5 segundos para deshacer."
+        confirmLabel="Eliminar"
+        cancelLabel="Cancelar"
+        onCancel={cancelDelete}
+        onConfirm={executeDelete}
+      >
+        {deleteTarget ? (
+          <MovementDeleteImpact movement={deleteTarget} snapshot={snapshot} />
+        ) : null}
+      </ConfirmDialog>
     </View>
     </GestureDetector>
   );
@@ -744,6 +872,59 @@ const styles = StyleSheet.create({
   },
   activeFilterChipText: { fontSize: FONT_SIZE.xs, color: COLORS.primary, fontFamily: FONT_FAMILY.bodyMedium },
   clearAll: { fontSize: FONT_SIZE.xs, color: COLORS.storm, fontFamily: FONT_FAMILY.body, paddingHorizontal: SPACING.xs },
+  dateRangeHintWrap: {
+    paddingHorizontal: SPACING.lg,
+    paddingBottom: SPACING.xs,
+  },
+  dateRangeHintText: {
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.textDisabled,
+    fontFamily: FONT_FAMILY.body,
+    lineHeight: 18,
+  },
+
+  // Summary bar
+  summaryBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.xs + 2,
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderTopWidth: 0.5,
+    borderBottomWidth: 0.5,
+    borderColor: "rgba(255,255,255,0.07)",
+    gap: SPACING.sm,
+  },
+  summaryItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    flex: 1,
+  },
+  summaryValue: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+  },
+  summaryCount: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: 10,
+    color: COLORS.textDisabled,
+  },
+  summarySep: {
+    width: 0.5,
+    height: 16,
+    backgroundColor: "rgba(255,255,255,0.12)",
+  },
+  summaryNet: {
+    fontFamily: FONT_FAMILY.heading,
+    fontSize: FONT_SIZE.sm,
+  },
+  summaryPartial: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: 9,
+    color: COLORS.textDisabled,
+    marginLeft: "auto" as any,
+  },
 
   // Bulk bar
   bulkBar: {
@@ -769,7 +950,9 @@ const styles = StyleSheet.create({
   bulkBtnDanger: { borderColor: COLORS.danger + "44" },
   bulkBtnText: { fontSize: FONT_SIZE.xs, color: COLORS.storm, fontFamily: FONT_FAMILY.bodyMedium },
 
-  footer: { padding: SPACING.lg, alignItems: "center" },
+  footer: { paddingVertical: SPACING.lg, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: SPACING.sm },
+  footerText: { fontSize: FONT_SIZE.xs, color: COLORS.textDisabled, fontFamily: FONT_FAMILY.body },
+  footerEnd: { fontSize: FONT_SIZE.sm, color: COLORS.textDisabled, letterSpacing: 4 },
   emptyContainer: { flexGrow: 1 },
   skeletonList: { padding: SPACING.md, gap: SPACING.md },
   skeletonRow: { flexDirection: "row", alignItems: "center", gap: SPACING.md },
@@ -818,44 +1001,109 @@ const styles = StyleSheet.create({
   },
   applyBtnText: { color: "#FFF", fontSize: FONT_SIZE.sm, fontFamily: FONT_FAMILY.bodySemibold },
 
-  // Undo
-  undoBanner: {
-    position: "absolute",
-    left: SPACING.lg,
-    right: SPACING.lg,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: "rgba(14,20,30,0.97)",
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.18)",
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm + 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-    elevation: 12,
-    zIndex: 50,
-  },
-  undoText: {
-    fontFamily: FONT_FAMILY.body,
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.ink,
-    flex: 1,
-  },
-  undoBtn: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: 4,
-    backgroundColor: COLORS.primary + "22",
-    borderRadius: RADIUS.full,
-    borderWidth: 1,
-    borderColor: COLORS.primary + "55",
-  },
-  undoBtnText: {
-    fontFamily: FONT_FAMILY.bodySemibold,
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.pine,
-  },
 });
+
+// ─── Balance impact for movement deletion ─────────────────────────────────────
+
+function MovementDeleteImpact({
+  movement,
+  snapshot,
+}: {
+  movement: MovementRecord;
+  snapshot: WorkspaceSnapshot | undefined;
+}) {
+  const accounts = snapshot?.accounts ?? [];
+  const obligations = snapshot?.obligations ?? [];
+
+  const isIncome = movement.movementType === "income" || movement.movementType === "refund";
+  const isExpense = !isIncome && movement.movementType !== "transfer";
+  const isTransfer = movement.movementType === "transfer";
+
+  const sourceAcc = accounts.find((a) => a.id === movement.sourceAccountId);
+  const destAcc = accounts.find((a) => a.id === movement.destinationAccountId);
+  const obligation = obligations.find((o) => o.id === movement.obligationId);
+
+  // Projected balances after deletion (reverse the original effect)
+  const projectedSource = sourceAcc != null
+    ? isIncome
+      ? null // income has no source account
+      : sourceAcc.currentBalance + (movement.sourceAmount ?? 0) // expense/transfer: removing it gives money back
+    : null;
+
+  const projectedDest = destAcc != null
+    ? isExpense
+      ? null // expense has no destination
+      : destAcc.currentBalance - (movement.destinationAmount ?? 0) // income/transfer: removing it takes money away
+    : null;
+
+  // Obligation: removing a payment increases pending
+  const projectedPending = obligation != null
+    ? obligation.pendingAmount + (movement.sourceAmount ?? movement.destinationAmount ?? 0)
+    : null;
+
+  const items: { label: string; from: number; to: number; currency: string }[] = [];
+  if (projectedSource !== null && sourceAcc) {
+    items.push({ label: sourceAcc.name, from: sourceAcc.currentBalance, to: projectedSource, currency: sourceAcc.currencyCode });
+  }
+  if (projectedDest !== null && destAcc) {
+    items.push({ label: destAcc.name, from: destAcc.currentBalance, to: projectedDest, currency: destAcc.currencyCode });
+  }
+  if (projectedPending !== null && obligation) {
+    items.push({ label: `Pendiente: ${obligation.title}`, from: obligation.pendingAmount, to: projectedPending, currency: obligation.currencyCode });
+  }
+
+  if (items.length === 0) return null;
+
+  return (
+    <View style={impactStyles.container}>
+      {items.map((item) => (
+        <ImpactRow key={item.label} {...item} />
+      ))}
+    </View>
+  );
+}
+
+function ImpactRow({ label, from, to, currency }: { label: string; from: number; to: number; currency: string }) {
+  const worse = to < from;
+  return (
+    <View style={impactStyles.row}>
+      <Text style={impactStyles.label} numberOfLines={1}>{label}</Text>
+      <View style={impactStyles.values}>
+        <Text style={impactStyles.fromVal}>{formatImpactAmount(from, currency)}</Text>
+        <Text style={impactStyles.arrow}>→</Text>
+        <Text style={[impactStyles.toVal, worse && impactStyles.toValWorse]}>
+          {formatImpactAmount(to, currency)}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+function formatImpactAmount(amount: number, currency: string) {
+  return `${currency} ${amount.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+const impactStyles = StyleSheet.create({
+  container: {
+    marginTop: SPACING.xs,
+    borderTopWidth: 1,
+    borderTopColor: GLASS.separator,
+    paddingTop: SPACING.sm,
+    gap: SPACING.xs + 2,
+  },
+  row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: SPACING.sm },
+  label: { fontSize: FONT_SIZE.xs, color: COLORS.storm, flex: 1 },
+  values: { flexDirection: "row", alignItems: "center", gap: SPACING.xs },
+  fromVal: { fontSize: FONT_SIZE.xs, color: COLORS.textDisabled },
+  arrow: { fontSize: FONT_SIZE.xs, color: COLORS.textDisabled },
+  toVal: { fontSize: FONT_SIZE.xs, fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.primary },
+  toValWorse: { color: COLORS.danger },
+});
+
+export default function MovementsScreenRoot() {
+  return (
+    <ErrorBoundary>
+      <MovementsScreen />
+    </ErrorBoundary>
+  );
+}

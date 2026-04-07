@@ -1,4 +1,5 @@
 import { GestureDetector } from "react-native-gesture-handler";
+import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { useCallback, useMemo, useState } from "react";
 import {
   RefreshControl,
@@ -9,7 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
@@ -85,7 +86,7 @@ function resolveConversion(map: Map<string, number>, from: string, to: string): 
   return 1;
 }
 
-export default function AccountsScreen() {
+function AccountsScreen() {
   const swipeGesture = useSwipeTab();
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -188,6 +189,12 @@ export default function AccountsScreen() {
   const onRefresh = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
   }, [queryClient]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+    }, [queryClient]),
+  );
 
   async function handleArchive(account: AccountSummary) {
     try {
@@ -569,3 +576,11 @@ const styles = StyleSheet.create({
     fontFamily: FONT_FAMILY.bodyMedium,
   },
 });
+
+export default function AccountsScreenRoot() {
+  return (
+    <ErrorBoundary>
+      <AccountsScreen />
+    </ErrorBoundary>
+  );
+}

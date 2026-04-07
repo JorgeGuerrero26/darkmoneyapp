@@ -10,35 +10,48 @@ export type Toast = {
   variant: ToastVariant;
 };
 
+export type ActivityNotice = {
+  id: string;
+  message: string;
+  description?: string;
+};
+
 export type DashboardMode = "simple" | "advanced";
 
 type UiState = {
   toasts: Toast[];
+  activityNotice: ActivityNotice | null;
   isBiometricLocked: boolean;
   biometricEnabled: boolean;
+  /** Última cuenta usada al crear un movimiento (sigue la categoría sin persistir). */
   lastMovementAccountId: number | null;
-  lastMovementCategoryId: number | null;
   dashboardMode: DashboardMode;
   dashboardScrollY: number;
+  /** Incrementing token — each new value triggers the SuccessGlow animation. */
+  successGlowToken: number;
   showToast: (message: string, variant?: ToastVariant) => void;
   dismissToast: (id: string) => void;
+  showActivityNotice: (message: string, description?: string) => string;
+  dismissActivityNotice: (id?: string) => void;
   setBiometricLocked: (locked: boolean) => void;
   setBiometricEnabled: (enabled: boolean) => void;
-  setLastMovementDefaults: (accountId: number | null, categoryId: number | null) => void;
+  setLastMovementAccountId: (accountId: number | null) => void;
   setDashboardMode: (mode: DashboardMode) => void;
   setDashboardScrollY: (y: number) => void;
+  triggerSuccessGlow: () => void;
 };
 
 export const useUiStore = create<UiState>()(
   persist(
     (set) => ({
       toasts: [],
+      activityNotice: null,
       isBiometricLocked: false,
       biometricEnabled: false,
       lastMovementAccountId: null,
-      lastMovementCategoryId: null,
       dashboardMode: "simple",
       dashboardScrollY: 0,
+      successGlowToken: 0,
 
       showToast: (message, variant = "success") =>
         set((state) => ({
@@ -53,21 +66,48 @@ export const useUiStore = create<UiState>()(
           toasts: state.toasts.filter((t) => t.id !== id),
         })),
 
+      showActivityNotice: (message, description) => {
+        const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        set({
+          activityNotice: {
+            id,
+            message,
+            description,
+          },
+        });
+        return id;
+      },
+
+      dismissActivityNotice: (id) =>
+        set((state) => {
+          if (!state.activityNotice) return state;
+          if (id && state.activityNotice.id !== id) return state;
+          return { activityNotice: null };
+        }),
+
       setBiometricLocked: (locked) => set({ isBiometricLocked: locked }),
       setBiometricEnabled: (enabled) => set({ biometricEnabled: enabled }),
-      setLastMovementDefaults: (accountId, categoryId) =>
-        set({ lastMovementAccountId: accountId, lastMovementCategoryId: categoryId }),
+      setLastMovementAccountId: (accountId) => set({ lastMovementAccountId: accountId }),
       setDashboardMode: (mode) => set({ dashboardMode: mode }),
       setDashboardScrollY: (y) => set({ dashboardScrollY: y }),
+      triggerSuccessGlow: () => set((s) => ({ successGlowToken: s.successGlowToken + 1 })),
     }),
     {
       name: "darkmoney-ui",
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (state) => ({
         lastMovementAccountId: state.lastMovementAccountId,
-        lastMovementCategoryId: state.lastMovementCategoryId,
         dashboardMode: state.dashboardMode,
       }),
+      /** Quita `lastMovementCategoryId` de almacenamientos antiguos (ya no se persiste). */
+      merge: (persisted, current) => {
+        const p =
+          persisted && typeof persisted === "object"
+            ? { ...(persisted as Record<string, unknown>) }
+            : {};
+        delete p.lastMovementCategoryId;
+        return Object.assign({}, current, p) as UiState;
+      },
     },
   ),
 );

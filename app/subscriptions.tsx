@@ -9,6 +9,8 @@ import {
   X,
 } from "lucide-react-native";
 import { FAB } from "../components/ui/FAB";
+import { ErrorBoundary } from "../components/ui/ErrorBoundary";
+import { UndoBanner } from "../components/ui/UndoBanner";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Animated,
@@ -47,7 +49,6 @@ import { Card } from "../components/ui/Card";
 import { EmptyState } from "../components/ui/EmptyState";
 import { SkeletonCard } from "../components/ui/Skeleton";
 import { ScreenHeader } from "../components/layout/ScreenHeader";
-import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { SubscriptionForm } from "../components/forms/SubscriptionForm";
 import { formatCurrency } from "../components/ui/AmountDisplay";
 import { useToast } from "../hooks/useToast";
@@ -273,7 +274,7 @@ const subSwipeStyles = StyleSheet.create({
   },
 });
 
-export default function SubscriptionsScreen() {
+function SubscriptionsScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -287,8 +288,32 @@ export default function SubscriptionsScreen() {
 
   const [createFormVisible, setCreateFormVisible] = useState(false);
   const [editSubscription, setEditSubscription] = useState<SubscriptionSummary | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<SubscriptionSummary | null>(null);
   const [analyticsTarget, setAnalyticsTarget] = useState<SubscriptionSummary | null>(null);
+  const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<number>>(new Set());
+  const [pendingDeleteLabels, setPendingDeleteLabels] = useState<Record<number, string>>({});
+  const deleteTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+
+  function startUndoDelete(sub: SubscriptionSummary) {
+    setPendingDeleteIds((prev) => new Set(prev).add(sub.id));
+    setPendingDeleteLabels((prev) => ({ ...prev, [sub.id]: sub.name }));
+    const timer = setTimeout(() => {
+      deleteMutation.mutate(sub.id, {
+        onError: (e) => showToast(e.message, "error"),
+      });
+      setPendingDeleteIds((prev) => { const n = new Set(prev); n.delete(sub.id); return n; });
+      deleteTimers.current.delete(sub.id);
+    }, 5000);
+    deleteTimers.current.set(sub.id, timer);
+  }
+
+  function undoDelete(id: number) {
+    const timer = deleteTimers.current.get(id);
+    if (timer) clearTimeout(timer);
+    deleteTimers.current.delete(id);
+    setPendingDeleteIds((prev) => { const n = new Set(prev); n.delete(id); return n; });
+  }
+
+  useEffect(() => () => { deleteTimers.current.forEach(clearTimeout); }, []);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [frequencyFilter, setFrequencyFilter] = useState<"all" | SubscriptionFrequency>("all");
@@ -316,7 +341,7 @@ export default function SubscriptionsScreen() {
   const postedMovements = snapshot?.subscriptionPostedMovements ?? [];
 
   const filteredSubscriptions = useMemo(() => {
-    let list = subscriptions;
+    let list = subscriptions.filter((s) => !pendingDeleteIds.has(s.id));
     const q = search.trim().toLowerCase();
     if (q) {
       list = list.filter(
@@ -365,17 +390,6 @@ export default function SubscriptionsScreen() {
     );
   }
 
-  function confirmDeleteSubscription() {
-    if (!deleteTarget) return;
-    const id = deleteTarget.id;
-    deleteMutation.mutate(id, {
-      onSuccess: () => {
-        setDeleteTarget(null);
-        showToast("Suscripción eliminada", "success");
-      },
-      onError: (e) => showToast(e.message, "error"),
-    });
-  }
 
   function renderCard(sub: SubscriptionSummary) {
     const monthlyCost =
@@ -432,7 +446,7 @@ export default function SubscriptionsScreen() {
         key={sub.id}
         sub={sub}
         onEdit={() => setEditSubscription(sub)}
-        onDeleteRequest={() => setDeleteTarget(sub)}
+        onDeleteRequest={() => startUndoDelete(sub)}
         onTogglePause={() => handleTogglePause(sub)}
         cardContent={inner}
       />
@@ -609,19 +623,14 @@ export default function SubscriptionsScreen() {
         editSubscription={editSubscription ?? undefined}
       />
 
-      <ConfirmDialog
-        visible={Boolean(deleteTarget)}
-        title="Eliminar suscripción"
-        body={
-          deleteTarget
-            ? `¿Eliminar «${deleteTarget.name}»? Esta acción no se puede deshacer.`
-            : undefined
-        }
-        confirmLabel="Eliminar"
-        cancelLabel="Cancelar"
-        destructive
-        onCancel={() => setDeleteTarget(null)}
-        onConfirm={confirmDeleteSubscription}
+      <UndoBanner
+        visible={pendingDeleteIds.size > 0}
+        message={pendingDeleteIds.size === 1
+          ? `Suscripción "${Object.values(pendingDeleteLabels).at(-1) ?? ""}" eliminada`
+          : `${pendingDeleteIds.size} suscripciones eliminadas`}
+        onUndo={() => pendingDeleteIds.forEach((id) => undoDelete(id))}
+        durationMs={5000}
+        bottomOffset={insets.bottom + 80}
       />
 
       <SubscriptionAnalyticsModal
@@ -797,3 +806,11 @@ const styles = StyleSheet.create({
   nextDue: { fontSize: FONT_SIZE.xs, color: COLORS.storm },
   monthly: { fontSize: FONT_SIZE.xs, color: COLORS.storm },
 });
+
+export default function SubscriptionsScreenRoot() {
+  return (
+    <ErrorBoundary>
+      <SubscriptionsScreen />
+    </ErrorBoundary>
+  );
+}

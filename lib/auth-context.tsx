@@ -2,6 +2,7 @@ import type { Session, User } from "@supabase/supabase-js";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { MutableRefObject } from "react";
 import type { PropsWithChildren } from "react";
+import { AppState } from "react-native";
 
 import { supabase, isSupabaseConfigured } from "./supabase";
 import { clearSessionScopedClientState } from "./session-data-reset";
@@ -109,6 +110,24 @@ function buildFallbackProfile(user: User): AppProfile {
   };
 }
 
+const AUTH_BOOT_TIMEOUT_MS = 8_000;
+
+function withTimeout<T>(promise: Promise<T>, ms = AUTH_BOOT_TIMEOUT_MS): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("Tiempo de espera agotado.")), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
 async function ensureProfile(user: User): Promise<AppProfile> {
   if (!supabase) throw new Error("Supabase no está configurado.");
 
@@ -151,6 +170,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const hadSessionAtLaunchRef = useRef(false);
   /** Login/registro antes de que resuelva el primer `getSession()` (evita marcar "sesión al arranque" por carrera). */
   const authBeforeInitialGetSessionRef = useRef(false);
+  const resumeSessionSyncInFlightRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -173,7 +193,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       }
 
       try {
-        const nextProfile = await ensureProfile(nextSession.user);
+        const nextProfile = await withTimeout(ensureProfile(nextSession.user));
         if (!cancelled) setProfile(nextProfile);
       } catch {
         if (!cancelled) setProfile(buildFallbackProfile(nextSession.user));
@@ -182,13 +202,32 @@ export function AuthProvider({ children }: PropsWithChildren) {
       }
     }
 
+    async function reconcileSessionOnForeground() {
+      if (!supabase || cancelled || resumeSessionSyncInFlightRef.current) return;
+      resumeSessionSyncInFlightRef.current = true;
+      try {
+        const { data } = await withTimeout(supabase.auth.getSession(), 5_000);
+        if (cancelled) return;
+        await syncSession(data.session, { blockUi: true });
+      } catch {
+        if (!cancelled) {
+          clearSessionScopedClientState();
+          setSession(null);
+          setUser(null);
+          setProfile(null);
+          setIsLoading(false);
+        }
+      } finally {
+        resumeSessionSyncInFlightRef.current = false;
+      }
+    }
+
     if (!supabase) {
       setIsLoading(false);
       return () => { cancelled = true; };
     }
 
-    void supabase.auth
-      .getSession()
+    void withTimeout(supabase.auth.getSession())
       .then(async ({ data }) => {
         if (cancelled) return;
 
@@ -198,7 +237,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         // El resultado puede llegar como null y syncSession(null) borraría la sesión recién creada.
         let nextSession = data.session;
         if (!nextSession && authBeforeInitialGetSessionRef.current) {
-          const { data: fresh } = await supabase.auth.getSession();
+          const { data: fresh } = await withTimeout(supabase!.auth.getSession());
           nextSession = fresh.session;
         }
 
@@ -224,9 +263,15 @@ export function AuthProvider({ children }: PropsWithChildren) {
       void syncSession(nextSession);
     });
 
+    const appStateSubscription = AppState.addEventListener("change", (state) => {
+      if (state !== "active" || !hasResolvedInitialSession.current) return;
+      void reconcileSessionOnForeground();
+    });
+
     return () => {
       cancelled = true;
       subscription.unsubscribe();
+      appStateSubscription.remove();
     };
   }, []);
 
@@ -242,7 +287,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     // Cargar perfil aquí: si SIGNED_IN llegó antes de hasResolvedInitialSession, onAuthStateChange no hizo syncSession.
     if (data.session?.user) {
       try {
-        const nextProfile = await ensureProfile(data.session.user);
+        const nextProfile = await withTimeout(ensureProfile(data.session.user));
         setProfile(nextProfile);
       } catch {
         setProfile(buildFallbackProfile(data.session.user));
@@ -272,7 +317,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       setSession(data.session);
       setUser(data.user);
       try {
-        const nextProfile = await ensureProfile(data.user);
+        const nextProfile = await withTimeout(ensureProfile(data.user));
         setProfile(nextProfile);
       } catch {
         setProfile(buildFallbackProfile(data.user));

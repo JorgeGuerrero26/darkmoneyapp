@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { forwardRef, useImperativeHandle, useRef } from "react";
 import {
   StyleSheet,
   Text,
@@ -20,7 +20,7 @@ type Props = {
   style?: StyleProp<ViewStyle>;
 };
 
-export function CurrencyInput({
+export const CurrencyInput = forwardRef<TextInput, Props>(function CurrencyInput({
   value,
   onChangeText,
   currencyCode,
@@ -28,14 +28,16 @@ export function CurrencyInput({
   error,
   placeholder = "0.00",
   style,
-}: Props) {
+}, ref) {
   const inputRef = useRef<TextInput>(null);
+  useImperativeHandle(ref, () => inputRef.current as TextInput, []);
 
   function handleChange(text: string) {
     // Allow digits and a single decimal point
     const cleaned = text.replace(/[^0-9.]/g, "");
     const parts = cleaned.split(".");
     if (parts.length > 2) return; // reject second dot
+    if (parts[0] && parts[0].length > 12) return; // max 12 integer digits
     if (parts[1] && parts[1].length > 2) return; // max 2 decimal places
     onChangeText(cleaned);
   }
@@ -63,7 +65,7 @@ export function CurrencyInput({
       {error ? <Text style={styles.error}>{error}</Text> : null}
     </TouchableOpacity>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: {

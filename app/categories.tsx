@@ -1,4 +1,6 @@
 import { FAB } from "../components/ui/FAB";
+import { ErrorBoundary } from "../components/ui/ErrorBoundary";
+import { UndoBanner } from "../components/ui/UndoBanner";
 import {
   BarChart3,
   Download,
@@ -50,7 +52,6 @@ import { ScreenHeader } from "../components/layout/ScreenHeader";
 import { CategoryForm } from "../components/forms/CategoryForm";
 import { CategoryAnalyticsModal } from "../components/domain/CategoryAnalyticsModal";
 import { CategoryGlyph } from "../components/domain/CategoryGlyph";
-import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { useToast } from "../hooks/useToast";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../constants/theme";
 
@@ -313,7 +314,7 @@ function formatIsoLocal(iso: string | null | undefined): string {
   return format(d, "d MMM yyyy", { locale: es });
 }
 
-export default function CategoriesScreen() {
+function CategoriesScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -328,8 +329,32 @@ export default function CategoriesScreen() {
 
   const [createFormVisible, setCreateFormVisible] = useState(false);
   const [editCategory, setEditCategory] = useState<CategoryOverview | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<CategoryOverview | null>(null);
   const [analyticsTarget, setAnalyticsTarget] = useState<CategoryOverview | null>(null);
+  const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<number>>(new Set());
+  const [pendingDeleteLabels, setPendingDeleteLabels] = useState<Record<number, string>>({});
+  const deleteTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+
+  function startUndoDelete(cat: CategoryOverview) {
+    setPendingDeleteIds((prev) => new Set(prev).add(cat.id));
+    setPendingDeleteLabels((prev) => ({ ...prev, [cat.id]: cat.name }));
+    const timer = setTimeout(() => {
+      deleteMutation.mutate(cat.id, {
+        onError: (e) => showToast(e.message, "error"),
+      });
+      setPendingDeleteIds((prev) => { const n = new Set(prev); n.delete(cat.id); return n; });
+      deleteTimers.current.delete(cat.id);
+    }, 5000);
+    deleteTimers.current.set(cat.id, timer);
+  }
+
+  function undoDelete(id: number) {
+    const timer = deleteTimers.current.get(id);
+    if (timer) clearTimeout(timer);
+    deleteTimers.current.delete(id);
+    setPendingDeleteIds((prev) => { const n = new Set(prev); n.delete(id); return n; });
+  }
+
+  useEffect(() => () => { deleteTimers.current.forEach(clearTimeout); }, []);
   const [search, setSearch] = useState("");
   const [kindFilter, setKindFilter] = useState<KindFilter>("all");
   const [showInactive, setShowInactive] = useState(false);
@@ -357,7 +382,7 @@ export default function CategoriesScreen() {
   const categoryPostedMovements = snapshot?.categoryPostedMovements ?? [];
 
   const filtered = useMemo(() => {
-    let list = overviewList;
+    let list = overviewList.filter((c) => !pendingDeleteIds.has(c.id));
     const q = search.trim().toLowerCase();
     if (q) {
       list = list.filter(
@@ -408,16 +433,6 @@ export default function CategoriesScreen() {
     );
   }
 
-  function confirmDelete() {
-    if (!deleteTarget) return;
-    deleteMutation.mutate(deleteTarget.id, {
-      onSuccess: () => {
-        setDeleteTarget(null);
-        showToast("Categoría eliminada", "success");
-      },
-      onError: (e) => showToast(e.message, "error"),
-    });
-  }
 
   const kindChips: { key: KindFilter; label: string }[] = [
     { key: "all", label: "Todas" },
@@ -577,7 +592,7 @@ export default function CategoriesScreen() {
                   onPressCard={() => setEditCategory(cat)}
                   onToggle={() => handleToggleActive(cat)}
                   onAnalytics={() => setAnalyticsTarget(cat)}
-                  onDelete={() => setDeleteTarget(cat)}
+                  onDelete={() => startUndoDelete(cat)}
                   canDelete={canDel}
                   toggleDisabled={toggleMutation.isPending}
                 />
@@ -623,19 +638,14 @@ export default function CategoriesScreen() {
         editCategory={editCategory ?? undefined}
       />
 
-      <ConfirmDialog
-        visible={Boolean(deleteTarget)}
-        title="Eliminar categoría"
-        body={
-          deleteTarget
-            ? `¿Eliminar «${deleteTarget.name}»? No debe tener movimientos, suscripciones ni subcategorías.`
-            : undefined
-        }
-        confirmLabel="Eliminar"
-        cancelLabel="Cancelar"
-        destructive
-        onCancel={() => setDeleteTarget(null)}
-        onConfirm={confirmDelete}
+      <UndoBanner
+        visible={pendingDeleteIds.size > 0}
+        message={pendingDeleteIds.size === 1
+          ? `Categoría "${Object.values(pendingDeleteLabels).at(-1) ?? ""}" eliminada`
+          : `${pendingDeleteIds.size} categorías eliminadas`}
+        onUndo={() => pendingDeleteIds.forEach((id) => undoDelete(id))}
+        durationMs={5000}
+        bottomOffset={insets.bottom + 80}
       />
 
       <CategoryAnalyticsModal
@@ -833,3 +843,11 @@ const styles = StyleSheet.create({
   },
   iconActionText: { fontSize: FONT_SIZE.sm, color: COLORS.storm },
 });
+
+export default function CategoriesScreenRoot() {
+  return (
+    <ErrorBoundary>
+      <CategoriesScreen />
+    </ErrorBoundary>
+  );
+}

@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import { ErrorBoundary } from "../components/ui/ErrorBoundary";
 import {
+  Animated,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -15,6 +17,7 @@ import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as LocalAuthentication from "expo-local-authentication";
 import * as SecureStore from "expo-secure-store";
+import { Fingerprint } from "lucide-react-native";
 
 import { useAuth } from "../lib/auth-context";
 import { useWorkspace, useWorkspaceListStore } from "../lib/workspace-context";
@@ -32,6 +35,8 @@ import { ScreenHeader } from "../components/layout/ScreenHeader";
 import { useToast } from "../hooks/useToast";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../constants/theme";
 import type { WorkspaceRole } from "../types/domain";
+import { SafeBlurView } from "../components/ui/SafeBlurView";
+import { useDismissibleSheet } from "../components/ui/useDismissibleSheet";
 
 const ROLE_OPTIONS: { label: string; value: Exclude<WorkspaceRole, "owner"> }[] = [
   { label: "Administrador", value: "admin" },
@@ -39,7 +44,7 @@ const ROLE_OPTIONS: { label: string; value: Exclude<WorkspaceRole, "owner"> }[] 
   { label: "Lector", value: "viewer" },
 ];
 
-export default function SettingsScreen() {
+function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { profile, saveProfile, signOut } = useAuth();
@@ -126,6 +131,10 @@ export default function SettingsScreen() {
 
   // ── Workspace invite sheet ────────────────────────────────────────────────
   const [inviteSheetOpen, setInviteSheetOpen] = useState(false);
+  const inviteSheetDismiss = useDismissibleSheet({
+    visible: inviteSheetOpen,
+    onClose: () => setInviteSheetOpen(false),
+  });
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<Exclude<WorkspaceRole, "owner">>("member");
   const [inviteNote, setInviteNote] = useState("");
@@ -163,6 +172,10 @@ export default function SettingsScreen() {
 
   // ── Create workspace sheet ────────────────────────────────────────────────
   const [createWsSheetOpen, setCreateWsSheetOpen] = useState(false);
+  const createSheetDismiss = useDismissibleSheet({
+    visible: createWsSheetOpen,
+    onClose: () => setCreateWsSheetOpen(false),
+  });
   const [newWsName, setNewWsName] = useState("");
   const [newWsCurrency, setNewWsCurrency] = useState(profile?.baseCurrencyCode ?? "PEN");
   const createWsMutation = useCreateSharedWorkspaceMutation();
@@ -296,9 +309,7 @@ export default function SettingsScreen() {
           ) : null}
 
           {/* Sign out */}
-          <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut} activeOpacity={0.8}>
-            <Text style={styles.signOutText}>Cerrar sesión</Text>
-          </TouchableOpacity>
+          <Button label="Cerrar sesión" variant="danger" size="lg" onPress={handleSignOut} />
         </ScrollView>
       </KeyboardAvoidingView>
 
@@ -310,9 +321,12 @@ export default function SettingsScreen() {
         onRequestClose={handleBioSetupCancel}
       >
         <View style={styles.soOverlay}>
-          <View style={styles.soCard}>
-            <View style={[styles.soIconWrap, { backgroundColor: COLORS.primary + "22" }]}>
-              <Text style={styles.soIcon}>🫆</Text>
+          <SafeBlurView intensity={30} tint="dark" style={StyleSheet.absoluteFillObject} />
+          <View style={styles.bioCard}>
+            <View style={styles.bioIconRing}>
+              <View style={styles.bioIconInner}>
+                <Fingerprint size={40} color={COLORS.primary} strokeWidth={1.5} />
+              </View>
             </View>
             <Text style={styles.soTitle}>Activar acceso con huella</Text>
             <Text style={styles.soBody}>
@@ -329,16 +343,20 @@ export default function SettingsScreen() {
               error={bioSetupError}
               containerStyle={styles.bioSetupInput}
             />
-            <TouchableOpacity
-              style={[styles.soConfirm, { backgroundColor: COLORS.primary }]}
+            <Button
+              label="Activar huella digital"
+              variant="primary"
+              size="lg"
+              style={styles.bioFullBtn}
               onPress={() => void handleBioSetupConfirm()}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.soConfirmText}>Activar huella digital</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.soCancel} onPress={handleBioSetupCancel}>
-              <Text style={styles.soCancelText}>Cancelar</Text>
-            </TouchableOpacity>
+            />
+            <Button
+              label="Cancelar"
+              variant="ghost"
+              size="md"
+              style={styles.bioFullBtn}
+              onPress={handleBioSetupCancel}
+            />
           </View>
         </View>
       </Modal>
@@ -359,28 +377,33 @@ export default function SettingsScreen() {
             <Text style={styles.soBody}>
               Se cerrará tu sesión en este dispositivo. Podrás volver a ingresar cuando quieras.
             </Text>
-            <TouchableOpacity
-              style={styles.soConfirm}
+            <Button
+              label="Cerrar sesión"
+              variant="danger"
+              size="lg"
+              style={styles.soFullBtn}
               onPress={() => { setSignOutVisible(false); void signOut(); }}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.soConfirmText}>Cerrar sesión</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.soCancel}
+            />
+            <Button
+              label="Cancelar"
+              variant="ghost"
+              size="md"
+              style={styles.soFullBtn}
               onPress={() => setSignOutVisible(false)}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.soCancelText}>Cancelar</Text>
-            </TouchableOpacity>
+            />
           </View>
         </View>
       </Modal>
 
       {/* ── Invite member sheet ───────────────────────────────────────── */}
-      <Modal visible={inviteSheetOpen} transparent animationType="slide" onRequestClose={() => setInviteSheetOpen(false)}>
-        <Pressable style={styles.overlay} onPress={() => setInviteSheetOpen(false)}>
-          <View style={[styles.sheet, { paddingBottom: insets.bottom + SPACING.lg }]} onStartShouldSetResponder={() => true}>
+      <Modal visible={inviteSheetOpen} transparent animationType="fade" onRequestClose={() => setInviteSheetOpen(false)}>
+        <Animated.View style={[styles.overlay, inviteSheetDismiss.backdropStyle]}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setInviteSheetOpen(false)} />
+          <Animated.View
+            style={[styles.sheet, { paddingBottom: insets.bottom + SPACING.lg }, inviteSheetDismiss.sheetStyle]}
+            onStartShouldSetResponder={() => true}
+            {...inviteSheetDismiss.panHandlers}
+          >
             <Text style={styles.sheetTitle}>Invitar miembro</Text>
             <Text style={styles.sheetSubtitle}>Workspace: {activeWorkspace?.name}</Text>
 
@@ -425,14 +448,19 @@ export default function SettingsScreen() {
               loading={inviteMutation.isPending}
               style={styles.sheetBtn}
             />
-          </View>
-        </Pressable>
+          </Animated.View>
+        </Animated.View>
       </Modal>
 
       {/* ── Create workspace sheet ────────────────────────────────────── */}
-      <Modal visible={createWsSheetOpen} transparent animationType="slide" onRequestClose={() => setCreateWsSheetOpen(false)}>
-        <Pressable style={styles.overlay} onPress={() => setCreateWsSheetOpen(false)}>
-          <View style={[styles.sheet, { paddingBottom: insets.bottom + SPACING.lg }]} onStartShouldSetResponder={() => true}>
+      <Modal visible={createWsSheetOpen} transparent animationType="fade" onRequestClose={() => setCreateWsSheetOpen(false)}>
+        <Animated.View style={[styles.overlay, createSheetDismiss.backdropStyle]}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setCreateWsSheetOpen(false)} />
+          <Animated.View
+            style={[styles.sheet, { paddingBottom: insets.bottom + SPACING.lg }, createSheetDismiss.sheetStyle]}
+            onStartShouldSetResponder={() => true}
+            {...createSheetDismiss.panHandlers}
+          >
             <Text style={styles.sheetTitle}>Nuevo workspace</Text>
             <Text style={styles.sheetSubtitle}>Se creará un workspace compartido</Text>
 
@@ -458,8 +486,8 @@ export default function SettingsScreen() {
               loading={createWsMutation.isPending}
               style={styles.sheetBtn}
             />
-          </View>
-        </Pressable>
+          </Animated.View>
+        </Animated.View>
       </Modal>
     </View>
   );
@@ -515,15 +543,6 @@ const styles = StyleSheet.create({
     borderColor: COLORS.primary,
   },
   wsActionText: { fontSize: FONT_SIZE.sm, color: COLORS.primary, fontFamily: FONT_FAMILY.bodyMedium },
-  signOutButton: {
-    paddingVertical: SPACING.md,
-    alignItems: "center",
-    backgroundColor: COLORS.dangerMuted,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: COLORS.danger,
-  },
-  signOutText: { color: COLORS.danger, fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.md },
   switchRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   switchInfo: { flex: 1, gap: 2, marginRight: SPACING.md },
   switchLabel: { fontSize: FONT_SIZE.sm, fontFamily: FONT_FAMILY.bodyMedium, color: COLORS.ink },
@@ -601,23 +620,53 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginBottom: SPACING.sm,
   },
-  soConfirm: {
-    width: "100%",
-    backgroundColor: COLORS.danger,
-    borderRadius: RADIUS.md,
-    paddingVertical: SPACING.md,
-    alignItems: "center",
-  },
-  soConfirmText: {
-    fontSize: FONT_SIZE.md,
-    fontFamily: FONT_FAMILY.bodySemibold,
-    color: "#FFFFFF",
-  },
-  soCancel: {
-    width: "100%",
-    paddingVertical: SPACING.sm,
-    alignItems: "center",
-  },
-  soCancelText: { fontSize: FONT_SIZE.md, color: COLORS.storm },
+  soFullBtn: { alignSelf: "stretch" },
   bioSetupInput: { width: "100%", alignSelf: "stretch" },
+  bioCard: {
+    width: "100%",
+    backgroundColor: "rgba(9,13,18,0.96)",
+    borderRadius: RADIUS.xl,
+    paddingHorizontal: SPACING.xl,
+    paddingVertical: SPACING.xxxl,
+    borderWidth: 1,
+    borderColor: GLASS.cardBorder,
+    alignItems: "center",
+    gap: SPACING.lg,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.1,
+    shadowRadius: 30,
+    elevation: 20,
+  },
+  bioIconRing: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: GLASS.cardActive,
+    borderWidth: 1.5,
+    borderColor: GLASS.cardActiveBorder,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+  },
+  bioIconInner: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: "rgba(107,228,197,0.08)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  bioFullBtn: { alignSelf: "stretch" },
 });
+
+export default function SettingsScreenRoot() {
+  return (
+    <ErrorBoundary>
+      <SettingsScreen />
+    </ErrorBoundary>
+  );
+}

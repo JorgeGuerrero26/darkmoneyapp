@@ -1,5 +1,5 @@
 import { GestureDetector } from "react-native-gesture-handler";
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
@@ -8,7 +8,9 @@ import {
 
 import { useAuth } from "../../lib/auth-context";
 import { useNotificationsQuery } from "../../services/queries/workspace-data";
+import { useHaptics } from "../../hooks/useHaptics";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
+import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { Badge } from "../../components/ui/Badge";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, SPACING } from "../../constants/theme";
@@ -27,6 +29,7 @@ export default function MoreScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { user, signOut } = useAuth();
+  const haptics = useHaptics();
 
   const { data: notifications } = useNotificationsQuery(user?.id ?? null);
   const unreadCount = (notifications ?? []).filter((n) => n.status !== "read").length;
@@ -49,7 +52,7 @@ export default function MoreScreen() {
       Icon: BarChart3,
       title: "Presupuestos",
       subtitle: "Controla tus gastos por categoría",
-      route: "/(app)/budgets",
+      route: "/(app)/budgets?from=more",
     },
     {
       Icon: RefreshCw,
@@ -86,7 +89,7 @@ export default function MoreScreen() {
         {menuItems.map((item) => (
           <Card
             key={item.route}
-            onPress={() => router.push(item.route as any)}
+            onPress={() => { haptics.light(); router.push(item.route as any); }}
             style={styles.menuCard}
           >
             <View style={styles.menuRow}>
@@ -95,7 +98,7 @@ export default function MoreScreen() {
               </View>
               <View style={styles.menuInfo}>
                 <Text style={styles.menuTitle}>{item.title}</Text>
-                <Text style={styles.menuSubtitle}>{item.subtitle}</Text>
+                <Text style={styles.menuSubtitle} numberOfLines={1}>{item.subtitle}</Text>
               </View>
               {item.badge ? <Badge count={item.badge} /> : null}
               <ChevronRight size={16} color={COLORS.storm} />
@@ -103,12 +106,13 @@ export default function MoreScreen() {
           </Card>
         ))}
 
-        <TouchableOpacity
+        <Button
+          label="Cerrar sesión"
+          variant="danger"
+          size="lg"
           style={styles.signOutButton}
-          onPress={() => signOut()}
-        >
-          <Text style={styles.signOutText}>Cerrar sesión</Text>
-        </TouchableOpacity>
+          onPress={() => { haptics.warning(); void signOut(); }}
+        />
       </ScrollView>
     </View>
     </GestureDetector>
@@ -137,12 +141,5 @@ const styles = StyleSheet.create({
   menuSubtitle: { fontSize: FONT_SIZE.xs, color: COLORS.storm },
   signOutButton: {
     marginTop: SPACING.lg,
-    paddingVertical: SPACING.md,
-    alignItems: "center",
-    backgroundColor: COLORS.dangerMuted,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: COLORS.danger,
   },
-  signOutText: { color: COLORS.danger, fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.md },
 });

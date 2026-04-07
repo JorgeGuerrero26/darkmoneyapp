@@ -3,12 +3,12 @@ import { AppState, StyleSheet, Text, View } from "react-native";
 import { Fingerprint } from "lucide-react-native";
 import * as LocalAuthentication from "expo-local-authentication";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { BlurView } from "expo-blur";
 
 import { useUiStore } from "../../store/ui-store";
 import { useAuth } from "../../lib/auth-context";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
 import { Button } from "./Button";
+import { SafeBlurView } from "./SafeBlurView";
 
 const BG_TIMESTAMP_KEY = "darkmoney_bg_timestamp";
 const LOCK_TIMEOUT_MS = 10_000; // 10 segundos en background → cierre de sesión
@@ -154,7 +154,7 @@ export function BiometricLock() {
 
   return (
     <View style={styles.overlay}>
-      <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFillObject} />
+      <SafeBlurView intensity={80} tint="dark" style={StyleSheet.absoluteFillObject} />
       <View style={styles.card}>
 
         {/* Ícono con anillo de brillo */}

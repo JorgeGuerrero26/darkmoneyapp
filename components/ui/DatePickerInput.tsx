@@ -1,5 +1,6 @@
 import { useState } from "react";
 import {
+  Animated,
   Modal,
   Platform,
   Pressable,
@@ -16,6 +17,7 @@ import { es } from "date-fns/locale";
 import { CalendarDays, ChevronRight, Check, X } from "lucide-react-native";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
 import { AndroidDarkDatePickerModal } from "./AndroidDarkDatePickerModal";
+import { useDismissibleSheet } from "./useDismissibleSheet";
 
 type Props = {
   label: string;
@@ -71,6 +73,10 @@ export function DatePickerInput({
 }: Props) {
   const insets = useSafeAreaInsets();
   const [open, setOpen] = useState(false);
+  const iosSheetDismiss = useDismissibleSheet({
+    visible: open && Platform.OS === "ios",
+    onClose: () => setOpen(false),
+  });
   const [tempDate, setTempDate] = useState<Date>(() => initialPickerDate(value, minimumDate));
 
   const displayText = value
@@ -153,12 +159,17 @@ export function DatePickerInput({
         <Modal
           visible={open}
           transparent
-          animationType="slide"
+          animationType="fade"
           onRequestClose={() => setOpen(false)}
         >
-          <Pressable style={styles.overlay} onPress={() => setOpen(false)}>
+          <Animated.View style={[styles.overlay, iosSheetDismiss.backdropStyle]}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setOpen(false)} />
             <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFill} />
-            <View style={[styles.iosSheet, { paddingBottom: Math.max(SPACING.lg, insets.bottom + SPACING.md) }]} onStartShouldSetResponder={() => true}>
+            <Animated.View
+              style={[styles.iosSheet, { paddingBottom: Math.max(SPACING.lg, insets.bottom + SPACING.md) }, iosSheetDismiss.sheetStyle]}
+              onStartShouldSetResponder={() => true}
+              {...iosSheetDismiss.panHandlers}
+            >
               {/* Drag handle */}
               <View style={styles.handle} />
 
@@ -211,8 +222,8 @@ export function DatePickerInput({
                   style={styles.iosInlinePicker}
                 />
               </View>
-            </View>
-          </Pressable>
+            </Animated.View>
+          </Animated.View>
         </Modal>
       )}
     </View>

@@ -1,7 +1,7 @@
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 
 import { supabase } from "../../lib/supabase";
-import { MOVEMENTS_PAGE_SIZE } from "../../constants/config";
+import { MOVEMENTS_PAGE_SIZE, SUPABASE_STORAGE_BUCKET } from "../../constants/config";
 import { filterDateFrom, filterDateTo } from "../../lib/date";
 import type { MovementRecord, MovementStatus, MovementType } from "../../types/domain";
 
@@ -19,6 +19,16 @@ type MovementPage = {
   data: MovementRecord[];
   hasMore: boolean;
   nextPage: number;
+};
+
+export type MovementAttachmentFile = {
+  filePath: string;
+  fileName: string;
+  signedUrl: string;
+  mimeType?: string | null;
+  sizeBytes?: number | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
 };
 
 async function fetchMovementsPage(
@@ -136,6 +146,61 @@ export function useMovementQuery(movementId?: number | null) {
       } as MovementRecord;
     },
     enabled: Boolean(movementId),
+    staleTime: 30_000,
+  });
+}
+
+export function useMovementAttachmentsQuery(
+  workspaceId?: number | null,
+  movementId?: number | null,
+) {
+  return useQuery({
+    queryKey: ["movement-attachments", workspaceId ?? null, movementId ?? null],
+    queryFn: async (): Promise<MovementAttachmentFile[]> => {
+      if (!supabase) throw new Error("Supabase no está configurado.");
+      if (!workspaceId || !movementId) return [];
+
+      const folderPath = `${workspaceId}/movement/${movementId}`;
+      const { data: files, error: listError } = await supabase.storage
+        .from(SUPABASE_STORAGE_BUCKET)
+        .list(folderPath, { limit: 20 });
+
+      if (listError) throw listError;
+
+      const visibleFiles = (files ?? [])
+        .filter((item) => item.name && !item.name.endsWith("/"))
+        .sort((a, b) => {
+          const aTime = a.updated_at ?? a.created_at ?? "";
+          const bTime = b.updated_at ?? b.created_at ?? "";
+          return bTime.localeCompare(aTime) || b.name.localeCompare(a.name);
+        });
+
+      if (visibleFiles.length === 0) return [];
+
+      const filePaths = visibleFiles.map((item) => `${folderPath}/${item.name}`);
+      const { data: signedUrls, error: signedError } = await supabase.storage
+        .from(SUPABASE_STORAGE_BUCKET)
+        .createSignedUrls(filePaths, 60 * 60);
+
+      if (signedError) throw signedError;
+
+      const attachments = visibleFiles.map((item, index): MovementAttachmentFile | null => {
+          const signedUrl = signedUrls?.[index]?.signedUrl;
+          if (!signedUrl) return null;
+          return {
+            filePath: filePaths[index],
+            fileName: item.name,
+            signedUrl,
+            mimeType: item.metadata?.mimetype ?? null,
+            sizeBytes: item.metadata?.size ? Number(item.metadata.size) : null,
+            createdAt: item.created_at ?? null,
+            updatedAt: item.updated_at ?? null,
+          };
+        });
+
+      return attachments.filter((item): item is MovementAttachmentFile => item !== null);
+    },
+    enabled: Boolean(workspaceId && movementId),
     staleTime: 30_000,
   });
 }
