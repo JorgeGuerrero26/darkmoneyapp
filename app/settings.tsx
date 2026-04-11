@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { ErrorBoundary } from "../components/ui/ErrorBoundary";
 import {
+  ActivityIndicator,
   Animated,
+  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -13,6 +15,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as LocalAuthentication from "expo-local-authentication";
@@ -47,7 +50,7 @@ const ROLE_OPTIONS: { label: string; value: Exclude<WorkspaceRole, "owner"> }[] 
 function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { profile, saveProfile, signOut } = useAuth();
+  const { profile, saveProfile, saveAvatar, removeAvatar, signOut } = useAuth();
   const { activeWorkspace, activeWorkspaceId } = useWorkspace();
   const { workspaces } = useWorkspaceListStore();
   const { showToast } = useToast();
@@ -58,6 +61,7 @@ function SettingsScreen() {
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | undefined>();
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
 
   // ── Biometrics ───────────────────────────────────────────────────────────
   const SECURE_EMAIL_KEY = "darkmoney_bio_email";
@@ -221,6 +225,42 @@ function SettingsScreen() {
     }
   }
 
+  async function handleAvatarPress() {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") {
+      showToast("Se necesita permiso para acceder a la galería", "error");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: "images",
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+    if (result.canceled || !result.assets[0]) return;
+    setIsUploadingAvatar(true);
+    try {
+      await saveAvatar(result.assets[0].uri);
+      showToast("Foto de perfil actualizada", "success");
+    } catch {
+      showToast("No se pudo subir la foto", "error");
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  }
+
+  async function handleAvatarRemove() {
+    setIsUploadingAvatar(true);
+    try {
+      await removeAvatar();
+      showToast("Foto de perfil eliminada", "success");
+    } catch {
+      showToast("No se pudo eliminar la foto", "error");
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  }
+
   function handleSignOut() {
     setSignOutVisible(true);
   }
@@ -237,9 +277,30 @@ function SettingsScreen() {
           {/* Profile */}
           <Card>
             <Text style={styles.sectionTitle}>Perfil</Text>
-            <View style={styles.profileAvatar}>
-              <Text style={styles.avatarText}>{profile?.initials ?? "DM"}</Text>
-            </View>
+            <TouchableOpacity
+              style={styles.avatarWrap}
+              onPress={handleAvatarPress}
+              activeOpacity={0.8}
+              disabled={isUploadingAvatar}
+            >
+              {profile?.avatarUrl ? (
+                <Image source={{ uri: profile.avatarUrl }} style={styles.avatarImage} />
+              ) : (
+                <View style={styles.avatarFallback}>
+                  <Text style={styles.avatarText}>{profile?.initials ?? "DM"}</Text>
+                </View>
+              )}
+              <View style={styles.avatarOverlay}>
+                {isUploadingAvatar
+                  ? <ActivityIndicator size="small" color="#FFF" />
+                  : <Text style={styles.avatarEditLabel}>Editar</Text>}
+              </View>
+            </TouchableOpacity>
+            {profile?.avatarUrl ? (
+              <TouchableOpacity onPress={handleAvatarRemove} disabled={isUploadingAvatar}>
+                <Text style={styles.avatarRemoveText}>Eliminar foto</Text>
+              </TouchableOpacity>
+            ) : null}
             <View style={styles.form}>
               <Input label="Nombre completo" value={fullName} onChangeText={setFullName} autoCapitalize="words" />
               <Input label="Correo electrónico" value={profile?.email ?? ""} editable={false} style={styles.disabledInput} />
@@ -505,15 +566,45 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginBottom: SPACING.md,
   },
-  profileAvatar: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+  avatarWrap: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    alignSelf: "center",
+    marginBottom: SPACING.sm,
+    overflow: "hidden",
+  },
+  avatarImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+  },
+  avatarFallback: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     backgroundColor: COLORS.primary,
     alignItems: "center",
     justifyContent: "center",
-    alignSelf: "center",
-    marginBottom: SPACING.lg,
+  },
+  avatarOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.38)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarEditLabel: {
+    fontSize: FONT_SIZE.xs,
+    fontFamily: FONT_FAMILY.bodyMedium,
+    color: "#FFF",
+    letterSpacing: 0.3,
+  },
+  avatarRemoveText: {
+    fontSize: FONT_SIZE.xs,
+    fontFamily: FONT_FAMILY.body,
+    color: COLORS.storm,
+    textAlign: "center",
+    marginBottom: SPACING.md,
   },
   avatarText: { fontSize: FONT_SIZE.xxl, fontFamily: FONT_FAMILY.heading, color: "#FFF" },
   form: { gap: SPACING.md },

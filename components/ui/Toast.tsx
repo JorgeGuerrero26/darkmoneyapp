@@ -289,7 +289,7 @@ function ToastItem({ message, variant, onDismiss }: ToastItemProps) {
 
   const progressWidth = progress.interpolate({
     inputRange: [0, 1],
-    outputRange: [0, expandedWidth - SPACING.sm * 2],
+    outputRange: ["0%", "100%"],
   });
 
   return (
@@ -346,19 +346,19 @@ function ToastItem({ message, variant, onDismiss }: ToastItemProps) {
                   {message}
                 </Text>
               </Animated.View>
-
-              <Animated.View style={[styles.progressTrack, { opacity: textOpacity }]}>
-                <Animated.View
-                  style={[
-                    styles.progressFill,
-                    {
-                      backgroundColor: config.color,
-                      width: progressWidth,
-                    },
-                  ]}
-                />
-              </Animated.View>
             </View>
+
+            <Animated.View style={[styles.progressTrack, { opacity: textOpacity }]}>
+              <Animated.View
+                style={[
+                  styles.progressFill,
+                  {
+                    backgroundColor: config.color,
+                    width: progressWidth,
+                  },
+                ]}
+              />
+            </Animated.View>
           </Pressable>
         </Animated.View>
       </View>
@@ -437,16 +437,15 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   progressTrack: {
-    position: "absolute",
-    left: SPACING.sm,
-    right: SPACING.sm,
-    bottom: 6,
-    height: 2,
-    borderRadius: 999,
+    height: 3,
+    marginHorizontal: SPACING.lg,
+    marginTop: 3,
+    borderBottomLeftRadius: BUBBLE_SIZE / 2,
+    borderBottomRightRadius: BUBBLE_SIZE / 2,
     backgroundColor: "rgba(255,255,255,0.06)",
+    overflow: "hidden",
   },
   progressFill: {
     height: "100%",
-    borderRadius: 999,
   },
 });
