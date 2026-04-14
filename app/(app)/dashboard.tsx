@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect } from "expo-router";
 import {
+  Image,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -38,11 +39,14 @@ import { useWorkspace, useWorkspaceListStore } from "../../lib/workspace-context
 import {
   useWorkspaceSnapshotQuery,
   useDashboardMovementsQuery,
+  useDashboardAnalyticsQuery,
+  usePersistDashboardAnalyticsMutation,
   useSharedObligationsQuery,
   useNotificationsQuery,
   useUserEntitlementQuery,
   mergeWorkspaceAndSharedObligations,
   type DashboardMovementRow,
+  type DashboardAnalyticsBundle,
 } from "../../services/queries/workspace-data";
 import type { ExchangeRateSummary } from "../../types/domain";
 import { useUiStore } from "../../store/ui-store";
@@ -82,6 +86,27 @@ const PERIOD_LABELS: Record<Period, string> = {
   week: "Semana",
   month: "Mes",
   last_30: "30 días",
+};
+
+type AdvancedPreset = "manual" | "liquidity" | "portfolio" | "control" | "analytics";
+
+const DASHBOARD_ADVANCED_PRESET_KEY = "darkmoney.dashboard.advancedPreset";
+const ADVANCED_WIDGET_LIBRARY = ["Flujo", "Salud", "Suscripciones", "Cartera", "Semanal", "Pulso", "Radar", "Calidad", "Aprendizaje", "Actividad"];
+
+const ADVANCED_PRESET_META: Record<AdvancedPreset, { title: string; subtitle: string; cta: string; situationalSubtitle: string }> = {
+  manual:    { title: "Manual",          subtitle: "Elige tus propios widgets abajo y ordénalos como quieras.", cta: "Armar mi panel",    situationalSubtitle: "Sin urgencia detectada — personaliza tú mismo." },
+  liquidity: { title: "Ver caja",        subtitle: "Caja, compromisos próximos y cierre estimado del mes.",    cta: "Vigilar liquidez",  situationalSubtitle: "Próximos 7–30 días bajo presión — conviene vigilar caja." },
+  portfolio: { title: "Revisar cartera", subtitle: "Cobros, pagos y vencimientos de la cartera.",              cta: "Ordenar cartera",   situationalSubtitle: "Hay vencimientos sin resolver que distorsionan la lectura." },
+  control:   { title: "Limpiar datos",   subtitle: "Categorización, duplicados y suscripciones.",              cta: "Mejorar calidad",   situationalSubtitle: "Categorías incompletas — las señales del dashboard pierden precisión." },
+  analytics: { title: "Analizar mes",    subtitle: "Patrones, comparativos y aprendizaje del sistema.",        cta: "Ver patrones",      situationalSubtitle: "Base suficientemente sana para lectura fina de hábitos." },
+};
+
+const ADVANCED_PRESET_WIDGETS: Record<AdvancedPreset, string[]> = {
+  manual: [],
+  liquidity: ["Flujo", "Salud", "Pulso", "Suscripciones"],
+  portfolio: ["Cartera", "Flujo", "Actividad"],
+  control: ["Calidad", "Actividad", "Suscripciones"],
+  analytics: ["Semanal", "Pulso", "Radar", "Aprendizaje"],
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -421,6 +446,12 @@ function buildFutureFlowWindows(
     nextDueDate: string;
     status: string;
   }>,
+  recurringIncome: Array<{
+    amount: number;
+    currencyCode: string;
+    nextExpectedDate: string;
+    status: string;
+  }>,
   displayCurrency: string,
   exchangeRateMap: Map<string, number>,
   currentVisibleBalance: number,
@@ -478,6 +509,19 @@ function buildFutureFlowWindows(
       );
     }
 
+    for (const income of recurringIncome) {
+      if (income.status !== "active") continue;
+      const expectedDate = parseDisplayDate(income.nextExpectedDate);
+      if (expectedDate < today || expectedDate > horizon) continue;
+      scheduledCount += 1;
+      expectedInflow += convertDashboardCurrency(
+        income.amount,
+        income.currencyCode,
+        displayCurrency,
+        exchangeRateMap,
+      );
+    }
+
     return {
       days,
       estimatedBalance: currentVisibleBalance + expectedInflow - expectedOutflow,
@@ -488,6 +532,437 @@ function buildFutureFlowWindows(
       scheduledCount,
     };
   });
+}
+
+type DashboardCategorySuggestion = {
+  movementId: number;
+  description: string;
+  occurredAt: string;
+  amount: number;
+  suggestedCategoryId: number;
+  suggestedCategoryName: string;
+  confidence: number;
+  matchedSamples: number;
+  reasons: string[];
+};
+
+type DashboardProjectionModel = {
+  expectedBalance: number;
+  conservativeBalance: number;
+  optimisticBalance: number;
+  committedInflow: number;
+  committedOutflow: number;
+  variableIncomeProjection: number;
+  variableExpenseProjection: number;
+  confidence: number;
+  confidenceLabel: string;
+  remainingDays: number;
+};
+
+type DashboardAnomalyFinding = {
+  key: string;
+  movementId: number;
+  title: string;
+  body: string;
+  meta: string;
+  level: "strong" | "review";
+  score: number;
+  reasons: string[];
+};
+
+function normalizeAnalyticsText(value: string) {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[0-9]/g, " ")
+    .replace(/[^a-z\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function tokenizeAnalyticsText(value: string) {
+  return normalizeAnalyticsText(value)
+    .split(" ")
+    .filter((token) => token.length >= 3);
+}
+
+function buildCategorySuggestions(
+  movements: DashboardMovementRow[],
+  categories: Array<{ id: number; name: string }>,
+  ctx: ConversionCtx,
+): DashboardCategorySuggestion[] {
+  const categoryMap = new Map(categories.map((category) => [category.id, category.name]));
+  const categorizedHistory = movements
+    .filter((movement) => movement.status === "posted")
+    .filter(isCategorizedCashflow)
+    .filter((movement) => movement.categoryId != null)
+    .sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime());
+
+  const uncategorizedTargets = movements
+    .filter((movement) => movement.status === "posted")
+    .filter(isCategorizedCashflow)
+    .filter((movement) => movement.categoryId == null)
+    .sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime())
+    .slice(0, 8);
+
+  const suggestions: DashboardCategorySuggestion[] = [];
+
+  for (const target of uncategorizedTargets) {
+    const targetNormalized = normalizeAnalyticsText(target.description);
+    const targetTokens = tokenizeAnalyticsText(target.description);
+    const targetAmount = movementActsAsIncome(target) ? incomeAmt(target, ctx) : expenseAmt(target, ctx);
+    const isTargetIncome = movementActsAsIncome(target);
+    const categoryScores = new Map<number, { score: number; samples: number; exact: number; closeAmount: number; sameCounterparty: number }>();
+
+    for (const sample of categorizedHistory) {
+      if (sample.id === target.id || sample.categoryId == null) continue;
+      if (movementActsAsIncome(sample) !== isTargetIncome) continue;
+
+      const sampleNormalized = normalizeAnalyticsText(sample.description);
+      const sampleTokens = tokenizeAnalyticsText(sample.description);
+      const sampleAmount = movementActsAsIncome(sample) ? incomeAmt(sample, ctx) : expenseAmt(sample, ctx);
+      let score = 0;
+
+      if (targetNormalized && sampleNormalized && targetNormalized === sampleNormalized) score += 5;
+
+      if (targetTokens.length > 0 && sampleTokens.length > 0) {
+        const overlap = targetTokens.filter((token) => sampleTokens.includes(token)).length;
+        const overlapRatio = overlap / Math.max(targetTokens.length, sampleTokens.length);
+        if (overlapRatio >= 0.75) score += 2.5;
+        else if (overlapRatio >= 0.45) score += 1.25;
+      }
+
+      if (target.counterpartyId && sample.counterpartyId && target.counterpartyId === sample.counterpartyId) score += 2;
+
+      if (targetAmount > 0.009 && sampleAmount > 0.009) {
+        const ratio = Math.abs(targetAmount - sampleAmount) / Math.max(targetAmount, sampleAmount);
+        if (ratio <= 0.12) score += 1.5;
+        else if (ratio <= 0.3) score += 0.75;
+      }
+
+      if (score < 1.25) continue;
+
+      const current = categoryScores.get(sample.categoryId) ?? { score: 0, samples: 0, exact: 0, closeAmount: 0, sameCounterparty: 0 };
+      categoryScores.set(sample.categoryId, {
+        score: current.score + score,
+        samples: current.samples + 1,
+        exact: current.exact + (targetNormalized && sampleNormalized && targetNormalized === sampleNormalized ? 1 : 0),
+        closeAmount: current.closeAmount + (targetAmount > 0.009 && sampleAmount > 0.009 && Math.abs(targetAmount - sampleAmount) / Math.max(targetAmount, sampleAmount) <= 0.12 ? 1 : 0),
+        sameCounterparty: current.sameCounterparty + (target.counterpartyId && sample.counterpartyId && target.counterpartyId === sample.counterpartyId ? 1 : 0),
+      });
+    }
+
+    const ranked = Array.from(categoryScores.entries()).sort((a, b) => b[1].score - a[1].score);
+    if (ranked.length === 0) continue;
+
+    const [bestCategoryId, best] = ranked[0];
+    const secondScore = ranked[1]?.[1].score ?? 0;
+    const scoreGap = Math.max(0, best.score - secondScore);
+    const confidence = Math.max(
+      0.46,
+      Math.min(
+        0.97,
+        0.38 +
+          Math.min(best.samples, 4) * 0.09 +
+          Math.min(best.exact, 2) * 0.14 +
+          Math.min(best.closeAmount, 2) * 0.06 +
+          Math.min(best.sameCounterparty, 1) * 0.08 +
+          Math.min(scoreGap / 6, 0.18),
+      ),
+    );
+
+    if (best.score < 3.4 || confidence < 0.62) continue;
+
+    const reasons: string[] = [];
+    if (best.exact > 0) reasons.push("misma descripción ya vista");
+    if (best.sameCounterparty > 0) reasons.push("misma contraparte");
+    if (best.closeAmount > 0) reasons.push("monto parecido");
+    if (best.samples >= 2) reasons.push(`${best.samples} casos parecidos en tu historial`);
+    if (reasons.length === 0) reasons.push("patrón repetido en tu historial");
+
+    suggestions.push({
+      movementId: target.id,
+      description: target.description.trim() || "Movimiento sin descripción",
+      occurredAt: target.occurredAt,
+      amount: targetAmount,
+      suggestedCategoryId: bestCategoryId,
+      suggestedCategoryName: categoryMap.get(bestCategoryId) ?? "Categoría sugerida",
+      confidence,
+      matchedSamples: best.samples,
+      reasons,
+    });
+  }
+
+  return suggestions
+    .sort((a, b) => b.confidence - a.confidence || new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime())
+    .slice(0, 4);
+}
+
+function buildMonthProjectionModel(
+  movements: DashboardMovementRow[],
+  obligations: Array<{
+    direction: string;
+    pendingAmount: number;
+    installmentAmount?: number | null;
+    currencyCode: string;
+    dueDate: string | null;
+    status: string;
+  }>,
+  subscriptions: Array<{
+    amount: number;
+    currencyCode: string;
+    nextDueDate: string;
+    status: string;
+  }>,
+  recurringIncome: Array<{
+    amount: number;
+    currencyCode: string;
+    nextExpectedDate: string;
+    status: string;
+  }>,
+  currentVisibleBalance: number,
+  ctx: ConversionCtx,
+): DashboardProjectionModel {
+  const today = new Date();
+  const monthStart = startOfMonth(today);
+  const monthEnd = endOfMonth(today);
+  const remainingDays = Math.max(0, differenceInDays(monthEnd, today));
+  const daysElapsed = Math.max(1, differenceInDays(today, monthStart) + 1);
+  const futureWindows = buildFutureFlowWindows(
+    obligations,
+    subscriptions,
+    recurringIncome,
+    ctx.displayCurrency,
+    ctx.exchangeRateMap,
+    currentVisibleBalance,
+  );
+  const monthWindow = futureWindows[2];
+
+  const variableIncomeObserved = movements
+    .filter((movement) => inRange(movement, monthStart, today))
+    .filter((movement) => movement.status === "posted")
+    .filter((movement) => movement.movementType === "income" || movement.movementType === "refund")
+    .reduce((sum, movement) => sum + incomeAmt(movement, ctx), 0);
+
+  const variableExpenseObserved = movements
+    .filter((movement) => inRange(movement, monthStart, today))
+    .filter((movement) => movement.status === "posted")
+    .filter((movement) => movement.movementType === "expense")
+    .reduce((sum, movement) => sum + expenseAmt(movement, ctx), 0);
+
+  const lastThirtyDays = Array.from({ length: 30 }, (_, index) => {
+    const day = subDays(today, 29 - index);
+    const start = startOfDay(day);
+    const end = endOfDay(day);
+    const income = movements
+      .filter((movement) => inRange(movement, start, end))
+      .filter((movement) => movement.status === "posted")
+      .filter((movement) => movement.movementType === "income" || movement.movementType === "refund")
+      .reduce((sum, movement) => sum + incomeAmt(movement, ctx), 0);
+    const expense = movements
+      .filter((movement) => inRange(movement, start, end))
+      .filter((movement) => movement.status === "posted")
+      .filter((movement) => movement.movementType === "expense")
+      .reduce((sum, movement) => sum + expenseAmt(movement, ctx), 0);
+    return { income, expense };
+  });
+
+  const incomeDailyAvg = variableIncomeObserved / daysElapsed;
+  const expenseDailyAvg = variableExpenseObserved / daysElapsed;
+  const incomeVarianceBase = lastThirtyDays.reduce((sum, day) => sum + Math.pow(day.income - incomeDailyAvg, 2), 0) / Math.max(lastThirtyDays.length, 1);
+  const expenseVarianceBase = lastThirtyDays.reduce((sum, day) => sum + Math.pow(day.expense - expenseDailyAvg, 2), 0) / Math.max(lastThirtyDays.length, 1);
+  const incomeVolatility = incomeDailyAvg > 0.009 ? Math.min(0.35, Math.sqrt(incomeVarianceBase) / Math.max(incomeDailyAvg, 1)) : 0.28;
+  const expenseVolatility = expenseDailyAvg > 0.009 ? Math.min(0.35, Math.sqrt(expenseVarianceBase) / Math.max(expenseDailyAvg, 1)) : 0.18;
+
+  const variableIncomeProjection = incomeDailyAvg * remainingDays;
+
+  // A4: corrección de patrón semanal — solo si hay ≥3 semanas de historia
+  const weeklyExpenseTotals = Array.from({ length: 7 }, () => ({ sum: 0, count: 0 }));
+  for (const movement of movements.filter((m) => m.status === "posted" && m.movementType === "expense")) {
+    const d = getDay(new Date(movement.occurredAt));
+    const idx = d === 0 ? 6 : d - 1;
+    weeklyExpenseTotals[idx].sum += expenseAmt(movement, ctx);
+    weeklyExpenseTotals[idx].count += 1;
+  }
+  const weeksOfHistory = Math.floor(daysElapsed / 7);
+  let patternWeightsApplied = false;
+  let variableExpenseProjection = expenseDailyAvg * remainingDays;
+  if (weeksOfHistory >= 3 && expenseDailyAvg > 0.009) {
+    const avgByDay = weeklyExpenseTotals.map((d) => d.count > 0 ? d.sum / d.count : expenseDailyAvg);
+    const meanDayAvg = avgByDay.reduce((s, v) => s + v, 0) / 7;
+    if (meanDayAvg > 0.009) {
+      const weights = avgByDay.map((v) => v / meanDayAvg);
+      let remainingWeightedDays = 0;
+      for (let i = 0; i < remainingDays; i++) {
+        const d = addDays(today, i + 1);
+        const dow = getDay(d);
+        const idx = dow === 0 ? 6 : dow - 1;
+        remainingWeightedDays += weights[idx];
+      }
+      variableExpenseProjection = expenseDailyAvg * remainingWeightedDays;
+      patternWeightsApplied = true;
+    }
+  }
+
+  const expectedBalance =
+    currentVisibleBalance +
+    monthWindow.expectedInflow -
+    monthWindow.expectedOutflow +
+    variableIncomeProjection -
+    variableExpenseProjection;
+  const conservativeBalance =
+    currentVisibleBalance +
+    monthWindow.expectedInflow * 0.9 -
+    monthWindow.expectedOutflow * 1.03 +
+    variableIncomeProjection * Math.max(0.45, 0.78 - incomeVolatility) -
+    variableExpenseProjection * (1.04 + expenseVolatility);
+  const optimisticBalance =
+    currentVisibleBalance +
+    monthWindow.expectedInflow * 1.02 -
+    monthWindow.expectedOutflow +
+    variableIncomeProjection * (1.05 + incomeVolatility * 0.35) -
+    variableExpenseProjection * Math.max(0.72, 0.92 - expenseVolatility * 0.25);
+
+  const activeDays = lastThirtyDays.filter((day) => day.income > 0.009 || day.expense > 0.009).length;
+  const confidence = Math.round(
+    Math.min(
+      92,
+      Math.max(
+        34,
+        Math.min(1, activeDays / 18) * 40 +
+          Math.min(1, daysElapsed / 12) * 20 +
+          Math.min(1, (30 - (incomeVolatility + expenseVolatility) * 32) / 30) * 32,
+      ),
+    ),
+  );
+  const confidenceLabel = confidence >= 78 ? "Alta" : confidence >= 60 ? "Media" : "Base corta";
+
+  return {
+    expectedBalance,
+    conservativeBalance,
+    optimisticBalance,
+    committedInflow: monthWindow.expectedInflow,
+    committedOutflow: monthWindow.expectedOutflow,
+    variableIncomeProjection,
+    variableExpenseProjection,
+    confidence,
+    confidenceLabel,
+    remainingDays,
+    patternWeightsApplied,
+  };
+}
+
+function buildAnomalyFindings(
+  movements: DashboardMovementRow[],
+  ctx: ConversionCtx,
+  categoryMap: Map<number, string>,
+  accountMap: Map<number, string>,
+): DashboardAnomalyFinding[] {
+  const expenses = movements
+    .filter(isExpense)
+    .filter((movement) => movement.description.trim())
+    .sort((a, b) => new Date(a.occurredAt).getTime() - new Date(b.occurredAt).getTime());
+
+  const descriptionHistory = new Map<string, number[]>();
+  const categoryHistory = new Map<number, number[]>();
+  const duplicateBuckets = new Map<string, DashboardMovementRow[]>();
+  const findings: DashboardAnomalyFinding[] = [];
+
+  for (const movement of expenses) {
+    const amount = expenseAmt(movement, ctx);
+    const normalizedDescription = normalizeAnalyticsText(movement.description) || "sin-descripcion";
+    const descriptionSamples = descriptionHistory.get(normalizedDescription) ?? [];
+    const categorySamples = movement.categoryId != null ? categoryHistory.get(movement.categoryId) ?? [] : [];
+
+    if (amount >= 12 && descriptionSamples.length >= 3) {
+      const n = descriptionSamples.length;
+      const avg = descriptionSamples.reduce((sum, value) => sum + value, 0) / n;
+      if (avg > 0) {
+        const variance = descriptionSamples.reduce((sum, value) => sum + Math.pow(value - avg, 2), 0) / n;
+        const std = Math.sqrt(variance);
+        const z = (amount - avg) / Math.max(std, avg * 0.10);
+        if (z >= 2.0) {
+          const accountLabel = accountMap.get(movementDisplayAccountId(movement) ?? -1) ?? "Cuenta";
+          findings.push({
+            key: `desc-${movement.id}`,
+            movementId: movement.id,
+            title: movement.description.trim() || "Movimiento",
+            body: `${z.toFixed(1)}σ por encima de tu promedio habitual (${avg.toFixed(2)} ± ${std.toFixed(2)}).`,
+            meta: `${accountLabel} · ${formatCurrency(amount, ctx.displayCurrency)} · ${format(new Date(movement.occurredAt), "d MMM", { locale: es })}`,
+            level: z >= 3.0 ? "strong" : "review",
+            score: Math.min(99, Math.round(45 + Math.min(z, 6) * 8)),
+            reasons: [
+              "pico estadístico contra su propia descripción",
+              `${n} casos previos comparables`,
+            ],
+          });
+        }
+      }
+    }
+
+    if (movement.categoryId != null && amount >= 15 && categorySamples.length >= 4) {
+      const n = categorySamples.length;
+      const avg = categorySamples.reduce((sum, value) => sum + value, 0) / n;
+      if (avg > 0) {
+        const variance = categorySamples.reduce((sum, value) => sum + Math.pow(value - avg, 2), 0) / n;
+        const std = Math.sqrt(variance);
+        const z = (amount - avg) / Math.max(std, avg * 0.10);
+        if (z >= 2.0) {
+          findings.push({
+            key: `cat-${movement.id}`,
+            movementId: movement.id,
+            title: movement.description.trim() || (categoryMap.get(movement.categoryId) ?? "Movimiento"),
+            body: `${z.toFixed(1)}σ por encima de tu promedio habitual en esta categoría (${avg.toFixed(2)} ± ${std.toFixed(2)}).`,
+            meta: `${categoryMap.get(movement.categoryId) ?? "Sin categoría"} · ${formatCurrency(amount, ctx.displayCurrency)} · ${format(new Date(movement.occurredAt), "d MMM", { locale: es })}`,
+            level: z >= 3.0 ? "strong" : "review",
+            score: Math.min(99, Math.round(45 + Math.min(z, 6) * 8)),
+            reasons: [
+              "pico estadístico contra su categoría",
+              `${n} gastos previos de referencia`,
+            ],
+          });
+        }
+      }
+    }
+
+    descriptionHistory.set(normalizedDescription, [...descriptionSamples.slice(-5), amount]);
+    if (movement.categoryId != null) {
+      categoryHistory.set(movement.categoryId, [...categorySamples.slice(-7), amount]);
+    }
+
+    const duplicateKey = `${movement.occurredAt.slice(0, 10)}|${movementDisplayAmount(movement).toFixed(2)}|${normalizedDescription}`;
+    duplicateBuckets.set(duplicateKey, [...(duplicateBuckets.get(duplicateKey) ?? []), movement]);
+  }
+
+  for (const bucket of duplicateBuckets.values()) {
+    if (bucket.length < 2) continue;
+    const first = bucket[0];
+    findings.push({
+      key: `dup-${first.id}`,
+      movementId: first.id,
+      title: first.description.trim() || "Posible duplicado",
+      body: `${bucket.length} movimientos con la misma descripción y monto aparecieron en una ventana de 1 día.`,
+      meta: `${categoryMap.get(first.categoryId ?? -1) ?? "Sin categoría"} · ${formatCurrency(expenseAmt(first, ctx), ctx.displayCurrency)} · ${format(new Date(first.occurredAt), "d MMM", { locale: es })}`,
+      level: bucket.length >= 3 ? "strong" : "review",
+      score: Math.min(96, 56 + (bucket.length - 2) * 11),
+      reasons: [
+        "misma descripción y monto",
+        `${bucket.length} repeticiones en una ventana corta`,
+      ],
+    });
+  }
+
+  const unique = new Map<string, DashboardAnomalyFinding>();
+  for (const finding of findings.sort((a, b) => {
+    if (a.score !== b.score) return b.score - a.score;
+    if (a.level !== b.level) return a.level === "strong" ? -1 : 1;
+    return b.movementId - a.movementId;
+  })) {
+    if (!unique.has(finding.key)) unique.set(finding.key, finding);
+  }
+
+  return Array.from(unique.values()).slice(0, 4);
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -818,10 +1293,11 @@ function AccountsScroll({ accounts, onPress }: {
 
 // Upcoming section (obligations + subscriptions, next 30 days)
 function UpcomingSection({
-  obligations, subscriptions, router,
+  obligations, subscriptions, recurringIncome, router,
 }: {
   obligations: { id: number; title: string; dueDate: string | null; pendingAmount: number; currencyCode: string }[];
   subscriptions: { id: number; name: string; nextDueDate: string; amount: number; currencyCode: string }[];
+  recurringIncome: { id: number; name: string; nextExpectedDate: string; amount: number; currencyCode: string }[];
   router: ReturnType<typeof useRouter>;
 }) {
   const now = new Date();
@@ -848,6 +1324,16 @@ function UpcomingSection({
         key: `sub-${sub.id}`, label: sub.name, amount: sub.amount,
         currency: sub.currencyCode, date: d,
         onPress: () => router.push(`/subscription/${sub.id}`),
+      });
+    }
+  }
+  for (const income of recurringIncome) {
+    const d = new Date(income.nextExpectedDate);
+    if (d >= now && d <= limit) {
+      items.push({
+        key: `ri-${income.id}`, label: `Ingreso fijo · ${income.name}`, amount: income.amount,
+        currency: income.currencyCode, date: d,
+        onPress: () => router.push("/recurring-income"),
       });
     }
   }
@@ -880,33 +1366,79 @@ function UpcomingSection({
 function BudgetsSection({
   budgets, router,
 }: {
-  budgets: { id: number; name: string; usedPercent: number; alertPercent: number; spentAmount: number; limitAmount: number; currencyCode: string; isOverLimit: boolean; isNearLimit: boolean }[];
+  budgets: { id: number; name: string; usedPercent: number; alertPercent: number; spentAmount: number; limitAmount: number; currencyCode: string; isOverLimit: boolean; isNearLimit: boolean; periodStart: string; periodEnd: string }[];
   router: ReturnType<typeof useRouter>;
 }) {
+  const today = new Date();
+
+  // Tier 3: proyección de burn rate — presupuestos que aún no alertaron pero van a exceder
+  const burnRateTier = budgets.filter((b) => {
+    if (b.isOverLimit || b.isNearLimit) return false;
+    const periodEnd = parseDisplayDate(b.periodEnd);
+    const periodStart = parseDisplayDate(b.periodStart);
+    const daysLeft = Math.max(1, differenceInDays(periodEnd, today));
+    const daysTotal = Math.max(1, differenceInDays(periodEnd, periodStart));
+    const daysElapsed = Math.max(1, daysTotal - daysLeft);
+    const dailyBurn = b.spentAmount / daysElapsed;
+    const projectedSpend = b.spentAmount + dailyBurn * daysLeft;
+    return projectedSpend / b.limitAmount > 0.95;
+  });
+
   const alert = budgets.filter((b) => b.isOverLimit || b.isNearLimit);
-  if (alert.length === 0) return null;
+  const visible = [...alert, ...burnRateTier.filter((b) => !alert.find((a) => a.id === b.id))];
+  if (visible.length === 0) return null;
+
   return (
     <View>
       <SectionTitle>Presupuestos con alerta</SectionTitle>
-      {alert.map((b) => (
-        <TouchableOpacity
-          key={b.id}
-          style={subStyles.budgetRow}
-          onPress={() => router.push("/(app)/budgets?from=dashboard")}
-          activeOpacity={0.8}
-        >
-          <View style={subStyles.budgetHeader}>
-            <Text style={subStyles.budgetName} numberOfLines={1}>{b.name}</Text>
-            <Text style={[subStyles.budgetPct, b.isOverLimit ? { color: COLORS.expense } : { color: COLORS.warning }]}>
-              {Math.round(b.usedPercent)}%
+      {visible.map((b) => {
+        const isBurnTier = !b.isOverLimit && !b.isNearLimit;
+        const periodEnd = parseDisplayDate(b.periodEnd);
+        const periodStart = parseDisplayDate(b.periodStart);
+        const daysLeft = Math.max(1, differenceInDays(periodEnd, today));
+        const daysTotal = Math.max(1, differenceInDays(periodEnd, periodStart));
+        const daysElapsed = Math.max(1, daysTotal - daysLeft);
+        const dailyBurn = b.spentAmount / daysElapsed;
+        const projectedPercent = Math.min(140, ((b.spentAmount + dailyBurn * daysLeft) / b.limitAmount) * 100);
+        const daysUntilLimit = dailyBurn > 0 ? Math.max(0, Math.round((b.limitAmount / dailyBurn) - daysElapsed)) : 999;
+
+        return (
+          <TouchableOpacity
+            key={b.id}
+            style={subStyles.budgetRow}
+            onPress={() => router.push("/(app)/budgets?from=dashboard")}
+            activeOpacity={0.8}
+          >
+            <View style={subStyles.budgetHeader}>
+              <Text style={subStyles.budgetName} numberOfLines={1}>{b.name}</Text>
+              <Text style={[subStyles.budgetPct, b.isOverLimit ? { color: COLORS.expense } : isBurnTier ? { color: COLORS.gold } : { color: COLORS.warning }]}>
+                {Math.round(b.usedPercent)}%
+              </Text>
+            </View>
+            <View style={{ position: "relative" }}>
+              <ProgressBar percent={b.usedPercent} alertPercent={b.alertPercent} height={6} />
+              {isBurnTier && projectedPercent > b.usedPercent ? (
+                <View
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: `${Math.min(b.usedPercent, 98)}%` as unknown as number,
+                    width: `${Math.min(projectedPercent - b.usedPercent, 100 - b.usedPercent)}%` as unknown as number,
+                    height: 6,
+                    backgroundColor: COLORS.gold + "66",
+                    borderRadius: 3,
+                  }}
+                />
+              ) : null}
+            </View>
+            <Text style={subStyles.budgetMeta}>
+              {isBurnTier
+                ? `A este ritmo: excede en ${daysUntilLimit}d · ${formatCurrency(b.spentAmount, b.currencyCode)} de ${formatCurrency(b.limitAmount, b.currencyCode)}`
+                : `${formatCurrency(b.spentAmount, b.currencyCode)} de ${formatCurrency(b.limitAmount, b.currencyCode)}`}
             </Text>
-          </View>
-          <ProgressBar percent={b.usedPercent} alertPercent={b.alertPercent} height={6} />
-          <Text style={subStyles.budgetMeta}>
-            {formatCurrency(b.spentAmount, b.currencyCode)} de {formatCurrency(b.limitAmount, b.currencyCode)}
-          </Text>
-        </TouchableOpacity>
-      ))}
+          </TouchableOpacity>
+        );
+      })}
     </View>
   );
 }
@@ -1240,19 +1772,21 @@ function ReviewInbox({
 function FutureFlowPreview({
   obligations,
   subscriptions,
+  recurringIncome,
   displayCurrency,
   exchangeRateMap,
   currentVisibleBalance,
 }: {
   obligations: Array<{ direction: string; pendingAmount: number; installmentAmount?: number | null; currencyCode: string; dueDate: string | null; status: string }>;
   subscriptions: Array<{ amount: number; currencyCode: string; nextDueDate: string; status: string }>;
+  recurringIncome: Array<{ amount: number; currencyCode: string; nextExpectedDate: string; status: string }>;
   displayCurrency: string;
   exchangeRateMap: Map<string, number>;
   currentVisibleBalance: number;
 }) {
   const windows = useMemo(
-    () => buildFutureFlowWindows(obligations, subscriptions, displayCurrency, exchangeRateMap, currentVisibleBalance),
-    [currentVisibleBalance, displayCurrency, exchangeRateMap, obligations, subscriptions],
+    () => buildFutureFlowWindows(obligations, subscriptions, recurringIncome, displayCurrency, exchangeRateMap, currentVisibleBalance),
+    [currentVisibleBalance, displayCurrency, exchangeRateMap, obligations, recurringIncome, subscriptions],
   );
 
   return (
@@ -1343,6 +1877,7 @@ function ProCommandCenter({
   movements,
   obligations,
   subscriptions,
+  recurringIncome,
   displayCurrency,
   exchangeRateMap,
   currentVisibleBalance,
@@ -1351,7 +1886,8 @@ function ProCommandCenter({
 }: {
   movements: DashboardMovementRow[];
   obligations: Array<{ id: number; title: string; direction: string; pendingAmount: number; installmentAmount?: number | null; currencyCode: string; dueDate: string | null; status: string; lastPaymentDate?: string | null; startDate?: string }>;
-  subscriptions: Array<{ id: number; name: string; amount: number; currencyCode: string; nextDueDate: string; accountId?: number | null; status: string }>;
+  subscriptions: Array<{ id: number; name: string; amount: number; currencyCode: string; nextDueDate: string; accountId?: number | null; status: string; frequency: string; intervalCount: number }>;
+  recurringIncome: Array<{ id: number; name: string; amount: number; currencyCode: string; nextExpectedDate: string; status: string }>;
   displayCurrency: string;
   exchangeRateMap: Map<string, number>;
   currentVisibleBalance: number;
@@ -1359,7 +1895,10 @@ function ProCommandCenter({
   accountCurrencyMap: Map<number, string>;
 }) {
   const review = useMemo(() => buildReviewInboxSnapshot(movements, subscriptions, obligations), [movements, obligations, subscriptions]);
-  const windows = useMemo(() => buildFutureFlowWindows(obligations, subscriptions, displayCurrency, exchangeRateMap, currentVisibleBalance), [currentVisibleBalance, displayCurrency, exchangeRateMap, obligations, subscriptions]);
+  const windows = useMemo(
+    () => buildFutureFlowWindows(obligations, subscriptions, recurringIncome, displayCurrency, exchangeRateMap, currentVisibleBalance),
+    [currentVisibleBalance, displayCurrency, exchangeRateMap, obligations, recurringIncome, subscriptions],
+  );
   const monthToDate = useMemo(() => {
     const now = new Date();
     const start = startOfMonth(now);
@@ -1367,8 +1906,22 @@ function ProCommandCenter({
     const expense = movements.filter((movement) => inRange(movement, start, now) && isExpense(movement)).reduce((sum, movement) => sum + expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency }), 0);
     return { net: income - expense, daysElapsed: Math.max(1, differenceInDays(now, start) + 1) };
   }, [accountCurrencyMap, displayCurrency, exchangeRateMap, movements]);
+  const monthRecurringIncomeProjection = useMemo(() => {
+    const now = new Date();
+    const monthEnd = endOfMonth(now);
+    return recurringIncome
+      .filter((income) => income.status === "active")
+      .reduce((sum, income) => {
+        const expectedDate = parseDisplayDate(income.nextExpectedDate);
+        if (expectedDate < now || expectedDate > monthEnd) return sum;
+        return sum + convertDashboardCurrency(income.amount, income.currencyCode, displayCurrency, exchangeRateMap);
+      }, 0);
+  }, [displayCurrency, exchangeRateMap, recurringIncome]);
   const daysInMonth = differenceInDays(endOfMonth(new Date()), startOfMonth(new Date())) + 1;
-  const monthEndEstimate = currentVisibleBalance + (monthToDate.net / monthToDate.daysElapsed) * (daysInMonth - monthToDate.daysElapsed);
+  const monthEndEstimate =
+    currentVisibleBalance +
+    (monthToDate.net / monthToDate.daysElapsed) * (daysInMonth - monthToDate.daysElapsed) +
+    monthRecurringIncomeProjection;
   const weekWindow = windows[0];
   const actions = [
     review.overdueObligationsCount > 0 ? { key: "overdue", title: "Resolver vencimientos", detail: `${review.overdueObligationsCount} cobros o pagos ya estan fuera de fecha.`, route: "/obligations" } : null,
@@ -1409,7 +1962,11 @@ function ProCommandCenter({
         <View style={subStyles.commandMetricCard}>
           <Text style={subStyles.commandMetricLabel}>Caja estimada fin de mes</Text>
           <Text style={subStyles.commandMetricValue}>{formatCurrency(monthEndEstimate, displayCurrency)}</Text>
-          <Text style={subStyles.commandMetricHint}>Extrapola el neto diario del mes en curso.</Text>
+          <Text style={subStyles.commandMetricHint}>
+            {monthRecurringIncomeProjection > 0
+              ? `Incluye ${formatCurrency(monthRecurringIncomeProjection, displayCurrency)} de ingresos fijos por entrar este mes.`
+              : "Extrapola el neto diario del mes en curso."}
+          </Text>
         </View>
       </View>
       <View style={subStyles.commandRecommendation}>
@@ -2055,6 +2612,1290 @@ function ActivityTimeline({ snapshot }: { snapshot: any }) {
   );
 }
 
+function AnomalyWatch({
+  movements,
+  ctx,
+  categoryMap,
+  accountMap,
+  router,
+}: {
+  movements: DashboardMovementRow[];
+  ctx: ConversionCtx;
+  categoryMap: Map<number, string>;
+  accountMap: Map<number, string>;
+  router: ReturnType<typeof useRouter>;
+}) {
+  const anomalies = useMemo(() => {
+    const expenses = movements
+      .filter(isExpense)
+      .filter((movement) => movement.description.trim())
+      .sort((a, b) => new Date(a.occurredAt).getTime() - new Date(b.occurredAt).getTime());
+
+    const descriptionHistory = new Map<string, number[]>();
+    const categoryHistory = new Map<number, number[]>();
+    const duplicateBuckets = new Map<string, DashboardMovementRow[]>();
+    const findings: Array<{
+      key: string;
+      movementId: number;
+      title: string;
+      body: string;
+      meta: string;
+      level: "strong" | "review";
+    }> = [];
+
+    for (const movement of expenses) {
+      const amount = expenseAmt(movement, ctx);
+      const normalizedDescription = movement.description.trim().toLowerCase() || "sin-descripcion";
+      const descriptionSamples = descriptionHistory.get(normalizedDescription) ?? [];
+      const categorySamples = movement.categoryId != null ? categoryHistory.get(movement.categoryId) ?? [] : [];
+
+      if (amount >= 12 && descriptionSamples.length >= 2) {
+        const avg = descriptionSamples.reduce((sum, value) => sum + value, 0) / descriptionSamples.length;
+        if (avg > 0) {
+          const ratio = amount / avg;
+          if (ratio >= 2.2) {
+            const accountLabel = accountMap.get(movementDisplayAccountId(movement) ?? -1) ?? "Cuenta";
+            findings.push({
+              key: `desc-${movement.id}`,
+              movementId: movement.id,
+              title: movement.description.trim() || "Movimiento",
+              body: `Este movimiento se ve ${ratio.toFixed(1)}x por encima de lo que suele pasar con esa descripción (${avg.toFixed(2)} como referencia).`,
+              meta: `${accountLabel} · ${formatCurrency(amount, ctx.displayCurrency)} · ${format(new Date(movement.occurredAt), "d MMM", { locale: es })}`,
+              level: ratio >= 4 ? "strong" : "review",
+            });
+          }
+        }
+      }
+
+      if (movement.categoryId != null && amount >= 15 && categorySamples.length >= 3) {
+        const avg = categorySamples.reduce((sum, value) => sum + value, 0) / categorySamples.length;
+        if (avg > 0) {
+          const ratio = amount / avg;
+          if (ratio >= 2.3) {
+            findings.push({
+              key: `cat-${movement.id}`,
+              movementId: movement.id,
+              title: movement.description.trim() || (categoryMap.get(movement.categoryId) ?? "Movimiento"),
+              body: `Este movimiento se ve ${ratio.toFixed(1)}x por encima de lo que suele pasar con esa categoría (${avg.toFixed(2)} como referencia).`,
+              meta: `${categoryMap.get(movement.categoryId) ?? "Sin categoría"} · ${formatCurrency(amount, ctx.displayCurrency)} · ${format(new Date(movement.occurredAt), "d MMM", { locale: es })}`,
+              level: ratio >= 4 ? "strong" : "review",
+            });
+          }
+        }
+      }
+
+      descriptionHistory.set(normalizedDescription, [...descriptionSamples.slice(-5), amount]);
+      if (movement.categoryId != null) {
+        categoryHistory.set(movement.categoryId, [...categorySamples.slice(-7), amount]);
+      }
+
+      const duplicateKey = `${movement.occurredAt.slice(0, 10)}|${movementDisplayAmount(movement).toFixed(2)}|${normalizedDescription}`;
+      duplicateBuckets.set(duplicateKey, [...(duplicateBuckets.get(duplicateKey) ?? []), movement]);
+    }
+
+    for (const bucket of duplicateBuckets.values()) {
+      if (bucket.length < 2) continue;
+      const first = bucket[0];
+      findings.push({
+        key: `dup-${first.id}`,
+        movementId: first.id,
+        title: first.description.trim() || "Posible duplicado",
+        body: `${bucket.length} movimientos con la misma descripción y monto aparecieron en una ventana de 1 día.`,
+        meta: `${categoryMap.get(first.categoryId ?? -1) ?? "Sin categoría"} · ${formatCurrency(expenseAmt(first, ctx), ctx.displayCurrency)} · ${format(new Date(first.occurredAt), "d MMM", { locale: es })}`,
+        level: "review",
+      });
+    }
+
+    const unique = new Map<string, typeof findings[number]>();
+    for (const finding of findings.sort((a, b) => {
+      if (a.level !== b.level) return a.level === "strong" ? -1 : 1;
+      return b.movementId - a.movementId;
+    })) {
+      if (!unique.has(finding.key)) unique.set(finding.key, finding);
+    }
+
+    return Array.from(unique.values()).slice(0, 4);
+  }, [accountMap, categoryMap, ctx, movements]);
+
+  if (anomalies.length === 0) return null;
+
+  return (
+    <Card>
+      <SectionTitle>Movimientos para revisar</SectionTitle>
+      <View style={subStyles.anomalyList}>
+        {anomalies.map((item) => (
+          <TouchableOpacity
+            key={item.key}
+            style={[subStyles.anomalyCard, item.level === "strong" ? subStyles.anomalyCardStrong : subStyles.anomalyCardReview]}
+            onPress={() => router.push(`/movement/${item.movementId}?from=dashboard`)}
+            activeOpacity={0.84}
+          >
+            <View style={subStyles.anomalyTop}>
+              <Text style={subStyles.anomalyTitle}>{item.title}</Text>
+              <View style={[subStyles.anomalyBadge, item.level === "strong" ? subStyles.anomalyBadgeStrong : subStyles.anomalyBadgeReview]}>
+                <Text style={[subStyles.anomalyBadgeText, item.level === "strong" ? subStyles.anomalyBadgeTextStrong : subStyles.anomalyBadgeTextReview]}>
+                  {item.level === "strong" ? "Fuerte" : "Revisar"}
+                </Text>
+              </View>
+            </View>
+            <Text style={subStyles.anomalyBody}>{item.body}</Text>
+            <View style={subStyles.anomalyBottom}>
+              <Text style={subStyles.anomalyMeta}>{item.meta}</Text>
+              <ArrowRight size={15} color={COLORS.storm} />
+            </View>
+          </TouchableOpacity>
+        ))}
+      </View>
+      <TouchableOpacity style={subStyles.secondaryOutlineBtn} onPress={() => router.push("/movements" as never)} activeOpacity={0.82}>
+        <Text style={subStyles.secondaryOutlineBtnText}>Abrir movimientos para revisar</Text>
+      </TouchableOpacity>
+    </Card>
+  );
+}
+
+function AdvancedDashboard({
+  movements,
+  obligations,
+  subscriptions,
+  recurringIncome,
+  snapshot,
+  activeAccounts,
+  activeCurrency,
+  baseCurrency,
+  exchangeRateMap,
+  currentVisibleBalance,
+  workspaceId,
+  analytics,
+  router,
+  accountCurrencyMap,
+}: {
+  movements: DashboardMovementRow[];
+  obligations: Array<{ id: number; title: string; direction: string; pendingAmount: number; installmentAmount?: number | null; currencyCode: string; dueDate: string | null; status: string; lastPaymentDate?: string | null; startDate?: string; counterparty: string }>;
+  subscriptions: Array<{ id: number; name: string; amount: number; currencyCode: string; nextDueDate: string; accountId?: number | null; status: string; frequency: string; intervalCount: number }>;
+  recurringIncome: Array<{ id: number; name: string; amount: number; currencyCode: string; nextExpectedDate: string; status: string }>;
+  snapshot: any;
+  activeAccounts: { id: number; name: string; currentBalance: number; currentBalanceInBaseCurrency?: number | null; currencyCode: string; includeInNetWorth: boolean; isArchived: boolean }[];
+  activeCurrency: string;
+  baseCurrency: string;
+  exchangeRateMap: Map<string, number>;
+  currentVisibleBalance: number;
+  workspaceId: number | null;
+  analytics: DashboardAnalyticsBundle | null | undefined;
+  router: ReturnType<typeof useRouter>;
+  accountCurrencyMap: Map<number, string>;
+}) {
+  const advancedStats = useDashboardStats(movements, "month", {
+    accountCurrencyMap,
+    exchangeRateMap,
+    displayCurrency: activeCurrency,
+  });
+  const review = useMemo(() => buildReviewInboxSnapshot(movements, subscriptions, obligations), [movements, obligations, subscriptions]);
+  const windows = useMemo(
+    () => buildFutureFlowWindows(obligations, subscriptions, recurringIncome, activeCurrency, exchangeRateMap, currentVisibleBalance),
+    [activeCurrency, currentVisibleBalance, exchangeRateMap, obligations, recurringIncome, subscriptions],
+  );
+  const weekWindow = windows[0];
+
+  const monthToDate = useMemo(() => {
+    const now = new Date();
+    const start = startOfMonth(now);
+    const income = movements.filter((movement) => inRange(movement, start, now) && isIncome(movement)).reduce((sum, movement) => sum + incomeAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }), 0);
+    const expense = movements.filter((movement) => inRange(movement, start, now) && isExpense(movement)).reduce((sum, movement) => sum + expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }), 0);
+    return { income, expense, net: income - expense, daysElapsed: Math.max(1, differenceInDays(now, start) + 1) };
+  }, [accountCurrencyMap, activeCurrency, exchangeRateMap, movements]);
+
+  const monthRecurringIncomeProjection = useMemo(() => {
+    const now = new Date();
+    const monthEnd = endOfMonth(now);
+    return recurringIncome
+      .filter((income) => income.status === "active")
+      .reduce((sum, income) => {
+        const expectedDate = parseDisplayDate(income.nextExpectedDate);
+        if (expectedDate < now || expectedDate > monthEnd) return sum;
+        return sum + convertDashboardCurrency(income.amount, income.currencyCode, activeCurrency, exchangeRateMap);
+      }, 0);
+  }, [activeCurrency, exchangeRateMap, recurringIncome]);
+
+  const daysInMonth = differenceInDays(endOfMonth(new Date()), startOfMonth(new Date())) + 1;
+  const monthEndEstimate =
+    currentVisibleBalance +
+    (monthToDate.net / monthToDate.daysElapsed) * (daysInMonth - monthToDate.daysElapsed) +
+    monthRecurringIncomeProjection;
+
+  // A3: Cash Cushion — días de caja libre al ritmo actual
+  const cashCushion = useMemo(() => {
+    const now = new Date();
+    const thirtyDaysAgo = subDays(now, 29);
+    const totalExpenses30d = movements
+      .filter((m) => isExpense(m) && inRange(m, thirtyDaysAgo, now))
+      .reduce((sum, m) => sum + expenseAmt(m, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }), 0);
+    const dailyBurn = totalExpenses30d / 30;
+    const days = Math.round(currentVisibleBalance / Math.max(dailyBurn, 1));
+    const adjustedDailyBurn = dailyBurn + (windows[2]?.expectedOutflow ?? 0) / 30;
+    const daysWithCommitments = Math.round(currentVisibleBalance / Math.max(adjustedDailyBurn, 1));
+    const label = days >= 90 ? "Sólido" : days >= 30 ? "Adecuado" : "Corto";
+    const color = days >= 90 ? COLORS.income : days >= 30 ? COLORS.gold : COLORS.expense;
+    return { days, daysWithCommitments, dailyBurn, label, color };
+  }, [accountCurrencyMap, activeCurrency, currentVisibleBalance, exchangeRateMap, movements, windows]);
+
+  // A2: EMA de tendencia de gasto semanal (α=0.35, últimas 12 semanas)
+  const spendingTrend = useMemo(() => {
+    const now = new Date();
+    const weekBuckets: number[] = Array.from({ length: 12 }, () => 0);
+    for (const m of movements.filter(isExpense)) {
+      const weeksAgo = Math.floor(differenceInDays(now, new Date(m.occurredAt)) / 7);
+      if (weeksAgo >= 0 && weeksAgo < 12) {
+        weekBuckets[11 - weeksAgo] += expenseAmt(m, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency });
+      }
+    }
+    const alpha = 0.35;
+    let ema = weekBuckets[0];
+    let prevEma = ema;
+    for (let i = 1; i < weekBuckets.length; i++) {
+      prevEma = ema;
+      ema = alpha * weekBuckets[i] + (1 - alpha) * ema;
+    }
+    const trendPct = prevEma > 0 ? ((ema - prevEma) / prevEma) * 100 : 0;
+    const label = trendPct > 5 ? "↑ acelerando" : trendPct < -5 ? "↓ desacelerando" : "→ estable";
+    const color = trendPct > 5 ? COLORS.expense : trendPct < -5 ? COLORS.income : COLORS.storm;
+    return { expenseTrendPct: trendPct, expenseTrendLabel: label, expenseTrendColor: color };
+  }, [accountCurrencyMap, activeCurrency, exchangeRateMap, movements]);
+
+  // N1: Tasa de ahorro mensual — (ingreso - gasto) / ingreso para cada uno de los últimos 6 meses
+  const monthlySavingsRate = useMemo(() => {
+    const now = new Date();
+    const months = Array.from({ length: 6 }, (_, i) => {
+      const mDate = subMonths(now, 5 - i);
+      const mStart = startOfMonth(mDate);
+      const mEnd = i === 5 ? now : endOfMonth(mDate);
+      const mMvs = movements.filter((m) => inRange(m, mStart, mEnd));
+      const inc = mMvs.filter(isIncome).reduce((s, m) => s + incomeAmt(m, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }), 0);
+      const exp = mMvs.filter(isExpense).reduce((s, m) => s + expenseAmt(m, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }), 0);
+      const rate = inc > 0 ? ((inc - exp) / inc) * 100 : null;
+      return { label: format(mDate, "MMM", { locale: es }), income: inc, expense: exp, rate };
+    });
+    const validRates = months.map((m) => m.rate).filter((r): r is number => r !== null);
+    const avgRate = validRates.length > 0 ? validRates.reduce((s, r) => s + r, 0) / validRates.length : null;
+    const lastRate = months[5].rate;
+    const trend = validRates.length >= 3
+      ? (validRates[validRates.length - 1] - validRates[0]) > 3 ? "mejorando"
+        : (validRates[validRates.length - 1] - validRates[0]) < -3 ? "empeorando"
+        : "estable"
+      : "insuficiente";
+    const color = lastRate == null ? COLORS.storm : lastRate >= 20 ? COLORS.income : lastRate >= 0 ? COLORS.gold : COLORS.expense;
+    return { months, avgRate, lastRate, trend, color };
+  }, [accountCurrencyMap, activeCurrency, exchangeRateMap, movements]);
+
+  // N2: Score de estabilidad de ingresos — coeficiente de variación sobre 6 meses (bajo CV = estable)
+  const incomeStabilityScore = useMemo(() => {
+    const incomes = advancedStats.monthlyPulse.map((m) => m.income).filter((v) => v > 0);
+    if (incomes.length < 3) return { score: null, cvPct: null, label: "Historial insuficiente", color: COLORS.storm };
+    const mean = incomes.reduce((s, v) => s + v, 0) / incomes.length;
+    const variance = incomes.reduce((s, v) => s + Math.pow(v - mean, 2), 0) / incomes.length;
+    const std = Math.sqrt(variance);
+    const cv = mean > 0 ? std / mean : 1;
+    const score = Math.round(Math.max(0, Math.min(100, (1 - cv) * 100)));
+    const cvPct = Math.round(cv * 100);
+    const label = score >= 75 ? "Muy estable" : score >= 50 ? "Moderado" : "Variable";
+    const color = score >= 75 ? COLORS.income : score >= 50 ? COLORS.gold : COLORS.expense;
+    return { score, cvPct, label, color };
+  }, [advancedStats.monthlyPulse]);
+
+  // N3: Índice de concentración de gasto Herfindahl-Hirschman (HHI) — diversificación entre categorías
+  const categoryConcentration = useMemo(() => {
+    const catTotals = advancedStats.catTotals;
+    const total = Array.from(catTotals.values()).reduce((s, v) => s + v, 0);
+    if (total <= 0) return { hhi: null, label: "Sin datos", color: COLORS.storm, topCategory: null, topShare: null };
+    const hhi = Array.from(catTotals.values()).reduce((s, v) => s + Math.pow(v / total, 2), 0);
+    const label = hhi > 0.25 ? "Concentrado" : hhi > 0.15 ? "Moderado" : "Diversificado";
+    const color = hhi > 0.25 ? COLORS.expense : hhi > 0.15 ? COLORS.gold : COLORS.income;
+    let topCatId: number | null = null;
+    let topVal = 0;
+    for (const [catId, val] of catTotals) {
+      if (val > topVal) { topVal = val; topCatId = catId as number | null; }
+    }
+    const topShare = topVal > 0 ? Math.round((topVal / total) * 100) : null;
+    const topCategory = topCatId != null ? (categoryMap.get(topCatId) ?? "Sin categoría") : "Sin categoría";
+    return { hhi: Math.round(hhi * 1000) / 1000, label, color, topCategory, topShare };
+  }, [advancedStats.catTotals, categoryMap]);
+
+  // N4: Eficiencia de cobranza — porcentaje de obligaciones a cobrar resueltas en los últimos 30 días
+  const collectionEfficiency = useMemo(() => {
+    const now = new Date();
+    const thirtyDaysAgo = subDays(now, 30);
+    const receivable = obligations.filter((ob) => ob.direction === "receivable");
+    if (receivable.length === 0) return { rate: null, resolved: 0, total: 0, label: "Sin cobros", color: COLORS.storm };
+    const dueInWindow = receivable.filter((ob) => {
+      if (!ob.dueDate) return false;
+      const d = new Date(ob.dueDate);
+      return d >= thirtyDaysAgo && d <= now;
+    });
+    const total = dueInWindow.length;
+    if (total === 0) return { rate: null, resolved: 0, total: 0, label: "Nada vencido", color: COLORS.income };
+    const resolved = dueInWindow.filter((ob) => ob.status === "paid").length;
+    const rate = Math.round((resolved / total) * 100);
+    const label = rate >= 80 ? "Eficiente" : rate >= 50 ? "Parcial" : "Bajo";
+    const color = rate >= 80 ? COLORS.income : rate >= 50 ? COLORS.gold : COLORS.expense;
+    return { rate, resolved, total, label, color };
+  }, [obligations]);
+
+  // N5: Comparación estacional — mes actual vs mismo mes del año pasado
+  const seasonalComparison = useMemo(() => {
+    const now = new Date();
+    const curStart = startOfMonth(now);
+    const curEnd = now;
+    const prevYearStart = startOfMonth(subMonths(now, 12));
+    const prevYearEnd = endOfMonth(subMonths(now, 12));
+    const ctx = { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency };
+    const curMvs = movements.filter((m) => inRange(m, curStart, curEnd));
+    const prevMvs = movements.filter((m) => inRange(m, prevYearStart, prevYearEnd));
+    const curIncome = curMvs.filter(isIncome).reduce((s, m) => s + incomeAmt(m, ctx), 0);
+    const curExpense = curMvs.filter(isExpense).reduce((s, m) => s + expenseAmt(m, ctx), 0);
+    const prevIncome = prevMvs.filter(isIncome).reduce((s, m) => s + incomeAmt(m, ctx), 0);
+    const prevExpense = prevMvs.filter(isExpense).reduce((s, m) => s + expenseAmt(m, ctx), 0);
+    const hasHistory = prevMvs.length >= 3;
+    const expenseDelta = prevExpense > 0 ? ((curExpense - prevExpense) / prevExpense) * 100 : null;
+    const incomeDelta = prevIncome > 0 ? ((curIncome - prevIncome) / prevIncome) * 100 : null;
+    const expenseLabel = expenseDelta == null ? "—"
+      : expenseDelta > 10 ? `↑ +${expenseDelta.toFixed(0)}% vs año pasado`
+      : expenseDelta < -10 ? `↓ ${expenseDelta.toFixed(0)}% vs año pasado`
+      : `→ similar al año pasado`;
+    const expenseColor = expenseDelta == null ? COLORS.storm : expenseDelta > 10 ? COLORS.expense : expenseDelta < -10 ? COLORS.income : COLORS.storm;
+    return { hasHistory, curIncome, curExpense, prevIncome, prevExpense, expenseDelta, incomeDelta, expenseLabel, expenseColor };
+  }, [accountCurrencyMap, activeCurrency, exchangeRateMap, movements]);
+
+  // U1: review de la semana anterior para mostrar delta en Executive Summary
+  const priorWeekReview = useMemo(() => {
+    const now = new Date();
+    const weekAgo = subDays(now, 7);
+    const twoWeeksAgo = subDays(now, 14);
+    const priorMoves = movements.filter((m) => inRange(m, twoWeeksAgo, weekAgo));
+    return buildReviewInboxSnapshot(priorMoves, subscriptions, obligations);
+  }, [movements, obligations, subscriptions]);
+
+  const learning = useMemo(() => {
+    const posted = movements.filter((movement) => movement.status === "posted");
+    const useful = posted.filter((movement) => movement.movementType !== "obligation_opening");
+    const categorizedBase = useful.filter(isCategorizedCashflow);
+    const categorizedCount = categorizedBase.filter((movement) => movement.categoryId != null).length;
+    const categorizedRate = categorizedBase.length > 0 ? categorizedCount / categorizedBase.length : 0;
+    const oldest = useful[useful.length - 1];
+    const historyDays = oldest ? Math.max(1, differenceInDays(new Date(), new Date(oldest.occurredAt))) : 0;
+    const readinessScore = Math.round(Math.min(1, useful.length / 120) * 40 + Math.min(1, historyDays / 120) * 25 + categorizedRate * 35);
+    return { categorizedRate, historyDays, readinessScore, usefulCount: useful.length };
+  }, [movements]);
+
+  const suggestedPreset = useMemo<AdvancedPreset>(() => {
+    if (review.uncategorizedCount > 0 || review.pendingMovementsCount > 0 || review.duplicateExpenseGroups > 0) return "control";
+    if (review.overdueObligationsCount > 0 || review.obligationsWithoutPlanCount > 0) return "portfolio";
+    if (weekWindow.expectedOutflow > weekWindow.expectedInflow || monthEndEstimate < currentVisibleBalance * 0.92) return "liquidity";
+    if (learning.readinessScore >= 70) return "analytics";
+    return "manual";
+  }, [currentVisibleBalance, learning.readinessScore, monthEndEstimate, review, weekWindow.expectedInflow, weekWindow.expectedOutflow]);
+
+  const [preset, setPreset] = useState<AdvancedPreset>("manual");
+  const presetLoadedRef = useRef(false);
+  useEffect(() => {
+    if (presetLoadedRef.current) return;
+    presetLoadedRef.current = true;
+    void AsyncStorage.getItem(DASHBOARD_ADVANCED_PRESET_KEY).then((stored) => {
+      if (stored && stored in ADVANCED_PRESET_META) setPreset(stored as AdvancedPreset);
+    });
+  }, []);
+
+  const applyPreset = useCallback((nextPreset: AdvancedPreset) => {
+    setPreset(nextPreset);
+    void AsyncStorage.setItem(DASHBOARD_ADVANCED_PRESET_KEY, nextPreset);
+  }, []);
+
+  const categoryMap = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const category of snapshot?.categories ?? []) map.set(category.id, category.name);
+    return map;
+  }, [snapshot?.categories]);
+
+  const accountMap = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const account of snapshot?.accounts ?? []) map.set(account.id, account.name);
+    return map;
+  }, [snapshot?.accounts]);
+
+  const anomalySignals = useMemo(
+    () => buildAnomalyFindings(
+      movements,
+      { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency },
+      categoryMap,
+      accountMap,
+    ),
+    [accountCurrencyMap, accountMap, activeCurrency, categoryMap, exchangeRateMap, movements],
+  );
+
+  const persistedCategorySuggestions = useMemo(() => {
+    if (!analytics?.signals?.length) return [];
+    const movementMap = new Map(movements.map((movement) => [movement.id, movement]));
+    return analytics.signals
+      .map((signal) => {
+        const movement = movementMap.get(signal.movementId);
+        if (!movement || movement.categoryId != null || movement.status !== "posted" || !isCategorizedCashflow(movement)) {
+          return null;
+        }
+        if (!signal.suggestedCategoryId || !signal.suggestedCategoryConfidence) return null;
+        const amount = movementActsAsIncome(movement)
+          ? incomeAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency })
+          : expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency });
+        return {
+          movementId: movement.id,
+          description: movement.description.trim() || "Movimiento sin descripción",
+          occurredAt: movement.occurredAt,
+          amount,
+          suggestedCategoryId: signal.suggestedCategoryId,
+          suggestedCategoryName:
+            categoryMap.get(signal.suggestedCategoryId) ?? "Categoría sugerida",
+          confidence: signal.suggestedCategoryConfidence,
+          matchedSamples: 0,
+          reasons:
+            signal.signalReasons.length > 0
+              ? signal.signalReasons
+              : ["señal analítica persistida"],
+        } satisfies DashboardCategorySuggestion;
+      })
+      .filter((item): item is DashboardCategorySuggestion => Boolean(item))
+      .sort((a, b) => b.confidence - a.confidence || new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime())
+      .slice(0, 4);
+  }, [accountCurrencyMap, activeCurrency, analytics?.signals, categoryMap, exchangeRateMap, movements]);
+
+  const focusAction = useMemo(() => {
+    if (review.uncategorizedCount > 0) {
+      return {
+        title: "Ordenar categorías",
+        body: `${review.uncategorizedCount} movimientos siguen sin categoría.`,
+        detail: "Más categoría significa comparativos y alertas mucho más finas.",
+        tag: "Orden fino",
+        route: "/movements",
+      };
+    }
+    if (review.overdueObligationsCount > 0) {
+      return {
+        title: "Resolver vencimientos",
+        body: `${review.overdueObligationsCount} cobros o pagos ya se quedaron fuera de fecha.`,
+        detail: "Limpiar esto primero evita que la cartera siga arrastrando lectura falsa.",
+        tag: "Cartera",
+        route: "/obligations",
+      };
+    }
+    if (review.subscriptionsAttentionCount > 0) {
+      return {
+        title: "Revisar suscripciones",
+        body: `${review.subscriptionsAttentionCount} cargos fijos todavía necesitan cuenta o fecha más clara.`,
+        detail: "Ordenar esa base mejora la proyección de corto plazo.",
+        tag: "Liquidez",
+        route: "/subscriptions",
+      };
+    }
+    if (weekWindow.expectedOutflow > weekWindow.expectedInflow) {
+      return {
+        title: "Cuidar liquidez",
+        body: "La próxima semana sale más dinero del que entra.",
+        detail: "Revisa compromisos cercanos antes de que la presión se sienta tarde.",
+        tag: "Liquidez",
+        route: "/dashboard",
+      };
+    }
+    return {
+      title: "Mantener el ritmo",
+      body: "No vemos una fricción fuerte inmediata en tu sistema.",
+      detail: "Buen momento para consolidar hábitos, metas y calidad del dato.",
+      tag: "Estable",
+      route: "/dashboard",
+    };
+  }, [review, weekWindow.expectedInflow, weekWindow.expectedOutflow]);
+
+  type CoachChip = { icon: LucideIcon; color: string; label: string; weight: "high" | "medium" | "low" };
+  const panelCoachChips = useMemo<CoachChip[]>(() => {
+    const chips: CoachChip[] = [];
+    if (review.uncategorizedCount > 0)
+      chips.push({ icon: Tag, color: COLORS.warning, label: `${review.uncategorizedCount} sin categoría · comparativos imprecisos`, weight: "high" });
+    if (review.overdueObligationsCount > 0)
+      chips.push({ icon: AlertTriangle, color: COLORS.expense, label: `${review.overdueObligationsCount} vencimiento${review.overdueObligationsCount === 1 ? "" : "s"} · cartera desactualizada`, weight: "high" });
+    if (weekWindow.expectedOutflow > weekWindow.expectedInflow)
+      chips.push({ icon: TrendingUp, color: COLORS.gold, label: "Semana: más sale que entra", weight: "medium" });
+    if (spendingTrend.expenseTrendPct > 5)
+      chips.push({ icon: TrendingUp, color: COLORS.gold, label: `Gasto acelerando +${spendingTrend.expenseTrendPct.toFixed(0)}% esta semana`, weight: "medium" });
+    if (cashCushion.days < 30)
+      chips.push({ icon: AlertCircle, color: COLORS.expense, label: `Caja libre: ${cashCushion.days}d solamente`, weight: "high" });
+    if (chips.length === 0)
+      chips.push({ icon: Sparkles, color: COLORS.income, label: "Base sana · sin fricción fuerte hoy", weight: "low" });
+    return chips.slice(0, 4);
+  }, [cashCushion.days, review.overdueObligationsCount, review.uncategorizedCount, spendingTrend.expenseTrendPct, weekWindow.expectedInflow, weekWindow.expectedOutflow]);
+
+  const qualityOpenInitial = review.totalIssues > 0 || learning.readinessScore < 75;
+  const [qualityOpen, setQualityOpen] = useState(qualityOpenInitial);
+  useEffect(() => {
+    setQualityOpen(qualityOpenInitial);
+  }, [qualityOpenInitial]);
+
+  const categorySuggestions = useMemo(() => {
+    if (persistedCategorySuggestions.length > 0) return persistedCategorySuggestions;
+    return buildCategorySuggestions(movements, snapshot?.categories ?? [], {
+      accountCurrencyMap,
+      exchangeRateMap,
+      displayCurrency: activeCurrency,
+    });
+  }, [
+    accountCurrencyMap,
+    activeCurrency,
+    exchangeRateMap,
+    movements,
+    persistedCategorySuggestions,
+    snapshot?.categories,
+  ]);
+
+  const projectionModel = useMemo(() => {
+    const currentMonthKey = format(new Date(), "yyyy-MM");
+    if (
+      analytics?.projectionSnapshot &&
+      analytics.projectionSnapshot.periodKey === currentMonthKey &&
+      analytics.projectionSnapshot.expectedBalance != null &&
+      analytics.projectionSnapshot.conservativeBalance != null &&
+      analytics.projectionSnapshot.optimisticBalance != null &&
+      analytics.projectionSnapshot.committedInflow != null &&
+      analytics.projectionSnapshot.committedOutflow != null &&
+      analytics.projectionSnapshot.variableIncomeProjection != null &&
+      analytics.projectionSnapshot.variableExpenseProjection != null &&
+      analytics.projectionSnapshot.confidence != null
+    ) {
+      const confidence = Math.round(analytics.projectionSnapshot.confidence);
+      return {
+        expectedBalance: analytics.projectionSnapshot.expectedBalance,
+        conservativeBalance: analytics.projectionSnapshot.conservativeBalance,
+        optimisticBalance: analytics.projectionSnapshot.optimisticBalance,
+        committedInflow: analytics.projectionSnapshot.committedInflow,
+        committedOutflow: analytics.projectionSnapshot.committedOutflow,
+        variableIncomeProjection: analytics.projectionSnapshot.variableIncomeProjection,
+        variableExpenseProjection: analytics.projectionSnapshot.variableExpenseProjection,
+        confidence,
+        confidenceLabel: confidence >= 78 ? "Alta" : confidence >= 60 ? "Media" : "Base corta",
+        remainingDays: Math.max(0, differenceInDays(endOfMonth(new Date()), new Date())),
+      } satisfies DashboardProjectionModel;
+    }
+
+    return buildMonthProjectionModel(
+      movements,
+      obligations,
+      subscriptions,
+      recurringIncome,
+      currentVisibleBalance,
+      {
+        accountCurrencyMap,
+        exchangeRateMap,
+        displayCurrency: activeCurrency,
+      },
+    );
+  }, [
+    accountCurrencyMap,
+    activeCurrency,
+    analytics?.projectionSnapshot,
+    currentVisibleBalance,
+    exchangeRateMap,
+    movements,
+    obligations,
+    recurringIncome,
+    subscriptions,
+  ]);
+
+  const persistDashboardAnalyticsMutation = usePersistDashboardAnalyticsMutation(workspaceId);
+  const lastPersistedAnalyticsKeyRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!workspaceId) return;
+    const periodKey = format(new Date(), "yyyy-MM");
+    const persistKey = JSON.stringify({
+      workspaceId,
+      periodKey,
+      suggestions: categorySuggestions.map((item) => [
+        item.movementId,
+        item.suggestedCategoryId,
+        Math.round(item.confidence * 100),
+      ]),
+      projection: [
+        Math.round(projectionModel.expectedBalance),
+        Math.round(projectionModel.conservativeBalance),
+        Math.round(projectionModel.optimisticBalance),
+        projectionModel.confidence,
+      ],
+    });
+    if (lastPersistedAnalyticsKeyRef.current === persistKey) return;
+    lastPersistedAnalyticsKeyRef.current = persistKey;
+
+    const signalMap = new Map<number, {
+      movementId: number;
+      normalizedDescription?: string | null;
+      suggestedCategoryId?: number | null;
+      suggestedCategoryConfidence?: number | null;
+      anomalyScore?: number | null;
+      signalReasons: string[];
+    }>();
+
+    for (const item of categorySuggestions) {
+      signalMap.set(item.movementId, {
+        movementId: item.movementId,
+        normalizedDescription: normalizeAnalyticsText(item.description) || null,
+        suggestedCategoryId: item.suggestedCategoryId,
+        suggestedCategoryConfidence: item.confidence,
+        signalReasons: item.reasons,
+      });
+    }
+
+    for (const anomaly of anomalySignals) {
+      const current = signalMap.get(anomaly.movementId);
+      signalMap.set(anomaly.movementId, {
+        movementId: anomaly.movementId,
+        normalizedDescription: current?.normalizedDescription ?? null,
+        suggestedCategoryId: current?.suggestedCategoryId ?? null,
+        suggestedCategoryConfidence: current?.suggestedCategoryConfidence ?? null,
+        anomalyScore: anomaly.score,
+        signalReasons: Array.from(new Set([...(current?.signalReasons ?? []), ...anomaly.reasons])),
+      });
+    }
+
+    persistDashboardAnalyticsMutation.mutate({
+      signals: Array.from(signalMap.values()),
+      snapshot: {
+        snapshotKind: "month_projection",
+        periodKey,
+        expectedBalance: projectionModel.expectedBalance,
+        conservativeBalance: projectionModel.conservativeBalance,
+        optimisticBalance: projectionModel.optimisticBalance,
+        committedInflow: projectionModel.committedInflow,
+        committedOutflow: projectionModel.committedOutflow,
+        variableIncomeProjection: projectionModel.variableIncomeProjection,
+        variableExpenseProjection: projectionModel.variableExpenseProjection,
+        confidence: projectionModel.confidence,
+      },
+    });
+  }, [anomalySignals, categorySuggestions, persistDashboardAnalyticsMutation, projectionModel, workspaceId]);
+
+  const weeklyPatternInsight = useMemo(() => {
+    const totals = Array.from({ length: 7 }, () => 0);
+    for (const movement of movements.filter(isExpense)) {
+      const day = getDay(new Date(movement.occurredAt));
+      const normalized = day === 0 ? 6 : day - 1;
+      totals[normalized] += expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency });
+    }
+    const totalSpent = totals.reduce((sum, value) => sum + value, 0);
+    if (totalSpent <= 0) return null;
+    const labels = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"];
+    const maxIndex = totals.reduce((best, value, index, arr) => value > arr[best] ? index : best, 0);
+    return { dayLabel: labels[maxIndex], share: Math.round((totals[maxIndex] / totalSpent) * 100) };
+  }, [accountCurrencyMap, activeCurrency, exchangeRateMap, movements]);
+
+  const pressureStatus = weekWindow.expectedOutflow > weekWindow.expectedInflow ? "Bajo presión" : weekWindow.scheduledCount > 0 ? "Controlado" : "Estable";
+  const monthStatus = monthEndEstimate >= currentVisibleBalance ? "Cerrando mejor" : monthEndEstimate >= currentVisibleBalance * 0.92 ? "Ajustado" : "Bajo presión";
+  const featuredWidgetChips = ADVANCED_PRESET_WIDGETS[preset];
+
+  return (
+    <>
+      <Card>
+        <Text style={subStyles.layerKicker}>Desglose guiado</Text>
+        <Text style={subStyles.layerHeroTitle}>Ahora baja del resumen a las capas del sistema</Text>
+        <Text style={subStyles.layerHeroBody}>
+          Primero viste la lectura principal. Desde aquí el dashboard Pro te la desarma en foco, liquidez, compromisos y diagnóstico para que entiendas qué la está empujando.
+        </Text>
+      </Card>
+
+      <Card>
+        <SectionTitle>Resumen ejecutivo</SectionTitle>
+        <Text style={subStyles.executiveIntro}>
+          Tres lecturas rápidas para saber si hoy toca ordenar, cuidar liquidez o simplemente seguir el ritmo actual.
+        </Text>
+        <View style={subStyles.executiveGrid}>
+          <View style={subStyles.executiveCard}>
+            <View style={subStyles.executiveTop}>
+              <Text style={subStyles.executiveLabel}>Foco de hoy</Text>
+              <View style={subStyles.executiveTonePill}>
+                <Text style={subStyles.executiveToneText}>{focusAction.tag}</Text>
+              </View>
+            </View>
+            <Text style={subStyles.executiveValue}>{review.totalIssues}</Text>
+            <Text style={subStyles.executiveCaption}>
+              {review.totalIssues > 0 ? `Hay ${review.totalIssues} punto${review.totalIssues === 1 ? "" : "s"} por limpiar` : "La lectura general se ve ordenada"}
+            </Text>
+            {(() => {
+              const delta = review.totalIssues - priorWeekReview.totalIssues;
+              if (delta === 0) return null;
+              const isImproving = delta < 0;
+              return (
+                <Text style={[subStyles.executiveDeltaChip, { color: isImproving ? COLORS.income : COLORS.expense }]}>
+                  {isImproving ? `↓ ${Math.abs(delta)} resuelto${Math.abs(delta) === 1 ? "" : "s"}` : `↑ ${delta} nuevo${delta === 1 ? "" : "s"}`}
+                </Text>
+              );
+            })()}
+          </View>
+
+          <View style={subStyles.executiveCard}>
+            <View style={subStyles.executiveTop}>
+              <Text style={subStyles.executiveLabel}>Riesgo 7 días</Text>
+              <View style={[subStyles.executiveTonePill, pressureStatus === "Bajo presión" && subStyles.executiveTonePillWarning]}>
+                <Text style={[subStyles.executiveToneText, pressureStatus === "Bajo presión" && subStyles.executiveToneTextWarning]}>{pressureStatus}</Text>
+              </View>
+            </View>
+            <Text style={subStyles.executiveValue}>{formatCurrency(weekWindow.expectedInflow - weekWindow.expectedOutflow, activeCurrency)}</Text>
+            <Text style={subStyles.executiveCaption}>Entran {formatCurrency(weekWindow.expectedInflow, activeCurrency)} y salen {formatCurrency(weekWindow.expectedOutflow, activeCurrency)}</Text>
+            <Text style={[subStyles.executiveDeltaChip, { color: cashCushion.color }]}>Caja libre: {cashCushion.days}d · {cashCushion.label}</Text>
+          </View>
+
+          <View style={[subStyles.executiveCard, subStyles.executiveCardWide]}>
+            <View style={subStyles.executiveTop}>
+              <Text style={subStyles.executiveLabel}>Fin de mes</Text>
+              <View style={[subStyles.executiveTonePill, monthStatus === "Bajo presión" && subStyles.executiveTonePillWarning]}>
+                <Text style={[subStyles.executiveToneText, monthStatus === "Bajo presión" && subStyles.executiveToneTextWarning]}>{monthStatus}</Text>
+              </View>
+            </View>
+            <Text style={subStyles.executiveValue}>{formatCurrency(monthEndEstimate, activeCurrency)}</Text>
+            <Text style={subStyles.executiveCaption}>Proyección usando el ritmo del mes actual{monthRecurringIncomeProjection > 0 ? ` e ingresos fijos por entrar.` : "."}</Text>
+            <Text style={[subStyles.executiveDeltaChip, { color: spendingTrend.expenseTrendColor }]}>{spendingTrend.expenseTrendLabel}</Text>
+          </View>
+        </View>
+      </Card>
+
+      <Card>
+        <Text style={subStyles.panelKicker}>Widgets fijos</Text>
+        <Text style={subStyles.panelTitle}>Panel destacado Pro</Text>
+        <Text style={subStyles.panelBody}>
+          Ancla los widgets que quieras arriba, reordena su prioridad y deja que el dashboard recuerde tu lectura favorita.
+        </Text>
+        <View style={subStyles.panelCoachCard}>
+          <View style={subStyles.panelCoachTop}>
+            <View style={subStyles.panelCoachIcon}>
+              <Sparkles size={16} color={COLORS.gold} />
+            </View>
+            <View style={subStyles.panelCoachCopy}>
+              <Text style={subStyles.panelCoachLabel}>Coach del panel</Text>
+              <Text style={subStyles.panelCoachTitle}>{ADVANCED_PRESET_META[suggestedPreset].cta} — {ADVANCED_PRESET_META[suggestedPreset].title}</Text>
+            </View>
+            <View style={subStyles.panelCoachPill}>
+              <Text style={subStyles.panelCoachPillText}>Sugerencia</Text>
+            </View>
+          </View>
+          <View style={subStyles.coachChipList}>
+            {panelCoachChips.map((chip, i) => (
+              <View key={i} style={[subStyles.coachChip, { borderLeftColor: chip.color }]}>
+                <chip.icon size={13} color={chip.color} strokeWidth={2} />
+                <Text style={[subStyles.coachChipText, chip.weight === "high" && { color: COLORS.ink }]}>{chip.label}</Text>
+              </View>
+            ))}
+          </View>
+          <View style={subStyles.panelCoachFooter}>
+            <Text style={subStyles.panelCoachFooterText}>
+              {preset === "manual" ? "Aun no fijaste un panel principal." : `Panel actual: ${ADVANCED_PRESET_META[preset].title}.`}
+            </Text>
+            {preset !== suggestedPreset ? (
+              <TouchableOpacity style={subStyles.panelApplyBtn} onPress={() => applyPreset(suggestedPreset)} activeOpacity={0.85}>
+                <Text style={subStyles.panelApplyBtnText}>{ADVANCED_PRESET_META[suggestedPreset].cta}</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        </View>
+
+        <View style={subStyles.presetHeaderRow}>
+          <Text style={subStyles.presetTitle}>Presets y modo</Text>
+          <View style={subStyles.panelCoachPill}>
+            <Text style={subStyles.panelCoachPillText}>Recomendado por DarkMoney</Text>
+          </View>
+        </View>
+
+        <View style={subStyles.presetGrid}>
+          {(Object.keys(ADVANCED_PRESET_META) as AdvancedPreset[]).map((option) => (
+            <TouchableOpacity
+              key={option}
+              style={[subStyles.presetCard, preset === option && subStyles.presetCardActive, option === "analytics" && subStyles.presetCardWide]}
+              onPress={() => applyPreset(option)}
+              activeOpacity={0.84}
+            >
+              <View style={subStyles.presetCardTop}>
+                <Text style={subStyles.presetCardTitle}>{ADVANCED_PRESET_META[option].title}</Text>
+                {option === suggestedPreset ? (
+                  <View style={subStyles.presetBadge}>
+                    <Text style={subStyles.presetBadgeText}>{option === "control" ? "Sugerido" : "Recomendado"}</Text>
+                  </View>
+                ) : null}
+              </View>
+              <Text style={subStyles.presetCardBody}>{ADVANCED_PRESET_META[option].subtitle}</Text>
+              {option === suggestedPreset ? (
+                <Text style={subStyles.presetSituationalText}>{ADVANCED_PRESET_META[option].situationalSubtitle}</Text>
+              ) : null}
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <View style={subStyles.widgetPanelCard}>
+          <Text style={subStyles.widgetPanelTitle}>
+            {featuredWidgetChips.length > 0 ? "Widgets priorizados" : "Aun no tienes widgets fijados"}
+          </Text>
+          <Text style={subStyles.widgetPanelBody}>
+            {featuredWidgetChips.length > 0
+              ? `Tu panel ${ADVANCED_PRESET_META[preset].title} prioriza esta lectura arriba, pero el resto del dashboard sigue explicando tu sistema por capas.`
+              : "Elige los widgets que quieras para convertir la parte alta del dashboard en tu panel favorito."}
+          </Text>
+          {featuredWidgetChips.length === 0 ? (
+            <Text style={subStyles.widgetPanelHint}>Si no quieres un preset, toca Manual y luego elige abajo tus widgets favoritos.</Text>
+          ) : null}
+          <View style={subStyles.widgetChipWrap}>
+            {(featuredWidgetChips.length > 0 ? featuredWidgetChips : ADVANCED_WIDGET_LIBRARY).map((chip) => (
+              <View key={chip} style={subStyles.widgetChip}>
+                <Text style={subStyles.widgetChipText}>{chip}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      </Card>
+
+      <Card>
+        <Text style={subStyles.layerKicker}>Como funciona tu panel</Text>
+        <Text style={subStyles.layerHeroTitle}>Los presets reordenan lo destacado, pero el resto sigue explicando tu sistema</Text>
+        <Text style={subStyles.layerHeroBody}>
+          Aunque uses un preset, el dashboard Pro mantiene una estructura fija: primero te orienta, luego te marca foco y después te deja profundizar por capas.
+        </Text>
+        <View style={subStyles.howList}>
+          <View style={subStyles.howItem}>
+            <Text style={subStyles.howTitle}>Resumen ejecutivo</Text>
+            <Text style={subStyles.howBody}>Te ubica rápido: foco de hoy, riesgo cercano y posible cierre del mes.</Text>
+          </View>
+          <View style={subStyles.howItem}>
+            <Text style={subStyles.howTitle}>Centro de foco</Text>
+            <Text style={subStyles.howBody}>Te dice cuál es la mejor acción inmediata y por qué DarkMoney la prioriza.</Text>
+          </View>
+          <View style={subStyles.howItem}>
+            <Text style={subStyles.howTitle}>Liquidez, salud y compromisos</Text>
+            <Text style={subStyles.howBody}>Mantiene la lectura operativa de corto plazo aunque tu panel destacado cambie.</Text>
+          </View>
+          <View style={subStyles.howItem}>
+            <Text style={subStyles.howTitle}>Diagnóstico y calidad</Text>
+            <Text style={subStyles.howBody}>Son capas de profundidad para entender patrones, calidad del dato y aprendizaje del sistema.</Text>
+          </View>
+        </View>
+      </Card>
+
+      <Card>
+        <Text style={subStyles.layerKicker}>Centro de foco</Text>
+        <Text style={subStyles.layerHeroBody}>
+          Aquí va lo que más importa ahora. La idea es que no tengas que interpretar diez tarjetas antes de decidir qué mirar.
+        </Text>
+        <TouchableOpacity style={subStyles.focusHeroCard} onPress={() => router.push(focusAction.route as never)} activeOpacity={0.84}>
+          <View style={subStyles.focusHeroTop}>
+            <Text style={subStyles.focusHeroLabel}>Tu siguiente mejor acción</Text>
+            <View style={subStyles.focusHeroPills}>
+              <View style={subStyles.focusHeroTonePill}><Text style={subStyles.focusHeroToneText}>{focusAction.tag}</Text></View>
+              <View style={subStyles.focusHeroTonePillMuted}><Text style={subStyles.focusHeroToneTextMuted}>Sistema</Text></View>
+            </View>
+          </View>
+          <View style={subStyles.focusHeroMiddle}>
+            <View style={{ flex: 1, gap: SPACING.xs }}>
+              <Text style={subStyles.focusHeroTitle}>{focusAction.title}</Text>
+              <Text style={subStyles.focusHeroValue}>{focusAction.body}</Text>
+              <Text style={subStyles.focusHeroBody}>{focusAction.detail}</Text>
+            </View>
+            <ArrowRight size={20} color={COLORS.primary} />
+          </View>
+        </TouchableOpacity>
+
+        <View style={subStyles.focusMetricGrid}>
+          <View style={subStyles.focusMetricCard}>
+            <Text style={subStyles.focusMetricLabel}>Presión 7 días</Text>
+            <Text style={subStyles.focusMetricValue}>{formatCurrency(weekWindow.expectedInflow - weekWindow.expectedOutflow, activeCurrency)}</Text>
+            <Text style={subStyles.focusMetricHint}>Entra {formatCurrency(weekWindow.expectedInflow, activeCurrency)} · sale {formatCurrency(weekWindow.expectedOutflow, activeCurrency)}</Text>
+          </View>
+          <View style={subStyles.focusMetricCard}>
+            <Text style={subStyles.focusMetricLabel}>Caja estimada fin de mes</Text>
+            <Text style={subStyles.focusMetricValue}>{formatCurrency(monthEndEstimate, activeCurrency)}</Text>
+            <Text style={subStyles.focusMetricHint}>Lectura proyectada usando el ritmo de este mes.</Text>
+          </View>
+          <View style={[subStyles.focusMetricCard, subStyles.focusMetricCardWide]}>
+            <Text style={subStyles.focusMetricLabel}>Caja libre</Text>
+            <Text style={[subStyles.focusMetricValue, { color: cashCushion.color }]}>{cashCushion.days}d · {cashCushion.label}</Text>
+            <Text style={subStyles.focusMetricHint}>{cashCushion.daysWithCommitments}d con compromisos incluidos</Text>
+          </View>
+        </View>
+
+        <View style={subStyles.coachChipList}>
+          {panelCoachChips.map((chip, i) => (
+            <View key={i} style={[subStyles.coachChip, { borderLeftColor: chip.color }]}>
+              <chip.icon size={13} color={chip.color} strokeWidth={2} />
+              <Text style={[subStyles.coachChipText, chip.weight === "high" && { color: COLORS.ink }]}>{chip.label}</Text>
+            </View>
+          ))}
+        </View>
+      </Card>
+
+      <View style={subStyles.layerSection}>
+        <Text style={subStyles.layerSectionKicker}>Proximas semanas</Text>
+        <Text style={subStyles.layerSectionTitle}>Liquidez, salud y compromisos</Text>
+        <Text style={subStyles.layerSectionBody}>
+          Esta parte te dice si lo que viene se ve controlado o si conviene mover foco antes de que se sienta la presión.
+        </Text>
+      </View>
+      <FutureFlowPreview
+        obligations={obligations}
+        subscriptions={subscriptions}
+        recurringIncome={recurringIncome}
+        displayCurrency={activeCurrency}
+        exchangeRateMap={exchangeRateMap}
+        currentVisibleBalance={currentVisibleBalance}
+      />
+      <UpcomingSection
+        obligations={obligations}
+        subscriptions={subscriptions}
+        recurringIncome={recurringIncome}
+        router={router}
+      />
+      <Card>
+        <SectionTitle>Proyección refinada</SectionTitle>
+        <Text style={subStyles.executiveIntro}>
+          Esta lectura ya separa lo comprometido del mes de tu ritmo variable reciente para darte una banda más útil, no un solo número.
+        </Text>
+        <View style={subStyles.executiveGrid}>
+          <View style={subStyles.executiveCard}>
+            <View style={subStyles.executiveTop}>
+              <Text style={subStyles.executiveLabel}>Conservador</Text>
+              <View style={[subStyles.executiveTonePill, subStyles.executiveTonePillWarning]}>
+                <Text style={[subStyles.executiveToneText, subStyles.executiveToneTextWarning]}>Defensivo</Text>
+              </View>
+            </View>
+            <Text style={subStyles.executiveValue}>{formatCurrency(projectionModel.conservativeBalance, activeCurrency)}</Text>
+            <Text style={subStyles.executiveCaption}>Asume entradas más prudentes y gasto variable algo más pesado.</Text>
+          </View>
+          <View style={subStyles.executiveCard}>
+            <View style={subStyles.executiveTop}>
+              <Text style={subStyles.executiveLabel}>Esperado</Text>
+              <View style={subStyles.executiveTonePill}>
+                <Text style={subStyles.executiveToneText}>{projectionModel.confidenceLabel}</Text>
+              </View>
+            </View>
+            <Text style={subStyles.executiveValue}>{formatCurrency(projectionModel.expectedBalance, activeCurrency)}</Text>
+            <Text style={subStyles.executiveCaption}>{projectionModel.confidence}% de confianza con {projectionModel.remainingDays} días por delante.</Text>
+          </View>
+          <View style={[subStyles.executiveCard, subStyles.executiveCardWide]}>
+            <View style={subStyles.executiveTop}>
+              <Text style={subStyles.executiveLabel}>Qué ya entra en la lectura</Text>
+            </View>
+            <Text style={subStyles.executiveCaption}>
+              Comprometido: entran {formatCurrency(projectionModel.committedInflow, activeCurrency)} y salen {formatCurrency(projectionModel.committedOutflow, activeCurrency)}.
+            </Text>
+            <Text style={subStyles.executiveCaption}>
+              Variable proyectado: entran {formatCurrency(projectionModel.variableIncomeProjection, activeCurrency)} y salen {formatCurrency(projectionModel.variableExpenseProjection, activeCurrency)} según tu ritmo reciente.
+            </Text>
+            <Text style={subStyles.executiveCaption}>
+              Escenario alto: {formatCurrency(projectionModel.optimisticBalance, activeCurrency)}.
+            </Text>
+          </View>
+        </View>
+      </Card>
+      <HealthScore
+        netWorth={currentVisibleBalance}
+        income={monthToDate.income}
+        expense={monthToDate.expense}
+        obligations={obligations}
+        netWorthThreeMonthExpense={currentVisibleBalance / Math.max(monthToDate.expense, 1)}
+      />
+      <SubscriptionsSummary subscriptions={subscriptions} currency={activeCurrency} />
+      <ObligationWatch obligations={obligations} router={router} />
+
+      <View style={subStyles.layerSection}>
+        <Text style={subStyles.layerSectionKicker}>Diagnostico</Text>
+        <Text style={subStyles.layerSectionTitle}>Patrones y comparativos del periodo</Text>
+        <Text style={subStyles.layerSectionBody}>
+          Abre esta parte cuando quieras entender de dónde sale la lectura del resumen y qué hábitos están marcando el mes.
+        </Text>
+      </View>
+      <ReviewInbox
+        movements={movements}
+        subscriptions={subscriptions}
+        obligations={obligations}
+        router={router}
+      />
+      <Card>
+        <SectionTitle>Sugerencias de categoría</SectionTitle>
+        <Text style={subStyles.executiveIntro}>
+          Aquí DarkMoney ya se apoya en tu historial: descripciones repetidas, contraparte y montos parecidos para adelantarte categorías con confianza.
+        </Text>
+        {categorySuggestions.length === 0 ? (
+          <View style={subStyles.richEmptyState}>
+            <Brain size={18} color={COLORS.primary} />
+            <Text style={subStyles.richEmptyTitle}>Aún no hay sugerencias fuertes</Text>
+            <Text style={subStyles.richEmptyBody}>Cuando vea repeticiones más claras en tu historial, aquí te propondrá categorías antes de que tengas que buscarlas a mano.</Text>
+          </View>
+        ) : (
+          <View style={subStyles.commandActions}>
+            {categorySuggestions.map((suggestion) => (
+              <TouchableOpacity
+                key={suggestion.movementId}
+                style={subStyles.commandActionRow}
+                onPress={() => router.push("/movements" as never)}
+                activeOpacity={0.82}
+              >
+                <View style={subStyles.commandActionCopy}>
+                  <View style={subStyles.suggestionRowTop}>
+                    <Text style={subStyles.commandActionTitle} numberOfLines={1}>{suggestion.description}</Text>
+                    <View style={subStyles.miniChip}>
+                      <Text style={subStyles.miniChipText}>{Math.round(suggestion.confidence * 100)}%</Text>
+                    </View>
+                  </View>
+                  <Text style={subStyles.commandActionBody}>
+                    {suggestion.suggestedCategoryName} · {formatCurrency(suggestion.amount, activeCurrency)} · {format(new Date(suggestion.occurredAt), "d MMM", { locale: es })}
+                  </Text>
+                  <Text style={subStyles.commandActionBody}>
+                    {suggestion.reasons.join(" · ")}
+                  </Text>
+                </View>
+                <ArrowRight size={15} color={COLORS.storm} />
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+      </Card>
+      <AnomalyWatch
+        movements={movements}
+        ctx={{ accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }}
+        categoryMap={categoryMap}
+        accountMap={accountMap}
+        router={router}
+      />
+      <CategoryBreakdown catTotals={advancedStats.catTotals} categories={snapshot?.categories ?? []} currency={activeCurrency} />
+      <TransferSnapshot movements={movements} accounts={activeAccounts} ctx={{ accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }} />
+      <WeeklyPattern movements={movements} ctx={{ accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }} />
+      <MonthlyPulse data={advancedStats.monthlyPulse} currency={activeCurrency} />
+
+      {/* N1-N5: Métricas avanzadas — tasa de ahorro, estabilidad, concentración, cobranza, estacional */}
+      <Card>
+        <SectionTitle>Métricas avanzadas</SectionTitle>
+        <Text style={subStyles.executiveIntro}>
+          Indicadores estadísticos sobre tus patrones: ahorro, estabilidad de ingresos, concentración de gasto, eficiencia de cobranza y comparación estacional.
+        </Text>
+
+        {/* N1: Tasa de ahorro mensual */}
+        <View style={subStyles.advMetricSection}>
+          <View style={subStyles.advMetricHeader}>
+            <Text style={subStyles.advMetricTitle}>Tasa de ahorro mensual</Text>
+            {monthlySavingsRate.lastRate != null ? (
+              <Text style={[subStyles.advMetricBadge, { color: monthlySavingsRate.color }]}>
+                {monthlySavingsRate.lastRate.toFixed(1)}% este mes
+              </Text>
+            ) : null}
+          </View>
+          <Text style={subStyles.advMetricBody}>
+            {monthlySavingsRate.avgRate != null
+              ? `Promedio 6 meses: ${monthlySavingsRate.avgRate.toFixed(1)}% · tendencia ${monthlySavingsRate.trend}`
+              : "Insuficiente historial para calcular promedio"}
+          </Text>
+          <View style={subStyles.advMetricBarRow}>
+            {monthlySavingsRate.months.map((m, i) => {
+              const pct = m.rate;
+              const barH = pct == null ? 4 : Math.min(40, Math.max(4, Math.abs(pct) * 0.8));
+              const barColor = pct == null ? COLORS.storm : pct >= 20 ? COLORS.income : pct >= 0 ? COLORS.gold : COLORS.expense;
+              return (
+                <View key={i} style={subStyles.advMetricBarItem}>
+                  <View style={[subStyles.advMetricBar, { height: barH, backgroundColor: barColor }]} />
+                  <Text style={subStyles.advMetricBarLabel}>{m.label}</Text>
+                </View>
+              );
+            })}
+          </View>
+        </View>
+
+        {/* N2: Score de estabilidad de ingresos */}
+        <View style={[subStyles.advMetricSection, subStyles.advMetricSectionBorder]}>
+          <View style={subStyles.advMetricHeader}>
+            <Text style={subStyles.advMetricTitle}>Estabilidad de ingresos</Text>
+            {incomeStabilityScore.score != null ? (
+              <Text style={[subStyles.advMetricBadge, { color: incomeStabilityScore.color }]}>
+                {incomeStabilityScore.score}/100
+              </Text>
+            ) : null}
+          </View>
+          <Text style={subStyles.advMetricBody}>
+            {incomeStabilityScore.score != null
+              ? `${incomeStabilityScore.label} · variación del ${incomeStabilityScore.cvPct}% entre meses`
+              : incomeStabilityScore.label}
+          </Text>
+          {incomeStabilityScore.score != null ? (
+            <View style={subStyles.advScoreBar}>
+              <View style={[subStyles.advScoreFill, { width: `${incomeStabilityScore.score}%` as any, backgroundColor: incomeStabilityScore.color }]} />
+            </View>
+          ) : null}
+        </View>
+
+        {/* N3: Índice HHI de concentración de gasto */}
+        <View style={[subStyles.advMetricSection, subStyles.advMetricSectionBorder]}>
+          <View style={subStyles.advMetricHeader}>
+            <Text style={subStyles.advMetricTitle}>Concentración de gasto</Text>
+            {categoryConcentration.hhi != null ? (
+              <Text style={[subStyles.advMetricBadge, { color: categoryConcentration.color }]}>
+                {categoryConcentration.label}
+              </Text>
+            ) : null}
+          </View>
+          <Text style={subStyles.advMetricBody}>
+            {categoryConcentration.hhi != null
+              ? `HHI: ${categoryConcentration.hhi.toFixed(3)}${categoryConcentration.topCategory ? ` · mayor partida: ${categoryConcentration.topCategory} (${categoryConcentration.topShare}%)` : ""}`
+              : "Sin movimientos categorizados este periodo"}
+          </Text>
+        </View>
+
+        {/* N4: Eficiencia de cobranza */}
+        <View style={[subStyles.advMetricSection, subStyles.advMetricSectionBorder]}>
+          <View style={subStyles.advMetricHeader}>
+            <Text style={subStyles.advMetricTitle}>Eficiencia de cobranza</Text>
+            {collectionEfficiency.rate != null ? (
+              <Text style={[subStyles.advMetricBadge, { color: collectionEfficiency.color }]}>
+                {collectionEfficiency.rate}% — {collectionEfficiency.label}
+              </Text>
+            ) : null}
+          </View>
+          <Text style={subStyles.advMetricBody}>
+            {collectionEfficiency.rate != null
+              ? `${collectionEfficiency.resolved} de ${collectionEfficiency.total} cobros resueltos en los últimos 30 días`
+              : collectionEfficiency.label}
+          </Text>
+          {collectionEfficiency.rate != null ? (
+            <View style={subStyles.advScoreBar}>
+              <View style={[subStyles.advScoreFill, { width: `${collectionEfficiency.rate}%` as any, backgroundColor: collectionEfficiency.color }]} />
+            </View>
+          ) : null}
+        </View>
+
+        {/* N5: Comparación estacional */}
+        <View style={[subStyles.advMetricSection, subStyles.advMetricSectionBorder]}>
+          <View style={subStyles.advMetricHeader}>
+            <Text style={subStyles.advMetricTitle}>Comparación estacional</Text>
+            {seasonalComparison.hasHistory ? (
+              <Text style={[subStyles.advMetricBadge, { color: seasonalComparison.expenseColor }]}>
+                {seasonalComparison.expenseLabel}
+              </Text>
+            ) : null}
+          </View>
+          {seasonalComparison.hasHistory ? (
+            <>
+              <Text style={subStyles.advMetricBody}>
+                Gasto: {formatCurrency(seasonalComparison.curExpense, activeCurrency)} este mes vs {formatCurrency(seasonalComparison.prevExpense, activeCurrency)} mismo mes año pasado.
+              </Text>
+              {seasonalComparison.incomeDelta != null ? (
+                <Text style={subStyles.advMetricBody}>
+                  Ingreso: {seasonalComparison.incomeDelta > 0 ? "+" : ""}{seasonalComparison.incomeDelta.toFixed(0)}% vs año pasado.
+                </Text>
+              ) : null}
+            </>
+          ) : (
+            <Text style={subStyles.advMetricBody}>Se necesita historial de al menos 12 meses para esta comparación.</Text>
+          )}
+        </View>
+      </Card>
+
+      <PeriodRadar
+        income={advancedStats.income}
+        expense={advancedStats.expense}
+        catTotals={advancedStats.catTotals}
+        categories={snapshot?.categories ?? []}
+        curStart={advancedStats.curStart}
+        curEnd={advancedStats.curEnd}
+        movements={movements}
+      />
+
+      <Card>
+        <View style={subStyles.qualityHeader}>
+          <View style={{ flex: 1, gap: 4 }}>
+            <Text style={subStyles.qualityKicker}>Calidad</Text>
+            <Text style={subStyles.qualityTitle}>Datos, aprendizaje y actividad</Text>
+            <Text style={subStyles.qualityBody}>Aquí quedan las capas más técnicas: calidad del dato, exposición, aprendizaje del sistema y actividad reciente.</Text>
+          </View>
+          <TouchableOpacity style={subStyles.qualityToggleBtn} onPress={() => setQualityOpen((value) => !value)} activeOpacity={0.85}>
+            <Text style={subStyles.qualityToggleBtnText}>{qualityOpen ? "Ocultar" : "Abrir"}</Text>
+          </TouchableOpacity>
+        </View>
+      </Card>
+
+      {qualityOpen ? (
+        <>
+          <DataQuality movements={movements} />
+          <LearningPanel movements={movements} />
+          <Card>
+            <SectionTitle>Proyeccion</SectionTitle>
+            <View style={subStyles.projectionStack}>
+              <View style={subStyles.projectionCard}>
+                <View style={subStyles.projectionTop}>
+                  <Text style={subStyles.projectionLabel}>Alertas y coach</Text>
+                  <View style={subStyles.executiveTonePill}>
+                    <Text style={subStyles.executiveToneText}>Activos</Text>
+                  </View>
+                </View>
+                <Text style={subStyles.projectionTitle}>{learning.readinessScore}% de confianza actual</Text>
+                <Text style={subStyles.projectionBody}>
+                  Con esta base ya es más fácil separar ruido de señal: el sistema puede priorizar mejor liquidez, cartera y control.
+                </Text>
+              </View>
+              <View style={subStyles.projectionCard}>
+                <View style={subStyles.projectionTop}>
+                  <Text style={subStyles.projectionLabel}>Proyección con bandas</Text>
+                  <View style={subStyles.executiveTonePill}>
+                    <Text style={subStyles.executiveToneText}>{projectionModel.confidenceLabel}</Text>
+                  </View>
+                </View>
+                <Text style={subStyles.projectionTitle}>{projectionModel.confidence}% de confianza actual</Text>
+                <Text style={subStyles.projectionBody}>
+                  Base esperada: {formatCurrency(projectionModel.expectedBalance, activeCurrency)}. Piso conservador: {formatCurrency(projectionModel.conservativeBalance, activeCurrency)}. Escenario alto: {formatCurrency(projectionModel.optimisticBalance, activeCurrency)}.
+                </Text>
+              </View>
+              <View style={subStyles.projectionCard}>
+                <View style={subStyles.projectionTop}>
+                  <Text style={subStyles.projectionLabel}>Que conviene limpiar o reforzar</Text>
+                </View>
+                <Text style={subStyles.projectionBody}>
+                  Si mejoras estos puntos, el dashboard deja de adivinar y pasa a explicarte mejor por qué hoy estás estable, con margen o bajo presión.
+                </Text>
+                {review.uncategorizedCount > 0 ? (
+                  <TouchableOpacity style={subStyles.actionPillRow} onPress={() => router.push("/movements" as never)} activeOpacity={0.85}>
+                    <AlertTriangle size={15} color={COLORS.gold} />
+                    <Text style={subStyles.actionPillBody}>{review.uncategorizedCount} movimientos sin categoría siguen quitando precisión a las comparaciones.</Text>
+                    <View style={subStyles.actionPill}><Text style={subStyles.actionPillText}>Ordenar</Text></View>
+                  </TouchableOpacity>
+                ) : null}
+                {learning.historyDays < 30 ? (
+                  <View style={subStyles.actionPillRow}>
+                    <AlertTriangle size={15} color={COLORS.gold} />
+                    <Text style={subStyles.actionPillBody}>Todavía falta un poco más de historia para separar hábitos reales de semanas aisladas.</Text>
+                    <View style={subStyles.actionPill}><Text style={subStyles.actionPillText}>Registrar</Text></View>
+                  </View>
+                ) : null}
+              </View>
+              {weeklyPatternInsight ? (
+                <View style={subStyles.projectionCard}>
+                  <View style={subStyles.projectionTop}>
+                    <Text style={subStyles.projectionLabel}>Patron semanal</Text>
+                    <View style={subStyles.executiveTonePill}>
+                      <Text style={subStyles.executiveToneText}>Visible</Text>
+                    </View>
+                  </View>
+                  <Text style={subStyles.projectionTitle}>Ritmo de gasto</Text>
+                  <Text style={subStyles.projectionBody}>
+                    {weeklyPatternInsight.dayLabel} pesa {weeklyPatternInsight.share}% del gasto observado. Ya se nota una concentración de salida de dinero ese día.
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+          </Card>
+          <AccountsBreakdown
+            accounts={snapshot?.accounts ?? []}
+            displayCurrency={activeCurrency}
+            baseCurrency={baseCurrency}
+            exchangeRateMap={exchangeRateMap}
+          />
+          <CurrencyExposure accounts={snapshot?.accounts ?? []} />
+          <ActivityTimeline snapshot={snapshot} />
+        </>
+      ) : null}
+    </>
+  );
+}
+
 function ProGate() {
   return (
     <View style={subStyles.proGate}>
@@ -2135,6 +3976,7 @@ function DashboardScreen() {
 
   const { data: snapshot, isLoading: snapLoading } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const { data: movements = [] } = useDashboardMovementsQuery(activeWorkspaceId, profile?.id);
+  const { data: dashboardAnalytics } = useDashboardAnalyticsQuery(activeWorkspaceId, profile?.id);
   const { data: sharedObligations = [] } = useSharedObligationsQuery(session?.user?.id ?? null);
 
   const obligationsMerged = useMemo(
@@ -2296,6 +4138,8 @@ function DashboardScreen() {
         {isCheckingAdvancedAccess ? <ProGateLoading /> : shouldShowAdvancedProGate ? <ProGate /> : (
           <>
 
+        {!isAdvanced ? (
+          <>
         {/* 2. Hero balance (period + currency selector inside) */}
         <HeroCard
           netWorth={netWorth}
@@ -2375,6 +4219,7 @@ function DashboardScreen() {
         <UpcomingSection
           obligations={obligationsMerged}
           subscriptions={snapshot?.subscriptions ?? []}
+          recurringIncome={snapshot?.recurringIncome ?? []}
           router={router}
         />
 
@@ -2391,107 +4236,27 @@ function DashboardScreen() {
 
         {/* 10. Savings trend sparkline */}
         <SavingsTrendCard monthlyPulse={stats.monthlyPulse} currency={activeCurrency} />
+          </>
+        ) : null}
 
         {/* ── Advanced section ── */}
         {isAdvanced && isPro && (
-          <>
-            <ReviewInbox
-              movements={movements}
-              subscriptions={snapshot?.subscriptions ?? []}
-              obligations={obligationsMerged}
-              router={router}
-            />
-
-            <ProCommandCenter
-              movements={movements}
-              obligations={obligationsMerged}
-              subscriptions={snapshot?.subscriptions ?? []}
-              displayCurrency={activeCurrency}
-              exchangeRateMap={exchangeRateMap}
-              currentVisibleBalance={netWorth}
-              router={router}
-              accountCurrencyMap={accountCurrencyMap}
-            />
-
-            <FutureFlowPreview
-              obligations={obligationsMerged}
-              subscriptions={snapshot?.subscriptions ?? []}
-              displayCurrency={activeCurrency}
-              exchangeRateMap={exchangeRateMap}
-              currentVisibleBalance={netWorth}
-            />
-
-            <LearningPanel movements={movements} />
-
-            {/* 10. Category breakdown (detail) */}
-            <CategoryBreakdown
-              catTotals={stats.catTotals}
-              categories={snapshot?.categories ?? []}
-              currency={activeCurrency}
-            />
-
-            {/* 11. Obligations section */}
-            <ObligationsSection obligations={obligationsMerged} router={router} />
-
-            {/* 12. Alert center */}
-            <AlertCenter
-              budgets={snapshot?.budgets ?? []}
-              obligations={obligationsMerged}
-              subscriptions={snapshot?.subscriptions ?? []}
-              movements={movements}
-            />
-
-            {/* 13. Obligation watch */}
-            <ObligationWatch obligations={obligationsMerged} router={router} />
-
-            {/* 14. Weekly pattern */}
-            <WeeklyPattern movements={movements} ctx={conversionCtx} />
-
-            {/* 15. Transfer snapshot */}
-            <TransferSnapshot
-              movements={movements}
-              accounts={activeAccounts}
-              ctx={conversionCtx}
-            />
-
-            {/* 16. Monthly pulse */}
-            <MonthlyPulse data={stats.monthlyPulse} currency={activeCurrency} />
-
-            {/* 17. Subscriptions summary */}
-            <SubscriptionsSummary
-              subscriptions={snapshot?.subscriptions ?? []}
-              currency={activeCurrency}
-            />
-
-            {/* 18. Health score */}
-            <HealthScore
-              netWorth={netWorth}
-              income={stats.income}
-              expense={stats.expense}
-              obligations={obligationsMerged}
-              netWorthThreeMonthExpense={netWorth / Math.max(stats.expense, 1)}
-            />
-
-            {/* 19. Currency exposure */}
-            <CurrencyExposure accounts={snapshot?.accounts ?? []} />
-
-            {/* 20. Period radar */}
-            <PeriodRadar
-              income={stats.income}
-              expense={stats.expense}
-              catTotals={stats.catTotals}
-              categories={snapshot?.categories ?? []}
-              curStart={stats.curStart}
-              curEnd={stats.curEnd}
-              movements={movements}
-            />
-
-            {/* 21. Data quality */}
-            <DataQuality movements={movements} />
-
-            {/* 22. Activity timeline */}
-            <ActivityTimeline snapshot={snapshot} />
-          </>
+          <AdvancedDashboard
+            movements={movements}
+            obligations={obligationsMerged}
+            subscriptions={snapshot?.subscriptions ?? []}
+            recurringIncome={snapshot?.recurringIncome ?? []}
+            snapshot={snapshot}
+            activeAccounts={activeAccounts}
+            activeCurrency={activeCurrency}
+            baseCurrency={baseCurrency}
+            exchangeRateMap={exchangeRateMap}
+            currentVisibleBalance={netWorth}
+            workspaceId={activeWorkspaceId}
+            analytics={dashboardAnalytics}
+            router={router}
+            accountCurrencyMap={accountCurrencyMap}
+          />
         )}
           </>
         )}
@@ -3201,6 +4966,12 @@ const subStyles = StyleSheet.create({
     flex: 1,
     gap: 2,
   },
+  suggestionRowTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: SPACING.sm,
+  },
   commandActionTitle: {
     fontFamily: FONT_FAMILY.bodySemibold,
     fontSize: FONT_SIZE.sm,
@@ -3260,6 +5031,547 @@ const subStyles = StyleSheet.create({
     fontSize: FONT_SIZE.sm,
     color: COLORS.ink,
     lineHeight: 20,
+  },
+  // Coach chips (U3)
+  coachChipList: {
+    gap: SPACING.xs,
+    marginTop: SPACING.sm,
+  },
+  coachChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.xs,
+    borderLeftWidth: 2,
+    paddingLeft: SPACING.sm,
+    paddingVertical: 5,
+  },
+  coachChipText: {
+    flex: 1,
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.storm,
+    lineHeight: 18,
+  },
+  // Executive Summary delta chip (U1)
+  executiveDeltaChip: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+    marginTop: 3,
+  },
+  // Focus metric wide card (A3)
+  focusMetricCardWide: {
+    width: "100%",
+  },
+  // Preset situational subtitle (U4)
+  presetSituationalText: {
+    fontFamily: FONT_FAMILY.bodyMedium,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.gold,
+    marginTop: SPACING.xs,
+    lineHeight: 16,
+  },
+  // Advanced metrics section (N1-N5)
+  advMetricSection: {
+    paddingVertical: SPACING.sm,
+    gap: SPACING.xs,
+  },
+  advMetricSectionBorder: {
+    borderTopWidth: 0.5,
+    borderTopColor: GLASS.cardBorder,
+    marginTop: SPACING.xs,
+  },
+  advMetricHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  advMetricTitle: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.ink,
+  },
+  advMetricBadge: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+  },
+  advMetricBody: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    lineHeight: 16,
+  },
+  advMetricBarRow: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: SPACING.xs,
+    marginTop: SPACING.xs,
+    height: 48,
+  },
+  advMetricBarItem: {
+    flex: 1,
+    alignItems: "center",
+    gap: 3,
+    justifyContent: "flex-end",
+  },
+  advMetricBar: {
+    width: "100%",
+    borderRadius: 3,
+    minHeight: 4,
+  },
+  advMetricBarLabel: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: 9,
+    color: COLORS.storm,
+    textTransform: "capitalize",
+  },
+  advScoreBar: {
+    height: 5,
+    backgroundColor: GLASS.card,
+    borderRadius: 3,
+    overflow: "hidden",
+    marginTop: SPACING.xs,
+  },
+  advScoreFill: {
+    height: "100%",
+    borderRadius: 3,
+  },
+  layerKicker: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.primary,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+    marginBottom: SPACING.xs,
+  },
+  layerHeroTitle: {
+    fontFamily: FONT_FAMILY.heading,
+    fontSize: 18,
+    color: COLORS.ink,
+    marginBottom: SPACING.xs,
+  },
+  layerHeroBody: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.md,
+    color: COLORS.storm,
+    lineHeight: 28,
+  },
+  executiveIntro: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.storm,
+    lineHeight: 21,
+    marginBottom: SPACING.md,
+  },
+  executiveGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: SPACING.sm,
+  },
+  executiveCard: {
+    flex: 1,
+    minWidth: "46%",
+    padding: SPACING.md,
+    borderRadius: RADIUS.xl,
+    backgroundColor: "rgba(255,255,255,0.035)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    gap: SPACING.xs,
+  },
+  executiveCardWide: {
+    minWidth: "100%",
+  },
+  executiveTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: SPACING.sm,
+  },
+  executiveLabel: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.storm,
+  },
+  executiveTonePill: {
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 4,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.primary + "18",
+  },
+  executiveTonePillWarning: {
+    backgroundColor: COLORS.gold + "18",
+  },
+  executiveToneText: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.primary,
+  },
+  executiveToneTextWarning: {
+    color: COLORS.gold,
+  },
+  executiveValue: {
+    fontFamily: FONT_FAMILY.heading,
+    fontSize: 18,
+    color: COLORS.ink,
+  },
+  executiveCaption: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.storm,
+    lineHeight: 21,
+  },
+  panelKicker: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.gold,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+    marginBottom: SPACING.xs,
+  },
+  panelTitle: {
+    fontFamily: FONT_FAMILY.heading,
+    fontSize: 18,
+    color: COLORS.ink,
+    marginBottom: SPACING.xs,
+  },
+  panelBody: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.storm,
+    lineHeight: 22,
+    marginBottom: SPACING.md,
+  },
+  panelCoachCard: {
+    padding: SPACING.md,
+    borderRadius: RADIUS.xl,
+    backgroundColor: "rgba(215,190,123,0.10)",
+    borderWidth: 1,
+    borderColor: "rgba(215,190,123,0.18)",
+    gap: SPACING.sm,
+    marginBottom: SPACING.lg,
+  },
+  panelCoachTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+  },
+  panelCoachIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.05)",
+  },
+  panelCoachCopy: { flex: 1, gap: 2 },
+  panelCoachLabel: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.gold,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+  },
+  panelCoachTitle: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.md,
+    color: COLORS.ink,
+  },
+  panelCoachPill: {
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 5,
+    borderRadius: RADIUS.full,
+    backgroundColor: "rgba(215,190,123,0.12)",
+  },
+  panelCoachPillText: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.gold,
+  },
+  panelCoachBody: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.ink,
+    lineHeight: 24,
+  },
+  miniChip: {
+    alignSelf: "flex-start",
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 6,
+    borderRadius: RADIUS.full,
+    backgroundColor: "rgba(255,255,255,0.06)",
+  },
+  miniChipText: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.ink,
+  },
+  panelCoachFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: SPACING.sm,
+    flexWrap: "wrap",
+  },
+  panelCoachFooterText: {
+    flex: 1,
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.storm,
+  },
+  panelApplyBtn: {
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    borderRadius: RADIUS.full,
+    backgroundColor: "rgba(215,190,123,0.16)",
+  },
+  panelApplyBtnText: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.gold,
+  },
+  presetHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: SPACING.sm,
+    marginBottom: SPACING.md,
+    flexWrap: "wrap",
+  },
+  presetTitle: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    textTransform: "uppercase",
+    letterSpacing: 0.7,
+  },
+  presetGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: SPACING.sm,
+    marginBottom: SPACING.lg,
+  },
+  presetCard: {
+    width: "48%",
+    padding: SPACING.md,
+    borderRadius: RADIUS.xl,
+    backgroundColor: "rgba(255,255,255,0.03)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    gap: SPACING.xs,
+  },
+  presetCardActive: {
+    borderColor: COLORS.primary + "88",
+    backgroundColor: COLORS.primary + "10",
+  },
+  presetCardWide: {
+    width: "100%",
+  },
+  presetCardTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: SPACING.xs,
+  },
+  presetCardTitle: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.lg,
+    color: COLORS.ink,
+    flex: 1,
+    flexShrink: 1,
+  },
+  presetBadge: {
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 4,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.gold + "18",
+    flexShrink: 0,
+  },
+  presetBadgeText: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.gold,
+  },
+  presetCardBody: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.storm,
+    lineHeight: 22,
+  },
+  widgetPanelCard: {
+    padding: SPACING.md,
+    borderRadius: RADIUS.xl,
+    backgroundColor: "rgba(255,255,255,0.03)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    gap: SPACING.sm,
+  },
+  widgetPanelTitle: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.lg,
+    color: COLORS.ink,
+  },
+  widgetPanelBody: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.storm,
+    lineHeight: 22,
+  },
+  widgetPanelHint: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.storm,
+    lineHeight: 22,
+  },
+  widgetChipWrap: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: SPACING.xs,
+  },
+  widgetChip: {
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 8,
+    borderRadius: RADIUS.full,
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.07)",
+  },
+  widgetChipText: {
+    fontFamily: FONT_FAMILY.bodyMedium,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.storm,
+  },
+  howList: { gap: SPACING.md, marginTop: SPACING.md },
+  howItem: { gap: 4 },
+  howTitle: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.lg, color: COLORS.ink },
+  howBody: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.storm, lineHeight: 22 },
+  focusHeroCard: {
+    marginTop: SPACING.md,
+    padding: SPACING.lg,
+    borderRadius: RADIUS.xl,
+    backgroundColor: "rgba(59,166,142,0.10)",
+    borderWidth: 1,
+    borderColor: "rgba(107,228,197,0.16)",
+    gap: SPACING.md,
+  },
+  focusHeroTop: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: SPACING.sm,
+  },
+  focusHeroLabel: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.primary,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+  },
+  focusHeroPills: { alignItems: "flex-end", gap: 6 },
+  focusHeroTonePill: {
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 5,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.primary + "14",
+  },
+  focusHeroToneText: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.xs, color: "#9EB7FF" },
+  focusHeroTonePillMuted: {
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 5,
+    borderRadius: RADIUS.full,
+    backgroundColor: "rgba(255,255,255,0.06)",
+  },
+  focusHeroToneTextMuted: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.xs, color: COLORS.storm },
+  focusHeroMiddle: { flexDirection: "row", alignItems: "center", gap: SPACING.md },
+  focusHeroTitle: { fontFamily: FONT_FAMILY.heading, fontSize: 18, color: COLORS.ink },
+  focusHeroValue: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: 18, color: COLORS.ink, lineHeight: 28 },
+  focusHeroBody: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.md, color: COLORS.storm, lineHeight: 26 },
+  focusMetricGrid: { flexDirection: "row", gap: SPACING.sm, marginTop: SPACING.md },
+  focusMetricCard: {
+    flex: 1,
+    padding: SPACING.md,
+    borderRadius: RADIUS.xl,
+    backgroundColor: "rgba(255,255,255,0.035)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    gap: SPACING.xs,
+  },
+  focusMetricLabel: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.storm },
+  focusMetricValue: { fontFamily: FONT_FAMILY.heading, fontSize: 18, color: COLORS.ink },
+  focusMetricHint: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.storm, lineHeight: 22 },
+  layerSection: { gap: SPACING.xs },
+  layerSectionKicker: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.primary,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+  },
+  layerSectionTitle: { fontFamily: FONT_FAMILY.heading, fontSize: 20, color: COLORS.ink },
+  layerSectionBody: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.md, color: COLORS.storm, lineHeight: 26 },
+  qualityHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.md,
+  },
+  qualityKicker: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+    color: "#9EA9FF",
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+  },
+  qualityTitle: { fontFamily: FONT_FAMILY.heading, fontSize: 18, color: COLORS.ink },
+  qualityBody: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.storm, lineHeight: 22 },
+  qualityToggleBtn: {
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.primary + "18",
+  },
+  qualityToggleBtnText: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.sm, color: COLORS.primary },
+  projectionStack: { gap: SPACING.sm },
+  projectionCard: {
+    padding: SPACING.md,
+    borderRadius: RADIUS.xl,
+    backgroundColor: "rgba(255,255,255,0.035)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    gap: SPACING.sm,
+  },
+  projectionTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: SPACING.sm },
+  projectionLabel: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm, textTransform: "uppercase", letterSpacing: 0.5 },
+  projectionTitle: { fontFamily: FONT_FAMILY.heading, fontSize: 18, color: COLORS.ink },
+  projectionBody: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.storm, lineHeight: 24 },
+  actionPillRow: { flexDirection: "row", alignItems: "center", gap: SPACING.sm },
+  actionPillBody: { flex: 1, fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.ink, lineHeight: 22 },
+  actionPill: { paddingHorizontal: SPACING.sm, paddingVertical: 6, borderRadius: RADIUS.full, backgroundColor: COLORS.primary + "18" },
+  actionPillText: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.sm, color: COLORS.primary },
+  anomalyList: { gap: SPACING.sm, marginBottom: SPACING.md },
+  anomalyCard: { padding: SPACING.md, borderRadius: RADIUS.xl, gap: SPACING.sm, borderWidth: 1 },
+  anomalyCardStrong: { backgroundColor: "rgba(167,95,118,0.12)", borderColor: "rgba(218,122,154,0.16)" },
+  anomalyCardReview: { backgroundColor: "rgba(215,190,123,0.08)", borderColor: "rgba(215,190,123,0.14)" },
+  anomalyTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: SPACING.sm },
+  anomalyTitle: { flex: 1, fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.lg, color: COLORS.ink },
+  anomalyBadge: { paddingHorizontal: SPACING.sm, paddingVertical: 5, borderRadius: RADIUS.full },
+  anomalyBadgeStrong: { backgroundColor: "rgba(218,122,154,0.16)" },
+  anomalyBadgeReview: { backgroundColor: "rgba(215,190,123,0.16)" },
+  anomalyBadgeText: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.xs },
+  anomalyBadgeTextStrong: { color: "#FF9DBA" },
+  anomalyBadgeTextReview: { color: COLORS.gold },
+  anomalyBody: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.ink, lineHeight: 24 },
+  anomalyBottom: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: SPACING.sm },
+  anomalyMeta: { flex: 1, fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm, lineHeight: 18 },
+  secondaryOutlineBtn: {
+    alignSelf: "flex-start",
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    borderColor: GLASS.cardBorder,
+    backgroundColor: "rgba(255,255,255,0.02)",
+  },
+  secondaryOutlineBtnText: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.ink,
   },
 
   // Accounts breakdown ring
@@ -3352,7 +5664,9 @@ function DashboardHeaderRight({ onSignOut }: { onSignOut: () => void }) {
         )}
       </TouchableOpacity>
       <TouchableOpacity style={hdrStyles.avatar} onPress={onSignOut}>
-        <Text style={hdrStyles.avatarText}>{profile?.initials ?? "?"}</Text>
+        {profile?.avatarUrl
+          ? <Image source={{ uri: profile.avatarUrl }} style={hdrStyles.avatarImage} />
+          : <Text style={hdrStyles.avatarText}>{profile?.initials ?? "?"}</Text>}
       </TouchableOpacity>
     </View>
   );
@@ -3401,6 +5715,12 @@ const hdrStyles = StyleSheet.create({
     borderColor: COLORS.primary + "55",
     alignItems: "center",
     justifyContent: "center",
+    overflow: "hidden",
+  },
+  avatarImage: {
+    width: 36,
+    height: 36,
+    borderRadius: RADIUS.lg,
   },
   avatarText: {
     fontSize: FONT_SIZE.xs,

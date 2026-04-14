@@ -11,7 +11,7 @@ import { Button } from "./Button";
 import { SafeBlurView } from "./SafeBlurView";
 
 const BG_TIMESTAMP_KEY = "darkmoney_bg_timestamp";
-const LOCK_TIMEOUT_MS = 10_000; // 10 segundos en background → cierre de sesión
+const LOCK_TIMEOUT_MS = 120_000; // 2 minutos en background → cierre de sesión
 /** Tras login/registro: ignorar el timeout (Samsung Pass / autofill ponen la app en `inactive` un rato). */
 const POST_LOGIN_GRACE_MS = 120_000;
 

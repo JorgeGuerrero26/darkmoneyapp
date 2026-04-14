@@ -13,6 +13,7 @@ import { sortObligationEventsNewestFirst } from "../../lib/sort-obligation-event
 import { useUiStore } from "../../store/ui-store";
 import {
   convertAmountToWorkspaceBase,
+  computeNextRecurringDate,
   subscriptionFrequencyListLabel,
 } from "../../lib/subscription-helpers";
 import type { AppProfile } from "../../lib/auth-context";
@@ -27,6 +28,7 @@ import type {
   ExchangeRateSummary,
   JsonValue,
   MovementRecord,
+  MovementAnalyticsSignal,
   MovementType,
   MovementStatus,
   ObligationDirection,
@@ -40,8 +42,12 @@ import type {
   ObligationPaymentRequest,
   ObligationEventViewerLink,
   UserEntitlementSummary,
+  WorkspaceAnalyticsSnapshot,
+  RecurringIncomeFrequency,
+  RecurringIncomeStatus,
   SubscriptionFrequency,
   CategoryPostedMovement,
+  RecurringIncomeSummary,
   SubscriptionPostedMovement,
   SubscriptionSummary,
   Workspace,
@@ -79,6 +85,23 @@ function isDuplicateConstraintMessage(message: string | null | undefined): boole
     normalized.includes("ya existe") ||
     normalized.includes("ya existen") ||
     normalized.includes("registro existente")
+  );
+}
+
+function isMissingRelationError(
+  error: { message?: string | null; details?: string | null; hint?: string | null } | null | undefined,
+  relationName: string,
+): boolean {
+  const joined = [error?.message, error?.details, error?.hint].filter(Boolean).join(" ").toLowerCase();
+  const relation = relationName.trim().toLowerCase();
+  return (
+    joined.includes(relation) &&
+    (
+      joined.includes("does not exist") ||
+      joined.includes("could not find") ||
+      joined.includes("schema cache") ||
+      joined.includes("no existe")
+    )
   );
 }
 
@@ -490,6 +513,28 @@ type SubscriptionRow = {
   notes: string | null;
 };
 
+type RecurringIncomeRow = {
+  id: number;
+  workspace_id: number;
+  name: string;
+  payer_party_id: number | null;
+  account_id: number | null;
+  category_id: number | null;
+  currency_code: string;
+  amount: NumericLike;
+  frequency: RecurringIncomeFrequency;
+  interval_count: number;
+  day_of_month: number | null;
+  day_of_week: number | null;
+  start_date: string;
+  next_expected_date: string;
+  end_date: string | null;
+  status: RecurringIncomeStatus;
+  remind_days_before: number;
+  description: string | null;
+  notes: string | null;
+};
+
 type ExchangeRateRow = {
   from_currency_code: string;
   to_currency_code: string;
@@ -737,6 +782,7 @@ export type WorkspaceSnapshot = {
   budgets: BudgetOverview[];
   obligations: ObligationSummary[];
   subscriptions: SubscriptionSummary[];
+  recurringIncome: RecurringIncomeSummary[];
   /** Movimientos posted con subscription_id (analÃ­ticas sin query extra). */
   subscriptionPostedMovements: SubscriptionPostedMovement[];
   /** Movimientos posted con category_id (analÃ­ticas categorÃ­as). */
@@ -829,6 +875,7 @@ async function fetchWorkspaceSnapshot(
     obligationsResult,
     obligationTextMetaResult,
     subscriptionsResult,
+    recurringIncomeResult,
     subscriptionMovementsResult,
     categoryMovementsResult,
     exchangeRatesResult,
@@ -879,6 +926,11 @@ async function fetchWorkspaceSnapshot(
       .eq("workspace_id", activeWorkspaceId)
       .order("next_due_date", { ascending: true }),
     supabase
+      .from("recurring_income")
+      .select("id, workspace_id, name, payer_party_id, account_id, category_id, currency_code, amount, frequency, interval_count, day_of_month, day_of_week, start_date, next_expected_date, end_date, status, remind_days_before, description, notes")
+      .eq("workspace_id", activeWorkspaceId)
+      .order("next_expected_date", { ascending: true }),
+    supabase
       .from("movements")
       .select("id, subscription_id, status, occurred_at, source_amount, destination_amount")
       .eq("workspace_id", activeWorkspaceId)
@@ -903,6 +955,9 @@ async function fetchWorkspaceSnapshot(
 
   if (subscriptionsResult.error) {
     throw new Error(subscriptionsResult.error.message ?? "Error al cargar suscripciones");
+  }
+  if (recurringIncomeResult.error) {
+    throw new Error(recurringIncomeResult.error.message ?? "Error al cargar ingresos fijos");
   }
 
   // obligation_events no tiene workspace_id en el esquema: filtrar eventos por obligaciones del workspace
@@ -1090,6 +1145,18 @@ async function fetchWorkspaceSnapshot(
         exchangeRates,
       ),
   );
+  const recurringIncome: RecurringIncomeSummary[] = (recurringIncomeResult.data ?? []).map(
+    (row: any) =>
+      mapRecurringIncome(
+        row as RecurringIncomeRow,
+        categoryMap,
+        counterpartyMap,
+        accountMap,
+        FREQUENCY_LABELS,
+        baseCurrency,
+        exchangeRates,
+      ),
+  );
 
   return {
     workspaces,
@@ -1098,6 +1165,7 @@ async function fetchWorkspaceSnapshot(
     budgets,
     obligations,
     subscriptions,
+    recurringIncome,
     subscriptionPostedMovements,
     categoryPostedMovements,
     counterparties,
@@ -1269,6 +1337,43 @@ export type DashboardMovementRow = {
   description: string;
 };
 
+export type DashboardAnalyticsBundle = {
+  signals: MovementAnalyticsSignal[];
+  projectionSnapshot: WorkspaceAnalyticsSnapshot | null;
+  available: boolean;
+};
+
+export type PersistMovementAnalyticsSignalInput = {
+  movementId: number;
+  normalizedDescription?: string | null;
+  merchantGuess?: string | null;
+  suggestedCategoryId?: number | null;
+  suggestedCategoryConfidence?: number | null;
+  anomalyScore?: number | null;
+  signalReasons?: string[];
+  analyticsVersion?: string;
+};
+
+export type PersistWorkspaceAnalyticsSnapshotInput = {
+  snapshotKind: string;
+  periodKey: string;
+  expectedBalance?: number | null;
+  conservativeBalance?: number | null;
+  optimisticBalance?: number | null;
+  committedInflow?: number | null;
+  committedOutflow?: number | null;
+  variableIncomeProjection?: number | null;
+  variableExpenseProjection?: number | null;
+  confidence?: number | null;
+  metadata?: JsonValue | null;
+  analyticsVersion?: string;
+};
+
+export type PersistDashboardAnalyticsInput = {
+  signals: PersistMovementAnalyticsSignalInput[];
+  snapshot?: PersistWorkspaceAnalyticsSnapshotInput | null;
+};
+
 export function useDashboardMovementsQuery(
   workspaceId: number | null,
   userScopeKey?: string | null,
@@ -1304,6 +1409,196 @@ export function useDashboardMovementsQuery(
     enabled: Boolean(workspaceId),
     staleTime: 60_000,
     retry: 1,
+  });
+}
+
+export function useDashboardAnalyticsQuery(
+  workspaceId: number | null,
+  userScopeKey?: string | null,
+) {
+  return useQuery({
+    queryKey: ["dashboard-analytics", userScopeKey ?? null, workspaceId],
+    queryFn: async (): Promise<DashboardAnalyticsBundle> => {
+      const fallback: DashboardAnalyticsBundle = {
+        signals: [],
+        projectionSnapshot: null,
+        available: false,
+      };
+      if (!supabase || !workspaceId) return fallback;
+
+      const [signalsResult, snapshotResult] = await Promise.all([
+        supabase
+          .from("movement_analytics_signals")
+          .select("id, workspace_id, movement_id, normalized_description, merchant_guess, suggested_category_id, suggested_category_confidence, anomaly_score, signal_reasons, analytics_version, created_at, updated_at")
+          .eq("workspace_id", workspaceId)
+          .order("updated_at", { ascending: false })
+          .limit(300),
+        supabase
+          .from("workspace_analytics_snapshots")
+          .select("id, workspace_id, snapshot_kind, period_key, expected_balance, conservative_balance, optimistic_balance, committed_inflow, committed_outflow, variable_income_projection, variable_expense_projection, confidence, metadata, analytics_version, generated_at, updated_at")
+          .eq("workspace_id", workspaceId)
+          .eq("snapshot_kind", "month_projection")
+          .order("period_key", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+      ]);
+
+      const missingSignals =
+        signalsResult.error && isMissingRelationError(signalsResult.error, "movement_analytics_signals");
+      const missingSnapshot =
+        snapshotResult.error && isMissingRelationError(snapshotResult.error, "workspace_analytics_snapshots");
+
+      if (signalsResult.error && !missingSignals) {
+        throw new Error(signalsResult.error.message ?? "No se pudieron cargar las seÃ±ales analÃ­ticas.");
+      }
+      if (snapshotResult.error && !missingSnapshot) {
+        throw new Error(snapshotResult.error.message ?? "No se pudo cargar la proyecciÃ³n persistida.");
+      }
+
+      const signals: MovementAnalyticsSignal[] = missingSignals
+        ? []
+        : (signalsResult.data ?? []).map((row: any) => ({
+          id: Number(row.id),
+          workspaceId: Number(row.workspace_id),
+          movementId: Number(row.movement_id),
+          normalizedDescription:
+            typeof row.normalized_description === "string" ? row.normalized_description : null,
+          merchantGuess: typeof row.merchant_guess === "string" ? row.merchant_guess : null,
+          suggestedCategoryId:
+            row.suggested_category_id == null ? null : Number(row.suggested_category_id),
+          suggestedCategoryConfidence:
+            row.suggested_category_confidence == null
+              ? null
+              : Number(row.suggested_category_confidence),
+          anomalyScore: row.anomaly_score == null ? null : Number(row.anomaly_score),
+          signalReasons: Array.isArray(row.signal_reasons)
+            ? row.signal_reasons.map((item: unknown) => String(item))
+            : [],
+          analyticsVersion: String(row.analytics_version ?? "v1"),
+          createdAt: String(row.created_at ?? ""),
+          updatedAt: String(row.updated_at ?? ""),
+        }));
+
+      const projectionSnapshot: WorkspaceAnalyticsSnapshot | null =
+        missingSnapshot || !snapshotResult.data
+          ? null
+          : {
+            id: Number(snapshotResult.data.id),
+            workspaceId: Number(snapshotResult.data.workspace_id),
+            snapshotKind: String(snapshotResult.data.snapshot_kind ?? ""),
+            periodKey: String(snapshotResult.data.period_key ?? ""),
+            expectedBalance:
+              snapshotResult.data.expected_balance == null
+                ? null
+                : Number(snapshotResult.data.expected_balance),
+            conservativeBalance:
+              snapshotResult.data.conservative_balance == null
+                ? null
+                : Number(snapshotResult.data.conservative_balance),
+            optimisticBalance:
+              snapshotResult.data.optimistic_balance == null
+                ? null
+                : Number(snapshotResult.data.optimistic_balance),
+            committedInflow:
+              snapshotResult.data.committed_inflow == null
+                ? null
+                : Number(snapshotResult.data.committed_inflow),
+            committedOutflow:
+              snapshotResult.data.committed_outflow == null
+                ? null
+                : Number(snapshotResult.data.committed_outflow),
+            variableIncomeProjection:
+              snapshotResult.data.variable_income_projection == null
+                ? null
+                : Number(snapshotResult.data.variable_income_projection),
+            variableExpenseProjection:
+              snapshotResult.data.variable_expense_projection == null
+                ? null
+                : Number(snapshotResult.data.variable_expense_projection),
+            confidence:
+              snapshotResult.data.confidence == null
+                ? null
+                : Number(snapshotResult.data.confidence),
+            metadata:
+              snapshotResult.data.metadata == null
+                ? null
+                : (snapshotResult.data.metadata as JsonValue),
+            analyticsVersion: String(snapshotResult.data.analytics_version ?? "v1"),
+            generatedAt: String(snapshotResult.data.generated_at ?? ""),
+            updatedAt: String(snapshotResult.data.updated_at ?? ""),
+          };
+
+      return {
+        signals,
+        projectionSnapshot,
+        available: !missingSignals || !missingSnapshot,
+      };
+    },
+    enabled: Boolean(workspaceId),
+    staleTime: 60_000,
+    retry: 1,
+  });
+}
+
+export function usePersistDashboardAnalyticsMutation(workspaceId: number | null) {
+  return useMutation({
+    mutationFn: async (input: PersistDashboardAnalyticsInput) => {
+      if (!supabase || !workspaceId) return { persisted: false };
+      const nowIso = new Date().toISOString();
+
+      if (input.signals.length > 0) {
+        const payload = input.signals.map((signal) => ({
+          workspace_id: workspaceId,
+          movement_id: signal.movementId,
+          normalized_description: signal.normalizedDescription ?? null,
+          merchant_guess: signal.merchantGuess ?? null,
+          suggested_category_id: signal.suggestedCategoryId ?? null,
+          suggested_category_confidence: signal.suggestedCategoryConfidence ?? null,
+          anomaly_score: signal.anomalyScore ?? null,
+          signal_reasons: signal.signalReasons ?? [],
+          analytics_version: signal.analyticsVersion ?? "v1",
+          updated_at: nowIso,
+        }));
+
+        const { error } = await supabase
+          .from("movement_analytics_signals")
+          .upsert(payload, { onConflict: "workspace_id,movement_id" });
+
+        if (error && !isMissingRelationError(error, "movement_analytics_signals")) {
+          throw new Error(error.message ?? "No se pudieron persistir las señales analíticas.");
+        }
+      }
+
+      if (input.snapshot) {
+        const payload = {
+          workspace_id: workspaceId,
+          snapshot_kind: input.snapshot.snapshotKind,
+          period_key: input.snapshot.periodKey,
+          expected_balance: input.snapshot.expectedBalance ?? null,
+          conservative_balance: input.snapshot.conservativeBalance ?? null,
+          optimistic_balance: input.snapshot.optimisticBalance ?? null,
+          committed_inflow: input.snapshot.committedInflow ?? null,
+          committed_outflow: input.snapshot.committedOutflow ?? null,
+          variable_income_projection: input.snapshot.variableIncomeProjection ?? null,
+          variable_expense_projection: input.snapshot.variableExpenseProjection ?? null,
+          confidence: input.snapshot.confidence ?? null,
+          metadata: input.snapshot.metadata ?? {},
+          analytics_version: input.snapshot.analyticsVersion ?? "v1",
+          generated_at: nowIso,
+          updated_at: nowIso,
+        };
+
+        const { error } = await supabase
+          .from("workspace_analytics_snapshots")
+          .upsert(payload, { onConflict: "workspace_id,snapshot_kind,period_key" });
+
+        if (error && !isMissingRelationError(error, "workspace_analytics_snapshots")) {
+          throw new Error(error.message ?? "No se pudo persistir el snapshot analítico.");
+        }
+      }
+
+      return { persisted: true };
+    },
   });
 }
 
@@ -1525,6 +1820,8 @@ export type MovementUpdateInput = {
   status?: MovementStatus;
   sourceAmount?: number;
   destinationAmount?: number;
+  sourceAccountId?: number | null;
+  destinationAccountId?: number | null;
 };
 
 export function useUpdateMovementMutation(workspaceId: number | null) {
@@ -1541,6 +1838,8 @@ export function useUpdateMovementMutation(workspaceId: number | null) {
       if (input.status !== undefined) payload.status = input.status;
       if (input.sourceAmount !== undefined) payload.source_amount = input.sourceAmount;
       if (input.destinationAmount !== undefined) payload.destination_amount = input.destinationAmount;
+      if (input.sourceAccountId !== undefined) payload.source_account_id = input.sourceAccountId;
+      if (input.destinationAccountId !== undefined) payload.destination_account_id = input.destinationAccountId;
       const { error } = await supabase
         .from("movements")
         .update(payload)
@@ -1563,6 +1862,8 @@ export function useUpdateMovementMutation(workspaceId: number | null) {
           ...(input.status !== undefined && { status: input.status }),
           ...(input.sourceAmount !== undefined && { sourceAmount: input.sourceAmount }),
           ...(input.destinationAmount !== undefined && { destinationAmount: input.destinationAmount }),
+          ...(input.sourceAccountId !== undefined && { sourceAccountId: input.sourceAccountId }),
+          ...(input.destinationAccountId !== undefined && { destinationAccountId: input.destinationAccountId }),
         };
       });
       return { previous };
@@ -2180,6 +2481,7 @@ export function useLinkMovementToObligationMutation(workspaceId: number | null) 
 
 export type PrincipalAdjustmentInput = {
   obligationId: number;
+  direction: ObligationDirection;
   mode: "increase" | "decrease";
   amount: number;
   eventDate: string;
@@ -2216,10 +2518,18 @@ export function useCreatePrincipalAdjustmentMutation(workspaceId: number | null)
       const eventId = (data as { id: number }).id;
       // Optionally create a linked account movement
       if (input.createMovement && input.accountId) {
-        const movType = input.mode === "increase" ? "income" : "expense";
+        const isReceivable = input.direction === "receivable";
+        const movType =
+          input.mode === "increase"
+            ? (isReceivable ? "expense" : "income")
+            : (isReceivable ? "income" : "expense");
         const desc = input.mode === "increase"
-          ? `Aumento de principal #${input.obligationId}`
-          : `ReducciÃ³n de principal #${input.obligationId}`;
+          ? (isReceivable
+              ? `Prestamo adicional #${input.obligationId}`
+              : `Aumento de deuda #${input.obligationId}`)
+          : (isReceivable
+              ? `Recuperacion de principal #${input.obligationId}`
+              : `Reduccion de deuda #${input.obligationId}`);
         const { data: mvData, error: mvErr } = await supabase
           .from("movements")
           .insert({
@@ -2228,7 +2538,7 @@ export function useCreatePrincipalAdjustmentMutation(workspaceId: number | null)
             status: "posted",
             occurred_at: dateStrToISO(input.eventDate),
             description: desc,
-            ...(input.mode === "increase"
+            ...((movType === "income")
               ? { destination_account_id: input.accountId, destination_amount: input.amount }
               : { source_account_id: input.accountId, source_amount: input.amount }),
             obligation_id: input.obligationId,
@@ -2587,7 +2897,7 @@ async function updateObligationEventAndSyncMovements(
     amount: input.amount,
     eventDate: input.eventDate,
     description: input.description,
-    direction: input.direction,
+    direction: input.direction as ObligationDirection,
   });
 
   await notifyAcceptedViewersObligationEventUpdated({
@@ -3691,6 +4001,7 @@ export type AcceptObligationEventEditRequestInput = {
   proposedInstallmentNo?: number | null;
   proposedDescription?: string | null;
   proposedNotes?: string | null;
+  accountId?: number | null;
 };
 
 export type RejectObligationEventEditRequestInput = {
@@ -3792,7 +4103,8 @@ export function useAcceptObligationEventEditRequestMutation() {
       }
 
       const ownerMovementId = toNum((eventRow as { movement_id?: NumericLike | null }).movement_id ?? null) || null;
-      const ownerAccountId = await resolveMovementAccountId(ownerMovementId);
+      const ownerAccountId =
+        input.accountId !== undefined ? input.accountId : await resolveMovementAccountId(ownerMovementId);
       const syncResult = await updateObligationEventAndSyncMovements({
         eventId: input.eventId,
         obligationId: input.obligationId,
@@ -3957,6 +4269,201 @@ export type SubscriptionFormInput = {
   description?: string | null;
   notes?: string | null;
 };
+
+export type RecurringIncomeFormInput = {
+  name: string;
+  payerPartyId?: number | null;
+  accountId?: number | null;
+  categoryId?: number | null;
+  amount: number;
+  currencyCode: string;
+  frequency: RecurringIncomeFrequency;
+  intervalCount: number;
+  dayOfMonth?: number | null;
+  dayOfWeek?: number | null;
+  startDate: string;
+  nextExpectedDate: string;
+  endDate?: string | null;
+  remindDaysBefore: number;
+  description?: string | null;
+  notes?: string | null;
+};
+
+export function useCreateRecurringIncomeMutation(workspaceId: number | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: RecurringIncomeFormInput) => {
+      if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
+      const { data: authData, error: authErr } = await supabase.auth.getUser();
+      if (authErr) throw new Error(authErr.message ?? "No se pudo verificar la sesiÃ³n");
+      const uid = authData.user?.id;
+      if (!uid) throw new Error("No hay sesiÃ³n");
+
+      const { data, error } = await supabase
+        .from("recurring_income")
+        .insert({
+          workspace_id: workspaceId,
+          created_by_user_id: uid,
+          name: input.name,
+          payer_party_id: input.payerPartyId ?? null,
+          account_id: input.accountId ?? null,
+          category_id: input.categoryId ?? null,
+          amount: input.amount,
+          currency_code: input.currencyCode.trim().toUpperCase(),
+          frequency: input.frequency,
+          interval_count: input.intervalCount,
+          day_of_month: input.dayOfMonth ?? null,
+          day_of_week: input.dayOfWeek ?? null,
+          start_date: input.startDate,
+          next_expected_date: input.nextExpectedDate,
+          end_date: input.endDate ?? null,
+          remind_days_before: input.remindDaysBefore,
+          description: input.description ?? null,
+          notes: input.notes ?? null,
+          status: "active",
+        })
+        .select("id")
+        .single();
+      if (error) throw new Error(error.message ?? "Error de base de datos");
+      return data as { id: number };
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+    },
+  });
+}
+
+export function useUpdateRecurringIncomeMutation(workspaceId: number | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, input }: { id: number; input: Partial<RecurringIncomeFormInput> & { status?: RecurringIncomeStatus } }) => {
+      if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
+      const payload: Record<string, unknown> = {};
+      if (input.name !== undefined) payload.name = input.name;
+      if (input.payerPartyId !== undefined) payload.payer_party_id = input.payerPartyId;
+      if (input.accountId !== undefined) payload.account_id = input.accountId;
+      if (input.categoryId !== undefined) payload.category_id = input.categoryId;
+      if (input.amount !== undefined) payload.amount = input.amount;
+      if (input.currencyCode !== undefined) payload.currency_code = input.currencyCode.trim().toUpperCase();
+      if (input.frequency !== undefined) payload.frequency = input.frequency;
+      if (input.intervalCount !== undefined) payload.interval_count = input.intervalCount;
+      if (input.dayOfMonth !== undefined) payload.day_of_month = input.dayOfMonth;
+      if (input.dayOfWeek !== undefined) payload.day_of_week = input.dayOfWeek;
+      if (input.startDate !== undefined) payload.start_date = input.startDate;
+      if (input.nextExpectedDate !== undefined) payload.next_expected_date = input.nextExpectedDate;
+      if (input.endDate !== undefined) payload.end_date = input.endDate;
+      if (input.remindDaysBefore !== undefined) payload.remind_days_before = input.remindDaysBefore;
+      if (input.description !== undefined) payload.description = input.description;
+      if (input.notes !== undefined) payload.notes = input.notes;
+      if (input.status !== undefined) payload.status = input.status;
+      const { error } = await supabase
+        .from("recurring_income")
+        .update(payload)
+        .eq("id", id)
+        .eq("workspace_id", workspaceId);
+      if (error) throw new Error(error.message ?? "Error de base de datos");
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+    },
+  });
+}
+
+export function useDeleteRecurringIncomeMutation(workspaceId: number | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: number) => {
+      if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
+      const { error: occErr } = await supabase
+        .from("recurring_income_occurrences")
+        .delete()
+        .eq("recurring_income_id", id);
+      if (occErr) {
+        const msg = occErr.message ?? "";
+        const ignorable =
+          /recurring_income_occurrences/i.test(msg) ||
+          /does not exist/i.test(msg) ||
+          /schema cache/i.test(msg) ||
+          /could not find/i.test(msg);
+        if (!ignorable) throw new Error(msg || "Error al limpiar ocurrencias");
+      }
+
+      const { error } = await supabase
+        .from("recurring_income")
+        .delete()
+        .eq("id", id)
+        .eq("workspace_id", workspaceId);
+      if (error) throw new Error(error.message ?? "Error de base de datos");
+    },
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: ["workspace-snapshot"] });
+      const previousEntries = queryClient.getQueriesData<WorkspaceSnapshot>({ queryKey: ["workspace-snapshot"] });
+      queryClient.setQueriesData<WorkspaceSnapshot>({ queryKey: ["workspace-snapshot"] }, (old) => {
+        if (!old) return old;
+        return { ...old, recurringIncome: old.recurringIncome.filter((item) => item.id !== id) };
+      });
+      return { previousEntries };
+    },
+    onError: (_err, _id, context) => {
+      for (const [key, value] of (context?.previousEntries ?? [])) {
+        queryClient.setQueryData(key, value);
+      }
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+    },
+  });
+}
+
+export function useConfirmRecurringIncomeArrivalMutation(workspaceId: number | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      recurringIncomeId: number;
+      expectedDate: string;
+      actualDate: string;
+      amount: number;
+      currencyCode: string;
+      frequency: RecurringIncomeFrequency;
+      intervalCount: number;
+      notes?: string | null;
+      movementId?: number | null;
+    }) => {
+      if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
+      const actual = input.actualDate.trim();
+      const expected = input.expectedDate.trim();
+      const nextExpectedDate = computeNextRecurringDate(expected, input.frequency, input.intervalCount);
+      const status = actual <= expected ? "on_time" : "late";
+
+      const { error: occError } = await supabase
+        .from("recurring_income_occurrences")
+        .insert({
+          workspace_id: workspaceId,
+          recurring_income_id: input.recurringIncomeId,
+          expected_date: expected,
+          actual_date: actual,
+          amount: input.amount,
+          currency_code: input.currencyCode,
+          movement_id: input.movementId ?? null,
+          status,
+          notes: input.notes ?? null,
+        });
+      if (occError) throw new Error(occError.message ?? "Error al registrar llegada");
+
+      const { error: updateError } = await supabase
+        .from("recurring_income")
+        .update({ next_expected_date: nextExpectedDate })
+        .eq("id", input.recurringIncomeId)
+        .eq("workspace_id", workspaceId);
+      if (updateError) throw new Error(updateError.message ?? "Error al actualizar proxima llegada");
+
+      return { nextExpectedDate };
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+    },
+  });
+}
 
 export function useCreateSubscriptionMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
@@ -5934,6 +6441,7 @@ export type LinkEventToAccountInput = {
   obligationId: number;
   obligationWorkspaceId: number;
   eventId: number;
+  eventType: "payment" | "principal_increase" | "principal_decrease";
   shareId: number;
   linkedByUserId: string;
   viewerWorkspaceId: number;
@@ -5947,6 +6455,82 @@ export type LinkEventToAccountInput = {
   currencyCode: string;
 };
 
+function viewerLinkedEventMovementConfig(input: Pick<LinkEventToAccountInput, "eventType" | "obligationDirection" | "obligationTitle">) {
+  const viewerIsDebtor = input.obligationDirection === "receivable";
+
+  if (input.eventType === "payment") {
+    return {
+      movementType: "obligation_payment" as const,
+      isInflow: !viewerIsDebtor,
+      autoDesc: viewerIsDebtor
+        ? `Pago vinculado: ${input.obligationTitle}`
+        : `Cobro vinculado: ${input.obligationTitle}`,
+    };
+  }
+
+  if (input.eventType === "principal_increase") {
+    return {
+      movementType: "obligation_opening" as const,
+      isInflow: viewerIsDebtor,
+      autoDesc: viewerIsDebtor
+        ? `Dinero recibido: ${input.obligationTitle}`
+        : `Prestamo adicional entregado: ${input.obligationTitle}`,
+    };
+  }
+
+  return {
+    movementType: "obligation_opening" as const,
+    isInflow: !viewerIsDebtor,
+    autoDesc: viewerIsDebtor
+      ? `Devolucion de principal: ${input.obligationTitle}`
+      : `Pago de principal: ${input.obligationTitle}`,
+  };
+}
+
+function mapRecurringIncome(
+  row: RecurringIncomeRow,
+  categoryMap: Map<number, string>,
+  counterpartyMap: Map<number, string>,
+  accountMap: Map<number, string>,
+  frequencyLabels: Record<SubscriptionFrequency, string>,
+  baseCurrency: string,
+  exchangeRates: ExchangeRateSummary[],
+): RecurringIncomeSummary {
+  const amount = toNum(row.amount);
+  const amountInBaseCurrency = convertAmountToWorkspaceBase(
+    amount,
+    row.currency_code,
+    baseCurrency,
+    exchangeRates,
+  );
+  return {
+    id: row.id,
+    workspaceId: row.workspace_id,
+    name: row.name,
+    payerPartyId: row.payer_party_id,
+    payer: row.payer_party_id ? (counterpartyMap.get(row.payer_party_id) ?? "") : "",
+    accountId: row.account_id,
+    accountName: row.account_id ? (accountMap.get(row.account_id) ?? null) : null,
+    categoryId: row.category_id,
+    categoryName: row.category_id ? (categoryMap.get(row.category_id) ?? null) : null,
+    status: row.status,
+    amount,
+    amountInBaseCurrency,
+    currencyCode: row.currency_code,
+    frequency: row.frequency,
+    frequencyLabel: subscriptionFrequencyListLabel(row.interval_count, row.frequency, frequencyLabels),
+    intervalCount: row.interval_count,
+    dayOfMonth: row.day_of_month,
+    dayOfWeek: row.day_of_week,
+    startDate: row.start_date,
+    nextExpectedDate: row.next_expected_date,
+    endDate: row.end_date,
+    remindDaysBefore: row.remind_days_before,
+    description: row.description,
+    notes: row.notes,
+  };
+}
+
 /**
  * Shared viewer asocia un evento de pago a una de sus cuentas.
  * Crea un movimiento en el workspace del viewer y registra el link.
@@ -5957,18 +6541,12 @@ export function useLinkEventToAccountMutation() {
     mutationFn: async (input: LinkEventToAccountInput) => {
       if (!supabase) throw new Error("Supabase no disponible.");
 
-      // From viewer's perspective:
-      // - receivable owner â†’ viewer is debtor â†’ paid â†’ outflow from viewer's account
-      // - payable owner    â†’ viewer is creditor â†’ collected â†’ inflow to viewer's account
-      const viewerIsDebtor = input.obligationDirection === "receivable";
-      const autoDesc = input.description?.trim() ||
-        (viewerIsDebtor
-          ? `Pago vinculado: ${input.obligationTitle}`
-          : `Cobro vinculado: ${input.obligationTitle}`);
+      const movementConfig = viewerLinkedEventMovementConfig(input);
+      const autoDesc = input.description?.trim() || movementConfig.autoDesc;
 
       const movementPayload: Record<string, unknown> = {
         workspace_id: input.viewerWorkspaceId,
-        movement_type: "obligation_payment",
+        movement_type: movementConfig.movementType,
         status: "posted",
         occurred_at: dateStrToISO(input.eventDate),
         description: autoDesc,
@@ -5976,14 +6554,12 @@ export function useLinkEventToAccountMutation() {
         metadata: { obligation_id: input.obligationId, obligation_event_id: input.eventId },
       };
 
-      if (viewerIsDebtor) {
-        // outflow
-        movementPayload.source_account_id = input.accountId;
-        movementPayload.source_amount = input.amount;
-      } else {
-        // inflow
+      if (movementConfig.isInflow) {
         movementPayload.destination_account_id = input.accountId;
         movementPayload.destination_amount = input.amount;
+      } else {
+        movementPayload.source_account_id = input.accountId;
+        movementPayload.source_amount = input.amount;
       }
 
       const { data: mvData, error: mvError } = await supabase
@@ -6044,24 +6620,21 @@ export function useUpsertLinkEventToAccountMutation() {
       if (!supabase) throw new Error("Supabase no disponible.");
       const client = supabase;
 
-      const viewerIsDebtor = input.obligationDirection === "receivable";
-      const autoDesc = input.description?.trim() ||
-        (viewerIsDebtor
-          ? `Pago vinculado: ${input.obligationTitle}`
-          : `Cobro vinculado: ${input.obligationTitle}`);
+      const movementConfig = viewerLinkedEventMovementConfig(input);
+      const autoDesc = input.description?.trim() || movementConfig.autoDesc;
 
       const movementPayload: Record<string, unknown> = {
         workspace_id: input.viewerWorkspaceId,
-        movement_type: "obligation_payment",
+        movement_type: movementConfig.movementType,
         status: "posted",
         occurred_at: dateStrToISO(input.eventDate),
         description: autoDesc,
         obligation_id: null,
         metadata: { obligation_id: input.obligationId, obligation_event_id: input.eventId },
-        source_account_id: viewerIsDebtor ? input.accountId : null,
-        source_amount: viewerIsDebtor ? input.amount : null,
-        destination_account_id: viewerIsDebtor ? null : input.accountId,
-        destination_amount: viewerIsDebtor ? null : input.amount,
+        source_account_id: movementConfig.isInflow ? null : input.accountId,
+        source_amount: movementConfig.isInflow ? null : input.amount,
+        destination_account_id: movementConfig.isInflow ? input.accountId : null,
+        destination_amount: movementConfig.isInflow ? input.amount : null,
       };
 
       const { data: existingLinks, error: existingErr } = await client

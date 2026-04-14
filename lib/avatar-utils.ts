@@ -1,3 +1,5 @@
+import * as FileSystem from "expo-file-system/legacy";
+import { decode } from "base64-arraybuffer";
 import { supabase } from "./supabase";
 
 const BUCKET = "avatars";
@@ -5,14 +7,19 @@ const BUCKET = "avatars";
 export async function uploadAvatar(userId: string, uri: string): Promise<string> {
   if (!supabase) throw new Error("Supabase no está configurado.");
 
-  const response = await fetch(uri);
-  const blob = await response.blob();
-
   const path = `${userId}/avatar.jpg`;
+
+  // Copy to cache first so FileSystem can always read it (handles content:// URIs on Android)
+  const cacheUri = `${FileSystem.cacheDirectory}avatar_tmp.jpg`;
+  await FileSystem.copyAsync({ from: uri, to: cacheUri });
+
+  const base64 = await FileSystem.readAsStringAsync(cacheUri, {
+    encoding: FileSystem.EncodingType.Base64,
+  });
 
   const { error } = await supabase.storage
     .from(BUCKET)
-    .upload(path, blob, {
+    .upload(path, decode(base64), {
       contentType: "image/jpeg",
       upsert: true,
     });

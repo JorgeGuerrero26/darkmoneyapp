@@ -215,7 +215,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
       try {
         const { data } = await withTimeout(supabase.auth.getSession(), 5_000);
         if (cancelled) return;
-        await syncSession(data.session, { blockUi: true });
+        // Sin blockUi: ya hay sesión cargada, no hace falta mostrar el overlay al volver del background
+        await syncSession(data.session);
       } catch {
         if (!cancelled) {
           clearSessionScopedClientState();

@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm --version)",
+      "Bash(npx --version)",
+      "Bash(npm install:*)",
+      "Bash(python3 fix_encoding.py)",
+      "Bash(rm fix_encoding.py)",
+      "Bash(ls /c/Python*)",
+      "Read(//c/Users/helpd/AppData/Local/Programs/**)",
+      "Bash(node -e ':*)"
+    ]
+  }
+}

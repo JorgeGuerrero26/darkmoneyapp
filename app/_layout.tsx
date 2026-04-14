@@ -44,6 +44,7 @@ import {
   usePushNotifications,
   scheduleSubscriptionReminders,
   scheduleObligationReminders,
+  scheduleRecurringIncomeReminders,
 } from "../hooks/usePushNotifications";
 import { useNotificationGenerator } from "../hooks/useNotificationGenerator";
 import { BiometricLock } from "../components/ui/BiometricLock";
@@ -207,6 +208,22 @@ function NotificationSetup() {
       console.warn("[NotificationSetup] obligation reminders failed:", error);
     });
   }, [snapshot?.obligations]);
+
+  useEffect(() => {
+    if (!snapshot?.recurringIncome) return;
+    void scheduleRecurringIncomeReminders(
+      snapshot.recurringIncome
+        .filter((income) => income.status === "active")
+        .map((income) => ({
+          id: income.id,
+          name: income.name,
+          nextExpectedDate: income.nextExpectedDate,
+          remindDaysBefore: income.remindDaysBefore,
+        })),
+    ).catch((error) => {
+      console.warn("[NotificationSetup] recurring income reminders failed:", error);
+    });
+  }, [snapshot?.recurringIncome]);
 
   useEffect(() => {
     if (!profile?.id || !supabase || !activeWorkspaceId || eventSyncInFlightRef.current) return;
@@ -499,11 +516,18 @@ function NavigationGuard() {
     },
     [router],
   );
+  const onRecurringIncomeReminderTap = useCallback(
+    (_recurringIncomeId: number) => {
+      router.push("/recurring-income");
+    },
+    [router],
+  );
 
   usePushNotifications(profile?.id, {
     onObligationShareInviteTap: onObligationInviteFromPush,
     onSubscriptionReminderTap,
     onObligationReminderTap,
+    onRecurringIncomeReminderTap,
   });
 
   // Universal link / cold start: asegurar token en cola si el pathname aún no llegó

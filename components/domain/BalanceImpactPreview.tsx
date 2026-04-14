@@ -18,6 +18,7 @@ export function BalanceImpactPreview({
 }: Props) {
   const diff = projectedBalance - currentBalance;
   const isNegative = projectedBalance < 0;
+  const isDecreasing = diff < 0;
 
   return (
     <View style={[styles.container, isNegative && styles.containerWarning]}>
@@ -41,7 +42,7 @@ export function BalanceImpactPreview({
           <Text
             style={[
               styles.balanceValue,
-              isNegative ? styles.negative : diff >= 0 ? styles.positive : styles.neutral,
+              isNegative ? styles.negative : isDecreasing ? styles.negative : styles.positive,
             ]}
           >
             {formatCurrency(projectedBalance, currencyCode)}

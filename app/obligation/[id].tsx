@@ -24,6 +24,7 @@ import { useWorkspace } from "../../lib/workspace-context";
 import { humanizeError } from "../../lib/errors";
 import { buildDateRangeNotice } from "../../lib/date-range-notice";
 import { parseDisplayDate, todayPeru } from "../../lib/date";
+import { supabase } from "../../lib/supabase";
 import { sortByName } from "../../lib/sort-locale";
 import { sortObligationEventsNewestFirst } from "../../lib/sort-obligation-events";
 import {
@@ -294,6 +295,24 @@ function ownerDefaultAccountId(
   return (obligation as ObligationSummary).settlementAccountId ?? null;
 }
 
+function viewerEventAccountDelta(
+  event: ObligationEventSummary | null,
+  obligation: ObligationSummary | SharedObligationSummary | null,
+): number {
+  if (!event || !obligation) return 0;
+  const viewerIsDebtor = obligation.direction === "receivable";
+  if (event.eventType === "payment") {
+    return viewerIsDebtor ? -event.amount : event.amount;
+  }
+  if (event.eventType === "principal_increase") {
+    return viewerIsDebtor ? event.amount : -event.amount;
+  }
+  if (event.eventType === "principal_decrease") {
+    return viewerIsDebtor ? -event.amount : event.amount;
+  }
+  return 0;
+}
+
 function ObligationDetailScreen() {
   const {
     id,
@@ -336,6 +355,8 @@ function ObligationDetailScreen() {
   const [rejectReason, setRejectReason] = useState("");
   const [notificationRequestTarget, setNotificationRequestTarget] = useState<ObligationPaymentRequest | null>(null);
   const [ownerResponseAccountId, setOwnerResponseAccountId] = useState<number | null>(null);
+  const [ownerEditResponseAccountId, setOwnerEditResponseAccountId] = useState<number | null>(null);
+  const [ownerEditPreviousAccountId, setOwnerEditPreviousAccountId] = useState<number | null>(null);
   const [linkingEvent, setLinkingEvent] = useState<ObligationEventSummary | null>(null);
   const [linkingAccountId, setLinkingAccountId] = useState<number | null>(null);
   const [viewerDeleteRequestEvent, setViewerDeleteRequestEvent] = useState<ObligationEventSummary | null>(null);
@@ -830,6 +851,50 @@ function ObligationDetailScreen() {
     clearFocusTimers();
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadOwnerEditAccounts() {
+      if (!ownerEditRequestTarget?.event?.movementId || !supabase) {
+        const fallbackAccountId = ownerDefaultAccountId(obligation);
+        if (!cancelled) {
+          setOwnerEditPreviousAccountId(fallbackAccountId);
+          setOwnerEditResponseAccountId(fallbackAccountId);
+        }
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("movements")
+        .select("source_account_id, destination_account_id")
+        .eq("id", ownerEditRequestTarget.event.movementId)
+        .maybeSingle();
+
+      const resolvedAccountId =
+        data && !error
+          ? Number((data as { source_account_id?: number | null; destination_account_id?: number | null }).source_account_id
+            ?? (data as { source_account_id?: number | null; destination_account_id?: number | null }).destination_account_id
+            ?? 0) || null
+          : ownerDefaultAccountId(obligation);
+
+      if (!cancelled) {
+        setOwnerEditPreviousAccountId(resolvedAccountId);
+        setOwnerEditResponseAccountId(resolvedAccountId);
+      }
+    }
+
+    if (ownerEditRequestTarget) {
+      void loadOwnerEditAccounts();
+    } else {
+      setOwnerEditPreviousAccountId(null);
+      setOwnerEditResponseAccountId(null);
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [obligation, ownerEditRequestTarget]);
+
   // Auto-link: when a request is accepted and viewer pre-selected an account,
   // auto-create their movement + link if not already done.
   const autoLinkedRef = useRef<Set<number>>(new Set());
@@ -853,6 +918,7 @@ function ObligationDetailScreen() {
             obligationId: obligation.id,
             obligationWorkspaceId: obligation.workspaceId,
             eventId: req.acceptedEventId,
+            eventType: "payment",
             shareId,
             linkedByUserId: profile.id,
             viewerWorkspaceId: req.viewerWorkspaceId,
@@ -1182,6 +1248,7 @@ function ObligationDetailScreen() {
         obligationId: obligation.id,
         obligationWorkspaceId: obligation.workspaceId,
         eventId: linkingEvent.id,
+        eventType: linkingEvent.eventType as "payment" | "principal_increase" | "principal_decrease",
         shareId,
         linkedByUserId: profile.id,
         viewerWorkspaceId: existingLink?.viewerWorkspaceId ?? activeWorkspaceId,
@@ -1195,11 +1262,16 @@ function ObligationDetailScreen() {
       });
       setLinkingEvent(null);
       setLinkingAccountId(null);
-      const verb = obligation.direction === "receivable" ? "pago" : "cobro";
+      const viewerEventLabel =
+        linkingEvent.eventType === "payment"
+          ? obligation.direction === "receivable" ? "pago" : "cobro"
+          : linkingEvent.eventType === "principal_increase"
+            ? obligation.direction === "receivable" ? "dinero recibido" : "prestamo entregado"
+            : obligation.direction === "receivable" ? "devolucion de principal" : "pago de principal";
       showToast(
         existingLink
           ? "Cuenta asociada actualizada"
-          : `${verb.charAt(0).toUpperCase() + verb.slice(1)} asociado a tu cuenta`,
+          : `${viewerEventLabel.charAt(0).toUpperCase() + viewerEventLabel.slice(1)} asociado a tu cuenta`,
         "success",
       );
       if (result.attachmentSyncError) {
@@ -1364,6 +1436,7 @@ function ObligationDetailScreen() {
         proposedInstallmentNo: target.payload.proposedInstallmentNo ?? null,
         proposedDescription: target.payload.proposedDescription ?? null,
         proposedNotes: target.payload.proposedNotes ?? null,
+        accountId: ownerEditResponseAccountId,
       });
       setOwnerEditRequestTarget(null);
       showToast("Solicitud de edicion aprobada", "success");
@@ -1460,14 +1533,35 @@ function ObligationDetailScreen() {
   const ownerProjectedBalance = ownerProjectedAccount
     ? ownerProjectedAccount.currentBalance + ownerRequestDelta
     : null;
-  const viewerLinkDelta = linkingEvent && obligation
-    ? (obligationViewerActsAsCollector(obligation.direction, true) ? linkingEvent.amount : -linkingEvent.amount)
-    : 0;
+  const viewerLinkDelta = viewerEventAccountDelta(linkingEvent, obligation);
   const viewerProjectedAccount = linkingEvent && linkingAccountId != null
     ? ownerAccounts.find((acc) => acc.id === linkingAccountId) ?? null
     : null;
   const viewerProjectedBalance = viewerProjectedAccount
     ? viewerProjectedAccount.currentBalance + viewerLinkDelta
+    : null;
+  const ownerEditCurrentAmount = ownerEditRequestTarget?.payload.currentAmount ?? ownerEditRequestTarget?.event?.amount ?? 0;
+  const ownerEditProposedAmount = ownerEditRequestTarget?.payload.proposedAmount ?? ownerEditRequestTarget?.event?.amount ?? 0;
+  const ownerEditCurrentDelta = ownerEditRequestTarget && obligation
+    ? (obligation.direction === "receivable" ? ownerEditCurrentAmount : -ownerEditCurrentAmount)
+    : 0;
+  const ownerEditProposedDelta = ownerEditRequestTarget && obligation
+    ? (obligation.direction === "receivable" ? ownerEditProposedAmount : -ownerEditProposedAmount)
+    : 0;
+  const ownerEditPreviousAccount = ownerEditPreviousAccountId != null
+    ? ownerAccounts.find((acc) => acc.id === ownerEditPreviousAccountId) ?? null
+    : null;
+  const ownerEditSelectedAccount = ownerEditResponseAccountId != null
+    ? ownerAccounts.find((acc) => acc.id === ownerEditResponseAccountId) ?? null
+    : null;
+  const ownerEditPreviousProjectedBalance = ownerEditPreviousAccount
+    ? ownerEditPreviousAccount.currentBalance - ownerEditCurrentDelta
+    : null;
+  const ownerEditSelectedProjectedBalance = ownerEditSelectedAccount
+    ? ownerEditSelectedAccount.currentBalance
+      + (ownerEditSelectedAccount.id === ownerEditPreviousAccount?.id
+        ? ownerEditProposedDelta - ownerEditCurrentDelta
+        : ownerEditProposedDelta)
     : null;
   const eventLabels = useMemo(() => {
     if (!obligation) return EVENT_LABEL_PAYABLE;
@@ -1819,7 +1913,11 @@ function ObligationDetailScreen() {
                   canHaveAttachments &&
                   (eventAttachmentCountsLoading || (rowMovementId != null && movementAttachmentCountsLoading));
                 const isTappable = ev.eventType !== "opening";
-                const isViewerLinkable = isSharedViewer && ev.eventType === "payment";
+                const isViewerLinkable =
+                  isSharedViewer &&
+                  (ev.eventType === "payment" ||
+                    ev.eventType === "principal_increase" ||
+                    ev.eventType === "principal_decrease");
                 const isLinked = linkedEventIds.has(ev.id);
                 const viewerDeleteStatus = viewerDeleteStatusByEventId.get(ev.id);
                 const viewerEditStatus = viewerEditStatusByEventId.get(ev.id);
@@ -2435,7 +2533,11 @@ function ObligationDetailScreen() {
             </Text>
             {linkingEvent && obligation ? (
               <Text style={styles.linkSheetSub}>
-                {obligationViewerActsAsCollector(obligation.direction, true) ? "Cobro" : "Pago"}{" "}
+                {linkingEvent.eventType === "payment"
+                  ? (obligationViewerActsAsCollector(obligation.direction, true) ? "Cobro" : "Pago")
+                  : linkingEvent.eventType === "principal_increase"
+                    ? (obligation.direction === "receivable" ? "Dinero recibido" : "Prestamo entregado")
+                    : (obligation.direction === "receivable" ? "Devolucion de principal" : "Pago de principal")}{" "}
                 de {formatCurrency(linkingEvent.amount, obligation.currencyCode)}{" "}
                 - {format(parseDisplayDate(linkingEvent.eventDate), "d MMM yyyy", { locale: es })}
               </Text>
@@ -2792,6 +2894,120 @@ function ObligationDetailScreen() {
                     El evento ya no esta disponible para editar.
                   </Text>
                 ) : null}
+                {ownerEditRequestTarget.event && ownerAccounts.length > 0 ? (
+                  <>
+                    <Text style={styles.linkSheetHint}>
+                      Elige la cuenta donde quedara reflejado este movimiento despues de aprobar la edicion
+                    </Text>
+                    <Text style={styles.ownerAccountLabel}>{ownerAccountLabel}</Text>
+                    {ownerAccounts.map((acc) => (
+                      <TouchableOpacity
+                        key={acc.id}
+                        style={[
+                          styles.linkAccountRow,
+                          ownerEditResponseAccountId === acc.id && styles.linkAccountRowSelected,
+                        ]}
+                        onPress={() => setOwnerEditResponseAccountId(acc.id)}
+                      >
+                        <View style={styles.linkAccountInfo}>
+                          <Text style={styles.linkAccountName}>{acc.name}</Text>
+                          <Text style={styles.linkAccountBalance}>
+                            {formatCurrency(acc.currentBalance, acc.currencyCode)}
+                          </Text>
+                        </View>
+                        {ownerEditResponseAccountId === acc.id ? (
+                          <Text style={styles.linkAccountCheck}>OK</Text>
+                        ) : null}
+                      </TouchableOpacity>
+                    ))}
+                    {ownerEditPreviousAccount && ownerEditPreviousProjectedBalance != null ? (
+                      <View style={styles.accountProjectionCard}>
+                        <Text style={styles.accountProjectionTitle}>
+                          Asi quedara la cuenta anterior: {ownerEditPreviousAccount.name}
+                        </Text>
+                        <View style={styles.accountProjectionRow}>
+                          <Text style={styles.accountProjectionLabel}>Saldo actual</Text>
+                          <Text style={styles.accountProjectionValue}>
+                            {formatCurrency(ownerEditPreviousAccount.currentBalance, ownerEditPreviousAccount.currencyCode)}
+                          </Text>
+                        </View>
+                        <View style={styles.accountProjectionRow}>
+                          <Text style={styles.accountProjectionLabel}>Reversion del movimiento actual</Text>
+                          <Text
+                            style={[
+                              styles.accountProjectionValue,
+                              ownerEditCurrentDelta >= 0 ? styles.accountProjectionNegative : styles.accountProjectionPositive,
+                            ]}
+                          >
+                            {ownerEditCurrentDelta >= 0 ? "-" : "+"}
+                            {formatCurrency(Math.abs(ownerEditCurrentAmount), ownerEditPreviousAccount.currencyCode)}
+                          </Text>
+                        </View>
+                        <View style={styles.accountProjectionRow}>
+                          <Text style={styles.accountProjectionLabel}>Quedara en</Text>
+                          <Text style={styles.accountProjectionStrong}>
+                            {formatCurrency(ownerEditPreviousProjectedBalance, ownerEditPreviousAccount.currencyCode)}
+                          </Text>
+                        </View>
+                      </View>
+                    ) : null}
+                    {ownerEditSelectedAccount && ownerEditSelectedProjectedBalance != null ? (
+                      <View style={styles.accountProjectionCard}>
+                        <Text style={styles.accountProjectionTitle}>
+                          Asi quedara la cuenta seleccionada: {ownerEditSelectedAccount.name}
+                        </Text>
+                        <View style={styles.accountProjectionRow}>
+                          <Text style={styles.accountProjectionLabel}>Saldo actual</Text>
+                          <Text style={styles.accountProjectionValue}>
+                            {formatCurrency(ownerEditSelectedAccount.currentBalance, ownerEditSelectedAccount.currencyCode)}
+                          </Text>
+                        </View>
+                        <View style={styles.accountProjectionRow}>
+                          <Text style={styles.accountProjectionLabel}>
+                            {ownerEditSelectedAccount.id === ownerEditPreviousAccount?.id
+                              ? "Ajuste neto del movimiento"
+                              : "Nuevo movimiento"}
+                          </Text>
+                          <Text
+                            style={[
+                              styles.accountProjectionValue,
+                              (ownerEditSelectedAccount.id === ownerEditPreviousAccount?.id
+                                ? ownerEditProposedDelta - ownerEditCurrentDelta
+                                : ownerEditProposedDelta) >= 0
+                                ? styles.accountProjectionPositive
+                                : styles.accountProjectionNegative,
+                            ]}
+                          >
+                            {(ownerEditSelectedAccount.id === ownerEditPreviousAccount?.id
+                              ? ownerEditProposedDelta - ownerEditCurrentDelta
+                              : ownerEditProposedDelta) >= 0
+                              ? "+"
+                              : "-"}
+                            {formatCurrency(
+                              Math.abs(
+                                ownerEditSelectedAccount.id === ownerEditPreviousAccount?.id
+                                  ? ownerEditProposedAmount - ownerEditCurrentAmount
+                                  : ownerEditProposedAmount,
+                              ),
+                              ownerEditSelectedAccount.currencyCode,
+                            )}
+                          </Text>
+                        </View>
+                        <View style={styles.accountProjectionRow}>
+                          <Text style={styles.accountProjectionLabel}>Quedara en</Text>
+                          <Text style={styles.accountProjectionStrong}>
+                            {formatCurrency(ownerEditSelectedProjectedBalance, ownerEditSelectedAccount.currencyCode)}
+                          </Text>
+                        </View>
+                      </View>
+                    ) : null}
+                  </>
+                ) : null}
+                {ownerEditRequestTarget.event && ownerAccounts.length === 0 ? (
+                  <Text style={styles.requestNoAccount}>
+                    No tienes cuentas activas disponibles para reasignar este movimiento.
+                  </Text>
+                ) : null}
               </>
             ) : null}
             <Button
@@ -2802,7 +3018,7 @@ function ObligationDetailScreen() {
                 }
               }}
               loading={acceptEditRequestMutation.isPending}
-              disabled={!ownerEditRequestTarget?.event}
+              disabled={!ownerEditRequestTarget?.event || (ownerAccounts.length > 0 && ownerEditResponseAccountId == null)}
             />
             <Button
               label="Rechazar"
@@ -2946,7 +3162,11 @@ function ObligationDetailScreen() {
                 },
               ]
             : []),
-          ...(isSharedViewer && selectedEvent?.eventType === "payment"
+          ...(isSharedViewer &&
+          selectedEvent &&
+          (selectedEvent.eventType === "payment" ||
+            selectedEvent.eventType === "principal_increase" ||
+            selectedEvent.eventType === "principal_decrease")
             ? [
                 {
                   key: "link-account",

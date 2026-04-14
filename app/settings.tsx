@@ -20,7 +20,7 @@ import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as LocalAuthentication from "expo-local-authentication";
 import * as SecureStore from "expo-secure-store";
-import { Fingerprint } from "lucide-react-native";
+import { Fingerprint, Pencil } from "lucide-react-native";
 
 import { useAuth } from "../lib/auth-context";
 import { useWorkspace, useWorkspaceListStore } from "../lib/workspace-context";
@@ -242,8 +242,8 @@ function SettingsScreen() {
     try {
       await saveAvatar(result.assets[0].uri);
       showToast("Foto de perfil actualizada", "success");
-    } catch {
-      showToast("No se pudo subir la foto", "error");
+    } catch (err: unknown) {
+      showToast(humanizeError(err), "error");
     } finally {
       setIsUploadingAvatar(false);
     }
@@ -293,7 +293,7 @@ function SettingsScreen() {
               <View style={styles.avatarOverlay}>
                 {isUploadingAvatar
                   ? <ActivityIndicator size="small" color="#FFF" />
-                  : <Text style={styles.avatarEditLabel}>Editar</Text>}
+                  : <Pencil size={20} color="#FFF" strokeWidth={2} />}
               </View>
             </TouchableOpacity>
             {profile?.avatarUrl ? (
@@ -592,12 +592,6 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.38)",
     alignItems: "center",
     justifyContent: "center",
-  },
-  avatarEditLabel: {
-    fontSize: FONT_SIZE.xs,
-    fontFamily: FONT_FAMILY.bodyMedium,
-    color: "#FFF",
-    letterSpacing: 0.3,
   },
   avatarRemoveText: {
     fontSize: FONT_SIZE.xs,

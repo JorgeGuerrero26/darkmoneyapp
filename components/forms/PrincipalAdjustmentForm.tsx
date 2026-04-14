@@ -20,6 +20,7 @@ import { CurrencyInput } from "../ui/CurrencyInput";
 import { DatePickerInput } from "../ui/DatePickerInput";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { formatCurrency } from "../ui/AmountDisplay";
+import { BalanceImpactPreview } from "../domain/BalanceImpactPreview";
 import { sortByName } from "../../lib/sort-locale";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
 
@@ -67,6 +68,7 @@ export function PrincipalAdjustmentForm({ visible, mode, obligation, onClose, on
   );
 
   const isIncrease = mode === "increase";
+  const isReceivable = obligation?.direction === "receivable";
   const currencyCode = obligation?.currencyCode ?? "PEN";
 
   const currentPrincipal = obligation?.currentPrincipalAmount ?? obligation?.principalAmount ?? 0;
@@ -76,6 +78,21 @@ export function PrincipalAdjustmentForm({ visible, mode, obligation, onClose, on
     if (!amount || isNaN(parsed) || parsed <= 0) return null;
     return isIncrease ? currentPrincipal + parsed : Math.max(0, currentPrincipal - parsed);
   }, [amount, currentPrincipal, isIncrease]);
+  const selectedAccount = useMemo(
+    () => activeAccounts.find((account) => account.id === accountId) ?? null,
+    [activeAccounts, accountId],
+  );
+  const projectedAccountDelta = useMemo(() => {
+    const parsed = parseFloat(amount);
+    if (!createMovement || !selectedAccount || !amount || isNaN(parsed) || parsed <= 0) return null;
+    if (isIncrease) {
+      return isReceivable ? -parsed : parsed;
+    }
+    return isReceivable ? parsed : -parsed;
+  }, [amount, createMovement, isIncrease, isReceivable, selectedAccount]);
+  const projectedAccountBalance = selectedAccount && projectedAccountDelta != null
+    ? selectedAccount.currentBalance + projectedAccountDelta
+    : null;
 
   useEffect(() => {
     if (!visible || !obligation) return;
@@ -149,6 +166,7 @@ export function PrincipalAdjustmentForm({ visible, mode, obligation, onClose, on
       } else {
         await mutation.mutateAsync({
           obligationId: obligation.id,
+          direction: obligation.direction,
           mode,
           amount: parsed,
           eventDate,
@@ -179,6 +197,14 @@ export function PrincipalAdjustmentForm({ visible, mode, obligation, onClose, on
     : (obligation?.direction === "receivable"
         ? "Reduce el monto que te deben. El principal original no se borra."
         : "Reduce lo que debes. El principal original no se borra.");
+
+  const movementImpactText = isIncrease
+    ? (isReceivable
+        ? "Crea un gasto real porque estas prestando mas dinero"
+        : "Crea un ingreso real porque estas recibiendo mas dinero prestado")
+    : (isReceivable
+        ? "Crea un ingreso real porque estas recuperando parte del principal"
+        : "Crea un gasto real porque estas pagando parte del principal");
 
   return (
     <>
@@ -253,9 +279,7 @@ export function PrincipalAdjustmentForm({ visible, mode, obligation, onClose, on
               <View style={styles.switchInfo}>
                 <Text style={styles.switchLabel}>Registrar movimiento en cuenta</Text>
                 <Text style={styles.switchDesc}>
-                  {isIncrease
-                    ? "Crea un ingreso real que afecta el saldo"
-                    : "Crea un gasto real que afecta el saldo"}
+                  {movementImpactText}
                 </Text>
               </View>
               <Switch
@@ -289,6 +313,16 @@ export function PrincipalAdjustmentForm({ visible, mode, obligation, onClose, on
                   </ScrollView>
                 </View>
                 {accountError ? <Text style={styles.fieldError}>{accountError}</Text> : null}
+                {selectedAccount && projectedAccountBalance != null ? (
+                  <View style={styles.projectionWrap}>
+                    <BalanceImpactPreview
+                      label={selectedAccount.name}
+                      currentBalance={selectedAccount.currentBalance}
+                      projectedBalance={projectedAccountBalance}
+                      currencyCode={selectedAccount.currencyCode}
+                    />
+                  </View>
+                ) : null}
               </View>
             ) : null}
           </>
@@ -423,6 +457,7 @@ const styles = StyleSheet.create({
     borderColor: GLASS.cardBorder,
   },
   pillText: { fontSize: FONT_SIZE.sm, fontFamily: FONT_FAMILY.bodyMedium, color: COLORS.storm },
+  projectionWrap: { marginTop: SPACING.sm },
   fieldError: {
     fontSize: FONT_SIZE.xs,
     color: COLORS.danger,

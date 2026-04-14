@@ -97,6 +97,7 @@ export type PushNotificationHandlers = {
   onSubscriptionReminderTap?: (subscriptionId: number) => void;
   /** Toque en notificación con data.type === "obligation_reminder" */
   onObligationReminderTap?: (obligationId: number) => void;
+  onRecurringIncomeReminderTap?: (recurringIncomeId: number) => void;
 };
 
 export function usePushNotifications(userId?: string, handlers?: PushNotificationHandlers) {
@@ -105,9 +106,11 @@ export function usePushNotifications(userId?: string, handlers?: PushNotificatio
   const onInviteTapRef = useRef(handlers?.onObligationShareInviteTap);
   const onSubTapRef = useRef(handlers?.onSubscriptionReminderTap);
   const onObTapRef = useRef(handlers?.onObligationReminderTap);
+  const onRecurringTapRef = useRef(handlers?.onRecurringIncomeReminderTap);
   onInviteTapRef.current = handlers?.onObligationShareInviteTap;
   onSubTapRef.current = handlers?.onSubscriptionReminderTap;
   onObTapRef.current = handlers?.onObligationReminderTap;
+  onRecurringTapRef.current = handlers?.onRecurringIncomeReminderTap;
 
   const handleResponse = useCallback((response: ExpoNotificationResponse) => {
     const data = response.notification.request.content.data as Record<string, unknown> | undefined;
@@ -119,6 +122,8 @@ export function usePushNotifications(userId?: string, handlers?: PushNotificatio
       onSubTapRef.current?.(data.subscriptionId);
     } else if (data.type === "obligation_reminder" && typeof data.obligationId === "number") {
       onObTapRef.current?.(data.obligationId);
+    } else if (data.type === "recurring_income_reminder" && typeof data.recurringIncomeId === "number") {
+      onRecurringTapRef.current?.(data.recurringIncomeId);
     }
   }, []);
 
@@ -268,6 +273,50 @@ export async function scheduleObligationReminders(
         title,
         body,
         data: { type: "obligation_reminder", obligationId: ob.id },
+      },
+      trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: triggerDate },
+    });
+  }
+}
+
+export async function scheduleRecurringIncomeReminders(
+  incomes: Array<{
+    id: number;
+    name: string;
+    nextExpectedDate: string;
+    remindDaysBefore: number;
+  }>,
+) {
+  if (!Notifications) return;
+  const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+  for (const notif of scheduled) {
+    if (String(notif.content.data?.type) === "recurring_income_reminder") {
+      await Notifications.cancelScheduledNotificationAsync(notif.identifier);
+    }
+  }
+
+  const now = new Date();
+  for (const income of incomes) {
+    const diffDays = calendarDaysFromTodayLocal(income.nextExpectedDate);
+    const remindWindow = Math.max(1, income.remindDaysBefore);
+    if (diffDays > remindWindow || diffDays < -1) continue;
+
+    const parts = income.nextExpectedDate.split("-").map(Number);
+    const expectedDate =
+      parts.length === 3 && !parts.some((n) => Number.isNaN(n))
+        ? new Date(parts[0], parts[1] - 1, parts[2])
+        : new Date(income.nextExpectedDate);
+
+    const windowStart = new Date(expectedDate);
+    windowStart.setDate(windowStart.getDate() - remindWindow);
+    windowStart.setHours(9, 0, 0, 0);
+    const triggerDate = windowStart > now ? windowStart : new Date(now.getTime() + 60_000);
+
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: "Ingreso fijo próximo",
+        body: `"${income.name}" se espera para el ${expectedDate.toLocaleDateString("es", { day: "numeric", month: "long" })}`,
+        data: { type: "recurring_income_reminder", recurringIncomeId: income.id },
       },
       trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: triggerDate },
     });

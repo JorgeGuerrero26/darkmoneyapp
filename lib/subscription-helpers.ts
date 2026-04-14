@@ -1,3 +1,4 @@
+import { addDays, addMonths, addWeeks, addYears } from "date-fns";
 import type { ExchangeRateSummary, SubscriptionFrequency } from "../types/domain";
 
 /** Convierte un monto a la moneda base del workspace usando tasas del snapshot. */
@@ -90,4 +91,49 @@ export function movementAmountForSubscriptionAnalytics(m: {
   if (s != null && Number.isFinite(s) && s !== 0) return Math.abs(s);
   if (d != null && Number.isFinite(d) && d !== 0) return Math.abs(d);
   return 0;
+}
+
+function parseLocalYmd(ymd: string): Date {
+  const parts = ymd.trim().split("-").map(Number);
+  if (parts.length !== 3 || parts.some((x) => Number.isNaN(x))) return new Date(ymd);
+  return new Date(parts[0], parts[1] - 1, parts[2]);
+}
+
+function toLocalYmd(date: Date): string {
+  const y = date.getFullYear();
+  const m = `${date.getMonth() + 1}`.padStart(2, "0");
+  const d = `${date.getDate()}`.padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+export function computeNextRecurringDate(
+  currentYmd: string,
+  frequency: SubscriptionFrequency,
+  intervalCount: number,
+): string {
+  const base = parseLocalYmd(currentYmd);
+  const n = Math.max(1, Math.floor(intervalCount) || 1);
+  let next: Date;
+  switch (frequency) {
+    case "daily":
+      next = addDays(base, n);
+      break;
+    case "weekly":
+      next = addWeeks(base, n);
+      break;
+    case "monthly":
+      next = addMonths(base, n);
+      break;
+    case "quarterly":
+      next = addMonths(base, n * 3);
+      break;
+    case "yearly":
+      next = addYears(base, n);
+      break;
+    case "custom":
+    default:
+      next = addDays(base, n);
+      break;
+  }
+  return toLocalYmd(next);
 }

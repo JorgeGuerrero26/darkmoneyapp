@@ -27,6 +27,8 @@ export type ObligationEventType =
 export type ObligationShareStatus = "pending" | "accepted" | "declined" | "revoked";
 export type SubscriptionFrequency = "daily" | "weekly" | "monthly" | "quarterly" | "yearly" | "custom";
 export type SubscriptionStatus = "active" | "paused" | "cancelled";
+export type RecurringIncomeFrequency = SubscriptionFrequency;
+export type RecurringIncomeStatus = "active" | "paused" | "cancelled";
 export type CategoryKind = "expense" | "income" | "both";
 export type CounterpartyType = "person" | "company" | "merchant" | "service" | "bank" | "other";
 export type CounterpartyRoleType =
@@ -44,6 +46,40 @@ export type JsonValue =
   | null
   | { [key: string]: JsonValue }
   | JsonValue[];
+
+export type MovementAnalyticsSignal = {
+  id: number;
+  workspaceId: number;
+  movementId: number;
+  normalizedDescription?: string | null;
+  merchantGuess?: string | null;
+  suggestedCategoryId?: number | null;
+  suggestedCategoryConfidence?: number | null;
+  anomalyScore?: number | null;
+  signalReasons: string[];
+  analyticsVersion: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type WorkspaceAnalyticsSnapshot = {
+  id: number;
+  workspaceId: number;
+  snapshotKind: string;
+  periodKey: string;
+  expectedBalance?: number | null;
+  conservativeBalance?: number | null;
+  optimisticBalance?: number | null;
+  committedInflow?: number | null;
+  committedOutflow?: number | null;
+  variableIncomeProjection?: number | null;
+  variableExpenseProjection?: number | null;
+  confidence?: number | null;
+  metadata?: JsonValue | null;
+  analyticsVersion: string;
+  generatedAt: string;
+  updatedAt: string;
+};
 
 export type UserProfile = {
   id: string;
@@ -397,6 +433,33 @@ export type SubscriptionSummary = {
   remindDaysBefore: number;
   accountName?: string | null;
   autoCreateMovement: boolean;
+  description?: string | null;
+  notes?: string | null;
+};
+
+export type RecurringIncomeSummary = {
+  id: number;
+  workspaceId: number;
+  name: string;
+  payerPartyId?: number | null;
+  payer: string;
+  accountId?: number | null;
+  accountName?: string | null;
+  categoryId?: number | null;
+  categoryName?: string | null;
+  status: RecurringIncomeStatus;
+  amount: number;
+  amountInBaseCurrency?: number | null;
+  currencyCode: string;
+  frequency: RecurringIncomeFrequency;
+  frequencyLabel: string;
+  intervalCount: number;
+  dayOfMonth?: number | null;
+  dayOfWeek?: number | null;
+  startDate: string;
+  nextExpectedDate: string;
+  endDate?: string | null;
+  remindDaysBefore: number;
   description?: string | null;
   notes?: string | null;
 };

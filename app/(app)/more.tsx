@@ -3,7 +3,7 @@ import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
-  Bell, Users, BarChart3, RefreshCw, Tag, Settings, ArrowLeftRight, ChevronRight, type LucideIcon,
+  Bell, Users, BarChart3, RefreshCw, Tag, Settings, ArrowLeftRight, ChevronRight, TrendingUp, type LucideIcon,
 } from "lucide-react-native";
 
 import { useAuth } from "../../lib/auth-context";
@@ -59,6 +59,12 @@ export default function MoreScreen() {
       title: "Suscripciones",
       subtitle: "Pagos recurrentes",
       route: "/subscriptions",
+    },
+    {
+      Icon: TrendingUp,
+      title: "Ingresos fijos",
+      subtitle: "Sueldos, rentas y cobros recurrentes",
+      route: "/recurring-income",
     },
     {
       Icon: Tag,

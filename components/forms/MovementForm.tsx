@@ -156,6 +156,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   const [form, setForm] = useState<FormState>(() => getInitialForm(defaultType));
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
   const [submitError, setSubmitError] = useState("");
+  const [isClosingAfterSubmit, setIsClosingAfterSubmit] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [savedMovementId, setSavedMovementId] = useState<number | undefined>(editMovement?.id);
   const attachmentsHydratedRef = useRef<string | null>(null);
@@ -246,7 +247,15 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
 
   // Reset on open / populate when editing
   useEffect(() => {
+    if (!visible) {
+      setIsClosingAfterSubmit(false);
+      return;
+    }
+  }, [visible]);
+
+  useEffect(() => {
     if (!visible) return;
+    if (isClosingAfterSubmit) return;
     attachmentsHydratedRef.current = null;
     initialAttachmentSignatureRef.current = "::ready";
     if (editMovement) {
@@ -279,7 +288,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     setSubmitError("");
     setAttachments([]);
     setSavedMovementId(editMovement?.id);
-  }, [visible, editMovement, defaultType, initialAccountId]);
+  }, [visible, editMovement, defaultType, initialAccountId, isClosingAfterSubmit]);
 
   useEffect(() => {
     if (!visible || !isEditing || !editMovement || editMovementAttachmentsLoading) return;
@@ -306,6 +315,8 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   // --- Balance impact preview ---
   const sourceAccount = accounts.find((a) => a.id === form.sourceAccountId) ?? null;
   const destinationAccount = accounts.find((a) => a.id === form.destinationAccountId) ?? null;
+  const originalSourceAccount = accounts.find((a) => a.id === (editMovement?.sourceAccountId ?? null)) ?? null;
+  const originalDestinationAccount = accounts.find((a) => a.id === (editMovement?.destinationAccountId ?? null)) ?? null;
   const sourceAmountNum = parseFloat(form.sourceAmount) || 0;
   const destinationAmountNum = parseFloat(form.destinationAmount) || 0;
 
@@ -328,9 +339,14 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     if (form.movementType === "income") {
       return sourceAccount.currentBalance + sourceAmountNum;
     }
-    // expense / transfer source: reverse original amount, then apply new
-    return (sourceAccount.currentBalance + editOriginalSourceAmt) - sourceAmountNum;
-  }, [sourceAccount, sourceAmountNum, form.movementType, editOriginalSourceAmt]);
+    // expense / transfer source:
+    // if we kept the same account, reverse original amount and apply the new one;
+    // if we changed account, only apply the new outgoing amount here.
+    if (isEditing && originalSourceAccount && originalSourceAccount.id === sourceAccount.id) {
+      return (sourceAccount.currentBalance + editOriginalSourceAmt) - sourceAmountNum;
+    }
+    return sourceAccount.currentBalance - sourceAmountNum;
+  }, [sourceAccount, sourceAmountNum, form.movementType, editOriginalSourceAmt, isEditing, originalSourceAccount]);
 
   const projectedDestBalance = useMemo(() => {
     if (!destinationAccount) return null;
@@ -339,9 +355,24 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         ? sourceAmountNum
         : destinationAmountNum;
     if (effectiveNewAmt <= 0) return null;
-    // destination: reverse original, apply new
-    return (destinationAccount.currentBalance - editOriginalDestAmt) + effectiveNewAmt;
-  }, [destinationAccount, destinationAmountNum, sourceAmountNum, form.movementType, transferCurrenciesDiffer, editOriginalDestAmt]);
+    // destination:
+    // if we kept the same account, reverse original amount and apply the new one;
+    // if we changed account, only apply the new incoming amount here.
+    if (isEditing && originalDestinationAccount && originalDestinationAccount.id === destinationAccount.id) {
+      return (destinationAccount.currentBalance - editOriginalDestAmt) + effectiveNewAmt;
+    }
+    return destinationAccount.currentBalance + effectiveNewAmt;
+  }, [destinationAccount, destinationAmountNum, sourceAmountNum, form.movementType, transferCurrenciesDiffer, editOriginalDestAmt, isEditing, originalDestinationAccount]);
+  const revertedOriginalSourceBalance = useMemo(() => {
+    if (!isEditing || !originalSourceAccount || editOriginalSourceAmt <= 0) return null;
+    if (originalSourceAccount.id === sourceAccount?.id) return null;
+    return originalSourceAccount.currentBalance + editOriginalSourceAmt;
+  }, [isEditing, originalSourceAccount, editOriginalSourceAmt, sourceAccount?.id]);
+  const revertedOriginalDestBalance = useMemo(() => {
+    if (!isEditing || !originalDestinationAccount || editOriginalDestAmt <= 0) return null;
+    if (originalDestinationAccount.id === destinationAccount?.id) return null;
+    return originalDestinationAccount.currentBalance - editOriginalDestAmt;
+  }, [isEditing, originalDestinationAccount, editOriginalDestAmt, destinationAccount?.id]);
   const hasAttachmentChanges = attachmentSignature !== initialAttachmentSignatureRef.current;
 
   // --- Validation per step ---
@@ -427,6 +458,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     }
 
     try {
+      setIsClosingAfterSubmit(true);
       const autoDesc = buildDescription();
       let backgroundAttachmentSync: (() => void) | null = null;
       if (isEditing && editMovement) {
@@ -437,7 +469,13 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
             description: autoDesc,
             notes: form.notes.trim() || null,
             categoryId: form.categoryId,
+            counterpartyId: form.counterpartyId,
             occurredAt: dateStrToISO(form.occurredAt),
+            sourceAccountId: form.movementType === "income" ? null : form.sourceAccountId,
+            destinationAccountId:
+              form.movementType === "income" || form.movementType === "transfer"
+                ? form.destinationAccountId
+                : null,
             sourceAmount: form.sourceAmount ? parseFloat(form.sourceAmount) : undefined,
             destinationAmount: form.destinationAmount ? parseFloat(form.destinationAmount) : undefined,
           },
@@ -473,6 +511,10 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
           };
         }
         showToast("Movimiento actualizado", "success");
+        if (linkedEventId && activeWorkspaceId) {
+          void queryClient.invalidateQueries({ queryKey: ["obligation-events"] });
+          void queryClient.invalidateQueries({ queryKey: ["entity-attachments", activeWorkspaceId, "obligation-event", linkedEventId] });
+        }
       } else {
         const isIncome = form.movementType === "income";
         const isTransfer = form.movementType === "transfer";
@@ -531,6 +573,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
       onClose();
       backgroundAttachmentSync?.();
     } catch (err: unknown) {
+      setIsClosingAfterSubmit(false);
       haptics.error();
       setSubmitError(humanizeError(err));
     }
@@ -542,10 +585,13 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
       const origOccurredAt = editMovement.occurredAt ? isoToDateStr(editMovement.occurredAt) : todayPeru();
       isDirty =
         form.description !== (editMovement.description ?? "") ||
+        form.sourceAccountId !== (editMovement.sourceAccountId ?? null) ||
+        form.destinationAccountId !== (editMovement.destinationAccountId ?? null) ||
         form.sourceAmount !== (editMovement.sourceAmount ? String(editMovement.sourceAmount) : "") ||
         form.destinationAmount !== (editMovement.destinationAmount ? String(editMovement.destinationAmount) : "") ||
         form.status !== editMovement.status ||
         form.categoryId !== (editMovement.categoryId ?? null) ||
+        form.counterpartyId !== (editMovement.counterpartyId ?? null) ||
         form.notes !== (editMovement.notes ?? "") ||
         form.occurredAt !== origOccurredAt ||
         attachmentSignature !== initialAttachmentSignatureRef.current;
@@ -717,18 +763,38 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
           {/* Balance impact preview */}
           {sourceAccount && projectedSourceBalance !== null && (
             <BalanceImpactPreview
-              label={sourceAccount.name}
+              label={isEditing && originalSourceAccount && originalSourceAccount.id !== sourceAccount.id
+                ? `Cuenta seleccionada: ${sourceAccount.name}`
+                : sourceAccount.name}
               currentBalance={sourceAccount.currentBalance}
               projectedBalance={projectedSourceBalance}
               currencyCode={sourceAccount.currencyCode}
             />
           )}
+          {originalSourceAccount && revertedOriginalSourceBalance !== null && (
+            <BalanceImpactPreview
+              label={`Cuenta anterior: ${originalSourceAccount.name}`}
+              currentBalance={originalSourceAccount.currentBalance}
+              projectedBalance={revertedOriginalSourceBalance}
+              currencyCode={originalSourceAccount.currencyCode}
+            />
+          )}
           {destinationAccount && projectedDestBalance !== null && (
             <BalanceImpactPreview
-              label={destinationAccount.name}
+              label={isEditing && originalDestinationAccount && originalDestinationAccount.id !== destinationAccount.id
+                ? `Cuenta seleccionada: ${destinationAccount.name}`
+                : destinationAccount.name}
               currentBalance={destinationAccount.currentBalance}
               projectedBalance={projectedDestBalance}
               currencyCode={destinationAccount.currencyCode}
+            />
+          )}
+          {originalDestinationAccount && revertedOriginalDestBalance !== null && (
+            <BalanceImpactPreview
+              label={`Cuenta anterior: ${originalDestinationAccount.name}`}
+              currentBalance={originalDestinationAccount.currentBalance}
+              projectedBalance={revertedOriginalDestBalance}
+              currencyCode={originalDestinationAccount.currencyCode}
             />
           )}
 
