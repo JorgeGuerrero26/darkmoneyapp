@@ -22,7 +22,7 @@ import {
 } from "react-native";
 
 const SCREEN_HEIGHT = Dimensions.get("window").height;
-import { useRouter, useFocusEffect } from "expo-router";
+import { useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { startOfMonth, endOfMonth, subMonths, format } from "date-fns";
@@ -111,6 +111,12 @@ function MovementsScreen() {
   const swipeGesture = useSwipeTab();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const params = useLocalSearchParams<{
+    quickFilter?: string | string[];
+    quickScope?: string | string[];
+    quickToken?: string | string[];
+    quickStatus?: string | string[];
+  }>();
   const queryClient = useQueryClient();
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
@@ -121,6 +127,7 @@ function MovementsScreen() {
   const [activeStatusFilter, setActiveStatusFilter] = useState<FilterStatus>("all");
   const [activeDatePreset, setActiveDatePreset] = useState<string | null>("Este mes");
   const [activeCategoryId, setActiveCategoryId] = useState<number | null>(null);
+  const [activeCategoryScope, setActiveCategoryScope] = useState<"uncategorized" | null>(null);
   const [activeAccountId, setActiveAccountId] = useState<number | null>(null);
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [customDateFrom, setCustomDateFrom] = useState("");
@@ -232,10 +239,11 @@ function MovementsScreen() {
       : selectedPreset
         ? { dateFrom: selectedPreset.from, dateTo: selectedPreset.to }
         : {}),
+    ...(activeCategoryScope === "uncategorized" ? { uncategorized: true } : {}),
     ...(activeCategoryId ? { categoryId: activeCategoryId } : {}),
     ...(activeAccountId ? { accountId: activeAccountId } : {}),
     ...(debouncedSearch ? { search: debouncedSearch } : {}),
-  }), [activeTypeFilter, activeStatusFilter, selectedPreset, isCustomRange, customDateFrom, customDateTo, activeCategoryId, activeAccountId, debouncedSearch]);
+  }), [activeTypeFilter, activeStatusFilter, selectedPreset, isCustomRange, customDateFrom, customDateTo, activeCategoryId, activeCategoryScope, activeAccountId, debouncedSearch]);
 
   const {
     data,
@@ -279,6 +287,7 @@ function MovementsScreen() {
   const extraFiltersCount = [
     activeDatePreset,
     activeCategoryId,
+    activeCategoryScope,
     activeAccountId,
     activeStatusFilter !== "all" ? activeStatusFilter : null,
   ].filter(Boolean).length;
@@ -305,6 +314,23 @@ function MovementsScreen() {
   );
 
   const refreshTriggeredRef = useRef(false);
+  const preserveScopedFiltersOnNextBlurRef = useRef(false);
+  const lastQuickFilterKeyRef = useRef<string | null>(null);
+  const scopedQuickFiltersRef = useRef<{ categoryScope: "uncategorized" | null; status: FilterStatus | null }>({
+    categoryScope: null,
+    status: null,
+  });
+
+  const clearScopedQuickFilters = useCallback(() => {
+    if (scopedQuickFiltersRef.current.categoryScope) {
+      setActiveCategoryScope(null);
+    }
+    if (scopedQuickFiltersRef.current.status) {
+      setActiveStatusFilter("all");
+    }
+    scopedQuickFiltersRef.current = { categoryScope: null, status: null };
+    lastQuickFilterKeyRef.current = null;
+  }, []);
   const onRefresh = useCallback(() => {
     refreshTriggeredRef.current = true;
     void queryClient.invalidateQueries({ queryKey: ["movements"] });
@@ -313,7 +339,39 @@ function MovementsScreen() {
   useFocusEffect(
     useCallback(() => {
       void queryClient.invalidateQueries({ queryKey: ["movements"] });
-    }, [queryClient]),
+      const quickFilter = Array.isArray(params.quickFilter) ? params.quickFilter[0] : params.quickFilter;
+      const quickScope = Array.isArray(params.quickScope) ? params.quickScope[0] : params.quickScope;
+      const quickToken = Array.isArray(params.quickToken) ? params.quickToken[0] : params.quickToken;
+      const quickStatus = Array.isArray(params.quickStatus) ? params.quickStatus[0] : params.quickStatus;
+      const quickKey = [quickFilter ?? "", quickScope ?? "", quickStatus ?? "", quickToken ?? ""].join("|");
+
+      if (quickScope && quickKey !== lastQuickFilterKeyRef.current) {
+        lastQuickFilterKeyRef.current = quickKey;
+        scopedQuickFiltersRef.current = {
+          categoryScope: quickFilter === "uncategorized" ? "uncategorized" : null,
+          status:
+            quickStatus === "pending" || quickStatus === "planned" || quickStatus === "posted"
+              ? (quickStatus as FilterStatus)
+              : null,
+        };
+
+        if (quickFilter === "uncategorized") {
+          setActiveCategoryId(null);
+          setActiveCategoryScope("uncategorized");
+        }
+        if (quickStatus === "pending" || quickStatus === "planned" || quickStatus === "posted") {
+          setActiveStatusFilter(quickStatus as FilterStatus);
+        }
+      }
+
+      return () => {
+        if (preserveScopedFiltersOnNextBlurRef.current) {
+          preserveScopedFiltersOnNextBlurRef.current = false;
+          return;
+        }
+        clearScopedQuickFilters();
+      };
+    }, [clearScopedQuickFilters, params.quickFilter, params.quickScope, params.quickStatus, params.quickToken, queryClient]),
   );
 
   useEffect(() => {
@@ -328,9 +386,12 @@ function MovementsScreen() {
     setActiveStatusFilter("all");
     setActiveDatePreset(null);
     setActiveCategoryId(null);
+    setActiveCategoryScope(null);
     setActiveAccountId(null);
     setCustomDateFrom("");
     setCustomDateTo("");
+    scopedQuickFiltersRef.current = { categoryScope: null, status: null };
+    lastQuickFilterKeyRef.current = null;
   }
 
   // ── CSV Export ────────────────────────────────────────────────────────────
@@ -371,6 +432,7 @@ function MovementsScreen() {
         if (selectMode) {
           toggleSelect(item.id);
         } else {
+          preserveScopedFiltersOnNextBlurRef.current = true;
           router.push(`/movement/${item.id}?from=movements`);
         }
       }}
@@ -459,7 +521,7 @@ function MovementsScreen() {
       ) : null}
 
       {/* Active filter chips */}
-      {!selectMode && (activeDatePreset !== null || activeCategoryId || activeAccountId || activeStatusFilter !== "all") ? (
+      {!selectMode && (activeDatePreset !== null || activeCategoryId || activeCategoryScope || activeAccountId || activeStatusFilter !== "all") ? (
         <View style={styles.activeFiltersBar}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.activeFiltersPills}>
             {activeStatusFilter !== "all" ? (
@@ -476,6 +538,13 @@ function MovementsScreen() {
                     ? `${customDateFrom} – ${customDateTo}`
                     : activeDatePreset}{" "}
                   ×
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+            {activeCategoryScope === "uncategorized" ? (
+              <TouchableOpacity style={styles.activeFilterChip} onPress={() => setActiveCategoryScope(null)}>
+                <Text style={styles.activeFilterChipText}>
+                  Sin categoría ×
                 </Text>
               </TouchableOpacity>
             ) : null}
@@ -665,11 +734,14 @@ function MovementsScreen() {
                 <Text style={styles.filterSectionLabel}>Categoría</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                   <View style={styles.filterPillWrap}>
-                    <TouchableOpacity style={[styles.pill, activeCategoryId === null && styles.pillActive]} onPress={() => setActiveCategoryId(null)}>
-                      <Text style={[styles.pillText, activeCategoryId === null && styles.pillTextActive]}>Todas</Text>
+                    <TouchableOpacity style={[styles.pill, activeCategoryId === null && activeCategoryScope === null && styles.pillActive]} onPress={() => { setActiveCategoryId(null); setActiveCategoryScope(null); }}>
+                      <Text style={[styles.pillText, activeCategoryId === null && activeCategoryScope === null && styles.pillTextActive]}>Todas</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.pill, activeCategoryScope === "uncategorized" && styles.pillActive]} onPress={() => { setActiveCategoryId(null); setActiveCategoryScope("uncategorized"); }}>
+                      <Text style={[styles.pillText, activeCategoryScope === "uncategorized" && styles.pillTextActive]}>Sin categoría</Text>
                     </TouchableOpacity>
                     {categoriesSorted.map((cat) => (
-                      <TouchableOpacity key={cat.id} style={[styles.pill, activeCategoryId === cat.id && styles.pillActive]} onPress={() => setActiveCategoryId(cat.id)}>
+                      <TouchableOpacity key={cat.id} style={[styles.pill, activeCategoryId === cat.id && styles.pillActive]} onPress={() => { setActiveCategoryScope(null); setActiveCategoryId(cat.id); }}>
                         <Text style={[styles.pillText, activeCategoryId === cat.id && styles.pillTextActive]}>{cat.name}</Text>
                       </TouchableOpacity>
                     ))}

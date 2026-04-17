@@ -28,9 +28,20 @@ type Props = {
   children: React.ReactNode;
   snapHeight?: number;
   scrollRef?: React.RefObject<ScrollView | null>;
+  backdropColor?: string;
+  blurBackdrop?: boolean;
 };
 
-export function BottomSheet({ visible, onClose, title, children, snapHeight = 0.75, scrollRef }: Props) {
+export function BottomSheet({
+  visible,
+  onClose,
+  title,
+  children,
+  snapHeight = 0.75,
+  scrollRef,
+  backdropColor = "rgba(0,0,0,0.45)",
+  blurBackdrop = true,
+}: Props) {
   const insets = useSafeAreaInsets();
   const translateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
@@ -115,13 +126,15 @@ export function BottomSheet({ visible, onClose, title, children, snapHeight = 0.
     >
       {/* Animated backdrop: blur + dark dim */}
       <Animated.View style={[StyleSheet.absoluteFillObject, { opacity: backdropOpacity }]}>
-        <SafeBlurView
-          intensity={22}
-          tint="dark"
-          style={StyleSheet.absoluteFillObject}
-        />
+        {blurBackdrop ? (
+          <SafeBlurView
+            intensity={22}
+            tint="dark"
+            style={StyleSheet.absoluteFillObject}
+          />
+        ) : null}
         <Pressable
-          style={[StyleSheet.absoluteFillObject, styles.backdropDim]}
+          style={[StyleSheet.absoluteFillObject, { backgroundColor: backdropColor }]}
           onPress={onClose}
         />
       </Animated.View>
@@ -183,9 +196,6 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-  },
-  backdropDim: {
-    backgroundColor: "rgba(0,0,0,0.45)",
   },
   sheet: {
     position: "absolute",

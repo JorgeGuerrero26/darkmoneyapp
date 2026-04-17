@@ -8,7 +8,9 @@
       "Bash(rm fix_encoding.py)",
       "Bash(ls /c/Python*)",
       "Read(//c/Users/helpd/AppData/Local/Programs/**)",
-      "Bash(node -e ':*)"
+      "Bash(node -e ':*)",
+      "Bash(node fix_encoding.js)",
+      "Bash(rm fix_encoding.js)"
     ]
   }
 }

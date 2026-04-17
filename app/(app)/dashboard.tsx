@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect } from "expo-router";
 import {
   Image,
@@ -29,7 +29,7 @@ import {
 import { es } from "date-fns/locale";
 import {
   AlertTriangle, AlertCircle, Clock, Tag, ArrowRight, Bell, Banknote,
-  Brain, Lock, Sparkles, Target, TrendingUp,
+  Brain, Lock, Sparkles, Target, TrendingUp, X,
   type LucideIcon,
 } from "lucide-react-native";
 
@@ -56,6 +56,7 @@ import { SkeletonCard } from "../../components/ui/Skeleton";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { formatCurrency } from "../../components/ui/AmountDisplay";
 import { MovementForm } from "../../components/forms/MovementForm";
+import { BottomSheet } from "../../components/ui/BottomSheet";
 import { WorkspaceSelector } from "../../components/layout/WorkspaceSelector";
 import { GestureDetector } from "react-native-gesture-handler";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
@@ -75,7 +76,7 @@ import { RingChart, type RingSegment } from "../../components/ui/RingChart";
 import { SparkLine } from "../../components/ui/SparkLine";
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const UPCOMING_DAYS = 30;
 
@@ -94,10 +95,10 @@ const DASHBOARD_ADVANCED_PRESET_KEY = "darkmoney.dashboard.advancedPreset";
 const ADVANCED_WIDGET_LIBRARY = ["Flujo", "Salud", "Suscripciones", "Cartera", "Semanal", "Pulso", "Radar", "Calidad", "Aprendizaje", "Actividad"];
 
 const ADVANCED_PRESET_META: Record<AdvancedPreset, { title: string; subtitle: string; cta: string; situationalSubtitle: string }> = {
-  manual:    { title: "Manual",          subtitle: "Elige tus propios widgets abajo y ordénalos como quieras.", cta: "Armar mi panel",    situationalSubtitle: "Sin urgencia detectada — personaliza tú mismo." },
-  liquidity: { title: "Ver caja",        subtitle: "Caja, compromisos próximos y cierre estimado del mes.",    cta: "Vigilar liquidez",  situationalSubtitle: "Próximos 7–30 días bajo presión — conviene vigilar caja." },
+  manual:    { title: "Manual",          subtitle: "Elige tus propios widgets abajo y ordénalos como quieras.", cta: "Armar mi panel",    situationalSubtitle: "Sin urgencia detectada â€” personaliza tú mismo." },
+  liquidity: { title: "Ver caja",        subtitle: "Caja, compromisos próximos y cierre estimado del mes.",    cta: "Vigilar liquidez",  situationalSubtitle: "Próximos 7â€“30 días bajo presión â€” conviene vigilar caja." },
   portfolio: { title: "Revisar cartera", subtitle: "Cobros, pagos y vencimientos de la cartera.",              cta: "Ordenar cartera",   situationalSubtitle: "Hay vencimientos sin resolver que distorsionan la lectura." },
-  control:   { title: "Limpiar datos",   subtitle: "Categorización, duplicados y suscripciones.",              cta: "Mejorar calidad",   situationalSubtitle: "Categorías incompletas — las señales del dashboard pierden precisión." },
+  control:   { title: "Limpiar datos",   subtitle: "Categorización, duplicados y suscripciones.",              cta: "Mejorar calidad",   situationalSubtitle: "Categorías incompletas â€” las señales del dashboard pierden precisión." },
   analytics: { title: "Analizar mes",    subtitle: "Patrones, comparativos y aprendizaje del sistema.",        cta: "Ver patrones",      situationalSubtitle: "Base suficientemente sana para lectura fina de hábitos." },
 };
 
@@ -109,7 +110,7 @@ const ADVANCED_PRESET_WIDGETS: Record<AdvancedPreset, string[]> = {
   analytics: ["Semanal", "Pulso", "Radar", "Aprendizaje"],
 };
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function pctChange(current: number, prev: number) {
   if (prev === 0) return null;
@@ -183,7 +184,7 @@ function getPeriodBounds(period: Period, now: Date): { curStart: Date; curEnd: D
   return { curStart, curEnd, prevStart, prevEnd };
 }
 
-// ─── Exchange rate helpers ─────────────────────────────────────────────────────
+// â”€â”€â”€ Exchange rate helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const DASHBOARD_CURRENCY_KEY = "darkmoney.dashboard.displayCurrency";
 
@@ -202,7 +203,7 @@ function resolveRate(map: Map<string, number>, from: string, to: string): number
   if (direct) return direct;
   const inverse = map.get(`${to}:${from}`);
   if (inverse) return 1 / inverse;
-  return 1; // no rate found → keep original
+  return 1; // no rate found â†’ keep original
 }
 
 function convertAmt(
@@ -215,7 +216,7 @@ function convertAmt(
   return amount * resolveRate(map, fromCurrency.toUpperCase(), toCurrency.toUpperCase());
 }
 
-// ─── Stats ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Stats â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 type ConversionCtx = {
   accountCurrencyMap: Map<number, string>;
@@ -269,7 +270,7 @@ function useDashboardStats(movements: DashboardMovementRow[], period: Period, ct
     const prevIncome = prev.filter(isIncome).reduce((s, m) => s + incomeAmt(m, ctx), 0);
     const prevExpense = prev.filter(isExpense).reduce((s, m) => s + expenseAmt(m, ctx), 0);
 
-    // Daily chart — last 7 days (con metadatos para detalle al tocar)
+    // Daily chart â€” last 7 days (con metadatos para detalle al tocar)
     const chartDays: DashboardChartDay[] = Array.from({ length: 7 }, (_, i) => {
       const d = subDays(now, 6 - i);
       const ds = startOfDay(d);
@@ -286,7 +287,7 @@ function useDashboardStats(movements: DashboardMovementRow[], period: Period, ct
       };
     });
 
-    // Monthly pulse — last 6 months
+    // Monthly pulse â€” last 6 months
     const monthlyPulse = Array.from({ length: 6 }, (_, i) => {
       const mDate = subMonths(now, 5 - i);
       const mStart = startOfMonth(mDate);
@@ -299,7 +300,7 @@ function useDashboardStats(movements: DashboardMovementRow[], period: Period, ct
       };
     });
 
-    // Category breakdown — current period, expenses only
+    // Category breakdown â€” current period, expenses only
     const catTotals = new Map<number | null, number>();
     for (const m of cur.filter(isExpense)) {
       const k = m.categoryId;
@@ -777,7 +778,7 @@ function buildMonthProjectionModel(
 
   const variableIncomeProjection = incomeDailyAvg * remainingDays;
 
-  // A4: corrección de patrón semanal — solo si hay ≥3 semanas de historia
+  // A4: corrección de patrón semanal â€” solo si hay â‰¥3 semanas de historia
   const weeklyExpenseTotals = Array.from({ length: 7 }, () => ({ sum: 0, count: 0 }));
   for (const movement of movements.filter((m) => m.status === "posted" && m.movementType === "expense")) {
     const d = getDay(new Date(movement.occurredAt));
@@ -849,7 +850,6 @@ function buildMonthProjectionModel(
     confidence,
     confidenceLabel,
     remainingDays,
-    patternWeightsApplied,
   };
 }
 
@@ -888,7 +888,7 @@ function buildAnomalyFindings(
             key: `desc-${movement.id}`,
             movementId: movement.id,
             title: movement.description.trim() || "Movimiento",
-            body: `${z.toFixed(1)}σ por encima de tu promedio habitual (${avg.toFixed(2)} ± ${std.toFixed(2)}).`,
+            body: `${z.toFixed(1)}Ïƒ por encima de tu promedio habitual (${avg.toFixed(2)} ± ${std.toFixed(2)}).`,
             meta: `${accountLabel} · ${formatCurrency(amount, ctx.displayCurrency)} · ${format(new Date(movement.occurredAt), "d MMM", { locale: es })}`,
             level: z >= 3.0 ? "strong" : "review",
             score: Math.min(99, Math.round(45 + Math.min(z, 6) * 8)),
@@ -913,7 +913,7 @@ function buildAnomalyFindings(
             key: `cat-${movement.id}`,
             movementId: movement.id,
             title: movement.description.trim() || (categoryMap.get(movement.categoryId) ?? "Movimiento"),
-            body: `${z.toFixed(1)}σ por encima de tu promedio habitual en esta categoría (${avg.toFixed(2)} ± ${std.toFixed(2)}).`,
+            body: `${z.toFixed(1)}Ïƒ por encima de tu promedio habitual en esta categoría (${avg.toFixed(2)} ± ${std.toFixed(2)}).`,
             meta: `${categoryMap.get(movement.categoryId) ?? "Sin categoría"} · ${formatCurrency(amount, ctx.displayCurrency)} · ${format(new Date(movement.occurredAt), "d MMM", { locale: es })}`,
             level: z >= 3.0 ? "strong" : "review",
             score: Math.min(99, Math.round(45 + Math.min(z, 6) * 8)),
@@ -965,7 +965,7 @@ function buildAnomalyFindings(
   return Array.from(unique.values()).slice(0, 4);
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+// â”€â”€â”€ Sub-components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function SectionTitle({ children }: { children: string }) {
   return <Text style={subStyles.sectionTitle}>{children}</Text>;
@@ -1080,7 +1080,7 @@ function HeroCard({
   );
 }
 
-// KPI row — 3 compact cards (income %, expense %, net)
+// KPI row â€” 3 compact cards (income %, expense %, net)
 function FlowRow({
   income, expense, net, currency, prevIncome, prevExpense,
 }: {
@@ -1109,7 +1109,7 @@ function FlowCard({
     ? (higherIsGood ? change >= 0 : change <= 0)
     : null;
   const changeColor = isGood === null ? COLORS.storm : isGood ? COLORS.pine : COLORS.rosewood;
-  const arrow = change == null ? null : change >= 0 ? "↑" : "↓";
+  const arrow = change == null ? null : change >= 0 ? "â†‘" : "â†“";
 
   return (
     <View style={subStyles.kpiCard}>
@@ -1129,7 +1129,7 @@ function FlowCard({
   );
 }
 
-// Mini bar chart (7 days) — toque abre detalle con ahorro del día y movimientos
+// Mini bar chart (7 days) â€” toque abre detalle con ahorro del día y movimientos
 function MiniBarChart({
   data,
   onSelectDay,
@@ -1142,7 +1142,7 @@ function MiniBarChart({
 
   return (
     <Card>
-      <SectionTitle>Últimos 7 días — flujo diario</SectionTitle>
+      <SectionTitle>Ãšltimos 7 días â€” flujo diario</SectionTitle>
       <Text style={subStyles.chronoHint}>
         Toca un día: verás ingresos, gastos, ahorro del día (neto) y cada movimiento que lo explica.
       </Text>
@@ -1371,7 +1371,7 @@ function BudgetsSection({
 }) {
   const today = new Date();
 
-  // Tier 3: proyección de burn rate — presupuestos que aún no alertaron pero van a exceder
+  // Tier 3: proyección de burn rate â€” presupuestos que aún no alertaron pero van a exceder
   const burnRateTier = budgets.filter((b) => {
     if (b.isOverLimit || b.isNearLimit) return false;
     const periodEnd = parseDisplayDate(b.periodEnd);
@@ -1443,7 +1443,7 @@ function BudgetsSection({
   );
 }
 
-// ─── Simple widgets: ReceivableLeaders + PayableLeaders ───────────────────────
+// â”€â”€â”€ Simple widgets: ReceivableLeaders + PayableLeaders â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function ReceivableLeaders({
   obligations, router,
@@ -1527,7 +1527,7 @@ function LeadersRow({
   );
 }
 
-// Category comparison (current vs prev period) — Simple widget
+// Category comparison (current vs prev period) â€” Simple widget
 function CategoryComparison({
   catTotals, prevCatTotals, categories, currency,
 }: {
@@ -1583,7 +1583,7 @@ function CategoryComparison({
   );
 }
 
-// ─── New visual widgets ───────────────────────────────────────────────────────
+// â”€â”€â”€ New visual widgets â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function AccountsBreakdown({
   accounts,
@@ -1670,7 +1670,7 @@ function SavingsTrendCard({
       <View style={subStyles.trendHeader}>
         <SectionTitle>Ahorro mensual (6 meses)</SectionTitle>
         <Text style={[subStyles.trendBadge, { color: trendUp ? COLORS.pine : COLORS.rosewood }]}>
-          {trendUp ? "↑" : "↓"} tendencia
+          {trendUp ? "â†‘" : "â†“"} tendencia
         </Text>
       </View>
       <View style={subStyles.trendBody}>
@@ -1699,7 +1699,7 @@ function SavingsTrendCard({
   );
 }
 
-// ─── Advanced widgets ─────────────────────────────────────────────────────────
+// â”€â”€â”€ Advanced widgets â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function ReviewInbox({
   movements,
@@ -2182,7 +2182,7 @@ function HealthScore({
   );
 }
 
-// Alert center — anomalies detection
+// Alert center â€” anomalies detection
 type AlertItem = {
   key: string;
   icon: LucideIcon;
@@ -2271,7 +2271,7 @@ function AlertCenter({
   );
 }
 
-// Obligation watch — full list with aging
+// Obligation watch â€” full list with aging
 function ObligationWatch({
   obligations, router,
 }: {
@@ -2334,7 +2334,7 @@ function ObligationWatch({
   );
 }
 
-// Weekly pattern — average expense per day of week
+// Weekly pattern â€” average expense per day of week
 function WeeklyPattern({ movements, ctx }: { movements: DashboardMovementRow[]; ctx: ConversionCtx }) {
   const DAY_LABELS = ["Lu", "Ma", "Mi", "Ju", "Vi", "Sá", "Do"];
 
@@ -2381,7 +2381,7 @@ function WeeklyPattern({ movements, ctx }: { movements: DashboardMovementRow[]; 
   );
 }
 
-// Transfer snapshot — top 3 transfer routes
+// Transfer snapshot â€” top 3 transfer routes
 function TransferSnapshot({
   movements, accounts, ctx,
 }: {
@@ -2504,7 +2504,7 @@ function CurrencyExposure({
   );
 }
 
-// Period radar — 5 compact readings
+// Period radar â€” 5 compact readings
 function PeriodRadar({
   income, expense, catTotals, categories, curStart, curEnd, movements,
 }: {
@@ -2520,7 +2520,7 @@ function PeriodRadar({
   const savingsRate = income > 0 ? ((income - expense) / income) * 100 : 0;
 
   // Top expense category
-  let topCatName = "—";
+  let topCatName = "â€”";
   let topCatAmt = 0;
   for (const [id, total] of catTotals.entries()) {
     if (total > topCatAmt) {
@@ -2551,7 +2551,7 @@ function PeriodRadar({
 
   const items = [
     { label: "Tasa de ahorro", value: `${savingsRate.toFixed(1)}%` },
-    { label: "Mayor gasto", value: topCatAmt > 0 ? `${topCatName}` : "—" },
+    { label: "Mayor gasto", value: topCatAmt > 0 ? `${topCatName}` : "â€”" },
     { label: "Días sin gastar", value: `${Math.max(daysWithoutExpense, 0)}` },
     { label: "Promedio diario", value: formatCurrency(avgDaily, "") },
     { label: "Mov. sin categoría", value: `${noCatCount}` },
@@ -2617,12 +2617,14 @@ function AnomalyWatch({
   ctx,
   categoryMap,
   accountMap,
+  onExplainPress,
   router,
 }: {
   movements: DashboardMovementRow[];
   ctx: ConversionCtx;
   categoryMap: Map<number, string>;
   accountMap: Map<number, string>;
+  onExplainPress?: () => void;
   router: ReturnType<typeof useRouter>;
 }) {
   const anomalies = useMemo(() => {
@@ -2721,7 +2723,14 @@ function AnomalyWatch({
 
   return (
     <Card>
-      <SectionTitle>Movimientos para revisar</SectionTitle>
+      <View style={subStyles.cardHeaderWithAction}>
+        <SectionTitle>Movimientos para revisar</SectionTitle>
+        {onExplainPress ? (
+          <TouchableOpacity style={subStyles.inlineExplainBtn} onPress={onExplainPress} activeOpacity={0.82}>
+            <Text style={subStyles.inlineExplainBtnText}>Entender</Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
       <View style={subStyles.anomalyList}>
         {anomalies.map((item) => (
           <TouchableOpacity
@@ -2838,7 +2847,7 @@ function AdvancedDashboard({
     return { days, daysWithCommitments, dailyBurn, label, color };
   }, [accountCurrencyMap, activeCurrency, currentVisibleBalance, exchangeRateMap, movements, windows]);
 
-  // A2: EMA de tendencia de gasto semanal (α=0.35, últimas 12 semanas)
+  // A2: EMA de tendencia de gasto semanal (Î±=0.35, últimas 12 semanas)
   const spendingTrend = useMemo(() => {
     const now = new Date();
     const weekBuckets: number[] = Array.from({ length: 12 }, () => 0);
@@ -2856,12 +2865,24 @@ function AdvancedDashboard({
       ema = alpha * weekBuckets[i] + (1 - alpha) * ema;
     }
     const trendPct = prevEma > 0 ? ((ema - prevEma) / prevEma) * 100 : 0;
-    const label = trendPct > 5 ? "↑ acelerando" : trendPct < -5 ? "↓ desacelerando" : "→ estable";
+    const label = trendPct > 5 ? "â†‘ acelerando" : trendPct < -5 ? "â†“ desacelerando" : "â†’ estable";
     const color = trendPct > 5 ? COLORS.expense : trendPct < -5 ? COLORS.income : COLORS.storm;
     return { expenseTrendPct: trendPct, expenseTrendLabel: label, expenseTrendColor: color };
   }, [accountCurrencyMap, activeCurrency, exchangeRateMap, movements]);
 
-  // N1: Tasa de ahorro mensual — (ingreso - gasto) / ingreso para cada uno de los últimos 6 meses
+  // N1: Tasa de ahorro mensual â€” (ingreso - gasto) / ingreso para cada uno de los últimos 6 meses
+  const categoryMap = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const category of snapshot?.categories ?? []) map.set(category.id, category.name);
+    return map;
+  }, [snapshot?.categories]);
+
+  const accountMap = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const account of snapshot?.accounts ?? []) map.set(account.id, account.name);
+    return map;
+  }, [snapshot?.accounts]);
+
   const monthlySavingsRate = useMemo(() => {
     const now = new Date();
     const months = Array.from({ length: 6 }, (_, i) => {
@@ -2886,7 +2907,7 @@ function AdvancedDashboard({
     return { months, avgRate, lastRate, trend, color };
   }, [accountCurrencyMap, activeCurrency, exchangeRateMap, movements]);
 
-  // N2: Score de estabilidad de ingresos — coeficiente de variación sobre 6 meses (bajo CV = estable)
+  // N2: Score de estabilidad de ingresos â€” coeficiente de variación sobre 6 meses (bajo CV = estable)
   const incomeStabilityScore = useMemo(() => {
     const incomes = advancedStats.monthlyPulse.map((m) => m.income).filter((v) => v > 0);
     if (incomes.length < 3) return { score: null, cvPct: null, label: "Historial insuficiente", color: COLORS.storm };
@@ -2901,7 +2922,7 @@ function AdvancedDashboard({
     return { score, cvPct, label, color };
   }, [advancedStats.monthlyPulse]);
 
-  // N3: Índice de concentración de gasto Herfindahl-Hirschman (HHI) — diversificación entre categorías
+  // N3: Índice de concentración de gasto Herfindahl-Hirschman (HHI) â€” diversificación entre categorías
   const categoryConcentration = useMemo(() => {
     const catTotals = advancedStats.catTotals;
     const total = Array.from(catTotals.values()).reduce((s, v) => s + v, 0);
@@ -2919,7 +2940,7 @@ function AdvancedDashboard({
     return { hhi: Math.round(hhi * 1000) / 1000, label, color, topCategory, topShare };
   }, [advancedStats.catTotals, categoryMap]);
 
-  // N4: Eficiencia de cobranza — porcentaje de obligaciones a cobrar resueltas en los últimos 30 días
+  // N4: Eficiencia de cobranza â€” porcentaje de obligaciones a cobrar resueltas en los últimos 30 días
   const collectionEfficiency = useMemo(() => {
     const now = new Date();
     const thirtyDaysAgo = subDays(now, 30);
@@ -2939,7 +2960,7 @@ function AdvancedDashboard({
     return { rate, resolved, total, label, color };
   }, [obligations]);
 
-  // N5: Comparación estacional — mes actual vs mismo mes del año pasado
+  // N5: Comparación estacional â€” mes actual vs mismo mes del año pasado
   const seasonalComparison = useMemo(() => {
     const now = new Date();
     const curStart = startOfMonth(now);
@@ -2956,10 +2977,10 @@ function AdvancedDashboard({
     const hasHistory = prevMvs.length >= 3;
     const expenseDelta = prevExpense > 0 ? ((curExpense - prevExpense) / prevExpense) * 100 : null;
     const incomeDelta = prevIncome > 0 ? ((curIncome - prevIncome) / prevIncome) * 100 : null;
-    const expenseLabel = expenseDelta == null ? "—"
-      : expenseDelta > 10 ? `↑ +${expenseDelta.toFixed(0)}% vs año pasado`
-      : expenseDelta < -10 ? `↓ ${expenseDelta.toFixed(0)}% vs año pasado`
-      : `→ similar al año pasado`;
+    const expenseLabel = expenseDelta == null ? "â€”"
+      : expenseDelta > 10 ? `â†‘ +${expenseDelta.toFixed(0)}% vs año pasado`
+      : expenseDelta < -10 ? `â†“ ${expenseDelta.toFixed(0)}% vs año pasado`
+      : `â†’ similar al año pasado`;
     const expenseColor = expenseDelta == null ? COLORS.storm : expenseDelta > 10 ? COLORS.expense : expenseDelta < -10 ? COLORS.income : COLORS.storm;
     return { hasHistory, curIncome, curExpense, prevIncome, prevExpense, expenseDelta, incomeDelta, expenseLabel, expenseColor };
   }, [accountCurrencyMap, activeCurrency, exchangeRateMap, movements]);
@@ -3007,18 +3028,6 @@ function AdvancedDashboard({
     setPreset(nextPreset);
     void AsyncStorage.setItem(DASHBOARD_ADVANCED_PRESET_KEY, nextPreset);
   }, []);
-
-  const categoryMap = useMemo(() => {
-    const map = new Map<number, string>();
-    for (const category of snapshot?.categories ?? []) map.set(category.id, category.name);
-    return map;
-  }, [snapshot?.categories]);
-
-  const accountMap = useMemo(() => {
-    const map = new Map<number, string>();
-    for (const account of snapshot?.accounts ?? []) map.set(account.id, account.name);
-    return map;
-  }, [snapshot?.accounts]);
 
   const anomalySignals = useMemo(
     () => buildAnomalyFindings(
@@ -3133,6 +3142,38 @@ function AdvancedDashboard({
   useEffect(() => {
     setQualityOpen(qualityOpenInitial);
   }, [qualityOpenInitial]);
+  const [executiveDetail, setExecutiveDetail] = useState<"focus" | "risk" | "month" | null>(null);
+  const [advancedDetail, setAdvancedDetail] = useState<"focusCenter" | "projection" | "review" | "advancedMetrics" | "quality" | null>(null);
+
+  const openMovementsQuickFilter = useCallback((quickFilter: "uncategorized", quickStatus?: "pending" | "planned" | "posted") => {
+    const params: Record<string, string> = {
+      quickFilter,
+      quickScope: "dashboard-executive",
+      quickToken: `${Date.now()}`,
+    };
+    if (quickStatus) params.quickStatus = quickStatus;
+    setExecutiveDetail(null);
+    setAdvancedDetail(null);
+    router.push({ pathname: "/movements", params } as never);
+  }, [router]);
+
+  const openFocusActionDestination = useCallback(() => {
+    if (review.uncategorizedCount > 0) {
+      openMovementsQuickFilter("uncategorized");
+      return;
+    }
+    setAdvancedDetail(null);
+    if (focusAction.route === "/dashboard") return;
+    router.push(focusAction.route as never);
+  }, [focusAction.route, openMovementsQuickFilter, review.uncategorizedCount, router]);
+
+  const qualitySnapshot = useMemo(() => {
+    const relevant = movements.filter((movement) => isCategorizedCashflow(movement));
+    return {
+      noCategoryCount: relevant.filter((movement) => movement.categoryId == null).length,
+      noCounterpartyCount: relevant.filter((movement) => movement.counterpartyId == null).length,
+    };
+  }, [movements]);
 
   const categorySuggestions = useMemo(() => {
     if (persistedCategorySuggestions.length > 0) return persistedCategorySuggestions;
@@ -3290,8 +3331,407 @@ function AdvancedDashboard({
   }, [accountCurrencyMap, activeCurrency, exchangeRateMap, movements]);
 
   const pressureStatus = weekWindow.expectedOutflow > weekWindow.expectedInflow ? "Bajo presión" : weekWindow.scheduledCount > 0 ? "Controlado" : "Estable";
-  const monthStatus = monthEndEstimate >= currentVisibleBalance ? "Cerrando mejor" : monthEndEstimate >= currentVisibleBalance * 0.92 ? "Ajustado" : "Bajo presión";
+  const monthStatus: string = monthEndEstimate >= currentVisibleBalance ? "Cerrando mejor" : monthEndEstimate >= currentVisibleBalance * 0.92 ? "Ajustado" : "Bajo presión";
   const featuredWidgetChips = ADVANCED_PRESET_WIDGETS[preset];
+
+  const executiveDetails = useMemo(() => ({
+    focus: {
+      title: "Foco de hoy",
+      summary: "Te dice dónde conviene actuar primero para mejorar la lectura del dashboard o corregir la fricción operativa más urgente.",
+      meaning: [
+        "No es solo un número: es una priorización. Busca evitar que revises diez widgets antes de decidir dónde intervenir.",
+        "Si el sistema detecta desorden de datos, pagos vencidos o cargos fijos mal configurados, eso pesa más que una lectura bonita del mes.",
+      ],
+      calculation: [
+        `Hoy el foco cayó en "${focusAction.title}" porque el motor revisa en este orden: datos sin categoría, cartera vencida, suscripciones con atención, presión de 7 días y recién después estabilidad general.`,
+        `En este workspace vemos ${review.uncategorizedCount} movimientos sin categoría, ${review.overdueObligationsCount} obligaciones vencidas, ${review.subscriptionsAttentionCount} suscripciones que necesitan revisión y ${review.pendingMovementsCount} movimientos pendientes.`,
+      ],
+      actions: [
+        review.uncategorizedCount > 0
+          ? { label: `Abrir ${review.uncategorizedCount} sin categoría`, onPress: () => openMovementsQuickFilter("uncategorized") }
+          : null,
+        review.overdueObligationsCount > 0
+          ? { label: "Ir a créditos y deudas", onPress: () => { setExecutiveDetail(null); router.push("/obligations" as never); } }
+          : null,
+        review.subscriptionsAttentionCount > 0
+          ? { label: "Revisar suscripciones", onPress: () => { setExecutiveDetail(null); router.push("/subscriptions" as never); } }
+          : null,
+      ].filter((action): action is { label: string; onPress: () => void } => Boolean(action)),
+    },
+    risk: {
+      title: "Riesgo 7 días",
+      summary: "Te ayuda a decidir si la próxima semana se ve tranquila o si conviene mover foco a liquidez antes de que falte caja.",
+      meaning: [
+        "Sirve para decisiones de corto plazo: si conviene pagar ya, esperar, reprogramar o revisar una cuenta antes de comprometerte.",
+        "Cuando sale en rojo o muy ajustado, el problema no es el cierre del mes: es la próxima semana.",
+      ],
+      calculation: [
+        `Tomamos obligaciones con vencimiento dentro de 7 días, suscripciones activas por cobrar y los ingresos fijos esperados en ese mismo rango.`,
+        `Con eso hoy vemos ${weekWindow.payableCount} pagos, ${weekWindow.receivableCount} cobros y ${weekWindow.scheduledCount} compromisos programados. Entran ${formatCurrency(weekWindow.expectedInflow, activeCurrency)} y salen ${formatCurrency(weekWindow.expectedOutflow, activeCurrency)}.`,
+      ],
+      actions: [
+        weekWindow.payableCount > 0
+          ? { label: "Ver obligaciones próximas", onPress: () => { setExecutiveDetail(null); router.push("/obligations" as never); } }
+          : null,
+        review.subscriptionsAttentionCount > 0
+          ? { label: "Corregir suscripciones activas", onPress: () => { setExecutiveDetail(null); router.push("/subscriptions" as never); } }
+          : null,
+      ].filter((action): action is { label: string; onPress: () => void } => Boolean(action)),
+    },
+    month: {
+      title: "Fin de mes",
+      summary: "Te ayuda a decidir si el mes cierra con margen, ajustado o bajo presión según lo ya comprometido y tu ritmo reciente.",
+      meaning: [
+        "No intenta adivinar exacto cuánto tendrás; te da una lectura operativa para saber si puedes sostener el ritmo actual o si conviene corregir ya.",
+        "Es útil para decisiones de gasto, ahorro, compras no urgentes y limpieza de datos que afectan la proyección.",
+      ],
+      calculation: [
+        `Partimos del saldo visible actual y sumamos la agenda comprometida del mes: obligaciones, suscripciones e ingresos fijos esperados.`,
+        `Luego añadimos tu ritmo variable reciente. La lectura esperada es ${formatCurrency(projectionModel.expectedBalance, activeCurrency)}, con piso conservador de ${formatCurrency(projectionModel.conservativeBalance, activeCurrency)} y escenario alto de ${formatCurrency(projectionModel.optimisticBalance, activeCurrency)}.`,
+      ],
+      actions: [
+        review.uncategorizedCount > 0
+          ? { label: "Limpiar movimientos sin categoría", onPress: () => openMovementsQuickFilter("uncategorized") }
+          : null,
+        monthRecurringIncomeProjection > 0
+          ? { label: "Revisar ingresos fijos del mes", onPress: () => { setExecutiveDetail(null); router.push("/recurring-income" as never); } }
+          : null,
+      ].filter((action): action is { label: string; onPress: () => void } => Boolean(action)),
+    },
+  }), [
+    activeCurrency,
+    focusAction.title,
+    monthRecurringIncomeProjection,
+    openMovementsQuickFilter,
+    projectionModel.conservativeBalance,
+    projectionModel.expectedBalance,
+    projectionModel.optimisticBalance,
+    review.overdueObligationsCount,
+    review.pendingMovementsCount,
+    review.subscriptionsAttentionCount,
+    review.uncategorizedCount,
+    router,
+    weekWindow.expectedInflow,
+    weekWindow.expectedOutflow,
+    weekWindow.payableCount,
+    weekWindow.receivableCount,
+    weekWindow.scheduledCount,
+  ]);
+  const activeExecutiveDetail = executiveDetail ? executiveDetails[executiveDetail] : null;
+  const visibleBalanceLabel = useMemo(() => {
+    if (activeAccounts.length === 0) return "tus cuentas visibles";
+    if (activeAccounts.length === 1) return `tu cuenta visible ${activeAccounts[0].name}`;
+    const names = activeAccounts.slice(0, 3).map((account) => account.name).join(", ");
+    return activeAccounts.length <= 3
+      ? `la suma de tus cuentas visibles (${names})`
+      : `la suma de tus ${activeAccounts.length} cuentas visibles (${names} y otras)`;
+  }, [activeAccounts]);
+  const executiveResultMeaning = useMemo(() => ({
+    focus: [
+      `Que hoy salga "${focusAction.title}" significa que esta es la friccion que mas esta pesando en tu sistema ahora mismo.`,
+      review.totalIssues > 0
+        ? `Hoy no conviene empezar por analisis finos: primero hay ${review.totalIssues} punto${review.totalIssues === 1 ? "" : "s"} por limpiar para que el dashboard lea mejor.`
+        : "Hoy la base se ve ordenada, asi que puedes usar el dashboard mas para decidir que para corregir.",
+    ],
+    risk: [
+      weekWindow.expectedOutflow > weekWindow.expectedInflow
+        ? "Este resultado significa que en la proxima semana tu agenda exige mas caja de la que hoy se ve entrar."
+        : weekWindow.scheduledCount > 0
+          ? "Este resultado significa que la semana se ve manejable, pero ya hay compromisos que vale la pena vigilar."
+          : "Este resultado significa que no se ve una tension fuerte de liquidez en los proximos 7 dias.",
+      `La lectura actual deja un neto de ${formatCurrency(weekWindow.expectedInflow - weekWindow.expectedOutflow, activeCurrency)} para la ventana cercana.`,
+    ],
+    month: [
+      monthStatus === "Bajo presión"
+        ? "Este resultado significa que, si no cambias algo, el cierre del mes ya se ve apretado frente a tu saldo y ritmo actual."
+        : monthStatus === "Ajustado"
+          ? "Este resultado significa que el cierre todavia es viable, pero con poco margen para errores o gastos extra."
+          : "Este resultado significa que hoy el mes se perfila mejor que tu saldo visible actual.",
+      `La lectura esperada de cierre hoy es ${formatCurrency(monthEndEstimate, activeCurrency)}.`,
+    ],
+  }), [
+    activeCurrency,
+    focusAction.title,
+    monthEndEstimate,
+    monthStatus,
+    review.totalIssues,
+    weekWindow.expectedInflow,
+    weekWindow.expectedOutflow,
+    weekWindow.scheduledCount,
+  ]);
+  const activeExecutiveResultMeaning = executiveDetail ? executiveResultMeaning[executiveDetail] : [];
+  const resolvedExecutiveResultMeaning = executiveDetail === "month"
+    ? [
+      monthStatus === "Cerrando mejor"
+        ? "Este resultado significa que hoy el mes se perfila mejor que tu saldo visible actual."
+        : monthStatus === "Ajustado"
+          ? "Este resultado significa que el cierre todavia es viable, pero con poco margen para errores o gastos extra."
+          : "Este resultado significa que, si no cambias algo, el cierre del mes ya se ve apretado frente a tu saldo y ritmo actual.",
+      `Cuando aqui hablamos de saldo visible actual, nos referimos a ${visibleBalanceLabel} convertida a ${activeCurrency}: hoy eso suma ${formatCurrency(currentVisibleBalance, activeCurrency)}.`,
+      `La lectura esperada de cierre hoy es ${formatCurrency(monthEndEstimate, activeCurrency)}. Eso implica un cambio de ${formatCurrency(monthEndEstimate - currentVisibleBalance, activeCurrency)} frente a lo que hoy ya tienes visible.`,
+    ]
+    : activeExecutiveResultMeaning;
+  const executiveResultTone = useMemo(() => ({
+    focus: review.totalIssues > 0 ? "warning" : "positive",
+    risk: weekWindow.expectedOutflow > weekWindow.expectedInflow ? "danger" : weekWindow.scheduledCount > 0 ? "warning" : "positive",
+    month: monthStatus === "Cerrando mejor" ? "positive" : monthStatus === "Ajustado" ? "warning" : "danger",
+  } as const), [
+    monthStatus,
+    review.totalIssues,
+    weekWindow.expectedOutflow,
+    weekWindow.expectedInflow,
+    weekWindow.scheduledCount,
+  ]);
+  const activeExecutiveResultTone = executiveDetail ? executiveResultTone[executiveDetail] : "warning";
+  const advancedDetails = useMemo(() => ({
+    focusCenter: {
+      title: "Centro de foco",
+      summary: "Te explica por que esta es la mejor accion inmediata y te deja saltar directo a la pantalla donde puedes resolverla.",
+      meaning: [
+        "No busca mostrarlo todo. Prioriza una sola accion para que sepas por donde empezar sin interpretar demasiados widgets antes.",
+        "Sirve para decisiones inmediatas: ordenar datos, corregir cartera, revisar suscripciones o proteger liquidez de corto plazo.",
+      ],
+      calculation: [
+        `Hoy el foco cayo en "${focusAction.title}" porque el motor pondera primero datos sin categoria, luego obligaciones vencidas, despues suscripciones con atencion y al final la presion de 7 dias.`,
+        `En esta lectura vemos ${review.uncategorizedCount} movimientos sin categoria, ${review.overdueObligationsCount} obligaciones vencidas, ${review.subscriptionsAttentionCount} suscripciones con atencion y una caja libre de ${cashCushion.days} dias.`,
+      ],
+      actions: [
+        review.uncategorizedCount > 0
+          ? { label: `Abrir ${review.uncategorizedCount} sin categoria`, onPress: () => openMovementsQuickFilter("uncategorized") }
+          : review.overdueObligationsCount > 0
+            ? { label: "Abrir creditos y deudas", onPress: () => { setAdvancedDetail(null); router.push("/obligations" as never); } }
+            : review.subscriptionsAttentionCount > 0
+              ? { label: "Abrir suscripciones", onPress: () => { setAdvancedDetail(null); router.push("/subscriptions" as never); } }
+              : { label: "Aplicar esta accion", onPress: openFocusActionDestination },
+        { label: "Entender la proyeccion del mes", onPress: () => setAdvancedDetail("projection") },
+      ],
+    },
+    projection: {
+      title: "Proyección refinada",
+      summary: "Te ayuda a decidir si el cierre del mes ya se ve sano o si todavía depende demasiado de que el ritmo reciente no se deteriore.",
+      meaning: [
+        "No se limita a extrapolar un promedio. Separa flujo comprometido del mes y flujo variable reciente para darte una banda más realista.",
+        "Sirve para decisiones de gasto, compras no urgentes, ahorro y para saber si conviene corregir datos antes de confiar en el cierre.",
+      ],
+      calculation: [
+        `Lectura comprometida del mes: entran ${formatCurrency(projectionModel.committedInflow, activeCurrency)} y salen ${formatCurrency(projectionModel.committedOutflow, activeCurrency)} por obligaciones, suscripciones e ingresos fijos.`,
+        `Luego se suma el ritmo variable reciente: entran ${formatCurrency(projectionModel.variableIncomeProjection, activeCurrency)} y salen ${formatCurrency(projectionModel.variableExpenseProjection, activeCurrency)}. Con eso el esperado es ${formatCurrency(projectionModel.expectedBalance, activeCurrency)}, con piso conservador de ${formatCurrency(projectionModel.conservativeBalance, activeCurrency)}.`,
+      ],
+      actions: [
+        review.uncategorizedCount > 0
+          ? { label: `Limpiar ${review.uncategorizedCount} sin categoría`, onPress: () => openMovementsQuickFilter("uncategorized") }
+          : null,
+        weekWindow.expectedOutflow > weekWindow.expectedInflow
+          ? { label: "Revisar obligaciones próximas", onPress: () => { setAdvancedDetail(null); router.push("/obligations" as never); } }
+          : null,
+      ].filter((action): action is { label: string; onPress: () => void } => Boolean(action)),
+    },
+    review: {
+      title: "Movimientos para revisar",
+      summary: "Te ayuda a detectar movimientos raros, duplicados o picos que pueden distorsionar lectura, presupuesto y flujo.",
+      meaning: [
+        "No necesariamente significa que el movimiento esté mal. Significa que se sale de tu patrón reciente y vale la pena confirmar.",
+        "Es útil para evitar errores de captura, duplicados o gastos atípicos que te cambian por completo el mes.",
+      ],
+      calculation: [
+        "Revisamos picos contra la misma descripción, picos contra la misma categoría y duplicados cercanos por monto y texto.",
+        "Cuando sale como 'Fuerte', el desvío contra tu historial es más claro; cuando sale como 'Revisar', hay una señal razonable pero menos concluyente.",
+      ],
+      actions: [
+        { label: "Abrir movimientos para revisar", onPress: () => { setAdvancedDetail(null); router.push("/movements" as never); } },
+      ],
+    },
+    advancedMetrics: {
+      title: "Metricas avanzadas",
+      summary: "Te ayudan a entender si tus patrones ya son estables, donde esta la fragilidad del mes y que tan confiable es la lectura estadistica.",
+      meaning: [
+        "No son metricas para actuar en cinco minutos, sino para entender salud del sistema: ahorro, estabilidad, concentracion y cobranza.",
+        "Sirven para validar si tus decisiones actuales son sostenibles o si alguna zona del sistema esta sesgando toda la lectura.",
+      ],
+      calculation: [
+        `La tasa de ahorro va ${monthlySavingsRate.lastRate != null ? `en ${monthlySavingsRate.lastRate.toFixed(1)}% este mes y ${monthlySavingsRate.trend} frente al promedio reciente` : "en modo inicial por historial insuficiente"}.`,
+        `La estabilidad de ingresos esta ${incomeStabilityScore.score != null ? `en ${incomeStabilityScore.score}/100 con variacion de ${incomeStabilityScore.cvPct}%` : "sin score todavia"}, la concentracion de gasto se ve ${categoryConcentration.label.toLowerCase()}${categoryConcentration.topCategory ? ` y la categoria dominante es ${categoryConcentration.topCategory}` : ""}, y la cobranza va ${collectionEfficiency.rate != null ? `en ${collectionEfficiency.rate}%` : "sin ventana suficiente para medir"}.`,
+      ],
+      actions: [
+        review.uncategorizedCount > 0
+          ? { label: `Limpiar ${review.uncategorizedCount} sin categoria`, onPress: () => openMovementsQuickFilter("uncategorized") }
+          : null,
+        collectionEfficiency.total > 0
+          ? { label: "Abrir creditos y deudas", onPress: () => { setAdvancedDetail(null); router.push("/obligations" as never); } }
+          : null,
+        { label: qualityOpen ? "Ver capa de calidad" : "Abrir capa de calidad", onPress: () => { setAdvancedDetail(null); setQualityOpen(true); } },
+      ].filter((action): action is { label: string; onPress: () => void } => Boolean(action)),
+    },
+    quality: {
+      title: "Calidad",
+      summary: "Te dice cuánto puede confiar el dashboard en tus datos antes de darte comparativos, patrones y alertas finas.",
+      meaning: [
+        "Cuando esta capa está floja, el problema no es solo visual: casi todo el análisis pierde precisión.",
+        "Mientras más limpio esté el workspace, más útiles serán foco, proyección, anomalías y comparativos.",
+      ],
+      calculation: [
+        `Hoy vemos ${qualitySnapshot.noCategoryCount} movimientos sin categoría y ${qualitySnapshot.noCounterpartyCount} movimientos sin contraparte dentro del flujo relevante.`,
+        `Además el aprendizaje usa cantidad de movimientos útiles, días de historia y porcentaje categorizado para estimar una confianza base de ${learning.readinessScore}%.`,
+      ],
+      actions: [
+        qualitySnapshot.noCategoryCount > 0
+          ? { label: `Abrir ${qualitySnapshot.noCategoryCount} sin categoría`, onPress: () => openMovementsQuickFilter("uncategorized") }
+          : null,
+        { label: qualityOpen ? "Ocultar capa de calidad" : "Abrir capa de calidad", onPress: () => { setAdvancedDetail(null); setQualityOpen((value) => !value); } },
+      ].filter((action): action is { label: string; onPress: () => void } => Boolean(action)),
+    },
+  }), [
+    activeCurrency,
+    cashCushion.days,
+    categoryConcentration.label,
+    categoryConcentration.topCategory,
+    collectionEfficiency.rate,
+    collectionEfficiency.total,
+    focusAction.title,
+    incomeStabilityScore.cvPct,
+    incomeStabilityScore.score,
+    learning.readinessScore,
+    monthlySavingsRate.lastRate,
+    monthlySavingsRate.trend,
+    openFocusActionDestination,
+    openMovementsQuickFilter,
+    projectionModel.committedInflow,
+    projectionModel.committedOutflow,
+    projectionModel.conservativeBalance,
+    projectionModel.expectedBalance,
+    projectionModel.variableExpenseProjection,
+    projectionModel.variableIncomeProjection,
+    qualityOpen,
+    qualitySnapshot.noCategoryCount,
+    qualitySnapshot.noCounterpartyCount,
+    review.overdueObligationsCount,
+    review.subscriptionsAttentionCount,
+    review.uncategorizedCount,
+    router,
+    weekWindow.expectedInflow,
+    weekWindow.expectedOutflow,
+  ]);
+  const activeAdvancedDetail = advancedDetail ? advancedDetails[advancedDetail] : null;
+  const advancedResultMeaning = useMemo(() => ({
+    focusCenter: [
+      `Que hoy el centro de foco marque "${focusAction.title}" significa que esta accion tendria mas impacto inmediato que revisar otras capas del dashboard.`,
+      review.uncategorizedCount > 0
+        ? "En este caso el sistema te esta diciendo que la calidad del dato pesa mas que cualquier lectura avanzada."
+        : review.overdueObligationsCount > 0
+          ? "En este caso el sistema te esta diciendo que la cartera vencida ya merece prioridad operativa."
+          : review.subscriptionsAttentionCount > 0
+            ? "En este caso el sistema te esta diciendo que tu agenda fija todavia necesita orden para proyectar mejor."
+            : "En este caso el sistema no ve una friccion operativa dominante y te deja sostener el ritmo actual.",
+    ],
+    projection: [
+      projectionModel.confidence >= 75
+        ? "Este resultado significa que la proyeccion ya tiene una base relativamente confiable para tomar decisiones de corto plazo."
+        : projectionModel.confidence >= 45
+          ? "Este resultado significa que la lectura ya orienta, pero todavia depende bastante de que el ritmo reciente no cambie demasiado."
+          : "Este resultado significa que la proyeccion todavia es fragil y conviene leerla con prudencia.",
+      `Hoy la banda va desde ${formatCurrency(projectionModel.conservativeBalance, activeCurrency)} hasta ${formatCurrency(projectionModel.optimisticBalance, activeCurrency)}.`,
+    ],
+    review: [
+      anomalySignals.length > 0
+        ? `Este resultado significa que hoy ya hay ${anomalySignals.length} senal${anomalySignals.length === 1 ? "" : "es"} que podria estar distorsionando tu lectura del periodo.`
+        : "Este resultado significa que no se ven senales fuertes de movimientos raros o duplicados en la lectura actual.",
+      anomalySignals.some((item) => item.level === "strong")
+        ? "Como hay alertas fuertes, aqui conviene revisar primero antes de confiar totalmente en comparativos o presupuestos."
+        : "Como no predominan alertas fuertes, esta capa hoy funciona mas como control fino que como urgencia.",
+    ],
+    advancedMetrics: [
+      monthlySavingsRate.lastRate != null
+        ? `Hoy esta capa te esta diciendo que tu ahorro del mes va en ${monthlySavingsRate.lastRate.toFixed(1)}%, con una lectura ${monthlySavingsRate.trend}.`
+        : "Hoy esta capa te esta diciendo que aun falta historial util para sacar una lectura estadistica mas firme.",
+      incomeStabilityScore.score != null
+        ? `Ademas, tus ingresos se ven ${incomeStabilityScore.label.toLowerCase()} y la concentracion de gasto aparece ${categoryConcentration.label.toLowerCase()}.`
+        : "Ademas, la estabilidad de ingresos todavia no tiene suficiente base para una senal fuerte.",
+    ],
+    quality: [
+      qualitySnapshot.noCategoryCount > 0 || qualitySnapshot.noCounterpartyCount > 0
+        ? "Este resultado significa que el dashboard ya puede orientarte, pero todavia no deberias pedirle lecturas demasiado finas sin limpiar primero esa base."
+        : "Este resultado significa que la base de datos ya esta bastante sana para comparativos, patrones y alertas mas confiables.",
+      `La confianza base de aprendizaje hoy esta en ${learning.readinessScore}%.`,
+    ],
+  }), [
+    activeCurrency,
+    anomalySignals,
+    categoryConcentration.label,
+    focusAction.title,
+    incomeStabilityScore.label,
+    incomeStabilityScore.score,
+    learning.readinessScore,
+    monthlySavingsRate.lastRate,
+    monthlySavingsRate.trend,
+    projectionModel.confidence,
+    projectionModel.conservativeBalance,
+    projectionModel.optimisticBalance,
+    qualitySnapshot.noCategoryCount,
+    qualitySnapshot.noCounterpartyCount,
+    review.overdueObligationsCount,
+    review.subscriptionsAttentionCount,
+    review.uncategorizedCount,
+  ]);
+  const activeAdvancedResultMeaning = advancedDetail ? advancedResultMeaning[advancedDetail] : [];
+  const resolvedAdvancedResultMeaning =
+    advancedDetail === "focusCenter"
+      ? [
+        `Cuando aqui hablamos de caja libre, nos referimos a ${visibleBalanceLabel} convertida a ${activeCurrency}: hoy eso suma ${formatCurrency(currentVisibleBalance, activeCurrency)}.`,
+        `Con ese saldo y tu ritmo reciente de gasto, el sistema estima ${cashCushion.days} dias de caja libre y ${cashCushion.daysWithCommitments} dias si ademas mete los compromisos ya programados.`,
+        cashCushion.days >= 90
+          ? "Eso significa que hoy tienes un colchon comodo para absorber variaciones sin que una sola semana te desordene."
+          : cashCushion.days >= 30
+            ? "Eso significa que hoy tienes aire, pero no tanto como para ignorar pagos cercanos o salidas grandes no planeadas."
+            : "Eso significa que hoy tu colchon de caja es corto y conviene priorizar liquidez antes que decisiones secundarias.",
+      ]
+      : advancedDetail === "projection"
+        ? [
+          `Esta proyeccion parte de ${visibleBalanceLabel} convertida a ${activeCurrency}: hoy eso suma ${formatCurrency(currentVisibleBalance, activeCurrency)}.`,
+          `Luego suma la agenda comprometida del mes y tu ritmo variable reciente para estimar un cierre esperado de ${formatCurrency(projectionModel.expectedBalance, activeCurrency)}.`,
+          `Frente a lo que hoy ya tienes visible, eso implica un cambio de ${formatCurrency(projectionModel.expectedBalance - currentVisibleBalance, activeCurrency)}. El piso conservador es ${formatCurrency(projectionModel.conservativeBalance, activeCurrency)} y el escenario alto ${formatCurrency(projectionModel.optimisticBalance, activeCurrency)}.`,
+          projectionModel.expectedBalance >= currentVisibleBalance
+            ? "Eso significa que, si el ritmo actual se sostiene, el mes deberia cerrar con mas caja que la que hoy ves acumulada."
+            : "Eso significa que, si el ritmo actual se sostiene, el mes cerraria con menos caja que la que hoy ya ves acumulada.",
+        ]
+        : advancedDetail === "advancedMetrics"
+          ? [
+            monthlySavingsRate.lastRate != null
+              ? `La tasa de ahorro del mes va en ${monthlySavingsRate.lastRate.toFixed(1)}%: si es positiva, el periodo todavia retiene parte del ingreso; si es negativa, estas gastando por encima del ingreso observado.`
+              : "Todavia no hay suficiente historial para confiar en la tasa de ahorro como lectura estadistica fuerte.",
+            incomeStabilityScore.score != null
+              ? `La estabilidad de ingresos va en ${incomeStabilityScore.score}/100: arriba de 75 suele ser buena señal, entre 45 y 74 pide vigilancia, y por debajo de eso la lectura se vuelve mas fragil.`
+              : "Todavia no hay suficiente base para leer estabilidad de ingresos con confianza.",
+            categoryConcentration.topCategory
+              ? `La concentracion de gasto te dice cuanto depende tu mes de una sola categoria; hoy la mayor partida es ${categoryConcentration.topCategory}. Si esa categoria domina demasiado, cualquier pico ahi te mueve todo el periodo.`
+              : "Todavia no hay una categoria dominante clara para interpretar concentracion de gasto.",
+          ]
+          : activeAdvancedResultMeaning;
+  const advancedResultTone = useMemo(() => ({
+    focusCenter: review.uncategorizedCount > 0 || review.overdueObligationsCount > 0 || review.subscriptionsAttentionCount > 0 ? "warning" : "positive",
+    projection: projectionModel.confidence >= 75 ? "positive" : projectionModel.confidence >= 45 ? "warning" : "danger",
+    review: anomalySignals.some((item) => item.level === "strong") ? "danger" : anomalySignals.length > 0 ? "warning" : "positive",
+    advancedMetrics:
+      incomeStabilityScore.score != null && incomeStabilityScore.score >= 75 && monthlySavingsRate.lastRate != null && monthlySavingsRate.lastRate >= 0
+        ? "positive"
+        : incomeStabilityScore.score != null && incomeStabilityScore.score >= 45
+          ? "warning"
+          : "danger",
+    quality: qualitySnapshot.noCategoryCount > 0 || qualitySnapshot.noCounterpartyCount > 0 ? "warning" : "positive",
+  } as const), [
+    anomalySignals,
+    incomeStabilityScore.score,
+    monthlySavingsRate.lastRate,
+    projectionModel.confidence,
+    qualitySnapshot.noCategoryCount,
+    qualitySnapshot.noCounterpartyCount,
+    review.overdueObligationsCount,
+    review.subscriptionsAttentionCount,
+    review.uncategorizedCount,
+  ]);
+  const activeAdvancedResultTone = advancedDetail ? advancedResultTone[advancedDetail] : "warning";
+  const monthEndDelta = monthEndEstimate - currentVisibleBalance;
+  const projectionExpectedDelta = projectionModel.expectedBalance - currentVisibleBalance;
+  const projectionConservativeDelta = projectionModel.conservativeBalance - currentVisibleBalance;
 
   return (
     <>
@@ -3309,7 +3749,7 @@ function AdvancedDashboard({
           Tres lecturas rápidas para saber si hoy toca ordenar, cuidar liquidez o simplemente seguir el ritmo actual.
         </Text>
         <View style={subStyles.executiveGrid}>
-          <View style={subStyles.executiveCard}>
+          <TouchableOpacity style={subStyles.executiveCard} activeOpacity={0.84} onPress={() => setExecutiveDetail("focus")}>
             <View style={subStyles.executiveTop}>
               <Text style={subStyles.executiveLabel}>Foco de hoy</Text>
               <View style={subStyles.executiveTonePill}>
@@ -3326,13 +3766,13 @@ function AdvancedDashboard({
               const isImproving = delta < 0;
               return (
                 <Text style={[subStyles.executiveDeltaChip, { color: isImproving ? COLORS.income : COLORS.expense }]}>
-                  {isImproving ? `↓ ${Math.abs(delta)} resuelto${Math.abs(delta) === 1 ? "" : "s"}` : `↑ ${delta} nuevo${delta === 1 ? "" : "s"}`}
+                  {isImproving ? `â†“ ${Math.abs(delta)} resuelto${Math.abs(delta) === 1 ? "" : "s"}` : `â†‘ ${delta} nuevo${delta === 1 ? "" : "s"}`}
                 </Text>
               );
             })()}
-          </View>
+          </TouchableOpacity>
 
-          <View style={subStyles.executiveCard}>
+          <TouchableOpacity style={subStyles.executiveCard} activeOpacity={0.84} onPress={() => setExecutiveDetail("risk")}>
             <View style={subStyles.executiveTop}>
               <Text style={subStyles.executiveLabel}>Riesgo 7 días</Text>
               <View style={[subStyles.executiveTonePill, pressureStatus === "Bajo presión" && subStyles.executiveTonePillWarning]}>
@@ -3342,9 +3782,9 @@ function AdvancedDashboard({
             <Text style={subStyles.executiveValue}>{formatCurrency(weekWindow.expectedInflow - weekWindow.expectedOutflow, activeCurrency)}</Text>
             <Text style={subStyles.executiveCaption}>Entran {formatCurrency(weekWindow.expectedInflow, activeCurrency)} y salen {formatCurrency(weekWindow.expectedOutflow, activeCurrency)}</Text>
             <Text style={[subStyles.executiveDeltaChip, { color: cashCushion.color }]}>Caja libre: {cashCushion.days}d · {cashCushion.label}</Text>
-          </View>
+          </TouchableOpacity>
 
-          <View style={[subStyles.executiveCard, subStyles.executiveCardWide]}>
+          <TouchableOpacity style={[subStyles.executiveCard, subStyles.executiveCardWide]} activeOpacity={0.84} onPress={() => setExecutiveDetail("month")}>
             <View style={subStyles.executiveTop}>
               <Text style={subStyles.executiveLabel}>Fin de mes</Text>
               <View style={[subStyles.executiveTonePill, monthStatus === "Bajo presión" && subStyles.executiveTonePillWarning]}>
@@ -3352,11 +3792,169 @@ function AdvancedDashboard({
               </View>
             </View>
             <Text style={subStyles.executiveValue}>{formatCurrency(monthEndEstimate, activeCurrency)}</Text>
-            <Text style={subStyles.executiveCaption}>Proyección usando el ritmo del mes actual{monthRecurringIncomeProjection > 0 ? ` e ingresos fijos por entrar.` : "."}</Text>
-            <Text style={[subStyles.executiveDeltaChip, { color: spendingTrend.expenseTrendColor }]}>{spendingTrend.expenseTrendLabel}</Text>
-          </View>
+            <Text style={subStyles.executiveCaption}>Base visible hoy: {formatCurrency(currentVisibleBalance, activeCurrency)}</Text>
+            <Text style={[subStyles.executiveDeltaChip, { color: monthEndDelta >= 0 ? COLORS.income : COLORS.expense }]}>Vs hoy: {formatCurrency(monthEndDelta, activeCurrency)}</Text>
+                                  </TouchableOpacity>
         </View>
       </Card>
+
+      <BottomSheet
+        visible={Boolean(activeExecutiveDetail)}
+        onClose={() => setExecutiveDetail(null)}
+        title={activeExecutiveDetail?.title}
+        snapHeight={0.78}
+        blurBackdrop={false}
+        backdropColor="rgba(0,0,0,0.68)"
+      >
+        {activeExecutiveDetail ? (
+          <>
+            <View style={subStyles.executiveModalSection}>
+              <Text style={subStyles.layerKicker}>Resumen ejecutivo</Text>
+              <Text style={subStyles.executiveModalSummary}>{activeExecutiveDetail.summary}</Text>
+            </View>
+
+            <View style={subStyles.executiveModalSection}>
+              <Text style={subStyles.executiveModalSectionTitle}>Para qué te sirve</Text>
+              {activeExecutiveDetail.meaning.map((item) => (
+                <Text key={item} style={subStyles.executiveModalBody}>â€¢ {item}</Text>
+              ))}
+            </View>
+
+            <View style={subStyles.executiveModalSection}>
+              <Text style={subStyles.executiveModalSectionTitle}>Cómo llegamos a este dato</Text>
+              {activeExecutiveDetail.calculation.map((item) => (
+                <Text key={item} style={subStyles.executiveModalBody}>â€¢ {item}</Text>
+              ))}
+            </View>
+
+            <View style={subStyles.executiveModalSection}>
+              <Text style={subStyles.executiveModalSectionTitle}>Qué significa este resultado</Text>
+              <View
+                style={[
+                  subStyles.resultMeaningCard,
+                  activeExecutiveResultTone === "positive"
+                    ? subStyles.resultMeaningCardPositive
+                    : activeExecutiveResultTone === "danger"
+                      ? subStyles.resultMeaningCardDanger
+                      : subStyles.resultMeaningCardWarning,
+                ]}
+              >
+                <Text
+                  style={[
+                    subStyles.resultMeaningTone,
+                    activeExecutiveResultTone === "positive"
+                      ? subStyles.resultMeaningTonePositive
+                      : activeExecutiveResultTone === "danger"
+                        ? subStyles.resultMeaningToneDanger
+                        : subStyles.resultMeaningToneWarning,
+                  ]}
+                >
+                  {activeExecutiveResultTone === "positive"
+                    ? "Lectura favorable"
+                    : activeExecutiveResultTone === "danger"
+                      ? "Lectura en presión"
+                      : "Lectura para vigilar"}
+                </Text>
+                {resolvedExecutiveResultMeaning.map((item) => (
+                  <Text key={item} style={subStyles.executiveModalBody}>â€¢ {item}</Text>
+                ))}
+              </View>
+            </View>
+
+            {activeExecutiveDetail.actions.length > 0 ? (
+              <View style={subStyles.executiveModalSection}>
+                <Text style={subStyles.executiveModalSectionTitle}>Qué puedes hacer ahora</Text>
+                <View style={subStyles.executiveActionList}>
+                  {activeExecutiveDetail.actions.map((action) => (
+                    <TouchableOpacity key={action.label} style={subStyles.executiveActionBtn} onPress={action.onPress} activeOpacity={0.84}>
+                      <Text style={subStyles.executiveActionBtnText}>{action.label}</Text>
+                      <ArrowRight size={15} color={COLORS.primary} />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            ) : null}
+          </>
+        ) : null}
+      </BottomSheet>
+
+      <BottomSheet
+        visible={Boolean(activeAdvancedDetail)}
+        onClose={() => setAdvancedDetail(null)}
+        title={activeAdvancedDetail?.title}
+        snapHeight={0.8}
+        blurBackdrop={false}
+        backdropColor="rgba(0,0,0,0.68)"
+      >
+        {activeAdvancedDetail ? (
+          <>
+            <View style={subStyles.executiveModalSection}>
+              <Text style={subStyles.layerKicker}>Dashboard avanzado</Text>
+              <Text style={subStyles.executiveModalSummary}>{activeAdvancedDetail.summary}</Text>
+            </View>
+
+            <View style={subStyles.executiveModalSection}>
+              <Text style={subStyles.executiveModalSectionTitle}>Para qué te sirve</Text>
+              {activeAdvancedDetail.meaning.map((item) => (
+                <Text key={item} style={subStyles.executiveModalBody}>â€¢ {item}</Text>
+              ))}
+            </View>
+
+            <View style={subStyles.executiveModalSection}>
+              <Text style={subStyles.executiveModalSectionTitle}>Cómo se construye</Text>
+              {activeAdvancedDetail.calculation.map((item) => (
+                <Text key={item} style={subStyles.executiveModalBody}>â€¢ {item}</Text>
+              ))}
+            </View>
+
+            <View style={subStyles.executiveModalSection}>
+              <Text style={subStyles.executiveModalSectionTitle}>Qué significa este resultado</Text>
+              <View
+                style={[
+                  subStyles.resultMeaningCard,
+                  activeAdvancedResultTone === "positive"
+                    ? subStyles.resultMeaningCardPositive
+                    : activeAdvancedResultTone === "danger"
+                      ? subStyles.resultMeaningCardDanger
+                      : subStyles.resultMeaningCardWarning,
+                ]}
+              >
+                <Text
+                  style={[
+                    subStyles.resultMeaningTone,
+                    activeAdvancedResultTone === "positive"
+                      ? subStyles.resultMeaningTonePositive
+                      : activeAdvancedResultTone === "danger"
+                        ? subStyles.resultMeaningToneDanger
+                        : subStyles.resultMeaningToneWarning,
+                  ]}
+                >
+                  {activeAdvancedResultTone === "positive"
+                    ? "Lectura favorable"
+                    : activeAdvancedResultTone === "danger"
+                      ? "Lectura en presión"
+                      : "Lectura para vigilar"}
+                </Text>
+                {resolvedAdvancedResultMeaning.map((item) => (
+                  <Text key={item} style={subStyles.executiveModalBody}>â€¢ {item}</Text>
+                ))}
+              </View>
+            </View>
+
+            <View style={subStyles.executiveModalSection}>
+              <Text style={subStyles.executiveModalSectionTitle}>Qué puedes hacer ahora</Text>
+              <View style={subStyles.executiveActionList}>
+                {activeAdvancedDetail.actions.map((action) => (
+                  <TouchableOpacity key={action.label} style={subStyles.executiveActionBtn} onPress={action.onPress} activeOpacity={0.84}>
+                    <Text style={subStyles.executiveActionBtnText}>{action.label}</Text>
+                    <ArrowRight size={15} color={COLORS.primary} />
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          </>
+        ) : null}
+      </BottomSheet>
 
       <Card>
         <Text style={subStyles.panelKicker}>Widgets fijos</Text>
@@ -3371,7 +3969,7 @@ function AdvancedDashboard({
             </View>
             <View style={subStyles.panelCoachCopy}>
               <Text style={subStyles.panelCoachLabel}>Coach del panel</Text>
-              <Text style={subStyles.panelCoachTitle}>{ADVANCED_PRESET_META[suggestedPreset].cta} — {ADVANCED_PRESET_META[suggestedPreset].title}</Text>
+              <Text style={subStyles.panelCoachTitle}>{ADVANCED_PRESET_META[suggestedPreset].cta} â€” {ADVANCED_PRESET_META[suggestedPreset].title}</Text>
             </View>
             <View style={subStyles.panelCoachPill}>
               <Text style={subStyles.panelCoachPillText}>Sugerencia</Text>
@@ -3477,11 +4075,16 @@ function AdvancedDashboard({
       </Card>
 
       <Card>
-        <Text style={subStyles.layerKicker}>Centro de foco</Text>
+        <View style={subStyles.cardHeaderWithAction}>
+          <Text style={subStyles.layerKicker}>Centro de foco</Text>
+          <TouchableOpacity style={subStyles.inlineExplainBtn} onPress={() => setAdvancedDetail("focusCenter")} activeOpacity={0.82}>
+            <Text style={subStyles.inlineExplainBtnText}>Entender</Text>
+          </TouchableOpacity>
+        </View>
         <Text style={subStyles.layerHeroBody}>
           Aquí va lo que más importa ahora. La idea es que no tengas que interpretar diez tarjetas antes de decidir qué mirar.
         </Text>
-        <TouchableOpacity style={subStyles.focusHeroCard} onPress={() => router.push(focusAction.route as never)} activeOpacity={0.84}>
+        <TouchableOpacity style={subStyles.focusHeroCard} onPress={() => setAdvancedDetail("focusCenter")} activeOpacity={0.84}>
           <View style={subStyles.focusHeroTop}>
             <Text style={subStyles.focusHeroLabel}>Tu siguiente mejor acción</Text>
             <View style={subStyles.focusHeroPills}>
@@ -3500,21 +4103,21 @@ function AdvancedDashboard({
         </TouchableOpacity>
 
         <View style={subStyles.focusMetricGrid}>
-          <View style={subStyles.focusMetricCard}>
+          <TouchableOpacity style={subStyles.focusMetricCard} onPress={() => setExecutiveDetail("risk")} activeOpacity={0.84}>
             <Text style={subStyles.focusMetricLabel}>Presión 7 días</Text>
             <Text style={subStyles.focusMetricValue}>{formatCurrency(weekWindow.expectedInflow - weekWindow.expectedOutflow, activeCurrency)}</Text>
-            <Text style={subStyles.focusMetricHint}>Entra {formatCurrency(weekWindow.expectedInflow, activeCurrency)} · sale {formatCurrency(weekWindow.expectedOutflow, activeCurrency)}</Text>
-          </View>
-          <View style={subStyles.focusMetricCard}>
+            <Text style={subStyles.focusMetricHint}>Sobre saldo visible actual: entran {formatCurrency(weekWindow.expectedInflow, activeCurrency)} · sale {formatCurrency(weekWindow.expectedOutflow, activeCurrency)}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={subStyles.focusMetricCard} onPress={() => setExecutiveDetail("month")} activeOpacity={0.84}>
             <Text style={subStyles.focusMetricLabel}>Caja estimada fin de mes</Text>
             <Text style={subStyles.focusMetricValue}>{formatCurrency(monthEndEstimate, activeCurrency)}</Text>
-            <Text style={subStyles.focusMetricHint}>Lectura proyectada usando el ritmo de este mes.</Text>
-          </View>
-          <View style={[subStyles.focusMetricCard, subStyles.focusMetricCardWide]}>
+            <Text style={subStyles.focusMetricHint}>Vs saldo visible actual: {formatCurrency(monthEndDelta, activeCurrency)}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[subStyles.focusMetricCard, subStyles.focusMetricCardWide]} onPress={() => setAdvancedDetail("focusCenter")} activeOpacity={0.84}>
             <Text style={subStyles.focusMetricLabel}>Caja libre</Text>
             <Text style={[subStyles.focusMetricValue, { color: cashCushion.color }]}>{cashCushion.days}d · {cashCushion.label}</Text>
-            <Text style={subStyles.focusMetricHint}>{cashCushion.daysWithCommitments}d con compromisos incluidos</Text>
-          </View>
+            <Text style={subStyles.focusMetricHint}>Sobre {formatCurrency(currentVisibleBalance, activeCurrency)} visibles · {cashCushion.daysWithCommitments}d con compromisos</Text>
+          </TouchableOpacity>
         </View>
 
         <View style={subStyles.coachChipList}>
@@ -3549,7 +4152,12 @@ function AdvancedDashboard({
         router={router}
       />
       <Card>
-        <SectionTitle>Proyección refinada</SectionTitle>
+        <View style={subStyles.cardHeaderWithAction}>
+          <SectionTitle>Proyección refinada</SectionTitle>
+          <TouchableOpacity style={subStyles.inlineExplainBtn} onPress={() => setAdvancedDetail("projection")} activeOpacity={0.82}>
+            <Text style={subStyles.inlineExplainBtnText}>Entender</Text>
+          </TouchableOpacity>
+        </View>
         <Text style={subStyles.executiveIntro}>
           Esta lectura ya separa lo comprometido del mes de tu ritmo variable reciente para darte una banda más útil, no un solo número.
         </Text>
@@ -3562,8 +4170,8 @@ function AdvancedDashboard({
               </View>
             </View>
             <Text style={subStyles.executiveValue}>{formatCurrency(projectionModel.conservativeBalance, activeCurrency)}</Text>
-            <Text style={subStyles.executiveCaption}>Asume entradas más prudentes y gasto variable algo más pesado.</Text>
-          </View>
+            <Text style={subStyles.executiveCaption}>Vs visible hoy: {formatCurrency(projectionConservativeDelta, activeCurrency)} con escenario defensivo.</Text>
+                      </View>
           <View style={subStyles.executiveCard}>
             <View style={subStyles.executiveTop}>
               <Text style={subStyles.executiveLabel}>Esperado</Text>
@@ -3572,12 +4180,15 @@ function AdvancedDashboard({
               </View>
             </View>
             <Text style={subStyles.executiveValue}>{formatCurrency(projectionModel.expectedBalance, activeCurrency)}</Text>
-            <Text style={subStyles.executiveCaption}>{projectionModel.confidence}% de confianza con {projectionModel.remainingDays} días por delante.</Text>
-          </View>
+            <Text style={subStyles.executiveCaption}>{projectionModel.confidence}% de confianza · vs hoy {formatCurrency(projectionExpectedDelta, activeCurrency)}</Text>
+                      </View>
           <View style={[subStyles.executiveCard, subStyles.executiveCardWide]}>
             <View style={subStyles.executiveTop}>
               <Text style={subStyles.executiveLabel}>Qué ya entra en la lectura</Text>
             </View>
+            <Text style={subStyles.executiveCaption}>
+              Base visible hoy: {formatCurrency(currentVisibleBalance, activeCurrency)}.
+            </Text>
             <Text style={subStyles.executiveCaption}>
               Comprometido: entran {formatCurrency(projectionModel.committedInflow, activeCurrency)} y salen {formatCurrency(projectionModel.committedOutflow, activeCurrency)}.
             </Text>
@@ -3658,6 +4269,7 @@ function AdvancedDashboard({
         ctx={{ accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }}
         categoryMap={categoryMap}
         accountMap={accountMap}
+        onExplainPress={() => setAdvancedDetail("review")}
         router={router}
       />
       <CategoryBreakdown catTotals={advancedStats.catTotals} categories={snapshot?.categories ?? []} currency={activeCurrency} />
@@ -3665,15 +4277,20 @@ function AdvancedDashboard({
       <WeeklyPattern movements={movements} ctx={{ accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }} />
       <MonthlyPulse data={advancedStats.monthlyPulse} currency={activeCurrency} />
 
-      {/* N1-N5: Métricas avanzadas — tasa de ahorro, estabilidad, concentración, cobranza, estacional */}
+      {/* N1-N5: Métricas avanzadas â€” tasa de ahorro, estabilidad, concentración, cobranza, estacional */}
       <Card>
-        <SectionTitle>Métricas avanzadas</SectionTitle>
+        <View style={subStyles.cardHeaderWithAction}>
+          <SectionTitle>Métricas avanzadas</SectionTitle>
+          <TouchableOpacity style={subStyles.inlineExplainBtn} onPress={() => setAdvancedDetail("advancedMetrics")} activeOpacity={0.82}>
+            <Text style={subStyles.inlineExplainBtnText}>Entender</Text>
+          </TouchableOpacity>
+        </View>
         <Text style={subStyles.executiveIntro}>
           Indicadores estadísticos sobre tus patrones: ahorro, estabilidad de ingresos, concentración de gasto, eficiencia de cobranza y comparación estacional.
         </Text>
 
         {/* N1: Tasa de ahorro mensual */}
-        <View style={subStyles.advMetricSection}>
+        <TouchableOpacity style={subStyles.advMetricSection} onPress={() => setAdvancedDetail("advancedMetrics")} activeOpacity={0.84}>
           <View style={subStyles.advMetricHeader}>
             <Text style={subStyles.advMetricTitle}>Tasa de ahorro mensual</Text>
             {monthlySavingsRate.lastRate != null ? (
@@ -3700,10 +4317,10 @@ function AdvancedDashboard({
               );
             })}
           </View>
-        </View>
+        </TouchableOpacity>
 
         {/* N2: Score de estabilidad de ingresos */}
-        <View style={[subStyles.advMetricSection, subStyles.advMetricSectionBorder]}>
+        <TouchableOpacity style={[subStyles.advMetricSection, subStyles.advMetricSectionBorder]} onPress={() => setAdvancedDetail("advancedMetrics")} activeOpacity={0.84}>
           <View style={subStyles.advMetricHeader}>
             <Text style={subStyles.advMetricTitle}>Estabilidad de ingresos</Text>
             {incomeStabilityScore.score != null ? (
@@ -3722,10 +4339,10 @@ function AdvancedDashboard({
               <View style={[subStyles.advScoreFill, { width: `${incomeStabilityScore.score}%` as any, backgroundColor: incomeStabilityScore.color }]} />
             </View>
           ) : null}
-        </View>
+        </TouchableOpacity>
 
         {/* N3: Índice HHI de concentración de gasto */}
-        <View style={[subStyles.advMetricSection, subStyles.advMetricSectionBorder]}>
+        <TouchableOpacity style={[subStyles.advMetricSection, subStyles.advMetricSectionBorder]} onPress={() => setAdvancedDetail("advancedMetrics")} activeOpacity={0.84}>
           <View style={subStyles.advMetricHeader}>
             <Text style={subStyles.advMetricTitle}>Concentración de gasto</Text>
             {categoryConcentration.hhi != null ? (
@@ -3739,15 +4356,15 @@ function AdvancedDashboard({
               ? `HHI: ${categoryConcentration.hhi.toFixed(3)}${categoryConcentration.topCategory ? ` · mayor partida: ${categoryConcentration.topCategory} (${categoryConcentration.topShare}%)` : ""}`
               : "Sin movimientos categorizados este periodo"}
           </Text>
-        </View>
+        </TouchableOpacity>
 
         {/* N4: Eficiencia de cobranza */}
-        <View style={[subStyles.advMetricSection, subStyles.advMetricSectionBorder]}>
+        <TouchableOpacity style={[subStyles.advMetricSection, subStyles.advMetricSectionBorder]} onPress={() => setAdvancedDetail("advancedMetrics")} activeOpacity={0.84}>
           <View style={subStyles.advMetricHeader}>
             <Text style={subStyles.advMetricTitle}>Eficiencia de cobranza</Text>
             {collectionEfficiency.rate != null ? (
               <Text style={[subStyles.advMetricBadge, { color: collectionEfficiency.color }]}>
-                {collectionEfficiency.rate}% — {collectionEfficiency.label}
+                {collectionEfficiency.rate}% â€” {collectionEfficiency.label}
               </Text>
             ) : null}
           </View>
@@ -3761,10 +4378,10 @@ function AdvancedDashboard({
               <View style={[subStyles.advScoreFill, { width: `${collectionEfficiency.rate}%` as any, backgroundColor: collectionEfficiency.color }]} />
             </View>
           ) : null}
-        </View>
+        </TouchableOpacity>
 
         {/* N5: Comparación estacional */}
-        <View style={[subStyles.advMetricSection, subStyles.advMetricSectionBorder]}>
+        <TouchableOpacity style={[subStyles.advMetricSection, subStyles.advMetricSectionBorder]} onPress={() => setAdvancedDetail("advancedMetrics")} activeOpacity={0.84}>
           <View style={subStyles.advMetricHeader}>
             <Text style={subStyles.advMetricTitle}>Comparación estacional</Text>
             {seasonalComparison.hasHistory ? (
@@ -3787,7 +4404,7 @@ function AdvancedDashboard({
           ) : (
             <Text style={subStyles.advMetricBody}>Se necesita historial de al menos 12 meses para esta comparación.</Text>
           )}
-        </View>
+        </TouchableOpacity>
       </Card>
 
       <PeriodRadar
@@ -3807,9 +4424,14 @@ function AdvancedDashboard({
             <Text style={subStyles.qualityTitle}>Datos, aprendizaje y actividad</Text>
             <Text style={subStyles.qualityBody}>Aquí quedan las capas más técnicas: calidad del dato, exposición, aprendizaje del sistema y actividad reciente.</Text>
           </View>
-          <TouchableOpacity style={subStyles.qualityToggleBtn} onPress={() => setQualityOpen((value) => !value)} activeOpacity={0.85}>
-            <Text style={subStyles.qualityToggleBtnText}>{qualityOpen ? "Ocultar" : "Abrir"}</Text>
-          </TouchableOpacity>
+          <View style={subStyles.qualityActions}>
+            <TouchableOpacity style={subStyles.inlineExplainBtn} onPress={() => setAdvancedDetail("quality")} activeOpacity={0.82}>
+              <Text style={subStyles.inlineExplainBtnText}>Entender</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={subStyles.qualityToggleBtn} onPress={() => setQualityOpen((value) => !value)} activeOpacity={0.85}>
+              <Text style={subStyles.qualityToggleBtnText}>{qualityOpen ? "Ocultar" : "Abrir"}</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </Card>
 
@@ -3913,7 +4535,7 @@ function ProGate() {
   );
 }
 
-// ─── Main screen ──────────────────────────────────────────────────────────────
+// â”€â”€â”€ Main screen â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function ProGateLoading() {
   return (
@@ -3923,7 +4545,7 @@ function ProGateLoading() {
       </View>
       <View style={subStyles.proGateText}>
         <Text style={subStyles.proGateTitle}>Dashboard Avanzado</Text>
-        <Text style={subStyles.proGateBody}>Verificando acceso…</Text>
+        <Text style={subStyles.proGateBody}>Verificando accesoâ€¦</Text>
       </View>
       <View style={[subStyles.proGateBadge, subStyles.proGateBadgeMuted]}>
         <Text style={[subStyles.proGateBadgeText, { color: COLORS.storm }]}>PRO</Text>
@@ -4003,7 +4625,7 @@ function DashboardScreen() {
     [snapshot?.exchangeRates],
   );
 
-  // Map accountId → currencyCode for movement conversion
+  // Map accountId â†’ currencyCode for movement conversion
   const accountCurrencyMap = useMemo(() => {
     const map = new Map<number, string>();
     for (const a of snapshot?.accounts ?? []) map.set(a.id, a.currencyCode);
@@ -4169,7 +4791,7 @@ function DashboardScreen() {
         />
         <ChronologyStrip
           title="Cronología de gastos"
-          hint="Últimos 7 días · toca un día para ver cada gasto de esa fecha"
+          hint="Ãšltimos 7 días · toca un día para ver cada gasto de esa fecha"
           mode="expense"
           data={stats.chartDays}
           barColor={COLORS.expense}
@@ -4179,7 +4801,7 @@ function DashboardScreen() {
         />
         <ChronologyStrip
           title="Cronología de ingresos"
-          hint="Últimos 7 días · toca un día para ver cada ingreso"
+          hint="Ãšltimos 7 días · toca un día para ver cada ingreso"
           mode="income"
           data={stats.chartDays}
           barColor={COLORS.income}
@@ -4189,7 +4811,7 @@ function DashboardScreen() {
         />
         <ChronologyStrip
           title="Cronología de transferencias"
-          hint="Últimos 7 días · toca un día para ver transferencias entre cuentas"
+          hint="Ãšltimos 7 días · toca un día para ver transferencias entre cuentas"
           mode="transfer"
           data={stats.chartDays}
           barColor={COLORS.secondary}
@@ -4239,7 +4861,7 @@ function DashboardScreen() {
           </>
         ) : null}
 
-        {/* ── Advanced section ── */}
+        {/* â”€â”€ Advanced section â”€â”€ */}
         {isAdvanced && isPro && (
           <AdvancedDashboard
             movements={movements}
@@ -4308,7 +4930,7 @@ function DashboardScreen() {
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Styles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const subStyles = StyleSheet.create({
   sectionTitle: {
@@ -4358,7 +4980,7 @@ const subStyles = StyleSheet.create({
   toggleTextActive: { fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.ink },
   proBadge: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.xs - 1, color: COLORS.gold },
 
-  // Hero card — most prominent, gets the full premium glass treatment
+  // Hero card â€” most prominent, gets the full premium glass treatment
   heroCard: {
     backgroundColor: GLASS.card,
     borderRadius: RADIUS.xl,
@@ -5172,9 +5794,9 @@ const subStyles = StyleSheet.create({
     minWidth: "46%",
     padding: SPACING.md,
     borderRadius: RADIUS.xl,
-    backgroundColor: "rgba(255,255,255,0.035)",
+    backgroundColor: "rgba(12,18,31,0.92)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
+    borderColor: "rgba(255,255,255,0.11)",
     gap: SPACING.xs,
   },
   executiveCardWide: {
@@ -5219,6 +5841,118 @@ const subStyles = StyleSheet.create({
     color: COLORS.storm,
     lineHeight: 21,
   },
+  executiveModalOverlay: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(5,8,18,0.82)",
+    padding: SPACING.md,
+  },
+  executiveModalCard: {
+    borderRadius: RADIUS.xl,
+    backgroundColor: "#0B1020",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+    padding: SPACING.lg,
+    gap: SPACING.md,
+  },
+  executiveModalHandle: {
+    alignSelf: "center",
+    width: 44,
+    height: 4,
+    borderRadius: RADIUS.full,
+    backgroundColor: "rgba(255,255,255,0.18)",
+  },
+  executiveModalHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: SPACING.sm,
+  },
+  executiveModalClose: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.10)",
+  },
+  executiveModalTitle: {
+    fontFamily: FONT_FAMILY.heading,
+    fontSize: 20,
+    color: COLORS.ink,
+  },
+  executiveModalSummary: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.storm,
+    lineHeight: 22,
+  },
+  executiveModalSection: {
+    gap: SPACING.xs,
+  },
+  executiveModalSectionTitle: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.ink,
+  },
+  executiveModalBody: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.storm,
+    lineHeight: 22,
+  },
+  resultMeaningCard: {
+    gap: SPACING.xs,
+    padding: SPACING.md,
+    borderRadius: RADIUS.xl,
+    borderWidth: 1,
+  },
+  resultMeaningCardPositive: {
+    backgroundColor: "rgba(18,48,40,0.92)",
+    borderColor: "rgba(107,228,197,0.18)",
+  },
+  resultMeaningCardWarning: {
+    backgroundColor: "rgba(44,34,20,0.94)",
+    borderColor: "rgba(215,190,123,0.22)",
+  },
+  resultMeaningCardDanger: {
+    backgroundColor: "rgba(52,22,33,0.94)",
+    borderColor: "rgba(218,122,154,0.22)",
+  },
+  resultMeaningTone: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+    textTransform: "uppercase",
+    letterSpacing: 0.7,
+  },
+  resultMeaningTonePositive: {
+    color: COLORS.primary,
+  },
+  resultMeaningToneWarning: {
+    color: COLORS.gold,
+  },
+  resultMeaningToneDanger: {
+    color: "#FF9DBA",
+  },
+  executiveActionList: {
+    gap: SPACING.sm,
+  },
+  executiveActionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: SPACING.sm,
+    padding: SPACING.md,
+    borderRadius: RADIUS.xl,
+    backgroundColor: "rgba(59,166,142,0.24)",
+    borderWidth: 1,
+    borderColor: "rgba(107,228,197,0.26)",
+  },
+  executiveActionBtnText: {
+    flex: 1,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.ink,
+  },
   panelKicker: {
     fontFamily: FONT_FAMILY.bodySemibold,
     fontSize: FONT_SIZE.xs,
@@ -5243,9 +5977,9 @@ const subStyles = StyleSheet.create({
   panelCoachCard: {
     padding: SPACING.md,
     borderRadius: RADIUS.xl,
-    backgroundColor: "rgba(215,190,123,0.10)",
+    backgroundColor: "rgba(31,27,18,0.94)",
     borderWidth: 1,
-    borderColor: "rgba(215,190,123,0.18)",
+    borderColor: "rgba(215,190,123,0.24)",
     gap: SPACING.sm,
     marginBottom: SPACING.lg,
   },
@@ -5260,7 +5994,7 @@ const subStyles = StyleSheet.create({
     borderRadius: 17,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: "rgba(215,190,123,0.14)",
   },
   panelCoachCopy: { flex: 1, gap: 2 },
   panelCoachLabel: {
@@ -5297,7 +6031,7 @@ const subStyles = StyleSheet.create({
     paddingHorizontal: SPACING.sm,
     paddingVertical: 6,
     borderRadius: RADIUS.full,
-    backgroundColor: "rgba(255,255,255,0.06)",
+    backgroundColor: "rgba(255,255,255,0.11)",
   },
   miniChipText: {
     fontFamily: FONT_FAMILY.bodySemibold,
@@ -5321,7 +6055,7 @@ const subStyles = StyleSheet.create({
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
     borderRadius: RADIUS.full,
-    backgroundColor: "rgba(215,190,123,0.16)",
+    backgroundColor: "rgba(215,190,123,0.24)",
   },
   panelApplyBtnText: {
     fontFamily: FONT_FAMILY.bodySemibold,
@@ -5353,9 +6087,9 @@ const subStyles = StyleSheet.create({
     width: "48%",
     padding: SPACING.md,
     borderRadius: RADIUS.xl,
-    backgroundColor: "rgba(255,255,255,0.03)",
+    backgroundColor: "rgba(12,18,31,0.90)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
+    borderColor: "rgba(255,255,255,0.11)",
     gap: SPACING.xs,
   },
   presetCardActive: {
@@ -5399,9 +6133,9 @@ const subStyles = StyleSheet.create({
   widgetPanelCard: {
     padding: SPACING.md,
     borderRadius: RADIUS.xl,
-    backgroundColor: "rgba(255,255,255,0.03)",
+    backgroundColor: "rgba(12,18,31,0.90)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
+    borderColor: "rgba(255,255,255,0.11)",
     gap: SPACING.sm,
   },
   widgetPanelTitle: {
@@ -5430,9 +6164,9 @@ const subStyles = StyleSheet.create({
     paddingHorizontal: SPACING.sm,
     paddingVertical: 8,
     borderRadius: RADIUS.full,
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: "rgba(255,255,255,0.09)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.07)",
+    borderColor: "rgba(255,255,255,0.10)",
   },
   widgetChipText: {
     fontFamily: FONT_FAMILY.bodyMedium,
@@ -5447,9 +6181,9 @@ const subStyles = StyleSheet.create({
     marginTop: SPACING.md,
     padding: SPACING.lg,
     borderRadius: RADIUS.xl,
-    backgroundColor: "rgba(59,166,142,0.10)",
+    backgroundColor: "rgba(16,34,31,0.94)",
     borderWidth: 1,
-    borderColor: "rgba(107,228,197,0.16)",
+    borderColor: "rgba(107,228,197,0.22)",
     gap: SPACING.md,
   },
   focusHeroTop: {
@@ -5476,7 +6210,7 @@ const subStyles = StyleSheet.create({
     paddingHorizontal: SPACING.sm,
     paddingVertical: 5,
     borderRadius: RADIUS.full,
-    backgroundColor: "rgba(255,255,255,0.06)",
+    backgroundColor: "rgba(255,255,255,0.11)",
   },
   focusHeroToneTextMuted: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.xs, color: COLORS.storm },
   focusHeroMiddle: { flexDirection: "row", alignItems: "center", gap: SPACING.md },
@@ -5488,9 +6222,9 @@ const subStyles = StyleSheet.create({
     flex: 1,
     padding: SPACING.md,
     borderRadius: RADIUS.xl,
-    backgroundColor: "rgba(255,255,255,0.035)",
+    backgroundColor: "rgba(12,18,31,0.90)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
+    borderColor: "rgba(255,255,255,0.11)",
     gap: SPACING.xs,
   },
   focusMetricLabel: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.storm },
@@ -5510,6 +6244,30 @@ const subStyles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: SPACING.md,
+  },
+  qualityActions: {
+    alignItems: "flex-end",
+    gap: SPACING.xs,
+  },
+  cardHeaderWithAction: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: SPACING.sm,
+    marginBottom: SPACING.xs,
+  },
+  inlineExplainBtn: {
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 6,
+    borderRadius: RADIUS.full,
+    backgroundColor: "rgba(255,255,255,0.10)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+  },
+  inlineExplainBtnText: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
   },
   qualityKicker: {
     fontFamily: FONT_FAMILY.bodySemibold,
@@ -5531,9 +6289,9 @@ const subStyles = StyleSheet.create({
   projectionCard: {
     padding: SPACING.md,
     borderRadius: RADIUS.xl,
-    backgroundColor: "rgba(255,255,255,0.035)",
+    backgroundColor: "rgba(12,18,31,0.90)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
+    borderColor: "rgba(255,255,255,0.11)",
     gap: SPACING.sm,
   },
   projectionTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: SPACING.sm },
@@ -5546,8 +6304,8 @@ const subStyles = StyleSheet.create({
   actionPillText: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.sm, color: COLORS.primary },
   anomalyList: { gap: SPACING.sm, marginBottom: SPACING.md },
   anomalyCard: { padding: SPACING.md, borderRadius: RADIUS.xl, gap: SPACING.sm, borderWidth: 1 },
-  anomalyCardStrong: { backgroundColor: "rgba(167,95,118,0.12)", borderColor: "rgba(218,122,154,0.16)" },
-  anomalyCardReview: { backgroundColor: "rgba(215,190,123,0.08)", borderColor: "rgba(215,190,123,0.14)" },
+  anomalyCardStrong: { backgroundColor: "rgba(52,22,33,0.96)", borderColor: "rgba(218,122,154,0.22)" },
+  anomalyCardReview: { backgroundColor: "rgba(37,31,19,0.96)", borderColor: "rgba(215,190,123,0.20)" },
   anomalyTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: SPACING.sm },
   anomalyTitle: { flex: 1, fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.lg, color: COLORS.ink },
   anomalyBadge: { paddingHorizontal: SPACING.sm, paddingVertical: 5, borderRadius: RADIUS.full },
@@ -5566,7 +6324,7 @@ const subStyles = StyleSheet.create({
     borderRadius: RADIUS.full,
     borderWidth: 1,
     borderColor: GLASS.cardBorder,
-    backgroundColor: "rgba(255,255,255,0.02)",
+    backgroundColor: "rgba(255,255,255,0.08)",
   },
   secondaryOutlineBtnText: {
     fontFamily: FONT_FAMILY.bodySemibold,
@@ -5639,7 +6397,7 @@ const styles = StyleSheet.create({
   content: { padding: SPACING.lg, gap: SPACING.xl, paddingBottom: 100 },
 });
 
-// ─── Dashboard header right actions ───────────────────────────────────────────
+// â”€â”€â”€ Dashboard header right actions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function DashboardHeaderRight({ onSignOut }: { onSignOut: () => void }) {
   const { profile } = useAuth();
@@ -5737,3 +6495,5 @@ export default function DashboardScreenRoot() {
     </ErrorBoundary>
   );
 }
+
+

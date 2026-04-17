@@ -10,6 +10,7 @@ export type MovementFilters = {
   status?: MovementStatus;
   accountId?: number;
   categoryId?: number;
+  uncategorized?: boolean;
   dateFrom?: string;
   dateTo?: string;
   search?: string;
@@ -60,7 +61,8 @@ async function fetchMovementsPage(
       `source_account_id.eq.${filters.accountId},destination_account_id.eq.${filters.accountId}`,
     );
   }
-  if (filters.categoryId) query = query.eq("category_id", filters.categoryId);
+  if (filters.uncategorized) query = query.is("category_id", null);
+  else if (filters.categoryId) query = query.eq("category_id", filters.categoryId);
   if (filters.search) {
     query = query.ilike("description", `%${filters.search}%`);
   }
