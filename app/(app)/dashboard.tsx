@@ -1296,7 +1296,7 @@ function AccountsScroll({ accounts, onPress }: {
 function UpcomingSection({
   obligations, subscriptions, recurringIncome, router,
 }: {
-  obligations: { id: number; title: string; dueDate: string | null; pendingAmount: number; currencyCode: string }[];
+  obligations: { id: number; title: string; direction?: string; dueDate: string | null; pendingAmount: number; currencyCode: string }[];
   subscriptions: { id: number; name: string; nextDueDate: string; amount: number; currencyCode: string }[];
   recurringIncome: { id: number; name: string; nextExpectedDate: string; amount: number; currencyCode: string }[];
   router: ReturnType<typeof useRouter>;
@@ -1311,6 +1311,8 @@ function UpcomingSection({
     currency: string;
     date: Date;
     kind: "obligation" | "subscription" | "income";
+    flow: "in" | "out";
+    badge: string;
     onPress: () => void;
   };
   const items: UpcomingItem[] = [];
@@ -1322,6 +1324,8 @@ function UpcomingSection({
       items.push({
         key: `ob-${ob.id}`, label: ob.title, amount: ob.pendingAmount,
         currency: ob.currencyCode, date: d, kind: "obligation",
+        flow: ob.direction === "receivable" ? "in" : "out",
+        badge: ob.direction === "receivable" ? "Cobro" : "Deuda",
         onPress: () => router.push(`/obligation/${ob.id}`),
       });
     }
@@ -1332,6 +1336,8 @@ function UpcomingSection({
       items.push({
         key: `sub-${sub.id}`, label: sub.name, amount: sub.amount,
         currency: sub.currencyCode, date: d, kind: "subscription",
+        flow: "out",
+        badge: "Suscripción",
         onPress: () => router.push(`/subscription/${sub.id}`),
       });
     }
@@ -1342,6 +1348,8 @@ function UpcomingSection({
       items.push({
         key: `ri-${income.id}`, label: `Ingreso fijo · ${income.name}`, amount: income.amount,
         currency: income.currencyCode, date: d, kind: "income",
+        flow: "in",
+        badge: "Ingreso",
         onPress: () => router.push("/recurring-income"),
       });
     }
@@ -1349,8 +1357,8 @@ function UpcomingSection({
 
   items.sort((a, b) => a.date.getTime() - b.date.getTime());
   const visible = items.slice(0, 5);
-  const inflowCount = visible.filter((item) => item.kind === "income").length;
-  const outflowCount = visible.length - inflowCount;
+  const inflowCount = visible.filter((item) => item.flow === "in").length;
+  const outflowCount = visible.filter((item) => item.flow === "out").length;
 
   if (visible.length === 0) return null;
   return (
@@ -1370,26 +1378,44 @@ function UpcomingSection({
           <Text style={[subStyles.upcomingSummaryValue, { color: COLORS.expense }]}>{outflowCount}</Text>
         </View>
       </View>
-      {visible.map((item) => (
-        <TouchableOpacity key={item.key} style={subStyles.upcomingRow} onPress={item.onPress} activeOpacity={0.75}>
-          <View style={subStyles.upcomingLeft}>
-            <View style={subStyles.upcomingTitleRow}>
+      <View style={subStyles.upcomingList}>
+        {visible.map((item) => (
+          <TouchableOpacity key={item.key} style={subStyles.upcomingRow} onPress={item.onPress} activeOpacity={0.75}>
+            <View style={subStyles.upcomingRowTop}>
+              <View style={subStyles.upcomingLeft}>
+                <View style={[
+                  subStyles.upcomingBadge,
+                  item.flow === "in" ? subStyles.upcomingBadgeIncome : item.kind === "subscription" ? subStyles.upcomingBadgeSubscription : subStyles.upcomingBadgeObligation,
+                ]}>
+                  <Text style={[
+                    subStyles.upcomingBadgeText,
+                    item.flow === "in" ? subStyles.upcomingBadgeTextIncome : item.kind === "subscription" ? subStyles.upcomingBadgeTextSubscription : subStyles.upcomingBadgeTextObligation,
+                  ]}>
+                    {item.badge}
+                  </Text>
+                </View>
+                <Text style={subStyles.upcomingLabel} numberOfLines={2}>{item.label}</Text>
+              </View>
               <View style={[
-                subStyles.upcomingKindDot,
-                item.kind === "income" ? subStyles.upcomingKindDotIncome : item.kind === "subscription" ? subStyles.upcomingKindDotSubscription : subStyles.upcomingKindDotObligation,
-              ]} />
-              <Text style={subStyles.upcomingLabel} numberOfLines={1}>{item.label}</Text>
+                subStyles.upcomingAmountPill,
+                item.flow === "in" ? subStyles.upcomingAmountPillIncome : subStyles.upcomingAmountPillOut,
+              ]}>
+                <Text style={[
+                  subStyles.upcomingAmount,
+                  item.flow === "in" ? subStyles.upcomingAmountIncome : subStyles.upcomingAmountOut,
+                ]}>
+                  {item.flow === "in" ? "+" : "-"}
+                  {formatCurrency(item.amount, item.currency)}
+                </Text>
+              </View>
             </View>
-            <Text style={subStyles.upcomingDate}>
-              {format(item.date, "d MMM", { locale: es })} · en {Math.max(0, differenceInDays(item.date, now))}d
-            </Text>
-          </View>
-          <Text style={[subStyles.upcomingAmount, item.kind === "income" && subStyles.upcomingAmountIncome]}>
-            {item.kind === "income" ? "+" : "-"}
-            {formatCurrency(item.amount, item.currency)}
-          </Text>
-        </TouchableOpacity>
-      ))}
+            <View style={subStyles.upcomingMetaRow}>
+              <Text style={subStyles.upcomingDate}>{format(item.date, "d MMM", { locale: es })}</Text>
+              <Text style={subStyles.upcomingDate}>En {Math.max(0, differenceInDays(item.date, now))} días</Text>
+            </View>
+          </TouchableOpacity>
+        ))}
+      </View>
     </Card>
   );
 }
@@ -6504,61 +6530,114 @@ const subStyles = StyleSheet.create({
   },
   upcomingSummaryRow: {
     flexDirection: "row",
-    gap: SPACING.sm,
+    gap: SPACING.md,
+    marginTop: SPACING.sm,
+    marginBottom: SPACING.md,
   },
   upcomingSummaryCard: {
     flex: 1,
-    padding: SPACING.sm,
-    borderRadius: RADIUS.lg,
-    backgroundColor: "rgba(255,255,255,0.045)",
+    minHeight: 70,
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.xl,
+    backgroundColor: "rgba(255,255,255,0.055)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.07)",
-    gap: 2,
+    borderColor: "rgba(255,255,255,0.09)",
+    gap: 6,
+    justifyContent: "space-between",
   },
   upcomingSummaryLabel: {
-    fontFamily: FONT_FAMILY.body,
+    fontFamily: FONT_FAMILY.bodySemibold,
     fontSize: FONT_SIZE.xs,
     color: COLORS.storm,
+    textTransform: "uppercase",
   },
   upcomingSummaryValue: {
     fontFamily: FONT_FAMILY.heading,
-    fontSize: 18,
+    fontSize: 22,
+  },
+  upcomingList: {
+    gap: SPACING.md,
   },
   upcomingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: SPACING.sm,
-    padding: SPACING.md,
+    gap: SPACING.lg,
+    padding: SPACING.lg,
     borderRadius: RADIUS.xl,
     backgroundColor: "rgba(255,255,255,0.04)",
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.07)",
   },
-  upcomingLeft: { flex: 1, gap: 2 },
-  upcomingTitleRow: {
+  upcomingRowTop: {
     flexDirection: "row",
-    alignItems: "center",
-    gap: SPACING.xs,
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: SPACING.lg,
   },
-  upcomingKindDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+  upcomingLeft: { flex: 1, minWidth: 0, gap: SPACING.sm },
+  upcomingBadge: {
+    alignSelf: "flex-start",
+    borderRadius: RADIUS.md,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 4,
+    borderWidth: 1,
   },
-  upcomingKindDotIncome: {
-    backgroundColor: COLORS.income,
+  upcomingBadgeIncome: {
+    backgroundColor: "rgba(41, 204, 126, 0.11)",
+    borderColor: "rgba(41, 204, 126, 0.28)",
   },
-  upcomingKindDotSubscription: {
-    backgroundColor: COLORS.secondary,
+  upcomingBadgeSubscription: {
+    backgroundColor: "rgba(111, 120, 255, 0.11)",
+    borderColor: "rgba(111, 120, 255, 0.24)",
   },
-  upcomingKindDotObligation: {
-    backgroundColor: COLORS.expense,
+  upcomingBadgeObligation: {
+    backgroundColor: "rgba(255, 95, 95, 0.10)",
+    borderColor: "rgba(255, 95, 95, 0.25)",
   },
-  upcomingLabel: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.sm, color: COLORS.ink },
+  upcomingBadgeText: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: 11,
+  },
+  upcomingBadgeTextIncome: { color: COLORS.income },
+  upcomingBadgeTextSubscription: { color: COLORS.secondary },
+  upcomingBadgeTextObligation: { color: COLORS.expense },
+  upcomingLabel: {
+    fontFamily: FONT_FAMILY.bodyMedium,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.ink,
+    lineHeight: 20,
+  },
+  upcomingMetaRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: SPACING.sm,
+    paddingTop: SPACING.md,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.06)",
+  },
   upcomingDate: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
-  upcomingAmount: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.sm, color: COLORS.rosewood },
+  upcomingAmountPill: {
+    flexShrink: 0,
+    maxWidth: 136,
+    borderRadius: RADIUS.lg,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 8,
+    borderWidth: 1,
+  },
+  upcomingAmountPillIncome: {
+    backgroundColor: "rgba(41, 204, 126, 0.10)",
+    borderColor: "rgba(41, 204, 126, 0.24)",
+  },
+  upcomingAmountPillOut: {
+    backgroundColor: "rgba(255, 95, 95, 0.09)",
+    borderColor: "rgba(255, 95, 95, 0.22)",
+  },
+  upcomingAmount: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.sm,
+    textAlign: "right",
+  },
   upcomingAmountIncome: { color: COLORS.income },
+  upcomingAmountOut: { color: COLORS.rosewood },
 
   // Budgets
   budgetRow: {
@@ -8708,4 +8787,3 @@ export default function DashboardScreenRoot() {
     </ErrorBoundary>
   );
 }
-
