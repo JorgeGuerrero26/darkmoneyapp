@@ -354,7 +354,7 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent
           movementId: updated.movementId ?? null,
           workspaceId: updated.workspaceId,
         };
-        showToast(actsAsCollector ? "Cobro actualizado ✓" : "Pago actualizado ✓", "success");
+        showToast(actsAsCollector ? "Cobro actualizado ✓" : "Pago actualizado ✓", "warning");
       } else {
         const created = await createPaymentMutation.mutateAsync({
           obligationId: obligation.id,

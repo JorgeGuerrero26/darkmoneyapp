@@ -27,7 +27,7 @@ import {
 } from "../services/queries/workspace-data";
 import { OfflineBanner } from "../components/layout/OfflineBanner";
 import { ActivityNoticeContainer } from "../components/ui/ActivityNotice";
-import { ToastContainer } from "../components/ui/Toast";
+import { ToastProvider } from "../components/DarkMoneyToast";
 import { SuccessGlow } from "../components/ui/SuccessGlow";
 import { SafeBlurView } from "../components/ui/SafeBlurView";
 import {
@@ -618,13 +618,14 @@ export default function RootLayout() {
           <QueryClientProvider client={queryClient}>
             <AuthProvider>
               <WorkspaceProvider>
-                <OfflineBanner />
-                <NotificationSetup />
-                <NavigationGuard />
-                <BiometricLock />
-                <SuccessGlow />
-                <ActivityNoticeContainer />
-                <ToastContainer />
+                <ToastProvider>
+                  <OfflineBanner />
+                  <NotificationSetup />
+                  <NavigationGuard />
+                  <BiometricLock />
+                  <SuccessGlow />
+                  <ActivityNoticeContainer />
+                </ToastProvider>
               </WorkspaceProvider>
             </AuthProvider>
           </QueryClientProvider>

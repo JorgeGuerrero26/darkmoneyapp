@@ -61,7 +61,11 @@ async function fetchMovementsPage(
       `source_account_id.eq.${filters.accountId},destination_account_id.eq.${filters.accountId}`,
     );
   }
-  if (filters.uncategorized) query = query.is("category_id", null);
+  if (filters.uncategorized) {
+    query = query
+      .is("category_id", null)
+      .in("movement_type", ["income", "refund", "expense", "subscription_payment", "obligation_payment"]);
+  }
   else if (filters.categoryId) query = query.eq("category_id", filters.categoryId);
   if (filters.search) {
     query = query.ilike("description", `%${filters.search}%`);

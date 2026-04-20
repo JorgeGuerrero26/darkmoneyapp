@@ -10,7 +10,11 @@
       "Read(//c/Users/helpd/AppData/Local/Programs/**)",
       "Bash(node -e ':*)",
       "Bash(node fix_encoding.js)",
-      "Bash(rm fix_encoding.js)"
+      "Bash(rm fix_encoding.js)",
+      "Bash(sed -i 's/showToast\\(actsAsCollector ? \"Cobro actualizado ✓\" : \"Pago actualizado ✓\", \"success\"\\)/showToast\\(actsAsCollector ? \"Cobro actualizado ✓\" : \"Pago actualizado ✓\", \"warning\"\\)/' /c/Users/helpd/OneDrive/Documentos/darkmoneyapp/components/forms/PaymentForm.tsx)",
+      "Bash(sed -i 's/showToast\\(isIncrease ? \"Aumento actualizado ✓\" : \"Reducción actualizada ✓\", \"success\"\\)/showToast\\(isIncrease ? \"Aumento actualizado ✓\" : \"Reducción actualizada ✓\", \"warning\"\\)/' /c/Users/helpd/OneDrive/Documentos/darkmoneyapp/components/forms/PrincipalAdjustmentForm.tsx)",
+      "Bash(awk -F: '$2 <= 5700 && $2 >= 5600')",
+      "Bash(npx tsc *)"
     ]
   }
 }

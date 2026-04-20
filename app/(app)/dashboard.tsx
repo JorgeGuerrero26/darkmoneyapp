@@ -2,6 +2,7 @@
 import { useFocusEffect } from "expo-router";
 import {
   Image,
+  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -76,7 +77,7 @@ import { RingChart, type RingSegment } from "../../components/ui/RingChart";
 import { SparkLine } from "../../components/ui/SparkLine";
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 
-// â”€â”€â”€ Constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// --- Constants ----------------------------------------------------------------
 
 const UPCOMING_DAYS = 30;
 
@@ -95,10 +96,10 @@ const DASHBOARD_ADVANCED_PRESET_KEY = "darkmoney.dashboard.advancedPreset";
 const ADVANCED_WIDGET_LIBRARY = ["Flujo", "Salud", "Suscripciones", "Cartera", "Semanal", "Pulso", "Radar", "Calidad", "Aprendizaje", "Actividad"];
 
 const ADVANCED_PRESET_META: Record<AdvancedPreset, { title: string; subtitle: string; cta: string; situationalSubtitle: string }> = {
-  manual:    { title: "Manual",          subtitle: "Elige tus propios widgets abajo y ordénalos como quieras.", cta: "Armar mi panel",    situationalSubtitle: "Sin urgencia detectada â€” personaliza tú mismo." },
-  liquidity: { title: "Ver caja",        subtitle: "Caja, compromisos próximos y cierre estimado del mes.",    cta: "Vigilar liquidez",  situationalSubtitle: "Próximos 7â€“30 días bajo presión â€” conviene vigilar caja." },
+  manual:    { title: "Manual",          subtitle: "Elige tus propios widgets abajo y ordénalos como quieras.", cta: "Armar mi panel",    situationalSubtitle: "Sin urgencia detectada - personaliza tú mismo." },
+  liquidity: { title: "Ver caja",        subtitle: "Caja, compromisos próximos y cierre estimado del mes.",    cta: "Vigilar liquidez",  situationalSubtitle: "Próximos 7-30 días bajo presión - conviene vigilar caja." },
   portfolio: { title: "Revisar cartera", subtitle: "Cobros, pagos y vencimientos de la cartera.",              cta: "Ordenar cartera",   situationalSubtitle: "Hay vencimientos sin resolver que distorsionan la lectura." },
-  control:   { title: "Limpiar datos",   subtitle: "Categorización, duplicados y suscripciones.",              cta: "Mejorar calidad",   situationalSubtitle: "Categorías incompletas â€” las señales del dashboard pierden precisión." },
+  control:   { title: "Limpiar datos",   subtitle: "Categorización, duplicados y suscripciones.",              cta: "Mejorar calidad",   situationalSubtitle: "Categorías incompletas - las señales del dashboard pierden precisión." },
   analytics: { title: "Analizar mes",    subtitle: "Patrones, comparativos y aprendizaje del sistema.",        cta: "Ver patrones",      situationalSubtitle: "Base suficientemente sana para lectura fina de hábitos." },
 };
 
@@ -110,7 +111,7 @@ const ADVANCED_PRESET_WIDGETS: Record<AdvancedPreset, string[]> = {
   analytics: ["Semanal", "Pulso", "Radar", "Aprendizaje"],
 };
 
-// â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// --- Helpers ------------------------------------------------------------------
 
 function pctChange(current: number, prev: number) {
   if (prev === 0) return null;
@@ -184,7 +185,7 @@ function getPeriodBounds(period: Period, now: Date): { curStart: Date; curEnd: D
   return { curStart, curEnd, prevStart, prevEnd };
 }
 
-// â”€â”€â”€ Exchange rate helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// --- Exchange rate helpers -----------------------------------------------------
 
 const DASHBOARD_CURRENCY_KEY = "darkmoney.dashboard.displayCurrency";
 
@@ -203,7 +204,7 @@ function resolveRate(map: Map<string, number>, from: string, to: string): number
   if (direct) return direct;
   const inverse = map.get(`${to}:${from}`);
   if (inverse) return 1 / inverse;
-  return 1; // no rate found â†’ keep original
+  return 1; // no rate found -> keep original
 }
 
 function convertAmt(
@@ -216,7 +217,7 @@ function convertAmt(
   return amount * resolveRate(map, fromCurrency.toUpperCase(), toCurrency.toUpperCase());
 }
 
-// â”€â”€â”€ Stats â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// --- Stats --------------------------------------------------------------------
 
 type ConversionCtx = {
   accountCurrencyMap: Map<number, string>;
@@ -270,7 +271,7 @@ function useDashboardStats(movements: DashboardMovementRow[], period: Period, ct
     const prevIncome = prev.filter(isIncome).reduce((s, m) => s + incomeAmt(m, ctx), 0);
     const prevExpense = prev.filter(isExpense).reduce((s, m) => s + expenseAmt(m, ctx), 0);
 
-    // Daily chart â€” last 7 days (con metadatos para detalle al tocar)
+    // Daily chart - last 7 days (con metadatos para detalle al tocar)
     const chartDays: DashboardChartDay[] = Array.from({ length: 7 }, (_, i) => {
       const d = subDays(now, 6 - i);
       const ds = startOfDay(d);
@@ -287,7 +288,7 @@ function useDashboardStats(movements: DashboardMovementRow[], period: Period, ct
       };
     });
 
-    // Monthly pulse â€” last 6 months
+    // Monthly pulse - last 6 months
     const monthlyPulse = Array.from({ length: 6 }, (_, i) => {
       const mDate = subMonths(now, 5 - i);
       const mStart = startOfMonth(mDate);
@@ -300,7 +301,7 @@ function useDashboardStats(movements: DashboardMovementRow[], period: Period, ct
       };
     });
 
-    // Category breakdown â€” current period, expenses only
+    // Category breakdown - current period, expenses only
     const catTotals = new Map<number | null, number>();
     for (const m of cur.filter(isExpense)) {
       const k = m.categoryId;
@@ -778,7 +779,7 @@ function buildMonthProjectionModel(
 
   const variableIncomeProjection = incomeDailyAvg * remainingDays;
 
-  // A4: corrección de patrón semanal â€” solo si hay â‰¥3 semanas de historia
+  // A4: corrección de patrón semanal - solo si hay >=3 semanas de historia
   const weeklyExpenseTotals = Array.from({ length: 7 }, () => ({ sum: 0, count: 0 }));
   for (const movement of movements.filter((m) => m.status === "posted" && m.movementType === "expense")) {
     const d = getDay(new Date(movement.occurredAt));
@@ -888,7 +889,7 @@ function buildAnomalyFindings(
             key: `desc-${movement.id}`,
             movementId: movement.id,
             title: movement.description.trim() || "Movimiento",
-            body: `${z.toFixed(1)}Ïƒ por encima de tu promedio habitual (${avg.toFixed(2)} ± ${std.toFixed(2)}).`,
+            body: `${z.toFixed(1)}sigma por encima de tu promedio habitual (${avg.toFixed(2)} ± ${std.toFixed(2)}).`,
             meta: `${accountLabel} · ${formatCurrency(amount, ctx.displayCurrency)} · ${format(new Date(movement.occurredAt), "d MMM", { locale: es })}`,
             level: z >= 3.0 ? "strong" : "review",
             score: Math.min(99, Math.round(45 + Math.min(z, 6) * 8)),
@@ -913,7 +914,7 @@ function buildAnomalyFindings(
             key: `cat-${movement.id}`,
             movementId: movement.id,
             title: movement.description.trim() || (categoryMap.get(movement.categoryId) ?? "Movimiento"),
-            body: `${z.toFixed(1)}Ïƒ por encima de tu promedio habitual en esta categoría (${avg.toFixed(2)} ± ${std.toFixed(2)}).`,
+            body: `${z.toFixed(1)}sigma por encima de tu promedio habitual en esta categoría (${avg.toFixed(2)} ± ${std.toFixed(2)}).`,
             meta: `${categoryMap.get(movement.categoryId) ?? "Sin categoría"} · ${formatCurrency(amount, ctx.displayCurrency)} · ${format(new Date(movement.occurredAt), "d MMM", { locale: es })}`,
             level: z >= 3.0 ? "strong" : "review",
             score: Math.min(99, Math.round(45 + Math.min(z, 6) * 8)),
@@ -965,7 +966,7 @@ function buildAnomalyFindings(
   return Array.from(unique.values()).slice(0, 4);
 }
 
-// â”€â”€â”€ Sub-components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// --- Sub-components -----------------------------------------------------------
 
 function SectionTitle({ children }: { children: string }) {
   return <Text style={subStyles.sectionTitle}>{children}</Text>;
@@ -1080,7 +1081,7 @@ function HeroCard({
   );
 }
 
-// KPI row â€” 3 compact cards (income %, expense %, net)
+// KPI row - 3 compact cards (income %, expense %, net)
 function FlowRow({
   income, expense, net, currency, prevIncome, prevExpense,
 }: {
@@ -1109,7 +1110,7 @@ function FlowCard({
     ? (higherIsGood ? change >= 0 : change <= 0)
     : null;
   const changeColor = isGood === null ? COLORS.storm : isGood ? COLORS.pine : COLORS.rosewood;
-  const arrow = change == null ? null : change >= 0 ? "â†‘" : "â†“";
+  const arrow = change == null ? null : change >= 0 ? "^" : "v";
 
   return (
     <View style={subStyles.kpiCard}>
@@ -1129,7 +1130,7 @@ function FlowCard({
   );
 }
 
-// Mini bar chart (7 days) â€” toque abre detalle con ahorro del día y movimientos
+// Mini bar chart (7 days) - toque abre detalle con ahorro del día y movimientos
 function MiniBarChart({
   data,
   onSelectDay,
@@ -1142,7 +1143,7 @@ function MiniBarChart({
 
   return (
     <Card>
-      <SectionTitle>Ãšltimos 7 días â€” flujo diario</SectionTitle>
+      <SectionTitle>Últimos 7 días - flujo diario</SectionTitle>
       <Text style={subStyles.chronoHint}>
         Toca un día: verás ingresos, gastos, ahorro del día (neto) y cada movimiento que lo explica.
       </Text>
@@ -1303,7 +1304,15 @@ function UpcomingSection({
   const now = new Date();
   const limit = addDays(now, UPCOMING_DAYS);
 
-  type UpcomingItem = { key: string; label: string; amount: number; currency: string; date: Date; onPress: () => void };
+  type UpcomingItem = {
+    key: string;
+    label: string;
+    amount: number;
+    currency: string;
+    date: Date;
+    kind: "obligation" | "subscription" | "income";
+    onPress: () => void;
+  };
   const items: UpcomingItem[] = [];
 
   for (const ob of obligations) {
@@ -1312,7 +1321,7 @@ function UpcomingSection({
     if (d >= now && d <= limit) {
       items.push({
         key: `ob-${ob.id}`, label: ob.title, amount: ob.pendingAmount,
-        currency: ob.currencyCode, date: d,
+        currency: ob.currencyCode, date: d, kind: "obligation",
         onPress: () => router.push(`/obligation/${ob.id}`),
       });
     }
@@ -1322,7 +1331,7 @@ function UpcomingSection({
     if (d >= now && d <= limit) {
       items.push({
         key: `sub-${sub.id}`, label: sub.name, amount: sub.amount,
-        currency: sub.currencyCode, date: d,
+        currency: sub.currencyCode, date: d, kind: "subscription",
         onPress: () => router.push(`/subscription/${sub.id}`),
       });
     }
@@ -1332,7 +1341,7 @@ function UpcomingSection({
     if (d >= now && d <= limit) {
       items.push({
         key: `ri-${income.id}`, label: `Ingreso fijo · ${income.name}`, amount: income.amount,
-        currency: income.currencyCode, date: d,
+        currency: income.currencyCode, date: d, kind: "income",
         onPress: () => router.push("/recurring-income"),
       });
     }
@@ -1340,25 +1349,48 @@ function UpcomingSection({
 
   items.sort((a, b) => a.date.getTime() - b.date.getTime());
   const visible = items.slice(0, 5);
+  const inflowCount = visible.filter((item) => item.kind === "income").length;
+  const outflowCount = visible.length - inflowCount;
 
   if (visible.length === 0) return null;
   return (
-    <View>
-      <SectionTitle>Próximos vencimientos</SectionTitle>
+    <Card>
+      <Text style={subStyles.upcomingKicker}>Agenda próxima</Text>
+      <SectionTitle>Compromisos y cobros esperados</SectionTitle>
+      <Text style={subStyles.upcomingIntro}>
+        Lo que ya tiene fecha en los próximos {UPCOMING_DAYS} días. Sirve para revisar agenda, no para analizar el historial.
+      </Text>
+      <View style={subStyles.upcomingSummaryRow}>
+        <View style={subStyles.upcomingSummaryCard}>
+          <Text style={subStyles.upcomingSummaryLabel}>Entra</Text>
+          <Text style={[subStyles.upcomingSummaryValue, { color: COLORS.income }]}>{inflowCount}</Text>
+        </View>
+        <View style={subStyles.upcomingSummaryCard}>
+          <Text style={subStyles.upcomingSummaryLabel}>Sale</Text>
+          <Text style={[subStyles.upcomingSummaryValue, { color: COLORS.expense }]}>{outflowCount}</Text>
+        </View>
+      </View>
       {visible.map((item) => (
         <TouchableOpacity key={item.key} style={subStyles.upcomingRow} onPress={item.onPress} activeOpacity={0.75}>
           <View style={subStyles.upcomingLeft}>
-            <Text style={subStyles.upcomingLabel} numberOfLines={1}>{item.label}</Text>
+            <View style={subStyles.upcomingTitleRow}>
+              <View style={[
+                subStyles.upcomingKindDot,
+                item.kind === "income" ? subStyles.upcomingKindDotIncome : item.kind === "subscription" ? subStyles.upcomingKindDotSubscription : subStyles.upcomingKindDotObligation,
+              ]} />
+              <Text style={subStyles.upcomingLabel} numberOfLines={1}>{item.label}</Text>
+            </View>
             <Text style={subStyles.upcomingDate}>
-              {format(item.date, "d MMM", { locale: es })}
+              {format(item.date, "d MMM", { locale: es })} · en {Math.max(0, differenceInDays(item.date, now))}d
             </Text>
           </View>
-          <Text style={subStyles.upcomingAmount}>
+          <Text style={[subStyles.upcomingAmount, item.kind === "income" && subStyles.upcomingAmountIncome]}>
+            {item.kind === "income" ? "+" : "-"}
             {formatCurrency(item.amount, item.currency)}
           </Text>
         </TouchableOpacity>
       ))}
-    </View>
+    </Card>
   );
 }
 
@@ -1371,7 +1403,7 @@ function BudgetsSection({
 }) {
   const today = new Date();
 
-  // Tier 3: proyección de burn rate â€” presupuestos que aún no alertaron pero van a exceder
+  // Tier 3: proyección de burn rate - presupuestos que aún no alertaron pero van a exceder
   const burnRateTier = budgets.filter((b) => {
     if (b.isOverLimit || b.isNearLimit) return false;
     const periodEnd = parseDisplayDate(b.periodEnd);
@@ -1443,7 +1475,7 @@ function BudgetsSection({
   );
 }
 
-// â”€â”€â”€ Simple widgets: ReceivableLeaders + PayableLeaders â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// --- Simple widgets: ReceivableLeaders + PayableLeaders -----------------------
 
 function ReceivableLeaders({
   obligations, router,
@@ -1527,7 +1559,7 @@ function LeadersRow({
   );
 }
 
-// Category comparison (current vs prev period) â€” Simple widget
+// Category comparison (current vs prev period) - Simple widget
 function CategoryComparison({
   catTotals, prevCatTotals, categories, currency,
 }: {
@@ -1583,7 +1615,7 @@ function CategoryComparison({
   );
 }
 
-// â”€â”€â”€ New visual widgets â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// --- New visual widgets -------------------------------------------------------
 
 function AccountsBreakdown({
   accounts,
@@ -1670,7 +1702,7 @@ function SavingsTrendCard({
       <View style={subStyles.trendHeader}>
         <SectionTitle>Ahorro mensual (6 meses)</SectionTitle>
         <Text style={[subStyles.trendBadge, { color: trendUp ? COLORS.pine : COLORS.rosewood }]}>
-          {trendUp ? "â†‘" : "â†“"} tendencia
+          {trendUp ? "^" : "v"} tendencia
         </Text>
       </View>
       <View style={subStyles.trendBody}>
@@ -1699,7 +1731,7 @@ function SavingsTrendCard({
   );
 }
 
-// â”€â”€â”€ Advanced widgets â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// --- Advanced widgets ---------------------------------------------------------
 
 function ReviewInbox({
   movements,
@@ -1814,7 +1846,276 @@ function FutureFlowPreview({
   );
 }
 
-function LearningPanel({ movements }: { movements: DashboardMovementRow[] }) {
+function ProjectionFormulaBreakdown({
+  activeCurrency,
+  currentVisibleBalance,
+  visibleBalanceLabel,
+  visibleAccountSummary,
+  committedNet,
+  variableNet,
+  expectedBalance,
+}: {
+  activeCurrency: string;
+  currentVisibleBalance: number;
+  visibleBalanceLabel: string;
+  visibleAccountSummary: string;
+  committedNet: number;
+  variableNet: number;
+  expectedBalance: number;
+}) {
+  const rows = [
+    { label: "Saldo visible", detail: visibleBalanceLabel, amount: currentVisibleBalance, tone: "base" as const },
+    { label: "Agenda comprometida", detail: "Ingresos fijos, obligaciones y suscripciones", amount: committedNet, tone: committedNet >= 0 ? "positive" as const : "negative" as const },
+    { label: "Ritmo variable", detail: "Proyección desde tu ritmo reciente", amount: variableNet, tone: variableNet >= 0 ? "positive" as const : "negative" as const },
+  ];
+
+  return (
+    <View style={subStyles.projectionFormulaBox}>
+      <View style={subStyles.projectionFormulaHeader}>
+        <Text style={subStyles.projectionFormulaKicker}>Fórmula del cierre</Text>
+        <Text style={subStyles.projectionFormulaTotal}>{formatCurrency(expectedBalance, activeCurrency)}</Text>
+      </View>
+      <Text style={subStyles.projectionFormulaSummary}>{visibleAccountSummary}</Text>
+      <View style={subStyles.projectionFormulaRows}>
+        {rows.map((row) => (
+          <View key={row.label} style={subStyles.projectionFormulaRow}>
+            <View style={subStyles.projectionFormulaCopy}>
+              <Text style={subStyles.projectionFormulaLabel}>{row.label}</Text>
+              <Text style={subStyles.projectionFormulaDetail}>{row.detail}</Text>
+            </View>
+            <Text
+              style={[
+                subStyles.projectionFormulaAmount,
+                row.tone === "positive" && subStyles.projectionFormulaAmountPositive,
+                row.tone === "negative" && subStyles.projectionFormulaAmountNegative,
+              ]}
+            >
+              {row.amount >= 0 && row.tone !== "base" ? "+" : ""}{formatCurrency(row.amount, activeCurrency)}
+            </Text>
+          </View>
+        ))}
+      </View>
+      <View style={subStyles.projectionFormulaEquals}>
+        <Text style={subStyles.projectionFormulaEqualsText}>Resultado esperado</Text>
+        <Text style={subStyles.projectionFormulaEqualsAmount}>{formatCurrency(expectedBalance, activeCurrency)}</Text>
+      </View>
+    </View>
+  );
+}
+
+type ExplanationTone = "positive" | "warning" | "danger";
+
+function explanationToneLabel(tone: ExplanationTone) {
+  if (tone === "positive") return "Lectura favorable";
+  if (tone === "danger") return "Lectura en presión";
+  return "Lectura para vigilar";
+}
+
+function ExplanationIntro({ kicker, summary }: { kicker: string; summary: string }) {
+  return (
+    <View style={subStyles.explanationIntroCard}>
+      <Text style={subStyles.explanationKicker}>{kicker}</Text>
+      <Text style={subStyles.explanationSummary}>{summary}</Text>
+    </View>
+  );
+}
+
+function ExplanationVisualSummary({
+  tone,
+  actionsCount,
+  detailCount,
+}: {
+  tone: ExplanationTone;
+  actionsCount: number;
+  detailCount: number;
+}) {
+  const urgency = tone === "danger" ? 92 : tone === "warning" ? 66 : 34;
+  const clarity = Math.min(100, Math.max(28, detailCount * 16));
+  const actionStrength = Math.min(100, Math.max(actionsCount > 0 ? 42 : 18, actionsCount * 44));
+  const toneColor = tone === "positive" ? COLORS.primary : tone === "danger" ? "#FF9DBA" : COLORS.gold;
+  const items = [
+    { label: "Lectura", value: urgency, caption: explanationToneLabel(tone), color: toneColor },
+    { label: "Claridad", value: clarity, caption: `${detailCount} puntos`, color: COLORS.secondary },
+    { label: "Acción", value: actionStrength, caption: actionsCount > 0 ? `${actionsCount} CTA` : "solo lectura", color: COLORS.primary },
+  ];
+
+  return (
+    <View style={subStyles.explanationVisualCard}>
+      <View style={subStyles.explanationVisualHeader}>
+        <Sparkles size={16} color={toneColor} />
+        <View style={{ flex: 1 }}>
+          <Text style={subStyles.explanationVisualTitle}>Lectura rápida</Text>
+          <Text style={subStyles.explanationVisualHint}>Toca las tarjetas de abajo para abrir solo el detalle que necesitas.</Text>
+        </View>
+      </View>
+      <View style={subStyles.explanationVisualGrid}>
+        {items.map((item) => (
+          <View key={item.label} style={subStyles.explanationVisualMetric}>
+            <Text style={subStyles.explanationVisualMetricLabel}>{item.label}</Text>
+            <Text style={[subStyles.explanationVisualMetricValue, { color: item.color }]}>{item.caption}</Text>
+            <View style={subStyles.explanationVisualTrack}>
+              <View style={[subStyles.explanationVisualFill, { width: `${item.value}%` as any, backgroundColor: item.color }]} />
+            </View>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function ExplanationSection({
+  index,
+  title,
+  items,
+}: {
+  index: string;
+  title: string;
+  items: string[];
+}) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <TouchableOpacity
+      style={[subStyles.explanationSectionCard, !expanded && subStyles.explanationSectionCardCollapsed]}
+      onPress={() => setExpanded((value) => !value)}
+      activeOpacity={0.86}
+    >
+      <View style={subStyles.explanationSectionHeader}>
+        <View style={subStyles.explanationStepBadge}>
+          <Text style={subStyles.explanationStepBadgeText}>{index}</Text>
+        </View>
+        <Text style={subStyles.explanationSectionTitle}>{title}</Text>
+        <View style={[subStyles.explanationChevron, expanded && subStyles.explanationChevronOpen]}>
+          <ArrowRight size={15} color={COLORS.storm} />
+        </View>
+      </View>
+      {expanded ? (
+        <View style={subStyles.explanationBulletList}>
+          {items.map((item) => (
+            <View key={item} style={subStyles.explanationBulletRow}>
+              <View style={subStyles.explanationBulletDot} />
+              <Text style={subStyles.explanationBulletText}>{item}</Text>
+            </View>
+          ))}
+        </View>
+      ) : (
+        <Text style={subStyles.explanationCollapsedHint}>{items[0]}</Text>
+      )}
+    </TouchableOpacity>
+  );
+}
+
+function ExplanationResult({
+  tone,
+  items,
+}: {
+  tone: ExplanationTone;
+  items: string[];
+}) {
+  const [expanded, setExpanded] = useState(true);
+  return (
+    <View style={subStyles.explanationResultSection}>
+      <TouchableOpacity style={subStyles.explanationSectionHeader} onPress={() => setExpanded((value) => !value)} activeOpacity={0.86}>
+        <View style={subStyles.explanationStepBadge}>
+          <Text style={subStyles.explanationStepBadgeText}>03</Text>
+        </View>
+        <Text style={subStyles.explanationSectionTitle}>Qué significa este resultado</Text>
+        <View style={[subStyles.explanationChevron, expanded && subStyles.explanationChevronOpen]}>
+          <ArrowRight size={15} color={COLORS.storm} />
+        </View>
+      </TouchableOpacity>
+      <View
+        style={[
+          subStyles.resultMeaningCard,
+          tone === "positive"
+            ? subStyles.resultMeaningCardPositive
+            : tone === "danger"
+              ? subStyles.resultMeaningCardDanger
+              : subStyles.resultMeaningCardWarning,
+        ]}
+      >
+        <View style={subStyles.resultMeaningHeader}>
+          <View
+            style={[
+              subStyles.resultMeaningIndicator,
+              tone === "positive"
+                ? subStyles.resultMeaningIndicatorPositive
+                : tone === "danger"
+                  ? subStyles.resultMeaningIndicatorDanger
+                  : subStyles.resultMeaningIndicatorWarning,
+            ]}
+          />
+          <Text
+            style={[
+              subStyles.resultMeaningTone,
+              tone === "positive"
+                ? subStyles.resultMeaningTonePositive
+                : tone === "danger"
+                  ? subStyles.resultMeaningToneDanger
+                  : subStyles.resultMeaningToneWarning,
+            ]}
+          >
+            {explanationToneLabel(tone)}
+          </Text>
+        </View>
+        {expanded ? (
+          <View style={subStyles.explanationBulletList}>
+            {items.map((item) => (
+              <View key={item} style={subStyles.explanationBulletRow}>
+                <View style={subStyles.explanationBulletDotMuted} />
+                <Text style={subStyles.explanationBulletText}>{item}</Text>
+              </View>
+            ))}
+          </View>
+        ) : (
+          <Text style={subStyles.explanationCollapsedHint}>{items[0]}</Text>
+        )}
+      </View>
+    </View>
+  );
+}
+
+function ExplanationActions({
+  actions,
+}: {
+  actions: Array<{ label: string; onPress: () => void }>;
+}) {
+  if (actions.length === 0) return null;
+  return (
+    <View style={subStyles.explanationActionsSection}>
+      <Text style={subStyles.explanationActionsTitle}>Qué puedes hacer ahora</Text>
+      <View style={subStyles.executiveActionList}>
+        {actions.map((action) => (
+          <TouchableOpacity key={action.label} style={subStyles.executiveActionBtn} onPress={action.onPress} activeOpacity={0.84}>
+            <Text style={subStyles.executiveActionBtnText}>{action.label}</Text>
+            <ArrowRight size={15} color={COLORS.primary} />
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function LearningPanel({
+  movements,
+  projectionModel,
+  activeCurrency,
+  weeklyPatternInsight,
+  categoryConcentration,
+  categorySuggestionsCount,
+  anomalySignalsCount,
+  cashCushionDays,
+  cashCushionLabel,
+}: {
+  movements: DashboardMovementRow[];
+  projectionModel: DashboardProjectionModel;
+  activeCurrency: string;
+  weeklyPatternInsight: { dayLabel: string; share: number } | null;
+  categoryConcentration: { label: string; topCategory: string | null; topShare: number | null };
+  categorySuggestionsCount: number;
+  anomalySignalsCount: number;
+  cashCushionDays: number;
+  cashCushionLabel: string;
+}) {
   const learning = useMemo(() => {
     const posted = movements.filter((movement) => movement.status === "posted");
     const useful = posted.filter((movement) => movement.movementType !== "obligation_opening");
@@ -1826,27 +2127,135 @@ function LearningPanel({ movements }: { movements: DashboardMovementRow[] }) {
     const readinessScore = Math.round(Math.min(1, useful.length / 120) * 40 + Math.min(1, historyDays / 120) * 25 + categorizedRate * 35);
     const phases = [
       { step: 1, title: "Base", description: "La app ya puede leer totales y ritmos simples.", progress: Math.min(1, useful.length / 10) },
-      { step: 2, title: "Patrones", description: "Empieza a distinguir habitos y semanas raras.", progress: Math.min(1, Math.min(useful.length / 30, historyDays / 30)) },
-      { step: 3, title: "Proyecciones", description: "Ya puede estimar presion futura con mas confianza.", progress: Math.min(1, Math.min(useful.length / 70, historyDays / 60, categorizedRate / 0.6)) },
-      { step: 4, title: "Alertas finas", description: "Lista para senales mas finas y anomalias.", progress: Math.min(1, Math.min(useful.length / 120, historyDays / 120, categorizedRate / 0.82)) },
+      { step: 2, title: "Patrones", description: "Empieza a distinguir hábitos y semanas raras.", progress: Math.min(1, Math.min(useful.length / 30, historyDays / 30)) },
+      { step: 3, title: "Proyecciones", description: "Ya puede estimar presión futura con más confianza.", progress: Math.min(1, Math.min(useful.length / 70, historyDays / 60, categorizedRate / 0.6)) },
+      { step: 4, title: "Alertas finas", description: "Lista para señales más finas y anomalías.", progress: Math.min(1, Math.min(useful.length / 120, historyDays / 120, categorizedRate / 0.82)) },
     ];
+    const descriptionGroups = new Map<string, { label: string; count: number }>();
+    for (const movement of useful) {
+      const normalized = normalizeAnalyticsText(movement.description ?? "");
+      if (normalized.length < 3) continue;
+      const current = descriptionGroups.get(normalized);
+      descriptionGroups.set(normalized, {
+        label: movement.description?.trim() || "Movimiento repetido",
+        count: (current?.count ?? 0) + 1,
+      });
+    }
+    const repeatedDescription = Array.from(descriptionGroups.values())
+      .filter((item) => item.count >= 2)
+      .sort((a, b) => b.count - a.count)[0] ?? null;
+
     const insights: string[] = [];
-    if (categorizedRate < 0.55) insights.push("Tus categorias aun necesitan trabajo para que las comparaciones sean mas confiables.");
-    if (useful.length < 25) insights.push("Todavia falta un poco de historia para detectar habitos mas estables.");
-    if (historyDays >= 45 && categorizedRate >= 0.6) insights.push("Ya hay una base decente para empezar a notar patrones y presion futura.");
-    if (insights.length === 0) insights.push("La base del workspace ya esta suficientemente sana para lecturas mas finas.");
-    return { categorizedRate, historyDays, insights, phases, readinessScore, usefulCount: useful.length };
+    if (categorizedRate < 0.55) insights.push("Tus categorías aún necesitan trabajo para que las comparaciones sean más confiables.");
+    if (useful.length < 25) insights.push("Todavía falta un poco de historia para detectar hábitos más estables.");
+    if (historyDays >= 45 && categorizedRate >= 0.6) insights.push("Ya hay una base decente para empezar a notar patrones y presión futura.");
+    if (insights.length === 0) insights.push("La base del workspace ya está suficientemente sana para lecturas más finas.");
+    return { categorizedRate, historyDays, insights, phases, readinessScore, repeatedDescription, usefulCount: useful.length };
   }, [movements]);
+
+  const learningSignals = useMemo(() => {
+    const projectionDelta = Math.abs(projectionModel.expectedBalance - projectionModel.conservativeBalance);
+    return [
+      {
+        icon: Clock,
+        color: COLORS.primary,
+        label: "Patrón semanal",
+        title: weeklyPatternInsight
+          ? `${weeklyPatternInsight.dayLabel} concentra ${weeklyPatternInsight.share}% del gasto`
+          : "Todavía no hay un día dominante",
+        body: weeklyPatternInsight
+          ? "Úsalo para decidir si ese día necesita un límite, alerta o revisión de hábitos."
+          : "La app necesita más movimientos por día para separar hábito real de semanas aisladas.",
+      },
+      {
+        icon: Tag,
+        color: COLORS.warning,
+        label: "Categorías",
+        title: categoryConcentration.topCategory
+          ? `${categoryConcentration.topCategory} pesa ${categoryConcentration.topShare ?? 0}%`
+          : "Sin categoría dominante clara",
+        body: categoryConcentration.topCategory
+          ? `La lectura aparece ${categoryConcentration.label.toLowerCase()}; si esa categoría sube, mueve fuerte tu mes.`
+          : "Cuando haya más gastos categorizados, aquí verás qué parte del mes está mandando.",
+      },
+      {
+        icon: Sparkles,
+        color: COLORS.gold,
+        label: "Repeticiones",
+        title: learning.repeatedDescription
+          ? `${learning.repeatedDescription.label} aparece ${learning.repeatedDescription.count} veces`
+          : "Aún no hay comercios repetidos fuertes",
+        body: learning.repeatedDescription
+          ? "Esto ayuda a sugerir categorías y detectar suscripciones o pagos que se repiten."
+          : "Cuando detecte textos parecidos, podrá anticipar categorías y posibles recurrentes.",
+      },
+      {
+        icon: TrendingUp,
+        color: COLORS.income,
+        label: "Proyección",
+        title: `${projectionModel.confidence}% de confianza · ${projectionModel.confidenceLabel}`,
+        body: `La banda actual tiene ${formatCurrency(projectionDelta, activeCurrency)} entre piso y esperado. Caja libre: ${cashCushionDays}d (${cashCushionLabel}).`,
+      },
+      {
+        icon: AlertTriangle,
+        color: categorySuggestionsCount > 0 || anomalySignalsCount > 0 ? COLORS.gold : COLORS.primary,
+        label: "Acciones útiles",
+        title: categorySuggestionsCount > 0 || anomalySignalsCount > 0
+          ? `${categorySuggestionsCount} sugerencia${categorySuggestionsCount === 1 ? "" : "s"} · ${anomalySignalsCount} alerta${anomalySignalsCount === 1 ? "" : "s"}`
+          : "Sin acciones críticas de aprendizaje",
+        body: categorySuggestionsCount > 0 || anomalySignalsCount > 0
+          ? "Primero atiende estas señales: mejoran categorización, anomalías y confianza de forecast."
+          : "Puedes usar esta capa como monitoreo, no como lista urgente.",
+      },
+    ];
+  }, [
+    activeCurrency,
+    anomalySignalsCount,
+    cashCushionDays,
+    cashCushionLabel,
+    categoryConcentration.label,
+    categoryConcentration.topCategory,
+    categoryConcentration.topShare,
+    categorySuggestionsCount,
+    learning.repeatedDescription,
+    projectionModel.confidence,
+    projectionModel.confidenceLabel,
+    projectionModel.conservativeBalance,
+    projectionModel.expectedBalance,
+    weeklyPatternInsight,
+  ]);
 
   return (
     <Card>
       <SectionTitle>Aprendiendo de ti</SectionTitle>
+      <Text style={subStyles.executiveIntro}>
+        Esta capa no es solo un porcentaje: te muestra dónde la app ya ve patrones y qué decisiones puede ayudarte a tomar con esa base.
+      </Text>
       <View style={subStyles.learningTopGrid}>
-        <View style={subStyles.learningMetricCard}><Brain size={16} color={COLORS.primary} /><Text style={subStyles.learningMetricValue}>{learning.usefulCount}</Text><Text style={subStyles.learningMetricLabel}>Movimientos utiles</Text></View>
+        <View style={subStyles.learningMetricCard}><Brain size={16} color={COLORS.primary} /><Text style={subStyles.learningMetricValue}>{learning.usefulCount}</Text><Text style={subStyles.learningMetricLabel}>Movimientos útiles</Text></View>
         <View style={subStyles.learningMetricCard}><Clock size={16} color={COLORS.secondary} /><Text style={subStyles.learningMetricValue}>{learning.historyDays} d</Text><Text style={subStyles.learningMetricLabel}>Historia observada</Text></View>
-        <View style={subStyles.learningMetricCard}><Tag size={16} color={COLORS.warning} /><Text style={subStyles.learningMetricValue}>{Math.round(learning.categorizedRate * 100)}%</Text><Text style={subStyles.learningMetricLabel}>Categorias utiles</Text></View>
+        <View style={subStyles.learningMetricCard}><Tag size={16} color={COLORS.warning} /><Text style={subStyles.learningMetricValue}>{Math.round(learning.categorizedRate * 100)}%</Text><Text style={subStyles.learningMetricLabel}>Categorías útiles</Text></View>
         <View style={subStyles.learningMetricCard}><Sparkles size={16} color={COLORS.income} /><Text style={subStyles.learningMetricValue}>{learning.readinessScore}%</Text><Text style={subStyles.learningMetricLabel}>Confianza actual</Text></View>
       </View>
+      <Text style={subStyles.learningGroupTitle}>Dónde ya ve señales</Text>
+      <View style={subStyles.learningSignalList}>
+        {learningSignals.map((signal, index) => {
+          const Icon = signal.icon;
+          return (
+            <View key={signal.label} style={[subStyles.learningSignalCard, index === 0 && subStyles.learningSignalCardWide]}>
+              <View style={subStyles.learningSignalHeader}>
+                <View style={[subStyles.learningSignalIcon, { backgroundColor: signal.color + "18" }]}>
+                  <Icon size={15} color={signal.color} />
+                </View>
+                <Text style={[subStyles.learningSignalKicker, { color: signal.color }]}>{signal.label}</Text>
+              </View>
+              <Text style={subStyles.learningSignalTitle}>{signal.title}</Text>
+              <Text style={subStyles.learningSignalBody}>{signal.body}</Text>
+            </View>
+          );
+        })}
+      </View>
+      <Text style={subStyles.learningGroupTitle}>Madurez del análisis</Text>
       <View style={subStyles.phaseList}>
         {learning.phases.map((phase) => (
           <View key={phase.step} style={subStyles.phaseCard}>
@@ -1929,7 +2338,7 @@ function ProCommandCenter({
     review.uncategorizedCount > 0 ? { key: "uncategorized", title: "Categorizar gastos e ingresos", detail: `${review.uncategorizedCount} movimientos siguen sin categoria.`, route: "/movements" } : null,
     review.subscriptionsAttentionCount > 0 ? { key: "subscriptions", title: "Confirmar suscripciones", detail: `${review.subscriptionsAttentionCount} cargos fijos necesitan cuenta o fecha revisada.`, route: "/subscriptions" } : null,
   ].filter(Boolean) as Array<{ key: string; title: string; detail: string; route: string }>;
-  const recommendation = review.overdueObligationsCount > 0 ? "Tu prioridad mas rentable hoy es limpiar vencimientos de cartera antes de que se arrastre mas el desfase." : weekWindow.expectedOutflow > weekWindow.expectedInflow ? "La proxima semana sale mas dinero del que entra: revisa compromisos y mueve foco a liquidez." : review.uncategorizedCount > 0 ? "Con unas cuantas categorias mas, el dashboard puede darte comparativos y senales mucho mas finas." : "No vemos friccion fuerte: aprovecha para ordenar metas, presupuestos o suscripciones.";
+  const recommendation = review.overdueObligationsCount > 0 ? "Tu prioridad más rentable hoy es limpiar vencimientos de cartera antes de que se arrastre más el desfase." : weekWindow.expectedOutflow > weekWindow.expectedInflow ? "La próxima semana sale más dinero del que entra: revisa compromisos y mueve foco a liquidez." : review.uncategorizedCount > 0 ? "Con unas cuantas categorías más, el dashboard puede darte comparativos y señales mucho más finas." : "No vemos fricción fuerte: aprovecha para ordenar metas, presupuestos o suscripciones.";
 
   return (
     <Card>
@@ -2182,7 +2591,7 @@ function HealthScore({
   );
 }
 
-// Alert center â€” anomalies detection
+// Alert center - anomalies detection
 type AlertItem = {
   key: string;
   icon: LucideIcon;
@@ -2271,7 +2680,7 @@ function AlertCenter({
   );
 }
 
-// Obligation watch â€” full list with aging
+// Obligation watch - full list with aging
 function ObligationWatch({
   obligations, router,
 }: {
@@ -2334,7 +2743,7 @@ function ObligationWatch({
   );
 }
 
-// Weekly pattern â€” average expense per day of week
+// Weekly pattern - average expense per day of week
 function WeeklyPattern({ movements, ctx }: { movements: DashboardMovementRow[]; ctx: ConversionCtx }) {
   const DAY_LABELS = ["Lu", "Ma", "Mi", "Ju", "Vi", "Sá", "Do"];
 
@@ -2381,7 +2790,7 @@ function WeeklyPattern({ movements, ctx }: { movements: DashboardMovementRow[]; 
   );
 }
 
-// Transfer snapshot â€” top 3 transfer routes
+// Transfer snapshot - top 3 transfer routes
 function TransferSnapshot({
   movements, accounts, ctx,
 }: {
@@ -2504,7 +2913,7 @@ function CurrencyExposure({
   );
 }
 
-// Period radar â€” 5 compact readings
+// Period radar - 5 compact readings
 function PeriodRadar({
   income, expense, catTotals, categories, curStart, curEnd, movements,
 }: {
@@ -2520,7 +2929,7 @@ function PeriodRadar({
   const savingsRate = income > 0 ? ((income - expense) / income) * 100 : 0;
 
   // Top expense category
-  let topCatName = "â€”";
+  let topCatName = "-";
   let topCatAmt = 0;
   for (const [id, total] of catTotals.entries()) {
     if (total > topCatAmt) {
@@ -2551,7 +2960,7 @@ function PeriodRadar({
 
   const items = [
     { label: "Tasa de ahorro", value: `${savingsRate.toFixed(1)}%` },
-    { label: "Mayor gasto", value: topCatAmt > 0 ? `${topCatName}` : "â€”" },
+    { label: "Mayor gasto", value: topCatAmt > 0 ? `${topCatName}` : "-" },
     { label: "Días sin gastar", value: `${Math.max(daysWithoutExpense, 0)}` },
     { label: "Promedio diario", value: formatCurrency(avgDaily, "") },
     { label: "Mov. sin categoría", value: `${noCatCount}` },
@@ -2762,6 +3171,444 @@ function AnomalyWatch({
   );
 }
 
+function DashboardLayerHeader({ kicker, title, body }: { kicker: string; title: string; body: string }) {
+  return (
+    <View style={subStyles.layerSection}>
+      <Text style={subStyles.layerSectionKicker}>{kicker}</Text>
+      <Text style={subStyles.layerSectionTitle}>{title}</Text>
+      <Text style={subStyles.layerSectionBody}>{body}</Text>
+    </View>
+  );
+}
+
+function ProjectionBridgeChart({
+  currentVisibleBalance,
+  committedNet,
+  variableNet,
+  expectedBalance,
+  currency,
+  onOpenAccounts,
+  onExplainProjection,
+  onOpenMonthMovements,
+}: {
+  currentVisibleBalance: number;
+  committedNet: number;
+  variableNet: number;
+  expectedBalance: number;
+  currency: string;
+  onOpenAccounts: () => void;
+  onExplainProjection: () => void;
+  onOpenMonthMovements: () => void;
+}) {
+  const rows = [
+    { label: "Saldo visible hoy", detail: "Lo que suman tus cuentas visibles", amount: currentVisibleBalance, tone: "base" as const, action: "Abrir cuentas", onPress: onOpenAccounts },
+    { label: "Agenda comprometida", detail: "Ingresos fijos menos pagos esperados", amount: committedNet, tone: committedNet >= 0 ? "positive" as const : "negative" as const, action: "Entender agenda", onPress: onExplainProjection },
+    { label: "Ritmo variable", detail: "Proyección de gastos e ingresos no fijos", amount: variableNet, tone: variableNet >= 0 ? "positive" as const : "negative" as const, action: "Ver movimientos", onPress: onOpenMonthMovements },
+    { label: "Cierre esperado", detail: "Resultado estimado de fin de mes", amount: expectedBalance, tone: expectedBalance >= currentVisibleBalance ? "positive" as const : "warning" as const, action: "Ver cálculo", onPress: onExplainProjection },
+  ];
+  const maxAbs = Math.max(...rows.map((row) => Math.abs(row.amount)), 1);
+
+  return (
+    <Card>
+      <Text style={subStyles.visualChartKicker}>Proyección</Text>
+      <SectionTitle>Puente de cierre de mes</SectionTitle>
+      <Text style={subStyles.visualChartIntro}>
+        Te muestra qué empuja la caja estimada: saldo actual, agenda fija y ritmo variable. Si una barra va a la izquierda, resta.
+      </Text>
+      <View style={subStyles.bridgeChartStack}>
+        {rows.map((row) => {
+          const width = Math.max(3, Math.min(50, (Math.abs(row.amount) / maxAbs) * 50));
+          const isNegative = row.amount < 0;
+          const color = row.tone === "positive" ? COLORS.income : row.tone === "negative" ? COLORS.expense : row.tone === "warning" ? COLORS.gold : COLORS.primary;
+          return (
+            <TouchableOpacity key={row.label} style={subStyles.bridgeRow} onPress={row.onPress} activeOpacity={0.84}>
+              <View style={subStyles.bridgeRowHeader}>
+                <View style={{ flex: 1 }}>
+                  <Text style={subStyles.bridgeLabel}>{row.label}</Text>
+                  <Text style={subStyles.bridgeDetail}>{row.detail}</Text>
+                </View>
+                <Text style={[subStyles.bridgeAmount, { color }]}>
+                  {row.amount > 0 && row.tone !== "base" ? "+" : ""}{formatCurrency(row.amount, currency)}
+                </Text>
+              </View>
+              <View style={subStyles.bridgeTrack}>
+                <View style={subStyles.bridgeAxis} />
+                <View
+                  style={[
+                    subStyles.bridgeFill,
+                    {
+                      width: `${width}%` as any,
+                      backgroundColor: color,
+                      left: isNegative ? `${50 - width}%` as any : "50%",
+                    },
+                  ]}
+                />
+              </View>
+              <Text style={subStyles.visualChartAction}>{row.action}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </Card>
+  );
+}
+
+function SavingsMomentumChart({
+  data,
+  currency,
+  onOpenMonth,
+}: {
+  data: { label: string; income: number; expense: number }[];
+  currency: string;
+  onOpenMonth: (dateFrom: string, dateTo: string) => void;
+}) {
+  const netValues = data.map((item) => item.income - item.expense);
+  const hasData = data.some((item) => item.income > 0 || item.expense > 0);
+  if (!hasData) return null;
+
+  let running = 0;
+  const cumulative = netValues.map((value) => {
+    running += value;
+    return running;
+  });
+  const lastNet = netValues[netValues.length - 1] ?? 0;
+  const bestNet = Math.max(...netValues);
+  const worstNet = Math.min(...netValues);
+  const maxAbs = Math.max(...netValues.map((value) => Math.abs(value)), 1);
+  const trendText = cumulative[cumulative.length - 1] >= cumulative[0] ? "subiendo" : "bajando";
+  const trendColor = cumulative[cumulative.length - 1] >= cumulative[0] ? COLORS.income : COLORS.expense;
+
+  return (
+    <Card>
+      <Text style={subStyles.visualChartKicker}>Evolución</Text>
+      <SectionTitle>Ahorro neto acumulado</SectionTitle>
+      <Text style={subStyles.visualChartIntro}>
+        Resume si tus meses recientes vienen dejando margen o consumiendo caja. Verde suma ahorro, rojo lo reduce.
+      </Text>
+      <View style={subStyles.savingsSparkWrap}>
+        <SparkLine values={cumulative} width={260} height={86} positiveColor={COLORS.income} negativeColor={COLORS.expense} />
+      </View>
+      <View style={subStyles.savingsStatsRow}>
+        <View style={subStyles.savingsStatCard}>
+          <Text style={subStyles.savingsStatLabel}>Último mes</Text>
+          <Text style={[subStyles.savingsStatValue, { color: lastNet >= 0 ? COLORS.income : COLORS.expense }]}>
+            {lastNet >= 0 ? "+" : ""}{formatCurrency(lastNet, currency)}
+          </Text>
+        </View>
+        <View style={subStyles.savingsStatCard}>
+          <Text style={subStyles.savingsStatLabel}>Mejor</Text>
+          <Text style={[subStyles.savingsStatValue, { color: bestNet >= 0 ? COLORS.income : COLORS.expense }]}>
+            {bestNet >= 0 ? "+" : ""}{formatCurrency(bestNet, currency)}
+          </Text>
+        </View>
+        <View style={subStyles.savingsStatCard}>
+          <Text style={subStyles.savingsStatLabel}>Tendencia</Text>
+          <Text style={[subStyles.savingsStatValue, { color: trendColor }]}>{trendText}</Text>
+        </View>
+      </View>
+      <View style={subStyles.netBarsRow}>
+        {data.map((item, index) => {
+          const net = netValues[index] ?? 0;
+          const height = Math.max(4, (Math.abs(net) / maxAbs) * 34);
+          const isPositive = net >= 0;
+          const monthDate = subMonths(new Date(), data.length - 1 - index);
+          const dateFrom = format(startOfMonth(monthDate), "yyyy-MM-dd");
+          const dateTo = format(index === data.length - 1 ? new Date() : endOfMonth(monthDate), "yyyy-MM-dd");
+          return (
+            <TouchableOpacity key={item.label} style={subStyles.netBarsCol} onPress={() => onOpenMonth(dateFrom, dateTo)} activeOpacity={0.84}>
+              <View style={subStyles.netBarsBox}>
+                <View style={subStyles.netBarsAxis} />
+                <View
+                  style={[
+                    subStyles.netBar,
+                    isPositive ? subStyles.netBarPositive : subStyles.netBarNegative,
+                    {
+                      height,
+                      bottom: isPositive ? 34 : undefined,
+                      top: isPositive ? undefined : 34,
+                    },
+                  ]}
+                />
+              </View>
+              <Text style={subStyles.chartLabel}>{item.label}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+      <Text style={subStyles.visualChartFootnote}>Peor mes observado: {formatCurrency(worstNet, currency)}.</Text>
+    </Card>
+  );
+}
+
+function CategoryDonutChart({
+  catTotals,
+  categories,
+  currency,
+  onOpenCategory,
+}: {
+  catTotals: Map<number | null, number>;
+  categories: { id: number; name: string }[];
+  currency: string;
+  onOpenCategory: (categoryId: number | null) => void;
+}) {
+  const catMap = new Map(categories.map((category) => [category.id, category.name]));
+  const allEntries = Array.from(catTotals.entries())
+    .map(([id, total]) => ({ id, key: `${id ?? "none"}`, name: catMap.get(id ?? -1) ?? "Sin categoría", total }))
+    .filter((entry) => entry.total > 0)
+    .sort((a, b) => b.total - a.total);
+  const total = allEntries.reduce((sum, entry) => sum + entry.total, 0);
+  if (total <= 0) return null;
+
+  const palette = [COLORS.expense, COLORS.gold, COLORS.primary, COLORS.secondary, "#9EB7FF"];
+  const topEntries = allEntries.slice(0, 5);
+  const rest = allEntries.slice(5).reduce((sum, entry) => sum + entry.total, 0);
+  const visibleEntries = rest > 0 ? [...topEntries, { id: undefined, key: "rest", name: "Otros", total: rest }] : topEntries;
+  const segments: RingSegment[] = visibleEntries.map((entry, index) => ({
+    key: entry.key,
+    value: entry.total,
+    color: palette[index % palette.length] + "dd",
+  }));
+  const leader = visibleEntries[0];
+  const leaderPct = Math.round((leader.total / total) * 100);
+
+  return (
+    <Card>
+      <Text style={subStyles.visualChartKicker}>Distribución</Text>
+      <SectionTitle>Mapa de gasto por categoría</SectionTitle>
+      <Text style={subStyles.visualChartIntro}>
+        Sirve para detectar si el mes está concentrado en una sola categoría o repartido en varios hábitos.
+      </Text>
+      <View style={subStyles.donutChartBody}>
+        <TouchableOpacity style={subStyles.donutWrap} onPress={() => onOpenCategory(leader.id ?? null)} activeOpacity={0.84}>
+          <RingChart segments={segments} size={132} thickness={22} />
+          <View style={subStyles.donutCenter}>
+            <Text style={subStyles.donutCenterValue}>{leaderPct}%</Text>
+            <Text style={subStyles.donutCenterLabel} numberOfLines={1}>{leader.name}</Text>
+          </View>
+        </TouchableOpacity>
+        <View style={subStyles.donutLegend}>
+          {visibleEntries.map((entry, index) => (
+            <TouchableOpacity
+              key={entry.key}
+              style={subStyles.donutLegendRow}
+              onPress={entry.id === undefined ? undefined : () => onOpenCategory(entry.id ?? null)}
+              activeOpacity={entry.id === undefined ? 1 : 0.84}
+            >
+              <View style={[subStyles.donutLegendDot, { backgroundColor: palette[index % palette.length] }]} />
+              <View style={{ flex: 1 }}>
+                <Text style={subStyles.donutLegendName} numberOfLines={1}>{entry.name}</Text>
+                <Text style={subStyles.donutLegendPct}>{Math.round((entry.total / total) * 100)}% del gasto</Text>
+              </View>
+              <Text style={subStyles.donutLegendAmount}>{formatCurrency(entry.total, currency)}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+    </Card>
+  );
+}
+
+type AnnualHistoryMonth = {
+  label: string;
+  income: number;
+  expense: number;
+  net: number;
+  cumulativeNet: number;
+  dateFrom: string;
+  dateTo: string;
+  isFuture: boolean;
+};
+
+function AnnualHistoryPanel({
+  years,
+  selectedYear,
+  onSelectYear,
+  data,
+  currency,
+  onSelectMonth,
+}: {
+  years: number[];
+  selectedYear: number;
+  onSelectYear: (year: number) => void;
+  data: AnnualHistoryMonth[];
+  currency: string;
+  onSelectMonth: (month: AnnualHistoryMonth) => void;
+}) {
+  const observed = data.filter((month) => !month.isFuture);
+  const yearIncome = observed.reduce((sum, month) => sum + month.income, 0);
+  const yearExpense = observed.reduce((sum, month) => sum + month.expense, 0);
+  const yearNet = yearIncome - yearExpense;
+  const savingsRate = yearIncome > 0 ? (yearNet / yearIncome) * 100 : null;
+  const maxFlow = Math.max(...data.flatMap((month) => [month.income, month.expense]), 1);
+  const maxNetAbs = Math.max(...observed.map((month) => Math.abs(month.net)), 1);
+  const bestMonth = observed.reduce<AnnualHistoryMonth | null>((best, month) => (!best || month.net > best.net ? month : best), null);
+  const worstMonth = observed.reduce<AnnualHistoryMonth | null>((worst, month) => (!worst || month.net < worst.net ? month : worst), null);
+
+  if (observed.length === 0) return null;
+
+  return (
+    <Card>
+      <View style={subStyles.annualHeaderRow}>
+        <View style={{ flex: 1 }}>
+          <Text style={subStyles.visualChartKicker}>Historial anual</Text>
+          <SectionTitle>Ingresos, gastos y ahorro</SectionTitle>
+        </View>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={subStyles.annualYearList}>
+          {years.map((year) => (
+            <TouchableOpacity
+              key={year}
+              style={[subStyles.annualYearPill, selectedYear === year && subStyles.annualYearPillActive]}
+              onPress={() => onSelectYear(year)}
+              activeOpacity={0.84}
+            >
+              <Text style={[subStyles.annualYearText, selectedYear === year && subStyles.annualYearTextActive]}>{year}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
+      <Text style={subStyles.visualChartIntro}>
+        Esta lectura compara cada mes del año y muestra si el neto acumulado está construyendo margen o consumiéndolo.
+      </Text>
+
+      <View style={subStyles.annualSummaryGrid}>
+        <View style={subStyles.annualSummaryCard}>
+          <Text style={subStyles.savingsStatLabel}>Ingresos</Text>
+          <Text style={[subStyles.annualSummaryValue, { color: COLORS.income }]}>{formatCurrency(yearIncome, currency)}</Text>
+        </View>
+        <View style={subStyles.annualSummaryCard}>
+          <Text style={subStyles.savingsStatLabel}>Gastos</Text>
+          <Text style={[subStyles.annualSummaryValue, { color: COLORS.expense }]}>{formatCurrency(yearExpense, currency)}</Text>
+        </View>
+        <View style={subStyles.annualSummaryCard}>
+          <Text style={subStyles.savingsStatLabel}>Neto</Text>
+          <Text style={[subStyles.annualSummaryValue, { color: yearNet >= 0 ? COLORS.income : COLORS.expense }]}>
+            {yearNet >= 0 ? "+" : ""}{formatCurrency(yearNet, currency)}
+          </Text>
+        </View>
+        <View style={subStyles.annualSummaryCard}>
+          <Text style={subStyles.savingsStatLabel}>Ahorro</Text>
+          <Text style={[subStyles.annualSummaryValue, { color: savingsRate == null ? COLORS.storm : savingsRate >= 0 ? COLORS.gold : COLORS.expense }]}>
+            {savingsRate == null ? "-" : `${savingsRate.toFixed(1)}%`}
+          </Text>
+        </View>
+      </View>
+
+      <View style={subStyles.annualFlowChart}>
+        {data.map((month) => (
+          <TouchableOpacity
+            key={month.label}
+            style={[subStyles.annualMonthCol, month.isFuture && subStyles.annualMonthColMuted]}
+            onPress={month.isFuture ? undefined : () => onSelectMonth(month)}
+            activeOpacity={month.isFuture ? 1 : 0.84}
+          >
+            <View style={subStyles.annualBarsBox}>
+              <View
+                style={[
+                  subStyles.annualFlowBar,
+                  { height: Math.max((month.income / maxFlow) * 70, month.income > 0 ? 3 : 0), backgroundColor: COLORS.income + "cc" },
+                ]}
+              />
+              <View
+                style={[
+                  subStyles.annualFlowBar,
+                  { height: Math.max((month.expense / maxFlow) * 70, month.expense > 0 ? 3 : 0), backgroundColor: COLORS.expense + "cc" },
+                ]}
+              />
+            </View>
+            <Text style={subStyles.chartLabel}>{month.label}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      <View style={subStyles.chartLegend}>
+        <View style={subStyles.legendItem}><View style={[subStyles.legendDot, { backgroundColor: COLORS.income }]} /><Text style={subStyles.legendText}>Ingresos</Text></View>
+        <View style={subStyles.legendItem}><View style={[subStyles.legendDot, { backgroundColor: COLORS.expense }]} /><Text style={subStyles.legendText}>Gastos</Text></View>
+      </View>
+
+      <View style={subStyles.annualNetList}>
+        {observed.map((month) => {
+          const width = Math.max(8, (Math.abs(month.net) / maxNetAbs) * 100);
+          const positive = month.net >= 0;
+          return (
+            <TouchableOpacity key={month.label} style={subStyles.annualNetRow} onPress={() => onSelectMonth(month)} activeOpacity={0.84}>
+              <Text style={subStyles.annualNetMonth}>{month.label}</Text>
+              <View style={subStyles.annualNetTrack}>
+                <View style={[subStyles.annualNetFill, { width: `${width}%` as any, backgroundColor: positive ? COLORS.income : COLORS.expense }]} />
+              </View>
+              <Text style={[subStyles.annualNetAmount, { color: positive ? COLORS.income : COLORS.expense }]}>
+                {positive ? "+" : ""}{formatCurrency(month.net, currency)}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      <Text style={subStyles.visualChartFootnote}>
+        Mejor mes: {bestMonth ? `${bestMonth.label} (${formatCurrency(bestMonth.net, currency)})` : "-"} · Peor mes: {worstMonth ? `${worstMonth.label} (${formatCurrency(worstMonth.net, currency)})` : "-"}.
+      </Text>
+    </Card>
+  );
+}
+
+type AdvancedTab = 'Hoy' | 'Análisis' | 'Agenda' | 'Historial' | 'Datos';
+
+const ADVANCED_TABS: { id: AdvancedTab; label: string }[] = [
+  { id: 'Hoy',      label: 'Hoy' },
+  { id: 'Análisis', label: 'Análisis' },
+  { id: 'Agenda',   label: 'Agenda' },
+  { id: 'Historial',label: 'Historial' },
+  { id: 'Datos',    label: 'Datos' },
+];
+
+function DashboardTabBar({ activeTab, onTabChange }: { activeTab: AdvancedTab; onTabChange: (tab: AdvancedTab) => void }) {
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={tabBarStyles.row}
+      style={tabBarStyles.container}
+    >
+      {ADVANCED_TABS.map((tab) => (
+        <Pressable
+          key={tab.id}
+          onPress={() => onTabChange(tab.id)}
+          style={[tabBarStyles.chip, activeTab === tab.id && tabBarStyles.chipActive]}
+        >
+          <Text style={[tabBarStyles.chipText, activeTab === tab.id && tabBarStyles.chipTextActive]}>
+            {tab.label}
+          </Text>
+        </Pressable>
+      ))}
+    </ScrollView>
+  );
+}
+
+const tabBarStyles = StyleSheet.create({
+  container: { marginBottom: 4 },
+  row: { paddingHorizontal: SPACING.md, gap: 8, paddingVertical: 6 },
+  chip: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+  },
+  chipActive: {
+    backgroundColor: 'rgba(107,228,197,0.14)',
+    borderColor: 'rgba(107,228,197,0.45)',
+  },
+  chipText: {
+    fontFamily: FONT_FAMILY.bodyMedium,
+    fontSize: 13,
+    color: COLORS.storm,
+  },
+  chipTextActive: {
+    color: '#6BE4C5',
+    fontFamily: FONT_FAMILY.bodySemibold,
+  },
+});
+
 function AdvancedDashboard({
   movements,
   obligations,
@@ -2777,6 +3624,8 @@ function AdvancedDashboard({
   analytics,
   router,
   accountCurrencyMap,
+  onRequestPrecisionFocus,
+  onScrollToTop,
 }: {
   movements: DashboardMovementRow[];
   obligations: Array<{ id: number; title: string; direction: string; pendingAmount: number; installmentAmount?: number | null; currencyCode: string; dueDate: string | null; status: string; lastPaymentDate?: string | null; startDate?: string; counterparty: string }>;
@@ -2792,12 +3641,55 @@ function AdvancedDashboard({
   analytics: DashboardAnalyticsBundle | null | undefined;
   router: ReturnType<typeof useRouter>;
   accountCurrencyMap: Map<number, string>;
+  onRequestPrecisionFocus?: () => void;
+  onScrollToTop?: () => void;
 }) {
   const advancedStats = useDashboardStats(movements, "month", {
     accountCurrencyMap,
     exchangeRateMap,
     displayCurrency: activeCurrency,
   });
+  const historyYears = useMemo(() => {
+    const years = new Set<number>([new Date().getFullYear()]);
+    for (const movement of movements) {
+      const year = new Date(movement.occurredAt).getFullYear();
+      if (Number.isFinite(year)) years.add(year);
+    }
+    return Array.from(years).sort((a, b) => b - a);
+  }, [movements]);
+  const [selectedHistoryYear, setSelectedHistoryYear] = useState(new Date().getFullYear());
+  const [selectedAnnualMonth, setSelectedAnnualMonth] = useState<AnnualHistoryMonth | null>(null);
+  useEffect(() => {
+    if (!historyYears.includes(selectedHistoryYear) && historyYears.length > 0) {
+      setSelectedHistoryYear(historyYears[0]);
+    }
+  }, [historyYears, selectedHistoryYear]);
+  const annualHistory = useMemo<AnnualHistoryMonth[]>(() => {
+    const now = new Date();
+    let cumulativeNet = 0;
+    return Array.from({ length: 12 }, (_, monthIndex) => {
+      const monthDate = new Date(selectedHistoryYear, monthIndex, 1);
+      const monthStart = startOfMonth(monthDate);
+      const monthEnd = endOfMonth(monthDate);
+      const cappedEnd = selectedHistoryYear === now.getFullYear() && monthIndex === now.getMonth() ? now : monthEnd;
+      const isFuture = monthStart > now;
+      const monthMovements = isFuture ? [] : movements.filter((movement) => inRange(movement, monthStart, cappedEnd));
+      const income = monthMovements.filter(isIncome).reduce((sum, movement) => sum + incomeAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }), 0);
+      const expense = monthMovements.filter(isExpense).reduce((sum, movement) => sum + expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }), 0);
+      const net = income - expense;
+      if (!isFuture) cumulativeNet += net;
+      return {
+        label: format(monthDate, "MMM", { locale: es }),
+        income,
+        expense,
+        net,
+        cumulativeNet,
+        dateFrom: format(monthStart, "yyyy-MM-dd"),
+        dateTo: format(cappedEnd, "yyyy-MM-dd"),
+        isFuture,
+      };
+    });
+  }, [accountCurrencyMap, activeCurrency, exchangeRateMap, movements, selectedHistoryYear]);
   const review = useMemo(() => buildReviewInboxSnapshot(movements, subscriptions, obligations), [movements, obligations, subscriptions]);
   const windows = useMemo(
     () => buildFutureFlowWindows(obligations, subscriptions, recurringIncome, activeCurrency, exchangeRateMap, currentVisibleBalance),
@@ -2825,12 +3717,6 @@ function AdvancedDashboard({
       }, 0);
   }, [activeCurrency, exchangeRateMap, recurringIncome]);
 
-  const daysInMonth = differenceInDays(endOfMonth(new Date()), startOfMonth(new Date())) + 1;
-  const monthEndEstimate =
-    currentVisibleBalance +
-    (monthToDate.net / monthToDate.daysElapsed) * (daysInMonth - monthToDate.daysElapsed) +
-    monthRecurringIncomeProjection;
-
   // A3: Cash Cushion — días de caja libre al ritmo actual
   const cashCushion = useMemo(() => {
     const now = new Date();
@@ -2847,7 +3733,7 @@ function AdvancedDashboard({
     return { days, daysWithCommitments, dailyBurn, label, color };
   }, [accountCurrencyMap, activeCurrency, currentVisibleBalance, exchangeRateMap, movements, windows]);
 
-  // A2: EMA de tendencia de gasto semanal (Î±=0.35, últimas 12 semanas)
+  // A2: EMA de tendencia de gasto semanal (alpha=0.35, últimas 12 semanas)
   const spendingTrend = useMemo(() => {
     const now = new Date();
     const weekBuckets: number[] = Array.from({ length: 12 }, () => 0);
@@ -2865,12 +3751,12 @@ function AdvancedDashboard({
       ema = alpha * weekBuckets[i] + (1 - alpha) * ema;
     }
     const trendPct = prevEma > 0 ? ((ema - prevEma) / prevEma) * 100 : 0;
-    const label = trendPct > 5 ? "â†‘ acelerando" : trendPct < -5 ? "â†“ desacelerando" : "â†’ estable";
+    const label = trendPct > 5 ? "^ acelerando" : trendPct < -5 ? "v desacelerando" : "-> estable";
     const color = trendPct > 5 ? COLORS.expense : trendPct < -5 ? COLORS.income : COLORS.storm;
     return { expenseTrendPct: trendPct, expenseTrendLabel: label, expenseTrendColor: color };
   }, [accountCurrencyMap, activeCurrency, exchangeRateMap, movements]);
 
-  // N1: Tasa de ahorro mensual â€” (ingreso - gasto) / ingreso para cada uno de los últimos 6 meses
+  // N1: Tasa de ahorro mensual - (ingreso - gasto) / ingreso para cada uno de los últimos 6 meses
   const categoryMap = useMemo(() => {
     const map = new Map<number, string>();
     for (const category of snapshot?.categories ?? []) map.set(category.id, category.name);
@@ -2882,6 +3768,59 @@ function AdvancedDashboard({
     for (const account of snapshot?.accounts ?? []) map.set(account.id, account.name);
     return map;
   }, [snapshot?.accounts]);
+
+  const selectedAnnualMonthDetail = useMemo(() => {
+    if (!selectedAnnualMonth) return null;
+    const from = startOfDay(parseDisplayDate(selectedAnnualMonth.dateFrom));
+    const to = endOfDay(parseDisplayDate(selectedAnnualMonth.dateTo));
+    const monthMovements = movements.filter((movement) => inRange(movement, from, to));
+    const ctx = { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency };
+    const categoryTotals = new Map<number | null, number>();
+
+    for (const movement of monthMovements.filter(isExpense)) {
+      const key = movement.categoryId ?? null;
+      categoryTotals.set(key, (categoryTotals.get(key) ?? 0) + expenseAmt(movement, ctx));
+    }
+
+    let topCategoryId: number | null = null;
+    let topCategoryAmount = 0;
+    for (const [categoryId, amount] of categoryTotals.entries()) {
+      if (amount > topCategoryAmount) {
+        topCategoryId = categoryId;
+        topCategoryAmount = amount;
+      }
+    }
+
+    const relevantMovements = monthMovements
+      .filter((movement) => isIncome(movement) || isExpense(movement))
+      .map((movement) => {
+        const income = isIncome(movement);
+        const amount = income ? incomeAmt(movement, ctx) : expenseAmt(movement, ctx);
+        return {
+          id: movement.id,
+          title: movement.description.trim() || (income ? "Ingreso" : "Gasto"),
+          amount,
+          income,
+          date: format(new Date(movement.occurredAt), "d MMM", { locale: es }),
+          accountName: accountMap.get(movementDisplayAccountId(movement) ?? -1) ?? "Cuenta",
+          categoryName: movement.categoryId != null ? (categoryMap.get(movement.categoryId) ?? "Categoría") : "Sin categoría",
+        };
+      })
+      .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
+      .slice(0, 4);
+
+    const savingsRate = selectedAnnualMonth.income > 0 ? (selectedAnnualMonth.net / selectedAnnualMonth.income) * 100 : null;
+    return {
+      month: selectedAnnualMonth,
+      incomeCount: monthMovements.filter(isIncome).length,
+      expenseCount: monthMovements.filter(isExpense).length,
+      topCategoryId,
+      topCategoryName: topCategoryAmount > 0 ? (topCategoryId != null ? (categoryMap.get(topCategoryId) ?? "Categoría") : "Sin categoría") : "Sin gasto categorizado",
+      topCategoryAmount,
+      largestMovements: relevantMovements,
+      savingsRate,
+    };
+  }, [accountCurrencyMap, accountMap, activeCurrency, categoryMap, exchangeRateMap, movements, selectedAnnualMonth]);
 
   const monthlySavingsRate = useMemo(() => {
     const now = new Date();
@@ -2907,7 +3846,7 @@ function AdvancedDashboard({
     return { months, avgRate, lastRate, trend, color };
   }, [accountCurrencyMap, activeCurrency, exchangeRateMap, movements]);
 
-  // N2: Score de estabilidad de ingresos â€” coeficiente de variación sobre 6 meses (bajo CV = estable)
+  // N2: Score de estabilidad de ingresos - coeficiente de variación sobre 6 meses (bajo CV = estable)
   const incomeStabilityScore = useMemo(() => {
     const incomes = advancedStats.monthlyPulse.map((m) => m.income).filter((v) => v > 0);
     if (incomes.length < 3) return { score: null, cvPct: null, label: "Historial insuficiente", color: COLORS.storm };
@@ -2922,7 +3861,7 @@ function AdvancedDashboard({
     return { score, cvPct, label, color };
   }, [advancedStats.monthlyPulse]);
 
-  // N3: Índice de concentración de gasto Herfindahl-Hirschman (HHI) â€” diversificación entre categorías
+  // N3: Índice de concentración de gasto Herfindahl-Hirschman (HHI) - diversificación entre categorías
   const categoryConcentration = useMemo(() => {
     const catTotals = advancedStats.catTotals;
     const total = Array.from(catTotals.values()).reduce((s, v) => s + v, 0);
@@ -2940,7 +3879,7 @@ function AdvancedDashboard({
     return { hhi: Math.round(hhi * 1000) / 1000, label, color, topCategory, topShare };
   }, [advancedStats.catTotals, categoryMap]);
 
-  // N4: Eficiencia de cobranza â€” porcentaje de obligaciones a cobrar resueltas en los últimos 30 días
+  // N4: Eficiencia de cobranza - porcentaje de obligaciones a cobrar resueltas en los últimos 30 días
   const collectionEfficiency = useMemo(() => {
     const now = new Date();
     const thirtyDaysAgo = subDays(now, 30);
@@ -2960,7 +3899,7 @@ function AdvancedDashboard({
     return { rate, resolved, total, label, color };
   }, [obligations]);
 
-  // N5: Comparación estacional â€” mes actual vs mismo mes del año pasado
+  // N5: Comparación estacional - mes actual vs mismo mes del año pasado
   const seasonalComparison = useMemo(() => {
     const now = new Date();
     const curStart = startOfMonth(now);
@@ -2977,10 +3916,10 @@ function AdvancedDashboard({
     const hasHistory = prevMvs.length >= 3;
     const expenseDelta = prevExpense > 0 ? ((curExpense - prevExpense) / prevExpense) * 100 : null;
     const incomeDelta = prevIncome > 0 ? ((curIncome - prevIncome) / prevIncome) * 100 : null;
-    const expenseLabel = expenseDelta == null ? "â€”"
-      : expenseDelta > 10 ? `â†‘ +${expenseDelta.toFixed(0)}% vs año pasado`
-      : expenseDelta < -10 ? `â†“ ${expenseDelta.toFixed(0)}% vs año pasado`
-      : `â†’ similar al año pasado`;
+    const expenseLabel = expenseDelta == null ? "-"
+      : expenseDelta > 10 ? `^ +${expenseDelta.toFixed(0)}% vs año pasado`
+      : expenseDelta < -10 ? `v ${expenseDelta.toFixed(0)}% vs año pasado`
+      : `-> similar al año pasado`;
     const expenseColor = expenseDelta == null ? COLORS.storm : expenseDelta > 10 ? COLORS.expense : expenseDelta < -10 ? COLORS.income : COLORS.storm;
     return { hasHistory, curIncome, curExpense, prevIncome, prevExpense, expenseDelta, incomeDelta, expenseLabel, expenseColor };
   }, [accountCurrencyMap, activeCurrency, exchangeRateMap, movements]);
@@ -3005,14 +3944,6 @@ function AdvancedDashboard({
     const readinessScore = Math.round(Math.min(1, useful.length / 120) * 40 + Math.min(1, historyDays / 120) * 25 + categorizedRate * 35);
     return { categorizedRate, historyDays, readinessScore, usefulCount: useful.length };
   }, [movements]);
-
-  const suggestedPreset = useMemo<AdvancedPreset>(() => {
-    if (review.uncategorizedCount > 0 || review.pendingMovementsCount > 0 || review.duplicateExpenseGroups > 0) return "control";
-    if (review.overdueObligationsCount > 0 || review.obligationsWithoutPlanCount > 0) return "portfolio";
-    if (weekWindow.expectedOutflow > weekWindow.expectedInflow || monthEndEstimate < currentVisibleBalance * 0.92) return "liquidity";
-    if (learning.readinessScore >= 70) return "analytics";
-    return "manual";
-  }, [currentVisibleBalance, learning.readinessScore, monthEndEstimate, review, weekWindow.expectedInflow, weekWindow.expectedOutflow]);
 
   const [preset, setPreset] = useState<AdvancedPreset>("manual");
   const presetLoadedRef = useRef(false);
@@ -3144,16 +4075,38 @@ function AdvancedDashboard({
   }, [qualityOpenInitial]);
   const [executiveDetail, setExecutiveDetail] = useState<"focus" | "risk" | "month" | null>(null);
   const [advancedDetail, setAdvancedDetail] = useState<"focusCenter" | "projection" | "review" | "advancedMetrics" | "quality" | null>(null);
+  const [projectionDetail, setProjectionDetail] = useState<"conservative" | "expected" | "included" | null>(null);
 
-  const openMovementsQuickFilter = useCallback((quickFilter: "uncategorized", quickStatus?: "pending" | "planned" | "posted") => {
+  const openMovementsQuickFilter = useCallback((
+    quickFilterOrOptions:
+      | "uncategorized"
+      | {
+        quickFilter?: "uncategorized";
+        quickStatus?: "pending" | "planned" | "posted";
+        quickCategoryId?: number | null;
+        quickDateFrom?: string;
+        quickDateTo?: string;
+        quickType?: "income" | "expense" | "transfer" | "obligation_payment" | "subscription_payment" | "refund" | "adjustment" | "obligation_opening";
+      },
+    quickStatus?: "pending" | "planned" | "posted",
+  ) => {
+    const options = typeof quickFilterOrOptions === "string"
+      ? { quickFilter: quickFilterOrOptions, quickStatus }
+      : quickFilterOrOptions;
     const params: Record<string, string> = {
-      quickFilter,
       quickScope: "dashboard-executive",
       quickToken: `${Date.now()}`,
     };
-    if (quickStatus) params.quickStatus = quickStatus;
+    if (options.quickFilter) params.quickFilter = options.quickFilter;
+    if (options.quickStatus) params.quickStatus = options.quickStatus;
+    if (options.quickCategoryId != null) params.quickCategoryId = String(options.quickCategoryId);
+    if (options.quickDateFrom) params.quickDateFrom = options.quickDateFrom;
+    if (options.quickDateTo) params.quickDateTo = options.quickDateTo;
+    if (options.quickType) params.quickType = options.quickType;
     setExecutiveDetail(null);
     setAdvancedDetail(null);
+    setProjectionDetail(null);
+    setSelectedAnnualMonth(null);
     router.push({ pathname: "/movements", params } as never);
   }, [router]);
 
@@ -3166,6 +4119,16 @@ function AdvancedDashboard({
     if (focusAction.route === "/dashboard") return;
     router.push(focusAction.route as never);
   }, [focusAction.route, openMovementsQuickFilter, review.uncategorizedCount, router]);
+
+  const openPrecisionLayer = useCallback(() => {
+    setExecutiveDetail(null);
+    setAdvancedDetail(null);
+    setProjectionDetail(null);
+    setQualityOpen(true);
+    InteractionManager.runAfterInteractions(() => {
+      setTimeout(() => onRequestPrecisionFocus?.(), 120);
+    });
+  }, [onRequestPrecisionFocus]);
 
   const qualitySnapshot = useMemo(() => {
     const relevant = movements.filter((movement) => isCategorizedCashflow(movement));
@@ -3243,6 +4206,14 @@ function AdvancedDashboard({
     recurringIncome,
     subscriptions,
   ]);
+
+  const suggestedPreset = useMemo<AdvancedPreset>(() => {
+    if (review.uncategorizedCount > 0 || review.pendingMovementsCount > 0 || review.duplicateExpenseGroups > 0) return "control";
+    if (review.overdueObligationsCount > 0 || review.obligationsWithoutPlanCount > 0) return "portfolio";
+    if (weekWindow.expectedOutflow > weekWindow.expectedInflow || projectionModel.expectedBalance < currentVisibleBalance * 0.92) return "liquidity";
+    if (learning.readinessScore >= 70) return "analytics";
+    return "manual";
+  }, [currentVisibleBalance, learning.readinessScore, projectionModel.expectedBalance, review, weekWindow.expectedInflow, weekWindow.expectedOutflow]);
 
   const persistDashboardAnalyticsMutation = usePersistDashboardAnalyticsMutation(workspaceId);
   const lastPersistedAnalyticsKeyRef = useRef<string | null>(null);
@@ -3330,32 +4301,60 @@ function AdvancedDashboard({
     return { dayLabel: labels[maxIndex], share: Math.round((totals[maxIndex] / totalSpent) * 100) };
   }, [accountCurrencyMap, activeCurrency, exchangeRateMap, movements]);
 
+  const monthEndReading = projectionModel.expectedBalance;
+  const monthEndDelta = monthEndReading - currentVisibleBalance;
+  const projectionExpectedDelta = projectionModel.expectedBalance - currentVisibleBalance;
+  const projectionConservativeDelta = projectionModel.conservativeBalance - currentVisibleBalance;
+  const projectionCommittedNet = projectionModel.committedInflow - projectionModel.committedOutflow;
+  const projectionVariableNet = projectionModel.variableIncomeProjection - projectionModel.variableExpenseProjection;
+  const projectionConservativeVariableNet = projectionModel.conservativeBalance - currentVisibleBalance - projectionCommittedNet;
   const pressureStatus = weekWindow.expectedOutflow > weekWindow.expectedInflow ? "Bajo presión" : weekWindow.scheduledCount > 0 ? "Controlado" : "Estable";
-  const monthStatus: string = monthEndEstimate >= currentVisibleBalance ? "Cerrando mejor" : monthEndEstimate >= currentVisibleBalance * 0.92 ? "Ajustado" : "Bajo presión";
+  const monthStatus: string = monthEndReading >= currentVisibleBalance ? "Cerrando mejor" : monthEndReading >= currentVisibleBalance * 0.92 ? "Ajustado" : "Bajo presión";
   const featuredWidgetChips = ADVANCED_PRESET_WIDGETS[preset];
+  const visibleBalanceLabel = useMemo(() => {
+    if (activeAccounts.length === 0) return "tus cuentas visibles";
+    if (activeAccounts.length === 1) return `tu cuenta visible ${activeAccounts[0].name}`;
+    const names = activeAccounts.slice(0, 3).map((account) => account.name).join(", ");
+    return activeAccounts.length <= 3
+      ? `la suma de tus cuentas visibles (${names})`
+      : `la suma de tus ${activeAccounts.length} cuentas visibles (${names} y otras)`;
+  }, [activeAccounts]);
+  const visibleAccountBreakdown = useMemo(() => (
+    activeAccounts
+      .map((account) => ({
+        id: account.id,
+        name: account.name,
+        amount: convertDashboardCurrency(account.currentBalance, account.currencyCode, activeCurrency, exchangeRateMap),
+      }))
+      .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
+  ), [activeAccounts, activeCurrency, exchangeRateMap]);
+  const visibleAccountSummary = useMemo(() => {
+    if (visibleAccountBreakdown.length === 0) return "No hay cuentas visibles incluidas en esta lectura.";
+    const preview = visibleAccountBreakdown
+      .slice(0, 3)
+      .map((account) => `${account.name}: ${formatCurrency(account.amount, activeCurrency)}`)
+      .join(" · ");
+    const remaining = visibleAccountBreakdown.length > 3 ? ` · +${visibleAccountBreakdown.length - 3} más` : "";
+    return `${preview}${remaining}`;
+  }, [activeCurrency, visibleAccountBreakdown]);
 
   const executiveDetails = useMemo(() => ({
     focus: {
-      title: "Foco de hoy",
-      summary: "Te dice dónde conviene actuar primero para mejorar la lectura del dashboard o corregir la fricción operativa más urgente.",
+      title: "Estado del sistema",
+      summary: "Te dice qué tan confiable es la lectura general antes de tomar decisiones con el dashboard.",
       meaning: [
-        "No es solo un número: es una priorización. Busca evitar que revises diez widgets antes de decidir dónde intervenir.",
-        "Si el sistema detecta desorden de datos, pagos vencidos o cargos fijos mal configurados, eso pesa más que una lectura bonita del mes.",
+        "Esta tarjeta no te dice qué hacer ahora; solo mide si la base de datos permite confiar en los análisis.",
+        "Sirve para saber si las demás lecturas salen de información suficientemente ordenada o si todavía hay ruido que puede distorsionar comparativos y proyecciones.",
       ],
       calculation: [
-        `Hoy el foco cayó en "${focusAction.title}" porque el motor revisa en este orden: datos sin categoría, cartera vencida, suscripciones con atención, presión de 7 días y recién después estabilidad general.`,
-        `En este workspace vemos ${review.uncategorizedCount} movimientos sin categoría, ${review.overdueObligationsCount} obligaciones vencidas, ${review.subscriptionsAttentionCount} suscripciones que necesitan revisión y ${review.pendingMovementsCount} movimientos pendientes.`,
+        `La confianza actual es ${learning.readinessScore}%. Se calcula con historia observada (${learning.historyDays} días), movimientos útiles (${learning.usefulCount}) y categorías útiles (${Math.round(learning.categorizedRate * 100)}%).`,
+        `Además revisamos fricción operativa: ${review.uncategorizedCount} movimientos sin categoría, ${review.overdueObligationsCount} obligaciones vencidas, ${review.subscriptionsAttentionCount} suscripciones con atención y ${review.pendingMovementsCount} movimientos pendientes.`,
       ],
       actions: [
         review.uncategorizedCount > 0
           ? { label: `Abrir ${review.uncategorizedCount} sin categoría`, onPress: () => openMovementsQuickFilter("uncategorized") }
           : null,
-        review.overdueObligationsCount > 0
-          ? { label: "Ir a créditos y deudas", onPress: () => { setExecutiveDetail(null); router.push("/obligations" as never); } }
-          : null,
-        review.subscriptionsAttentionCount > 0
-          ? { label: "Revisar suscripciones", onPress: () => { setExecutiveDetail(null); router.push("/subscriptions" as never); } }
-          : null,
+        { label: qualityOpen ? "Ver capa de precisión" : "Abrir capa de precisión", onPress: openPrecisionLayer },
       ].filter((action): action is { label: string; onPress: () => void } => Boolean(action)),
     },
     risk: {
@@ -3386,8 +4385,9 @@ function AdvancedDashboard({
         "Es útil para decisiones de gasto, ahorro, compras no urgentes y limpieza de datos que afectan la proyección.",
       ],
       calculation: [
-        `Partimos del saldo visible actual y sumamos la agenda comprometida del mes: obligaciones, suscripciones e ingresos fijos esperados.`,
-        `Luego añadimos tu ritmo variable reciente. La lectura esperada es ${formatCurrency(projectionModel.expectedBalance, activeCurrency)}, con piso conservador de ${formatCurrency(projectionModel.conservativeBalance, activeCurrency)} y escenario alto de ${formatCurrency(projectionModel.optimisticBalance, activeCurrency)}.`,
+        `Partimos de ${visibleBalanceLabel}: ${visibleAccountSummary}. Esa base suma ${formatCurrency(currentVisibleBalance, activeCurrency)}.`,
+        `Después aplicamos la fórmula: saldo visible + comprometido neto (${formatCurrency(projectionCommittedNet, activeCurrency)}) + variable neto (${formatCurrency(projectionVariableNet, activeCurrency)}) = ${formatCurrency(projectionModel.expectedBalance, activeCurrency)}.`,
+        `El rango defensivo queda en ${formatCurrency(projectionModel.conservativeBalance, activeCurrency)} y el escenario alto en ${formatCurrency(projectionModel.optimisticBalance, activeCurrency)}.`,
       ],
       actions: [
         review.uncategorizedCount > 0
@@ -3400,38 +4400,48 @@ function AdvancedDashboard({
     },
   }), [
     activeCurrency,
-    focusAction.title,
+    learning.categorizedRate,
+    learning.historyDays,
+    learning.readinessScore,
+    learning.usefulCount,
     monthRecurringIncomeProjection,
+    openPrecisionLayer,
     openMovementsQuickFilter,
     projectionModel.conservativeBalance,
+    projectionModel.committedInflow,
+    projectionModel.committedOutflow,
     projectionModel.expectedBalance,
     projectionModel.optimisticBalance,
+    projectionModel.variableExpenseProjection,
+    projectionModel.variableIncomeProjection,
+    projectionCommittedNet,
+    projectionVariableNet,
     review.overdueObligationsCount,
     review.pendingMovementsCount,
     review.subscriptionsAttentionCount,
     review.uncategorizedCount,
+    qualityOpen,
     router,
     weekWindow.expectedInflow,
     weekWindow.expectedOutflow,
     weekWindow.payableCount,
     weekWindow.receivableCount,
     weekWindow.scheduledCount,
+    currentVisibleBalance,
+    visibleAccountSummary,
+    visibleBalanceLabel,
   ]);
   const activeExecutiveDetail = executiveDetail ? executiveDetails[executiveDetail] : null;
-  const visibleBalanceLabel = useMemo(() => {
-    if (activeAccounts.length === 0) return "tus cuentas visibles";
-    if (activeAccounts.length === 1) return `tu cuenta visible ${activeAccounts[0].name}`;
-    const names = activeAccounts.slice(0, 3).map((account) => account.name).join(", ");
-    return activeAccounts.length <= 3
-      ? `la suma de tus cuentas visibles (${names})`
-      : `la suma de tus ${activeAccounts.length} cuentas visibles (${names} y otras)`;
-  }, [activeAccounts]);
   const executiveResultMeaning = useMemo(() => ({
     focus: [
-      `Que hoy salga "${focusAction.title}" significa que esta es la friccion que mas esta pesando en tu sistema ahora mismo.`,
+      learning.readinessScore >= 75
+        ? "Este resultado significa que el dashboard ya tiene una base suficientemente confiable para lecturas avanzadas."
+        : learning.readinessScore >= 45
+          ? "Este resultado significa que el dashboard ya orienta, pero todavía hay ruido que puede afectar conclusiones finas."
+          : "Este resultado significa que la lectura todavía es frágil y conviene limpiar datos antes de confiar demasiado en los análisis.",
       review.totalIssues > 0
-        ? `Hoy no conviene empezar por analisis finos: primero hay ${review.totalIssues} punto${review.totalIssues === 1 ? "" : "s"} por limpiar para que el dashboard lea mejor.`
-        : "Hoy la base se ve ordenada, asi que puedes usar el dashboard mas para decidir que para corregir.",
+        ? `Hoy hay ${review.totalIssues} punto${review.totalIssues === 1 ? "" : "s"} que pueden bajar precisión. La acción exacta queda en Centro de foco.`
+        : "Hoy la base se ve ordenada; Centro de foco queda libre para recomendar la siguiente acción operativa.",
     ],
     risk: [
       weekWindow.expectedOutflow > weekWindow.expectedInflow
@@ -3447,12 +4457,12 @@ function AdvancedDashboard({
         : monthStatus === "Ajustado"
           ? "Este resultado significa que el cierre todavia es viable, pero con poco margen para errores o gastos extra."
           : "Este resultado significa que hoy el mes se perfila mejor que tu saldo visible actual.",
-      `La lectura esperada de cierre hoy es ${formatCurrency(monthEndEstimate, activeCurrency)}.`,
+      `La lectura esperada de cierre hoy es ${formatCurrency(monthEndReading, activeCurrency)}.`,
     ],
   }), [
     activeCurrency,
-    focusAction.title,
-    monthEndEstimate,
+    learning.readinessScore,
+    monthEndReading,
     monthStatus,
     review.totalIssues,
     weekWindow.expectedInflow,
@@ -3467,15 +4477,18 @@ function AdvancedDashboard({
         : monthStatus === "Ajustado"
           ? "Este resultado significa que el cierre todavia es viable, pero con poco margen para errores o gastos extra."
           : "Este resultado significa que, si no cambias algo, el cierre del mes ya se ve apretado frente a tu saldo y ritmo actual.",
-      `Cuando aqui hablamos de saldo visible actual, nos referimos a ${visibleBalanceLabel} convertida a ${activeCurrency}: hoy eso suma ${formatCurrency(currentVisibleBalance, activeCurrency)}.`,
-      `La lectura esperada de cierre hoy es ${formatCurrency(monthEndEstimate, activeCurrency)}. Eso implica un cambio de ${formatCurrency(monthEndEstimate - currentVisibleBalance, activeCurrency)} frente a lo que hoy ya tienes visible.`,
+      `Cuando aquí hablamos de saldo visible actual, nos referimos a ${visibleBalanceLabel} convertida a ${activeCurrency}: hoy eso suma ${formatCurrency(currentVisibleBalance, activeCurrency)}.`,
+      `No es una cuenta puntual. Está compuesto por: ${visibleAccountSummary}.`,
+      `La lectura esperada de cierre hoy es ${formatCurrency(monthEndReading, activeCurrency)}. Eso implica un cambio de ${formatCurrency(monthEndDelta, activeCurrency)} frente a lo que hoy ya tienes visible.`,
+      `Fórmula usada: ${formatCurrency(currentVisibleBalance, activeCurrency)} + comprometido neto ${formatCurrency(projectionCommittedNet, activeCurrency)} + variable neto ${formatCurrency(projectionVariableNet, activeCurrency)}.`,
     ]
     : activeExecutiveResultMeaning;
   const executiveResultTone = useMemo(() => ({
-    focus: review.totalIssues > 0 ? "warning" : "positive",
+    focus: learning.readinessScore >= 75 && review.totalIssues === 0 ? "positive" : learning.readinessScore >= 45 ? "warning" : "danger",
     risk: weekWindow.expectedOutflow > weekWindow.expectedInflow ? "danger" : weekWindow.scheduledCount > 0 ? "warning" : "positive",
     month: monthStatus === "Cerrando mejor" ? "positive" : monthStatus === "Ajustado" ? "warning" : "danger",
   } as const), [
+    learning.readinessScore,
     monthStatus,
     review.totalIssues,
     weekWindow.expectedOutflow,
@@ -3559,7 +4572,7 @@ function AdvancedDashboard({
         collectionEfficiency.total > 0
           ? { label: "Abrir creditos y deudas", onPress: () => { setAdvancedDetail(null); router.push("/obligations" as never); } }
           : null,
-        { label: qualityOpen ? "Ver capa de calidad" : "Abrir capa de calidad", onPress: () => { setAdvancedDetail(null); setQualityOpen(true); } },
+        { label: qualityOpen ? "Ver capa de calidad" : "Abrir capa de calidad", onPress: openPrecisionLayer },
       ].filter((action): action is { label: string; onPress: () => void } => Boolean(action)),
     },
     quality: {
@@ -3577,7 +4590,7 @@ function AdvancedDashboard({
         qualitySnapshot.noCategoryCount > 0
           ? { label: `Abrir ${qualitySnapshot.noCategoryCount} sin categoría`, onPress: () => openMovementsQuickFilter("uncategorized") }
           : null,
-        { label: qualityOpen ? "Ocultar capa de calidad" : "Abrir capa de calidad", onPress: () => { setAdvancedDetail(null); setQualityOpen((value) => !value); } },
+        { label: qualityOpen ? "Ocultar capa de calidad" : "Abrir capa de calidad", onPress: qualityOpen ? () => { setAdvancedDetail(null); setQualityOpen(false); } : openPrecisionLayer },
       ].filter((action): action is { label: string; onPress: () => void } => Boolean(action)),
     },
   }), [
@@ -3595,6 +4608,7 @@ function AdvancedDashboard({
     monthlySavingsRate.trend,
     openFocusActionDestination,
     openMovementsQuickFilter,
+    openPrecisionLayer,
     projectionModel.committedInflow,
     projectionModel.committedOutflow,
     projectionModel.conservativeBalance,
@@ -3634,7 +4648,7 @@ function AdvancedDashboard({
     review: [
       anomalySignals.length > 0
         ? `Este resultado significa que hoy ya hay ${anomalySignals.length} senal${anomalySignals.length === 1 ? "" : "es"} que podria estar distorsionando tu lectura del periodo.`
-        : "Este resultado significa que no se ven senales fuertes de movimientos raros o duplicados en la lectura actual.",
+        : "Este resultado significa que no se ven señales fuertes de movimientos raros o duplicados en la lectura actual.",
       anomalySignals.some((item) => item.level === "strong")
         ? "Como hay alertas fuertes, aqui conviene revisar primero antes de confiar totalmente en comparativos o presupuestos."
         : "Como no predominan alertas fuertes, esta capa hoy funciona mas como control fino que como urgencia.",
@@ -3686,8 +4700,9 @@ function AdvancedDashboard({
       ]
       : advancedDetail === "projection"
         ? [
-          `Esta proyeccion parte de ${visibleBalanceLabel} convertida a ${activeCurrency}: hoy eso suma ${formatCurrency(currentVisibleBalance, activeCurrency)}.`,
-          `Luego suma la agenda comprometida del mes y tu ritmo variable reciente para estimar un cierre esperado de ${formatCurrency(projectionModel.expectedBalance, activeCurrency)}.`,
+          `Esta proyección parte de ${visibleBalanceLabel} convertida a ${activeCurrency}: hoy eso suma ${formatCurrency(currentVisibleBalance, activeCurrency)}.`,
+          `Detalle de esa base: ${visibleAccountSummary}.`,
+          `Luego suma la agenda comprometida del mes (${formatCurrency(projectionCommittedNet, activeCurrency)} neto) y tu ritmo variable reciente (${formatCurrency(projectionVariableNet, activeCurrency)} neto) para estimar un cierre esperado de ${formatCurrency(projectionModel.expectedBalance, activeCurrency)}.`,
           `Frente a lo que hoy ya tienes visible, eso implica un cambio de ${formatCurrency(projectionModel.expectedBalance - currentVisibleBalance, activeCurrency)}. El piso conservador es ${formatCurrency(projectionModel.conservativeBalance, activeCurrency)} y el escenario alto ${formatCurrency(projectionModel.optimisticBalance, activeCurrency)}.`,
           projectionModel.expectedBalance >= currentVisibleBalance
             ? "Eso significa que, si el ritmo actual se sostiene, el mes deberia cerrar con mas caja que la que hoy ves acumulada."
@@ -3729,36 +4744,154 @@ function AdvancedDashboard({
     review.uncategorizedCount,
   ]);
   const activeAdvancedResultTone = advancedDetail ? advancedResultTone[advancedDetail] : "warning";
-  const monthEndDelta = monthEndEstimate - currentVisibleBalance;
-  const projectionExpectedDelta = projectionModel.expectedBalance - currentVisibleBalance;
-  const projectionConservativeDelta = projectionModel.conservativeBalance - currentVisibleBalance;
+  const projectionExpectedTone: ExplanationTone =
+    projectionModel.expectedBalance >= currentVisibleBalance
+      ? "positive"
+      : projectionModel.expectedBalance >= currentVisibleBalance * 0.92
+        ? "warning"
+        : "danger";
+  const projectionConservativeTone: ExplanationTone =
+    projectionModel.conservativeBalance >= currentVisibleBalance
+      ? "positive"
+      : projectionModel.conservativeBalance >= currentVisibleBalance * 0.9
+        ? "warning"
+        : "danger";
+  const projectionDetails = {
+    conservative: {
+      title: "Conservador",
+      summary: "Es el piso defensivo de cierre: una lectura prudente para decidir si el mes aguanta aunque el ritmo variable salga peor de lo esperado.",
+      tone: projectionConservativeTone,
+      meaning: [
+        "No es una cuenta específica. Parte de la suma de tus cuentas visibles y la convierte a la moneda del dashboard.",
+        "Sirve para responder: si este mes se pone más pesado, cuál sería mi margen mínimo razonable al cierre.",
+        "Si el conservador baja mucho frente a tu saldo visible actual, no significa que ya perdiste ese dinero; significa que el escenario defensivo deja menos aire para gastos no urgentes.",
+      ],
+      calculation: [
+        `Primero toma ${visibleBalanceLabel}: ${visibleAccountSummary}. Esa base suma ${formatCurrency(currentVisibleBalance, activeCurrency)}.`,
+        `Luego agrega la agenda comprometida del mes: ${formatCurrency(projectionModel.committedInflow, activeCurrency)} por entrar menos ${formatCurrency(projectionModel.committedOutflow, activeCurrency)} por salir, neto ${formatCurrency(projectionCommittedNet, activeCurrency)}.`,
+        `Finalmente usa un ritmo variable defensivo de ${formatCurrency(projectionConservativeVariableNet, activeCurrency)}. Fórmula: ${formatCurrency(currentVisibleBalance, activeCurrency)} + ${formatCurrency(projectionCommittedNet, activeCurrency)} + ${formatCurrency(projectionConservativeVariableNet, activeCurrency)} = ${formatCurrency(projectionModel.conservativeBalance, activeCurrency)}.`,
+      ],
+      result: [
+        `El piso conservador queda en ${formatCurrency(projectionModel.conservativeBalance, activeCurrency)}.`,
+        `Frente a lo que hoy ya tienes visible, cambia ${formatCurrency(projectionConservativeDelta, activeCurrency)}.`,
+        projectionConservativeDelta >= 0
+          ? "Eso significa que incluso en lectura defensiva el mes todavía podría cerrar con más caja visible que hoy."
+          : "Eso significa que, en lectura defensiva, el mes podría cerrar con menos caja visible que hoy; conviene cuidar gastos variables o revisar compromisos próximos.",
+      ],
+      actions: [
+        { label: "Ver cálculo completo", onPress: () => { setProjectionDetail(null); setAdvancedDetail("projection"); } },
+        weekWindow.expectedOutflow > weekWindow.expectedInflow
+          ? { label: "Revisar obligaciones próximas", onPress: () => { setProjectionDetail(null); router.push("/obligations" as never); } }
+          : null,
+      ].filter((action): action is { label: string; onPress: () => void } => Boolean(action)),
+    },
+    expected: {
+      title: "Esperado",
+      summary: "Es el cierre central del mes si se mantiene lo que ya está programado y tu ritmo reciente de ingresos y gastos variables.",
+      tone: projectionExpectedTone,
+      meaning: [
+        "No representa una sola cuenta; representa la caja visible total del workspace en la moneda del dashboard.",
+        "Sirve para decidir si puedes sostener el ritmo actual, si conviene frenar gastos no urgentes o si el mes ya viene con margen.",
+        "La confianza indica qué tan fuerte es la base: más historial y datos limpios hacen que esta lectura sea menos frágil.",
+      ],
+      calculation: [
+        `Base inicial: ${formatCurrency(currentVisibleBalance, activeCurrency)} desde ${visibleBalanceLabel}.`,
+        `Agenda comprometida neta: ${formatCurrency(projectionCommittedNet, activeCurrency)}. Ahí entran ingresos fijos esperados, obligaciones y suscripciones del mes.`,
+        `Ritmo variable neto: ${formatCurrency(projectionVariableNet, activeCurrency)}. Ahí se estima lo que falta del mes con tu comportamiento reciente.`,
+        `Fórmula: ${formatCurrency(currentVisibleBalance, activeCurrency)} + ${formatCurrency(projectionCommittedNet, activeCurrency)} + ${formatCurrency(projectionVariableNet, activeCurrency)} = ${formatCurrency(projectionModel.expectedBalance, activeCurrency)}.`,
+      ],
+      result: [
+        `El esperado queda en ${formatCurrency(projectionModel.expectedBalance, activeCurrency)} con ${projectionModel.confidence}% de confianza (${projectionModel.confidenceLabel}).`,
+        `Frente a tu caja visible actual, la diferencia es ${formatCurrency(projectionExpectedDelta, activeCurrency)}.`,
+        projectionExpectedDelta >= 0
+          ? "Eso significa que el modelo espera cerrar con más caja total visible que la que tienes hoy, no que todas tus cuentas suban por igual."
+          : "Eso significa que el modelo espera consumir parte de la caja visible actual antes de fin de mes.",
+      ],
+      actions: [
+        { label: "Ver cálculo completo", onPress: () => { setProjectionDetail(null); setAdvancedDetail("projection"); } },
+        review.uncategorizedCount > 0
+          ? { label: `Limpiar ${review.uncategorizedCount} sin categoría`, onPress: () => openMovementsQuickFilter("uncategorized") }
+          : null,
+      ].filter((action): action is { label: string; onPress: () => void } => Boolean(action)),
+    },
+    included: {
+      title: "Qué ya entra",
+      summary: "Te muestra qué componentes ya fueron sumados en la proyección para que no los cuentes dos veces ni confundas saldo actual con saldo proyectado.",
+      tone: projectionModel.confidence >= 60 ? "positive" as ExplanationTone : "warning" as ExplanationTone,
+      meaning: [
+        "Esta tarjeta responde qué está dentro del cálculo del cierre esperado.",
+        "Sirve para saber si el número ya considera ingresos fijos, pagos programados y ritmo variable, o si falta registrar algo manualmente.",
+        "Cuando algo ya entra en la lectura, no deberías sumarlo otra vez mentalmente encima del esperado.",
+      ],
+      calculation: [
+        `Saldo visible: ${formatCurrency(currentVisibleBalance, activeCurrency)} desde ${visibleAccountSummary}.`,
+        `Agenda comprometida: ingresos fijos, obligaciones y suscripciones. Neto actual: ${formatCurrency(projectionCommittedNet, activeCurrency)}.`,
+        `Ritmo variable: ingresos y gastos no programados estimados por comportamiento reciente. Neto actual: ${formatCurrency(projectionVariableNet, activeCurrency)}.`,
+        `Con esos componentes sale el esperado: ${formatCurrency(projectionModel.expectedBalance, activeCurrency)}. La banda va de ${formatCurrency(projectionModel.conservativeBalance, activeCurrency)} a ${formatCurrency(projectionModel.optimisticBalance, activeCurrency)}.`,
+      ],
+      result: [
+        "El resultado esperado ya incluye lo comprometido y el ritmo reciente; por eso puede ser mayor o menor que tu saldo visible de hoy.",
+        projectionCommittedNet >= 0
+          ? `La agenda comprometida hoy suma a favor: ${formatCurrency(projectionCommittedNet, activeCurrency)} neto.`
+          : `La agenda comprometida hoy presiona la caja: ${formatCurrency(projectionCommittedNet, activeCurrency)} neto.`,
+        projectionVariableNet >= 0
+          ? `El ritmo variable también suma a favor: ${formatCurrency(projectionVariableNet, activeCurrency)} neto.`
+          : `El ritmo variable consume caja: ${formatCurrency(projectionVariableNet, activeCurrency)} neto.`,
+      ],
+      actions: [
+        { label: "Ver ingresos fijos", onPress: () => { setProjectionDetail(null); router.push("/recurring-income" as never); } },
+        { label: "Ver obligaciones", onPress: () => { setProjectionDetail(null); router.push("/obligations" as never); } },
+        { label: "Ver movimientos del mes", onPress: () => openMovementsQuickFilter({
+          quickDateFrom: format(startOfMonth(new Date()), "yyyy-MM-dd"),
+          quickDateTo: format(endOfMonth(new Date()), "yyyy-MM-dd"),
+        }) },
+      ],
+    },
+  } satisfies Record<"conservative" | "expected" | "included", {
+    title: string;
+    summary: string;
+    tone: ExplanationTone;
+    meaning: string[];
+    calculation: string[];
+    result: string[];
+    actions: Array<{ label: string; onPress: () => void }>;
+  }>;
+  const activeProjectionDetail = projectionDetail ? projectionDetails[projectionDetail] : null;
+  const [activeTab, setActiveTab] = useState<AdvancedTab>('Hoy');
+  const handleTabChange = useCallback((tab: AdvancedTab) => {
+    setActiveTab(tab);
+    onScrollToTop?.();
+  }, [onScrollToTop]);
 
   return (
     <>
-      <Card>
-        <Text style={subStyles.layerKicker}>Desglose guiado</Text>
-        <Text style={subStyles.layerHeroTitle}>Ahora baja del resumen a las capas del sistema</Text>
-        <Text style={subStyles.layerHeroBody}>
-          Primero viste la lectura principal. Desde aquí el dashboard Pro te la desarma en foco, liquidez, compromisos y diagnóstico para que entiendas qué la está empujando.
-        </Text>
-      </Card>
+      <DashboardTabBar activeTab={activeTab} onTabChange={handleTabChange} />
+
+      {activeTab === 'Hoy' && <>
+      <DashboardLayerHeader
+        kicker="Hoy"
+        title="Lectura rápida"
+        body="Esta capa resume el estado del sistema: qué tan confiable es la lectura, cómo viene la semana y cómo podría cerrar el mes."
+      />
 
       <Card>
         <SectionTitle>Resumen ejecutivo</SectionTitle>
         <Text style={subStyles.executiveIntro}>
-          Tres lecturas rápidas para saber si hoy toca ordenar, cuidar liquidez o simplemente seguir el ritmo actual.
+          Tres lecturas de estado para entender el panorama sin entrar todavía en la acción concreta.
         </Text>
         <View style={subStyles.executiveGrid}>
           <TouchableOpacity style={subStyles.executiveCard} activeOpacity={0.84} onPress={() => setExecutiveDetail("focus")}>
             <View style={subStyles.executiveTop}>
-              <Text style={subStyles.executiveLabel}>Foco de hoy</Text>
+              <Text style={subStyles.executiveLabel}>Estado del sistema</Text>
               <View style={subStyles.executiveTonePill}>
-                <Text style={subStyles.executiveToneText}>{focusAction.tag}</Text>
+                <Text style={subStyles.executiveToneText} numberOfLines={1}>
+                  {learning.readinessScore >= 75 ? "Confiable" : review.totalIssues > 0 ? "Por limpiar" : "Base media"}
+                </Text>
               </View>
             </View>
-            <Text style={subStyles.executiveValue}>{review.totalIssues}</Text>
+            <Text style={subStyles.executiveValue}>{learning.readinessScore}%</Text>
             <Text style={subStyles.executiveCaption}>
-              {review.totalIssues > 0 ? `Hay ${review.totalIssues} punto${review.totalIssues === 1 ? "" : "s"} por limpiar` : "La lectura general se ve ordenada"}
+              {review.totalIssues > 0 ? `${review.totalIssues} punto${review.totalIssues === 1 ? "" : "s"} afectan precisión` : "Base lista para lecturas finas"}
             </Text>
             {(() => {
               const delta = review.totalIssues - priorWeekReview.totalIssues;
@@ -3766,7 +4899,7 @@ function AdvancedDashboard({
               const isImproving = delta < 0;
               return (
                 <Text style={[subStyles.executiveDeltaChip, { color: isImproving ? COLORS.income : COLORS.expense }]}>
-                  {isImproving ? `â†“ ${Math.abs(delta)} resuelto${Math.abs(delta) === 1 ? "" : "s"}` : `â†‘ ${delta} nuevo${delta === 1 ? "" : "s"}`}
+                  {isImproving ? `v ${Math.abs(delta)} resuelto${Math.abs(delta) === 1 ? "" : "s"}` : `^ ${delta} nuevo${delta === 1 ? "" : "s"}`}
                 </Text>
               );
             })()}
@@ -3791,10 +4924,11 @@ function AdvancedDashboard({
                 <Text style={[subStyles.executiveToneText, monthStatus === "Bajo presión" && subStyles.executiveToneTextWarning]}>{monthStatus}</Text>
               </View>
             </View>
-            <Text style={subStyles.executiveValue}>{formatCurrency(monthEndEstimate, activeCurrency)}</Text>
-            <Text style={subStyles.executiveCaption}>Base visible hoy: {formatCurrency(currentVisibleBalance, activeCurrency)}</Text>
+            <Text style={subStyles.executiveValue}>{formatCurrency(monthEndReading, activeCurrency)}</Text>
+            <Text style={subStyles.executiveCaption}>Suma visible hoy: {formatCurrency(currentVisibleBalance, activeCurrency)} · {activeAccounts.length} cuenta{activeAccounts.length === 1 ? "" : "s"}</Text>
+            <Text style={subStyles.executiveCaption}>{visibleAccountSummary}</Text>
             <Text style={[subStyles.executiveDeltaChip, { color: monthEndDelta >= 0 ? COLORS.income : COLORS.expense }]}>Vs hoy: {formatCurrency(monthEndDelta, activeCurrency)}</Text>
-                                  </TouchableOpacity>
+          </TouchableOpacity>
         </View>
       </Card>
 
@@ -3807,74 +4941,18 @@ function AdvancedDashboard({
         backdropColor="rgba(0,0,0,0.68)"
       >
         {activeExecutiveDetail ? (
-          <>
-            <View style={subStyles.executiveModalSection}>
-              <Text style={subStyles.layerKicker}>Resumen ejecutivo</Text>
-              <Text style={subStyles.executiveModalSummary}>{activeExecutiveDetail.summary}</Text>
-            </View>
-
-            <View style={subStyles.executiveModalSection}>
-              <Text style={subStyles.executiveModalSectionTitle}>Para qué te sirve</Text>
-              {activeExecutiveDetail.meaning.map((item) => (
-                <Text key={item} style={subStyles.executiveModalBody}>â€¢ {item}</Text>
-              ))}
-            </View>
-
-            <View style={subStyles.executiveModalSection}>
-              <Text style={subStyles.executiveModalSectionTitle}>Cómo llegamos a este dato</Text>
-              {activeExecutiveDetail.calculation.map((item) => (
-                <Text key={item} style={subStyles.executiveModalBody}>â€¢ {item}</Text>
-              ))}
-            </View>
-
-            <View style={subStyles.executiveModalSection}>
-              <Text style={subStyles.executiveModalSectionTitle}>Qué significa este resultado</Text>
-              <View
-                style={[
-                  subStyles.resultMeaningCard,
-                  activeExecutiveResultTone === "positive"
-                    ? subStyles.resultMeaningCardPositive
-                    : activeExecutiveResultTone === "danger"
-                      ? subStyles.resultMeaningCardDanger
-                      : subStyles.resultMeaningCardWarning,
-                ]}
-              >
-                <Text
-                  style={[
-                    subStyles.resultMeaningTone,
-                    activeExecutiveResultTone === "positive"
-                      ? subStyles.resultMeaningTonePositive
-                      : activeExecutiveResultTone === "danger"
-                        ? subStyles.resultMeaningToneDanger
-                        : subStyles.resultMeaningToneWarning,
-                  ]}
-                >
-                  {activeExecutiveResultTone === "positive"
-                    ? "Lectura favorable"
-                    : activeExecutiveResultTone === "danger"
-                      ? "Lectura en presión"
-                      : "Lectura para vigilar"}
-                </Text>
-                {resolvedExecutiveResultMeaning.map((item) => (
-                  <Text key={item} style={subStyles.executiveModalBody}>â€¢ {item}</Text>
-                ))}
-              </View>
-            </View>
-
-            {activeExecutiveDetail.actions.length > 0 ? (
-              <View style={subStyles.executiveModalSection}>
-                <Text style={subStyles.executiveModalSectionTitle}>Qué puedes hacer ahora</Text>
-                <View style={subStyles.executiveActionList}>
-                  {activeExecutiveDetail.actions.map((action) => (
-                    <TouchableOpacity key={action.label} style={subStyles.executiveActionBtn} onPress={action.onPress} activeOpacity={0.84}>
-                      <Text style={subStyles.executiveActionBtnText}>{action.label}</Text>
-                      <ArrowRight size={15} color={COLORS.primary} />
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-            ) : null}
-          </>
+          <View style={subStyles.explanationSheetContent}>
+            <ExplanationIntro kicker="Resumen ejecutivo" summary={activeExecutiveDetail.summary} />
+            <ExplanationVisualSummary
+              tone={activeExecutiveResultTone}
+              actionsCount={activeExecutiveDetail.actions.length}
+              detailCount={activeExecutiveDetail.meaning.length + activeExecutiveDetail.calculation.length + resolvedExecutiveResultMeaning.length}
+            />
+            <ExplanationSection index="01" title="Para qué te sirve" items={activeExecutiveDetail.meaning} />
+            <ExplanationSection index="02" title="Cómo llegamos a este dato" items={activeExecutiveDetail.calculation} />
+            <ExplanationResult tone={activeExecutiveResultTone} items={resolvedExecutiveResultMeaning} />
+            <ExplanationActions actions={activeExecutiveDetail.actions} />
+          </View>
         ) : null}
       </BottomSheet>
 
@@ -3887,74 +4965,238 @@ function AdvancedDashboard({
         backdropColor="rgba(0,0,0,0.68)"
       >
         {activeAdvancedDetail ? (
-          <>
-            <View style={subStyles.executiveModalSection}>
-              <Text style={subStyles.layerKicker}>Dashboard avanzado</Text>
-              <Text style={subStyles.executiveModalSummary}>{activeAdvancedDetail.summary}</Text>
+          <View style={subStyles.explanationSheetContent}>
+            <ExplanationIntro kicker="Dashboard avanzado" summary={activeAdvancedDetail.summary} />
+            <ExplanationVisualSummary
+              tone={activeAdvancedResultTone}
+              actionsCount={activeAdvancedDetail.actions.length}
+              detailCount={activeAdvancedDetail.meaning.length + activeAdvancedDetail.calculation.length + resolvedAdvancedResultMeaning.length}
+            />
+            <ExplanationSection index="01" title="Para qué te sirve" items={activeAdvancedDetail.meaning} />
+            <ExplanationSection index="02" title="Cómo se construye" items={activeAdvancedDetail.calculation} />
+            <ExplanationResult tone={activeAdvancedResultTone} items={resolvedAdvancedResultMeaning} />
+            <ExplanationActions actions={activeAdvancedDetail.actions} />
+          </View>
+        ) : null}
+      </BottomSheet>
+
+      <BottomSheet
+        visible={Boolean(activeProjectionDetail)}
+        onClose={() => setProjectionDetail(null)}
+        title={activeProjectionDetail?.title}
+        snapHeight={0.78}
+        blurBackdrop={false}
+        backdropColor="rgba(0,0,0,0.68)"
+      >
+        {activeProjectionDetail ? (
+          <View style={subStyles.explanationSheetContent}>
+            <ExplanationIntro kicker="Proyección refinada" summary={activeProjectionDetail.summary} />
+            <ExplanationVisualSummary
+              tone={activeProjectionDetail.tone}
+              actionsCount={activeProjectionDetail.actions.length}
+              detailCount={activeProjectionDetail.meaning.length + activeProjectionDetail.calculation.length + activeProjectionDetail.result.length}
+            />
+            <ExplanationSection index="01" title="Qué significa" items={activeProjectionDetail.meaning} />
+            <ExplanationSection index="02" title="Cómo se calculó" items={activeProjectionDetail.calculation} />
+            <ExplanationResult tone={activeProjectionDetail.tone} items={activeProjectionDetail.result} />
+            <ExplanationActions actions={activeProjectionDetail.actions} />
+          </View>
+        ) : null}
+      </BottomSheet>
+
+      <BottomSheet
+        visible={Boolean(selectedAnnualMonthDetail)}
+        onClose={() => setSelectedAnnualMonth(null)}
+        title={selectedAnnualMonthDetail ? `Detalle de ${selectedAnnualMonthDetail.month.label} ${selectedHistoryYear}` : "Detalle mensual"}
+        snapHeight={0.72}
+        blurBackdrop={false}
+        backdropColor="rgba(0,0,0,0.68)"
+      >
+        {selectedAnnualMonthDetail ? (
+          <View style={subStyles.annualDetailContent}>
+            <View style={subStyles.annualDetailHero}>
+              <Text style={subStyles.visualChartKicker}>Lectura del mes</Text>
+              <Text style={subStyles.annualDetailTitle}>
+                {selectedAnnualMonthDetail.month.net >= 0 ? "Este mes dejó margen" : "Este mes consumió caja"}
+              </Text>
+              <Text style={subStyles.visualChartIntro}>
+                La lectura usa movimientos reales del rango {selectedAnnualMonthDetail.month.dateFrom} al {selectedAnnualMonthDetail.month.dateTo}.
+              </Text>
             </View>
 
-            <View style={subStyles.executiveModalSection}>
-              <Text style={subStyles.executiveModalSectionTitle}>Para qué te sirve</Text>
-              {activeAdvancedDetail.meaning.map((item) => (
-                <Text key={item} style={subStyles.executiveModalBody}>â€¢ {item}</Text>
-              ))}
-            </View>
-
-            <View style={subStyles.executiveModalSection}>
-              <Text style={subStyles.executiveModalSectionTitle}>Cómo se construye</Text>
-              {activeAdvancedDetail.calculation.map((item) => (
-                <Text key={item} style={subStyles.executiveModalBody}>â€¢ {item}</Text>
-              ))}
-            </View>
-
-            <View style={subStyles.executiveModalSection}>
-              <Text style={subStyles.executiveModalSectionTitle}>Qué significa este resultado</Text>
-              <View
-                style={[
-                  subStyles.resultMeaningCard,
-                  activeAdvancedResultTone === "positive"
-                    ? subStyles.resultMeaningCardPositive
-                    : activeAdvancedResultTone === "danger"
-                      ? subStyles.resultMeaningCardDanger
-                      : subStyles.resultMeaningCardWarning,
-                ]}
-              >
-                <Text
-                  style={[
-                    subStyles.resultMeaningTone,
-                    activeAdvancedResultTone === "positive"
-                      ? subStyles.resultMeaningTonePositive
-                      : activeAdvancedResultTone === "danger"
-                        ? subStyles.resultMeaningToneDanger
-                        : subStyles.resultMeaningToneWarning,
-                  ]}
-                >
-                  {activeAdvancedResultTone === "positive"
-                    ? "Lectura favorable"
-                    : activeAdvancedResultTone === "danger"
-                      ? "Lectura en presión"
-                      : "Lectura para vigilar"}
+            <View style={subStyles.annualSummaryGrid}>
+              <View style={subStyles.annualSummaryCard}>
+                <Text style={subStyles.savingsStatLabel}>Ingresos</Text>
+                <Text style={[subStyles.annualSummaryValue, { color: COLORS.income }]}>{formatCurrency(selectedAnnualMonthDetail.month.income, activeCurrency)}</Text>
+                <Text style={subStyles.annualDetailMini}>{selectedAnnualMonthDetail.incomeCount} mov.</Text>
+              </View>
+              <View style={subStyles.annualSummaryCard}>
+                <Text style={subStyles.savingsStatLabel}>Gastos</Text>
+                <Text style={[subStyles.annualSummaryValue, { color: COLORS.expense }]}>{formatCurrency(selectedAnnualMonthDetail.month.expense, activeCurrency)}</Text>
+                <Text style={subStyles.annualDetailMini}>{selectedAnnualMonthDetail.expenseCount} mov.</Text>
+              </View>
+              <View style={subStyles.annualSummaryCard}>
+                <Text style={subStyles.savingsStatLabel}>Neto</Text>
+                <Text style={[subStyles.annualSummaryValue, { color: selectedAnnualMonthDetail.month.net >= 0 ? COLORS.income : COLORS.expense }]}>
+                  {selectedAnnualMonthDetail.month.net >= 0 ? "+" : ""}{formatCurrency(selectedAnnualMonthDetail.month.net, activeCurrency)}
                 </Text>
-                {resolvedAdvancedResultMeaning.map((item) => (
-                  <Text key={item} style={subStyles.executiveModalBody}>â€¢ {item}</Text>
-                ))}
+              </View>
+              <View style={subStyles.annualSummaryCard}>
+                <Text style={subStyles.savingsStatLabel}>Ahorro</Text>
+                <Text style={[subStyles.annualSummaryValue, { color: selectedAnnualMonthDetail.savingsRate == null ? COLORS.storm : selectedAnnualMonthDetail.savingsRate >= 0 ? COLORS.gold : COLORS.expense }]}>
+                  {selectedAnnualMonthDetail.savingsRate == null ? "-" : `${selectedAnnualMonthDetail.savingsRate.toFixed(1)}%`}
+                </Text>
               </View>
             </View>
 
-            <View style={subStyles.executiveModalSection}>
-              <Text style={subStyles.executiveModalSectionTitle}>Qué puedes hacer ahora</Text>
-              <View style={subStyles.executiveActionList}>
-                {activeAdvancedDetail.actions.map((action) => (
-                  <TouchableOpacity key={action.label} style={subStyles.executiveActionBtn} onPress={action.onPress} activeOpacity={0.84}>
-                    <Text style={subStyles.executiveActionBtnText}>{action.label}</Text>
-                    <ArrowRight size={15} color={COLORS.primary} />
+            <View style={subStyles.annualDetailSection}>
+              <Text style={subStyles.annualDetailSectionTitle}>Qué empujó el gasto</Text>
+              <TouchableOpacity
+                style={subStyles.annualDetailCategoryCard}
+                onPress={() => {
+                  if (!selectedAnnualMonthDetail) return;
+                  openMovementsQuickFilter({
+                    ...(selectedAnnualMonthDetail.topCategoryId == null ? { quickFilter: "uncategorized" as const } : { quickCategoryId: selectedAnnualMonthDetail.topCategoryId }),
+                    quickDateFrom: selectedAnnualMonthDetail.month.dateFrom,
+                    quickDateTo: selectedAnnualMonthDetail.month.dateTo,
+                  });
+                }}
+                activeOpacity={0.84}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={subStyles.annualDetailCategoryName}>{selectedAnnualMonthDetail.topCategoryName}</Text>
+                  <Text style={subStyles.annualDetailMini}>Toca para ver esos movimientos</Text>
+                </View>
+                <Text style={subStyles.annualDetailCategoryAmount}>{formatCurrency(selectedAnnualMonthDetail.topCategoryAmount, activeCurrency)}</Text>
+              </TouchableOpacity>
+            </View>
+
+            {selectedAnnualMonthDetail.largestMovements.length > 0 ? (
+              <View style={subStyles.annualDetailSection}>
+                <Text style={subStyles.annualDetailSectionTitle}>Movimientos que más pesan</Text>
+                {selectedAnnualMonthDetail.largestMovements.map((movement) => (
+                  <TouchableOpacity
+                    key={movement.id}
+                    style={subStyles.annualMovementRow}
+                    onPress={() => {
+                      setSelectedAnnualMonth(null);
+                      router.push(`/movement/${movement.id}?from=dashboard` as never);
+                    }}
+                    activeOpacity={0.84}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={subStyles.annualMovementTitle} numberOfLines={1}>{movement.title}</Text>
+                      <Text style={subStyles.annualMovementMeta} numberOfLines={1}>{movement.categoryName} · {movement.accountName} · {movement.date}</Text>
+                    </View>
+                    <Text style={[subStyles.annualMovementAmount, { color: movement.income ? COLORS.income : COLORS.expense }]}>
+                      {movement.income ? "+" : "-"}{formatCurrency(movement.amount, activeCurrency)}
+                    </Text>
                   </TouchableOpacity>
                 ))}
               </View>
+            ) : null}
+
+            <View style={subStyles.annualDetailActions}>
+              <TouchableOpacity
+                style={subStyles.annualDetailPrimaryBtn}
+                onPress={() => openMovementsQuickFilter({
+                  quickDateFrom: selectedAnnualMonthDetail.month.dateFrom,
+                  quickDateTo: selectedAnnualMonthDetail.month.dateTo,
+                })}
+                activeOpacity={0.84}
+              >
+                <Text style={subStyles.annualDetailPrimaryBtnText}>Abrir movimientos del mes</Text>
+              </TouchableOpacity>
+              <View style={subStyles.annualDetailSplitActions}>
+                <TouchableOpacity
+                  style={subStyles.annualDetailSecondaryBtn}
+                  onPress={() => openMovementsQuickFilter({
+                    quickDateFrom: selectedAnnualMonthDetail.month.dateFrom,
+                    quickDateTo: selectedAnnualMonthDetail.month.dateTo,
+                    quickType: "income",
+                  })}
+                  activeOpacity={0.84}
+                >
+                  <Text style={subStyles.annualDetailSecondaryBtnText}>Solo ingresos</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={subStyles.annualDetailSecondaryBtn}
+                  onPress={() => openMovementsQuickFilter({
+                    quickDateFrom: selectedAnnualMonthDetail.month.dateFrom,
+                    quickDateTo: selectedAnnualMonthDetail.month.dateTo,
+                    quickType: "expense",
+                  })}
+                  activeOpacity={0.84}
+                >
+                  <Text style={subStyles.annualDetailSecondaryBtnText}>Solo gastos</Text>
+                </TouchableOpacity>
+              </View>
             </View>
-          </>
+          </View>
         ) : null}
       </BottomSheet>
+
+      <Card>
+        <View style={subStyles.cardHeaderWithAction}>
+          <Text style={subStyles.layerKicker}>Centro de foco</Text>
+          <TouchableOpacity style={subStyles.inlineExplainBtn} onPress={() => setAdvancedDetail("focusCenter")} activeOpacity={0.82}>
+            <Text style={subStyles.inlineExplainBtnText}>Entender</Text>
+          </TouchableOpacity>
+        </View>
+        <Text style={subStyles.layerHeroBody}>
+          Aquí va lo que más importa ahora. La idea es que no tengas que interpretar diez tarjetas antes de decidir qué mirar.
+        </Text>
+        <TouchableOpacity style={subStyles.focusHeroCard} onPress={() => setAdvancedDetail("focusCenter")} activeOpacity={0.84}>
+          <View style={subStyles.focusHeroTop}>
+            <Text style={subStyles.focusHeroLabel}>Tu siguiente mejor acción</Text>
+            <View style={subStyles.focusHeroPills}>
+              <View style={subStyles.focusHeroTonePill}><Text style={subStyles.focusHeroToneText} numberOfLines={1}>{focusAction.tag}</Text></View>
+              <View style={subStyles.focusHeroTonePillMuted}><Text style={subStyles.focusHeroToneTextMuted} numberOfLines={1}>Sistema</Text></View>
+            </View>
+          </View>
+          <View style={subStyles.focusHeroMiddle}>
+            <View style={{ flex: 1, gap: SPACING.xs }}>
+              <Text style={subStyles.focusHeroTitle}>{focusAction.title}</Text>
+              <Text style={subStyles.focusHeroValue}>{focusAction.body}</Text>
+              <Text style={subStyles.focusHeroBody}>{focusAction.detail}</Text>
+            </View>
+            <ArrowRight size={20} color={COLORS.primary} />
+          </View>
+        </TouchableOpacity>
+
+        <View style={subStyles.focusMetricGrid}>
+          <TouchableOpacity style={subStyles.focusMetricCard} onPress={() => setExecutiveDetail("risk")} activeOpacity={0.84}>
+            <Text style={subStyles.focusMetricLabel}>Presión 7 días</Text>
+            <Text style={subStyles.focusMetricValue}>{formatCurrency(weekWindow.expectedInflow - weekWindow.expectedOutflow, activeCurrency)}</Text>
+            <Text style={subStyles.focusMetricHint}>Sobre saldo visible actual: entran {formatCurrency(weekWindow.expectedInflow, activeCurrency)} · sale {formatCurrency(weekWindow.expectedOutflow, activeCurrency)}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={subStyles.focusMetricCard} onPress={() => setExecutiveDetail("month")} activeOpacity={0.84}>
+            <Text style={subStyles.focusMetricLabel}>Caja estimada fin de mes</Text>
+            <Text style={subStyles.focusMetricValue}>{formatCurrency(monthEndReading, activeCurrency)}</Text>
+            <Text style={subStyles.focusMetricHint}>Suma visible hoy {formatCurrency(currentVisibleBalance, activeCurrency)} · vs hoy {formatCurrency(monthEndDelta, activeCurrency)}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[subStyles.focusMetricCard, subStyles.focusMetricCardWide]} onPress={() => setAdvancedDetail("focusCenter")} activeOpacity={0.84}>
+            <Text style={subStyles.focusMetricLabel}>Caja libre</Text>
+            <Text style={[subStyles.focusMetricValue, { color: cashCushion.color }]}>{cashCushion.days}d · {cashCushion.label}</Text>
+            <Text style={subStyles.focusMetricHint}>Sobre {formatCurrency(currentVisibleBalance, activeCurrency)} visibles · {cashCushion.daysWithCommitments}d con compromisos</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={subStyles.coachChipList}>
+          {panelCoachChips.map((chip, i) => (
+            <View key={i} style={[subStyles.coachChip, { borderLeftColor: chip.color }]}>
+              <chip.icon size={13} color={chip.color} strokeWidth={2} />
+              <Text style={[subStyles.coachChipText, chip.weight === "high" && { color: COLORS.ink }]}>{chip.label}</Text>
+            </View>
+          ))}
+        </View>
+      </Card>
+
+      <DashboardLayerHeader
+        kicker="Coach IA"
+        title="Panel recomendado y modo de lectura"
+        body="Esta capa no decide por ti: ordena lo destacado, sugiere una vista y te deja fijar los widgets que quieres ver primero."
+      />
 
       <Card>
         <Text style={subStyles.panelKicker}>Widgets fijos</Text>
@@ -3969,7 +5211,7 @@ function AdvancedDashboard({
             </View>
             <View style={subStyles.panelCoachCopy}>
               <Text style={subStyles.panelCoachLabel}>Coach del panel</Text>
-              <Text style={subStyles.panelCoachTitle}>{ADVANCED_PRESET_META[suggestedPreset].cta} â€” {ADVANCED_PRESET_META[suggestedPreset].title}</Text>
+              <Text style={subStyles.panelCoachTitle}>{ADVANCED_PRESET_META[suggestedPreset].cta} - {ADVANCED_PRESET_META[suggestedPreset].title}</Text>
             </View>
             <View style={subStyles.panelCoachPill}>
               <Text style={subStyles.panelCoachPillText}>Sugerencia</Text>
@@ -4050,93 +5292,76 @@ function AdvancedDashboard({
 
       <Card>
         <Text style={subStyles.layerKicker}>Como funciona tu panel</Text>
-        <Text style={subStyles.layerHeroTitle}>Los presets reordenan lo destacado, pero el resto sigue explicando tu sistema</Text>
+        <Text style={subStyles.layerHeroTitle}>Los presets cambian lo destacado, pero las capas se mantienen</Text>
         <Text style={subStyles.layerHeroBody}>
-          Aunque uses un preset, el dashboard Pro mantiene una estructura fija: primero te orienta, luego te marca foco y después te deja profundizar por capas.
+          Aunque uses un preset, el dashboard Pro conserva una ruta fija: hoy, liquidez, evolución, patrones, coach y precisión.
         </Text>
         <View style={subStyles.howList}>
           <View style={subStyles.howItem}>
-            <Text style={subStyles.howTitle}>Resumen ejecutivo</Text>
-            <Text style={subStyles.howBody}>Te ubica rápido: foco de hoy, riesgo cercano y posible cierre del mes.</Text>
+            <Text style={subStyles.howTitle}>Hoy</Text>
+            <Text style={subStyles.howBody}>Te ubica rápido: foco, presión cercana y posible cierre del mes.</Text>
           </View>
           <View style={subStyles.howItem}>
-            <Text style={subStyles.howTitle}>Centro de foco</Text>
-            <Text style={subStyles.howBody}>Te dice cuál es la mejor acción inmediata y por qué DarkMoney la prioriza.</Text>
+            <Text style={subStyles.howTitle}>Próximas semanas</Text>
+            <Text style={subStyles.howBody}>Mira compromisos, entradas esperadas y salud de caja antes de que llegue la presión.</Text>
           </View>
           <View style={subStyles.howItem}>
-            <Text style={subStyles.howTitle}>Liquidez, salud y compromisos</Text>
-            <Text style={subStyles.howBody}>Mantiene la lectura operativa de corto plazo aunque tu panel destacado cambie.</Text>
+            <Text style={subStyles.howTitle}>Evolución y patrones</Text>
+            <Text style={subStyles.howBody}>Compara tu ritmo histórico y detecta categorías, hábitos o movimientos raros.</Text>
           </View>
           <View style={subStyles.howItem}>
-            <Text style={subStyles.howTitle}>Diagnóstico y calidad</Text>
-            <Text style={subStyles.howBody}>Son capas de profundidad para entender patrones, calidad del dato y aprendizaje del sistema.</Text>
+            <Text style={subStyles.howTitle}>Precisión</Text>
+            <Text style={subStyles.howBody}>Te dice qué tan confiable es la lectura y qué datos conviene limpiar.</Text>
           </View>
         </View>
       </Card>
 
-      <Card>
-        <View style={subStyles.cardHeaderWithAction}>
-          <Text style={subStyles.layerKicker}>Centro de foco</Text>
-          <TouchableOpacity style={subStyles.inlineExplainBtn} onPress={() => setAdvancedDetail("focusCenter")} activeOpacity={0.82}>
-            <Text style={subStyles.inlineExplainBtnText}>Entender</Text>
-          </TouchableOpacity>
-        </View>
-        <Text style={subStyles.layerHeroBody}>
-          Aquí va lo que más importa ahora. La idea es que no tengas que interpretar diez tarjetas antes de decidir qué mirar.
-        </Text>
-        <TouchableOpacity style={subStyles.focusHeroCard} onPress={() => setAdvancedDetail("focusCenter")} activeOpacity={0.84}>
-          <View style={subStyles.focusHeroTop}>
-            <Text style={subStyles.focusHeroLabel}>Tu siguiente mejor acción</Text>
-            <View style={subStyles.focusHeroPills}>
-              <View style={subStyles.focusHeroTonePill}><Text style={subStyles.focusHeroToneText}>{focusAction.tag}</Text></View>
-              <View style={subStyles.focusHeroTonePillMuted}><Text style={subStyles.focusHeroToneTextMuted}>Sistema</Text></View>
-            </View>
-          </View>
-          <View style={subStyles.focusHeroMiddle}>
-            <View style={{ flex: 1, gap: SPACING.xs }}>
-              <Text style={subStyles.focusHeroTitle}>{focusAction.title}</Text>
-              <Text style={subStyles.focusHeroValue}>{focusAction.body}</Text>
-              <Text style={subStyles.focusHeroBody}>{focusAction.detail}</Text>
-            </View>
-            <ArrowRight size={20} color={COLORS.primary} />
-          </View>
-        </TouchableOpacity>
+      </>}
 
-        <View style={subStyles.focusMetricGrid}>
-          <TouchableOpacity style={subStyles.focusMetricCard} onPress={() => setExecutiveDetail("risk")} activeOpacity={0.84}>
-            <Text style={subStyles.focusMetricLabel}>Presión 7 días</Text>
-            <Text style={subStyles.focusMetricValue}>{formatCurrency(weekWindow.expectedInflow - weekWindow.expectedOutflow, activeCurrency)}</Text>
-            <Text style={subStyles.focusMetricHint}>Sobre saldo visible actual: entran {formatCurrency(weekWindow.expectedInflow, activeCurrency)} · sale {formatCurrency(weekWindow.expectedOutflow, activeCurrency)}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={subStyles.focusMetricCard} onPress={() => setExecutiveDetail("month")} activeOpacity={0.84}>
-            <Text style={subStyles.focusMetricLabel}>Caja estimada fin de mes</Text>
-            <Text style={subStyles.focusMetricValue}>{formatCurrency(monthEndEstimate, activeCurrency)}</Text>
-            <Text style={subStyles.focusMetricHint}>Vs saldo visible actual: {formatCurrency(monthEndDelta, activeCurrency)}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[subStyles.focusMetricCard, subStyles.focusMetricCardWide]} onPress={() => setAdvancedDetail("focusCenter")} activeOpacity={0.84}>
-            <Text style={subStyles.focusMetricLabel}>Caja libre</Text>
-            <Text style={[subStyles.focusMetricValue, { color: cashCushion.color }]}>{cashCushion.days}d · {cashCushion.label}</Text>
-            <Text style={subStyles.focusMetricHint}>Sobre {formatCurrency(currentVisibleBalance, activeCurrency)} visibles · {cashCushion.daysWithCommitments}d con compromisos</Text>
-          </TouchableOpacity>
-        </View>
+      {activeTab === 'Análisis' && <>
+      <DashboardLayerHeader
+        kicker="Gráficos"
+        title="Lecturas visuales"
+        body="Una capa rápida para ver de un golpe qué mueve tu cierre, cómo viene tu ahorro y dónde se concentra el gasto."
+      />
 
-        <View style={subStyles.coachChipList}>
-          {panelCoachChips.map((chip, i) => (
-            <View key={i} style={[subStyles.coachChip, { borderLeftColor: chip.color }]}>
-              <chip.icon size={13} color={chip.color} strokeWidth={2} />
-              <Text style={[subStyles.coachChipText, chip.weight === "high" && { color: COLORS.ink }]}>{chip.label}</Text>
-            </View>
-          ))}
-        </View>
-      </Card>
+      <ProjectionBridgeChart
+        currentVisibleBalance={currentVisibleBalance}
+        committedNet={projectionCommittedNet}
+        variableNet={projectionVariableNet}
+        expectedBalance={projectionModel.expectedBalance}
+        currency={activeCurrency}
+        onOpenAccounts={() => router.push("/accounts" as never)}
+        onExplainProjection={() => setAdvancedDetail("projection")}
+        onOpenMonthMovements={() => openMovementsQuickFilter({
+          quickDateFrom: format(advancedStats.curStart, "yyyy-MM-dd"),
+          quickDateTo: format(advancedStats.curEnd, "yyyy-MM-dd"),
+        })}
+      />
+      <SavingsMomentumChart
+        data={advancedStats.monthlyPulse}
+        currency={activeCurrency}
+        onOpenMonth={(quickDateFrom, quickDateTo) => openMovementsQuickFilter({ quickDateFrom, quickDateTo })}
+      />
+      <CategoryDonutChart
+        catTotals={advancedStats.catTotals}
+        categories={snapshot?.categories ?? []}
+        currency={activeCurrency}
+        onOpenCategory={(quickCategoryId) => openMovementsQuickFilter({
+          ...(quickCategoryId == null ? { quickFilter: "uncategorized" as const } : { quickCategoryId }),
+          quickDateFrom: format(advancedStats.curStart, "yyyy-MM-dd"),
+          quickDateTo: format(advancedStats.curEnd, "yyyy-MM-dd"),
+        })}
+      />
 
-      <View style={subStyles.layerSection}>
-        <Text style={subStyles.layerSectionKicker}>Proximas semanas</Text>
-        <Text style={subStyles.layerSectionTitle}>Liquidez, salud y compromisos</Text>
-        <Text style={subStyles.layerSectionBody}>
-          Esta parte te dice si lo que viene se ve controlado o si conviene mover foco antes de que se sienta la presión.
-        </Text>
-      </View>
+      </>}
+
+      {activeTab === 'Agenda' && <>
+      <DashboardLayerHeader
+        kicker="Próximas semanas"
+        title="Liquidez, salud y compromisos"
+        body="Esta parte te dice si lo que viene se ve controlado o si conviene mover foco antes de que se sienta la presión."
+      />
       <FutureFlowPreview
         obligations={obligations}
         subscriptions={subscriptions}
@@ -4162,7 +5387,7 @@ function AdvancedDashboard({
           Esta lectura ya separa lo comprometido del mes de tu ritmo variable reciente para darte una banda más útil, no un solo número.
         </Text>
         <View style={subStyles.executiveGrid}>
-          <View style={subStyles.executiveCard}>
+          <TouchableOpacity style={subStyles.executiveCard} activeOpacity={0.84} onPress={() => setProjectionDetail("conservative")}>
             <View style={subStyles.executiveTop}>
               <Text style={subStyles.executiveLabel}>Conservador</Text>
               <View style={[subStyles.executiveTonePill, subStyles.executiveTonePillWarning]}>
@@ -4171,8 +5396,8 @@ function AdvancedDashboard({
             </View>
             <Text style={subStyles.executiveValue}>{formatCurrency(projectionModel.conservativeBalance, activeCurrency)}</Text>
             <Text style={subStyles.executiveCaption}>Vs visible hoy: {formatCurrency(projectionConservativeDelta, activeCurrency)} con escenario defensivo.</Text>
-                      </View>
-          <View style={subStyles.executiveCard}>
+          </TouchableOpacity>
+          <TouchableOpacity style={subStyles.executiveCard} activeOpacity={0.84} onPress={() => setProjectionDetail("expected")}>
             <View style={subStyles.executiveTop}>
               <Text style={subStyles.executiveLabel}>Esperado</Text>
               <View style={subStyles.executiveTonePill}>
@@ -4181,24 +5406,25 @@ function AdvancedDashboard({
             </View>
             <Text style={subStyles.executiveValue}>{formatCurrency(projectionModel.expectedBalance, activeCurrency)}</Text>
             <Text style={subStyles.executiveCaption}>{projectionModel.confidence}% de confianza · vs hoy {formatCurrency(projectionExpectedDelta, activeCurrency)}</Text>
-                      </View>
-          <View style={[subStyles.executiveCard, subStyles.executiveCardWide]}>
+          </TouchableOpacity>
+          <TouchableOpacity style={[subStyles.executiveCard, subStyles.executiveCardWide]} activeOpacity={0.84} onPress={() => setProjectionDetail("included")}>
             <View style={subStyles.executiveTop}>
               <Text style={subStyles.executiveLabel}>Qué ya entra en la lectura</Text>
             </View>
-            <Text style={subStyles.executiveCaption}>
-              Base visible hoy: {formatCurrency(currentVisibleBalance, activeCurrency)}.
-            </Text>
-            <Text style={subStyles.executiveCaption}>
-              Comprometido: entran {formatCurrency(projectionModel.committedInflow, activeCurrency)} y salen {formatCurrency(projectionModel.committedOutflow, activeCurrency)}.
-            </Text>
-            <Text style={subStyles.executiveCaption}>
-              Variable proyectado: entran {formatCurrency(projectionModel.variableIncomeProjection, activeCurrency)} y salen {formatCurrency(projectionModel.variableExpenseProjection, activeCurrency)} según tu ritmo reciente.
-            </Text>
-            <Text style={subStyles.executiveCaption}>
-              Escenario alto: {formatCurrency(projectionModel.optimisticBalance, activeCurrency)}.
-            </Text>
-          </View>
+            <ProjectionFormulaBreakdown
+              activeCurrency={activeCurrency}
+              currentVisibleBalance={currentVisibleBalance}
+              visibleBalanceLabel={visibleBalanceLabel}
+              visibleAccountSummary={visibleAccountSummary}
+              committedNet={projectionCommittedNet}
+              variableNet={projectionVariableNet}
+              expectedBalance={projectionModel.expectedBalance}
+            />
+            <View style={subStyles.projectionScenarioStrip}>
+              <Text style={subStyles.projectionScenarioText}>Piso defensivo: {formatCurrency(projectionModel.conservativeBalance, activeCurrency)}</Text>
+              <Text style={subStyles.projectionScenarioText}>Escenario alto: {formatCurrency(projectionModel.optimisticBalance, activeCurrency)}</Text>
+            </View>
+          </TouchableOpacity>
         </View>
       </Card>
       <HealthScore
@@ -4211,13 +5437,14 @@ function AdvancedDashboard({
       <SubscriptionsSummary subscriptions={subscriptions} currency={activeCurrency} />
       <ObligationWatch obligations={obligations} router={router} />
 
-      <View style={subStyles.layerSection}>
-        <Text style={subStyles.layerSectionKicker}>Diagnostico</Text>
-        <Text style={subStyles.layerSectionTitle}>Patrones y comparativos del periodo</Text>
-        <Text style={subStyles.layerSectionBody}>
-          Abre esta parte cuando quieras entender de dónde sale la lectura del resumen y qué hábitos están marcando el mes.
-        </Text>
-      </View>
+      </>}
+
+      {activeTab === 'Análisis' && <>
+      <DashboardLayerHeader
+        kicker="Patrones"
+        title="Hábitos, anomalías y categorías"
+        body="Abre esta parte cuando quieras entender de dónde sale la lectura del resumen y qué hábitos están marcando el mes."
+      />
       <ReviewInbox
         movements={movements}
         subscriptions={subscriptions}
@@ -4275,9 +5502,33 @@ function AdvancedDashboard({
       <CategoryBreakdown catTotals={advancedStats.catTotals} categories={snapshot?.categories ?? []} currency={activeCurrency} />
       <TransferSnapshot movements={movements} accounts={activeAccounts} ctx={{ accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }} />
       <WeeklyPattern movements={movements} ctx={{ accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }} />
+      <AccountsBreakdown
+        accounts={snapshot?.accounts ?? []}
+        displayCurrency={activeCurrency}
+        baseCurrency={baseCurrency}
+        exchangeRateMap={exchangeRateMap}
+      />
+      <CurrencyExposure accounts={snapshot?.accounts ?? []} />
+
+      </>}
+
+      {activeTab === 'Historial' && <>
+      <DashboardLayerHeader
+        kicker="Evolución"
+        title="Historial y métricas"
+        body="Aquí ves si el mes actual es una excepción o parte de una tendencia: ahorro, estabilidad, pulso mensual y comparación con tu propio historial."
+      />
+      <AnnualHistoryPanel
+        years={historyYears}
+        selectedYear={selectedHistoryYear}
+        onSelectYear={setSelectedHistoryYear}
+        data={annualHistory}
+        currency={activeCurrency}
+        onSelectMonth={setSelectedAnnualMonth}
+      />
       <MonthlyPulse data={advancedStats.monthlyPulse} currency={activeCurrency} />
 
-      {/* N1-N5: Métricas avanzadas â€” tasa de ahorro, estabilidad, concentración, cobranza, estacional */}
+      {/* N1-N5: Métricas avanzadas - tasa de ahorro, estabilidad, concentración, cobranza, estacional */}
       <Card>
         <View style={subStyles.cardHeaderWithAction}>
           <SectionTitle>Métricas avanzadas</SectionTitle>
@@ -4364,7 +5615,7 @@ function AdvancedDashboard({
             <Text style={subStyles.advMetricTitle}>Eficiencia de cobranza</Text>
             {collectionEfficiency.rate != null ? (
               <Text style={[subStyles.advMetricBadge, { color: collectionEfficiency.color }]}>
-                {collectionEfficiency.rate}% â€” {collectionEfficiency.label}
+                {collectionEfficiency.rate}% - {collectionEfficiency.label}
               </Text>
             ) : null}
           </View>
@@ -4417,6 +5668,15 @@ function AdvancedDashboard({
         movements={movements}
       />
 
+      </>}
+
+      {activeTab === 'Datos' && <>
+      <DashboardLayerHeader
+        kicker="Precisión"
+        title="Calidad de datos y aprendizaje"
+        body="Esta capa te dice qué tan confiable es la lectura y dónde DarkMoney ya puede ver patrones, proyectar o necesita más datos."
+      />
+
       <Card>
         <View style={subStyles.qualityHeader}>
           <View style={{ flex: 1, gap: 4 }}>
@@ -4438,9 +5698,19 @@ function AdvancedDashboard({
       {qualityOpen ? (
         <>
           <DataQuality movements={movements} />
-          <LearningPanel movements={movements} />
+          <LearningPanel
+            movements={movements}
+            projectionModel={projectionModel}
+            activeCurrency={activeCurrency}
+            weeklyPatternInsight={weeklyPatternInsight}
+            categoryConcentration={categoryConcentration}
+            categorySuggestionsCount={categorySuggestions.length}
+            anomalySignalsCount={anomalySignals.length}
+            cashCushionDays={cashCushion.days}
+            cashCushionLabel={cashCushion.label}
+          />
           <Card>
-            <SectionTitle>Proyeccion</SectionTitle>
+            <SectionTitle>Proyección</SectionTitle>
             <View style={subStyles.projectionStack}>
               <View style={subStyles.projectionCard}>
                 <View style={subStyles.projectionTop}>
@@ -4462,9 +5732,19 @@ function AdvancedDashboard({
                   </View>
                 </View>
                 <Text style={subStyles.projectionTitle}>{projectionModel.confidence}% de confianza actual</Text>
-                <Text style={subStyles.projectionBody}>
-                  Base esperada: {formatCurrency(projectionModel.expectedBalance, activeCurrency)}. Piso conservador: {formatCurrency(projectionModel.conservativeBalance, activeCurrency)}. Escenario alto: {formatCurrency(projectionModel.optimisticBalance, activeCurrency)}.
-                </Text>
+                <ProjectionFormulaBreakdown
+                  activeCurrency={activeCurrency}
+                  currentVisibleBalance={currentVisibleBalance}
+                  visibleBalanceLabel={visibleBalanceLabel}
+                  visibleAccountSummary={visibleAccountSummary}
+                  committedNet={projectionCommittedNet}
+                  variableNet={projectionVariableNet}
+                  expectedBalance={projectionModel.expectedBalance}
+                />
+                <View style={subStyles.projectionScenarioStrip}>
+                  <Text style={subStyles.projectionScenarioText}>Conservador: {formatCurrency(projectionModel.conservativeBalance, activeCurrency)}</Text>
+                  <Text style={subStyles.projectionScenarioText}>Alto: {formatCurrency(projectionModel.optimisticBalance, activeCurrency)}</Text>
+                </View>
               </View>
               <View style={subStyles.projectionCard}>
                 <View style={subStyles.projectionTop}>
@@ -4474,7 +5754,7 @@ function AdvancedDashboard({
                   Si mejoras estos puntos, el dashboard deja de adivinar y pasa a explicarte mejor por qué hoy estás estable, con margen o bajo presión.
                 </Text>
                 {review.uncategorizedCount > 0 ? (
-                  <TouchableOpacity style={subStyles.actionPillRow} onPress={() => router.push("/movements" as never)} activeOpacity={0.85}>
+                  <TouchableOpacity style={subStyles.actionPillRow} onPress={() => openMovementsQuickFilter("uncategorized")} activeOpacity={0.85}>
                     <AlertTriangle size={15} color={COLORS.gold} />
                     <Text style={subStyles.actionPillBody}>{review.uncategorizedCount} movimientos sin categoría siguen quitando precisión a las comparaciones.</Text>
                     <View style={subStyles.actionPill}><Text style={subStyles.actionPillText}>Ordenar</Text></View>
@@ -4504,16 +5784,10 @@ function AdvancedDashboard({
               ) : null}
             </View>
           </Card>
-          <AccountsBreakdown
-            accounts={snapshot?.accounts ?? []}
-            displayCurrency={activeCurrency}
-            baseCurrency={baseCurrency}
-            exchangeRateMap={exchangeRateMap}
-          />
-          <CurrencyExposure accounts={snapshot?.accounts ?? []} />
           <ActivityTimeline snapshot={snapshot} />
         </>
       ) : null}
+      </>}
     </>
   );
 }
@@ -4535,7 +5809,7 @@ function ProGate() {
   );
 }
 
-// â”€â”€â”€ Main screen â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// --- Main screen --------------------------------------------------------------
 
 function ProGateLoading() {
   return (
@@ -4545,7 +5819,7 @@ function ProGateLoading() {
       </View>
       <View style={subStyles.proGateText}>
         <Text style={subStyles.proGateTitle}>Dashboard Avanzado</Text>
-        <Text style={subStyles.proGateBody}>Verificando accesoâ€¦</Text>
+        <Text style={subStyles.proGateBody}>Verificando acceso...</Text>
       </View>
       <View style={[subStyles.proGateBadge, subStyles.proGateBadgeMuted]}>
         <Text style={[subStyles.proGateBadgeText, { color: COLORS.storm }]}>PRO</Text>
@@ -4625,7 +5899,7 @@ function DashboardScreen() {
     [snapshot?.exchangeRates],
   );
 
-  // Map accountId â†’ currencyCode for movement conversion
+  // Map accountId -> currencyCode for movement conversion
   const accountCurrencyMap = useMemo(() => {
     const map = new Map<number, string>();
     for (const a of snapshot?.accounts ?? []) map.set(a.id, a.currencyCode);
@@ -4791,7 +6065,7 @@ function DashboardScreen() {
         />
         <ChronologyStrip
           title="Cronología de gastos"
-          hint="Ãšltimos 7 días · toca un día para ver cada gasto de esa fecha"
+          hint="Últimos 7 días · toca un día para ver cada gasto de esa fecha"
           mode="expense"
           data={stats.chartDays}
           barColor={COLORS.expense}
@@ -4801,7 +6075,7 @@ function DashboardScreen() {
         />
         <ChronologyStrip
           title="Cronología de ingresos"
-          hint="Ãšltimos 7 días · toca un día para ver cada ingreso"
+          hint="Últimos 7 días · toca un día para ver cada ingreso"
           mode="income"
           data={stats.chartDays}
           barColor={COLORS.income}
@@ -4811,7 +6085,7 @@ function DashboardScreen() {
         />
         <ChronologyStrip
           title="Cronología de transferencias"
-          hint="Ãšltimos 7 días · toca un día para ver transferencias entre cuentas"
+          hint="Últimos 7 días · toca un día para ver transferencias entre cuentas"
           mode="transfer"
           data={stats.chartDays}
           barColor={COLORS.secondary}
@@ -4861,7 +6135,7 @@ function DashboardScreen() {
           </>
         ) : null}
 
-        {/* â”€â”€ Advanced section â”€â”€ */}
+        {/* -- Advanced section -- */}
         {isAdvanced && isPro && (
           <AdvancedDashboard
             movements={movements}
@@ -4878,6 +6152,12 @@ function DashboardScreen() {
             analytics={dashboardAnalytics}
             router={router}
             accountCurrencyMap={accountCurrencyMap}
+            onRequestPrecisionFocus={() => {
+              scrollRef.current?.scrollToEnd({ animated: true });
+            }}
+            onScrollToTop={() => {
+              scrollRef.current?.scrollTo({ y: 0, animated: true });
+            }}
           />
         )}
           </>
@@ -4930,7 +6210,7 @@ function DashboardScreen() {
   );
 }
 
-// â”€â”€â”€ Styles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// --- Styles -------------------------------------------------------------------
 
 const subStyles = StyleSheet.create({
   sectionTitle: {
@@ -4980,7 +6260,7 @@ const subStyles = StyleSheet.create({
   toggleTextActive: { fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.ink },
   proBadge: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.xs - 1, color: COLORS.gold },
 
-  // Hero card â€” most prominent, gets the full premium glass treatment
+  // Hero card - most prominent, gets the full premium glass treatment
   heroCard: {
     backgroundColor: GLASS.card,
     borderRadius: RADIUS.xl,
@@ -5186,18 +6466,76 @@ const subStyles = StyleSheet.create({
   accountChipBalance: { fontFamily: FONT_FAMILY.heading, fontSize: FONT_SIZE.sm, color: COLORS.ink, textAlign: "center" },
 
   // Upcoming
+  upcomingKicker: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.primary,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+  },
+  upcomingIntro: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.storm,
+    lineHeight: 22,
+  },
+  upcomingSummaryRow: {
+    flexDirection: "row",
+    gap: SPACING.sm,
+  },
+  upcomingSummaryCard: {
+    flex: 1,
+    padding: SPACING.sm,
+    borderRadius: RADIUS.lg,
+    backgroundColor: "rgba(255,255,255,0.045)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.07)",
+    gap: 2,
+  },
+  upcomingSummaryLabel: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+  },
+  upcomingSummaryValue: {
+    fontFamily: FONT_FAMILY.heading,
+    fontSize: 18,
+  },
   upcomingRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingVertical: SPACING.sm,
-    borderBottomWidth: 0.5,
-    borderBottomColor: GLASS.separator,
+    gap: SPACING.sm,
+    padding: SPACING.md,
+    borderRadius: RADIUS.xl,
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.07)",
   },
   upcomingLeft: { flex: 1, gap: 2 },
+  upcomingTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.xs,
+  },
+  upcomingKindDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  upcomingKindDotIncome: {
+    backgroundColor: COLORS.income,
+  },
+  upcomingKindDotSubscription: {
+    backgroundColor: COLORS.secondary,
+  },
+  upcomingKindDotObligation: {
+    backgroundColor: COLORS.expense,
+  },
   upcomingLabel: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.sm, color: COLORS.ink },
   upcomingDate: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
   upcomingAmount: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.sm, color: COLORS.rosewood },
+  upcomingAmountIncome: { color: COLORS.income },
 
   // Budgets
   budgetRow: {
@@ -5558,6 +6896,62 @@ const subStyles = StyleSheet.create({
     gap: SPACING.xs,
     marginTop: SPACING.sm,
   },
+  learningGroupTitle: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.ink,
+    marginTop: SPACING.xs,
+    marginBottom: SPACING.xs,
+  },
+  learningSignalList: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: SPACING.sm,
+    marginBottom: SPACING.md,
+  },
+  learningSignalCard: {
+    flex: 1,
+    minWidth: "46%",
+    padding: SPACING.md,
+    borderRadius: RADIUS.xl,
+    backgroundColor: "rgba(9,22,27,0.78)",
+    borderWidth: 1,
+    borderColor: COLORS.primary + "22",
+    gap: SPACING.xs,
+  },
+  learningSignalCardWide: {
+    minWidth: "100%",
+    backgroundColor: "rgba(8,31,36,0.88)",
+  },
+  learningSignalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.xs,
+  },
+  learningSignalIcon: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  learningSignalKicker: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+  },
+  learningSignalTitle: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.md,
+    color: COLORS.ink,
+  },
+  learningSignalBody: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.storm,
+    lineHeight: 22,
+  },
   learningInsightRow: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -5809,11 +7203,15 @@ const subStyles = StyleSheet.create({
     gap: SPACING.sm,
   },
   executiveLabel: {
+    flex: 1,
+    minWidth: 0,
     fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.sm,
     color: COLORS.storm,
   },
   executiveTonePill: {
+    flexShrink: 1,
+    maxWidth: "58%",
     paddingHorizontal: SPACING.sm,
     paddingVertical: 4,
     borderRadius: RADIUS.full,
@@ -5826,6 +7224,7 @@ const subStyles = StyleSheet.create({
     fontFamily: FONT_FAMILY.bodySemibold,
     fontSize: FONT_SIZE.xs,
     color: COLORS.primary,
+    flexShrink: 1,
   },
   executiveToneTextWarning: {
     color: COLORS.gold,
@@ -5886,6 +7285,185 @@ const subStyles = StyleSheet.create({
     color: COLORS.storm,
     lineHeight: 22,
   },
+  explanationSheetContent: {
+    gap: SPACING.lg,
+    paddingBottom: SPACING.md,
+  },
+  explanationIntroCard: {
+    padding: SPACING.md,
+    borderRadius: RADIUS.xl,
+    backgroundColor: "rgba(255,255,255,0.045)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    gap: SPACING.xs,
+  },
+  explanationKicker: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.primary,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+  },
+  explanationSummary: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.ink,
+    lineHeight: 23,
+  },
+  explanationVisualCard: {
+    padding: SPACING.md,
+    borderRadius: RADIUS.xl,
+    backgroundColor: "rgba(9,22,27,0.82)",
+    borderWidth: 1,
+    borderColor: COLORS.primary + "1F",
+    gap: SPACING.md,
+  },
+  explanationVisualHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: SPACING.sm,
+  },
+  explanationVisualTitle: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.md,
+    color: COLORS.ink,
+  },
+  explanationVisualHint: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    lineHeight: 18,
+    marginTop: 2,
+  },
+  explanationVisualGrid: {
+    flexDirection: "row",
+    gap: SPACING.sm,
+  },
+  explanationVisualMetric: {
+    flex: 1,
+    gap: 5,
+    padding: SPACING.sm,
+    borderRadius: RADIUS.lg,
+    backgroundColor: "rgba(255,255,255,0.045)",
+  },
+  explanationVisualMetricLabel: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+  },
+  explanationVisualMetricValue: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+  },
+  explanationVisualTrack: {
+    height: 5,
+    borderRadius: RADIUS.full,
+    backgroundColor: "rgba(255,255,255,0.09)",
+    overflow: "hidden",
+  },
+  explanationVisualFill: {
+    height: 5,
+    borderRadius: RADIUS.full,
+  },
+  explanationSectionCard: {
+    padding: SPACING.md,
+    borderRadius: RADIUS.xl,
+    backgroundColor: "rgba(8,13,24,0.72)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.075)",
+    gap: SPACING.md,
+  },
+  explanationSectionCardCollapsed: {
+    backgroundColor: "rgba(8,13,24,0.48)",
+  },
+  explanationSectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+  },
+  explanationStepBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.primary + "16",
+    borderWidth: 1,
+    borderColor: COLORS.primary + "22",
+  },
+  explanationStepBadgeText: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.primary,
+  },
+  explanationSectionTitle: {
+    flex: 1,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.md,
+    color: COLORS.ink,
+  },
+  explanationChevron: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.06)",
+    transform: [{ rotate: "0deg" }],
+  },
+  explanationChevronOpen: {
+    transform: [{ rotate: "90deg" }],
+  },
+  explanationBulletList: {
+    gap: SPACING.sm,
+  },
+  explanationBulletRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: SPACING.sm,
+  },
+  explanationBulletDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginTop: 8,
+    backgroundColor: COLORS.primary,
+  },
+  explanationBulletDotMuted: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginTop: 8,
+    backgroundColor: "rgba(255,255,255,0.42)",
+  },
+  explanationBulletText: {
+    flex: 1,
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.storm,
+    lineHeight: 22,
+  },
+  explanationCollapsedHint: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.storm,
+    lineHeight: 21,
+  },
+  explanationResultSection: {
+    gap: SPACING.md,
+  },
+  explanationActionsSection: {
+    marginTop: SPACING.xs,
+    paddingTop: SPACING.lg,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.09)",
+    gap: SPACING.md,
+  },
+  explanationActionsTitle: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.md,
+    color: COLORS.ink,
+  },
   executiveModalSection: {
     gap: SPACING.xs,
   },
@@ -5901,10 +7479,29 @@ const subStyles = StyleSheet.create({
     lineHeight: 22,
   },
   resultMeaningCard: {
-    gap: SPACING.xs,
+    gap: SPACING.md,
     padding: SPACING.md,
     borderRadius: RADIUS.xl,
     borderWidth: 1,
+  },
+  resultMeaningHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+  },
+  resultMeaningIndicator: {
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+  },
+  resultMeaningIndicatorPositive: {
+    backgroundColor: COLORS.primary,
+  },
+  resultMeaningIndicatorWarning: {
+    backgroundColor: COLORS.gold,
+  },
+  resultMeaningIndicatorDanger: {
+    backgroundColor: "#FF9DBA",
   },
   resultMeaningCardPositive: {
     backgroundColor: "rgba(18,48,40,0.92)",
@@ -6188,18 +7785,30 @@ const subStyles = StyleSheet.create({
   },
   focusHeroTop: {
     flexDirection: "row",
+    alignItems: "flex-start",
     justifyContent: "space-between",
     gap: SPACING.sm,
   },
   focusHeroLabel: {
+    flex: 1,
+    minWidth: 0,
     fontFamily: FONT_FAMILY.bodySemibold,
     fontSize: FONT_SIZE.xs,
     color: COLORS.primary,
     textTransform: "uppercase",
     letterSpacing: 0.8,
   },
-  focusHeroPills: { alignItems: "flex-end", gap: 6 },
+  focusHeroPills: {
+    flexShrink: 1,
+    maxWidth: "48%",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "flex-end",
+    alignItems: "center",
+    gap: 6,
+  },
   focusHeroTonePill: {
+    maxWidth: "100%",
     paddingHorizontal: SPACING.sm,
     paddingVertical: 5,
     borderRadius: RADIUS.full,
@@ -6207,6 +7816,7 @@ const subStyles = StyleSheet.create({
   },
   focusHeroToneText: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.xs, color: "#9EB7FF" },
   focusHeroTonePillMuted: {
+    maxWidth: "100%",
     paddingHorizontal: SPACING.sm,
     paddingVertical: 5,
     borderRadius: RADIUS.full,
@@ -6230,7 +7840,16 @@ const subStyles = StyleSheet.create({
   focusMetricLabel: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.storm },
   focusMetricValue: { fontFamily: FONT_FAMILY.heading, fontSize: 18, color: COLORS.ink },
   focusMetricHint: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.storm, lineHeight: 22 },
-  layerSection: { gap: SPACING.xs },
+  layerSection: {
+    gap: SPACING.xs,
+    padding: SPACING.md,
+    borderRadius: RADIUS.xl,
+    backgroundColor: "rgba(8,13,24,0.58)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    borderLeftWidth: 2,
+    borderLeftColor: COLORS.primary + "88",
+  },
   layerSectionKicker: {
     fontFamily: FONT_FAMILY.bodySemibold,
     fontSize: FONT_SIZE.xs,
@@ -6240,6 +7859,440 @@ const subStyles = StyleSheet.create({
   },
   layerSectionTitle: { fontFamily: FONT_FAMILY.heading, fontSize: 20, color: COLORS.ink },
   layerSectionBody: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.md, color: COLORS.storm, lineHeight: 26 },
+  visualChartKicker: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.primary,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+  },
+  visualChartIntro: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.storm,
+    lineHeight: 22,
+  },
+  visualChartFootnote: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    lineHeight: 18,
+  },
+  visualChartAction: {
+    alignSelf: "flex-start",
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 5,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.primary + "14",
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.primary,
+  },
+  annualHeaderRow: {
+    gap: SPACING.sm,
+  },
+  annualYearList: {
+    gap: SPACING.xs,
+    paddingRight: SPACING.sm,
+  },
+  annualYearPill: {
+    paddingHorizontal: SPACING.md,
+    paddingVertical: 7,
+    borderRadius: RADIUS.full,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  annualYearPillActive: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  annualYearText: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+  },
+  annualYearTextActive: {
+    color: "#06110F",
+  },
+  annualSummaryGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: SPACING.sm,
+  },
+  annualSummaryCard: {
+    width: "48%",
+    padding: SPACING.md,
+    borderRadius: RADIUS.xl,
+    backgroundColor: "rgba(255,255,255,0.045)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.075)",
+    gap: 4,
+  },
+  annualSummaryValue: {
+    fontFamily: FONT_FAMILY.heading,
+    fontSize: 17,
+  },
+  annualFlowChart: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: 5,
+    paddingTop: SPACING.xs,
+  },
+  annualMonthCol: {
+    flex: 1,
+    alignItems: "center",
+    gap: 4,
+  },
+  annualMonthColMuted: {
+    opacity: 0.28,
+  },
+  annualBarsBox: {
+    width: "100%",
+    height: 74,
+    flexDirection: "row",
+    alignItems: "flex-end",
+    justifyContent: "center",
+    gap: 2,
+    borderRadius: RADIUS.md,
+    backgroundColor: "rgba(255,255,255,0.035)",
+    paddingHorizontal: 2,
+    paddingBottom: 2,
+  },
+  annualFlowBar: {
+    flex: 1,
+    maxWidth: 7,
+    borderTopLeftRadius: 4,
+    borderTopRightRadius: 4,
+  },
+  annualNetList: {
+    gap: SPACING.xs,
+  },
+  annualNetRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+  },
+  annualNetMonth: {
+    width: 34,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    textTransform: "capitalize",
+  },
+  annualNetTrack: {
+    flex: 1,
+    height: 8,
+    borderRadius: RADIUS.full,
+    backgroundColor: "rgba(255,255,255,0.07)",
+    overflow: "hidden",
+  },
+  annualNetFill: {
+    height: 8,
+    borderRadius: RADIUS.full,
+  },
+  annualNetAmount: {
+    width: 88,
+    textAlign: "right",
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+  },
+  annualDetailContent: {
+    gap: SPACING.lg,
+    paddingBottom: SPACING.md,
+  },
+  annualDetailHero: {
+    gap: SPACING.xs,
+    padding: SPACING.md,
+    borderRadius: RADIUS.xl,
+    backgroundColor: "rgba(255,255,255,0.045)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  annualDetailTitle: {
+    fontFamily: FONT_FAMILY.heading,
+    fontSize: 20,
+    color: COLORS.ink,
+  },
+  annualDetailMini: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    lineHeight: 18,
+  },
+  annualDetailSection: {
+    gap: SPACING.sm,
+  },
+  annualDetailSectionTitle: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.md,
+    color: COLORS.ink,
+  },
+  annualDetailCategoryCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+    padding: SPACING.md,
+    borderRadius: RADIUS.xl,
+    backgroundColor: "rgba(9,22,27,0.78)",
+    borderWidth: 1,
+    borderColor: COLORS.primary + "22",
+  },
+  annualDetailCategoryName: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.md,
+    color: COLORS.ink,
+  },
+  annualDetailCategoryAmount: {
+    fontFamily: FONT_FAMILY.heading,
+    fontSize: FONT_SIZE.md,
+    color: COLORS.expense,
+    textAlign: "right",
+  },
+  annualMovementRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+    padding: SPACING.md,
+    borderRadius: RADIUS.xl,
+    backgroundColor: "rgba(255,255,255,0.045)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.07)",
+  },
+  annualMovementTitle: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.ink,
+  },
+  annualMovementMeta: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    marginTop: 2,
+  },
+  annualMovementAmount: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.sm,
+    textAlign: "right",
+  },
+  annualDetailActions: {
+    gap: SPACING.sm,
+    paddingTop: SPACING.sm,
+  },
+  annualDetailPrimaryBtn: {
+    minHeight: 48,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.primary,
+  },
+  annualDetailPrimaryBtnText: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.md,
+    color: "#06110F",
+  },
+  annualDetailSplitActions: {
+    flexDirection: "row",
+    gap: SPACING.sm,
+  },
+  annualDetailSecondaryBtn: {
+    flex: 1,
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: RADIUS.full,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.09)",
+  },
+  annualDetailSecondaryBtnText: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.ink,
+  },
+  bridgeChartStack: {
+    gap: SPACING.md,
+  },
+  bridgeRow: {
+    gap: SPACING.xs,
+  },
+  bridgeRowHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: SPACING.sm,
+  },
+  bridgeLabel: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.ink,
+  },
+  bridgeDetail: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    lineHeight: 17,
+  },
+  bridgeAmount: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.sm,
+    textAlign: "right",
+  },
+  bridgeTrack: {
+    position: "relative",
+    height: 12,
+    borderRadius: RADIUS.full,
+    backgroundColor: "rgba(255,255,255,0.07)",
+    overflow: "hidden",
+  },
+  bridgeAxis: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    left: "50%",
+    width: 1,
+    backgroundColor: "rgba(255,255,255,0.22)",
+  },
+  bridgeFill: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    borderRadius: RADIUS.full,
+  },
+  savingsSparkWrap: {
+    alignItems: "center",
+    paddingVertical: SPACING.xs,
+    borderRadius: RADIUS.xl,
+    backgroundColor: "rgba(255,255,255,0.035)",
+  },
+  savingsStatsRow: {
+    flexDirection: "row",
+    gap: SPACING.sm,
+    marginBottom: SPACING.xl,
+  },
+  savingsStatCard: {
+    flex: 1,
+    padding: SPACING.sm,
+    borderRadius: RADIUS.lg,
+    backgroundColor: "rgba(255,255,255,0.045)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.07)",
+    gap: 3,
+  },
+  savingsStatLabel: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+  },
+  savingsStatValue: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.sm,
+  },
+  netBarsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+    marginTop: SPACING.md,
+  },
+  netBarsCol: {
+    flex: 1,
+    alignItems: "center",
+    gap: 4,
+  },
+  netBarsBox: {
+    position: "relative",
+    width: "100%",
+    height: 68,
+    borderRadius: RADIUS.md,
+    backgroundColor: "rgba(255,255,255,0.035)",
+    overflow: "hidden",
+  },
+  netBarsAxis: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 34,
+    height: 1,
+    backgroundColor: "rgba(255,255,255,0.14)",
+  },
+  netBar: {
+    position: "absolute",
+    left: "24%",
+    right: "24%",
+    borderRadius: 5,
+  },
+  netBarPositive: {
+    backgroundColor: COLORS.income + "cc",
+  },
+  netBarNegative: {
+    backgroundColor: COLORS.expense + "cc",
+  },
+  donutChartBody: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.md,
+  },
+  donutWrap: {
+    width: 132,
+    height: 132,
+    alignItems: "center",
+    justifyContent: "center",
+    position: "relative",
+  },
+  donutCenter: {
+    position: "absolute",
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 6,
+    backgroundColor: "rgba(7,11,20,0.92)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.07)",
+  },
+  donutCenterValue: {
+    fontFamily: FONT_FAMILY.heading,
+    fontSize: 18,
+    color: COLORS.ink,
+  },
+  donutCenterLabel: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    maxWidth: 58,
+    textAlign: "center",
+  },
+  donutLegend: {
+    flex: 1,
+    gap: SPACING.sm,
+  },
+  donutLegendRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+  },
+  donutLegendDot: {
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+  },
+  donutLegendName: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.ink,
+  },
+  donutLegendPct: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+  },
+  donutLegendAmount: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.ink,
+    textAlign: "right",
+  },
   qualityHeader: {
     flexDirection: "row",
     alignItems: "center",
@@ -6298,6 +8351,113 @@ const subStyles = StyleSheet.create({
   projectionLabel: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm, textTransform: "uppercase", letterSpacing: 0.5 },
   projectionTitle: { fontFamily: FONT_FAMILY.heading, fontSize: 18, color: COLORS.ink },
   projectionBody: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.storm, lineHeight: 24 },
+  projectionFormulaBox: {
+    padding: SPACING.md,
+    borderRadius: RADIUS.xl,
+    backgroundColor: "rgba(5,10,18,0.58)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.09)",
+    gap: SPACING.sm,
+  },
+  projectionFormulaHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: SPACING.sm,
+  },
+  projectionFormulaKicker: {
+    flex: 1,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.primary,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+  },
+  projectionFormulaTotal: {
+    fontFamily: FONT_FAMILY.heading,
+    fontSize: FONT_SIZE.md,
+    color: COLORS.ink,
+    textAlign: "right",
+  },
+  projectionFormulaSummary: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    lineHeight: 18,
+  },
+  projectionFormulaRows: {
+    gap: 8,
+  },
+  projectionFormulaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: SPACING.sm,
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.06)",
+  },
+  projectionFormulaCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  projectionFormulaLabel: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.ink,
+  },
+  projectionFormulaDetail: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    lineHeight: 17,
+  },
+  projectionFormulaAmount: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.ink,
+    textAlign: "right",
+  },
+  projectionFormulaAmountPositive: {
+    color: COLORS.income,
+  },
+  projectionFormulaAmountNegative: {
+    color: COLORS.expense,
+  },
+  projectionFormulaEquals: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingTop: SPACING.sm,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.primary + "26",
+  },
+  projectionFormulaEqualsText: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.primary,
+  },
+  projectionFormulaEqualsAmount: {
+    fontFamily: FONT_FAMILY.heading,
+    fontSize: FONT_SIZE.lg,
+    color: COLORS.primary,
+  },
+  projectionScenarioStrip: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: SPACING.xs,
+  },
+  projectionScenarioText: {
+    flexGrow: 1,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 7,
+    borderRadius: RADIUS.full,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    textAlign: "center",
+  },
   actionPillRow: { flexDirection: "row", alignItems: "center", gap: SPACING.sm },
   actionPillBody: { flex: 1, fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.ink, lineHeight: 22 },
   actionPill: { paddingHorizontal: SPACING.sm, paddingVertical: 6, borderRadius: RADIUS.full, backgroundColor: COLORS.primary + "18" },
@@ -6397,7 +8557,7 @@ const styles = StyleSheet.create({
   content: { padding: SPACING.lg, gap: SPACING.xl, paddingBottom: 100 },
 });
 
-// â”€â”€â”€ Dashboard header right actions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// --- Dashboard header right actions -------------------------------------------
 
 function DashboardHeaderRight({ onSignOut }: { onSignOut: () => void }) {
   const { profile } = useAuth();
@@ -6495,5 +8655,4 @@ export default function DashboardScreenRoot() {
     </ErrorBoundary>
   );
 }
-
 

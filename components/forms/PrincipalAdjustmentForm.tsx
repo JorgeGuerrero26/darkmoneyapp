@@ -162,7 +162,7 @@ export function PrincipalAdjustmentForm({ visible, mode, obligation, onClose, on
           currencyCode: obligation.currencyCode,
           obligationTitle: obligation.title,
         });
-        showToast(isIncrease ? "Aumento actualizado ✓" : "Reducción actualizada ✓", "success");
+        showToast(isIncrease ? "Aumento actualizado ✓" : "Reducción actualizada ✓", "warning");
       } else {
         await mutation.mutateAsync({
           obligationId: obligation.id,

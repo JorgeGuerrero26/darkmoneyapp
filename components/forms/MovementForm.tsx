@@ -510,7 +510,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
               .finally(() => dismissActivityNotice(noticeId));
           };
         }
-        showToast("Movimiento actualizado", "success");
+        showToast("Movimiento actualizado", "warning");
         if (linkedEventId && activeWorkspaceId) {
           void queryClient.invalidateQueries({ queryKey: ["obligation-events"] });
           void queryClient.invalidateQueries({ queryKey: ["entity-attachments", activeWorkspaceId, "obligation-event", linkedEventId] });

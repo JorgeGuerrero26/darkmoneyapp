@@ -305,7 +305,7 @@ function MovementDetailScreen() {
         subtitle={activeWorkspace?.name}
         rightAction={
           <TouchableOpacity
-            onPress={() => from === "movements" ? router.replace("/(app)/movements") : router.back()}
+            onPress={() => router.back()}
             accessibilityLabel="Volver"
           >
             <Text style={styles.back}>Volver</Text>

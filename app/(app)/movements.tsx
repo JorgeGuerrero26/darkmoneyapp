@@ -40,7 +40,6 @@ import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { MovementForm } from "../../components/forms/MovementForm";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { FAB } from "../../components/ui/FAB";
-import { UndoBanner } from "../../components/ui/UndoBanner";
 import { useDeleteMovementMutation } from "../../services/queries/workspace-data";
 import { useToast } from "../../hooks/useToast";
 import { isoToDateStr } from "../../lib/date";
@@ -116,6 +115,10 @@ function MovementsScreen() {
     quickScope?: string | string[];
     quickToken?: string | string[];
     quickStatus?: string | string[];
+    quickCategoryId?: string | string[];
+    quickDateFrom?: string | string[];
+    quickDateTo?: string | string[];
+    quickType?: string | string[];
   }>();
   const queryClient = useQueryClient();
   const { profile } = useAuth();
@@ -150,7 +153,7 @@ function MovementsScreen() {
   }, [filterSheetOpen, filterOverlayOpacity, filterSheetY]);
 
   // ── Delete / undo ─────────────────────────────────────────────────────────
-  const { showToast } = useToast();
+  const { showToast, showRichToast } = useToast();
   const deleteMutation = useDeleteMovementMutation(activeWorkspaceId);
   const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<number>>(new Set());
   const deleteTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
@@ -205,8 +208,15 @@ function MovementsScreen() {
   function cancelDelete() { setDeleteTarget(null); }
   function executeDelete() {
     if (!deleteTarget) return;
+    const item = deleteTarget;
     setDeleteTarget(null);
-    startUndoDelete(deleteTarget);
+    startUndoDelete(item);
+    showRichToast({
+      type: 'delete',
+      title: 'Movimiento eliminado',
+      duration: 5000,
+      onUndo: () => undoDelete(item.id),
+    });
   }
 
   // ── Multi-select ──────────────────────────────────────────────────────────
@@ -316,20 +326,39 @@ function MovementsScreen() {
   const refreshTriggeredRef = useRef(false);
   const preserveScopedFiltersOnNextBlurRef = useRef(false);
   const lastQuickFilterKeyRef = useRef<string | null>(null);
-  const scopedQuickFiltersRef = useRef<{ categoryScope: "uncategorized" | null; status: FilterStatus | null }>({
+  const scopedQuickFiltersRef = useRef<{
+    categoryScope: "uncategorized" | null;
+    categoryId: number | null;
+    status: FilterStatus | null;
+    type: FilterType | null;
+    dateRange: boolean;
+  }>({
     categoryScope: null,
+    categoryId: null,
     status: null,
+    type: null,
+    dateRange: false,
   });
 
   const clearScopedQuickFilters = useCallback(() => {
     if (scopedQuickFiltersRef.current.categoryScope) {
       setActiveCategoryScope(null);
     }
+    if (scopedQuickFiltersRef.current.categoryId) {
+      setActiveCategoryId(null);
+    }
     if (scopedQuickFiltersRef.current.status) {
       setActiveStatusFilter("all");
     }
-    scopedQuickFiltersRef.current = { categoryScope: null, status: null };
-    lastQuickFilterKeyRef.current = null;
+    if (scopedQuickFiltersRef.current.type) {
+      setActiveTypeFilter("all");
+    }
+    if (scopedQuickFiltersRef.current.dateRange) {
+      setActiveDatePreset("Este mes");
+      setCustomDateFrom("");
+      setCustomDateTo("");
+    }
+    scopedQuickFiltersRef.current = { categoryScope: null, categoryId: null, status: null, type: null, dateRange: false };
   }, []);
   const onRefresh = useCallback(() => {
     refreshTriggeredRef.current = true;
@@ -343,24 +372,63 @@ function MovementsScreen() {
       const quickScope = Array.isArray(params.quickScope) ? params.quickScope[0] : params.quickScope;
       const quickToken = Array.isArray(params.quickToken) ? params.quickToken[0] : params.quickToken;
       const quickStatus = Array.isArray(params.quickStatus) ? params.quickStatus[0] : params.quickStatus;
-      const quickKey = [quickFilter ?? "", quickScope ?? "", quickStatus ?? "", quickToken ?? ""].join("|");
+      const quickCategoryId = Array.isArray(params.quickCategoryId) ? params.quickCategoryId[0] : params.quickCategoryId;
+      const quickDateFrom = Array.isArray(params.quickDateFrom) ? params.quickDateFrom[0] : params.quickDateFrom;
+      const quickDateTo = Array.isArray(params.quickDateTo) ? params.quickDateTo[0] : params.quickDateTo;
+      const quickType = Array.isArray(params.quickType) ? params.quickType[0] : params.quickType;
+      const parsedQuickCategoryId = quickCategoryId ? Number(quickCategoryId) : null;
+      const scopedType =
+        quickType === "income" ||
+        quickType === "expense" ||
+        quickType === "transfer" ||
+        quickType === "obligation_payment" ||
+        quickType === "subscription_payment" ||
+        quickType === "refund" ||
+        quickType === "adjustment" ||
+        quickType === "obligation_opening"
+          ? (quickType as FilterType)
+          : null;
+      const quickKey = [
+        quickFilter ?? "",
+        quickScope ?? "",
+        quickStatus ?? "",
+        quickCategoryId ?? "",
+        quickDateFrom ?? "",
+        quickDateTo ?? "",
+        quickType ?? "",
+        quickToken ?? "",
+      ].join("|");
 
       if (quickScope && quickKey !== lastQuickFilterKeyRef.current) {
         lastQuickFilterKeyRef.current = quickKey;
         scopedQuickFiltersRef.current = {
           categoryScope: quickFilter === "uncategorized" ? "uncategorized" : null,
+          categoryId: parsedQuickCategoryId && Number.isFinite(parsedQuickCategoryId) ? parsedQuickCategoryId : null,
           status:
             quickStatus === "pending" || quickStatus === "planned" || quickStatus === "posted"
               ? (quickStatus as FilterStatus)
               : null,
+          type: scopedType,
+          dateRange: Boolean(quickDateFrom && quickDateTo),
         };
 
         if (quickFilter === "uncategorized") {
           setActiveCategoryId(null);
           setActiveCategoryScope("uncategorized");
+        } else if (parsedQuickCategoryId && Number.isFinite(parsedQuickCategoryId)) {
+          setActiveCategoryScope(null);
+          setActiveCategoryId(parsedQuickCategoryId);
         }
         if (quickStatus === "pending" || quickStatus === "planned" || quickStatus === "posted") {
           setActiveStatusFilter(quickStatus as FilterStatus);
+        }
+        if (scopedType) {
+          setActiveTypeFilter(scopedType);
+        }
+        if (quickDateFrom && quickDateTo) {
+          setActiveDatePreset("Rango…");
+          setCustomDateFrom(quickDateFrom);
+          setCustomDateTo(quickDateTo);
         }
       }
 
@@ -371,7 +439,18 @@ function MovementsScreen() {
         }
         clearScopedQuickFilters();
       };
-    }, [clearScopedQuickFilters, params.quickFilter, params.quickScope, params.quickStatus, params.quickToken, queryClient]),
+    }, [
+      clearScopedQuickFilters,
+      params.quickCategoryId,
+      params.quickDateFrom,
+      params.quickDateTo,
+      params.quickFilter,
+      params.quickScope,
+      params.quickStatus,
+      params.quickToken,
+      params.quickType,
+      queryClient,
+    ]),
   );
 
   useEffect(() => {
@@ -390,8 +469,7 @@ function MovementsScreen() {
     setActiveAccountId(null);
     setCustomDateFrom("");
     setCustomDateTo("");
-    scopedQuickFiltersRef.current = { categoryScope: null, status: null };
-    lastQuickFilterKeyRef.current = null;
+    scopedQuickFiltersRef.current = { categoryScope: null, categoryId: null, status: null, type: null, dateRange: false };
   }
 
   // ── CSV Export ────────────────────────────────────────────────────────────
@@ -406,14 +484,20 @@ function MovementsScreen() {
   }
 
   // Bulk delete selected
-  async function executeBulkDelete() {
-    const ids = Array.from(selectedIds);
-    for (const id of ids) {
-      deleteMutation.mutate(id);
-    }
+  function executeBulkDelete() {
+    const toDelete = selectedMovements.slice();
     exitSelectMode();
     setBulkDeleteConfirm(false);
-    showToast(`${ids.length} movimientos eliminados`, "success");
+    for (const movement of toDelete) {
+      startUndoDelete(movement);
+    }
+    const ids = toDelete.map((m) => m.id);
+    showRichToast({
+      type: 'delete',
+      title: `${toDelete.length} movimiento${toDelete.length === 1 ? '' : 's'} eliminado${toDelete.length === 1 ? '' : 's'}`,
+      duration: 5000,
+      onUndo: () => ids.forEach((id) => undoDelete(id)),
+    });
   }
 
   const selectedMovements = useMemo(
@@ -836,14 +920,6 @@ function MovementsScreen() {
         contentContainerStyle={allMovements.length === 0 ? styles.emptyContainer : undefined}
       />
 
-      {/* Undo-delete banner */}
-      <UndoBanner
-        visible={pendingDeleteIds.size > 0}
-        message={pendingDeleteIds.size === 1 ? "Movimiento eliminado" : `${pendingDeleteIds.size} movimientos eliminados`}
-        onUndo={() => pendingDeleteIds.forEach((id) => undoDelete(id))}
-        durationMs={5000}
-        bottomOffset={insets.bottom + 80}
-      />
 
       {!selectMode ? (
         <FAB onPress={() => setFormVisible(true)} bottom={insets.bottom + 16} />

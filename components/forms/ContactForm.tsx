@@ -110,7 +110,7 @@ export function ContactForm({ visible, onClose, onSuccess, editContact }: Props)
     try {
       if (isEditing && editContact) {
         await updateMutation.mutateAsync({ id: editContact.id, input });
-        showToast("Contacto actualizado", "success");
+        showToast("Contacto actualizado", "warning");
         haptics.success();
         onSuccess?.();
       } else {

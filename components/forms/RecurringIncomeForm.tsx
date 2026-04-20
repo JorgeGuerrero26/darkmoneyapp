@@ -205,7 +205,7 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
     try {
       if (isEditing && editRecurringIncome) {
         await updateMutation.mutateAsync({ id: editRecurringIncome.id, input: payload });
-        showToast("Ingreso fijo actualizado", "success");
+        showToast("Ingreso fijo actualizado", "warning");
       } else {
         await createMutation.mutateAsync(payload);
         showToast("Ingreso fijo creado", "success");

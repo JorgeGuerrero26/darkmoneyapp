@@ -241,7 +241,7 @@ function SettingsScreen() {
     setIsUploadingAvatar(true);
     try {
       await saveAvatar(result.assets[0].uri);
-      showToast("Foto de perfil actualizada", "success");
+      showToast("Foto de perfil actualizada", "warning");
     } catch (err: unknown) {
       showToast(humanizeError(err), "error");
     } finally {

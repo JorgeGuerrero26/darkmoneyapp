@@ -161,7 +161,7 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget }: Props) {
     try {
       if (isEditing && editBudget) {
         await updateMutation.mutateAsync({ id: editBudget.id, input });
-        showToast("Presupuesto actualizado", "success");
+        showToast("Presupuesto actualizado", "warning");
       } else {
         await createMutation.mutateAsync(input);
         showToast("Presupuesto creado", "success");
