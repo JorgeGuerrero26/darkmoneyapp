@@ -16,7 +16,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
 import { endOfMonth, format, startOfMonth, subMonths } from "date-fns";
 import { es } from "date-fns/locale";
-import { CheckCircle, Images, XCircle } from "lucide-react-native";
+import { CheckCircle, Images, Minus, Pencil, Plus, XCircle } from "lucide-react-native";
 
 import { useAuth } from "../../lib/auth-context";
 import { removeAttachmentFile } from "../../lib/entity-attachments";
@@ -62,6 +62,7 @@ import type {
 } from "../../types/domain";
 import {
   obligationHistoryEventColor,
+  obligationHistoryEventAmountPrefix,
   obligationPendingDirectionBadge,
   obligationProgressPaidAdjective,
   obligationViewerActsAsCollector,
@@ -87,6 +88,7 @@ import { ObligationCapitalChangesModal } from "../../components/domain/Obligatio
 import { formatCurrency } from "../../components/ui/AmountDisplay";
 import { useToast } from "../../hooks/useToast";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
+import { getObligationStatusLabel } from "../../lib/obligation-labels";
 
 const EVENT_LABEL_PAYABLE: Record<string, string> = {
   opening: "Apertura",
@@ -577,6 +579,14 @@ function ObligationDetailScreen() {
     );
   }, [notifications, obligation, isSharedViewer, eventsForDetail]);
 
+  const ownerDeleteRequestByEventId = useMemo(() => {
+    const map = new Map<number, PendingOwnerDeleteRequest>();
+    for (const req of pendingOwnerDeleteRequests) {
+      map.set(req.payload.eventId, req);
+    }
+    return map;
+  }, [pendingOwnerDeleteRequests]);
+
   const pendingOwnerEditRequests = useMemo((): PendingOwnerEditRequest[] => {
     if (!obligation || isSharedViewer) return [];
     const items: PendingOwnerEditRequest[] = [];
@@ -684,6 +694,13 @@ function ObligationDetailScreen() {
         b.notification.scheduledFor.localeCompare(a.notification.scheduledFor),
       ),
     [viewerEditStatusByEventId],
+  );
+  const viewerDeleteRequests = useMemo(
+    () =>
+      Array.from(viewerDeleteStatusByEventId.values()).sort((a, b) =>
+        b.notification.scheduledFor.localeCompare(a.notification.scheduledFor),
+      ),
+    [viewerDeleteStatusByEventId],
   );
 
   const filteredHistoryEvents = useMemo(() => {
@@ -1684,29 +1701,49 @@ function ObligationDetailScreen() {
           </Card>
 
           {!isSharedViewer ? (
-            <View style={styles.detailActionsGroup}>
-              <TouchableOpacity style={styles.editBtn} onPress={() => setEditFormVisible(true)}>
-                <Text style={styles.editBtnText}>Editar</Text>
+            <View style={styles.detailActionsPanel}>
+              <TouchableOpacity
+                style={styles.detailPrimaryAction}
+                onPress={() => setEditFormVisible(true)}
+                activeOpacity={0.86}
+              >
+                <View style={styles.detailPrimaryIcon}>
+                  <Pencil size={16} color={COLORS.bgVoid} strokeWidth={2.4} />
+                </View>
+                <View style={styles.detailActionCopy}>
+                  <Text style={styles.detailPrimaryTitle}>Editar obligación</Text>
+                  <Text style={styles.detailActionMeta}>Datos, fechas y cuenta</Text>
+                </View>
               </TouchableOpacity>
               <View style={styles.detailActionsRow}>
                 <TouchableOpacity
-                  style={styles.detailActionSecondaryBtn}
+                  style={[styles.detailActionSecondaryBtn, styles.detailActionIncreaseBtn]}
+                  activeOpacity={0.86}
                   onPress={() => {
                     setEditingAdjustmentEvent(null);
                     setAdjustmentMode("increase");
                     setAdjustmentFormVisible(true);
                   }}
                 >
-                  <Text style={styles.detailActionSecondaryText}>Aumentar monto</Text>
+                  <View style={[styles.detailActionIcon, styles.detailActionIncreaseIcon]}>
+                    <Plus size={15} color={COLORS.income} strokeWidth={2.4} />
+                  </View>
+                  <Text style={[styles.detailActionSecondaryText, styles.detailActionIncreaseText]}>
+                    Aumentar monto
+                  </Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.detailActionSecondaryBtn, styles.detailActionDangerBtn]}
+                  activeOpacity={0.86}
                   onPress={() => {
                     setEditingAdjustmentEvent(null);
                     setAdjustmentMode("decrease");
                     setAdjustmentFormVisible(true);
                   }}
                 >
+                  <View style={[styles.detailActionIcon, styles.detailActionDangerIcon]}>
+                    <Minus size={15} color={COLORS.danger} strokeWidth={2.4} />
+                  </View>
                   <Text style={[styles.detailActionSecondaryText, styles.detailActionDangerText]}>
                     Reducir monto
                   </Text>
@@ -1716,10 +1753,12 @@ function ObligationDetailScreen() {
           ) : null}
 
           {/* Details */}
-          <Card>
-            <DetailRow label="Estado" value={obligation.status} />
-            <Divider />
-            <DetailRow label="Moneda" value={obligation.currencyCode} />
+          <Card style={styles.detailInfoCard}>
+            <View style={styles.detailInfoHeader}>
+              <Text style={styles.sectionTitle}>Detalles</Text>
+              <Text style={styles.detailInfoBadge}>{obligation.currencyCode}</Text>
+            </View>
+            <DetailRow label="Estado" value={getObligationStatusLabel(obligation.status)} />
             <Divider />
             <DetailRow
               label="Fecha inicio"
@@ -1804,7 +1843,7 @@ function ObligationDetailScreen() {
                       viewerDetailTab === "requests" && styles.viewerTabChipTextActive,
                     ]}
                   >
-                    Mis solicitudes ({viewerRequests.length + viewerEditRequests.length})
+                    Mis solicitudes ({viewerRequests.length + viewerEditRequests.length + viewerDeleteRequests.length})
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -1820,9 +1859,6 @@ function ObligationDetailScreen() {
               }}
             >
               <Text style={styles.sectionTitle}>Historial de eventos</Text>
-              <Text style={styles.sectionHint}>
-                Por defecto solo el mes actual; amplia el rango o elige todo el historial.
-              </Text>
               <Text style={styles.dateRangeCaption}>{historyDateRangeNotice}</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.historyPresetRow}>
                 {(
@@ -1901,6 +1937,11 @@ function ObligationDetailScreen() {
                   obligation.direction,
                   isSharedViewer,
                 );
+                const evAmountPrefix = obligationHistoryEventAmountPrefix(
+                  ev.eventType,
+                  obligation.direction,
+                  isSharedViewer,
+                );
                 const rowMovementId = isSharedViewer
                   ? viewerLinkByEventId.get(ev.id)?.movementId ?? null
                   : ev.movementId ?? null;
@@ -1921,11 +1962,15 @@ function ObligationDetailScreen() {
                 const isLinked = linkedEventIds.has(ev.id);
                 const viewerDeleteStatus = viewerDeleteStatusByEventId.get(ev.id);
                 const viewerEditStatus = viewerEditStatusByEventId.get(ev.id);
+                const ownerDeleteRequest = !isSharedViewer ? ownerDeleteRequestByEventId.get(ev.id) ?? null : null;
                 const isHighlighted = highlightedEventId === ev.id;
-                const eventInlineDetail =
-                  ev.eventType === "principal_increase" || ev.eventType === "principal_decrease"
-                    ? firstMeaningfulText(ev.description, ev.reason, ev.notes)
-                    : firstMeaningfulText(ev.notes);
+                const eventInlineDescription = firstMeaningfulText(ev.description, ev.reason);
+                const eventInlineNotes = ev.notes?.trim() || null;
+                const showEventInlineNotes =
+                  eventInlineNotes != null &&
+                  eventInlineNotes.length > 0 &&
+                  eventInlineNotes !== eventInlineDescription;
+                const eventDateLabel = format(parseDisplayDate(ev.eventDate), "d MMM yyyy", { locale: es });
                 return (
                   <View
                     key={ev.id}
@@ -1952,49 +1997,59 @@ function ObligationDetailScreen() {
                       onPress={isTappable ? () => handleEventTap(ev) : undefined}
                       activeOpacity={isTappable ? 0.7 : 1}
                     >
-                      <View style={styles.eventInfo}>
-                        <Text style={[styles.eventType, { color: evTint }]}>
-                          {eventLabels[ev.eventType] ?? ev.eventType}
-                        </Text>
-                        <Text style={styles.eventDate}>
-                          {format(parseDisplayDate(ev.eventDate), "d MMM yyyy", { locale: es })}
-                        </Text>
-                        {eventInlineDetail ? (
-                          <Text style={styles.eventNotes} numberOfLines={2}>
-                            {eventInlineDetail}
+                      <View style={[styles.eventAccent, { backgroundColor: evTint }]} />
+                      <View style={styles.eventBody}>
+                        <View style={styles.eventHeaderRow}>
+                          <View style={styles.eventInfo}>
+                            <Text style={[styles.eventType, { color: evTint }]} numberOfLines={1}>
+                              {eventLabels[ev.eventType] ?? ev.eventType}
+                            </Text>
+                            <Text style={styles.eventDate}>{eventDateLabel}</Text>
+                          </View>
+                          <View style={styles.eventAmountGroup}>
+                            <View
+                              style={[
+                                styles.eventAmountPill,
+                                { backgroundColor: evTint + "12", borderColor: evTint + "42" },
+                              ]}
+                            >
+                              <Text style={[styles.eventAmount, { color: evTint }]} numberOfLines={1}>
+                                {evAmountPrefix}
+                                {formatCurrency(ev.amount, obligation.currencyCode)}
+                              </Text>
+                            </View>
+                            {isTappable ? <Text style={styles.eventChevron}>{">"}</Text> : null}
+                          </View>
+                        </View>
+                        {eventInlineDescription ? (
+                          <Text style={styles.eventDescription} numberOfLines={2}>
+                            {eventInlineDescription}
+                          </Text>
+                        ) : !showEventInlineNotes ? (
+                          <Text style={styles.eventDescriptionMuted}>
+                            Este evento no tiene descripcion visible.
                           </Text>
                         ) : null}
-                      </View>
-                      <View style={styles.eventRight}>
-                        <Text style={[styles.eventAmount, { color: evTint }]}>
-                          {ev.eventType === "payment" ? "+" : ""}
-                          {formatCurrency(ev.amount, obligation.currencyCode)}
-                        </Text>
-                        {false && ev.movementId && !isSharedViewer ? (
-                          <TouchableOpacity
-                            style={styles.movementChip}
-                            onPress={() => router.push(`/movement/${ev.movementId}`)}
-                            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                          >
-                            <Text style={styles.movementChipText}>Mov.</Text>
-                          </TouchableOpacity>
+                        {showEventInlineNotes ? (
+                          <Text style={styles.eventNotes} numberOfLines={2}>
+                            {eventInlineNotes}
+                          </Text>
                         ) : null}
-                        {isViewerLinkable && (
-                          isLinked ? (
-                            <View style={styles.linkedChip}>
-                              <Text style={styles.linkedChipText}>Asociado</Text>
+                        {ev.installmentNo ? (
+                          <View style={styles.eventInlineMetaRow}>
+                            <View style={styles.eventMetaChip}>
+                              <Text style={styles.eventMetaChipText}>Cuota {ev.installmentNo}</Text>
                             </View>
-                          ) : (
-                            <View style={styles.unlinkChip}>
-                              <Text style={styles.unlinkChipText}>{"Sin asociar >"}</Text>
-                            </View>
-                          )
-                        )}
-                        {isTappable ? <Text style={styles.eventChevron}>{">"}</Text> : null}
+                          </View>
+                        ) : null}
                       </View>
                     </TouchableOpacity>
 
-                    {(showAttachmentLoading || (ev.movementId && !isSharedViewer) || attachmentCount > 0) ? (
+                    {(showAttachmentLoading ||
+                      (ev.movementId && !isSharedViewer) ||
+                      attachmentCount > 0 ||
+                      isViewerLinkable ||
+                      ownerDeleteRequest) ? (
                       <View style={styles.eventAttachmentRow}>
                         {ev.movementId && !isSharedViewer ? (
                           <TouchableOpacity
@@ -2029,27 +2084,31 @@ function ObligationDetailScreen() {
                             </Text>
                           </TouchableOpacity>
                         ) : null}
+                        {ownerDeleteRequest ? (
+                          <View style={styles.ownerEventDeletePendingChip}>
+                            <Text style={styles.ownerEventDeletePendingText}>Eliminacion solicitada</Text>
+                          </View>
+                        ) : null}
+                        {isViewerLinkable && (
+                          isLinked ? (
+                            <View style={styles.viewerAccountLinkedChip}>
+                              <Text style={styles.viewerAccountLinkedText}>Cuenta asociada</Text>
+                            </View>
+                          ) : (
+                            <View style={styles.viewerAccountUnlinkedChip}>
+                              <Text style={styles.viewerAccountUnlinkedText}>Sin cuenta asociada</Text>
+                            </View>
+                          )
+                        )}
                       </View>
                     ) : null}
 
                     {isSharedViewer && ev.eventType !== "opening" ? (
                       <View style={styles.viewerEventActions}>
-                        {EDITABLE_TYPES.has(ev.eventType) ? (
-                          <TouchableOpacity
-                            style={styles.viewerEditBtn}
-                            onPress={() => {
-                              setEditRequestEvent(ev);
-                              setEditRequestFormVisible(true);
-                            }}
-                            disabled={viewerEditStatus?.status === "pending"}
-                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                          >
-                            <Text style={styles.viewerEditBtnText}>
-                              {viewerEditStatus?.status === "rejected"
-                                ? "Editar otra vez"
-                                : "Solicitar edicion"}
-                            </Text>
-                          </TouchableOpacity>
+                        {EDITABLE_TYPES.has(ev.eventType) && viewerEditStatus?.status === "pending" ? (
+                          <View style={styles.viewerEditPendingChip}>
+                            <Text style={styles.viewerEditPendingText}>Edicion pendiente</Text>
+                          </View>
                         ) : null}
                         {viewerDeleteStatus?.status === "pending" ? (
                           <View style={styles.viewerDeletePendingChip}>
@@ -2059,20 +2118,21 @@ function ObligationDetailScreen() {
                           <View style={styles.viewerDeleteAcceptedChip}>
                             <Text style={styles.viewerDeleteAcceptedText}>Eliminacion aprobada</Text>
                           </View>
-                        ) : (
-                          <TouchableOpacity
-                            style={styles.viewerDeleteBtn}
-                            onPress={() => setViewerDeleteRequestEvent(ev)}
-                            disabled={createDeleteRequestMutation.isPending}
-                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                          >
-                            <Text style={styles.viewerDeleteBtnText}>
-                              {viewerDeleteStatus?.status === "rejected"
-                                ? "Solicitar otra vez"
-                                : "Solicitar eliminacion"}
-                            </Text>
-                          </TouchableOpacity>
-                        )}
+                        ) : null}
+                        {viewerEditStatus?.status !== "pending" &&
+                        viewerDeleteStatus?.status !== "pending" &&
+                        viewerDeleteStatus?.status !== "accepted" ? (
+                          <Text style={styles.viewerEventManageHint}>
+                            Toca la tarjeta para gestionar
+                          </Text>
+                        ) : null}
+                        {viewerEditStatus?.status === "rejected" ? (
+                          <Text style={[styles.viewerRequestNote, { color: COLORS.danger }]}>
+                            {viewerEditStatus.payload.rejectionReason?.trim()
+                              ? `Edicion rechazada: ${viewerEditStatus.payload.rejectionReason.trim()}`
+                              : "La solicitud de edicion anterior fue rechazada"}
+                          </Text>
+                        ) : null}
                         {viewerDeleteStatus?.status === "rejected" ? (
                           <Text style={[styles.viewerRequestNote, { color: COLORS.danger }]}>
                             {viewerDeleteStatus.payload.rejectionReason?.trim()
@@ -2093,51 +2153,109 @@ function ObligationDetailScreen() {
               <Text style={styles.sectionTitle}>
                 Solicitudes de eliminacion ({pendingOwnerDeleteRequests.length})
               </Text>
-              {pendingOwnerDeleteRequests.map((req) => (
-                <View key={req.notification.id} style={styles.requestCard}>
-                  <View style={styles.requestInfo}>
-                    <Text style={styles.requestName}>
-                      {req.payload.requestedByDisplayName ?? "Visualizador compartido"}
-                    </Text>
-                    <Text style={styles.requestAmount}>
-                      {req.event
-                        ? formatCurrency(req.event.amount, obligation.currencyCode)
-                        : req.payload.amount != null
-                          ? formatCurrency(req.payload.amount, obligation.currencyCode)
-                          : "Evento"}
-                    </Text>
-                    <Text style={styles.requestDate}>
-                      {format(parseDisplayDate(req.payload.eventDate ?? obligation.startDate), "d MMM yyyy", { locale: es })}
-                    </Text>
-                    <Text style={styles.requestDesc} numberOfLines={2}>
-                      {req.event
-                        ? eventLabels[req.event.eventType] ?? req.event.eventType
-                        : req.payload.eventType ?? "Evento"}
-                    </Text>
-                    {!req.event ? (
-                      <Text style={styles.requestNoAccount}>
-                        El evento ya no esta disponible. Puedes aceptar para cerrar la solicitud.
-                      </Text>
-                    ) : null}
+              {pendingOwnerDeleteRequests.map((req) => {
+                const targetType = req.event?.eventType ?? req.payload.eventType ?? null;
+                const targetLabel = targetType ? eventLabels[targetType] ?? targetType : "Evento";
+                const targetAmount = req.event?.amount ?? req.payload.amount ?? null;
+                const targetDate = req.event?.eventDate ?? req.payload.eventDate ?? obligation.startDate;
+                const targetTint = req.event
+                  ? obligationHistoryEventColor(req.event.eventType, obligation.direction, false)
+                  : COLORS.danger;
+                const targetPrefix = req.event
+                  ? obligationHistoryEventAmountPrefix(req.event.eventType, obligation.direction, false)
+                  : "";
+                const targetDescription = req.event
+                  ? firstMeaningfulText(req.event.description, req.event.reason, req.event.notes)
+                  : null;
+                return (
+                  <View key={req.notification.id} style={styles.ownerDeleteRequestCard}>
+                    <View style={styles.ownerDeleteRequestHeader}>
+                      <View style={styles.ownerDeleteRequestTitleWrap}>
+                        <Text style={styles.ownerDeleteRequestEyebrow}>Solicitud de eliminacion</Text>
+                        <Text style={styles.ownerDeleteRequestTitle} numberOfLines={1}>
+                          {req.payload.requestedByDisplayName ?? "Visualizador compartido"}
+                        </Text>
+                      </View>
+                      <View style={styles.ownerDeleteRequestStatus}>
+                        <Text style={styles.ownerDeleteRequestStatusText}>Pendiente</Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.ownerDeleteTargetCard}>
+                      <View style={[styles.ownerDeleteTargetAccent, { backgroundColor: targetTint }]} />
+                      <View style={styles.ownerDeleteTargetBody}>
+                        <View style={styles.ownerDeleteTargetTopRow}>
+                          <View style={styles.ownerDeleteTargetInfo}>
+                            <Text style={[styles.ownerDeleteTargetType, { color: targetTint }]} numberOfLines={1}>
+                              {targetLabel}
+                            </Text>
+                            <Text style={styles.ownerDeleteTargetDate}>
+                              {format(parseDisplayDate(targetDate), "d MMM yyyy", { locale: es })}
+                            </Text>
+                          </View>
+                          <Text style={[styles.ownerDeleteTargetAmount, { color: targetTint }]} numberOfLines={1}>
+                            {targetAmount != null
+                              ? `${targetPrefix}${formatCurrency(targetAmount, obligation.currencyCode)}`
+                              : "Sin monto"}
+                          </Text>
+                        </View>
+                        {targetDescription ? (
+                          <Text style={styles.ownerDeleteTargetDesc} numberOfLines={2}>
+                            {targetDescription}
+                          </Text>
+                        ) : (
+                          <Text style={styles.ownerDeleteTargetDescMuted}>
+                            {req.event
+                              ? "Este evento no tiene descripcion visible."
+                              : "El evento ya no esta disponible en el historial."}
+                          </Text>
+                        )}
+                      </View>
+                    </View>
+
+                    <View style={styles.ownerDeleteRequestActions}>
+                      {req.event ? (
+                        <TouchableOpacity
+                          style={styles.ownerDeleteFocusBtn}
+                          onPress={() => {
+                            setPendingFocusEventId(req.event?.id ?? null);
+                            if (req.event) {
+                              focusEventFromNotification(req.event.id, {
+                                tone: "info",
+                                message: "Evento de la solicitud resaltado en el historial.",
+                                toastMessage: "Evento resaltado",
+                              });
+                            }
+                          }}
+                          activeOpacity={0.86}
+                        >
+                          <Text style={styles.ownerDeleteFocusText}>Ver evento</Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <Text style={styles.requestNoAccount}>
+                          Puedes aceptar para cerrar la solicitud pendiente.
+                        </Text>
+                      )}
+                      <View style={styles.ownerDeleteDecisionActions}>
+                        <TouchableOpacity
+                          style={styles.acceptBtn}
+                          onPress={() => void handleApproveDeleteRequest(req)}
+                          disabled={deleteEventMutation.isPending}
+                        >
+                          <CheckCircle size={20} color={COLORS.income} strokeWidth={2} />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.rejectBtn}
+                          onPress={() => void handleRejectDeleteRequest(req)}
+                          disabled={rejectDeleteRequestMutation.isPending}
+                        >
+                          <XCircle size={20} color={COLORS.danger} strokeWidth={2} />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
                   </View>
-                  <View style={styles.requestActions}>
-                    <TouchableOpacity
-                      style={styles.acceptBtn}
-                      onPress={() => void handleApproveDeleteRequest(req)}
-                      disabled={deleteEventMutation.isPending}
-                    >
-                      <CheckCircle size={20} color={COLORS.income} strokeWidth={2} />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.rejectBtn}
-                      onPress={() => void handleRejectDeleteRequest(req)}
-                      disabled={rejectDeleteRequestMutation.isPending}
-                    >
-                      <XCircle size={20} color={COLORS.danger} strokeWidth={2} />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ))}
+                );
+              })}
             </View>
           ) : null}
 
@@ -2265,9 +2383,19 @@ function ObligationDetailScreen() {
           ) : null}
 
           {/* Viewer: mis solicitudes */}
-          {showViewerRequestsTab && viewerRequests.length > 0 ? (
+          {showViewerRequestsTab &&
+          (viewerRequests.length > 0 || viewerEditRequests.length > 0 || viewerDeleteRequests.length > 0) ? (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Mis solicitudes</Text>
+              <Text style={styles.sectionHint}>
+                Seguimiento de lo que enviaste al propietario y aun requiere respuesta o ya fue respondido.
+              </Text>
+            </View>
+          ) : null}
+
+          {showViewerRequestsTab && viewerRequests.length > 0 ? (
+            <View style={styles.section}>
+              <Text style={styles.requestGroupTitle}>Pagos y cobros</Text>
               {viewerRequests.map((req) => {
                 const isPending = req.status === "pending";
                 const isAccepted = req.status === "accepted";
@@ -2323,7 +2451,7 @@ function ObligationDetailScreen() {
 
           {showViewerRequestsTab && viewerEditRequests.length > 0 ? (
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Solicitudes de edicion</Text>
+              <Text style={styles.requestGroupTitle}>Cambios de evento</Text>
               {viewerEditRequests.map((req) => {
                 const isPending = req.status === "pending";
                 const isAccepted = req.status === "accepted";
@@ -2393,7 +2521,71 @@ function ObligationDetailScreen() {
             </View>
           ) : null}
 
-          {showViewerRequestsTab && viewerRequests.length === 0 && viewerEditRequests.length === 0 ? (
+          {showViewerRequestsTab && viewerDeleteRequests.length > 0 ? (
+            <View style={styles.section}>
+              <Text style={styles.requestGroupTitle}>Eliminaciones de evento</Text>
+              {viewerDeleteRequests.map((req) => {
+                const isPending = req.status === "pending";
+                const isAccepted = req.status === "accepted";
+                const isRejected = req.status === "rejected";
+                const statusColor = isAccepted ? COLORS.income : isRejected ? COLORS.danger : COLORS.warning;
+                const statusLabel = isAccepted ? "Aceptada" : isRejected ? "Rechazada" : "Pendiente";
+                const targetEvent = eventsForDetail.find((event) => event.id === req.payload.eventId) ?? null;
+                const targetType = targetEvent?.eventType ?? req.payload.eventType ?? null;
+                const targetLabel = targetType ? eventLabels[targetType] ?? targetType : "Evento";
+                const targetDate = targetEvent?.eventDate ?? req.payload.eventDate ?? obligation.startDate;
+                const targetAmount = targetEvent?.amount ?? req.payload.amount ?? null;
+                const targetDescription = targetEvent
+                  ? firstMeaningfulText(targetEvent.description, targetEvent.reason, targetEvent.notes)
+                  : null;
+                return (
+                  <View
+                    key={req.notification.id}
+                    style={[styles.viewerRequestCard, { borderColor: statusColor + "44" }]}
+                  >
+                    <View style={styles.viewerRequestHeader}>
+                      <Text style={styles.viewerRequestAmount}>
+                        {targetAmount != null
+                          ? formatCurrency(targetAmount, obligation.currencyCode)
+                          : "Eliminacion"}
+                      </Text>
+                      <View style={[styles.viewerRequestStatus, { backgroundColor: statusColor + "22" }]}>
+                        <Text style={[styles.viewerRequestStatusText, { color: statusColor }]}>
+                          {statusLabel}
+                        </Text>
+                      </View>
+                    </View>
+                    <Text style={styles.viewerRequestDate}>
+                      {format(parseDisplayDate(targetDate), "d MMM yyyy", { locale: es })}
+                    </Text>
+                    <Text style={styles.viewerRequestDesc} numberOfLines={2}>
+                      {targetDescription ?? targetLabel}
+                    </Text>
+                    {isAccepted ? (
+                      <Text style={[styles.viewerRequestNote, { color: COLORS.income }]}>
+                        La eliminacion fue aprobada.
+                      </Text>
+                    ) : null}
+                    {isRejected ? (
+                      <Text style={[styles.viewerRequestNote, { color: COLORS.danger }]}>
+                        {req.payload.rejectionReason?.trim()
+                          ? `Motivo: ${req.payload.rejectionReason.trim()}`
+                          : "La solicitud fue rechazada"}
+                      </Text>
+                    ) : null}
+                    {isPending ? (
+                      <Text style={styles.viewerRequestNote}>Esperando confirmacion del propietario</Text>
+                    ) : null}
+                  </View>
+                );
+              })}
+            </View>
+          ) : null}
+
+          {showViewerRequestsTab &&
+          viewerRequests.length === 0 &&
+          viewerEditRequests.length === 0 &&
+          viewerDeleteRequests.length === 0 ? (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Mis solicitudes</Text>
               <View style={styles.viewerEmptyState}>
@@ -3315,10 +3507,30 @@ function Divider() {
 }
 
 const rowStyles = StyleSheet.create({
-  row: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: SPACING.md },
-  label: { fontSize: FONT_SIZE.sm, color: COLORS.storm, flex: 1 },
-  value: { fontSize: FONT_SIZE.sm, color: COLORS.ink, fontFamily: FONT_FAMILY.bodyMedium, flex: 2, textAlign: "right" },
-  divider: { height: 1, backgroundColor: GLASS.separator, marginVertical: SPACING.sm },
+  row: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: SPACING.md,
+    paddingVertical: SPACING.xs + 2,
+  },
+  label: {
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    flex: 1,
+    fontFamily: FONT_FAMILY.bodyMedium,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  value: {
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.ink,
+    fontFamily: FONT_FAMILY.bodyMedium,
+    flex: 2,
+    textAlign: "right",
+    lineHeight: 19,
+  },
+  divider: { height: 1, backgroundColor: "rgba(255,255,255,0.07)", marginVertical: SPACING.xs },
 });
 
 const styles = StyleSheet.create({
@@ -3332,14 +3544,45 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.full, borderWidth: 1, borderColor: COLORS.income + "88",
   },
   shareBtnText: { fontSize: FONT_SIZE.xs, color: COLORS.income, fontFamily: FONT_FAMILY.bodyMedium },
-  editBtn: {
-    paddingHorizontal: SPACING.sm, paddingVertical: 4,
-    borderRadius: RADIUS.full, borderWidth: 1, borderColor: COLORS.primary,
-    alignItems: "center",
-  },
-  editBtnText: { fontSize: FONT_SIZE.xs, color: COLORS.primary, fontFamily: FONT_FAMILY.bodyMedium },
-  detailActionsGroup: {
+  detailActionsPanel: {
     gap: SPACING.sm,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.10)",
+    backgroundColor: "rgba(10,14,20,0.50)",
+    padding: SPACING.sm,
+  },
+  detailPrimaryAction: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.md,
+  },
+  detailPrimaryIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: RADIUS.full,
+    backgroundColor: "rgba(5,7,11,0.16)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  detailPrimaryTitle: {
+    fontSize: FONT_SIZE.md,
+    color: COLORS.bgVoid,
+    fontFamily: FONT_FAMILY.bodySemibold,
+  },
+  detailActionCopy: {
+    flex: 1,
+    minWidth: 0,
+    gap: 1,
+  },
+  detailActionMeta: {
+    fontSize: FONT_SIZE.xs,
+    color: "rgba(5,7,11,0.72)",
+    fontFamily: FONT_FAMILY.bodyMedium,
   },
   detailActionsRow: {
     flexDirection: "row",
@@ -3347,23 +3590,69 @@ const styles = StyleSheet.create({
   },
   detailActionSecondaryBtn: {
     flex: 1,
+    minHeight: 74,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.sm,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.10)",
+    backgroundColor: "rgba(255,255,255,0.04)",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: SPACING.xs,
+  },
+  detailActionIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: RADIUS.full,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  detailActionIncreaseBtn: {
+    borderColor: COLORS.income + "28",
+    backgroundColor: COLORS.income + "0E",
+  },
+  detailActionIncreaseIcon: {
+    backgroundColor: COLORS.income + "18",
+  },
+  detailActionIncreaseText: {
+    color: COLORS.income,
+  },
+  detailActionDangerBtn: {
+    borderColor: COLORS.danger + "28",
+    backgroundColor: COLORS.danger + "0E",
+  },
+  detailActionDangerIcon: {
+    backgroundColor: COLORS.danger + "18",
+  },
+  detailActionSecondaryText: {
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.ink,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    textAlign: "center",
+  },
+  detailActionDangerText: {
+    color: COLORS.danger,
+  },
+  detailInfoCard: {
+    gap: 0,
+  },
+  detailInfoHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: SPACING.sm,
+  },
+  detailInfoBadge: {
     paddingHorizontal: SPACING.sm,
     paddingVertical: 4,
     borderRadius: RADIUS.full,
     borderWidth: 1,
-    borderColor: COLORS.secondary,
-    alignItems: "center",
-  },
-  detailActionDangerBtn: {
-    borderColor: COLORS.danger,
-  },
-  detailActionSecondaryText: {
-    fontSize: FONT_SIZE.xs,
+    borderColor: COLORS.secondary + "38",
+    backgroundColor: COLORS.secondary + "12",
     color: COLORS.secondary,
-    fontFamily: FONT_FAMILY.bodyMedium,
-  },
-  detailActionDangerText: {
-    color: COLORS.danger,
+    fontSize: FONT_SIZE.xs,
+    fontFamily: FONT_FAMILY.bodySemibold,
   },
   back: { fontSize: FONT_SIZE.sm, color: COLORS.primary },
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
@@ -3529,13 +3818,16 @@ const styles = StyleSheet.create({
   },
   eventRow: {
     gap: SPACING.xs,
-    paddingVertical: SPACING.sm, borderBottomWidth: 1, borderBottomColor: GLASS.separator,
+    padding: SPACING.md,
+    borderRadius: RADIUS.md,
+    backgroundColor: "rgba(10,14,20,0.56)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.10)",
   },
   eventRowHighlighted: {
     borderRadius: RADIUS.md,
-    backgroundColor: COLORS.income + "04",
-    borderWidth: 1,
-    borderColor: COLORS.income + "14",
+    backgroundColor: COLORS.income + "08",
+    borderColor: COLORS.income + "28",
   },
   eventRowHighlightedPulse: {
     backgroundColor: COLORS.income + "12",
@@ -3543,11 +3835,28 @@ const styles = StyleSheet.create({
   },
   eventMainPress: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     justifyContent: "space-between",
     gap: SPACING.sm,
   },
-  eventInfo: { gap: 2, flex: 1 },
+  eventAccent: {
+    width: 3,
+    alignSelf: "stretch",
+    minHeight: 44,
+    borderRadius: RADIUS.full,
+  },
+  eventBody: {
+    flex: 1,
+    gap: SPACING.xs,
+    minWidth: 0,
+  },
+  eventHeaderRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: SPACING.sm,
+  },
+  eventInfo: { gap: 2, flex: 1, minWidth: 0 },
   eventRight: {
     flexDirection: "row",
     alignItems: "center",
@@ -3559,9 +3868,59 @@ const styles = StyleSheet.create({
   },
   eventType: { fontSize: FONT_SIZE.sm, fontFamily: FONT_FAMILY.bodyMedium, color: COLORS.ink },
   eventDate: { fontSize: FONT_SIZE.xs, color: COLORS.storm },
-  eventNotes: { fontSize: FONT_SIZE.xs, color: COLORS.textDisabled },
-  eventAmount: { fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.bodySemibold },
-  eventChevron: { fontSize: FONT_SIZE.lg, color: COLORS.storm, marginTop: 1 },
+  eventDescription: {
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.ink,
+    fontFamily: FONT_FAMILY.body,
+    lineHeight: 19,
+  },
+  eventDescriptionMuted: {
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.textDisabled,
+    fontFamily: FONT_FAMILY.body,
+    lineHeight: 17,
+  },
+  eventNotes: {
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    lineHeight: 17,
+  },
+  eventAmountGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.xs,
+    flexShrink: 0,
+  },
+  eventAmountPill: {
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 4,
+    maxWidth: 150,
+  },
+  eventAmount: { fontSize: FONT_SIZE.sm, fontFamily: FONT_FAMILY.bodySemibold },
+  eventChevron: { fontSize: FONT_SIZE.md, color: COLORS.storm, marginTop: 1 },
+  eventInlineMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: SPACING.xs,
+    marginTop: 2,
+  },
+  eventMetaChip: {
+    alignSelf: "flex-start",
+    paddingHorizontal: SPACING.xs + 2,
+    paddingVertical: 3,
+    borderRadius: RADIUS.full,
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.10)",
+  },
+  eventMetaChipText: {
+    fontSize: 10,
+    color: COLORS.storm,
+    fontFamily: FONT_FAMILY.bodyMedium,
+  },
   movementChip: {
     paddingHorizontal: SPACING.xs + 2,
     paddingVertical: 2,
@@ -3576,7 +3935,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flexWrap: "wrap",
     gap: SPACING.xs,
-    paddingLeft: 2,
+    paddingLeft: SPACING.md,
     marginTop: 4,
   },
   eventAttachmentChip: {
@@ -3613,6 +3972,20 @@ const styles = StyleSheet.create({
     color: COLORS.storm,
     fontFamily: FONT_FAMILY.body,
   },
+  ownerEventDeletePendingChip: {
+    alignSelf: "flex-start",
+    paddingHorizontal: SPACING.xs + 2,
+    paddingVertical: 4,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.danger + "16",
+    borderWidth: 1,
+    borderColor: COLORS.danger + "36",
+  },
+  ownerEventDeletePendingText: {
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.danger,
+    fontFamily: FONT_FAMILY.bodyMedium,
+  },
   eventMenuSheet: {
     paddingTop: SPACING.xs,
     gap: SPACING.sm,
@@ -3645,6 +4018,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 5,
   },
   requestBadgeText: { color: "#FFF", fontSize: 11, fontFamily: FONT_FAMILY.bodySemibold },
+  requestGroupTitle: {
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.ink,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    marginTop: SPACING.xs,
+  },
   requestCard: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -3678,6 +4057,133 @@ const styles = StyleSheet.create({
   rejectBtn: {
     width: 36, height: 36, alignItems: "center", justifyContent: "center",
     borderRadius: RADIUS.md, backgroundColor: COLORS.danger + "18",
+  },
+  ownerDeleteRequestCard: {
+    gap: SPACING.sm,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: COLORS.danger + "28",
+    backgroundColor: "rgba(10,14,20,0.58)",
+    padding: SPACING.md,
+  },
+  ownerDeleteRequestHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: SPACING.sm,
+  },
+  ownerDeleteRequestTitleWrap: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  ownerDeleteRequestEyebrow: {
+    fontSize: 10,
+    color: COLORS.danger,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  ownerDeleteRequestTitle: {
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.ink,
+    fontFamily: FONT_FAMILY.bodySemibold,
+  },
+  ownerDeleteRequestStatus: {
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 4,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.warning + "16",
+    borderWidth: 1,
+    borderColor: COLORS.warning + "36",
+  },
+  ownerDeleteRequestStatusText: {
+    fontSize: 10,
+    color: COLORS.warning,
+    fontFamily: FONT_FAMILY.bodySemibold,
+  },
+  ownerDeleteTargetCard: {
+    flexDirection: "row",
+    gap: SPACING.sm,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.10)",
+    backgroundColor: "rgba(255,255,255,0.04)",
+    padding: SPACING.sm,
+  },
+  ownerDeleteTargetAccent: {
+    width: 3,
+    alignSelf: "stretch",
+    minHeight: 46,
+    borderRadius: RADIUS.full,
+  },
+  ownerDeleteTargetBody: {
+    flex: 1,
+    minWidth: 0,
+    gap: SPACING.xs,
+  },
+  ownerDeleteTargetTopRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: SPACING.sm,
+  },
+  ownerDeleteTargetInfo: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  ownerDeleteTargetType: {
+    fontSize: FONT_SIZE.sm,
+    fontFamily: FONT_FAMILY.bodySemibold,
+  },
+  ownerDeleteTargetDate: {
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    fontFamily: FONT_FAMILY.bodyMedium,
+  },
+  ownerDeleteTargetAmount: {
+    maxWidth: 140,
+    fontSize: FONT_SIZE.sm,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    textAlign: "right",
+  },
+  ownerDeleteTargetDesc: {
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.ink,
+    lineHeight: 17,
+  },
+  ownerDeleteTargetDescMuted: {
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.textDisabled,
+    lineHeight: 17,
+  },
+  ownerDeleteRequestActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: SPACING.sm,
+  },
+  ownerDeleteFocusBtn: {
+    flex: 1,
+    minHeight: 36,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.secondary + "32",
+    backgroundColor: COLORS.secondary + "10",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: SPACING.sm,
+  },
+  ownerDeleteFocusText: {
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.secondary,
+    fontFamily: FONT_FAMILY.bodySemibold,
+  },
+  ownerDeleteDecisionActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.xs,
   },
   rejectSheet: {
     backgroundColor: COLORS.mist,
@@ -3727,54 +4233,57 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
     fontFamily: FONT_FAMILY.bodySemibold,
   },
-  linkedChip: {
-    paddingHorizontal: SPACING.xs + 1, paddingVertical: 2,
+  viewerAccountLinkedChip: {
+    paddingHorizontal: SPACING.xs + 2,
+    paddingVertical: 4,
     borderRadius: RADIUS.full,
-    backgroundColor: COLORS.income + "22",
+    backgroundColor: COLORS.income + "14",
     borderWidth: 1,
-    borderColor: COLORS.income + "44",
+    borderColor: COLORS.income + "30",
   },
-  linkedChipText: { fontSize: 10, color: COLORS.income, fontFamily: FONT_FAMILY.bodySemibold },
-  unlinkChip: {
-    paddingHorizontal: SPACING.xs + 1, paddingVertical: 2,
+  viewerAccountLinkedText: {
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.income,
+    fontFamily: FONT_FAMILY.bodyMedium,
+  },
+  viewerAccountUnlinkedChip: {
+    paddingHorizontal: SPACING.xs + 2,
+    paddingVertical: 4,
     borderRadius: RADIUS.full,
-    backgroundColor: COLORS.warning + "22",
+    backgroundColor: "rgba(255,255,255,0.05)",
     borderWidth: 1,
-    borderColor: COLORS.warning + "44",
+    borderColor: "rgba(255,255,255,0.10)",
   },
-  unlinkChipText: { fontSize: 10, color: COLORS.warning, fontFamily: FONT_FAMILY.bodySemibold },
+  viewerAccountUnlinkedText: {
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    fontFamily: FONT_FAMILY.bodyMedium,
+  },
   viewerEventActions: {
     flexDirection: "row",
     alignItems: "center",
     gap: SPACING.xs,
     flexWrap: "wrap",
-    paddingLeft: 2,
+    paddingLeft: SPACING.md,
   },
-  viewerEditBtn: {
+  viewerEditPendingChip: {
     paddingHorizontal: SPACING.xs + 2,
     paddingVertical: 4,
     borderRadius: RADIUS.full,
-    backgroundColor: COLORS.primary + "18",
+    backgroundColor: COLORS.warning + "20",
     borderWidth: 1,
-    borderColor: COLORS.primary + "44",
+    borderColor: COLORS.warning + "44",
   },
-  viewerEditBtnText: {
+  viewerEditPendingText: {
     fontSize: FONT_SIZE.xs,
-    color: COLORS.primary,
+    color: COLORS.warning,
     fontFamily: FONT_FAMILY.bodyMedium,
   },
-  viewerDeleteBtn: {
-    paddingHorizontal: SPACING.xs + 2,
-    paddingVertical: 4,
-    borderRadius: RADIUS.full,
-    backgroundColor: COLORS.danger + "18",
-    borderWidth: 1,
-    borderColor: COLORS.danger + "44",
-  },
-  viewerDeleteBtnText: {
+  viewerEventManageHint: {
     fontSize: FONT_SIZE.xs,
-    color: COLORS.danger,
+    color: COLORS.textDisabled,
     fontFamily: FONT_FAMILY.bodyMedium,
+    fontStyle: "italic",
   },
   viewerDeletePendingChip: {
     paddingHorizontal: SPACING.xs + 2,
@@ -3967,4 +4476,3 @@ export default function ObligationDetailScreenRoot() {
     </ErrorBoundary>
   );
 }
-

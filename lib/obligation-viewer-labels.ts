@@ -117,3 +117,12 @@ export function obligationHistoryEventColor(
 
   return COLORS.storm;
 }
+
+export function obligationHistoryEventAmountPrefix(
+  eventType: string,
+  direction: ObligationDirection,
+  isSharedViewer: boolean,
+): "+" | "−" | "" {
+  if (eventType !== "payment") return "";
+  return obligationViewerActsAsCollector(direction, isSharedViewer) ? "+" : "−";
+}

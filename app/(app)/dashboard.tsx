@@ -5792,18 +5792,37 @@ function AdvancedDashboard({
   );
 }
 
+const PRO_GATE_FEATURES = [
+  { icon: TrendingUp, label: "Flujo y salud financiera en profundidad" },
+  { icon: Target,     label: "Radar de calidad y métricas avanzadas" },
+  { icon: Brain,      label: "Aprendizaje inteligente de patrones" },
+  { icon: Sparkles,   label: "Widgets personalizables y presets" },
+];
+
 function ProGate() {
   return (
     <View style={subStyles.proGate}>
-      <View style={subStyles.proGateIconWrap}>
-        <Lock size={16} color={COLORS.gold} strokeWidth={1.8} />
+      <View style={subStyles.proGateHeader}>
+        <View style={subStyles.proGateIconWrapLg}>
+          <Lock size={22} color={COLORS.gold} strokeWidth={1.8} />
+        </View>
+        <View style={{ flex: 1, gap: 2 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: SPACING.sm }}>
+            <Text style={subStyles.proGateTitleLg}>Dashboard Avanzado</Text>
+            <View style={subStyles.proGateBadge}>
+              <Text style={subStyles.proGateBadgeText}>PRO</Text>
+            </View>
+          </View>
+          <Text style={subStyles.proGateBody}>Análisis en profundidad disponible solo en el plan PRO</Text>
+        </View>
       </View>
-      <View style={subStyles.proGateText}>
-        <Text style={subStyles.proGateTitle}>Dashboard Avanzado</Text>
-        <Text style={subStyles.proGateBody}>Análisis detallado, gráficos y salud financiera</Text>
-      </View>
-      <View style={subStyles.proGateBadge}>
-        <Text style={subStyles.proGateBadgeText}>PRO</Text>
+      <View style={subStyles.proGateFeatures}>
+        {PRO_GATE_FEATURES.map(({ icon: Icon, label }) => (
+          <View key={label} style={subStyles.proGateFeatureRow}>
+            <Icon size={13} color={COLORS.gold} strokeWidth={2} />
+            <Text style={subStyles.proGateFeatureText}>{label}</Text>
+          </View>
+        ))}
       </View>
     </View>
   );
@@ -5813,7 +5832,7 @@ function ProGate() {
 
 function ProGateLoading() {
   return (
-    <View style={subStyles.proGate}>
+    <View style={[subStyles.proGate, { flexDirection: "row", alignItems: "center" }]}>
       <View style={subStyles.proGateIconWrap}>
         <Lock size={16} color={COLORS.storm} strokeWidth={1.8} />
       </View>
@@ -6031,7 +6050,11 @@ function DashboardScreen() {
       >
         {/* 1. Mode toggle */}
         <ModeToggle mode={dashboardMode} setMode={setDashboardMode} isPro={isPro} />
-        {isCheckingAdvancedAccess ? <ProGateLoading /> : shouldShowAdvancedProGate ? <ProGate /> : (
+        {isCheckingAdvancedAccess ? <ProGateLoading /> : shouldShowAdvancedProGate ? (
+          <>
+            <ProGate />
+          </>
+        ) : (
           <>
 
         {!isAdvanced ? (
@@ -8511,15 +8534,18 @@ const subStyles = StyleSheet.create({
 
   // Pro gate
   proGate: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: SPACING.sm,
-    paddingVertical: SPACING.md,
+    gap: SPACING.md,
+    paddingVertical: SPACING.lg,
     paddingHorizontal: SPACING.lg,
     backgroundColor: "rgba(215,190,123,0.06)",
     borderRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: "rgba(215,190,123,0.15)",
+    borderColor: "rgba(215,190,123,0.18)",
+  },
+  proGateHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: SPACING.md,
   },
   proGateIconWrap: {
     width: 32,
@@ -8529,8 +8555,18 @@ const subStyles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  proGateIconWrapLg: {
+    width: 42,
+    height: 42,
+    borderRadius: RADIUS.full,
+    backgroundColor: "rgba(215,190,123,0.12)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 2,
+  },
   proGateText: { flex: 1, gap: 2 },
   proGateTitle: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.sm, color: COLORS.ink },
+  proGateTitleLg: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.md, color: COLORS.ink },
   proGateBody: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm, lineHeight: 16 },
   proGateBadge: {
     paddingHorizontal: SPACING.sm,
@@ -8549,6 +8585,23 @@ const subStyles = StyleSheet.create({
     fontSize: 10,
     color: COLORS.gold,
     letterSpacing: 0.8,
+  },
+  proGateFeatures: {
+    gap: SPACING.xs,
+    paddingTop: SPACING.sm,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(215,190,123,0.10)",
+  },
+  proGateFeatureRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+  },
+  proGateFeatureText: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    lineHeight: 18,
   },
 });
 

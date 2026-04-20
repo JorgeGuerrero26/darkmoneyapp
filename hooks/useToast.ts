@@ -9,7 +9,7 @@ const VARIANT_TO_TYPE: Record<string, ToastType> = {
   success: "success",
   error: "delete",
   warning: "update",
-  info: "transfer",
+  info: "info",
 };
 
 export function useToast() {

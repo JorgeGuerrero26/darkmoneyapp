@@ -20,7 +20,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type ToastType = 'success' | 'update' | 'transfer' | 'delete'
+export type ToastType = 'success' | 'update' | 'transfer' | 'delete' | 'info'
 
 export interface ToastConfig {
   type: ToastType
@@ -44,6 +44,7 @@ const THEME: Record<ToastType, {
   update:   { bg: '#1C1700', iconBg: '#302700', accent: '#E8C44A', subtitleColor: '#A08830', undoBorder: 'rgba(232,196,74,0.35)' },
   transfer: { bg: '#130E28', iconBg: '#1E1440', accent: '#9B7AE8', subtitleColor: '#6A5090', undoBorder: 'rgba(155,122,232,0.35)' },
   delete:   { bg: '#200A0A', iconBg: '#381212', accent: '#E85A5A', subtitleColor: '#A04040', undoBorder: 'rgba(232,90,90,0.35)' },
+  info:     { bg: '#0A1824', iconBg: '#10243A', accent: '#60A5FA', subtitleColor: '#7EA9D8', undoBorder: 'rgba(96,165,250,0.35)' },
 }
 
 // ─── Dimensions ───────────────────────────────────────────────────────────────
@@ -95,6 +96,13 @@ function ToastIcon({ type, color }: { type: ToastType; color: string }) {
             strokeLinecap="round"
             {...p}
           />
+        </Svg>
+      )
+    case 'info':
+      return (
+        <Svg width={16} height={16} viewBox="0 0 16 16">
+          <Rect x={1.5} y={1.5} width={13} height={13} rx={6.5} {...p} />
+          <Path d="M8 7.2v4.1M8 4.7h.01" strokeLinecap="round" {...p} />
         </Svg>
       )
   }
