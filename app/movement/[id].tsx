@@ -58,7 +58,7 @@ function readMovementLinkedEventId(metadata: unknown): number | null {
 }
 
 function MovementDetailScreen() {
-  const { id, from } = useLocalSearchParams<{ id: string; from?: string }>();
+  const { id, from, edit } = useLocalSearchParams<{ id: string; from?: string; edit?: string }>();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -82,12 +82,20 @@ function MovementDetailScreen() {
   const [deletingSelected, setDeletingSelected] = useState(false);
   const [voidConfirmVisible, setVoidConfirmVisible] = useState(false);
   const longPressAttachmentPathRef = useRef<string | null>(null);
+  const autoOpenedEditMovementIdRef = useRef<number | null>(null);
 
   const { data: movement, isLoading, error } = useMovementQuery(id ? parseInt(id) : null);
   const {
     data: movementAttachments = [],
     isLoading: attachmentsLoading,
   } = useMovementAttachmentsQuery(movement?.workspaceId, movement?.id);
+
+  useEffect(() => {
+    if (edit !== "1" || !movement) return;
+    if (autoOpenedEditMovementIdRef.current === movement.id) return;
+    autoOpenedEditMovementIdRef.current = movement.id;
+    setEditFormVisible(true);
+  }, [edit, movement?.id]);
 
   const baseCurrency = activeWorkspace?.baseCurrencyCode ?? "PEN";
   const isTransfer = movement?.movementType === "transfer";
@@ -1088,4 +1096,3 @@ export default function MovementDetailScreenRoot() {
     </ErrorBoundary>
   );
 }
-

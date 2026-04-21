@@ -62,6 +62,21 @@ export type MovementAnalyticsSignal = {
   updatedAt: string;
 };
 
+export type MovementLearningFeedback = {
+  id: number;
+  workspaceId: number;
+  userId?: string | null;
+  movementId: number;
+  feedbackKind: string;
+  normalizedDescription?: string | null;
+  previousCategoryId?: number | null;
+  acceptedCategoryId?: number | null;
+  confidence?: number | null;
+  source: string;
+  metadata?: JsonValue | null;
+  createdAt: string;
+};
+
 export type WorkspaceAnalyticsSnapshot = {
   id: number;
   workspaceId: number;

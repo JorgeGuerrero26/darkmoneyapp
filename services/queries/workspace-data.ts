@@ -29,6 +29,7 @@ import type {
   JsonValue,
   MovementRecord,
   MovementAnalyticsSignal,
+  MovementLearningFeedback,
   MovementType,
   MovementStatus,
   ObligationDirection,
@@ -1339,6 +1340,7 @@ export type DashboardMovementRow = {
 
 export type DashboardAnalyticsBundle = {
   signals: MovementAnalyticsSignal[];
+  learningFeedback: MovementLearningFeedback[];
   projectionSnapshot: WorkspaceAnalyticsSnapshot | null;
   available: boolean;
 };
@@ -1372,6 +1374,17 @@ export type PersistWorkspaceAnalyticsSnapshotInput = {
 export type PersistDashboardAnalyticsInput = {
   signals: PersistMovementAnalyticsSignalInput[];
   snapshot?: PersistWorkspaceAnalyticsSnapshotInput | null;
+};
+
+export type PersistLearningFeedbackInput = {
+  movementId: number;
+  feedbackKind: "accepted_category_suggestion" | "rejected_category_suggestion" | "manual_category_change";
+  normalizedDescription?: string | null;
+  previousCategoryId?: number | null;
+  acceptedCategoryId?: number | null;
+  confidence?: number | null;
+  source?: string;
+  metadata?: JsonValue | null;
 };
 
 export function useDashboardMovementsQuery(
@@ -1421,17 +1434,24 @@ export function useDashboardAnalyticsQuery(
     queryFn: async (): Promise<DashboardAnalyticsBundle> => {
       const fallback: DashboardAnalyticsBundle = {
         signals: [],
+        learningFeedback: [],
         projectionSnapshot: null,
         available: false,
       };
       if (!supabase || !workspaceId) return fallback;
 
-      const [signalsResult, snapshotResult] = await Promise.all([
+      const [signalsResult, feedbackResult, snapshotResult] = await Promise.all([
         supabase
           .from("movement_analytics_signals")
           .select("id, workspace_id, movement_id, normalized_description, merchant_guess, suggested_category_id, suggested_category_confidence, anomaly_score, signal_reasons, analytics_version, created_at, updated_at")
           .eq("workspace_id", workspaceId)
           .order("updated_at", { ascending: false })
+          .limit(300),
+        supabase
+          .from("movement_learning_feedback")
+          .select("id, workspace_id, user_id, movement_id, feedback_kind, normalized_description, previous_category_id, accepted_category_id, confidence, source, metadata, created_at")
+          .eq("workspace_id", workspaceId)
+          .order("created_at", { ascending: false })
           .limit(300),
         supabase
           .from("workspace_analytics_snapshots")
@@ -1445,11 +1465,16 @@ export function useDashboardAnalyticsQuery(
 
       const missingSignals =
         signalsResult.error && isMissingRelationError(signalsResult.error, "movement_analytics_signals");
+      const missingFeedback =
+        feedbackResult.error && isMissingRelationError(feedbackResult.error, "movement_learning_feedback");
       const missingSnapshot =
         snapshotResult.error && isMissingRelationError(snapshotResult.error, "workspace_analytics_snapshots");
 
       if (signalsResult.error && !missingSignals) {
         throw new Error(signalsResult.error.message ?? "No se pudieron cargar las seÃ±ales analÃ­ticas.");
+      }
+      if (feedbackResult.error && !missingFeedback) {
+        throw new Error(feedbackResult.error.message ?? "No se pudo cargar el aprendizaje persistido.");
       }
       if (snapshotResult.error && !missingSnapshot) {
         throw new Error(snapshotResult.error.message ?? "No se pudo cargar la proyecciÃ³n persistida.");
@@ -1477,6 +1502,26 @@ export function useDashboardAnalyticsQuery(
           analyticsVersion: String(row.analytics_version ?? "v1"),
           createdAt: String(row.created_at ?? ""),
           updatedAt: String(row.updated_at ?? ""),
+        }));
+
+      const learningFeedback: MovementLearningFeedback[] = missingFeedback
+        ? []
+        : (feedbackResult.data ?? []).map((row: any) => ({
+          id: Number(row.id),
+          workspaceId: Number(row.workspace_id),
+          userId: typeof row.user_id === "string" ? row.user_id : null,
+          movementId: Number(row.movement_id),
+          feedbackKind: String(row.feedback_kind ?? ""),
+          normalizedDescription:
+            typeof row.normalized_description === "string" ? row.normalized_description : null,
+          previousCategoryId:
+            row.previous_category_id == null ? null : Number(row.previous_category_id),
+          acceptedCategoryId:
+            row.accepted_category_id == null ? null : Number(row.accepted_category_id),
+          confidence: row.confidence == null ? null : Number(row.confidence),
+          source: String(row.source ?? "dashboard"),
+          metadata: row.metadata == null ? null : (row.metadata as JsonValue),
+          createdAt: String(row.created_at ?? ""),
         }));
 
       const projectionSnapshot: WorkspaceAnalyticsSnapshot | null =
@@ -1530,8 +1575,9 @@ export function useDashboardAnalyticsQuery(
 
       return {
         signals,
+        learningFeedback,
         projectionSnapshot,
-        available: !missingSignals || !missingSnapshot,
+        available: !missingSignals || !missingFeedback || !missingSnapshot,
       };
     },
     enabled: Boolean(workspaceId),
@@ -1598,6 +1644,39 @@ export function usePersistDashboardAnalyticsMutation(workspaceId: number | null)
       }
 
       return { persisted: true };
+    },
+  });
+}
+
+export function usePersistLearningFeedbackMutation(
+  workspaceId: number | null,
+  userId?: string | null,
+) {
+  return useMutation({
+    mutationFn: async (input: PersistLearningFeedbackInput) => {
+      if (!supabase || !workspaceId) return { persisted: false };
+      const payload = {
+        workspace_id: workspaceId,
+        user_id: userId ?? null,
+        movement_id: input.movementId,
+        feedback_kind: input.feedbackKind,
+        normalized_description: input.normalizedDescription ?? null,
+        previous_category_id: input.previousCategoryId ?? null,
+        accepted_category_id: input.acceptedCategoryId ?? null,
+        confidence: input.confidence ?? null,
+        source: input.source ?? "dashboard",
+        metadata: input.metadata ?? {},
+      };
+
+      const { error } = await supabase
+        .from("movement_learning_feedback")
+        .insert(payload);
+
+      if (error && !isMissingRelationError(error, "movement_learning_feedback")) {
+        throw new Error(error.message ?? "No se pudo persistir el aprendizaje.");
+      }
+
+      return { persisted: !error };
     },
   });
 }
@@ -2957,6 +3036,7 @@ export type DeleteObligationEventInput = {
   ownerUserId?: string | null;
   obligationTitle?: string | null;
   amount?: number | null;
+  currencyCode?: string | null;
   eventType?: string | null;
   eventDate?: string | null;
 };
@@ -6768,6 +6848,3 @@ export function useDeleteViewerEventLinkMutation() {
     },
   });
 }
-
-
-

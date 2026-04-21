@@ -2,6 +2,7 @@
 import { useFocusEffect } from "expo-router";
 import {
   Image,
+  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -42,6 +43,8 @@ import {
   useDashboardMovementsQuery,
   useDashboardAnalyticsQuery,
   usePersistDashboardAnalyticsMutation,
+  usePersistLearningFeedbackMutation,
+  useUpdateMovementMutation,
   useSharedObligationsQuery,
   useNotificationsQuery,
   useUserEntitlementQuery,
@@ -76,6 +79,19 @@ import { parseDisplayDate } from "../../lib/date";
 import { RingChart, type RingSegment } from "../../components/ui/RingChart";
 import { SparkLine } from "../../components/ui/SparkLine";
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
+import { useToast } from "../../hooks/useToast";
+import { buildCategorySuggestionCandidates } from "../../services/analytics/category-suggestions";
+import { detectMovementAnomalies } from "../../services/analytics/anomaly-detection";
+import { simulateMonthEndCashflow } from "../../services/analytics/cashflow-forecast";
+import { findProbableDuplicateGroups } from "../../services/analytics/duplicate-detection";
+import { buildFinancialGraphRank, type FinancialGraphRankNode } from "../../services/analytics/financial-graph";
+import { buildFocusActionRanking } from "../../services/analytics/focus-scoring";
+import { buildHistoryFactorAnalysis } from "../../services/analytics/history-factor-analysis";
+import { detectHistoryChangePoint } from "../../services/analytics/history-change-points";
+import { clusterHistoryMonths } from "../../services/analytics/month-clustering";
+import { buildPaymentOptimizationPlan, type PaymentOptimizationRecommendation } from "../../services/analytics/payment-optimization";
+import { buildPatternClusters } from "../../services/analytics/pattern-clustering";
+import { normalizeAnalyticsText } from "../../services/analytics/movement-features";
 
 // --- Constants ----------------------------------------------------------------
 
@@ -127,6 +143,16 @@ function isCategorizedCashflow(m: DashboardMovementRow) {
 function inRange(m: DashboardMovementRow, start: Date, end: Date) {
   const d = new Date(m.occurredAt);
   return d >= start && d <= end;
+}
+
+function sortMovementsRecentFirst(movements: DashboardMovementRow[]) {
+  return [...movements].sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime() || b.id - a.id);
+}
+
+function movementPreviewActionLabel(movement: DashboardMovementRow) {
+  if (movement.status === "pending" || movement.status === "planned") return "Aplicar";
+  if (isCategorizedCashflow(movement) && movement.categoryId == null) return "Categorizar";
+  return "Editar";
 }
 
 function getPeriodBounds(period: Period, now: Date): { curStart: Date; curEnd: Date; prevStart: Date; prevEnd: Date } {
@@ -336,14 +362,10 @@ function buildReviewInboxSnapshot(
 
   const pendingMovementsCount = movements.filter((movement) => movement.status === "pending").length;
 
-  const duplicateGroups = new Map<string, number>();
-  for (const movement of movements) {
-    if (!isExpense(movement)) continue;
-    const label = movement.description.trim().toLowerCase() || "sin-descripcion";
-    const key = `${movement.occurredAt.slice(0, 10)}|${movementDisplayAmount(movement).toFixed(2)}|${label}`;
-    duplicateGroups.set(key, (duplicateGroups.get(key) ?? 0) + 1);
-  }
-  const duplicateExpenseGroups = Array.from(duplicateGroups.values()).filter((count) => count > 1).length;
+  const duplicateExpenseGroups = findProbableDuplicateGroups({
+    movements: movements.filter(isExpense),
+    getAmount: movementDisplayAmount,
+  }).length;
 
   const subscriptionsAttentionCount = subscriptions.filter((subscription) => {
     if (subscription.status !== "active") return false;
@@ -531,6 +553,11 @@ type DashboardProjectionModel = {
   expectedBalance: number;
   conservativeBalance: number;
   optimisticBalance: number;
+  monteCarloLowBalance: number;
+  monteCarloMedianBalance: number;
+  monteCarloHighBalance: number;
+  pressureThreshold: number;
+  pressureProbability: number;
   committedInflow: number;
   committedOutflow: number;
   variableIncomeProjection: number;
@@ -551,133 +578,38 @@ type DashboardAnomalyFinding = {
   reasons: string[];
 };
 
-function normalizeAnalyticsText(value: string) {
-  return value
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[0-9]/g, " ")
-    .replace(/[^a-z\s]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function tokenizeAnalyticsText(value: string) {
-  return normalizeAnalyticsText(value)
-    .split(" ")
-    .filter((token) => token.length >= 3);
-}
+type MovementPreviewSheetState = {
+  title: string;
+  subtitle: string;
+  scopeLabel: string;
+  emptyTitle?: string;
+  emptyBody?: string;
+  movements: DashboardMovementRow[];
+  suggestion?: {
+    movementId: number;
+    description: string;
+    categoryId: number;
+    categoryName: string;
+    confidencePct: number;
+  };
+};
 
 function buildCategorySuggestions(
   movements: DashboardMovementRow[],
   categories: Array<{ id: number; name: string }>,
   ctx: ConversionCtx,
 ): DashboardCategorySuggestion[] {
-  const categoryMap = new Map(categories.map((category) => [category.id, category.name]));
-  const categorizedHistory = movements
-    .filter((movement) => movement.status === "posted")
-    .filter(isCategorizedCashflow)
-    .filter((movement) => movement.categoryId != null)
-    .sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime());
-
-  const uncategorizedTargets = movements
-    .filter((movement) => movement.status === "posted")
-    .filter(isCategorizedCashflow)
-    .filter((movement) => movement.categoryId == null)
-    .sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime())
-    .slice(0, 8);
-
-  const suggestions: DashboardCategorySuggestion[] = [];
-
-  for (const target of uncategorizedTargets) {
-    const targetNormalized = normalizeAnalyticsText(target.description);
-    const targetTokens = tokenizeAnalyticsText(target.description);
-    const targetAmount = movementActsAsIncome(target) ? incomeAmt(target, ctx) : expenseAmt(target, ctx);
-    const isTargetIncome = movementActsAsIncome(target);
-    const categoryScores = new Map<number, { score: number; samples: number; exact: number; closeAmount: number; sameCounterparty: number }>();
-
-    for (const sample of categorizedHistory) {
-      if (sample.id === target.id || sample.categoryId == null) continue;
-      if (movementActsAsIncome(sample) !== isTargetIncome) continue;
-
-      const sampleNormalized = normalizeAnalyticsText(sample.description);
-      const sampleTokens = tokenizeAnalyticsText(sample.description);
-      const sampleAmount = movementActsAsIncome(sample) ? incomeAmt(sample, ctx) : expenseAmt(sample, ctx);
-      let score = 0;
-
-      if (targetNormalized && sampleNormalized && targetNormalized === sampleNormalized) score += 5;
-
-      if (targetTokens.length > 0 && sampleTokens.length > 0) {
-        const overlap = targetTokens.filter((token) => sampleTokens.includes(token)).length;
-        const overlapRatio = overlap / Math.max(targetTokens.length, sampleTokens.length);
-        if (overlapRatio >= 0.75) score += 2.5;
-        else if (overlapRatio >= 0.45) score += 1.25;
-      }
-
-      if (target.counterpartyId && sample.counterpartyId && target.counterpartyId === sample.counterpartyId) score += 2;
-
-      if (targetAmount > 0.009 && sampleAmount > 0.009) {
-        const ratio = Math.abs(targetAmount - sampleAmount) / Math.max(targetAmount, sampleAmount);
-        if (ratio <= 0.12) score += 1.5;
-        else if (ratio <= 0.3) score += 0.75;
-      }
-
-      if (score < 1.25) continue;
-
-      const current = categoryScores.get(sample.categoryId) ?? { score: 0, samples: 0, exact: 0, closeAmount: 0, sameCounterparty: 0 };
-      categoryScores.set(sample.categoryId, {
-        score: current.score + score,
-        samples: current.samples + 1,
-        exact: current.exact + (targetNormalized && sampleNormalized && targetNormalized === sampleNormalized ? 1 : 0),
-        closeAmount: current.closeAmount + (targetAmount > 0.009 && sampleAmount > 0.009 && Math.abs(targetAmount - sampleAmount) / Math.max(targetAmount, sampleAmount) <= 0.12 ? 1 : 0),
-        sameCounterparty: current.sameCounterparty + (target.counterpartyId && sample.counterpartyId && target.counterpartyId === sample.counterpartyId ? 1 : 0),
-      });
-    }
-
-    const ranked = Array.from(categoryScores.entries()).sort((a, b) => b[1].score - a[1].score);
-    if (ranked.length === 0) continue;
-
-    const [bestCategoryId, best] = ranked[0];
-    const secondScore = ranked[1]?.[1].score ?? 0;
-    const scoreGap = Math.max(0, best.score - secondScore);
-    const confidence = Math.max(
-      0.46,
-      Math.min(
-        0.97,
-        0.38 +
-          Math.min(best.samples, 4) * 0.09 +
-          Math.min(best.exact, 2) * 0.14 +
-          Math.min(best.closeAmount, 2) * 0.06 +
-          Math.min(best.sameCounterparty, 1) * 0.08 +
-          Math.min(scoreGap / 6, 0.18),
-      ),
-    );
-
-    if (best.score < 3.4 || confidence < 0.62) continue;
-
-    const reasons: string[] = [];
-    if (best.exact > 0) reasons.push("misma descripción ya vista");
-    if (best.sameCounterparty > 0) reasons.push("misma contraparte");
-    if (best.closeAmount > 0) reasons.push("monto parecido");
-    if (best.samples >= 2) reasons.push(`${best.samples} casos parecidos en tu historial`);
-    if (reasons.length === 0) reasons.push("patrón repetido en tu historial");
-
-    suggestions.push({
-      movementId: target.id,
-      description: target.description.trim() || "Movimiento sin descripción",
-      occurredAt: target.occurredAt,
-      amount: targetAmount,
-      suggestedCategoryId: bestCategoryId,
-      suggestedCategoryName: categoryMap.get(bestCategoryId) ?? "Categoría sugerida",
-      confidence,
-      matchedSamples: best.samples,
-      reasons,
-    });
-  }
-
-  return suggestions
-    .sort((a, b) => b.confidence - a.confidence || new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime())
-    .slice(0, 4);
+  return buildCategorySuggestionCandidates<DashboardMovementRow>({
+    movements,
+    categories,
+    isCashflow: isCategorizedCashflow,
+    isIncomeLike: movementActsAsIncome,
+    getAmount: (movement) => movementActsAsIncome(movement)
+      ? incomeAmt(movement, ctx)
+      : expenseAmt(movement, ctx),
+    limit: 4,
+    targetLimit: 10,
+  });
 }
 
 function buildMonthProjectionModel(
@@ -804,6 +736,15 @@ function buildMonthProjectionModel(
     monthWindow.expectedOutflow +
     variableIncomeProjection * (1.05 + incomeVolatility * 0.35) -
     variableExpenseProjection * Math.max(0.72, 0.92 - expenseVolatility * 0.25);
+  const monteCarlo = simulateMonthEndCashflow({
+    currentBalance: currentVisibleBalance,
+    committedInflow: monthWindow.expectedInflow,
+    committedOutflow: monthWindow.expectedOutflow,
+    dailySamples: lastThirtyDays,
+    incomeDailyAverage: incomeDailyAvg,
+    expenseDailyAverage: expenseDailyAvg,
+    remainingDays,
+  });
 
   const activeDays = lastThirtyDays.filter((day) => day.income > 0.009 || day.expense > 0.009).length;
   const confidence = Math.round(
@@ -823,6 +764,11 @@ function buildMonthProjectionModel(
     expectedBalance,
     conservativeBalance,
     optimisticBalance,
+    monteCarloLowBalance: monteCarlo.lowBalance,
+    monteCarloMedianBalance: monteCarlo.medianBalance,
+    monteCarloHighBalance: monteCarlo.highBalance,
+    pressureThreshold: monteCarlo.pressureThreshold,
+    pressureProbability: monteCarlo.pressureProbability,
     committedInflow: monthWindow.expectedInflow,
     committedOutflow: monthWindow.expectedOutflow,
     variableIncomeProjection,
@@ -839,110 +785,38 @@ function buildAnomalyFindings(
   categoryMap: Map<number, string>,
   accountMap: Map<number, string>,
 ): DashboardAnomalyFinding[] {
-  const expenses = movements
-    .filter(isExpense)
-    .filter((movement) => movement.description.trim())
-    .sort((a, b) => new Date(a.occurredAt).getTime() - new Date(b.occurredAt).getTime());
+  const movementMap = new Map(movements.map((movement) => [movement.id, movement]));
+  return detectMovementAnomalies<DashboardMovementRow>({
+    movements: movements.filter(isExpense),
+    getAmount: (movement) => expenseAmt(movement, ctx),
+    limit: 4,
+  }).map((finding) => {
+    const movement = movementMap.get(finding.movementId);
+    const amount = movement ? expenseAmt(movement, ctx) : finding.amount;
+    const categoryLabel = movement?.categoryId != null ? categoryMap.get(movement.categoryId) ?? "Categoría" : "Sin categoría";
+    const accountLabel = movement ? accountMap.get(movementDisplayAccountId(movement) ?? -1) ?? "Cuenta" : "Cuenta";
+    const title = movement?.description.trim() || (finding.kind === "probable_duplicate" ? "Posible duplicado" : "Movimiento");
+    const baseline = finding.baselineAmount != null ? formatCurrency(finding.baselineAmount, ctx.displayCurrency) : null;
+    const amountLabel = formatCurrency(amount, ctx.displayCurrency);
+    const body = finding.kind === "description_spike"
+      ? `Este gasto está bastante por encima de lo normal para esta misma descripción. Antes solía rondar ${baseline ?? "menos"}.`
+      : finding.kind === "category_spike"
+        ? `Este gasto está bastante por encima de lo habitual dentro de ${categoryLabel}. Antes esa referencia rondaba ${baseline ?? "menos"}.`
+        : finding.kind === "peer_spike"
+          ? `Este gasto se ve raro frente a movimientos parecidos por texto, cuenta, categoría o contraparte. La referencia rondaba ${baseline ?? "menos"}.`
+          : `${finding.sampleCount} movimientos parecen repetidos por fecha cercana, monto parecido y texto similar.`;
 
-  const descriptionHistory = new Map<string, number[]>();
-  const categoryHistory = new Map<number, number[]>();
-  const duplicateBuckets = new Map<string, DashboardMovementRow[]>();
-  const findings: DashboardAnomalyFinding[] = [];
-
-  for (const movement of expenses) {
-    const amount = expenseAmt(movement, ctx);
-    const normalizedDescription = normalizeAnalyticsText(movement.description) || "sin-descripcion";
-    const descriptionSamples = descriptionHistory.get(normalizedDescription) ?? [];
-    const categorySamples = movement.categoryId != null ? categoryHistory.get(movement.categoryId) ?? [] : [];
-
-    if (amount >= 12 && descriptionSamples.length >= 3) {
-      const n = descriptionSamples.length;
-      const avg = descriptionSamples.reduce((sum, value) => sum + value, 0) / n;
-      if (avg > 0) {
-        const variance = descriptionSamples.reduce((sum, value) => sum + Math.pow(value - avg, 2), 0) / n;
-        const std = Math.sqrt(variance);
-        const z = (amount - avg) / Math.max(std, avg * 0.10);
-        if (z >= 2.0) {
-          const accountLabel = accountMap.get(movementDisplayAccountId(movement) ?? -1) ?? "Cuenta";
-          findings.push({
-            key: `desc-${movement.id}`,
-            movementId: movement.id,
-            title: movement.description.trim() || "Movimiento",
-            body: `${z.toFixed(1)}sigma por encima de tu promedio habitual (${avg.toFixed(2)} ± ${std.toFixed(2)}).`,
-            meta: `${accountLabel} · ${formatCurrency(amount, ctx.displayCurrency)} · ${format(new Date(movement.occurredAt), "d MMM", { locale: es })}`,
-            level: z >= 3.0 ? "strong" : "review",
-            score: Math.min(99, Math.round(45 + Math.min(z, 6) * 8)),
-            reasons: [
-              "pico estadístico contra su propia descripción",
-              `${n} casos previos comparables`,
-            ],
-          });
-        }
-      }
-    }
-
-    if (movement.categoryId != null && amount >= 15 && categorySamples.length >= 4) {
-      const n = categorySamples.length;
-      const avg = categorySamples.reduce((sum, value) => sum + value, 0) / n;
-      if (avg > 0) {
-        const variance = categorySamples.reduce((sum, value) => sum + Math.pow(value - avg, 2), 0) / n;
-        const std = Math.sqrt(variance);
-        const z = (amount - avg) / Math.max(std, avg * 0.10);
-        if (z >= 2.0) {
-          findings.push({
-            key: `cat-${movement.id}`,
-            movementId: movement.id,
-            title: movement.description.trim() || (categoryMap.get(movement.categoryId) ?? "Movimiento"),
-            body: `${z.toFixed(1)}sigma por encima de tu promedio habitual en esta categoría (${avg.toFixed(2)} ± ${std.toFixed(2)}).`,
-            meta: `${categoryMap.get(movement.categoryId) ?? "Sin categoría"} · ${formatCurrency(amount, ctx.displayCurrency)} · ${format(new Date(movement.occurredAt), "d MMM", { locale: es })}`,
-            level: z >= 3.0 ? "strong" : "review",
-            score: Math.min(99, Math.round(45 + Math.min(z, 6) * 8)),
-            reasons: [
-              "pico estadístico contra su categoría",
-              `${n} gastos previos de referencia`,
-            ],
-          });
-        }
-      }
-    }
-
-    descriptionHistory.set(normalizedDescription, [...descriptionSamples.slice(-5), amount]);
-    if (movement.categoryId != null) {
-      categoryHistory.set(movement.categoryId, [...categorySamples.slice(-7), amount]);
-    }
-
-    const duplicateKey = `${movement.occurredAt.slice(0, 10)}|${movementDisplayAmount(movement).toFixed(2)}|${normalizedDescription}`;
-    duplicateBuckets.set(duplicateKey, [...(duplicateBuckets.get(duplicateKey) ?? []), movement]);
-  }
-
-  for (const bucket of duplicateBuckets.values()) {
-    if (bucket.length < 2) continue;
-    const first = bucket[0];
-    findings.push({
-      key: `dup-${first.id}`,
-      movementId: first.id,
-      title: first.description.trim() || "Posible duplicado",
-      body: `${bucket.length} movimientos con la misma descripción y monto aparecieron en una ventana de 1 día.`,
-      meta: `${categoryMap.get(first.categoryId ?? -1) ?? "Sin categoría"} · ${formatCurrency(expenseAmt(first, ctx), ctx.displayCurrency)} · ${format(new Date(first.occurredAt), "d MMM", { locale: es })}`,
-      level: bucket.length >= 3 ? "strong" : "review",
-      score: Math.min(96, 56 + (bucket.length - 2) * 11),
-      reasons: [
-        "misma descripción y monto",
-        `${bucket.length} repeticiones en una ventana corta`,
-      ],
-    });
-  }
-
-  const unique = new Map<string, DashboardAnomalyFinding>();
-  for (const finding of findings.sort((a, b) => {
-    if (a.score !== b.score) return b.score - a.score;
-    if (a.level !== b.level) return a.level === "strong" ? -1 : 1;
-    return b.movementId - a.movementId;
-  })) {
-    if (!unique.has(finding.key)) unique.set(finding.key, finding);
-  }
-
-  return Array.from(unique.values()).slice(0, 4);
+    return {
+      key: finding.key,
+      movementId: finding.movementId,
+      title,
+      body,
+      meta: `${finding.kind === "description_spike" ? accountLabel : categoryLabel} · ${amountLabel} · ${movement ? format(new Date(movement.occurredAt), "d MMM", { locale: es }) : "fecha reciente"}`,
+      level: finding.level,
+      score: finding.score,
+      reasons: finding.reasons,
+    };
+  });
 }
 
 // --- Sub-components -----------------------------------------------------------
@@ -1743,6 +1617,7 @@ function ReviewInbox({
   subscriptions,
   obligations,
   router,
+  onOpenMovementIssue,
 }: {
   movements: DashboardMovementRow[];
   subscriptions: Array<{ id: number; name: string; accountId?: number | null; nextDueDate: string; status: string }>;
@@ -1758,6 +1633,7 @@ function ReviewInbox({
     status: string;
   }>;
   router: ReturnType<typeof useRouter>;
+  onOpenMovementIssue?: (key: "uncategorized" | "pending" | "duplicates") => void;
 }) {
   const review = useMemo(
     () => buildReviewInboxSnapshot(movements, subscriptions, obligations),
@@ -1767,7 +1643,7 @@ function ReviewInbox({
   const items = [
     { key: "uncategorized", count: review.uncategorizedCount, title: "Sin categoria", detail: "Movimientos aplicados que aun no clasificas.", route: "/movements", icon: Tag, tone: COLORS.warning },
     { key: "pending", count: review.pendingMovementsCount, title: "Pendientes de aplicar", detail: "Todavia no impactan el saldo real.", route: "/movements", icon: Clock, tone: COLORS.warning },
-    { key: "duplicates", count: review.duplicateExpenseGroups, title: "Posibles duplicados", detail: "Mismo dia, monto y descripcion en gastos.", route: "/movements", icon: AlertTriangle, tone: COLORS.warning },
+    { key: "duplicates", count: review.duplicateExpenseGroups, title: "Posibles duplicados", detail: "Fecha cercana, monto parecido y texto similar.", route: "/movements", icon: AlertTriangle, tone: COLORS.warning },
     { key: "subscriptions", count: review.subscriptionsAttentionCount, title: "Suscripciones por revisar", detail: "Sin cuenta ligada o con vencimiento pasado.", route: "/subscriptions", icon: Bell, tone: COLORS.secondary },
     { key: "without-plan", count: review.obligationsWithoutPlanCount, title: "Cartera sin plan claro", detail: "Saldo vivo sin cuota ni fecha concreta.", route: "/obligations", icon: Banknote, tone: COLORS.warning },
     { key: "stale", count: review.staleObligationsCount, title: "Cartera sin actividad reciente", detail: "Mas de 50 dias sin eventos nuevos.", route: "/obligations", icon: AlertCircle, tone: COLORS.storm },
@@ -1786,7 +1662,18 @@ function ReviewInbox({
       ) : (
         <View style={subStyles.reviewList}>
           {items.map((item) => (
-            <TouchableOpacity key={item.key} style={subStyles.reviewItem} onPress={() => router.push(item.route as never)} activeOpacity={0.82}>
+            <TouchableOpacity
+              key={item.key}
+              style={subStyles.reviewItem}
+              onPress={() => {
+                if ((item.key === "uncategorized" || item.key === "pending" || item.key === "duplicates") && onOpenMovementIssue) {
+                  onOpenMovementIssue(item.key);
+                  return;
+                }
+                router.push(item.route as never);
+              }}
+              activeOpacity={0.82}
+            >
               <View style={[subStyles.reviewItemIconWrap, { backgroundColor: item.tone + "16" }]}>
                 <item.icon size={15} color={item.tone} />
               </View>
@@ -2108,6 +1995,7 @@ function LearningPanel({
   categoryConcentration,
   categorySuggestionsCount,
   anomalySignalsCount,
+  acceptedFeedbackCount,
   cashCushionDays,
   cashCushionLabel,
 }: {
@@ -2118,6 +2006,7 @@ function LearningPanel({
   categoryConcentration: { label: string; topCategory: string | null; topShare: number | null };
   categorySuggestionsCount: number;
   anomalySignalsCount: number;
+  acceptedFeedbackCount: number;
   cashCushionDays: number;
   cashCushionLabel: string;
 }) {
@@ -2153,10 +2042,11 @@ function LearningPanel({
     const insights: string[] = [];
     if (categorizedRate < 0.55) insights.push("Tus categorías aún necesitan trabajo para que las comparaciones sean más confiables.");
     if (useful.length < 25) insights.push("Todavía falta un poco de historia para detectar hábitos más estables.");
+    if (acceptedFeedbackCount > 0) insights.push(`${acceptedFeedbackCount} corrección${acceptedFeedbackCount === 1 ? "" : "es"} tuya ya alimenta${acceptedFeedbackCount === 1 ? "" : "n"} el aprendizaje de categorías.`);
     if (historyDays >= 45 && categorizedRate >= 0.6) insights.push("Ya hay una base decente para empezar a notar patrones y presión futura.");
     if (insights.length === 0) insights.push("La base del workspace ya está suficientemente sana para lecturas más finas.");
     return { categorizedRate, historyDays, insights, phases, readinessScore, repeatedDescription, usefulCount: useful.length };
-  }, [movements]);
+  }, [acceptedFeedbackCount, movements]);
 
   const learningSignals = useMemo(() => {
     const projectionDelta = Math.abs(projectionModel.expectedBalance - projectionModel.conservativeBalance);
@@ -2207,13 +2097,18 @@ function LearningPanel({
         label: "Acciones útiles",
         title: categorySuggestionsCount > 0 || anomalySignalsCount > 0
           ? `${categorySuggestionsCount} sugerencia${categorySuggestionsCount === 1 ? "" : "s"} · ${anomalySignalsCount} alerta${anomalySignalsCount === 1 ? "" : "s"}`
+          : acceptedFeedbackCount > 0
+            ? `${acceptedFeedbackCount} aprendizaje${acceptedFeedbackCount === 1 ? "" : "s"} aplicado${acceptedFeedbackCount === 1 ? "" : "s"}`
           : "Sin acciones críticas de aprendizaje",
         body: categorySuggestionsCount > 0 || anomalySignalsCount > 0
           ? "Primero atiende estas señales: mejoran categorización, anomalías y confianza de forecast."
+          : acceptedFeedbackCount > 0
+            ? "La app ya está usando respuestas tuyas para reconocer mejor movimientos parecidos."
           : "Puedes usar esta capa como monitoreo, no como lista urgente.",
       },
     ];
   }, [
+    acceptedFeedbackCount,
     activeCurrency,
     anomalySignalsCount,
     cashCushionDays,
@@ -2241,6 +2136,7 @@ function LearningPanel({
         <View style={subStyles.learningMetricCard}><Clock size={16} color={COLORS.secondary} /><Text style={subStyles.learningMetricValue}>{learning.historyDays} d</Text><Text style={subStyles.learningMetricLabel}>Historia observada</Text></View>
         <View style={subStyles.learningMetricCard}><Tag size={16} color={COLORS.warning} /><Text style={subStyles.learningMetricValue}>{Math.round(learning.categorizedRate * 100)}%</Text><Text style={subStyles.learningMetricLabel}>Categorías útiles</Text></View>
         <View style={subStyles.learningMetricCard}><Sparkles size={16} color={COLORS.income} /><Text style={subStyles.learningMetricValue}>{learning.readinessScore}%</Text><Text style={subStyles.learningMetricLabel}>Confianza actual</Text></View>
+        <View style={subStyles.learningMetricCard}><Brain size={16} color={COLORS.gold} /><Text style={subStyles.learningMetricValue}>{acceptedFeedbackCount}</Text><Text style={subStyles.learningMetricLabel}>Respuestas usadas</Text></View>
       </View>
       <Text style={subStyles.learningGroupTitle}>Dónde ya ve señales</Text>
       <View style={subStyles.learningSignalList}>
@@ -2468,9 +2364,10 @@ function CategoryBreakdown({
   );
 }
 
-function MonthlyPulse({ data, currency }: {
+function MonthlyPulse({ data, currency, onOpenMonth }: {
   data: { label: string; income: number; expense: number }[];
   currency: string;
+  onOpenMonth?: (dateFrom: string, dateTo: string) => void;
 }) {
   const maxVal = Math.max(...data.flatMap((d) => [d.income, d.expense]), 1);
   const BAR_HEIGHT = 64;
@@ -2478,15 +2375,25 @@ function MonthlyPulse({ data, currency }: {
     <Card>
       <SectionTitle>Pulso mensual (6 meses)</SectionTitle>
       <View style={subStyles.chartRow}>
-        {data.map((d, i) => (
-          <View key={i} style={subStyles.chartCol}>
+        {data.map((d, i) => {
+          const monthDate = subMonths(new Date(), data.length - 1 - i);
+          const dateFrom = format(startOfMonth(monthDate), "yyyy-MM-dd");
+          const dateTo = format(i === data.length - 1 ? new Date() : endOfMonth(monthDate), "yyyy-MM-dd");
+          return (
+          <TouchableOpacity
+            key={i}
+            style={subStyles.chartCol}
+            onPress={onOpenMonth ? () => onOpenMonth(dateFrom, dateTo) : undefined}
+            activeOpacity={onOpenMonth ? 0.84 : 1}
+          >
             <View style={[subStyles.chartBars, { height: BAR_HEIGHT }]}>
               <View style={[subStyles.chartBar, { height: Math.max((d.income / maxVal) * BAR_HEIGHT, d.income > 0 ? 3 : 0), backgroundColor: COLORS.income + "cc" }]} />
               <View style={[subStyles.chartBar, { height: Math.max((d.expense / maxVal) * BAR_HEIGHT, d.expense > 0 ? 3 : 0), backgroundColor: COLORS.expense + "cc" }]} />
             </View>
             <Text style={subStyles.chartLabel}>{d.label}</Text>
-          </View>
-        ))}
+          </TouchableOpacity>
+          );
+        })}
       </View>
     </Card>
   );
@@ -2779,12 +2686,136 @@ function ObligationWatch({
   );
 }
 
+function PaymentOptimizationCard({
+  recommendations,
+  currency,
+  router,
+}: {
+  recommendations: PaymentOptimizationRecommendation[];
+  currency: string;
+  router: ReturnType<typeof useRouter>;
+}) {
+  if (recommendations.length === 0) return null;
+
+  function dueLabel(daysUntilDue: number | null) {
+    if (daysUntilDue == null) return "sin fecha";
+    if (daysUntilDue < 0) return `${Math.abs(daysUntilDue)}d vencido`;
+    if (daysUntilDue === 0) return "vence hoy";
+    return `en ${daysUntilDue}d`;
+  }
+
+  return (
+    <Card>
+      <SectionTitle>Optimización de pagos</SectionTitle>
+      <Text style={subStyles.executiveIntro}>
+        Ordena cobros y pagos por lo que más puede bajar presión de caja. No mueve dinero solo; te dice qué revisar primero.
+      </Text>
+      <View style={subStyles.commandActions}>
+        {recommendations.map((item) => (
+          <TouchableOpacity
+            key={`${item.direction}-${item.id}`}
+            style={subStyles.commandActionRow}
+            onPress={() => router.push(`/obligation/${item.id}`)}
+            activeOpacity={0.82}
+          >
+            <View style={subStyles.commandActionCopy}>
+              <View style={subStyles.suggestionRowTop}>
+                <Text style={subStyles.commandActionTitle} numberOfLines={1}>{item.actionLabel}: {item.title}</Text>
+                <View style={subStyles.miniChip}>
+                  <Text style={subStyles.miniChipText}>{item.score}/100</Text>
+                </View>
+              </View>
+              <Text style={subStyles.commandActionBody}>
+                {formatCurrency(item.amount, currency)} · {dueLabel(item.daysUntilDue)} · {item.subtitle}
+              </Text>
+              <Text style={subStyles.commandActionBody}>{item.reason}</Text>
+            </View>
+            <ArrowRight size={15} color={COLORS.storm} />
+          </TouchableOpacity>
+        ))}
+      </View>
+    </Card>
+  );
+}
+
+function FinancialGraphCard({
+  nodes,
+  currency,
+  onOpenNode,
+}: {
+  nodes: FinancialGraphRankNode[];
+  currency: string;
+  onOpenNode: (node: FinancialGraphRankNode) => void;
+}) {
+  if (nodes.length === 0) return null;
+
+  function kindLabel(node: FinancialGraphRankNode) {
+    if (node.kind === "account") return "Cuenta";
+    if (node.kind === "category") return "Categoría";
+    if (node.kind === "counterparty") return "Contacto";
+    return "Flujo";
+  }
+
+  return (
+    <Card>
+      <SectionTitle>Nodos que más mueven tu sistema</SectionTitle>
+      <Text style={subStyles.executiveIntro}>
+        Une cuenta, categoría, contacto y tipo de movimiento. Si algo aparece arriba, está muy conectado con tu dinero reciente.
+      </Text>
+      <Text style={subStyles.scopeHint}>
+        Alcance: movimientos confirmados de los últimos 90 días cargados por el dashboard.
+      </Text>
+      <View style={subStyles.commandActions}>
+        {nodes.map((node) => (
+          <TouchableOpacity
+            key={node.id}
+            style={subStyles.commandActionRow}
+            onPress={() => onOpenNode(node)}
+            activeOpacity={0.82}
+          >
+            <View style={subStyles.commandActionCopy}>
+              <View style={subStyles.suggestionRowTop}>
+                <Text style={subStyles.commandActionTitle} numberOfLines={1}>{node.label}</Text>
+                <View style={subStyles.miniChip}>
+                  <Text style={subStyles.miniChipText}>{node.score}/100</Text>
+                </View>
+              </View>
+              <Text style={subStyles.commandActionBody}>
+                {kindLabel(node)} · {node.movementCount} movimiento{node.movementCount === 1 ? "" : "s"} · {formatCurrency(node.amount, currency)}
+              </Text>
+              <Text style={subStyles.commandActionBody}>{node.reason}</Text>
+            </View>
+            <ArrowRight size={15} color={COLORS.storm} />
+          </TouchableOpacity>
+        ))}
+      </View>
+    </Card>
+  );
+}
+
 // Weekly pattern - average expense per day of week
-function WeeklyPattern({ movements, ctx }: { movements: DashboardMovementRow[]; ctx: ConversionCtx }) {
+function WeeklyPattern({
+  movements,
+  ctx,
+  onOpenDay,
+}: {
+  movements: DashboardMovementRow[];
+  ctx: ConversionCtx;
+  onOpenDay?: (day: {
+    shortLabel: string;
+    fullLabel: string;
+    total: number;
+    average: number;
+    count: number;
+    weekCount: number;
+    movements: DashboardMovementRow[];
+  }) => void;
+}) {
   const DAY_LABELS = ["Lu", "Ma", "Mi", "Ju", "Vi", "Sá", "Do"];
+  const DAY_NAMES = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"];
 
   // getDay returns 0=Sun..6=Sat. We want Mon=0..Sun=6
-  const byDay = Array.from({ length: 7 }, () => ({ total: 0, count: 0 }));
+  const byDay = Array.from({ length: 7 }, () => ({ total: 0, count: 0, movements: [] as DashboardMovementRow[] }));
   const weekSet = new Set<string>();
 
   for (const m of movements.filter(isExpense)) {
@@ -2792,6 +2823,8 @@ function WeeklyPattern({ movements, ctx }: { movements: DashboardMovementRow[]; 
     const jsDay = getDay(d); // 0=Sun
     const idx = jsDay === 0 ? 6 : jsDay - 1; // Mon=0..Sun=6
     byDay[idx].total += expenseAmt(m, ctx);
+    byDay[idx].count += 1;
+    byDay[idx].movements.push(m);
     // track unique weeks for averaging
     const weekKey = `${d.getFullYear()}-${format(startOfWeek(d, { weekStartsOn: 1 }), "MM-dd")}`;
     weekSet.add(weekKey);
@@ -2800,6 +2833,9 @@ function WeeklyPattern({ movements, ctx }: { movements: DashboardMovementRow[]; 
   const weekCount = Math.max(weekSet.size, 1);
   const averages = byDay.map((d) => d.total / weekCount);
   const maxAvg = Math.max(...averages, 1);
+  const totalExpense = byDay.reduce((sum, day) => sum + day.total, 0);
+  const totalCount = byDay.reduce((sum, day) => sum + day.count, 0);
+  const topIndex = byDay.reduce((best, day, index) => day.total > byDay[best].total ? index : best, 0);
   const BAR_HEIGHT = 56;
 
   if (averages.every((a) => a === 0)) return null;
@@ -2807,9 +2843,44 @@ function WeeklyPattern({ movements, ctx }: { movements: DashboardMovementRow[]; 
   return (
     <Card>
       <SectionTitle>Patrón semanal de gastos</SectionTitle>
+      <Text style={subStyles.executiveIntro}>
+        Agrupa tus gastos por día de la semana para ver cuándo suele salir más dinero.
+      </Text>
+      <View style={subStyles.weeklyPatternSummary}>
+        <View style={subStyles.weeklyPatternPill}>
+          <Text style={subStyles.weeklyPatternPillLabel}>Día más pesado</Text>
+          <Text style={subStyles.weeklyPatternPillValue}>{DAY_NAMES[topIndex]}</Text>
+        </View>
+        <View style={subStyles.weeklyPatternPill}>
+          <Text style={subStyles.weeklyPatternPillLabel}>Gastos vistos</Text>
+          <Text style={subStyles.weeklyPatternPillValue}>{totalCount} mov.</Text>
+        </View>
+        <View style={subStyles.weeklyPatternPill}>
+          <Text style={subStyles.weeklyPatternPillLabel}>Total</Text>
+          <Text style={subStyles.weeklyPatternPillValue}>{formatCurrency(totalExpense, ctx.displayCurrency)}</Text>
+        </View>
+      </View>
       <View style={subStyles.chartRow}>
-        {averages.map((avg, i) => (
-          <View key={i} style={subStyles.chartCol}>
+        {averages.map((avg, i) => {
+          const day = byDay[i];
+          const disabled = day.count === 0;
+          return (
+          <TouchableOpacity
+            key={DAY_LABELS[i]}
+            style={[subStyles.chartCol, subStyles.weeklyDayButton, disabled && subStyles.weeklyDayButtonDisabled]}
+            disabled={disabled}
+            onPress={() => onOpenDay?.({
+              shortLabel: DAY_LABELS[i],
+              fullLabel: DAY_NAMES[i],
+              total: day.total,
+              average: avg,
+              count: day.count,
+              weekCount,
+              movements: sortMovementsRecentFirst(day.movements),
+            })}
+            activeOpacity={0.84}
+          >
+            <Text style={subStyles.weeklyDayAmount} numberOfLines={1}>{formatCurrency(avg, ctx.displayCurrency)}</Text>
             <View style={[subStyles.chartBars, { height: BAR_HEIGHT, justifyContent: "flex-end" }]}>
               <View
                 style={[
@@ -2819,8 +2890,10 @@ function WeeklyPattern({ movements, ctx }: { movements: DashboardMovementRow[]; 
               />
             </View>
             <Text style={subStyles.chartLabel}>{DAY_LABELS[i]}</Text>
-          </View>
-        ))}
+            <Text style={subStyles.weeklyDayCount}>{day.count} mov.</Text>
+          </TouchableOpacity>
+          );
+        })}
       </View>
     </Card>
   );
@@ -2828,25 +2901,27 @@ function WeeklyPattern({ movements, ctx }: { movements: DashboardMovementRow[]; 
 
 // Transfer snapshot - top 3 transfer routes
 function TransferSnapshot({
-  movements, accounts, ctx,
+  movements, accounts, ctx, onOpenRoute,
 }: {
   movements: DashboardMovementRow[];
   accounts: { id: number; name: string }[];
   ctx: ConversionCtx;
+  onOpenRoute?: (route: { srcName: string; dstName: string; total: number; count: number; movementIds: number[] }) => void;
 }) {
   const accMap = new Map(accounts.map((a) => [a.id, a.name]));
 
   // Group by (sourceAccountId, destinationAccountId)
-  const routeMap = new Map<string, { srcId: number; dstId: number; total: number; count: number }>();
+  const routeMap = new Map<string, { srcId: number; dstId: number; total: number; count: number; movementIds: number[] }>();
   for (const m of movements.filter((m) => m.movementType === "transfer" && m.status === "posted")) {
     if (!m.sourceAccountId || !m.destinationAccountId) continue;
     const key = `${m.sourceAccountId}-${m.destinationAccountId}`;
     const existing = routeMap.get(key);
     if (existing) {
-      existing.total += expenseAmt(m, ctx);
+      existing.total += transferAmt(m, ctx);
       existing.count++;
+      existing.movementIds.push(m.id);
     } else {
-      routeMap.set(key, { srcId: m.sourceAccountId, dstId: m.destinationAccountId, total: expenseAmt(m, ctx), count: 1 });
+      routeMap.set(key, { srcId: m.sourceAccountId, dstId: m.destinationAccountId, total: transferAmt(m, ctx), count: 1, movementIds: [m.id] });
     }
   }
 
@@ -2859,18 +2934,29 @@ function TransferSnapshot({
   return (
     <Card>
       <SectionTitle>Rutas de transferencia</SectionTitle>
+      <Text style={subStyles.executiveIntro}>
+        Toca una ruta para ver las transferencias exactas entre esas cuentas.
+      </Text>
       {routes.map((r, i) => {
         const srcName = accMap.get(r.srcId) ?? `Cuenta ${r.srcId}`;
         const dstName = accMap.get(r.dstId) ?? `Cuenta ${r.dstId}`;
         return (
-          <View key={i} style={[subStyles.transferRow, i < routes.length - 1 && subStyles.leadersSep]}>
+          <TouchableOpacity
+            key={i}
+            style={[subStyles.transferRow, i < routes.length - 1 && subStyles.leadersSep]}
+            onPress={() => onOpenRoute?.({ ...r, srcName, dstName })}
+            activeOpacity={0.82}
+          >
             <View style={subStyles.transferRoute}>
               <Text style={subStyles.transferAcct} numberOfLines={1}>{srcName}</Text>
               <ArrowRight size={12} color={COLORS.storm} />
               <Text style={subStyles.transferAcct} numberOfLines={1}>{dstName}</Text>
             </View>
-            <Text style={subStyles.transferAmt}>{formatCurrency(r.total, "")}</Text>
-          </View>
+            <View style={subStyles.transferRight}>
+              <Text style={subStyles.transferAmt}>{formatCurrency(r.total, ctx.displayCurrency)}</Text>
+              <Text style={subStyles.transferCount}>{r.count} mov.</Text>
+            </View>
+          </TouchableOpacity>
         );
       })}
     </Card>
@@ -2878,12 +2964,20 @@ function TransferSnapshot({
 }
 
 // Data quality widget
-function DataQuality({ movements }: { movements: DashboardMovementRow[] }) {
+function DataQuality({
+  movements,
+  onOpenNoCategory,
+  onOpenNoCounterparty,
+}: {
+  movements: DashboardMovementRow[];
+  onOpenNoCategory?: () => void;
+  onOpenNoCounterparty?: () => void;
+}) {
   const relevant = movements.filter(
     (m) => isCategorizedCashflow(m),
   );
-  const noCat = relevant.filter((m) => m.categoryId === null).length;
-  const noCounterparty = relevant.filter((m) => m.counterpartyId === null).length;
+  const noCat = relevant.filter((m) => m.categoryId == null).length;
+  const noCounterparty = relevant.filter((m) => m.counterpartyId == null).length;
 
   if (noCat === 0 && noCounterparty === 0) return null;
 
@@ -2891,16 +2985,18 @@ function DataQuality({ movements }: { movements: DashboardMovementRow[] }) {
     <Card>
       <SectionTitle>Calidad de datos</SectionTitle>
       {noCat > 0 && (
-        <View style={subStyles.dqRow}>
+        <TouchableOpacity style={subStyles.dqRow} onPress={onOpenNoCategory} activeOpacity={0.82}>
           <Tag size={13} color={COLORS.gold} />
           <Text style={subStyles.dqText}>{noCat} movimiento{noCat !== 1 ? "s" : ""} sin categoría</Text>
-        </View>
+          <ArrowRight size={14} color={COLORS.storm} />
+        </TouchableOpacity>
       )}
       {noCounterparty > 0 && (
-        <View style={subStyles.dqRow}>
+        <TouchableOpacity style={subStyles.dqRow} onPress={onOpenNoCounterparty} activeOpacity={0.82}>
           <AlertCircle size={13} color={COLORS.storm} />
           <Text style={subStyles.dqText}>{noCounterparty} movimiento{noCounterparty !== 1 ? "s" : ""} sin contraparte</Text>
-        </View>
+          <ArrowRight size={14} color={COLORS.storm} />
+        </TouchableOpacity>
       )}
     </Card>
   );
@@ -3063,6 +3159,8 @@ function AnomalyWatch({
   categoryMap,
   accountMap,
   onExplainPress,
+  onOpenMovement,
+  onOpenAll,
   router,
 }: {
   movements: DashboardMovementRow[];
@@ -3070,99 +3168,14 @@ function AnomalyWatch({
   categoryMap: Map<number, string>;
   accountMap: Map<number, string>;
   onExplainPress?: () => void;
+  onOpenMovement?: (movementId: number) => void;
+  onOpenAll?: (movementIds: number[]) => void;
   router: ReturnType<typeof useRouter>;
 }) {
-  const anomalies = useMemo(() => {
-    const expenses = movements
-      .filter(isExpense)
-      .filter((movement) => movement.description.trim())
-      .sort((a, b) => new Date(a.occurredAt).getTime() - new Date(b.occurredAt).getTime());
-
-    const descriptionHistory = new Map<string, number[]>();
-    const categoryHistory = new Map<number, number[]>();
-    const duplicateBuckets = new Map<string, DashboardMovementRow[]>();
-    const findings: Array<{
-      key: string;
-      movementId: number;
-      title: string;
-      body: string;
-      meta: string;
-      level: "strong" | "review";
-    }> = [];
-
-    for (const movement of expenses) {
-      const amount = expenseAmt(movement, ctx);
-      const normalizedDescription = movement.description.trim().toLowerCase() || "sin-descripcion";
-      const descriptionSamples = descriptionHistory.get(normalizedDescription) ?? [];
-      const categorySamples = movement.categoryId != null ? categoryHistory.get(movement.categoryId) ?? [] : [];
-
-      if (amount >= 12 && descriptionSamples.length >= 2) {
-        const avg = descriptionSamples.reduce((sum, value) => sum + value, 0) / descriptionSamples.length;
-        if (avg > 0) {
-          const ratio = amount / avg;
-          if (ratio >= 2.2) {
-            const accountLabel = accountMap.get(movementDisplayAccountId(movement) ?? -1) ?? "Cuenta";
-            findings.push({
-              key: `desc-${movement.id}`,
-              movementId: movement.id,
-              title: movement.description.trim() || "Movimiento",
-              body: `Este movimiento se ve ${ratio.toFixed(1)}x por encima de lo que suele pasar con esa descripción (${avg.toFixed(2)} como referencia).`,
-              meta: `${accountLabel} · ${formatCurrency(amount, ctx.displayCurrency)} · ${format(new Date(movement.occurredAt), "d MMM", { locale: es })}`,
-              level: ratio >= 4 ? "strong" : "review",
-            });
-          }
-        }
-      }
-
-      if (movement.categoryId != null && amount >= 15 && categorySamples.length >= 3) {
-        const avg = categorySamples.reduce((sum, value) => sum + value, 0) / categorySamples.length;
-        if (avg > 0) {
-          const ratio = amount / avg;
-          if (ratio >= 2.3) {
-            findings.push({
-              key: `cat-${movement.id}`,
-              movementId: movement.id,
-              title: movement.description.trim() || (categoryMap.get(movement.categoryId) ?? "Movimiento"),
-              body: `Este movimiento se ve ${ratio.toFixed(1)}x por encima de lo que suele pasar con esa categoría (${avg.toFixed(2)} como referencia).`,
-              meta: `${categoryMap.get(movement.categoryId) ?? "Sin categoría"} · ${formatCurrency(amount, ctx.displayCurrency)} · ${format(new Date(movement.occurredAt), "d MMM", { locale: es })}`,
-              level: ratio >= 4 ? "strong" : "review",
-            });
-          }
-        }
-      }
-
-      descriptionHistory.set(normalizedDescription, [...descriptionSamples.slice(-5), amount]);
-      if (movement.categoryId != null) {
-        categoryHistory.set(movement.categoryId, [...categorySamples.slice(-7), amount]);
-      }
-
-      const duplicateKey = `${movement.occurredAt.slice(0, 10)}|${movementDisplayAmount(movement).toFixed(2)}|${normalizedDescription}`;
-      duplicateBuckets.set(duplicateKey, [...(duplicateBuckets.get(duplicateKey) ?? []), movement]);
-    }
-
-    for (const bucket of duplicateBuckets.values()) {
-      if (bucket.length < 2) continue;
-      const first = bucket[0];
-      findings.push({
-        key: `dup-${first.id}`,
-        movementId: first.id,
-        title: first.description.trim() || "Posible duplicado",
-        body: `${bucket.length} movimientos con la misma descripción y monto aparecieron en una ventana de 1 día.`,
-        meta: `${categoryMap.get(first.categoryId ?? -1) ?? "Sin categoría"} · ${formatCurrency(expenseAmt(first, ctx), ctx.displayCurrency)} · ${format(new Date(first.occurredAt), "d MMM", { locale: es })}`,
-        level: "review",
-      });
-    }
-
-    const unique = new Map<string, typeof findings[number]>();
-    for (const finding of findings.sort((a, b) => {
-      if (a.level !== b.level) return a.level === "strong" ? -1 : 1;
-      return b.movementId - a.movementId;
-    })) {
-      if (!unique.has(finding.key)) unique.set(finding.key, finding);
-    }
-
-    return Array.from(unique.values()).slice(0, 4);
-  }, [accountMap, categoryMap, ctx, movements]);
+  const anomalies = useMemo(
+    () => buildAnomalyFindings(movements, ctx, categoryMap, accountMap),
+    [accountMap, categoryMap, ctx, movements],
+  );
 
   if (anomalies.length === 0) return null;
 
@@ -3181,7 +3194,13 @@ function AnomalyWatch({
           <TouchableOpacity
             key={item.key}
             style={[subStyles.anomalyCard, item.level === "strong" ? subStyles.anomalyCardStrong : subStyles.anomalyCardReview]}
-            onPress={() => router.push(`/movement/${item.movementId}?from=dashboard`)}
+            onPress={() => {
+              if (onOpenMovement) {
+                onOpenMovement(item.movementId);
+                return;
+              }
+              router.push(`/movement/${item.movementId}?from=dashboard`);
+            }}
             activeOpacity={0.84}
           >
             <View style={subStyles.anomalyTop}>
@@ -3200,7 +3219,17 @@ function AnomalyWatch({
           </TouchableOpacity>
         ))}
       </View>
-      <TouchableOpacity style={subStyles.secondaryOutlineBtn} onPress={() => router.push("/movements" as never)} activeOpacity={0.82}>
+      <TouchableOpacity
+        style={subStyles.secondaryOutlineBtn}
+        onPress={() => {
+          if (onOpenAll) {
+            onOpenAll(anomalies.map((item) => item.movementId));
+            return;
+          }
+          router.push("/movements" as never);
+        }}
+        activeOpacity={0.82}
+      >
         <Text style={subStyles.secondaryOutlineBtnText}>Abrir movimientos para revisar</Text>
       </TouchableOpacity>
     </Card>
@@ -3710,6 +3739,7 @@ function AdvancedDashboard({
   exchangeRateMap,
   currentVisibleBalance,
   workspaceId,
+  userId,
   analytics,
   router,
   accountCurrencyMap,
@@ -3727,6 +3757,7 @@ function AdvancedDashboard({
   exchangeRateMap: Map<string, number>;
   currentVisibleBalance: number;
   workspaceId: number | null;
+  userId?: string | null;
   analytics: DashboardAnalyticsBundle | null | undefined;
   router: ReturnType<typeof useRouter>;
   accountCurrencyMap: Map<number, string>;
@@ -3779,6 +3810,14 @@ function AdvancedDashboard({
       };
     });
   }, [accountCurrencyMap, activeCurrency, exchangeRateMap, movements, selectedHistoryYear]);
+  const historyChangePoint = useMemo(
+    () => detectHistoryChangePoint(annualHistory),
+    [annualHistory],
+  );
+  const monthClusters = useMemo(
+    () => clusterHistoryMonths(annualHistory),
+    [annualHistory],
+  );
   const review = useMemo(() => buildReviewInboxSnapshot(movements, subscriptions, obligations), [movements, obligations, subscriptions]);
   const windows = useMemo(
     () => buildFutureFlowWindows(obligations, subscriptions, recurringIncome, activeCurrency, exchangeRateMap, currentVisibleBalance),
@@ -3857,6 +3896,43 @@ function AdvancedDashboard({
     for (const account of snapshot?.accounts ?? []) map.set(account.id, account.name);
     return map;
   }, [snapshot?.accounts]);
+
+  const counterpartyMap = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const counterparty of snapshot?.counterparties ?? []) map.set(counterparty.id, counterparty.name);
+    return map;
+  }, [snapshot?.counterparties]);
+
+  const historyFactorAnalysis = useMemo(() => {
+    const now = new Date();
+    const ctx = { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency };
+    const months = Array.from({ length: 12 }, (_, monthIndex) => {
+      const monthDate = new Date(selectedHistoryYear, monthIndex, 1);
+      const monthStart = startOfMonth(monthDate);
+      const monthEnd = endOfMonth(monthDate);
+      const cappedEnd = selectedHistoryYear === now.getFullYear() && monthIndex === now.getMonth() ? now : monthEnd;
+      const isFuture = monthStart > now;
+      const totals = new Map<number | null, number>();
+      if (!isFuture) {
+        for (const movement of movements.filter((item) => isExpense(item) && inRange(item, monthStart, cappedEnd))) {
+          const key = movement.categoryId ?? null;
+          totals.set(key, (totals.get(key) ?? 0) + expenseAmt(movement, ctx));
+        }
+      }
+      return {
+        label: format(monthDate, "MMM", { locale: es }),
+        dateFrom: format(monthStart, "yyyy-MM-dd"),
+        dateTo: format(cappedEnd, "yyyy-MM-dd"),
+        isFuture,
+        categories: Array.from(totals.entries()).map(([categoryId, amount]) => ({
+          categoryId,
+          name: categoryId == null ? "Sin categoría" : categoryMap.get(categoryId) ?? "Categoría",
+          amount,
+        })),
+      };
+    });
+    return buildHistoryFactorAnalysis({ months });
+  }, [accountCurrencyMap, activeCurrency, categoryMap, exchangeRateMap, movements, selectedHistoryYear]);
 
   const selectedAnnualMonthDetail = useMemo(() => {
     if (!selectedAnnualMonth) return null;
@@ -3957,7 +4033,7 @@ function AdvancedDashboard({
   const categoryConcentration = useMemo(() => {
     const catTotals = advancedStats.catTotals;
     const total = Array.from(catTotals.values()).reduce((s, v) => s + v, 0);
-    if (total <= 0) return { hhi: null, label: "Sin datos", color: COLORS.storm, topCategory: null, topShare: null };
+    if (total <= 0) return { hhi: null, label: "Sin datos", color: COLORS.storm, topCategory: null, topCategoryId: null, topShare: null };
     const hhi = Array.from(catTotals.values()).reduce((s, v) => s + Math.pow(v / total, 2), 0);
     const label = hhi > 0.25 ? "Concentrado" : hhi > 0.15 ? "Moderado" : "Diversificado";
     const color = hhi > 0.25 ? COLORS.expense : hhi > 0.15 ? COLORS.gold : COLORS.income;
@@ -3968,7 +4044,7 @@ function AdvancedDashboard({
     }
     const topShare = topVal > 0 ? Math.round((topVal / total) * 100) : null;
     const topCategory = topCatId != null ? (categoryMap.get(topCatId) ?? "Sin categoría") : "Sin categoría";
-    return { hhi: Math.round(hhi * 1000) / 1000, label, color, topCategory, topShare };
+    return { hhi: Math.round(hhi * 1000) / 1000, label, color, topCategory, topCategoryId: topCatId, topShare };
   }, [advancedStats.catTotals, categoryMap]);
 
   // N4: Eficiencia de cobranza - porcentaje de obligaciones a cobrar resueltas en los últimos 30 días
@@ -4047,6 +4123,80 @@ function AdvancedDashboard({
     [accountCurrencyMap, accountMap, activeCurrency, categoryMap, exchangeRateMap, movements],
   );
 
+  const repeatedPatterns = useMemo(() => {
+    const now = new Date();
+    const ctx = { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency };
+    return buildPatternClusters<DashboardMovementRow>({
+      movements,
+      isCashflow: isCategorizedCashflow,
+      isIncomeLike: movementActsAsIncome,
+      getAmount: (movement) => movementActsAsIncome(movement)
+        ? incomeAmt(movement, ctx)
+        : expenseAmt(movement, ctx),
+      categoryNames: categoryMap,
+      now,
+      sinceDays: 90,
+      limit: 4,
+    }).map((cluster) => ({
+      ...cluster,
+      lastLabel: format(new Date(cluster.lastAt), "d MMM", { locale: es }),
+    }));
+  }, [accountCurrencyMap, activeCurrency, categoryMap, exchangeRateMap, movements]);
+
+  const risingCategoryPatterns = useMemo(() => {
+    const now = new Date();
+    const currentStart = subDays(now, 13);
+    const previousStart = subDays(now, 27);
+    const previousEnd = subDays(now, 14);
+    const ctx = { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency };
+    const currentTotals = new Map<number | null, number>();
+    const previousTotals = new Map<number | null, number>();
+    const currentMovementIds = new Map<number | null, number[]>();
+
+    for (const movement of movements.filter((item) => item.status === "posted" && isExpense(item))) {
+      const key = movement.categoryId ?? null;
+      const amount = expenseAmt(movement, ctx);
+      if (inRange(movement, currentStart, now)) {
+        currentTotals.set(key, (currentTotals.get(key) ?? 0) + amount);
+        currentMovementIds.set(key, [...(currentMovementIds.get(key) ?? []), movement.id]);
+      } else if (inRange(movement, previousStart, previousEnd)) {
+        previousTotals.set(key, (previousTotals.get(key) ?? 0) + amount);
+      }
+    }
+
+    return Array.from(currentTotals.entries())
+      .map(([categoryId, current]) => {
+        const previous = previousTotals.get(categoryId) ?? 0;
+        const delta = current - previous;
+        const pct = previous > 0 ? (delta / previous) * 100 : null;
+        const name = categoryId != null ? (categoryMap.get(categoryId) ?? "Categoría") : "Sin categoría";
+        return { categoryId, name, current, previous, delta, pct, movementIds: currentMovementIds.get(categoryId) ?? [] };
+      })
+      .filter((item) => item.delta > Math.max(10, item.previous * 0.18) && item.current >= 12)
+      .sort((a, b) => b.delta - a.delta)
+      .slice(0, 4);
+  }, [accountCurrencyMap, activeCurrency, categoryMap, exchangeRateMap, movements]);
+
+  const patternQuickRead = useMemo(() => {
+    const topRepeat = repeatedPatterns[0] ?? null;
+    const topRise = risingCategoryPatterns[0] ?? null;
+    const topAnomaly = anomalySignals[0] ?? null;
+    return {
+      repeatTitle: topRepeat ? topRepeat.label : "Sin hábito repetido claro",
+      repeatBody: topRepeat
+        ? `${topRepeat.count} veces en 90 días · promedio ${formatCurrency(topRepeat.average, activeCurrency)}`
+        : "Aún falta repetición para reconocer un hábito.",
+      riseTitle: topRise ? topRise.name : "Sin subida fuerte",
+      riseBody: topRise
+        ? `${formatCurrency(topRise.delta, activeCurrency)} más que los 14 días anteriores`
+        : "Las categorías recientes se ven parejas.",
+      anomalyTitle: topAnomaly ? `${anomalySignals.length} por revisar` : "Sin gastos raros",
+      anomalyBody: topAnomaly
+        ? "Hay movimientos que se salen de lo normal para tu propio historial."
+        : "No vemos picos claros contra tus hábitos recientes.",
+    };
+  }, [activeCurrency, anomalySignals, repeatedPatterns, risingCategoryPatterns]);
+
   const persistedCategorySuggestions = useMemo(() => {
     if (!analytics?.signals?.length) return [];
     const movementMap = new Map(movements.map((movement) => [movement.id, movement]));
@@ -4081,51 +4231,17 @@ function AdvancedDashboard({
       .slice(0, 4);
   }, [accountCurrencyMap, activeCurrency, analytics?.signals, categoryMap, exchangeRateMap, movements]);
 
-  const focusAction = useMemo(() => {
-    if (review.uncategorizedCount > 0) {
-      return {
-        title: "Ordenar categorías",
-        body: `${review.uncategorizedCount} movimientos siguen sin categoría.`,
-        detail: "Más categoría significa comparativos y alertas mucho más finas.",
-        tag: "Orden fino",
-        route: "/movements",
-      };
-    }
-    if (review.overdueObligationsCount > 0) {
-      return {
-        title: "Resolver vencimientos",
-        body: `${review.overdueObligationsCount} cobros o pagos ya se quedaron fuera de fecha.`,
-        detail: "Limpiar esto primero evita que la cartera siga arrastrando lectura falsa.",
-        tag: "Cartera",
-        route: "/obligations",
-      };
-    }
-    if (review.subscriptionsAttentionCount > 0) {
-      return {
-        title: "Revisar suscripciones",
-        body: `${review.subscriptionsAttentionCount} cargos fijos todavía necesitan cuenta o fecha más clara.`,
-        detail: "Ordenar esa base mejora la proyección de corto plazo.",
-        tag: "Liquidez",
-        route: "/subscriptions",
-      };
-    }
-    if (weekWindow.expectedOutflow > weekWindow.expectedInflow) {
-      return {
-        title: "Cuidar liquidez",
-        body: "La próxima semana sale más dinero del que entra.",
-        detail: "Revisa compromisos cercanos antes de que la presión se sienta tarde.",
-        tag: "Liquidez",
-        route: "/dashboard",
-      };
-    }
-    return {
-      title: "Mantener el ritmo",
-      body: "No vemos una fricción fuerte inmediata en tu sistema.",
-      detail: "Buen momento para consolidar hábitos, metas y calidad del dato.",
-      tag: "Estable",
-      route: "/dashboard",
-    };
-  }, [review, weekWindow.expectedInflow, weekWindow.expectedOutflow]);
+  const acceptedFeedbackCount = useMemo(() => {
+    const dedicatedCount = analytics?.learningFeedback.filter((feedback) =>
+      feedback.feedbackKind === "accepted_category_suggestion" ||
+      feedback.feedbackKind === "manual_category_change"
+    ).length ?? 0;
+    if (dedicatedCount > 0) return dedicatedCount;
+    return analytics?.signals.filter((signal) =>
+      signal.analyticsVersion === "v2-feedback" ||
+      signal.signalReasons.some((reason) => reason.toLowerCase().includes("usuario acept"))
+    ).length ?? 0;
+  }, [analytics?.learningFeedback, analytics?.signals]);
 
   type CoachChip = { icon: LucideIcon; color: string; label: string; weight: "high" | "medium" | "low" };
   const panelCoachChips = useMemo<CoachChip[]>(() => {
@@ -4153,49 +4269,499 @@ function AdvancedDashboard({
   const [executiveDetail, setExecutiveDetail] = useState<"focus" | "risk" | "month" | null>(null);
   const [advancedDetail, setAdvancedDetail] = useState<"focusCenter" | "projection" | "review" | "advancedMetrics" | "quality" | "categoryConcentration" | "savingsRate" | "incomeStability" | "seasonalComparison" | "collectionEfficiency" | null>(null);
   const [projectionDetail, setProjectionDetail] = useState<"conservative" | "expected" | "included" | null>(null);
+  const [movementPreview, setMovementPreview] = useState<MovementPreviewSheetState | null>(null);
+  const [applyingSuggestionMovementId, setApplyingSuggestionMovementId] = useState<number | null>(null);
+  const queryClient = useQueryClient();
+  const { showToast } = useToast();
+  const updateMovementMutation = useUpdateMovementMutation(workspaceId);
+  const persistDashboardAnalyticsMutation = usePersistDashboardAnalyticsMutation(workspaceId);
+  const persistLearningFeedbackMutation = usePersistLearningFeedbackMutation(workspaceId, userId);
 
-  const openMovementsQuickFilter = useCallback((
-    quickFilterOrOptions:
-      | "uncategorized"
-      | {
-        quickFilter?: "uncategorized";
-        quickStatus?: "pending" | "planned" | "posted";
-        quickCategoryId?: number | null;
-        quickDateFrom?: string;
-        quickDateTo?: string;
-        quickType?: "income" | "expense" | "transfer" | "obligation_payment" | "subscription_payment" | "refund" | "adjustment" | "obligation_opening";
-      },
-    quickStatus?: "pending" | "planned" | "posted",
-  ) => {
-    const options = typeof quickFilterOrOptions === "string"
-      ? { quickFilter: quickFilterOrOptions, quickStatus }
-      : quickFilterOrOptions;
-    const params: Record<string, string> = {
-      quickScope: "dashboard-executive",
-      quickToken: `${Date.now()}`,
-    };
-    if (options.quickFilter) params.quickFilter = options.quickFilter;
-    if (options.quickStatus) params.quickStatus = options.quickStatus;
-    if (options.quickCategoryId != null) params.quickCategoryId = String(options.quickCategoryId);
-    if (options.quickDateFrom) params.quickDateFrom = options.quickDateFrom;
-    if (options.quickDateTo) params.quickDateTo = options.quickDateTo;
-    if (options.quickType) params.quickType = options.quickType;
+  const summaryUncategorizedMovements = useMemo(() => (
+    movements
+      .filter((movement) => movement.status === "posted")
+      .filter(isCategorizedCashflow)
+      .filter((movement) => movement.categoryId == null)
+      .sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime() || b.id - a.id)
+  ), [movements]);
+
+  const currentMonthMovements = useMemo(() => {
+    const now = new Date();
+    const monthStart = startOfMonth(now);
+    return sortMovementsRecentFirst(movements.filter((movement) => inRange(movement, monthStart, now)));
+  }, [movements]);
+
+  const currentMonthVariableMovements = useMemo(() => {
+    const now = new Date();
+    const monthStart = startOfMonth(now);
+    return sortMovementsRecentFirst(
+      movements.filter((movement) =>
+        movement.status === "posted" &&
+        inRange(movement, monthStart, now) &&
+        (movement.movementType === "income" || movement.movementType === "refund" || movement.movementType === "expense")
+      ),
+    );
+  }, [movements]);
+
+  const pendingReviewMovements = useMemo(() => (
+    sortMovementsRecentFirst(movements.filter((movement) => movement.status === "pending"))
+  ), [movements]);
+
+  const duplicateExpenseReviewMovements = useMemo(() => {
+    const groups = findProbableDuplicateGroups({
+      movements: movements.filter(isExpense),
+      getAmount: movementDisplayAmount,
+    });
+    const movementIds = new Set(groups.flatMap((group) => group.movementIds));
+    return sortMovementsRecentFirst(
+      movements.filter((movement) => movementIds.has(movement.id)),
+    );
+  }, [movements]);
+
+  const noCounterpartyReviewMovements = useMemo(() => (
+    sortMovementsRecentFirst(
+      movements.filter((movement) =>
+        movement.status === "posted" &&
+        isCategorizedCashflow(movement) &&
+        movement.counterpartyId == null
+      ),
+    )
+  ), [movements]);
+
+  const movementById = useMemo(() => new Map(movements.map((movement) => [movement.id, movement])), [movements]);
+
+  const getMovementsByIds = useCallback((movementIds: number[]) => (
+    sortMovementsRecentFirst(
+      Array.from(new Set(movementIds))
+        .map((movementId) => movementById.get(movementId))
+        .filter((movement): movement is DashboardMovementRow => Boolean(movement)),
+    )
+  ), [movementById]);
+
+  const openMovementPreview = useCallback((preview: MovementPreviewSheetState) => {
     setExecutiveDetail(null);
     setAdvancedDetail(null);
     setProjectionDetail(null);
     setSelectedAnnualMonth(null);
-    router.push({ pathname: "/movements", params } as never);
-  }, [router]);
+    setMovementPreview(preview);
+  }, []);
 
-  const openFocusActionDestination = useCallback(() => {
-    if (review.uncategorizedCount > 0) {
-      openMovementsQuickFilter("uncategorized");
+  const openSummaryUncategorizedPreview = useCallback(() => {
+    openMovementPreview({
+      title: "Movimientos sin categoría",
+      subtitle: `${summaryUncategorizedMovements.length} movimiento${summaryUncategorizedMovements.length === 1 ? "" : "s"} confirmado${summaryUncategorizedMovements.length === 1 ? "" : "s"} todavía no tiene${summaryUncategorizedMovements.length === 1 ? "" : "n"} categoría. Al ordenarlos, el dashboard compara mejor tus gastos e ingresos.`,
+      scopeLabel: "Alcance: todos los movimientos confirmados sin categoría cargados en el dashboard.",
+      emptyTitle: "No quedan movimientos sin categoría",
+      emptyBody: "La lectura de Resumen ya no tiene esta tarea pendiente.",
+      movements: summaryUncategorizedMovements,
+    });
+  }, [openMovementPreview, summaryUncategorizedMovements]);
+
+  const openCurrentMonthMovementsPreview = useCallback(() => {
+    const monthLabel = format(new Date(), "MMMM yyyy", { locale: es });
+    openMovementPreview({
+      title: "Movimientos del mes",
+      subtitle: `${currentMonthMovements.length} movimiento${currentMonthMovements.length === 1 ? "" : "s"} dentro de ${monthLabel}. Esta es la misma ventana que usa la proyección de cierre del mes.`,
+      scopeLabel: "Alcance: desde el primer día del mes actual hasta hoy.",
+      emptyTitle: "No hay movimientos este mes",
+      emptyBody: "Cuando registres ingresos o gastos del mes, aparecerán aquí.",
+      movements: currentMonthMovements,
+    });
+  }, [currentMonthMovements, openMovementPreview]);
+
+  const openFlowVariableMovementsPreview = useCallback(() => {
+    const income = currentMonthVariableMovements
+      .filter((movement) => movementActsAsIncome(movement))
+      .reduce((sum, movement) => sum + incomeAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }), 0);
+    const expense = currentMonthVariableMovements
+      .filter((movement) => movementActsAsExpense(movement))
+      .reduce((sum, movement) => sum + expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }), 0);
+    openMovementPreview({
+      title: "Ritmo variable del mes",
+      subtitle: `${currentMonthVariableMovements.length} movimiento${currentMonthVariableMovements.length === 1 ? "" : "s"} variable${currentMonthVariableMovements.length === 1 ? "" : "s"} ya registrado${currentMonthVariableMovements.length === 1 ? "" : "s"} este mes. Entran ${formatCurrency(income, activeCurrency)} y salen ${formatCurrency(expense, activeCurrency)}.`,
+      scopeLabel: "Alcance: ingresos, devoluciones y gastos confirmados del mes actual. No incluye transferencias ni agenda fija.",
+      emptyTitle: "No hay ritmo variable este mes",
+      emptyBody: "Cuando registres ingresos o gastos variables confirmados, aparecerán aquí.",
+      movements: currentMonthVariableMovements,
+    });
+  }, [
+    accountCurrencyMap,
+    activeCurrency,
+    currentMonthVariableMovements,
+    exchangeRateMap,
+    openMovementPreview,
+  ]);
+
+  const openPatternHabitPreview = useCallback((pattern: { label: string; count: number; total: number; average: number; movementIds: number[] }) => {
+    const patternMovements = getMovementsByIds(pattern.movementIds);
+    openMovementPreview({
+      title: pattern.label,
+      subtitle: `${pattern.count} movimiento${pattern.count === 1 ? "" : "s"} parecido${pattern.count === 1 ? "" : "s"} en los últimos 90 días. En total suman ${formatCurrency(pattern.total, activeCurrency)} y el promedio es ${formatCurrency(pattern.average, activeCurrency)}.`,
+      scopeLabel: "Alcance: selección exacta detectada como hábito repetido en los últimos 90 días.",
+      emptyTitle: "No encontramos movimientos para este hábito",
+      emptyBody: "Puede pasar si la lista se actualizó mientras veías el dashboard.",
+      movements: patternMovements,
+    });
+  }, [activeCurrency, getMovementsByIds, openMovementPreview]);
+
+  const openRisingCategoryPreview = useCallback((item: { name: string; current: number; previous: number; delta: number; movementIds: number[] }) => {
+    const categoryMovements = getMovementsByIds(item.movementIds);
+    openMovementPreview({
+      title: `Subida en ${item.name}`,
+      subtitle: `En los últimos 14 días esta categoría suma ${formatCurrency(item.current, activeCurrency)}. Antes sumaba ${formatCurrency(item.previous, activeCurrency)}; la diferencia es ${formatCurrency(item.delta, activeCurrency)}.`,
+      scopeLabel: "Alcance: movimientos exactos de esta categoría en los últimos 14 días.",
+      emptyTitle: "No encontramos movimientos para esta subida",
+      emptyBody: "Puede pasar si los datos cambiaron después de calcular la tarjeta.",
+      movements: categoryMovements,
+    });
+  }, [activeCurrency, getMovementsByIds, openMovementPreview]);
+
+  const openAnomalyMovementsPreview = useCallback((movementIds: number[], title = "Gastos fuera de costumbre") => {
+    const anomalyMovements = getMovementsByIds(movementIds);
+    openMovementPreview({
+      title,
+      subtitle: `${anomalyMovements.length} movimiento${anomalyMovements.length === 1 ? "" : "s"} se sale${anomalyMovements.length === 1 ? "" : "n"} de tu comportamiento reciente. No siempre está mal; solo conviene revisarlo.`,
+      scopeLabel: "Alcance: selección exacta marcada por comparación contra tu propio historial reciente.",
+      emptyTitle: "No hay gastos fuera de costumbre",
+      emptyBody: "No encontramos movimientos raros con la selección actual.",
+      movements: anomalyMovements,
+    });
+  }, [getMovementsByIds, openMovementPreview]);
+
+  const openCategoryPeriodPreview = useCallback((categoryId: number | null, label?: string) => {
+    const categoryName = label ?? (categoryId != null ? categoryMap.get(categoryId) ?? "Categoría" : "Sin categoría");
+    const categoryMovements = sortMovementsRecentFirst(
+      movements.filter((movement) =>
+        isExpense(movement) &&
+        inRange(movement, advancedStats.curStart, advancedStats.curEnd) &&
+        (categoryId == null ? movement.categoryId == null : movement.categoryId === categoryId)
+      ),
+    );
+    const total = categoryMovements.reduce((sum, movement) => sum + expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }), 0);
+    openMovementPreview({
+      title: categoryName,
+      subtitle: `${categoryMovements.length} gasto${categoryMovements.length === 1 ? "" : "s"} del mes suman ${formatCurrency(total, activeCurrency)} en esta categoría.`,
+      scopeLabel: `Alcance: ${format(advancedStats.curStart, "d MMM", { locale: es })} - ${format(advancedStats.curEnd, "d MMM yyyy", { locale: es })}.`,
+      emptyTitle: "No hay movimientos en esta categoría",
+      emptyBody: "La distribución se actualizará cuando existan gastos para esta selección.",
+      movements: categoryMovements,
+    });
+  }, [
+    accountCurrencyMap,
+    activeCurrency,
+    advancedStats.curEnd,
+    advancedStats.curStart,
+    categoryMap,
+    exchangeRateMap,
+    movements,
+    openMovementPreview,
+  ]);
+
+  const openFinancialGraphNodePreview = useCallback((node: FinancialGraphRankNode) => {
+    const nodeMovements = sortMovementsRecentFirst(
+      movements.filter((movement) => {
+        if (movement.status !== "posted") return false;
+        if (node.kind === "account") {
+          return node.entityId != null && (movement.sourceAccountId === node.entityId || movement.destinationAccountId === node.entityId);
+        }
+        if (node.kind === "category") {
+          if (!isCategorizedCashflow(movement)) return false;
+          return node.entityId == null ? movement.categoryId == null : movement.categoryId === node.entityId;
+        }
+        if (node.kind === "counterparty") {
+          return node.entityId != null && movement.counterpartyId === node.entityId;
+        }
+        if (node.kind === "flow") {
+          if (node.flowKind === "transfer") return isTransfer(movement);
+          if (node.flowKind === "income") return movementActsAsIncome(movement);
+          return movementActsAsExpense(movement);
+        }
+        return false;
+      }),
+    );
+    const total = nodeMovements.reduce((sum, movement) => {
+      if (isTransfer(movement)) return sum + transferAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency });
+      return sum + (movementActsAsIncome(movement)
+        ? incomeAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency })
+        : expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }));
+    }, 0);
+
+    const kindLabel =
+      node.kind === "account" ? "cuenta" :
+      node.kind === "category" ? "categoría" :
+      node.kind === "counterparty" ? "contacto" :
+      "tipo de movimiento";
+
+    openMovementPreview({
+      title: node.label,
+      subtitle: `${nodeMovements.length} movimiento${nodeMovements.length === 1 ? "" : "s"} conectado${nodeMovements.length === 1 ? "" : "s"} a este ${kindLabel}. En valor absoluto suman ${formatCurrency(total, activeCurrency)}.`,
+      scopeLabel: "Alcance: movimientos confirmados de los últimos 90 días cargados por el dashboard avanzado.",
+      emptyTitle: "No encontramos movimientos para este nodo",
+      emptyBody: "Puede pasar si la lista se actualizó después de calcular el grafo.",
+      movements: nodeMovements,
+    });
+  }, [
+    accountCurrencyMap,
+    activeCurrency,
+    exchangeRateMap,
+    movements,
+    openMovementPreview,
+  ]);
+
+  const openWeeklyDayPreview = useCallback((day: {
+    fullLabel: string;
+    total: number;
+    average: number;
+    count: number;
+    weekCount: number;
+    movements: DashboardMovementRow[];
+  }) => {
+    openMovementPreview({
+      title: `Gastos de ${day.fullLabel}`,
+      subtitle: `${day.count} movimiento${day.count === 1 ? "" : "s"} registrado${day.count === 1 ? "" : "s"} en ${day.fullLabel}. En total suman ${formatCurrency(day.total, activeCurrency)}; promedio semanal: ${formatCurrency(day.average, activeCurrency)}.`,
+      scopeLabel: `Alcance: todos los ${day.fullLabel} cargados en el dashboard, promediados sobre ${day.weekCount} semana${day.weekCount === 1 ? "" : "s"} observada${day.weekCount === 1 ? "" : "s"}.`,
+      emptyTitle: `Sin gastos de ${day.fullLabel}`,
+      emptyBody: "No hay movimientos para este día de la semana.",
+      movements: day.movements,
+    });
+  }, [activeCurrency, openMovementPreview]);
+
+  const openTransferRoutePreview = useCallback((route: { srcName: string; dstName: string; total: number; count: number; movementIds: number[] }) => {
+    const routeMovements = getMovementsByIds(route.movementIds);
+    openMovementPreview({
+      title: `${route.srcName} a ${route.dstName}`,
+      subtitle: `${route.count} transferencia${route.count === 1 ? "" : "s"} entre estas cuentas suman ${formatCurrency(route.total, activeCurrency)}.`,
+      scopeLabel: "Alcance: transferencias confirmadas cargadas en el dashboard para esta misma ruta.",
+      emptyTitle: "No encontramos transferencias para esta ruta",
+      emptyBody: "Puede pasar si la lista se actualizó mientras veías el dashboard.",
+      movements: routeMovements,
+    });
+  }, [activeCurrency, getMovementsByIds, openMovementPreview]);
+
+  const openHistoryRangePreview = useCallback((
+    dateFrom: string,
+    dateTo: string,
+    options?: {
+      title?: string;
+      kind?: "all" | "income" | "expense";
+      categoryId?: number | null;
+    },
+  ) => {
+    const from = startOfDay(parseDisplayDate(dateFrom));
+    const to = endOfDay(parseDisplayDate(dateTo));
+    const kind = options?.kind ?? "all";
+    const rangeMovements = sortMovementsRecentFirst(
+      movements.filter((movement) => {
+        if (!inRange(movement, from, to)) return false;
+        if (kind === "income" && !isIncome(movement)) return false;
+        if (kind === "expense" && !isExpense(movement)) return false;
+        if (kind === "all" && movement.status !== "posted") return false;
+        if (options?.categoryId !== undefined) {
+          const categoryId = options.categoryId;
+          if (categoryId == null) return movement.categoryId == null;
+          return movement.categoryId === categoryId;
+        }
+        return true;
+      }),
+    );
+    const income = rangeMovements
+      .filter((movement) => movementActsAsIncome(movement))
+      .reduce((sum, movement) => sum + incomeAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }), 0);
+    const expense = rangeMovements
+      .filter((movement) => movementActsAsExpense(movement))
+      .reduce((sum, movement) => sum + expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }), 0);
+    const rangeLabel = `${format(from, "d MMM", { locale: es })} - ${format(to, "d MMM yyyy", { locale: es })}`;
+    const defaultTitle = kind === "income"
+      ? "Ingresos del periodo"
+      : kind === "expense"
+        ? "Gastos del periodo"
+        : "Movimientos del periodo";
+
+    openMovementPreview({
+      title: options?.title ?? defaultTitle,
+      subtitle: `${rangeMovements.length} movimiento${rangeMovements.length === 1 ? "" : "s"} en el periodo. Ingresos: ${formatCurrency(income, activeCurrency)}. Gastos: ${formatCurrency(expense, activeCurrency)}.`,
+      scopeLabel: `Alcance: ${rangeLabel}.`,
+      emptyTitle: "No hay movimientos para esta selección",
+      emptyBody: "El historial se actualizará cuando existan movimientos en este rango.",
+      movements: rangeMovements,
+    });
+  }, [
+    accountCurrencyMap,
+    activeCurrency,
+    exchangeRateMap,
+    movements,
+    openMovementPreview,
+  ]);
+
+  const openAnnualMonthPreview = useCallback((month: AnnualHistoryMonth, kind: "all" | "income" | "expense" = "all") => {
+    const monthName = format(parseDisplayDate(month.dateFrom), "MMMM yyyy", { locale: es });
+    openHistoryRangePreview(month.dateFrom, month.dateTo, {
+      kind,
+      title: kind === "income"
+        ? `Ingresos de ${monthName}`
+        : kind === "expense"
+          ? `Gastos de ${monthName}`
+          : `Movimientos de ${monthName}`,
+    });
+  }, [openHistoryRangePreview]);
+
+  const openAnnualTopCategoryPreview = useCallback((detail: NonNullable<typeof selectedAnnualMonthDetail>) => {
+    openHistoryRangePreview(detail.month.dateFrom, detail.month.dateTo, {
+      kind: "expense",
+      categoryId: detail.topCategoryId,
+      title: `${detail.topCategoryName} en ${format(parseDisplayDate(detail.month.dateFrom), "MMMM yyyy", { locale: es })}`,
+    });
+  }, [openHistoryRangePreview]);
+
+  const openSingleMovementPreview = useCallback((movementId: number, title = "Movimiento del historial") => {
+    const movement = movementById.get(movementId);
+    openMovementPreview({
+      title,
+      subtitle: movement
+        ? "Este movimiento fue uno de los que más peso tuvo en la lectura del mes."
+        : "No encontramos este movimiento en la lista actual del dashboard.",
+      scopeLabel: "Alcance: selección exacta desde Historial.",
+      emptyTitle: "Movimiento no disponible",
+      emptyBody: "Puede pasar si los datos se actualizaron después de abrir el detalle.",
+      movements: movement ? [movement] : [],
+    });
+  }, [movementById, openMovementPreview]);
+
+  const openPendingReviewPreview = useCallback(() => {
+    openMovementPreview({
+      title: "Movimientos pendientes",
+      subtitle: `${pendingReviewMovements.length} movimiento${pendingReviewMovements.length === 1 ? "" : "s"} todavía no impacta${pendingReviewMovements.length === 1 ? "" : "n"} el saldo real.`,
+      scopeLabel: "Alcance: movimientos con estado pendiente cargados en el dashboard.",
+      emptyTitle: "No hay movimientos pendientes",
+      emptyBody: "La bandeja de Salud ya no tiene pendientes por aplicar.",
+      movements: pendingReviewMovements,
+    });
+  }, [openMovementPreview, pendingReviewMovements]);
+
+  const openDuplicateExpensesPreview = useCallback(() => {
+    openMovementPreview({
+      title: "Posibles duplicados",
+      subtitle: `${duplicateExpenseReviewMovements.length} movimiento${duplicateExpenseReviewMovements.length === 1 ? "" : "s"} aparece${duplicateExpenseReviewMovements.length === 1 ? "" : "n"} en grupos con fecha cercana, monto parecido y texto similar.`,
+      scopeLabel: "Alcance: gastos confirmados comparados por fecha, monto, texto, cuenta y contraparte.",
+      emptyTitle: "No hay duplicados visibles",
+      emptyBody: "No encontramos gastos repetidos con la selección actual.",
+      movements: duplicateExpenseReviewMovements,
+    });
+  }, [duplicateExpenseReviewMovements, openMovementPreview]);
+
+  const openNoCounterpartyPreview = useCallback(() => {
+    openMovementPreview({
+      title: "Movimientos sin contraparte",
+      subtitle: `${noCounterpartyReviewMovements.length} movimiento${noCounterpartyReviewMovements.length === 1 ? "" : "s"} no tiene${noCounterpartyReviewMovements.length === 1 ? "" : "n"} persona, negocio o contacto asociado.`,
+      scopeLabel: "Alcance: ingresos, gastos y pagos confirmados sin contraparte.",
+      emptyTitle: "No hay movimientos sin contraparte",
+      emptyBody: "La calidad de datos ya no tiene esta tarea pendiente.",
+      movements: noCounterpartyReviewMovements,
+    });
+  }, [noCounterpartyReviewMovements, openMovementPreview]);
+
+  const openHealthMovementIssuePreview = useCallback((key: "uncategorized" | "pending" | "duplicates") => {
+    if (key === "uncategorized") {
+      openSummaryUncategorizedPreview();
       return;
     }
-    setAdvancedDetail(null);
-    if (focusAction.route === "/dashboard") return;
-    router.push(focusAction.route as never);
-  }, [focusAction.route, openMovementsQuickFilter, review.uncategorizedCount, router]);
+    if (key === "pending") {
+      openPendingReviewPreview();
+      return;
+    }
+    openDuplicateExpensesPreview();
+  }, [openDuplicateExpensesPreview, openPendingReviewPreview, openSummaryUncategorizedPreview]);
+
+  const openCategorySuggestionPreview = useCallback((suggestion: DashboardCategorySuggestion) => {
+    const movement = movementById.get(suggestion.movementId);
+    const confidencePct = Math.round(suggestion.confidence * 100);
+    openMovementPreview({
+      title: "Sugerencia de categoría",
+      subtitle: movement
+        ? `La app sugiere "${suggestion.suggestedCategoryName}" para "${suggestion.description}" con ${confidencePct}% de confianza.`
+        : "No encontramos este movimiento en la lista actual del dashboard.",
+      scopeLabel: suggestion.reasons.length > 0
+        ? `Motivo: ${suggestion.reasons.join(" · ")}.`
+        : "Alcance: movimiento exacto sugerido por Salud.",
+      emptyTitle: "Movimiento no disponible",
+      emptyBody: "Puede pasar si los datos se actualizaron después de abrir la sugerencia.",
+      movements: movement ? [movement] : [],
+      suggestion: movement
+        ? {
+          movementId: suggestion.movementId,
+          description: suggestion.description,
+          categoryId: suggestion.suggestedCategoryId,
+          categoryName: suggestion.suggestedCategoryName,
+          confidencePct,
+        }
+        : undefined,
+    });
+  }, [movementById, openMovementPreview]);
+
+  const applyCategorySuggestionFromPreview = useCallback(async () => {
+    const suggestion = movementPreview?.suggestion;
+    if (!suggestion) return;
+    const currentMovement = movementPreview?.movements.find((movement) => movement.id === suggestion.movementId);
+    setApplyingSuggestionMovementId(suggestion.movementId);
+    try {
+      await updateMovementMutation.mutateAsync({
+        id: suggestion.movementId,
+        input: { categoryId: suggestion.categoryId },
+      });
+      await persistDashboardAnalyticsMutation.mutateAsync({
+        signals: [{
+          movementId: suggestion.movementId,
+          normalizedDescription: normalizeAnalyticsText(suggestion.description) || null,
+          suggestedCategoryId: suggestion.categoryId,
+          suggestedCategoryConfidence: 1,
+          signalReasons: [
+            "usuario aceptó sugerencia de categoría",
+            `categoría aplicada: ${suggestion.categoryName}`,
+          ],
+          analyticsVersion: "v2-feedback",
+        }],
+      });
+      await persistLearningFeedbackMutation.mutateAsync({
+        movementId: suggestion.movementId,
+        feedbackKind: "accepted_category_suggestion",
+        normalizedDescription: normalizeAnalyticsText(suggestion.description) || null,
+        previousCategoryId: currentMovement?.categoryId ?? null,
+        acceptedCategoryId: suggestion.categoryId,
+        confidence: suggestion.confidencePct / 100,
+        source: "dashboard-salud",
+        metadata: {
+          categoryName: suggestion.categoryName,
+          description: suggestion.description,
+        },
+      });
+      setMovementPreview((current) => {
+        if (!current) return current;
+        return {
+          ...current,
+          subtitle: `Listo: "${suggestion.categoryName}" quedó aplicado a este movimiento.`,
+          scopeLabel: "Categoría aplicada desde Salud. Puedes editar el movimiento si necesitas cambiar algo más.",
+          movements: current.movements.map((movement) =>
+            movement.id === suggestion.movementId
+              ? { ...movement, categoryId: suggestion.categoryId }
+              : movement,
+          ),
+          suggestion: undefined,
+        };
+      });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["dashboard-movements"] }),
+        queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] }),
+        queryClient.invalidateQueries({ queryKey: ["dashboard-analytics"] }),
+        queryClient.invalidateQueries({ queryKey: ["movement", suggestion.movementId] }),
+      ]);
+      showToast(`Categoría aplicada: ${suggestion.categoryName}`, "success");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo aplicar la categoría.";
+      showToast(message, "error");
+    } finally {
+      setApplyingSuggestionMovementId(null);
+    }
+  }, [movementPreview?.movements, movementPreview?.suggestion, persistDashboardAnalyticsMutation, persistLearningFeedbackMutation, queryClient, showToast, updateMovementMutation]);
 
   const openPrecisionLayer = useCallback(() => {
     setExecutiveDetail(null);
@@ -4233,34 +4799,6 @@ function AdvancedDashboard({
   ]);
 
   const projectionModel = useMemo(() => {
-    const currentMonthKey = format(new Date(), "yyyy-MM");
-    if (
-      analytics?.projectionSnapshot &&
-      analytics.projectionSnapshot.periodKey === currentMonthKey &&
-      analytics.projectionSnapshot.expectedBalance != null &&
-      analytics.projectionSnapshot.conservativeBalance != null &&
-      analytics.projectionSnapshot.optimisticBalance != null &&
-      analytics.projectionSnapshot.committedInflow != null &&
-      analytics.projectionSnapshot.committedOutflow != null &&
-      analytics.projectionSnapshot.variableIncomeProjection != null &&
-      analytics.projectionSnapshot.variableExpenseProjection != null &&
-      analytics.projectionSnapshot.confidence != null
-    ) {
-      const confidence = Math.round(analytics.projectionSnapshot.confidence);
-      return {
-        expectedBalance: analytics.projectionSnapshot.expectedBalance,
-        conservativeBalance: analytics.projectionSnapshot.conservativeBalance,
-        optimisticBalance: analytics.projectionSnapshot.optimisticBalance,
-        committedInflow: analytics.projectionSnapshot.committedInflow,
-        committedOutflow: analytics.projectionSnapshot.committedOutflow,
-        variableIncomeProjection: analytics.projectionSnapshot.variableIncomeProjection,
-        variableExpenseProjection: analytics.projectionSnapshot.variableExpenseProjection,
-        confidence,
-        confidenceLabel: confidence >= 78 ? "Alta" : confidence >= 60 ? "Media" : "Base corta",
-        remainingDays: Math.max(0, differenceInDays(endOfMonth(new Date()), new Date())),
-      } satisfies DashboardProjectionModel;
-    }
-
     return buildMonthProjectionModel(
       movements,
       obligations,
@@ -4276,7 +4814,6 @@ function AdvancedDashboard({
   }, [
     accountCurrencyMap,
     activeCurrency,
-    analytics?.projectionSnapshot,
     currentVisibleBalance,
     exchangeRateMap,
     movements,
@@ -4285,7 +4822,114 @@ function AdvancedDashboard({
     subscriptions,
   ]);
 
-  const persistDashboardAnalyticsMutation = usePersistDashboardAnalyticsMutation(workspaceId);
+  const paymentOptimization = useMemo(() => (
+    buildPaymentOptimizationPlan({
+      obligations: obligations.map((obligation) => {
+        const rawAmount = obligation.installmentAmount && obligation.installmentAmount > 0
+          ? Math.min(obligation.pendingAmount, obligation.installmentAmount)
+          : obligation.pendingAmount;
+        return {
+          id: obligation.id,
+          title: obligation.title,
+          direction: obligation.direction,
+          amount: convertDashboardCurrency(rawAmount, obligation.currencyCode, activeCurrency, exchangeRateMap),
+          dueDate: obligation.dueDate,
+          status: obligation.status,
+          counterparty: obligation.counterparty,
+        };
+      }),
+      currentBalance: currentVisibleBalance,
+      weekExpectedInflow: weekWindow.expectedInflow,
+      weekExpectedOutflow: weekWindow.expectedOutflow,
+      pressureProbability: projectionModel.pressureProbability,
+    })
+  ), [
+    activeCurrency,
+    currentVisibleBalance,
+    exchangeRateMap,
+    obligations,
+    projectionModel.pressureProbability,
+    weekWindow.expectedInflow,
+    weekWindow.expectedOutflow,
+  ]);
+
+  const financialGraphRank = useMemo(() => (
+    buildFinancialGraphRank<DashboardMovementRow>({
+      movements: movements.filter((movement) => movement.status === "posted"),
+      getAmount: (movement) => {
+        if (isTransfer(movement)) return transferAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency });
+        return movementActsAsIncome(movement)
+          ? incomeAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency })
+          : expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency });
+      },
+      getAccountIds: (movement) => [movement.sourceAccountId, movement.destinationAccountId],
+      getCategoryId: (movement) => isCategorizedCashflow(movement) ? movement.categoryId ?? null : null,
+      getCounterpartyId: (movement) => movement.counterpartyId ?? null,
+      getFlowKind: (movement) => {
+        if (isTransfer(movement)) return "transfer";
+        return movementActsAsIncome(movement) ? "income" : "expense";
+      },
+      accountNames: accountMap,
+      categoryNames: categoryMap,
+      counterpartyNames: counterpartyMap,
+      limit: 4,
+    })
+  ), [
+    accountCurrencyMap,
+    accountMap,
+    activeCurrency,
+    categoryMap,
+    counterpartyMap,
+    exchangeRateMap,
+    movements,
+  ]);
+
+  const focusAction = useMemo(() => {
+    return buildFocusActionRanking({
+      uncategorizedCount: review.uncategorizedCount,
+      overdueObligationsCount: review.overdueObligationsCount,
+      subscriptionsAttentionCount: review.subscriptionsAttentionCount,
+      learningReadinessScore: learning.readinessScore,
+      weekExpectedInflow: weekWindow.expectedInflow,
+      weekExpectedOutflow: weekWindow.expectedOutflow,
+      monthExpense: monthToDate.expense,
+      cashCushionDays: cashCushion.days,
+      cashDailyBurn: cashCushion.dailyBurn,
+      spendingTrendPct: spendingTrend.expenseTrendPct,
+      pressureProbability: projectionModel.pressureProbability,
+      pressureThresholdLabel: formatCurrency(projectionModel.pressureThreshold, activeCurrency),
+      formatAmount: (amount) => formatCurrency(amount, activeCurrency),
+    });
+  }, [
+    activeCurrency,
+    cashCushion.dailyBurn,
+    cashCushion.days,
+    learning.readinessScore,
+    monthToDate.expense,
+    projectionModel.pressureProbability,
+    projectionModel.pressureThreshold,
+    review.overdueObligationsCount,
+    review.subscriptionsAttentionCount,
+    review.uncategorizedCount,
+    spendingTrend.expenseTrendPct,
+    weekWindow.expectedInflow,
+    weekWindow.expectedOutflow,
+  ]);
+
+  const openFocusActionDestination = useCallback(() => {
+    if (focusAction.quickFilter === "uncategorized") {
+      openSummaryUncategorizedPreview();
+      return;
+    }
+    setAdvancedDetail(null);
+    if (focusAction.key === "liquidity" || focusAction.key === "cash" || focusAction.key === "spending" || focusAction.key === "projection-risk") {
+      setActiveTab("Flujo");
+      return;
+    }
+    if (focusAction.route === "/dashboard") return;
+    router.push(focusAction.route as never);
+  }, [focusAction.key, focusAction.quickFilter, focusAction.route, openSummaryUncategorizedPreview, router]);
+
   const lastPersistedAnalyticsKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -4416,12 +5060,13 @@ function AdvancedDashboard({
         "Sirve para saber si las demás lecturas salen de información suficientemente ordenada o si todavía hay ruido que puede distorsionar comparativos y proyecciones.",
       ],
       calculation: [
+        "Usamos un resumen de señales: la app junta muchos movimientos y los convierte en pocos datos fáciles de leer, como separar una libreta de ventas en ventas, gastos, pendientes y errores.",
         `La confianza actual es ${learning.readinessScore}%. Se calcula con historia observada (${learning.historyDays} días), movimientos útiles (${learning.usefulCount}) y categorías útiles (${Math.round(learning.categorizedRate * 100)}%).`,
         `Además revisamos fricción operativa: ${review.uncategorizedCount} movimientos sin categoría, ${review.overdueObligationsCount} obligaciones vencidas, ${review.subscriptionsAttentionCount} suscripciones con atención y ${review.pendingMovementsCount} movimientos pendientes.`,
       ],
       actions: [
         review.uncategorizedCount > 0
-          ? { label: `Abrir ${review.uncategorizedCount} sin categoría`, onPress: () => openMovementsQuickFilter("uncategorized") }
+          ? { label: `Abrir ${review.uncategorizedCount} sin categoría`, onPress: openSummaryUncategorizedPreview }
           : null,
         { label: qualityOpen ? "Ver capa de precisión" : "Abrir capa de precisión", onPress: openPrecisionLayer },
       ].filter((action): action is { label: string; onPress: () => void } => Boolean(action)),
@@ -4434,6 +5079,7 @@ function AdvancedDashboard({
         "Cuando sale en rojo o muy ajustado, el problema no es el cierre del mes: es la próxima semana.",
       ],
       calculation: [
+        "Usamos una ventana de tiempo: en vez de mezclar todo el mes, miramos solo lo que cae en los próximos 7 días, como revisar la caja necesaria para esta semana.",
         `Tomamos obligaciones con vencimiento dentro de 7 días, suscripciones activas por cobrar y los ingresos fijos esperados en ese mismo rango.`,
         `Con eso hoy vemos ${weekWindow.payableCount} pagos, ${weekWindow.receivableCount} cobros y ${weekWindow.scheduledCount} compromisos programados. Entran ${formatCurrency(weekWindow.expectedInflow, activeCurrency)} y salen ${formatCurrency(weekWindow.expectedOutflow, activeCurrency)}.`,
       ],
@@ -4455,12 +5101,14 @@ function AdvancedDashboard({
       ],
       calculation: [
         `Partimos de ${visibleBalanceLabel}: ${visibleAccountSummary}. Esa base suma ${formatCurrency(currentVisibleBalance, activeCurrency)}.`,
+        "Usamos una proyección por escenarios: no prometemos un número exacto; armamos un cierre esperado, uno defensivo y uno más favorable para que veas el rango posible.",
         `Después aplicamos la fórmula: saldo visible + comprometido neto (${formatCurrency(projectionCommittedNet, activeCurrency)}) + variable neto (${formatCurrency(projectionVariableNet, activeCurrency)}) = ${formatCurrency(projectionModel.expectedBalance, activeCurrency)}.`,
         `El rango defensivo queda en ${formatCurrency(projectionModel.conservativeBalance, activeCurrency)} y el escenario alto en ${formatCurrency(projectionModel.optimisticBalance, activeCurrency)}.`,
+        `Además simulamos muchos cierres posibles con tu ritmo diario reciente. Hoy la probabilidad de cerrar por debajo de ${formatCurrency(projectionModel.pressureThreshold, activeCurrency)} es ${projectionModel.pressureProbability}%.`,
       ],
       actions: [
         review.uncategorizedCount > 0
-          ? { label: "Limpiar movimientos sin categoría", onPress: () => openMovementsQuickFilter("uncategorized") }
+          ? { label: "Limpiar movimientos sin categoría", onPress: openSummaryUncategorizedPreview }
           : null,
         monthRecurringIncomeProjection > 0
           ? { label: "Revisar ingresos fijos del mes", onPress: () => { setExecutiveDetail(null); router.push("/recurring-income" as never); } }
@@ -4475,12 +5123,14 @@ function AdvancedDashboard({
     learning.usefulCount,
     monthRecurringIncomeProjection,
     openPrecisionLayer,
-    openMovementsQuickFilter,
+    openSummaryUncategorizedPreview,
     projectionModel.conservativeBalance,
     projectionModel.committedInflow,
     projectionModel.committedOutflow,
     projectionModel.expectedBalance,
     projectionModel.optimisticBalance,
+    projectionModel.pressureProbability,
+    projectionModel.pressureThreshold,
     projectionModel.variableExpenseProjection,
     projectionModel.variableIncomeProjection,
     projectionCommittedNet,
@@ -4568,21 +5218,26 @@ function AdvancedDashboard({
   const advancedDetails = useMemo(() => ({
     focusCenter: {
       title: "Centro de foco",
-      summary: "Te explica por que esta es la mejor accion inmediata y te deja saltar directo a la pantalla donde puedes resolverla.",
+      summary: "Te explica por qué esta es la mejor acción inmediata y te deja saltar directo a la pantalla donde puedes resolverla.",
       meaning: [
-        "No busca mostrarlo todo. Prioriza una sola accion para que sepas por donde empezar sin interpretar demasiados widgets antes.",
-        "Sirve para decisiones inmediatas: ordenar datos, corregir cartera, revisar suscripciones o proteger liquidez de corto plazo.",
+        "La app no intenta mostrarte todo al mismo tiempo. Hace como una balanza: pone de un lado categorías pendientes, vencimientos, cargos fijos, caja disponible y presión de la semana.",
+        "Después elige el punto que más puede mover tu dinero hoy. La idea es que sepas por dónde empezar sin revisar diez tarjetas.",
       ],
       calculation: [
-        `Hoy el foco cayo en "${focusAction.title}" porque el motor pondera primero datos sin categoria, luego obligaciones vencidas, despues suscripciones con atencion y al final la presion de 7 dias.`,
-        `En esta lectura vemos ${review.uncategorizedCount} movimientos sin categoria, ${review.overdueObligationsCount} obligaciones vencidas, ${review.subscriptionsAttentionCount} suscripciones con atencion y una caja libre de ${cashCushion.days} dias.`,
+        "Primero juntamos muchas señales en pocos grupos: datos por ordenar, vencimientos, suscripciones, caja libre, gasto reciente, riesgo de cierre y flujo de los próximos 7 días.",
+        "Luego cada posible acción recibe una prioridad de 0 a 100 combinando urgencia, impacto en dinero, efecto sobre confianza y facilidad de resolver.",
+        `Hoy ganó "${focusAction.title}" con ${focusAction.score}/100 (${focusAction.scoreLabel}).`,
+        focusAction.reason,
+        focusAction.alternatives.length > 0
+          ? `También revisamos: ${focusAction.alternatives.map((item) => `${item.title} (${item.score}/100)`).join(", ")}.`
+          : "No apareció otra alerta fuerte detrás de esta recomendación.",
       ],
       actions: [
-        review.uncategorizedCount > 0
-          ? { label: `Abrir ${review.uncategorizedCount} sin categoria`, onPress: () => openMovementsQuickFilter("uncategorized") }
-          : review.overdueObligationsCount > 0
+        focusAction.quickFilter === "uncategorized"
+          ? { label: `Abrir ${review.uncategorizedCount} sin categoria`, onPress: openSummaryUncategorizedPreview }
+          : focusAction.key === "overdue"
             ? { label: "Abrir creditos y deudas", onPress: () => { setAdvancedDetail(null); router.push("/obligations" as never); } }
-            : review.subscriptionsAttentionCount > 0
+            : focusAction.key === "subscriptions"
               ? { label: "Abrir suscripciones", onPress: () => { setAdvancedDetail(null); router.push("/subscriptions" as never); } }
               : { label: "Aplicar esta accion", onPress: openFocusActionDestination },
         { label: "Entender la proyeccion del mes", onPress: () => setAdvancedDetail("projection") },
@@ -4598,10 +5253,11 @@ function AdvancedDashboard({
       calculation: [
         `Lectura comprometida del mes: entran ${formatCurrency(projectionModel.committedInflow, activeCurrency)} y salen ${formatCurrency(projectionModel.committedOutflow, activeCurrency)} por obligaciones, suscripciones e ingresos fijos.`,
         `Luego se suma el ritmo variable reciente: entran ${formatCurrency(projectionModel.variableIncomeProjection, activeCurrency)} y salen ${formatCurrency(projectionModel.variableExpenseProjection, activeCurrency)}. Con eso el esperado es ${formatCurrency(projectionModel.expectedBalance, activeCurrency)}, con piso conservador de ${formatCurrency(projectionModel.conservativeBalance, activeCurrency)}.`,
+        `Monte Carlo: probamos muchos cierres posibles tomando días parecidos de tu historial reciente. La banda simulada va de ${formatCurrency(projectionModel.monteCarloLowBalance, activeCurrency)} a ${formatCurrency(projectionModel.monteCarloHighBalance, activeCurrency)}, con mediana de ${formatCurrency(projectionModel.monteCarloMedianBalance, activeCurrency)}.`,
       ],
       actions: [
         review.uncategorizedCount > 0
-          ? { label: `Limpiar ${review.uncategorizedCount} sin categoría`, onPress: () => openMovementsQuickFilter("uncategorized") }
+          ? { label: `Limpiar ${review.uncategorizedCount} sin categoría`, onPress: openSummaryUncategorizedPreview }
           : null,
         weekWindow.expectedOutflow > weekWindow.expectedInflow
           ? { label: "Revisar obligaciones próximas", onPress: () => { setAdvancedDetail(null); router.push("/obligations" as never); } }
@@ -4620,7 +5276,7 @@ function AdvancedDashboard({
         "Cuando sale como 'Fuerte', el desvío contra tu historial es más claro; cuando sale como 'Revisar', hay una señal razonable pero menos concluyente.",
       ],
       actions: [
-        { label: "Abrir movimientos para revisar", onPress: () => { setAdvancedDetail(null); router.push("/movements" as never); } },
+        { label: "Abrir movimientos para revisar", onPress: () => openAnomalyMovementsPreview(anomalySignals.map((item) => item.movementId)) },
       ],
     },
     advancedMetrics: {
@@ -4636,7 +5292,7 @@ function AdvancedDashboard({
       ],
       actions: [
         review.uncategorizedCount > 0
-          ? { label: `Limpiar ${review.uncategorizedCount} sin categoria`, onPress: () => openMovementsQuickFilter("uncategorized") }
+          ? { label: `Limpiar ${review.uncategorizedCount} sin categoria`, onPress: openSummaryUncategorizedPreview }
           : null,
         collectionEfficiency.total > 0
           ? { label: "Abrir creditos y deudas", onPress: () => { setAdvancedDetail(null); router.push("/obligations" as never); } }
@@ -4657,7 +5313,7 @@ function AdvancedDashboard({
       ],
       actions: [
         qualitySnapshot.noCategoryCount > 0
-          ? { label: `Abrir ${qualitySnapshot.noCategoryCount} sin categoría`, onPress: () => openMovementsQuickFilter("uncategorized") }
+          ? { label: `Abrir ${qualitySnapshot.noCategoryCount} sin categoría`, onPress: openSummaryUncategorizedPreview }
           : null,
         { label: qualityOpen ? "Ocultar capa de calidad" : "Abrir capa de calidad", onPress: qualityOpen ? () => { setAdvancedDetail(null); setQualityOpen(false); } : openPrecisionLayer },
       ].filter((action): action is { label: string; onPress: () => void } => Boolean(action)),
@@ -4680,10 +5336,10 @@ function AdvancedDashboard({
       ],
       actions: [
         review.uncategorizedCount > 0
-          ? { label: `Categorizar ${review.uncategorizedCount} sin etiquetar`, onPress: () => openMovementsQuickFilter("uncategorized") }
+          ? { label: `Categorizar ${review.uncategorizedCount} sin etiquetar`, onPress: openSummaryUncategorizedPreview }
           : null,
         categoryConcentration.topCategory
-          ? { label: `Ver movimientos de ${categoryConcentration.topCategory}`, onPress: () => { setAdvancedDetail(null); router.push("/movements" as never); } }
+          ? { label: `Ver movimientos de ${categoryConcentration.topCategory}`, onPress: () => openCategoryPeriodPreview(categoryConcentration.topCategoryId, categoryConcentration.topCategory ?? undefined) }
           : null,
       ].filter((action): action is { label: string; onPress: () => void } => Boolean(action)),
     },
@@ -4705,7 +5361,7 @@ function AdvancedDashboard({
       ],
       actions: [
         review.uncategorizedCount > 0
-          ? { label: `Limpiar ${review.uncategorizedCount} sin categoría`, onPress: () => openMovementsQuickFilter("uncategorized") }
+          ? { label: `Limpiar ${review.uncategorizedCount} sin categoría`, onPress: openSummaryUncategorizedPreview }
           : null,
       ].filter((action): action is { label: string; onPress: () => void } => Boolean(action)),
     },
@@ -4769,15 +5425,24 @@ function AdvancedDashboard({
     },
   }), [
     activeCurrency,
+    anomalySignals,
     cashCushion.days,
     categoryConcentration.hhi,
     categoryConcentration.label,
     categoryConcentration.topCategory,
+    categoryConcentration.topCategoryId,
     categoryConcentration.topShare,
     collectionEfficiency.rate,
     collectionEfficiency.resolved,
     collectionEfficiency.total,
     focusAction.title,
+    focusAction.score,
+    focusAction.scoreLabel,
+    focusAction.scorePill,
+    focusAction.reason,
+    focusAction.alternatives,
+    focusAction.key,
+    focusAction.quickFilter,
     incomeStabilityScore.cvPct,
     incomeStabilityScore.label,
     incomeStabilityScore.score,
@@ -4785,13 +5450,20 @@ function AdvancedDashboard({
     monthlySavingsRate.avgRate,
     monthlySavingsRate.lastRate,
     monthlySavingsRate.trend,
+    openAnomalyMovementsPreview,
+    openCategoryPeriodPreview,
     openFocusActionDestination,
-    openMovementsQuickFilter,
     openPrecisionLayer,
+    openSummaryUncategorizedPreview,
     projectionModel.committedInflow,
     projectionModel.committedOutflow,
     projectionModel.conservativeBalance,
     projectionModel.expectedBalance,
+    projectionModel.monteCarloHighBalance,
+    projectionModel.monteCarloLowBalance,
+    projectionModel.monteCarloMedianBalance,
+    projectionModel.pressureProbability,
+    projectionModel.pressureThreshold,
     projectionModel.variableExpenseProjection,
     projectionModel.variableIncomeProjection,
     qualityOpen,
@@ -5055,7 +5727,7 @@ function AdvancedDashboard({
       actions: [
         { label: "Ver cálculo completo", onPress: () => { setProjectionDetail(null); setAdvancedDetail("projection"); } },
         review.uncategorizedCount > 0
-          ? { label: `Limpiar ${review.uncategorizedCount} sin categoría`, onPress: () => openMovementsQuickFilter("uncategorized") }
+          ? { label: `Limpiar ${review.uncategorizedCount} sin categoría`, onPress: openSummaryUncategorizedPreview }
           : null,
       ].filter((action): action is { label: string; onPress: () => void } => Boolean(action)),
     },
@@ -5086,10 +5758,7 @@ function AdvancedDashboard({
       actions: [
         { label: "Ver ingresos fijos", onPress: () => { setProjectionDetail(null); router.push("/recurring-income" as never); } },
         { label: "Ver obligaciones", onPress: () => { setProjectionDetail(null); router.push("/obligations" as never); } },
-        { label: "Ver movimientos del mes", onPress: () => openMovementsQuickFilter({
-          quickDateFrom: format(startOfMonth(new Date()), "yyyy-MM-dd"),
-          quickDateTo: format(endOfMonth(new Date()), "yyyy-MM-dd"),
-        }) },
+        { label: "Ver movimientos del mes", onPress: openCurrentMonthMovementsPreview },
       ],
     },
   } satisfies Record<"conservative" | "expected" | "included", {
@@ -5102,6 +5771,26 @@ function AdvancedDashboard({
     actions: Array<{ label: string; onPress: () => void }>;
   }>;
   const activeProjectionDetail = projectionDetail ? projectionDetails[projectionDetail] : null;
+  const movementPreviewStats = useMemo(() => {
+    if (!movementPreview) return null;
+    const total = movementPreview.movements.reduce((sum, movement) => {
+      if (movementActsAsIncome(movement)) {
+        return sum + incomeAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency });
+      }
+      if (movementActsAsExpense(movement)) {
+        return sum + expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency });
+      }
+      return sum + transferAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency });
+    }, 0);
+    const pending = movementPreview.movements.filter((movement) => movement.status === "pending" || movement.status === "planned").length;
+    const uncategorized = movementPreview.movements.filter((movement) => isCategorizedCashflow(movement) && movement.categoryId == null).length;
+    return {
+      total,
+      pending,
+      uncategorized,
+      count: movementPreview.movements.length,
+    };
+  }, [accountCurrencyMap, activeCurrency, exchangeRateMap, movementPreview]);
   const [activeTab, setActiveTab] = useState<AdvancedTab>('Resumen');
   const handleTabChange = useCallback((tab: AdvancedTab) => {
     setActiveTab(tab);
@@ -5208,6 +5897,17 @@ function AdvancedDashboard({
         </View>
       </Card>
 
+      {financialGraphRank.length > 0 ? (
+        <>
+          <View style={{ height: SPACING.sm }} />
+          <FinancialGraphCard
+            nodes={financialGraphRank}
+            currency={activeCurrency}
+            onOpenNode={openFinancialGraphNodePreview}
+          />
+        </>
+      ) : null}
+
       </>}
 
       <BottomSheet
@@ -5281,6 +5981,141 @@ function AdvancedDashboard({
           </View>
         ) : null}
       </BottomSheet>
+
+      <Modal
+        visible={Boolean(movementPreview)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMovementPreview(null)}
+      >
+        <View style={subStyles.movementPreviewOverlay}>
+          <Pressable style={subStyles.movementPreviewBackdrop} onPress={() => setMovementPreview(null)} />
+          <View style={subStyles.movementPreviewCard}>
+            <View style={subStyles.movementPreviewHeader}>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={subStyles.movementPreviewKicker}>Movimientos del dashboard</Text>
+                <Text style={subStyles.movementPreviewTitle}>{movementPreview?.title}</Text>
+              </View>
+              <TouchableOpacity
+                style={subStyles.movementPreviewClose}
+                onPress={() => setMovementPreview(null)}
+                activeOpacity={0.82}
+              >
+                <X size={18} color={COLORS.ink} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={subStyles.movementPreviewSubtitle}>{movementPreview?.subtitle}</Text>
+            <Text style={subStyles.movementPreviewScope}>{movementPreview?.scopeLabel}</Text>
+            {movementPreview?.suggestion ? (
+              <TouchableOpacity
+                style={[
+                  subStyles.movementPreviewSuggestionAction,
+                  applyingSuggestionMovementId === movementPreview.suggestion.movementId && subStyles.movementPreviewSuggestionActionDisabled,
+                ]}
+                onPress={applyCategorySuggestionFromPreview}
+                disabled={applyingSuggestionMovementId === movementPreview.suggestion.movementId}
+                activeOpacity={0.84}
+              >
+                <Tag size={15} color={COLORS.primary} />
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={subStyles.movementPreviewSuggestionTitle} numberOfLines={1}>
+                    {applyingSuggestionMovementId === movementPreview.suggestion.movementId
+                      ? "Aplicando sugerencia..."
+                      : `Aplicar ${movementPreview.suggestion.categoryName}`}
+                  </Text>
+                  <Text style={subStyles.movementPreviewSuggestionBody} numberOfLines={1}>
+                    Confianza {movementPreview.suggestion.confidencePct}% · no sales del dashboard.
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            ) : null}
+            {movementPreviewStats && movementPreviewStats.count > 0 ? (
+              <View style={subStyles.movementPreviewStatsRow}>
+                <View style={subStyles.movementPreviewStatPill}>
+                  <Text style={subStyles.movementPreviewStatLabel}>Movimientos</Text>
+                  <Text style={subStyles.movementPreviewStatValue}>{movementPreviewStats.count}</Text>
+                </View>
+                <View style={subStyles.movementPreviewStatPill}>
+                  <Text style={subStyles.movementPreviewStatLabel}>Total listado</Text>
+                  <Text style={subStyles.movementPreviewStatValue}>{formatCurrency(movementPreviewStats.total, activeCurrency)}</Text>
+                </View>
+                {movementPreviewStats.uncategorized > 0 ? (
+                  <View style={subStyles.movementPreviewStatPill}>
+                    <Text style={subStyles.movementPreviewStatLabel}>Sin categoría</Text>
+                    <Text style={subStyles.movementPreviewStatValue}>{movementPreviewStats.uncategorized}</Text>
+                  </View>
+                ) : null}
+                {movementPreviewStats.pending > 0 ? (
+                  <View style={subStyles.movementPreviewStatPill}>
+                    <Text style={subStyles.movementPreviewStatLabel}>Pendientes</Text>
+                    <Text style={subStyles.movementPreviewStatValue}>{movementPreviewStats.pending}</Text>
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
+
+            {movementPreview && movementPreview.movements.length > 0 ? (
+              <ScrollView style={subStyles.movementPreviewList} contentContainerStyle={subStyles.movementPreviewListContent}>
+                {movementPreview.movements.map((movement) => {
+                  const incomeLike = movementActsAsIncome(movement);
+                  const expenseLike = movementActsAsExpense(movement);
+                  const amount = incomeLike
+                    ? incomeAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency })
+                    : expenseLike
+                      ? expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency })
+                      : transferAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency });
+                  const accountId = movementDisplayAccountId(movement);
+                  const accountName = accountId ? accountMap.get(accountId) ?? "Cuenta" : "Sin cuenta";
+                  const categoryName = movement.categoryId != null ? categoryMap.get(movement.categoryId) ?? "Categoría" : "Sin categoría";
+                  const amountColor = incomeLike ? COLORS.income : expenseLike ? COLORS.expense : COLORS.storm;
+                  const sign = incomeLike ? "+" : expenseLike ? "-" : "";
+
+                  return (
+                    <View key={movement.id} style={subStyles.movementPreviewRow}>
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={subStyles.movementPreviewRowTitle} numberOfLines={1}>
+                          {movement.description.trim() || "Movimiento sin descripción"}
+                        </Text>
+                        <Text style={subStyles.movementPreviewRowMeta} numberOfLines={1}>
+                          {format(new Date(movement.occurredAt), "d MMM yyyy", { locale: es })} · {categoryName} · {accountName}
+                        </Text>
+                        <Text style={subStyles.movementPreviewRowStatus} numberOfLines={1}>
+                          {movement.status === "posted" ? "Confirmado" : movement.status === "pending" ? "Pendiente" : movement.status === "planned" ? "Planificado" : "Anulado"}
+                        </Text>
+                      </View>
+                      <View style={subStyles.movementPreviewRowSide}>
+                        <Text style={[subStyles.movementPreviewAmount, { color: amountColor }]} numberOfLines={1}>
+                          {sign}{formatCurrency(amount, activeCurrency)}
+                        </Text>
+                        <TouchableOpacity
+                          style={subStyles.movementPreviewEditBtn}
+                          onPress={() => {
+                            setMovementPreview(null);
+                            router.push(`/movement/${movement.id}?from=dashboard&edit=1` as never);
+                          }}
+                          activeOpacity={0.84}
+                        >
+                          <Text style={subStyles.movementPreviewEditText}>{movementPreviewActionLabel(movement)}</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  );
+                })}
+              </ScrollView>
+            ) : (
+              <View style={subStyles.movementPreviewEmpty}>
+                <Text style={subStyles.movementPreviewEmptyTitle}>
+                  {movementPreview?.emptyTitle ?? "No hay movimientos para mostrar"}
+                </Text>
+                <Text style={subStyles.movementPreviewEmptyBody}>
+                  {movementPreview?.emptyBody ?? "Cuando exista una selección para esta lectura, aparecerá aquí."}
+                </Text>
+              </View>
+            )}
+          </View>
+        </View>
+      </Modal>
 
       <BottomSheet
         visible={Boolean(selectedAnnualMonthDetail)}
@@ -5390,11 +6225,7 @@ function AdvancedDashboard({
                 style={subStyles.annualDetailCategoryCard}
                 onPress={() => {
                   if (!selectedAnnualMonthDetail) return;
-                  openMovementsQuickFilter({
-                    ...(selectedAnnualMonthDetail.topCategoryId == null ? { quickFilter: "uncategorized" as const } : { quickCategoryId: selectedAnnualMonthDetail.topCategoryId }),
-                    quickDateFrom: selectedAnnualMonthDetail.month.dateFrom,
-                    quickDateTo: selectedAnnualMonthDetail.month.dateTo,
-                  });
+                  openAnnualTopCategoryPreview(selectedAnnualMonthDetail);
                 }}
                 activeOpacity={0.84}
               >
@@ -5414,8 +6245,7 @@ function AdvancedDashboard({
                     key={movement.id}
                     style={subStyles.annualMovementRow}
                     onPress={() => {
-                      setSelectedAnnualMonth(null);
-                      router.push(`/movement/${movement.id}?from=dashboard` as never);
+                      openSingleMovementPreview(movement.id, movement.title);
                     }}
                     activeOpacity={0.84}
                   >
@@ -5434,10 +6264,7 @@ function AdvancedDashboard({
             <View style={subStyles.annualDetailActions}>
               <TouchableOpacity
                 style={subStyles.annualDetailPrimaryBtn}
-                onPress={() => openMovementsQuickFilter({
-                  quickDateFrom: selectedAnnualMonthDetail.month.dateFrom,
-                  quickDateTo: selectedAnnualMonthDetail.month.dateTo,
-                })}
+                onPress={() => openAnnualMonthPreview(selectedAnnualMonthDetail.month)}
                 activeOpacity={0.84}
               >
                 <Text style={subStyles.annualDetailPrimaryBtnText}>Abrir movimientos del mes</Text>
@@ -5445,22 +6272,14 @@ function AdvancedDashboard({
               <View style={subStyles.annualDetailSplitActions}>
                 <TouchableOpacity
                   style={subStyles.annualDetailSecondaryBtn}
-                  onPress={() => openMovementsQuickFilter({
-                    quickDateFrom: selectedAnnualMonthDetail.month.dateFrom,
-                    quickDateTo: selectedAnnualMonthDetail.month.dateTo,
-                    quickType: "income",
-                  })}
+                  onPress={() => openAnnualMonthPreview(selectedAnnualMonthDetail.month, "income")}
                   activeOpacity={0.84}
                 >
                   <Text style={subStyles.annualDetailSecondaryBtnText}>Solo ingresos</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={subStyles.annualDetailSecondaryBtn}
-                  onPress={() => openMovementsQuickFilter({
-                    quickDateFrom: selectedAnnualMonthDetail.month.dateFrom,
-                    quickDateTo: selectedAnnualMonthDetail.month.dateTo,
-                    quickType: "expense",
-                  })}
+                  onPress={() => openAnnualMonthPreview(selectedAnnualMonthDetail.month, "expense")}
                   activeOpacity={0.84}
                 >
                   <Text style={subStyles.annualDetailSecondaryBtnText}>Solo gastos</Text>
@@ -5488,7 +6307,7 @@ function AdvancedDashboard({
             <Text style={subStyles.focusHeroLabel}>Tu siguiente mejor acción</Text>
             <View style={subStyles.focusHeroPills}>
               <View style={subStyles.focusHeroTonePill}><Text style={subStyles.focusHeroToneText} numberOfLines={1}>{focusAction.tag}</Text></View>
-              <View style={subStyles.focusHeroTonePillMuted}><Text style={subStyles.focusHeroToneTextMuted} numberOfLines={1}>Sistema</Text></View>
+              <View style={subStyles.focusHeroTonePillMuted}><Text style={subStyles.focusHeroToneTextMuted} numberOfLines={1}>{focusAction.scorePill}</Text></View>
             </View>
           </View>
           <View style={subStyles.focusHeroMiddle}>
@@ -5496,6 +6315,7 @@ function AdvancedDashboard({
               <Text style={subStyles.focusHeroTitle}>{focusAction.title}</Text>
               <Text style={subStyles.focusHeroValue}>{focusAction.body}</Text>
               <Text style={subStyles.focusHeroBody}>{focusAction.detail}</Text>
+              <Text style={subStyles.focusHeroReason}>{focusAction.reason}</Text>
             </View>
             <ArrowRight size={20} color={COLORS.primary} />
           </View>
@@ -5518,21 +6338,72 @@ function AdvancedDashboard({
         kicker="Patrones"
         title="Hábitos y tendencias"
         bullets={[
-          "Distribución del gasto por categoría este mes",
-          "Qué días de la semana gastas más",
-          "Movimientos inusuales o fuera de tu patrón habitual",
+          "Hábitos que se repiten en los últimos 90 días",
+          "Categorías que subieron frente a los 14 días anteriores",
+          "Movimientos que se salen de lo normal para ti",
         ]}
       />
+      <View style={{ height: SPACING.sm }} />
+      <Card>
+        <SectionTitle>Lectura rápida de patrones</SectionTitle>
+        <Text style={subStyles.executiveIntro}>
+          La app busca costumbres, no términos técnicos: qué se repite, qué subió y qué gasto no parece normal para tu historial.
+        </Text>
+        <Text style={subStyles.scopeHint}>
+          Alcance: hábitos y gastos raros usan últimos 90 días; subidas usa últimos 14 días contra los 14 días anteriores; categoría del mes usa el mes actual.
+        </Text>
+        <View style={subStyles.commandMetricGrid}>
+          <TouchableOpacity
+            style={subStyles.commandMetricCard}
+            onPress={() => {
+              const pattern = repeatedPatterns[0];
+              if (!pattern) return;
+              openPatternHabitPreview(pattern);
+            }}
+            disabled={!repeatedPatterns[0]}
+            activeOpacity={0.82}
+          >
+            <Text style={subStyles.commandMetricLabel}>Hábito más repetido</Text>
+            <Text style={subStyles.commandMetricValue} numberOfLines={1}>{patternQuickRead.repeatTitle}</Text>
+            <Text style={subStyles.commandMetricHint}>{patternQuickRead.repeatBody}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={subStyles.commandMetricCard}
+            onPress={() => {
+              const item = risingCategoryPatterns[0];
+              if (!item) return;
+              openRisingCategoryPreview(item);
+            }}
+            disabled={!risingCategoryPatterns[0]}
+            activeOpacity={0.82}
+          >
+            <Text style={subStyles.commandMetricLabel}>Mayor subida</Text>
+            <Text style={subStyles.commandMetricValue} numberOfLines={1}>{patternQuickRead.riseTitle}</Text>
+            <Text style={subStyles.commandMetricHint}>{patternQuickRead.riseBody}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[subStyles.commandMetricCard, subStyles.focusMetricCardWide]}
+            onPress={() => {
+              const ids = anomalySignals.map((item) => item.movementId);
+              if (ids.length === 0) return;
+              openAnomalyMovementsPreview(ids);
+            }}
+            disabled={anomalySignals.length === 0}
+            activeOpacity={0.82}
+          >
+            <Text style={subStyles.commandMetricLabel}>Gastos fuera de costumbre</Text>
+            <Text style={subStyles.commandMetricValue}>{patternQuickRead.anomalyTitle}</Text>
+            <Text style={subStyles.commandMetricHint}>{patternQuickRead.anomalyBody}</Text>
+          </TouchableOpacity>
+        </View>
+      </Card>
+
       <View style={{ height: SPACING.sm }} />
       <CategoryDonutChart
         catTotals={advancedStats.catTotals}
         categories={snapshot?.categories ?? []}
         currency={activeCurrency}
-        onOpenCategory={(quickCategoryId) => openMovementsQuickFilter({
-          ...(quickCategoryId == null ? { quickFilter: "uncategorized" as const } : { quickCategoryId }),
-          quickDateFrom: format(advancedStats.curStart, "yyyy-MM-dd"),
-          quickDateTo: format(advancedStats.curEnd, "yyyy-MM-dd"),
-        })}
+        onOpenCategory={(categoryId) => openCategoryPeriodPreview(categoryId)}
       />
 
       <View style={{ height: SPACING.sm }} />
@@ -5563,6 +6434,115 @@ function AdvancedDashboard({
         </TouchableOpacity>
       </Card>
 
+      <View style={{ height: SPACING.sm }} />
+      <WeeklyPattern
+        movements={movements}
+        ctx={{ accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }}
+        onOpenDay={openWeeklyDayPreview}
+      />
+
+      <View style={{ height: SPACING.sm }} />
+      <Card>
+        <SectionTitle>Hábitos que se repiten</SectionTitle>
+        <Text style={subStyles.executiveIntro}>
+          Agrupamos movimientos parecidos por nombre, categoría, contacto, monto y día. Es como juntar tickets similares para ver qué se volvió costumbre aunque no estén escritos igual.
+        </Text>
+        <Text style={subStyles.scopeHint}>Alcance: últimos 90 días. Al tocar, se abre la lista exacta dentro del dashboard.</Text>
+        {repeatedPatterns.length === 0 ? (
+          <View style={subStyles.richEmptyState}>
+            <Sparkles size={18} color={COLORS.primary} />
+            <Text style={subStyles.richEmptyTitle}>Sin repeticiones claras todavía</Text>
+            <Text style={subStyles.richEmptyBody}>Cuando haya más movimientos parecidos, aquí verás qué hábitos aparecen varias veces.</Text>
+          </View>
+        ) : (
+          <View style={subStyles.commandActions}>
+            {repeatedPatterns.map((pattern) => (
+              <TouchableOpacity
+                key={`${pattern.type}-${pattern.label}-${pattern.movementIds.join("-")}`}
+                style={subStyles.commandActionRow}
+                onPress={() => openPatternHabitPreview(pattern)}
+                activeOpacity={0.82}
+              >
+                <View style={subStyles.commandActionCopy}>
+                  <View style={subStyles.suggestionRowTop}>
+                    <Text style={subStyles.commandActionTitle} numberOfLines={1}>{pattern.label}</Text>
+                    <View style={subStyles.miniChip}>
+                      <Text style={subStyles.miniChipText}>{pattern.count}x</Text>
+                    </View>
+                  </View>
+                  <Text style={subStyles.commandActionBody}>
+                    {pattern.type} · {pattern.category} · promedio {formatCurrency(pattern.average, activeCurrency)} · confianza {pattern.confidence}%
+                  </Text>
+                  <Text style={subStyles.commandActionBody}>
+                    Total observado {formatCurrency(pattern.total, activeCurrency)} · última vez {pattern.lastLabel} · {pattern.variantCount} nombre{pattern.variantCount === 1 ? "" : "s"}
+                  </Text>
+                  <Text style={subStyles.commandActionBody}>{pattern.reason}</Text>
+                </View>
+                <ArrowRight size={15} color={COLORS.storm} />
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+      </Card>
+
+      <View style={{ height: SPACING.sm }} />
+      <Card>
+        <SectionTitle>Categorías que subieron</SectionTitle>
+        <Text style={subStyles.executiveIntro}>
+          Comparamos los últimos 14 días contra los 14 días anteriores. Si una categoría sube bastante, la marcamos para que sepas dónde se está moviendo la caja.
+        </Text>
+        <Text style={subStyles.scopeHint}>Alcance: últimos 14 días. Al tocar, se abre la lista exacta dentro del dashboard.</Text>
+        {risingCategoryPatterns.length === 0 ? (
+          <View style={subStyles.richEmptyState}>
+            <TrendingUp size={18} color={COLORS.primary} />
+            <Text style={subStyles.richEmptyTitle}>Sin subidas fuertes</Text>
+            <Text style={subStyles.richEmptyBody}>Tus gastos recientes no muestran una categoría que haya saltado con fuerza frente a las dos semanas anteriores.</Text>
+          </View>
+        ) : (
+          <View style={subStyles.commandActions}>
+            {risingCategoryPatterns.map((item) => {
+              const pctText = item.pct == null ? "nuevo gasto reciente" : `+${item.pct.toFixed(0)}%`;
+              return (
+                <TouchableOpacity
+                  key={`${item.categoryId ?? "none"}-${item.name}`}
+                  style={subStyles.commandActionRow}
+                  onPress={() => openRisingCategoryPreview(item)}
+                  activeOpacity={0.82}
+                >
+                  <View style={subStyles.commandActionCopy}>
+                    <View style={subStyles.suggestionRowTop}>
+                      <Text style={subStyles.commandActionTitle} numberOfLines={1}>{item.name}</Text>
+                      <View style={subStyles.miniChip}>
+                        <Text style={subStyles.miniChipText}>{pctText}</Text>
+                      </View>
+                    </View>
+                    <Text style={subStyles.commandActionBody}>
+                      Últimos 14 días: {formatCurrency(item.current, activeCurrency)} · antes: {formatCurrency(item.previous, activeCurrency)}
+                    </Text>
+                    <Text style={subStyles.commandActionBody}>
+                      Subió {formatCurrency(item.delta, activeCurrency)}. Revísalo si no fue una compra planificada.
+                    </Text>
+                  </View>
+                  <ArrowRight size={15} color={COLORS.storm} />
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
+      </Card>
+
+      <View style={{ height: SPACING.sm }} />
+      <AnomalyWatch
+        movements={movements}
+        ctx={{ accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }}
+        categoryMap={categoryMap}
+        accountMap={accountMap}
+        onExplainPress={() => setAdvancedDetail("review")}
+        onOpenMovement={(movementId) => openAnomalyMovementsPreview([movementId], "Movimiento fuera de costumbre")}
+        onOpenAll={(movementIds) => openAnomalyMovementsPreview(movementIds)}
+        router={router}
+      />
+
       </>}
 
       {activeTab === 'Flujo' && <>
@@ -5584,10 +6564,7 @@ function AdvancedDashboard({
         currency={activeCurrency}
         onOpenAccounts={() => router.push("/accounts" as never)}
         onExplainProjection={() => setAdvancedDetail("projection")}
-        onOpenMonthMovements={() => openMovementsQuickFilter({
-          quickDateFrom: format(advancedStats.curStart, "yyyy-MM-dd"),
-          quickDateTo: format(advancedStats.curEnd, "yyyy-MM-dd"),
-        })}
+        onOpenMonthMovements={openFlowVariableMovementsPreview}
       />
       <View style={{ height: SPACING.sm }} />
       <FutureFlowPreview
@@ -5599,6 +6576,12 @@ function AdvancedDashboard({
         currentVisibleBalance={currentVisibleBalance}
       />
       <View style={{ height: SPACING.sm }} />
+      <PaymentOptimizationCard
+        recommendations={paymentOptimization}
+        currency={activeCurrency}
+        router={router}
+      />
+      {paymentOptimization.length > 0 ? <View style={{ height: SPACING.sm }} /> : null}
       <Card>
         <Text style={subStyles.layerKicker}>Salud de caja</Text>
         <Text style={subStyles.layerHeroBody}>
@@ -5617,22 +6600,13 @@ function AdvancedDashboard({
       <SubscriptionsSummary subscriptions={subscriptions} currency={activeCurrency} />
       <View style={{ height: SPACING.sm }} />
       <ObligationWatch obligations={obligations} router={router} />
-
       <View style={{ height: SPACING.sm }} />
-      <AnomalyWatch
+      <TransferSnapshot
         movements={movements}
+        accounts={activeAccounts}
         ctx={{ accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }}
-        categoryMap={categoryMap}
-        accountMap={accountMap}
-        onExplainPress={() => setAdvancedDetail("review")}
-        router={router}
+        onOpenRoute={openTransferRoutePreview}
       />
-      <View style={{ height: SPACING.sm }} />
-      <CategoryBreakdown catTotals={advancedStats.catTotals} categories={snapshot?.categories ?? []} currency={activeCurrency} />
-      <View style={{ height: SPACING.sm }} />
-      <TransferSnapshot movements={movements} accounts={activeAccounts} ctx={{ accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }} />
-      <View style={{ height: SPACING.sm }} />
-      <WeeklyPattern movements={movements} ctx={{ accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }} />
 
       </>}
 
@@ -5655,8 +6629,144 @@ function AdvancedDashboard({
         currency={activeCurrency}
         onSelectMonth={setSelectedAnnualMonth}
       />
+      {historyChangePoint ? (
+        <>
+          <View style={{ height: SPACING.sm }} />
+          <Card>
+            <SectionTitle>Cambio detectado</SectionTitle>
+            <Text style={subStyles.executiveIntro}>
+              {historyChangePoint.body}
+            </Text>
+            <View style={subStyles.commandMetricGrid}>
+              <View style={subStyles.commandMetricCard}>
+                <Text style={subStyles.commandMetricLabel}>Señal principal</Text>
+                <Text style={subStyles.commandMetricValue}>{historyChangePoint.title}</Text>
+                <Text style={subStyles.commandMetricHint}>
+                  Promedio reciente: {formatCurrency(historyChangePoint.recentAverage, activeCurrency)}
+                </Text>
+              </View>
+              <View style={subStyles.commandMetricCard}>
+                <Text style={subStyles.commandMetricLabel}>Referencia anterior</Text>
+                <Text style={subStyles.commandMetricValue}>{formatCurrency(historyChangePoint.previousAverage, activeCurrency)}</Text>
+                <Text style={subStyles.commandMetricHint}>
+                  Esto ayuda a separar cambio real de un pico aislado.
+                </Text>
+              </View>
+            </View>
+          </Card>
+        </>
+      ) : null}
+      {monthClusters.length > 0 ? (
+        <>
+          <View style={{ height: SPACING.sm }} />
+          <Card>
+            <SectionTitle>Tipos de meses</SectionTitle>
+            <Text style={subStyles.executiveIntro}>
+              Agrupa meses parecidos para que no tengas que leer doce barras una por una. Toca un grupo para abrir un mes representativo.
+            </Text>
+            <View style={subStyles.commandActions}>
+              {monthClusters.slice(0, 4).map((cluster) => (
+                <TouchableOpacity
+                  key={cluster.kind}
+                  style={subStyles.commandActionRow}
+                  onPress={() => openHistoryRangePreview(cluster.representativeMonth.dateFrom, cluster.representativeMonth.dateTo, { title: cluster.title })}
+                  activeOpacity={0.82}
+                >
+                  <View style={subStyles.commandActionCopy}>
+                    <View style={subStyles.suggestionRowTop}>
+                      <Text style={subStyles.commandActionTitle} numberOfLines={1}>{cluster.title}</Text>
+                      <View style={subStyles.miniChip}>
+                        <Text style={subStyles.miniChipText}>{cluster.count} mes{cluster.count === 1 ? "" : "es"}</Text>
+                      </View>
+                    </View>
+                    <Text style={subStyles.commandActionBody}>{cluster.description}</Text>
+                    <Text style={subStyles.commandActionBody}>
+                      {cluster.monthLabels.join(", ")} · neto promedio {formatCurrency(cluster.averageNet, activeCurrency)}
+                    </Text>
+                  </View>
+                  <ArrowRight size={15} color={COLORS.storm} />
+                </TouchableOpacity>
+              ))}
+            </View>
+          </Card>
+        </>
+      ) : null}
+      {historyFactorAnalysis ? (
+        <>
+          <View style={{ height: SPACING.sm }} />
+          <Card>
+            <SectionTitle>Qué partidas explican el año</SectionTitle>
+            <Text style={subStyles.executiveIntro}>
+              {historyFactorAnalysis.body}
+            </Text>
+            <Text style={subStyles.scopeHint}>
+              Alcance: gastos del año seleccionado. Es como revisar qué productos hacen que una tienda tenga meses tranquilos o meses pesados.
+            </Text>
+            <View style={subStyles.commandMetricGrid}>
+              <View style={[subStyles.commandMetricCard, subStyles.focusMetricCardWide]}>
+                <Text style={subStyles.commandMetricLabel}>Factor principal</Text>
+                <Text style={subStyles.commandMetricValue}>{historyFactorAnalysis.title}</Text>
+                <Text style={subStyles.commandMetricHint}>
+                  Explica {historyFactorAnalysis.explainedVariancePct}% de los cambios entre meses.
+                </Text>
+              </View>
+            </View>
+            <View style={subStyles.commandActions}>
+              {historyFactorAnalysis.topCategories.map((category) => (
+                <TouchableOpacity
+                  key={`${category.categoryId ?? "none"}-${category.name}`}
+                  style={subStyles.commandActionRow}
+                  onPress={() => openHistoryRangePreview(
+                    `${selectedHistoryYear}-01-01`,
+                    `${selectedHistoryYear}-12-31`,
+                    { kind: "expense", categoryId: category.categoryId, title: `${category.name} en ${selectedHistoryYear}` },
+                  )}
+                  activeOpacity={0.82}
+                >
+                  <View style={subStyles.commandActionCopy}>
+                    <View style={subStyles.suggestionRowTop}>
+                      <Text style={subStyles.commandActionTitle} numberOfLines={1}>{category.name}</Text>
+                      <View style={subStyles.miniChip}>
+                        <Text style={subStyles.miniChipText}>{category.weight}%</Text>
+                      </View>
+                    </View>
+                    <Text style={subStyles.commandActionBody}>
+                      Total anual {formatCurrency(category.amount, activeCurrency)} · {category.direction === "sube_con_el_cambio" ? "sube cuando el factor pesa más" : "baja cuando el factor pesa más"}
+                    </Text>
+                  </View>
+                  <ArrowRight size={15} color={COLORS.storm} />
+                </TouchableOpacity>
+              ))}
+            </View>
+            {historyFactorAnalysis.activeMonths.length > 0 ? (
+              <View style={subStyles.commandActions}>
+                {historyFactorAnalysis.activeMonths.map((month) => (
+                  <TouchableOpacity
+                    key={`${month.dateFrom}-${month.dateTo}`}
+                    style={subStyles.commandActionRow}
+                    onPress={() => openHistoryRangePreview(month.dateFrom, month.dateTo, { title: `Movimientos de ${month.label}` })}
+                    activeOpacity={0.82}
+                  >
+                    <View style={subStyles.commandActionCopy}>
+                      <Text style={subStyles.commandActionTitle} numberOfLines={1}>Mes donde más se nota: {month.label}</Text>
+                      <Text style={subStyles.commandActionBody}>
+                        Toca para ver qué movimientos hicieron que este mes se aleje del promedio.
+                      </Text>
+                    </View>
+                    <ArrowRight size={15} color={COLORS.storm} />
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ) : null}
+          </Card>
+        </>
+      ) : null}
       <View style={{ height: SPACING.sm }} />
-      <MonthlyPulse data={advancedStats.monthlyPulse} currency={activeCurrency} />
+      <MonthlyPulse
+        data={advancedStats.monthlyPulse}
+        currency={activeCurrency}
+        onOpenMonth={(dateFrom, dateTo) => openHistoryRangePreview(dateFrom, dateTo, { title: "Pulso mensual" })}
+      />
 
       {/* N1-N5: Métricas avanzadas - tasa de ahorro, estabilidad, concentración, cobranza, estacional */}
       <View style={{ height: SPACING.sm }} />
@@ -5810,6 +6920,7 @@ function AdvancedDashboard({
         subscriptions={subscriptions}
         obligations={obligations}
         router={router}
+        onOpenMovementIssue={openHealthMovementIssuePreview}
       />
 
       <View style={{ height: SPACING.sm }} />
@@ -5822,7 +6933,7 @@ function AdvancedDashboard({
           <View style={subStyles.richEmptyState}>
             <Brain size={18} color={COLORS.primary} />
             <Text style={subStyles.richEmptyTitle}>Sin sugerencias por ahora</Text>
-            <Text style={subStyles.richEmptyBody}>Categoriza los movimientos pendientes en Movimientos. Cuando haya patrones repetidos, el sistema te propondrá categorías automáticamente.</Text>
+            <Text style={subStyles.richEmptyBody}>Categoriza los movimientos pendientes desde esta sección. Cuando haya patrones repetidos, el sistema te propondrá categorías automáticamente.</Text>
           </View>
         ) : (
           <View style={subStyles.commandActions}>
@@ -5830,7 +6941,7 @@ function AdvancedDashboard({
               <TouchableOpacity
                 key={suggestion.movementId}
                 style={subStyles.commandActionRow}
-                onPress={() => router.push("/movements" as never)}
+                onPress={() => openCategorySuggestionPreview(suggestion)}
                 activeOpacity={0.82}
               >
                 <View style={subStyles.commandActionCopy}>
@@ -5944,7 +7055,11 @@ function AdvancedDashboard({
 
       {qualityOpen ? (
         <>
-          <DataQuality movements={movements} />
+          <DataQuality
+            movements={movements}
+            onOpenNoCategory={openSummaryUncategorizedPreview}
+            onOpenNoCounterparty={openNoCounterpartyPreview}
+          />
           <LearningPanel
             movements={movements}
             projectionModel={projectionModel}
@@ -5953,6 +7068,7 @@ function AdvancedDashboard({
             categoryConcentration={categoryConcentration}
             categorySuggestionsCount={categorySuggestions.length}
             anomalySignalsCount={anomalySignals.length}
+            acceptedFeedbackCount={acceptedFeedbackCount}
             cashCushionDays={cashCushion.days}
             cashCushionLabel={cashCushion.label}
           />
@@ -5988,11 +7104,15 @@ function AdvancedDashboard({
                   variableNet={projectionVariableNet}
                   expectedBalance={projectionModel.expectedBalance}
                 />
-                <View style={subStyles.projectionScenarioStrip}>
-                  <Text style={subStyles.projectionScenarioText}>Conservador: {formatCurrency(projectionModel.conservativeBalance, activeCurrency)}</Text>
-                  <Text style={subStyles.projectionScenarioText}>Alto: {formatCurrency(projectionModel.optimisticBalance, activeCurrency)}</Text>
-                </View>
+              <View style={subStyles.projectionScenarioStrip}>
+                <Text style={subStyles.projectionScenarioText}>Conservador: {formatCurrency(projectionModel.conservativeBalance, activeCurrency)}</Text>
+                <Text style={subStyles.projectionScenarioText}>Alto: {formatCurrency(projectionModel.optimisticBalance, activeCurrency)}</Text>
               </View>
+              <View style={subStyles.projectionScenarioStrip}>
+                <Text style={subStyles.projectionScenarioText}>Simulado bajo: {formatCurrency(projectionModel.monteCarloLowBalance, activeCurrency)}</Text>
+                <Text style={subStyles.projectionScenarioText}>Riesgo: {projectionModel.pressureProbability}% bajo {formatCurrency(projectionModel.pressureThreshold, activeCurrency)}</Text>
+              </View>
+            </View>
               <View style={subStyles.projectionCard}>
                 <View style={subStyles.projectionTop}>
                   <Text style={subStyles.projectionLabel}>Que conviene limpiar o reforzar</Text>
@@ -6001,7 +7121,7 @@ function AdvancedDashboard({
                   Si mejoras estos puntos, el dashboard deja de adivinar y pasa a explicarte mejor por qué hoy estás estable, con margen o bajo presión.
                 </Text>
                 {review.uncategorizedCount > 0 ? (
-                  <TouchableOpacity style={subStyles.actionPillRow} onPress={() => openMovementsQuickFilter("uncategorized")} activeOpacity={0.85}>
+                  <TouchableOpacity style={subStyles.actionPillRow} onPress={openSummaryUncategorizedPreview} activeOpacity={0.85}>
                     <AlertTriangle size={15} color={COLORS.gold} />
                     <Text style={subStyles.actionPillBody}>{review.uncategorizedCount} movimientos sin categoría siguen quitando precisión a las comparaciones.</Text>
                     <View style={subStyles.actionPill}><Text style={subStyles.actionPillText}>Ordenar</Text></View>
@@ -6421,6 +7541,7 @@ function DashboardScreen() {
             exchangeRateMap={exchangeRateMap}
             currentVisibleBalance={netWorth}
             workspaceId={activeWorkspaceId}
+            userId={profile?.id ?? null}
             analytics={dashboardAnalytics}
             router={router}
             accountCurrencyMap={accountCurrencyMap}
@@ -6993,18 +8114,67 @@ const subStyles = StyleSheet.create({
   alertText: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.sm, flex: 1 },
 
   // Weekly pattern
+  weeklyPatternSummary: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: SPACING.sm,
+    marginTop: SPACING.sm,
+  },
+  weeklyPatternPill: {
+    flexGrow: 1,
+    minWidth: 92,
+    padding: SPACING.sm,
+    borderRadius: RADIUS.lg,
+    backgroundColor: "rgba(255,255,255,0.045)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    gap: 3,
+  },
+  weeklyPatternPillLabel: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+  },
+  weeklyPatternPillValue: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.ink,
+  },
+  weeklyDayButton: {
+    paddingHorizontal: 2,
+    paddingTop: 2,
+    borderRadius: RADIUS.sm,
+  },
+  weeklyDayButtonDisabled: {
+    opacity: 0.45,
+  },
+  weeklyDayAmount: {
+    maxWidth: "100%",
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: 9,
+    color: COLORS.ink,
+    textAlign: "center",
+  },
   weeklyBar: {
     flex: 1,
     backgroundColor: COLORS.rosewood + "99",
     borderTopLeftRadius: 3,
     borderTopRightRadius: 3,
   },
+  weeklyDayCount: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: 9,
+    color: COLORS.storm,
+    textAlign: "center",
+  },
 
   // Transfer snapshot
   transferRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: SPACING.sm },
   transferRoute: { flex: 1, flexDirection: "row", alignItems: "center", gap: 4 },
   transferAcct: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.xs, color: COLORS.ink, flexShrink: 1 },
+  transferRight: { alignItems: "flex-end", gap: 2, marginLeft: SPACING.sm },
   transferAmt: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.xs, color: COLORS.storm },
+  transferCount: { fontFamily: FONT_FAMILY.body, fontSize: 9, color: COLORS.textMuted },
 
   // Data quality
   dqRow: { flexDirection: "row", alignItems: "center", gap: SPACING.sm, paddingVertical: SPACING.xs },
@@ -7611,6 +8781,192 @@ const subStyles = StyleSheet.create({
     color: COLORS.storm,
     lineHeight: 22,
   },
+  movementPreviewOverlay: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(5,8,18,0.72)",
+    padding: SPACING.md,
+  },
+  movementPreviewBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  movementPreviewCard: {
+    width: "100%",
+    maxWidth: 560,
+    maxHeight: "82%",
+    borderRadius: RADIUS.xl,
+    backgroundColor: "#0B1020",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+    padding: SPACING.lg,
+    gap: SPACING.sm,
+  },
+  movementPreviewHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: SPACING.sm,
+  },
+  movementPreviewKicker: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.primary,
+    textTransform: "uppercase",
+    letterSpacing: 0.7,
+  },
+  movementPreviewTitle: {
+    marginTop: 3,
+    fontFamily: FONT_FAMILY.heading,
+    fontSize: 20,
+    color: COLORS.ink,
+  },
+  movementPreviewClose: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.10)",
+  },
+  movementPreviewSubtitle: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.ink,
+    lineHeight: 22,
+  },
+  movementPreviewScope: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    lineHeight: 18,
+  },
+  movementPreviewSuggestionAction: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+    padding: SPACING.sm,
+    borderRadius: RADIUS.lg,
+    backgroundColor: COLORS.primary + "18",
+    borderWidth: 1,
+    borderColor: COLORS.primary + "38",
+  },
+  movementPreviewSuggestionActionDisabled: {
+    opacity: 0.64,
+  },
+  movementPreviewSuggestionTitle: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.ink,
+  },
+  movementPreviewSuggestionBody: {
+    marginTop: 2,
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+  },
+  movementPreviewStatsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: SPACING.xs,
+  },
+  movementPreviewStatPill: {
+    minWidth: 104,
+    flexGrow: 1,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 9,
+    borderRadius: RADIUS.lg,
+    backgroundColor: "rgba(255,255,255,0.055)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  movementPreviewStatLabel: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+  },
+  movementPreviewStatValue: {
+    marginTop: 2,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.ink,
+  },
+  movementPreviewList: {
+    marginTop: SPACING.xs,
+  },
+  movementPreviewListContent: {
+    gap: SPACING.sm,
+    paddingBottom: SPACING.xs,
+  },
+  movementPreviewRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+    padding: SPACING.sm,
+    borderRadius: RADIUS.lg,
+    backgroundColor: "rgba(255,255,255,0.045)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  movementPreviewRowTitle: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.ink,
+  },
+  movementPreviewRowMeta: {
+    marginTop: 3,
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+  },
+  movementPreviewRowStatus: {
+    marginTop: 2,
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.textMuted,
+  },
+  movementPreviewRowSide: {
+    width: 118,
+    alignItems: "flex-end",
+    gap: SPACING.xs,
+  },
+  movementPreviewAmount: {
+    maxWidth: 118,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.sm,
+  },
+  movementPreviewEditBtn: {
+    minWidth: 72,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 7,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.primary + "24",
+    borderWidth: 1,
+    borderColor: COLORS.primary + "42",
+  },
+  movementPreviewEditText: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.primary,
+  },
+  movementPreviewEmpty: {
+    paddingVertical: SPACING.xl,
+    gap: SPACING.xs,
+  },
+  movementPreviewEmptyTitle: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.md,
+    color: COLORS.ink,
+    textAlign: "center",
+  },
+  movementPreviewEmptyBody: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.storm,
+    lineHeight: 21,
+    textAlign: "center",
+  },
   explanationSheetContent: {
     gap: SPACING.lg,
     paddingBottom: SPACING.md,
@@ -8153,6 +9509,19 @@ const subStyles = StyleSheet.create({
   focusHeroTitle: { fontFamily: FONT_FAMILY.heading, fontSize: 18, color: COLORS.ink },
   focusHeroValue: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: 18, color: COLORS.ink, lineHeight: 28 },
   focusHeroBody: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.md, color: COLORS.storm, lineHeight: 26 },
+  focusHeroReason: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.primary,
+    lineHeight: 20,
+  },
+  scopeHint: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    lineHeight: 18,
+    marginBottom: SPACING.sm,
+  },
   focusMetricGrid: { flexDirection: "row", gap: SPACING.sm, marginTop: SPACING.md },
   focusMetricCard: {
     flex: 1,

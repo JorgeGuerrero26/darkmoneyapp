@@ -14,6 +14,7 @@ export type MovementFilters = {
   dateFrom?: string;
   dateTo?: string;
   search?: string;
+  movementIds?: number[];
 };
 
 type MovementPage = {
@@ -69,6 +70,9 @@ async function fetchMovementsPage(
   else if (filters.categoryId) query = query.eq("category_id", filters.categoryId);
   if (filters.search) {
     query = query.ilike("description", `%${filters.search}%`);
+  }
+  if (filters.movementIds?.length) {
+    query = query.in("id", filters.movementIds);
   }
 
   const { data, error } = await query;

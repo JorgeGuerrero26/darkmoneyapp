@@ -21,6 +21,8 @@ ios/
 
 # Database
 *.sql
+!supabase/migrations/
+!supabase/migrations/*.sql
 *.db
 *.sqlite
 *.sqlite3
@@ -34,6 +36,7 @@ Thumbs.db
 
 # TypeScript
 *.tsbuildinfo
+.tmp/
 
 # Logs
 *.log

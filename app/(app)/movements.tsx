@@ -119,6 +119,9 @@ function MovementsScreen() {
     quickDateFrom?: string | string[];
     quickDateTo?: string | string[];
     quickType?: string | string[];
+    quickSearch?: string | string[];
+    quickMovementIds?: string | string[];
+    quickLabel?: string | string[];
   }>();
   const queryClient = useQueryClient();
   const { profile } = useAuth();
@@ -132,6 +135,8 @@ function MovementsScreen() {
   const [activeCategoryId, setActiveCategoryId] = useState<number | null>(null);
   const [activeCategoryScope, setActiveCategoryScope] = useState<"uncategorized" | null>(null);
   const [activeAccountId, setActiveAccountId] = useState<number | null>(null);
+  const [activeMovementIds, setActiveMovementIds] = useState<number[] | null>(null);
+  const [activeQuickLabel, setActiveQuickLabel] = useState<string | null>(null);
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [customDateFrom, setCustomDateFrom] = useState("");
   const [customDateTo, setCustomDateTo] = useState("");
@@ -252,8 +257,9 @@ function MovementsScreen() {
     ...(activeCategoryScope === "uncategorized" ? { uncategorized: true } : {}),
     ...(activeCategoryId ? { categoryId: activeCategoryId } : {}),
     ...(activeAccountId ? { accountId: activeAccountId } : {}),
+    ...(activeMovementIds?.length ? { movementIds: activeMovementIds } : {}),
     ...(debouncedSearch ? { search: debouncedSearch } : {}),
-  }), [activeTypeFilter, activeStatusFilter, selectedPreset, isCustomRange, customDateFrom, customDateTo, activeCategoryId, activeCategoryScope, activeAccountId, debouncedSearch]);
+  }), [activeTypeFilter, activeStatusFilter, selectedPreset, isCustomRange, customDateFrom, customDateTo, activeCategoryId, activeCategoryScope, activeAccountId, activeMovementIds, debouncedSearch]);
 
   const {
     data,
@@ -299,11 +305,15 @@ function MovementsScreen() {
     activeCategoryId,
     activeCategoryScope,
     activeAccountId,
+    activeMovementIds?.length ? activeMovementIds.length : null,
     activeStatusFilter !== "all" ? activeStatusFilter : null,
   ].filter(Boolean).length;
 
   const hasFilters = activeTypeFilter !== "all" || activeStatusFilter !== "all" || extraFiltersCount > 0 || Boolean(debouncedSearch);
   const activeDateRangeNotice = useMemo(() => {
+    if (activeQuickLabel) {
+      return `Mostrando selección del dashboard: ${activeQuickLabel}.`;
+    }
     const from = isCustomRange ? customDateFrom.trim() || null : selectedPreset?.from ?? null;
     const to = isCustomRange ? customDateTo.trim() || null : selectedPreset?.to ?? null;
     return buildDateRangeNotice({
@@ -312,7 +322,7 @@ function MovementsScreen() {
       to,
       allMessage: "Mostrando todos los movimientos disponibles.",
     });
-  }, [customDateFrom, customDateTo, isCustomRange, selectedPreset]);
+  }, [activeQuickLabel, customDateFrom, customDateTo, isCustomRange, selectedPreset]);
 
   const accountsSorted = useMemo(
     () => sortByName(snapshot?.accounts.filter((a) => !a.isArchived) ?? []),
@@ -332,12 +342,18 @@ function MovementsScreen() {
     status: FilterStatus | null;
     type: FilterType | null;
     dateRange: boolean;
+    search: boolean;
+    movementIds: boolean;
+    quickLabel: boolean;
   }>({
     categoryScope: null,
     categoryId: null,
     status: null,
     type: null,
     dateRange: false,
+    search: false,
+    movementIds: false,
+    quickLabel: false,
   });
 
   const clearScopedQuickFilters = useCallback(() => {
@@ -358,7 +374,17 @@ function MovementsScreen() {
       setCustomDateFrom("");
       setCustomDateTo("");
     }
-    scopedQuickFiltersRef.current = { categoryScope: null, categoryId: null, status: null, type: null, dateRange: false };
+    if (scopedQuickFiltersRef.current.search) {
+      setSearchText("");
+      setDebouncedSearch("");
+    }
+    if (scopedQuickFiltersRef.current.movementIds) {
+      setActiveMovementIds(null);
+    }
+    if (scopedQuickFiltersRef.current.quickLabel) {
+      setActiveQuickLabel(null);
+    }
+    scopedQuickFiltersRef.current = { categoryScope: null, categoryId: null, status: null, type: null, dateRange: false, search: false, movementIds: false, quickLabel: false };
   }, []);
   const onRefresh = useCallback(() => {
     refreshTriggeredRef.current = true;
@@ -376,7 +402,14 @@ function MovementsScreen() {
       const quickDateFrom = Array.isArray(params.quickDateFrom) ? params.quickDateFrom[0] : params.quickDateFrom;
       const quickDateTo = Array.isArray(params.quickDateTo) ? params.quickDateTo[0] : params.quickDateTo;
       const quickType = Array.isArray(params.quickType) ? params.quickType[0] : params.quickType;
+      const quickSearch = Array.isArray(params.quickSearch) ? params.quickSearch[0] : params.quickSearch;
+      const quickMovementIds = Array.isArray(params.quickMovementIds) ? params.quickMovementIds[0] : params.quickMovementIds;
+      const quickLabel = Array.isArray(params.quickLabel) ? params.quickLabel[0] : params.quickLabel;
       const parsedQuickCategoryId = quickCategoryId ? Number(quickCategoryId) : null;
+      const parsedQuickMovementIds = (quickMovementIds ?? "")
+        .split(",")
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value) && value > 0);
       const scopedType =
         quickType === "income" ||
         quickType === "expense" ||
@@ -396,6 +429,9 @@ function MovementsScreen() {
         quickDateFrom ?? "",
         quickDateTo ?? "",
         quickType ?? "",
+        quickSearch ?? "",
+        quickMovementIds ?? "",
+        quickLabel ?? "",
         quickToken ?? "",
       ].join("|");
 
@@ -409,8 +445,31 @@ function MovementsScreen() {
               ? (quickStatus as FilterStatus)
               : null,
           type: scopedType,
-          dateRange: Boolean(quickDateFrom && quickDateTo),
+          dateRange: Boolean((quickDateFrom && quickDateTo) || quickSearch || parsedQuickMovementIds.length > 0),
+          search: Boolean(quickSearch),
+          movementIds: parsedQuickMovementIds.length > 0,
+          quickLabel: Boolean(quickLabel),
         };
+
+        setActiveAccountId(null);
+        if (!quickFilter && !(parsedQuickCategoryId && Number.isFinite(parsedQuickCategoryId))) {
+          setActiveCategoryScope(null);
+          setActiveCategoryId(null);
+        }
+        if (!(quickStatus === "pending" || quickStatus === "planned" || quickStatus === "posted")) {
+          setActiveStatusFilter("all");
+        }
+        if (!scopedType) {
+          setActiveTypeFilter("all");
+        }
+        if (!quickSearch) {
+          setSearchText("");
+          setDebouncedSearch("");
+        }
+        if (parsedQuickMovementIds.length === 0) {
+          setActiveMovementIds(null);
+        }
+        setActiveQuickLabel(quickLabel?.trim() || null);
 
         if (quickFilter === "uncategorized") {
           setActiveCategoryId(null);
@@ -429,6 +488,17 @@ function MovementsScreen() {
           setActiveDatePreset("Rango…");
           setCustomDateFrom(quickDateFrom);
           setCustomDateTo(quickDateTo);
+        } else if (quickSearch || parsedQuickMovementIds.length > 0) {
+          setActiveDatePreset(null);
+          setCustomDateFrom("");
+          setCustomDateTo("");
+        }
+        if (quickSearch) {
+          setSearchText(quickSearch);
+          setDebouncedSearch(quickSearch.trim());
+        }
+        if (parsedQuickMovementIds.length > 0) {
+          setActiveMovementIds(parsedQuickMovementIds);
         }
       }
 
@@ -446,9 +516,12 @@ function MovementsScreen() {
       params.quickDateTo,
       params.quickFilter,
       params.quickScope,
+      params.quickSearch,
       params.quickStatus,
       params.quickToken,
       params.quickType,
+      params.quickMovementIds,
+      params.quickLabel,
       queryClient,
     ]),
   );
@@ -467,9 +540,13 @@ function MovementsScreen() {
     setActiveCategoryId(null);
     setActiveCategoryScope(null);
     setActiveAccountId(null);
+    setActiveMovementIds(null);
+    setActiveQuickLabel(null);
+    setSearchText("");
+    setDebouncedSearch("");
     setCustomDateFrom("");
     setCustomDateTo("");
-    scopedQuickFiltersRef.current = { categoryScope: null, categoryId: null, status: null, type: null, dateRange: false };
+    scopedQuickFiltersRef.current = { categoryScope: null, categoryId: null, status: null, type: null, dateRange: false, search: false, movementIds: false, quickLabel: false };
   }
 
   // ── CSV Export ────────────────────────────────────────────────────────────
@@ -605,9 +682,22 @@ function MovementsScreen() {
       ) : null}
 
       {/* Active filter chips */}
-      {!selectMode && (activeDatePreset !== null || activeCategoryId || activeCategoryScope || activeAccountId || activeStatusFilter !== "all") ? (
+      {!selectMode && (activeDatePreset !== null || activeCategoryId || activeCategoryScope || activeAccountId || activeMovementIds?.length || activeQuickLabel || activeStatusFilter !== "all") ? (
         <View style={styles.activeFiltersBar}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.activeFiltersPills}>
+            {activeQuickLabel ? (
+              <TouchableOpacity style={styles.activeFilterChip} onPress={() => { setActiveQuickLabel(null); setActiveMovementIds(null); }}>
+                <Text style={styles.activeFilterChipText}>
+                  {activeQuickLabel} ×
+                </Text>
+              </TouchableOpacity>
+            ) : activeMovementIds?.length ? (
+              <TouchableOpacity style={styles.activeFilterChip} onPress={() => setActiveMovementIds(null)}>
+                <Text style={styles.activeFilterChipText}>
+                  Selección dashboard ({activeMovementIds.length}) ×
+                </Text>
+              </TouchableOpacity>
+            ) : null}
             {activeStatusFilter !== "all" ? (
               <TouchableOpacity style={styles.activeFilterChip} onPress={() => setActiveStatusFilter("all")}>
                 <Text style={styles.activeFilterChipText}>

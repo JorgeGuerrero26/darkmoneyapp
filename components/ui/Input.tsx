@@ -1,4 +1,4 @@
-import { forwardRef, useState } from "react";
+import { forwardRef, useState, type ReactNode } from "react";
 import {
   StyleSheet,
   Text,
@@ -7,7 +7,6 @@ import {
   type TextInputProps,
   type StyleProp,
   type ViewStyle,
-  type ReactNode,
 } from "react-native";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
 
