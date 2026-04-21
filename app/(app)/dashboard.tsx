@@ -90,27 +90,6 @@ const PERIOD_LABELS: Record<Period, string> = {
   last_30: "30 días",
 };
 
-type AdvancedPreset = "manual" | "liquidity" | "portfolio" | "control" | "analytics";
-
-const DASHBOARD_ADVANCED_PRESET_KEY = "darkmoney.dashboard.advancedPreset";
-const ADVANCED_WIDGET_LIBRARY = ["Flujo", "Salud", "Suscripciones", "Cartera", "Semanal", "Pulso", "Radar", "Calidad", "Aprendizaje", "Actividad"];
-
-const ADVANCED_PRESET_META: Record<AdvancedPreset, { title: string; subtitle: string; cta: string; situationalSubtitle: string }> = {
-  manual:    { title: "Manual",          subtitle: "Elige tus propios widgets abajo y ordénalos como quieras.", cta: "Armar mi panel",    situationalSubtitle: "Sin urgencia detectada - personaliza tú mismo." },
-  liquidity: { title: "Ver caja",        subtitle: "Caja, compromisos próximos y cierre estimado del mes.",    cta: "Vigilar liquidez",  situationalSubtitle: "Próximos 7-30 días bajo presión - conviene vigilar caja." },
-  portfolio: { title: "Revisar cartera", subtitle: "Cobros, pagos y vencimientos de la cartera.",              cta: "Ordenar cartera",   situationalSubtitle: "Hay vencimientos sin resolver que distorsionan la lectura." },
-  control:   { title: "Limpiar datos",   subtitle: "Categorización, duplicados y suscripciones.",              cta: "Mejorar calidad",   situationalSubtitle: "Categorías incompletas - las señales del dashboard pierden precisión." },
-  analytics: { title: "Analizar mes",    subtitle: "Patrones, comparativos y aprendizaje del sistema.",        cta: "Ver patrones",      situationalSubtitle: "Base suficientemente sana para lectura fina de hábitos." },
-};
-
-const ADVANCED_PRESET_WIDGETS: Record<AdvancedPreset, string[]> = {
-  manual: [],
-  liquidity: ["Flujo", "Salud", "Pulso", "Suscripciones"],
-  portfolio: ["Cartera", "Flujo", "Actividad"],
-  control: ["Calidad", "Actividad", "Suscripciones"],
-  analytics: ["Semanal", "Pulso", "Radar", "Aprendizaje"],
-};
-
 // --- Helpers ------------------------------------------------------------------
 
 function pctChange(current: number, prev: number) {
@@ -2587,16 +2566,44 @@ function HealthScore({
     score >= 80 ? COLORS.income : score >= 60 ? COLORS.warning : COLORS.expense;
 
   const indicators = [
-    { label: "Tasa de ahorro", value: s1, desc: `${(savingsRate * 100).toFixed(1)}% del ingreso` },
-    { label: "Meses de cobertura", value: s2, desc: `${coverageMonths.toFixed(1)} meses` },
-    { label: "Relación deuda/ingreso", value: s3, desc: `${(debtToIncome * 100).toFixed(1)}%` },
-    { label: "Obligaciones al día", value: s4, desc: overdueCount === 0 ? "Sin vencidas" : `${overdueCount} vencidas` },
+    {
+      label: "Tasa de ahorro", value: s1, desc: `${(savingsRate * 100).toFixed(1)}% del ingreso`,
+      interpret: s1 >= 75 ? "Buen margen — ahorras más del 20% del ingreso."
+        : s1 >= 50 ? "Ahorro por debajo del 10% — margen ajustado."
+        : savingsRate < 0 ? "Gastos superan los ingresos este mes."
+        : "Ahorrando poco — sin margen para imprevistos.",
+    },
+    {
+      label: "Meses de cobertura", value: s2, desc: `${coverageMonths.toFixed(1)} meses`,
+      interpret: s2 >= 75 ? "Cobertura sólida — más de 6 meses de reserva."
+        : s2 >= 50 ? "Cobertura suficiente, pero ajustada (3–6 meses)."
+        : "Menos de 3 meses de reserva — zona de precaución.",
+    },
+    {
+      label: "Relación deuda/ingreso", value: s3, desc: `${(debtToIncome * 100).toFixed(1)}%`,
+      interpret: s3 >= 75 ? "Deuda manejable respecto al ingreso mensual."
+        : s3 >= 50 ? "Obligaciones moderadas — monitorear de cerca."
+        : "Obligaciones elevadas vs ingresos — prioriza resolver.",
+    },
+    {
+      label: "Obligaciones al día", value: s4, desc: overdueCount === 0 ? "Sin vencidas" : `${overdueCount} vencidas`,
+      interpret: overdueCount === 0 ? "Todo al día — sin compromisos vencidos."
+        : overdueCount === 1 ? "Hay 1 obligación vencida — actúa pronto."
+        : `${overdueCount} obligaciones vencidas — requieren atención urgente.`,
+    },
   ];
 
   return (
     <Card>
       <View style={subStyles.healthHeader}>
-        <SectionTitle>Salud financiera</SectionTitle>
+        <View style={{ gap: 2 }}>
+          <SectionTitle>Salud financiera</SectionTitle>
+          <Text style={subStyles.healthScoreInterpret}>
+            {score >= 80 ? "Finanzas en buen estado — sin señales de alerta."
+              : score >= 60 ? "Estado aceptable — hay áreas que mejorar."
+              : "Varias señales de alerta — revisa los indicadores en rojo."}
+          </Text>
+        </View>
         <View style={[subStyles.healthScore, { borderColor: scoreColor + "55" }]}>
           <Text style={[subStyles.healthScoreNum, { color: scoreColor }]}>{score}</Text>
           <Text style={subStyles.healthScoreOf}>/100</Text>
@@ -2611,6 +2618,9 @@ function HealthScore({
           <View style={subStyles.healthTrack}>
             <View style={[subStyles.healthFill, { width: `${ind.value}%`, backgroundColor: ind.value >= 75 ? COLORS.income : ind.value >= 50 ? COLORS.warning : COLORS.expense }]} />
           </View>
+          <Text style={[subStyles.healthInterpret, { color: ind.value >= 75 ? COLORS.income : ind.value >= 50 ? COLORS.gold : COLORS.expense }]}>
+            {ind.interpret}
+          </Text>
         </View>
       ))}
     </Card>
@@ -3197,12 +3207,19 @@ function AnomalyWatch({
   );
 }
 
-function DashboardLayerHeader({ kicker, title, body }: { kicker: string; title: string; body: string }) {
+function DashboardLayerHeader({ kicker, title, bullets }: { kicker: string; title: string; bullets: string[] }) {
   return (
     <View style={subStyles.layerSection}>
       <Text style={subStyles.layerSectionKicker}>{kicker}</Text>
       <Text style={subStyles.layerSectionTitle}>{title}</Text>
-      <Text style={subStyles.layerSectionBody}>{body}</Text>
+      <View style={subStyles.layerBulletList}>
+        {bullets.map((b) => (
+          <View key={b} style={subStyles.layerBulletRow}>
+            <Text style={subStyles.layerBulletDot}>·</Text>
+            <Text style={subStyles.layerSectionBody}>{b}</Text>
+          </View>
+        ))}
+      </View>
     </View>
   );
 }
@@ -3576,17 +3593,27 @@ function AnnualHistoryPanel({
   );
 }
 
-type AdvancedTab = 'Hoy' | 'Análisis' | 'Agenda' | 'Historial' | 'Datos';
+type AdvancedTab = 'Resumen' | 'Patrones' | 'Flujo' | 'Historial' | 'Salud';
 
 const ADVANCED_TABS: { id: AdvancedTab; label: string }[] = [
-  { id: 'Hoy',      label: 'Hoy' },
-  { id: 'Análisis', label: 'Análisis' },
-  { id: 'Agenda',   label: 'Agenda' },
-  { id: 'Historial',label: 'Historial' },
-  { id: 'Datos',    label: 'Datos' },
+  { id: 'Resumen',   label: 'Resumen' },
+  { id: 'Patrones',  label: 'Patrones' },
+  { id: 'Flujo',     label: 'Flujo' },
+  { id: 'Historial', label: 'Historial' },
+  { id: 'Salud',     label: 'Salud' },
 ];
 
-function DashboardTabBar({ activeTab, onTabChange }: { activeTab: AdvancedTab; onTabChange: (tab: AdvancedTab) => void }) {
+type TabIndicator = { tab: AdvancedTab; count?: number; dot?: string };
+
+function DashboardTabBar({
+  activeTab,
+  onTabChange,
+  indicators = [],
+}: {
+  activeTab: AdvancedTab;
+  onTabChange: (tab: AdvancedTab) => void;
+  indicators?: TabIndicator[];
+}) {
   return (
     <ScrollView
       horizontal
@@ -3594,7 +3621,9 @@ function DashboardTabBar({ activeTab, onTabChange }: { activeTab: AdvancedTab; o
       contentContainerStyle={tabBarStyles.row}
       style={tabBarStyles.container}
     >
-      {ADVANCED_TABS.map((tab) => (
+      {ADVANCED_TABS.map((tab) => {
+        const ind = indicators.find((i) => i.tab === tab.id);
+        return (
         <Pressable
           key={tab.id}
           onPress={() => onTabChange(tab.id)}
@@ -3603,8 +3632,16 @@ function DashboardTabBar({ activeTab, onTabChange }: { activeTab: AdvancedTab; o
           <Text style={[tabBarStyles.chipText, activeTab === tab.id && tabBarStyles.chipTextActive]}>
             {tab.label}
           </Text>
+          {ind?.count != null && ind.count > 0 ? (
+            <View style={tabBarStyles.badge}>
+              <Text style={tabBarStyles.badgeText}>{ind.count > 99 ? "99+" : ind.count}</Text>
+            </View>
+          ) : ind?.dot ? (
+            <View style={[tabBarStyles.dot, { backgroundColor: ind.dot }]} />
+          ) : null}
         </Pressable>
-      ))}
+        );
+      })}
     </ScrollView>
   );
 }
@@ -3619,6 +3656,7 @@ const tabBarStyles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.06)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.10)',
+    position: "relative",
   },
   chipActive: {
     backgroundColor: 'rgba(107,228,197,0.14)',
@@ -3632,6 +3670,31 @@ const tabBarStyles = StyleSheet.create({
   chipTextActive: {
     color: '#6BE4C5',
     fontFamily: FONT_FAMILY.bodySemibold,
+  },
+  badge: {
+    position: "absolute",
+    top: -4,
+    right: -6,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: COLORS.gold,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 3,
+  },
+  badgeText: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: 9,
+    color: "#090D12",
+  },
+  dot: {
+    position: "absolute",
+    top: -2,
+    right: -2,
+    width: 7,
+    height: 7,
+    borderRadius: 4,
   },
 });
 
@@ -3836,6 +3899,8 @@ function AdvancedDashboard({
       .slice(0, 4);
 
     const savingsRate = selectedAnnualMonth.income > 0 ? (selectedAnnualMonth.net / selectedAnnualMonth.income) * 100 : null;
+    const monthIndex = annualHistory.findIndex((m) => m.dateFrom === selectedAnnualMonth.dateFrom);
+    const prevMonth = monthIndex > 0 ? annualHistory[monthIndex - 1] : null;
     return {
       month: selectedAnnualMonth,
       incomeCount: monthMovements.filter(isIncome).length,
@@ -3845,8 +3910,9 @@ function AdvancedDashboard({
       topCategoryAmount,
       largestMovements: relevantMovements,
       savingsRate,
+      prevMonth,
     };
-  }, [accountCurrencyMap, accountMap, activeCurrency, categoryMap, exchangeRateMap, movements, selectedAnnualMonth]);
+  }, [accountCurrencyMap, accountMap, activeCurrency, annualHistory, categoryMap, exchangeRateMap, movements, selectedAnnualMonth]);
 
   const monthlySavingsRate = useMemo(() => {
     const now = new Date();
@@ -3971,21 +4037,6 @@ function AdvancedDashboard({
     return { categorizedRate, historyDays, readinessScore, usefulCount: useful.length };
   }, [movements]);
 
-  const [preset, setPreset] = useState<AdvancedPreset>("manual");
-  const presetLoadedRef = useRef(false);
-  useEffect(() => {
-    if (presetLoadedRef.current) return;
-    presetLoadedRef.current = true;
-    void AsyncStorage.getItem(DASHBOARD_ADVANCED_PRESET_KEY).then((stored) => {
-      if (stored && stored in ADVANCED_PRESET_META) setPreset(stored as AdvancedPreset);
-    });
-  }, []);
-
-  const applyPreset = useCallback((nextPreset: AdvancedPreset) => {
-    setPreset(nextPreset);
-    void AsyncStorage.setItem(DASHBOARD_ADVANCED_PRESET_KEY, nextPreset);
-  }, []);
-
   const anomalySignals = useMemo(
     () => buildAnomalyFindings(
       movements,
@@ -4100,7 +4151,7 @@ function AdvancedDashboard({
     setQualityOpen(qualityOpenInitial);
   }, [qualityOpenInitial]);
   const [executiveDetail, setExecutiveDetail] = useState<"focus" | "risk" | "month" | null>(null);
-  const [advancedDetail, setAdvancedDetail] = useState<"focusCenter" | "projection" | "review" | "advancedMetrics" | "quality" | null>(null);
+  const [advancedDetail, setAdvancedDetail] = useState<"focusCenter" | "projection" | "review" | "advancedMetrics" | "quality" | "categoryConcentration" | "savingsRate" | "incomeStability" | "seasonalComparison" | "collectionEfficiency" | null>(null);
   const [projectionDetail, setProjectionDetail] = useState<"conservative" | "expected" | "included" | null>(null);
 
   const openMovementsQuickFilter = useCallback((
@@ -4150,9 +4201,10 @@ function AdvancedDashboard({
     setExecutiveDetail(null);
     setAdvancedDetail(null);
     setProjectionDetail(null);
+    setActiveTab('Salud');
     setQualityOpen(true);
     InteractionManager.runAfterInteractions(() => {
-      setTimeout(() => onRequestPrecisionFocus?.(), 120);
+      setTimeout(() => onRequestPrecisionFocus?.(), 300);
     });
   }, [onRequestPrecisionFocus]);
 
@@ -4232,14 +4284,6 @@ function AdvancedDashboard({
     recurringIncome,
     subscriptions,
   ]);
-
-  const suggestedPreset = useMemo<AdvancedPreset>(() => {
-    if (review.uncategorizedCount > 0 || review.pendingMovementsCount > 0 || review.duplicateExpenseGroups > 0) return "control";
-    if (review.overdueObligationsCount > 0 || review.obligationsWithoutPlanCount > 0) return "portfolio";
-    if (weekWindow.expectedOutflow > weekWindow.expectedInflow || projectionModel.expectedBalance < currentVisibleBalance * 0.92) return "liquidity";
-    if (learning.readinessScore >= 70) return "analytics";
-    return "manual";
-  }, [currentVisibleBalance, learning.readinessScore, projectionModel.expectedBalance, review, weekWindow.expectedInflow, weekWindow.expectedOutflow]);
 
   const persistDashboardAnalyticsMutation = usePersistDashboardAnalyticsMutation(workspaceId);
   const lastPersistedAnalyticsKeyRef = useRef<string | null>(null);
@@ -4336,7 +4380,6 @@ function AdvancedDashboard({
   const projectionConservativeVariableNet = projectionModel.conservativeBalance - currentVisibleBalance - projectionCommittedNet;
   const pressureStatus = weekWindow.expectedOutflow > weekWindow.expectedInflow ? "Bajo presión" : weekWindow.scheduledCount > 0 ? "Controlado" : "Estable";
   const monthStatus: string = monthEndReading >= currentVisibleBalance ? "Cerrando mejor" : monthEndReading >= currentVisibleBalance * 0.92 ? "Ajustado" : "Bajo presión";
-  const featuredWidgetChips = ADVANCED_PRESET_WIDGETS[preset];
   const visibleBalanceLabel = useMemo(() => {
     if (activeAccounts.length === 0) return "tus cuentas visibles";
     if (activeAccounts.length === 1) return `tu cuenta visible ${activeAccounts[0].name}`;
@@ -4619,17 +4662,127 @@ function AdvancedDashboard({
         { label: qualityOpen ? "Ocultar capa de calidad" : "Abrir capa de calidad", onPress: qualityOpen ? () => { setAdvancedDetail(null); setQualityOpen(false); } : openPrecisionLayer },
       ].filter((action): action is { label: string; onPress: () => void } => Boolean(action)),
     },
+    categoryConcentration: {
+      title: "Concentración de gasto",
+      summary: "Mide qué tan dependiente es tu mes de una sola categoría. Si una categoría domina, cualquier pico ahí mueve todo el período.",
+      meaning: [
+        "HHI (Herfindahl–Hirschman Index) es un índice económico que mide concentración. Se calcula elevando al cuadrado la proporción de cada categoría y sumando los resultados.",
+        "Valores cercanos a 0 = gasto muy distribuido. Por encima de 0.15 hay concentración moderada; por encima de 0.25 es concentrado y la categoría dominante tiene mucho peso sobre el mes.",
+        "Sirve para detectar si una sola categoría puede distorsionar toda tu lectura del período. Un mes concentrado no es necesariamente malo, pero conviene saber qué categoría lo mueve.",
+      ],
+      calculation: [
+        categoryConcentration.hhi != null
+          ? `HHI actual: ${categoryConcentration.hhi.toFixed(3)} — se interpreta como ${categoryConcentration.label.toLowerCase()}.`
+          : "Categoriza más movimientos para activar este indicador.",
+        categoryConcentration.topCategory
+          ? `La categoría con mayor peso es ${categoryConcentration.topCategory}, que representa el ${categoryConcentration.topShare ?? 0}% del gasto total del período.`
+          : "Sin categoría dominante identificada todavía.",
+      ],
+      actions: [
+        review.uncategorizedCount > 0
+          ? { label: `Categorizar ${review.uncategorizedCount} sin etiquetar`, onPress: () => openMovementsQuickFilter("uncategorized") }
+          : null,
+        categoryConcentration.topCategory
+          ? { label: `Ver movimientos de ${categoryConcentration.topCategory}`, onPress: () => { setAdvancedDetail(null); router.push("/movements" as never); } }
+          : null,
+      ].filter((action): action is { label: string; onPress: () => void } => Boolean(action)),
+    },
+    savingsRate: {
+      title: "Tasa de ahorro mensual",
+      summary: "Mide qué porcentaje de tu ingreso logras retener cada mes. El objetivo ideal en finanzas personales es ≥ 20%. Por debajo de 0% los gastos superan los ingresos.",
+      meaning: [
+        "Se calcula como (Ingresos − Gastos) / Ingresos × 100 para cada mes. Un mes con tasa positiva retiene caja; negativa la consume.",
+        "La tendencia importa tanto como el número: una tasa bajando 3 meses seguidos es una señal aunque todavía sea positiva.",
+        "Sirve para decidir si el ritmo actual es sostenible a largo plazo y si hay margen real para ahorro o inversión.",
+      ],
+      calculation: [
+        monthlySavingsRate.lastRate != null
+          ? `Este mes la tasa va en ${monthlySavingsRate.lastRate.toFixed(1)}%. El promedio de los últimos 6 meses es ${monthlySavingsRate.avgRate?.toFixed(1) ?? "–"}%.`
+          : "Registra ingresos y gastos en al menos 2 meses para activar este indicador.",
+        monthlySavingsRate.trend !== "insuficiente"
+          ? `La tendencia de los últimos 6 meses es ${monthlySavingsRate.trend}: ${monthlySavingsRate.trend === "mejorando" ? "la tasa ha subido más de 3 puntos desde el mes más antiguo del período." : monthlySavingsRate.trend === "empeorando" ? "la tasa ha bajado más de 3 puntos desde el mes más antiguo del período." : "la variación entre el mes más antiguo y el actual es menor a 3 puntos."}`
+          : "Se necesitan al menos 3 meses para calcular la tendencia.",
+      ],
+      actions: [
+        review.uncategorizedCount > 0
+          ? { label: `Limpiar ${review.uncategorizedCount} sin categoría`, onPress: () => openMovementsQuickFilter("uncategorized") }
+          : null,
+      ].filter((action): action is { label: string; onPress: () => void } => Boolean(action)),
+    },
+    incomeStability: {
+      title: "Estabilidad de ingresos",
+      summary: "Mide qué tan predecibles son tus ingresos mes a mes. Ingresos estables hacen las proyecciones más fiables; ingresos muy variables las hacen más inciertas.",
+      meaning: [
+        "Usa el coeficiente de variación (CV): desviación estándar / media de los últimos 6 meses. Cuanto menor el CV, más estable el ingreso.",
+        "Score 75–100 = ingreso predecible, las proyecciones son confiables. Score 45–74 = variación moderada, proyecciones son aproximadas. Menos de 45 = ingreso muy variable, las proyecciones son orientativas.",
+        "Sirve para calibrar cuánta confianza depositar en el cierre estimado del mes y para saber si conviene construir un colchón mayor.",
+      ],
+      calculation: [
+        incomeStabilityScore.score != null
+          ? `Score actual: ${incomeStabilityScore.score}/100 — ${incomeStabilityScore.label}. Coeficiente de variación: ${incomeStabilityScore.cvPct}%.`
+          : "Registra ingresos en al menos 2 meses para calcular este indicador.",
+        incomeStabilityScore.score != null
+          ? `Un CV del ${incomeStabilityScore.cvPct}% significa que tus ingresos típicamente varían ±${incomeStabilityScore.cvPct}% respecto a tu promedio mensual.`
+          : "",
+      ].filter(Boolean),
+      actions: [],
+    },
+    seasonalComparison: {
+      title: "Comparación estacional",
+      summary: "Te muestra si este mes gastas más o menos que en el mismo mes del año pasado, ajustando por estacionalidad natural del calendario.",
+      meaning: [
+        "La comparación estacional elimina la distorsión de comparar meses distintos (enero vs diciembre). Compara como-a-como: este marzo vs el marzo anterior.",
+        "Es útil para detectar si el crecimiento del gasto es real o simplemente refleja la estacionalidad esperada del año.",
+        "Requiere al menos 12 meses de historia para activarse.",
+      ],
+      calculation: [
+        seasonalComparison.hasHistory
+          ? `Gasto este mes: ${formatCurrency(seasonalComparison.curExpense, activeCurrency)} vs ${formatCurrency(seasonalComparison.prevExpense, activeCurrency)} en el mismo mes del año pasado.`
+          : "Se necesitan 12 meses de movimientos registrados para activar esta comparación.",
+        seasonalComparison.hasHistory && seasonalComparison.expenseDelta != null
+          ? `Variación de gasto: ${seasonalComparison.expenseDelta >= 0 ? "+" : ""}${seasonalComparison.expenseDelta.toFixed(1)}% vs el mismo mes del año anterior.`
+          : "",
+        seasonalComparison.hasHistory && seasonalComparison.incomeDelta != null
+          ? `Variación de ingresos: ${seasonalComparison.incomeDelta >= 0 ? "+" : ""}${seasonalComparison.incomeDelta.toFixed(0)}% vs el mismo mes del año anterior.`
+          : "",
+      ].filter(Boolean),
+      actions: [],
+    },
+    collectionEfficiency: {
+      title: "Eficiencia de cobranza",
+      summary: "Mide qué porcentaje de tus cobros pendientes (obligaciones receivable) se resolvieron en los últimos 30 días. Una cobranza alta mejora la lectura de liquidez.",
+      meaning: [
+        "Un cobro 'resuelto' es una obligación receivable que venció en los últimos 30 días y ya fue marcada como cobrada.",
+        "80%+ es excelente. 50–79% indica que algunos cobros tardan más de lo esperado. Menos del 50% sugiere que hay dinero pendiente que no está volviendo al flujo.",
+        "Cobros sin resolver distorsionan la proyección: el sistema puede esperar ingresos que aún no llegan.",
+      ],
+      calculation: [
+        collectionEfficiency.rate != null
+          ? `${collectionEfficiency.resolved} de ${collectionEfficiency.total} cobros vencidos en los últimos 30 días fueron resueltos (${collectionEfficiency.rate}%).`
+          : "Sin obligaciones receivable con vencimiento en los últimos 30 días.",
+      ],
+      actions: [
+        collectionEfficiency.total > 0
+          ? { label: "Abrir créditos y deudas", onPress: () => { setAdvancedDetail(null); router.push("/obligations" as never); } }
+          : null,
+      ].filter((action): action is { label: string; onPress: () => void } => Boolean(action)),
+    },
   }), [
     activeCurrency,
     cashCushion.days,
+    categoryConcentration.hhi,
     categoryConcentration.label,
     categoryConcentration.topCategory,
+    categoryConcentration.topShare,
     collectionEfficiency.rate,
+    collectionEfficiency.resolved,
     collectionEfficiency.total,
     focusAction.title,
     incomeStabilityScore.cvPct,
+    incomeStabilityScore.label,
     incomeStabilityScore.score,
     learning.readinessScore,
+    monthlySavingsRate.avgRate,
     monthlySavingsRate.lastRate,
     monthlySavingsRate.trend,
     openFocusActionDestination,
@@ -4648,6 +4801,11 @@ function AdvancedDashboard({
     review.subscriptionsAttentionCount,
     review.uncategorizedCount,
     router,
+    seasonalComparison.curExpense,
+    seasonalComparison.expenseDelta,
+    seasonalComparison.hasHistory,
+    seasonalComparison.incomeDelta,
+    seasonalComparison.prevExpense,
     weekWindow.expectedInflow,
     weekWindow.expectedOutflow,
   ]);
@@ -4693,10 +4851,60 @@ function AdvancedDashboard({
         : "Este resultado significa que la base de datos ya esta bastante sana para comparativos, patrones y alertas mas confiables.",
       `La confianza base de aprendizaje hoy esta en ${learning.readinessScore}%.`,
     ],
+    categoryConcentration: [
+      categoryConcentration.hhi != null
+        ? categoryConcentration.hhi > 0.25
+          ? `Un HHI de ${categoryConcentration.hhi.toFixed(3)} indica que tu gasto está muy concentrado. Esto no es malo en sí, pero significa que si ${categoryConcentration.topCategory ?? "la categoría dominante"} sube inesperadamente, mueve todo el mes.`
+          : categoryConcentration.hhi > 0.15
+            ? `Un HHI de ${categoryConcentration.hhi.toFixed(3)} indica concentración moderada. Hay una categoría dominante pero el resto del gasto tiene cierta diversidad.`
+            : `Un HHI de ${categoryConcentration.hhi.toFixed(3)} indica que el gasto está bien distribuido entre categorías. Menos riesgo de que una sola partida distorsione el período.`
+        : "Categoriza más movimientos para que este indicador pueda calcular la distribución real del gasto.",
+    ],
+    savingsRate: [
+      monthlySavingsRate.lastRate != null
+        ? monthlySavingsRate.lastRate >= 20
+          ? `Una tasa de ${monthlySavingsRate.lastRate.toFixed(1)}% este mes es saludable — estás reteniendo más de 1 de cada 5 pesos que entra.`
+          : monthlySavingsRate.lastRate >= 0
+            ? `Una tasa de ${monthlySavingsRate.lastRate.toFixed(1)}% indica que estás reteniendo algo, pero hay margen para mejorar. El objetivo recomendado es ≥ 20%.`
+            : `Una tasa de ${monthlySavingsRate.lastRate.toFixed(1)}% indica que este mes los gastos superaron los ingresos. Conviene revisar qué categorías empujaron ese resultado.`
+        : "Registra al menos 2 meses de ingresos y gastos para activar este indicador.",
+    ],
+    incomeStability: [
+      incomeStabilityScore.score != null
+        ? incomeStabilityScore.score >= 75
+          ? `Con un score de ${incomeStabilityScore.score}/100 tu ingreso es predecible. Las proyecciones de cierre de mes son más fiables en este contexto.`
+          : incomeStabilityScore.score >= 45
+            ? `Con un score de ${incomeStabilityScore.score}/100 hay variación moderada mes a mes. Las proyecciones son una buena guía pero pueden desviarse.`
+            : `Con un score de ${incomeStabilityScore.score}/100 el ingreso varía significativamente entre meses. Conviene leer el estimado de fin de mes con cautela.`
+        : "Registra ingresos en al menos 2 meses para activar este indicador.",
+    ],
+    seasonalComparison: [
+      seasonalComparison.hasHistory && seasonalComparison.expenseDelta != null
+        ? seasonalComparison.expenseDelta <= -5
+          ? `Gastaste ${Math.abs(seasonalComparison.expenseDelta).toFixed(1)}% menos que en este mismo mes el año pasado. Buen control estacional.`
+          : seasonalComparison.expenseDelta <= 5
+            ? "El gasto está en línea con el mismo período del año pasado — patrón estable."
+            : `Gastaste ${seasonalComparison.expenseDelta.toFixed(1)}% más que en este mismo mes el año pasado. Vale la pena revisar qué cambió respecto al año anterior.`
+        : "Se necesitan 12 meses de movimientos registrados para activar esta comparación.",
+    ],
+    collectionEfficiency: [
+      collectionEfficiency.rate != null
+        ? collectionEfficiency.rate >= 80
+          ? `Con ${collectionEfficiency.rate}% de eficiencia estás cobrando la gran mayoría de lo que se te debe a tiempo. El flujo proyectado es más confiable.`
+          : collectionEfficiency.rate >= 50
+            ? `Con ${collectionEfficiency.rate}% de eficiencia algunos cobros tardan más de lo esperado. Los ${collectionEfficiency.total - collectionEfficiency.resolved} cobros sin resolver pueden estar retrasando el flujo real.`
+            : `Con ${collectionEfficiency.rate}% de eficiencia hay dinero pendiente que no está volviendo al flujo. Conviene revisar las obligaciones receivable vencidas.`
+        : "Sin obligaciones receivable con vencimiento en los últimos 30 días para medir.",
+    ],
   }), [
     activeCurrency,
     anomalySignals,
+    categoryConcentration.hhi,
     categoryConcentration.label,
+    categoryConcentration.topCategory,
+    collectionEfficiency.rate,
+    collectionEfficiency.resolved,
+    collectionEfficiency.total,
     focusAction.title,
     incomeStabilityScore.label,
     incomeStabilityScore.score,
@@ -4711,6 +4919,8 @@ function AdvancedDashboard({
     review.overdueObligationsCount,
     review.subscriptionsAttentionCount,
     review.uncategorizedCount,
+    seasonalComparison.expenseDelta,
+    seasonalComparison.hasHistory,
   ]);
   const activeAdvancedResultMeaning = advancedDetail ? advancedResultMeaning[advancedDetail] : [];
   const resolvedAdvancedResultMeaning =
@@ -4758,8 +4968,15 @@ function AdvancedDashboard({
           ? "warning"
           : "danger",
     quality: qualitySnapshot.noCategoryCount > 0 || qualitySnapshot.noCounterpartyCount > 0 ? "warning" : "positive",
+    categoryConcentration: categoryConcentration.hhi == null ? "warning" : categoryConcentration.hhi > 0.25 ? "warning" : categoryConcentration.hhi > 0.15 ? "warning" : "positive",
+    savingsRate: monthlySavingsRate.lastRate == null ? "warning" : monthlySavingsRate.lastRate >= 20 ? "positive" : monthlySavingsRate.lastRate >= 0 ? "warning" : "danger",
+    incomeStability: incomeStabilityScore.score == null ? "warning" : incomeStabilityScore.score >= 75 ? "positive" : incomeStabilityScore.score >= 45 ? "warning" : "danger",
+    seasonalComparison: !seasonalComparison.hasHistory ? "warning" : seasonalComparison.expenseDelta == null ? "warning" : seasonalComparison.expenseDelta <= 5 ? "positive" : "warning",
+    collectionEfficiency: collectionEfficiency.rate == null ? "warning" : collectionEfficiency.rate >= 80 ? "positive" : collectionEfficiency.rate >= 50 ? "warning" : "danger",
   } as const), [
     anomalySignals,
+    categoryConcentration.hhi,
+    collectionEfficiency.rate,
     incomeStabilityScore.score,
     monthlySavingsRate.lastRate,
     projectionModel.confidence,
@@ -4768,6 +4985,8 @@ function AdvancedDashboard({
     review.overdueObligationsCount,
     review.subscriptionsAttentionCount,
     review.uncategorizedCount,
+    seasonalComparison.expenseDelta,
+    seasonalComparison.hasHistory,
   ]);
   const activeAdvancedResultTone = advancedDetail ? advancedResultTone[advancedDetail] : "warning";
   const projectionExpectedTone: ExplanationTone =
@@ -4883,7 +5102,7 @@ function AdvancedDashboard({
     actions: Array<{ label: string; onPress: () => void }>;
   }>;
   const activeProjectionDetail = projectionDetail ? projectionDetails[projectionDetail] : null;
-  const [activeTab, setActiveTab] = useState<AdvancedTab>('Hoy');
+  const [activeTab, setActiveTab] = useState<AdvancedTab>('Resumen');
   const handleTabChange = useCallback((tab: AdvancedTab) => {
     setActiveTab(tab);
     onScrollToTop?.();
@@ -4891,15 +5110,30 @@ function AdvancedDashboard({
 
   return (
     <>
-      <DashboardTabBar activeTab={activeTab} onTabChange={handleTabChange} />
-
-      {activeTab === 'Hoy' && <>
-      <DashboardLayerHeader
-        kicker="Hoy"
-        title="Lectura rápida"
-        body="Esta capa resume el estado del sistema: qué tan confiable es la lectura, cómo viene la semana y cómo podría cerrar el mes."
+      <DashboardTabBar
+        activeTab={activeTab}
+        onTabChange={handleTabChange}
+        indicators={[
+          ...(review.totalIssues > 0 ? [{ tab: 'Salud' as AdvancedTab, count: review.totalIssues }] : []),
+          ...(anomalySignals.length > 0 ? [{ tab: 'Patrones' as AdvancedTab, dot: COLORS.gold }] : []),
+          ...(cashCushion.days < 30 || pressureStatus === "Bajo presión"
+            ? [{ tab: 'Flujo' as AdvancedTab, dot: COLORS.expense }]
+            : []),
+        ]}
       />
 
+      {activeTab === 'Resumen' && <>
+      <DashboardLayerHeader
+        kicker="Resumen"
+        title="Estado actual"
+        bullets={[
+          "Calidad de los datos: qué tan fiables son las cifras",
+          "Presión de caja en los próximos 7 días",
+          "Estimado de cómo cerrarás el mes",
+        ]}
+      />
+
+      <View style={{ height: SPACING.sm }} />
       <Card>
         <SectionTitle>Resumen ejecutivo</SectionTitle>
         <Text style={subStyles.executiveIntro}>
@@ -4917,7 +5151,14 @@ function AdvancedDashboard({
             </View>
             <Text style={subStyles.executiveValue}>{learning.readinessScore}%</Text>
             <Text style={subStyles.executiveCaption}>
-              {review.totalIssues > 0 ? `${review.totalIssues} punto${review.totalIssues === 1 ? "" : "s"} afectan precisión` : "Base lista para lecturas finas"}
+              {review.totalIssues > 0 ? `${review.totalIssues} punto${review.totalIssues === 1 ? "" : "s"} sin resolver` : "Sin issues pendientes"}
+            </Text>
+            <Text style={[subStyles.executiveInterpret, { color: learning.readinessScore >= 75 ? COLORS.income : review.totalIssues > 0 ? COLORS.gold : COLORS.storm }]}>
+              {learning.readinessScore >= 75
+                ? "Los números son confiables para tomar decisiones."
+                : review.totalIssues > 0
+                ? "Conviene limpiar datos antes de confiar en las métricas."
+                : "Base suficiente, aunque hay margen para mejorar."}
             </Text>
             {(() => {
               const delta = review.totalIssues - priorWeekReview.totalIssues;
@@ -4939,7 +5180,12 @@ function AdvancedDashboard({
               </View>
             </View>
             <Text style={subStyles.executiveValue}>{formatCurrency(weekWindow.expectedInflow - weekWindow.expectedOutflow, activeCurrency)}</Text>
-            <Text style={subStyles.executiveCaption}>Entran {formatCurrency(weekWindow.expectedInflow, activeCurrency)} y salen {formatCurrency(weekWindow.expectedOutflow, activeCurrency)}</Text>
+            <Text style={subStyles.executiveCaption}>Entran {formatCurrency(weekWindow.expectedInflow, activeCurrency)} · salen {formatCurrency(weekWindow.expectedOutflow, activeCurrency)}</Text>
+            <Text style={[subStyles.executiveInterpret, { color: weekWindow.expectedInflow >= weekWindow.expectedOutflow ? COLORS.income : COLORS.gold }]}>
+              {weekWindow.expectedInflow >= weekWindow.expectedOutflow
+                ? "Semana con margen positivo — sin presión inmediata."
+                : "Más compromisos que ingresos esta semana — revisa el flujo."}
+            </Text>
             <Text style={[subStyles.executiveDeltaChip, { color: cashCushion.color }]}>Caja libre: {cashCushion.days}d · {cashCushion.label}</Text>
           </TouchableOpacity>
 
@@ -4951,12 +5197,18 @@ function AdvancedDashboard({
               </View>
             </View>
             <Text style={subStyles.executiveValue}>{formatCurrency(monthEndReading, activeCurrency)}</Text>
-            <Text style={subStyles.executiveCaption}>Suma visible hoy: {formatCurrency(currentVisibleBalance, activeCurrency)} · {activeAccounts.length} cuenta{activeAccounts.length === 1 ? "" : "s"}</Text>
-            <Text style={subStyles.executiveCaption}>{visibleAccountSummary}</Text>
+            <Text style={subStyles.executiveCaption}>Hoy: {formatCurrency(currentVisibleBalance, activeCurrency)} · {activeAccounts.length} cuenta{activeAccounts.length === 1 ? "" : "s"}</Text>
+            <Text style={[subStyles.executiveInterpret, { color: monthEndDelta >= 0 ? COLORS.income : COLORS.expense }]}>
+              {monthEndDelta >= 0
+                ? `Cerrarías el mes con ${formatCurrency(monthEndDelta, activeCurrency)} más que hoy.`
+                : `Se proyecta consumir ${formatCurrency(Math.abs(monthEndDelta), activeCurrency)} del saldo actual.`}
+            </Text>
             <Text style={[subStyles.executiveDeltaChip, { color: monthEndDelta >= 0 ? COLORS.income : COLORS.expense }]}>Vs hoy: {formatCurrency(monthEndDelta, activeCurrency)}</Text>
           </TouchableOpacity>
         </View>
       </Card>
+
+      </>}
 
       <BottomSheet
         visible={Boolean(activeExecutiveDetail)}
@@ -5075,6 +5327,63 @@ function AdvancedDashboard({
               </View>
             </View>
 
+            {selectedAnnualMonthDetail.prevMonth && !selectedAnnualMonthDetail.prevMonth.isFuture ? (
+              <View style={subStyles.annualDetailSection}>
+                <Text style={subStyles.annualDetailSectionTitle}>Vs mes anterior ({selectedAnnualMonthDetail.prevMonth.label})</Text>
+                <View style={subStyles.annualSummaryGrid}>
+                  <View style={subStyles.annualSummaryCard}>
+                    <Text style={subStyles.savingsStatLabel}>Ingresos</Text>
+                    {(() => {
+                      const delta = selectedAnnualMonthDetail.month.income - selectedAnnualMonthDetail.prevMonth!.income;
+                      return (
+                        <Text style={[subStyles.annualSummaryValue, { color: delta >= 0 ? COLORS.income : COLORS.expense }]}>
+                          {delta >= 0 ? "+" : ""}{formatCurrency(delta, activeCurrency)}
+                        </Text>
+                      );
+                    })()}
+                  </View>
+                  <View style={subStyles.annualSummaryCard}>
+                    <Text style={subStyles.savingsStatLabel}>Gastos</Text>
+                    {(() => {
+                      const delta = selectedAnnualMonthDetail.month.expense - selectedAnnualMonthDetail.prevMonth!.expense;
+                      return (
+                        <Text style={[subStyles.annualSummaryValue, { color: delta <= 0 ? COLORS.income : COLORS.expense }]}>
+                          {delta >= 0 ? "+" : ""}{formatCurrency(delta, activeCurrency)}
+                        </Text>
+                      );
+                    })()}
+                  </View>
+                  <View style={subStyles.annualSummaryCard}>
+                    <Text style={subStyles.savingsStatLabel}>Neto</Text>
+                    {(() => {
+                      const delta = selectedAnnualMonthDetail.month.net - selectedAnnualMonthDetail.prevMonth!.net;
+                      return (
+                        <Text style={[subStyles.annualSummaryValue, { color: delta >= 0 ? COLORS.income : COLORS.expense }]}>
+                          {delta >= 0 ? "+" : ""}{formatCurrency(delta, activeCurrency)}
+                        </Text>
+                      );
+                    })()}
+                  </View>
+                  <View style={subStyles.annualSummaryCard}>
+                    <Text style={subStyles.savingsStatLabel}>Ahorro</Text>
+                    {(() => {
+                      const prevRate = selectedAnnualMonthDetail.prevMonth!.income > 0
+                        ? (selectedAnnualMonthDetail.prevMonth!.net / selectedAnnualMonthDetail.prevMonth!.income) * 100
+                        : null;
+                      const delta = selectedAnnualMonthDetail.savingsRate != null && prevRate != null
+                        ? selectedAnnualMonthDetail.savingsRate - prevRate
+                        : null;
+                      return (
+                        <Text style={[subStyles.annualSummaryValue, { color: delta == null ? COLORS.storm : delta >= 0 ? COLORS.income : COLORS.expense }]}>
+                          {delta == null ? "-" : `${delta >= 0 ? "+" : ""}${delta.toFixed(1)}pp`}
+                        </Text>
+                      );
+                    })()}
+                  </View>
+                </View>
+              </View>
+            ) : null}
+
             <View style={subStyles.annualDetailSection}>
               <Text style={subStyles.annualDetailSectionTitle}>Qué empujó el gasto</Text>
               <TouchableOpacity
@@ -5162,6 +5471,8 @@ function AdvancedDashboard({
         ) : null}
       </BottomSheet>
 
+      {activeTab === 'Resumen' && <>
+      <View style={{ height: SPACING.sm }} />
       <Card>
         <View style={subStyles.cardHeaderWithAction}>
           <Text style={subStyles.layerKicker}>Centro de foco</Text>
@@ -5190,24 +5501,6 @@ function AdvancedDashboard({
           </View>
         </TouchableOpacity>
 
-        <View style={subStyles.focusMetricGrid}>
-          <TouchableOpacity style={subStyles.focusMetricCard} onPress={() => setExecutiveDetail("risk")} activeOpacity={0.84}>
-            <Text style={subStyles.focusMetricLabel}>Presión 7 días</Text>
-            <Text style={subStyles.focusMetricValue}>{formatCurrency(weekWindow.expectedInflow - weekWindow.expectedOutflow, activeCurrency)}</Text>
-            <Text style={subStyles.focusMetricHint}>Sobre saldo visible actual: entran {formatCurrency(weekWindow.expectedInflow, activeCurrency)} · sale {formatCurrency(weekWindow.expectedOutflow, activeCurrency)}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={subStyles.focusMetricCard} onPress={() => setExecutiveDetail("month")} activeOpacity={0.84}>
-            <Text style={subStyles.focusMetricLabel}>Caja estimada fin de mes</Text>
-            <Text style={subStyles.focusMetricValue}>{formatCurrency(monthEndReading, activeCurrency)}</Text>
-            <Text style={subStyles.focusMetricHint}>Suma visible hoy {formatCurrency(currentVisibleBalance, activeCurrency)} · vs hoy {formatCurrency(monthEndDelta, activeCurrency)}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[subStyles.focusMetricCard, subStyles.focusMetricCardWide]} onPress={() => setAdvancedDetail("focusCenter")} activeOpacity={0.84}>
-            <Text style={subStyles.focusMetricLabel}>Caja libre</Text>
-            <Text style={[subStyles.focusMetricValue, { color: cashCushion.color }]}>{cashCushion.days}d · {cashCushion.label}</Text>
-            <Text style={subStyles.focusMetricHint}>Sobre {formatCurrency(currentVisibleBalance, activeCurrency)} visibles · {cashCushion.daysWithCommitments}d con compromisos</Text>
-          </TouchableOpacity>
-        </View>
-
         <View style={subStyles.coachChipList}>
           {panelCoachChips.map((chip, i) => (
             <View key={i} style={[subStyles.coachChip, { borderLeftColor: chip.color }]}>
@@ -5218,139 +5511,71 @@ function AdvancedDashboard({
         </View>
       </Card>
 
+      </>}
+
+      {activeTab === 'Patrones' && <>
       <DashboardLayerHeader
-        kicker="Coach IA"
-        title="Panel recomendado y modo de lectura"
-        body="Esta capa no decide por ti: ordena lo destacado, sugiere una vista y te deja fijar los widgets que quieres ver primero."
+        kicker="Patrones"
+        title="Hábitos y tendencias"
+        bullets={[
+          "Distribución del gasto por categoría este mes",
+          "Qué días de la semana gastas más",
+          "Movimientos inusuales o fuera de tu patrón habitual",
+        ]}
+      />
+      <View style={{ height: SPACING.sm }} />
+      <CategoryDonutChart
+        catTotals={advancedStats.catTotals}
+        categories={snapshot?.categories ?? []}
+        currency={activeCurrency}
+        onOpenCategory={(quickCategoryId) => openMovementsQuickFilter({
+          ...(quickCategoryId == null ? { quickFilter: "uncategorized" as const } : { quickCategoryId }),
+          quickDateFrom: format(advancedStats.curStart, "yyyy-MM-dd"),
+          quickDateTo: format(advancedStats.curEnd, "yyyy-MM-dd"),
+        })}
       />
 
+      <View style={{ height: SPACING.sm }} />
       <Card>
-        <Text style={subStyles.panelKicker}>Widgets fijos</Text>
-        <Text style={subStyles.panelTitle}>Panel destacado Pro</Text>
-        <Text style={subStyles.panelBody}>
-          Ancla los widgets que quieras arriba, reordena su prioridad y deja que el dashboard recuerde tu lectura favorita.
-        </Text>
-        <View style={subStyles.panelCoachCard}>
-          <View style={subStyles.panelCoachTop}>
-            <View style={subStyles.panelCoachIcon}>
-              <Sparkles size={16} color={COLORS.gold} />
-            </View>
-            <View style={subStyles.panelCoachCopy}>
-              <Text style={subStyles.panelCoachLabel}>Coach del panel</Text>
-              <Text style={subStyles.panelCoachTitle}>{ADVANCED_PRESET_META[suggestedPreset].cta} - {ADVANCED_PRESET_META[suggestedPreset].title}</Text>
-            </View>
-            <View style={subStyles.panelCoachPill}>
-              <Text style={subStyles.panelCoachPillText}>Sugerencia</Text>
-            </View>
-          </View>
-          <View style={subStyles.coachChipList}>
-            {panelCoachChips.map((chip, i) => (
-              <View key={i} style={[subStyles.coachChip, { borderLeftColor: chip.color }]}>
-                <chip.icon size={13} color={chip.color} strokeWidth={2} />
-                <Text style={[subStyles.coachChipText, chip.weight === "high" && { color: COLORS.ink }]}>{chip.label}</Text>
-              </View>
-            ))}
-          </View>
-          <View style={subStyles.panelCoachFooter}>
-            <Text style={subStyles.panelCoachFooterText}>
-              {preset === "manual" ? "Aun no fijaste un panel principal." : `Panel actual: ${ADVANCED_PRESET_META[preset].title}.`}
-            </Text>
-            {preset !== suggestedPreset ? (
-              <TouchableOpacity style={subStyles.panelApplyBtn} onPress={() => applyPreset(suggestedPreset)} activeOpacity={0.85}>
-                <Text style={subStyles.panelApplyBtnText}>{ADVANCED_PRESET_META[suggestedPreset].cta}</Text>
-              </TouchableOpacity>
+        <TouchableOpacity style={subStyles.advMetricSection} onPress={() => setAdvancedDetail("categoryConcentration")} activeOpacity={0.84}>
+          <View style={subStyles.advMetricHeader}>
+            <Text style={subStyles.advMetricTitle}>Concentración de gasto</Text>
+            {categoryConcentration.hhi != null ? (
+              <Text style={[subStyles.advMetricBadge, { color: categoryConcentration.color }]}>
+                {categoryConcentration.label}
+              </Text>
             ) : null}
           </View>
-        </View>
-
-        <View style={subStyles.presetHeaderRow}>
-          <Text style={subStyles.presetTitle}>Presets y modo</Text>
-          <View style={subStyles.panelCoachPill}>
-            <Text style={subStyles.panelCoachPillText}>Recomendado por DarkMoney</Text>
-          </View>
-        </View>
-
-        <View style={subStyles.presetGrid}>
-          {(Object.keys(ADVANCED_PRESET_META) as AdvancedPreset[]).map((option) => (
-            <TouchableOpacity
-              key={option}
-              style={[subStyles.presetCard, preset === option && subStyles.presetCardActive, option === "analytics" && subStyles.presetCardWide]}
-              onPress={() => applyPreset(option)}
-              activeOpacity={0.84}
-            >
-              <View style={subStyles.presetCardTop}>
-                <Text style={subStyles.presetCardTitle}>{ADVANCED_PRESET_META[option].title}</Text>
-                {option === suggestedPreset ? (
-                  <View style={subStyles.presetBadge}>
-                    <Text style={subStyles.presetBadgeText}>{option === "control" ? "Sugerido" : "Recomendado"}</Text>
-                  </View>
-                ) : null}
-              </View>
-              <Text style={subStyles.presetCardBody}>{ADVANCED_PRESET_META[option].subtitle}</Text>
-              {option === suggestedPreset ? (
-                <Text style={subStyles.presetSituationalText}>{ADVANCED_PRESET_META[option].situationalSubtitle}</Text>
-              ) : null}
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        <View style={subStyles.widgetPanelCard}>
-          <Text style={subStyles.widgetPanelTitle}>
-            {featuredWidgetChips.length > 0 ? "Widgets priorizados" : "Aun no tienes widgets fijados"}
+          <Text style={subStyles.advMetricBody}>
+            {categoryConcentration.hhi != null
+              ? `HHI: ${categoryConcentration.hhi.toFixed(3)}${categoryConcentration.topCategory ? ` · mayor partida: ${categoryConcentration.topCategory} (${categoryConcentration.topShare ?? 0}%)` : ""}`
+              : "Categoriza movimientos para ver cómo se distribuye tu gasto entre categorías."}
           </Text>
-          <Text style={subStyles.widgetPanelBody}>
-            {featuredWidgetChips.length > 0
-              ? `Tu panel ${ADVANCED_PRESET_META[preset].title} prioriza esta lectura arriba, pero el resto del dashboard sigue explicando tu sistema por capas.`
-              : "Elige los widgets que quieras para convertir la parte alta del dashboard en tu panel favorito."}
-          </Text>
-          {featuredWidgetChips.length === 0 ? (
-            <Text style={subStyles.widgetPanelHint}>Si no quieres un preset, toca Manual y luego elige abajo tus widgets favoritos.</Text>
+          {categoryConcentration.hhi != null ? (
+            <Text style={[subStyles.advMetricInterpret, { color: categoryConcentration.color }]}>
+              {categoryConcentration.hhi > 0.25
+                ? `Tu gasto está muy concentrado. Si ${categoryConcentration.topCategory} sube, mueve fuerte todo el mes.`
+                : categoryConcentration.hhi > 0.15
+                ? `Concentración moderada. Hay una categoría dominante pero con cierta diversidad.`
+                : "Gasto bien distribuido entre categorías — menor riesgo de sorpresas por una sola partida."}
+            </Text>
           ) : null}
-          <View style={subStyles.widgetChipWrap}>
-            {(featuredWidgetChips.length > 0 ? featuredWidgetChips : ADVANCED_WIDGET_LIBRARY).map((chip) => (
-              <View key={chip} style={subStyles.widgetChip}>
-                <Text style={subStyles.widgetChipText}>{chip}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-      </Card>
-
-      <Card>
-        <Text style={subStyles.layerKicker}>Como funciona tu panel</Text>
-        <Text style={subStyles.layerHeroTitle}>Los presets cambian lo destacado, pero las capas se mantienen</Text>
-        <Text style={subStyles.layerHeroBody}>
-          Aunque uses un preset, el dashboard Pro conserva una ruta fija: hoy, liquidez, evolución, patrones, coach y precisión.
-        </Text>
-        <View style={subStyles.howList}>
-          <View style={subStyles.howItem}>
-            <Text style={subStyles.howTitle}>Hoy</Text>
-            <Text style={subStyles.howBody}>Te ubica rápido: foco, presión cercana y posible cierre del mes.</Text>
-          </View>
-          <View style={subStyles.howItem}>
-            <Text style={subStyles.howTitle}>Próximas semanas</Text>
-            <Text style={subStyles.howBody}>Mira compromisos, entradas esperadas y salud de caja antes de que llegue la presión.</Text>
-          </View>
-          <View style={subStyles.howItem}>
-            <Text style={subStyles.howTitle}>Evolución y patrones</Text>
-            <Text style={subStyles.howBody}>Compara tu ritmo histórico y detecta categorías, hábitos o movimientos raros.</Text>
-          </View>
-          <View style={subStyles.howItem}>
-            <Text style={subStyles.howTitle}>Precisión</Text>
-            <Text style={subStyles.howBody}>Te dice qué tan confiable es la lectura y qué datos conviene limpiar.</Text>
-          </View>
-        </View>
+        </TouchableOpacity>
       </Card>
 
       </>}
 
-      {activeTab === 'Análisis' && <>
+      {activeTab === 'Flujo' && <>
       <DashboardLayerHeader
-        kicker="Gráficos"
-        title="Lecturas visuales"
-        body="Una capa rápida para ver de un golpe qué mueve tu cierre, cómo viene tu ahorro y dónde se concentra el gasto."
+        kicker="Flujo"
+        title="Proyección y compromisos"
+        bullets={[
+          "Proyección de cierre del mes en 3 escenarios",
+          "Flujo neto esperado esta semana y los próximos 30 días",
+          "Salud de caja, suscripciones y obligaciones próximas",
+        ]}
       />
-
+      <View style={{ height: SPACING.sm }} />
       <ProjectionBridgeChart
         currentVisibleBalance={currentVisibleBalance}
         committedNet={projectionCommittedNet}
@@ -5364,30 +5589,7 @@ function AdvancedDashboard({
           quickDateTo: format(advancedStats.curEnd, "yyyy-MM-dd"),
         })}
       />
-      <SavingsMomentumChart
-        data={advancedStats.monthlyPulse}
-        currency={activeCurrency}
-        onOpenMonth={(quickDateFrom, quickDateTo) => openMovementsQuickFilter({ quickDateFrom, quickDateTo })}
-      />
-      <CategoryDonutChart
-        catTotals={advancedStats.catTotals}
-        categories={snapshot?.categories ?? []}
-        currency={activeCurrency}
-        onOpenCategory={(quickCategoryId) => openMovementsQuickFilter({
-          ...(quickCategoryId == null ? { quickFilter: "uncategorized" as const } : { quickCategoryId }),
-          quickDateFrom: format(advancedStats.curStart, "yyyy-MM-dd"),
-          quickDateTo: format(advancedStats.curEnd, "yyyy-MM-dd"),
-        })}
-      />
-
-      </>}
-
-      {activeTab === 'Agenda' && <>
-      <DashboardLayerHeader
-        kicker="Próximas semanas"
-        title="Liquidez, salud y compromisos"
-        body="Esta parte te dice si lo que viene se ve controlado o si conviene mover foco antes de que se sienta la presión."
-      />
+      <View style={{ height: SPACING.sm }} />
       <FutureFlowPreview
         obligations={obligations}
         subscriptions={subscriptions}
@@ -5396,63 +5598,14 @@ function AdvancedDashboard({
         exchangeRateMap={exchangeRateMap}
         currentVisibleBalance={currentVisibleBalance}
       />
-      <UpcomingSection
-        obligations={obligations}
-        subscriptions={subscriptions}
-        recurringIncome={recurringIncome}
-        router={router}
-      />
+      <View style={{ height: SPACING.sm }} />
       <Card>
-        <View style={subStyles.cardHeaderWithAction}>
-          <SectionTitle>Proyección refinada</SectionTitle>
-          <TouchableOpacity style={subStyles.inlineExplainBtn} onPress={() => setAdvancedDetail("projection")} activeOpacity={0.82}>
-            <Text style={subStyles.inlineExplainBtnText}>Entender</Text>
-          </TouchableOpacity>
-        </View>
-        <Text style={subStyles.executiveIntro}>
-          Esta lectura ya separa lo comprometido del mes de tu ritmo variable reciente para darte una banda más útil, no un solo número.
+        <Text style={subStyles.layerKicker}>Salud de caja</Text>
+        <Text style={subStyles.layerHeroBody}>
+          Un score saludable es 70+. Por debajo de 50 suele indicar gastos cerca o por encima del ingreso, obligaciones sin cubrir, o caja insuficiente para 1 mes de gasto.
         </Text>
-        <View style={subStyles.executiveGrid}>
-          <TouchableOpacity style={subStyles.executiveCard} activeOpacity={0.84} onPress={() => setProjectionDetail("conservative")}>
-            <View style={subStyles.executiveTop}>
-              <Text style={subStyles.executiveLabel}>Conservador</Text>
-              <View style={[subStyles.executiveTonePill, subStyles.executiveTonePillWarning]}>
-                <Text style={[subStyles.executiveToneText, subStyles.executiveToneTextWarning]}>Defensivo</Text>
-              </View>
-            </View>
-            <Text style={subStyles.executiveValue}>{formatCurrency(projectionModel.conservativeBalance, activeCurrency)}</Text>
-            <Text style={subStyles.executiveCaption}>Vs visible hoy: {formatCurrency(projectionConservativeDelta, activeCurrency)} con escenario defensivo.</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={subStyles.executiveCard} activeOpacity={0.84} onPress={() => setProjectionDetail("expected")}>
-            <View style={subStyles.executiveTop}>
-              <Text style={subStyles.executiveLabel}>Esperado</Text>
-              <View style={subStyles.executiveTonePill}>
-                <Text style={subStyles.executiveToneText}>{projectionModel.confidenceLabel}</Text>
-              </View>
-            </View>
-            <Text style={subStyles.executiveValue}>{formatCurrency(projectionModel.expectedBalance, activeCurrency)}</Text>
-            <Text style={subStyles.executiveCaption}>{projectionModel.confidence}% de confianza · vs hoy {formatCurrency(projectionExpectedDelta, activeCurrency)}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[subStyles.executiveCard, subStyles.executiveCardWide]} activeOpacity={0.84} onPress={() => setProjectionDetail("included")}>
-            <View style={subStyles.executiveTop}>
-              <Text style={subStyles.executiveLabel}>Qué ya entra en la lectura</Text>
-            </View>
-            <ProjectionFormulaBreakdown
-              activeCurrency={activeCurrency}
-              currentVisibleBalance={currentVisibleBalance}
-              visibleBalanceLabel={visibleBalanceLabel}
-              visibleAccountSummary={visibleAccountSummary}
-              committedNet={projectionCommittedNet}
-              variableNet={projectionVariableNet}
-              expectedBalance={projectionModel.expectedBalance}
-            />
-            <View style={subStyles.projectionScenarioStrip}>
-              <Text style={subStyles.projectionScenarioText}>Piso defensivo: {formatCurrency(projectionModel.conservativeBalance, activeCurrency)}</Text>
-              <Text style={subStyles.projectionScenarioText}>Escenario alto: {formatCurrency(projectionModel.optimisticBalance, activeCurrency)}</Text>
-            </View>
-          </TouchableOpacity>
-        </View>
       </Card>
+      <View style={{ height: SPACING.sm }} />
       <HealthScore
         netWorth={currentVisibleBalance}
         income={monthToDate.income}
@@ -5460,23 +5613,206 @@ function AdvancedDashboard({
         obligations={obligations}
         netWorthThreeMonthExpense={currentVisibleBalance / Math.max(monthToDate.expense, 1)}
       />
+      <View style={{ height: SPACING.sm }} />
       <SubscriptionsSummary subscriptions={subscriptions} currency={activeCurrency} />
+      <View style={{ height: SPACING.sm }} />
       <ObligationWatch obligations={obligations} router={router} />
+
+      <View style={{ height: SPACING.sm }} />
+      <AnomalyWatch
+        movements={movements}
+        ctx={{ accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }}
+        categoryMap={categoryMap}
+        accountMap={accountMap}
+        onExplainPress={() => setAdvancedDetail("review")}
+        router={router}
+      />
+      <View style={{ height: SPACING.sm }} />
+      <CategoryBreakdown catTotals={advancedStats.catTotals} categories={snapshot?.categories ?? []} currency={activeCurrency} />
+      <View style={{ height: SPACING.sm }} />
+      <TransferSnapshot movements={movements} accounts={activeAccounts} ctx={{ accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }} />
+      <View style={{ height: SPACING.sm }} />
+      <WeeklyPattern movements={movements} ctx={{ accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }} />
 
       </>}
 
-      {activeTab === 'Análisis' && <>
+      {activeTab === 'Historial' && <>
       <DashboardLayerHeader
-        kicker="Patrones"
-        title="Hábitos, anomalías y categorías"
-        body="Abre esta parte cuando quieras entender de dónde sale la lectura del resumen y qué hábitos están marcando el mes."
+        kicker="Historial"
+        title="Evolución en el tiempo"
+        bullets={[
+          "Neto mes a mes del año seleccionado — toca un mes para ver el detalle",
+          "Tasa de ahorro y estabilidad de ingresos en los últimos 6 meses",
+          "Comparación con el mismo mes del año pasado",
+        ]}
       />
+      <View style={{ height: SPACING.sm }} />
+      <AnnualHistoryPanel
+        years={historyYears}
+        selectedYear={selectedHistoryYear}
+        onSelectYear={setSelectedHistoryYear}
+        data={annualHistory}
+        currency={activeCurrency}
+        onSelectMonth={setSelectedAnnualMonth}
+      />
+      <View style={{ height: SPACING.sm }} />
+      <MonthlyPulse data={advancedStats.monthlyPulse} currency={activeCurrency} />
+
+      {/* N1-N5: Métricas avanzadas - tasa de ahorro, estabilidad, concentración, cobranza, estacional */}
+      <View style={{ height: SPACING.sm }} />
+      <Card>
+        <View style={subStyles.cardHeaderWithAction}>
+          <SectionTitle>Métricas avanzadas</SectionTitle>
+          <TouchableOpacity style={subStyles.inlineExplainBtn} onPress={() => setAdvancedDetail("advancedMetrics")} activeOpacity={0.82}>
+            <Text style={subStyles.inlineExplainBtnText}>Entender</Text>
+          </TouchableOpacity>
+        </View>
+        <Text style={subStyles.executiveIntro}>
+          Indicadores estadísticos sobre tus patrones: ahorro, estabilidad de ingresos, concentración de gasto, eficiencia de cobranza y comparación estacional.
+        </Text>
+
+        {/* N1: Tasa de ahorro mensual */}
+        <TouchableOpacity style={subStyles.advMetricSection} onPress={() => setAdvancedDetail("savingsRate")} activeOpacity={0.84}>
+          <View style={subStyles.advMetricHeader}>
+            <Text style={subStyles.advMetricTitle}>Tasa de ahorro mensual</Text>
+            {monthlySavingsRate.lastRate != null ? (
+              <Text style={[subStyles.advMetricBadge, { color: monthlySavingsRate.color }]}>
+                {monthlySavingsRate.lastRate.toFixed(1)}% este mes
+              </Text>
+            ) : null}
+          </View>
+          <Text style={subStyles.advMetricBody}>
+            {monthlySavingsRate.avgRate != null
+              ? `Promedio 6 meses: ${monthlySavingsRate.avgRate.toFixed(1)}% · tendencia ${monthlySavingsRate.trend}`
+              : "Registra al menos 2 meses de movimientos para ver tu promedio de ahorro."}
+          </Text>
+          {monthlySavingsRate.lastRate != null && monthlySavingsRate.avgRate != null ? (
+            <Text style={[subStyles.advMetricInterpret, { color: monthlySavingsRate.lastRate >= monthlySavingsRate.avgRate ? COLORS.income : COLORS.gold }]}>
+              {monthlySavingsRate.lastRate > monthlySavingsRate.avgRate + 1
+                ? `Este mes ahorras ${(monthlySavingsRate.lastRate - monthlySavingsRate.avgRate).toFixed(1)}% más que tu promedio — por encima de lo habitual.`
+                : monthlySavingsRate.lastRate < monthlySavingsRate.avgRate - 1
+                ? `Este mes ahorras ${(monthlySavingsRate.avgRate - monthlySavingsRate.lastRate).toFixed(1)}% menos que tu promedio — mes de mayor gasto.`
+                : "Este mes está en línea con tu promedio histórico."}
+            </Text>
+          ) : null}
+          <View style={subStyles.advMetricBarRow}>
+            {monthlySavingsRate.months.map((m, i) => {
+              const pct = m.rate;
+              const barH = pct == null ? 4 : Math.min(40, Math.max(4, Math.abs(pct) * 0.8));
+              const barColor = pct == null ? COLORS.storm : pct >= 20 ? COLORS.income : pct >= 0 ? COLORS.gold : COLORS.expense;
+              return (
+                <View key={i} style={subStyles.advMetricBarItem}>
+                  <View style={[subStyles.advMetricBar, { height: barH, backgroundColor: barColor }]} />
+                  <Text style={subStyles.advMetricBarLabel}>{m.label}</Text>
+                </View>
+              );
+            })}
+          </View>
+        </TouchableOpacity>
+
+        {/* N2: Score de estabilidad de ingresos */}
+        <TouchableOpacity style={[subStyles.advMetricSection, subStyles.advMetricSectionBorder]} onPress={() => setAdvancedDetail("incomeStability")} activeOpacity={0.84}>
+          <View style={subStyles.advMetricHeader}>
+            <Text style={subStyles.advMetricTitle}>Estabilidad de ingresos</Text>
+            {incomeStabilityScore.score != null ? (
+              <Text style={[subStyles.advMetricBadge, { color: incomeStabilityScore.color }]}>
+                {incomeStabilityScore.score}/100
+              </Text>
+            ) : null}
+          </View>
+          <Text style={subStyles.advMetricBody}>
+            {incomeStabilityScore.score != null
+              ? `${incomeStabilityScore.label} · variación del ${incomeStabilityScore.cvPct}% entre meses`
+              : "Registra ingresos en al menos 2 meses para calcular la estabilidad."}
+          </Text>
+          {incomeStabilityScore.score != null ? (
+            <View style={subStyles.advScoreBar}>
+              <View style={[subStyles.advScoreFill, { width: `${incomeStabilityScore.score}%` as any, backgroundColor: incomeStabilityScore.color }]} />
+            </View>
+          ) : null}
+          {incomeStabilityScore.score != null ? (
+            <Text style={[subStyles.advMetricInterpret, { color: incomeStabilityScore.color }]}>
+              {incomeStabilityScore.score >= 75
+                ? "Ingreso predecible — las proyecciones de cierre son más fiables."
+                : incomeStabilityScore.score >= 50
+                ? "Cierta variación mes a mes — las proyecciones son aproximadas."
+                : "Ingreso muy variable — toma el estimado de fin de mes con cautela."}
+            </Text>
+          ) : null}
+        </TouchableOpacity>
+
+        {/* N5: Comparación estacional */}
+        <TouchableOpacity style={[subStyles.advMetricSection, subStyles.advMetricSectionBorder]} onPress={() => setAdvancedDetail("seasonalComparison")} activeOpacity={0.84}>
+          <View style={subStyles.advMetricHeader}>
+            <Text style={subStyles.advMetricTitle}>Comparación estacional</Text>
+            {seasonalComparison.hasHistory ? (
+              <Text style={[subStyles.advMetricBadge, { color: seasonalComparison.expenseColor }]}>
+                {seasonalComparison.expenseLabel}
+              </Text>
+            ) : null}
+          </View>
+          {seasonalComparison.hasHistory ? (
+            <>
+              <Text style={subStyles.advMetricBody}>
+                Gasto: {formatCurrency(seasonalComparison.curExpense, activeCurrency)} este mes vs {formatCurrency(seasonalComparison.prevExpense, activeCurrency)} mismo mes año pasado.
+              </Text>
+              {seasonalComparison.incomeDelta != null ? (
+                <Text style={subStyles.advMetricBody}>
+                  Ingreso: {seasonalComparison.incomeDelta > 0 ? "+" : ""}{seasonalComparison.incomeDelta.toFixed(0)}% vs año pasado.
+                </Text>
+              ) : null}
+              {seasonalComparison.expenseDelta != null ? (
+                <Text style={[subStyles.advMetricInterpret, { color: seasonalComparison.expenseColor }]}>
+                  {seasonalComparison.expenseDelta <= -5
+                    ? `Gastaste ${Math.abs(seasonalComparison.expenseDelta).toFixed(0)}% menos que en este mes el año pasado — buen control.`
+                    : seasonalComparison.expenseDelta <= 5
+                    ? "Gasto similar al mismo mes del año pasado — patrón estable."
+                    : `Gastaste ${seasonalComparison.expenseDelta.toFixed(0)}% más que en este mes el año pasado — revisa qué cambió.`}
+                </Text>
+              ) : null}
+            </>
+          ) : (
+            <Text style={subStyles.advMetricBody}>
+              Necesitas 12 meses de movimientos registrados para activar esta comparación. Registra ingresos y gastos de meses anteriores para verla.
+            </Text>
+          )}
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[subStyles.advMetricSection, subStyles.advMetricSectionBorder, { flexDirection: "row", alignItems: "center", justifyContent: "space-between" }]}
+          onPress={() => setActiveTab('Flujo')}
+          activeOpacity={0.84}
+        >
+          <View style={{ flex: 1 }}>
+            <Text style={subStyles.advMetricTitle}>¿Cómo va este mes?</Text>
+            <Text style={subStyles.advMetricBody}>Compara tu ritmo actual con este historial — ve a Flujo para ver la proyección de cierre.</Text>
+          </View>
+          <ArrowRight size={16} color={COLORS.primary} />
+        </TouchableOpacity>
+      </Card>
+
+      </>}
+
+      {activeTab === 'Salud' && <>
+      <DashboardLayerHeader
+        kicker="Salud"
+        title="Calidad financiera y limpieza"
+        bullets={[
+          "Tareas pendientes que reducen la precisión del dashboard",
+          "Sugerencias de IA para categorizar movimientos sin etiquetar",
+          "Eficiencia de cobros y calidad general del dato",
+        ]}
+      />
+
+      <View style={{ height: SPACING.sm }} />
       <ReviewInbox
         movements={movements}
         subscriptions={subscriptions}
         obligations={obligations}
         router={router}
       />
+
+      <View style={{ height: SPACING.sm }} />
       <Card>
         <SectionTitle>Sugerencias de categoría</SectionTitle>
         <Text style={subStyles.executiveIntro}>
@@ -5485,8 +5821,8 @@ function AdvancedDashboard({
         {categorySuggestions.length === 0 ? (
           <View style={subStyles.richEmptyState}>
             <Brain size={18} color={COLORS.primary} />
-            <Text style={subStyles.richEmptyTitle}>Aún no hay sugerencias fuertes</Text>
-            <Text style={subStyles.richEmptyBody}>Cuando vea repeticiones más claras en tu historial, aquí te propondrá categorías antes de que tengas que buscarlas a mano.</Text>
+            <Text style={subStyles.richEmptyTitle}>Sin sugerencias por ahora</Text>
+            <Text style={subStyles.richEmptyBody}>Categoriza los movimientos pendientes en Movimientos. Cuando haya patrones repetidos, el sistema te propondrá categorías automáticamente.</Text>
           </View>
         ) : (
           <View style={subStyles.commandActions}>
@@ -5517,192 +5853,47 @@ function AdvancedDashboard({
           </View>
         )}
       </Card>
-      <AnomalyWatch
-        movements={movements}
-        ctx={{ accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }}
-        categoryMap={categoryMap}
-        accountMap={accountMap}
-        onExplainPress={() => setAdvancedDetail("review")}
-        router={router}
-      />
-      <CategoryBreakdown catTotals={advancedStats.catTotals} categories={snapshot?.categories ?? []} currency={activeCurrency} />
-      <TransferSnapshot movements={movements} accounts={activeAccounts} ctx={{ accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }} />
-      <WeeklyPattern movements={movements} ctx={{ accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }} />
-      <AccountsBreakdown
-        accounts={snapshot?.accounts ?? []}
-        displayCurrency={activeCurrency}
-        baseCurrency={baseCurrency}
-        exchangeRateMap={exchangeRateMap}
-      />
-      <CurrencyExposure accounts={snapshot?.accounts ?? []} />
 
-      </>}
-
-      {activeTab === 'Historial' && <>
-      <DashboardLayerHeader
-        kicker="Evolución"
-        title="Historial y métricas"
-        body="Aquí ves si el mes actual es una excepción o parte de una tendencia: ahorro, estabilidad, pulso mensual y comparación con tu propio historial."
-      />
-      <AnnualHistoryPanel
-        years={historyYears}
-        selectedYear={selectedHistoryYear}
-        onSelectYear={setSelectedHistoryYear}
-        data={annualHistory}
-        currency={activeCurrency}
-        onSelectMonth={setSelectedAnnualMonth}
-      />
-      <MonthlyPulse data={advancedStats.monthlyPulse} currency={activeCurrency} />
-
-      {/* N1-N5: Métricas avanzadas - tasa de ahorro, estabilidad, concentración, cobranza, estacional */}
+      <View style={{ height: SPACING.sm }} />
       <Card>
         <View style={subStyles.cardHeaderWithAction}>
-          <SectionTitle>Métricas avanzadas</SectionTitle>
-          <TouchableOpacity style={subStyles.inlineExplainBtn} onPress={() => setAdvancedDetail("advancedMetrics")} activeOpacity={0.82}>
-            <Text style={subStyles.inlineExplainBtnText}>Entender</Text>
-          </TouchableOpacity>
+          <SectionTitle>Eficiencia de cobranza</SectionTitle>
         </View>
-        <Text style={subStyles.executiveIntro}>
-          Indicadores estadísticos sobre tus patrones: ahorro, estabilidad de ingresos, concentración de gasto, eficiencia de cobranza y comparación estacional.
-        </Text>
-
-        {/* N1: Tasa de ahorro mensual */}
-        <TouchableOpacity style={subStyles.advMetricSection} onPress={() => setAdvancedDetail("advancedMetrics")} activeOpacity={0.84}>
+        <TouchableOpacity style={subStyles.advMetricSection} onPress={() => setAdvancedDetail("collectionEfficiency")} activeOpacity={0.84}>
           <View style={subStyles.advMetricHeader}>
-            <Text style={subStyles.advMetricTitle}>Tasa de ahorro mensual</Text>
-            {monthlySavingsRate.lastRate != null ? (
-              <Text style={[subStyles.advMetricBadge, { color: monthlySavingsRate.color }]}>
-                {monthlySavingsRate.lastRate.toFixed(1)}% este mes
-              </Text>
-            ) : null}
-          </View>
-          <Text style={subStyles.advMetricBody}>
-            {monthlySavingsRate.avgRate != null
-              ? `Promedio 6 meses: ${monthlySavingsRate.avgRate.toFixed(1)}% · tendencia ${monthlySavingsRate.trend}`
-              : "Insuficiente historial para calcular promedio"}
-          </Text>
-          <View style={subStyles.advMetricBarRow}>
-            {monthlySavingsRate.months.map((m, i) => {
-              const pct = m.rate;
-              const barH = pct == null ? 4 : Math.min(40, Math.max(4, Math.abs(pct) * 0.8));
-              const barColor = pct == null ? COLORS.storm : pct >= 20 ? COLORS.income : pct >= 0 ? COLORS.gold : COLORS.expense;
-              return (
-                <View key={i} style={subStyles.advMetricBarItem}>
-                  <View style={[subStyles.advMetricBar, { height: barH, backgroundColor: barColor }]} />
-                  <Text style={subStyles.advMetricBarLabel}>{m.label}</Text>
-                </View>
-              );
-            })}
-          </View>
-        </TouchableOpacity>
-
-        {/* N2: Score de estabilidad de ingresos */}
-        <TouchableOpacity style={[subStyles.advMetricSection, subStyles.advMetricSectionBorder]} onPress={() => setAdvancedDetail("advancedMetrics")} activeOpacity={0.84}>
-          <View style={subStyles.advMetricHeader}>
-            <Text style={subStyles.advMetricTitle}>Estabilidad de ingresos</Text>
-            {incomeStabilityScore.score != null ? (
-              <Text style={[subStyles.advMetricBadge, { color: incomeStabilityScore.color }]}>
-                {incomeStabilityScore.score}/100
-              </Text>
-            ) : null}
-          </View>
-          <Text style={subStyles.advMetricBody}>
-            {incomeStabilityScore.score != null
-              ? `${incomeStabilityScore.label} · variación del ${incomeStabilityScore.cvPct}% entre meses`
-              : incomeStabilityScore.label}
-          </Text>
-          {incomeStabilityScore.score != null ? (
-            <View style={subStyles.advScoreBar}>
-              <View style={[subStyles.advScoreFill, { width: `${incomeStabilityScore.score}%` as any, backgroundColor: incomeStabilityScore.color }]} />
-            </View>
-          ) : null}
-        </TouchableOpacity>
-
-        {/* N3: Índice HHI de concentración de gasto */}
-        <TouchableOpacity style={[subStyles.advMetricSection, subStyles.advMetricSectionBorder]} onPress={() => setAdvancedDetail("advancedMetrics")} activeOpacity={0.84}>
-          <View style={subStyles.advMetricHeader}>
-            <Text style={subStyles.advMetricTitle}>Concentración de gasto</Text>
-            {categoryConcentration.hhi != null ? (
-              <Text style={[subStyles.advMetricBadge, { color: categoryConcentration.color }]}>
-                {categoryConcentration.label}
-              </Text>
-            ) : null}
-          </View>
-          <Text style={subStyles.advMetricBody}>
-            {categoryConcentration.hhi != null
-              ? `HHI: ${categoryConcentration.hhi.toFixed(3)}${categoryConcentration.topCategory ? ` · mayor partida: ${categoryConcentration.topCategory} (${categoryConcentration.topShare}%)` : ""}`
-              : "Sin movimientos categorizados este periodo"}
-          </Text>
-        </TouchableOpacity>
-
-        {/* N4: Eficiencia de cobranza */}
-        <TouchableOpacity style={[subStyles.advMetricSection, subStyles.advMetricSectionBorder]} onPress={() => setAdvancedDetail("advancedMetrics")} activeOpacity={0.84}>
-          <View style={subStyles.advMetricHeader}>
-            <Text style={subStyles.advMetricTitle}>Eficiencia de cobranza</Text>
+            <Text style={subStyles.advMetricTitle}>Cobros resueltos (últimos 30 días)</Text>
             {collectionEfficiency.rate != null ? (
               <Text style={[subStyles.advMetricBadge, { color: collectionEfficiency.color }]}>
-                {collectionEfficiency.rate}% - {collectionEfficiency.label}
+                {collectionEfficiency.rate}% · {collectionEfficiency.label}
               </Text>
             ) : null}
           </View>
           <Text style={subStyles.advMetricBody}>
             {collectionEfficiency.rate != null
-              ? `${collectionEfficiency.resolved} de ${collectionEfficiency.total} cobros resueltos en los últimos 30 días`
-              : collectionEfficiency.label}
+              ? `${collectionEfficiency.resolved} de ${collectionEfficiency.total} cobros resueltos`
+              : "Sin cobros registrados en los últimos 30 días. Agrega obligaciones de tipo receivable para activar esta métrica."}
           </Text>
           {collectionEfficiency.rate != null ? (
             <View style={subStyles.advScoreBar}>
               <View style={[subStyles.advScoreFill, { width: `${collectionEfficiency.rate}%` as any, backgroundColor: collectionEfficiency.color }]} />
             </View>
           ) : null}
-        </TouchableOpacity>
-
-        {/* N5: Comparación estacional */}
-        <TouchableOpacity style={[subStyles.advMetricSection, subStyles.advMetricSectionBorder]} onPress={() => setAdvancedDetail("advancedMetrics")} activeOpacity={0.84}>
-          <View style={subStyles.advMetricHeader}>
-            <Text style={subStyles.advMetricTitle}>Comparación estacional</Text>
-            {seasonalComparison.hasHistory ? (
-              <Text style={[subStyles.advMetricBadge, { color: seasonalComparison.expenseColor }]}>
-                {seasonalComparison.expenseLabel}
-              </Text>
-            ) : null}
-          </View>
-          {seasonalComparison.hasHistory ? (
-            <>
-              <Text style={subStyles.advMetricBody}>
-                Gasto: {formatCurrency(seasonalComparison.curExpense, activeCurrency)} este mes vs {formatCurrency(seasonalComparison.prevExpense, activeCurrency)} mismo mes año pasado.
-              </Text>
-              {seasonalComparison.incomeDelta != null ? (
-                <Text style={subStyles.advMetricBody}>
-                  Ingreso: {seasonalComparison.incomeDelta > 0 ? "+" : ""}{seasonalComparison.incomeDelta.toFixed(0)}% vs año pasado.
-                </Text>
-              ) : null}
-            </>
-          ) : (
-            <Text style={subStyles.advMetricBody}>Se necesita historial de al menos 12 meses para esta comparación.</Text>
-          )}
+          {collectionEfficiency.rate != null ? (
+            <Text style={[subStyles.advMetricInterpret, { color: collectionEfficiency.color }]}>
+              {collectionEfficiency.rate >= 80
+                ? "Excelente — cobras la mayoría de lo que se te debe a tiempo."
+                : collectionEfficiency.rate >= 50
+                ? "Cobros parciales — algunos receivables siguen sin resolverse."
+                : "Baja eficiencia — hay dinero pendiente que no está volviendo."}
+            </Text>
+          ) : null}
         </TouchableOpacity>
       </Card>
 
-      <PeriodRadar
-        income={advancedStats.income}
-        expense={advancedStats.expense}
-        catTotals={advancedStats.catTotals}
-        categories={snapshot?.categories ?? []}
-        curStart={advancedStats.curStart}
-        curEnd={advancedStats.curEnd}
-        movements={movements}
-      />
+      <View style={{ height: SPACING.sm }} />
+      <CurrencyExposure accounts={snapshot?.accounts ?? []} />
 
-      </>}
-
-      {activeTab === 'Datos' && <>
-      <DashboardLayerHeader
-        kicker="Precisión"
-        title="Calidad de datos y aprendizaje"
-        body="Esta capa te dice qué tan confiable es la lectura y dónde DarkMoney ya puede ver patrones, proyectar o necesita más datos."
-      />
-
+      <View style={{ height: SPACING.sm }} />
       <Card>
         <View style={subStyles.qualityHeader}>
           <View style={{ flex: 1, gap: 4 }}>
@@ -5717,6 +5908,36 @@ function AdvancedDashboard({
             <TouchableOpacity style={subStyles.qualityToggleBtn} onPress={() => setQualityOpen((value) => !value)} activeOpacity={0.85}>
               <Text style={subStyles.qualityToggleBtnText}>{qualityOpen ? "Ocultar" : "Abrir"}</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+        <View style={subStyles.annualSummaryGrid}>
+          <View style={subStyles.annualSummaryCard}>
+            <Text style={subStyles.savingsStatLabel}>Confianza sistema</Text>
+            <Text style={[subStyles.annualSummaryValue, { color: learning.readinessScore >= 75 ? COLORS.income : learning.readinessScore >= 50 ? COLORS.gold : COLORS.expense }]}>
+              {learning.readinessScore}%
+            </Text>
+            <Text style={subStyles.annualDetailMini}>{learning.readinessScore >= 75 ? "Fiable" : learning.readinessScore >= 50 ? "Suficiente" : "Baja"}</Text>
+          </View>
+          <View style={subStyles.annualSummaryCard}>
+            <Text style={subStyles.savingsStatLabel}>Confianza proyección</Text>
+            <Text style={[subStyles.annualSummaryValue, { color: projectionModel.confidence >= 70 ? COLORS.income : projectionModel.confidence >= 40 ? COLORS.gold : COLORS.expense }]}>
+              {projectionModel.confidence}%
+            </Text>
+            <Text style={subStyles.annualDetailMini}>{projectionModel.confidenceLabel}</Text>
+          </View>
+          <View style={subStyles.annualSummaryCard}>
+            <Text style={subStyles.savingsStatLabel}>Issues pendientes</Text>
+            <Text style={[subStyles.annualSummaryValue, { color: review.totalIssues === 0 ? COLORS.income : review.totalIssues <= 3 ? COLORS.gold : COLORS.expense }]}>
+              {review.totalIssues}
+            </Text>
+            <Text style={subStyles.annualDetailMini}>{review.totalIssues === 0 ? "Todo limpio" : "Por resolver"}</Text>
+          </View>
+          <View style={subStyles.annualSummaryCard}>
+            <Text style={subStyles.savingsStatLabel}>Datos útiles</Text>
+            <Text style={[subStyles.annualSummaryValue, { color: learning.historyDays >= 90 ? COLORS.income : learning.historyDays >= 30 ? COLORS.gold : COLORS.expense }]}>
+              {learning.historyDays}d
+            </Text>
+            <Text style={subStyles.annualDetailMini}>{learning.historyDays >= 90 ? "Sólido" : learning.historyDays >= 30 ? "Suficiente" : "Poco historial"}</Text>
           </View>
         </View>
       </Card>
@@ -5888,6 +6109,7 @@ function DashboardScreen() {
   const { dashboardMode, setDashboardMode, dashboardScrollY, setDashboardScrollY } = useUiStore();
   const scrollRef = useRef<import("react-native").ScrollView>(null);
   const scrollSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const advancedSectionY = useRef(0);
 
   // Restaurar posición de scroll cuando el dashboard recupera el foco
   useFocusEffect(
@@ -6186,6 +6408,7 @@ function DashboardScreen() {
 
         {/* -- Advanced section -- */}
         {isAdvanced && isPro && (
+          <View onLayout={(e) => { advancedSectionY.current = e.nativeEvent.layout.y; }}>
           <AdvancedDashboard
             movements={movements}
             obligations={obligationsMerged}
@@ -6202,12 +6425,13 @@ function DashboardScreen() {
             router={router}
             accountCurrencyMap={accountCurrencyMap}
             onRequestPrecisionFocus={() => {
-              scrollRef.current?.scrollToEnd({ animated: true });
+              scrollRef.current?.scrollTo({ y: advancedSectionY.current, animated: true });
             }}
             onScrollToTop={() => {
               scrollRef.current?.scrollTo({ y: 0, animated: true });
             }}
           />
+          </View>
         )}
           </>
         )}
@@ -7960,7 +8184,10 @@ const subStyles = StyleSheet.create({
     letterSpacing: 0.8,
   },
   layerSectionTitle: { fontFamily: FONT_FAMILY.heading, fontSize: 20, color: COLORS.ink },
-  layerSectionBody: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.md, color: COLORS.storm, lineHeight: 26 },
+  layerSectionBody: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.storm, lineHeight: 20, flex: 1 },
+  layerBulletList: { gap: 5, marginTop: 8 },
+  layerBulletRow: { flexDirection: "row", gap: 8, alignItems: "flex-start" },
+  layerBulletDot: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.sm, color: COLORS.pine, lineHeight: 20 },
   visualChartKicker: {
     fontFamily: FONT_FAMILY.bodySemibold,
     fontSize: FONT_SIZE.xs,
@@ -8681,6 +8908,32 @@ const subStyles = StyleSheet.create({
     fontSize: FONT_SIZE.xs,
     color: COLORS.storm,
     lineHeight: 18,
+  },
+
+  // Interpretation lines — one sentence per metric telling the user what the number means
+  executiveInterpret: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    lineHeight: 16,
+    marginTop: 3,
+  },
+  healthScoreInterpret: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    lineHeight: 16,
+  },
+  healthInterpret: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    lineHeight: 15,
+    marginTop: 3,
+  },
+  advMetricInterpret: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    lineHeight: 16,
+    marginTop: 4,
   },
 });
 
