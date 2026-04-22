@@ -5,6 +5,7 @@
 
 import {
   authenticatedUser,
+  buildMobileShareUrl,
   buildShareUrl,
   corsHeaders,
   findAuthUserByEmail,
@@ -139,6 +140,7 @@ Deno.serve(async (req) => {
 
     const token = String(shareRow.token ?? "");
     const shareUrl = buildShareUrl(body.appUrl, token);
+    const mobileShareUrl = buildMobileShareUrl(token);
 
     if (invitedUser?.id) {
       await client.from("notifications").insert({
@@ -157,6 +159,7 @@ Deno.serve(async (req) => {
           workspaceId,
           obligationId,
           shareUrl,
+          mobileShareUrl,
         },
       });
     }
@@ -164,6 +167,7 @@ Deno.serve(async (req) => {
     const emailSent = await maybeSendInviteEmail({
       to: invitedEmail,
       shareUrl,
+      mobileShareUrl,
       obligationTitle: String(obligation.title ?? "Obligacion"),
       ownerDisplayName,
       message,
@@ -173,6 +177,7 @@ Deno.serve(async (req) => {
       ok: true,
       shareId: Number(shareRow.id),
       shareUrl,
+      mobileShareUrl,
       emailSent,
       invitedEmail,
       invitedDisplayName,

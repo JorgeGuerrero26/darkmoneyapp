@@ -103,28 +103,135 @@ export function buildShareUrl(appUrl: unknown, token: string): string | null {
   return `${base}/share/obligations/${encodeURIComponent(token)}`;
 }
 
+export function buildMobileShareUrl(token: string): string | null {
+  const scheme = (Deno.env.get("INVITE_APP_SCHEME") ?? "darkmoney").trim().replace(/:\/\/?$/, "");
+  if (!scheme || !token) return null;
+  return `${scheme}:///share/obligations/${encodeURIComponent(token)}`;
+}
+
 export async function maybeSendInviteEmail(input: {
   to: string;
   shareUrl: string | null;
+  mobileShareUrl: string | null;
   obligationTitle: string;
   ownerDisplayName: string | null;
   message: string | null;
 }): Promise<boolean> {
   const apiKey = Deno.env.get("RESEND_API_KEY");
-  const from = Deno.env.get("INVITE_FROM_EMAIL") ?? Deno.env.get("RESEND_FROM_EMAIL");
+  const from =
+    Deno.env.get("INVITE_FROM_EMAIL") ??
+    Deno.env.get("RESEND_FROM_EMAIL") ??
+    Deno.env.get("FROM_EMAIL") ??
+    Deno.env.get("EMAIL_FROM") ??
+    "DarkMoney <onboarding@resend.dev>";
+  const heroImageUrl =
+    Deno.env.get("INVITE_HERO_IMAGE_URL") ??
+    "https://images.unsplash.com/photo-1554224155-6726b3ff858f?auto=format&fit=crop&w=1200&q=80";
   if (!apiKey || !from || !input.shareUrl) return false;
 
   const owner = input.ownerDisplayName ?? "DarkMoney";
+  const safeOwner = escapeHtml(owner);
+  const safeTitle = escapeHtml(input.obligationTitle);
+  const safeShareUrl = escapeHtml(input.shareUrl);
+  const primaryShareUrl = input.mobileShareUrl ?? input.shareUrl;
+  const safePrimaryShareUrl = escapeHtml(primaryShareUrl);
+  const safeHeroImageUrl = escapeHtml(heroImageUrl);
+  const safeMessage = input.message ? escapeHtml(input.message) : null;
   const text = [
     `${owner} compartio contigo "${input.obligationTitle}".`,
     input.message ? `Mensaje: ${input.message}` : null,
-    `Abre la invitacion: ${input.shareUrl}`,
+    input.mobileShareUrl ? `Abrir en la app: ${input.mobileShareUrl}` : null,
+    `Enlace web de respaldo: ${input.shareUrl}`,
   ].filter(Boolean).join("\n\n");
 
   const html = `
-    <p>${escapeHtml(owner)} compartio contigo <strong>${escapeHtml(input.obligationTitle)}</strong>.</p>
-    ${input.message ? `<p>${escapeHtml(input.message)}</p>` : ""}
-    <p><a href="${escapeHtml(input.shareUrl)}">Abrir invitacion</a></p>
+    <!doctype html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Invitacion de DarkMoney</title>
+      </head>
+      <body style="margin:0;padding:0;background:#f3f6fb;color:#182230;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;">
+        <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">
+          ${safeOwner} compartio contigo una obligacion en DarkMoney.
+        </div>
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f3f6fb;padding:28px 12px;">
+          <tr>
+            <td align="center">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#ffffff;border-radius:22px;overflow:hidden;border:1px solid #dbe4f0;box-shadow:0 18px 50px rgba(15,23,42,0.10);">
+                <tr>
+                  <td style="padding:0;">
+                    <img src="${safeHeroImageUrl}" alt="DarkMoney" width="640" style="display:block;width:100%;max-width:640px;height:220px;object-fit:cover;border:0;">
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:28px 30px 12px 30px;">
+                    <div style="display:inline-block;padding:7px 12px;border-radius:999px;background:#e8f7ef;color:#0f8a4b;font-size:12px;font-weight:700;letter-spacing:0.02em;text-transform:uppercase;">
+                      Invitacion privada
+                    </div>
+                    <h1 style="margin:18px 0 10px 0;color:#101828;font-size:28px;line-height:1.18;font-weight:800;letter-spacing:0;">
+                      ${safeOwner} compartio una obligacion contigo
+                    </h1>
+                    <p style="margin:0;color:#475467;font-size:16px;line-height:1.6;">
+                      Puedes revisar el credito o deuda compartida en DarkMoney y darle seguimiento desde tu cuenta.
+                    </p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:12px 30px 0 30px;">
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-radius:16px;background:#f8fafc;border:1px solid #e4e7ec;">
+                      <tr>
+                        <td style="padding:18px 18px 16px 18px;">
+                          <div style="font-size:13px;color:#667085;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px;">
+                            Obligacion compartida
+                          </div>
+                          <div style="font-size:20px;line-height:1.35;color:#101828;font-weight:800;">
+                            ${safeTitle}
+                          </div>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+                ${safeMessage ? `
+                <tr>
+                  <td style="padding:14px 30px 0 30px;">
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-radius:16px;background:#fff8eb;border:1px solid #fedf89;">
+                      <tr>
+                        <td style="padding:16px 18px;">
+                          <div style="font-size:13px;color:#b54708;font-weight:800;margin-bottom:8px;">Mensaje de ${safeOwner}</div>
+                          <div style="font-size:15px;line-height:1.55;color:#344054;">${safeMessage}</div>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+                ` : ""}
+                <tr>
+                  <td align="center" style="padding:26px 30px 12px 30px;">
+                    <a href="${safePrimaryShareUrl}" style="display:inline-block;background:#141b34;color:#ffffff;text-decoration:none;font-size:16px;font-weight:800;padding:15px 24px;border-radius:14px;box-shadow:0 10px 24px rgba(20,27,52,0.22);">
+                      Abrir en la app
+                    </a>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:8px 30px 28px 30px;">
+                    <p style="margin:0;color:#667085;font-size:13px;line-height:1.6;text-align:center;">
+                      Si el boton no abre la app, usa este enlace de respaldo:<br>
+                      <a href="${safeShareUrl}" style="color:#2563eb;text-decoration:none;word-break:break-all;">${safeShareUrl}</a>
+                    </p>
+                  </td>
+                </tr>
+              </table>
+              <p style="max-width:640px;margin:18px auto 0 auto;color:#98a2b3;font-size:12px;line-height:1.5;text-align:center;">
+                DarkMoney envio este correo porque alguien compartio una obligacion con tu direccion.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </body>
+    </html>
   `;
 
   try {
