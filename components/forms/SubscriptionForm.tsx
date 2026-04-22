@@ -14,7 +14,12 @@ import {
   type SubscriptionFormInput,
 } from "../../services/queries/workspace-data";
 import { useMovementPatternsQuery } from "../../services/queries/movement-patterns";
-import { buildPatternMaps, suggestCategoryFromDescription, suggestAccountFromCounterparty } from "../../lib/movement-patterns";
+import {
+  buildPatternMaps,
+  suggestAccountFromCounterparty,
+  suggestCategoryFromCounterparty,
+  suggestCategoryFromDescription,
+} from "../../lib/movement-patterns";
 import type { SubscriptionSummary } from "../../types/domain";
 import { BottomSheet } from "../ui/BottomSheet";
 import { Button } from "../ui/Button";
@@ -326,11 +331,21 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
     const trimmed = name.trim();
     if (trimmed.length < 3) { setCatSuggestionId(null); return; }
     nameDebounceRef.current = setTimeout(() => {
-      setCatSuggestionId(suggestCategoryFromDescription(trimmed, patternMaps));
+      const suggestedByName = suggestCategoryFromDescription(trimmed, patternMaps);
+      const suggestedByVendor = vendorPartyId !== null
+        ? suggestCategoryFromCounterparty(vendorPartyId, patternMaps)
+        : null;
+      setCatSuggestionId(suggestedByName ?? suggestedByVendor);
     }, 350);
     return () => { if (nameDebounceRef.current) clearTimeout(nameDebounceRef.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [name, categoryId, patternMaps]);
+  }, [name, categoryId, patternMaps, vendorPartyId]);
+
+  // Vendor can suggest category even before the name is descriptive.
+  useEffect(() => {
+    if (!patternMaps || categoryId !== null || vendorPartyId === null || name.trim().length >= 3) return;
+    setCatSuggestionId(suggestCategoryFromCounterparty(vendorPartyId, patternMaps));
+  }, [vendorPartyId, categoryId, patternMaps, name]);
 
   // Vendor (counterparty) → suggest account
   useEffect(() => {
@@ -577,7 +592,11 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
           {accSuggestionId !== null ? (() => {
             const acc = activeAccounts.find((a) => a.id === accSuggestionId);
             return acc ? (
-              <SmartSuggestion label={acc.name} onApply={() => setAccountId(acc.id)} />
+              <SmartSuggestion
+                label={acc.name}
+                detail="Cuenta aprendida por pagos parecidos a este proveedor"
+                onApply={() => setAccountId(acc.id)}
+              />
             ) : null;
           })() : null}
         </View>
@@ -611,7 +630,11 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
           {catSuggestionId !== null ? (() => {
             const cat = expenseCategories.find((c) => c.id === catSuggestionId);
             return cat ? (
-              <SmartSuggestion label={cat.name} onApply={() => setCategoryId(cat.id)} />
+              <SmartSuggestion
+                label={cat.name}
+                detail="Categoría sugerida por nombre y proveedor"
+                onApply={() => setCategoryId(cat.id)}
+              />
             ) : null;
           })() : null}
         </View>

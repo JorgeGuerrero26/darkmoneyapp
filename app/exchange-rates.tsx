@@ -3,6 +3,7 @@ import { ErrorBoundary } from "../components/ui/ErrorBoundary";
 import {
   Animated,
   PanResponder,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -12,18 +13,21 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ArrowRight, Plus, Trash2, RefreshCw } from "lucide-react-native";
+import { ArrowRight, RefreshCw, Search, Trash2, X } from "lucide-react-native";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
 import {
   useExchangeRatesQuery,
   useCreateExchangeRateMutation,
+  useUpdateExchangeRateMutation,
   useDeleteExchangeRateMutation,
   type ExchangeRateRecord,
 } from "../services/queries/workspace-data";
 import { ScreenHeader } from "../components/layout/ScreenHeader";
 import { BottomSheet } from "../components/ui/BottomSheet";
+import { EmptyState } from "../components/ui/EmptyState";
+import { FAB } from "../components/ui/FAB";
 import { UndoBanner } from "../components/ui/UndoBanner";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../constants/theme";
 import { useToast } from "../hooks/useToast";
@@ -322,9 +326,12 @@ function ExchangeRatesScreen() {
 
   const [showForm, setShowForm] = useState(false);
   const [editItem, setEditItem] = useState<ExchangeRateRecord | null>(null);
+  const [search, setSearch] = useState("");
+  const [currencyFilter, setCurrencyFilter] = useState("all");
 
   const { data: rates = [], isLoading, refetch } = useExchangeRatesQuery();
   const createRate = useCreateExchangeRateMutation();
+  const updateRate = useUpdateExchangeRateMutation();
   const deleteRate = useDeleteExchangeRateMutation();
 
   const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<number>>(new Set());
@@ -370,20 +377,51 @@ function ExchangeRatesScreen() {
 
   async function handleSave(from: string, to: string, rate: number, notes: string) {
     try {
-      await createRate.mutateAsync({ fromCurrencyCode: from, toCurrencyCode: to, rate, notes });
+      if (editItem) {
+        await updateRate.mutateAsync({ id: editItem.id, fromCurrencyCode: from, toCurrencyCode: to, rate, notes });
+        showToast("Tipo de cambio actualizado", "success");
+      } else {
+        await createRate.mutateAsync({ fromCurrencyCode: from, toCurrencyCode: to, rate, notes });
+        showToast("Tipo de cambio creado", "success");
+      }
       closeForm();
     } catch (err: any) {
       showToast(err?.message ?? "No se pudo guardar el tipo de cambio", "error");
     }
   }
 
+  const activeRates = useMemo(
+    () => rates.filter((r) => !pendingDeleteIds.has(r.id)),
+    [pendingDeleteIds, rates],
+  );
+
+  const filteredRates = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return activeRates.filter((r) => {
+      const from = r.fromCurrencyCode.toUpperCase();
+      const to = r.toCurrencyCode.toUpperCase();
+      if (currencyFilter !== "all" && from !== currencyFilter && to !== currencyFilter) return false;
+      if (!q) return true;
+      return (
+        from.toLowerCase().includes(q) ||
+        to.toLowerCase().includes(q) ||
+        `${from} ${to}`.toLowerCase().includes(q) ||
+        `${from}:${to}`.toLowerCase().includes(q) ||
+        String(r.rate).includes(q) ||
+        (r.notes ?? "").toLowerCase().includes(q)
+      );
+    });
+  }, [activeRates, currencyFilter, search]);
+
   const pairMap = new Map<string, ExchangeRateRecord[]>();
-  for (const r of rates) {
+  for (const r of filteredRates) {
     if (pendingDeleteIds.has(r.id)) continue;
     const key = `${r.fromCurrencyCode}:${r.toCurrencyCode}`;
     if (!pairMap.has(key)) pairMap.set(key, []);
     pairMap.get(key)!.push(r);
   }
+
+  const pairCount = new Set(activeRates.map((r) => `${r.fromCurrencyCode}:${r.toCurrencyCode}`)).size;
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
@@ -391,25 +429,95 @@ function ExchangeRatesScreen() {
         title="Tipos de cambio"
         onBack={() => router.back()}
         rightAction={
-          <TouchableOpacity onPress={() => void refetch()} hitSlop={8}>
-            <RefreshCw size={18} color={COLORS.storm} />
+          <TouchableOpacity
+            style={styles.filterBtn}
+            onPress={() => void refetch()}
+            accessibilityLabel="Actualizar tipos de cambio"
+            activeOpacity={0.75}
+          >
+            <RefreshCw size={14} color={COLORS.storm} />
           </TouchableOpacity>
         }
       />
 
-      <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.hint}>
-          Define cuántas unidades de la moneda destino equivalen a 1 unidad de la moneda origen.
-          Ej: 1 USD = 3.72 PEN.
-        </Text>
+      <View style={styles.searchWrap}>
+        <Search size={15} color={COLORS.storm} />
+        <TextInput
+          style={styles.searchInput}
+          value={search}
+          onChangeText={setSearch}
+          placeholder="Buscar moneda, tasa o nota..."
+          placeholderTextColor={COLORS.storm}
+          returnKeyType="search"
+          autoCapitalize="characters"
+        />
+        {search.length > 0 ? (
+          <TouchableOpacity onPress={() => setSearch("")} hitSlop={8}>
+            <X size={15} color={COLORS.storm} />
+          </TouchableOpacity>
+        ) : null}
+      </View>
+
+      <View style={styles.segmentedWrap}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.segmentedRow}>
+          <TouchableOpacity
+            style={[styles.pill, currencyFilter === "all" && styles.pillActive]}
+            onPress={() => setCurrencyFilter("all")}
+          >
+            <Text style={[styles.pillText, currencyFilter === "all" && styles.pillTextActive]}>Todas</Text>
+          </TouchableOpacity>
+          {currencyOptions.map((currency) => (
+            <TouchableOpacity
+              key={currency}
+              style={[styles.pill, currencyFilter === currency && styles.pillActive]}
+              onPress={() => setCurrencyFilter(currency)}
+            >
+              <Text style={[styles.pillText, currencyFilter === currency && styles.pillTextActive]}>
+                {currency}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
+
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl refreshing={isLoading} onRefresh={() => void refetch()} tintColor={COLORS.primary} />
+        }
+      >
+        <View style={styles.summaryCard}>
+          <View style={styles.summaryTopRow}>
+            <View style={styles.summaryMetric}>
+              <Text style={styles.summaryLabel}>Pares</Text>
+              <Text style={styles.summaryValue}>{pairCount}</Text>
+            </View>
+            <View style={styles.summaryDivider} />
+            <View style={styles.summaryMetric}>
+              <Text style={styles.summaryLabel}>Monedas</Text>
+              <Text style={styles.summaryValue}>{currencyOptions.length}</Text>
+            </View>
+          </View>
+          <Text style={styles.summaryHint}>
+            Define cuántas unidades de la moneda destino equivalen a 1 unidad de la moneda origen.
+            Ej: 1 USD = 3.72 PEN.
+          </Text>
+        </View>
 
         {isLoading ? (
           <Text style={styles.empty}>Cargando...</Text>
-        ) : rates.length === 0 ? (
-          <View style={styles.emptyWrap}>
-            <Text style={styles.empty}>No hay tipos de cambio registrados.</Text>
-            <Text style={styles.emptySub}>Agrega uno con el botón +.</Text>
-          </View>
+        ) : activeRates.length === 0 ? (
+          <EmptyState
+            title="Sin tipos de cambio"
+            description="Agrega el primer par para convertir saldos entre monedas."
+            action={{ label: "Nuevo tipo de cambio", onPress: openNew }}
+          />
+        ) : filteredRates.length === 0 ? (
+          <EmptyState
+            variant="no-results"
+            title="Sin resultados"
+            description="Prueba otra moneda o limpia la búsqueda."
+          />
         ) : (
           Array.from(pairMap.entries()).map(([pair, items]) => (
             <View key={pair} style={styles.group}>
@@ -427,13 +535,7 @@ function ExchangeRatesScreen() {
         )}
       </ScrollView>
 
-      <TouchableOpacity
-        style={[styles.fab, { bottom: insets.bottom + 16 }]}
-        onPress={openNew}
-        activeOpacity={0.85}
-      >
-        <Plus size={24} color="#05070B" />
-      </TouchableOpacity>
+      <FAB onPress={openNew} bottom={insets.bottom + 16} />
 
       <BottomSheet
         visible={showForm}
@@ -450,7 +552,7 @@ function ExchangeRatesScreen() {
           currencyOptions={currencyOptions}
           onSave={(from, to, rate, notes) => void handleSave(from, to, rate, notes)}
           onCancel={closeForm}
-          loading={createRate.isPending}
+          loading={createRate.isPending || updateRate.isPending}
         />
       </BottomSheet>
       <UndoBanner
@@ -460,7 +562,7 @@ function ExchangeRatesScreen() {
           : `${pendingDeleteIds.size} tipos de cambio eliminados`}
         onUndo={() => pendingDeleteIds.forEach((id) => undoDelete(id))}
         durationMs={5000}
-        bottomOffset={insets.bottom + 16}
+        bottomOffset={insets.bottom + 80}
       />
     </View>
   );
@@ -507,24 +609,94 @@ const pickerStyles = StyleSheet.create({
 });
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: "#05070B" },
+  screen: { flex: 1, backgroundColor: COLORS.bg },
   content: { padding: SPACING.lg, gap: SPACING.lg, paddingBottom: 100 },
 
-  hint: {
+  filterBtn: {
+    height: 34,
+    paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.full,
+    backgroundColor: GLASS.card,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 5,
+  },
+  searchWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginHorizontal: SPACING.lg,
+    marginTop: SPACING.xs,
+    marginBottom: SPACING.sm,
+    backgroundColor: GLASS.card,
+    borderRadius: RADIUS.md,
+    paddingHorizontal: SPACING.md,
+    gap: SPACING.sm,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.ink,
+    fontFamily: FONT_FAMILY.body,
+    paddingVertical: SPACING.md,
+  },
+  segmentedWrap: { height: 44, justifyContent: "center" },
+  segmentedRow: { paddingHorizontal: SPACING.lg, gap: SPACING.xs, alignItems: "center" },
+  pill: {
+    height: 32,
+    paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.full,
+    backgroundColor: GLASS.card,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pillActive: { backgroundColor: COLORS.primary },
+  pillText: {
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    fontFamily: FONT_FAMILY.bodyMedium,
+    includeFontPadding: false,
+  },
+  pillTextActive: { color: "#FFFFFF", fontFamily: FONT_FAMILY.bodySemibold },
+
+  summaryCard: {
+    backgroundColor: GLASS.card,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: GLASS.cardBorder,
+    padding: SPACING.md,
+    gap: SPACING.md,
+  },
+  summaryTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  summaryMetric: { flex: 1, gap: 2 },
+  summaryLabel: {
+    fontFamily: FONT_FAMILY.bodyMedium,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    textTransform: "uppercase",
+  },
+  summaryValue: {
+    fontFamily: FONT_FAMILY.heading,
+    fontSize: FONT_SIZE.xl,
+    color: COLORS.ink,
+  },
+  summaryDivider: {
+    width: 1,
+    height: 38,
+    backgroundColor: GLASS.separator,
+    marginHorizontal: SPACING.md,
+  },
+  summaryHint: {
     fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.sm,
     color: COLORS.storm,
     lineHeight: 20,
-    backgroundColor: GLASS.card,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: GLASS.cardBorder,
-    padding: SPACING.md,
   },
 
-  emptyWrap: { alignItems: "center", paddingVertical: SPACING.xxxl, gap: SPACING.sm },
   empty: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.sm, color: COLORS.storm, textAlign: "center" },
-  emptySub: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm, opacity: 0.6, textAlign: "center" },
 
   group: { gap: SPACING.xs },
   groupLabel: {
@@ -590,21 +762,6 @@ const styles = StyleSheet.create({
   rateNum: { fontFamily: FONT_FAMILY.heading, fontSize: FONT_SIZE.sm, color: COLORS.ink },
   rateDate: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm, opacity: 0.6 },
   rateNotes: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm, fontStyle: "italic" },
-
-  fab: {
-    position: "absolute",
-    right: SPACING.lg,
-    width: 56, height: 56,
-    borderRadius: 28,
-    backgroundColor: COLORS.pine,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: COLORS.pine,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 8,
-  },
 
   // Form
   formBody: { gap: SPACING.md, paddingBottom: SPACING.lg },

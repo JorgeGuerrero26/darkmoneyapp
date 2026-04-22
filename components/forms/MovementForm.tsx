@@ -22,14 +22,17 @@ import {
   useWorkspaceSnapshotQuery,
   useCreateMovementMutation,
   useUpdateMovementMutation,
+  useDashboardAnalyticsQuery,
+  usePersistLearningFeedbackMutation,
 } from "../../services/queries/workspace-data";
 import { useMovementAttachmentsQuery } from "../../services/queries/movements";
-import { useMovementPatternsQuery } from "../../services/queries/movement-patterns";
+import { useMovementPatternsQuery, type PatternMovement } from "../../services/queries/movement-patterns";
 import {
   buildPatternMaps,
   suggestCategoryFromDescription,
   suggestCategoryFromCounterparty,
   suggestCounterpartyFromCategory,
+  suggestAccountFromCounterparty,
 } from "../../lib/movement-patterns";
 import { useAuth } from "../../lib/auth-context";
 import { useToast } from "../../hooks/useToast";
@@ -43,9 +46,12 @@ import { BalanceImpactPreview } from "../domain/BalanceImpactPreview";
 import { AttachmentPicker, type Attachment } from "../domain/AttachmentPicker";
 import { DatePickerInput } from "../ui/DatePickerInput";
 import { SmartSuggestion } from "../ui/SmartSuggestion";
+import { buildCategorySuggestionCandidates } from "../../services/analytics/category-suggestions";
+import { findProbableDuplicateGroups } from "../../services/analytics/duplicate-detection";
+import { normalizeAnalyticsText } from "../../services/analytics/movement-features";
 import { sortByName } from "../../lib/sort-locale";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
-import type { MovementType, MovementStatus, MovementRecord, AccountSummary, CategorySummary, CounterpartySummary } from "../../types/domain";
+import type { MovementType, MovementStatus, MovementRecord, AccountSummary, CategorySummary, CounterpartySummary, ExchangeRateSummary } from "../../types/domain";
 
 type Props = {
   visible: boolean;
@@ -72,11 +78,120 @@ type FormState = {
   notes: string;
 };
 
+type MovementSuggestionLike = {
+  id: number;
+  movementType: string;
+  status: string;
+  occurredAt: string;
+  sourceAccountId: number | null;
+  destinationAccountId: number | null;
+  categoryId: number | null;
+  counterpartyId: number | null;
+  description: string;
+  amount: number;
+};
+
+type CategorySuggestionState = {
+  categoryId: number;
+  categoryName: string;
+  confidence: number;
+  reasons: string[];
+};
+
+type DuplicateWarningState = {
+  movementIds: number[];
+  reasons: string[];
+};
+
+type CategoryFeedbackIntent = {
+  kind: "accepted_category_suggestion" | "manual_category_change";
+  categoryId: number;
+  categoryName?: string | null;
+  confidence?: number | null;
+  reasons?: string[];
+};
+
 function readMovementLinkedEventId(metadata: unknown): number | null {
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
   const raw = metadata as Record<string, unknown>;
   const eventId = Number(raw.obligation_event_id ?? 0);
   return Number.isFinite(eventId) && eventId > 0 ? eventId : null;
+}
+
+function patternMovementAmount(movement: Pick<PatternMovement, "movement_type" | "source_amount" | "destination_amount">) {
+  const source = Math.abs(Number(movement.source_amount ?? 0));
+  const destination = Math.abs(Number(movement.destination_amount ?? 0));
+  if (movement.movement_type === "income" || movement.movement_type === "refund") return destination || source;
+  return source || destination;
+}
+
+function isSuggestionCashflow(movement: MovementSuggestionLike) {
+  return (
+    movement.movementType === "income" ||
+    movement.movementType === "refund" ||
+    movement.movementType === "expense" ||
+    movement.movementType === "subscription_payment" ||
+    movement.movementType === "obligation_payment"
+  );
+}
+
+function suggestionActsAsIncome(movement: MovementSuggestionLike) {
+  return movement.movementType === "income" || movement.movementType === "refund";
+}
+
+function movementFormTextSimilarity(left: string, right: string) {
+  const leftTokens = new Set(normalizeAnalyticsText(left).split(" ").filter((token) => token.length >= 3));
+  const rightTokens = new Set(normalizeAnalyticsText(right).split(" ").filter((token) => token.length >= 3));
+  const allTokens = new Set([...leftTokens, ...rightTokens]);
+  if (allTokens.size === 0) return 0;
+  let overlap = 0;
+  for (const token of allTokens) {
+    if (leftTokens.has(token) && rightTokens.has(token)) overlap += 1;
+  }
+  return overlap / allTokens.size;
+}
+
+function formatTransferAmount(value: number) {
+  if (!Number.isFinite(value)) return "";
+  return String(Math.round(value * 100) / 100);
+}
+
+function formatShortDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString("es-PE", { day: "2-digit", month: "short" });
+}
+
+function findTransferExchangeRate(
+  exchangeRates: ExchangeRateSummary[],
+  fromCurrencyCode: string,
+  toCurrencyCode: string,
+) {
+  const from = fromCurrencyCode.trim().toUpperCase();
+  const to = toCurrencyCode.trim().toUpperCase();
+  if (!from || !to || from === to) return null;
+
+  const candidates = exchangeRates
+    .filter((rate) => {
+      const rateFrom = rate.fromCurrencyCode.trim().toUpperCase();
+      const rateTo = rate.toCurrencyCode.trim().toUpperCase();
+      return (
+        rate.rate > 0 &&
+        ((rateFrom === from && rateTo === to) || (rateFrom === to && rateTo === from))
+      );
+    })
+    .sort((left, right) => new Date(right.effectiveAt).getTime() - new Date(left.effectiveAt).getTime());
+
+  const best = candidates[0];
+  if (!best) return null;
+  const direct = best.fromCurrencyCode.trim().toUpperCase() === from;
+  const resolvedRate = direct ? best.rate : 1 / best.rate;
+  if (!Number.isFinite(resolvedRate) || resolvedRate <= 0) return null;
+  return {
+    rate: resolvedRate,
+    effectiveAt: best.effectiveAt,
+    label: `1 ${from} = ${resolvedRate.toLocaleString("es-PE", { maximumFractionDigits: 6 })} ${to}`,
+  };
 }
 
 const TYPE_OPTIONS: { type: MovementType; label: string; Icon: typeof ArrowDownCircle; color: string }[] = [
@@ -124,6 +239,8 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   const { data: snapshot } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const createMovement = useCreateMovementMutation(activeWorkspaceId);
   const updateMovement = useUpdateMovementMutation(activeWorkspaceId);
+  const { data: dashboardAnalytics } = useDashboardAnalyticsQuery(activeWorkspaceId, profile?.id);
+  const persistLearningFeedback = usePersistLearningFeedbackMutation(activeWorkspaceId, profile?.id);
   const {
     data: editMovementAttachments = [],
     isLoading: editMovementAttachmentsLoading,
@@ -159,6 +276,8 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   const [isClosingAfterSubmit, setIsClosingAfterSubmit] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [savedMovementId, setSavedMovementId] = useState<number | undefined>(editMovement?.id);
+  const [categoryFeedbackIntent, setCategoryFeedbackIntent] = useState<CategoryFeedbackIntent | null>(null);
+  const [transferDestinationEdited, setTransferDestinationEdited] = useState(false);
   const attachmentsHydratedRef = useRef<string | null>(null);
   const initialAttachmentSignatureRef = useRef("::ready");
 
@@ -175,6 +294,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   const accounts = snapshot?.accounts ?? [];
   const categories = snapshot?.categories ?? [];
   const counterparties = snapshot?.counterparties ?? [];
+  const exchangeRates = snapshot?.exchangeRates ?? [];
 
   const activeAccountsSorted = useMemo(
     () => sortByName(accounts.filter((a) => !a.isArchived)),
@@ -199,6 +319,131 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     return sortByName(filtered);
   }, [categories, form.movementType]);
   const counterpartiesSorted = useMemo(() => sortByName(counterparties), [counterparties]);
+  const sourceAmountNum = parseFloat(form.sourceAmount) || 0;
+  const destinationAmountNum = parseFloat(form.destinationAmount) || 0;
+
+  const currentSuggestionMovement = useMemo<MovementSuggestionLike | null>(() => {
+    const amount = form.movementType === "income" ? destinationAmountNum : sourceAmountNum;
+    if (form.movementType === "transfer") return null;
+    return {
+      id: editMovement?.id ? -editMovement.id : -1,
+      movementType: form.movementType,
+      status: "posted",
+      occurredAt: dateStrToISO(form.occurredAt),
+      sourceAccountId: form.movementType === "income" ? null : form.sourceAccountId,
+      destinationAccountId: form.movementType === "income" ? form.destinationAccountId : null,
+      categoryId: form.categoryId,
+      counterpartyId: form.counterpartyId,
+      description: form.description.trim(),
+      amount,
+    };
+  }, [
+    destinationAmountNum,
+    editMovement?.id,
+    form.categoryId,
+    form.counterpartyId,
+    form.description,
+    form.destinationAccountId,
+    form.movementType,
+    form.occurredAt,
+    form.sourceAccountId,
+    sourceAmountNum,
+  ]);
+
+  const suggestionHistory = useMemo<MovementSuggestionLike[]>(() => {
+    return (patternMovements ?? [])
+      .filter((movement) => movement.id !== editMovement?.id)
+      .map((movement) => ({
+        id: movement.id,
+        movementType: movement.movement_type,
+        status: movement.status,
+        occurredAt: movement.occurred_at,
+        sourceAccountId: movement.source_account_id ?? null,
+        destinationAccountId: movement.destination_account_id ?? null,
+        categoryId: movement.category_id ?? null,
+        counterpartyId: movement.counterparty_id ?? null,
+        description: movement.description ?? "",
+        amount: patternMovementAmount(movement),
+      }));
+  }, [editMovement?.id, patternMovements]);
+
+  const learnedCategorySuggestion = useMemo<CategorySuggestionState | null>(() => {
+    if (!currentSuggestionMovement || form.categoryId != null || !currentSuggestionMovement.description.trim()) return null;
+    const accepted = dashboardAnalytics?.learningFeedback.filter((feedback) =>
+      feedback.acceptedCategoryId != null &&
+      (feedback.feedbackKind === "accepted_category_suggestion" || feedback.feedbackKind === "manual_category_change")
+    ) ?? [];
+    const normalized = normalizeAnalyticsText(currentSuggestionMovement.description);
+    if (!normalized || accepted.length === 0) return null;
+    const best = accepted
+      .map((feedback) => {
+        const learnedText = feedback.normalizedDescription ?? "";
+        const similarity = learnedText === normalized ? 1 : movementFormTextSimilarity(normalized, learnedText);
+        return { feedback, similarity };
+      })
+      .filter((item) => item.similarity >= 0.58)
+      .sort((a, b) => b.similarity - a.similarity || new Date(b.feedback.createdAt).getTime() - new Date(a.feedback.createdAt).getTime())[0];
+    if (!best?.feedback.acceptedCategoryId) return null;
+    const category = categoriesForPicker.find((item) => item.id === best.feedback.acceptedCategoryId);
+    if (!category) return null;
+    return {
+      categoryId: category.id,
+      categoryName: category.name,
+      confidence: Math.max(0.68, Math.min(0.98, 0.62 + best.similarity * 0.28)),
+      reasons: ["aprendido de una corrección tuya", best.similarity >= 0.92 ? "texto casi igual" : "texto parecido"],
+    };
+  }, [categoriesForPicker, currentSuggestionMovement, dashboardAnalytics?.learningFeedback, form.categoryId]);
+
+  const algorithmicCategorySuggestion = useMemo<CategorySuggestionState | null>(() => {
+    if (!currentSuggestionMovement || form.categoryId != null || !currentSuggestionMovement.description.trim()) return null;
+    const suggestions = buildCategorySuggestionCandidates<MovementSuggestionLike>({
+      movements: [
+        ...suggestionHistory.filter((movement) => movement.categoryId != null),
+        { ...currentSuggestionMovement, categoryId: null },
+      ],
+      categories: categoriesForPicker,
+      isCashflow: isSuggestionCashflow,
+      isIncomeLike: suggestionActsAsIncome,
+      getAmount: (movement) => movement.amount,
+      limit: 1,
+      targetLimit: 1,
+    });
+    const suggestion = suggestions.find((item) => item.movementId === currentSuggestionMovement.id);
+    if (!suggestion) return null;
+    return {
+      categoryId: suggestion.suggestedCategoryId,
+      categoryName: suggestion.suggestedCategoryName,
+      confidence: suggestion.confidence,
+      reasons: suggestion.reasons,
+    };
+  }, [categoriesForPicker, currentSuggestionMovement, form.categoryId, suggestionHistory]);
+
+  const bestCategorySuggestion = learnedCategorySuggestion ?? algorithmicCategorySuggestion;
+
+  const duplicateWarning = useMemo<DuplicateWarningState | null>(() => {
+    if (!currentSuggestionMovement || currentSuggestionMovement.amount <= 0.009 || !currentSuggestionMovement.description.trim()) return null;
+    const groups = findProbableDuplicateGroups<MovementSuggestionLike>({
+      movements: [...suggestionHistory, currentSuggestionMovement],
+      getAmount: (movement) => movement.amount,
+      maxDaysApart: 2,
+    });
+    const group = groups.find((item) => item.movementIds.includes(currentSuggestionMovement.id));
+    if (!group) return null;
+    return {
+      movementIds: group.movementIds.filter((id) => id !== currentSuggestionMovement.id),
+      reasons: group.reasons,
+    };
+  }, [currentSuggestionMovement, suggestionHistory]);
+
+  const accountSuggestionId = useMemo(() => {
+    if (!patternMaps || form.counterpartyId == null || form.movementType === "transfer") return null;
+    const suggested = suggestAccountFromCounterparty(form.counterpartyId, patternMaps);
+    if (suggested == null) return null;
+    if (form.movementType === "income") {
+      return suggested !== form.destinationAccountId ? suggested : null;
+    }
+    return suggested !== form.sourceAccountId ? suggested : null;
+  }, [form.counterpartyId, form.destinationAccountId, form.movementType, form.sourceAccountId, patternMaps]);
 
   // -- Suggestion effects ----------------------------------------------------
 
@@ -288,6 +533,8 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     setSubmitError("");
     setAttachments([]);
     setSavedMovementId(editMovement?.id);
+    setCategoryFeedbackIntent(null);
+    setTransferDestinationEdited(Boolean(editMovement?.destinationAmount));
   }, [visible, editMovement, defaultType, initialAccountId, isClosingAfterSubmit]);
 
   useEffect(() => {
@@ -312,20 +559,115 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     setForm((prev) => ({ ...prev, ...partial }));
   }
 
+  function selectCategoryManually(id: number | null) {
+    patch({ categoryId: id });
+    if (id == null) {
+      setCategoryFeedbackIntent(null);
+      return;
+    }
+    const category = categoriesForPicker.find((item) => item.id === id);
+    setCategoryFeedbackIntent({
+      kind: "manual_category_change",
+      categoryId: id,
+      categoryName: category?.name ?? null,
+      confidence: null,
+      reasons: ["elegida manualmente en el formulario"],
+    });
+  }
+
+  function applyCategorySuggestion(suggestion: CategorySuggestionState) {
+    patch({ categoryId: suggestion.categoryId });
+    setCategoryFeedbackIntent({
+      kind: "accepted_category_suggestion",
+      categoryId: suggestion.categoryId,
+      categoryName: suggestion.categoryName,
+      confidence: suggestion.confidence,
+      reasons: suggestion.reasons,
+    });
+  }
+
+  function persistCategoryLearning(movementId: number, description: string) {
+    if (form.categoryId == null) return;
+    const previousCategoryId = editMovement?.categoryId ?? null;
+    const categoryChanged = form.categoryId !== previousCategoryId;
+    if (!categoryChanged && categoryFeedbackIntent?.kind !== "accepted_category_suggestion") return;
+
+    const category = categoriesForPicker.find((item) => item.id === form.categoryId);
+    const intent = categoryFeedbackIntent?.categoryId === form.categoryId
+      ? categoryFeedbackIntent
+      : {
+        kind: "manual_category_change" as const,
+        categoryId: form.categoryId,
+        categoryName: category?.name ?? null,
+        confidence: null,
+        reasons: ["categoría final elegida en el formulario"],
+      };
+
+    void persistLearningFeedback.mutateAsync({
+      movementId,
+      feedbackKind: intent.kind,
+      normalizedDescription: normalizeAnalyticsText(description) || null,
+      previousCategoryId,
+      acceptedCategoryId: form.categoryId,
+      confidence: intent.confidence ?? (intent.kind === "accepted_category_suggestion" ? 0.7 : null),
+      source: "movement-form",
+      metadata: {
+        categoryName: intent.categoryName ?? category?.name ?? null,
+        reasons: intent.reasons ?? [],
+        movementType: form.movementType,
+        counterpartyId: form.counterpartyId,
+        sourceAccountId: form.sourceAccountId,
+        destinationAccountId: form.destinationAccountId,
+        amount: form.movementType === "income" ? destinationAmountNum : sourceAmountNum,
+      },
+    }).catch((error) => {
+      if (__DEV__) console.warn("[MovementForm] learning feedback failed", error);
+    });
+  }
+
   // --- Balance impact preview ---
   const sourceAccount = accounts.find((a) => a.id === form.sourceAccountId) ?? null;
   const destinationAccount = accounts.find((a) => a.id === form.destinationAccountId) ?? null;
   const originalSourceAccount = accounts.find((a) => a.id === (editMovement?.sourceAccountId ?? null)) ?? null;
   const originalDestinationAccount = accounts.find((a) => a.id === (editMovement?.destinationAccountId ?? null)) ?? null;
-  const sourceAmountNum = parseFloat(form.sourceAmount) || 0;
-  const destinationAmountNum = parseFloat(form.destinationAmount) || 0;
-
   // Transfer: destination amount only needed when currencies differ
   const transferCurrenciesDiffer =
     form.movementType === "transfer" &&
     sourceAccount !== null &&
     destinationAccount !== null &&
     sourceAccount.currencyCode !== destinationAccount.currencyCode;
+
+  const transferFxSuggestion = useMemo(() => {
+    if (!transferCurrenciesDiffer || !sourceAccount || !destinationAccount) return null;
+    return findTransferExchangeRate(
+      exchangeRates,
+      sourceAccount.currencyCode,
+      destinationAccount.currencyCode,
+    );
+  }, [destinationAccount, exchangeRates, sourceAccount, transferCurrenciesDiffer]);
+
+  useEffect(() => {
+    if (form.movementType !== "transfer" || !transferCurrenciesDiffer || transferDestinationEdited) return;
+    if (sourceAmountNum <= 0) {
+      if (form.destinationAmount) patch({ destinationAmount: "" });
+      return;
+    }
+    if (!transferFxSuggestion) {
+      if (form.destinationAmount) patch({ destinationAmount: "" });
+      return;
+    }
+    const nextDestinationAmount = formatTransferAmount(sourceAmountNum * transferFxSuggestion.rate);
+    if (nextDestinationAmount && nextDestinationAmount !== form.destinationAmount) {
+      patch({ destinationAmount: nextDestinationAmount });
+    }
+  }, [
+    form.destinationAmount,
+    form.movementType,
+    sourceAmountNum,
+    transferCurrenciesDiffer,
+    transferDestinationEdited,
+    transferFxSuggestion,
+  ]);
 
   // When editing a posted movement, currentBalance already reflects the original movement.
   // We must reverse it first, then apply the new amount to get the correct projection.
@@ -480,6 +822,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
             destinationAmount: form.destinationAmount ? parseFloat(form.destinationAmount) : undefined,
           },
         });
+        persistCategoryLearning(editMovement.id, autoDesc);
         if (activeWorkspaceId && linkedEventId && hasAttachmentChanges) {
           backgroundAttachmentSync = () => {
             const noticeId = showActivityNotice(
@@ -541,6 +884,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         };
         const created = await createMovement.mutateAsync(payload);
         setSavedMovementId(created.id);
+        persistCategoryLearning(created.id, autoDesc);
         // Los comprobantes se sincronizan después de cerrar el formulario para no bloquear la UI.
         showToast("Movimiento guardado", "success");
         setLastMovementAccountId(form.sourceAccountId);
@@ -658,7 +1002,10 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
                 >
                   <TouchableOpacity
                     style={styles.typeButtonInner}
-                    onPress={() => patch({ movementType: opt.type })}
+                    onPress={() => {
+                      setTransferDestinationEdited(false);
+                      patch({ movementType: opt.type });
+                    }}
                     activeOpacity={0.75}
                   >
                     <opt.Icon size={26} color={isActive ? opt.color : COLORS.storm} />
@@ -714,7 +1061,10 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
                 label="Cuenta origen"
                 accounts={activeAccountsSorted}
                 selectedId={form.sourceAccountId}
-                onSelect={(id) => patch({ sourceAccountId: id })}
+                onSelect={(id) => {
+                  if (form.movementType === "transfer") setTransferDestinationEdited(false);
+                  patch({ sourceAccountId: id });
+                }}
                 error={errors.sourceAccountId as string | undefined}
               />
             </>
@@ -727,7 +1077,10 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
                 label="Cuenta destino"
                 accounts={destinationAccountsSorted}
                 selectedId={form.destinationAccountId}
-                onSelect={(id) => patch({ destinationAccountId: id })}
+                onSelect={(id) => {
+                  if (form.movementType === "transfer") setTransferDestinationEdited(false);
+                  patch({ destinationAccountId: id });
+                }}
                 error={errors.destinationAccountId as string | undefined}
               />
               {/* Income amount */}
@@ -745,11 +1098,29 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
                 <CurrencyInput
                   label={`Monto destino (${destinationAccount?.currencyCode ?? ""})`}
                   value={form.destinationAmount}
-                  onChangeText={(v) => patch({ destinationAmount: v })}
+                  onChangeText={(v) => {
+                    setTransferDestinationEdited(true);
+                    patch({ destinationAmount: v });
+                  }}
                   currencyCode={destinationAccount?.currencyCode ?? baseCurrency}
                   error={errors.destinationAmount}
                 />
               )}
+              {form.movementType === "transfer" && transferCurrenciesDiffer && sourceAccount && destinationAccount ? (
+                <View style={[
+                  styles.fxRateNote,
+                  !transferFxSuggestion && styles.fxRateNoteMissing,
+                ]}>
+                  <Text style={[
+                    styles.fxRateNoteText,
+                    !transferFxSuggestion && styles.fxRateNoteTextMissing,
+                  ]}>
+                    {transferFxSuggestion
+                      ? `Monto destino calculado con ${transferFxSuggestion.label}${transferFxSuggestion.effectiveAt ? ` · ${formatShortDate(transferFxSuggestion.effectiveAt)}` : ""}. Puedes editarlo.`
+                      : `No encontré tipo de cambio ${sourceAccount.currencyCode} → ${destinationAccount.currencyCode}. Ingresa el monto destino manualmente.`}
+                  </Text>
+                </View>
+              ) : null}
               {form.movementType === "transfer" && !transferCurrenciesDiffer && sourceAccount && destinationAccount && (
                 <View style={styles.sameCurrencyNote}>
                   <Text style={styles.sameCurrencyText}>
@@ -813,8 +1184,33 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         const cpSuggestion = cpSuggestionId !== null
           ? counterpartiesSorted.find((c) => c.id === cpSuggestionId) ?? null
           : null;
+        const accountSuggestion = accountSuggestionId !== null
+          ? activeAccountsSorted.find((account) => account.id === accountSuggestionId) ?? null
+          : null;
+        const categorySuggestionToShow = bestCategorySuggestion ?? (
+          catSuggestion
+            ? {
+              categoryId: catSuggestion.id,
+              categoryName: catSuggestion.name,
+              confidence: 0.62,
+              reasons: ["patrón repetido en tu historial"],
+            }
+            : null
+        );
         return (
         <View style={styles.section}>
+          {duplicateWarning ? (
+            <View style={styles.duplicateWarning}>
+              <AlertCircle size={16} color={COLORS.gold} strokeWidth={2} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.duplicateWarningTitle}>Podría estar repetido</Text>
+                <Text style={styles.duplicateWarningText}>
+                  Hay {duplicateWarning.movementIds.length} movimiento{duplicateWarning.movementIds.length === 1 ? "" : "s"} parecido{duplicateWarning.movementIds.length === 1 ? "" : "s"} por {duplicateWarning.reasons.join(", ") || "fecha y monto cercanos"}.
+                </Text>
+              </View>
+            </View>
+          ) : null}
+
           <Input
             label="Descripción (opcional)"
             placeholder="Se genera automáticamente si la dejas vacía"
@@ -830,12 +1226,13 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
             label="Categoría (opcional)"
             categories={categoriesForPicker}
             selectedId={form.categoryId}
-            onSelect={(id) => patch({ categoryId: id })}
+            onSelect={selectCategoryManually}
           />
-          {catSuggestion ? (
+          {categorySuggestionToShow ? (
             <SmartSuggestion
-              label={catSuggestion.name}
-              onApply={() => patch({ categoryId: catSuggestion.id })}
+              label={categorySuggestionToShow.categoryName}
+              detail={`${Math.round(categorySuggestionToShow.confidence * 100)}% · ${categorySuggestionToShow.reasons.join(" · ")}`}
+              onApply={() => applyCategorySuggestion(categorySuggestionToShow)}
             />
           ) : null}
 
@@ -849,6 +1246,16 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
             <SmartSuggestion
               label={cpSuggestion.name}
               onApply={() => patch({ counterpartyId: cpSuggestion.id })}
+            />
+          ) : null}
+          {accountSuggestion ? (
+            <SmartSuggestion
+              label={`Usar ${accountSuggestion.name}`}
+              detail="Normalmente usas esta cuenta con esa persona o comercio"
+              onApply={() => {
+                if (form.movementType === "income") patch({ destinationAccountId: accountSuggestion.id });
+                else patch({ sourceAccountId: accountSuggestion.id });
+              }}
             />
           ) : null}
 
@@ -1176,6 +1583,50 @@ const styles = StyleSheet.create({
   categoryChipTextActive: { color: COLORS.pine, fontFamily: FONT_FAMILY.bodySemibold },
   notesInput: { height: 72, textAlignVertical: "top" },
   fieldError: { fontSize: FONT_SIZE.xs, color: COLORS.danger },
+  duplicateWarning: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: SPACING.sm,
+    padding: SPACING.md,
+    borderRadius: RADIUS.lg,
+    backgroundColor: COLORS.gold + "16",
+    borderWidth: 1,
+    borderColor: COLORS.gold + "44",
+  },
+  duplicateWarningTitle: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.ink,
+  },
+  duplicateWarningText: {
+    marginTop: 2,
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    lineHeight: 17,
+  },
+  fxRateNote: {
+    marginTop: -SPACING.xs,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.primary + "12",
+    borderWidth: 1,
+    borderColor: COLORS.primary + "2E",
+  },
+  fxRateNoteMissing: {
+    backgroundColor: COLORS.gold + "14",
+    borderColor: COLORS.gold + "3D",
+  },
+  fxRateNoteText: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    lineHeight: 17,
+  },
+  fxRateNoteTextMissing: {
+    color: COLORS.ink,
+  },
   sameCurrencyNote: {
     backgroundColor: GLASS.card,
     borderRadius: RADIUS.md,
@@ -1207,4 +1658,3 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
 });
-

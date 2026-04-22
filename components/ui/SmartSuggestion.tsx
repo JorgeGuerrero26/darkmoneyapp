@@ -5,10 +5,11 @@ import { useHaptics } from "../../hooks/useHaptics";
 
 type Props = {
   label: string;
+  detail?: string;
   onApply: () => void;
 };
 
-export function SmartSuggestion({ label, onApply }: Props) {
+export function SmartSuggestion({ label, detail, onApply }: Props) {
   const haptics = useHaptics();
   return (
     <Pressable
@@ -16,10 +17,13 @@ export function SmartSuggestion({ label, onApply }: Props) {
       onPress={() => { haptics.light(); onApply(); }}
     >
       <Sparkles size={13} color={COLORS.primary} strokeWidth={2} />
-      <Text style={styles.text} numberOfLines={1}>
-        Sugerido:{" "}
-        <Text style={styles.value}>{label}</Text>
-      </Text>
+      <View style={styles.copy}>
+        <Text style={styles.text} numberOfLines={1}>
+          Sugerido:{" "}
+          <Text style={styles.value}>{label}</Text>
+        </Text>
+        {detail ? <Text style={styles.detail} numberOfLines={1}>{detail}</Text> : null}
+      </View>
       <View style={styles.applyBadge}>
         <Text style={styles.applyText}>Aplicar</Text>
       </View>
@@ -40,9 +44,11 @@ const styles = StyleSheet.create({
     borderColor: "rgba(107,228,197,0.20)",
     marginTop: -SPACING.xs,
   },
+  copy: {
+    flex: 1,
+  },
   pressed: { opacity: 0.7 },
   text: {
-    flex: 1,
     fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.xs,
     color: COLORS.storm,
@@ -50,6 +56,12 @@ const styles = StyleSheet.create({
   value: {
     fontFamily: FONT_FAMILY.bodySemibold,
     color: COLORS.primary,
+  },
+  detail: {
+    marginTop: 1,
+    fontFamily: FONT_FAMILY.body,
+    fontSize: 10,
+    color: COLORS.storm,
   },
   applyBadge: {
     paddingHorizontal: SPACING.sm,

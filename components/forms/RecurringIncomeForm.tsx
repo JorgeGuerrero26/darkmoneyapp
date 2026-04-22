@@ -14,12 +14,20 @@ import {
   useWorkspaceSnapshotQuery,
   type RecurringIncomeFormInput,
 } from "../../services/queries/workspace-data";
+import { useMovementPatternsQuery } from "../../services/queries/movement-patterns";
+import {
+  buildPatternMaps,
+  suggestAccountFromCounterparty,
+  suggestCategoryFromCounterparty,
+  suggestCategoryFromDescription,
+} from "../../lib/movement-patterns";
 import type { RecurringIncomeSummary } from "../../types/domain";
 import { BottomSheet } from "../ui/BottomSheet";
 import { Button } from "../ui/Button";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { CurrencyInput } from "../ui/CurrencyInput";
 import { FormDateField } from "./FormDateField";
+import { SmartSuggestion } from "../ui/SmartSuggestion";
 import { sortByName } from "../../lib/sort-locale";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
 
@@ -54,6 +62,11 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
   const createMutation = useCreateRecurringIncomeMutation(activeWorkspaceId);
   const updateMutation = useUpdateRecurringIncomeMutation(activeWorkspaceId);
   const { data: snapshot } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
+  const { data: patternMovements } = useMovementPatternsQuery(activeWorkspaceId);
+  const patternMaps = useMemo(
+    () => (patternMovements ? buildPatternMaps(patternMovements) : null),
+    [patternMovements],
+  );
 
   const defaultCurrency = activeWorkspace?.baseCurrencyCode ?? "PEN";
   const today = format(new Date(), "yyyy-MM-dd");
@@ -78,8 +91,11 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
   const [nameError, setNameError] = useState("");
   const [amountError, setAmountError] = useState("");
   const [submitError, setSubmitError] = useState("");
+  const [catSuggestionId, setCatSuggestionId] = useState<number | null>(null);
+  const [accSuggestionId, setAccSuggestionId] = useState<number | null>(null);
 
   const nameRef = useRef<TextInput>(null);
+  const suggestionDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!visible) return;
@@ -131,6 +147,37 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
   );
   const counterparties = useMemo(() => sortByName(snapshot?.counterparties ?? []), [snapshot?.counterparties]);
   const isLoading = createMutation.isPending || updateMutation.isPending;
+
+  useEffect(() => {
+    if (suggestionDebounceRef.current) clearTimeout(suggestionDebounceRef.current);
+    if (!patternMaps || categoryId !== null) {
+      setCatSuggestionId(null);
+      return;
+    }
+    const trimmed = name.trim();
+    if (trimmed.length < 3 && payerPartyId === null) {
+      setCatSuggestionId(null);
+      return;
+    }
+    suggestionDebounceRef.current = setTimeout(() => {
+      const suggestedByName = trimmed.length >= 3 ? suggestCategoryFromDescription(trimmed, patternMaps) : null;
+      const suggestedByPayer = payerPartyId !== null
+        ? suggestCategoryFromCounterparty(payerPartyId, patternMaps)
+        : null;
+      setCatSuggestionId(suggestedByName ?? suggestedByPayer);
+    }, 350);
+    return () => {
+      if (suggestionDebounceRef.current) clearTimeout(suggestionDebounceRef.current);
+    };
+  }, [name, payerPartyId, categoryId, patternMaps]);
+
+  useEffect(() => {
+    if (!patternMaps || accountId !== null || payerPartyId === null) {
+      setAccSuggestionId(null);
+      return;
+    }
+    setAccSuggestionId(suggestAccountFromCounterparty(payerPartyId, patternMaps));
+  }, [payerPartyId, accountId, patternMaps]);
 
   function handleClose() {
     const ri = editRecurringIncome;
@@ -379,6 +426,16 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
               ))}
             </View>
           </ScrollView>
+          {accSuggestionId !== null ? (() => {
+            const account = activeAccounts.find((item) => item.id === accSuggestionId);
+            return account ? (
+              <SmartSuggestion
+                label={account.name}
+                detail="Cuenta aprendida por ingresos parecidos de este pagador"
+                onApply={() => setAccountId(account.id)}
+              />
+            ) : null;
+          })() : null}
 
           <Text style={styles.label}>Categoría (opcional)</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -397,6 +454,16 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
               ))}
             </View>
           </ScrollView>
+          {catSuggestionId !== null ? (() => {
+            const category = incomeCategories.find((item) => item.id === catSuggestionId);
+            return category ? (
+              <SmartSuggestion
+                label={category.name}
+                detail="Categoría sugerida por nombre y pagador"
+                onApply={() => setCategoryId(category.id)}
+              />
+            ) : null;
+          })() : null}
 
           <Text style={styles.label}>Notas (opcional)</Text>
           <TextInput

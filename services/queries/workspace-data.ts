@@ -1652,6 +1652,7 @@ export function usePersistLearningFeedbackMutation(
   workspaceId: number | null,
   userId?: string | null,
 ) {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (input: PersistLearningFeedbackInput) => {
       if (!supabase || !workspaceId) return { persisted: false };
@@ -1677,6 +1678,9 @@ export function usePersistLearningFeedbackMutation(
       }
 
       return { persisted: !error };
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["dashboard-analytics"] });
     },
   });
 }
@@ -5960,6 +5964,37 @@ export function useCreateExchangeRateMutation() {
         source: "manual",
         notes: input.notes?.trim() ?? null,
       });
+      if (error) throw new Error(error.message);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["exchange-rates"] });
+      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+    },
+  });
+}
+
+export function useUpdateExchangeRateMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      id: number;
+      fromCurrencyCode: string;
+      toCurrencyCode: string;
+      rate: number;
+      notes?: string;
+    }) => {
+      if (!supabase) throw new Error("Supabase no configurado");
+      const { error } = await supabase
+        .from("exchange_rates")
+        .update({
+          from_currency_code: input.fromCurrencyCode.toUpperCase().trim(),
+          to_currency_code: input.toCurrencyCode.toUpperCase().trim(),
+          rate: input.rate,
+          effective_at: new Date().toISOString(),
+          source: "manual",
+          notes: input.notes?.trim() ?? null,
+        })
+        .eq("id", input.id);
       if (error) throw new Error(error.message);
     },
     onSuccess: () => {

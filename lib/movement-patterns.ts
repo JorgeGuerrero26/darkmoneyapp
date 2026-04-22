@@ -37,7 +37,7 @@ export function buildPatternMaps(movements: PatternMovement[]): PatternMaps {
   for (const m of movements) {
     const catId = m.category_id;
     const cpId = m.counterparty_id;
-    const accId = m.source_account_id;
+    const accId = m.movement_type === "income" ? m.destination_account_id : m.source_account_id;
 
     if (catId && m.description) {
       for (const word of normalizeWords(m.description)) {

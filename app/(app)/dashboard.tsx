@@ -96,6 +96,7 @@ import { normalizeAnalyticsText } from "../../services/analytics/movement-featur
 // --- Constants ----------------------------------------------------------------
 
 const UPCOMING_DAYS = 30;
+const ADVANCED_DASHBOARD_GIFT_EMAIL = "nicol.solano15@gmail.com";
 
 type Period = "today" | "week" | "month" | "last_30";
 
@@ -610,6 +611,68 @@ function buildCategorySuggestions(
     limit: 4,
     targetLimit: 10,
   });
+}
+
+function textSimilarity(left: string, right: string) {
+  const leftTokens = new Set(normalizeAnalyticsText(left).split(" ").filter((token) => token.length >= 3));
+  const rightTokens = new Set(normalizeAnalyticsText(right).split(" ").filter((token) => token.length >= 3));
+  const allTokens = new Set([...leftTokens, ...rightTokens]);
+  if (allTokens.size === 0) return 0;
+  let overlap = 0;
+  for (const token of allTokens) {
+    if (leftTokens.has(token) && rightTokens.has(token)) overlap += 1;
+  }
+  return overlap / allTokens.size;
+}
+
+function buildLearningFeedbackCategorySuggestions(
+  movements: DashboardMovementRow[],
+  feedback: NonNullable<DashboardAnalyticsBundle["learningFeedback"]>,
+  categoryMap: Map<number, string>,
+  ctx: ConversionCtx,
+): DashboardCategorySuggestion[] {
+  const accepted = feedback.filter((item) =>
+    item.acceptedCategoryId != null &&
+    (item.feedbackKind === "accepted_category_suggestion" || item.feedbackKind === "manual_category_change")
+  );
+  if (accepted.length === 0) return [];
+
+  return movements
+    .filter((movement) => movement.status === "posted" && isCategorizedCashflow(movement) && movement.categoryId == null)
+    .map((movement): DashboardCategorySuggestion | null => {
+      const normalized = normalizeAnalyticsText(movement.description);
+      if (!normalized) return null;
+      const matches = accepted
+        .map((item) => {
+          const learnedText = item.normalizedDescription ?? "";
+          const similarity = learnedText === normalized ? 1 : textSimilarity(normalized, learnedText);
+          return { item, similarity };
+        })
+        .filter(({ similarity }) => similarity >= 0.58)
+        .sort((a, b) => b.similarity - a.similarity || new Date(b.item.createdAt).getTime() - new Date(a.item.createdAt).getTime());
+      const best = matches[0];
+      if (!best?.item.acceptedCategoryId) return null;
+      const confidence = Math.max(0.62, Math.min(0.98, 0.56 + best.similarity * 0.26 + Math.min(matches.length, 4) * 0.035));
+      const amount = movementActsAsIncome(movement) ? incomeAmt(movement, ctx) : expenseAmt(movement, ctx);
+      return {
+        movementId: movement.id,
+        description: movement.description.trim() || "Movimiento sin descripción",
+        occurredAt: movement.occurredAt,
+        amount,
+        suggestedCategoryId: best.item.acceptedCategoryId,
+        suggestedCategoryName: categoryMap.get(best.item.acceptedCategoryId) ?? "Categoría sugerida",
+        confidence,
+        matchedSamples: matches.length,
+        reasons: [
+          "aprendido de una corrección tuya",
+          best.similarity >= 0.92 ? "texto casi igual" : "texto parecido",
+          `${matches.length} respuesta${matches.length === 1 ? "" : "s"} usada${matches.length === 1 ? "" : "s"}`,
+        ],
+      };
+    })
+    .filter((item): item is DashboardCategorySuggestion => Boolean(item))
+    .sort((a, b) => b.confidence - a.confidence || new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime())
+    .slice(0, 4);
 }
 
 function buildMonthProjectionModel(
@@ -2738,6 +2801,28 @@ function PaymentOptimizationCard({
   );
 }
 
+function AdvancedGiftCard() {
+  return (
+    <View style={subStyles.advancedGiftCard}>
+      <View style={subStyles.advancedGiftHeartsRow}>
+        <Text style={subStyles.advancedGiftHeart}>♥</Text>
+        <Text style={subStyles.advancedGiftHeartSmall}>♥</Text>
+        <Text style={subStyles.advancedGiftHeart}>♥</Text>
+      </View>
+      <Text style={subStyles.advancedGiftKicker}>Un regalo especial</Text>
+      <Text style={subStyles.advancedGiftTitle}>
+        Esto te lo muestro aunque seas free porque te quiero.
+      </Text>
+      <Text style={subStyles.advancedGiftBody}>
+        Este dashboard avanzado queda abierto para ti: para que veas tus patrones, tu flujo y tu salud financiera con más cariño, más claridad y sin perderte entre números.
+      </Text>
+      <View style={subStyles.advancedGiftPill}>
+        <Text style={subStyles.advancedGiftPillText}>Acceso avanzado activado solo para ti</Text>
+      </View>
+    </View>
+  );
+}
+
 function FinancialGraphCard({
   nodes,
   currency,
@@ -2788,6 +2873,48 @@ function FinancialGraphCard({
             <ArrowRight size={15} color={COLORS.storm} />
           </TouchableOpacity>
         ))}
+      </View>
+    </Card>
+  );
+}
+
+function AlgorithmReadinessCard({
+  title,
+  body,
+  checks,
+}: {
+  title: string;
+  body: string;
+  checks: Array<{
+    label: string;
+    current: number;
+    required: number;
+    detail: string;
+  }>;
+}) {
+  return (
+    <Card>
+      <SectionTitle>{title}</SectionTitle>
+      <Text style={subStyles.executiveIntro}>{body}</Text>
+      <View style={subStyles.readinessList}>
+        {checks.map((check) => {
+          const ready = check.current >= check.required;
+          const pct = Math.max(0, Math.min(100, Math.round((check.current / Math.max(check.required, 1)) * 100)));
+          return (
+            <View key={check.label} style={subStyles.readinessRow}>
+              <View style={subStyles.readinessTop}>
+                <Text style={subStyles.readinessLabel}>{check.label}</Text>
+                <Text style={[subStyles.readinessStatus, { color: ready ? COLORS.income : COLORS.gold }]}>
+                  {ready ? "Listo" : `${check.current}/${check.required}`}
+                </Text>
+              </View>
+              <View style={subStyles.readinessTrack}>
+                <View style={[subStyles.readinessFill, { width: `${pct}%` as any, backgroundColor: ready ? COLORS.income : COLORS.gold }]} />
+              </View>
+              <Text style={subStyles.readinessDetail}>{check.detail}</Text>
+            </View>
+          );
+        })}
       </View>
     </Card>
   );
@@ -3740,6 +3867,7 @@ function AdvancedDashboard({
   currentVisibleBalance,
   workspaceId,
   userId,
+  showAdvancedGift,
   analytics,
   router,
   accountCurrencyMap,
@@ -3758,6 +3886,7 @@ function AdvancedDashboard({
   currentVisibleBalance: number;
   workspaceId: number | null;
   userId?: string | null;
+  showAdvancedGift?: boolean;
   analytics: DashboardAnalyticsBundle | null | undefined;
   router: ReturnType<typeof useRouter>;
   accountCurrencyMap: Map<number, string>;
@@ -3933,6 +4062,25 @@ function AdvancedDashboard({
     });
     return buildHistoryFactorAnalysis({ months });
   }, [accountCurrencyMap, activeCurrency, categoryMap, exchangeRateMap, movements, selectedHistoryYear]);
+
+  const historyReadiness = useMemo(() => {
+    const observedMonths = annualHistory.filter((month) => !month.isFuture && (month.income > 0.009 || month.expense > 0.009)).length;
+    const yearStart = startOfDay(new Date(selectedHistoryYear, 0, 1));
+    const yearEnd = endOfDay(new Date(selectedHistoryYear, 11, 31));
+    const yearMovements = movements.filter((movement) => movement.status === "posted" && inRange(movement, yearStart, yearEnd));
+    const expenseCategoryIds = new Set(
+      yearMovements
+        .filter(isExpense)
+        .filter((movement) => expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }) > 0.009)
+        .map((movement) => movement.categoryId ?? null),
+    );
+    return {
+      observedMonths,
+      movementCount: yearMovements.length,
+      expenseCategoryCount: expenseCategoryIds.size,
+      allReady: observedMonths >= 6 && expenseCategoryIds.size >= 2 && yearMovements.length >= 8,
+    };
+  }, [accountCurrencyMap, activeCurrency, annualHistory, exchangeRateMap, movements, selectedHistoryYear]);
 
   const selectedAnnualMonthDetail = useMemo(() => {
     if (!selectedAnnualMonth) return null;
@@ -4230,6 +4378,15 @@ function AdvancedDashboard({
       .sort((a, b) => b.confidence - a.confidence || new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime())
       .slice(0, 4);
   }, [accountCurrencyMap, activeCurrency, analytics?.signals, categoryMap, exchangeRateMap, movements]);
+
+  const learningFeedbackCategorySuggestions = useMemo(() => (
+    buildLearningFeedbackCategorySuggestions(
+      movements,
+      analytics?.learningFeedback ?? [],
+      categoryMap,
+      { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency },
+    )
+  ), [accountCurrencyMap, activeCurrency, analytics?.learningFeedback, categoryMap, exchangeRateMap, movements]);
 
   const acceptedFeedbackCount = useMemo(() => {
     const dedicatedCount = analytics?.learningFeedback.filter((feedback) =>
@@ -4783,16 +4940,25 @@ function AdvancedDashboard({
   }, [movements]);
 
   const categorySuggestions = useMemo(() => {
-    if (persistedCategorySuggestions.length > 0) return persistedCategorySuggestions;
-    return buildCategorySuggestions(movements, snapshot?.categories ?? [], {
+    const generated = buildCategorySuggestions(movements, snapshot?.categories ?? [], {
       accountCurrencyMap,
       exchangeRateMap,
       displayCurrency: activeCurrency,
     });
+    const seen = new Set<number>();
+    return [...learningFeedbackCategorySuggestions, ...persistedCategorySuggestions, ...generated]
+      .filter((suggestion) => {
+        if (seen.has(suggestion.movementId)) return false;
+        seen.add(suggestion.movementId);
+        return true;
+      })
+      .sort((a, b) => b.confidence - a.confidence || new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime())
+      .slice(0, 4);
   }, [
     accountCurrencyMap,
     activeCurrency,
     exchangeRateMap,
+    learningFeedbackCategorySuggestions,
     movements,
     persistedCategorySuggestions,
     snapshot?.categories,
@@ -6291,6 +6457,12 @@ function AdvancedDashboard({
       </BottomSheet>
 
       {activeTab === 'Resumen' && <>
+      {showAdvancedGift ? (
+        <>
+          <View style={{ height: SPACING.sm }} />
+          <AdvancedGiftCard />
+        </>
+      ) : null}
       <View style={{ height: SPACING.sm }} />
       <Card>
         <View style={subStyles.cardHeaderWithAction}>
@@ -6452,7 +6624,7 @@ function AdvancedDashboard({
           <View style={subStyles.richEmptyState}>
             <Sparkles size={18} color={COLORS.primary} />
             <Text style={subStyles.richEmptyTitle}>Sin repeticiones claras todavía</Text>
-            <Text style={subStyles.richEmptyBody}>Cuando haya más movimientos parecidos, aquí verás qué hábitos aparecen varias veces.</Text>
+            <Text style={subStyles.richEmptyBody}>El motor de clustering ya está listo. Se activará cuando encuentre al menos 2 movimientos parecidos en los últimos 90 días.</Text>
           </View>
         ) : (
           <View style={subStyles.commandActions}>
@@ -6496,7 +6668,7 @@ function AdvancedDashboard({
           <View style={subStyles.richEmptyState}>
             <TrendingUp size={18} color={COLORS.primary} />
             <Text style={subStyles.richEmptyTitle}>Sin subidas fuertes</Text>
-            <Text style={subStyles.richEmptyBody}>Tus gastos recientes no muestran una categoría que haya saltado con fuerza frente a las dos semanas anteriores.</Text>
+            <Text style={subStyles.richEmptyBody}>El comparador ya revisa 14 días contra los 14 anteriores. Se mostrará cuando una categoría suba lo suficiente como para afectar tu lectura.</Text>
           </View>
         ) : (
           <View style={subStyles.commandActions}>
@@ -6761,6 +6933,39 @@ function AdvancedDashboard({
           </Card>
         </>
       ) : null}
+      {!historyReadiness.allReady ? (
+        <>
+          <View style={{ height: SPACING.sm }} />
+          <AlgorithmReadinessCard
+            title="Análisis histórico preparado"
+            body="Estos cálculos ya están listos. Si todavía no aparecen arriba, no es porque falten funciones: el sistema está esperando más meses y categorías para no inventar conclusiones."
+            checks={[
+              {
+                label: "Cambio de comportamiento",
+                current: historyReadiness.observedMonths,
+                required: 6,
+                detail: "Necesita 6 meses con actividad para comparar 3 meses recientes contra 3 anteriores.",
+              },
+              {
+                label: "Tipos de meses",
+                current: historyReadiness.observedMonths,
+                required: 3,
+                detail: "Necesita al menos 3 meses con movimientos para separar meses normales, caros o ajustados.",
+              },
+              {
+                label: "Partidas que explican el año",
+                current: [
+                  historyReadiness.observedMonths >= 3,
+                  historyReadiness.expenseCategoryCount >= 2,
+                  historyReadiness.movementCount >= 8,
+                ].filter(Boolean).length,
+                required: 3,
+                detail: `${historyReadiness.observedMonths}/3 meses, ${historyReadiness.expenseCategoryCount}/2 categorías y ${historyReadiness.movementCount}/8 movimientos del año seleccionado.`,
+              },
+            ]}
+          />
+        </>
+      ) : null}
       <View style={{ height: SPACING.sm }} />
       <MonthlyPulse
         data={advancedStats.monthlyPulse}
@@ -6933,7 +7138,7 @@ function AdvancedDashboard({
           <View style={subStyles.richEmptyState}>
             <Brain size={18} color={COLORS.primary} />
             <Text style={subStyles.richEmptyTitle}>Sin sugerencias por ahora</Text>
-            <Text style={subStyles.richEmptyBody}>Categoriza los movimientos pendientes desde esta sección. Cuando haya patrones repetidos, el sistema te propondrá categorías automáticamente.</Text>
+            <Text style={subStyles.richEmptyBody}>El motor ya está preparado. Se activará cuando haya movimientos sin categoría y ejemplos parecidos ya corregidos o categorizados en tu historial.</Text>
           </View>
         ) : (
           <View style={subStyles.commandActions}>
@@ -7055,11 +7260,15 @@ function AdvancedDashboard({
 
       {qualityOpen ? (
         <>
+          <View style={{ height: SPACING.sm }} />
           <DataQuality
             movements={movements}
             onOpenNoCategory={openSummaryUncategorizedPreview}
             onOpenNoCounterparty={openNoCounterpartyPreview}
           />
+          {qualitySnapshot.noCategoryCount > 0 || qualitySnapshot.noCounterpartyCount > 0 ? (
+            <View style={{ height: SPACING.sm }} />
+          ) : null}
           <LearningPanel
             movements={movements}
             projectionModel={projectionModel}
@@ -7256,6 +7465,8 @@ function DashboardScreen() {
 
   const entitlementQuery = useUserEntitlementQuery(session?.user?.id ?? profile?.id ?? null, profile?.email);
   const isPro = entitlementQuery.data?.proAccessEnabled ?? false;
+  const hasAdvancedDashboardGift = profile?.email?.trim().toLowerCase() === ADVANCED_DASHBOARD_GIFT_EMAIL;
+  const hasAdvancedDashboardAccess = isPro || hasAdvancedDashboardGift;
 
   const { data: snapshot, isLoading: snapLoading } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const { data: movements = [] } = useDashboardMovementsQuery(activeWorkspaceId, profile?.id);
@@ -7375,8 +7586,8 @@ function DashboardScreen() {
   }, [snapshot?.accounts]);
 
   const isAdvanced = dashboardMode === "advanced";
-  const isCheckingAdvancedAccess = isAdvanced && entitlementQuery.isLoading && !entitlementQuery.data;
-  const shouldShowAdvancedProGate = isAdvanced && !isCheckingAdvancedAccess && !isPro;
+  const isCheckingAdvancedAccess = isAdvanced && !hasAdvancedDashboardGift && entitlementQuery.isLoading && !entitlementQuery.data;
+  const shouldShowAdvancedProGate = isAdvanced && !isCheckingAdvancedAccess && !hasAdvancedDashboardAccess;
 
   if (snapLoading) {
     return (
@@ -7417,7 +7628,7 @@ function DashboardScreen() {
         }
       >
         {/* 1. Mode toggle */}
-        <ModeToggle mode={dashboardMode} setMode={setDashboardMode} isPro={isPro} />
+        <ModeToggle mode={dashboardMode} setMode={setDashboardMode} isPro={hasAdvancedDashboardAccess} />
         {isCheckingAdvancedAccess ? <ProGateLoading /> : shouldShowAdvancedProGate ? (
           <>
             <ProGate />
@@ -7527,7 +7738,7 @@ function DashboardScreen() {
         ) : null}
 
         {/* -- Advanced section -- */}
-        {isAdvanced && isPro && (
+        {isAdvanced && hasAdvancedDashboardAccess && (
           <View onLayout={(e) => { advancedSectionY.current = e.nativeEvent.layout.y; }}>
           <AdvancedDashboard
             movements={movements}
@@ -7542,6 +7753,7 @@ function DashboardScreen() {
             currentVisibleBalance={netWorth}
             workspaceId={activeWorkspaceId}
             userId={profile?.id ?? null}
+            showAdvancedGift={hasAdvancedDashboardGift}
             analytics={dashboardAnalytics}
             router={router}
             accountCurrencyMap={accountCurrencyMap}
@@ -8521,6 +8733,49 @@ const subStyles = StyleSheet.create({
     color: COLORS.ink,
   },
   commandMetricHint: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    lineHeight: 17,
+  },
+  readinessList: {
+    gap: SPACING.sm,
+  },
+  readinessRow: {
+    gap: SPACING.xs,
+    padding: SPACING.md,
+    borderRadius: RADIUS.xl,
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  readinessTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: SPACING.sm,
+  },
+  readinessLabel: {
+    flex: 1,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.ink,
+  },
+  readinessStatus: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+  },
+  readinessTrack: {
+    height: 6,
+    borderRadius: RADIUS.full,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    overflow: "hidden",
+  },
+  readinessFill: {
+    height: 6,
+    borderRadius: RADIUS.full,
+  },
+  readinessDetail: {
     fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.xs,
     color: COLORS.storm,
@@ -10277,6 +10532,70 @@ const subStyles = StyleSheet.create({
     fontSize: FONT_SIZE.xs,
     color: COLORS.storm,
     lineHeight: 18,
+  },
+  advancedGiftCard: {
+    overflow: "hidden",
+    alignItems: "center",
+    gap: SPACING.sm,
+    paddingVertical: SPACING.xl,
+    paddingHorizontal: SPACING.lg,
+    borderRadius: RADIUS.xl,
+    backgroundColor: "#7F1020",
+    borderWidth: 1,
+    borderColor: "rgba(255,205,214,0.38)",
+  },
+  advancedGiftHeartsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: SPACING.sm,
+  },
+  advancedGiftHeart: {
+    fontFamily: FONT_FAMILY.heading,
+    fontSize: 34,
+    color: "#FFE3E8",
+    lineHeight: 38,
+  },
+  advancedGiftHeartSmall: {
+    fontFamily: FONT_FAMILY.heading,
+    fontSize: 22,
+    color: "#FFB7C3",
+    lineHeight: 28,
+  },
+  advancedGiftKicker: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+    color: "#FFD1D9",
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+  },
+  advancedGiftTitle: {
+    fontFamily: FONT_FAMILY.heading,
+    fontSize: 25,
+    color: "#FFFFFF",
+    lineHeight: 32,
+    textAlign: "center",
+  },
+  advancedGiftBody: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.md,
+    color: "#FFE8EC",
+    lineHeight: 23,
+    textAlign: "center",
+  },
+  advancedGiftPill: {
+    marginTop: SPACING.xs,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: 8,
+    borderRadius: RADIUS.full,
+    backgroundColor: "rgba(255,255,255,0.16)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.26)",
+  },
+  advancedGiftPillText: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+    color: "#FFFFFF",
   },
 
   // Interpretation lines — one sentence per metric telling the user what the number means

@@ -2,10 +2,16 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "../../lib/supabase";
 
 export type PatternMovement = {
+  id: number;
   description: string;
+  status: string;
+  occurred_at: string;
+  source_amount: number | null;
+  destination_amount: number | null;
   category_id: number | null;
   counterparty_id: number | null;
   source_account_id: number | null;
+  destination_account_id: number | null;
   movement_type: string;
 };
 
@@ -13,7 +19,7 @@ async function fetchMovementPatterns(workspaceId: number): Promise<PatternMoveme
   if (!supabase) throw new Error("Supabase no está configurado.");
   const { data, error } = await supabase
     .from("movements")
-    .select("description, category_id, counterparty_id, source_account_id, movement_type")
+    .select("id, description, status, occurred_at, source_amount, destination_amount, category_id, counterparty_id, source_account_id, destination_account_id, movement_type")
     .eq("workspace_id", workspaceId)
     .eq("status", "posted")
     .order("occurred_at", { ascending: false })
