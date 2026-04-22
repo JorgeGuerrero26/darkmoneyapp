@@ -25,6 +25,7 @@ import { BottomSheet } from "../ui/BottomSheet";
 import { Button } from "../ui/Button";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { CurrencyInput } from "../ui/CurrencyInput";
+import { BusinessDateNotice } from "../ui/BusinessDateNotice";
 import { FormDateField } from "./FormDateField";
 import { SmartSuggestion } from "../ui/SmartSuggestion";
 import { sortByName } from "../../lib/sort-locale";
@@ -543,6 +544,7 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
         Icon={CalendarClock}
         accentColor={COLORS.gold}
       />
+      <BusinessDateNotice dateValue={nextDueDate} onApplySuggestedDate={setNextDueDate} />
 
       <FormDateField
         title="Fin de la suscripción"

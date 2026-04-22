@@ -32,6 +32,7 @@ import { Button } from "../ui/Button";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { Input } from "../ui/Input";
 import { CurrencyInput } from "../ui/CurrencyInput";
+import { BusinessDateNotice } from "../ui/BusinessDateNotice";
 import { DatePickerInput } from "../ui/DatePickerInput";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
 
@@ -789,6 +790,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
         onChange={setDueDate}
         optional
       />
+      <BusinessDateNotice dateValue={dueDate} onApplySuggestedDate={setDueDate} />
 
       {/* Installments */}
       <View style={styles.twoCol}>

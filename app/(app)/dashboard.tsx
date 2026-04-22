@@ -92,6 +92,7 @@ import { clusterHistoryMonths } from "../../services/analytics/month-clustering"
 import { buildPaymentOptimizationPlan, type PaymentOptimizationRecommendation } from "../../services/analytics/payment-optimization";
 import { buildPatternClusters } from "../../services/analytics/pattern-clustering";
 import { normalizeAnalyticsText } from "../../services/analytics/movement-features";
+import { useBcrpMacroIndicatorsQuery } from "../../services/queries/bcrp-data";
 
 // --- Constants ----------------------------------------------------------------
 
@@ -886,6 +887,54 @@ function buildAnomalyFindings(
 
 function SectionTitle({ children }: { children: string }) {
   return <Text style={subStyles.sectionTitle}>{children}</Text>;
+}
+
+function formatPercentValue(value: number | null) {
+  if (value === null) return "Sin dato";
+  return `${value.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
+}
+
+function MacroContextCard() {
+  const { data, isLoading, error } = useBcrpMacroIndicatorsQuery();
+  const inflation = data?.inflation12m;
+  const referenceRate = data?.referenceRate;
+  const period = inflation?.period || referenceRate?.period || "Último dato";
+
+  return (
+    <View style={subStyles.macroCard}>
+      <View style={subStyles.macroHeader}>
+        <View>
+          <Text style={subStyles.macroEyebrow}>Contexto BCRP</Text>
+          <Text style={subStyles.macroTitle}>{period}</Text>
+        </View>
+        <View style={subStyles.macroBadge}>
+          <Text style={subStyles.macroBadgeText}>BCRPData</Text>
+        </View>
+      </View>
+
+      <View style={subStyles.macroGrid}>
+        <View style={subStyles.macroMetric}>
+          <Text style={subStyles.macroMetricLabel}>Inflación 12m</Text>
+          <Text style={subStyles.macroMetricValue}>
+            {isLoading ? "..." : formatPercentValue(inflation?.value ?? null)}
+          </Text>
+        </View>
+        <View style={subStyles.macroDivider} />
+        <View style={subStyles.macroMetric}>
+          <Text style={subStyles.macroMetricLabel}>Tasa ref.</Text>
+          <Text style={subStyles.macroMetricValue}>
+            {isLoading ? "..." : formatPercentValue(referenceRate?.value ?? null)}
+          </Text>
+        </View>
+      </View>
+
+      <Text style={subStyles.macroHint}>
+        {error
+          ? "No se pudo cargar el contexto macroeconómico."
+          : "Indicadores oficiales usados como contexto; no modifican tus cálculos."}
+      </Text>
+    </View>
+  );
 }
 
 // Mode toggle
@@ -7649,6 +7698,7 @@ function DashboardScreen() {
           currencyOptions={currencyOptions}
           onCurrencyChange={handleCurrencyChange}
         />
+        <MacroContextCard />
 
         {/* 3. Flow KPI row */}
         <FlowRow
@@ -7826,6 +7876,76 @@ const subStyles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.6,
     marginBottom: SPACING.sm,
+  },
+  macroCard: {
+    backgroundColor: GLASS.card,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: GLASS.cardBorder,
+    padding: SPACING.md,
+    gap: SPACING.md,
+  },
+  macroHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: SPACING.md,
+  },
+  macroEyebrow: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  macroTitle: {
+    marginTop: 2,
+    fontFamily: FONT_FAMILY.heading,
+    fontSize: FONT_SIZE.md,
+    color: COLORS.ink,
+  },
+  macroBadge: {
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 4,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.secondary + "18",
+    borderWidth: 1,
+    borderColor: COLORS.secondary + "3D",
+  },
+  macroBadgeText: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.secondary,
+  },
+  macroGrid: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  macroMetric: {
+    flex: 1,
+    gap: 2,
+  },
+  macroMetricLabel: {
+    fontFamily: FONT_FAMILY.bodyMedium,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+  },
+  macroMetricValue: {
+    fontFamily: FONT_FAMILY.heading,
+    fontSize: FONT_SIZE.xl,
+    color: COLORS.ink,
+  },
+  macroDivider: {
+    width: 1,
+    height: 40,
+    backgroundColor: GLASS.separator,
+    marginHorizontal: SPACING.md,
+  },
+  macroHint: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    lineHeight: 17,
   },
 
   // Mode toggle

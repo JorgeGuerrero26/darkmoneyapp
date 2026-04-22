@@ -26,6 +26,7 @@ import { BottomSheet } from "../ui/BottomSheet";
 import { Button } from "../ui/Button";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { CurrencyInput } from "../ui/CurrencyInput";
+import { BusinessDateNotice } from "../ui/BusinessDateNotice";
 import { FormDateField } from "./FormDateField";
 import { SmartSuggestion } from "../ui/SmartSuggestion";
 import { sortByName } from "../../lib/sort-locale";
@@ -352,6 +353,7 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
             Icon={CalendarClock}
             accentColor={COLORS.primary}
           />
+          <BusinessDateNotice dateValue={nextExpectedDate} onApplySuggestedDate={setNextExpectedDate} />
 
           <FormDateField
             title="Fecha de inicio"
