@@ -10,6 +10,7 @@ import {
   type AttachmentLike,
 } from "../../lib/entity-attachments";
 import { sortObligationEventsNewestFirst } from "../../lib/sort-obligation-events";
+import { fetchLiveExchangeRate, type LiveExchangeRate } from "../../lib/exchange-rate-providers";
 import { useUiStore } from "../../store/ui-store";
 import {
   convertAmountToWorkspaceBase,
@@ -1903,6 +1904,7 @@ export type MovementUpdateInput = {
   status?: MovementStatus;
   sourceAmount?: number;
   destinationAmount?: number;
+  fxRate?: number | null;
   sourceAccountId?: number | null;
   destinationAccountId?: number | null;
 };
@@ -1921,6 +1923,7 @@ export function useUpdateMovementMutation(workspaceId: number | null) {
       if (input.status !== undefined) payload.status = input.status;
       if (input.sourceAmount !== undefined) payload.source_amount = input.sourceAmount;
       if (input.destinationAmount !== undefined) payload.destination_amount = input.destinationAmount;
+      if (input.fxRate !== undefined) payload.fx_rate = input.fxRate;
       if (input.sourceAccountId !== undefined) payload.source_account_id = input.sourceAccountId;
       if (input.destinationAccountId !== undefined) payload.destination_account_id = input.destinationAccountId;
       const { error } = await supabase
@@ -1945,6 +1948,7 @@ export function useUpdateMovementMutation(workspaceId: number | null) {
           ...(input.status !== undefined && { status: input.status }),
           ...(input.sourceAmount !== undefined && { sourceAmount: input.sourceAmount }),
           ...(input.destinationAmount !== undefined && { destinationAmount: input.destinationAmount }),
+          ...(input.fxRate !== undefined && { fxRate: input.fxRate }),
           ...(input.sourceAccountId !== undefined && { sourceAccountId: input.sourceAccountId }),
           ...(input.destinationAccountId !== undefined && { destinationAccountId: input.destinationAccountId }),
         };
@@ -5996,6 +6000,98 @@ export function useUpdateExchangeRateMutation() {
         })
         .eq("id", input.id);
       if (error) throw new Error(error.message);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["exchange-rates"] });
+      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+    },
+  });
+}
+
+async function upsertExchangeRateRow(input: {
+  fromCurrencyCode: string;
+  toCurrencyCode: string;
+  rate: number;
+  effectiveAt: string;
+  source: string;
+  notes: string | null;
+}) {
+  if (!supabase) throw new Error("Supabase no configurado");
+  const from = input.fromCurrencyCode.toUpperCase().trim();
+  const to = input.toCurrencyCode.toUpperCase().trim();
+  const { data: existing, error: selectError } = await supabase
+    .from("exchange_rates")
+    .select("id")
+    .eq("from_currency_code", from)
+    .eq("to_currency_code", to)
+    .order("effective_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (selectError) throw new Error(selectError.message);
+
+  const payload = {
+    from_currency_code: from,
+    to_currency_code: to,
+    rate: input.rate,
+    effective_at: input.effectiveAt,
+    source: input.source,
+    notes: input.notes,
+  };
+
+  if (existing?.id) {
+    const { error } = await supabase
+      .from("exchange_rates")
+      .update(payload)
+      .eq("id", existing.id);
+    if (error) throw new Error(error.message);
+    return Number(existing.id);
+  }
+
+  const { data, error } = await supabase
+    .from("exchange_rates")
+    .insert(payload)
+    .select("id")
+    .single();
+  if (error) throw new Error(error.message);
+  return Number(data.id);
+}
+
+export function useSyncExchangeRatePairMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { fromCurrencyCode: string; toCurrencyCode: string }) => {
+      const liveRate = await fetchLiveExchangeRate(input.fromCurrencyCode, input.toCurrencyCode);
+      const from = liveRate.fromCurrencyCode.toUpperCase().trim();
+      const to = liveRate.toCurrencyCode.toUpperCase().trim();
+      const source = `api:${liveRate.provider}`;
+
+      const directId = await upsertExchangeRateRow({
+        fromCurrencyCode: from,
+        toCurrencyCode: to,
+        rate: liveRate.rate,
+        effectiveAt: liveRate.effectiveAt,
+        source,
+        notes: "Sincronizado automáticamente",
+      });
+
+      const inverseRate = 1 / liveRate.rate;
+      let inverseId: number | null = null;
+      if (Number.isFinite(inverseRate) && inverseRate > 0) {
+        inverseId = await upsertExchangeRateRow({
+          fromCurrencyCode: to,
+          toCurrencyCode: from,
+          rate: inverseRate,
+          effectiveAt: liveRate.effectiveAt,
+          source,
+          notes: `Inverso calculado desde ${from}→${to}`,
+        });
+      }
+
+      return {
+        ...liveRate,
+        directId,
+        inverseId,
+      } satisfies LiveExchangeRate & { directId: number; inverseId: number | null };
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["exchange-rates"] });

@@ -22,6 +22,7 @@ import {
   useCreateExchangeRateMutation,
   useUpdateExchangeRateMutation,
   useDeleteExchangeRateMutation,
+  useSyncExchangeRatePairMutation,
   type ExchangeRateRecord,
 } from "../services/queries/workspace-data";
 import { ScreenHeader } from "../components/layout/ScreenHeader";
@@ -33,6 +34,12 @@ import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../const
 import { useToast } from "../hooks/useToast";
 
 const REVEAL_W = 80;
+
+function isSameLocalDay(left: string, right: Date) {
+  const date = new Date(left);
+  if (Number.isNaN(date.getTime())) return false;
+  return date.toLocaleDateString("en-CA") === right.toLocaleDateString("en-CA");
+}
 
 // ─── Currency picker ──────────────────────────────────────────────────────────
 
@@ -333,6 +340,7 @@ function ExchangeRatesScreen() {
   const createRate = useCreateExchangeRateMutation();
   const updateRate = useUpdateExchangeRateMutation();
   const deleteRate = useDeleteExchangeRateMutation();
+  const syncRatePair = useSyncExchangeRatePairMutation();
 
   const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<number>>(new Set());
   const [pendingDeleteLabels, setPendingDeleteLabels] = useState<Record<number, string>>({});
@@ -423,6 +431,42 @@ function ExchangeRatesScreen() {
 
   const pairCount = new Set(activeRates.map((r) => `${r.fromCurrencyCode}:${r.toCurrencyCode}`)).size;
 
+  async function handleRefreshRates(silent = false) {
+    if (activeRates.length === 0) {
+      await refetch();
+      return;
+    }
+
+    const pairMap = new Map<string, string>();
+    for (const rate of activeRates) {
+      const from = rate.fromCurrencyCode.toUpperCase();
+      const to = rate.toCurrencyCode.toUpperCase();
+      const canonical = [from, to].sort().join(":");
+      if (!pairMap.has(canonical)) pairMap.set(canonical, `${from}:${to}`);
+    }
+    const uniquePairs = Array.from(pairMap.values());
+    try {
+      await Promise.all(uniquePairs.map((pair) => {
+        const [fromCurrencyCode, toCurrencyCode] = pair.split(":");
+        return syncRatePair.mutateAsync({ fromCurrencyCode, toCurrencyCode });
+      }));
+      if (!silent) showToast("Tipos de cambio actualizados", "success");
+    } catch (error: any) {
+      if (!silent) showToast(error?.message ?? "No se pudo actualizar tipos de cambio", "error");
+    }
+  }
+
+  const dailySyncStartedRef = useRef(false);
+  useEffect(() => {
+    if (dailySyncStartedRef.current || isLoading || activeRates.length === 0) return;
+    const today = new Date();
+    const needsSync = activeRates.some((rate) => !isSameLocalDay(rate.effectiveAt, today));
+    if (!needsSync) return;
+    dailySyncStartedRef.current = true;
+    void handleRefreshRates(true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeRates, isLoading]);
+
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
       <ScreenHeader
@@ -431,9 +475,10 @@ function ExchangeRatesScreen() {
         rightAction={
           <TouchableOpacity
             style={styles.filterBtn}
-            onPress={() => void refetch()}
+            onPress={() => void handleRefreshRates()}
             accessibilityLabel="Actualizar tipos de cambio"
             activeOpacity={0.75}
+            disabled={syncRatePair.isPending}
           >
             <RefreshCw size={14} color={COLORS.storm} />
           </TouchableOpacity>
@@ -483,7 +528,11 @@ function ExchangeRatesScreen() {
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={
-          <RefreshControl refreshing={isLoading} onRefresh={() => void refetch()} tintColor={COLORS.primary} />
+          <RefreshControl
+            refreshing={isLoading || syncRatePair.isPending}
+            onRefresh={() => void handleRefreshRates()}
+            tintColor={COLORS.primary}
+          />
         }
       >
         <View style={styles.summaryCard}>
