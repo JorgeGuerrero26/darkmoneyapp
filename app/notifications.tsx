@@ -81,6 +81,8 @@ function getKindMeta(kind: string): KindMeta {
       return { Icon: CreditCard,     color: COLORS.warning, bg: COLORS.warning  + "20" };
     case "obligation_payment_request":
       return { Icon: CreditCard,     color: COLORS.primary, bg: COLORS.primary  + "20" };
+    case "obligation_share_invite":
+      return { Icon: Mail,           color: COLORS.pine,    bg: COLORS.pine     + "20" };
     case "obligation_request_accepted":
       return { Icon: CreditCard,     color: COLORS.income,  bg: COLORS.income   + "20" };
     case "obligation_request_rejected":
@@ -234,6 +236,12 @@ function InviteCard({
   item: PendingObligationShareInviteItem;
   onPress: () => void;
 }) {
+  const kindLabel = item.inviteKindLabel === "deuda"
+    ? "deuda"
+    : item.inviteKindLabel === "credito"
+      ? "crédito"
+      : "crédito o deuda";
+  const title = item.obligationTitle ?? `Solicitud de ${kindLabel}`;
   return (
     <View style={[styles.card, styles.cardUnread]}>
       <View style={[styles.unreadBar, { backgroundColor: COLORS.pine }]} />
@@ -245,22 +253,25 @@ function InviteCard({
       <View style={styles.cardBody}>
         <View style={styles.cardTop}>
           <Text style={[styles.cardTitle, { color: COLORS.ink }]} numberOfLines={1}>
-            Obligación compartida
+            Tienes una {kindLabel} compartida
           </Text>
           <Text style={styles.cardTime}>
             {format(new Date(item.updatedAt), "d MMM · HH:mm", { locale: es })}
           </Text>
         </View>
+        <Text style={styles.cardContext} numberOfLines={1}>
+          {title}
+        </Text>
         <Text style={styles.cardText} numberOfLines={2}>
           {item.ownerDisplayName
-            ? `${item.ownerDisplayName} te invitó a ver una obligación en solo lectura.`
-            : "Tienes una invitación pendiente para ver una obligación."}
+            ? `${item.ownerDisplayName} te envió una solicitud. Acéptala o recházala para mantener tu información ordenada.`
+            : "Tienes una solicitud pendiente. Acéptala o recházala para continuar."}
         </Text>
         {item.message ? (
           <Text style={styles.cardQuote} numberOfLines={1}>"{item.message}"</Text>
         ) : null}
         <TouchableOpacity style={styles.inviteBtn} onPress={onPress} activeOpacity={0.8}>
-          <Text style={styles.inviteBtnText}>Abrir invitación</Text>
+          <Text style={styles.inviteBtnText}>Revisar solicitud</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -467,6 +478,15 @@ function NotificationsScreen() {
           }
         }
         break;
+      case "obligation_share_invite": {
+        const token = payloadString(n.payload, "token");
+        if (token) {
+          router.push(obligationShareHref(token));
+        } else {
+          router.push("/(app)/obligations");
+        }
+        break;
+      }
       case "obligation_request_accepted":
       case "obligation_request_rejected":
         if (obligationRouteId) {

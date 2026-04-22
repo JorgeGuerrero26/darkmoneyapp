@@ -5846,17 +5846,52 @@ export function usePendingObligationShareInvitesQuery(
         .or(`invited_user_id.eq.${userId},invited_email.eq.${normalizedEmail}`)
         .order("updated_at", { ascending: false });
       if (error) throw new Error(error.message ?? "Error al cargar invitaciones");
-      return (data ?? []).map((row: Record<string, unknown>) => ({
+
+      const rows = (data ?? []) as Record<string, unknown>[];
+      const obligationIds = Array.from(
+        new Set(rows.map((row) => Number(row.obligation_id)).filter((id) => Number.isFinite(id) && id > 0)),
+      );
+      const obligationMetaById = new Map<number, { title: string | null; direction: ObligationDirection | null }>();
+      if (obligationIds.length > 0) {
+        const { data: obligationRows } = await supabase
+          .from("v_obligation_summary")
+          .select("id, title, direction")
+          .in("id", obligationIds);
+        for (const obligationRow of obligationRows ?? []) {
+          const row = obligationRow as Record<string, unknown>;
+          const id = Number(row.id);
+          if (!Number.isFinite(id)) continue;
+          obligationMetaById.set(id, {
+            title: typeof row.title === "string" ? row.title : null,
+            direction: row.direction === "receivable" || row.direction === "payable"
+              ? row.direction
+              : null,
+          });
+        }
+      }
+
+      return rows.map((row: Record<string, unknown>) => {
+        const obligationId = Number(row.obligation_id);
+        const meta = obligationMetaById.get(obligationId);
+        const inviteKindLabel = meta?.direction === "receivable"
+          ? "deuda"
+          : meta?.direction === "payable"
+            ? "credito"
+            : null;
+        return {
         id: Number(row.id),
         workspaceId: Number(row.workspace_id),
-        obligationId: Number(row.obligation_id),
+        obligationId,
         token: String(row.token ?? ""),
         ownerDisplayName: (row.owner_display_name as string) ?? null,
         invitedEmail: String(row.invited_email ?? ""),
         message: (row.message as string) ?? null,
         updatedAt: String(row.updated_at ?? ""),
-        obligationTitle: null as string | null,
-      }));
+        obligationTitle: meta?.title ?? null,
+        obligationDirection: meta?.direction ?? null,
+        inviteKindLabel,
+      };
+      });
     },
   });
 }

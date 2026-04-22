@@ -542,6 +542,8 @@ export type PendingObligationShareInviteItem = {
   message: string | null;
   updatedAt: string;
   obligationTitle: string | null;
+  obligationDirection?: ObligationDirection | null;
+  inviteKindLabel?: "deuda" | "credito" | null;
 };
 
 export type AttachmentSummary = {

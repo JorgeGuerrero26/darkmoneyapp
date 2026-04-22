@@ -22,12 +22,15 @@ Deno.serve(async (req) => {
 
     const { data: share, error: shareError } = await client
       .from("obligation_shares")
-      .select("id, obligation_id, status")
+      .select("id, obligation_id, status, owner_display_name, message")
       .eq("token", token)
-      .in("status", ["pending", "accepted"])
+      .in("status", ["pending", "accepted", "declined"])
       .maybeSingle();
     if (shareError) throw shareError;
     if (!share) return jsonResponse({ ok: false, error: "Invitacion no encontrada o expirada." }, 404);
+    if (share.status === "declined") {
+      return jsonResponse({ ok: false, error: "Esta invitacion ya fue rechazada." }, 409);
+    }
 
     const { data: summary, error: summaryError } = await client
       .from("v_obligation_summary")
@@ -45,6 +48,9 @@ Deno.serve(async (req) => {
       principalAmount: Number(summary.principal_amount ?? summary.principal_initial_amount ?? 0),
       currentPrincipalAmount: Number(summary.principal_current_amount ?? summary.current_principal_amount ?? 0),
       pendingAmount: Number(summary.pending_amount ?? 0),
+      status: String(share.status ?? "pending"),
+      ownerDisplayName: typeof share.owner_display_name === "string" ? share.owner_display_name : null,
+      message: typeof share.message === "string" ? share.message : null,
     };
 
     return jsonResponse({ ok: true, invite });

@@ -5,6 +5,7 @@
 
 import {
   authenticatedUser,
+  buildAndroidIntentShareUrl,
   buildMobileShareUrl,
   buildShareUrl,
   corsHeaders,
@@ -57,7 +58,7 @@ Deno.serve(async (req) => {
 
     const { data: obligation, error: obligationError } = await client
       .from("obligations")
-      .select("id, workspace_id, title")
+      .select("id, workspace_id, title, direction")
       .eq("id", obligationId)
       .eq("workspace_id", workspaceId)
       .maybeSingle();
@@ -141,6 +142,21 @@ Deno.serve(async (req) => {
     const token = String(shareRow.token ?? "");
     const shareUrl = buildShareUrl(body.appUrl, token);
     const mobileShareUrl = buildMobileShareUrl(token);
+    const androidIntentShareUrl = buildAndroidIntentShareUrl(token, shareUrl);
+    const obligationDirection = String(obligation.direction ?? "");
+    const inviteKindLabel = obligationDirection === "receivable"
+      ? "deuda"
+      : obligationDirection === "payable"
+        ? "credito"
+        : "obligacion";
+    const notificationTitle = inviteKindLabel === "deuda"
+      ? "Tienes una deuda compartida pendiente"
+      : inviteKindLabel === "credito"
+        ? "Tienes un credito compartido pendiente"
+        : "Tienes una obligacion compartida pendiente";
+    const notificationBody = inviteKindLabel === "obligacion"
+      ? "Revisa la solicitud y confirma si deseas aceptarla o rechazarla."
+      : `Revisa la solicitud de ${inviteKindLabel} y confirma si deseas aceptarla o rechazarla.`;
 
     if (invitedUser?.id) {
       await client.from("notifications").insert({
@@ -148,18 +164,24 @@ Deno.serve(async (req) => {
         channel: "in_app",
         status: "pending",
         kind: "obligation_share_invite",
-        title: "Nueva obligacion compartida",
-        body: `${ownerDisplayName ?? "Un usuario"} compartio "${obligation.title}" contigo.`,
+        title: notificationTitle,
+        body: notificationBody,
         scheduled_for: now,
         related_entity_type: "obligation_share",
         related_entity_id: Number(shareRow.id),
         payload: {
+          type: "obligation_share_invite",
           token,
           shareId: Number(shareRow.id),
           workspaceId,
           obligationId,
+          obligationTitle: String(obligation.title ?? ""),
+          obligationDirection,
+          inviteKindLabel,
+          ownerDisplayName,
           shareUrl,
           mobileShareUrl,
+          androidIntentShareUrl,
         },
       });
     }
@@ -168,6 +190,7 @@ Deno.serve(async (req) => {
       to: invitedEmail,
       shareUrl,
       mobileShareUrl,
+      androidIntentShareUrl,
       obligationTitle: String(obligation.title ?? "Obligacion"),
       ownerDisplayName,
       message,
@@ -178,6 +201,7 @@ Deno.serve(async (req) => {
       shareId: Number(shareRow.id),
       shareUrl,
       mobileShareUrl,
+      androidIntentShareUrl,
       emailSent,
       invitedEmail,
       invitedDisplayName,

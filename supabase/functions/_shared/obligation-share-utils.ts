@@ -109,10 +109,29 @@ export function buildMobileShareUrl(token: string): string | null {
   return `${scheme}:///share/obligations/${encodeURIComponent(token)}`;
 }
 
+export function buildAndroidIntentShareUrl(token: string, fallbackUrl: string | null): string | null {
+  const scheme = (Deno.env.get("INVITE_APP_SCHEME") ?? "darkmoney").trim().replace(/:\/\/?$/, "");
+  const packageName = (Deno.env.get("INVITE_ANDROID_PACKAGE") ?? "com.darkmoney.app").trim();
+  if (!scheme || !packageName || !token) return null;
+
+  const fallbackPart = fallbackUrl
+    ? `;S.browser_fallback_url=${encodeURIComponent(fallbackUrl)}`
+    : "";
+
+  return `intent:///share/obligations/${encodeURIComponent(token)}#Intent;scheme=${scheme};package=${packageName}${fallbackPart};end`;
+}
+
+function defaultInviteHeroImageUrl(): string {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")?.trim().replace(/\/+$/, "");
+  if (supabaseUrl) return `${supabaseUrl}/functions/v1/invite-banner`;
+  return "https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&w=1200&q=80";
+}
+
 export async function maybeSendInviteEmail(input: {
   to: string;
   shareUrl: string | null;
   mobileShareUrl: string | null;
+  androidIntentShareUrl: string | null;
   obligationTitle: string;
   ownerDisplayName: string | null;
   message: string | null;
@@ -126,20 +145,23 @@ export async function maybeSendInviteEmail(input: {
     "DarkMoney <onboarding@resend.dev>";
   const heroImageUrl =
     Deno.env.get("INVITE_HERO_IMAGE_URL") ??
-    "https://images.unsplash.com/photo-1554224155-6726b3ff858f?auto=format&fit=crop&w=1200&q=80";
+    defaultInviteHeroImageUrl();
   if (!apiKey || !from || !input.shareUrl) return false;
 
   const owner = input.ownerDisplayName ?? "DarkMoney";
   const safeOwner = escapeHtml(owner);
   const safeTitle = escapeHtml(input.obligationTitle);
   const safeShareUrl = escapeHtml(input.shareUrl);
-  const primaryShareUrl = input.mobileShareUrl ?? input.shareUrl;
+  const primaryShareUrl = input.androidIntentShareUrl ?? input.mobileShareUrl ?? input.shareUrl;
   const safePrimaryShareUrl = escapeHtml(primaryShareUrl);
+  const safeMobileShareUrl = input.mobileShareUrl ? escapeHtml(input.mobileShareUrl) : null;
   const safeHeroImageUrl = escapeHtml(heroImageUrl);
   const safeMessage = input.message ? escapeHtml(input.message) : null;
   const text = [
-    `${owner} compartio contigo "${input.obligationTitle}".`,
+    `${owner} te compartio un registro desde DarkMoney movil.`,
+    `Registro: ${input.obligationTitle}`,
     input.message ? `Mensaje: ${input.message}` : null,
+    input.androidIntentShareUrl ? `Abrir en Android: ${input.androidIntentShareUrl}` : null,
     input.mobileShareUrl ? `Abrir en la app: ${input.mobileShareUrl}` : null,
     `Enlace web de respaldo: ${input.shareUrl}`,
   ].filter(Boolean).join("\n\n");
@@ -152,42 +174,45 @@ export async function maybeSendInviteEmail(input: {
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Invitacion de DarkMoney</title>
       </head>
-      <body style="margin:0;padding:0;background:#f3f6fb;color:#182230;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;">
+      <body style="margin:0;padding:0;background:#030711;color:#f4f7fb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;">
         <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">
-          ${safeOwner} compartio contigo una obligacion en DarkMoney.
+          ${safeOwner} te compartio un registro desde DarkMoney movil.
         </div>
-        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f3f6fb;padding:28px 12px;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#030711;padding:32px 12px;">
           <tr>
             <td align="center">
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#ffffff;border-radius:22px;overflow:hidden;border:1px solid #dbe4f0;box-shadow:0 18px 50px rgba(15,23,42,0.10);">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#07111d;border-radius:30px;overflow:hidden;border:1px solid rgba(255,255,255,0.12);box-shadow:0 24px 70px rgba(0,0,0,0.45);">
                 <tr>
-                  <td style="padding:0;">
-                    <img src="${safeHeroImageUrl}" alt="DarkMoney" width="640" style="display:block;width:100%;max-width:640px;height:220px;object-fit:cover;border:0;">
+                  <td style="padding:0;background:#050b14;">
+                    <img src="${safeHeroImageUrl}" alt="DarkMoney" width="640" style="display:block;width:100%;max-width:640px;height:210px;object-fit:cover;border:0;">
                   </td>
                 </tr>
                 <tr>
-                  <td style="padding:28px 30px 12px 30px;">
-                    <div style="display:inline-block;padding:7px 12px;border-radius:999px;background:#e8f7ef;color:#0f8a4b;font-size:12px;font-weight:700;letter-spacing:0.02em;text-transform:uppercase;">
-                      Invitacion privada
+                  <td style="padding:30px 32px 12px 32px;background:linear-gradient(180deg,#07111d 0%,#050b14 100%);">
+                    <div style="display:inline-block;padding:8px 13px;border-radius:999px;background:rgba(107,228,197,0.14);border:1px solid rgba(107,228,197,0.32);color:#6be4c5;font-size:12px;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;">
+                      Invitacion desde movil
                     </div>
-                    <h1 style="margin:18px 0 10px 0;color:#101828;font-size:28px;line-height:1.18;font-weight:800;letter-spacing:0;">
-                      ${safeOwner} compartio una obligacion contigo
+                    <h1 style="margin:18px 0 10px 0;color:#f4f7fb;font-size:31px;line-height:1.12;font-weight:800;letter-spacing:0;">
+                      ${safeOwner} te compartio un registro en DarkMoney
                     </h1>
-                    <p style="margin:0;color:#475467;font-size:16px;line-height:1.6;">
-                      Puedes revisar el credito o deuda compartida en DarkMoney y darle seguimiento desde tu cuenta.
+                    <p style="margin:0;color:#b4c1d7;font-size:16px;line-height:1.65;">
+                      Esta invitacion fue enviada desde la app movil. Abrela en tu celular para revisar y aceptar el credito o deuda compartida.
                     </p>
                   </td>
                 </tr>
                 <tr>
-                  <td style="padding:12px 30px 0 30px;">
-                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-radius:16px;background:#f8fafc;border:1px solid #e4e7ec;">
+                  <td style="padding:14px 32px 0 32px;background:#050b14;">
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-radius:22px;background:#091522;border:1px solid rgba(255,255,255,0.10);">
                       <tr>
-                        <td style="padding:18px 18px 16px 18px;">
-                          <div style="font-size:13px;color:#667085;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px;">
-                            Obligacion compartida
+                        <td style="padding:21px 21px 19px 21px;">
+                          <div style="font-size:12px;color:#8ea2bf;font-weight:800;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:9px;">
+                            Registro
                           </div>
-                          <div style="font-size:20px;line-height:1.35;color:#101828;font-weight:800;">
+                          <div style="font-size:21px;line-height:1.35;color:#f4f7fb;font-weight:800;">
                             ${safeTitle}
+                          </div>
+                          <div style="margin-top:13px;font-size:14px;line-height:1.55;color:#8ea2bf;">
+                            Al aceptar, aparecera en tu seccion de creditos y deudas en modo compartido.
                           </div>
                         </td>
                       </tr>
@@ -196,12 +221,12 @@ export async function maybeSendInviteEmail(input: {
                 </tr>
                 ${safeMessage ? `
                 <tr>
-                  <td style="padding:14px 30px 0 30px;">
-                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-radius:16px;background:#fff8eb;border:1px solid #fedf89;">
+                  <td style="padding:14px 32px 0 32px;background:#050b14;">
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-radius:20px;background:rgba(107,228,197,0.08);border:1px solid rgba(107,228,197,0.22);">
                       <tr>
-                        <td style="padding:16px 18px;">
-                          <div style="font-size:13px;color:#b54708;font-weight:800;margin-bottom:8px;">Mensaje de ${safeOwner}</div>
-                          <div style="font-size:15px;line-height:1.55;color:#344054;">${safeMessage}</div>
+                        <td style="padding:17px 19px;">
+                          <div style="font-size:13px;color:#6be4c5;font-weight:800;margin-bottom:8px;">Mensaje de ${safeOwner}</div>
+                          <div style="font-size:15px;line-height:1.58;color:#d9e4f2;">${safeMessage}</div>
                         </td>
                       </tr>
                     </table>
@@ -209,23 +234,34 @@ export async function maybeSendInviteEmail(input: {
                 </tr>
                 ` : ""}
                 <tr>
-                  <td align="center" style="padding:26px 30px 12px 30px;">
-                    <a href="${safePrimaryShareUrl}" style="display:inline-block;background:#141b34;color:#ffffff;text-decoration:none;font-size:16px;font-weight:800;padding:15px 24px;border-radius:14px;box-shadow:0 10px 24px rgba(20,27,52,0.22);">
-                      Abrir en la app
+                  <td align="center" style="padding:28px 32px 12px 32px;background:#050b14;">
+                    <a href="${safePrimaryShareUrl}" style="display:inline-block;background:#f3f7fd;color:#07111d;text-decoration:none;font-size:16px;font-weight:800;padding:16px 26px;border-radius:16px;box-shadow:0 14px 30px rgba(0,0,0,0.35);">
+                      Abrir en movil
                     </a>
                   </td>
                 </tr>
+                ${safeMobileShareUrl ? `
                 <tr>
-                  <td style="padding:8px 30px 28px 30px;">
-                    <p style="margin:0;color:#667085;font-size:13px;line-height:1.6;text-align:center;">
+                  <td align="center" style="padding:0 32px 14px 32px;background:#050b14;">
+                    <a href="${safeMobileShareUrl}" style="display:inline-block;color:#6be4c5;text-decoration:none;font-size:14px;font-weight:800;">
+                      Probar enlace alternativo
+                    </a>
+                  </td>
+                </tr>
+                ` : ""}
+                <tr>
+                  <td style="padding:8px 32px 32px 32px;background:#050b14;">
+                    <p style="margin:0;color:#8ea2bf;font-size:13px;line-height:1.65;text-align:center;">
                       Si el boton no abre la app, usa este enlace de respaldo:<br>
-                      <a href="${safeShareUrl}" style="color:#2563eb;text-decoration:none;word-break:break-all;">${safeShareUrl}</a>
+                      <a href="${safeShareUrl}" style="color:#6be4c5;text-decoration:none;word-break:break-all;">${safeShareUrl}</a>
+                      <br><br>
+                      Tambien puedes revisar esta solicitud desde el modulo Notificaciones de tu app.
                     </p>
                   </td>
                 </tr>
               </table>
-              <p style="max-width:640px;margin:18px auto 0 auto;color:#98a2b3;font-size:12px;line-height:1.5;text-align:center;">
-                DarkMoney envio este correo porque alguien compartio una obligacion con tu direccion.
+              <p style="max-width:640px;margin:18px auto 0 auto;color:#60718b;font-size:12px;line-height:1.5;text-align:center;">
+                DarkMoney movil envio este correo porque alguien compartio un registro con tu direccion.
               </p>
             </td>
           </tr>
@@ -244,7 +280,7 @@ export async function maybeSendInviteEmail(input: {
       body: JSON.stringify({
         from,
         to: input.to,
-        subject: `${owner} compartio una obligacion contigo`,
+        subject: `${owner} te compartio un registro desde DarkMoney movil`,
         text,
         html,
       }),

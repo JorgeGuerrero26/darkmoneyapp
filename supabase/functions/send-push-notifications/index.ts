@@ -31,6 +31,7 @@ interface NotificationRecord {
   status: string;
   related_entity_type: string | null;
   related_entity_id: number | null;
+  payload: Record<string, unknown> | null;
 }
 
 interface WebhookPayload {
@@ -98,11 +99,22 @@ Deno.serve(async (req: Request) => {
   }
 
   // Send via Expo Push API
+  const payload =
+    record.payload && typeof record.payload === "object" && !Array.isArray(record.payload)
+      ? record.payload
+      : {};
+  const notificationType =
+    typeof payload.type === "string" && payload.type.trim()
+      ? payload.type.trim()
+      : record.kind;
+
   const pushBody = {
     to: pref.push_token,
     title: record.title,
     body: record.body,
     data: {
+      ...payload,
+      type: notificationType,
       kind: record.kind,
       relatedEntityType: record.related_entity_type,
       relatedEntityId: record.related_entity_id,

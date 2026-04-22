@@ -34,6 +34,9 @@ type InvitePreview = {
   principalAmount: number;
   currentPrincipalAmount?: number;
   pendingAmount: number;
+  status?: "pending" | "accepted" | "declined";
+  ownerDisplayName?: string | null;
+  message?: string | null;
 };
 
 type Props = {
@@ -50,7 +53,10 @@ export function ObligationInviteFlow({ token }: Props) {
   const [invite, setInvite] = useState<InvitePreview | null>(null);
   const [error, setError] = useState<string | undefined>();
   const [isAccepting, setIsAccepting] = useState(false);
+  const [isDeclining, setIsDeclining] = useState(false);
   const [accepted, setAccepted] = useState(false);
+  const [alreadyAccepted, setAlreadyAccepted] = useState(false);
+  const [declined, setDeclined] = useState(false);
   const [decisionOpen, setDecisionOpen] = useState(false);
 
   useEffect(() => {
@@ -59,10 +65,10 @@ export function ObligationInviteFlow({ token }: Props) {
   }, [token]);
 
   useEffect(() => {
-    if (invite && !error && !accepted) {
+    if (invite && invite.status !== "accepted" && !error && !accepted && !declined) {
       setDecisionOpen(true);
     }
-  }, [invite, error, accepted]);
+  }, [invite, error, accepted, declined]);
 
   async function loadInvite() {
     if (!supabase) return;
@@ -77,6 +83,7 @@ export function ObligationInviteFlow({ token }: Props) {
       if (fnError) throw fnError;
       if (!data?.ok) throw new Error(data?.error ?? "Invitación inválida");
       setInvite(data.invite ?? null);
+      setAlreadyAccepted(data.invite?.status === "accepted");
     } catch (err: unknown) {
       setError(humanizeError(err));
     } finally {
@@ -108,6 +115,12 @@ export function ObligationInviteFlow({ token }: Props) {
       void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
       void queryClient.invalidateQueries({ queryKey: ["obligation-shares"] });
       void queryClient.invalidateQueries({ queryKey: ["shared-obligations"] });
+      void queryClient.invalidateQueries({ queryKey: ["notifications"] });
+      if (data?.alreadyAccepted) {
+        setAlreadyAccepted(true);
+        setDecisionOpen(false);
+        return;
+      }
       setAccepted(true);
       setDecisionOpen(false);
       setTimeout(() => router.replace("/(app)/obligations"), 1500);
@@ -115,6 +128,44 @@ export function ObligationInviteFlow({ token }: Props) {
       setError(humanizeError(err));
     } finally {
       setIsAccepting(false);
+    }
+  }
+
+  async function handleDecline() {
+    if (!supabase) return;
+    if (!session) {
+      await setPendingObligationInviteToken(token);
+      router.replace("/(auth)/login");
+      setDecisionOpen(false);
+      return;
+    }
+    setIsDeclining(true);
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke<{
+        ok: boolean;
+        error?: string;
+        alreadyAccepted?: boolean;
+        alreadyDeclined?: boolean;
+      }>("decline-obligation-share", { body: { token } });
+      if (fnError) throw fnError;
+      if (data?.alreadyAccepted) {
+        setAlreadyAccepted(true);
+        setDecisionOpen(false);
+        return;
+      }
+      if (!data?.ok && !data?.alreadyDeclined) {
+        throw new Error(data?.error ?? "No se pudo rechazar la solicitud");
+      }
+      await cancelObligationInviteScheduledReminder(token);
+      void queryClient.invalidateQueries({ queryKey: ["pending-obligation-share-invites"] });
+      void queryClient.invalidateQueries({ queryKey: ["notifications"] });
+      setDeclined(true);
+      setDecisionOpen(false);
+    } catch (err: unknown) {
+      setError(humanizeError(err));
+      setDecisionOpen(false);
+    } finally {
+      setIsDeclining(false);
     }
   }
 
@@ -141,15 +192,43 @@ export function ObligationInviteFlow({ token }: Props) {
             <Text style={styles.errorText}>{error}</Text>
             <Button label="Volver" variant="secondary" onPress={() => router.back()} style={styles.mt} />
           </Card>
+        ) : alreadyAccepted ? (
+          <View style={styles.centered}>
+            <CheckCircle2 size={56} color={COLORS.primary} />
+            <Text style={styles.successText}>Solicitud ya aceptada</Text>
+            <Text style={styles.hint}>
+              Este registro ya está disponible en Créditos y deudas.
+            </Text>
+            <Button
+              label="Ver créditos y deudas"
+              onPress={() => router.replace("/(app)/obligations")}
+              style={styles.mt}
+            />
+          </View>
         ) : accepted ? (
           <View style={styles.centered}>
             <CheckCircle2 size={56} color={COLORS.primary} />
             <Text style={styles.successText}>¡Acceso concedido!</Text>
             <Text style={styles.hint}>Te llevamos a Créditos y deudas…</Text>
           </View>
+        ) : declined ? (
+          <View style={styles.centered}>
+            <Text style={styles.successText}>Solicitud rechazada</Text>
+            <Text style={styles.hint}>
+              La invitación fue cerrada y ya no aparecerá como pendiente.
+            </Text>
+            <Button
+              label="Volver a notificaciones"
+              variant="secondary"
+              onPress={() => router.replace("/notifications")}
+              style={styles.mt}
+            />
+          </View>
         ) : invite ? (
           <Card>
-            <Text style={styles.label}>Te comparten una obligación</Text>
+            <Text style={styles.label}>
+              {invite.direction === "receivable" ? "Solicitud de deuda" : "Solicitud de crédito"}
+            </Text>
             <Text style={styles.title}>{invite.title}</Text>
             <Text style={styles.detail}>
               {invite.direction === "receivable" ? "Por cobrar" : "Por pagar"} · {invite.counterparty}
@@ -163,6 +242,9 @@ export function ObligationInviteFlow({ token }: Props) {
             <Text style={styles.detail}>
               Pendiente: {formatCurrency(invite.pendingAmount, invite.currencyCode)}
             </Text>
+            {invite.message ? (
+              <Text style={styles.inviteMessage}>{invite.message}</Text>
+            ) : null}
             {!session ? (
               <Text style={styles.loginHint}>Inicia sesión para aceptar la invitación.</Text>
             ) : null}
@@ -171,7 +253,7 @@ export function ObligationInviteFlow({ token }: Props) {
       </View>
 
       <Modal
-        visible={decisionOpen && Boolean(invite) && !accepted && !error}
+        visible={decisionOpen && Boolean(invite) && !accepted && !alreadyAccepted && !declined && !error}
         transparent
         animationType="fade"
         onRequestClose={handleCloseModal}
@@ -180,24 +262,33 @@ export function ObligationInviteFlow({ token }: Props) {
           <Pressable style={[styles.modalCard, { marginBottom: insets.bottom + SPACING.md }]} onPress={(e) => e.stopPropagation()}>
             <Text style={styles.modalTitle}>¿Aceptar invitación?</Text>
             <Text style={styles.modalBody}>
-              {invite?.title ? `«${invite.title}»` : "Esta obligación"} quedará en tu lista como compartida
-              (solo lectura).
+              {invite?.title ? `«${invite.title}»` : "Este registro"} se agregará a Créditos y deudas en modo compartido.
+              También puedes rechazar la solicitud si no reconoces este registro.
             </Text>
             <Button
-              label={session ? "Aceptar y ver obligación" : "Iniciar sesión y aceptar"}
+              label={session ? "Aceptar y ver créditos/deudas" : "Iniciar sesión y aceptar"}
               onPress={() => void handleAccept()}
               loading={isAccepting}
+              disabled={isDeclining}
               style={styles.modalBtn}
             />
             <Button
-              label="Ahora no"
+              label="Rechazar solicitud"
               variant="secondary"
-              onPress={() => void handleDefer()}
+              onPress={() => void handleDecline()}
+              loading={isDeclining}
               disabled={isAccepting}
               style={styles.modalBtn}
             />
+            <Button
+              label="Decidir después"
+              variant="secondary"
+              onPress={() => void handleDefer()}
+              disabled={isAccepting || isDeclining}
+              style={styles.modalBtn}
+            />
             <Text style={styles.modalFootnote}>
-              Podrás aceptarla después desde Notificaciones o el recordatorio del sistema.
+              Si el enlace del correo no abre la app, revisa esta solicitud desde Notificaciones.
             </Text>
           </Pressable>
         </Pressable>
@@ -223,6 +314,17 @@ const styles = StyleSheet.create({
     fontWeight: FONT_WEIGHT.bold,
     color: COLORS.text,
     marginVertical: SPACING.sm,
+  },
+  inviteMessage: {
+    marginTop: SPACING.md,
+    padding: SPACING.sm,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: COLORS.primary + "30",
+    backgroundColor: COLORS.primary + "12",
+    color: COLORS.storm,
+    fontSize: FONT_SIZE.sm,
+    lineHeight: 20,
   },
   errorText: { color: COLORS.danger, fontSize: FONT_SIZE.sm },
   successText: { fontSize: FONT_SIZE.xl, fontWeight: FONT_WEIGHT.bold, color: COLORS.success },
