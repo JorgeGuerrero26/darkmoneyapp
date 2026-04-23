@@ -1637,6 +1637,24 @@ export function useDashboardAiPatternsMutation() {
   });
 }
 
+export type DashboardAiFlowInput = DashboardAiSummaryInput;
+export type DashboardAiFlowResponse = DashboardAiSummaryResponse;
+
+export function useDashboardAiFlowMutation() {
+  return useMutation({
+    mutationFn: async (input: DashboardAiFlowInput): Promise<DashboardAiFlowResponse> => {
+      if (!input.workspaceId) throw new Error("No se encontró el workspace activo.");
+      if (!input.summary || typeof input.summary !== "object") {
+        throw new Error("No hay datos de flujo suficientes para enviar a la IA.");
+      }
+      if (input.tone !== "managerial" && input.tone !== "personal") {
+        throw new Error("No se encontró el estilo de explicación.");
+      }
+      return invokeEdgeFunction<DashboardAiFlowResponse>("dashboard-advanced-ai-flow", input);
+    },
+  });
+}
+
 export function usePersistDashboardAnalyticsMutation(workspaceId: number | null) {
   return useMutation({
     mutationFn: async (input: PersistDashboardAnalyticsInput) => {

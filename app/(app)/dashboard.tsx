@@ -50,6 +50,7 @@ import {
   useSharedObligationsQuery,
   useNotificationsQuery,
   useUserEntitlementQuery,
+  useDashboardAiFlowMutation,
   useDashboardAiPatternsMutation,
   useDashboardAiSummaryMutation,
   mergeWorkspaceAndSharedObligations,
@@ -204,6 +205,7 @@ const DASHBOARD_CURRENCY_KEY = "darkmoney.dashboard.displayCurrency";
 const DASHBOARD_AI_TONE_KEY_PREFIX = "darkmoney.dashboard.aiTone";
 const DASHBOARD_AI_SUMMARY_CACHE_KEY_PREFIX = "darkmoney.dashboard.aiSummaryCache";
 const DASHBOARD_AI_PATTERNS_CACHE_KEY_PREFIX = "darkmoney.dashboard.aiPatternsCache";
+const DASHBOARD_AI_FLOW_CACHE_KEY_PREFIX = "darkmoney.dashboard.aiFlowCache";
 const DASHBOARD_AI_ADMIN_EMAIL = "joradrianmori@gmail.com";
 
 function getDashboardAiToneKey(userId?: string | null) {
@@ -219,6 +221,11 @@ function getDashboardAiSummaryCacheKey(userId?: string | null) {
 function getDashboardAiPatternsCacheKey(userId?: string | null) {
   if (!userId) return null;
   return `${DASHBOARD_AI_PATTERNS_CACHE_KEY_PREFIX}.${userId}`;
+}
+
+function getDashboardAiFlowCacheKey(userId?: string | null) {
+  if (!userId) return null;
+  return `${DASHBOARD_AI_FLOW_CACHE_KEY_PREFIX}.${userId}`;
 }
 
 function getDashboardAiUsageDate(date = new Date()) {
@@ -5573,6 +5580,74 @@ function AdvancedDashboard({
     risingCategoryPatterns,
     weeklyPatternInsight,
   ]);
+  const dashboardAiFlowPayload = useMemo(() => ({
+    workspaceName: "Workspace actual",
+    currency: activeCurrency,
+    currentVisibleBalance: formatCurrency(currentVisibleBalance, activeCurrency),
+    weekNet: formatCurrency(weekWindow.expectedInflow - weekWindow.expectedOutflow, activeCurrency),
+    weekExpectedInflow: formatCurrency(weekWindow.expectedInflow, activeCurrency),
+    weekExpectedOutflow: formatCurrency(weekWindow.expectedOutflow, activeCurrency),
+    weekStatus: pressureStatus,
+    weekScheduledCount: weekWindow.scheduledCount,
+    weekPayableCount: weekWindow.payableCount,
+    weekReceivableCount: weekWindow.receivableCount,
+    monthEndReading: formatCurrency(projectionModel.expectedBalance, activeCurrency),
+    monthEndDelta: formatCurrency(projectionModel.expectedBalance - currentVisibleBalance, activeCurrency),
+    conservativeBalance: formatCurrency(projectionModel.conservativeBalance, activeCurrency),
+    optimisticBalance: formatCurrency(projectionModel.optimisticBalance, activeCurrency),
+    confidencePct: projectionModel.confidence,
+    confidenceLabel: projectionModel.confidenceLabel,
+    committedInflow: formatCurrency(projectionModel.committedInflow, activeCurrency),
+    committedOutflow: formatCurrency(projectionModel.committedOutflow, activeCurrency),
+    committedNet: formatCurrency(projectionCommittedNet, activeCurrency),
+    variableIncomeProjection: formatCurrency(projectionModel.variableIncomeProjection, activeCurrency),
+    variableExpenseProjection: formatCurrency(projectionModel.variableExpenseProjection, activeCurrency),
+    variableNet: formatCurrency(projectionVariableNet, activeCurrency),
+    pressureProbabilityPct: projectionModel.pressureProbability,
+    pressureThreshold: formatCurrency(projectionModel.pressureThreshold, activeCurrency),
+    cashCushionDays: cashCushion.days,
+    cashCushionDaysWithCommitments: cashCushion.daysWithCommitments,
+    cashCushionLabel: cashCushion.label,
+    paymentOptimizationTop: paymentOptimization.slice(0, 3).map((item) => ({
+      title: item.title,
+      subtitle: item.subtitle,
+      actionLabel: item.actionLabel,
+      amount: formatCurrency(item.amount, activeCurrency),
+      direction: item.direction,
+      score: item.score,
+      reason: item.reason,
+    })),
+    subscriptionsCount: subscriptions.length,
+    obligationsCount: obligations.length,
+  }), [
+    activeCurrency,
+    cashCushion.days,
+    cashCushion.daysWithCommitments,
+    cashCushion.label,
+    currentVisibleBalance,
+    obligations.length,
+    paymentOptimization,
+    pressureStatus,
+    projectionCommittedNet,
+    projectionModel.committedInflow,
+    projectionModel.committedOutflow,
+    projectionModel.confidence,
+    projectionModel.confidenceLabel,
+    projectionModel.conservativeBalance,
+    projectionModel.expectedBalance,
+    projectionModel.optimisticBalance,
+    projectionModel.pressureProbability,
+    projectionModel.pressureThreshold,
+    projectionModel.variableExpenseProjection,
+    projectionModel.variableIncomeProjection,
+    projectionVariableNet,
+    subscriptions.length,
+    weekWindow.expectedInflow,
+    weekWindow.expectedOutflow,
+    weekWindow.payableCount,
+    weekWindow.receivableCount,
+    weekWindow.scheduledCount,
+  ]);
 
   const executiveDetails = useMemo(() => ({
     focus: {
@@ -6314,14 +6389,17 @@ function AdvancedDashboard({
       count: movementPreview.movements.length,
     };
   }, [accountCurrencyMap, activeCurrency, exchangeRateMap, movementPreview]);
+  const dashboardAiFlowMutation = useDashboardAiFlowMutation();
   const dashboardAiPatternsMutation = useDashboardAiPatternsMutation();
   const dashboardAiSummaryMutation = useDashboardAiSummaryMutation();
   const [dashboardAiDailyCache, setDashboardAiDailyCache] = useState<DashboardAiDailyCache | null>(null);
+  const [dashboardAiFlowCache, setDashboardAiFlowCache] = useState<DashboardAiDailyCache | null>(null);
   const [dashboardAiPatternsCache, setDashboardAiPatternsCache] = useState<DashboardAiDailyCache | null>(null);
   const [activeDashboardAiTerm, setActiveDashboardAiTerm] = useState<DashboardAiComplexTerm | null>(null);
   const [dashboardAiTone, setDashboardAiTone] = useState<DashboardAiTone>("managerial");
   const dashboardAiBreath = useRef(new Animated.Value(0)).current;
   const dashboardAiToneStorageKey = useMemo(() => getDashboardAiToneKey(userId), [userId]);
+  const dashboardAiFlowCacheKey = useMemo(() => getDashboardAiFlowCacheKey(userId), [userId]);
   const dashboardAiSummaryCacheKey = useMemo(() => getDashboardAiSummaryCacheKey(userId), [userId]);
   const dashboardAiPatternsCacheKey = useMemo(() => getDashboardAiPatternsCacheKey(userId), [userId]);
   const dashboardAiToneLoadedRef = useRef(false);
@@ -6355,6 +6433,7 @@ function AdvancedDashboard({
     dashboardAiToneLoadedRef.current = false;
     setDashboardAiTone("managerial");
     setDashboardAiDailyCache(null);
+    setDashboardAiFlowCache(null);
     setDashboardAiPatternsCache(null);
     setActiveDashboardAiTerm(null);
     if (!dashboardAiToneStorageKey) {
@@ -6376,6 +6455,36 @@ function AdvancedDashboard({
       cancelled = true;
     };
   }, [dashboardAiToneStorageKey]);
+  useEffect(() => {
+    if (!dashboardAiFlowCacheKey) {
+      setDashboardAiFlowCache(null);
+      return;
+    }
+    let cancelled = false;
+    void AsyncStorage.getItem(dashboardAiFlowCacheKey)
+      .then((stored) => {
+        if (cancelled) return;
+        if (!stored) {
+          setDashboardAiFlowCache(null);
+          return;
+        }
+        try {
+          const parsed = JSON.parse(stored) as DashboardAiDailyCache;
+          if (parsed && parsed.usageDate === dashboardAiUsageDate && parsed.responses && typeof parsed.responses === "object") {
+            setDashboardAiFlowCache(parsed);
+          } else {
+            setDashboardAiFlowCache(null);
+            void AsyncStorage.removeItem(dashboardAiFlowCacheKey);
+          }
+        } catch {
+          setDashboardAiFlowCache(null);
+          void AsyncStorage.removeItem(dashboardAiFlowCacheKey);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [dashboardAiFlowCacheKey, dashboardAiUsageDate]);
   useEffect(() => {
     if (!dashboardAiSummaryCacheKey) {
       setDashboardAiDailyCache(null);
@@ -6441,6 +6550,14 @@ function AdvancedDashboard({
     void AsyncStorage.setItem(dashboardAiToneStorageKey, dashboardAiTone);
   }, [dashboardAiTone, dashboardAiToneStorageKey]);
   useEffect(() => {
+    if (!dashboardAiFlowCacheKey) return;
+    if (!dashboardAiFlowCache) {
+      void AsyncStorage.removeItem(dashboardAiFlowCacheKey);
+      return;
+    }
+    void AsyncStorage.setItem(dashboardAiFlowCacheKey, JSON.stringify(dashboardAiFlowCache));
+  }, [dashboardAiFlowCache, dashboardAiFlowCacheKey]);
+  useEffect(() => {
     if (!dashboardAiSummaryCacheKey) return;
     if (!dashboardAiDailyCache) {
       void AsyncStorage.removeItem(dashboardAiSummaryCacheKey);
@@ -6483,6 +6600,9 @@ function AdvancedDashboard({
   const dashboardAiCurrentToneResponse = dashboardAiDailyCache?.responses?.[dashboardAiTone] ?? null;
   const dashboardAiReply = dashboardAiCurrentToneResponse?.reply ?? null;
   const dashboardAiComplexTerms = dashboardAiCurrentToneResponse?.complexTerms ?? [];
+  const dashboardAiFlowCurrentToneResponse = dashboardAiFlowCache?.responses?.[dashboardAiTone] ?? null;
+  const dashboardAiFlowReply = dashboardAiFlowCurrentToneResponse?.reply ?? null;
+  const dashboardAiFlowComplexTerms = dashboardAiFlowCurrentToneResponse?.complexTerms ?? [];
   const dashboardAiPatternsCurrentToneResponse = dashboardAiPatternsCache?.responses?.[dashboardAiTone] ?? null;
   const dashboardAiPatternsReply = dashboardAiPatternsCurrentToneResponse?.reply ?? null;
   const dashboardAiPatternsComplexTerms = dashboardAiPatternsCurrentToneResponse?.complexTerms ?? [];
@@ -6496,6 +6616,14 @@ function AdvancedDashboard({
   const dashboardAiTextParts = useMemo(
     () => buildDashboardAiTextParts(dashboardAiReply ?? "", dashboardAiResolvedTerms),
     [dashboardAiReply, dashboardAiResolvedTerms],
+  );
+  const dashboardAiFlowResolvedTerms = useMemo(
+    () => ensureDashboardAiComplexTerms(dashboardAiFlowReply ?? "", dashboardAiFlowComplexTerms),
+    [dashboardAiFlowComplexTerms, dashboardAiFlowReply],
+  );
+  const dashboardAiFlowTextParts = useMemo(
+    () => buildDashboardAiTextParts(dashboardAiFlowReply ?? "", dashboardAiFlowResolvedTerms),
+    [dashboardAiFlowReply, dashboardAiFlowResolvedTerms],
   );
   const dashboardAiPatternsResolvedTerms = useMemo(
     () => ensureDashboardAiComplexTerms(dashboardAiPatternsReply ?? "", dashboardAiPatternsComplexTerms),
@@ -6538,6 +6666,35 @@ function AdvancedDashboard({
       showToast(error instanceof Error ? error.message : "No se pudo consultar a la IA.", "error");
     }
   }, [dashboardAiLimitReached, dashboardAiSummaryMutation, dashboardAiSummaryPayload, dashboardAiTone, dashboardAiUsageDate, showToast, workspaceId]);
+  const handleRequestDashboardAiFlow = useCallback(async () => {
+    if (!workspaceId) {
+      showToast("No se encontró el workspace activo.", "error");
+      return;
+    }
+    try {
+      setActiveDashboardAiTerm(null);
+      const response = await dashboardAiFlowMutation.mutateAsync({
+        workspaceId,
+        summary: dashboardAiFlowPayload,
+        tone: dashboardAiTone,
+      });
+      const nextResponse: DashboardAiToneResponse = {
+        reply: response.reply,
+        complexTerms: response.complexTerms ?? [],
+        generatedAt: new Date().toISOString(),
+      };
+      setDashboardAiFlowCache((current) => ({
+        usageDate: dashboardAiUsageDate,
+        lastUsedAt: nextResponse.generatedAt,
+        responses: {
+          ...(current?.usageDate === dashboardAiUsageDate ? current.responses : {}),
+          [dashboardAiTone]: nextResponse,
+        },
+      }));
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "No se pudo consultar a la IA de flujo.", "error");
+    }
+  }, [dashboardAiFlowMutation, dashboardAiFlowPayload, dashboardAiTone, dashboardAiUsageDate, showToast, workspaceId]);
   const handleRequestDashboardAiPatterns = useCallback(async () => {
     if (!workspaceId) {
       showToast("No se encontró el workspace activo.", "error");
@@ -7725,6 +7882,184 @@ function AdvancedDashboard({
         onExplainProjection={() => setAdvancedDetail("projection")}
         onOpenMonthMovements={openFlowVariableMovementsPreview}
       />
+      <View style={{ height: SPACING.sm }} />
+      <Card>
+        <View style={subStyles.aiSummaryShellWrap}>
+          <LinearGradient
+            colors={[GEMINI_BRAND.blue, GEMINI_BRAND.coral, GEMINI_BRAND.gold, GEMINI_BRAND.teal]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={subStyles.aiSummaryGradientBorder}
+            pointerEvents="none"
+          />
+          <View style={subStyles.aiSummaryShell}>
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                subStyles.aiSummaryAmbientGlow,
+                subStyles.aiSummaryAmbientGlowBlue,
+                { transform: [{ scale: dashboardAiHaloScale }] },
+              ]}
+            />
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                subStyles.aiSummaryAmbientGlow,
+                subStyles.aiSummaryAmbientGlowCoral,
+                { transform: [{ scale: dashboardAiHaloScale }, { translateY: dashboardAiOrbShift }] },
+              ]}
+            />
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                subStyles.aiSummaryAmbientGlow,
+                subStyles.aiSummaryAmbientGlowGold,
+                { transform: [{ scale: dashboardAiHaloScale }, { translateY: Animated.multiply(dashboardAiOrbShift, -0.6) }] },
+              ]}
+            />
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                subStyles.aiSummaryAmbientGlow,
+                subStyles.aiSummaryAmbientGlowTeal,
+                { transform: [{ scale: dashboardAiHaloScale }, { translateY: dashboardAiOrbShift }] },
+              ]}
+            />
+            <Animated.View style={[subStyles.aiSummaryBadgeRow, { transform: [{ translateY: dashboardAiBadgeTranslateY }] }]}>
+              <View style={subStyles.aiSummaryGeminiBadge}>
+                <Sparkles size={12} color={GEMINI_BRAND.teal} />
+                <View style={subStyles.aiSummaryGeminiDotsRow}>
+                  <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.blue }]} />
+                  <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.coral }]} />
+                  <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.gold }]} />
+                  <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.teal }]} />
+                </View>
+                <Text style={subStyles.aiSummaryGeminiBadgeText}>Impulsado por Gemini AI</Text>
+              </View>
+              <Text style={subStyles.aiSummaryGeminiKicker}>Interpreta tu caja, compromisos y proyección para que entiendas cómo viene el flujo.</Text>
+            </Animated.View>
+            <View style={subStyles.aiSummaryHeader}>
+              <View style={subStyles.aiSummaryHeaderText}>
+                <Text style={subStyles.aiSummaryTitle}>Tu flujo explicado</Text>
+                <Text style={subStyles.aiSummaryBody}>
+                  Gemini toma la proyección, la agenda comprometida y la salud de caja para explicarte con claridad qué presión tiene tu flujo y qué deberías vigilar primero.
+                </Text>
+              </View>
+              <View style={subStyles.aiSummaryOrbWrap}>
+                <Animated.View
+                  pointerEvents="none"
+                  style={[
+                    subStyles.aiSummaryPulseHalo,
+                    { opacity: dashboardAiHaloOpacity, transform: [{ scale: dashboardAiHaloScale }] },
+                  ]}
+                />
+                <Animated.View style={{ transform: [{ scale: dashboardAiCoreScale }] }}>
+                  <View style={subStyles.aiSummaryIconWrap}>
+                    <View style={subStyles.aiSummaryIconRing}>
+                      <Sparkles size={20} color={GEMINI_BRAND.teal} />
+                    </View>
+                  </View>
+                </Animated.View>
+              </View>
+            </View>
+            <Text style={subStyles.aiSummarySelectorLabel}>Elige cómo quieres ver la explicación</Text>
+            <View style={subStyles.aiSummaryToneRow}>
+              {DASHBOARD_AI_TONE_OPTIONS.map((option) => {
+                const active = option.id === dashboardAiTone;
+                return (
+                  <TouchableOpacity
+                    key={option.id}
+                    activeOpacity={0.85}
+                    style={[subStyles.aiSummaryToneChip, active && subStyles.aiSummaryToneChipActive]}
+                    onPress={() => {
+                      setDashboardAiTone(option.id);
+                      setActiveDashboardAiTerm(null);
+                    }}
+                  >
+                    <Text style={[subStyles.aiSummaryToneChipTitle, active && subStyles.aiSummaryToneChipTitleActive]}>
+                      {option.label}
+                    </Text>
+                    <Text style={[subStyles.aiSummaryToneChipBody, active && subStyles.aiSummaryToneChipBodyActive]}>
+                      {option.description}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <TouchableOpacity
+              activeOpacity={0.86}
+              onPress={() => void handleRequestDashboardAiFlow()}
+              disabled={dashboardAiFlowMutation.isPending}
+              style={[
+                subStyles.aiSummaryButton,
+                dashboardAiFlowMutation.isPending && subStyles.aiSummaryButtonDisabled,
+              ]}
+            >
+              <View style={subStyles.aiSummaryButtonAccent} />
+              <View style={subStyles.aiSummaryButtonInner}>
+                <Sparkles size={16} color={dashboardAiFlowMutation.isPending ? "rgba(255,255,255,0.4)" : GEMINI_BRAND.teal} />
+                <Text style={subStyles.aiSummaryButtonLabel}>
+                  {dashboardAiFlowMutation.isPending
+                    ? "Preparando explicacion..."
+                    : dashboardAiTone === "managerial"
+                      ? "Ver informe de flujo"
+                      : "Hablar con mi asesor de flujo"}
+                </Text>
+              </View>
+            </TouchableOpacity>
+            {dashboardAiFlowReply ? (
+              <View style={subStyles.aiSummaryResponseCard}>
+                <LinearGradient
+                  pointerEvents="none"
+                  colors={[GEMINI_BRAND.blue, GEMINI_BRAND.coral, GEMINI_BRAND.gold, GEMINI_BRAND.teal]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 0, y: 1 }}
+                  style={subStyles.aiSummaryResponseGradientBar}
+                />
+                <View style={subStyles.aiSummaryResponseAiTag}>
+                  <Sparkles size={11} color={GEMINI_BRAND.teal} />
+                  <View style={subStyles.aiSummaryGeminiDotsRow}>
+                    <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.blue, width: 5, height: 5 }]} />
+                    <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.coral, width: 5, height: 5 }]} />
+                    <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.gold, width: 5, height: 5 }]} />
+                    <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.teal, width: 5, height: 5 }]} />
+                  </View>
+                  <Text style={subStyles.aiSummaryResponseLabel}>
+                    {dashboardAiTone === "managerial" ? "Gemini · Flujo gerencial" : "Gemini · Flujo en modo asesor"}
+                  </Text>
+                </View>
+                {dashboardAiFlowResolvedTerms.length > 0 ? (
+                  <Text style={subStyles.aiSummaryGlossaryHint}>
+                    Toca las palabras resaltadas para ver su explicación.
+                  </Text>
+                ) : null}
+                <Text style={subStyles.aiSummaryResponseText}>
+                  {dashboardAiFlowTextParts.map((part, index) => (
+                    part.type === "term" ? (
+                      <Text
+                        key={`${part.term.term}-flow-${index}`}
+                        style={subStyles.aiSummaryResponseTerm}
+                        onPress={() => setActiveDashboardAiTerm(part.term)}
+                      >
+                        {part.value}
+                      </Text>
+                    ) : (
+                      <Text key={`flow-text-${index}`}>{part.value}</Text>
+                    )
+                  ))}
+                </Text>
+              </View>
+            ) : (
+              <Text style={subStyles.aiSummaryHint}>
+                Gemini interpreta tu caja, tus compromisos y la proyección actual para explicarte el flujo con lenguaje claro.
+              </Text>
+            )}
+            <View style={subStyles.aiSummaryFooterRow}>
+              <Text style={subStyles.aiSummaryFooterText}>La explicación usa solo la información de flujo visible en esta pestaña.</Text>
+            </View>
+          </View>
+        </View>
+      </Card>
       <View style={{ height: SPACING.sm }} />
       <FutureFlowPreview
         obligations={obligations}
