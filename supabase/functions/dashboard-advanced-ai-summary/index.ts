@@ -104,7 +104,7 @@ function buildPrompt(summary: Record<string, unknown>, tone: DashboardAiTone, mo
     "  ]",
     '}',
     "Reglas para complexTerms:",
-    "Incluye entre 0 y 6 términos.",
+    "Incluye entre 3 y 6 términos siempre que reply tenga suficientes expresiones útiles para explicar.",
     "Cada term debe aparecer literalmente dentro de reply con la misma escritura.",
     "Incluye solo términos o expresiones que puedan ser difíciles para un usuario común.",
     "No repitas términos.",
@@ -251,6 +251,7 @@ function fallbackReply(summary: Record<string, unknown>, tone: DashboardAiTone) 
 
 const FALLBACK_COMPLEX_TERM_EXPLANATIONS: Array<DashboardAiComplexTerm> = [
   { term: "balance visible", explanation: "Es el dinero que ves disponible ahora mismo en tus cuentas." },
+  { term: "saldo actual", explanation: "Es el dinero disponible que tienes en este momento." },
   { term: "cierre estimado de mes", explanation: "Es cómo podrías terminar el mes si todo sigue como va hoy." },
   { term: "neto semanal", explanation: "Es la diferencia entre lo que entra y lo que sale durante la semana." },
   { term: "presión financiera", explanation: "Significa que tus pagos cercanos aprietan tu dinero disponible." },
@@ -259,7 +260,13 @@ const FALLBACK_COMPLEX_TERM_EXPLANATIONS: Array<DashboardAiComplexTerm> = [
   { term: "proyección", explanation: "Es una estimación de lo que podría pasar con tus números más adelante." },
   { term: "compromisos inmediatos", explanation: "Son pagos u obligaciones que tienes que atender pronto." },
   { term: "desorden operativo", explanation: "Significa que hay pendientes o datos mal organizados que afectan el control." },
-  { term: "saldo actual", explanation: "Es el dinero disponible que tienes en este momento." },
+  { term: "margen", explanation: "Es el espacio que te queda entre lo que tienes y lo que necesitas pagar." },
+  { term: "solidez", explanation: "Es qué tan fuerte o estable se ve tu situación financiera." },
+  { term: "calidad operativa", explanation: "Es qué tan ordenados y confiables están tus datos para tomar decisiones." },
+  { term: "lectura", explanation: "Es la interpretación del estado financiero usando los datos del dashboard." },
+  { term: "riesgos", explanation: "Son problemas que podrían afectar tu dinero si no se atienden a tiempo." },
+  { term: "oportunidades", explanation: "Son opciones para mejorar tu situación financiera o aprovechar mejor tu dinero." },
+  { term: "prioridad", explanation: "Es lo más importante que conviene atender primero." },
 ];
 
 function buildFallbackComplexTerms(reply: string): DashboardAiComplexTerm[] {
@@ -267,6 +274,22 @@ function buildFallbackComplexTerms(reply: string): DashboardAiComplexTerm[] {
   return FALLBACK_COMPLEX_TERM_EXPLANATIONS
     .filter((item) => normalizedReply.includes(item.term.toLocaleLowerCase("es")))
     .slice(0, 6);
+}
+
+function ensureMinimumComplexTerms(reply: string, terms: DashboardAiComplexTerm[]) {
+  const merged = [...terms];
+  const seen = new Set(terms.map((item) => item.term.toLocaleLowerCase("es")));
+  const fallbackTerms = buildFallbackComplexTerms(reply);
+
+  for (const item of fallbackTerms) {
+    const key = item.term.toLocaleLowerCase("es");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(item);
+    if (merged.length >= 6) break;
+  }
+
+  return merged.slice(0, 6);
 }
 
 async function requestGeminiReply(apiKey: string, model: string, prompt: string) {
@@ -345,20 +368,20 @@ Deno.serve(async (req) => {
 
     let structuredReply = await requestGeminiReply(geminiApiKey, model, buildPrompt(summary, tone, "normal"));
     let reply = ensureRecommendationLine(structuredReply.reply, summary);
-    let complexTerms = sanitizeComplexTerms(structuredReply.complexTerms, reply);
+    let complexTerms = ensureMinimumComplexTerms(reply, sanitizeComplexTerms(structuredReply.complexTerms, reply));
 
     if (isReplyInsufficient(reply)) {
       structuredReply = await requestGeminiReply(geminiApiKey, model, buildPrompt(summary, tone, "strict"));
       reply = ensureRecommendationLine(structuredReply.reply, summary);
-      complexTerms = sanitizeComplexTerms(structuredReply.complexTerms, reply);
+      complexTerms = ensureMinimumComplexTerms(reply, sanitizeComplexTerms(structuredReply.complexTerms, reply));
     }
     if (isReplyInsufficient(reply)) {
       reply = fallbackReply(summary, tone);
-      complexTerms = buildFallbackComplexTerms(reply);
+      complexTerms = ensureMinimumComplexTerms(reply, buildFallbackComplexTerms(reply));
     }
     reply = ensureRecommendationLine(reply, summary);
-    if (complexTerms.length === 0) {
-      complexTerms = buildFallbackComplexTerms(reply);
+    if (complexTerms.length < 3) {
+      complexTerms = ensureMinimumComplexTerms(reply, complexTerms);
     }
 
     if (!reply) {

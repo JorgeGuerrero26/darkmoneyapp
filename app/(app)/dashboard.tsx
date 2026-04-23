@@ -3811,6 +3811,13 @@ function AnnualHistoryPanel({
 
 type AdvancedTab = 'Resumen' | 'Patrones' | 'Flujo' | 'Historial' | 'Salud';
 type DashboardAiTone = "managerial" | "personal";
+type DashboardAiComplexTerm = {
+  term: string;
+  explanation: string;
+};
+type DashboardAiTextPart =
+  | { type: "text"; value: string }
+  | { type: "term"; value: string; term: DashboardAiComplexTerm };
 
 const ADVANCED_TABS: { id: AdvancedTab; label: string }[] = [
   { id: 'Resumen',   label: 'Resumen' },
@@ -3839,6 +3846,116 @@ const GEMINI_BRAND = {
   coral: "#FF7D8D",
   gold: "#FFD15C",
 };
+
+const DASHBOARD_AI_TERM_CATALOG: DashboardAiComplexTerm[] = [
+  { term: "balance visible", explanation: "Es el dinero que ves disponible ahora mismo en tus cuentas." },
+  { term: "saldo actual", explanation: "Es el dinero disponible que tienes en este momento." },
+  { term: "cierre estimado de mes", explanation: "Es cómo podrías terminar el mes si todo sigue como va hoy." },
+  { term: "neto semanal", explanation: "Es la diferencia entre lo que entra y lo que sale durante la semana." },
+  { term: "presión financiera", explanation: "Significa que tus pagos cercanos aprietan tu dinero disponible." },
+  { term: "cobertura de caja", explanation: "Es cuántos días podrías seguir pagando con el dinero que ya tienes." },
+  { term: "flujo", explanation: "Es el movimiento de dinero que entra y sale en un periodo." },
+  { term: "proyección", explanation: "Es una estimación de lo que podría pasar con tus números más adelante." },
+  { term: "compromisos inmediatos", explanation: "Son pagos u obligaciones que tienes que atender pronto." },
+  { term: "desorden operativo", explanation: "Significa que hay pendientes o datos mal organizados que afectan el control." },
+  { term: "margen", explanation: "Es el espacio que te queda entre lo que tienes y lo que necesitas pagar." },
+  { term: "solidez", explanation: "Es qué tan fuerte o estable se ve tu situación financiera." },
+  { term: "calidad operativa", explanation: "Es qué tan ordenados y confiables están tus datos para tomar decisiones." },
+  { term: "lectura", explanation: "Es la interpretación del estado financiero usando los datos del dashboard." },
+  { term: "riesgos", explanation: "Son problemas que podrían afectar tu dinero si no se atienden a tiempo." },
+  { term: "oportunidades", explanation: "Son opciones para mejorar tu situación financiera o aprovechar mejor tu dinero." },
+  { term: "prioridad", explanation: "Es lo más importante que conviene atender primero." },
+];
+
+function normalizeDashboardAiText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("es");
+}
+
+function isDashboardAiWordChar(char: string | undefined) {
+  if (!char) return false;
+  return /[a-zA-Z0-9áéíóúÁÉÍÓÚñÑ]/.test(char);
+}
+
+function hasDashboardAiTermBoundary(text: string, index: number, length: number) {
+  const before = index > 0 ? text[index - 1] : undefined;
+  const after = index + length < text.length ? text[index + length] : undefined;
+  return !isDashboardAiWordChar(before) && !isDashboardAiWordChar(after);
+}
+
+function ensureDashboardAiComplexTerms(reply: string, terms: DashboardAiComplexTerm[]) {
+  if (!reply) return [];
+  const normalizedReply = normalizeDashboardAiText(reply);
+  const candidates = [...terms, ...DASHBOARD_AI_TERM_CATALOG];
+  const picked: DashboardAiComplexTerm[] = [];
+  const seen = new Set<string>();
+
+  for (const candidate of candidates) {
+    const term = candidate.term.trim();
+    const explanation = candidate.explanation.trim();
+    if (!term || !explanation) continue;
+    const normalizedTerm = normalizeDashboardAiText(term);
+    const index = normalizedReply.indexOf(normalizedTerm);
+    if (index === -1) continue;
+    if (!hasDashboardAiTermBoundary(reply, index, term.length)) continue;
+    const key = normalizedTerm;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    picked.push({ term, explanation });
+    if (picked.length >= 6) break;
+  }
+
+  return picked;
+}
+
+function buildDashboardAiTextParts(reply: string, terms: DashboardAiComplexTerm[]): DashboardAiTextPart[] {
+  if (!reply) return [];
+  const resolvedTerms = ensureDashboardAiComplexTerms(reply, terms)
+    .sort((a, b) => b.term.length - a.term.length);
+  if (resolvedTerms.length === 0) return [{ type: "text", value: reply }];
+
+  const normalizedReply = normalizeDashboardAiText(reply);
+  const parts: DashboardAiTextPart[] = [];
+  let cursor = 0;
+
+  while (cursor < reply.length) {
+    let matchedTerm: DashboardAiComplexTerm | null = null;
+    let matchedLength = 0;
+
+    for (const term of resolvedTerms) {
+      const normalizedTerm = normalizeDashboardAiText(term.term);
+      if (!normalizedReply.startsWith(normalizedTerm, cursor)) continue;
+      if (!hasDashboardAiTermBoundary(reply, cursor, term.term.length)) continue;
+      matchedTerm = term;
+      matchedLength = term.term.length;
+      break;
+    }
+
+    if (matchedTerm) {
+      parts.push({
+        type: "term",
+        value: reply.slice(cursor, cursor + matchedLength),
+        term: matchedTerm,
+      });
+      cursor += matchedLength;
+      continue;
+    }
+
+    const nextCursor = cursor + 1;
+    const lastPart = parts[parts.length - 1];
+    const nextChar = reply.slice(cursor, nextCursor);
+    if (lastPart?.type === "text") {
+      lastPart.value += nextChar;
+    } else {
+      parts.push({ type: "text", value: nextChar });
+    }
+    cursor = nextCursor;
+  }
+
+  return parts;
+}
 
 type TabIndicator = { tab: AdvancedTab; count?: number; dot?: string };
 
@@ -6093,6 +6210,8 @@ function AdvancedDashboard({
   }, [accountCurrencyMap, activeCurrency, exchangeRateMap, movementPreview]);
   const dashboardAiSummaryMutation = useDashboardAiSummaryMutation();
   const [dashboardAiReply, setDashboardAiReply] = useState<string | null>(null);
+  const [dashboardAiComplexTerms, setDashboardAiComplexTerms] = useState<DashboardAiComplexTerm[]>([]);
+  const [activeDashboardAiTerm, setActiveDashboardAiTerm] = useState<DashboardAiComplexTerm | null>(null);
   const [dashboardAiTone, setDashboardAiTone] = useState<DashboardAiTone>("managerial");
   const dashboardAiBreath = useRef(new Animated.Value(0)).current;
   const dashboardAiToneStorageKey = useMemo(() => getDashboardAiToneKey(userId), [userId]);
@@ -6125,6 +6244,8 @@ function AdvancedDashboard({
     dashboardAiToneLoadedRef.current = false;
     setDashboardAiTone("managerial");
     setDashboardAiReply(null);
+    setDashboardAiComplexTerms([]);
+    setActiveDashboardAiTerm(null);
     if (!dashboardAiToneStorageKey) {
       dashboardAiToneLoadedRef.current = true;
       return;
@@ -6172,18 +6293,28 @@ function AdvancedDashboard({
     inputRange: [0, 1],
     outputRange: [0, -5],
   });
+  const dashboardAiResolvedTerms = useMemo(
+    () => ensureDashboardAiComplexTerms(dashboardAiReply ?? "", dashboardAiComplexTerms),
+    [dashboardAiComplexTerms, dashboardAiReply],
+  );
+  const dashboardAiTextParts = useMemo(
+    () => buildDashboardAiTextParts(dashboardAiReply ?? "", dashboardAiResolvedTerms),
+    [dashboardAiReply, dashboardAiResolvedTerms],
+  );
   const handleRequestDashboardAiSummary = useCallback(async () => {
     if (!workspaceId) {
       showToast("No se encontró el workspace activo.", "error");
       return;
     }
     try {
+      setActiveDashboardAiTerm(null);
       const response = await dashboardAiSummaryMutation.mutateAsync({
         workspaceId,
         summary: dashboardAiSummaryPayload,
         tone: dashboardAiTone,
       });
       setDashboardAiReply(response.reply);
+      setDashboardAiComplexTerms(response.complexTerms ?? []);
     } catch (error) {
       showToast(error instanceof Error ? error.message : "No se pudo consultar a la IA.", "error");
     }
@@ -6381,6 +6512,8 @@ function AdvancedDashboard({
                   onPress={() => {
                     setDashboardAiTone(option.id);
                     setDashboardAiReply(null);
+                    setDashboardAiComplexTerms([]);
+                    setActiveDashboardAiTerm(null);
                   }}
                 >
                   <Text style={[subStyles.aiSummaryToneChipTitle, active && subStyles.aiSummaryToneChipTitleActive]}>
@@ -6435,7 +6568,26 @@ function AdvancedDashboard({
                   {dashboardAiTone === "managerial" ? "Gemini · Modo gerencial" : "Gemini · Modo asesor"}
                 </Text>
               </View>
-              <Text style={subStyles.aiSummaryResponseText}>{dashboardAiReply}</Text>
+              {dashboardAiResolvedTerms.length > 0 ? (
+                <Text style={subStyles.aiSummaryGlossaryHint}>
+                  Toca las palabras resaltadas para ver su explicación.
+                </Text>
+              ) : null}
+              <Text style={subStyles.aiSummaryResponseText}>
+                {dashboardAiTextParts.map((part, index) => (
+                  part.type === "term" ? (
+                    <Text
+                      key={`${part.term.term}-${index}`}
+                      style={subStyles.aiSummaryResponseTerm}
+                      onPress={() => setActiveDashboardAiTerm(part.term)}
+                    >
+                      {part.value}
+                    </Text>
+                  ) : (
+                    <Text key={`text-${index}`}>{part.value}</Text>
+                  )
+                ))}
+              </Text>
             </View>
           ) : (
             <Text style={subStyles.aiSummaryHint}>
@@ -6461,6 +6613,26 @@ function AdvancedDashboard({
       ) : null}
 
       </>}
+
+      <BottomSheet
+        visible={Boolean(activeDashboardAiTerm)}
+        onClose={() => setActiveDashboardAiTerm(null)}
+        title={activeDashboardAiTerm?.term ?? "Término"}
+        snapHeight={0.42}
+        blurBackdrop={false}
+        backdropColor="rgba(0,0,0,0.68)"
+      >
+        {activeDashboardAiTerm ? (
+          <View style={subStyles.aiSummaryTermSheet}>
+            <View style={subStyles.aiSummaryTermSheetBadge}>
+              <Sparkles size={12} color={GEMINI_BRAND.teal} />
+              <Text style={subStyles.aiSummaryTermSheetBadgeText}>Explicación simple</Text>
+            </View>
+            <Text style={subStyles.aiSummaryTermSheetTitle}>{activeDashboardAiTerm.term}</Text>
+            <Text style={subStyles.aiSummaryTermSheetBody}>{activeDashboardAiTerm.explanation}</Text>
+          </View>
+        ) : null}
+      </BottomSheet>
 
       <BottomSheet
         visible={Boolean(activeExecutiveDetail)}
@@ -9723,11 +9895,54 @@ const subStyles = StyleSheet.create({
     color: "#7FE8D4",
     letterSpacing: 0.4,
   },
+  aiSummaryGlossaryHint: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: 12,
+    color: "rgba(180,216,255,0.76)",
+    lineHeight: 18,
+  },
   aiSummaryResponseText: {
     fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.sm,
     color: "rgba(230,240,255,0.92)",
     lineHeight: 22,
+  },
+  aiSummaryResponseTerm: {
+    color: "#9BEDE0",
+    textDecorationLine: "underline",
+    textDecorationColor: "rgba(73,215,190,0.65)",
+    backgroundColor: "rgba(73,215,190,0.12)",
+  },
+  aiSummaryTermSheet: {
+    gap: SPACING.md,
+  },
+  aiSummaryTermSheetBadge: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 6,
+    borderRadius: RADIUS.full,
+    backgroundColor: "rgba(73,215,190,0.10)",
+    borderWidth: 1,
+    borderColor: "rgba(73,215,190,0.20)",
+  },
+  aiSummaryTermSheetBadgeText: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+    color: "#7FE8D4",
+  },
+  aiSummaryTermSheetTitle: {
+    fontFamily: FONT_FAMILY.heading,
+    fontSize: FONT_SIZE.xl,
+    color: COLORS.ink,
+  },
+  aiSummaryTermSheetBody: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.md,
+    color: "rgba(230,240,255,0.88)",
+    lineHeight: 24,
   },
   aiSummaryFooterRow: {
     paddingTop: 2,
