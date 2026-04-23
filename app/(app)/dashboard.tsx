@@ -6894,6 +6894,18 @@ function AdvancedDashboard({
   const dashboardAiLimitReached = !dashboardAiIsAdmin &&
     dashboardAiDailyCache?.usageDate === dashboardAiUsageDate &&
     Boolean(dashboardAiDailyCache?.lastUsedAt);
+  const dashboardAiFlowLimitReached = !dashboardAiIsAdmin &&
+    dashboardAiFlowCache?.usageDate === dashboardAiUsageDate &&
+    Boolean(dashboardAiFlowCache?.lastUsedAt);
+  const dashboardAiHealthLimitReached = !dashboardAiIsAdmin &&
+    dashboardAiHealthCache?.usageDate === dashboardAiUsageDate &&
+    Boolean(dashboardAiHealthCache?.lastUsedAt);
+  const dashboardAiHistoryLimitReached = !dashboardAiIsAdmin &&
+    dashboardAiHistoryCache?.usageDate === dashboardAiUsageDate &&
+    Boolean(dashboardAiHistoryCache?.lastUsedAt);
+  const dashboardAiPatternsLimitReached = !dashboardAiIsAdmin &&
+    dashboardAiPatternsCache?.usageDate === dashboardAiUsageDate &&
+    Boolean(dashboardAiPatternsCache?.lastUsedAt);
   const dashboardAiResolvedTerms = useMemo(
     () => ensureDashboardAiComplexTerms(dashboardAiReply ?? "", dashboardAiComplexTerms),
     [dashboardAiComplexTerms, dashboardAiReply],
@@ -6972,6 +6984,10 @@ function AdvancedDashboard({
       showToast("No se encontró el workspace activo.", "error");
       return;
     }
+    if (dashboardAiFlowLimitReached) {
+      showToast("Ya usaste tu explicación de IA de hoy. Podrás pedir otra mañana.", "error");
+      return;
+    }
     try {
       setActiveDashboardAiTerm(null);
       const response = await dashboardAiFlowMutation.mutateAsync({
@@ -6995,10 +7011,14 @@ function AdvancedDashboard({
     } catch (error) {
       showToast(error instanceof Error ? error.message : "No se pudo consultar a la IA de flujo.", "error");
     }
-  }, [dashboardAiFlowMutation, dashboardAiFlowPayload, dashboardAiTone, dashboardAiUsageDate, showToast, workspaceId]);
+  }, [dashboardAiFlowLimitReached, dashboardAiFlowMutation, dashboardAiFlowPayload, dashboardAiTone, dashboardAiUsageDate, showToast, workspaceId]);
   const handleRequestDashboardAiHealth = useCallback(async () => {
     if (!workspaceId) {
       showToast("No se encontró el workspace activo.", "error");
+      return;
+    }
+    if (dashboardAiHealthLimitReached) {
+      showToast("Ya usaste tu explicación de IA de hoy. Podrás pedir otra mañana.", "error");
       return;
     }
     try {
@@ -7024,10 +7044,14 @@ function AdvancedDashboard({
     } catch (error) {
       showToast(error instanceof Error ? error.message : "No se pudo consultar a la IA de salud.", "error");
     }
-  }, [dashboardAiHealthMutation, dashboardAiHealthPayload, dashboardAiTone, dashboardAiUsageDate, showToast, workspaceId]);
+  }, [dashboardAiHealthLimitReached, dashboardAiHealthMutation, dashboardAiHealthPayload, dashboardAiTone, dashboardAiUsageDate, showToast, workspaceId]);
   const handleRequestDashboardAiHistory = useCallback(async () => {
     if (!workspaceId) {
       showToast("No se encontró el workspace activo.", "error");
+      return;
+    }
+    if (dashboardAiHistoryLimitReached) {
+      showToast("Ya usaste tu explicación de IA de hoy. Podrás pedir otra mañana.", "error");
       return;
     }
     try {
@@ -7053,10 +7077,14 @@ function AdvancedDashboard({
     } catch (error) {
       showToast(error instanceof Error ? error.message : "No se pudo consultar a la IA de historial.", "error");
     }
-  }, [dashboardAiHistoryMutation, dashboardAiHistoryPayload, dashboardAiTone, dashboardAiUsageDate, showToast, workspaceId]);
+  }, [dashboardAiHistoryLimitReached, dashboardAiHistoryMutation, dashboardAiHistoryPayload, dashboardAiTone, dashboardAiUsageDate, showToast, workspaceId]);
   const handleRequestDashboardAiPatterns = useCallback(async () => {
     if (!workspaceId) {
       showToast("No se encontró el workspace activo.", "error");
+      return;
+    }
+    if (dashboardAiPatternsLimitReached) {
+      showToast("Ya usaste tu explicación de IA de hoy. Podrás pedir otra mañana.", "error");
       return;
     }
     try {
@@ -7082,7 +7110,7 @@ function AdvancedDashboard({
     } catch (error) {
       showToast(error instanceof Error ? error.message : "No se pudo consultar a la IA de patrones.", "error");
     }
-  }, [dashboardAiPatternsMutation, dashboardAiPatternsPayload, dashboardAiTone, dashboardAiUsageDate, showToast, workspaceId]);
+  }, [dashboardAiPatternsLimitReached, dashboardAiPatternsMutation, dashboardAiPatternsPayload, dashboardAiTone, dashboardAiUsageDate, showToast, workspaceId]);
 
   return (
     <>
@@ -8001,21 +8029,23 @@ function AdvancedDashboard({
             <TouchableOpacity
               activeOpacity={0.86}
               onPress={() => void handleRequestDashboardAiPatterns()}
-              disabled={dashboardAiPatternsMutation.isPending}
+              disabled={dashboardAiPatternsMutation.isPending || dashboardAiPatternsLimitReached}
               style={[
                 subStyles.aiSummaryButton,
-                dashboardAiPatternsMutation.isPending && subStyles.aiSummaryButtonDisabled,
+                (dashboardAiPatternsMutation.isPending || dashboardAiPatternsLimitReached) && subStyles.aiSummaryButtonDisabled,
               ]}
             >
               <View style={subStyles.aiSummaryButtonAccent} />
               <View style={subStyles.aiSummaryButtonInner}>
-                <Sparkles size={16} color={dashboardAiPatternsMutation.isPending ? "rgba(255,255,255,0.4)" : GEMINI_BRAND.teal} />
+                <Sparkles size={16} color={dashboardAiPatternsMutation.isPending || dashboardAiPatternsLimitReached ? "rgba(255,255,255,0.4)" : GEMINI_BRAND.teal} />
                 <Text style={subStyles.aiSummaryButtonLabel}>
                   {dashboardAiPatternsMutation.isPending
                     ? "Preparando explicacion..."
-                    : dashboardAiTone === "managerial"
-                      ? "Ver informe de patrones"
-                      : "Hablar con mi asesor de patrones"}
+                    : dashboardAiPatternsLimitReached
+                      ? "Consulta de hoy usada"
+                      : dashboardAiTone === "managerial"
+                        ? "Ver informe de patrones"
+                        : "Hablar con mi asesor de patrones"}
                 </Text>
               </View>
             </TouchableOpacity>
@@ -8063,7 +8093,9 @@ function AdvancedDashboard({
               </View>
             ) : (
               <Text style={subStyles.aiSummaryHint}>
-                Gemini toma tus hábitos, variaciones y anomalías recientes para explicarte qué patrones ya importan en tus finanzas.
+                {dashboardAiPatternsLimitReached
+                  ? "Ya usaste tu explicación de IA de hoy en este módulo. Podrás pedir otra mañana."
+                  : "Gemini toma tus hábitos, variaciones y anomalías recientes para explicarte qué patrones ya importan en tus finanzas."}
               </Text>
             )}
             <View style={subStyles.aiSummaryFooterRow}>
@@ -8348,21 +8380,23 @@ function AdvancedDashboard({
             <TouchableOpacity
               activeOpacity={0.86}
               onPress={() => void handleRequestDashboardAiFlow()}
-              disabled={dashboardAiFlowMutation.isPending}
+              disabled={dashboardAiFlowMutation.isPending || dashboardAiFlowLimitReached}
               style={[
                 subStyles.aiSummaryButton,
-                dashboardAiFlowMutation.isPending && subStyles.aiSummaryButtonDisabled,
+                (dashboardAiFlowMutation.isPending || dashboardAiFlowLimitReached) && subStyles.aiSummaryButtonDisabled,
               ]}
             >
               <View style={subStyles.aiSummaryButtonAccent} />
               <View style={subStyles.aiSummaryButtonInner}>
-                <Sparkles size={16} color={dashboardAiFlowMutation.isPending ? "rgba(255,255,255,0.4)" : GEMINI_BRAND.teal} />
+                <Sparkles size={16} color={dashboardAiFlowMutation.isPending || dashboardAiFlowLimitReached ? "rgba(255,255,255,0.4)" : GEMINI_BRAND.teal} />
                 <Text style={subStyles.aiSummaryButtonLabel}>
                   {dashboardAiFlowMutation.isPending
                     ? "Preparando explicacion..."
-                    : dashboardAiTone === "managerial"
-                      ? "Ver informe de flujo"
-                      : "Hablar con mi asesor de flujo"}
+                    : dashboardAiFlowLimitReached
+                      ? "Consulta de hoy usada"
+                      : dashboardAiTone === "managerial"
+                        ? "Ver informe de flujo"
+                        : "Hablar con mi asesor de flujo"}
                 </Text>
               </View>
             </TouchableOpacity>
@@ -8410,7 +8444,9 @@ function AdvancedDashboard({
               </View>
             ) : (
               <Text style={subStyles.aiSummaryHint}>
-                Gemini interpreta tu caja, tus compromisos y la proyección actual para explicarte el flujo con lenguaje claro.
+                {dashboardAiFlowLimitReached
+                  ? "Ya usaste tu explicación de IA de hoy en este módulo. Podrás pedir otra mañana."
+                  : "Gemini interpreta tu caja, tus compromisos y la proyección actual para explicarte el flujo con lenguaje claro."}
               </Text>
             )}
             <View style={subStyles.aiSummaryFooterRow}>
@@ -8589,21 +8625,23 @@ function AdvancedDashboard({
             <TouchableOpacity
               activeOpacity={0.86}
               onPress={() => void handleRequestDashboardAiHistory()}
-              disabled={dashboardAiHistoryMutation.isPending}
+              disabled={dashboardAiHistoryMutation.isPending || dashboardAiHistoryLimitReached}
               style={[
                 subStyles.aiSummaryButton,
-                dashboardAiHistoryMutation.isPending && subStyles.aiSummaryButtonDisabled,
+                (dashboardAiHistoryMutation.isPending || dashboardAiHistoryLimitReached) && subStyles.aiSummaryButtonDisabled,
               ]}
             >
               <View style={subStyles.aiSummaryButtonAccent} />
               <View style={subStyles.aiSummaryButtonInner}>
-                <Sparkles size={16} color={dashboardAiHistoryMutation.isPending ? "rgba(255,255,255,0.4)" : GEMINI_BRAND.teal} />
+                <Sparkles size={16} color={dashboardAiHistoryMutation.isPending || dashboardAiHistoryLimitReached ? "rgba(255,255,255,0.4)" : GEMINI_BRAND.teal} />
                 <Text style={subStyles.aiSummaryButtonLabel}>
                   {dashboardAiHistoryMutation.isPending
                     ? "Preparando explicacion..."
-                    : dashboardAiTone === "managerial"
-                      ? "Ver informe histórico"
-                      : "Hablar con mi asesor histórico"}
+                    : dashboardAiHistoryLimitReached
+                      ? "Consulta de hoy usada"
+                      : dashboardAiTone === "managerial"
+                        ? "Ver informe histórico"
+                        : "Hablar con mi asesor histórico"}
                 </Text>
               </View>
             </TouchableOpacity>
@@ -8651,7 +8689,9 @@ function AdvancedDashboard({
               </View>
             ) : (
               <Text style={subStyles.aiSummaryHint}>
-                Gemini usa los meses del año seleccionado, los cambios de comportamiento y las métricas históricas para contarte cómo ha evolucionado tu situación.
+                {dashboardAiHistoryLimitReached
+                  ? "Ya usaste tu explicación de IA de hoy en este módulo. Podrás pedir otra mañana."
+                  : "Gemini usa los meses del año seleccionado, los cambios de comportamiento y las métricas históricas para contarte cómo ha evolucionado tu situación."}
               </Text>
             )}
             <View style={subStyles.aiSummaryFooterRow}>
@@ -9094,21 +9134,23 @@ function AdvancedDashboard({
             <TouchableOpacity
               activeOpacity={0.86}
               onPress={() => void handleRequestDashboardAiHealth()}
-              disabled={dashboardAiHealthMutation.isPending}
+              disabled={dashboardAiHealthMutation.isPending || dashboardAiHealthLimitReached}
               style={[
                 subStyles.aiSummaryButton,
-                dashboardAiHealthMutation.isPending && subStyles.aiSummaryButtonDisabled,
+                (dashboardAiHealthMutation.isPending || dashboardAiHealthLimitReached) && subStyles.aiSummaryButtonDisabled,
               ]}
             >
               <View style={subStyles.aiSummaryButtonAccent} />
               <View style={subStyles.aiSummaryButtonInner}>
-                <Sparkles size={16} color={dashboardAiHealthMutation.isPending ? "rgba(255,255,255,0.4)" : GEMINI_BRAND.teal} />
+                <Sparkles size={16} color={dashboardAiHealthMutation.isPending || dashboardAiHealthLimitReached ? "rgba(255,255,255,0.4)" : GEMINI_BRAND.teal} />
                 <Text style={subStyles.aiSummaryButtonLabel}>
                   {dashboardAiHealthMutation.isPending
                     ? "Preparando explicacion..."
-                    : dashboardAiTone === "managerial"
-                      ? "Ver informe de salud"
-                      : "Hablar con mi asesor de salud"}
+                    : dashboardAiHealthLimitReached
+                      ? "Consulta de hoy usada"
+                      : dashboardAiTone === "managerial"
+                        ? "Ver informe de salud"
+                        : "Hablar con mi asesor de salud"}
                 </Text>
               </View>
             </TouchableOpacity>
@@ -9156,7 +9198,9 @@ function AdvancedDashboard({
               </View>
             ) : (
               <Text style={subStyles.aiSummaryHint}>
-                Gemini interpreta tus pendientes, la calidad del dato y las sugerencias activas para explicarte qué está afectando hoy la salud del sistema.
+                {dashboardAiHealthLimitReached
+                  ? "Ya usaste tu explicación de IA de hoy en este módulo. Podrás pedir otra mañana."
+                  : "Gemini interpreta tus pendientes, la calidad del dato y las sugerencias activas para explicarte qué está afectando hoy la salud del sistema."}
               </Text>
             )}
             <View style={subStyles.aiSummaryFooterRow}>

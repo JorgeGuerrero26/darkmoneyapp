@@ -41,6 +41,8 @@ type DashboardAiStructuredReply = {
   reply: string;
   complexTerms: DashboardAiComplexTerm[];
 };
+const DASHBOARD_AI_ADMIN_EMAIL = "joradrianmori@gmail.com";
+const DASHBOARD_AI_FEATURE_KEY = "dashboard-advanced-ai-history";
 
 function sanitizeTone(value: unknown): DashboardAiTone {
   return value === "personal" ? "personal" : "managerial";
@@ -48,6 +50,15 @@ function sanitizeTone(value: unknown): DashboardAiTone {
 
 function toneLabel(tone: DashboardAiTone) {
   return tone === "personal" ? "asesor financiero personal" : "informe gerencial";
+}
+
+function usageDateInLima(date = new Date()) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Lima",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
 }
 
 function recommendationLine(summary: Record<string, unknown>) {
@@ -374,6 +385,8 @@ Deno.serve(async (req) => {
 
     const client = serviceClient();
     const user = await authenticatedUser(req, client);
+    const isAdminUser = user.email?.trim().toLowerCase() === DASHBOARD_AI_ADMIN_EMAIL;
+    const usageDate = usageDateInLima();
     const body = await readJsonBody(req);
     const workspaceId = numberFromBody(body.workspaceId);
     const summary = sanitizeSummary(body.summary);
@@ -397,6 +410,23 @@ Deno.serve(async (req) => {
       return jsonResponse({ ok: false, error: "No tienes acceso a este workspace." }, 403);
     }
 
+    if (!isAdminUser) {
+      const { data: existingUsage, error: usageLookupError } = await client
+        .from("ai_feature_daily_usage")
+        .select("id")
+        .eq("feature_key", DASHBOARD_AI_FEATURE_KEY)
+        .eq("user_id", user.id)
+        .eq("usage_date", usageDate)
+        .maybeSingle();
+      if (usageLookupError) throw usageLookupError;
+      if (existingUsage) {
+        return jsonResponse({
+          ok: false,
+          error: "Ya usaste tu explicación de IA de hoy. Podrás pedir otra mañana.",
+        }, 429);
+      }
+    }
+
     let structuredReply = await requestGeminiReply(geminiApiKey, model, buildPrompt(summary, tone, "normal"));
     let reply = ensureRecommendationLine(structuredReply.reply, summary);
     let complexTerms = ensureMinimumComplexTerms(reply, sanitizeComplexTerms(structuredReply.complexTerms, reply));
@@ -417,6 +447,28 @@ Deno.serve(async (req) => {
 
     if (!reply) {
       return jsonResponse({ ok: false, error: "La IA no devolvio contenido util." }, 502);
+    }
+
+    if (!isAdminUser) {
+      const { error: usageInsertError } = await client
+        .from("ai_feature_daily_usage")
+        .insert({
+          user_id: user.id,
+          workspace_id: workspaceId,
+          feature_key: DASHBOARD_AI_FEATURE_KEY,
+          usage_date: usageDate,
+          tone,
+          model,
+        });
+      if (usageInsertError) {
+        if ((usageInsertError as { code?: string }).code === "23505") {
+          return jsonResponse({
+            ok: false,
+            error: "Ya usaste tu explicación de IA de hoy. Podrás pedir otra mañana.",
+          }, 429);
+        }
+        throw usageInsertError;
+      }
     }
 
     return jsonResponse({
