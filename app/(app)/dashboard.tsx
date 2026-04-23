@@ -197,6 +197,12 @@ function getPeriodBounds(period: Period, now: Date): { curStart: Date; curEnd: D
 // --- Exchange rate helpers -----------------------------------------------------
 
 const DASHBOARD_CURRENCY_KEY = "darkmoney.dashboard.displayCurrency";
+const DASHBOARD_AI_TONE_KEY_PREFIX = "darkmoney.dashboard.aiTone";
+
+function getDashboardAiToneKey(userId?: string | null) {
+  if (!userId) return null;
+  return `${DASHBOARD_AI_TONE_KEY_PREFIX}.${userId}`;
+}
 
 function buildExchangeRateMap(rates: ExchangeRateSummary[]): Map<string, number> {
   const map = new Map<string, number>();
@@ -3801,6 +3807,7 @@ function AnnualHistoryPanel({
 }
 
 type AdvancedTab = 'Resumen' | 'Patrones' | 'Flujo' | 'Historial' | 'Salud';
+type DashboardAiTone = "managerial" | "personal";
 
 const ADVANCED_TABS: { id: AdvancedTab; label: string }[] = [
   { id: 'Resumen',   label: 'Resumen' },
@@ -3808,6 +3815,19 @@ const ADVANCED_TABS: { id: AdvancedTab; label: string }[] = [
   { id: 'Flujo',     label: 'Flujo' },
   { id: 'Historial', label: 'Historial' },
   { id: 'Salud',     label: 'Salud' },
+];
+
+const DASHBOARD_AI_TONE_OPTIONS: Array<{ id: DashboardAiTone; label: string; description: string }> = [
+  {
+    id: "managerial",
+    label: "Informe gerencial",
+    description: "Más ejecutivo y orientado a decisiones.",
+  },
+  {
+    id: "personal",
+    label: "Asesor personal",
+    description: "Más cercano y pensado para el día a día.",
+  },
 ];
 
 type TabIndicator = { tab: AdvancedTab; count?: number; dot?: string };
@@ -6063,7 +6083,37 @@ function AdvancedDashboard({
   }, [accountCurrencyMap, activeCurrency, exchangeRateMap, movementPreview]);
   const dashboardAiSummaryMutation = useDashboardAiSummaryMutation();
   const [dashboardAiReply, setDashboardAiReply] = useState<string | null>(null);
+  const [dashboardAiTone, setDashboardAiTone] = useState<DashboardAiTone>("managerial");
+  const dashboardAiToneStorageKey = useMemo(() => getDashboardAiToneKey(userId), [userId]);
+  const dashboardAiToneLoadedRef = useRef(false);
   const [activeTab, setActiveTab] = useState<AdvancedTab>('Resumen');
+  useEffect(() => {
+    dashboardAiToneLoadedRef.current = false;
+    setDashboardAiTone("managerial");
+    setDashboardAiReply(null);
+    if (!dashboardAiToneStorageKey) {
+      dashboardAiToneLoadedRef.current = true;
+      return;
+    }
+    let cancelled = false;
+    void AsyncStorage.getItem(dashboardAiToneStorageKey)
+      .then((stored) => {
+        if (cancelled) return;
+        if (stored === "managerial" || stored === "personal") {
+          setDashboardAiTone(stored);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) dashboardAiToneLoadedRef.current = true;
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [dashboardAiToneStorageKey]);
+  useEffect(() => {
+    if (!dashboardAiToneLoadedRef.current || !dashboardAiToneStorageKey) return;
+    void AsyncStorage.setItem(dashboardAiToneStorageKey, dashboardAiTone);
+  }, [dashboardAiTone, dashboardAiToneStorageKey]);
   const handleTabChange = useCallback((tab: AdvancedTab) => {
     setActiveTab(tab);
     onScrollToTop?.();
@@ -6077,12 +6127,13 @@ function AdvancedDashboard({
       const response = await dashboardAiSummaryMutation.mutateAsync({
         workspaceId,
         summary: dashboardAiSummaryPayload,
+        tone: dashboardAiTone,
       });
       setDashboardAiReply(response.reply);
     } catch (error) {
       showToast(error instanceof Error ? error.message : "No se pudo consultar a la IA.", "error");
     }
-  }, [dashboardAiSummaryMutation, dashboardAiSummaryPayload, showToast, workspaceId]);
+  }, [dashboardAiSummaryMutation, dashboardAiSummaryPayload, dashboardAiTone, showToast, workspaceId]);
 
   return (
     <>
@@ -6188,29 +6239,59 @@ function AdvancedDashboard({
       <Card>
         <View style={subStyles.aiSummaryHeader}>
           <View style={subStyles.aiSummaryHeaderText}>
-            <Text style={subStyles.aiSummaryTitle}>Lectura con IA</Text>
+            <Text style={subStyles.aiSummaryTitle}>Tu situación explicada</Text>
             <Text style={subStyles.aiSummaryBody}>
-              Envía solo este resumen estructurado del dashboard avanzado para recibir una interpretación humana de tu estado financiero actual.
+              Toma el estado actual de tu dashboard y te lo explica en palabras simples para que entiendas cómo vas hoy y qué conviene revisar primero.
             </Text>
           </View>
           <View style={subStyles.aiSummaryIconWrap}>
             <Brain size={18} color={COLORS.primary} />
           </View>
         </View>
+        <Text style={subStyles.aiSummarySelectorLabel}>Elige cómo quieres ver la explicación</Text>
+        <View style={subStyles.aiSummaryToneRow}>
+          {DASHBOARD_AI_TONE_OPTIONS.map((option) => {
+            const active = option.id === dashboardAiTone;
+            return (
+              <TouchableOpacity
+                key={option.id}
+                activeOpacity={0.85}
+                style={[subStyles.aiSummaryToneChip, active && subStyles.aiSummaryToneChipActive]}
+                onPress={() => {
+                  setDashboardAiTone(option.id);
+                  setDashboardAiReply(null);
+                }}
+              >
+                <Text style={[subStyles.aiSummaryToneChipTitle, active && subStyles.aiSummaryToneChipTitleActive]}>
+                  {option.label}
+                </Text>
+                <Text style={[subStyles.aiSummaryToneChipBody, active && subStyles.aiSummaryToneChipBodyActive]}>
+                  {option.description}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
         <Button
-          label={dashboardAiSummaryMutation.isPending ? "Analizando..." : "Analizar mi estado actual"}
+          label={dashboardAiSummaryMutation.isPending
+            ? "Preparando explicacion..."
+            : dashboardAiTone === "managerial"
+              ? "Generar informe gerencial"
+              : "Hablar con mi asesor personal"}
           onPress={() => void handleRequestDashboardAiSummary()}
           loading={dashboardAiSummaryMutation.isPending}
           style={subStyles.aiSummaryButton}
         />
         {dashboardAiReply ? (
           <View style={subStyles.aiSummaryResponseCard}>
-            <Text style={subStyles.aiSummaryResponseLabel}>Respuesta</Text>
+            <Text style={subStyles.aiSummaryResponseLabel}>
+              {dashboardAiTone === "managerial" ? "Informe gerencial" : "Asesor financiero personal"}
+            </Text>
             <Text style={subStyles.aiSummaryResponseText}>{dashboardAiReply}</Text>
           </View>
         ) : (
           <Text style={subStyles.aiSummaryHint}>
-            La respuesta se genera a partir del estado actual del resumen, no del detalle completo de todos tus movimientos.
+            Esta explicación se basa en el resumen actual de tus finanzas y siempre cierra con una recomendación concreta para hoy.
           </Text>
         )}
       </Card>
@@ -9244,6 +9325,51 @@ const subStyles = StyleSheet.create({
     fontSize: FONT_SIZE.sm,
     color: COLORS.storm,
     lineHeight: 21,
+  },
+  aiSummarySelectorLabel: {
+    marginTop: SPACING.md,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    textTransform: "uppercase",
+    letterSpacing: 0.3,
+  },
+  aiSummaryToneRow: {
+    marginTop: SPACING.sm,
+    flexDirection: "row",
+    gap: SPACING.sm,
+  },
+  aiSummaryToneChip: {
+    flex: 1,
+    minHeight: 82,
+    borderRadius: RADIUS.lg,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.10)",
+    gap: 6,
+  },
+  aiSummaryToneChipActive: {
+    backgroundColor: COLORS.primary + "14",
+    borderColor: COLORS.primary + "55",
+  },
+  aiSummaryToneChipTitle: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.ink,
+  },
+  aiSummaryToneChipTitleActive: {
+    color: COLORS.primary,
+  },
+  aiSummaryToneChipBody: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    lineHeight: 18,
+  },
+  aiSummaryToneChipBodyActive: {
+    color: COLORS.ink,
   },
   aiSummaryButton: {
     marginTop: SPACING.md,

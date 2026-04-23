@@ -1590,12 +1590,14 @@ export function useDashboardAnalyticsQuery(
 export type DashboardAiSummaryInput = {
   workspaceId: number;
   summary: Record<string, unknown>;
+  tone: "managerial" | "personal";
 };
 
 export type DashboardAiSummaryResponse = {
   ok: boolean;
   reply: string;
   model?: string | null;
+  tone?: string | null;
 };
 
 export function useDashboardAiSummaryMutation() {
@@ -1604,6 +1606,9 @@ export function useDashboardAiSummaryMutation() {
       if (!input.workspaceId) throw new Error("No se encontró el workspace activo.");
       if (!input.summary || typeof input.summary !== "object") {
         throw new Error("No hay resumen suficiente para enviar a la IA.");
+      }
+      if (input.tone !== "managerial" && input.tone !== "personal") {
+        throw new Error("No se encontró el estilo de explicación.");
       }
       return invokeEdgeFunction<DashboardAiSummaryResponse>("dashboard-advanced-ai-summary", input);
     },
