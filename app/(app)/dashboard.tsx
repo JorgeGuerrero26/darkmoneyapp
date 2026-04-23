@@ -51,6 +51,7 @@ import {
   useNotificationsQuery,
   useUserEntitlementQuery,
   useDashboardAiFlowMutation,
+  useDashboardAiHealthMutation,
   useDashboardAiHistoryMutation,
   useDashboardAiPatternsMutation,
   useDashboardAiSummaryMutation,
@@ -208,6 +209,7 @@ const DASHBOARD_AI_SUMMARY_CACHE_KEY_PREFIX = "darkmoney.dashboard.aiSummaryCach
 const DASHBOARD_AI_PATTERNS_CACHE_KEY_PREFIX = "darkmoney.dashboard.aiPatternsCache";
 const DASHBOARD_AI_FLOW_CACHE_KEY_PREFIX = "darkmoney.dashboard.aiFlowCache";
 const DASHBOARD_AI_HISTORY_CACHE_KEY_PREFIX = "darkmoney.dashboard.aiHistoryCache";
+const DASHBOARD_AI_HEALTH_CACHE_KEY_PREFIX = "darkmoney.dashboard.aiHealthCache";
 const DASHBOARD_AI_ADMIN_EMAIL = "joradrianmori@gmail.com";
 
 function getDashboardAiToneKey(userId?: string | null) {
@@ -233,6 +235,11 @@ function getDashboardAiFlowCacheKey(userId?: string | null) {
 function getDashboardAiHistoryCacheKey(userId?: string | null) {
   if (!userId) return null;
   return `${DASHBOARD_AI_HISTORY_CACHE_KEY_PREFIX}.${userId}`;
+}
+
+function getDashboardAiHealthCacheKey(userId?: string | null) {
+  if (!userId) return null;
+  return `${DASHBOARD_AI_HEALTH_CACHE_KEY_PREFIX}.${userId}`;
 }
 
 function getDashboardAiUsageDate(date = new Date()) {
@@ -5769,6 +5776,73 @@ function AdvancedDashboard({
     seasonalComparison.incomeDelta,
     selectedHistoryYear,
   ]);
+  const dashboardAiHealthPayload = useMemo(() => ({
+    workspaceName: "Workspace actual",
+    currency: activeCurrency,
+    totalIssues: review.totalIssues,
+    uncategorizedCount: review.uncategorizedCount,
+    pendingMovementsCount: review.pendingMovementsCount,
+    subscriptionsAttentionCount: review.subscriptionsAttentionCount,
+    overdueObligationsCount: review.overdueObligationsCount,
+    duplicateExpenseCount: duplicateExpenseReviewMovements.length,
+    noCounterpartyCount: qualitySnapshot.noCounterpartyCount,
+    noCategoryCount: qualitySnapshot.noCategoryCount,
+    categorySuggestionsCount: categorySuggestions.length,
+    categorySuggestionsTop: categorySuggestions.slice(0, 4).map((suggestion) => ({
+      description: suggestion.description,
+      suggestedCategoryName: suggestion.suggestedCategoryName,
+      amount: formatCurrency(suggestion.amount, activeCurrency),
+      confidencePct: Math.round(suggestion.confidence * 100),
+      reasons: suggestion.reasons,
+    })),
+    collectionEfficiency: {
+      rate: collectionEfficiency.rate,
+      resolved: collectionEfficiency.resolved,
+      total: collectionEfficiency.total,
+      label: collectionEfficiency.label,
+    },
+    systemReadiness: {
+      score: learning.readinessScore,
+      historyDays: learning.historyDays,
+      usefulCount: learning.usefulCount,
+      categorizedRatePct: Math.round(learning.categorizedRate * 100),
+    },
+    projectionConfidence: {
+      score: projectionModel.confidence,
+      label: projectionModel.confidenceLabel,
+    },
+    acceptedFeedbackCount,
+    cashCushion: {
+      days: cashCushion.days,
+      label: cashCushion.label,
+    },
+    coachSignals: panelCoachChips.map((chip) => chip.label),
+  }), [
+    acceptedFeedbackCount,
+    activeCurrency,
+    cashCushion.days,
+    cashCushion.label,
+    categorySuggestions,
+    collectionEfficiency.label,
+    collectionEfficiency.rate,
+    collectionEfficiency.resolved,
+    collectionEfficiency.total,
+    duplicateExpenseReviewMovements.length,
+    learning.categorizedRate,
+    learning.historyDays,
+    learning.readinessScore,
+    learning.usefulCount,
+    panelCoachChips,
+    projectionModel.confidence,
+    projectionModel.confidenceLabel,
+    qualitySnapshot.noCategoryCount,
+    qualitySnapshot.noCounterpartyCount,
+    review.overdueObligationsCount,
+    review.pendingMovementsCount,
+    review.subscriptionsAttentionCount,
+    review.totalIssues,
+    review.uncategorizedCount,
+  ]);
 
   const executiveDetails = useMemo(() => ({
     focus: {
@@ -6511,11 +6585,13 @@ function AdvancedDashboard({
     };
   }, [accountCurrencyMap, activeCurrency, exchangeRateMap, movementPreview]);
   const dashboardAiFlowMutation = useDashboardAiFlowMutation();
+  const dashboardAiHealthMutation = useDashboardAiHealthMutation();
   const dashboardAiHistoryMutation = useDashboardAiHistoryMutation();
   const dashboardAiPatternsMutation = useDashboardAiPatternsMutation();
   const dashboardAiSummaryMutation = useDashboardAiSummaryMutation();
   const [dashboardAiDailyCache, setDashboardAiDailyCache] = useState<DashboardAiDailyCache | null>(null);
   const [dashboardAiFlowCache, setDashboardAiFlowCache] = useState<DashboardAiDailyCache | null>(null);
+  const [dashboardAiHealthCache, setDashboardAiHealthCache] = useState<DashboardAiDailyCache | null>(null);
   const [dashboardAiHistoryCache, setDashboardAiHistoryCache] = useState<DashboardAiDailyCache | null>(null);
   const [dashboardAiPatternsCache, setDashboardAiPatternsCache] = useState<DashboardAiDailyCache | null>(null);
   const [activeDashboardAiTerm, setActiveDashboardAiTerm] = useState<DashboardAiComplexTerm | null>(null);
@@ -6523,6 +6599,7 @@ function AdvancedDashboard({
   const dashboardAiBreath = useRef(new Animated.Value(0)).current;
   const dashboardAiToneStorageKey = useMemo(() => getDashboardAiToneKey(userId), [userId]);
   const dashboardAiFlowCacheKey = useMemo(() => getDashboardAiFlowCacheKey(userId), [userId]);
+  const dashboardAiHealthCacheKey = useMemo(() => getDashboardAiHealthCacheKey(userId), [userId]);
   const dashboardAiHistoryCacheKey = useMemo(() => getDashboardAiHistoryCacheKey(userId), [userId]);
   const dashboardAiSummaryCacheKey = useMemo(() => getDashboardAiSummaryCacheKey(userId), [userId]);
   const dashboardAiPatternsCacheKey = useMemo(() => getDashboardAiPatternsCacheKey(userId), [userId]);
@@ -6558,6 +6635,7 @@ function AdvancedDashboard({
     setDashboardAiTone("managerial");
     setDashboardAiDailyCache(null);
     setDashboardAiFlowCache(null);
+    setDashboardAiHealthCache(null);
     setDashboardAiHistoryCache(null);
     setDashboardAiPatternsCache(null);
     setActiveDashboardAiTerm(null);
@@ -6610,6 +6688,36 @@ function AdvancedDashboard({
       cancelled = true;
     };
   }, [dashboardAiFlowCacheKey, dashboardAiUsageDate]);
+  useEffect(() => {
+    if (!dashboardAiHealthCacheKey) {
+      setDashboardAiHealthCache(null);
+      return;
+    }
+    let cancelled = false;
+    void AsyncStorage.getItem(dashboardAiHealthCacheKey)
+      .then((stored) => {
+        if (cancelled) return;
+        if (!stored) {
+          setDashboardAiHealthCache(null);
+          return;
+        }
+        try {
+          const parsed = JSON.parse(stored) as DashboardAiDailyCache;
+          if (parsed && parsed.usageDate === dashboardAiUsageDate && parsed.responses && typeof parsed.responses === "object") {
+            setDashboardAiHealthCache(parsed);
+          } else {
+            setDashboardAiHealthCache(null);
+            void AsyncStorage.removeItem(dashboardAiHealthCacheKey);
+          }
+        } catch {
+          setDashboardAiHealthCache(null);
+          void AsyncStorage.removeItem(dashboardAiHealthCacheKey);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [dashboardAiHealthCacheKey, dashboardAiUsageDate]);
   useEffect(() => {
     if (!dashboardAiHistoryCacheKey) {
       setDashboardAiHistoryCache(null);
@@ -6713,6 +6821,14 @@ function AdvancedDashboard({
     void AsyncStorage.setItem(dashboardAiFlowCacheKey, JSON.stringify(dashboardAiFlowCache));
   }, [dashboardAiFlowCache, dashboardAiFlowCacheKey]);
   useEffect(() => {
+    if (!dashboardAiHealthCacheKey) return;
+    if (!dashboardAiHealthCache) {
+      void AsyncStorage.removeItem(dashboardAiHealthCacheKey);
+      return;
+    }
+    void AsyncStorage.setItem(dashboardAiHealthCacheKey, JSON.stringify(dashboardAiHealthCache));
+  }, [dashboardAiHealthCache, dashboardAiHealthCacheKey]);
+  useEffect(() => {
     if (!dashboardAiHistoryCacheKey) return;
     if (!dashboardAiHistoryCache) {
       void AsyncStorage.removeItem(dashboardAiHistoryCacheKey);
@@ -6766,6 +6882,9 @@ function AdvancedDashboard({
   const dashboardAiFlowCurrentToneResponse = dashboardAiFlowCache?.responses?.[dashboardAiTone] ?? null;
   const dashboardAiFlowReply = dashboardAiFlowCurrentToneResponse?.reply ?? null;
   const dashboardAiFlowComplexTerms = dashboardAiFlowCurrentToneResponse?.complexTerms ?? [];
+  const dashboardAiHealthCurrentToneResponse = dashboardAiHealthCache?.responses?.[dashboardAiTone] ?? null;
+  const dashboardAiHealthReply = dashboardAiHealthCurrentToneResponse?.reply ?? null;
+  const dashboardAiHealthComplexTerms = dashboardAiHealthCurrentToneResponse?.complexTerms ?? [];
   const dashboardAiHistoryCurrentToneResponse = dashboardAiHistoryCache?.responses?.[dashboardAiTone] ?? null;
   const dashboardAiHistoryReply = dashboardAiHistoryCurrentToneResponse?.reply ?? null;
   const dashboardAiHistoryComplexTerms = dashboardAiHistoryCurrentToneResponse?.complexTerms ?? [];
@@ -6790,6 +6909,14 @@ function AdvancedDashboard({
   const dashboardAiFlowTextParts = useMemo(
     () => buildDashboardAiTextParts(dashboardAiFlowReply ?? "", dashboardAiFlowResolvedTerms),
     [dashboardAiFlowReply, dashboardAiFlowResolvedTerms],
+  );
+  const dashboardAiHealthResolvedTerms = useMemo(
+    () => ensureDashboardAiComplexTerms(dashboardAiHealthReply ?? "", dashboardAiHealthComplexTerms),
+    [dashboardAiHealthComplexTerms, dashboardAiHealthReply],
+  );
+  const dashboardAiHealthTextParts = useMemo(
+    () => buildDashboardAiTextParts(dashboardAiHealthReply ?? "", dashboardAiHealthResolvedTerms),
+    [dashboardAiHealthReply, dashboardAiHealthResolvedTerms],
   );
   const dashboardAiHistoryResolvedTerms = useMemo(
     () => ensureDashboardAiComplexTerms(dashboardAiHistoryReply ?? "", dashboardAiHistoryComplexTerms),
@@ -6869,6 +6996,35 @@ function AdvancedDashboard({
       showToast(error instanceof Error ? error.message : "No se pudo consultar a la IA de flujo.", "error");
     }
   }, [dashboardAiFlowMutation, dashboardAiFlowPayload, dashboardAiTone, dashboardAiUsageDate, showToast, workspaceId]);
+  const handleRequestDashboardAiHealth = useCallback(async () => {
+    if (!workspaceId) {
+      showToast("No se encontró el workspace activo.", "error");
+      return;
+    }
+    try {
+      setActiveDashboardAiTerm(null);
+      const response = await dashboardAiHealthMutation.mutateAsync({
+        workspaceId,
+        summary: dashboardAiHealthPayload,
+        tone: dashboardAiTone,
+      });
+      const nextResponse: DashboardAiToneResponse = {
+        reply: response.reply,
+        complexTerms: response.complexTerms ?? [],
+        generatedAt: new Date().toISOString(),
+      };
+      setDashboardAiHealthCache((current) => ({
+        usageDate: dashboardAiUsageDate,
+        lastUsedAt: nextResponse.generatedAt,
+        responses: {
+          ...(current?.usageDate === dashboardAiUsageDate ? current.responses : {}),
+          [dashboardAiTone]: nextResponse,
+        },
+      }));
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "No se pudo consultar a la IA de salud.", "error");
+    }
+  }, [dashboardAiHealthMutation, dashboardAiHealthPayload, dashboardAiTone, dashboardAiUsageDate, showToast, workspaceId]);
   const handleRequestDashboardAiHistory = useCallback(async () => {
     if (!workspaceId) {
       showToast("No se encontró el workspace activo.", "error");
@@ -8830,6 +8986,185 @@ function AdvancedDashboard({
         router={router}
         onOpenMovementIssue={openHealthMovementIssuePreview}
       />
+
+      <View style={{ height: SPACING.sm }} />
+      <Card>
+        <View style={subStyles.aiSummaryShellWrap}>
+          <LinearGradient
+            colors={[GEMINI_BRAND.blue, GEMINI_BRAND.coral, GEMINI_BRAND.gold, GEMINI_BRAND.teal]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={subStyles.aiSummaryGradientBorder}
+            pointerEvents="none"
+          />
+          <View style={subStyles.aiSummaryShell}>
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                subStyles.aiSummaryAmbientGlow,
+                subStyles.aiSummaryAmbientGlowBlue,
+                { transform: [{ scale: dashboardAiHaloScale }] },
+              ]}
+            />
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                subStyles.aiSummaryAmbientGlow,
+                subStyles.aiSummaryAmbientGlowCoral,
+                { transform: [{ scale: dashboardAiHaloScale }, { translateY: dashboardAiOrbShift }] },
+              ]}
+            />
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                subStyles.aiSummaryAmbientGlow,
+                subStyles.aiSummaryAmbientGlowGold,
+                { transform: [{ scale: dashboardAiHaloScale }, { translateY: Animated.multiply(dashboardAiOrbShift, -0.6) }] },
+              ]}
+            />
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                subStyles.aiSummaryAmbientGlow,
+                subStyles.aiSummaryAmbientGlowTeal,
+                { transform: [{ scale: dashboardAiHaloScale }, { translateY: dashboardAiOrbShift }] },
+              ]}
+            />
+            <Animated.View style={[subStyles.aiSummaryBadgeRow, { transform: [{ translateY: dashboardAiBadgeTranslateY }] }]}>
+              <View style={subStyles.aiSummaryGeminiBadge}>
+                <Sparkles size={12} color={GEMINI_BRAND.teal} />
+                <View style={subStyles.aiSummaryGeminiDotsRow}>
+                  <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.blue }]} />
+                  <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.coral }]} />
+                  <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.gold }]} />
+                  <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.teal }]} />
+                </View>
+                <Text style={subStyles.aiSummaryGeminiBadgeText}>Impulsado por Gemini AI</Text>
+              </View>
+              <Text style={subStyles.aiSummaryGeminiKicker}>Interpreta tu limpieza operativa, la calidad del dato y los puntos que hoy bajan la precisión del sistema.</Text>
+            </Animated.View>
+            <View style={subStyles.aiSummaryHeader}>
+              <View style={subStyles.aiSummaryHeaderText}>
+                <Text style={subStyles.aiSummaryTitle}>Tu salud financiera explicada</Text>
+                <Text style={subStyles.aiSummaryBody}>
+                  Gemini toma los pendientes, las sugerencias y la calidad actual del dashboard para explicarte qué está frenando la precisión y qué conviene ordenar primero.
+                </Text>
+              </View>
+              <View style={subStyles.aiSummaryOrbWrap}>
+                <Animated.View
+                  pointerEvents="none"
+                  style={[
+                    subStyles.aiSummaryPulseHalo,
+                    { opacity: dashboardAiHaloOpacity, transform: [{ scale: dashboardAiHaloScale }] },
+                  ]}
+                />
+                <Animated.View style={{ transform: [{ scale: dashboardAiCoreScale }] }}>
+                  <View style={subStyles.aiSummaryIconWrap}>
+                    <View style={subStyles.aiSummaryIconRing}>
+                      <Sparkles size={20} color={GEMINI_BRAND.teal} />
+                    </View>
+                  </View>
+                </Animated.View>
+              </View>
+            </View>
+            <Text style={subStyles.aiSummarySelectorLabel}>Elige cómo quieres ver la explicación</Text>
+            <View style={subStyles.aiSummaryToneRow}>
+              {DASHBOARD_AI_TONE_OPTIONS.map((option) => {
+                const active = option.id === dashboardAiTone;
+                return (
+                  <TouchableOpacity
+                    key={option.id}
+                    activeOpacity={0.85}
+                    style={[subStyles.aiSummaryToneChip, active && subStyles.aiSummaryToneChipActive]}
+                    onPress={() => {
+                      setDashboardAiTone(option.id);
+                      setActiveDashboardAiTerm(null);
+                    }}
+                  >
+                    <Text style={[subStyles.aiSummaryToneChipTitle, active && subStyles.aiSummaryToneChipTitleActive]}>
+                      {option.label}
+                    </Text>
+                    <Text style={[subStyles.aiSummaryToneChipBody, active && subStyles.aiSummaryToneChipBodyActive]}>
+                      {option.description}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <TouchableOpacity
+              activeOpacity={0.86}
+              onPress={() => void handleRequestDashboardAiHealth()}
+              disabled={dashboardAiHealthMutation.isPending}
+              style={[
+                subStyles.aiSummaryButton,
+                dashboardAiHealthMutation.isPending && subStyles.aiSummaryButtonDisabled,
+              ]}
+            >
+              <View style={subStyles.aiSummaryButtonAccent} />
+              <View style={subStyles.aiSummaryButtonInner}>
+                <Sparkles size={16} color={dashboardAiHealthMutation.isPending ? "rgba(255,255,255,0.4)" : GEMINI_BRAND.teal} />
+                <Text style={subStyles.aiSummaryButtonLabel}>
+                  {dashboardAiHealthMutation.isPending
+                    ? "Preparando explicacion..."
+                    : dashboardAiTone === "managerial"
+                      ? "Ver informe de salud"
+                      : "Hablar con mi asesor de salud"}
+                </Text>
+              </View>
+            </TouchableOpacity>
+            {dashboardAiHealthReply ? (
+              <View style={subStyles.aiSummaryResponseCard}>
+                <LinearGradient
+                  pointerEvents="none"
+                  colors={[GEMINI_BRAND.blue, GEMINI_BRAND.coral, GEMINI_BRAND.gold, GEMINI_BRAND.teal]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 0, y: 1 }}
+                  style={subStyles.aiSummaryResponseGradientBar}
+                />
+                <View style={subStyles.aiSummaryResponseAiTag}>
+                  <Sparkles size={11} color={GEMINI_BRAND.teal} />
+                  <View style={subStyles.aiSummaryGeminiDotsRow}>
+                    <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.blue, width: 5, height: 5 }]} />
+                    <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.coral, width: 5, height: 5 }]} />
+                    <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.gold, width: 5, height: 5 }]} />
+                    <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.teal, width: 5, height: 5 }]} />
+                  </View>
+                  <Text style={subStyles.aiSummaryResponseLabel}>
+                    {dashboardAiTone === "managerial" ? "Gemini · Salud gerencial" : "Gemini · Salud en modo asesor"}
+                  </Text>
+                </View>
+                {dashboardAiHealthResolvedTerms.length > 0 ? (
+                  <Text style={subStyles.aiSummaryGlossaryHint}>
+                    Toca las palabras resaltadas para ver su explicación.
+                  </Text>
+                ) : null}
+                <Text style={subStyles.aiSummaryResponseText}>
+                  {dashboardAiHealthTextParts.map((part, index) => (
+                    part.type === "term" ? (
+                      <Text
+                        key={`${part.term.term}-health-${index}`}
+                        style={subStyles.aiSummaryResponseTerm}
+                        onPress={() => setActiveDashboardAiTerm(part.term)}
+                      >
+                        {part.value}
+                      </Text>
+                    ) : (
+                      <Text key={`health-text-${index}`}>{part.value}</Text>
+                    )
+                  ))}
+                </Text>
+              </View>
+            ) : (
+              <Text style={subStyles.aiSummaryHint}>
+                Gemini interpreta tus pendientes, la calidad del dato y las sugerencias activas para explicarte qué está afectando hoy la salud del sistema.
+              </Text>
+            )}
+            <View style={subStyles.aiSummaryFooterRow}>
+              <Text style={subStyles.aiSummaryFooterText}>La explicación usa solo las señales de limpieza y calidad visibles en esta pestaña.</Text>
+            </View>
+          </View>
+        </View>
+      </Card>
 
       <View style={{ height: SPACING.sm }} />
       <Card>
