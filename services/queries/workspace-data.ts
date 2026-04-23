@@ -1619,6 +1619,24 @@ export function useDashboardAiSummaryMutation() {
   });
 }
 
+export type DashboardAiPatternsInput = DashboardAiSummaryInput;
+export type DashboardAiPatternsResponse = DashboardAiSummaryResponse;
+
+export function useDashboardAiPatternsMutation() {
+  return useMutation({
+    mutationFn: async (input: DashboardAiPatternsInput): Promise<DashboardAiPatternsResponse> => {
+      if (!input.workspaceId) throw new Error("No se encontró el workspace activo.");
+      if (!input.summary || typeof input.summary !== "object") {
+        throw new Error("No hay patrones suficientes para enviar a la IA.");
+      }
+      if (input.tone !== "managerial" && input.tone !== "personal") {
+        throw new Error("No se encontró el estilo de explicación.");
+      }
+      return invokeEdgeFunction<DashboardAiPatternsResponse>("dashboard-advanced-ai-patterns", input);
+    },
+  });
+}
+
 export function usePersistDashboardAnalyticsMutation(workspaceId: number | null) {
   return useMutation({
     mutationFn: async (input: PersistDashboardAnalyticsInput) => {
