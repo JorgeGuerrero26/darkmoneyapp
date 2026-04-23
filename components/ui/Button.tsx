@@ -107,6 +107,8 @@ const styles = StyleSheet.create({
   label: {
     fontFamily: FONT_FAMILY.bodySemibold,
     fontSize: FONT_SIZE.md,
+    textAlign: "center",
+    flexShrink: 1,
   },
   primaryLabel:   { color: COLORS.textInverse },
   secondaryLabel: { color: COLORS.ink },

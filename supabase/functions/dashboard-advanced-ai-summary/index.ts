@@ -33,6 +33,14 @@ function formatSummary(summary: Record<string, unknown>) {
 }
 
 type DashboardAiTone = "managerial" | "personal";
+type DashboardAiComplexTerm = {
+  term: string;
+  explanation: string;
+};
+type DashboardAiStructuredReply = {
+  reply: string;
+  complexTerms: DashboardAiComplexTerm[];
+};
 
 function sanitizeTone(value: unknown): DashboardAiTone {
   return value === "personal" ? "personal" : "managerial";
@@ -54,14 +62,17 @@ function buildPrompt(summary: Record<string, unknown>, tone: DashboardAiTone, mo
   const extraInstruction = mode === "strict"
     ? [
         "La respuesta anterior quedo demasiado corta o incompleta.",
-        "Ahora debes responder con 3 parrafos completos, sin listas, sin markdown y sin asteriscos.",
+        "Ahora debes responder con 3 parrafos completos dentro del campo reply, sin listas, sin markdown y sin asteriscos.",
         "Cada parrafo debe tener al menos 2 oraciones.",
       ].join("\n")
-    : "Responde con 3 parrafos breves, sin markdown y sin asteriscos.";
+    : "Responde con 3 parrafos breves dentro del campo reply, sin markdown y sin asteriscos.";
   const toneInstruction = tone === "personal"
     ? [
         "Escribe como un asesor financiero personal.",
         "Haz que el texto se sienta cercano, claro y orientado a ayudar al usuario a entender su situación sin sonar informal.",
+        "Usa palabras simples y fáciles de entender.",
+        "Si necesitas mencionar un término financiero o del dashboard, explícalo en la misma frase con lenguaje común.",
+        "Ejemplo: en vez de decir solo 'cobertura de caja', explica que se refiere a cuántos días podría sostener sus pagos con el dinero disponible.",
       ].join("\n")
     : [
         "Escribe como un informe gerencial breve.",
@@ -83,7 +94,21 @@ function buildPrompt(summary: Record<string, unknown>, tone: DashboardAiTone, mo
     "No empieces con títulos como 'Estado actual', 'Respuesta' o 'Acción sugerida'.",
     "No uses emojis, frases promocionales, muletillas ni lenguaje demasiado coloquial.",
     "Escribe como un asesor financiero serio, no como un chatbot.",
-    "Cierra siempre con una última línea independiente que empiece exactamente con 'Recomendación inmediata:' y contenga una sola recomendación concreta.",
+    "Cierra siempre con una última línea independiente dentro de reply que empiece exactamente con 'Recomendación inmediata:' y contenga una sola recomendación concreta.",
+    "Devuelve solo JSON valido. No agregues texto fuera del JSON.",
+    "Usa exactamente esta estructura:",
+    '{',
+    '  "reply": "texto con 3 parrafos y la línea final de recomendación",',
+    '  "complexTerms": [',
+    '    { "term": "termino exacto usado en reply", "explanation": "explicacion breve y simple" }',
+    "  ]",
+    '}',
+    "Reglas para complexTerms:",
+    "Incluye entre 0 y 6 términos.",
+    "Cada term debe aparecer literalmente dentro de reply con la misma escritura.",
+    "Incluye solo términos o expresiones que puedan ser difíciles para un usuario común.",
+    "No repitas términos.",
+    "Cada explanation debe explicar el término con palabras simples en una sola oración corta.",
     "",
     "Resumen estructurado del dashboard avanzado:",
     formatSummary(summary),
@@ -98,6 +123,74 @@ function normalizeReply(value: string) {
     .replace(/\s+\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+function normalizeInlineText(value: string) {
+  return value
+    .replace(/\*\*/g, "")
+    .replace(/^#{1,6}\s*/gm, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function sanitizeComplexTerms(value: unknown, reply: string): DashboardAiComplexTerm[] {
+  if (!Array.isArray(value) || !reply) return [];
+  const normalizedReply = reply.toLocaleLowerCase("es");
+  const seen = new Set<string>();
+  const terms: DashboardAiComplexTerm[] = [];
+
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+    const rawTerm = typeof (entry as Record<string, unknown>).term === "string"
+      ? (entry as Record<string, unknown>).term
+      : "";
+    const rawExplanation = typeof (entry as Record<string, unknown>).explanation === "string"
+      ? (entry as Record<string, unknown>).explanation
+      : "";
+    const term = normalizeInlineText(rawTerm).replace(/^["'“”‘’]+|["'“”‘’]+$/g, "");
+    const explanation = normalizeInlineText(rawExplanation);
+    if (term.length < 3 || term.length > 80 || explanation.length < 8 || explanation.length > 220) continue;
+    if (!normalizedReply.includes(term.toLocaleLowerCase("es"))) continue;
+    const key = term.toLocaleLowerCase("es");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    terms.push({ term, explanation });
+    if (terms.length >= 6) break;
+  }
+
+  return terms;
+}
+
+function extractJsonObject(raw: string) {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith("{") && trimmed.endsWith("}")) return trimmed;
+  const withoutFences = trimmed.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+  if (withoutFences.startsWith("{") && withoutFences.endsWith("}")) return withoutFences;
+  const start = withoutFences.indexOf("{");
+  const end = withoutFences.lastIndexOf("}");
+  if (start === -1 || end === -1 || end <= start) return null;
+  return withoutFences.slice(start, end + 1);
+}
+
+function parseStructuredReply(raw: string): DashboardAiStructuredReply {
+  const jsonText = extractJsonObject(raw);
+  if (!jsonText) {
+    const reply = normalizeReply(raw);
+    return { reply, complexTerms: [] };
+  }
+
+  try {
+    const parsed = JSON.parse(jsonText) as Record<string, unknown>;
+    const reply = normalizeReply(typeof parsed.reply === "string" ? parsed.reply : "");
+    return {
+      reply,
+      complexTerms: sanitizeComplexTerms(parsed.complexTerms, reply),
+    };
+  } catch {
+    const reply = normalizeReply(raw);
+    return { reply, complexTerms: [] };
+  }
 }
 
 function ensureRecommendationLine(reply: string, summary: Record<string, unknown>) {
@@ -145,7 +238,7 @@ function fallbackReply(summary: Record<string, unknown>, tone: DashboardAiTone) 
   const body = tone === "personal"
     ? [
         `Hoy tu panorama financiero muestra un balance visible de ${visibleBalance ?? "N/D"} y un cierre estimado de mes de ${monthEndReading ?? "N/D"}. Con la información disponible, tu situación se ubica en ${monthStatus ?? "un estado no disponible"} y la presión de los próximos 7 días aparece como ${weekStatus ?? "sin lectura disponible"}, con un neto semanal de ${weekNet ?? "N/D"}.`,
-        `Esto significa que no basta con mirar solo el saldo actual. También importa que hoy tienes ${unresolvedIssues ?? 0} puntos por revisar y una cobertura de caja aproximada de ${cashCushionDays ?? 0} días, porque eso define cuánto margen real tienes para sostener pagos, responder a imprevistos y mantener orden en tus decisiones financieras.`,
+        `Esto significa que no basta con mirar solo el saldo actual. También importa que hoy tienes ${unresolvedIssues ?? 0} puntos por revisar y que tu dinero disponible alcanzaría aproximadamente para ${cashCushionDays ?? 0} días de operación, es decir, para cubrir pagos y gastos por ese tiempo si no entrara más dinero.`,
         `${focusTitle} aparece como la prioridad principal en este momento. ${focusBody ?? "Conviene atender primero esa acción antes de asumir nuevos gastos, transferencias o compromisos adicionales."}`,
       ].join("\n\n")
     : [
@@ -154,6 +247,26 @@ function fallbackReply(summary: Record<string, unknown>, tone: DashboardAiTone) 
         `La prioridad recomendada en este momento es ${focusTitle}. ${focusBody ?? "Conviene ejecutar primero la acción prioritaria identificada por el resumen antes de asumir nuevos gastos, transferencias o compromisos adicionales."}`,
       ].join("\n\n");
   return ensureRecommendationLine(body, summary);
+}
+
+const FALLBACK_COMPLEX_TERM_EXPLANATIONS: Array<DashboardAiComplexTerm> = [
+  { term: "balance visible", explanation: "Es el dinero que ves disponible ahora mismo en tus cuentas." },
+  { term: "cierre estimado de mes", explanation: "Es cómo podrías terminar el mes si todo sigue como va hoy." },
+  { term: "neto semanal", explanation: "Es la diferencia entre lo que entra y lo que sale durante la semana." },
+  { term: "presión financiera", explanation: "Significa que tus pagos cercanos aprietan tu dinero disponible." },
+  { term: "cobertura de caja", explanation: "Es cuántos días podrías seguir pagando con el dinero que ya tienes." },
+  { term: "flujo", explanation: "Es el movimiento de dinero que entra y sale en un periodo." },
+  { term: "proyección", explanation: "Es una estimación de lo que podría pasar con tus números más adelante." },
+  { term: "compromisos inmediatos", explanation: "Son pagos u obligaciones que tienes que atender pronto." },
+  { term: "desorden operativo", explanation: "Significa que hay pendientes o datos mal organizados que afectan el control." },
+  { term: "saldo actual", explanation: "Es el dinero disponible que tienes en este momento." },
+];
+
+function buildFallbackComplexTerms(reply: string): DashboardAiComplexTerm[] {
+  const normalizedReply = reply.toLocaleLowerCase("es");
+  return FALLBACK_COMPLEX_TERM_EXPLANATIONS
+    .filter((item) => normalizedReply.includes(item.term.toLocaleLowerCase("es")))
+    .slice(0, 6);
 }
 
 async function requestGeminiReply(apiKey: string, model: string, prompt: string) {
@@ -173,7 +286,7 @@ async function requestGeminiReply(apiKey: string, model: string, prompt: string)
           temperature: 0.4,
           topP: 0.9,
           maxOutputTokens: 420,
-          responseMimeType: "text/plain",
+          responseMimeType: "application/json",
         },
       }),
     },
@@ -188,7 +301,7 @@ async function requestGeminiReply(apiKey: string, model: string, prompt: string)
     throw new Error(message);
   }
 
-  return normalizeReply(payload?.candidates?.[0]?.content?.parts
+  return parseStructuredReply(payload?.candidates?.[0]?.content?.parts
     ?.map((part: { text?: string }) => part?.text ?? "")
     .join("\n")
     .trim() ?? "");
@@ -230,16 +343,23 @@ Deno.serve(async (req) => {
       return jsonResponse({ ok: false, error: "No tienes acceso a este workspace." }, 403);
     }
 
-    let reply = await requestGeminiReply(geminiApiKey, model, buildPrompt(summary, tone, "normal"));
-    reply = ensureRecommendationLine(reply, summary);
+    let structuredReply = await requestGeminiReply(geminiApiKey, model, buildPrompt(summary, tone, "normal"));
+    let reply = ensureRecommendationLine(structuredReply.reply, summary);
+    let complexTerms = sanitizeComplexTerms(structuredReply.complexTerms, reply);
+
     if (isReplyInsufficient(reply)) {
-      reply = await requestGeminiReply(geminiApiKey, model, buildPrompt(summary, tone, "strict"));
-      reply = ensureRecommendationLine(reply, summary);
+      structuredReply = await requestGeminiReply(geminiApiKey, model, buildPrompt(summary, tone, "strict"));
+      reply = ensureRecommendationLine(structuredReply.reply, summary);
+      complexTerms = sanitizeComplexTerms(structuredReply.complexTerms, reply);
     }
     if (isReplyInsufficient(reply)) {
       reply = fallbackReply(summary, tone);
+      complexTerms = buildFallbackComplexTerms(reply);
     }
     reply = ensureRecommendationLine(reply, summary);
+    if (complexTerms.length === 0) {
+      complexTerms = buildFallbackComplexTerms(reply);
+    }
 
     if (!reply) {
       return jsonResponse({ ok: false, error: "La IA no devolvio contenido util." }, 502);
@@ -248,6 +368,7 @@ Deno.serve(async (req) => {
     return jsonResponse({
       ok: true,
       reply,
+      complexTerms,
       model,
       tone: toneLabel(tone),
     });

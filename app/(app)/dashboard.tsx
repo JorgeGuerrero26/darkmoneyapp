@@ -1,6 +1,8 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect } from "expo-router";
 import {
+  Animated,
+  Easing,
   Image,
   Modal,
   Pressable,
@@ -95,6 +97,7 @@ import { buildPaymentOptimizationPlan, type PaymentOptimizationRecommendation } 
 import { buildPatternClusters } from "../../services/analytics/pattern-clustering";
 import { normalizeAnalyticsText } from "../../services/analytics/movement-features";
 import { useBcrpMacroIndicatorsQuery } from "../../services/queries/bcrp-data";
+import { LinearGradient } from "expo-linear-gradient";
 
 // --- Constants ----------------------------------------------------------------
 
@@ -3826,9 +3829,16 @@ const DASHBOARD_AI_TONE_OPTIONS: Array<{ id: DashboardAiTone; label: string; des
   {
     id: "personal",
     label: "Asesor personal",
-    description: "Más cercano y pensado para el día a día.",
+    description: "Más claro, simple y pensado para el día a día.",
   },
 ];
+
+const GEMINI_BRAND = {
+  blue: "#5C8DFF",
+  teal: "#49D7BE",
+  coral: "#FF7D8D",
+  gold: "#FFD15C",
+};
 
 type TabIndicator = { tab: AdvancedTab; count?: number; dot?: string };
 
@@ -6084,9 +6094,33 @@ function AdvancedDashboard({
   const dashboardAiSummaryMutation = useDashboardAiSummaryMutation();
   const [dashboardAiReply, setDashboardAiReply] = useState<string | null>(null);
   const [dashboardAiTone, setDashboardAiTone] = useState<DashboardAiTone>("managerial");
+  const dashboardAiBreath = useRef(new Animated.Value(0)).current;
   const dashboardAiToneStorageKey = useMemo(() => getDashboardAiToneKey(userId), [userId]);
   const dashboardAiToneLoadedRef = useRef(false);
   const [activeTab, setActiveTab] = useState<AdvancedTab>('Resumen');
+  useEffect(() => {
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(dashboardAiBreath, {
+          toValue: 1,
+          duration: 2600,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(dashboardAiBreath, {
+          toValue: 0,
+          duration: 2600,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    animation.start();
+    return () => {
+      animation.stop();
+      dashboardAiBreath.stopAnimation();
+    };
+  }, [dashboardAiBreath]);
   useEffect(() => {
     dashboardAiToneLoadedRef.current = false;
     setDashboardAiTone("managerial");
@@ -6118,6 +6152,26 @@ function AdvancedDashboard({
     setActiveTab(tab);
     onScrollToTop?.();
   }, [onScrollToTop]);
+  const dashboardAiHaloScale = dashboardAiBreath.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.96, 1.12],
+  });
+  const dashboardAiHaloOpacity = dashboardAiBreath.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.18, 0.38],
+  });
+  const dashboardAiCoreScale = dashboardAiBreath.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 1.06],
+  });
+  const dashboardAiBadgeTranslateY = dashboardAiBreath.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -2],
+  });
+  const dashboardAiOrbShift = dashboardAiBreath.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -5],
+  });
   const handleRequestDashboardAiSummary = useCallback(async () => {
     if (!workspaceId) {
       showToast("No se encontró el workspace activo.", "error");
@@ -6237,63 +6291,162 @@ function AdvancedDashboard({
 
       <View style={{ height: SPACING.sm }} />
       <Card>
-        <View style={subStyles.aiSummaryHeader}>
-          <View style={subStyles.aiSummaryHeaderText}>
-            <Text style={subStyles.aiSummaryTitle}>Tu situación explicada</Text>
-            <Text style={subStyles.aiSummaryBody}>
-              Toma el estado actual de tu dashboard y te lo explica en palabras simples para que entiendas cómo vas hoy y qué conviene revisar primero.
-            </Text>
+        <View style={subStyles.aiSummaryShellWrap}>
+          <LinearGradient
+            colors={[GEMINI_BRAND.blue, GEMINI_BRAND.coral, GEMINI_BRAND.gold, GEMINI_BRAND.teal]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={subStyles.aiSummaryGradientBorder}
+            pointerEvents="none"
+          />
+        <View style={subStyles.aiSummaryShell}>
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              subStyles.aiSummaryAmbientGlow,
+              subStyles.aiSummaryAmbientGlowBlue,
+              { transform: [{ scale: dashboardAiHaloScale }] },
+            ]}
+          />
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              subStyles.aiSummaryAmbientGlow,
+              subStyles.aiSummaryAmbientGlowCoral,
+              { transform: [{ scale: dashboardAiHaloScale }, { translateY: dashboardAiOrbShift }] },
+            ]}
+          />
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              subStyles.aiSummaryAmbientGlow,
+              subStyles.aiSummaryAmbientGlowGold,
+              { transform: [{ scale: dashboardAiHaloScale }, { translateY: Animated.multiply(dashboardAiOrbShift, -0.6) }] },
+            ]}
+          />
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              subStyles.aiSummaryAmbientGlow,
+              subStyles.aiSummaryAmbientGlowTeal,
+              { transform: [{ scale: dashboardAiHaloScale }, { translateY: dashboardAiOrbShift }] },
+            ]}
+          />
+          <Animated.View style={[subStyles.aiSummaryBadgeRow, { transform: [{ translateY: dashboardAiBadgeTranslateY }] }]}>
+            <View style={subStyles.aiSummaryGeminiBadge}>
+              <Sparkles size={12} color={GEMINI_BRAND.teal} />
+              <View style={subStyles.aiSummaryGeminiDotsRow}>
+                <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.blue }]} />
+                <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.coral }]} />
+                <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.gold }]} />
+                <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.teal }]} />
+              </View>
+              <Text style={subStyles.aiSummaryGeminiBadgeText}>Impulsado por Gemini AI</Text>
+            </View>
+            <Text style={subStyles.aiSummaryGeminiKicker}>Lee las señales de tu dashboard y las convierte en una explicación accionable.</Text>
+          </Animated.View>
+          <View style={subStyles.aiSummaryHeader}>
+            <View style={subStyles.aiSummaryHeaderText}>
+              <Text style={subStyles.aiSummaryTitle}>Tu situación explicada</Text>
+              <Text style={subStyles.aiSummaryBody}>
+                Una capa inteligente de Gemini toma el estado actual de tu dashboard y lo convierte en una lectura simple, accionable y más fácil de entender.
+              </Text>
+            </View>
+            <View style={subStyles.aiSummaryOrbWrap}>
+              <Animated.View
+                pointerEvents="none"
+                style={[
+                  subStyles.aiSummaryPulseHalo,
+                  { opacity: dashboardAiHaloOpacity, transform: [{ scale: dashboardAiHaloScale }] },
+                ]}
+              />
+              <Animated.View style={{ transform: [{ scale: dashboardAiCoreScale }] }}>
+                <View style={subStyles.aiSummaryIconWrap}>
+                  <View style={subStyles.aiSummaryIconRing}>
+                    <Sparkles size={20} color={GEMINI_BRAND.teal} />
+                  </View>
+                </View>
+              </Animated.View>
+            </View>
           </View>
-          <View style={subStyles.aiSummaryIconWrap}>
-            <Brain size={18} color={COLORS.primary} />
+          <Text style={subStyles.aiSummarySelectorLabel}>Elige cómo quieres ver la explicación</Text>
+          <View style={subStyles.aiSummaryToneRow}>
+            {DASHBOARD_AI_TONE_OPTIONS.map((option) => {
+              const active = option.id === dashboardAiTone;
+              return (
+                <TouchableOpacity
+                  key={option.id}
+                  activeOpacity={0.85}
+                  style={[subStyles.aiSummaryToneChip, active && subStyles.aiSummaryToneChipActive]}
+                  onPress={() => {
+                    setDashboardAiTone(option.id);
+                    setDashboardAiReply(null);
+                  }}
+                >
+                  <Text style={[subStyles.aiSummaryToneChipTitle, active && subStyles.aiSummaryToneChipTitleActive]}>
+                    {option.label}
+                  </Text>
+                  <Text style={[subStyles.aiSummaryToneChipBody, active && subStyles.aiSummaryToneChipBodyActive]}>
+                    {option.description}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          <TouchableOpacity
+            activeOpacity={0.86}
+            onPress={() => void handleRequestDashboardAiSummary()}
+            disabled={dashboardAiSummaryMutation.isPending}
+            style={[
+              subStyles.aiSummaryButton,
+              dashboardAiSummaryMutation.isPending && subStyles.aiSummaryButtonDisabled,
+            ]}
+          >
+            <View style={subStyles.aiSummaryButtonAccent} />
+            <View style={subStyles.aiSummaryButtonInner}>
+              <Sparkles size={16} color={dashboardAiSummaryMutation.isPending ? "rgba(255,255,255,0.4)" : GEMINI_BRAND.teal} />
+              <Text style={subStyles.aiSummaryButtonLabel}>
+                {dashboardAiSummaryMutation.isPending
+                  ? "Preparando explicacion..."
+                  : dashboardAiTone === "managerial"
+                    ? "Ver informe gerencial"
+                    : "Hablar con mi asesor personal"}
+              </Text>
+            </View>
+          </TouchableOpacity>
+          {dashboardAiReply ? (
+            <View style={subStyles.aiSummaryResponseCard}>
+              <LinearGradient
+                pointerEvents="none"
+                colors={[GEMINI_BRAND.blue, GEMINI_BRAND.coral, GEMINI_BRAND.gold, GEMINI_BRAND.teal]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 0, y: 1 }}
+                style={subStyles.aiSummaryResponseGradientBar}
+              />
+              <View style={subStyles.aiSummaryResponseAiTag}>
+                <Sparkles size={11} color={GEMINI_BRAND.teal} />
+                <View style={subStyles.aiSummaryGeminiDotsRow}>
+                  <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.blue, width: 5, height: 5 }]} />
+                  <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.coral, width: 5, height: 5 }]} />
+                  <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.gold, width: 5, height: 5 }]} />
+                  <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.teal, width: 5, height: 5 }]} />
+                </View>
+                <Text style={subStyles.aiSummaryResponseLabel}>
+                  {dashboardAiTone === "managerial" ? "Gemini · Modo gerencial" : "Gemini · Modo asesor"}
+                </Text>
+              </View>
+              <Text style={subStyles.aiSummaryResponseText}>{dashboardAiReply}</Text>
+            </View>
+          ) : (
+            <Text style={subStyles.aiSummaryHint}>
+              Gemini interpreta tu resumen actual y siempre cierra con una recomendación concreta para hoy.
+            </Text>
+          )}
+          <View style={subStyles.aiSummaryFooterRow}>
+            <Text style={subStyles.aiSummaryFooterText}>Gemini mejora la lectura del sistema, pero usa solo los datos que ya existen en DarkMoney.</Text>
           </View>
         </View>
-        <Text style={subStyles.aiSummarySelectorLabel}>Elige cómo quieres ver la explicación</Text>
-        <View style={subStyles.aiSummaryToneRow}>
-          {DASHBOARD_AI_TONE_OPTIONS.map((option) => {
-            const active = option.id === dashboardAiTone;
-            return (
-              <TouchableOpacity
-                key={option.id}
-                activeOpacity={0.85}
-                style={[subStyles.aiSummaryToneChip, active && subStyles.aiSummaryToneChipActive]}
-                onPress={() => {
-                  setDashboardAiTone(option.id);
-                  setDashboardAiReply(null);
-                }}
-              >
-                <Text style={[subStyles.aiSummaryToneChipTitle, active && subStyles.aiSummaryToneChipTitleActive]}>
-                  {option.label}
-                </Text>
-                <Text style={[subStyles.aiSummaryToneChipBody, active && subStyles.aiSummaryToneChipBodyActive]}>
-                  {option.description}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
         </View>
-        <Button
-          label={dashboardAiSummaryMutation.isPending
-            ? "Preparando explicacion..."
-            : dashboardAiTone === "managerial"
-              ? "Generar informe gerencial"
-              : "Hablar con mi asesor personal"}
-          onPress={() => void handleRequestDashboardAiSummary()}
-          loading={dashboardAiSummaryMutation.isPending}
-          style={subStyles.aiSummaryButton}
-        />
-        {dashboardAiReply ? (
-          <View style={subStyles.aiSummaryResponseCard}>
-            <Text style={subStyles.aiSummaryResponseLabel}>
-              {dashboardAiTone === "managerial" ? "Informe gerencial" : "Asesor financiero personal"}
-            </Text>
-            <Text style={subStyles.aiSummaryResponseText}>{dashboardAiReply}</Text>
-          </View>
-        ) : (
-          <Text style={subStyles.aiSummaryHint}>
-            Esta explicación se basa en el resumen actual de tus finanzas y siempre cierra con una recomendación concreta para hoy.
-          </Text>
-        )}
       </Card>
 
       {financialGraphRank.length > 0 ? (
@@ -9295,6 +9448,92 @@ const subStyles = StyleSheet.create({
     color: COLORS.storm,
     lineHeight: 21,
   },
+  aiSummaryShellWrap: {
+    position: "relative",
+    marginHorizontal: -SPACING.xs,
+    borderRadius: RADIUS.xl,
+  },
+  aiSummaryGradientBorder: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: RADIUS.xl,
+  },
+  aiSummaryShell: {
+    position: "relative",
+    overflow: "hidden",
+    borderRadius: RADIUS.xl,
+    margin: 1.5,
+    padding: SPACING.lg,
+    backgroundColor: "rgba(7,11,22,0.96)",
+    gap: SPACING.md,
+  },
+  aiSummaryAmbientGlow: {
+    position: "absolute",
+    borderRadius: 999,
+    width: 100,
+    height: 100,
+  },
+  aiSummaryAmbientGlowBlue: {
+    top: -20,
+    right: -10,
+    backgroundColor: "rgba(92,141,255,0.10)",
+  },
+  aiSummaryAmbientGlowCoral: {
+    bottom: -20,
+    right: -10,
+    backgroundColor: "rgba(255,125,141,0.08)",
+  },
+  aiSummaryAmbientGlowGold: {
+    bottom: -20,
+    left: -10,
+    backgroundColor: "rgba(255,209,92,0.08)",
+  },
+  aiSummaryAmbientGlowTeal: {
+    top: -20,
+    left: -10,
+    backgroundColor: "rgba(73,215,190,0.08)",
+  },
+  aiSummaryBadgeRow: {
+    gap: SPACING.sm,
+  },
+  aiSummaryGeminiBadge: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: 7,
+    borderRadius: RADIUS.full,
+    backgroundColor: "rgba(14,22,44,0.94)",
+    borderWidth: 1,
+    borderColor: "rgba(73,215,190,0.30)",
+  },
+  aiSummaryGeminiDotsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+  },
+  aiSummaryGeminiDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 999,
+  },
+  aiSummaryGeminiBadgeText: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+    color: "#C8E8FF",
+    letterSpacing: 0.3,
+  },
+  aiSummaryGeminiKicker: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: "rgba(223,231,245,0.72)",
+    lineHeight: 18,
+    maxWidth: 360,
+  },
   aiSummaryHeader: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -9305,37 +9544,67 @@ const subStyles = StyleSheet.create({
     flex: 1,
     gap: SPACING.xs,
   },
-  aiSummaryIconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+  aiSummaryOrbWrap: {
+    width: 74,
+    height: 74,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: COLORS.primary + "16",
+  },
+  aiSummaryPulseHalo: {
+    position: "absolute",
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: "rgba(73,215,190,0.12)",
     borderWidth: 1,
-    borderColor: COLORS.primary + "33",
+    borderColor: "rgba(73,215,190,0.28)",
+  },
+  aiSummaryIconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(7,12,26,0.96)",
+    borderWidth: 1.5,
+    borderColor: "rgba(73,215,190,0.36)",
+    shadowColor: "#49D7BE",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.32,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  aiSummaryIconRing: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(73,215,190,0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(73,215,190,0.22)",
   },
   aiSummaryTitle: {
     fontFamily: FONT_FAMILY.heading,
-    fontSize: FONT_SIZE.lg,
+    fontSize: 19,
     color: COLORS.ink,
   },
   aiSummaryBody: {
     fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.sm,
-    color: COLORS.storm,
-    lineHeight: 21,
+    color: "rgba(231,238,248,0.80)",
+    lineHeight: 22,
   },
   aiSummarySelectorLabel: {
-    marginTop: SPACING.md,
+    marginTop: SPACING.xs,
     fontFamily: FONT_FAMILY.bodySemibold,
     fontSize: FONT_SIZE.xs,
-    color: COLORS.storm,
+    color: "rgba(198,210,227,0.78)",
     textTransform: "uppercase",
-    letterSpacing: 0.3,
+    letterSpacing: 0.8,
   },
   aiSummaryToneRow: {
-    marginTop: SPACING.sm,
+    marginTop: 10,
     flexDirection: "row",
     gap: SPACING.sm,
   },
@@ -9345,14 +9614,15 @@ const subStyles = StyleSheet.create({
     borderRadius: RADIUS.lg,
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
-    backgroundColor: "rgba(255,255,255,0.04)",
+    backgroundColor: "rgba(255,255,255,0.03)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.10)",
+    borderColor: "rgba(255,255,255,0.08)",
     gap: 6,
+    overflow: "hidden",
   },
   aiSummaryToneChipActive: {
-    backgroundColor: COLORS.primary + "14",
-    borderColor: COLORS.primary + "55",
+    backgroundColor: "rgba(92,141,255,0.12)",
+    borderColor: "rgba(92,141,255,0.36)",
   },
   aiSummaryToneChipTitle: {
     fontFamily: FONT_FAMILY.bodySemibold,
@@ -9360,47 +9630,113 @@ const subStyles = StyleSheet.create({
     color: COLORS.ink,
   },
   aiSummaryToneChipTitleActive: {
-    color: COLORS.primary,
+    color: "#CFE0FF",
   },
   aiSummaryToneChipBody: {
     fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.xs,
-    color: COLORS.storm,
+    color: "rgba(170,183,204,0.74)",
     lineHeight: 18,
   },
   aiSummaryToneChipBodyActive: {
-    color: COLORS.ink,
+    color: "rgba(240,245,255,0.88)",
   },
   aiSummaryButton: {
     marginTop: SPACING.md,
+    minHeight: 54,
+    borderRadius: RADIUS.lg,
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.md,
+    backgroundColor: "rgba(8,15,32,0.98)",
+    borderWidth: 1.5,
+    borderColor: "rgba(73,215,190,0.36)",
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+    shadowColor: "#49D7BE",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.22,
+    shadowRadius: 20,
+    elevation: 8,
+  },
+  aiSummaryButtonDisabled: {
+    opacity: 0.6,
+  },
+  aiSummaryButtonAccent: {
+    position: "absolute",
+    top: -28,
+    right: -18,
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    backgroundColor: "rgba(73,215,190,0.12)",
+  },
+  aiSummaryButtonInner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+  },
+  aiSummaryButtonLabel: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.md,
+    color: COLORS.ink,
+    textAlign: "center",
+    letterSpacing: 0.2,
   },
   aiSummaryHint: {
     marginTop: SPACING.md,
     fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.xs,
-    color: COLORS.storm,
+    color: "rgba(193,206,225,0.76)",
     lineHeight: 19,
   },
   aiSummaryResponseCard: {
     marginTop: SPACING.md,
-    padding: SPACING.md,
+    paddingTop: SPACING.md,
+    paddingBottom: SPACING.md,
+    paddingRight: SPACING.md,
+    paddingLeft: SPACING.md + 4,
     borderRadius: RADIUS.lg,
-    backgroundColor: "rgba(12,18,31,0.88)",
+    backgroundColor: "rgba(6,11,24,0.95)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.10)",
-    gap: SPACING.xs,
+    borderColor: "rgba(92,141,255,0.16)",
+    overflow: "hidden",
+    gap: SPACING.sm,
+  },
+  aiSummaryResponseGradientBar: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 4,
+    borderTopLeftRadius: RADIUS.lg,
+    borderBottomLeftRadius: RADIUS.lg,
+  },
+  aiSummaryResponseAiTag: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
   },
   aiSummaryResponseLabel: {
     fontFamily: FONT_FAMILY.bodySemibold,
     fontSize: FONT_SIZE.xs,
-    color: COLORS.primary,
-    textTransform: "uppercase",
+    color: "#7FE8D4",
+    letterSpacing: 0.4,
   },
   aiSummaryResponseText: {
     fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.sm,
-    color: COLORS.ink,
+    color: "rgba(230,240,255,0.92)",
     lineHeight: 22,
+  },
+  aiSummaryFooterRow: {
+    paddingTop: 2,
+  },
+  aiSummaryFooterText: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: 12,
+    color: "rgba(169,184,205,0.68)",
+    lineHeight: 18,
   },
   executiveModalOverlay: {
     flex: 1,

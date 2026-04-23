@@ -1596,6 +1596,10 @@ export type DashboardAiSummaryInput = {
 export type DashboardAiSummaryResponse = {
   ok: boolean;
   reply: string;
+  complexTerms?: Array<{
+    term: string;
+    explanation: string;
+  }>;
   model?: string | null;
   tone?: string | null;
 };
