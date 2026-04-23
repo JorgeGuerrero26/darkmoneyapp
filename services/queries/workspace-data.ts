@@ -5913,6 +5913,12 @@ export type ObligationShareInviteResult = {
   invitedDisplayName?: string | null;
 };
 
+export type UnlinkObligationShareInput = {
+  shareId?: number | null;
+  workspaceId?: number | null;
+  obligationId?: number | null;
+};
+
 export function useCreateObligationShareInviteMutation(workspaceId?: number | null) {
   const queryClient = useQueryClient();
   const appUrl = buildHostedAppUrl();
@@ -5948,6 +5954,39 @@ export function useCreateObligationShareInviteMutation(workspaceId?: number | nu
       void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
       void queryClient.invalidateQueries({ queryKey: ["obligation-active-share"] });
       void queryClient.invalidateQueries({ queryKey: ["pending-obligation-share-invites"] });
+      if (workspaceId) {
+        void queryClient.invalidateQueries({ queryKey: ["obligation-shares", workspaceId] });
+      }
+    },
+  });
+}
+
+export function useUnlinkObligationShareMutation(workspaceId?: number | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: UnlinkObligationShareInput) => {
+      const response = await invokeEdgeFunction<{
+        ok: boolean;
+        error?: string;
+        shareId?: number;
+        status?: string;
+        alreadyInactive?: boolean;
+      }>("unlink-obligation-share", {
+        shareId: input.shareId ?? null,
+        workspaceId: input.workspaceId ?? workspaceId ?? null,
+        obligationId: input.obligationId ?? null,
+      });
+      if (!response.ok) {
+        throw new Error(response.error ?? "No se pudo desvincular la relación compartida.");
+      }
+      return response;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+      void queryClient.invalidateQueries({ queryKey: ["obligation-active-share"] });
+      void queryClient.invalidateQueries({ queryKey: ["pending-obligation-share-invites"] });
+      void queryClient.invalidateQueries({ queryKey: ["shared-obligations"] });
+      void queryClient.invalidateQueries({ queryKey: ["notifications"] });
       if (workspaceId) {
         void queryClient.invalidateQueries({ queryKey: ["obligation-shares", workspaceId] });
       }

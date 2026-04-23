@@ -30,6 +30,7 @@ import { sortObligationEventsNewestFirst } from "../../lib/sort-obligation-event
 import {
   useWorkspaceSnapshotQuery,
   useCreateObligationShareInviteMutation,
+  useUnlinkObligationShareMutation,
   useSharedObligationsQuery,
   useDeleteObligationEventMutation,
   useNotificationsQuery,
@@ -373,6 +374,7 @@ function ObligationDetailScreen() {
     text: string;
   } | null>(null);
   const [viewerDetailTab, setViewerDetailTab] = useState<"history" | "requests">("history");
+  const [unlinkShareConfirmVisible, setUnlinkShareConfirmVisible] = useState(false);
   const [historyPreset, setHistoryPreset] = useState<HistoryPreset>("month");
   const [historyFrom, setHistoryFrom] = useState("");
   const [historyTo, setHistoryTo] = useState("");
@@ -384,6 +386,7 @@ function ObligationDetailScreen() {
 
   const deleteEventMutation = useDeleteObligationEventMutation();
   const shareMutation = useCreateObligationShareInviteMutation(activeWorkspaceId);
+  const unlinkShareMutation = useUnlinkObligationShareMutation(activeWorkspaceId);
   const acceptRequestMutation = useAcceptPaymentRequestMutation();
   const rejectRequestMutation = useRejectPaymentRequestMutation();
   const createDeleteRequestMutation = useCreateObligationEventDeleteRequestMutation();
@@ -1183,6 +1186,22 @@ function ObligationDetailScreen() {
     }
   }
 
+  async function handleUnlinkViewerShare() {
+    if (!obligation || !isSharedViewer || !("share" in obligation)) return;
+    try {
+      await unlinkShareMutation.mutateAsync({
+        shareId: obligation.share.id,
+        workspaceId: obligation.share.workspaceId,
+        obligationId: obligation.id,
+      });
+      setUnlinkShareConfirmVisible(false);
+      showToast("Te desvinculaste de este registro compartido", "success");
+      router.replace("/(app)/obligations");
+    } catch (err: unknown) {
+      showToast(humanizeError(err), "error");
+    }
+  }
+
   const EDITABLE_TYPES = new Set(["payment", "principal_increase", "principal_decrease"]);
 
   function handleEventTap(ev: ObligationEventSummary) {
@@ -1612,6 +1631,14 @@ function ObligationDetailScreen() {
                   <Text style={styles.shareBtnText}>Compartir</Text>
                 </TouchableOpacity>
               </>
+            ) : null}
+            {obligation && isSharedViewer ? (
+              <TouchableOpacity
+                style={[styles.shareBtn, styles.unlinkHeaderBtn]}
+                onPress={() => setUnlinkShareConfirmVisible(true)}
+              >
+                <Text style={[styles.shareBtnText, styles.unlinkHeaderBtnText]}>Desvincular</Text>
+              </TouchableOpacity>
             ) : null}
             <TouchableOpacity onPress={() => router.replace("/(app)/obligations")}>
               <Text style={styles.back}>Volver</Text>
@@ -3463,6 +3490,16 @@ function ObligationDetailScreen() {
         title="Comprobantes del evento"
       />
 
+      <ConfirmDialog
+        visible={unlinkShareConfirmVisible}
+        title="Desvincular registro compartido"
+        body="Dejarás de ver este crédito o deuda en tu módulo de obligaciones. El propietario conservará su registro original."
+        confirmLabel="Desvincular"
+        cancelLabel="Cancelar"
+        onCancel={() => setUnlinkShareConfirmVisible(false)}
+        onConfirm={() => void handleUnlinkViewerShare()}
+      />
+
       {/* Share obligation sheet */}
       <BottomSheet
         visible={shareSheetOpen}
@@ -3544,6 +3581,13 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.full, borderWidth: 1, borderColor: COLORS.income + "88",
   },
   shareBtnText: { fontSize: FONT_SIZE.xs, color: COLORS.income, fontFamily: FONT_FAMILY.bodyMedium },
+  unlinkHeaderBtn: {
+    borderColor: COLORS.expense + "66",
+    backgroundColor: COLORS.expense + "12",
+  },
+  unlinkHeaderBtnText: {
+    color: COLORS.expense,
+  },
   detailActionsPanel: {
     gap: SPACING.sm,
     borderRadius: RADIUS.lg,

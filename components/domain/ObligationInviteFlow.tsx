@@ -3,8 +3,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  Modal,
-  Pressable,
   StyleSheet,
   Text,
   View,
@@ -57,18 +55,11 @@ export function ObligationInviteFlow({ token }: Props) {
   const [accepted, setAccepted] = useState(false);
   const [alreadyAccepted, setAlreadyAccepted] = useState(false);
   const [declined, setDeclined] = useState(false);
-  const [decisionOpen, setDecisionOpen] = useState(false);
 
   useEffect(() => {
     if (!token) return;
     void loadInvite();
   }, [token]);
-
-  useEffect(() => {
-    if (invite && invite.status !== "accepted" && !error && !accepted && !declined) {
-      setDecisionOpen(true);
-    }
-  }, [invite, error, accepted, declined]);
 
   async function loadInvite() {
     if (!supabase) return;
@@ -96,7 +87,6 @@ export function ObligationInviteFlow({ token }: Props) {
     if (!session) {
       await setPendingObligationInviteToken(token);
       router.replace("/(auth)/login");
-      setDecisionOpen(false);
       return;
     }
     setIsAccepting(true);
@@ -118,11 +108,9 @@ export function ObligationInviteFlow({ token }: Props) {
       void queryClient.invalidateQueries({ queryKey: ["notifications"] });
       if (data?.alreadyAccepted) {
         setAlreadyAccepted(true);
-        setDecisionOpen(false);
         return;
       }
       setAccepted(true);
-      setDecisionOpen(false);
       setTimeout(() => router.replace("/(app)/obligations"), 1500);
     } catch (err: unknown) {
       setError(humanizeError(err));
@@ -136,7 +124,6 @@ export function ObligationInviteFlow({ token }: Props) {
     if (!session) {
       await setPendingObligationInviteToken(token);
       router.replace("/(auth)/login");
-      setDecisionOpen(false);
       return;
     }
     setIsDeclining(true);
@@ -150,7 +137,6 @@ export function ObligationInviteFlow({ token }: Props) {
       if (fnError) throw fnError;
       if (data?.alreadyAccepted) {
         setAlreadyAccepted(true);
-        setDecisionOpen(false);
         return;
       }
       if (!data?.ok && !data?.alreadyDeclined) {
@@ -160,23 +146,15 @@ export function ObligationInviteFlow({ token }: Props) {
       void queryClient.invalidateQueries({ queryKey: ["pending-obligation-share-invites"] });
       void queryClient.invalidateQueries({ queryKey: ["notifications"] });
       setDeclined(true);
-      setDecisionOpen(false);
     } catch (err: unknown) {
       setError(humanizeError(err));
-      setDecisionOpen(false);
     } finally {
       setIsDeclining(false);
     }
   }
 
   async function handleDefer() {
-    setDecisionOpen(false);
     await scheduleObligationInviteDeferredReminder(token, 3600);
-    router.replace("/(app)/dashboard");
-  }
-
-  function handleCloseModal() {
-    setDecisionOpen(false);
     router.replace("/(app)/dashboard");
   }
 
@@ -248,51 +226,41 @@ export function ObligationInviteFlow({ token }: Props) {
             {!session ? (
               <Text style={styles.loginHint}>Inicia sesión para aceptar la invitación.</Text>
             ) : null}
+            <View style={styles.actionGroup}>
+              <Text style={styles.actionTitle}>¿Deseas agregar este registro?</Text>
+              <Text style={styles.actionBody}>
+                Si aceptas, aparecerá en Créditos y deudas en modo compartido. Si no reconoces la solicitud,
+                puedes rechazarla.
+              </Text>
+              <Button
+                label={session ? "Aceptar y ver créditos/deudas" : "Iniciar sesión y aceptar"}
+                onPress={() => void handleAccept()}
+                loading={isAccepting}
+                disabled={isDeclining}
+                style={styles.actionBtn}
+              />
+              <Button
+                label="Rechazar solicitud"
+                variant="secondary"
+                onPress={() => void handleDecline()}
+                loading={isDeclining}
+                disabled={isAccepting}
+                style={styles.actionBtn}
+              />
+              <Button
+                label="Decidir después"
+                variant="secondary"
+                onPress={() => void handleDefer()}
+                disabled={isAccepting || isDeclining}
+                style={styles.actionBtn}
+              />
+              <Text style={styles.actionFootnote}>
+                También podrás responder desde el módulo Notificaciones.
+              </Text>
+            </View>
           </Card>
         ) : null}
       </View>
-
-      <Modal
-        visible={decisionOpen && Boolean(invite) && !accepted && !alreadyAccepted && !declined && !error}
-        transparent
-        animationType="fade"
-        onRequestClose={handleCloseModal}
-      >
-        <Pressable style={styles.modalBackdrop} onPress={handleCloseModal}>
-          <Pressable style={[styles.modalCard, { marginBottom: insets.bottom + SPACING.md }]} onPress={(e) => e.stopPropagation()}>
-            <Text style={styles.modalTitle}>¿Aceptar invitación?</Text>
-            <Text style={styles.modalBody}>
-              {invite?.title ? `«${invite.title}»` : "Este registro"} se agregará a Créditos y deudas en modo compartido.
-              También puedes rechazar la solicitud si no reconoces este registro.
-            </Text>
-            <Button
-              label={session ? "Aceptar y ver créditos/deudas" : "Iniciar sesión y aceptar"}
-              onPress={() => void handleAccept()}
-              loading={isAccepting}
-              disabled={isDeclining}
-              style={styles.modalBtn}
-            />
-            <Button
-              label="Rechazar solicitud"
-              variant="secondary"
-              onPress={() => void handleDecline()}
-              loading={isDeclining}
-              disabled={isAccepting}
-              style={styles.modalBtn}
-            />
-            <Button
-              label="Decidir después"
-              variant="secondary"
-              onPress={() => void handleDefer()}
-              disabled={isAccepting || isDeclining}
-              style={styles.modalBtn}
-            />
-            <Text style={styles.modalFootnote}>
-              Si el enlace del correo no abre la app, revisa esta solicitud desde Notificaciones.
-            </Text>
-          </Pressable>
-        </Pressable>
-      </Modal>
     </View>
   );
 }
@@ -333,6 +301,31 @@ const styles = StyleSheet.create({
     marginTop: SPACING.md,
     fontSize: FONT_SIZE.sm,
     color: COLORS.warning,
+  },
+  actionGroup: {
+    marginTop: SPACING.lg,
+    paddingTop: SPACING.md,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.08)",
+  },
+  actionTitle: {
+    fontSize: FONT_SIZE.md,
+    fontWeight: FONT_WEIGHT.bold,
+    color: COLORS.text,
+    marginBottom: SPACING.xs,
+  },
+  actionBody: {
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.textMuted,
+    lineHeight: 20,
+    marginBottom: SPACING.sm,
+  },
+  actionBtn: { marginTop: SPACING.sm },
+  actionFootnote: {
+    marginTop: SPACING.md,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.textDisabled,
+    textAlign: "center",
   },
   mt: { marginTop: SPACING.md },
   modalBackdrop: {

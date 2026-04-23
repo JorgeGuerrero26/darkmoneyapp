@@ -20,6 +20,7 @@ import {
   useCreateObligationMutation,
   useUpdateObligationMutation,
   useCreateObligationShareInviteMutation,
+  useUnlinkObligationShareMutation,
   useObligationActiveShareQuery,
   useWorkspaceSnapshotQuery,
   type ObligationFormInput,
@@ -132,6 +133,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
   const createMutation = useCreateObligationMutation(activeWorkspaceId);
   const updateMutation = useUpdateObligationMutation(activeWorkspaceId);
   const shareMutation = useCreateObligationShareInviteMutation(activeWorkspaceId);
+  const unlinkShareMutation = useUnlinkObligationShareMutation(activeWorkspaceId);
   const { data: snapshot } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const { data: activeShare, isLoading: shareLoading } = useObligationActiveShareQuery(
     activeWorkspaceId,
@@ -170,6 +172,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
   const [shareEmail, setShareEmail] = useState("");
   const [shareMessage, setShareMessage] = useState("");
   const [reassignExpanded, setReassignExpanded] = useState(false);
+  const [unlinkShareConfirmVisible, setUnlinkShareConfirmVisible] = useState(false);
 
   const isEditing = Boolean(editObligation);
 
@@ -273,6 +276,23 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
           : "Invitación registrada",
         "success",
       );
+    } catch (err: unknown) {
+      setSubmitError(humanizeError(err));
+    }
+  }
+
+  async function handleUnlinkShare() {
+    if (!activeShare || !activeWorkspaceId || !editObligation) return;
+    try {
+      await unlinkShareMutation.mutateAsync({
+        shareId: activeShare.id,
+        workspaceId: activeWorkspaceId,
+        obligationId: editObligation.id,
+      });
+      setShareEmail("");
+      setShareMessage("");
+      setReassignExpanded(false);
+      showToast("Acceso compartido desvinculado", "success");
     } catch (err: unknown) {
       setSubmitError(humanizeError(err));
     }
@@ -913,13 +933,25 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
                 </Text>
               </View>
               {!reassignExpanded ? (
-                <TouchableOpacity
-                  style={styles.reassignBtn}
-                  onPress={() => setReassignExpanded(true)}
-                  activeOpacity={0.85}
-                >
-                  <Text style={styles.reassignBtnText}>Reasignar / cambiar correo</Text>
-                </TouchableOpacity>
+                <View style={styles.shareActionRow}>
+                  <TouchableOpacity
+                    style={styles.reassignBtn}
+                    onPress={() => setReassignExpanded(true)}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={styles.reassignBtnText}>Reasignar / cambiar correo</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.reassignBtn, styles.unlinkShareBtn]}
+                    onPress={() => setUnlinkShareConfirmVisible(true)}
+                    activeOpacity={0.85}
+                    disabled={unlinkShareMutation.isPending}
+                  >
+                    <Text style={[styles.reassignBtnText, styles.unlinkShareBtnText]}>
+                      {unlinkShareMutation.isPending ? "Desvinculando..." : "Desvincular acceso"}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               ) : (
                 <>
                   <Text style={styles.shareHint}>
@@ -990,6 +1022,16 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
                 disabled={!shareEmail.trim()}
                 style={styles.shareBtn}
               />
+              <TouchableOpacity
+                style={[styles.reassignBtn, styles.unlinkShareBtn]}
+                onPress={() => setUnlinkShareConfirmVisible(true)}
+                activeOpacity={0.85}
+                disabled={unlinkShareMutation.isPending}
+              >
+                <Text style={[styles.reassignBtnText, styles.unlinkShareBtnText]}>
+                  {unlinkShareMutation.isPending ? "Cancelando..." : "Cancelar invitación"}
+                </Text>
+              </TouchableOpacity>
             </>
           ) : (
             <>
@@ -1037,7 +1079,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
               : "Crear obligación"
         }
         onPress={handleSubmit}
-        loading={isLoading || shareMutation.isPending}
+        loading={isLoading || shareMutation.isPending || unlinkShareMutation.isPending}
         disabled={Boolean(sharedViewer)}
         style={styles.submitBtn}
       />
@@ -1071,6 +1113,19 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
       cancelLabel="Continuar"
       onCancel={() => setShowDiscard(false)}
       onConfirm={() => { setShowDiscard(false); onClose(); }}
+    />
+    <ConfirmDialog
+      visible={unlinkShareConfirmVisible}
+      title={activeShare?.status === "pending" ? "Cancelar invitación" : "Desvincular acceso compartido"}
+      body={
+        activeShare?.status === "pending"
+          ? "La invitación quedará cancelada y la otra persona ya no podrá aceptarla."
+          : "La otra persona dejará de ver este crédito o deuda en su módulo de obligaciones. Tu registro original se conservará."
+      }
+      confirmLabel={activeShare?.status === "pending" ? "Cancelar invitación" : "Desvincular"}
+      cancelLabel="Volver"
+      onCancel={() => setUnlinkShareConfirmVisible(false)}
+      onConfirm={() => { setUnlinkShareConfirmVisible(false); void handleUnlinkShare(); }}
     />
   </>
   );
@@ -1232,10 +1287,22 @@ const styles = StyleSheet.create({
     backgroundColor: GLASS.card,
     alignSelf: "flex-start",
   },
+  shareActionRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: SPACING.sm,
+  },
+  unlinkShareBtn: {
+    borderColor: COLORS.expense + "44",
+    backgroundColor: COLORS.expense + "12",
+  },
   reassignBtnText: {
     fontFamily: FONT_FAMILY.bodySemibold,
     fontSize: FONT_SIZE.sm,
     color: COLORS.pine,
+  },
+  unlinkShareBtnText: {
+    color: COLORS.expense,
   },
   shareMessageInput: {
     minHeight: 80,
