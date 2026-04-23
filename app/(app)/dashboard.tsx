@@ -48,6 +48,7 @@ import {
   useSharedObligationsQuery,
   useNotificationsQuery,
   useUserEntitlementQuery,
+  useDashboardAiSummaryMutation,
   mergeWorkspaceAndSharedObligations,
   type DashboardMovementRow,
   type DashboardAnalyticsBundle,
@@ -55,6 +56,7 @@ import {
 import type { ExchangeRateSummary } from "../../types/domain";
 import { useUiStore } from "../../store/ui-store";
 import { Card } from "../../components/ui/Card";
+import { Button } from "../../components/ui/Button";
 import { ProgressBar } from "../../components/ui/ProgressBar";
 import { SkeletonCard } from "../../components/ui/Skeleton";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
@@ -5265,6 +5267,59 @@ function AdvancedDashboard({
     const remaining = visibleAccountBreakdown.length > 3 ? ` · +${visibleAccountBreakdown.length - 3} más` : "";
     return `${preview}${remaining}`;
   }, [activeCurrency, visibleAccountBreakdown]);
+  const dashboardAiSummaryPayload = useMemo(() => ({
+    workspaceName: "Workspace actual",
+    currency: activeCurrency,
+    visibleBalance: formatCurrency(currentVisibleBalance, activeCurrency),
+    monthEndReading: formatCurrency(monthEndReading, activeCurrency),
+    monthEndDelta: formatCurrency(monthEndDelta, activeCurrency),
+    monthStatus,
+    weekStatus: pressureStatus,
+    weekNet: formatCurrency(weekWindow.expectedInflow - weekWindow.expectedOutflow, activeCurrency),
+    weekExpectedInflow: formatCurrency(weekWindow.expectedInflow, activeCurrency),
+    weekExpectedOutflow: formatCurrency(weekWindow.expectedOutflow, activeCurrency),
+    dataReadinessScore: learning.readinessScore,
+    unresolvedIssues: review.totalIssues,
+    cashCushionDays: cashCushion.days,
+    cashCushionLabel: cashCushion.label,
+    savingsRatePct: monthlySavingsRate.lastRate == null ? null : Number(monthlySavingsRate.lastRate.toFixed(1)),
+    collectionEfficiencyPct: collectionEfficiency.rate,
+    topFocusAction: {
+      title: focusAction.title,
+      body: focusAction.body,
+      reason: focusAction.reason,
+      detail: focusAction.detail,
+    },
+    visibleAccounts: visibleAccountSummary,
+    activeAccountsCount: activeAccounts.length,
+    uncategorizedMovements: review.uncategorizedCount,
+    overdueObligations: review.overdueObligationsCount,
+    upcomingSubscriptions: review.subscriptionsAttentionCount,
+  }), [
+    activeAccounts.length,
+    activeCurrency,
+    cashCushion.days,
+    cashCushion.label,
+    collectionEfficiency.rate,
+    currentVisibleBalance,
+    focusAction.body,
+    focusAction.detail,
+    focusAction.reason,
+    focusAction.title,
+    learning.readinessScore,
+    monthEndDelta,
+    monthEndReading,
+    monthStatus,
+    monthlySavingsRate.lastRate,
+    pressureStatus,
+    review.overdueObligationsCount,
+    review.subscriptionsAttentionCount,
+    review.totalIssues,
+    review.uncategorizedCount,
+    visibleAccountSummary,
+    weekWindow.expectedInflow,
+    weekWindow.expectedOutflow,
+  ]);
 
   const executiveDetails = useMemo(() => ({
     focus: {
@@ -6006,11 +6061,28 @@ function AdvancedDashboard({
       count: movementPreview.movements.length,
     };
   }, [accountCurrencyMap, activeCurrency, exchangeRateMap, movementPreview]);
+  const dashboardAiSummaryMutation = useDashboardAiSummaryMutation();
+  const [dashboardAiReply, setDashboardAiReply] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<AdvancedTab>('Resumen');
   const handleTabChange = useCallback((tab: AdvancedTab) => {
     setActiveTab(tab);
     onScrollToTop?.();
   }, [onScrollToTop]);
+  const handleRequestDashboardAiSummary = useCallback(async () => {
+    if (!workspaceId) {
+      showToast("No se encontró el workspace activo.", "error");
+      return;
+    }
+    try {
+      const response = await dashboardAiSummaryMutation.mutateAsync({
+        workspaceId,
+        summary: dashboardAiSummaryPayload,
+      });
+      setDashboardAiReply(response.reply);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "No se pudo consultar a la IA.", "error");
+    }
+  }, [dashboardAiSummaryMutation, dashboardAiSummaryPayload, showToast, workspaceId]);
 
   return (
     <>
@@ -6110,6 +6182,37 @@ function AdvancedDashboard({
             <Text style={[subStyles.executiveDeltaChip, { color: monthEndDelta >= 0 ? COLORS.income : COLORS.expense }]}>Vs hoy: {formatCurrency(monthEndDelta, activeCurrency)}</Text>
           </TouchableOpacity>
         </View>
+      </Card>
+
+      <View style={{ height: SPACING.sm }} />
+      <Card>
+        <View style={subStyles.aiSummaryHeader}>
+          <View style={subStyles.aiSummaryHeaderText}>
+            <Text style={subStyles.aiSummaryTitle}>Lectura con IA</Text>
+            <Text style={subStyles.aiSummaryBody}>
+              Envía solo este resumen estructurado del dashboard avanzado para recibir una interpretación humana de tu estado financiero actual.
+            </Text>
+          </View>
+          <View style={subStyles.aiSummaryIconWrap}>
+            <Brain size={18} color={COLORS.primary} />
+          </View>
+        </View>
+        <Button
+          label={dashboardAiSummaryMutation.isPending ? "Analizando..." : "Analizar mi estado actual"}
+          onPress={() => void handleRequestDashboardAiSummary()}
+          loading={dashboardAiSummaryMutation.isPending}
+          style={subStyles.aiSummaryButton}
+        />
+        {dashboardAiReply ? (
+          <View style={subStyles.aiSummaryResponseCard}>
+            <Text style={subStyles.aiSummaryResponseLabel}>Respuesta</Text>
+            <Text style={subStyles.aiSummaryResponseText}>{dashboardAiReply}</Text>
+          </View>
+        ) : (
+          <Text style={subStyles.aiSummaryHint}>
+            La respuesta se genera a partir del estado actual del resumen, no del detalle completo de todos tus movimientos.
+          </Text>
+        )}
       </Card>
 
       {financialGraphRank.length > 0 ? (
@@ -9110,6 +9213,68 @@ const subStyles = StyleSheet.create({
     fontSize: FONT_SIZE.sm,
     color: COLORS.storm,
     lineHeight: 21,
+  },
+  aiSummaryHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: SPACING.md,
+  },
+  aiSummaryHeaderText: {
+    flex: 1,
+    gap: SPACING.xs,
+  },
+  aiSummaryIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.primary + "16",
+    borderWidth: 1,
+    borderColor: COLORS.primary + "33",
+  },
+  aiSummaryTitle: {
+    fontFamily: FONT_FAMILY.heading,
+    fontSize: FONT_SIZE.lg,
+    color: COLORS.ink,
+  },
+  aiSummaryBody: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.storm,
+    lineHeight: 21,
+  },
+  aiSummaryButton: {
+    marginTop: SPACING.md,
+  },
+  aiSummaryHint: {
+    marginTop: SPACING.md,
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    lineHeight: 19,
+  },
+  aiSummaryResponseCard: {
+    marginTop: SPACING.md,
+    padding: SPACING.md,
+    borderRadius: RADIUS.lg,
+    backgroundColor: "rgba(12,18,31,0.88)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.10)",
+    gap: SPACING.xs,
+  },
+  aiSummaryResponseLabel: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.primary,
+    textTransform: "uppercase",
+  },
+  aiSummaryResponseText: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.ink,
+    lineHeight: 22,
   },
   executiveModalOverlay: {
     flex: 1,

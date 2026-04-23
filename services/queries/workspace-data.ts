@@ -1587,6 +1587,29 @@ export function useDashboardAnalyticsQuery(
   });
 }
 
+export type DashboardAiSummaryInput = {
+  workspaceId: number;
+  summary: Record<string, unknown>;
+};
+
+export type DashboardAiSummaryResponse = {
+  ok: boolean;
+  reply: string;
+  model?: string | null;
+};
+
+export function useDashboardAiSummaryMutation() {
+  return useMutation({
+    mutationFn: async (input: DashboardAiSummaryInput): Promise<DashboardAiSummaryResponse> => {
+      if (!input.workspaceId) throw new Error("No se encontró el workspace activo.");
+      if (!input.summary || typeof input.summary !== "object") {
+        throw new Error("No hay resumen suficiente para enviar a la IA.");
+      }
+      return invokeEdgeFunction<DashboardAiSummaryResponse>("dashboard-advanced-ai-summary", input);
+    },
+  });
+}
+
 export function usePersistDashboardAnalyticsMutation(workspaceId: number | null) {
   return useMutation({
     mutationFn: async (input: PersistDashboardAnalyticsInput) => {
