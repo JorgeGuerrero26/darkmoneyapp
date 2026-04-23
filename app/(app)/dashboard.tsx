@@ -201,10 +201,26 @@ function getPeriodBounds(period: Period, now: Date): { curStart: Date; curEnd: D
 
 const DASHBOARD_CURRENCY_KEY = "darkmoney.dashboard.displayCurrency";
 const DASHBOARD_AI_TONE_KEY_PREFIX = "darkmoney.dashboard.aiTone";
+const DASHBOARD_AI_SUMMARY_CACHE_KEY_PREFIX = "darkmoney.dashboard.aiSummaryCache";
+const DASHBOARD_AI_ADMIN_EMAIL = "joradrianmori@gmail.com";
 
 function getDashboardAiToneKey(userId?: string | null) {
   if (!userId) return null;
   return `${DASHBOARD_AI_TONE_KEY_PREFIX}.${userId}`;
+}
+
+function getDashboardAiSummaryCacheKey(userId?: string | null) {
+  if (!userId) return null;
+  return `${DASHBOARD_AI_SUMMARY_CACHE_KEY_PREFIX}.${userId}`;
+}
+
+function getDashboardAiUsageDate(date = new Date()) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Lima",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
 }
 
 function buildExchangeRateMap(rates: ExchangeRateSummary[]): Map<string, number> {
@@ -3815,6 +3831,16 @@ type DashboardAiComplexTerm = {
   term: string;
   explanation: string;
 };
+type DashboardAiToneResponse = {
+  reply: string;
+  complexTerms: DashboardAiComplexTerm[];
+  generatedAt: string;
+};
+type DashboardAiDailyCache = {
+  usageDate: string;
+  lastUsedAt: string;
+  responses: Partial<Record<DashboardAiTone, DashboardAiToneResponse>>;
+};
 type DashboardAiTextPart =
   | { type: "text"; value: string }
   | { type: "term"; value: string; term: DashboardAiComplexTerm };
@@ -4065,6 +4091,7 @@ function AdvancedDashboard({
   currentVisibleBalance,
   workspaceId,
   userId,
+  userEmail,
   showAdvancedGift,
   analytics,
   router,
@@ -4084,6 +4111,7 @@ function AdvancedDashboard({
   currentVisibleBalance: number;
   workspaceId: number | null;
   userId?: string | null;
+  userEmail?: string | null;
   showAdvancedGift?: boolean;
   analytics: DashboardAnalyticsBundle | null | undefined;
   router: ReturnType<typeof useRouter>;
@@ -6209,13 +6237,15 @@ function AdvancedDashboard({
     };
   }, [accountCurrencyMap, activeCurrency, exchangeRateMap, movementPreview]);
   const dashboardAiSummaryMutation = useDashboardAiSummaryMutation();
-  const [dashboardAiReply, setDashboardAiReply] = useState<string | null>(null);
-  const [dashboardAiComplexTerms, setDashboardAiComplexTerms] = useState<DashboardAiComplexTerm[]>([]);
+  const [dashboardAiDailyCache, setDashboardAiDailyCache] = useState<DashboardAiDailyCache | null>(null);
   const [activeDashboardAiTerm, setActiveDashboardAiTerm] = useState<DashboardAiComplexTerm | null>(null);
   const [dashboardAiTone, setDashboardAiTone] = useState<DashboardAiTone>("managerial");
   const dashboardAiBreath = useRef(new Animated.Value(0)).current;
   const dashboardAiToneStorageKey = useMemo(() => getDashboardAiToneKey(userId), [userId]);
+  const dashboardAiSummaryCacheKey = useMemo(() => getDashboardAiSummaryCacheKey(userId), [userId]);
   const dashboardAiToneLoadedRef = useRef(false);
+  const dashboardAiUsageDate = getDashboardAiUsageDate();
+  const dashboardAiIsAdmin = userEmail?.trim().toLowerCase() === DASHBOARD_AI_ADMIN_EMAIL;
   const [activeTab, setActiveTab] = useState<AdvancedTab>('Resumen');
   useEffect(() => {
     const animation = Animated.loop(
@@ -6243,8 +6273,7 @@ function AdvancedDashboard({
   useEffect(() => {
     dashboardAiToneLoadedRef.current = false;
     setDashboardAiTone("managerial");
-    setDashboardAiReply(null);
-    setDashboardAiComplexTerms([]);
+    setDashboardAiDailyCache(null);
     setActiveDashboardAiTerm(null);
     if (!dashboardAiToneStorageKey) {
       dashboardAiToneLoadedRef.current = true;
@@ -6266,9 +6295,47 @@ function AdvancedDashboard({
     };
   }, [dashboardAiToneStorageKey]);
   useEffect(() => {
+    if (!dashboardAiSummaryCacheKey) {
+      setDashboardAiDailyCache(null);
+      return;
+    }
+    let cancelled = false;
+    void AsyncStorage.getItem(dashboardAiSummaryCacheKey)
+      .then((stored) => {
+        if (cancelled) return;
+        if (!stored) {
+          setDashboardAiDailyCache(null);
+          return;
+        }
+        try {
+          const parsed = JSON.parse(stored) as DashboardAiDailyCache;
+          if (parsed && parsed.usageDate === dashboardAiUsageDate && parsed.responses && typeof parsed.responses === "object") {
+            setDashboardAiDailyCache(parsed);
+          } else {
+            setDashboardAiDailyCache(null);
+            void AsyncStorage.removeItem(dashboardAiSummaryCacheKey);
+          }
+        } catch {
+          setDashboardAiDailyCache(null);
+          void AsyncStorage.removeItem(dashboardAiSummaryCacheKey);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [dashboardAiSummaryCacheKey, dashboardAiUsageDate]);
+  useEffect(() => {
     if (!dashboardAiToneLoadedRef.current || !dashboardAiToneStorageKey) return;
     void AsyncStorage.setItem(dashboardAiToneStorageKey, dashboardAiTone);
   }, [dashboardAiTone, dashboardAiToneStorageKey]);
+  useEffect(() => {
+    if (!dashboardAiSummaryCacheKey) return;
+    if (!dashboardAiDailyCache) {
+      void AsyncStorage.removeItem(dashboardAiSummaryCacheKey);
+      return;
+    }
+    void AsyncStorage.setItem(dashboardAiSummaryCacheKey, JSON.stringify(dashboardAiDailyCache));
+  }, [dashboardAiDailyCache, dashboardAiSummaryCacheKey]);
   const handleTabChange = useCallback((tab: AdvancedTab) => {
     setActiveTab(tab);
     onScrollToTop?.();
@@ -6293,6 +6360,12 @@ function AdvancedDashboard({
     inputRange: [0, 1],
     outputRange: [0, -5],
   });
+  const dashboardAiCurrentToneResponse = dashboardAiDailyCache?.responses?.[dashboardAiTone] ?? null;
+  const dashboardAiReply = dashboardAiCurrentToneResponse?.reply ?? null;
+  const dashboardAiComplexTerms = dashboardAiCurrentToneResponse?.complexTerms ?? [];
+  const dashboardAiLimitReached = !dashboardAiIsAdmin &&
+    dashboardAiDailyCache?.usageDate === dashboardAiUsageDate &&
+    Boolean(dashboardAiDailyCache?.lastUsedAt);
   const dashboardAiResolvedTerms = useMemo(
     () => ensureDashboardAiComplexTerms(dashboardAiReply ?? "", dashboardAiComplexTerms),
     [dashboardAiComplexTerms, dashboardAiReply],
@@ -6306,6 +6379,10 @@ function AdvancedDashboard({
       showToast("No se encontró el workspace activo.", "error");
       return;
     }
+    if (dashboardAiLimitReached) {
+      showToast("Ya usaste tu explicación de IA de hoy. Podrás pedir otra mañana.", "error");
+      return;
+    }
     try {
       setActiveDashboardAiTerm(null);
       const response = await dashboardAiSummaryMutation.mutateAsync({
@@ -6313,12 +6390,23 @@ function AdvancedDashboard({
         summary: dashboardAiSummaryPayload,
         tone: dashboardAiTone,
       });
-      setDashboardAiReply(response.reply);
-      setDashboardAiComplexTerms(response.complexTerms ?? []);
+      const nextResponse: DashboardAiToneResponse = {
+        reply: response.reply,
+        complexTerms: response.complexTerms ?? [],
+        generatedAt: new Date().toISOString(),
+      };
+      setDashboardAiDailyCache((current) => ({
+        usageDate: dashboardAiUsageDate,
+        lastUsedAt: nextResponse.generatedAt,
+        responses: {
+          ...(current?.usageDate === dashboardAiUsageDate ? current.responses : {}),
+          [dashboardAiTone]: nextResponse,
+        },
+      }));
     } catch (error) {
       showToast(error instanceof Error ? error.message : "No se pudo consultar a la IA.", "error");
     }
-  }, [dashboardAiSummaryMutation, dashboardAiSummaryPayload, dashboardAiTone, showToast, workspaceId]);
+  }, [dashboardAiLimitReached, dashboardAiSummaryMutation, dashboardAiSummaryPayload, dashboardAiTone, dashboardAiUsageDate, showToast, workspaceId]);
 
   return (
     <>
@@ -6511,8 +6599,6 @@ function AdvancedDashboard({
                   style={[subStyles.aiSummaryToneChip, active && subStyles.aiSummaryToneChipActive]}
                   onPress={() => {
                     setDashboardAiTone(option.id);
-                    setDashboardAiReply(null);
-                    setDashboardAiComplexTerms([]);
                     setActiveDashboardAiTerm(null);
                   }}
                 >
@@ -6529,21 +6615,23 @@ function AdvancedDashboard({
           <TouchableOpacity
             activeOpacity={0.86}
             onPress={() => void handleRequestDashboardAiSummary()}
-            disabled={dashboardAiSummaryMutation.isPending}
+            disabled={dashboardAiSummaryMutation.isPending || dashboardAiLimitReached}
             style={[
               subStyles.aiSummaryButton,
-              dashboardAiSummaryMutation.isPending && subStyles.aiSummaryButtonDisabled,
+              (dashboardAiSummaryMutation.isPending || dashboardAiLimitReached) && subStyles.aiSummaryButtonDisabled,
             ]}
           >
             <View style={subStyles.aiSummaryButtonAccent} />
             <View style={subStyles.aiSummaryButtonInner}>
-              <Sparkles size={16} color={dashboardAiSummaryMutation.isPending ? "rgba(255,255,255,0.4)" : GEMINI_BRAND.teal} />
+              <Sparkles size={16} color={dashboardAiSummaryMutation.isPending || dashboardAiLimitReached ? "rgba(255,255,255,0.4)" : GEMINI_BRAND.teal} />
               <Text style={subStyles.aiSummaryButtonLabel}>
                 {dashboardAiSummaryMutation.isPending
                   ? "Preparando explicacion..."
-                  : dashboardAiTone === "managerial"
-                    ? "Ver informe gerencial"
-                    : "Hablar con mi asesor personal"}
+                  : dashboardAiLimitReached
+                    ? "Consulta de hoy usada"
+                    : dashboardAiTone === "managerial"
+                      ? "Ver informe gerencial"
+                      : "Hablar con mi asesor personal"}
               </Text>
             </View>
           </TouchableOpacity>
@@ -6591,7 +6679,9 @@ function AdvancedDashboard({
             </View>
           ) : (
             <Text style={subStyles.aiSummaryHint}>
-              Gemini interpreta tu resumen actual y siempre cierra con una recomendación concreta para hoy.
+              {dashboardAiLimitReached
+                ? "Ya usaste tu explicación de IA de hoy en este módulo. Podrás pedir otra mañana."
+                : "Gemini interpreta tu resumen actual y siempre cierra con una recomendación concreta para hoy."}
             </Text>
           )}
           <View style={subStyles.aiSummaryFooterRow}>
@@ -6617,7 +6707,7 @@ function AdvancedDashboard({
       <BottomSheet
         visible={Boolean(activeDashboardAiTerm)}
         onClose={() => setActiveDashboardAiTerm(null)}
-        title={activeDashboardAiTerm?.term ?? "Término"}
+        title="Explicación"
         snapHeight={0.42}
         blurBackdrop={false}
         backdropColor="rgba(0,0,0,0.68)"
@@ -8312,6 +8402,7 @@ function DashboardScreen() {
             currentVisibleBalance={netWorth}
             workspaceId={activeWorkspaceId}
             userId={profile?.id ?? null}
+            userEmail={profile?.email ?? null}
             showAdvancedGift={hasAdvancedDashboardGift}
             analytics={dashboardAnalytics}
             router={router}
