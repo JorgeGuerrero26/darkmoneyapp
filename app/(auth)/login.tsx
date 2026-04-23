@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  Animated,
+  BackHandler,
   Image,
   KeyboardAvoidingView,
   Modal,
@@ -9,8 +11,9 @@ import {
   Text,
   TouchableOpacity,
   View,
+  useWindowDimensions,
 } from "react-native";
-import { Link } from "expo-router";
+import { Link, useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as LocalAuthentication from "expo-local-authentication";
 import * as SecureStore from "expo-secure-store";
@@ -23,19 +26,33 @@ import { Input } from "../../components/ui/Input";
 import { Button } from "../../components/ui/Button";
 import { SafeBlurView } from "../../components/ui/SafeBlurView";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
-
-const SECURE_EMAIL_KEY = "darkmoney_bio_email";
-const SECURE_PASS_KEY = "darkmoney_bio_password";
-const REMEMBER_EMAIL_KEY = "darkmoney_remember_email";
-const REMEMBER_PASS_KEY = "darkmoney_remember_password";
-const REMEMBER_FLAG_KEY = "darkmoney_remember_me";
+import {
+  REMEMBER_EMAIL_KEY,
+  REMEMBER_FLAG_KEY,
+  REMEMBER_PASS_KEY,
+  SECURE_EMAIL_KEY,
+  SECURE_PASS_KEY,
+} from "../../lib/device-auth-state";
 
 type FormErrors = { email?: string; password?: string; general?: string };
+const EASTER_EGG_TAP_COUNT = 7;
+const EASTER_EGG_TAP_WINDOW_MS = 2_200;
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
+  const { height } = useWindowDimensions();
+  const router = useRouter();
+  const params = useLocalSearchParams<{ fromWelcome?: string }>();
   const { signIn } = useAuth();
   const { biometricEnabled, setBiometricEnabled } = useUiStore();
+  const logoFlipScale = useRef(new Animated.Value(1)).current;
+  const logoFlipDepth = useRef(new Animated.Value(1)).current;
+  const logoBounceScale = useRef(new Animated.Value(1)).current;
+  const logoBounceLift = useRef(new Animated.Value(0)).current;
+  const logoBounceTilt = useRef(new Animated.Value(0)).current;
+  const logoFlipInFlightRef = useRef(false);
+  const logoBounceInFlightRef = useRef(false);
+  const logoTapTimesRef = useRef<number[]>([]);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -53,6 +70,25 @@ export default function LoginScreen() {
   const [bioPromptVisible, setBioPromptVisible] = useState(false);
   // Pending credentials waiting for user decision
   const [pendingCreds, setPendingCreds] = useState<{ email: string; password: string } | null>(null);
+  const [showLogoBack, setShowLogoBack] = useState(false);
+
+  useEffect(() => {
+    if (params.fromWelcome === "1") return;
+    router.replace({ pathname: "/(auth)/login", params: { fromWelcome: "1" } });
+  }, [params.fromWelcome, router]);
+
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
+      router.replace("/(auth)/welcome");
+      return true;
+    });
+    return () => subscription.remove();
+  }, [router]);
+
+  useEffect(() => {
+    setShowLogoBack(false);
+    logoTapTimesRef.current = [];
+  }, []);
 
   // On mount: check biometric hardware + stored credentials + remember me
   useEffect(() => {
@@ -166,7 +202,124 @@ export default function LoginScreen() {
     setBioPromptVisible(false);
   }
 
+  const triggerLogoFlip = useCallback(() => {
+    if (logoFlipInFlightRef.current) return;
+    logoFlipInFlightRef.current = true;
+
+    Animated.parallel([
+      Animated.timing(logoFlipScale, {
+        toValue: 0.08,
+        duration: 170,
+        useNativeDriver: true,
+      }),
+      Animated.timing(logoFlipDepth, {
+        toValue: 1.08,
+        duration: 170,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      setShowLogoBack((current) => !current);
+      Animated.parallel([
+        Animated.spring(logoFlipScale, {
+          toValue: 1,
+          friction: 7,
+          tension: 120,
+          useNativeDriver: true,
+        }),
+        Animated.spring(logoFlipDepth, {
+          toValue: 1,
+          friction: 7,
+          tension: 110,
+          useNativeDriver: true,
+        }),
+      ]).start(() => {
+        logoFlipInFlightRef.current = false;
+      });
+    });
+  }, [logoFlipDepth, logoFlipScale]);
+
+  const playLogoBounce = useCallback((onDone?: () => void) => {
+    if (logoBounceInFlightRef.current) {
+      onDone?.();
+      return;
+    }
+
+    logoBounceInFlightRef.current = true;
+    Animated.parallel([
+      Animated.sequence([
+        Animated.timing(logoBounceScale, {
+          toValue: 1.08,
+          duration: 95,
+          useNativeDriver: true,
+        }),
+        Animated.spring(logoBounceScale, {
+          toValue: 1,
+          friction: 5,
+          tension: 130,
+          useNativeDriver: true,
+        }),
+      ]),
+      Animated.sequence([
+        Animated.timing(logoBounceLift, {
+          toValue: -8,
+          duration: 90,
+          useNativeDriver: true,
+        }),
+        Animated.spring(logoBounceLift, {
+          toValue: 0,
+          friction: 6,
+          tension: 120,
+          useNativeDriver: true,
+        }),
+      ]),
+      Animated.sequence([
+        Animated.timing(logoBounceTilt, {
+          toValue: 1,
+          duration: 70,
+          useNativeDriver: true,
+        }),
+        Animated.timing(logoBounceTilt, {
+          toValue: -0.65,
+          duration: 95,
+          useNativeDriver: true,
+        }),
+        Animated.spring(logoBounceTilt, {
+          toValue: 0,
+          friction: 6,
+          tension: 120,
+          useNativeDriver: true,
+        }),
+      ]),
+    ]).start(() => {
+      logoBounceInFlightRef.current = false;
+      onDone?.();
+    });
+  }, [logoBounceLift, logoBounceScale, logoBounceTilt]);
+
+  const handleLogoPress = useCallback(() => {
+    const now = Date.now();
+    logoTapTimesRef.current = logoTapTimesRef.current
+      .filter((tapTime) => now - tapTime <= EASTER_EGG_TAP_WINDOW_MS)
+      .concat(now);
+
+    const shouldFlip = logoTapTimesRef.current.length >= EASTER_EGG_TAP_COUNT;
+    if (shouldFlip) {
+      logoTapTimesRef.current = [];
+      playLogoBounce(() => {
+        triggerLogoFlip();
+      });
+      return;
+    }
+
+    playLogoBounce();
+  }, [playLogoBounce, triggerLogoFlip]);
+
   const showBioButton = bioAvailable && bioCredsStored;
+  const compact = height < 740;
+  const logoTilt = logoBounceTilt.interpolate({
+    inputRange: [-1, 1],
+    outputRange: ["-7deg", "7deg"],
+  });
 
   return (
     <>
@@ -177,21 +330,59 @@ export default function LoginScreen() {
         <ScrollView
           contentContainerStyle={[
             styles.container,
-            { paddingTop: insets.top + SPACING.xxxl, paddingBottom: insets.bottom + SPACING.xl },
+            compact && styles.containerCompact,
+            { paddingTop: insets.top + SPACING.xxxl + SPACING.md, paddingBottom: insets.bottom + SPACING.xl },
           ]}
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.header}>
-            <Image
-              source={require("../../assets/images/logo-darkmoney.png")}
-              style={styles.logo}
-              resizeMode="contain"
-            />
+            <TouchableOpacity
+              activeOpacity={0.94}
+              hitSlop={{ top: 16, right: 16, bottom: 16, left: 16 }}
+              onPress={handleLogoPress}
+            >
+              <Animated.View
+                style={[
+                  styles.logoFrame,
+                  compact && styles.logoFrameCompact,
+                  showLogoBack && styles.logoFrameBackActive,
+                  {
+                    transform: [
+                      { translateY: logoBounceLift },
+                      { rotate: logoTilt },
+                      { scaleX: logoFlipScale },
+                      { scaleY: logoFlipDepth },
+                      { scale: logoBounceScale },
+                    ],
+                  },
+                ]}
+              >
+                <Image
+                  source={
+                    showLogoBack
+                      ? require("../../assets/images/logo-back-sin-fondo.png")
+                      : require("../../assets/images/logo-sin-fondo.png")
+                  }
+                  style={[styles.logoFace, showLogoBack && styles.logoFaceBack]}
+                  resizeMode="cover"
+                />
+                {showLogoBack ? (
+                  <>
+                    <Image
+                      source={require("../../assets/images/logo-back-sin-fondo.png")}
+                      style={[styles.logoFace, styles.logoFaceBackBoost]}
+                      resizeMode="cover"
+                    />
+                    <View style={styles.logoFaceBackContrast} />
+                  </>
+                ) : null}
+              </Animated.View>
+            </TouchableOpacity>
             <Text style={styles.appName}>DarkMoney</Text>
             <Text style={styles.subtitle}>Inicia sesión en tu cuenta</Text>
           </View>
 
-          <View style={styles.form}>
+          <View style={styles.formCard}>
             {errors.general ? (
               <View style={styles.errorBanner}>
                 <Text style={styles.errorBannerText}>{errors.general}</Text>
@@ -286,11 +477,13 @@ export default function LoginScreen() {
               style={styles.submitButton}
             />
 
-            <Link href="/(auth)/recovery" asChild>
-              <TouchableOpacity style={styles.forgotLink}>
-                <Text style={styles.linkText}>¿Olvidaste tu contraseña?</Text>
-              </TouchableOpacity>
-            </Link>
+            <View style={styles.formFooterLinks}>
+              <Link href="/(auth)/recovery" asChild>
+                <TouchableOpacity style={styles.forgotLink}>
+                  <Text style={styles.linkText}>¿Olvidaste tu contraseña?</Text>
+                </TouchableOpacity>
+              </Link>
+            </View>
           </View>
 
           <View style={styles.footer}>
@@ -349,15 +542,47 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: COLORS.canvas },
   container: { flexGrow: 1, paddingHorizontal: SPACING.xl, gap: SPACING.xxl },
-  header: { alignItems: "center", gap: SPACING.md },
-  logo: {
-    width: 160, height: 160, borderRadius: 80, overflow: "hidden",
-    shadowColor: COLORS.pine, shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.5, shadowRadius: 32, elevation: 12,
+  containerCompact: { gap: SPACING.md },
+  header: { alignItems: "center", gap: SPACING.xs },
+  logoFrame: {
+    width: 136,
+    height: 156,
+    overflow: "hidden",
+    marginBottom: -SPACING.xs,
+  },
+  logoFrameCompact: { width: 122, height: 142 },
+  logoFrameBackActive: {
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  logoFace: {
+    ...StyleSheet.absoluteFillObject,
+    width: "100%",
+    height: "100%",
+  },
+  logoFaceBack: {
+    opacity: 1,
+  },
+  logoFaceBackBoost: {
+    opacity: 0.12,
+  },
+  logoFaceBackContrast: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.07)",
   },
   appName: { fontFamily: FONT_FAMILY.heading, fontSize: FONT_SIZE.xxl, color: COLORS.ink, letterSpacing: 0.5 },
   subtitle: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.md, color: COLORS.storm },
-  form: { gap: SPACING.lg },
+  formCard: {
+    gap: SPACING.lg,
+    padding: SPACING.lg,
+    borderRadius: RADIUS.xl,
+    borderWidth: 1,
+    borderColor: GLASS.cardBorder,
+    backgroundColor: "rgba(10,14,20,0.78)",
+  },
   errorBanner: {
     backgroundColor: GLASS.dangerBg, borderRadius: RADIUS.md,
     padding: SPACING.md, borderWidth: 1, borderColor: GLASS.dangerBorder,
@@ -411,7 +636,8 @@ const styles = StyleSheet.create({
     fontFamily: FONT_FAMILY.bodyMedium,
   },
   submitButton: { marginTop: SPACING.xs },
-  forgotLink: { alignItems: "center", paddingVertical: SPACING.sm },
+  formFooterLinks: { alignItems: "center" },
+  forgotLink: { alignItems: "center", paddingVertical: SPACING.xs },
   linkText: { fontFamily: FONT_FAMILY.bodyMedium, color: COLORS.pine, fontSize: FONT_SIZE.sm },
   footer: { flexDirection: "row", justifyContent: "center", alignItems: "center" },
   footerText: { fontFamily: FONT_FAMILY.body, color: COLORS.storm, fontSize: FONT_SIZE.sm },

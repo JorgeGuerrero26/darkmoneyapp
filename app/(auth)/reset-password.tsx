@@ -19,6 +19,33 @@ import { Input } from "../../components/ui/Input";
 import { Button } from "../../components/ui/Button";
 import { COLORS, FONT_SIZE, FONT_WEIGHT, SPACING } from "../../constants/theme";
 
+function extractRecoveryTokens(url: string | null) {
+  if (!url) return null;
+
+  const parsed = Linking.parse(url);
+  const queryParams = parsed.queryParams ?? {};
+  const accessTokenFromQuery = queryParams.access_token;
+  const refreshTokenFromQuery = queryParams.refresh_token;
+  const accessToken =
+    typeof accessTokenFromQuery === "string" ? accessTokenFromQuery : undefined;
+  const refreshToken =
+    typeof refreshTokenFromQuery === "string" ? refreshTokenFromQuery : undefined;
+  if (accessToken && refreshToken) return { accessToken, refreshToken };
+
+  const fragment = url.split("#")[1] ?? "";
+  const fragmentParams = new URLSearchParams(fragment);
+  const accessTokenFromFragment = fragmentParams.get("access_token") ?? undefined;
+  const refreshTokenFromFragment = fragmentParams.get("refresh_token") ?? undefined;
+  if (accessTokenFromFragment && refreshTokenFromFragment) {
+    return {
+      accessToken: accessTokenFromFragment,
+      refreshToken: refreshTokenFromFragment,
+    };
+  }
+
+  return null;
+}
+
 export default function ResetPasswordScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -32,24 +59,25 @@ export default function ResetPasswordScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [done, setDone] = useState(false);
 
-  // Handle deep link token — Supabase sends the token in the URL fragment
+  // Handle deep link token: Supabase may send recovery tokens in query params or URL fragment.
   useEffect(() => {
-    async function handleDeepLink() {
-      const url = await Linking.getInitialURL();
+    async function applyRecoverySession(url: string | null) {
       if (!url || !supabase) return;
-      // Extract access_token and refresh_token from the URL hash/params
-      const parsed = Linking.parse(url);
-      const params = parsed.queryParams ?? {};
-      const accessToken = params.access_token as string | undefined;
-      const refreshToken = params.refresh_token as string | undefined;
-      if (accessToken && refreshToken) {
+      const tokens = extractRecoveryTokens(url);
+      if (tokens) {
         await supabase.auth.setSession({
-          access_token: accessToken,
-          refresh_token: refreshToken,
+          access_token: tokens.accessToken,
+          refresh_token: tokens.refreshToken,
         });
       }
     }
-    void handleDeepLink();
+
+    void Linking.getInitialURL().then(applyRecoverySession);
+    const subscription = Linking.addEventListener("url", ({ url }) => {
+      void applyRecoverySession(url);
+    });
+
+    return () => subscription.remove();
   }, []);
 
   async function handleSubmit() {

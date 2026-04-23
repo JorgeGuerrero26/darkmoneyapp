@@ -3,7 +3,7 @@ import * as Linking from "expo-linking";
 import { Stack, usePathname, useRouter, useSegments } from "expo-router";
 import { useFonts } from "expo-font";
 import * as SplashScreen from "expo-splash-screen";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, ImageBackground, Platform, StyleSheet, Text, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -49,6 +49,7 @@ import {
 import { useNotificationGenerator } from "../hooks/useNotificationGenerator";
 import { BiometricLock } from "../components/ui/BiometricLock";
 import { getNotificationsModule } from "../lib/notifications-runtime";
+import { hasSavedAuthOnDevice } from "../lib/device-auth-state";
 
 const Notifications = getNotificationsModule();
 
@@ -496,6 +497,7 @@ function NavigationGuard() {
   const segments = useSegments();
   const pathname = usePathname();
   const router = useRouter();
+  const [preferredAuthEntry, setPreferredAuthEntry] = useState<"/(auth)/login" | "/(auth)/welcome" | null>(null);
   const onObligationInviteFromPush = useCallback(
     (token: string) => {
       router.push(obligationShareHref(token));
@@ -530,6 +532,24 @@ function NavigationGuard() {
     onRecurringIncomeReminderTap,
   });
 
+  useEffect(() => {
+    if (session) {
+      setPreferredAuthEntry(null);
+      return;
+    }
+
+    let cancelled = false;
+    setPreferredAuthEntry(null);
+    void hasSavedAuthOnDevice().then((hasSavedAuth) => {
+      if (cancelled) return;
+      setPreferredAuthEntry(hasSavedAuth ? "/(auth)/login" : "/(auth)/welcome");
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session]);
+
   // Universal link / cold start: asegurar token en cola si el pathname aún no llegó
   useEffect(() => {
     void Linking.getInitialURL()
@@ -554,7 +574,9 @@ function NavigationGuard() {
     if (!session) {
       if (!inAuthGroup) {
         if (pathToken) void setPendingObligationInviteToken(pathToken);
-        router.replace("/(auth)/login");
+        const target = pathToken ? "/(auth)/login" : preferredAuthEntry;
+        if (!target) return;
+        router.replace(target);
       }
       return;
     }
@@ -568,7 +590,7 @@ function NavigationGuard() {
     if (inAuthGroup) {
       router.replace("/(app)/dashboard");
     }
-  }, [isLoading, session, profile, segments, pathname, router]);
+  }, [isLoading, session, profile, segments, pathname, router, preferredAuthEntry]);
 
   // Tras login + onboarding: abrir invitación pendiente (misma URL que el correo / web)
   useEffect(() => {
