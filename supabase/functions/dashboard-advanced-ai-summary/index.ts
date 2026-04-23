@@ -105,11 +105,27 @@ function ensureRecommendationLine(reply: string, summary: Record<string, unknown
   return `${reply}\n\n${recommendationLine(summary)}`.trim();
 }
 
-function isReplyTooShort(reply: string) {
+function hasEnoughParagraphs(reply: string) {
+  const withoutRecommendation = reply
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("Recomendación inmediata:"))
+    .join("\n")
+    .trim();
+  const paragraphs = withoutRecommendation
+    .split(/\n\s*\n/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  return paragraphs.length >= 3;
+}
+
+function isReplyInsufficient(reply: string) {
   const text = reply.trim();
   if (text.length < 140) return true;
   const sentenceCount = text.split(/[.!?]+/).map((part) => part.trim()).filter(Boolean).length;
-  return sentenceCount < 4;
+  if (sentenceCount < 4) return true;
+  if (!hasEnoughParagraphs(text)) return true;
+  if (!/^Recomendación inmediata:/m.test(text)) return true;
+  return false;
 }
 
 function fallbackReply(summary: Record<string, unknown>, tone: DashboardAiTone) {
@@ -215,10 +231,12 @@ Deno.serve(async (req) => {
     }
 
     let reply = await requestGeminiReply(geminiApiKey, model, buildPrompt(summary, tone, "normal"));
-    if (isReplyTooShort(reply)) {
+    reply = ensureRecommendationLine(reply, summary);
+    if (isReplyInsufficient(reply)) {
       reply = await requestGeminiReply(geminiApiKey, model, buildPrompt(summary, tone, "strict"));
+      reply = ensureRecommendationLine(reply, summary);
     }
-    if (isReplyTooShort(reply)) {
+    if (isReplyInsufficient(reply)) {
       reply = fallbackReply(summary, tone);
     }
     reply = ensureRecommendationLine(reply, summary);
