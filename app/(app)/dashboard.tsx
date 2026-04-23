@@ -51,6 +51,7 @@ import {
   useNotificationsQuery,
   useUserEntitlementQuery,
   useDashboardAiFlowMutation,
+  useDashboardAiHistoryMutation,
   useDashboardAiPatternsMutation,
   useDashboardAiSummaryMutation,
   mergeWorkspaceAndSharedObligations,
@@ -206,6 +207,7 @@ const DASHBOARD_AI_TONE_KEY_PREFIX = "darkmoney.dashboard.aiTone";
 const DASHBOARD_AI_SUMMARY_CACHE_KEY_PREFIX = "darkmoney.dashboard.aiSummaryCache";
 const DASHBOARD_AI_PATTERNS_CACHE_KEY_PREFIX = "darkmoney.dashboard.aiPatternsCache";
 const DASHBOARD_AI_FLOW_CACHE_KEY_PREFIX = "darkmoney.dashboard.aiFlowCache";
+const DASHBOARD_AI_HISTORY_CACHE_KEY_PREFIX = "darkmoney.dashboard.aiHistoryCache";
 const DASHBOARD_AI_ADMIN_EMAIL = "joradrianmori@gmail.com";
 
 function getDashboardAiToneKey(userId?: string | null) {
@@ -226,6 +228,11 @@ function getDashboardAiPatternsCacheKey(userId?: string | null) {
 function getDashboardAiFlowCacheKey(userId?: string | null) {
   if (!userId) return null;
   return `${DASHBOARD_AI_FLOW_CACHE_KEY_PREFIX}.${userId}`;
+}
+
+function getDashboardAiHistoryCacheKey(userId?: string | null) {
+  if (!userId) return null;
+  return `${DASHBOARD_AI_HISTORY_CACHE_KEY_PREFIX}.${userId}`;
 }
 
 function getDashboardAiUsageDate(date = new Date()) {
@@ -5648,6 +5655,120 @@ function AdvancedDashboard({
     weekWindow.receivableCount,
     weekWindow.scheduledCount,
   ]);
+  const dashboardAiHistoryPayload = useMemo(() => {
+    const observedMonths = annualHistory.filter((month) => !month.isFuture && (month.income > 0.009 || month.expense > 0.009));
+    const positiveMonths = observedMonths.filter((month) => month.net > 0).length;
+    const negativeMonths = observedMonths.filter((month) => month.net < 0).length;
+    const annualIncome = observedMonths.reduce((sum, month) => sum + month.income, 0);
+    const annualExpense = observedMonths.reduce((sum, month) => sum + month.expense, 0);
+    const annualNet = observedMonths.reduce((sum, month) => sum + month.net, 0);
+    const topMonths = observedMonths
+      .slice()
+      .sort((a, b) => Math.abs(b.net) - Math.abs(a.net))
+      .slice(0, 4)
+      .map((month) => ({
+        label: month.label,
+        income: formatCurrency(month.income, activeCurrency),
+        expense: formatCurrency(month.expense, activeCurrency),
+        net: formatCurrency(month.net, activeCurrency),
+      }));
+
+    return {
+      workspaceName: "Workspace actual",
+      currency: activeCurrency,
+      selectedYear: selectedHistoryYear,
+      observedMonths: historyReadiness.observedMonths,
+      movementCount: historyReadiness.movementCount,
+      expenseCategoryCount: historyReadiness.expenseCategoryCount,
+      historyDays: learning.historyDays,
+      readinessScore: learning.readinessScore,
+      usefulCount: learning.usefulCount,
+      categorizedRatePct: Math.round(learning.categorizedRate * 100),
+      annualIncome: formatCurrency(annualIncome, activeCurrency),
+      annualExpense: formatCurrency(annualExpense, activeCurrency),
+      annualNet: formatCurrency(annualNet, activeCurrency),
+      positiveMonths,
+      negativeMonths,
+      topMonths,
+      changePoint: historyChangePoint
+        ? {
+            title: historyChangePoint.title,
+            body: historyChangePoint.body,
+            metric: historyChangePoint.metric,
+            direction: historyChangePoint.direction,
+            changePct: Number(historyChangePoint.changePct.toFixed(1)),
+            recentAverage: formatCurrency(historyChangePoint.recentAverage, activeCurrency),
+            previousAverage: formatCurrency(historyChangePoint.previousAverage, activeCurrency),
+          }
+        : null,
+      monthClusters: monthClusters.slice(0, 4).map((cluster) => ({
+        title: cluster.title,
+        description: cluster.description,
+        count: cluster.count,
+        averageIncome: formatCurrency(cluster.averageIncome, activeCurrency),
+        averageExpense: formatCurrency(cluster.averageExpense, activeCurrency),
+        averageNet: formatCurrency(cluster.averageNet, activeCurrency),
+        months: cluster.monthLabels,
+      })),
+      factorAnalysis: historyFactorAnalysis
+        ? {
+            title: historyFactorAnalysis.title,
+            body: historyFactorAnalysis.body,
+            explainedVariancePct: historyFactorAnalysis.explainedVariancePct,
+            topCategories: historyFactorAnalysis.topCategories.map((category) => ({
+              name: category.name,
+              amount: formatCurrency(category.amount, activeCurrency),
+              weight: category.weight,
+              direction: category.direction,
+            })),
+            activeMonths: historyFactorAnalysis.activeMonths.map((month) => ({
+              label: month.label,
+              score: Number(month.score.toFixed(2)),
+            })),
+          }
+        : null,
+      savingsRate: {
+        avgRate: monthlySavingsRate.avgRate == null ? null : Number(monthlySavingsRate.avgRate.toFixed(1)),
+        lastRate: monthlySavingsRate.lastRate == null ? null : Number(monthlySavingsRate.lastRate.toFixed(1)),
+        trend: monthlySavingsRate.trend,
+      },
+      incomeStability: {
+        score: incomeStabilityScore.score,
+        cvPct: incomeStabilityScore.cvPct,
+        label: incomeStabilityScore.label,
+      },
+      seasonalComparison: {
+        hasHistory: seasonalComparison.hasHistory,
+        expenseDelta: seasonalComparison.expenseDelta == null ? null : Number(seasonalComparison.expenseDelta.toFixed(1)),
+        incomeDelta: seasonalComparison.incomeDelta == null ? null : Number(seasonalComparison.incomeDelta.toFixed(1)),
+        expenseLabel: seasonalComparison.expenseLabel,
+      },
+    };
+  }, [
+    activeCurrency,
+    annualHistory,
+    historyChangePoint,
+    historyFactorAnalysis,
+    historyReadiness.expenseCategoryCount,
+    historyReadiness.movementCount,
+    historyReadiness.observedMonths,
+    incomeStabilityScore.cvPct,
+    incomeStabilityScore.label,
+    incomeStabilityScore.score,
+    learning.categorizedRate,
+    learning.historyDays,
+    learning.readinessScore,
+    learning.usefulCount,
+    monthClusters,
+    monthlySavingsRate.avgRate,
+    monthlySavingsRate.lastRate,
+    monthlySavingsRate.trend,
+    seasonalComparison.expenseDelta,
+    seasonalComparison.expenseLabel,
+    seasonalComparison.hasHistory,
+    seasonalComparison.incomeDelta,
+    selectedHistoryYear,
+  ]);
 
   const executiveDetails = useMemo(() => ({
     focus: {
@@ -6390,16 +6511,19 @@ function AdvancedDashboard({
     };
   }, [accountCurrencyMap, activeCurrency, exchangeRateMap, movementPreview]);
   const dashboardAiFlowMutation = useDashboardAiFlowMutation();
+  const dashboardAiHistoryMutation = useDashboardAiHistoryMutation();
   const dashboardAiPatternsMutation = useDashboardAiPatternsMutation();
   const dashboardAiSummaryMutation = useDashboardAiSummaryMutation();
   const [dashboardAiDailyCache, setDashboardAiDailyCache] = useState<DashboardAiDailyCache | null>(null);
   const [dashboardAiFlowCache, setDashboardAiFlowCache] = useState<DashboardAiDailyCache | null>(null);
+  const [dashboardAiHistoryCache, setDashboardAiHistoryCache] = useState<DashboardAiDailyCache | null>(null);
   const [dashboardAiPatternsCache, setDashboardAiPatternsCache] = useState<DashboardAiDailyCache | null>(null);
   const [activeDashboardAiTerm, setActiveDashboardAiTerm] = useState<DashboardAiComplexTerm | null>(null);
   const [dashboardAiTone, setDashboardAiTone] = useState<DashboardAiTone>("managerial");
   const dashboardAiBreath = useRef(new Animated.Value(0)).current;
   const dashboardAiToneStorageKey = useMemo(() => getDashboardAiToneKey(userId), [userId]);
   const dashboardAiFlowCacheKey = useMemo(() => getDashboardAiFlowCacheKey(userId), [userId]);
+  const dashboardAiHistoryCacheKey = useMemo(() => getDashboardAiHistoryCacheKey(userId), [userId]);
   const dashboardAiSummaryCacheKey = useMemo(() => getDashboardAiSummaryCacheKey(userId), [userId]);
   const dashboardAiPatternsCacheKey = useMemo(() => getDashboardAiPatternsCacheKey(userId), [userId]);
   const dashboardAiToneLoadedRef = useRef(false);
@@ -6434,6 +6558,7 @@ function AdvancedDashboard({
     setDashboardAiTone("managerial");
     setDashboardAiDailyCache(null);
     setDashboardAiFlowCache(null);
+    setDashboardAiHistoryCache(null);
     setDashboardAiPatternsCache(null);
     setActiveDashboardAiTerm(null);
     if (!dashboardAiToneStorageKey) {
@@ -6485,6 +6610,36 @@ function AdvancedDashboard({
       cancelled = true;
     };
   }, [dashboardAiFlowCacheKey, dashboardAiUsageDate]);
+  useEffect(() => {
+    if (!dashboardAiHistoryCacheKey) {
+      setDashboardAiHistoryCache(null);
+      return;
+    }
+    let cancelled = false;
+    void AsyncStorage.getItem(dashboardAiHistoryCacheKey)
+      .then((stored) => {
+        if (cancelled) return;
+        if (!stored) {
+          setDashboardAiHistoryCache(null);
+          return;
+        }
+        try {
+          const parsed = JSON.parse(stored) as DashboardAiDailyCache;
+          if (parsed && parsed.usageDate === dashboardAiUsageDate && parsed.responses && typeof parsed.responses === "object") {
+            setDashboardAiHistoryCache(parsed);
+          } else {
+            setDashboardAiHistoryCache(null);
+            void AsyncStorage.removeItem(dashboardAiHistoryCacheKey);
+          }
+        } catch {
+          setDashboardAiHistoryCache(null);
+          void AsyncStorage.removeItem(dashboardAiHistoryCacheKey);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [dashboardAiHistoryCacheKey, dashboardAiUsageDate]);
   useEffect(() => {
     if (!dashboardAiSummaryCacheKey) {
       setDashboardAiDailyCache(null);
@@ -6558,6 +6713,14 @@ function AdvancedDashboard({
     void AsyncStorage.setItem(dashboardAiFlowCacheKey, JSON.stringify(dashboardAiFlowCache));
   }, [dashboardAiFlowCache, dashboardAiFlowCacheKey]);
   useEffect(() => {
+    if (!dashboardAiHistoryCacheKey) return;
+    if (!dashboardAiHistoryCache) {
+      void AsyncStorage.removeItem(dashboardAiHistoryCacheKey);
+      return;
+    }
+    void AsyncStorage.setItem(dashboardAiHistoryCacheKey, JSON.stringify(dashboardAiHistoryCache));
+  }, [dashboardAiHistoryCache, dashboardAiHistoryCacheKey]);
+  useEffect(() => {
     if (!dashboardAiSummaryCacheKey) return;
     if (!dashboardAiDailyCache) {
       void AsyncStorage.removeItem(dashboardAiSummaryCacheKey);
@@ -6603,6 +6766,9 @@ function AdvancedDashboard({
   const dashboardAiFlowCurrentToneResponse = dashboardAiFlowCache?.responses?.[dashboardAiTone] ?? null;
   const dashboardAiFlowReply = dashboardAiFlowCurrentToneResponse?.reply ?? null;
   const dashboardAiFlowComplexTerms = dashboardAiFlowCurrentToneResponse?.complexTerms ?? [];
+  const dashboardAiHistoryCurrentToneResponse = dashboardAiHistoryCache?.responses?.[dashboardAiTone] ?? null;
+  const dashboardAiHistoryReply = dashboardAiHistoryCurrentToneResponse?.reply ?? null;
+  const dashboardAiHistoryComplexTerms = dashboardAiHistoryCurrentToneResponse?.complexTerms ?? [];
   const dashboardAiPatternsCurrentToneResponse = dashboardAiPatternsCache?.responses?.[dashboardAiTone] ?? null;
   const dashboardAiPatternsReply = dashboardAiPatternsCurrentToneResponse?.reply ?? null;
   const dashboardAiPatternsComplexTerms = dashboardAiPatternsCurrentToneResponse?.complexTerms ?? [];
@@ -6624,6 +6790,14 @@ function AdvancedDashboard({
   const dashboardAiFlowTextParts = useMemo(
     () => buildDashboardAiTextParts(dashboardAiFlowReply ?? "", dashboardAiFlowResolvedTerms),
     [dashboardAiFlowReply, dashboardAiFlowResolvedTerms],
+  );
+  const dashboardAiHistoryResolvedTerms = useMemo(
+    () => ensureDashboardAiComplexTerms(dashboardAiHistoryReply ?? "", dashboardAiHistoryComplexTerms),
+    [dashboardAiHistoryComplexTerms, dashboardAiHistoryReply],
+  );
+  const dashboardAiHistoryTextParts = useMemo(
+    () => buildDashboardAiTextParts(dashboardAiHistoryReply ?? "", dashboardAiHistoryResolvedTerms),
+    [dashboardAiHistoryReply, dashboardAiHistoryResolvedTerms],
   );
   const dashboardAiPatternsResolvedTerms = useMemo(
     () => ensureDashboardAiComplexTerms(dashboardAiPatternsReply ?? "", dashboardAiPatternsComplexTerms),
@@ -6695,6 +6869,35 @@ function AdvancedDashboard({
       showToast(error instanceof Error ? error.message : "No se pudo consultar a la IA de flujo.", "error");
     }
   }, [dashboardAiFlowMutation, dashboardAiFlowPayload, dashboardAiTone, dashboardAiUsageDate, showToast, workspaceId]);
+  const handleRequestDashboardAiHistory = useCallback(async () => {
+    if (!workspaceId) {
+      showToast("No se encontró el workspace activo.", "error");
+      return;
+    }
+    try {
+      setActiveDashboardAiTerm(null);
+      const response = await dashboardAiHistoryMutation.mutateAsync({
+        workspaceId,
+        summary: dashboardAiHistoryPayload,
+        tone: dashboardAiTone,
+      });
+      const nextResponse: DashboardAiToneResponse = {
+        reply: response.reply,
+        complexTerms: response.complexTerms ?? [],
+        generatedAt: new Date().toISOString(),
+      };
+      setDashboardAiHistoryCache((current) => ({
+        usageDate: dashboardAiUsageDate,
+        lastUsedAt: nextResponse.generatedAt,
+        responses: {
+          ...(current?.usageDate === dashboardAiUsageDate ? current.responses : {}),
+          [dashboardAiTone]: nextResponse,
+        },
+      }));
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "No se pudo consultar a la IA de historial.", "error");
+    }
+  }, [dashboardAiHistoryMutation, dashboardAiHistoryPayload, dashboardAiTone, dashboardAiUsageDate, showToast, workspaceId]);
   const handleRequestDashboardAiPatterns = useCallback(async () => {
     if (!workspaceId) {
       showToast("No se encontró el workspace activo.", "error");
@@ -8123,6 +8326,184 @@ function AdvancedDashboard({
         currency={activeCurrency}
         onSelectMonth={setSelectedAnnualMonth}
       />
+      <View style={{ height: SPACING.sm }} />
+      <Card>
+        <View style={subStyles.aiSummaryShellWrap}>
+          <LinearGradient
+            colors={[GEMINI_BRAND.blue, GEMINI_BRAND.coral, GEMINI_BRAND.gold, GEMINI_BRAND.teal]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={subStyles.aiSummaryGradientBorder}
+            pointerEvents="none"
+          />
+          <View style={subStyles.aiSummaryShell}>
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                subStyles.aiSummaryAmbientGlow,
+                subStyles.aiSummaryAmbientGlowBlue,
+                { transform: [{ scale: dashboardAiHaloScale }] },
+              ]}
+            />
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                subStyles.aiSummaryAmbientGlow,
+                subStyles.aiSummaryAmbientGlowCoral,
+                { transform: [{ scale: dashboardAiHaloScale }, { translateY: dashboardAiOrbShift }] },
+              ]}
+            />
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                subStyles.aiSummaryAmbientGlow,
+                subStyles.aiSummaryAmbientGlowGold,
+                { transform: [{ scale: dashboardAiHaloScale }, { translateY: Animated.multiply(dashboardAiOrbShift, -0.6) }] },
+              ]}
+            />
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                subStyles.aiSummaryAmbientGlow,
+                subStyles.aiSummaryAmbientGlowTeal,
+                { transform: [{ scale: dashboardAiHaloScale }, { translateY: dashboardAiOrbShift }] },
+              ]}
+            />
+            <Animated.View style={[subStyles.aiSummaryBadgeRow, { transform: [{ translateY: dashboardAiBadgeTranslateY }] }]}>
+              <View style={subStyles.aiSummaryGeminiBadge}>
+                <Sparkles size={12} color={GEMINI_BRAND.teal} />
+                <View style={subStyles.aiSummaryGeminiDotsRow}>
+                  <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.blue }]} />
+                  <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.coral }]} />
+                  <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.gold }]} />
+                  <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.teal }]} />
+                </View>
+                <Text style={subStyles.aiSummaryGeminiBadgeText}>Impulsado por Gemini AI</Text>
+              </View>
+              <Text style={subStyles.aiSummaryGeminiKicker}>Interpreta tu evolución en el tiempo para explicarte qué cambió, qué se repite y qué merece vigilarse.</Text>
+            </Animated.View>
+            <View style={subStyles.aiSummaryHeader}>
+              <View style={subStyles.aiSummaryHeaderText}>
+                <Text style={subStyles.aiSummaryTitle}>Tu historial explicado</Text>
+                <Text style={subStyles.aiSummaryBody}>
+                  Gemini toma el año seleccionado, los cambios detectados y las métricas históricas para explicarte cómo viene evolucionando tu dinero y qué lectura merece más atención.
+                </Text>
+              </View>
+              <View style={subStyles.aiSummaryOrbWrap}>
+                <Animated.View
+                  pointerEvents="none"
+                  style={[
+                    subStyles.aiSummaryPulseHalo,
+                    { opacity: dashboardAiHaloOpacity, transform: [{ scale: dashboardAiHaloScale }] },
+                  ]}
+                />
+                <Animated.View style={{ transform: [{ scale: dashboardAiCoreScale }] }}>
+                  <View style={subStyles.aiSummaryIconWrap}>
+                    <View style={subStyles.aiSummaryIconRing}>
+                      <Sparkles size={20} color={GEMINI_BRAND.teal} />
+                    </View>
+                  </View>
+                </Animated.View>
+              </View>
+            </View>
+            <Text style={subStyles.aiSummarySelectorLabel}>Elige cómo quieres ver la explicación</Text>
+            <View style={subStyles.aiSummaryToneRow}>
+              {DASHBOARD_AI_TONE_OPTIONS.map((option) => {
+                const active = option.id === dashboardAiTone;
+                return (
+                  <TouchableOpacity
+                    key={option.id}
+                    activeOpacity={0.85}
+                    style={[subStyles.aiSummaryToneChip, active && subStyles.aiSummaryToneChipActive]}
+                    onPress={() => {
+                      setDashboardAiTone(option.id);
+                      setActiveDashboardAiTerm(null);
+                    }}
+                  >
+                    <Text style={[subStyles.aiSummaryToneChipTitle, active && subStyles.aiSummaryToneChipTitleActive]}>
+                      {option.label}
+                    </Text>
+                    <Text style={[subStyles.aiSummaryToneChipBody, active && subStyles.aiSummaryToneChipBodyActive]}>
+                      {option.description}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <TouchableOpacity
+              activeOpacity={0.86}
+              onPress={() => void handleRequestDashboardAiHistory()}
+              disabled={dashboardAiHistoryMutation.isPending}
+              style={[
+                subStyles.aiSummaryButton,
+                dashboardAiHistoryMutation.isPending && subStyles.aiSummaryButtonDisabled,
+              ]}
+            >
+              <View style={subStyles.aiSummaryButtonAccent} />
+              <View style={subStyles.aiSummaryButtonInner}>
+                <Sparkles size={16} color={dashboardAiHistoryMutation.isPending ? "rgba(255,255,255,0.4)" : GEMINI_BRAND.teal} />
+                <Text style={subStyles.aiSummaryButtonLabel}>
+                  {dashboardAiHistoryMutation.isPending
+                    ? "Preparando explicacion..."
+                    : dashboardAiTone === "managerial"
+                      ? "Ver informe histórico"
+                      : "Hablar con mi asesor histórico"}
+                </Text>
+              </View>
+            </TouchableOpacity>
+            {dashboardAiHistoryReply ? (
+              <View style={subStyles.aiSummaryResponseCard}>
+                <LinearGradient
+                  pointerEvents="none"
+                  colors={[GEMINI_BRAND.blue, GEMINI_BRAND.coral, GEMINI_BRAND.gold, GEMINI_BRAND.teal]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 0, y: 1 }}
+                  style={subStyles.aiSummaryResponseGradientBar}
+                />
+                <View style={subStyles.aiSummaryResponseAiTag}>
+                  <Sparkles size={11} color={GEMINI_BRAND.teal} />
+                  <View style={subStyles.aiSummaryGeminiDotsRow}>
+                    <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.blue, width: 5, height: 5 }]} />
+                    <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.coral, width: 5, height: 5 }]} />
+                    <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.gold, width: 5, height: 5 }]} />
+                    <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.teal, width: 5, height: 5 }]} />
+                  </View>
+                  <Text style={subStyles.aiSummaryResponseLabel}>
+                    {dashboardAiTone === "managerial" ? "Gemini · Historial gerencial" : "Gemini · Historial en modo asesor"}
+                  </Text>
+                </View>
+                {dashboardAiHistoryResolvedTerms.length > 0 ? (
+                  <Text style={subStyles.aiSummaryGlossaryHint}>
+                    Toca las palabras resaltadas para ver su explicación.
+                  </Text>
+                ) : null}
+                <Text style={subStyles.aiSummaryResponseText}>
+                  {dashboardAiHistoryTextParts.map((part, index) => (
+                    part.type === "term" ? (
+                      <Text
+                        key={`${part.term.term}-history-${index}`}
+                        style={subStyles.aiSummaryResponseTerm}
+                        onPress={() => setActiveDashboardAiTerm(part.term)}
+                      >
+                        {part.value}
+                      </Text>
+                    ) : (
+                      <Text key={`history-text-${index}`}>{part.value}</Text>
+                    )
+                  ))}
+                </Text>
+              </View>
+            ) : (
+              <Text style={subStyles.aiSummaryHint}>
+                Gemini usa los meses del año seleccionado, los cambios de comportamiento y las métricas históricas para contarte cómo ha evolucionado tu situación.
+              </Text>
+            )}
+            <View style={subStyles.aiSummaryFooterRow}>
+              <Text style={subStyles.aiSummaryFooterText}>La explicación usa solo las señales históricas visibles dentro de esta pestaña.</Text>
+            </View>
+          </View>
+        </View>
+      </Card>
       {historyChangePoint ? (
         <>
           <View style={{ height: SPACING.sm }} />

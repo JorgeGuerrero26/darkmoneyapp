@@ -290,6 +290,15 @@ async function readEdgeFunctionErrorMessage(
   return edgeFunctionFallbackMessage(name, targetResponse);
 }
 
+function isEdgeFunctionAuthSessionError(message: string) {
+  const normalized = message.trim().toLowerCase();
+  if (!normalized) return false;
+  return normalized.includes("auth session missing") ||
+    normalized.includes("session missing") ||
+    normalized.includes("invalid jwt") ||
+    normalized.includes("jwt expired");
+}
+
 async function fetchNextObligationInstallmentNo(obligationId: number): Promise<number> {
   if (!supabase) throw new Error("Supabase no disponible.");
 
@@ -1651,6 +1660,24 @@ export function useDashboardAiFlowMutation() {
         throw new Error("No se encontró el estilo de explicación.");
       }
       return invokeEdgeFunction<DashboardAiFlowResponse>("dashboard-advanced-ai-flow", input);
+    },
+  });
+}
+
+export type DashboardAiHistoryInput = DashboardAiSummaryInput;
+export type DashboardAiHistoryResponse = DashboardAiSummaryResponse;
+
+export function useDashboardAiHistoryMutation() {
+  return useMutation({
+    mutationFn: async (input: DashboardAiHistoryInput): Promise<DashboardAiHistoryResponse> => {
+      if (!input.workspaceId) throw new Error("No se encontró el workspace activo.");
+      if (!input.summary || typeof input.summary !== "object") {
+        throw new Error("No hay datos históricos suficientes para enviar a la IA.");
+      }
+      if (input.tone !== "managerial" && input.tone !== "personal") {
+        throw new Error("No se encontró el estilo de explicación.");
+      }
+      return invokeEdgeFunction<DashboardAiHistoryResponse>("dashboard-advanced-ai-history", input);
     },
   });
 }
@@ -5374,55 +5401,57 @@ async function invokeEdgeFunction<T>(name: string, body: Record<string, unknown>
   tokenProjectRef = extractJwtProjectRef(tokenPayload);
 
   const endpoint = `${supabaseUrl.replace(/\/+$/, "")}/functions/v1/${name}`;
-  const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
-  const timeoutId = controller ? setTimeout(() => controller.abort(), 15_000) : null;
+  const fetchEdgeResponse = async (token: string) => {
+    const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+    const timeoutId = controller ? setTimeout(() => controller.abort(), 15_000) : null;
 
-  let response: Response;
-  try {
-    response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        apikey: supabaseAnonKey,
-        Authorization: `Bearer ${accessToken}`,
-      },
-      body: JSON.stringify(body),
-      signal: controller?.signal,
-    });
-  } catch (error) {
-    if (timeoutId) clearTimeout(timeoutId);
-    const message =
-      error instanceof Error && error.name === "AbortError"
-        ? "La solicitud tardÃ³ demasiado. Intenta de nuevo."
-        : "No pudimos conectarnos al servidor. Revisa tu internet e intenta de nuevo.";
-    logEdgeFunctionDebug(name, {
-      stage: "network-error",
-      message,
-      rawError: error instanceof Error ? error.message : String(error),
-      userId: activeSession?.user?.id ?? null,
-      expiresAt: activeSession?.expires_at ?? null,
-      configuredProjectRef,
-      tokenProjectRef,
-      tokenIssuer: typeof tokenPayload?.iss === "string" ? tokenPayload.iss : null,
-      invitedEmail: typeof body.invitedEmail === "string" ? body.invitedEmail : null,
-      workspaceId: typeof body.workspaceId === "number" ? body.workspaceId : body.workspaceId ?? null,
-      obligationId: typeof body.obligationId === "number" ? body.obligationId : body.obligationId ?? null,
-      appUrl: typeof body.appUrl === "string" ? body.appUrl : body.appUrl ?? null,
-    });
-    throw new Error(message);
-  } finally {
-    if (timeoutId) clearTimeout(timeoutId);
-  }
+    try {
+      return await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: supabaseAnonKey,
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(body),
+        signal: controller?.signal,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error && error.name === "AbortError"
+          ? "La solicitud tardÃ³ demasiado. Intenta de nuevo."
+          : "No pudimos conectarnos al servidor. Revisa tu internet e intenta de nuevo.";
+      logEdgeFunctionDebug(name, {
+        stage: "network-error",
+        message,
+        rawError: error instanceof Error ? error.message : String(error),
+        userId: activeSession?.user?.id ?? null,
+        expiresAt: activeSession?.expires_at ?? null,
+        configuredProjectRef,
+        tokenProjectRef,
+        tokenIssuer: typeof tokenPayload?.iss === "string" ? tokenPayload.iss : null,
+        invitedEmail: typeof body.invitedEmail === "string" ? body.invitedEmail : null,
+        workspaceId: typeof body.workspaceId === "number" ? body.workspaceId : body.workspaceId ?? null,
+        obligationId: typeof body.obligationId === "number" ? body.obligationId : body.obligationId ?? null,
+        appUrl: typeof body.appUrl === "string" ? body.appUrl : body.appUrl ?? null,
+      });
+      throw new Error(message);
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+    }
+  };
+
+  let response = await fetchEdgeResponse(accessToken);
 
   if (!response.ok) {
-    const message = await readEdgeFunctionErrorMessage(name, undefined, response);
-    const shouldRetryViaClient =
+    let message = await readEdgeFunctionErrorMessage(name, undefined, response);
+    const shouldRetryWithFreshSession =
       response.status === 401 &&
-      message.toLowerCase().includes("invalid jwt");
+      isEdgeFunctionAuthSessionError(message);
 
-    if (shouldRetryViaClient) {
+    if (shouldRetryWithFreshSession) {
       logEdgeFunctionDebug(name, {
-        stage: "invoke-error-retrying-via-client",
+        stage: "invoke-error-retrying-after-session-refresh",
         message,
         responseStatus: response.status ?? null,
         userId: activeSession?.user?.id ?? null,
@@ -5436,6 +5465,68 @@ async function invokeEdgeFunction<T>(name: string, body: Record<string, unknown>
         appUrl: typeof body.appUrl === "string" ? body.appUrl : body.appUrl ?? null,
       });
 
+      const { data: refreshedData, error: refreshError } = await supabase.auth.refreshSession();
+      if (!refreshError && refreshedData.session?.access_token) {
+        activeSession = refreshedData.session;
+        accessToken = refreshedData.session.access_token;
+        tokenPayload = decodeJwtPayload(accessToken);
+        tokenProjectRef = extractJwtProjectRef(tokenPayload);
+
+        if (configuredProjectRef && tokenProjectRef && configuredProjectRef !== tokenProjectRef) {
+          logEdgeFunctionDebug(name, {
+            stage: "token-project-mismatch-after-invoke-refresh",
+            configuredProjectRef,
+            tokenProjectRef,
+            tokenIssuer: typeof tokenPayload?.iss === "string" ? tokenPayload.iss : null,
+            userId: activeSession?.user?.id ?? null,
+          });
+          await clearLocalSessionSilently();
+          throw new Error(
+            "La sesiÃ³n guardada pertenece a otro proyecto de Supabase. Cierra sesiÃ³n e ingresa otra vez.",
+          );
+        }
+
+        response = await fetchEdgeResponse(accessToken);
+        if (response.ok) {
+          const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+          if (!contentType.includes("application/json")) {
+            return {} as T;
+          }
+          return (await response.json()) as T;
+        }
+
+        message = await readEdgeFunctionErrorMessage(name, undefined, response);
+      } else {
+        logEdgeFunctionDebug(name, {
+          stage: "refresh-session-before-retry-error",
+          error: refreshError?.message ?? null,
+          userId: activeSession?.user?.id ?? null,
+          configuredProjectRef,
+          tokenProjectRef,
+        });
+      }
+    }
+
+    if (response.status === 401 && isEdgeFunctionAuthSessionError(message)) {
+      logEdgeFunctionDebug(name, {
+        stage: "invoke-auth-session-error",
+        message,
+        responseStatus: response.status ?? null,
+        userId: activeSession?.user?.id ?? null,
+        expiresAt: activeSession?.expires_at ?? null,
+        configuredProjectRef,
+        tokenProjectRef,
+        tokenIssuer: typeof tokenPayload?.iss === "string" ? tokenPayload.iss : null,
+      });
+      await clearLocalSessionSilently();
+      throw new Error("Tu sesiÃ³n expirÃ³. Cierra sesiÃ³n e ingresa nuevamente.");
+    }
+
+    const shouldRetryViaClient =
+      response.status === 401 &&
+      message.toLowerCase().includes("invalid jwt");
+
+    if (shouldRetryViaClient) {
       const { data: clientData, error: clientError } = await supabase.functions.invoke<T>(name, {
         body,
       });
