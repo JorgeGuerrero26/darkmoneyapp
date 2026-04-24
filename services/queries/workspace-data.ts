@@ -1294,7 +1294,7 @@ export function useCategoriesOverviewQuery(profile: AppProfile | null, workspace
 
 // â”€â”€â”€ Workspace list init (no activeWorkspaceId needed) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-async function fetchUserWorkspaces(userId: string) {
+export async function fetchUserWorkspaces(userId: string) {
   if (!supabase) throw new Error("Supabase no estÃ¡ configurado.");
   const [membershipsResult, workspacesResult] = await Promise.all([
     supabase.from("workspace_members").select("workspace_id, role, is_default_workspace, joined_at").eq("user_id", userId),
@@ -4529,6 +4529,7 @@ export function useCreateRecurringIncomeMutation(workspaceId: number | null) {
       return data as { id: number };
     },
     onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["user-workspaces"] });
       void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
     },
   });
@@ -4565,6 +4566,7 @@ export function useUpdateRecurringIncomeMutation(workspaceId: number | null) {
       if (error) throw new Error(error.message ?? "Error de base de datos");
     },
     onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["user-workspaces"] });
       void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
     },
   });

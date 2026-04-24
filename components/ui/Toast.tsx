@@ -16,7 +16,7 @@ import { useUiStore } from "../../store/ui-store";
 import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING } from "../../constants/theme";
 import { TOAST_DURATION_MS } from "../../constants/config";
 
-const TOAST_LOGO = require("../../assets/images/logo-darkmoney.png");
+const TOAST_LOGO = require("../../assets/images/logo-sin-fondo.png");
 const BUBBLE_SIZE = 56;
 const TOAST_PROGRESS_DURATION_MS = TOAST_DURATION_MS + 500;
 

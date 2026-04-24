@@ -93,6 +93,8 @@ async function saveTokenToSupabase(userId: string, token: string) {
 export type PushNotificationHandlers = {
   /** Toque en notificación con data.type === "obligation_share_invite" */
   onObligationShareInviteTap?: (token: string) => void;
+  /** Toque en notificación con data.type === "workspace_invite" */
+  onWorkspaceInviteTap?: (token: string) => void;
   /** Toque en notificación con data.type === "subscription_reminder" */
   onSubscriptionReminderTap?: (subscriptionId: number) => void;
   /** Toque en notificación con data.type === "obligation_reminder" */
@@ -104,10 +106,12 @@ export function usePushNotifications(userId?: string, handlers?: PushNotificatio
   const notificationListener = useRef<ExpoEventSubscription | null>(null);
   const responseListener = useRef<ExpoEventSubscription | null>(null);
   const onInviteTapRef = useRef(handlers?.onObligationShareInviteTap);
+  const onWorkspaceInviteTapRef = useRef(handlers?.onWorkspaceInviteTap);
   const onSubTapRef = useRef(handlers?.onSubscriptionReminderTap);
   const onObTapRef = useRef(handlers?.onObligationReminderTap);
   const onRecurringTapRef = useRef(handlers?.onRecurringIncomeReminderTap);
   onInviteTapRef.current = handlers?.onObligationShareInviteTap;
+  onWorkspaceInviteTapRef.current = handlers?.onWorkspaceInviteTap;
   onSubTapRef.current = handlers?.onSubscriptionReminderTap;
   onObTapRef.current = handlers?.onObligationReminderTap;
   onRecurringTapRef.current = handlers?.onRecurringIncomeReminderTap;
@@ -118,6 +122,8 @@ export function usePushNotifications(userId?: string, handlers?: PushNotificatio
 
     if (data.type === "obligation_share_invite" && typeof data.token === "string") {
       onInviteTapRef.current?.(data.token);
+    } else if (data.type === "workspace_invite" && typeof data.token === "string") {
+      onWorkspaceInviteTapRef.current?.(data.token);
     } else if (data.type === "subscription_reminder" && typeof data.subscriptionId === "number") {
       onSubTapRef.current?.(data.subscriptionId);
     } else if (data.type === "obligation_reminder" && typeof data.obligationId === "number") {

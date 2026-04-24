@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { ErrorBoundary } from "../components/ui/ErrorBoundary";
 import {
@@ -27,6 +28,7 @@ import { useWorkspace, useWorkspaceListStore } from "../lib/workspace-context";
 import { humanizeError } from "../lib/errors";
 import { useUiStore } from "../store/ui-store";
 import {
+  fetchUserWorkspaces,
   useCreateSharedWorkspaceMutation,
   useCreateWorkspaceInvitationMutation,
   type WorkspaceInvitationInput,
@@ -50,8 +52,9 @@ const ROLE_OPTIONS: { label: string; value: Exclude<WorkspaceRole, "owner"> }[] 
 function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { profile, saveProfile, saveAvatar, removeAvatar, signOut } = useAuth();
-  const { activeWorkspace, activeWorkspaceId } = useWorkspace();
+  const { activeWorkspace, activeWorkspaceId, setActiveWorkspaceId, setWorkspaces } = useWorkspace();
   const { workspaces } = useWorkspaceListStore();
   const { showToast } = useToast();
 
@@ -191,12 +194,18 @@ function SettingsScreen() {
   }
 
   async function handleCreateWorkspace() {
-    if (!newWsName.trim()) return;
+    if (!newWsName.trim() || !profile?.id) return;
     try {
-      await createWsMutation.mutateAsync({
+      const workspace = await createWsMutation.mutateAsync({
         name: newWsName.trim(),
         baseCurrencyCode: newWsCurrency.trim().toUpperCase() || null,
       });
+      const refreshedWorkspaces = await queryClient.fetchQuery({
+        queryKey: ["user-workspaces", profile.id],
+        queryFn: () => fetchUserWorkspaces(profile.id),
+      });
+      setWorkspaces(refreshedWorkspaces);
+      setActiveWorkspaceId(workspace.id);
       setCreateWsSheetOpen(false);
       showToast("Workspace creado", "success");
     } catch (err: unknown) {
@@ -265,7 +274,9 @@ function SettingsScreen() {
     setSignOutVisible(true);
   }
 
-  const canInvite = activeWorkspace?.role === "owner" || activeWorkspace?.role === "admin";
+  const canInvite =
+    activeWorkspace?.kind === "shared" &&
+    (activeWorkspace?.role === "owner" || activeWorkspace?.role === "admin");
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>

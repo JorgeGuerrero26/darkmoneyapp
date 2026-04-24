@@ -31,6 +31,7 @@ import {
 
 import { useAuth } from "../lib/auth-context";
 import { obligationShareHref } from "../lib/obligation-share-link";
+import { workspaceInviteHref } from "../lib/workspace-invite-link";
 import {
   useNotificationsQuery,
   useMarkNotificationReadMutation,
@@ -83,6 +84,8 @@ function getKindMeta(kind: string): KindMeta {
       return { Icon: CreditCard,     color: COLORS.primary, bg: COLORS.primary  + "20" };
     case "obligation_share_invite":
       return { Icon: Mail,           color: COLORS.pine,    bg: COLORS.pine     + "20" };
+    case "workspace_invite":
+      return { Icon: Mail,           color: COLORS.primary, bg: COLORS.primary  + "20" };
     case "obligation_request_accepted":
       return { Icon: CreditCard,     color: COLORS.income,  bg: COLORS.income   + "20" };
     case "obligation_request_rejected":
@@ -484,6 +487,15 @@ function NotificationsScreen() {
           router.push(obligationShareHref(token));
         } else {
           router.push("/(app)/obligations");
+        }
+        break;
+      }
+      case "workspace_invite": {
+        const token = payloadString(n.payload, "token");
+        if (token) {
+          router.push(workspaceInviteHref(token));
+        } else {
+          router.push("/(app)/dashboard");
         }
         break;
       }

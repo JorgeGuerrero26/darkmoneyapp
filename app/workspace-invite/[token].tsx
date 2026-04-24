@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -7,17 +8,20 @@ import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/auth-context";
 import { useWorkspace } from "../../lib/workspace-context";
 import { humanizeError } from "../../lib/errors";
+import { setPendingWorkspaceInviteToken } from "../../lib/pending-workspace-invite";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { COLORS, FONT_SIZE, FONT_WEIGHT, SPACING } from "../../constants/theme";
+import { fetchUserWorkspaces } from "../../services/queries/workspace-data";
 
 export default function WorkspaceInviteScreen() {
   const { token } = useLocalSearchParams<{ token: string }>();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { session } = useAuth();
-  const { setActiveWorkspaceId } = useWorkspace();
+  const queryClient = useQueryClient();
+  const { setActiveWorkspaceId, setWorkspaces } = useWorkspace();
 
   const [isLoading, setIsLoading] = useState(true);
   const [invite, setInvite] = useState<any>(null);
@@ -49,6 +53,7 @@ export default function WorkspaceInviteScreen() {
 
   async function handleAccept() {
     if (!supabase || !session) {
+      if (token) await setPendingWorkspaceInviteToken(token);
       router.replace("/(auth)/login");
       return;
     }
@@ -60,8 +65,15 @@ export default function WorkspaceInviteScreen() {
       if (error) throw error;
       if (!data.ok && !data.alreadyAccepted) throw new Error(data.error ?? "Error al aceptar");
       if (data.workspaceId) {
+        const refreshedWorkspaces = await queryClient.fetchQuery({
+          queryKey: ["user-workspaces", session.user.id],
+          queryFn: () => fetchUserWorkspaces(session.user.id),
+        });
+        setWorkspaces(refreshedWorkspaces);
         setActiveWorkspaceId(data.workspaceId);
       }
+      await queryClient.invalidateQueries({ queryKey: ["notifications"] });
+      await queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
       setAccepted(true);
       setTimeout(() => router.replace("/(app)/dashboard"), 1500);
     } catch (err: unknown) {

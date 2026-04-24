@@ -121,6 +121,30 @@ export function buildAndroidIntentShareUrl(token: string, fallbackUrl: string | 
   return `intent:///share/obligations/${encodeURIComponent(token)}#Intent;scheme=${scheme};package=${packageName}${fallbackPart};end`;
 }
 
+export function buildWorkspaceInviteUrl(appUrl: unknown, token: string): string | null {
+  const base = typeof appUrl === "string" ? appUrl.trim().replace(/\/+$/, "") : "";
+  if (!base || !token) return null;
+  return `${base}/workspace-invite/${encodeURIComponent(token)}`;
+}
+
+export function buildMobileWorkspaceInviteUrl(token: string): string | null {
+  const scheme = (Deno.env.get("INVITE_APP_SCHEME") ?? "darkmoney").trim().replace(/:\/\/?$/, "");
+  if (!scheme || !token) return null;
+  return `${scheme}:///workspace-invite/${encodeURIComponent(token)}`;
+}
+
+export function buildAndroidIntentWorkspaceInviteUrl(token: string, fallbackUrl: string | null): string | null {
+  const scheme = (Deno.env.get("INVITE_APP_SCHEME") ?? "darkmoney").trim().replace(/:\/\/?$/, "");
+  const packageName = (Deno.env.get("INVITE_ANDROID_PACKAGE") ?? "com.darkmoney.app").trim();
+  if (!scheme || !packageName || !token) return null;
+
+  const fallbackPart = fallbackUrl
+    ? `;S.browser_fallback_url=${encodeURIComponent(fallbackUrl)}`
+    : "";
+
+  return `intent:///workspace-invite/${encodeURIComponent(token)}#Intent;scheme=${scheme};package=${packageName}${fallbackPart};end`;
+}
+
 function defaultInviteHeroImageUrl(): string {
   const supabaseUrl = Deno.env.get("SUPABASE_URL")?.trim().replace(/\/+$/, "");
   if (supabaseUrl) return `${supabaseUrl}/functions/v1/invite-banner`;
@@ -281,6 +305,173 @@ export async function maybeSendInviteEmail(input: {
         from,
         to: input.to,
         subject: `${owner} te compartio un registro desde DarkMoney movil`,
+        text,
+        html,
+      }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function maybeSendWorkspaceInviteEmail(input: {
+  to: string;
+  inviteUrl: string | null;
+  mobileInviteUrl: string | null;
+  androidIntentInviteUrl: string | null;
+  workspaceName: string;
+  invitedByDisplayName: string | null;
+  note: string | null;
+  roleLabel: string;
+}): Promise<boolean> {
+  const apiKey = Deno.env.get("RESEND_API_KEY");
+  const from =
+    Deno.env.get("INVITE_FROM_EMAIL") ??
+    Deno.env.get("RESEND_FROM_EMAIL") ??
+    Deno.env.get("FROM_EMAIL") ??
+    Deno.env.get("EMAIL_FROM") ??
+    "DarkMoney <onboarding@resend.dev>";
+  const heroImageUrl =
+    Deno.env.get("INVITE_HERO_IMAGE_URL") ??
+    defaultInviteHeroImageUrl();
+  if (!apiKey || !from || !input.inviteUrl) return false;
+
+  const sender = input.invitedByDisplayName ?? "DarkMoney";
+  const safeSender = escapeHtml(sender);
+  const safeWorkspaceName = escapeHtml(input.workspaceName);
+  const safeRoleLabel = escapeHtml(input.roleLabel);
+  const safeInviteUrl = escapeHtml(input.inviteUrl);
+  const primaryInviteUrl = input.androidIntentInviteUrl ?? input.mobileInviteUrl ?? input.inviteUrl;
+  const safePrimaryInviteUrl = escapeHtml(primaryInviteUrl);
+  const safeMobileInviteUrl = input.mobileInviteUrl ? escapeHtml(input.mobileInviteUrl) : null;
+  const safeHeroImageUrl = escapeHtml(heroImageUrl);
+  const safeNote = input.note ? escapeHtml(input.note) : null;
+  const text = [
+    `${sender} te invito a un workspace de DarkMoney.`,
+    `Workspace: ${input.workspaceName}`,
+    `Rol: ${input.roleLabel}`,
+    input.note ? `Mensaje: ${input.note}` : null,
+    input.androidIntentInviteUrl ? `Abrir en Android: ${input.androidIntentInviteUrl}` : null,
+    input.mobileInviteUrl ? `Abrir en la app: ${input.mobileInviteUrl}` : null,
+    `Enlace web de respaldo: ${input.inviteUrl}`,
+  ].filter(Boolean).join("\n\n");
+
+  const html = `
+    <!doctype html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Invitacion a workspace</title>
+      </head>
+      <body style="margin:0;padding:0;background:#030711;color:#f4f7fb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;">
+        <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">
+          ${safeSender} te invito a colaborar en DarkMoney.
+        </div>
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#030711;padding:32px 12px;">
+          <tr>
+            <td align="center">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#07111d;border-radius:30px;overflow:hidden;border:1px solid rgba(255,255,255,0.12);box-shadow:0 24px 70px rgba(0,0,0,0.45);">
+                <tr>
+                  <td style="padding:0;background:#050b14;">
+                    <img src="${safeHeroImageUrl}" alt="DarkMoney" width="640" style="display:block;width:100%;max-width:640px;height:210px;object-fit:cover;border:0;">
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:30px 32px 12px 32px;background:linear-gradient(180deg,#07111d 0%,#050b14 100%);">
+                    <div style="display:inline-block;padding:8px 13px;border-radius:999px;background:rgba(107,228,197,0.14);border:1px solid rgba(107,228,197,0.32);color:#6be4c5;font-size:12px;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;">
+                      Invitacion a workspace
+                    </div>
+                    <h1 style="margin:18px 0 10px 0;color:#f4f7fb;font-size:31px;line-height:1.12;font-weight:800;letter-spacing:0;">
+                      ${safeSender} te invito a colaborar en DarkMoney
+                    </h1>
+                    <p style="margin:0;color:#b4c1d7;font-size:16px;line-height:1.65;">
+                      Abre esta invitacion desde tu celular para unirte al workspace y revisar sus movimientos, paneles y modulos compartidos.
+                    </p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:14px 32px 0 32px;background:#050b14;">
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-radius:22px;background:#091522;border:1px solid rgba(255,255,255,0.10);">
+                      <tr>
+                        <td style="padding:21px 21px 19px 21px;">
+                          <div style="font-size:12px;color:#8ea2bf;font-weight:800;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:9px;">
+                            Workspace
+                          </div>
+                          <div style="font-size:21px;line-height:1.35;color:#f4f7fb;font-weight:800;">
+                            ${safeWorkspaceName}
+                          </div>
+                          <div style="margin-top:13px;font-size:14px;line-height:1.55;color:#8ea2bf;">
+                            Tu rol sugerido sera <strong style="color:#f4f7fb;">${safeRoleLabel}</strong>.
+                          </div>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+                ${safeNote ? `
+                <tr>
+                  <td style="padding:14px 32px 0 32px;background:#050b14;">
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-radius:20px;background:rgba(107,228,197,0.08);border:1px solid rgba(107,228,197,0.22);">
+                      <tr>
+                        <td style="padding:17px 19px;">
+                          <div style="font-size:13px;color:#6be4c5;font-weight:800;margin-bottom:8px;">Mensaje de ${safeSender}</div>
+                          <div style="font-size:15px;line-height:1.58;color:#d9e4f2;">${safeNote}</div>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+                ` : ""}
+                <tr>
+                  <td align="center" style="padding:28px 32px 12px 32px;background:#050b14;">
+                    <a href="${safePrimaryInviteUrl}" style="display:inline-block;background:#f3f7fd;color:#07111d;text-decoration:none;font-size:16px;font-weight:800;padding:16px 26px;border-radius:16px;box-shadow:0 14px 30px rgba(0,0,0,0.35);">
+                      Abrir invitacion
+                    </a>
+                  </td>
+                </tr>
+                ${safeMobileInviteUrl ? `
+                <tr>
+                  <td align="center" style="padding:0 32px 14px 32px;background:#050b14;">
+                    <a href="${safeMobileInviteUrl}" style="display:inline-block;color:#6be4c5;text-decoration:none;font-size:14px;font-weight:800;">
+                      Probar enlace alternativo
+                    </a>
+                  </td>
+                </tr>
+                ` : ""}
+                <tr>
+                  <td style="padding:8px 32px 32px 32px;background:#050b14;">
+                    <p style="margin:0;color:#8ea2bf;font-size:13px;line-height:1.65;text-align:center;">
+                      Si el boton no abre la app, usa este enlace de respaldo:<br>
+                      <a href="${safeInviteUrl}" style="color:#6be4c5;text-decoration:none;word-break:break-all;">${safeInviteUrl}</a>
+                      <br><br>
+                      Si ya tienes cuenta con este correo, tambien veras esta invitacion dentro del modulo Notificaciones.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+              <p style="max-width:640px;margin:18px auto 0 auto;color:#60718b;font-size:12px;line-height:1.5;text-align:center;">
+                DarkMoney movil envio este correo porque alguien te invito a un workspace con tu direccion.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </body>
+    </html>
+  `;
+
+  try {
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from,
+        to: input.to,
+        subject: `${sender} te invito a un workspace de DarkMoney`,
         text,
         html,
       }),

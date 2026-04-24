@@ -4,7 +4,7 @@ import { Stack, usePathname, useRouter, useSegments } from "expo-router";
 import { useFonts } from "expo-font";
 import * as SplashScreen from "expo-splash-screen";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, ImageBackground, Platform, StyleSheet, Text, View } from "react-native";
+import { Animated, Easing, Image, ImageBackground, Platform, StyleSheet, Text, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { DarkTheme, ThemeProvider } from "@react-navigation/native";
@@ -40,6 +40,16 @@ import {
   getPendingObligationInviteToken,
   setPendingObligationInviteToken,
 } from "../lib/pending-obligation-invite";
+import {
+  clearPendingWorkspaceInviteToken,
+  getPendingWorkspaceInviteToken,
+  setPendingWorkspaceInviteToken,
+} from "../lib/pending-workspace-invite";
+import {
+  parseWorkspaceInviteTokenFromPath,
+  parseWorkspaceInviteTokenFromUrl,
+  workspaceInviteHref,
+} from "../lib/workspace-invite-link";
 import {
   usePushNotifications,
   scheduleSubscriptionReminders,
@@ -159,6 +169,15 @@ function NotificationSetup() {
     : resolvedActiveWorkspace?.name
       ? `Estamos preparando ${resolvedActiveWorkspace.name} para mostrar la información completa.`
       : "Estamos preparando tus cuentas, movimientos y módulos antes de dejarte navegar.";
+  const workspaceBootstrapPulse = useRef(new Animated.Value(0)).current;
+  const workspaceBootstrapLogoScale = workspaceBootstrapPulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.98, 1.04],
+  });
+  const workspaceBootstrapLogoOpacity = workspaceBootstrapPulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.92, 1],
+  });
 
   useNotificationGenerator(profile?.id, snapshot);
 
@@ -176,6 +195,35 @@ function NotificationSetup() {
       }
     })();
   }, [profile?.id]);
+
+  useEffect(() => {
+    if (!showWorkspaceBootstrapOverlay) {
+      workspaceBootstrapPulse.stopAnimation();
+      workspaceBootstrapPulse.setValue(0);
+      return;
+    }
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(workspaceBootstrapPulse, {
+          toValue: 1,
+          duration: 2400,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(workspaceBootstrapPulse, {
+          toValue: 0,
+          duration: 2400,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    animation.start();
+    return () => {
+      animation.stop();
+      workspaceBootstrapPulse.stopAnimation();
+    };
+  }, [showWorkspaceBootstrapOverlay, workspaceBootstrapPulse]);
 
   useEffect(() => {
     if (!snapshot?.subscriptions) return;
@@ -484,7 +532,17 @@ function NotificationSetup() {
       />
       <View style={styles.workspaceBootstrapVeil} />
       <View style={styles.workspaceBootstrapCard}>
-        <ActivityIndicator size="large" color="#6BE4C5" />
+        <View style={styles.workspaceBootstrapLogoStage}>
+          <Animated.View
+            style={{ opacity: workspaceBootstrapLogoOpacity, transform: [{ scale: workspaceBootstrapLogoScale }] }}
+          >
+            <Image
+              source={require("../assets/images/logo-sin-fondo.png")}
+              style={styles.workspaceBootstrapFrontLogo}
+              resizeMode="contain"
+            />
+          </Animated.View>
+        </View>
         <Text style={styles.workspaceBootstrapTitle}>{bootstrapTitle}</Text>
         <Text style={styles.workspaceBootstrapBody}>{bootstrapBody}</Text>
       </View>
@@ -501,6 +559,12 @@ function NavigationGuard() {
   const onObligationInviteFromPush = useCallback(
     (token: string) => {
       router.push(obligationShareHref(token));
+    },
+    [router],
+  );
+  const onWorkspaceInviteFromPush = useCallback(
+    (token: string) => {
+      router.push(workspaceInviteHref(token));
     },
     [router],
   );
@@ -527,6 +591,7 @@ function NavigationGuard() {
 
   usePushNotifications(profile?.id, {
     onObligationShareInviteTap: onObligationInviteFromPush,
+    onWorkspaceInviteTap: onWorkspaceInviteFromPush,
     onSubscriptionReminderTap,
     onObligationReminderTap,
     onRecurringIncomeReminderTap,
@@ -554,8 +619,10 @@ function NavigationGuard() {
   useEffect(() => {
     void Linking.getInitialURL()
       .then((url) => {
-        const t = parseObligationShareTokenFromUrl(url);
-        if (t && !session) void setPendingObligationInviteToken(t);
+        const obligationToken = parseObligationShareTokenFromUrl(url);
+        const workspaceToken = parseWorkspaceInviteTokenFromUrl(url);
+        if (obligationToken && !session) void setPendingObligationInviteToken(obligationToken);
+        if (workspaceToken && !session) void setPendingWorkspaceInviteToken(workspaceToken);
       })
       .catch((error) => {
         console.warn("[NavigationGuard] initial URL failed:", error);
@@ -569,12 +636,15 @@ function NavigationGuard() {
 
     const inAuthGroup = segments[0] === "(auth)";
     const inOnboarding = segments[0] === "onboarding";
-    const pathToken = parseObligationShareTokenFromPath(pathname);
+    const obligationPathToken = parseObligationShareTokenFromPath(pathname);
+    const workspacePathToken = parseWorkspaceInviteTokenFromPath(pathname);
 
     if (!session) {
       if (!inAuthGroup) {
-        if (pathToken) void setPendingObligationInviteToken(pathToken);
-        const target = pathToken ? "/(auth)/login" : preferredAuthEntry;
+        if (obligationPathToken) void setPendingObligationInviteToken(obligationPathToken);
+        if (workspacePathToken) void setPendingWorkspaceInviteToken(workspacePathToken);
+        const hasPendingInvite = Boolean(obligationPathToken || workspacePathToken);
+        const target = hasPendingInvite ? "/(auth)/login" : preferredAuthEntry;
         if (!target) return;
         router.replace(target);
       }
@@ -582,7 +652,8 @@ function NavigationGuard() {
     }
 
     if (profile && !profile.baseCurrencyCode && !inOnboarding) {
-      if (pathToken) void setPendingObligationInviteToken(pathToken);
+      if (obligationPathToken) void setPendingObligationInviteToken(obligationPathToken);
+      if (workspacePathToken) void setPendingWorkspaceInviteToken(workspacePathToken);
       router.replace("/onboarding");
       return;
     }
@@ -596,14 +667,24 @@ function NavigationGuard() {
   useEffect(() => {
     if (isLoading || !session || !profile?.baseCurrencyCode) return;
     if (pathname.includes("/share/obligations/")) return;
+    if (pathname.includes("/workspace-invite/")) return;
 
     let cancelled = false;
     void (async () => {
-      const t = await getPendingObligationInviteToken();
-      if (!t || cancelled) return;
+      const workspaceToken = await getPendingWorkspaceInviteToken();
+      if (workspaceToken && !cancelled) {
+        await clearPendingWorkspaceInviteToken();
+        if (!cancelled) {
+          router.replace(workspaceInviteHref(workspaceToken));
+          return;
+        }
+      }
+
+      const obligationToken = await getPendingObligationInviteToken();
+      if (!obligationToken || cancelled) return;
       await clearPendingObligationInviteToken();
       if (cancelled) return;
-      router.replace(obligationShareHref(t));
+      router.replace(obligationShareHref(obligationToken));
     })();
     return () => {
       cancelled = true;
@@ -685,7 +766,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 10,
     paddingHorizontal: 24,
-    paddingVertical: 28,
+    paddingVertical: 30,
     borderRadius: 24,
     backgroundColor: "rgba(9,13,18,0.90)",
     borderTopWidth: 1,
@@ -696,6 +777,17 @@ const styles = StyleSheet.create({
     borderLeftColor: "rgba(255,255,255,0.10)",
     borderRightColor: "rgba(255,255,255,0.08)",
     borderBottomColor: "rgba(255,255,255,0.05)",
+  },
+  workspaceBootstrapLogoStage: {
+    width: 140,
+    height: 140,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 6,
+  },
+  workspaceBootstrapFrontLogo: {
+    width: 108,
+    height: 108,
   },
   workspaceBootstrapTitle: {
     color: "#F5F7FB",
