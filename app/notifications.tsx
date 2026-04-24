@@ -33,6 +33,11 @@ import { useAuth } from "../lib/auth-context";
 import { obligationShareHref } from "../lib/obligation-share-link";
 import { workspaceInviteHref } from "../lib/workspace-invite-link";
 import {
+  getNotificationPriority,
+  getNotificationPriorityMeta,
+  type NotificationPriority,
+} from "../lib/notification-priority";
+import {
   useNotificationsQuery,
   useMarkNotificationReadMutation,
   useMarkAllNotificationsReadMutation,
@@ -59,6 +64,26 @@ type KindMeta = {
   color: string;
   bg: string;
 };
+
+type NotificationSection = {
+  key: NotificationPriority;
+  title: string;
+  subtitle: string;
+  color: string;
+  items: NotificationItem[];
+};
+
+type NotificationFilter = "all" | NotificationPriority;
+
+const NOTIFICATION_FILTERS: Array<{
+  key: NotificationFilter;
+  label: string;
+}> = [
+  { key: "all", label: "Todas" },
+  { key: "critical", label: "Críticas" },
+  { key: "important", label: "Importantes" },
+  { key: "informational", label: "Informativas" },
+];
 
 function getKindMeta(kind: string): KindMeta {
   switch (kind) {
@@ -179,6 +204,8 @@ function NotifCard({
   selectionMode?: boolean;
 }) {
   const { Icon, color, bg } = getKindMeta(item.kind);
+  const priority = getNotificationPriority(item.kind);
+  const priorityMeta = getNotificationPriorityMeta(priority);
   const unread = item.status !== "read";
   const obligationTitle = payloadString(item.payload, "obligationTitle");
 
@@ -217,11 +244,26 @@ function NotifCard({
             {format(new Date(item.scheduledFor), "d MMM · HH:mm", { locale: es })}
           </Text>
         </View>
-        {obligationTitle ? (
-          <Text style={styles.cardContext} numberOfLines={1}>
-            {obligationTitle}
-          </Text>
-        ) : null}
+        <View style={styles.metaRow}>
+          <View
+            style={[
+              styles.priorityPill,
+              {
+                backgroundColor: priorityMeta.bg,
+                borderColor: priorityMeta.border,
+              },
+            ]}
+          >
+            <Text style={[styles.priorityPillText, { color: priorityMeta.color }]}>
+              {priorityMeta.label}
+            </Text>
+          </View>
+          {obligationTitle ? (
+            <Text style={styles.cardContext} numberOfLines={1}>
+              {obligationTitle}
+            </Text>
+          ) : null}
+        </View>
         <Text style={styles.cardText} numberOfLines={3}>
           {item.body}
         </Text>
@@ -305,6 +347,7 @@ function NotificationsScreen() {
   const { user, profile } = useAuth();
   const { showToast } = useToast();
   const [selectedNotificationIds, setSelectedNotificationIds] = useState<number[]>([]);
+  const [activeFilter, setActiveFilter] = useState<NotificationFilter>("all");
   const ignoreTapAfterLongPressRef = useRef(false);
 
   // Pedir permisos al entrar al módulo
@@ -550,6 +593,65 @@ function NotificationsScreen() {
     (loadingPendingInvites && !pendingInvites.length && notificationList.length === 0);
 
   const hasContent = pendingInvites.length > 0 || notificationList.length > 0;
+  const notificationSections = useMemo<NotificationSection[]>(() => {
+    const grouped: Record<NotificationPriority, NotificationItem[]> = {
+      critical: [],
+      important: [],
+      informational: [],
+    };
+
+    for (const item of notificationList) {
+      grouped[getNotificationPriority(item.kind)].push(item);
+    }
+
+    return [
+      {
+        key: "critical" as const,
+        title: "Críticas",
+        subtitle: getNotificationPriorityMeta("critical").subtitle,
+        color: getNotificationPriorityMeta("critical").color,
+        items: grouped.critical,
+      },
+      {
+        key: "important" as const,
+        title: getNotificationPriorityMeta("important").title,
+        subtitle: getNotificationPriorityMeta("important").subtitle,
+        color: getNotificationPriorityMeta("important").color,
+        items: grouped.important,
+      },
+      {
+        key: "informational" as const,
+        title: getNotificationPriorityMeta("informational").title,
+        subtitle: getNotificationPriorityMeta("informational").subtitle,
+        color: getNotificationPriorityMeta("informational").color,
+        items: grouped.informational,
+      },
+    ].filter((section) => section.items.length > 0);
+  }, [notificationList]);
+  const visibleNotificationSections = useMemo(
+    () =>
+      activeFilter === "all"
+        ? notificationSections
+        : notificationSections.filter((section) => section.key === activeFilter),
+    [activeFilter, notificationSections],
+  );
+  const filteredNotificationCount = useMemo(
+    () => visibleNotificationSections.reduce((total, section) => total + section.items.length, 0),
+    [visibleNotificationSections],
+  );
+  const filterUnreadCounts = useMemo(() => {
+    const counts: Record<NotificationFilter, number> = {
+      all: notificationList.filter((item) => item.status !== "read").length,
+      critical: 0,
+      important: 0,
+      informational: 0,
+    };
+    for (const item of notificationList) {
+      if (item.status === "read") continue;
+      counts[getNotificationPriority(item.kind)] += 1;
+    }
+    return counts;
+  }, [notificationList]);
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
@@ -623,6 +725,37 @@ function NotificationsScreen() {
         </View>
       ) : null}
 
+      {notificationList.length > 0 && (
+        <View style={styles.filterBar}>
+          {NOTIFICATION_FILTERS.map((filter) => {
+            const isActive = activeFilter === filter.key;
+            const unread = filterUnreadCounts[filter.key];
+            return (
+              <TouchableOpacity
+                key={filter.key}
+                style={[
+                  styles.filterChip,
+                  isActive && styles.filterChipActive,
+                ]}
+                onPress={() => setActiveFilter(filter.key)}
+                activeOpacity={0.85}
+              >
+                <Text style={[styles.filterChipText, isActive && styles.filterChipTextActive]}>
+                  {filter.label}
+                </Text>
+                {unread > 0 && (
+                  <View style={[styles.filterChipBadge, isActive && styles.filterChipBadgeActive]}>
+                    <Text style={[styles.filterChipBadgeText, isActive && styles.filterChipBadgeTextActive]}>
+                      {unread}
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      )}
+
       {showSkeleton ? (
         <View style={styles.listPad}>
           <SkeletonCard />
@@ -658,27 +791,41 @@ function NotificationsScreen() {
                 </View>
               )}
 
-              {/* Alerts section */}
-              {notificationList.length > 0 && (
-                <View style={styles.section}>
-                  <View style={styles.sectionRow}>
-                    <Text style={styles.sectionLabel}>Alertas</Text>
-                    {unreadCount > 0 && (
-                      <View style={styles.badge}>
-                        <Text style={styles.badgeText}>{unreadCount}</Text>
+              {visibleNotificationSections.map((section) => {
+                const sectionUnreadCount = section.items.filter((item) => item.status !== "read").length;
+                return (
+                  <View key={section.key} style={styles.section}>
+                    <View style={styles.sectionHeader}>
+                      <View style={styles.sectionHeading}>
+                        <View style={[styles.sectionDot, { backgroundColor: section.color }]} />
+                        <Text style={styles.sectionLabel}>{section.title}</Text>
+                        {sectionUnreadCount > 0 && (
+                          <View style={styles.badge}>
+                            <Text style={styles.badgeText}>{sectionUnreadCount}</Text>
+                          </View>
+                        )}
                       </View>
-                    )}
+                      <Text style={styles.sectionSubtitle}>{section.subtitle}</Text>
+                    </View>
+                    {section.items.map((n, i) => (
+                      <NotifCard
+                        key={`${section.key}-${n.id}-${i}`}
+                        item={n}
+                        onPress={() => handleTap(n)}
+                        onLongPress={() => handleNotificationLongPress(n)}
+                        selected={selectedNotificationIds.includes(n.id)}
+                        selectionMode={selectionMode}
+                      />
+                    ))}
                   </View>
-                  {notificationList.map((n, i) => (
-                    <NotifCard
-                      key={`${n.id}-${i}`}
-                      item={n}
-                      onPress={() => handleTap(n)}
-                      onLongPress={() => handleNotificationLongPress(n)}
-                      selected={selectedNotificationIds.includes(n.id)}
-                      selectionMode={selectionMode}
-                    />
-                  ))}
+                );
+              })}
+              {notificationList.length > 0 && filteredNotificationCount === 0 && (
+                <View style={styles.filteredEmptyState}>
+                  <Text style={styles.filteredEmptyTitle}>Nada en esta vista</Text>
+                  <Text style={styles.filteredEmptyBody}>
+                    Cambia el filtro para ver otras prioridades o espera nuevas alertas.
+                  </Text>
                 </View>
               )}
             </>
@@ -735,14 +882,79 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.xs,
     color: COLORS.primary,
   },
+  filterBar: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: SPACING.xs,
+    paddingHorizontal: SPACING.lg,
+    marginTop: SPACING.sm,
+    marginBottom: SPACING.xs,
+  },
+  filterChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 7,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    borderColor: GLASS.cardBorder,
+    backgroundColor: GLASS.card,
+  },
+  filterChipActive: {
+    borderColor: COLORS.primary + "70",
+    backgroundColor: COLORS.primary + "14",
+  },
+  filterChipText: {
+    fontFamily: FONT_FAMILY.bodyMedium,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+  },
+  filterChipTextActive: {
+    color: COLORS.primary,
+  },
+  filterChipBadge: {
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 5,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.primary + "24",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  filterChipBadgeActive: {
+    backgroundColor: COLORS.primary,
+  },
+  filterChipBadgeText: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: 10,
+    color: COLORS.primary,
+  },
+  filterChipBadgeTextActive: {
+    color: "#FFFFFF",
+  },
 
   // Section
   section: { gap: SPACING.sm },
+  sectionHeader: {
+    gap: 4,
+    marginBottom: SPACING.xs,
+  },
+  sectionHeading: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.xs,
+  },
   sectionRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: SPACING.xs,
     marginBottom: SPACING.xs,
+  },
+  sectionDot: {
+    width: 8,
+    height: 8,
+    borderRadius: RADIUS.full,
   },
   sectionLabel: {
     fontFamily: FONT_FAMILY.bodySemibold,
@@ -750,6 +962,12 @@ const styles = StyleSheet.create({
     color: COLORS.storm,
     textTransform: "uppercase",
     letterSpacing: 0.6,
+  },
+  sectionSubtitle: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.textMuted,
+    lineHeight: 16,
   },
   badge: {
     backgroundColor: COLORS.primary + "30",
@@ -835,6 +1053,13 @@ const styles = StyleSheet.create({
   cardBodyWithSelection: {
     paddingRight: 28,
   },
+  metaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.xs,
+    minWidth: 0,
+    flexWrap: "wrap",
+  },
   cardTop: {
     flexDirection: "row",
     alignItems: "center",
@@ -857,6 +1082,17 @@ const styles = StyleSheet.create({
     fontFamily: FONT_FAMILY.bodySemibold,
     fontSize: FONT_SIZE.xs,
     color: COLORS.primary,
+    flexShrink: 1,
+  },
+  priorityPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+  },
+  priorityPillText: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: 10,
   },
   cardText: {
     fontFamily: FONT_FAMILY.body,
@@ -932,6 +1168,26 @@ const styles = StyleSheet.create({
     color: COLORS.storm,
     textAlign: "center",
     lineHeight: 20,
+  },
+  filteredEmptyState: {
+    paddingVertical: SPACING.xl,
+    paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.xl,
+    borderWidth: 1,
+    borderColor: GLASS.cardBorder,
+    backgroundColor: GLASS.card,
+    gap: SPACING.xs,
+  },
+  filteredEmptyTitle: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.ink,
+  },
+  filteredEmptyBody: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.textMuted,
+    lineHeight: 18,
   },
 });
 

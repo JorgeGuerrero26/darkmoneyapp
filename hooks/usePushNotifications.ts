@@ -95,6 +95,7 @@ export type PushNotificationHandlers = {
   onObligationShareInviteTap?: (token: string) => void;
   /** Toque en notificación con data.type === "workspace_invite" */
   onWorkspaceInviteTap?: (token: string) => void;
+  onDailyDigestTap?: () => void;
   /** Toque en notificación con data.type === "subscription_reminder" */
   onSubscriptionReminderTap?: (subscriptionId: number) => void;
   /** Toque en notificación con data.type === "obligation_reminder" */
@@ -107,11 +108,13 @@ export function usePushNotifications(userId?: string, handlers?: PushNotificatio
   const responseListener = useRef<ExpoEventSubscription | null>(null);
   const onInviteTapRef = useRef(handlers?.onObligationShareInviteTap);
   const onWorkspaceInviteTapRef = useRef(handlers?.onWorkspaceInviteTap);
+  const onDailyDigestTapRef = useRef(handlers?.onDailyDigestTap);
   const onSubTapRef = useRef(handlers?.onSubscriptionReminderTap);
   const onObTapRef = useRef(handlers?.onObligationReminderTap);
   const onRecurringTapRef = useRef(handlers?.onRecurringIncomeReminderTap);
   onInviteTapRef.current = handlers?.onObligationShareInviteTap;
   onWorkspaceInviteTapRef.current = handlers?.onWorkspaceInviteTap;
+  onDailyDigestTapRef.current = handlers?.onDailyDigestTap;
   onSubTapRef.current = handlers?.onSubscriptionReminderTap;
   onObTapRef.current = handlers?.onObligationReminderTap;
   onRecurringTapRef.current = handlers?.onRecurringIncomeReminderTap;
@@ -124,6 +127,8 @@ export function usePushNotifications(userId?: string, handlers?: PushNotificatio
       onInviteTapRef.current?.(data.token);
     } else if (data.type === "workspace_invite" && typeof data.token === "string") {
       onWorkspaceInviteTapRef.current?.(data.token);
+    } else if (data.type === "daily_digest") {
+      onDailyDigestTapRef.current?.();
     } else if (data.type === "subscription_reminder" && typeof data.subscriptionId === "number") {
       onSubTapRef.current?.(data.subscriptionId);
     } else if (data.type === "obligation_reminder" && typeof data.obligationId === "number") {

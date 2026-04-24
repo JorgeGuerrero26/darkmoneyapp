@@ -568,6 +568,9 @@ function NavigationGuard() {
     },
     [router],
   );
+  const onDailyDigestTap = useCallback(() => {
+    router.push("/notifications");
+  }, [router]);
 
   const onSubscriptionReminderTap = useCallback(
     (subscriptionId: number) => {
@@ -592,6 +595,7 @@ function NavigationGuard() {
   usePushNotifications(profile?.id, {
     onObligationShareInviteTap: onObligationInviteFromPush,
     onWorkspaceInviteTap: onWorkspaceInviteFromPush,
+    onDailyDigestTap,
     onSubscriptionReminderTap,
     onObligationReminderTap,
     onRecurringIncomeReminderTap,
