@@ -49,10 +49,7 @@ import { useEffect, useRef } from "react";
 import { supabase } from "../lib/supabase";
 import { queryClient } from "../lib/query-client";
 import { calendarDaysFromTodayLocal } from "../lib/subscription-helpers";
-import { getNotificationsModule } from "../lib/notifications-runtime";
 import type { WorkspaceSnapshot } from "../services/queries/workspace-data";
-
-const Notifications = getNotificationsModule();
 
 type NotificationRow = {
   user_id: string;
@@ -654,34 +651,6 @@ async function generateNotifications(
   if (newRows.length) {
     const { error } = await supabase.from("notifications").insert(newRows);
     if (error) console.warn("[NotificationGenerator] insert error:", error.message);
-
-    // Fire as immediate local OS notifications so they appear in the notification shade
-    if (Notifications) {
-      const toFire = newRows.slice(0, 8); // cap to avoid flooding
-      for (const row of toFire) {
-        try {
-          await Notifications.scheduleNotificationAsync({
-            content: {
-              title: row.title,
-              body: row.body,
-              data: {
-                kind: row.kind,
-                relatedEntityType: row.related_entity_type,
-                relatedEntityId: row.related_entity_id,
-              },
-              sound: true,
-            },
-            trigger: {
-              type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-              seconds: 2,
-              repeats: false,
-            },
-          });
-        } catch {
-          // ignore — scheduling failures must not block the app
-        }
-      }
-    }
   }
 
   await cleanupStaleNotifications(userId, rows);

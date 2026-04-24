@@ -42,6 +42,74 @@ interface WebhookPayload {
 }
 
 const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
+const DAILY_IMPORTANT_PUSH_LIMIT = 3;
+const LIMA_TIMEZONE = "America/Lima";
+
+type NotificationPriority = "critical" | "important" | "informational";
+type DeliveryDecision = "sent" | "skipped_daily_limit" | "skipped_priority" | "skipped_no_token";
+
+const CRITICAL_KINDS = new Set([
+  "workspace_invite",
+  "obligation_share_invite",
+  "obligation_payment_request",
+  "obligation_event_delete_request",
+  "obligation_event_edit_request",
+  "obligation_request_accepted",
+  "obligation_request_rejected",
+  "negative_balance",
+  "obligation_overdue",
+  "subscription_overdue",
+]);
+
+const IMPORTANT_KINDS = new Set([
+  "obligation_due",
+  "multiple_obligations_overdue",
+  "multiple_subscriptions_due",
+  "subscription_reminder",
+  "low_balance",
+  "high_interest_obligation",
+  "obligation_no_payment",
+  "obligation_event_unlinked",
+]);
+
+function classifyNotificationKind(kind: string): NotificationPriority {
+  if (CRITICAL_KINDS.has(kind)) return "critical";
+  if (IMPORTANT_KINDS.has(kind)) return "important";
+  return "informational";
+}
+
+function usageDateInLima(date = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: LIMA_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
+async function logDeliveryDecision(
+  supabase: ReturnType<typeof createClient>,
+  record: NotificationRecord,
+  priority: NotificationPriority,
+  decision: DeliveryDecision,
+  bypassDailyLimit: boolean,
+) {
+  const { error } = await supabase
+    .from("notification_push_delivery_log")
+    .upsert({
+      notification_id: record.id,
+      user_id: record.user_id,
+      kind: record.kind,
+      priority,
+      decision,
+      usage_date: usageDateInLima(),
+      bypass_daily_limit: bypassDailyLimit,
+    }, { onConflict: "notification_id" });
+
+  if (error) {
+    console.warn("[PushNotif] delivery log error:", error.message);
+  }
+}
 
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST") {
@@ -84,6 +152,13 @@ Deno.serve(async (req: Request) => {
   }
 
   const supabase = createClient(supabaseUrl, serviceRoleKey);
+  const priority = classifyNotificationKind(record.kind);
+  const bypassDailyLimit = priority === "critical";
+
+  if (priority === "informational") {
+    await logDeliveryDecision(supabase, record, priority, "skipped_priority", false);
+    return new Response("Skipped by priority", { status: 200 });
+  }
 
   // Look up push token
   const { data: pref } = await supabase
@@ -94,8 +169,27 @@ Deno.serve(async (req: Request) => {
     .maybeSingle();
 
   if (!pref?.push_token) {
+    await logDeliveryDecision(supabase, record, priority, "skipped_no_token", bypassDailyLimit);
     // User hasn't granted push permissions — nothing to do
     return new Response("No push token", { status: 200 });
+  }
+
+  if (!bypassDailyLimit) {
+    const usageDate = usageDateInLima();
+    const { count, error: countError } = await supabase
+      .from("notification_push_delivery_log")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", record.user_id)
+      .eq("usage_date", usageDate)
+      .eq("decision", "sent")
+      .eq("bypass_daily_limit", false);
+
+    if (countError) {
+      console.warn("[PushNotif] delivery count error:", countError.message);
+    } else if ((count ?? 0) >= DAILY_IMPORTANT_PUSH_LIMIT) {
+      await logDeliveryDecision(supabase, record, priority, "skipped_daily_limit", false);
+      return new Response("Daily limit reached", { status: 200 });
+    }
   }
 
   // Send via Expo Push API
@@ -116,6 +210,7 @@ Deno.serve(async (req: Request) => {
       ...payload,
       type: notificationType,
       kind: record.kind,
+      priority,
       relatedEntityType: record.related_entity_type,
       relatedEntityId: record.related_entity_id,
     },
@@ -166,6 +261,8 @@ Deno.serve(async (req: Request) => {
     .from("notifications")
     .update({ status: "sent" })
     .eq("id", record.id);
+
+  await logDeliveryDecision(supabase, record, priority, "sent", bypassDailyLimit);
 
   return new Response("OK", { status: 200 });
 });
