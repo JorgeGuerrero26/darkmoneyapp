@@ -1,5 +1,5 @@
 ﻿import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
-import { InteractionManager } from "react-native";
+import { InteractionManager, Platform } from "react-native";
 import type { WorkspaceInvitationStatus } from "../../types/domain";
 
 import { UNIVERSAL_LINK_HOST } from "../../constants/config";
@@ -5136,6 +5136,88 @@ export function useNotificationsQuery(userId: string | null) {
     refetchOnReconnect: true,
     refetchOnWindowFocus: true,
     refetchInterval: userId ? 10_000 : false,
+  });
+}
+
+export type NotificationPreferenceSummary = {
+  userId: string;
+  pushEnabled: boolean;
+  dailyDigestEnabled: boolean;
+};
+
+export function useNotificationPreferencesQuery(userId: string | null | undefined) {
+  return useQuery({
+    queryKey: ["notification-preferences", userId ?? null],
+    enabled: Boolean(supabase && userId),
+    staleTime: 15_000,
+    queryFn: async (): Promise<NotificationPreferenceSummary> => {
+      if (!supabase || !userId) {
+        return {
+          userId: userId ?? "",
+          pushEnabled: false,
+          dailyDigestEnabled: true,
+        };
+      }
+
+      const { data, error } = await supabase
+        .from("notification_preferences")
+        .select("user_id, is_active, daily_digest_enabled")
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (error) throw new Error(error.message ?? "Error al cargar preferencias de notificaciones");
+
+      return {
+        userId,
+        pushEnabled: data?.is_active === true,
+        dailyDigestEnabled: data?.daily_digest_enabled !== false,
+      };
+    },
+  });
+}
+
+export function useUpdateNotificationPreferencesMutation(userId: string | null | undefined) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { dailyDigestEnabled: boolean }) => {
+      if (!supabase || !userId) throw new Error("Usuario no disponible.");
+
+      const { data: existing, error: existingError } = await supabase
+        .from("notification_preferences")
+        .select("user_id")
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (existingError) {
+        throw new Error(existingError.message ?? "Error al leer preferencias de notificaciones");
+      }
+
+      const operation = existing
+        ? supabase
+          .from("notification_preferences")
+          .update({
+            daily_digest_enabled: input.dailyDigestEnabled,
+          })
+          .eq("user_id", userId)
+        : supabase
+          .from("notification_preferences")
+          .insert({
+            user_id: userId,
+            platform: Platform.OS,
+            is_active: false,
+            daily_digest_enabled: input.dailyDigestEnabled,
+          });
+
+      const { error } = await operation;
+      if (error) {
+        throw new Error(error.message ?? "Error al guardar preferencias de notificaciones");
+      }
+
+      return input;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["notification-preferences", userId ?? null] });
+    },
   });
 }
 

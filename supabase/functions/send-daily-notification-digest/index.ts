@@ -88,7 +88,7 @@ Deno.serve(async (req: Request) => {
 
   const { data: prefs, error: prefsError } = await supabase
     .from("notification_preferences")
-    .select("user_id, push_token")
+    .select("user_id, push_token, daily_digest_enabled")
     .eq("is_active", true)
     .not("push_token", "is", null);
   if (prefsError) {
@@ -100,6 +100,11 @@ Deno.serve(async (req: Request) => {
   for (const pref of prefs ?? []) {
     const userId = String(pref.user_id ?? "");
     const pushToken = typeof pref.push_token === "string" ? pref.push_token : "";
+    const dailyDigestEnabled = pref.daily_digest_enabled !== false;
+    if (!dailyDigestEnabled) {
+      results.push({ userId, ok: true, skipped: "digest_disabled" });
+      continue;
+    }
     if (!userId || !pushToken) continue;
 
     const { data: existingDigest, error: digestError } = await supabase

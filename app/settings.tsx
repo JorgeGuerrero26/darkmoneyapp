@@ -31,6 +31,8 @@ import {
   fetchUserWorkspaces,
   useCreateSharedWorkspaceMutation,
   useCreateWorkspaceInvitationMutation,
+  useNotificationPreferencesQuery,
+  useUpdateNotificationPreferencesMutation,
   type WorkspaceInvitationInput,
 } from "../services/queries/workspace-data";
 import { Input } from "../components/ui/Input";
@@ -57,6 +59,8 @@ function SettingsScreen() {
   const { activeWorkspace, activeWorkspaceId, setActiveWorkspaceId, setWorkspaces } = useWorkspace();
   const { workspaces } = useWorkspaceListStore();
   const { showToast } = useToast();
+  const notificationPreferencesQuery = useNotificationPreferencesQuery(profile?.id ?? null);
+  const updateNotificationPreferencesMutation = useUpdateNotificationPreferencesMutation(profile?.id ?? null);
 
   // ── Profile ──────────────────────────────────────────────────────────────
   const [fullName, setFullName] = useState(profile?.fullName ?? "");
@@ -277,6 +281,20 @@ function SettingsScreen() {
   const canInvite =
     activeWorkspace?.kind === "shared" &&
     (activeWorkspace?.role === "owner" || activeWorkspace?.role === "admin");
+  const dailyDigestEnabled = notificationPreferencesQuery.data?.dailyDigestEnabled !== false;
+  const pushEnabled = notificationPreferencesQuery.data?.pushEnabled === true;
+
+  async function handleDailyDigestToggle(nextValue: boolean) {
+    try {
+      await updateNotificationPreferencesMutation.mutateAsync({ dailyDigestEnabled: nextValue });
+      showToast(
+        nextValue ? "Digest diario activado" : "Digest diario desactivado",
+        "success",
+      );
+    } catch (err: unknown) {
+      showToast(humanizeError(err), "error");
+    }
+  }
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
@@ -379,6 +397,27 @@ function SettingsScreen() {
               </View>
             </Card>
           ) : null}
+
+          <Card>
+            <Text style={styles.sectionTitle}>Notificaciones</Text>
+            <View style={styles.switchRow}>
+              <View style={styles.switchInfo}>
+                <Text style={styles.switchLabel}>Resumen diario informativo</Text>
+                <Text style={styles.switchDesc}>
+                  {pushEnabled
+                    ? "Recibe un solo resumen al final del día con alertas informativas."
+                    : "Se guardará tu preferencia aunque ahora no tengas push activo."}
+                </Text>
+              </View>
+              <Switch
+                value={dailyDigestEnabled}
+                onValueChange={(v) => void handleDailyDigestToggle(v)}
+                disabled={updateNotificationPreferencesMutation.isPending || notificationPreferencesQuery.isLoading}
+                trackColor={{ false: COLORS.border, true: COLORS.primary }}
+                thumbColor="#FFFFFF"
+              />
+            </View>
+          </Card>
 
           {/* Sign out */}
           <Button label="Cerrar sesión" variant="danger" size="lg" onPress={handleSignOut} />
