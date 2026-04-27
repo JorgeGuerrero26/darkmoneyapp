@@ -77,7 +77,9 @@ Deno.serve(async (req: Request) => {
     return new Response("Method not allowed", { status: 405 });
   }
 
-  const webhookSecret = Deno.env.get("WEBHOOK_SECRET");
+  const webhookSecret =
+    Deno.env.get("DIGEST_WEBHOOK_SECRET") ??
+    Deno.env.get("WEBHOOK_SECRET");
   if (webhookSecret) {
     const incoming = req.headers.get("x-webhook-secret");
     if (incoming !== webhookSecret) {
