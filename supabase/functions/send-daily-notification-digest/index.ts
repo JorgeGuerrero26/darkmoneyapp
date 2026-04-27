@@ -4,23 +4,10 @@
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { isInformationalNotificationKind } from "../_shared/notification-priority.ts";
 
 const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
 const LIMA_TIMEZONE = "America/Lima";
-const INFORMATIONAL_KINDS = new Set([
-  "budget_alert",
-  "budget_period_ending",
-  "account_dormant",
-  "no_income_month",
-  "high_expense_month",
-  "category_spending_spike",
-  "expense_income_imbalance",
-  "net_worth_negative",
-  "savings_rate_low",
-  "subscription_cost_heavy",
-  "upcoming_annual_subscription",
-  "no_movements_week",
-]);
 
 const KIND_LABELS: Record<string, string> = {
   budget_alert: "presupuestos",
@@ -146,7 +133,7 @@ Deno.serve(async (req: Request) => {
     const todaysInformational = (notifications ?? []).filter((row) => {
       const kind = typeof row.kind === "string" ? row.kind : "";
       const scheduledFor = typeof row.scheduled_for === "string" ? row.scheduled_for : "";
-      if (!INFORMATIONAL_KINDS.has(kind) || !scheduledFor) return false;
+      if (!isInformationalNotificationKind(kind) || !scheduledFor) return false;
       return usageDateInLima(new Date(scheduledFor)) === digestDate;
     });
 

@@ -20,6 +20,11 @@
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  classifyNotificationKind,
+  expoPushPriority,
+  type NotificationPriority,
+} from "../_shared/notification-priority.ts";
 
 interface NotificationRecord {
   id: number;
@@ -44,39 +49,7 @@ interface WebhookPayload {
 const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
 const DAILY_IMPORTANT_PUSH_LIMIT = 3;
 const LIMA_TIMEZONE = "America/Lima";
-
-type NotificationPriority = "critical" | "important" | "informational";
 type DeliveryDecision = "sent" | "skipped_daily_limit" | "skipped_priority" | "skipped_no_token";
-
-const CRITICAL_KINDS = new Set([
-  "workspace_invite",
-  "obligation_share_invite",
-  "obligation_payment_request",
-  "obligation_event_delete_request",
-  "obligation_event_edit_request",
-  "obligation_request_accepted",
-  "obligation_request_rejected",
-  "negative_balance",
-  "obligation_overdue",
-  "subscription_overdue",
-]);
-
-const IMPORTANT_KINDS = new Set([
-  "obligation_due",
-  "multiple_obligations_overdue",
-  "multiple_subscriptions_due",
-  "subscription_reminder",
-  "low_balance",
-  "high_interest_obligation",
-  "obligation_no_payment",
-  "obligation_event_unlinked",
-]);
-
-function classifyNotificationKind(kind: string): NotificationPriority {
-  if (CRITICAL_KINDS.has(kind)) return "critical";
-  if (IMPORTANT_KINDS.has(kind)) return "important";
-  return "informational";
-}
 
 function usageDateInLima(date = new Date()): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -216,7 +189,7 @@ Deno.serve(async (req: Request) => {
     },
     sound: "default",
     badge: 1,
-    priority: "high",
+    priority: expoPushPriority(priority),
   };
 
   let pushRes: Response;

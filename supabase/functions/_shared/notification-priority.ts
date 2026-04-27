@@ -1,5 +1,3 @@
-import { COLORS } from "../constants/theme";
-
 export type NotificationPriority = "critical" | "important" | "informational";
 
 const CRITICAL_KINDS = new Set([
@@ -34,40 +32,16 @@ const IMPORTANT_KINDS = new Set([
   "obligation_event_deleted",
 ]);
 
-export function getNotificationPriority(kind: string): NotificationPriority {
+export function classifyNotificationKind(kind: string): NotificationPriority {
   if (CRITICAL_KINDS.has(kind)) return "critical";
   if (IMPORTANT_KINDS.has(kind)) return "important";
   return "informational";
 }
 
-export function getNotificationPriorityMeta(priority: NotificationPriority) {
-  switch (priority) {
-    case "critical":
-      return {
-        label: "Crítica",
-        color: COLORS.danger,
-        bg: COLORS.danger + "1A",
-        border: COLORS.danger + "40",
-        title: "Críticas",
-        subtitle: "Riesgo real o acciones humanas que no deberían quedarse esperando.",
-      };
-    case "important":
-      return {
-        label: "Importante",
-        color: COLORS.warning,
-        bg: COLORS.warning + "18",
-        border: COLORS.warning + "3A",
-        title: "Importantes",
-        subtitle: "Necesitan atención, pero sí respetan control para no saturarte.",
-      };
-    default:
-      return {
-        label: "Informativa",
-        color: COLORS.storm,
-        bg: COLORS.storm + "14",
-        border: COLORS.storm + "30",
-        title: "Informativas",
-        subtitle: "Se quedan en bandeja para no saturarte.",
-      };
-  }
+export function isInformationalNotificationKind(kind: string): boolean {
+  return classifyNotificationKind(kind) === "informational";
+}
+
+export function expoPushPriority(priority: NotificationPriority): "high" | "default" {
+  return priority === "critical" ? "high" : "default";
 }
