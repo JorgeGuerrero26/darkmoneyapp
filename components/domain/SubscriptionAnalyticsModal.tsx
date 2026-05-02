@@ -13,6 +13,7 @@ import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
 import type { SubscriptionPostedMovement, SubscriptionSummary } from "../../types/domain";
+import { buildCurrencyBreakdown, formatCurrencyBreakdownLine } from "../../lib/analytics-currency";
 import {
   getSubscriptionAnnualCost,
   movementAmountForSubscriptionAnalytics,
@@ -35,7 +36,7 @@ function ymFromOccurredAt(iso: string): string {
   return format(d, "yyyy-MM");
 }
 
-function ymLabel(ym: string): string {
+function ymLabel(ym: string) {
   const [y, m] = ym.split("-").map(Number);
   if (!y || !m) return ym;
   return format(new Date(y, m - 1, 1), "MMM yy", { locale: es });
@@ -53,58 +54,107 @@ export function SubscriptionAnalyticsModal({
 
   const filtered = useMemo(() => {
     if (!subscription) return [];
-    return movements.filter((m) => m.subscriptionId === subscription.id);
+    return movements
+      .filter((movement) => movement.subscriptionId === subscription.id)
+      .sort((left, right) => right.occurredAt.localeCompare(left.occurredAt));
   }, [movements, subscription]);
 
-  const { paymentCount, totalSpent, monthlyEst, annualEst, last12, maxBar } = useMemo(() => {
-    if (!subscription) {
-      return {
-        paymentCount: 0,
-        totalSpent: 0,
-        monthlyEst: 0,
-        annualEst: 0,
-        last12: [] as { ym: string; total: number }[],
-        maxBar: 1,
-      };
-    }
-    const payCount = filtered.length;
-    let total = 0;
-    for (const m of filtered) {
-      total += movementAmountForSubscriptionAnalytics(m);
-    }
-    const annual = getSubscriptionAnnualCost(
+  const analytics = useMemo(() => {
+    if (!subscription) return null;
+
+    const annualNative = getSubscriptionAnnualCost(
       subscription.amount,
       subscription.frequency,
       subscription.intervalCount,
     );
-    const monthly = annual / 12;
+    const monthlyNative = annualNative / 12;
+    const annualBase = subscription.amountInBaseCurrency != null
+      ? getSubscriptionAnnualCost(
+          subscription.amountInBaseCurrency,
+          subscription.frequency,
+          subscription.intervalCount,
+        )
+      : null;
+    const monthlyBase = annualBase != null ? annualBase / 12 : null;
 
     const now = new Date();
-    const keys: string[] = [];
-    for (let i = 11; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      keys.push(format(d, "yyyy-MM"));
+    const monthKeys: string[] = [];
+    for (let i = 11; i >= 0; i -= 1) {
+      const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      monthKeys.push(format(date, "yyyy-MM"));
     }
-    const bucket: Record<string, number> = {};
-    for (const k of keys) bucket[k] = 0;
-    for (const m of filtered) {
-      const ym = ymFromOccurredAt(m.occurredAt);
-      if (ym && bucket[ym] !== undefined) bucket[ym] += movementAmountForSubscriptionAnalytics(m);
+    const totalsByMonth = new Map<string, number>();
+    for (const key of monthKeys) totalsByMonth.set(key, 0);
+
+    let totalBase = 0;
+    let comparableCount = 0;
+    for (const movement of filtered) {
+      if (movement.amountInBaseCurrency != null && Number.isFinite(movement.amountInBaseCurrency)) {
+        totalBase += movement.amountInBaseCurrency;
+        comparableCount += 1;
+        const ym = ymFromOccurredAt(movement.occurredAt);
+        if (ym && totalsByMonth.has(ym)) {
+          totalsByMonth.set(ym, (totalsByMonth.get(ym) ?? 0) + movement.amountInBaseCurrency);
+        }
+      }
     }
-    const last12Arr = keys.map((ym) => ({ ym, total: bucket[ym] ?? 0 }));
-    const maxBar = Math.max(1, ...last12Arr.map((x) => x.total));
+
+    const totalNative = filtered.reduce(
+      (sum, movement) => sum + movementAmountForSubscriptionAnalytics(movement),
+      0,
+    );
+    const averageBase = comparableCount > 0 ? totalBase / comparableCount : 0;
+    const breakdown = buildCurrencyBreakdown(
+      filtered.map((movement) => ({
+        currencyCode: movement.amountCurrencyCode ?? subscription.currencyCode,
+        amount: movementAmountForSubscriptionAnalytics(movement),
+        amountInBaseCurrency: movement.amountInBaseCurrency ?? null,
+      })),
+    );
+    const last12 = monthKeys.map((ym) => ({ ym, totalBase: totalsByMonth.get(ym) ?? 0 }));
+    const maxBar = Math.max(1, ...last12.map((item) => item.totalBase));
+    const strongestMonth = last12.reduce<{ ym: string; totalBase: number } | null>(
+      (best, current) => (!best || current.totalBase > best.totalBase ? current : best),
+      null,
+    );
+    const latestMovement = filtered[0] ?? null;
+
+    const insightLines: string[] = [];
+    if (monthlyBase != null) {
+      insightLines.push(
+        `El plan equivale aproximadamente a ${formatCurrency(monthlyBase, baseCurrencyCode)} al mes en ${baseCurrencyCode}.`,
+      );
+    }
+    if (strongestMonth && strongestMonth.totalBase > 0) {
+      insightLines.push(
+        `El mayor mes registrado fue ${ymLabel(strongestMonth.ym)} con ${formatCurrency(strongestMonth.totalBase, baseCurrencyCode)} comparables.`,
+      );
+    }
+    if (breakdown.length > 1) {
+      insightLines.push(
+        `Los pagos reales se detectaron en ${breakdown.length} monedas, por eso el histórico comparable se expresa en ${baseCurrencyCode}.`,
+      );
+    }
 
     return {
-      paymentCount: payCount,
-      totalSpent: total,
-      monthlyEst: monthly,
-      annualEst: annual,
-      last12: last12Arr,
+      paymentCount: filtered.length,
+      totalNative,
+      totalBase,
+      averageBase,
+      monthlyNative,
+      annualNative,
+      monthlyBase,
+      annualBase,
+      breakdown,
+      last12,
       maxBar,
+      strongestMonth,
+      latestMovement,
+      insightLines,
     };
-  }, [filtered, subscription]);
+  }, [baseCurrencyCode, filtered, subscription]);
 
-  if (!subscription) return null;
+  if (!subscription || !analytics) return null;
 
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
@@ -120,50 +170,126 @@ export function SubscriptionAnalyticsModal({
           </View>
 
           <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
-            <View style={styles.metrics}>
-              <Metric label="Pagos registrados" value={String(paymentCount)} />
+            <View style={styles.heroCard}>
+              <Text style={styles.heroEyebrow}>Plan y pagos comparables</Text>
+              <Text style={styles.heroAmount}>
+                {formatCurrency(analytics.totalBase, baseCurrencyCode)}
+              </Text>
+              <Text style={styles.heroCaption}>
+                Total publicado comparable en {baseCurrencyCode}
+              </Text>
+              <Text style={styles.heroNativeLine}>
+                Pagos detectados: {formatCurrencyBreakdownLine(analytics.breakdown)}
+              </Text>
+            </View>
+
+            <View style={styles.metricsGrid}>
+              <Metric label="Pagos registrados" value={String(analytics.paymentCount)} />
               <Metric
-                label="Total gastado (mov. publicados)"
-                value={formatCurrency(totalSpent, subscription.currencyCode)}
+                label={`Promedio publicado (${baseCurrencyCode})`}
+                value={formatCurrency(analytics.averageBase, baseCurrencyCode)}
               />
               <Metric
-                label="Estimado mensual (plan)"
-                value={formatCurrency(monthlyEst, subscription.currencyCode)}
+                label={`Plan mensual (${subscription.currencyCode})`}
+                value={formatCurrency(analytics.monthlyNative, subscription.currencyCode)}
               />
               <Metric
-                label="Estimado anual (plan)"
-                value={formatCurrency(annualEst, subscription.currencyCode)}
+                label={`Plan anual (${subscription.currencyCode})`}
+                value={formatCurrency(analytics.annualNative, subscription.currencyCode)}
               />
-              {subscription.amountInBaseCurrency != null ? (
+              {analytics.monthlyBase != null ? (
                 <Metric
-                  label={`Monto del plan en ${baseCurrencyCode}`}
-                  value={formatCurrency(subscription.amountInBaseCurrency, baseCurrencyCode)}
+                  label={`Plan mensual (${baseCurrencyCode})`}
+                  value={formatCurrency(analytics.monthlyBase, baseCurrencyCode)}
+                />
+              ) : null}
+              {analytics.annualBase != null ? (
+                <Metric
+                  label={`Plan anual (${baseCurrencyCode})`}
+                  value={formatCurrency(analytics.annualBase, baseCurrencyCode)}
                 />
               ) : null}
             </View>
 
-            <Text style={styles.chartTitle}>Últimos 12 meses</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.barRow}>
-              {last12.map(({ ym, total }) => {
-                const barH = Math.max(4, (total / maxBar) * 120);
-                return (
-                <View key={ym} style={styles.barCol}>
-                  <View style={styles.barTrack}>
-                    <View style={[styles.barFill, { height: barH }]} />
-                  </View>
-                  <Text style={styles.barLabel} numberOfLines={1}>
-                    {ymLabel(ym)}
-                  </Text>
-                  <Text style={styles.barAmount} numberOfLines={1}>
-                    {total > 0 ? formatCurrency(total, subscription.currencyCode) : "—"}
-                  </Text>
+            {analytics.insightLines.length > 0 ? (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Lectura rápida</Text>
+                <View style={styles.insightList}>
+                  {analytics.insightLines.map((line) => (
+                    <View key={line} style={styles.insightRow}>
+                      <View style={styles.insightDot} />
+                      <Text style={styles.insightText}>{line}</Text>
+                    </View>
+                  ))}
                 </View>
-              );
-              })}
-            </ScrollView>
+              </View>
+            ) : null}
+
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Últimos 12 meses · comparable en {baseCurrencyCode}</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.barRow}>
+                {analytics.last12.map(({ ym, totalBase }) => {
+                  const barH = Math.max(4, (totalBase / analytics.maxBar) * 128);
+                  return (
+                    <View key={ym} style={styles.barCol}>
+                      <View style={styles.barTrack}>
+                        <View style={[styles.barFill, { height: barH }]} />
+                      </View>
+                      <Text style={styles.barLabel} numberOfLines={1}>
+                        {ymLabel(ym)}
+                      </Text>
+                      <Text style={styles.barAmount} numberOfLines={1}>
+                        {totalBase > 0 ? formatCurrency(totalBase, baseCurrencyCode) : "—"}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </ScrollView>
+            </View>
+
+            {analytics.breakdown.length > 0 ? (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Monedas detectadas en pagos</Text>
+                <View style={styles.breakdownList}>
+                  {analytics.breakdown.map((row) => (
+                    <View key={row.currencyCode} style={styles.breakdownCard}>
+                      <Text style={styles.breakdownTitle}>{row.currencyCode}</Text>
+                      <Text style={styles.breakdownValue}>{formatCurrency(row.total, row.currencyCode)}</Text>
+                      <Text style={styles.breakdownSub}>
+                        {row.totalInBaseCurrency != null
+                          ? `≈ ${formatCurrency(row.totalInBaseCurrency, baseCurrencyCode)} en ${baseCurrencyCode}`
+                          : `Sin equivalencia confiable a ${baseCurrencyCode}`}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            ) : null}
+
+            {analytics.latestMovement ? (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Último pago detectado</Text>
+                <View style={styles.latestCard}>
+                  <Text style={styles.latestAmount}>
+                    {formatCurrency(
+                      movementAmountForSubscriptionAnalytics(analytics.latestMovement),
+                      analytics.latestMovement.amountCurrencyCode ?? subscription.currencyCode,
+                    )}
+                  </Text>
+                  <Text style={styles.latestSub}>
+                    {format(new Date(analytics.latestMovement.occurredAt), "d 'de' MMMM yyyy", { locale: es })}
+                  </Text>
+                  {analytics.latestMovement.amountInBaseCurrency != null ? (
+                    <Text style={styles.latestSub}>
+                      Comparable: {formatCurrency(analytics.latestMovement.amountInBaseCurrency, baseCurrencyCode)}
+                    </Text>
+                  ) : null}
+                </View>
+              </View>
+            ) : null}
 
             <Text style={styles.hint}>
-              Datos del snapshot: solo movimientos con estado publicado vinculados a esta suscripción.
+              El plan conserva su moneda original ({subscription.currencyCode}). Los históricos comparables se muestran en {baseCurrencyCode} para que no se mezclen pagos en distintas monedas sin conversión.
             </Text>
           </ScrollView>
         </Animated.View>
@@ -174,7 +300,7 @@ export function SubscriptionAnalyticsModal({
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <View style={styles.metric}>
+    <View style={styles.metricCard}>
       <Text style={styles.metricLabel}>{label}</Text>
       <Text style={styles.metricValue}>{value}</Text>
     </View>
@@ -188,7 +314,7 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
   },
   sheet: {
-    maxHeight: "88%",
+    maxHeight: "92%",
     backgroundColor: COLORS.bgModal,
     borderTopLeftRadius: RADIUS.lg,
     borderTopRightRadius: RADIUS.lg,
@@ -217,14 +343,51 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.md,
     color: COLORS.primary,
   },
-  body: { padding: SPACING.lg, gap: SPACING.md, paddingBottom: SPACING.xl },
-  metrics: { gap: SPACING.sm },
-  metric: {
+  body: { padding: SPACING.lg, gap: SPACING.lg, paddingBottom: SPACING.xl },
+  heroCard: {
+    backgroundColor: GLASS.card,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: GLASS.cardBorder,
+    padding: SPACING.lg,
+    gap: SPACING.xs,
+  },
+  heroEyebrow: {
+    fontSize: FONT_SIZE.xs,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    color: COLORS.storm,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  heroAmount: {
+    fontSize: FONT_SIZE.xxl,
+    fontFamily: FONT_FAMILY.heading,
+    color: COLORS.ink,
+  },
+  heroCaption: {
+    fontSize: FONT_SIZE.sm,
+    fontFamily: FONT_FAMILY.body,
+    color: COLORS.storm,
+  },
+  heroNativeLine: {
+    marginTop: SPACING.xs,
+    fontSize: FONT_SIZE.xs,
+    fontFamily: FONT_FAMILY.bodyMedium,
+    color: COLORS.primary,
+  },
+  metricsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: SPACING.sm,
+  },
+  metricCard: {
+    width: "48%",
     backgroundColor: GLASS.card,
     borderRadius: RADIUS.md,
     borderWidth: 1,
     borderColor: GLASS.cardBorder,
     padding: SPACING.md,
+    gap: 4,
   },
   metricLabel: {
     fontSize: FONT_SIZE.xs,
@@ -232,29 +395,48 @@ const styles = StyleSheet.create({
     color: COLORS.storm,
     textTransform: "uppercase",
     letterSpacing: 0.4,
-    marginBottom: 4,
   },
   metricValue: {
     fontSize: FONT_SIZE.md,
     fontFamily: FONT_FAMILY.bodySemibold,
     color: COLORS.ink,
   },
-  chartTitle: {
-    marginTop: SPACING.sm,
+  section: { gap: SPACING.sm },
+  sectionTitle: {
     fontFamily: FONT_FAMILY.bodySemibold,
     fontSize: FONT_SIZE.sm,
     color: COLORS.ink,
+  },
+  insightList: { gap: SPACING.sm },
+  insightRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: SPACING.sm,
+  },
+  insightDot: {
+    width: 7,
+    height: 7,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.primary,
+    marginTop: 6,
+  },
+  insightText: {
+    flex: 1,
+    fontSize: FONT_SIZE.sm,
+    fontFamily: FONT_FAMILY.body,
+    color: COLORS.storm,
+    lineHeight: 20,
   },
   barRow: {
     flexDirection: "row",
     alignItems: "flex-end",
     gap: SPACING.sm,
-    paddingVertical: SPACING.sm,
+    paddingVertical: SPACING.xs,
   },
-  barCol: { width: 56, alignItems: "center" },
+  barCol: { width: 74, alignItems: "center" },
   barTrack: {
-    width: 28,
-    height: 120,
+    width: 32,
+    height: 128,
     borderRadius: RADIUS.sm,
     backgroundColor: GLASS.card,
     borderWidth: 1,
@@ -275,14 +457,59 @@ const styles = StyleSheet.create({
     fontFamily: FONT_FAMILY.bodyMedium,
   },
   barAmount: {
+    marginTop: 2,
     fontSize: 9,
     color: COLORS.ink,
     fontFamily: FONT_FAMILY.bodyMedium,
+    textAlign: "center",
+  },
+  breakdownList: { gap: SPACING.sm },
+  breakdownCard: {
+    backgroundColor: GLASS.card,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: GLASS.cardBorder,
+    padding: SPACING.md,
+    gap: 4,
+  },
+  breakdownTitle: {
+    fontSize: FONT_SIZE.xs,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    color: COLORS.primary,
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+  },
+  breakdownValue: {
+    fontSize: FONT_SIZE.md,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    color: COLORS.ink,
+  },
+  breakdownSub: {
+    fontSize: FONT_SIZE.xs,
+    fontFamily: FONT_FAMILY.body,
+    color: COLORS.storm,
+  },
+  latestCard: {
+    backgroundColor: GLASS.card,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: GLASS.cardBorder,
+    padding: SPACING.md,
+    gap: 4,
+  },
+  latestAmount: {
+    fontSize: FONT_SIZE.lg,
+    fontFamily: FONT_FAMILY.heading,
+    color: COLORS.ink,
+  },
+  latestSub: {
+    fontSize: FONT_SIZE.xs,
+    fontFamily: FONT_FAMILY.body,
+    color: COLORS.storm,
   },
   hint: {
     fontSize: FONT_SIZE.xs,
     color: COLORS.storm,
     fontFamily: FONT_FAMILY.body,
-    marginTop: SPACING.sm,
   },
 });

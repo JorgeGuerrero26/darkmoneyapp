@@ -1019,6 +1019,26 @@ function ModeToggle({
   );
 }
 
+function useCountUp(target: number, duration = 950): number {
+  const animRef = useRef(new Animated.Value(0));
+  const [displayed, setDisplayed] = useState(0);
+  useEffect(() => {
+    animRef.current.setValue(0);
+    const id = animRef.current.addListener(({ value }) => setDisplayed(value));
+    Animated.timing(animRef.current, {
+      toValue: target,
+      duration,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+    return () => {
+      animRef.current.removeListener(id);
+      animRef.current.stopAnimation();
+    };
+  }, [target, duration]);
+  return displayed;
+}
+
 // Hero balance card (prominent net worth + period income/expense)
 function HeroCard({
   netWorth, income, expense, currency, period, setPeriod,
@@ -1028,7 +1048,10 @@ function HeroCard({
   period: Period; setPeriod: (p: Period) => void;
   currencyOptions: string[]; onCurrencyChange: (c: string) => void;
 }) {
-  const net = income - expense;
+  const animNetWorth = useCountUp(netWorth);
+  const animIncome = useCountUp(income);
+  const animExpense = useCountUp(expense);
+  const net = animIncome - animExpense;
   const allPeriods: Period[] = ["today", "week", "month", "last_30"];
   return (
     <View style={subStyles.heroCard}>
@@ -1066,13 +1089,13 @@ function HeroCard({
 
       <Text style={subStyles.heroLabel}>Patrimonio neto</Text>
       <Text style={subStyles.heroValue} numberOfLines={1} adjustsFontSizeToFit>
-        {formatCurrency(netWorth, currency)}
+        {formatCurrency(animNetWorth, currency)}
       </Text>
 
       {/* Net flow pill */}
       <View style={[subStyles.heroNetPill, { backgroundColor: net >= 0 ? COLORS.pine + "22" : COLORS.rosewood + "22" }]}>
         <Text style={[subStyles.heroNetText, { color: net >= 0 ? COLORS.pine : COLORS.rosewood }]}>
-          {net >= 0 ? "+" : ""}{formatCurrency(net, currency)} neto
+          {net >= 0 ? "+" : ""}{formatCurrency(Math.abs(net), currency)} neto
         </Text>
       </View>
 
@@ -1084,7 +1107,7 @@ function HeroCard({
           </View>
           <Text style={subStyles.heroFlowLabel}>Ingresos</Text>
           <Text style={[subStyles.heroFlowAmt, { color: COLORS.pine }]}>
-            {formatCurrency(income, currency)}
+            {formatCurrency(animIncome, currency)}
           </Text>
         </View>
         <View style={[subStyles.heroFlowItem, { paddingLeft: SPACING.lg }]}>
@@ -1093,7 +1116,7 @@ function HeroCard({
           </View>
           <Text style={subStyles.heroFlowLabel}>Gastos</Text>
           <Text style={[subStyles.heroFlowAmt, { color: COLORS.rosewood }]}>
-            {formatCurrency(expense, currency)}
+            {formatCurrency(animExpense, currency)}
           </Text>
         </View>
       </View>

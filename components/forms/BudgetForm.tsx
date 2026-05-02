@@ -24,6 +24,7 @@ import { BottomSheet } from "../ui/BottomSheet";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { Button } from "../ui/Button";
 import { CurrencyInput } from "../ui/CurrencyInput";
+import { DatePickerInput } from "../ui/DatePickerInput";
 import { sortByName } from "../../lib/sort-locale";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
 
@@ -35,6 +36,8 @@ const ALERT_PRESETS = [
   { label: "90%", value: 90 },
   { label: "100%", value: 100 },
 ];
+
+type BudgetPeriodPreset = "current" | "next" | "custom";
 
 type Props = {
   visible: boolean;
@@ -65,6 +68,7 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget }: Props) {
   const [rolloverEnabled, setRolloverEnabled] = useState(false);
   const [periodStart, setPeriodStart] = useState(format(startOfMonth(now), "yyyy-MM-dd"));
   const [periodEnd, setPeriodEnd] = useState(format(endOfMonth(now), "yyyy-MM-dd"));
+  const [periodPreset, setPeriodPreset] = useState<BudgetPeriodPreset>("current");
   const [notes, setNotes] = useState("");
 
   const [nameError, setNameError] = useState("");
@@ -83,6 +87,18 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget }: Props) {
       setRolloverEnabled(editBudget.rolloverEnabled);
       setPeriodStart(editBudget.periodStart);
       setPeriodEnd(editBudget.periodEnd);
+      const currentMonthStart = format(startOfMonth(now), "yyyy-MM-dd");
+      const currentMonthEnd = format(endOfMonth(now), "yyyy-MM-dd");
+      const nextMonth = addMonths(now, 1);
+      const nextMonthStart = format(startOfMonth(nextMonth), "yyyy-MM-dd");
+      const nextMonthEnd = format(endOfMonth(nextMonth), "yyyy-MM-dd");
+      if (editBudget.periodStart === currentMonthStart && editBudget.periodEnd === currentMonthEnd) {
+        setPeriodPreset("current");
+      } else if (editBudget.periodStart === nextMonthStart && editBudget.periodEnd === nextMonthEnd) {
+        setPeriodPreset("next");
+      } else {
+        setPeriodPreset("custom");
+      }
       setNotes(editBudget.notes ?? "");
     } else {
       const m = new Date();
@@ -95,6 +111,7 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget }: Props) {
       setRolloverEnabled(false);
       setPeriodStart(format(startOfMonth(m), "yyyy-MM-dd"));
       setPeriodEnd(format(endOfMonth(m), "yyyy-MM-dd"));
+      setPeriodPreset("current");
       setNotes("");
     }
     setNameError("");
@@ -105,11 +122,17 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget }: Props) {
     const next = addMonths(now, 1);
     setPeriodStart(format(startOfMonth(next), "yyyy-MM-dd"));
     setPeriodEnd(format(endOfMonth(next), "yyyy-MM-dd"));
+    setPeriodPreset("next");
   }
 
   function setCurrentMonth() {
     setPeriodStart(format(startOfMonth(now), "yyyy-MM-dd"));
     setPeriodEnd(format(endOfMonth(now), "yyyy-MM-dd"));
+    setPeriodPreset("current");
+  }
+
+  function setCustomPeriod() {
+    setPeriodPreset("custom");
   }
 
   function handleClose() {
@@ -141,6 +164,10 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget }: Props) {
     const amount = parseFloat(limitAmount);
     if (!limitAmount || isNaN(amount) || amount <= 0) {
       setAmountError("Ingresa un monto válido mayor a 0");
+      valid = false;
+    }
+    if (periodEnd < periodStart) {
+      showToast("La fecha final no puede ser anterior a la inicial", "error");
       valid = false;
     }
     if (!valid) { haptics.error(); return; }
@@ -212,28 +239,65 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget }: Props) {
 
       {/* Period */}
       <View>
-        <Text style={styles.label}>Período</Text>
+        <Text style={styles.label}>Período del presupuesto</Text>
         <View style={styles.pillRow}>
           <TouchableOpacity
-            style={[styles.pill, periodStart.startsWith(format(startOfMonth(now), "yyyy-MM")) && styles.pillActive]}
+            style={[styles.pill, periodPreset === "current" && styles.pillActive]}
             onPress={setCurrentMonth}
           >
-            <Text style={[styles.pillText, periodStart.startsWith(format(startOfMonth(now), "yyyy-MM")) && styles.pillTextActive]}>
+            <Text style={[styles.pillText, periodPreset === "current" && styles.pillTextActive]}>
               Este mes
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.pill, periodStart.startsWith(format(startOfMonth(addMonths(now, 1)), "yyyy-MM")) && styles.pillActive]}
+            style={[styles.pill, periodPreset === "next" && styles.pillActive]}
             onPress={setNextMonth}
           >
-            <Text style={[styles.pillText, periodStart.startsWith(format(startOfMonth(addMonths(now, 1)), "yyyy-MM")) && styles.pillTextActive]}>
+            <Text style={[styles.pillText, periodPreset === "next" && styles.pillTextActive]}>
               Próximo mes
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.pill, periodPreset === "custom" && styles.pillActive]}
+            onPress={setCustomPeriod}
+          >
+            <Text style={[styles.pillText, periodPreset === "custom" && styles.pillTextActive]}>
+              Personalizado
             </Text>
           </TouchableOpacity>
         </View>
         <Text style={styles.periodRange}>
           {periodStart} → {periodEnd}
         </Text>
+        <Text style={styles.periodHint}>
+          Define desde qué fecha hasta qué fecha quieres controlar este presupuesto.
+        </Text>
+        {periodPreset === "custom" ? (
+          <View style={styles.customRange}>
+            <DatePickerInput
+              label="Desde"
+              value={periodStart}
+              onChange={(value) => {
+                setPeriodPreset("custom");
+                setPeriodStart(value);
+                if (periodEnd < value) setPeriodEnd(value);
+              }}
+              hideLabel
+              variant="formRow"
+            />
+            <DatePickerInput
+              label="Hasta"
+              value={periodEnd}
+              onChange={(value) => {
+                setPeriodPreset("custom");
+                setPeriodEnd(value);
+              }}
+              hideLabel
+              variant="formRow"
+              minimumDate={new Date(`${periodStart}T00:00:00`)}
+            />
+          </View>
+        ) : null}
       </View>
 
       {/* Currency */}
@@ -341,7 +405,10 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget }: Props) {
       <View style={styles.switchRow}>
         <View style={styles.switchInfo}>
           <Text style={styles.switchLabel}>Arrastrar saldo al siguiente período</Text>
-          <Text style={styles.switchDesc}>El remanente se agrega al siguiente presupuesto</Text>
+          <Text style={styles.switchDesc}>
+            Si te sobra parte del límite al cerrar este período, ese saldo disponible se suma al próximo presupuesto equivalente.
+            No mueve dinero entre cuentas: solo aumenta el monto que podrás usar en el siguiente período.
+          </Text>
         </View>
         <Switch
           value={rolloverEnabled}
@@ -422,9 +489,11 @@ const styles = StyleSheet.create({
   pillText: { fontSize: FONT_SIZE.sm, color: COLORS.storm, fontFamily: FONT_FAMILY.bodyMedium },
   pillTextActive: { color: COLORS.textInverse },
   periodRange: { fontSize: FONT_SIZE.xs, color: COLORS.storm, marginTop: SPACING.xs },
+  periodHint: { fontSize: FONT_SIZE.xs, color: COLORS.storm, marginTop: 4, lineHeight: 18 },
+  customRange: { gap: SPACING.sm, marginTop: SPACING.sm },
   switchRow: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     justifyContent: "space-between",
     backgroundColor: GLASS.card,
     borderRadius: RADIUS.md,

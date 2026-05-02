@@ -1,4 +1,5 @@
 import { GestureDetector } from "react-native-gesture-handler";
+import { StaggeredItem } from "../../components/ui/StaggeredItem";
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { Download, Search, SlidersHorizontal, Trash2, TrendingDown, TrendingUp, X } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
@@ -582,7 +583,8 @@ function MovementsScreen() {
     [allMovements, selectedIds],
   );
 
-  const renderItem = useCallback(({ item }: { item: MovementRecord }) => (
+  const renderItem = useCallback(({ item, index }: { item: MovementRecord; index: number }) => (
+    <StaggeredItem index={index}>
     <SwipeableMovementRow
       movement={item}
       baseCurrencyCode={baseCurrency}
@@ -605,6 +607,7 @@ function MovementsScreen() {
       }}
       onDelete={() => confirmDelete(item)}
     />
+    </StaggeredItem>
   ), [baseCurrency, movementAttachmentCounts, selectedIds, selectMode, toggleSelect, confirmDelete, router]);
 
   return (

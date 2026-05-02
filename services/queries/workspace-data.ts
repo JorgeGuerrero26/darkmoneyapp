@@ -15,6 +15,7 @@ import { useUiStore } from "../../store/ui-store";
 import {
   convertAmountToWorkspaceBase,
   computeNextRecurringDate,
+  movementAmountForSubscriptionAnalytics,
   subscriptionFrequencyListLabel,
 } from "../../lib/subscription-helpers";
 import type { AppProfile } from "../../lib/auth-context";
@@ -47,6 +48,7 @@ import type {
   WorkspaceAnalyticsSnapshot,
   RecurringIncomeFrequency,
   RecurringIncomeStatus,
+  RecurringIncomeOccurrenceSummary,
   SubscriptionFrequency,
   CategoryPostedMovement,
   RecurringIncomeSummary,
@@ -63,6 +65,20 @@ function toNum(val: NumericLike): number {
   if (val === null || val === undefined) return 0;
   const n = Number(val);
   return isNaN(n) ? 0 : n;
+}
+
+function joinNotes(...parts: Array<string | null | undefined>) {
+  const normalized = parts
+    .map((part) => part?.trim())
+    .filter((part): part is string => Boolean(part));
+  return normalized.length > 0 ? normalized.join("\n") : null;
+}
+
+function formatAmountWithCurrency(amount: number, currencyCode: string) {
+  return `${currencyCode.trim().toUpperCase()} ${amount.toLocaleString("es-PE", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
 }
 
 function formatSupabaseError(error: {
@@ -943,7 +959,7 @@ async function fetchWorkspaceSnapshot(
       .order("next_expected_date", { ascending: true }),
     supabase
       .from("movements")
-      .select("id, subscription_id, status, occurred_at, source_amount, destination_amount")
+      .select("id, subscription_id, status, occurred_at, source_amount, destination_amount, source_account_id, destination_account_id")
       .eq("workspace_id", activeWorkspaceId)
       .not("subscription_id", "is", null)
       .eq("status", "posted")
@@ -952,7 +968,7 @@ async function fetchWorkspaceSnapshot(
       .limit(1000),
     supabase
       .from("movements")
-      .select("id, category_id, status, occurred_at, source_amount, destination_amount")
+      .select("id, category_id, status, occurred_at, source_amount, destination_amount, source_account_id, destination_account_id")
       .eq("workspace_id", activeWorkspaceId)
       .not("category_id", "is", null)
       .eq("status", "posted")
@@ -1064,6 +1080,8 @@ async function fetchWorkspaceSnapshot(
 
   const accountMap = new Map<number, string>();
   for (const acc of accounts) accountMap.set(acc.id, acc.name);
+  const accountCurrencyMap = new Map<number, string>();
+  for (const acc of accounts) accountCurrencyMap.set(acc.id, acc.currencyCode.toUpperCase());
 
   const budgets: BudgetOverview[] = (budgetsResult.data ?? []).map((row: any) =>
     mapBudget(row as BudgetProgressRow),
@@ -1126,23 +1144,49 @@ async function fetchWorkspaceSnapshot(
 
   const subscriptionPostedMovements: SubscriptionPostedMovement[] = subscriptionMovementsResult.error
     ? []
-    : (subscriptionMovementsResult.data ?? []).map((row: any) => ({
-        id: row.id as number,
-        subscriptionId: row.subscription_id as number,
-        occurredAt: row.occurred_at as string,
-        sourceAmount: row.source_amount != null ? toNum(row.source_amount) : null,
-        destinationAmount: row.destination_amount != null ? toNum(row.destination_amount) : null,
-      }));
+    : (subscriptionMovementsResult.data ?? []).map((row: any) => {
+        const sourceAmount = row.source_amount != null ? toNum(row.source_amount) : null;
+        const destinationAmount = row.destination_amount != null ? toNum(row.destination_amount) : null;
+        const amount = movementAmountForSubscriptionAnalytics({ sourceAmount, destinationAmount });
+        const amountCurrencyCode =
+          sourceAmount != null && sourceAmount !== 0
+            ? accountCurrencyMap.get(row.source_account_id as number) ?? baseCurrency
+            : destinationAmount != null && destinationAmount !== 0
+              ? accountCurrencyMap.get(row.destination_account_id as number) ?? baseCurrency
+              : baseCurrency;
+        return {
+          id: row.id as number,
+          subscriptionId: row.subscription_id as number,
+          occurredAt: row.occurred_at as string,
+          sourceAmount,
+          destinationAmount,
+          amountCurrencyCode,
+          amountInBaseCurrency: convertAmountToWorkspaceBase(amount, amountCurrencyCode, baseCurrency, exchangeRates),
+        };
+      });
 
   const categoryPostedMovements: CategoryPostedMovement[] = categoryMovementsResult.error
     ? []
-    : (categoryMovementsResult.data ?? []).map((row: any) => ({
-        id: row.id as number,
-        categoryId: row.category_id as number,
-        occurredAt: row.occurred_at as string,
-        sourceAmount: row.source_amount != null ? toNum(row.source_amount) : null,
-        destinationAmount: row.destination_amount != null ? toNum(row.destination_amount) : null,
-      }));
+    : (categoryMovementsResult.data ?? []).map((row: any) => {
+        const sourceAmount = row.source_amount != null ? toNum(row.source_amount) : null;
+        const destinationAmount = row.destination_amount != null ? toNum(row.destination_amount) : null;
+        const amount = movementAmountForSubscriptionAnalytics({ sourceAmount, destinationAmount });
+        const amountCurrencyCode =
+          sourceAmount != null && sourceAmount !== 0
+            ? accountCurrencyMap.get(row.source_account_id as number) ?? baseCurrency
+            : destinationAmount != null && destinationAmount !== 0
+              ? accountCurrencyMap.get(row.destination_account_id as number) ?? baseCurrency
+              : baseCurrency;
+        return {
+          id: row.id as number,
+          categoryId: row.category_id as number,
+          occurredAt: row.occurred_at as string,
+          sourceAmount,
+          destinationAmount,
+          amountCurrencyCode,
+          amountInBaseCurrency: convertAmountToWorkspaceBase(amount, amountCurrencyCode, baseCurrency, exchangeRates),
+        };
+      });
 
   const subscriptions: SubscriptionSummary[] = (subscriptionsResult.data ?? []).map(
     (row: any) =>
@@ -2562,7 +2606,7 @@ export function useCreateObligationPaymentMutation(workspaceId: number | null) {
       const isReceivable = input.direction === "receivable";
       const autoDesc =
         input.description?.trim() ||
-        (isReceivable ? `Cobro obligaciÃ³n #${input.obligationId}` : `Pago obligaciÃ³n #${input.obligationId}`);
+        (isReceivable ? `Cobro de obligacion #${input.obligationId}` : `Pago de obligacion #${input.obligationId}`);
       const { id: eventId, installmentNoApplied } = await insertObligationPaymentEventWithFallback({
         obligationId: input.obligationId,
         paymentDate: input.paymentDate,
@@ -2725,10 +2769,10 @@ export function useCreatePrincipalAdjustmentMutation(workspaceId: number | null)
             : (isReceivable ? "income" : "expense");
         const desc = input.mode === "increase"
           ? (isReceivable
-              ? `Prestamo adicional #${input.obligationId}`
+              ? `Prestamo adicional de obligacion #${input.obligationId}`
               : `Aumento de deuda #${input.obligationId}`)
           : (isReceivable
-              ? `Recuperacion de principal #${input.obligationId}`
+              ? `Recuperacion de principal de obligacion #${input.obligationId}`
               : `Reduccion de deuda #${input.obligationId}`);
         const { data: mvData, error: mvErr } = await supabase
           .from("movements")
@@ -2812,6 +2856,7 @@ async function syncViewerLinkedMovementsForEvent(input: {
   eventId: number;
   obligationId: number;
   obligationWorkspaceId: number;
+  eventType: "payment" | "principal_increase" | "principal_decrease";
   amount: number;
   eventDate: string;
   description?: string | null;
@@ -2823,12 +2868,12 @@ async function syncViewerLinkedMovementsForEvent(input: {
   const viewerLinks = await fetchViewerLinksForEvent(input.eventId);
   if (viewerLinks.length === 0) return [] as number[];
 
-  const viewerIsDebtor = input.direction === "receivable";
-  const autoDesc =
-    input.description?.trim() ||
-    (viewerIsDebtor
-      ? `Pago vinculado: ${input.obligationTitle?.trim() || `Obligacion #${input.obligationId}`}`
-      : `Cobro vinculado: ${input.obligationTitle?.trim() || `Obligacion #${input.obligationId}`}`);
+  const movementConfig = viewerLinkedEventMovementConfig({
+    eventType: input.eventType,
+    obligationDirection: input.direction,
+    obligationTitle: input.obligationTitle?.trim() || `Obligacion #${input.obligationId}`,
+  });
+  const autoDesc = input.description?.trim() || movementConfig.autoDesc;
 
   const syncedMovementIds: number[] = [];
 
@@ -2842,16 +2887,16 @@ async function syncViewerLinkedMovementsForEvent(input: {
 
     const movementPayload: Record<string, unknown> = {
       workspace_id: viewerWorkspaceId,
-      movement_type: "obligation_payment",
+      movement_type: movementConfig.movementType,
       status: "posted",
       occurred_at: dateStrToISO(input.eventDate),
       description: autoDesc,
       obligation_id: null,
       metadata: { obligation_id: input.obligationId, obligation_event_id: input.eventId },
-      source_account_id: viewerIsDebtor ? accountId : null,
-      source_amount: viewerIsDebtor ? input.amount : null,
-      destination_account_id: viewerIsDebtor ? null : accountId,
-      destination_amount: viewerIsDebtor ? null : input.amount,
+      source_account_id: movementConfig.isInflow ? null : accountId,
+      source_amount: movementConfig.isInflow ? null : input.amount,
+      destination_account_id: movementConfig.isInflow ? accountId : null,
+      destination_amount: movementConfig.isInflow ? input.amount : null,
     };
 
     let movementId = link.movement_id != null ? Number(link.movement_id) : null;
@@ -3026,8 +3071,8 @@ async function updateObligationEventAndSyncMovements(
   const autoDesc =
     input.description?.trim() ||
     (isReceivable
-      ? `Cobro obligacion #${input.obligationId}`
-      : `Pago obligacion #${input.obligationId}`);
+      ? `Cobro de obligacion #${input.obligationId}`
+      : `Pago de obligacion #${input.obligationId}`);
 
   const createMovement = input.createMovement ?? Boolean(input.movementId ?? input.accountId);
   const resolvedAccountId =
@@ -3094,10 +3139,12 @@ async function updateObligationEventAndSyncMovements(
     eventId: input.eventId,
     obligationId: input.obligationId,
     obligationWorkspaceId: workspaceId,
+    eventType: input.eventType as "payment" | "principal_increase" | "principal_decrease",
     amount: input.amount,
     eventDate: input.eventDate,
     description: input.description,
     direction: input.direction as ObligationDirection,
+    obligationTitle: input.obligationTitle ?? undefined,
   });
 
   await notifyAcceptedViewersObligationEventUpdated({
@@ -4618,25 +4665,109 @@ export function useDeleteRecurringIncomeMutation(workspaceId: number | null) {
   });
 }
 
+export function useRecurringIncomeOccurrencesQuery(
+  workspaceId: number | null,
+  recurringIncomeId: number | null | undefined,
+) {
+  return useQuery({
+    queryKey: ["recurring-income-occurrences", workspaceId ?? null, recurringIncomeId ?? null],
+    enabled: Boolean(supabase && workspaceId && recurringIncomeId),
+    staleTime: 20_000,
+    queryFn: async (): Promise<RecurringIncomeOccurrenceSummary[]> => {
+      if (!supabase || !workspaceId || !recurringIncomeId) return [];
+      const { data, error } = await supabase
+        .from("recurring_income_occurrences")
+        .select("id, workspace_id, recurring_income_id, expected_date, actual_date, amount, currency_code, movement_id, status, notes, created_at")
+        .eq("workspace_id", workspaceId)
+        .eq("recurring_income_id", recurringIncomeId)
+        .order("actual_date", { ascending: false })
+        .order("created_at", { ascending: false });
+      if (error) throw new Error(error.message ?? "Error al cargar historial de llegadas");
+      return ((data ?? []) as Array<Record<string, unknown>>).map((row) => ({
+        id: Number(row.id),
+        workspaceId: Number(row.workspace_id),
+        recurringIncomeId: Number(row.recurring_income_id),
+        expectedDate: String(row.expected_date ?? ""),
+        actualDate: String(row.actual_date ?? ""),
+        amount: toNum(row.amount as NumericLike),
+        currencyCode: String(row.currency_code ?? ""),
+        movementId: row.movement_id != null ? Number(row.movement_id) : null,
+        status: row.status === "late" ? "late" : "on_time",
+        notes: typeof row.notes === "string" ? row.notes : null,
+        createdAt: typeof row.created_at === "string" ? row.created_at : null,
+      }));
+    },
+  });
+}
+
 export function useConfirmRecurringIncomeArrivalMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (input: {
       recurringIncomeId: number;
+      recurringIncomeName: string;
       expectedDate: string;
       actualDate: string;
       amount: number;
+      accountId: number;
+      currentAccountId?: number | null;
+      categoryId?: number | null;
+      payerPartyId?: number | null;
+      description?: string | null;
       currencyCode: string;
       frequency: RecurringIncomeFrequency;
       intervalCount: number;
+      currentBaseAmount: number;
+      newBaseAmount?: number | null;
+      baseChangeKind?: "bonus" | "discount" | null;
       notes?: string | null;
       movementId?: number | null;
     }) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const actual = input.actualDate.trim();
       const expected = input.expectedDate.trim();
+      if (!actual) throw new Error("La fecha real de llegada es obligatoria.");
+      if (!input.accountId) throw new Error("Debes elegir una cuenta destino para crear el movimiento.");
       const nextExpectedDate = computeNextRecurringDate(expected, input.frequency, input.intervalCount);
       const status = actual <= expected ? "on_time" : "late";
+      const normalizedNotes = input.notes?.trim() || null;
+      const requestedBaseAmount = input.newBaseAmount != null ? Number(input.newBaseAmount) : null;
+      const shouldUpdateBaseAmount =
+        requestedBaseAmount != null &&
+        Number.isFinite(requestedBaseAmount) &&
+        requestedBaseAmount > 0 &&
+        Math.abs(requestedBaseAmount - input.currentBaseAmount) > 0.000001;
+
+      const baseChangeSummary = shouldUpdateBaseAmount
+        ? `${input.baseChangeKind === "discount" ? "Descuento" : "Bonificación"} permanente: base ${formatAmountWithCurrency(input.currentBaseAmount, input.currencyCode)} -> ${formatAmountWithCurrency(requestedBaseAmount!, input.currencyCode)}.`
+        : null;
+
+      const movementNotes = joinNotes(
+        normalizedNotes,
+        baseChangeSummary,
+      );
+      const movement = await createMovement(workspaceId, {
+        movementType: "income",
+        status: "posted",
+        occurredAt: dateStrToISO(actual),
+        description: input.description?.trim() || input.recurringIncomeName.trim(),
+        notes: movementNotes,
+        sourceAccountId: null,
+        sourceAmount: null,
+        destinationAccountId: input.accountId,
+        destinationAmount: input.amount,
+        categoryId: input.categoryId ?? null,
+        counterpartyId: input.payerPartyId ?? null,
+        metadata: {
+          recurring_income_id: input.recurringIncomeId,
+          recurring_income_expected_date: expected,
+          recurring_income_actual_date: actual,
+          recurring_income_confirmed_arrival: true,
+          recurring_income_base_change_kind: input.baseChangeKind ?? null,
+          recurring_income_base_amount_before: input.currentBaseAmount,
+          recurring_income_base_amount_after: shouldUpdateBaseAmount ? requestedBaseAmount : null,
+        },
+      });
 
       const { error: occError } = await supabase
         .from("recurring_income_occurrences")
@@ -4647,23 +4778,37 @@ export function useConfirmRecurringIncomeArrivalMutation(workspaceId: number | n
           actual_date: actual,
           amount: input.amount,
           currency_code: input.currencyCode,
-          movement_id: input.movementId ?? null,
+          movement_id: movement.id,
           status,
-          notes: input.notes ?? null,
+          notes: movementNotes,
         });
       if (occError) throw new Error(occError.message ?? "Error al registrar llegada");
 
+      const recurringIncomePatch: Record<string, unknown> = {
+        next_expected_date: nextExpectedDate,
+      };
+      if (shouldUpdateBaseAmount) recurringIncomePatch.amount = requestedBaseAmount;
+      if (!input.currentAccountId && input.accountId) recurringIncomePatch.account_id = input.accountId;
+
       const { error: updateError } = await supabase
         .from("recurring_income")
-        .update({ next_expected_date: nextExpectedDate })
+        .update(recurringIncomePatch)
         .eq("id", input.recurringIncomeId)
         .eq("workspace_id", workspaceId);
       if (updateError) throw new Error(updateError.message ?? "Error al actualizar proxima llegada");
 
-      return { nextExpectedDate };
+      return {
+        nextExpectedDate,
+        movementId: movement.id,
+        updatedBaseAmount: shouldUpdateBaseAmount ? requestedBaseAmount : null,
+      };
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+      void queryClient.invalidateQueries({ queryKey: ["movements"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["recurring-income-occurrences", workspaceId ?? null, variables.recurringIncomeId],
+      });
     },
   });
 }
@@ -5318,6 +5463,41 @@ export function useMarkNotificationsUnreadMutation(userId: string | null) {
       const { error } = await supabase
         .from("notifications")
         .update({ status: "sent", read_at: null })
+        .in("id", notificationIds);
+      if (error) throw new Error(error.message ?? "Error de base de datos");
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["notifications", userId] });
+    },
+  });
+}
+
+export function useDeleteNotificationMutation(userId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (notificationId: number) => {
+      if (!supabase) throw new Error("Supabase no está configurado.");
+      const { error } = await supabase
+        .from("notifications")
+        .delete()
+        .eq("id", notificationId);
+      if (error) throw new Error(error.message ?? "Error de base de datos");
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["notifications", userId] });
+    },
+  });
+}
+
+export function useDeleteNotificationsMutation(userId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (notificationIds: number[]) => {
+      if (!supabase) throw new Error("Supabase no está configurado.");
+      if (!notificationIds.length) return;
+      const { error } = await supabase
+        .from("notifications")
+        .delete()
         .in("id", notificationIds);
       if (error) throw new Error(error.message ?? "Error de base de datos");
     },
@@ -6725,7 +6905,7 @@ export function useAcceptPaymentRequestMutation() {
       const isReceivable = input.direction === "receivable";
       const autoDesc =
         input.description?.trim() ||
-        (isReceivable ? `Cobro: ${input.obligationTitle ?? `obligaciÃ³n #${input.obligationId}`}` : `Pago: ${input.obligationTitle ?? `obligaciÃ³n #${input.obligationId}`}`);
+        (isReceivable ? `Cobro: ${input.obligationTitle ?? `obligacion #${input.obligationId}`}` : `Pago: ${input.obligationTitle ?? `obligacion #${input.obligationId}`}`);
 
       const { id: eventId } = await insertObligationPaymentEventWithFallback({
         obligationId: input.obligationId,

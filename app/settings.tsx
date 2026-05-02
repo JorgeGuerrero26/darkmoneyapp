@@ -66,8 +66,6 @@ function SettingsScreen() {
   const [fullName, setFullName] = useState(profile?.fullName ?? "");
   const [baseCurrencyCode, setBaseCurrencyCode] = useState(profile?.baseCurrencyCode ?? "PEN");
   const [isSaving, setIsSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | undefined>();
-  const [saveSuccess, setSaveSuccess] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
 
   // ── Biometrics ───────────────────────────────────────────────────────────
@@ -221,18 +219,15 @@ function SettingsScreen() {
   async function handleSave() {
     if (!fullName.trim()) return;
     setIsSaving(true);
-    setSaveError(undefined);
-    setSaveSuccess(false);
     try {
       await saveProfile({
         fullName: fullName.trim(),
         baseCurrencyCode: baseCurrencyCode.trim().toUpperCase(),
         timezone: profile?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
       });
-      setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 3000);
+      showToast("Perfil guardado", "success");
     } catch (err: unknown) {
-      setSaveError(humanizeError(err));
+      showToast(humanizeError(err), "error");
     } finally {
       setIsSaving(false);
     }
@@ -342,9 +337,6 @@ function SettingsScreen() {
                 hint="Código de 3 letras (PEN, USD, EUR…)"
               />
             </View>
-            {saveError ? <Text style={styles.errorText}>{saveError}</Text>
-              : saveSuccess ? <Text style={styles.successText}>✓ Perfil guardado</Text>
-              : null}
             <Button label="Guardar perfil" onPress={handleSave} loading={isSaving} style={styles.saveButton} />
           </Card>
 
@@ -654,8 +646,6 @@ const styles = StyleSheet.create({
   form: { gap: SPACING.md },
   disabledInput: { opacity: 0.5 },
   saveButton: { marginTop: SPACING.lg },
-  errorText: { color: COLORS.danger, fontSize: FONT_SIZE.sm, marginTop: SPACING.sm },
-  successText: { color: COLORS.success, fontSize: FONT_SIZE.sm, marginTop: SPACING.sm },
   wsRow: {
     flexDirection: "row",
     alignItems: "center",

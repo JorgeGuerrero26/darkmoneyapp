@@ -2,13 +2,16 @@
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import {
   ActivityIndicator,
+  LayoutAnimation,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
+  UIManager,
   View,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -62,9 +65,11 @@ import type {
   SharedObligationSummary,
 } from "../../types/domain";
 import {
+  obligationEventCashDeltaSign,
   obligationHistoryEventColor,
   obligationHistoryEventAmountPrefix,
   obligationPendingDirectionBadge,
+  obligationPerspectiveDirectionLabel,
   obligationProgressPaidAdjective,
   obligationViewerActsAsCollector,
 } from "../../lib/obligation-viewer-labels";
@@ -87,6 +92,7 @@ import { ObligationEventActionSheet } from "../../components/domain/ObligationEv
 import { ObligationAnalyticsModal } from "../../components/domain/ObligationAnalyticsModal";
 import { ObligationCapitalChangesModal } from "../../components/domain/ObligationCapitalChangesModal";
 import { formatCurrency } from "../../components/ui/AmountDisplay";
+import { StaggeredItem } from "../../components/ui/StaggeredItem";
 import { useToast } from "../../hooks/useToast";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
 import { getObligationStatusLabel } from "../../lib/obligation-labels";
@@ -159,6 +165,43 @@ function firstMeaningfulText(...values: Array<string | null | undefined>): strin
   }
   return null;
 }
+
+function groupEventsByDate(events: ObligationEventSummary[]): Array<{ date: string; events: ObligationEventSummary[] }> {
+  const map = new Map<string, ObligationEventSummary[]>();
+  for (const e of events) {
+    const date = e.eventDate.slice(0, 10);
+    if (!map.has(date)) map.set(date, []);
+    map.get(date)!.push(e);
+  }
+  return Array.from(map.entries())
+    .sort((a, b) => b[0].localeCompare(a[0]))
+    .map(([date, evs]) => ({ date, events: evs }));
+}
+
+function eventDatePillLabel(dateStr: string, todayStr: string): string {
+  const [ty, tm, td] = todayStr.split("-").map(Number);
+  const [ey, em, ed] = dateStr.split("-").map(Number);
+  const todayMs = Date.UTC(ty, tm - 1, td);
+  const eventMs = Date.UTC(ey, em - 1, ed);
+  const diffDays = Math.round((todayMs - eventMs) / 86400000);
+  if (diffDays === 0) return "Hoy";
+  if (diffDays === 1) return "Ayer";
+  if (diffDays < 7) return `Hace ${diffDays} días`;
+  const months = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
+  return `${ed} ${months[em - 1]} ${ey}`;
+}
+
+const EVENT_TYPE_ICON: Record<string, string> = {
+  opening: "◎",
+  payment: "↕",
+  principal_increase: "+",
+  principal_decrease: "−",
+  interest: "%",
+  fee: "!",
+  discount: "↓",
+  adjustment: "~",
+  writeoff: "×",
+};
 
 type EventDeleteRequestPayload = {
   obligationId: number;
@@ -303,17 +346,100 @@ function viewerEventAccountDelta(
   obligation: ObligationSummary | SharedObligationSummary | null,
 ): number {
   if (!event || !obligation) return 0;
-  const viewerIsDebtor = obligation.direction === "receivable";
+  const sign = obligationEventCashDeltaSign(event.eventType, obligation.direction, true);
+  return sign * event.amount;
+}
+
+function obligationEventLaneLabel(eventType: string, paymentWord: string): string {
+  if (eventType === "payment") return `Movimiento de ${paymentWord.toLowerCase()}`;
+  if (eventType === "principal_increase" || eventType === "principal_decrease") return "Cambio de capital";
+  if (eventType === "opening") return "Apertura";
+  return "Ajuste";
+}
+
+function viewerEventAccountImpactCopy(
+  event: ObligationEventSummary | null,
+  obligation: ObligationSummary | SharedObligationSummary | null,
+  hasLinkedAccount: boolean,
+): {
+  chipLabel: string;
+  note: string;
+  tone: "positive" | "negative" | "neutral";
+} | null {
+  if (!event || !obligation) return null;
+  if (
+    event.eventType !== "payment" &&
+    event.eventType !== "principal_increase" &&
+    event.eventType !== "principal_decrease"
+  ) {
+    return null;
+  }
+  if (!hasLinkedAccount) {
+    return {
+      chipLabel: "Sin cuenta asociada",
+      note: "Sin cuenta asociada, este evento solo cambia la obligación. Tus balances no se mueven todavía.",
+      tone: "neutral",
+    };
+  }
+
+  const delta = viewerEventAccountDelta(event, obligation);
+  const amountLabel = `${delta >= 0 ? "+" : "-"}${formatCurrency(Math.abs(delta), obligation.currencyCode)}`;
+  const isReceivable = obligation.direction === "receivable";
+
   if (event.eventType === "payment") {
-    return viewerIsDebtor ? -event.amount : event.amount;
+    if (delta >= 0) {
+      return {
+        chipLabel: `En tu cuenta ${amountLabel}`,
+        note: isReceivable
+          ? "Como estás viendo la deuda desde el lado acreedor, este cobro se registra como entrada en tu cuenta."
+          : "Como estás viendo el crédito desde el lado acreedor, este cobro se registra como entrada en tu cuenta.",
+        tone: "positive",
+      };
+    }
+    return {
+      chipLabel: `En tu cuenta ${amountLabel}`,
+      note: isReceivable
+        ? "Como estás viendo el crédito desde el lado deudor, este pago se registra como salida en tu cuenta."
+        : "Como estás viendo la deuda desde el lado deudor, este pago se registra como salida en tu cuenta.",
+      tone: "negative",
+    };
   }
+
   if (event.eventType === "principal_increase") {
-    return viewerIsDebtor ? event.amount : -event.amount;
+    if (delta >= 0) {
+      return {
+        chipLabel: `En tu cuenta ${amountLabel}`,
+        note: isReceivable
+          ? "Este aumento de capital significa que recibiste más dinero prestado, por eso el sistema registra una entrada en tu cuenta."
+          : "Este aumento de capital significa que recibiste más dinero para cubrir la deuda, por eso el sistema registra una entrada en tu cuenta.",
+        tone: "positive",
+      };
+    }
+    return {
+      chipLabel: `En tu cuenta ${amountLabel}`,
+      note: isReceivable
+        ? "Este aumento de capital significa que prestaste más dinero, por eso el sistema registra una salida en tu cuenta."
+        : "Este aumento de capital significa que prestaste más dinero al deudor, por eso el sistema registra una salida en tu cuenta.",
+      tone: "negative",
+    };
   }
-  if (event.eventType === "principal_decrease") {
-    return viewerIsDebtor ? -event.amount : event.amount;
+
+  if (delta >= 0) {
+    return {
+      chipLabel: `En tu cuenta ${amountLabel}`,
+      note: isReceivable
+        ? "Esta reducción de capital te devolvió parte del principal, por eso el sistema registra una entrada en tu cuenta."
+        : "Esta reducción de capital te devolvió parte del dinero pendiente, por eso el sistema registra una entrada en tu cuenta.",
+      tone: "positive",
+    };
   }
-  return 0;
+  return {
+    chipLabel: `En tu cuenta ${amountLabel}`,
+    note: isReceivable
+      ? "Esta reducción de capital implica que devolviste parte del principal, por eso el sistema registra una salida en tu cuenta."
+      : "Esta reducción de capital implica que devolviste parte del dinero recibido, por eso el sistema registra una salida en tu cuenta.",
+    tone: "negative",
+  };
 }
 
 function ObligationDetailScreen() {
@@ -376,6 +502,10 @@ function ObligationDetailScreen() {
   const [viewerDetailTab, setViewerDetailTab] = useState<"history" | "requests">("history");
   const [unlinkShareConfirmVisible, setUnlinkShareConfirmVisible] = useState(false);
   const [historyPreset, setHistoryPreset] = useState<HistoryPreset>("month");
+  const [historyGroupsCollapsed, setHistoryGroupsCollapsed] = useState({
+    payments: false,
+    capital: false,
+  });
   const [historyFrom, setHistoryFrom] = useState("");
   const [historyTo, setHistoryTo] = useState("");
   const notificationPromptHandledRef = useRef<string | null>(null);
@@ -383,6 +513,12 @@ function ObligationDetailScreen() {
   const historySectionYRef = useRef<number | null>(null);
   const eventRowLayoutsRef = useRef<Map<number, { y: number; height: number }>>(new Map());
   const focusTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  useEffect(() => {
+    if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
+      UIManager.setLayoutAnimationEnabledExperimental(true);
+    }
+  }, []);
 
   const deleteEventMutation = useDeleteObligationEventMutation();
   const shareMutation = useCreateObligationShareInviteMutation(activeWorkspaceId);
@@ -688,6 +824,14 @@ function ObligationDetailScreen() {
   const selectedEventEditStatus = selectedEvent
     ? viewerEditStatusByEventId.get(selectedEvent.id) ?? null
     : null;
+  const selectedEventViewerImpactCopy =
+    isSharedViewer && selectedEvent
+      ? viewerEventAccountImpactCopy(
+          selectedEvent,
+          obligation,
+          (viewerLinkByEventId.get(selectedEvent.id)?.accountId ?? null) != null,
+        )
+      : null;
   const showViewerHistoryTab = !isSharedViewer || viewerDetailTab === "history";
   const showViewerRequestsTab = isSharedViewer && viewerDetailTab === "requests";
 
@@ -720,6 +864,14 @@ function ObligationDetailScreen() {
       return d >= from && d <= to;
     });
   }, [eventsForDetail, historyFrom, historyPreset, historyTo]);
+  const paymentHistoryEvents = useMemo(
+    () => filteredHistoryEvents.filter((event) => event.eventType === "payment"),
+    [filteredHistoryEvents],
+  );
+  const capitalHistoryEvents = useMemo(
+    () => filteredHistoryEvents.filter((event) => event.eventType !== "payment"),
+    [filteredHistoryEvents],
+  );
 
   const historyDateRangeNotice = useMemo(() => {
     const from = historyPreset === "all" ? null : historyFrom.trim() || null;
@@ -738,6 +890,7 @@ function ObligationDetailScreen() {
     setHistoryPreset("month");
     setHistoryFrom(from);
     setHistoryTo(to);
+    setHistoryGroupsCollapsed({ payments: false, capital: false });
   }, [obligation?.id]);
 
   // Force-refetch attachment list every time the preview modal opens to bypass stale cache
@@ -1128,6 +1281,10 @@ function ObligationDetailScreen() {
     if (!pendingFocusEventId) return;
     const targetEvent = eventsForDetail.find((event) => event.id === pendingFocusEventId);
     if (!targetEvent) return;
+    setHistoryGroupsCollapsed((current) => ({
+      payments: targetEvent.eventType === "payment" ? false : current.payments,
+      capital: targetEvent.eventType === "payment" ? current.capital : false,
+    }));
     const bestPreset = bestHistoryPresetForEventDate(targetEvent.eventDate);
     if (historyPreset !== bestPreset) {
       applyHistoryPreset(bestPreset);
@@ -1164,6 +1321,348 @@ function ObligationDetailScreen() {
     if (!notificationRequestTarget) return;
     setOwnerResponseAccountId(ownerDefaultAccountId(obligation));
   }, [notificationRequestTarget?.id, obligation]);
+
+  function renderHistoryEventRow(
+    ev: ObligationEventSummary,
+    cardPosition: "single" | "first" | "middle" | "last",
+  ) {
+    if (!obligation) return null;
+    const viewerLinkedAccountId = isSharedViewer
+      ? viewerLinkByEventId.get(ev.id)?.accountId ?? null
+      : null;
+    const useCashPerspective = isSharedViewer && viewerLinkedAccountId != null;
+    const evTint = obligationHistoryEventColor(
+      ev.eventType,
+      obligation.direction,
+      isSharedViewer,
+      useCashPerspective,
+    );
+    const evAmountPrefix = obligationHistoryEventAmountPrefix(
+      ev.eventType,
+      obligation.direction,
+      isSharedViewer,
+      useCashPerspective,
+    );
+    const rowMovementId = isSharedViewer
+      ? viewerLinkByEventId.get(ev.id)?.movementId ?? null
+      : ev.movementId ?? null;
+    const attachmentCount = Math.max(
+      eventAttachmentCounts[ev.id] ?? 0,
+      rowMovementId != null ? movementAttachmentCounts[rowMovementId] ?? 0 : 0,
+    );
+    const canHaveAttachments = ev.eventType === "payment";
+    const showAttachmentLoading =
+      canHaveAttachments &&
+      (eventAttachmentCountsLoading || (rowMovementId != null && movementAttachmentCountsLoading));
+    const isTappable = ev.eventType !== "opening";
+    const isViewerLinkable =
+      isSharedViewer &&
+      (ev.eventType === "payment" ||
+        ev.eventType === "principal_increase" ||
+        ev.eventType === "principal_decrease");
+    const isLinked = linkedEventIds.has(ev.id);
+    const viewerDeleteStatus = viewerDeleteStatusByEventId.get(ev.id);
+    const viewerEditStatus = viewerEditStatusByEventId.get(ev.id);
+    const ownerDeleteRequest = !isSharedViewer ? ownerDeleteRequestByEventId.get(ev.id) ?? null : null;
+    const isHighlighted = highlightedEventId === ev.id;
+    const eventInlineDescription = firstMeaningfulText(ev.description, ev.reason);
+    const viewerImpactCopy = isSharedViewer
+      ? viewerEventAccountImpactCopy(ev, obligation, viewerLinkedAccountId != null)
+      : null;
+
+    const cardRadius =
+      cardPosition === "single"
+        ? { borderRadius: 12 }
+        : cardPosition === "first"
+          ? { borderTopLeftRadius: 12, borderTopRightRadius: 12, borderBottomLeftRadius: 4, borderBottomRightRadius: 4 }
+          : cardPosition === "last"
+            ? { borderTopLeftRadius: 4, borderTopRightRadius: 4, borderBottomLeftRadius: 12, borderBottomRightRadius: 12 }
+            : { borderRadius: 4 };
+
+    const hasChipsRow =
+      showAttachmentLoading ||
+      (ev.movementId && !isSharedViewer) ||
+      attachmentCount > 0 ||
+      isViewerLinkable ||
+      ownerDeleteRequest;
+
+    const hasViewerStatusRow =
+      isSharedViewer && ev.eventType !== "opening" && (
+        viewerEditStatus?.status === "pending" ||
+        viewerDeleteStatus?.status === "pending" ||
+        viewerDeleteStatus?.status === "accepted" ||
+        viewerEditStatus?.status === "rejected" ||
+        viewerDeleteStatus?.status === "rejected"
+      );
+
+    return (
+      <View
+        key={ev.id}
+        style={[
+          styles.eventCard,
+          cardRadius,
+          isHighlighted && styles.eventRowHighlighted,
+          isHighlighted && highlightPulseOn && styles.eventRowHighlightedPulse,
+        ]}
+        onLayout={(e) => {
+          eventRowLayoutsRef.current.set(ev.id, {
+            y: e.nativeEvent.layout.y,
+            height: e.nativeEvent.layout.height,
+          });
+          if (pendingFocusEventId === ev.id) {
+            const focusTimer = setTimeout(() => {
+              focusEventFromNotification(ev.id, { announce: false });
+            }, 60);
+            focusTimersRef.current.push(focusTimer);
+          }
+        }}
+      >
+        <TouchableOpacity
+          style={styles.eventCardInner}
+          onPress={isTappable ? () => handleEventTap(ev) : undefined}
+          activeOpacity={isTappable ? 0.7 : 1}
+        >
+          {/* Icon box */}
+          <View style={[styles.eventIconBox, { backgroundColor: evTint + "18" }]}>
+            <Text style={[styles.eventIconText, { color: evTint }]}>
+              {EVENT_TYPE_ICON[ev.eventType] ?? "·"}
+            </Text>
+          </View>
+
+          {/* Content */}
+          <View style={styles.eventCardBody}>
+            <Text style={[styles.eventTypeLabel, { color: evTint }]} numberOfLines={1}>
+              {eventLabels[ev.eventType] ?? ev.eventType}
+            </Text>
+            {eventInlineDescription ? (
+              <Text style={styles.eventDescription} numberOfLines={1}>
+                {eventInlineDescription}
+              </Text>
+            ) : (
+              <Text style={styles.eventDescriptionMuted}>Sin descripción</Text>
+            )}
+            {ev.installmentNo ? (
+              <Text style={styles.eventInstallmentNote}>Cuota {ev.installmentNo}</Text>
+            ) : null}
+            {viewerImpactCopy ? (
+              <Text
+                style={[
+                  styles.eventImpactNote,
+                  viewerImpactCopy.tone === "positive"
+                    ? { color: COLORS.income }
+                    : viewerImpactCopy.tone === "negative"
+                      ? { color: COLORS.danger }
+                      : { color: COLORS.storm },
+                ]}
+              >
+                {viewerImpactCopy.chipLabel}
+              </Text>
+            ) : null}
+          </View>
+
+          {/* Amount */}
+          <Text style={[styles.eventCardAmount, { color: evTint }]} numberOfLines={1}>
+            {evAmountPrefix}{formatCurrency(ev.amount, obligation.currencyCode)}
+          </Text>
+        </TouchableOpacity>
+
+        {/* Chips row */}
+        {hasChipsRow ? (
+          <View style={styles.eventChipsRow}>
+            {ev.movementId && !isSharedViewer ? (
+              <TouchableOpacity
+                style={styles.movementChip}
+                onPress={() => router.push(`/movement/${ev.movementId}`)}
+                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+              >
+                <Text style={styles.movementChipText}>Mov.</Text>
+              </TouchableOpacity>
+            ) : null}
+            {showAttachmentLoading ? (
+              <View style={styles.eventAttachmentLoadingChip}>
+                <ActivityIndicator size="small" color={COLORS.storm} />
+                <Text style={styles.eventAttachmentLoadingText}>Comprobando...</Text>
+              </View>
+            ) : null}
+            {!showAttachmentLoading && attachmentCount > 0 ? (
+              <TouchableOpacity
+                style={styles.eventAttachmentChip}
+                onPress={() => {
+                  setSelectedEvent(ev);
+                  setEventMenuVisible(false);
+                  setEventAttachmentsVisible(true);
+                }}
+                activeOpacity={0.86}
+              >
+                <Images size={11} color={COLORS.primary} />
+                <Text style={styles.eventAttachmentChipText}>
+                  {attachmentCount === 1 ? "Ver comprobante" : `Ver ${attachmentCount} comprobantes`}
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+            {ownerDeleteRequest ? (
+              <View style={styles.ownerEventDeletePendingChip}>
+                <Text style={styles.ownerEventDeletePendingText}>Eliminacion solicitada</Text>
+              </View>
+            ) : null}
+            {isViewerLinkable && (
+              viewerImpactCopy && viewerImpactCopy.tone !== "neutral" ? (
+                <View
+                  style={[
+                    styles.viewerAccountLinkedChip,
+                    viewerImpactCopy.tone === "negative" && styles.viewerAccountLinkedChipNegative,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.viewerAccountLinkedText,
+                      viewerImpactCopy.tone === "negative" && styles.viewerAccountLinkedTextNegative,
+                    ]}
+                  >
+                    {viewerImpactCopy.tone === "positive" ? "Cuenta asociada con entrada" : "Cuenta asociada con salida"}
+                  </Text>
+                </View>
+              ) : isLinked ? (
+                <View style={styles.viewerAccountLinkedChip}>
+                  <Text style={styles.viewerAccountLinkedText}>Cuenta asociada</Text>
+                </View>
+              ) : (
+                <View style={styles.viewerAccountUnlinkedChip}>
+                  <Text style={styles.viewerAccountUnlinkedText}>Sin cuenta asociada</Text>
+                </View>
+              )
+            )}
+          </View>
+        ) : null}
+
+        {/* Viewer status row */}
+        {hasViewerStatusRow ? (
+          <View style={styles.viewerEventActions}>
+            {viewerEditStatus?.status === "pending" ? (
+              <View style={styles.viewerEditPendingChip}>
+                <Text style={styles.viewerEditPendingText}>Edicion pendiente</Text>
+              </View>
+            ) : null}
+            {viewerDeleteStatus?.status === "pending" ? (
+              <View style={styles.viewerDeletePendingChip}>
+                <Text style={styles.viewerDeletePendingText}>Eliminacion pendiente</Text>
+              </View>
+            ) : viewerDeleteStatus?.status === "accepted" ? (
+              <View style={styles.viewerDeleteAcceptedChip}>
+                <Text style={styles.viewerDeleteAcceptedText}>Eliminacion aprobada</Text>
+              </View>
+            ) : null}
+            {viewerEditStatus?.status === "rejected" ? (
+              <Text style={[styles.viewerRequestNote, { color: COLORS.danger }]}>
+                {viewerEditStatus.payload.rejectionReason?.trim()
+                  ? `Edicion rechazada: ${viewerEditStatus.payload.rejectionReason.trim()}`
+                  : "Solicitud de edicion rechazada"}
+              </Text>
+            ) : null}
+            {viewerDeleteStatus?.status === "rejected" ? (
+              <Text style={[styles.viewerRequestNote, { color: COLORS.danger }]}>
+                {viewerDeleteStatus.payload.rejectionReason?.trim()
+                  ? `Rechazada: ${viewerDeleteStatus.payload.rejectionReason.trim()}`
+                  : "Solicitud de eliminacion rechazada"}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
+      </View>
+    );
+  }
+
+  function renderHistoryGroup(params: {
+    key: "payments" | "capital";
+    title: string;
+    subtitle: string;
+    events: ObligationEventSummary[];
+    emptyText: string;
+  }) {
+    const collapsed = historyGroupsCollapsed[params.key];
+    const dateGroups = groupEventsByDate(params.events);
+    const todayStr = todayPeru();
+
+    return (
+      <View key={params.key} style={styles.historyGroupCard}>
+        <TouchableOpacity
+          style={styles.historyGroupHeader}
+          onPress={() => {
+            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+            setHistoryGroupsCollapsed((current) => ({
+              ...current,
+              [params.key]: !current[params.key],
+            }));
+          }}
+          activeOpacity={0.8}
+        >
+          <View style={styles.historyGroupHeaderLeft}>
+            <Text style={styles.historyGroupTitle}>{params.title}</Text>
+          </View>
+          <View style={styles.historyGroupToggle}>
+            <View style={styles.historyGroupBadge}>
+              <Text style={styles.historyGroupBadgeText}>{params.events.length}</Text>
+            </View>
+            {collapsed ? (
+              <Plus size={13} color={COLORS.storm} strokeWidth={2.5} />
+            ) : (
+              <Minus size={13} color={COLORS.storm} strokeWidth={2.5} />
+            )}
+          </View>
+        </TouchableOpacity>
+
+        {!collapsed ? (
+          <View style={styles.historyGroupBody}>
+            {params.events.length === 0 ? (
+              <Text style={styles.historyGroupEmpty}>{params.emptyText}</Text>
+            ) : (
+              dateGroups.map(({ date, events: dayEvents }) => {
+                const pillLabel = eventDatePillLabel(date, todayStr);
+                const dayTotal = dayEvents.reduce((sum, e) => sum + e.amount, 0);
+                return (
+                  <View key={date}>
+                    {/* Date pill separator */}
+                    <View style={styles.dateSeparator}>
+                      <View style={styles.dateSepLine} />
+                      <View style={styles.datePill}>
+                        <Text style={styles.datePillText}>{pillLabel}</Text>
+                      </View>
+                      <View style={styles.dateSepLine} />
+                      <Text style={[
+                        styles.dateDayTotal,
+                        { color: dayTotal >= 0 ? COLORS.income : COLORS.danger },
+                      ]}>
+                        {dayTotal >= 0 ? "+" : ""}{formatCurrency(Math.abs(dayTotal), obligation?.currencyCode ?? "")}
+                      </Text>
+                    </View>
+
+                    {/* Event cards grouped */}
+                    <View style={styles.dateGroup}>
+                      {dayEvents.map((event, idx) => {
+                        const position =
+                          dayEvents.length === 1
+                            ? "single"
+                            : idx === 0
+                              ? "first"
+                              : idx === dayEvents.length - 1
+                                ? "last"
+                                : "middle";
+                        return (
+                          <StaggeredItem key={event.id} index={idx} maxStagger={6}>
+                            {renderHistoryEventRow(event, position)}
+                          </StaggeredItem>
+                        );
+                      })}
+                    </View>
+                  </View>
+                );
+              })
+            )}
+          </View>
+        ) : null}
+      </View>
+    );
+  }
 
   async function handleShare() {
     if (!shareEmail.trim() || !obligation || !activeWorkspaceId || isSharedViewer) return;
@@ -1555,7 +2054,13 @@ function ObligationDetailScreen() {
   const pageLoading = isLoading || (!obligation && sharedLoading);
 
   const isReceivable = obligation?.direction === "receivable";
-  const dirColor = isReceivable ? COLORS.income : COLORS.expense;
+  const viewerActsAsCollector = obligation
+    ? obligationViewerActsAsCollector(obligation.direction, isSharedViewer)
+    : false;
+  const dirColor = viewerActsAsCollector ? COLORS.income : COLORS.expense;
+  const directionPerspectiveLabel = obligation
+    ? obligationPerspectiveDirectionLabel(obligation.direction, isSharedViewer)
+    : "";
   const ownerAccountQuestion = isReceivable
     ? "A que cuenta va a ingresar este dinero?"
     : "De que cuenta va a salir este dinero?";
@@ -1576,6 +2081,10 @@ function ObligationDetailScreen() {
   const viewerProjectedBalance = viewerProjectedAccount
     ? viewerProjectedAccount.currentBalance + viewerLinkDelta
     : null;
+  const linkingEventImpactCopy =
+    linkingEvent && obligation
+      ? viewerEventAccountImpactCopy(linkingEvent, obligation, true)
+      : null;
   const ownerEditCurrentAmount = ownerEditRequestTarget?.payload.currentAmount ?? ownerEditRequestTarget?.event?.amount ?? 0;
   const ownerEditProposedAmount = ownerEditRequestTarget?.payload.proposedAmount ?? ownerEditRequestTarget?.event?.amount ?? 0;
   const ownerEditCurrentDelta = ownerEditRequestTarget && obligation
@@ -1599,13 +2108,15 @@ function ObligationDetailScreen() {
         ? ownerEditProposedDelta - ownerEditCurrentDelta
         : ownerEditProposedDelta)
     : null;
-  const eventLabels = useMemo(() => {
-    if (!obligation) return EVENT_LABEL_PAYABLE;
-    const paymentWord = obligationViewerActsAsCollector(obligation.direction, isSharedViewer)
+  const paymentWord =
+    obligation && obligationViewerActsAsCollector(obligation.direction, isSharedViewer)
       ? "Cobro"
       : "Pago";
-    return { ...EVENT_LABEL_PAYABLE, payment: paymentWord };
-  }, [obligation, isSharedViewer]);
+  const paymentWordPlural = paymentWord === "Cobro" ? "Cobros" : "Pagos";
+  const eventLabels = useMemo<Record<string, string>>(
+    () => ({ ...EVENT_LABEL_PAYABLE, payment: paymentWord }),
+    [paymentWord],
+  );
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
@@ -1660,17 +2171,19 @@ function ObligationDetailScreen() {
           {/* Hero */}
           <Card style={styles.heroCard}>
             <Text style={[styles.directionBadge, { color: dirColor }]}>
-              {obligationPendingDirectionBadge(obligation.direction, isSharedViewer)}
+              {directionPerspectiveLabel}
             </Text>
             <Text style={styles.counterparty}>{obligation.counterparty || "Sin contacto"}</Text>
             <Text style={[styles.pendingAmount, { color: dirColor }]}>
               {formatCurrency(obligation.pendingAmount, obligation.currencyCode)}
             </Text>
-            <Text style={styles.pendingLabel}>pendiente</Text>
+            <Text style={styles.pendingLabel}>
+              {obligationPendingDirectionBadge(obligation.direction, isSharedViewer).toLowerCase()}
+            </Text>
             <ProgressBar percent={capitalOverview.progressPercent} alertPercent={100} style={styles.progress} />
             <Text style={styles.progressLabel}>
               {Math.round(capitalOverview.progressPercent)}%{" "}
-              {obligationProgressPaidAdjective(obligation.direction, isSharedViewer)} sobre un capital actual de{" "}
+              {obligationProgressPaidAdjective(obligation.direction, isSharedViewer)} sobre un capital vigente de{" "}
               {formatCurrency(capitalOverview.currentPrincipal, obligation.currencyCode)}
             </Text>
           </Card>
@@ -1679,7 +2192,7 @@ function ObligationDetailScreen() {
             <Text style={styles.sectionTitle}>Resumen de capital</Text>
             <View style={styles.capitalSummaryGrid}>
               <View style={styles.capitalSummaryItem}>
-                <Text style={styles.capitalSummaryLabel}>Inicio</Text>
+                <Text style={styles.capitalSummaryLabel}>Capital original</Text>
                 <Text style={styles.capitalSummaryValue}>
                   {formatCurrency(capitalOverview.openingAmount, obligation.currencyCode)}
                 </Text>
@@ -1719,7 +2232,7 @@ function ObligationDetailScreen() {
                 <Text style={styles.capitalSummaryLink}>Ver detalle</Text>
               </TouchableOpacity>
               <View style={styles.capitalSummaryItem}>
-                <Text style={styles.capitalSummaryLabel}>Capital actual</Text>
+                <Text style={styles.capitalSummaryLabel}>Capital vigente</Text>
                 <Text style={styles.capitalSummaryValue}>
                   {formatCurrency(capitalOverview.currentPrincipal, obligation.currencyCode)}
                 </Text>
@@ -1887,6 +2400,18 @@ function ObligationDetailScreen() {
             >
               <Text style={styles.sectionTitle}>Historial de eventos</Text>
               <Text style={styles.dateRangeCaption}>{historyDateRangeNotice}</Text>
+              <View style={styles.historyLegendRow}>
+                <View style={[styles.historyLegendChip, styles.historyLegendChipCash]}>
+                  <Text style={[styles.historyLegendChipText, styles.historyLegendChipTextCash]}>
+                    {paymentWordPlural} reducen el saldo pendiente
+                  </Text>
+                </View>
+                <View style={[styles.historyLegendChip, styles.historyLegendChipCapital]}>
+                  <Text style={[styles.historyLegendChipText, styles.historyLegendChipTextCapital]}>
+                    Capital cambia el monto prestado o debido
+                  </Text>
+                </View>
+              </View>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.historyPresetRow}>
                 {(
                   [
@@ -1958,220 +2483,24 @@ function ObligationDetailScreen() {
                     ? "Sin eventos registrados aun."
                     : "Ningun evento en este rango de fechas."}
                 </Text>
-              ) : filteredHistoryEvents.map((ev) => {
-                const evTint = obligationHistoryEventColor(
-                  ev.eventType,
-                  obligation.direction,
-                  isSharedViewer,
-                );
-                const evAmountPrefix = obligationHistoryEventAmountPrefix(
-                  ev.eventType,
-                  obligation.direction,
-                  isSharedViewer,
-                );
-                const rowMovementId = isSharedViewer
-                  ? viewerLinkByEventId.get(ev.id)?.movementId ?? null
-                  : ev.movementId ?? null;
-                const attachmentCount = Math.max(
-                  eventAttachmentCounts[ev.id] ?? 0,
-                  rowMovementId != null ? movementAttachmentCounts[rowMovementId] ?? 0 : 0,
-                );
-                const canHaveAttachments = ev.eventType === "payment";
-                const showAttachmentLoading =
-                  canHaveAttachments &&
-                  (eventAttachmentCountsLoading || (rowMovementId != null && movementAttachmentCountsLoading));
-                const isTappable = ev.eventType !== "opening";
-                const isViewerLinkable =
-                  isSharedViewer &&
-                  (ev.eventType === "payment" ||
-                    ev.eventType === "principal_increase" ||
-                    ev.eventType === "principal_decrease");
-                const isLinked = linkedEventIds.has(ev.id);
-                const viewerDeleteStatus = viewerDeleteStatusByEventId.get(ev.id);
-                const viewerEditStatus = viewerEditStatusByEventId.get(ev.id);
-                const ownerDeleteRequest = !isSharedViewer ? ownerDeleteRequestByEventId.get(ev.id) ?? null : null;
-                const isHighlighted = highlightedEventId === ev.id;
-                const eventInlineDescription = firstMeaningfulText(ev.description, ev.reason);
-                const eventInlineNotes = ev.notes?.trim() || null;
-                const showEventInlineNotes =
-                  eventInlineNotes != null &&
-                  eventInlineNotes.length > 0 &&
-                  eventInlineNotes !== eventInlineDescription;
-                const eventDateLabel = format(parseDisplayDate(ev.eventDate), "d MMM yyyy", { locale: es });
-                return (
-                  <View
-                    key={ev.id}
-                    style={[
-                      styles.eventRow,
-                      isHighlighted && styles.eventRowHighlighted,
-                      isHighlighted && highlightPulseOn && styles.eventRowHighlightedPulse,
-                    ]}
-                    onLayout={(event) => {
-                      eventRowLayoutsRef.current.set(ev.id, {
-                        y: event.nativeEvent.layout.y,
-                        height: event.nativeEvent.layout.height,
-                      });
-                      if (pendingFocusEventId === ev.id) {
-                        const focusTimer = setTimeout(() => {
-                          focusEventFromNotification(ev.id, { announce: false });
-                        }, 60);
-                        focusTimersRef.current.push(focusTimer);
-                      }
-                    }}
-                  >
-                    <TouchableOpacity
-                      style={styles.eventMainPress}
-                      onPress={isTappable ? () => handleEventTap(ev) : undefined}
-                      activeOpacity={isTappable ? 0.7 : 1}
-                    >
-                      <View style={[styles.eventAccent, { backgroundColor: evTint }]} />
-                      <View style={styles.eventBody}>
-                        <View style={styles.eventHeaderRow}>
-                          <View style={styles.eventInfo}>
-                            <Text style={[styles.eventType, { color: evTint }]} numberOfLines={1}>
-                              {eventLabels[ev.eventType] ?? ev.eventType}
-                            </Text>
-                            <Text style={styles.eventDate}>{eventDateLabel}</Text>
-                          </View>
-                          <View style={styles.eventAmountGroup}>
-                            <View
-                              style={[
-                                styles.eventAmountPill,
-                                { backgroundColor: evTint + "12", borderColor: evTint + "42" },
-                              ]}
-                            >
-                              <Text style={[styles.eventAmount, { color: evTint }]} numberOfLines={1}>
-                                {evAmountPrefix}
-                                {formatCurrency(ev.amount, obligation.currencyCode)}
-                              </Text>
-                            </View>
-                            {isTappable ? <Text style={styles.eventChevron}>{">"}</Text> : null}
-                          </View>
-                        </View>
-                        {eventInlineDescription ? (
-                          <Text style={styles.eventDescription} numberOfLines={2}>
-                            {eventInlineDescription}
-                          </Text>
-                        ) : !showEventInlineNotes ? (
-                          <Text style={styles.eventDescriptionMuted}>
-                            Este evento no tiene descripcion visible.
-                          </Text>
-                        ) : null}
-                        {showEventInlineNotes ? (
-                          <Text style={styles.eventNotes} numberOfLines={2}>
-                            {eventInlineNotes}
-                          </Text>
-                        ) : null}
-                        {ev.installmentNo ? (
-                          <View style={styles.eventInlineMetaRow}>
-                            <View style={styles.eventMetaChip}>
-                              <Text style={styles.eventMetaChipText}>Cuota {ev.installmentNo}</Text>
-                            </View>
-                          </View>
-                        ) : null}
-                      </View>
-                    </TouchableOpacity>
-
-                    {(showAttachmentLoading ||
-                      (ev.movementId && !isSharedViewer) ||
-                      attachmentCount > 0 ||
-                      isViewerLinkable ||
-                      ownerDeleteRequest) ? (
-                      <View style={styles.eventAttachmentRow}>
-                        {ev.movementId && !isSharedViewer ? (
-                          <TouchableOpacity
-                            style={styles.movementChip}
-                            onPress={() => router.push(`/movement/${ev.movementId}`)}
-                            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                          >
-                            <Text style={styles.movementChipText}>Mov.</Text>
-                          </TouchableOpacity>
-                        ) : null}
-                        {showAttachmentLoading ? (
-                          <View style={styles.eventAttachmentLoadingChip}>
-                            <ActivityIndicator size="small" color={COLORS.storm} />
-                            <Text style={styles.eventAttachmentLoadingText}>
-                              Comprobando comprobante...
-                            </Text>
-                          </View>
-                        ) : null}
-                        {!showAttachmentLoading && attachmentCount > 0 ? (
-                          <TouchableOpacity
-                            style={styles.eventAttachmentChip}
-                            onPress={() => {
-                              setSelectedEvent(ev);
-                              setEventMenuVisible(false);
-                              setEventAttachmentsVisible(true);
-                            }}
-                            activeOpacity={0.86}
-                          >
-                            <Images size={12} color={COLORS.primary} />
-                            <Text style={styles.eventAttachmentChipText}>
-                              {attachmentCount === 1 ? "Ver comprobante" : `Ver ${attachmentCount} comprobantes`}
-                            </Text>
-                          </TouchableOpacity>
-                        ) : null}
-                        {ownerDeleteRequest ? (
-                          <View style={styles.ownerEventDeletePendingChip}>
-                            <Text style={styles.ownerEventDeletePendingText}>Eliminacion solicitada</Text>
-                          </View>
-                        ) : null}
-                        {isViewerLinkable && (
-                          isLinked ? (
-                            <View style={styles.viewerAccountLinkedChip}>
-                              <Text style={styles.viewerAccountLinkedText}>Cuenta asociada</Text>
-                            </View>
-                          ) : (
-                            <View style={styles.viewerAccountUnlinkedChip}>
-                              <Text style={styles.viewerAccountUnlinkedText}>Sin cuenta asociada</Text>
-                            </View>
-                          )
-                        )}
-                      </View>
-                    ) : null}
-
-                    {isSharedViewer && ev.eventType !== "opening" ? (
-                      <View style={styles.viewerEventActions}>
-                        {EDITABLE_TYPES.has(ev.eventType) && viewerEditStatus?.status === "pending" ? (
-                          <View style={styles.viewerEditPendingChip}>
-                            <Text style={styles.viewerEditPendingText}>Edicion pendiente</Text>
-                          </View>
-                        ) : null}
-                        {viewerDeleteStatus?.status === "pending" ? (
-                          <View style={styles.viewerDeletePendingChip}>
-                            <Text style={styles.viewerDeletePendingText}>Eliminacion pendiente</Text>
-                          </View>
-                        ) : viewerDeleteStatus?.status === "accepted" ? (
-                          <View style={styles.viewerDeleteAcceptedChip}>
-                            <Text style={styles.viewerDeleteAcceptedText}>Eliminacion aprobada</Text>
-                          </View>
-                        ) : null}
-                        {viewerEditStatus?.status !== "pending" &&
-                        viewerDeleteStatus?.status !== "pending" &&
-                        viewerDeleteStatus?.status !== "accepted" ? (
-                          <Text style={styles.viewerEventManageHint}>
-                            Toca la tarjeta para gestionar
-                          </Text>
-                        ) : null}
-                        {viewerEditStatus?.status === "rejected" ? (
-                          <Text style={[styles.viewerRequestNote, { color: COLORS.danger }]}>
-                            {viewerEditStatus.payload.rejectionReason?.trim()
-                              ? `Edicion rechazada: ${viewerEditStatus.payload.rejectionReason.trim()}`
-                              : "La solicitud de edicion anterior fue rechazada"}
-                          </Text>
-                        ) : null}
-                        {viewerDeleteStatus?.status === "rejected" ? (
-                          <Text style={[styles.viewerRequestNote, { color: COLORS.danger }]}>
-                            {viewerDeleteStatus.payload.rejectionReason?.trim()
-                              ? `Rechazada: ${viewerDeleteStatus.payload.rejectionReason.trim()}`
-                              : "La solicitud anterior fue rechazada"}
-                          </Text>
-                        ) : null}
-                      </View>
-                    ) : null}
-                  </View>
-                );
-              })}
+              ) : (
+                <>
+                  {renderHistoryGroup({
+                    key: "payments",
+                    title: paymentWordPlural,
+                    subtitle: `Eventos que registran ${paymentWord.toLowerCase()}s y reducen el saldo pendiente.`,
+                    events: paymentHistoryEvents,
+                    emptyText: `Sin ${paymentWord.toLowerCase()}s en este rango.`,
+                  })}
+                  {renderHistoryGroup({
+                    key: "capital",
+                    title: "Capital",
+                    subtitle: "Apertura, aumentos, reducciones y otros ajustes del principal.",
+                    events: capitalHistoryEvents,
+                    emptyText: "Sin cambios de capital en este rango.",
+                  })}
+                </>
+              )}
             </View>
           ) : null}
 
@@ -2763,9 +3092,35 @@ function ObligationDetailScreen() {
             ) : null}
             <Text style={styles.linkSheetHint}>
               {linkingEvent && viewerLinkByEventId.get(linkingEvent.id)
-                ? "Elige la nueva cuenta en la que se reflejara este movimiento"
-                : "Elige la cuenta en la que se refleja este movimiento"}
+                ? "Elige la nueva cuenta sobre la que se recalculara este movimiento real."
+                : "Elige la cuenta en la que quieres reflejar este evento como movimiento real."}
             </Text>
+            {linkingEventImpactCopy ? (
+              <View
+                style={[
+                  styles.linkSheetImpactCard,
+                  linkingEventImpactCopy.tone === "positive"
+                    ? styles.linkSheetImpactCardPositive
+                    : linkingEventImpactCopy.tone === "negative"
+                      ? styles.linkSheetImpactCardNegative
+                      : styles.linkSheetImpactCardNeutral,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.linkSheetImpactTitle,
+                    linkingEventImpactCopy.tone === "positive"
+                      ? styles.linkSheetImpactTitlePositive
+                      : linkingEventImpactCopy.tone === "negative"
+                        ? styles.linkSheetImpactTitleNegative
+                        : styles.linkSheetImpactTitleNeutral,
+                  ]}
+                >
+                  {linkingEventImpactCopy.chipLabel}
+                </Text>
+                <Text style={styles.linkSheetImpactBody}>{linkingEventImpactCopy.note}</Text>
+              </View>
+            ) : null}
             {(snapshot?.accounts ?? []).filter((a) => !a.isArchived).map((acc) => (
               <TouchableOpacity
                 key={acc.id}
@@ -3311,7 +3666,18 @@ function ObligationDetailScreen() {
             : null
         }
         amountLabel={
-          selectedEvent ? formatCurrency(selectedEvent.amount, obligation?.currencyCode ?? "") : null
+          selectedEvent
+            ? `${obligationHistoryEventAmountPrefix(
+              selectedEvent.eventType,
+              obligation?.direction ?? "payable",
+              isSharedViewer,
+              Boolean(
+                isSharedViewer &&
+                selectedEventViewerImpactCopy &&
+                selectedEventViewerImpactCopy.tone !== "neutral",
+              ),
+            )}${formatCurrency(selectedEvent.amount, obligation?.currencyCode ?? "")}`
+            : null
         }
         description={selectedEvent?.description ?? null}
         notes={selectedEvent?.notes ?? null}
@@ -3360,6 +3726,20 @@ function ObligationDetailScreen() {
                     ? `Edicion rechazada: ${selectedEventEditStatus.payload.rejectionReason.trim()}`
                     : "La solicitud de edicion anterior fue rechazada.",
                   tone: "danger" as const,
+                },
+              ]
+            : []),
+          ...(isSharedViewer && selectedEventViewerImpactCopy
+            ? [
+                {
+                  key: "viewer-account-impact",
+                  text: selectedEventViewerImpactCopy.note,
+                  tone:
+                    selectedEventViewerImpactCopy.tone === "positive"
+                      ? ("success" as const)
+                      : selectedEventViewerImpactCopy.tone === "negative"
+                        ? ("danger" as const)
+                        : ("info" as const),
                 },
               ]
             : []),
@@ -3774,6 +4154,35 @@ const styles = StyleSheet.create({
     color: COLORS.storm,
     fontFamily: FONT_FAMILY.bodyMedium,
   },
+  historyLegendRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: SPACING.xs,
+  },
+  historyLegendChip: {
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 6,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+  },
+  historyLegendChipCash: {
+    backgroundColor: COLORS.primary + "12",
+    borderColor: COLORS.primary + "30",
+  },
+  historyLegendChipCapital: {
+    backgroundColor: COLORS.secondary + "12",
+    borderColor: COLORS.secondary + "30",
+  },
+  historyLegendChipText: {
+    fontSize: FONT_SIZE.xs,
+    fontFamily: FONT_FAMILY.bodyMedium,
+  },
+  historyLegendChipTextCash: {
+    color: COLORS.primary,
+  },
+  historyLegendChipTextCapital: {
+    color: COLORS.secondary,
+  },
   historyPresetRow: {
     flexDirection: "row",
     gap: SPACING.xs,
@@ -3809,6 +4218,94 @@ const styles = StyleSheet.create({
     color: COLORS.storm,
     fontFamily: FONT_FAMILY.body,
     lineHeight: 20,
+  },
+  historyGroupCard: {
+    gap: SPACING.xs,
+  },
+  historyGroupHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: SPACING.sm,
+    paddingHorizontal: 4,
+    minHeight: 40,
+  },
+  historyGroupHeaderLeft: {
+    flex: 1,
+  },
+  historyGroupTitle: {
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+  },
+  historyGroupToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 5,
+    borderRadius: RADIUS.full,
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  historyGroupBadge: {
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderRadius: RADIUS.full,
+    paddingHorizontal: 7,
+    paddingVertical: 1,
+  },
+  historyGroupBadgeText: {
+    fontSize: 10,
+    color: COLORS.storm,
+    fontFamily: FONT_FAMILY.bodySemibold,
+  },
+  historyGroupBody: {
+    gap: 0,
+  },
+  historyGroupEmpty: {
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    fontFamily: FONT_FAMILY.body,
+    lineHeight: 18,
+    paddingVertical: SPACING.xs,
+    paddingHorizontal: 4,
+  },
+  dateSeparator: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 4,
+    paddingTop: 12,
+    paddingBottom: 6,
+    gap: 8,
+  },
+  dateSepLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: "rgba(255,255,255,0.07)",
+  },
+  datePill: {
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderRadius: 99,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.11)",
+  },
+  datePillText: {
+    fontSize: 10,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    color: COLORS.storm,
+    letterSpacing: 0.4,
+  },
+  dateDayTotal: {
+    fontSize: 10,
+    fontFamily: FONT_FAMILY.bodySemibold,
+  },
+  dateGroup: {
+    gap: 1,
   },
   viewerTabsRow: {
     flexDirection: "row",
@@ -3860,16 +4357,66 @@ const styles = StyleSheet.create({
   eventFocusNoticeTextSuccess: {
     color: COLORS.income,
   },
-  eventRow: {
-    gap: SPACING.xs,
-    padding: SPACING.md,
-    borderRadius: RADIUS.md,
-    backgroundColor: "rgba(10,14,20,0.56)",
+  eventCard: {
+    backgroundColor: "rgba(255,255,255,0.03)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.10)",
+    borderColor: "rgba(255,255,255,0.07)",
+    overflow: "hidden",
+  },
+  eventCardInner: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 12,
+    paddingHorizontal: 14,
+    gap: 12,
+  },
+  eventIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  },
+  eventIconText: {
+    fontSize: 16,
+    fontFamily: FONT_FAMILY.bodySemibold,
+  },
+  eventCardBody: {
+    flex: 1,
+    minWidth: 0,
+    gap: 1,
+  },
+  eventTypeLabel: {
+    fontSize: FONT_SIZE.xs,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    lineHeight: 16,
+  },
+  eventCardAmount: {
+    fontSize: 14,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    flexShrink: 0,
+  },
+  eventInstallmentNote: {
+    fontSize: 10,
+    color: COLORS.storm,
+    fontFamily: FONT_FAMILY.body,
+  },
+  eventImpactNote: {
+    fontSize: 10,
+    fontFamily: FONT_FAMILY.bodyMedium,
+    marginTop: 1,
+  },
+  eventChipsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: SPACING.xs,
+    paddingHorizontal: 14,
+    paddingBottom: 10,
+    paddingTop: 0,
   },
   eventRowHighlighted: {
-    borderRadius: RADIUS.md,
     backgroundColor: COLORS.income + "08",
     borderColor: COLORS.income + "28",
   },
@@ -3884,9 +4431,9 @@ const styles = StyleSheet.create({
     gap: SPACING.sm,
   },
   eventAccent: {
-    width: 3,
+    width: 4,
     alignSelf: "stretch",
-    minHeight: 44,
+    minHeight: 48,
     borderRadius: RADIUS.full,
   },
   eventBody: {
@@ -3913,16 +4460,17 @@ const styles = StyleSheet.create({
   eventType: { fontSize: FONT_SIZE.sm, fontFamily: FONT_FAMILY.bodyMedium, color: COLORS.ink },
   eventDate: { fontSize: FONT_SIZE.xs, color: COLORS.storm },
   eventDescription: {
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.ink,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
     fontFamily: FONT_FAMILY.body,
-    lineHeight: 19,
+    lineHeight: 16,
   },
   eventDescriptionMuted: {
     fontSize: FONT_SIZE.xs,
     color: COLORS.textDisabled,
     fontFamily: FONT_FAMILY.body,
-    lineHeight: 17,
+    fontStyle: "italic",
+    lineHeight: 16,
   },
   eventNotes: {
     fontSize: FONT_SIZE.xs,
@@ -3939,7 +4487,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.full,
     borderWidth: 1,
     paddingHorizontal: SPACING.sm,
-    paddingVertical: 4,
+    paddingVertical: 5,
     maxWidth: 150,
   },
   eventAmount: { fontSize: FONT_SIZE.sm, fontFamily: FONT_FAMILY.bodySemibold },
@@ -3964,6 +4512,47 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: COLORS.storm,
     fontFamily: FONT_FAMILY.bodyMedium,
+  },
+  eventMetaChipCash: {
+    backgroundColor: COLORS.primary + "14",
+    borderColor: COLORS.primary + "32",
+  },
+  eventMetaChipTextCash: {
+    color: COLORS.primary,
+  },
+  eventMetaChipCapital: {
+    backgroundColor: COLORS.secondary + "14",
+    borderColor: COLORS.secondary + "32",
+  },
+  eventMetaChipTextCapital: {
+    color: COLORS.secondary,
+  },
+  eventMetaChipPositive: {
+    backgroundColor: COLORS.income + "14",
+    borderColor: COLORS.income + "32",
+  },
+  eventMetaChipTextPositive: {
+    color: COLORS.income,
+  },
+  eventMetaChipNegative: {
+    backgroundColor: COLORS.danger + "14",
+    borderColor: COLORS.danger + "32",
+  },
+  eventMetaChipTextNegative: {
+    color: COLORS.danger,
+  },
+  eventMetaChipNeutral: {
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderColor: "rgba(255,255,255,0.10)",
+  },
+  eventMetaChipTextNeutral: {
+    color: COLORS.storm,
+  },
+  eventAccountImpactNote: {
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    fontFamily: FONT_FAMILY.body,
+    lineHeight: 17,
   },
   movementChip: {
     paddingHorizontal: SPACING.xs + 2,
@@ -4290,6 +4879,13 @@ const styles = StyleSheet.create({
     color: COLORS.income,
     fontFamily: FONT_FAMILY.bodyMedium,
   },
+  viewerAccountLinkedChipNegative: {
+    backgroundColor: COLORS.danger + "14",
+    borderColor: COLORS.danger + "30",
+  },
+  viewerAccountLinkedTextNegative: {
+    color: COLORS.danger,
+  },
   viewerAccountUnlinkedChip: {
     paddingHorizontal: SPACING.xs + 2,
     paddingVertical: 4,
@@ -4365,6 +4961,43 @@ const styles = StyleSheet.create({
   linkSheetTitle: { fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.ink, textAlign: "center" },
   linkSheetSub: { fontSize: FONT_SIZE.sm, color: COLORS.storm, textAlign: "center", marginTop: -SPACING.xs },
   linkSheetHint: { fontSize: FONT_SIZE.xs, color: COLORS.textDisabled, textAlign: "center" },
+  linkSheetImpactCard: {
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    padding: SPACING.sm,
+    gap: 4,
+  },
+  linkSheetImpactCardPositive: {
+    backgroundColor: COLORS.income + "10",
+    borderColor: COLORS.income + "26",
+  },
+  linkSheetImpactCardNegative: {
+    backgroundColor: COLORS.danger + "10",
+    borderColor: COLORS.danger + "26",
+  },
+  linkSheetImpactCardNeutral: {
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderColor: "rgba(255,255,255,0.10)",
+  },
+  linkSheetImpactTitle: {
+    fontSize: FONT_SIZE.xs,
+    fontFamily: FONT_FAMILY.bodySemibold,
+  },
+  linkSheetImpactTitlePositive: {
+    color: COLORS.income,
+  },
+  linkSheetImpactTitleNegative: {
+    color: COLORS.danger,
+  },
+  linkSheetImpactTitleNeutral: {
+    color: COLORS.ink,
+  },
+  linkSheetImpactBody: {
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    fontFamily: FONT_FAMILY.body,
+    lineHeight: 17,
+  },
   ownerAccountLabel: {
     fontSize: FONT_SIZE.xs,
     color: COLORS.ink,

@@ -41,6 +41,15 @@ const FREQUENCY_OPTIONS: { value: RecurringIncomeFormInput["frequency"]; label: 
   { value: "daily", label: "Diario" },
   { value: "custom", label: "Personalizado" },
 ];
+const WEEKDAY_OPTIONS: { value: number; label: string }[] = [
+  { value: 1, label: "Lun" },
+  { value: 2, label: "Mar" },
+  { value: 3, label: "Mié" },
+  { value: 4, label: "Jue" },
+  { value: 5, label: "Vie" },
+  { value: 6, label: "Sáb" },
+  { value: 0, label: "Dom" },
+];
 const REMIND_OPTIONS = [
   { label: "1 día", value: 1 },
   { label: "3 días", value: 3 },
@@ -148,6 +157,7 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
   );
   const counterparties = useMemo(() => sortByName(snapshot?.counterparties ?? []), [snapshot?.counterparties]);
   const isLoading = createMutation.isPending || updateMutation.isPending;
+  const intervalValue = Math.max(1, parseInt(intervalCount, 10) || 1);
 
   useEffect(() => {
     if (suggestionDebounceRef.current) clearTimeout(suggestionDebounceRef.current);
@@ -231,6 +241,24 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
       setSubmitError("La próxima llegada debe ser igual o posterior al inicio");
       return;
     }
+    if (!Number.isFinite(intervalValue) || intervalValue < 1) {
+      haptics.error();
+      setSubmitError("El intervalo debe ser mayor o igual a 1.");
+      return;
+    }
+    if ((frequency === "monthly" || frequency === "quarterly" || frequency === "yearly") && dayOfMonth.trim()) {
+      const resolvedDayOfMonth = parseInt(dayOfMonth, 10);
+      if (!Number.isFinite(resolvedDayOfMonth) || resolvedDayOfMonth < 1 || resolvedDayOfMonth > 31) {
+        haptics.error();
+        setSubmitError("El día del mes debe estar entre 1 y 31.");
+        return;
+      }
+    }
+    if (frequency === "weekly" && dayOfWeek !== null && (dayOfWeek < 0 || dayOfWeek > 6)) {
+      haptics.error();
+      setSubmitError("El día de la semana seleccionado no es válido.");
+      return;
+    }
 
     const payload: RecurringIncomeFormInput = {
       name: name.trim(),
@@ -240,9 +268,11 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
       amount: parsed,
       currencyCode: currencyCode.trim().toUpperCase(),
       frequency,
-      intervalCount: Math.max(1, parseInt(intervalCount, 10) || 1),
-      dayOfMonth: dayOfMonth.trim() ? parseInt(dayOfMonth, 10) : null,
-      dayOfWeek,
+      intervalCount: intervalValue,
+      dayOfMonth: (frequency === "monthly" || frequency === "quarterly" || frequency === "yearly") && dayOfMonth.trim()
+        ? parseInt(dayOfMonth, 10)
+        : null,
+      dayOfWeek: frequency === "weekly" ? dayOfWeek : null,
       startDate,
       nextExpectedDate,
       endDate: endDate.trim() ? endDate : null,
@@ -324,10 +354,30 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
               ))}
             </View>
           </ScrollView>
+          <Text style={styles.helperText}>
+            La app usa la próxima llegada como fecha base y desde ahí repite según esta frecuencia.
+          </Text>
+
+          <Text style={styles.label}>
+            {frequency === "custom" ? "Repetir cada N días" : "Repetir cada N periodos"}
+          </Text>
+          <TextInput
+            style={styles.input}
+            value={intervalCount}
+            onChangeText={setIntervalCount}
+            placeholder="1"
+            placeholderTextColor={COLORS.textDisabled}
+            keyboardType="number-pad"
+          />
+          <Text style={styles.helperText}>
+            {frequency === "custom"
+              ? `Personalizado siempre se interpreta en días. ${intervalValue} significa repetir cada ${intervalValue} día${intervalValue === 1 ? "" : "s"}.`
+              : `Cadencia actual: cada ${intervalValue} ${frequency === "weekly" ? `semana${intervalValue === 1 ? "" : "s"}` : frequency === "monthly" ? `mes${intervalValue === 1 ? "" : "es"}` : frequency === "quarterly" ? `trimestre${intervalValue === 1 ? "" : "s"}` : frequency === "yearly" ? `año${intervalValue === 1 ? "" : "s"}` : `día${intervalValue === 1 ? "" : "s"}`}.`}
+          </Text>
 
           {(frequency === "monthly" || frequency === "quarterly" || frequency === "yearly") ? (
             <>
-              <Text style={styles.label}>Día del mes</Text>
+              <Text style={styles.label}>Día habitual del mes</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                 <View style={styles.pillRow}>
                   {[1, 5, 10, 15, 20, 25, 28, 30].map((day) => (
@@ -341,6 +391,39 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
                   ))}
                 </View>
               </ScrollView>
+              <Text style={styles.helperText}>
+                Úsalo para dejar claro qué día suele caer este ingreso dentro del ciclo.
+              </Text>
+            </>
+          ) : null}
+
+          {frequency === "weekly" ? (
+            <>
+              <Text style={styles.label}>Día habitual de la semana</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <View style={styles.pillRow}>
+                  <TouchableOpacity
+                    style={[styles.pill, dayOfWeek == null && styles.pillActive]}
+                    onPress={() => setDayOfWeek(null)}
+                  >
+                    <Text style={[styles.pillText, dayOfWeek == null && styles.pillTextActive]}>Sin día fijo</Text>
+                  </TouchableOpacity>
+                  {WEEKDAY_OPTIONS.map((option) => (
+                    <TouchableOpacity
+                      key={option.value}
+                      style={[styles.pill, dayOfWeek === option.value && styles.pillActive]}
+                      onPress={() => setDayOfWeek(option.value)}
+                    >
+                      <Text style={[styles.pillText, dayOfWeek === option.value && styles.pillTextActive]}>
+                        {option.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </ScrollView>
+              <Text style={styles.helperText}>
+                Esto deja registrado el día semanal habitual de cobro para que la configuración no quede ambigua.
+              </Text>
             </>
           ) : null}
 
@@ -528,6 +611,13 @@ const styles = StyleSheet.create({
     color: COLORS.ink,
     fontSize: FONT_SIZE.lg,
     fontFamily: FONT_FAMILY.bodyMedium,
+  },
+  helperText: {
+    marginTop: -2,
+    color: COLORS.storm,
+    fontSize: FONT_SIZE.xs,
+    lineHeight: 18,
+    fontFamily: FONT_FAMILY.body,
   },
   notesInput: {
     minHeight: 120,

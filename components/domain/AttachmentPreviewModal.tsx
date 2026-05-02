@@ -10,7 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import type { EdgeInsets } from "react-native-safe-area-context";
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import { Check, Trash2 } from "lucide-react-native";
@@ -162,169 +162,172 @@ export function AttachmentPreviewModal({
   return (
     <>
       <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-        <View style={styles.overlay}>
-          <Pressable style={StyleSheet.absoluteFillObject} onPress={onClose} />
+        <GestureHandlerRootView style={styles.modalRoot}>
+          <View style={styles.overlay}>
+            <Pressable style={StyleSheet.absoluteFillObject} onPress={onClose} />
 
-          <View
-            style={[
-              styles.header,
-              {
-                top: (insets?.top ?? 0) + SPACING.sm,
-              },
-            ]}
-          >
-            <View style={styles.headerCopy}>
-              <Text style={styles.title} numberOfLines={1}>
-                {title}
-              </Text>
-              <Text style={styles.subtitle} numberOfLines={1}>
-                {isSelecting
-                  ? `${selectedPaths.length} comprobante${selectedPaths.length === 1 ? "" : "s"} seleccionado${selectedPaths.length === 1 ? "" : "s"}`
-                  : selectedAttachment?.fileName ?? "Sin comprobantes"}
-              </Text>
-            </View>
-
-            <View style={styles.headerActions}>
-              {onDeleteAttachment && isSelecting ? (
-                <TouchableOpacity
-                  style={[styles.deleteBtn, deletingSelected && styles.deleteBtnDisabled]}
-                  onPress={() => setConfirmDeleteVisible(true)}
-                  disabled={deletingSelected}
-                  accessibilityLabel="Eliminar comprobantes seleccionados"
-                >
-                  {deletingSelected ? (
-                    <ActivityIndicator size="small" color={COLORS.danger} />
-                  ) : (
-                    <View style={styles.deleteBtnContent}>
-                      <Trash2 size={14} color={COLORS.danger} />
-                      <Text style={styles.deleteText}>Eliminar</Text>
-                    </View>
-                  )}
-                </TouchableOpacity>
-              ) : onDeleteAttachment && selectedAttachment ? (
-                <TouchableOpacity
-                  style={[styles.deleteBtn, deleteLoading && styles.deleteBtnDisabled]}
-                  onPress={() => setConfirmDeleteVisible(true)}
-                  disabled={deleteLoading}
-                  accessibilityLabel="Eliminar comprobante"
-                >
-                  {deleteLoading ? (
-                    <ActivityIndicator size="small" color={COLORS.danger} />
-                  ) : (
-                    <Text style={styles.deleteText}>Eliminar</Text>
-                  )}
-                </TouchableOpacity>
-              ) : null}
-
-              <TouchableOpacity
-                style={styles.closeBtn}
-                onPress={isSelecting ? () => setSelectedPaths([]) : onClose}
-                accessibilityLabel={isSelecting ? "Cancelar seleccion" : "Cerrar"}
-              >
-                <Text style={styles.closeText}>{isSelecting ? "Cancelar" : "Cerrar"}</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {selectedAttachment ? (
             <View
               style={[
-                styles.content,
+                styles.header,
                 {
-                  paddingTop: contentTopInset,
-                  paddingBottom: contentBottomInset,
+                  top: (insets?.top ?? 0) + SPACING.sm,
                 },
               ]}
             >
-              <GestureDetector gesture={pinchGesture}>
-                <View
-                  style={[
-                    styles.heroViewport,
-                    attachments.length > 1 ? styles.heroViewportWithGrid : styles.heroViewportSingle,
-                  ]}
-                >
-                  <Animated.View style={[styles.heroZoomLayer, zoomAnimatedStyle]}>
-                    <Image
-                      source={{ uri: selectedAttachment.signedUrl }}
-                      style={styles.heroImage}
-                      resizeMode="contain"
-                    />
-                  </Animated.View>
-                </View>
-              </GestureDetector>
-
-              <Text style={styles.zoomHint}>Pellizca con dos dedos para acercar o alejar.</Text>
-
-              {attachments.length > 1 ? (
-                <Text style={styles.selectionHint}>
-                  {isSelecting
-                    ? "Toca los comprobantes para marcarlos o quitarlos de la seleccion."
-                    : "Manten presionado un comprobante para seleccionar uno o varios y eliminarlos."}
+              <View style={styles.headerCopy}>
+                <Text style={styles.title} numberOfLines={1}>
+                  {title}
                 </Text>
-              ) : null}
+                <Text style={styles.subtitle} numberOfLines={1}>
+                  {isSelecting
+                    ? `${selectedPaths.length} comprobante${selectedPaths.length === 1 ? "" : "s"} seleccionado${selectedPaths.length === 1 ? "" : "s"}`
+                    : selectedAttachment?.fileName ?? "Sin comprobantes"}
+                </Text>
+              </View>
 
-              {attachments.length > 1 ? (
-                <ScrollView
-                  style={styles.thumbScroll}
-                  showsVerticalScrollIndicator={false}
-                  contentContainerStyle={styles.thumbGrid}
+              <View style={styles.headerActions}>
+                {onDeleteAttachment && isSelecting ? (
+                  <TouchableOpacity
+                    style={[styles.deleteBtn, deletingSelected && styles.deleteBtnDisabled]}
+                    onPress={() => setConfirmDeleteVisible(true)}
+                    disabled={deletingSelected}
+                    accessibilityLabel="Eliminar comprobantes seleccionados"
+                  >
+                    {deletingSelected ? (
+                      <ActivityIndicator size="small" color={COLORS.danger} />
+                    ) : (
+                      <View style={styles.deleteBtnContent}>
+                        <Trash2 size={14} color={COLORS.danger} />
+                        <Text style={styles.deleteText}>Eliminar</Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                ) : onDeleteAttachment && selectedAttachment ? (
+                  <TouchableOpacity
+                    style={[styles.deleteBtn, deleteLoading && styles.deleteBtnDisabled]}
+                    onPress={() => setConfirmDeleteVisible(true)}
+                    disabled={deleteLoading}
+                    accessibilityLabel="Eliminar comprobante"
+                  >
+                    {deleteLoading ? (
+                      <ActivityIndicator size="small" color={COLORS.danger} />
+                    ) : (
+                      <Text style={styles.deleteText}>Eliminar</Text>
+                    )}
+                  </TouchableOpacity>
+                ) : null}
+
+                <TouchableOpacity
+                  style={styles.closeBtn}
+                  onPress={isSelecting ? () => setSelectedPaths([]) : onClose}
+                  accessibilityLabel={isSelecting ? "Cancelar seleccion" : "Cerrar"}
                 >
-                  {attachments.map((attachment) => {
-                    const isActive = attachment.filePath === selectedAttachment.filePath;
-                    const isMarked = selectedPaths.includes(attachment.filePath);
-                    return (
-                      <TouchableOpacity
-                        key={attachment.filePath}
-                        style={[
-                          styles.thumbCard,
-                          isActive && styles.thumbCardActive,
-                          isMarked && styles.thumbCardSelected,
-                        ]}
-                        onPress={() => {
-                          if (isSelecting) {
+                  <Text style={styles.closeText}>{isSelecting ? "Cancelar" : "Cerrar"}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {selectedAttachment ? (
+              <View
+                style={[
+                  styles.content,
+                  {
+                    paddingTop: contentTopInset,
+                    paddingBottom: contentBottomInset,
+                  },
+                ]}
+              >
+                <GestureDetector gesture={pinchGesture}>
+                  <View
+                    collapsable={false}
+                    style={[
+                      styles.heroViewport,
+                      attachments.length > 1 ? styles.heroViewportWithGrid : styles.heroViewportSingle,
+                    ]}
+                  >
+                    <Animated.View style={[styles.heroZoomLayer, zoomAnimatedStyle]}>
+                      <Image
+                        source={{ uri: selectedAttachment.signedUrl }}
+                        style={styles.heroImage}
+                        resizeMode="contain"
+                      />
+                    </Animated.View>
+                  </View>
+                </GestureDetector>
+
+                <Text style={styles.zoomHint}>Pellizca con dos dedos para acercar o alejar.</Text>
+
+                {attachments.length > 1 ? (
+                  <Text style={styles.selectionHint}>
+                    {isSelecting
+                      ? "Toca los comprobantes para marcarlos o quitarlos de la seleccion."
+                      : "Manten presionado un comprobante para seleccionar uno o varios y eliminarlos."}
+                  </Text>
+                ) : null}
+
+                {attachments.length > 1 ? (
+                  <ScrollView
+                    style={styles.thumbScroll}
+                    showsVerticalScrollIndicator={false}
+                    contentContainerStyle={styles.thumbGrid}
+                  >
+                    {attachments.map((attachment) => {
+                      const isActive = attachment.filePath === selectedAttachment.filePath;
+                      const isMarked = selectedPaths.includes(attachment.filePath);
+                      return (
+                        <TouchableOpacity
+                          key={attachment.filePath}
+                          style={[
+                            styles.thumbCard,
+                            isActive && styles.thumbCardActive,
+                            isMarked && styles.thumbCardSelected,
+                          ]}
+                          onPress={() => {
+                            if (isSelecting) {
+                              toggleSelection(attachment.filePath);
+                              return;
+                            }
+                            setSelectedPath(attachment.filePath);
+                          }}
+                          onLongPress={() => {
+                            setSelectedPath(attachment.filePath);
                             toggleSelection(attachment.filePath);
-                            return;
-                          }
-                          setSelectedPath(attachment.filePath);
-                        }}
-                        onLongPress={() => {
-                          setSelectedPath(attachment.filePath);
-                          toggleSelection(attachment.filePath);
-                        }}
-                        activeOpacity={0.86}
-                      >
-                        <Image source={{ uri: attachment.signedUrl }} style={styles.thumbImage} />
-                        {isSelecting ? (
-                          <View
-                            style={[
-                              styles.thumbSelectBadge,
-                              isMarked && styles.thumbSelectBadgeActive,
-                            ]}
-                          >
-                            {isMarked ? <Check size={14} color={COLORS.ink} /> : null}
+                          }}
+                          activeOpacity={0.86}
+                        >
+                          <Image source={{ uri: attachment.signedUrl }} style={styles.thumbImage} />
+                          {isSelecting ? (
+                            <View
+                              style={[
+                                styles.thumbSelectBadge,
+                                isMarked && styles.thumbSelectBadgeActive,
+                              ]}
+                            >
+                              {isMarked ? <Check size={14} color={COLORS.ink} /> : null}
+                            </View>
+                          ) : null}
+                          <View style={styles.thumbFooter}>
+                            <Text style={styles.thumbLabel} numberOfLines={1}>
+                              {attachment.fileName}
+                            </Text>
                           </View>
-                        ) : null}
-                        <View style={styles.thumbFooter}>
-                          <Text style={styles.thumbLabel} numberOfLines={1}>
-                            {attachment.fileName}
-                          </Text>
-                        </View>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>
-              ) : null}
-            </View>
-          ) : isLoading ? (
-            <View style={styles.emptyWrap}>
-              <ActivityIndicator size="large" color={COLORS.storm} />
-            </View>
-          ) : (
-            <View style={styles.emptyWrap}>
-              <Text style={styles.emptyText}>Este registro no tiene comprobantes visibles.</Text>
-            </View>
-          )}
-        </View>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                ) : null}
+              </View>
+            ) : isLoading ? (
+              <View style={styles.emptyWrap}>
+                <ActivityIndicator size="large" color={COLORS.storm} />
+              </View>
+            ) : (
+              <View style={styles.emptyWrap}>
+                <Text style={styles.emptyText}>Este registro no tiene comprobantes visibles.</Text>
+              </View>
+            )}
+          </View>
+        </GestureHandlerRootView>
       </Modal>
 
       <ConfirmDialog
@@ -345,6 +348,9 @@ export function AttachmentPreviewModal({
 }
 
 const styles = StyleSheet.create({
+  modalRoot: {
+    flex: 1,
+  },
   overlay: {
     flex: 1,
     backgroundColor: "rgba(3,5,8,0.96)",

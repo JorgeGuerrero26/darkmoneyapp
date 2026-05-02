@@ -46,6 +46,13 @@ const REVEAL_WIDTH = 90;
 
 type SwipeableContactRowProps = {
   contact: CounterpartyOverview;
+  metrics?: {
+    movementCount: number;
+    receivablePendingTotal: number;
+    payablePendingTotal: number;
+    subscriptionCount: number;
+    recurringIncomeCount: number;
+  };
   onPress: () => void;
   onArchive: () => void;
   onDelete: () => void;
@@ -53,7 +60,15 @@ type SwipeableContactRowProps = {
   canDelete: boolean;
 };
 
-function SwipeableContactRow({ contact, onPress, onArchive, onDelete, onRestore, canDelete }: SwipeableContactRowProps) {
+function SwipeableContactRow({
+  contact,
+  metrics,
+  onPress,
+  onArchive,
+  onDelete,
+  onRestore,
+  canDelete,
+}: SwipeableContactRowProps) {
   const translateX = useRef(new Animated.Value(0)).current;
   const isOpen = useRef(false);
 
@@ -175,6 +190,41 @@ function SwipeableContactRow({ contact, onPress, onArchive, onDelete, onRestore,
                   Doc. {contact.documentNumber.trim()}
                 </Text>
               ) : null}
+              {metrics && (
+                <View style={styles.metricRow}>
+                  {metrics.receivablePendingTotal > 0 ? (
+                    <View style={[styles.metricChip, styles.metricChipIncome]}>
+                      <Text style={[styles.metricChipText, styles.metricChipTextIncome]}>Cobra</Text>
+                    </View>
+                  ) : null}
+                  {metrics.payablePendingTotal > 0 ? (
+                    <View style={[styles.metricChip, styles.metricChipExpense]}>
+                      <Text style={[styles.metricChipText, styles.metricChipTextExpense]}>Debe</Text>
+                    </View>
+                  ) : null}
+                  {metrics.movementCount > 0 ? (
+                    <View style={styles.metricChip}>
+                      <Text style={styles.metricChipText}>
+                        {metrics.movementCount} mov.
+                      </Text>
+                    </View>
+                  ) : null}
+                  {metrics.subscriptionCount > 0 ? (
+                    <View style={styles.metricChip}>
+                      <Text style={styles.metricChipText}>
+                        {metrics.subscriptionCount} subs.
+                      </Text>
+                    </View>
+                  ) : null}
+                  {metrics.recurringIncomeCount > 0 ? (
+                    <View style={styles.metricChip}>
+                      <Text style={styles.metricChipText}>
+                        {metrics.recurringIncomeCount} ingresos
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+              )}
             </View>
           </View>
         </Card>
@@ -198,8 +248,66 @@ function ContactsScreen() {
   const [deleteTarget, setDeleteTarget] = useState<CounterpartyOverview | null>(null);
 
   const counterparties = snapshot?.counterparties ?? [];
+  const obligations = snapshot?.obligations ?? [];
+  const subscriptions = snapshot?.subscriptions ?? [];
+  const recurringIncome = snapshot?.recurringIncome ?? [];
   const active = counterparties.filter((c) => !c.isArchived);
   const archived = counterparties.filter((c) => c.isArchived);
+
+  const contactMetricsById = useMemo(() => {
+    const map = new Map<number, {
+      movementCount: number;
+      receivablePendingTotal: number;
+      payablePendingTotal: number;
+      subscriptionCount: number;
+      recurringIncomeCount: number;
+    }>();
+
+    for (const obligation of obligations) {
+      if (obligation.counterpartyId == null || obligation.status === "cancelled") continue;
+      const current = map.get(obligation.counterpartyId) ?? {
+        movementCount: counterparties.find((contact) => contact.id === obligation.counterpartyId)?.movementCount ?? 0,
+        receivablePendingTotal: 0,
+        payablePendingTotal: 0,
+        subscriptionCount: 0,
+        recurringIncomeCount: 0,
+      };
+      if (obligation.direction === "receivable") {
+        current.receivablePendingTotal += obligation.pendingAmount;
+      } else {
+        current.payablePendingTotal += obligation.pendingAmount;
+      }
+      map.set(obligation.counterpartyId, current);
+    }
+
+    for (const subscription of subscriptions) {
+      if (subscription.vendorPartyId == null) continue;
+      const current = map.get(subscription.vendorPartyId) ?? {
+        movementCount: counterparties.find((contact) => contact.id === subscription.vendorPartyId)?.movementCount ?? 0,
+        receivablePendingTotal: 0,
+        payablePendingTotal: 0,
+        subscriptionCount: 0,
+        recurringIncomeCount: 0,
+      };
+      current.subscriptionCount += 1;
+      map.set(subscription.vendorPartyId, current);
+    }
+
+    for (const income of recurringIncome) {
+      if (income.payerPartyId == null) continue;
+      const current = map.get(income.payerPartyId) ?? {
+        movementCount: counterparties.find((contact) => contact.id === income.payerPartyId)?.movementCount ?? 0,
+        receivablePendingTotal: 0,
+        payablePendingTotal: 0,
+        subscriptionCount: 0,
+        recurringIncomeCount: 0,
+      };
+      current.recurringIncomeCount += 1;
+      map.set(income.payerPartyId, current);
+    }
+
+    return map;
+  }, [counterparties, obligations, subscriptions, recurringIncome]);
 
   const canDeleteContact = useCallback((contact: CounterpartyOverview) =>
     contact.movementCount === 0 && contact.receivableCount === 0 && contact.payableCount === 0,
@@ -243,13 +351,14 @@ function ContactsScreen() {
   const renderContactItem = useCallback(({ item: cp }: { item: CounterpartyOverview }) => (
     <SwipeableContactRow
       contact={cp}
+      metrics={contactMetricsById.get(cp.id)}
       onPress={() => router.push(`/contacts/${cp.id}`)}
       onArchive={() => handleArchive(cp.id)}
       onDelete={() => handleDelete(cp)}
       onRestore={() => handleRestore(cp.id)}
       canDelete={canDeleteContact(cp)}
     />
-  ), [router, handleArchive, handleDelete, handleRestore, canDeleteContact]);
+  ), [router, handleArchive, handleDelete, handleRestore, canDeleteContact, contactMetricsById]);
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
@@ -389,6 +498,30 @@ const styles = StyleSheet.create({
   name: { fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.bodyMedium, color: COLORS.ink },
   type: { fontSize: FONT_SIZE.xs, color: COLORS.storm, marginTop: 2 },
   subMeta: { fontSize: FONT_SIZE.xs, color: COLORS.storm, marginTop: 4, opacity: 0.9 },
+  metricRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 },
+  metricChip: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.bgInput,
+  },
+  metricChipIncome: {
+    backgroundColor: COLORS.income + "18",
+  },
+  metricChipExpense: {
+    backgroundColor: COLORS.expense + "18",
+  },
+  metricChipText: {
+    fontSize: 10,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    color: COLORS.storm,
+  },
+  metricChipTextIncome: {
+    color: COLORS.income,
+  },
+  metricChipTextExpense: {
+    color: COLORS.expense,
+  },
 
   // Archived section
   archivedSection: { marginTop: SPACING.md, gap: SPACING.sm },

@@ -358,20 +358,16 @@ export default function LoginScreen() {
                 ]}
               >
                 <Image
-                  source={
-                    showLogoBack
-                      ? require("../../assets/images/logo-back-sin-fondo.png")
-                      : require("../../assets/images/logo-sin-fondo.png")
-                  }
+                  source={require("../../assets/images/logo-sin-fondo.png")}
                   style={[styles.logoFace, showLogoBack && styles.logoFaceBack]}
-                  resizeMode="cover"
+                  resizeMode="contain"
                 />
                 {showLogoBack ? (
                   <>
                     <Image
-                      source={require("../../assets/images/logo-back-sin-fondo.png")}
+                      source={require("../../assets/images/logo-sin-fondo.png")}
                       style={[styles.logoFace, styles.logoFaceBackBoost]}
-                      resizeMode="cover"
+                      resizeMode="contain"
                     />
                     <View style={styles.logoFaceBackContrast} />
                   </>
@@ -547,7 +543,6 @@ const styles = StyleSheet.create({
   logoFrame: {
     width: 136,
     height: 156,
-    overflow: "hidden",
     marginBottom: -SPACING.xs,
   },
   logoFrameCompact: { width: 122, height: 142 },

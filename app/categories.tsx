@@ -653,6 +653,7 @@ function CategoriesScreen() {
         onClose={() => setAnalyticsTarget(null)}
         category={analyticsTarget}
         movements={categoryPostedMovements}
+        baseCurrencyCode={activeWorkspace?.baseCurrencyCode ?? profile?.baseCurrencyCode ?? "PEN"}
       />
     </View>
   );

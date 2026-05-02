@@ -214,6 +214,8 @@ export type CategoryPostedMovement = {
   occurredAt: string;
   sourceAmount: number | null;
   destinationAmount: number | null;
+  amountCurrencyCode?: string | null;
+  amountInBaseCurrency?: number | null;
 };
 
 export type CategoryOverview = CategorySummary & {
@@ -422,6 +424,8 @@ export type SubscriptionPostedMovement = {
   occurredAt: string;
   sourceAmount: number | null;
   destinationAmount: number | null;
+  amountCurrencyCode?: string | null;
+  amountInBaseCurrency?: number | null;
 };
 
 export type SubscriptionSummary = {
@@ -477,6 +481,20 @@ export type RecurringIncomeSummary = {
   remindDaysBefore: number;
   description?: string | null;
   notes?: string | null;
+};
+
+export type RecurringIncomeOccurrenceSummary = {
+  id: number;
+  recurringIncomeId: number;
+  workspaceId: number;
+  expectedDate: string;
+  actualDate: string;
+  amount: number;
+  currencyCode: string;
+  movementId?: number | null;
+  status: "on_time" | "late";
+  notes?: string | null;
+  createdAt?: string | null;
 };
 
 export type NotificationItem = {

@@ -23,6 +23,13 @@ export function obligationSwipeActionLabel(
   return obligationViewerActsAsCollector(direction, isSharedViewer) ? "Cobrar" : "Pagar";
 }
 
+export function obligationPerspectiveDirectionLabel(
+  direction: ObligationDirection,
+  isSharedViewer: boolean,
+): "Me deben" | "Yo debo" {
+  return obligationViewerActsAsCollector(direction, isSharedViewer) ? "Me deben" : "Yo debo";
+}
+
 export function analyticsPaidMetricLabel(
   direction: ObligationDirection,
   isSharedViewer: boolean,
@@ -87,6 +94,21 @@ export function obligationRegisterMoneyActionTitle(
   return obligationViewerActsAsCollector(direction, isSharedViewer) ? "Registrar cobro" : "Registrar pago";
 }
 
+export function obligationEventCashDeltaSign(
+  eventType: string,
+  direction: ObligationDirection,
+  isSharedViewer: boolean,
+): -1 | 1 | 0 {
+  const actsAsCollector = obligationViewerActsAsCollector(direction, isSharedViewer);
+  if (eventType === "payment" || eventType === "principal_decrease") {
+    return actsAsCollector ? 1 : -1;
+  }
+  if (eventType === "principal_increase") {
+    return actsAsCollector ? -1 : 1;
+  }
+  return 0;
+}
+
 /**
  * Color del evento en historial (verde = le conviene al que mira, rojo = le perjudica).
  * Crédito titular: cobros/aumentos verde, reducción rojo. Invitado: al revés.
@@ -96,9 +118,16 @@ export function obligationHistoryEventColor(
   eventType: string,
   direction: ObligationDirection,
   isSharedViewer: boolean,
+  useCashPerspective = false,
 ): string {
   const good = COLORS.income;
   const bad = COLORS.expense;
+
+  if (useCashPerspective) {
+    const cashSign = obligationEventCashDeltaSign(eventType, direction, isSharedViewer);
+    if (cashSign > 0) return good;
+    if (cashSign < 0) return bad;
+  }
 
   const isReceivable = direction === "receivable";
 
@@ -122,7 +151,14 @@ export function obligationHistoryEventAmountPrefix(
   eventType: string,
   direction: ObligationDirection,
   isSharedViewer: boolean,
+  useCashPerspective = false,
 ): "+" | "−" | "" {
+  if (useCashPerspective) {
+    const cashSign = obligationEventCashDeltaSign(eventType, direction, isSharedViewer);
+    if (cashSign > 0) return "+";
+    if (cashSign < 0) return "−";
+    return "";
+  }
   if (eventType !== "payment") return "";
   return obligationViewerActsAsCollector(direction, isSharedViewer) ? "+" : "−";
 }

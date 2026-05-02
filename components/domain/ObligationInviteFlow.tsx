@@ -22,6 +22,7 @@ import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
 import { ScreenHeader } from "../layout/ScreenHeader";
 import { formatCurrency } from "../ui/AmountDisplay";
+import { useToast } from "../../hooks/useToast";
 import { COLORS, FONT_SIZE, FONT_WEIGHT, RADIUS, SPACING } from "../../constants/theme";
 
 type InvitePreview = {
@@ -46,6 +47,7 @@ export function ObligationInviteFlow({ token }: Props) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { session } = useAuth();
+  const { showToast } = useToast();
 
   const [isLoading, setIsLoading] = useState(true);
   const [invite, setInvite] = useState<InvitePreview | null>(null);
@@ -107,13 +109,17 @@ export function ObligationInviteFlow({ token }: Props) {
       void queryClient.invalidateQueries({ queryKey: ["shared-obligations"] });
       void queryClient.invalidateQueries({ queryKey: ["notifications"] });
       if (data?.alreadyAccepted) {
+        showToast("Esta solicitud ya estaba aceptada", "info");
         setAlreadyAccepted(true);
         return;
       }
+      showToast("Acceso concedido", "success");
       setAccepted(true);
       setTimeout(() => router.replace("/(app)/obligations"), 1500);
     } catch (err: unknown) {
-      setError(humanizeError(err));
+      const message = humanizeError(err);
+      setError(message);
+      showToast(message, "error");
     } finally {
       setIsAccepting(false);
     }
@@ -136,6 +142,7 @@ export function ObligationInviteFlow({ token }: Props) {
       }>("decline-obligation-share", { body: { token } });
       if (fnError) throw fnError;
       if (data?.alreadyAccepted) {
+        showToast("Esta solicitud ya estaba aceptada", "info");
         setAlreadyAccepted(true);
         return;
       }
@@ -145,9 +152,12 @@ export function ObligationInviteFlow({ token }: Props) {
       await cancelObligationInviteScheduledReminder(token);
       void queryClient.invalidateQueries({ queryKey: ["pending-obligation-share-invites"] });
       void queryClient.invalidateQueries({ queryKey: ["notifications"] });
+      showToast(data?.alreadyDeclined ? "Esta solicitud ya estaba rechazada" : "Solicitud rechazada", "success");
       setDeclined(true);
     } catch (err: unknown) {
-      setError(humanizeError(err));
+      const message = humanizeError(err);
+      setError(message);
+      showToast(message, "error");
     } finally {
       setIsDeclining(false);
     }

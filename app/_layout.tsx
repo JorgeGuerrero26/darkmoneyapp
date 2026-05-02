@@ -50,12 +50,14 @@ import {
   parseWorkspaceInviteTokenFromUrl,
   workspaceInviteHref,
 } from "../lib/workspace-invite-link";
+import { resolveNotificationNavigationTarget } from "../lib/notification-navigation";
 import {
   usePushNotifications,
   scheduleSubscriptionReminders,
   scheduleObligationReminders,
   scheduleRecurringIncomeReminders,
 } from "../hooks/usePushNotifications";
+import { useAutoSubscriptionMovements } from "../hooks/useAutoSubscriptionMovements";
 import { useNotificationGenerator } from "../hooks/useNotificationGenerator";
 import { BiometricLock } from "../components/ui/BiometricLock";
 import { getNotificationsModule } from "../lib/notifications-runtime";
@@ -88,6 +90,81 @@ function readMovementMetadataNumber(payload: unknown, key: string): number | nul
   const rawValue = (payload as Record<string, unknown>)[key];
   const value = Number(rawValue ?? 0);
   return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+function AppSplash() {
+  const { isLoading } = useAuth();
+  const [visible, setVisible] = useState(true);
+  const screenOpacity = useRef(new Animated.Value(1)).current;
+  const enterAnim = useRef(new Animated.Value(0)).current;
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const progressAnim = useRef(new Animated.Value(0)).current;
+  const progressOpacity = useRef(new Animated.Value(0)).current;
+
+  const logoOpacity = enterAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 1] });
+  const logoScale = enterAnim.interpolate({ inputRange: [0, 1], outputRange: [0.86, 1] });
+  const progressWidth = progressAnim.interpolate({ inputRange: [0, 1], outputRange: ["0%", "100%"] });
+
+  useEffect(() => {
+    Animated.timing(enterAnim, {
+      toValue: 1,
+      duration: 800,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start(() => {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 0.78, duration: 2200, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 2200, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+        ]),
+      ).start();
+      Animated.timing(progressOpacity, { toValue: 1, duration: 400, useNativeDriver: true }).start();
+      Animated.timing(progressAnim, { toValue: 0.85, duration: 4500, easing: Easing.out(Easing.cubic), useNativeDriver: false }).start();
+    });
+  }, [enterAnim, pulseAnim, progressAnim, progressOpacity]);
+
+  useEffect(() => {
+    if (isLoading) return;
+    pulseAnim.stopAnimation();
+    Animated.timing(progressAnim, {
+      toValue: 1,
+      duration: 320,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: false,
+    }).start(() => {
+      Animated.timing(screenOpacity, {
+        toValue: 0,
+        duration: 550,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }).start(() => setVisible(false));
+    });
+  }, [isLoading, pulseAnim, progressAnim, screenOpacity]);
+
+  if (!visible) return null;
+
+  return (
+    <Animated.View
+      style={[
+        StyleSheet.absoluteFillObject,
+        { opacity: screenOpacity, backgroundColor: "#05070B", zIndex: 999, alignItems: "center", justifyContent: "center" },
+      ]}
+    >
+      <View style={styles.splashGlow} />
+      <Animated.View style={{ opacity: logoOpacity, transform: [{ scale: logoScale }] }}>
+        <Animated.View style={{ opacity: pulseAnim }}>
+          <Image
+            source={require("../assets/images/logo-sin-fondo.png")}
+            style={styles.splashLogo}
+            resizeMode="contain"
+          />
+        </Animated.View>
+      </Animated.View>
+      <Animated.View style={[styles.splashProgressTrack, { opacity: progressOpacity }]}>
+        <Animated.View style={[styles.splashProgressFill, { width: progressWidth }]} />
+      </Animated.View>
+    </Animated.View>
+  );
 }
 
 function FontLoader({ children }: { children: React.ReactNode }) {
@@ -177,6 +254,12 @@ function NotificationSetup() {
   const workspaceBootstrapLogoOpacity = workspaceBootstrapPulse.interpolate({
     inputRange: [0, 1],
     outputRange: [0.92, 1],
+  });
+
+  useAutoSubscriptionMovements({
+    userId: profile?.id,
+    workspaceId: activeWorkspaceId,
+    snapshot,
   });
 
   useNotificationGenerator(profile?.id, snapshot);
@@ -586,8 +669,32 @@ function NavigationGuard() {
     [router],
   );
   const onRecurringIncomeReminderTap = useCallback(
-    (_recurringIncomeId: number) => {
-      router.push("/recurring-income");
+    (recurringIncomeId: number) => {
+      const target = resolveNotificationNavigationTarget({
+        kind: "recurring_income_reminder",
+        relatedEntityType: "recurring_income",
+        relatedEntityId: recurringIncomeId,
+        payload: { recurringIncomeId },
+      });
+      router.push(target as never);
+    },
+    [router],
+  );
+  const onGenericNotificationTap = useCallback(
+    (data: Record<string, unknown>) => {
+      const kind =
+        (typeof data.kind === "string" && data.kind.trim()) ||
+        (typeof data.type === "string" && data.type.trim()) ||
+        "daily_digest";
+      const relatedEntityType = typeof data.relatedEntityType === "string" ? data.relatedEntityType : null;
+      const relatedEntityId = Number(data.relatedEntityId ?? 0);
+      const target = resolveNotificationNavigationTarget({
+        kind,
+        relatedEntityType,
+        relatedEntityId: Number.isFinite(relatedEntityId) && relatedEntityId > 0 ? relatedEntityId : null,
+        payload: data,
+      });
+      router.push(target as never);
     },
     [router],
   );
@@ -599,6 +706,7 @@ function NavigationGuard() {
     onSubscriptionReminderTap,
     onObligationReminderTap,
     onRecurringIncomeReminderTap,
+    onGenericNotificationTap,
   });
 
   useEffect(() => {
@@ -729,6 +837,7 @@ export default function RootLayout() {
                   <OfflineBanner />
                   <NotificationSetup />
                   <NavigationGuard />
+                  <AppSplash />
                   <BiometricLock />
                   <SuccessGlow />
                   <ActivityNoticeContainer />
@@ -744,6 +853,30 @@ export default function RootLayout() {
 }
 
 const styles = StyleSheet.create({
+  splashLogo: {
+    width: 220,
+    height: 220,
+  },
+  splashGlow: {
+    position: "absolute",
+    width: 340,
+    height: 340,
+    borderRadius: 170,
+    backgroundColor: "rgba(180, 140, 50, 0.07)",
+  },
+  splashProgressTrack: {
+    width: 160,
+    height: 2,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderRadius: 1,
+    overflow: "hidden",
+    marginTop: 52,
+  },
+  splashProgressFill: {
+    height: "100%",
+    backgroundColor: "#C9A84C",
+    borderRadius: 1,
+  },
   background: {
     flex: 1,
     backgroundColor: "#05070B",

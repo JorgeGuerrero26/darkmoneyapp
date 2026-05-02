@@ -1,4 +1,5 @@
 import { FAB } from "../../components/ui/FAB";
+import { StaggeredItem } from "../../components/ui/StaggeredItem";
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { UndoBanner } from "../../components/ui/UndoBanner";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -15,7 +16,7 @@ import {
 } from "react-native";
 import { Trash2 } from "lucide-react-native";
 import { useQueryClient } from "@tanstack/react-query";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import { useNavigation } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -35,7 +36,6 @@ import { useToast } from "../../hooks/useToast";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING } from "../../constants/theme";
 
 function BudgetsScreen() {
-  const { from } = useLocalSearchParams<{ from?: string }>();
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
   const router = useRouter();
@@ -79,17 +79,17 @@ function BudgetsScreen() {
   const okBudgets = budgets.filter((b) => !pendingDeleteIds.has(b.id) && !b.isOverLimit && !b.isNearLimit);
   const isHandlingBackRef = useRef(false);
 
-  const returnRoute = useMemo(() => {
-    if (from === "dashboard") return "/(app)/dashboard";
-    if (from === "notifications") return "/notifications";
-    return "/(app)/more";
-  }, [from]);
+  const returnRoute = "/(app)/more";
 
   const handleBack = useCallback(() => {
     if (isHandlingBackRef.current) return;
     isHandlingBackRef.current = true;
     router.replace(returnRoute as any);
   }, [returnRoute, router]);
+
+  useEffect(() => {
+    isHandlingBackRef.current = false;
+  }, []);
 
   const refreshTriggeredRef = useRef(false);
   const onRefresh = useCallback(() => {
@@ -139,12 +139,14 @@ function BudgetsScreen() {
     return sections;
   }, [alertBudgets, okBudgets]);
 
-  const renderBudgetItem = useCallback(({ item }: { item: BudgetOverview }) => (
-    <SwipeableBudgetRow
-      budget={item}
-      onEdit={() => setEditBudget(item)}
-      onDelete={() => handleDelete(item)}
-    />
+  const renderBudgetItem = useCallback(({ item, index }: { item: BudgetOverview; index: number }) => (
+    <StaggeredItem index={index}>
+      <SwipeableBudgetRow
+        budget={item}
+        onEdit={() => setEditBudget(item)}
+        onDelete={() => handleDelete(item)}
+      />
+    </StaggeredItem>
   ), [handleDelete]);
 
   return (

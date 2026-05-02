@@ -23,12 +23,11 @@ import {
   ChevronRight,
   XCircle,
 } from "lucide-react-native";
-import { differenceInCalendarDays, differenceInDays, endOfMonth, format, startOfMonth, subMonths } from "date-fns";
+import { differenceInCalendarDays, differenceInDays, endOfMonth, format, startOfMonth, subDays, subMonths } from "date-fns";
 import { es } from "date-fns/locale";
 
 import { formatCurrency } from "../ui/AmountDisplay";
 import { ProgressBar } from "../ui/ProgressBar";
-import { SparkLine } from "../ui/SparkLine";
 import { DatePickerInput } from "../ui/DatePickerInput";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { parseDisplayDate, todayPeru } from "../../lib/date";
@@ -68,7 +67,9 @@ import {
   analyticsInstallmentsDoneAdj,
   analyticsPaidMetricLabel,
   analyticsPaymentCountMetricLabel,
+  obligationEventCashDeltaSign,
   obligationHistoryEventColor,
+  obligationHistoryEventAmountPrefix,
   obligationProgressPaidAdjective,
   obligationViewerActsAsCollector,
 } from "../../lib/obligation-viewer-labels";
@@ -77,6 +78,7 @@ import { AttachmentPreviewModal } from "./AttachmentPreviewModal";
 import { ObligationEventDeleteImpact } from "./ObligationEventDeleteImpact";
 import { SafeBlurView } from "../ui/SafeBlurView";
 import { useDismissibleSheet } from "../ui/useDismissibleSheet";
+import { StaggeredItem } from "../ui/StaggeredItem";
 
 function ymdToLocalDate(ymd: string): Date {
   const [y, m, d] = ymd.split("-").map(Number);
@@ -91,8 +93,46 @@ function currentMonthRangeYmd(): { from: string; to: string } {
   };
 }
 
+function formatSignedCurrencyValue(amount: number, currency: string): string {
+  const absolute = formatCurrency(Math.abs(amount), currency);
+  if (amount > 0) return `+${absolute}`;
+  if (amount < 0) return `-${absolute}`;
+  return absolute;
+}
+
+function formatPeriodLabel(from: Date, to: Date): string {
+  const fromText = format(from, "d MMM", { locale: es });
+  const toText = format(to, "d MMM yyyy", { locale: es });
+  return `${fromText} al ${toText}`;
+}
+
+function firstMeaningfulText(...values: Array<string | null | undefined>): string | null {
+  for (const value of values) {
+    const trimmed = value?.trim();
+    if (trimmed) return trimmed;
+  }
+  return null;
+}
+
+function groupAnalyticsEventsByDate(events: ObligationEventSummary[]): Array<{ date: string; events: ObligationEventSummary[] }> {
+  const map = new Map<string, ObligationEventSummary[]>();
+  for (const e of events) {
+    const date = e.eventDate.slice(0, 10);
+    if (!map.has(date)) map.set(date, []);
+    map.get(date)!.push(e);
+  }
+  return Array.from(map.entries())
+    .sort((a, b) => b[0].localeCompare(a[0]))
+    .map(([date, evs]) => ({ date, events: evs }));
+}
+
 type HistoryPreset = "month" | "3m" | "year" | "all" | "custom";
 type ChartScope = "6" | "12" | "all";
+type TimelineFilter = "all" | "payments" | "capital";
+type TimelineToneFilter = "all" | "positive" | "negative";
+type TimelinePerspective = "obligation" | "cash";
+type ComparisonMode = "flow" | "capital" | "all";
+type ComparisonWindow = "month" | "90d";
 
 const EVENT_LABELS: Record<string, { label: string }> = {
   payment: { label: "Pago" },
@@ -190,6 +230,11 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
   const [historyFrom, setHistoryFrom] = useState("");
   const [historyTo, setHistoryTo] = useState("");
   const [chartScope, setChartScope] = useState<ChartScope>("6");
+  const [analyticsPerspective, setAnalyticsPerspective] = useState<TimelinePerspective>("cash");
+  const [timelineFilter, setTimelineFilter] = useState<TimelineFilter>("all");
+  const [timelineToneFilter, setTimelineToneFilter] = useState<TimelineToneFilter>("all");
+  const [comparisonMode, setComparisonMode] = useState<ComparisonMode>("flow");
+  const [comparisonWindow, setComparisonWindow] = useState<ComparisonWindow>("month");
   const [historyPageIndex, setHistoryPageIndex] = useState(0);
   const { backdropStyle, panHandlers, sheetStyle } = useDismissibleSheet({
     visible,
@@ -203,6 +248,11 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
     setHistoryFrom(from);
     setHistoryTo(to);
     setChartScope("6");
+    setAnalyticsPerspective("cash");
+    setTimelineFilter("all");
+    setTimelineToneFilter("all");
+    setComparisonMode("flow");
+    setComparisonWindow("month");
     setHistoryPageIndex(0);
     setEventTypeFilter("all");
     setRejectingRequestId(null);
@@ -467,6 +517,81 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
   const allEventsSorted = useMemo(
     () => sortObligationEventsNewestFirst(eventsForModal),
     [eventsForModal],
+  );
+  const analyticsDirection = obligation?.direction ?? "receivable";
+  function shouldUseCashPerspective(eventId: number, perspective: TimelinePerspective) {
+    if (!isSharedViewer || perspective !== "cash") return false;
+    return (viewerLinkByEventId.get(eventId)?.accountId ?? null) != null;
+  }
+  const analyticsUsesCashPerspective = isSharedViewer && analyticsPerspective === "cash";
+  const analysisEvents = useMemo(() => {
+    if (!analyticsUsesCashPerspective) {
+      return paymentEvents.map((event) => ({
+        event,
+        signedAmount: event.amount,
+        displayAmount: event.amount,
+      }));
+    }
+    return eventsForModal
+      .filter((event) =>
+        event.eventType === "payment" ||
+        event.eventType === "principal_increase" ||
+        event.eventType === "principal_decrease",
+      )
+      .map((event) => {
+        if (!shouldUseCashPerspective(event.id, analyticsPerspective)) return null;
+        const sign = obligationEventCashDeltaSign(event.eventType, analyticsDirection, isSharedViewer);
+        if (sign === 0) return null;
+        return {
+          event,
+          signedAmount: sign * event.amount,
+          displayAmount: event.amount,
+        };
+      })
+      .filter((item): item is { event: ObligationEventSummary; signedAmount: number; displayAmount: number } => item != null)
+      .sort((a, b) => b.event.eventDate.localeCompare(a.event.eventDate));
+  }, [
+    analyticsDirection,
+    analyticsPerspective,
+    analyticsUsesCashPerspective,
+    eventsForModal,
+    isSharedViewer,
+    paymentEvents,
+    viewerLinkByEventId,
+  ]);
+  const analysisMonthlySeries = useMemo(() => {
+    const eventMonth = (item: { event: ObligationEventSummary }) => item.event.eventDate.slice(0, 7);
+    if (chartScope === "all") {
+      const keys = [...new Set(analysisEvents.map(eventMonth))].sort();
+      const anchor = ymdToLocalDate(todayPeru());
+      const fallbackKey = format(startOfMonth(anchor), "yyyy-MM");
+      const monthKeys = keys.length > 0 ? keys : [fallbackKey];
+      return monthKeys.map((key) => {
+        const d = ymdToLocalDate(`${key}-01`);
+        const label = format(d, "MMM yy", { locale: es });
+        const total = analysisEvents
+          .filter((item) => eventMonth(item) === key)
+          .reduce((sum, item) => sum + item.signedAmount, 0);
+        return { label, key, total };
+      });
+    }
+    const n = chartScope === "12" ? 12 : 6;
+    const anchor = ymdToLocalDate(todayPeru());
+    const months: { label: string; key: string; total: number }[] = [];
+    for (let i = n - 1; i >= 0; i -= 1) {
+      const d = startOfMonth(subMonths(anchor, i));
+      const key = format(d, "yyyy-MM");
+      const label = format(d, "MMM", { locale: es });
+      const total = analysisEvents
+        .filter((item) => eventMonth(item) === key)
+        .reduce((sum, item) => sum + item.signedAmount, 0);
+      months.push({ label, key, total });
+    }
+    return months;
+  }, [analysisEvents, chartScope]);
+  const timelineEvents = useMemo(
+    () => allEventsSorted.filter((event) => event.eventType !== "opening").slice(0, 12),
+    [allEventsSorted],
   );
 
   const filteredHistoryEvents = useMemo(() => {
@@ -894,6 +1019,258 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
         return "Necesita acelerar";
       })()
     : "Sin fecha limite";
+  const chartTitle = analyticsChartSectionTitle(obligation.direction, isSharedViewer, chartScope);
+  const paidMetricLabel = analyticsPaidMetricLabel(obligation.direction, isSharedViewer);
+  const paymentCountMetricLabel = analyticsPaymentCountMetricLabel(obligation.direction, isSharedViewer);
+  const installmentsDoneAdj = analyticsInstallmentsDoneAdj(obligation.direction, isSharedViewer);
+  const eventPaymentNoun = analyticsEventPaymentNoun(obligation.direction, isSharedViewer);
+  const maxAnalysisMonthly = Math.max(...analysisMonthlySeries.map((month) => Math.abs(month.total)), 1);
+  const analysisCurrentMonthTotal = analysisEvents
+    .filter((item) => item.event.eventDate.slice(0, 7) === todayMonthKey)
+    .reduce((sum, item) => sum + item.signedAmount, 0);
+  const analysisTrailing90DaysTotal = analysisEvents
+    .filter((item) => differenceInDays(todayLocal, ymdToLocalDate(item.event.eventDate)) <= 90)
+    .reduce((sum, item) => sum + item.signedAmount, 0);
+  const analysisTotalRecorded = analysisEvents.reduce((sum, item) => sum + item.signedAmount, 0);
+  const analysisAveragePaymentAmount = analysisEvents.length > 0 ? analysisTotalRecorded / analysisEvents.length : 0;
+  const analysisLastEvent = analysisEvents[0]?.event ?? null;
+  const analysisFirstEvent = analysisEvents.length > 0 ? analysisEvents[analysisEvents.length - 1]?.event ?? null : null;
+  const analysisLargestEvent = analysisEvents.reduce<{ event: ObligationEventSummary; signedAmount: number; displayAmount: number } | null>(
+    (largest, item) => (!largest || Math.abs(item.signedAmount) > Math.abs(largest.signedAmount) ? item : largest),
+    null,
+  );
+  const analysisAverageGapDays = (() => {
+    if (analysisEvents.length < 2) return null;
+    const gaps: number[] = [];
+    for (let index = 0; index < analysisEvents.length - 1; index += 1) {
+      const newer = ymdToLocalDate(analysisEvents[index].event.eventDate);
+      const older = ymdToLocalDate(analysisEvents[index + 1].event.eventDate);
+      gaps.push(Math.abs(differenceInCalendarDays(newer, older)));
+    }
+    return gaps.reduce((sum, gap) => sum + gap, 0) / gaps.length;
+  })();
+  const analysisBestMonth = analysisMonthlySeries.reduce<{ key: string; label: string; total: number } | null>(
+    (best, month) => {
+      if (month.total === 0) return best;
+      if (!best) return month;
+      return Math.abs(month.total) > Math.abs(best.total) ? month : best;
+    },
+    null,
+  );
+  const analysisMonthsWithActivity = analysisMonthlySeries.filter((month) => month.total !== 0);
+  const analysisAverageMonthlyTotal =
+    analysisMonthsWithActivity.length > 0
+      ? analysisMonthsWithActivity.reduce((sum, month) => sum + month.total, 0) / analysisMonthsWithActivity.length
+      : 0;
+  const analysisPositiveTotal = analysisEvents
+    .filter((item) => item.signedAmount > 0)
+    .reduce((sum, item) => sum + item.signedAmount, 0);
+  const analysisNegativeTotal = analysisEvents
+    .filter((item) => item.signedAmount < 0)
+    .reduce((sum, item) => sum + Math.abs(item.signedAmount), 0);
+  const analysisRelevantEventCount = allEventsSorted.filter((event) =>
+    event.eventType === "payment" ||
+    event.eventType === "principal_increase" ||
+    event.eventType === "principal_decrease",
+  ).length;
+  const analysisUnlinkedEventCount =
+    analyticsUsesCashPerspective
+      ? Math.max(0, analysisRelevantEventCount - analysisEvents.length)
+      : 0;
+  const analysisEventLabel =
+    analyticsUsesCashPerspective
+      ? analysisEvents.length === 1
+        ? "movimiento"
+        : "movimientos"
+      : analysisEvents.length === 1
+        ? eventPaymentNoun.toLowerCase()
+        : `${eventPaymentNoun.toLowerCase()}s`;
+  const analysisChartTitle = analyticsUsesCashPerspective
+    ? chartScope === "6"
+      ? "Impacto neto en caja por mes (ultimos 6 meses)"
+      : chartScope === "12"
+        ? "Impacto neto en caja por mes (ultimos 12 meses)"
+        : "Impacto neto en caja por mes (historico completo)"
+    : chartTitle;
+  const analysisSparkTitle = analyticsUsesCashPerspective
+    ? "Velocidad de caja"
+    : `Velocidad de ${eventPaymentNoun.toLowerCase()}s`;
+  const analysisSparkLabel = analyticsUsesCashPerspective
+    ? "promedio mensual neto con cuenta asociada"
+    : "promedio mensual activo";
+  const timelineSummary = (() => {
+    let positive = 0;
+    let negative = 0;
+    let unlinked = 0;
+    const summaryEvents = timelineEvents.filter((event) => {
+      if (timelineFilter === "payments") return event.eventType === "payment";
+      if (timelineFilter === "capital") return event.eventType !== "payment";
+      return true;
+    });
+    for (const event of summaryEvents) {
+      const useCashPerspective = shouldUseCashPerspective(event.id, analyticsPerspective);
+      const tint = obligationHistoryEventColor(
+        event.eventType,
+        analyticsDirection,
+        isSharedViewer,
+        useCashPerspective,
+      );
+      if (tint === COLORS.income) positive += 1;
+      if (tint === COLORS.expense) negative += 1;
+      if (isSharedViewer && analyticsPerspective === "cash" && !useCashPerspective) unlinked += 1;
+    }
+    return { positive, negative, unlinked, total: summaryEvents.length };
+  })();
+  const filteredTimelineEvents = (() => {
+    return timelineEvents.filter((event) => {
+      if (timelineFilter === "payments" && event.eventType !== "payment") return false;
+      if (timelineFilter === "capital" && event.eventType === "payment") return false;
+      if (timelineToneFilter === "all") return true;
+      const useCashPerspective = shouldUseCashPerspective(event.id, analyticsPerspective);
+      const tint = obligationHistoryEventColor(
+        event.eventType,
+        analyticsDirection,
+        isSharedViewer,
+        useCashPerspective,
+      );
+      if (timelineToneFilter === "positive") return tint === COLORS.income;
+      return tint === COLORS.expense;
+    });
+  })();
+  const comparisonSummary = (() => {
+    const scopedEvents = allEventsSorted.filter((event) => {
+      if (event.eventType === "opening") return false;
+      if (comparisonMode === "flow") return event.eventType === "payment";
+      if (comparisonMode === "capital") {
+        return event.eventType === "principal_increase" || event.eventType === "principal_decrease";
+      }
+      return (
+        event.eventType === "payment" ||
+        event.eventType === "principal_increase" ||
+        event.eventType === "principal_decrease"
+      );
+    });
+    const currentPeriod =
+      comparisonWindow === "month"
+        ? { from: startOfMonth(todayLocal), to: todayLocal, label: format(startOfMonth(todayLocal), "MMMM yyyy", { locale: es }) }
+        : { from: subDays(todayLocal, 89), to: todayLocal, label: formatPeriodLabel(subDays(todayLocal, 89), todayLocal) };
+    const previousPeriod =
+      comparisonWindow === "month"
+        ? {
+            from: startOfMonth(subMonths(todayLocal, 1)),
+            to: endOfMonth(subMonths(todayLocal, 1)),
+            label: format(startOfMonth(subMonths(todayLocal, 1)), "MMMM yyyy", { locale: es }),
+          }
+        : {
+            from: subDays(currentPeriod.from, 90),
+            to: subDays(currentPeriod.from, 1),
+            label: formatPeriodLabel(subDays(currentPeriod.from, 90), subDays(currentPeriod.from, 1)),
+          };
+    const isWithinPeriod = (eventDate: string, from: Date, to: Date) => {
+      const date = ymdToLocalDate(eventDate);
+      return date >= from && date <= to;
+    };
+    const netImpactForPeriod = (from: Date, to: Date) =>
+      scopedEvents
+        .filter((event) => isWithinPeriod(event.eventDate, from, to))
+        .reduce((sum, event) => {
+          const useCashPerspective = shouldUseCashPerspective(event.id, analyticsPerspective);
+          const tint = obligationHistoryEventColor(
+            event.eventType,
+            analyticsDirection,
+            isSharedViewer,
+            useCashPerspective,
+          );
+          if (tint === COLORS.income) return sum + event.amount;
+          if (tint === COLORS.expense) return sum - event.amount;
+          return sum;
+        }, 0);
+    const currentCount = scopedEvents.filter((event) => isWithinPeriod(event.eventDate, currentPeriod.from, currentPeriod.to)).length;
+    const previousCount = scopedEvents.filter((event) => isWithinPeriod(event.eventDate, previousPeriod.from, previousPeriod.to)).length;
+    const currentNet = netImpactForPeriod(currentPeriod.from, currentPeriod.to);
+    const previousNet = netImpactForPeriod(previousPeriod.from, previousPeriod.to);
+    const deltaAmount = currentNet - previousNet;
+    const deltaCount = currentCount - previousCount;
+    const deltaPercent = previousNet !== 0 ? (deltaAmount / Math.abs(previousNet)) * 100 : null;
+    const toneStyle =
+      deltaAmount > 0
+        ? styles.insightPositive
+        : deltaAmount < 0
+          ? styles.insightNegative
+          : styles.insightWarning;
+    const categoryHint =
+      comparisonMode === "flow"
+        ? `${eventPaymentNoun.toLowerCase()}s`
+        : comparisonMode === "capital"
+          ? "aumentos y reducciones de capital"
+          : "flujo y capital combinados";
+    const perspectiveHint =
+      analyticsPerspective === "cash"
+        ? "desde la caja"
+        : "sobre la obligacion";
+    const windowHint =
+      comparisonWindow === "month"
+        ? "el mes actual contra el mes anterior"
+        : "los ultimos 90 dias contra los 90 dias previos";
+    const summaryLead =
+      deltaAmount > 0
+        ? `${comparisonWindow === "month" ? "Este mes" : "En los ultimos 90 dias"} mejoraste el impacto ${comparisonMode === "capital" ? "del capital" : comparisonMode === "flow" ? "del flujo" : "total"}`
+        : deltaAmount < 0
+          ? `${comparisonWindow === "month" ? "Este mes" : "En los ultimos 90 dias"} el impacto ${comparisonMode === "capital" ? "del capital" : comparisonMode === "flow" ? "del flujo" : "total"} empeoro`
+          : `${comparisonWindow === "month" ? "Este mes" : "En los ultimos 90 dias"} el impacto se mantuvo estable`;
+    const summaryBody =
+      previousNet !== 0
+        ? `${formatSignedCurrencyValue(currentNet, currency)} frente a ${formatSignedCurrencyValue(previousNet, currency)} en el periodo anterior (${deltaPercent! >= 0 ? "+" : ""}${Math.round(deltaPercent!)}%).`
+        : currentNet !== 0
+          ? `${formatSignedCurrencyValue(currentNet, currency)} tras un periodo previo sin impacto neto.`
+          : "No hubo impacto neto en ninguno de los dos periodos.";
+    const summaryFootnote =
+      deltaCount === 0
+        ? "La cantidad de eventos se mantuvo igual."
+        : `${deltaCount > 0 ? "Hubo mas" : "Hubo menos"} eventos: ${currentCount} vs ${previousCount}.`;
+    return {
+      currentNet,
+      previousNet,
+      currentCount,
+      previousCount,
+      currentPeriodLabel: currentPeriod.label,
+      previousPeriodLabel: previousPeriod.label,
+      toneStyle,
+      scopeHint: `Compara ${categoryHint} ${perspectiveHint} entre ${windowHint}.`,
+      detail:
+        previousNet !== 0
+          ? `${deltaPercent! >= 0 ? "+" : ""}${Math.round(deltaPercent!)}% frente a ${previousPeriod.label}`
+          : currentNet !== 0
+            ? `Aparece impacto en ${currentPeriod.label} tras un periodo previo sin cambios`
+            : "Ninguno de los dos periodos registra impacto neto",
+      countLabel:
+        deltaCount === 0
+          ? "Misma cantidad de eventos"
+          : `${deltaCount > 0 ? "+" : ""}${deltaCount} evento${Math.abs(deltaCount) === 1 ? "" : "s"}`,
+      headline:
+        deltaAmount > 0
+          ? "Impacto mas favorable que el periodo anterior"
+          : deltaAmount < 0
+            ? "Impacto menos favorable que el periodo anterior"
+            : "Impacto estable frente al periodo anterior",
+      summaryLead,
+      summaryBody,
+      summaryFootnote,
+      showCashHint: isSharedViewer && analyticsPerspective === "cash",
+      itemFamily:
+        comparisonMode === "flow"
+          ? `${eventPaymentNoun.toLowerCase()}${currentCount === 1 ? "" : "s"}`
+          : comparisonMode === "capital"
+            ? `cambio${currentCount === 1 ? "" : "s"} de capital`
+            : `evento${currentCount === 1 ? "" : "s"} clave`,
+      previousItemFamily:
+        comparisonMode === "flow"
+          ? `${eventPaymentNoun.toLowerCase()}${previousCount === 1 ? "" : "s"}`
+          : comparisonMode === "capital"
+            ? `cambio${previousCount === 1 ? "" : "s"} de capital`
+            : `evento${previousCount === 1 ? "" : "s"} clave`,
+    };
+  })();
 
   function applyHistoryPreset(p: HistoryPreset) {
     setHistoryPreset(p);
@@ -925,43 +1302,72 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
     }
   }
 
-  const chartTitle = analyticsChartSectionTitle(obligation.direction, isSharedViewer, chartScope);
-
-  const paidMetricLabel = analyticsPaidMetricLabel(obligation.direction, isSharedViewer);
-  const paymentCountMetricLabel = analyticsPaymentCountMetricLabel(obligation.direction, isSharedViewer);
-  const installmentsDoneAdj = analyticsInstallmentsDoneAdj(obligation.direction, isSharedViewer);
-  const eventPaymentNoun = analyticsEventPaymentNoun(obligation.direction, isSharedViewer);
-
-  const metrics = [
-    {
-      key: "principal",
-      label: "Principal",
-      value: formatCurrency(currentPrincipal, currency),
-      icon: TrendingUp,
-      color: COLORS.primary,
-    },
-    {
-      key: "paid",
-      label: paidMetricLabel,
-      value: formatCurrency(Math.max(0, paidAmount), currency),
-      icon: CheckCircle2,
-      color: COLORS.income,
-    },
-    {
-      key: "pending",
-      label: "Pendiente",
-      value: formatCurrency(obligation.pendingAmount, currency),
-      icon: Clock,
-      color: COLORS.warning,
-    },
-    {
-      key: "paymentCount",
-      label: paymentCountMetricLabel,
-      value: String(obligation.paymentCount),
-      icon: CreditCard,
-      color: COLORS.storm,
-    },
-  ];
+  const metrics = analyticsUsesCashPerspective
+    ? [
+        {
+          key: "cashNet",
+          label: "Caja neta",
+          value: formatSignedCurrencyValue(analysisTotalRecorded, currency),
+          icon: TrendingUp,
+          color:
+            analysisTotalRecorded > 0
+              ? COLORS.income
+              : analysisTotalRecorded < 0
+                ? COLORS.danger
+                : COLORS.warning,
+        },
+        {
+          key: "cashIn",
+          label: "Ingresos vinculados",
+          value: formatCurrency(analysisPositiveTotal, currency),
+          icon: CheckCircle2,
+          color: COLORS.income,
+        },
+        {
+          key: "cashOut",
+          label: "Salidas vinculadas",
+          value: formatCurrency(analysisNegativeTotal, currency),
+          icon: XCircle,
+          color: COLORS.danger,
+        },
+        {
+          key: "cashCount",
+          label: "Mov. vinculados",
+          value: String(analysisEvents.length),
+          icon: CreditCard,
+          color: COLORS.primary,
+        },
+      ]
+    : [
+        {
+          key: "principal",
+          label: "Principal",
+          value: formatCurrency(currentPrincipal, currency),
+          icon: TrendingUp,
+          color: COLORS.primary,
+        },
+        {
+          key: "paid",
+          label: paidMetricLabel,
+          value: formatCurrency(Math.max(0, paidAmount), currency),
+          icon: CheckCircle2,
+          color: COLORS.income,
+        },
+        {
+          key: "pending",
+          label: "Pendiente",
+          value: formatCurrency(obligation.pendingAmount, currency),
+          icon: Clock,
+          color: COLORS.warning,
+        },
+        {
+          key: "paymentCount",
+          label: paymentCountMetricLabel,
+          value: String(obligation.paymentCount),
+          icon: CreditCard,
+          color: COLORS.storm,
+        },
+      ];
   const ownerAccountQuestion = obligation.direction === "receivable"
     ? "A que cuenta va a ingresar este dinero?"
     : "De que cuenta va a salir este dinero?";
@@ -1031,6 +1437,11 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
                   </Text>
                 ) : null}
               </View>
+              {analyticsUsesCashPerspective ? (
+                <Text style={styles.progressHint}>
+                  Esta barra sigue leyendo el avance base de la obligacion. El modo caja solo cambia las metricas y graficos del analisis.
+                </Text>
+              ) : null}
               <ProgressBar
                 percent={displayProgressPercent}
                 alertPercent={isPaid ? 101 : 90}
@@ -1052,57 +1463,98 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
                 </View>
               ))}
             </View>
+            {analyticsUsesCashPerspective && analysisUnlinkedEventCount > 0 ? (
+              <Text style={styles.metricsFootnote}>
+                {analysisUnlinkedEventCount} evento{analysisUnlinkedEventCount === 1 ? "" : "s"} sin cuenta asociada siguen fuera de esta lectura de caja.
+              </Text>
+            ) : null}
+            {isSharedViewer ? (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Perspectiva del analisis</Text>
+                <View style={styles.pillRowWrap}>
+                  {(
+                    [
+                      { id: "obligation" as TimelinePerspective, label: "Impacto en obligacion" },
+                      { id: "cash" as TimelinePerspective, label: "Impacto en caja" },
+                    ] as const
+                  ).map((option) => (
+                    <TouchableOpacity
+                      key={option.id}
+                      style={[styles.filterPill, analyticsPerspective === option.id && styles.filterPillActive]}
+                      onPress={() => setAnalyticsPerspective(option.id)}
+                    >
+                      <Text style={[styles.filterPillText, analyticsPerspective === option.id && styles.filterPillTextActive]}>
+                        {option.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                {analyticsUsesCashPerspective ? (
+                  <Text style={styles.timelinePerspectiveHint}>
+                    En caja, solo cuentan los eventos que ya tienen cuenta asociada. Los demas siguen leyendo el impacto sobre la obligacion.
+                  </Text>
+                ) : null}
+              </View>
+            ) : null}
 
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Ritmo reciente</Text>
               <View style={styles.insightGrid}>
                 <View style={styles.insightCard}>
                   <Text style={styles.insightValue}>
-                    {averagePaymentAmount > 0
-                      ? formatCurrency(averagePaymentAmount, currency)
+                    {analysisEvents.length > 0
+                      ? analyticsUsesCashPerspective
+                        ? formatSignedCurrencyValue(analysisAveragePaymentAmount, currency)
+                        : formatCurrency(analysisAveragePaymentAmount, currency)
                       : "Sin eventos"}
                   </Text>
-                  <Text style={styles.insightLabel}>Promedio por {eventPaymentNoun}</Text>
+                  <Text style={styles.insightLabel}>
+                    {analyticsUsesCashPerspective ? "Promedio por movimiento" : `Promedio por ${eventPaymentNoun}`}
+                  </Text>
                   <Text style={styles.insightSub}>
-                    {paymentEvents.length > 0
-                      ? `${paymentEvents.length} evento${paymentEvents.length === 1 ? "" : "s"} registrados`
+                    {analysisEvents.length > 0
+                      ? `${analysisEvents.length} ${analysisEventLabel} registrados`
                       : "Aun no hay historial suficiente"}
                   </Text>
                 </View>
                 <View style={styles.insightCard}>
                   <Text style={styles.insightValue}>
-                    {largestPaymentEvent
-                      ? formatCurrency(largestPaymentEvent.amount, currency)
+                    {analysisLargestEvent
+                      ? analyticsUsesCashPerspective
+                        ? formatSignedCurrencyValue(analysisLargestEvent.signedAmount, currency)
+                        : formatCurrency(analysisLargestEvent.displayAmount, currency)
                       : "Sin eventos"}
                   </Text>
-                  <Text style={styles.insightLabel}>Mayor {eventPaymentNoun}</Text>
+                  <Text style={styles.insightLabel}>
+                    {analyticsUsesCashPerspective ? "Mayor impacto en caja" : `Mayor ${eventPaymentNoun}`}
+                  </Text>
                   <Text style={styles.insightSub}>
-                    {largestPaymentEvent
-                      ? format(parseDisplayDate(largestPaymentEvent.eventDate), "d MMM yyyy", { locale: es })
+                    {analysisLargestEvent
+                      ? format(parseDisplayDate(analysisLargestEvent.event.eventDate), "d MMM yyyy", { locale: es })
                       : "Todavia no hay un pico registrado"}
                   </Text>
                 </View>
                 <View style={styles.insightCard}>
                   <Text style={styles.insightValue}>
-                    {lastPaymentEvent
-                      ? `${Math.max(0, differenceInDays(todayLocal, ymdToLocalDate(lastPaymentEvent.eventDate)))} d`
+                    {analysisLastEvent
+                      ? `${Math.max(0, differenceInDays(todayLocal, ymdToLocalDate(analysisLastEvent.eventDate)))} d`
                       : "Sin eventos"}
                   </Text>
                   <Text style={styles.insightLabel}>Tiempo desde el ultimo</Text>
                   <Text style={styles.insightSub}>
-                    {lastPaymentEvent
-                      ? format(parseDisplayDate(lastPaymentEvent.eventDate), "d MMM yyyy", { locale: es })
+                    {analysisLastEvent
+                      ? format(parseDisplayDate(analysisLastEvent.eventDate), "d MMM yyyy", { locale: es })
                       : "No hay movimientos recientes"}
                   </Text>
                 </View>
                 <View style={styles.insightCard}>
                   <Text style={styles.insightValue}>
-                    {averageGapDays != null ? `${Math.round(averageGapDays)} d` : "Sin serie"}
+                    {analysisAverageGapDays != null ? `${Math.round(analysisAverageGapDays)} d` : "Sin serie"}
                   </Text>
                   <Text style={styles.insightLabel}>Separacion promedio</Text>
                   <Text style={styles.insightSub}>
-                    {firstPaymentEvent && lastPaymentEvent && paymentEvents.length > 1
-                      ? `Desde ${format(parseDisplayDate(firstPaymentEvent.eventDate), "d MMM", { locale: es })} hasta ${format(parseDisplayDate(lastPaymentEvent.eventDate), "d MMM", { locale: es })}`
+                    {analysisFirstEvent && analysisLastEvent && analysisEvents.length > 1
+                      ? `Desde ${format(parseDisplayDate(analysisFirstEvent.eventDate), "d MMM", { locale: es })} hasta ${format(parseDisplayDate(analysisLastEvent.eventDate), "d MMM", { locale: es })}`
                       : "Necesita al menos dos eventos"}
                   </Text>
                 </View>
@@ -1111,7 +1563,7 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
 
             {/* Monthly payments chart */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>{chartTitle}</Text>
+              <Text style={styles.sectionTitle}>{analysisChartTitle}</Text>
               {needsChartScroll ? (
                 <ScrollView
                   horizontal
@@ -1119,13 +1571,14 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
                   contentContainerStyle={styles.chartScroll}
                 >
                   <View style={[styles.chart, styles.chartWide]}>
-                    {monthlyPayments.map((m) => (
+                    {analysisMonthlySeries.map((m) => (
                       <View key={m.key} style={[styles.chartBar, styles.chartBarFixed]}>
                         <View style={styles.barTrack}>
                           <View
                             style={[
                               styles.barFill,
-                              { height: `${Math.round((m.total / maxMonthly) * 100)}%` as any },
+                              m.total > 0 ? styles.barFillPositive : m.total < 0 ? styles.barFillNegative : null,
+                              { height: `${Math.round((Math.abs(m.total) / maxAnalysisMonthly) * 100)}%` as any },
                               m.total === 0 && styles.barEmpty,
                             ]}
                           />
@@ -1133,9 +1586,11 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
                         <Text style={styles.barLabel} numberOfLines={1}>
                           {m.label}
                         </Text>
-                        {m.total > 0 ? (
+                        {m.total !== 0 ? (
                           <Text style={styles.barValue} numberOfLines={1}>
-                            {formatCurrency(m.total, currency).replace(/\s/g, "")}
+                            {(analyticsUsesCashPerspective
+                              ? formatSignedCurrencyValue(m.total, currency)
+                              : formatCurrency(m.total, currency)).replace(/\s/g, "")}
                           </Text>
                         ) : null}
                       </View>
@@ -1144,13 +1599,14 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
                 </ScrollView>
               ) : (
                 <View style={styles.chart}>
-                  {monthlyPayments.map((m) => (
+                  {analysisMonthlySeries.map((m) => (
                     <View key={m.key} style={styles.chartBar}>
                       <View style={styles.barTrack}>
                         <View
                           style={[
                             styles.barFill,
-                            { height: `${Math.round((m.total / maxMonthly) * 100)}%` as any },
+                            m.total > 0 ? styles.barFillPositive : m.total < 0 ? styles.barFillNegative : null,
+                            { height: `${Math.round((Math.abs(m.total) / maxAnalysisMonthly) * 100)}%` as any },
                             m.total === 0 && styles.barEmpty,
                           ]}
                         />
@@ -1158,9 +1614,11 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
                       <Text style={styles.barLabel} numberOfLines={1}>
                         {m.label}
                       </Text>
-                      {m.total > 0 ? (
+                      {m.total !== 0 ? (
                         <Text style={styles.barValue} numberOfLines={1}>
-                          {formatCurrency(m.total, currency).replace(/\s/g, "")}
+                          {(analyticsUsesCashPerspective
+                            ? formatSignedCurrencyValue(m.total, currency)
+                            : formatCurrency(m.total, currency)).replace(/\s/g, "")}
                         </Text>
                       ) : null}
                     </View>
@@ -1188,82 +1646,17 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
               </View>
             </View>
 
-            {/* Payment velocity sparkline */}
-            {monthlyPayments.some((m) => m.total > 0) ? (
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Velocidad de pagos</Text>
-                <View style={styles.sparkCard}>
-                  <View style={styles.sparkHeader}>
-                    <View>
-                      <Text style={styles.sparkAvg}>
-                        {averageMonthlyPaid > 0
-                          ? formatCurrency(averageMonthlyPaid, currency)
-                          : "Sin ritmo"}
-                      </Text>
-                      <Text style={styles.sparkAvgLabel}>promedio mensual activo</Text>
-                    </View>
-                    <SparkLine
-                      values={monthlyPayments.map((m) => m.total)}
-                      width={120}
-                      height={48}
-                    />
-                  </View>
-                  <View style={styles.sparkMonths}>
-                    {monthlyPayments.slice(-6).map((m) => (
-                      <View key={m.key} style={styles.sparkMonthItem}>
-                        <Text style={styles.sparkMonthLabel}>{m.label}</Text>
-                        <Text style={[styles.sparkMonthVal, m.total === 0 && styles.sparkMonthZero]}>
-                          {m.total > 0 ? formatCurrency(m.total, currency).replace(/\s/g, "") : "—"}
-                        </Text>
-                      </View>
-                    ))}
-                  </View>
-                </View>
-              </View>
-            ) : null}
-
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Pulso del periodo</Text>
-              <View style={styles.insightGrid}>
-                <View style={styles.insightCard}>
-                  <Text style={styles.insightValue}>{formatCurrency(currentMonthPaid, currency)}</Text>
-                  <Text style={styles.insightLabel}>Mes actual</Text>
-                  <Text style={styles.insightSub}>Lo registrado desde el inicio del mes</Text>
-                </View>
-                <View style={styles.insightCard}>
-                  <Text style={styles.insightValue}>{formatCurrency(trailing90DaysPaid, currency)}</Text>
-                  <Text style={styles.insightLabel}>Ultimos 90 dias</Text>
-                  <Text style={styles.insightSub}>Sirve para ver si el ritmo sigue vivo</Text>
-                </View>
-                <View style={styles.insightCard}>
-                  <Text style={styles.insightValue}>
-                    {bestMonth && bestMonth.total > 0 ? formatCurrency(bestMonth.total, currency) : "Sin datos"}
-                  </Text>
-                  <Text style={styles.insightLabel}>Mejor mes</Text>
-                  <Text style={styles.insightSub}>
-                    {bestMonth && bestMonth.total > 0 ? bestMonth.label : "Aun no hay meses comparables"}
-                  </Text>
-                </View>
-                <View style={styles.insightCard}>
-                  <Text style={styles.insightValue}>
-                    {averageMonthlyPaid > 0 ? formatCurrency(averageMonthlyPaid, currency) : "Sin ritmo"}
-                  </Text>
-                  <Text style={styles.insightLabel}>Promedio mensual activo</Text>
-                  <Text style={styles.insightSub}>
-                    {monthsWithActivity.length > 0
-                      ? `${monthsWithActivity.length} mes${monthsWithActivity.length === 1 ? "" : "es"} con actividad`
-                      : "Aun no hay meses con pagos o cobros"}
-                  </Text>
-                </View>
-              </View>
-            </View>
-
             {/* Installment grid */}
             {totalInstallments > 0 ? (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>
                   Cuotas: {paidInstallments} de {totalInstallments} {installmentsDoneAdj}
                 </Text>
+                {isSharedViewer ? (
+                  <Text style={styles.sectionHint}>
+                    Este bloque sigue mostrando el avance contractual de la obligacion. No cambia por la perspectiva de caja del analisis.
+                  </Text>
+                ) : null}
                 <View style={styles.installmentGrid}>
                   {Array.from({ length: totalInstallments }, (_, i) => {
                     const n = i + 1;
@@ -1283,76 +1676,163 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
               </View>
             ) : null}
 
+            {/* Timeline ESTILO 2 */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Lectura operativa</Text>
-              <View style={styles.insightGrid}>
-                <View style={styles.insightCard}>
-                  <Text style={styles.insightValue}>
-                    {remainingInstallments > 0 ? String(remainingInstallments) : "0"}
-                  </Text>
-                  <Text style={styles.insightLabel}>Cuotas restantes</Text>
-                  <Text style={styles.insightSub}>
-                    {totalInstallments > 0
-                      ? `De ${totalInstallments} totales`
-                      : "Sin plan de cuotas configurado"}
-                  </Text>
-                </View>
-                <View style={styles.insightCard}>
-                  <Text style={styles.insightValue}>
-                    {amountPerRemainingInstallment != null
-                      ? formatCurrency(amountPerRemainingInstallment, currency)
-                      : "Flexible"}
-                  </Text>
-                  <Text style={styles.insightLabel}>Promedio por cuota pendiente</Text>
-                  <Text style={styles.insightSub}>
-                    {amountPerRemainingInstallment != null
-                      ? "Si repartes lo pendiente de forma uniforme"
-                      : "No hay cuotas pendientes para repartir"}
-                  </Text>
-                </View>
-                <View style={styles.insightCard}>
-                  <Text style={styles.insightValue}>
-                    {monthsToFinishAtCurrentRhythm != null ? `${monthsToFinishAtCurrentRhythm} m` : "Sin proyeccion"}
-                  </Text>
-                  <Text style={styles.insightLabel}>Tiempo estimado para cerrar</Text>
-                  <Text style={styles.insightSub}>
-                    {averageMonthlyPaid > 0
-                      ? `A ritmo de ${formatCurrency(averageMonthlyPaid, currency)} por mes activo`
-                      : "Necesitas mas historial para proyectar"}
-                  </Text>
-                </View>
-                <View style={styles.insightCard}>
-                  <Text
-                    style={[
-                      styles.insightValue,
-                      dueDatePressure === "Ritmo saludable"
-                        ? styles.insightPositive
-                        : dueDatePressure === "Ritmo justo"
-                          ? styles.insightWarning
-                          : styles.insightNegative,
-                    ]}
+              <Text style={styles.sectionTitle}>Línea de tiempo</Text>
+
+              {/* Filter pills */}
+              <View style={styles.pillRowWrap}>
+                {(
+                  [
+                    { id: "all" as TimelineFilter, label: "Todos" },
+                    { id: "payments" as TimelineFilter, label: `${eventPaymentNoun}s` },
+                    { id: "capital" as TimelineFilter, label: "Capital" },
+                  ] as const
+                ).map((option) => (
+                  <TouchableOpacity
+                    key={option.id}
+                    style={[styles.filterPill, timelineFilter === option.id && styles.filterPillActive]}
+                    onPress={() => setTimelineFilter(option.id)}
                   >
-                    {dueDatePressure}
-                  </Text>
-                  <Text style={styles.insightLabel}>Lectura frente al vencimiento</Text>
-                  <Text style={styles.insightSub}>
-                    {obligation.dueDate
-                      ? `Vence ${format(parseDisplayDate(obligation.dueDate), "d MMM yyyy", { locale: es })}`
-                      : "Puedes agregar una fecha para medir presion"}
-                  </Text>
-                </View>
+                    <Text style={[styles.filterPillText, timelineFilter === option.id && styles.filterPillTextActive]}>
+                      {option.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
               </View>
+              <View style={styles.pillRowWrap}>
+                {(
+                  [
+                    { id: "all" as TimelineToneFilter, label: "Todo impacto" },
+                    { id: "positive" as TimelineToneFilter, label: "Solo positivos" },
+                    { id: "negative" as TimelineToneFilter, label: "Solo negativos" },
+                  ] as const
+                ).map((option) => (
+                  <TouchableOpacity
+                    key={option.id}
+                    style={[styles.filterPill, timelineToneFilter === option.id && styles.filterPillActive]}
+                    onPress={() => setTimelineToneFilter(option.id)}
+                  >
+                    <Text style={[styles.filterPillText, timelineToneFilter === option.id && styles.filterPillTextActive]}>
+                      {option.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {timelineEvents.length === 0 ? (
+                <Text style={styles.emptyHistory}>Aun no hay eventos para construir la linea de tiempo.</Text>
+              ) : filteredTimelineEvents.length === 0 ? (
+                <Text style={styles.emptyHistory}>No hay eventos que coincidan con esos filtros.</Text>
+              ) : (
+                <View style={styles.tl2Container}>
+                  {groupAnalyticsEventsByDate(filteredTimelineEvents).map(({ date, events: dayEvents }) => {
+                    const dayTotal = dayEvents.reduce((sum, e) => {
+                      const useCash = shouldUseCashPerspective(e.id, analyticsPerspective);
+                      const prefix = obligationHistoryEventAmountPrefix(e.eventType, analyticsDirection, isSharedViewer, useCash);
+                      return sum + (prefix === "+" ? e.amount : -e.amount);
+                    }, 0);
+                    const dayTotalColor = dayTotal >= 0 ? COLORS.income : COLORS.danger;
+                    return (
+                      <View key={date}>
+                        {/* Date node row */}
+                        <View style={styles.tl2DateRow}>
+                          <View style={styles.tl2NodeCol}>
+                            <View style={styles.tl2DateDot} />
+                          </View>
+                          <Text style={styles.tl2DateLabel}>
+                            {format(new Date(date + "T12:00:00"), "d MMM yyyy", { locale: es }).toUpperCase()}
+                          </Text>
+                          <View style={styles.tl2DateLine} />
+                          <Text style={[styles.tl2DayTotal, { color: dayTotalColor }]}>
+                            {dayTotal >= 0 ? "+" : ""}{formatCurrency(Math.abs(dayTotal), currency)}
+                          </Text>
+                        </View>
+
+                        {/* Events */}
+                        {dayEvents.map((event, i) => {
+                          const useCashPerspective = shouldUseCashPerspective(event.id, analyticsPerspective);
+                          const eventTint = obligationHistoryEventColor(
+                            event.eventType,
+                            analyticsDirection,
+                            isSharedViewer,
+                            useCashPerspective,
+                          );
+                          const amountPrefix = obligationHistoryEventAmountPrefix(
+                            event.eventType,
+                            analyticsDirection,
+                            isSharedViewer,
+                            useCashPerspective,
+                          );
+                          const eventLabel =
+                            event.eventType === "payment"
+                              ? eventPaymentNoun
+                              : EVENT_LABELS[event.eventType]?.label ?? event.eventType;
+                          const eventDetail = firstMeaningfulText(event.description, event.reason, event.notes);
+                          const impactLabel =
+                            eventTint === COLORS.income
+                              ? "Positivo"
+                              : eventTint === COLORS.expense
+                                ? "Negativo"
+                                : "Neutro";
+                          const isLastInDay = i === dayEvents.length - 1;
+
+                          return (
+                            <View key={event.id} style={styles.tl2EventRow}>
+                              {/* Line column */}
+                              <View style={styles.tl2LineCol}>
+                                <View style={styles.tl2LineSegment} />
+                                <View style={[styles.tl2Dot, {
+                                  backgroundColor: eventTint,
+                                  shadowColor: eventTint,
+                                  shadowOpacity: 0.5,
+                                  shadowRadius: 3,
+                                  elevation: 3,
+                                }]} />
+                                {isLastInDay
+                                  ? <View style={styles.tl2LineEnd} />
+                                  : <View style={styles.tl2LineSegment} />
+                                }
+                              </View>
+
+                              {/* Card */}
+                              <TouchableOpacity
+                                style={styles.tl2Card}
+                                onPress={() => {
+                                  if (onEventTap) { onEventTap(event); return; }
+                                  if (isSharedViewer) handleViewerEventTap(event);
+                                }}
+                                activeOpacity={onEventTap || isSharedViewer ? 0.8 : 1}
+                              >
+                                <View style={styles.tl2CardBody}>
+                                  <Text style={[styles.tl2TypeLabel, { color: eventTint }]} numberOfLines={1}>
+                                    {eventLabel}
+                                  </Text>
+                                  <View style={styles.tl2CardSubRow}>
+                                    <View style={[styles.tl2Badge, { backgroundColor: eventTint + "18" }]}>
+                                      <Text style={[styles.tl2BadgeText, { color: eventTint }]}>{impactLabel}</Text>
+                                    </View>
+                                    {eventDetail ? (
+                                      <Text style={styles.tl2CardDesc} numberOfLines={1}>
+                                        {eventDetail}
+                                      </Text>
+                                    ) : null}
+                                  </View>
+                                </View>
+                                <Text style={[styles.tl2Amount, { color: eventTint }]} numberOfLines={1}>
+                                  {amountPrefix}{formatCurrency(event.amount, currency)}
+                                </Text>
+                              </TouchableOpacity>
+                            </View>
+                          );
+                        })}
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
             </View>
 
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Analisis</Text>
-              <Text style={styles.sectionHint}>
-                El historial de eventos y las solicitudes ahora viven solo en el detalle del credito o deuda.
-              </Text>
-              <Text style={styles.dateRangeCaption}>
-                Usa esta vista para resumen, cuotas, tendencias y estadisticas del periodo.
-              </Text>
-            </View>
           </ScrollView>
         </Animated.View>
       </View>
@@ -1967,6 +2447,12 @@ const styles = StyleSheet.create({
   },
   progressPct: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.sm, color: COLORS.ink },
   dueDate: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
+  progressHint: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    lineHeight: 17,
+  },
   progressAmounts: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -2007,6 +2493,13 @@ const styles = StyleSheet.create({
     fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.xs,
     color: COLORS.storm,
+  },
+  metricsFootnote: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    lineHeight: 17,
+    marginTop: -SPACING.xs,
   },
   insightCard: {
     flex: 1,
@@ -2053,7 +2546,38 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
-
+  comparisonNarrativeCard: {
+    backgroundColor: GLASS.card,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: GLASS.cardBorder,
+    padding: SPACING.md,
+    gap: 6,
+  },
+  comparisonNarrativeEyebrow: {
+    fontFamily: FONT_FAMILY.bodyMedium,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+  },
+  comparisonNarrativeLead: {
+    fontFamily: FONT_FAMILY.heading,
+    fontSize: FONT_SIZE.md,
+    color: COLORS.ink,
+  },
+  comparisonNarrativeBody: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.ink,
+    lineHeight: 20,
+  },
+  comparisonNarrativeFootnote: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    lineHeight: 17,
+  },
   sectionHint: {
     fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.xs,
@@ -2139,6 +2663,12 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
     borderRadius: 4,
     minHeight: 3,
+  },
+  barFillPositive: {
+    backgroundColor: COLORS.income,
+  },
+  barFillNegative: {
+    backgroundColor: COLORS.danger,
   },
   barEmpty: { backgroundColor: "transparent", minHeight: 0 },
   barLabel: {
@@ -2424,5 +2954,276 @@ const styles = StyleSheet.create({
   sparkMonthZero: {
     color: COLORS.storm,
   },
-});
+  timelinePerspectiveHint: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    lineHeight: 17,
+    marginTop: -SPACING.xs,
+  },
+  timelineSummaryCard: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: SPACING.xs,
+  },
+  timelineSummaryPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 10,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    backgroundColor: "rgba(255,255,255,0.04)",
+  },
+  timelineSummaryPositivePill: {
+    borderColor: COLORS.income + "44",
+    backgroundColor: COLORS.income + "14",
+  },
+  timelineSummaryNegativePill: {
+    borderColor: COLORS.expense + "44",
+    backgroundColor: COLORS.expense + "14",
+  },
+  timelineSummaryNeutralPill: {
+    borderColor: "rgba(255,255,255,0.12)",
+  },
+  timelineSummaryValue: {
+    fontFamily: FONT_FAMILY.heading,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.ink,
+  },
+  timelineSummaryPositiveValue: {
+    color: COLORS.income,
+  },
+  timelineSummaryNegativeValue: {
+    color: COLORS.expense,
+  },
+  timelineSummaryLabel: {
+    fontFamily: FONT_FAMILY.bodyMedium,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+  },
+  timelineCard: {
+    backgroundColor: GLASS.card,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: GLASS.cardBorder,
+    padding: SPACING.md,
+    gap: SPACING.sm,
+  },
+  timelineRow: {
+    flexDirection: "row",
+    gap: SPACING.sm,
+    alignItems: "flex-start",
+  },
+  timelineRowBorder: {
+    marginBottom: SPACING.xs,
+  },
+  timelineRail: {
+    width: 24,
+    alignItems: "center",
+    position: "relative",
+    minHeight: 88,
+  },
+  timelineLine: {
+    position: "absolute",
+    top: 18,
+    bottom: -SPACING.md,
+    width: 2,
+    borderRadius: RADIUS.full,
+  },
+  timelineDot: {
+    width: 18,
+    height: 18,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 2,
+  },
+  timelineDotInner: {
+    width: 7,
+    height: 7,
+    borderRadius: RADIUS.full,
+  },
+  timelineContent: {
+    flex: 1,
+    minWidth: 0,
+  },
+  timelineSurface: {
+    gap: SPACING.xs,
+    padding: SPACING.md,
+    borderRadius: RADIUS.md,
+    backgroundColor: "rgba(255,255,255,0.03)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  timelineTopRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: SPACING.sm,
+  },
+  timelineMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: SPACING.xs,
+  },
+  timelineDatePill: {
+    paddingHorizontal: SPACING.xs + 2,
+    paddingVertical: 4,
+    borderRadius: RADIUS.full,
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  timelineImpactPill: {
+    paddingHorizontal: SPACING.xs + 2,
+    paddingVertical: 4,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+  },
+  timelineImpactText: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: 10,
+  },
+  timelineType: {
+    flex: 1,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.sm,
+  },
+  timelineAmount: {
+    fontFamily: FONT_FAMILY.heading,
+    fontSize: FONT_SIZE.sm,
+    flexShrink: 0,
+  },
+  timelineDate: {
+    fontFamily: FONT_FAMILY.bodyMedium,
+    fontSize: 10,
+    color: COLORS.storm,
+  },
+  timelineDescription: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.ink,
+    lineHeight: 18,
+  },
 
+  // ── ESTILO 2 Timeline ──────────────────────────────────────────────────────
+  tl2Container: {
+    paddingHorizontal: 4,
+    marginTop: SPACING.xs,
+  },
+  tl2DateRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 14,
+    marginBottom: 6,
+    gap: 0,
+  },
+  tl2NodeCol: {
+    width: 28,
+    alignItems: "center",
+  },
+  tl2DateDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: COLORS.storm,
+    borderWidth: 2,
+    borderColor: "rgba(18,20,26,1)",
+  },
+  tl2DateLabel: {
+    fontSize: 10,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    color: COLORS.storm,
+    letterSpacing: 0.8,
+    marginLeft: 6,
+  },
+  tl2DateLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: "rgba(255,255,255,0.07)",
+    marginLeft: 10,
+  },
+  tl2DayTotal: {
+    fontSize: 10,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    marginLeft: 8,
+  },
+  tl2EventRow: {
+    flexDirection: "row",
+  },
+  tl2LineCol: {
+    width: 28,
+    alignItems: "center",
+  },
+  tl2LineSegment: {
+    width: 2,
+    flex: 1,
+    backgroundColor: "rgba(255,255,255,0.07)",
+    minHeight: 8,
+  },
+  tl2LineEnd: {
+    flex: 1,
+    minHeight: 6,
+  },
+  tl2Dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    flexShrink: 0,
+  },
+  tl2Card: {
+    flex: 1,
+    marginLeft: 8,
+    marginBottom: 6,
+    backgroundColor: "rgba(255,255,255,0.03)",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.07)",
+    padding: 10,
+    paddingHorizontal: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  tl2CardBody: {
+    flex: 1,
+    minWidth: 0,
+    gap: 3,
+  },
+  tl2TypeLabel: {
+    fontSize: FONT_SIZE.xs,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    lineHeight: 15,
+  },
+  tl2CardSubRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 5,
+    marginTop: 1,
+  },
+  tl2Badge: {
+    borderRadius: 99,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  tl2BadgeText: {
+    fontSize: 10,
+    fontFamily: FONT_FAMILY.bodySemibold,
+  },
+  tl2CardDesc: {
+    fontSize: 10,
+    color: COLORS.storm,
+    fontFamily: FONT_FAMILY.body,
+    flex: 1,
+  },
+  tl2Amount: {
+    fontSize: 13,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    flexShrink: 0,
+  },
+});

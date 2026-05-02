@@ -23,10 +23,15 @@ import { useWorkspace } from "../lib/workspace-context";
 import {
   useConfirmRecurringIncomeArrivalMutation,
   useDeleteRecurringIncomeMutation,
+  useRecurringIncomeOccurrencesQuery,
   useUpdateRecurringIncomeMutation,
   useWorkspaceSnapshotQuery,
 } from "../services/queries/workspace-data";
-import type { RecurringIncomeFrequency, RecurringIncomeSummary } from "../types/domain";
+import type {
+  RecurringIncomeFrequency,
+  RecurringIncomeOccurrenceSummary,
+  RecurringIncomeSummary,
+} from "../types/domain";
 import { ScreenHeader } from "../components/layout/ScreenHeader";
 import { Card } from "../components/ui/Card";
 import { EmptyState } from "../components/ui/EmptyState";
@@ -36,6 +41,7 @@ import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { RecurringIncomeForm } from "../components/forms/RecurringIncomeForm";
 import { DatePickerInput } from "../components/ui/DatePickerInput";
 import { Button } from "../components/ui/Button";
+import { CurrencyInput } from "../components/ui/CurrencyInput";
 import { formatCurrency } from "../components/ui/AmountDisplay";
 import { useToast } from "../hooks/useToast";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../constants/theme";
@@ -63,6 +69,8 @@ const FREQ_FILTERS: { label: string; value: "all" | RecurringIncomeFrequency }[]
   { label: "Personalizado", value: "custom" },
 ];
 
+type BaseChangeMode = "none" | "bonus" | "discount";
+
 function formatYmdLocal(ymd: string, pattern: string) {
   const p = ymd.split("-").map(Number);
   if (p.length !== 3 || p.some((n) => Number.isNaN(n))) return ymd;
@@ -75,6 +83,15 @@ function ymdWithin30Days(ymd: string) {
   const limit = new Date();
   limit.setDate(limit.getDate() + 30);
   return target >= new Date(now.getFullYear(), now.getMonth(), now.getDate()) && target <= limit;
+}
+
+function parseMoneyInput(value: string) {
+  const parsed = Number(value.replace(",", "."));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function occurrenceStatusLabel(status: RecurringIncomeOccurrenceSummary["status"]) {
+  return status === "late" ? "Tardía" : "A tiempo";
 }
 
 function SwipeableRecurringIncomeRow({
@@ -230,13 +247,23 @@ export default function RecurringIncomeScreen() {
   const updateMutation = useUpdateRecurringIncomeMutation(activeWorkspaceId);
   const deleteMutation = useDeleteRecurringIncomeMutation(activeWorkspaceId);
   const confirmArrivalMutation = useConfirmRecurringIncomeArrivalMutation(activeWorkspaceId);
+  const [historyTarget, setHistoryTarget] = useState<RecurringIncomeSummary | null>(null);
+  const { data: historyItems = [], isLoading: historyLoading } = useRecurringIncomeOccurrencesQuery(
+    activeWorkspaceId,
+    historyTarget?.id ?? null,
+  );
 
   const [createFormVisible, setCreateFormVisible] = useState(false);
   const [editTarget, setEditTarget] = useState<RecurringIncomeSummary | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<RecurringIncomeSummary | null>(null);
   const [arrivalTarget, setArrivalTarget] = useState<RecurringIncomeSummary | null>(null);
   const [arrivalDate, setArrivalDate] = useState(format(new Date(), "yyyy-MM-dd"));
+  const [arrivalAmount, setArrivalAmount] = useState("");
+  const [arrivalAccountId, setArrivalAccountId] = useState<number | null>(null);
+  const [arrivalBaseChangeMode, setArrivalBaseChangeMode] = useState<BaseChangeMode>("none");
+  const [arrivalNewBaseAmount, setArrivalNewBaseAmount] = useState("");
   const [arrivalNotes, setArrivalNotes] = useState("");
+  const [arrivalError, setArrivalError] = useState("");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [frequencyFilter, setFrequencyFilter] = useState<"all" | RecurringIncomeFrequency>("all");
@@ -289,11 +316,24 @@ export default function RecurringIncomeScreen() {
   const categories = useMemo(() => snapshot?.categories.filter((c) => c.isActive && (c.kind === "income" || c.kind === "both")) ?? [], [snapshot?.categories]);
   const counterparties = useMemo(() => snapshot?.counterparties ?? [], [snapshot?.counterparties]);
   const extraFiltersCount = [frequencyFilter !== "all", payerFilter != null, accountFilter != null, categoryFilter != null, upcomingOnly].filter(Boolean).length;
+  const arrivalSelectedAccount = arrivalAccountId != null
+    ? activeAccounts.find((account) => account.id === arrivalAccountId) ?? null
+    : null;
+  const parsedArrivalAmount = parseMoneyInput(arrivalAmount);
+  const parsedArrivalNewBaseAmount = parseMoneyInput(arrivalNewBaseAmount);
+  const arrivalBaseDelta = arrivalTarget && parsedArrivalNewBaseAmount != null
+    ? parsedArrivalNewBaseAmount - arrivalTarget.amount
+    : null;
 
   function openConfirmArrival(item: RecurringIncomeSummary) {
     setArrivalTarget(item);
     setArrivalDate(format(new Date(), "yyyy-MM-dd"));
+    setArrivalAmount(String(item.amount));
+    setArrivalAccountId(item.accountId ?? null);
+    setArrivalBaseChangeMode("none");
+    setArrivalNewBaseAmount(String(item.amount));
     setArrivalNotes("");
+    setArrivalError("");
   }
 
   function clearExtraFilters() {
@@ -306,20 +346,61 @@ export default function RecurringIncomeScreen() {
 
   async function handleConfirmArrival() {
     if (!arrivalTarget) return;
+    const actualAmount = parseMoneyInput(arrivalAmount);
+    if (!arrivalDate.trim()) {
+      setArrivalError("La fecha real de llegada es obligatoria.");
+      return;
+    }
+    if (actualAmount == null) {
+      setArrivalError("Ingresa un monto real mayor a 0.");
+      return;
+    }
+    if (arrivalAccountId == null) {
+      setArrivalError("Elige la cuenta destino para registrar el movimiento.");
+      return;
+    }
+    let nextBaseAmount: number | null = null;
+    if (arrivalBaseChangeMode !== "none") {
+      nextBaseAmount = parseMoneyInput(arrivalNewBaseAmount);
+      if (nextBaseAmount == null) {
+        setArrivalError("Ingresa el nuevo monto base para las próximas llegadas.");
+        return;
+      }
+      if (arrivalBaseChangeMode === "bonus" && nextBaseAmount <= arrivalTarget.amount) {
+        setArrivalError("Si hubo bonificación permanente, el nuevo monto base debe ser mayor al actual.");
+        return;
+      }
+      if (arrivalBaseChangeMode === "discount" && nextBaseAmount >= arrivalTarget.amount) {
+        setArrivalError("Si hubo descuento permanente, el nuevo monto base debe ser menor al actual.");
+        return;
+      }
+    }
+
     try {
+      setArrivalError("");
       await confirmArrivalMutation.mutateAsync({
         recurringIncomeId: arrivalTarget.id,
+        recurringIncomeName: arrivalTarget.name,
         expectedDate: arrivalTarget.nextExpectedDate,
         actualDate: arrivalDate,
-        amount: arrivalTarget.amount,
+        amount: actualAmount,
+        accountId: arrivalAccountId,
+        currentAccountId: arrivalTarget.accountId ?? null,
+        categoryId: arrivalTarget.categoryId ?? null,
+        payerPartyId: arrivalTarget.payerPartyId ?? null,
+        description: arrivalTarget.description ?? null,
         currencyCode: arrivalTarget.currencyCode,
         frequency: arrivalTarget.frequency,
         intervalCount: arrivalTarget.intervalCount,
+        currentBaseAmount: arrivalTarget.amount,
+        newBaseAmount: nextBaseAmount,
+        baseChangeKind: arrivalBaseChangeMode === "none" ? null : arrivalBaseChangeMode,
         notes: arrivalNotes.trim() || null,
       });
       setArrivalTarget(null);
       showToast("Llegada confirmada", "success");
     } catch (error) {
+      setArrivalError(error instanceof Error ? error.message : "No pudimos confirmar la llegada");
       showToast(error instanceof Error ? error.message : "No pudimos confirmar la llegada", "error");
     }
   }
@@ -426,6 +507,16 @@ export default function RecurringIncomeScreen() {
                 {item.categoryName ? <Text style={styles.metaChip}>{item.categoryName}</Text> : null}
               </View>
 
+              <View style={styles.cardActionsRow}>
+                <TouchableOpacity
+                  style={styles.inlineActionChip}
+                  onPress={() => setHistoryTarget(item)}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.inlineActionText}>Ver historial</Text>
+                </TouchableOpacity>
+              </View>
+
                 </>
               )}
             />
@@ -471,36 +562,244 @@ export default function RecurringIncomeScreen() {
         visible={Boolean(arrivalTarget)}
         transparent
         animationType="fade"
-        onRequestClose={() => setArrivalTarget(null)}
+        onRequestClose={() => {
+          setArrivalTarget(null);
+          setArrivalError("");
+        }}
       >
-        <Pressable style={styles.overlay} onPress={() => setArrivalTarget(null)}>
+        <Pressable
+          style={styles.overlay}
+          onPress={() => {
+            setArrivalTarget(null);
+            setArrivalError("");
+          }}
+        >
           <View style={styles.arrivalSheet} onStartShouldSetResponder={() => true}>
-            <Text style={styles.arrivalTitle}>Confirmar llegada</Text>
-            {arrivalTarget ? (
-              <>
-                <Text style={styles.arrivalSubtitle}>
-                  {arrivalTarget.name} · {formatCurrency(arrivalTarget.amount, arrivalTarget.currencyCode)}
-                </Text>
-                <DatePickerInput label="Fecha real de llegada" value={arrivalDate} onChange={setArrivalDate} />
-                <TextInput
-                  style={styles.notesInput}
-                  multiline
-                  value={arrivalNotes}
-                  onChangeText={setArrivalNotes}
-                  placeholder="Notas (opcional)"
-                  placeholderTextColor={COLORS.textDisabled}
-                />
-                <View style={styles.arrivalActions}>
-                  <Button label="Cancelar" variant="ghost" onPress={() => setArrivalTarget(null)} style={styles.cancelBtn} />
-                  <Button
-                    label="Confirmar"
-                    onPress={handleConfirmArrival}
-                    loading={confirmArrivalMutation.isPending}
-                    style={styles.submitBtn}
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.arrivalSheetContent}>
+              <Text style={styles.arrivalTitle}>Confirmar llegada</Text>
+              {arrivalTarget ? (
+                <>
+                  <Text style={styles.arrivalSubtitle}>
+                    {arrivalTarget.name} · Programado para {formatYmdLocal(arrivalTarget.nextExpectedDate, "d MMM yyyy")}
+                  </Text>
+                  <View style={styles.arrivalSummaryCard}>
+                    <Text style={styles.arrivalSummaryTitle}>Monto base actual</Text>
+                    <Text style={styles.arrivalSummaryAmount}>
+                      {formatCurrency(arrivalTarget.amount, arrivalTarget.currencyCode)}
+                    </Text>
+                    <Text style={styles.arrivalSummaryBody}>
+                      Este es el monto fijo que hoy usa el sistema para futuras llegadas.
+                    </Text>
+                  </View>
+
+                  <DatePickerInput label="Fecha real de llegada" value={arrivalDate} onChange={setArrivalDate} />
+
+                  <CurrencyInput
+                    label="Monto real recibido"
+                    value={arrivalAmount}
+                    onChangeText={setArrivalAmount}
+                    currencyCode={arrivalTarget.currencyCode}
                   />
+
+                  <View style={styles.arrivalSection}>
+                    <Text style={styles.arrivalSectionLabel}>Cuenta destino del movimiento</Text>
+                    {arrivalTarget.accountId ? (
+                      <View style={styles.arrivalInfoCard}>
+                        <Text style={styles.arrivalInfoBody}>
+                          El movimiento se registrará en {arrivalTarget.accountName ?? "la cuenta configurada"}.
+                        </Text>
+                      </View>
+                    ) : (
+                      <>
+                        <Text style={styles.arrivalHelper}>
+                          Este ingreso fijo no tiene cuenta base. Elige una ahora para registrar el movimiento y la guardaremos para próximas llegadas.
+                        </Text>
+                        {activeAccounts.length > 0 ? (
+                          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                            <View style={styles.filterPillWrap}>
+                              {activeAccounts.map((account) => (
+                                <TouchableOpacity
+                                  key={account.id}
+                                  style={[styles.filterPill, arrivalAccountId === account.id && styles.filterPillActive]}
+                                  onPress={() => setArrivalAccountId(account.id)}
+                                >
+                                  <Text style={[styles.filterPillText, arrivalAccountId === account.id && styles.filterPillTextActive]}>
+                                    {account.name}
+                                  </Text>
+                                </TouchableOpacity>
+                              ))}
+                            </View>
+                          </ScrollView>
+                        ) : (
+                          <View style={styles.arrivalInfoCard}>
+                            <Text style={styles.arrivalInfoBody}>
+                              No hay cuentas activas disponibles. Primero crea o reactiva una cuenta para poder registrar este ingreso como movimiento.
+                            </Text>
+                          </View>
+                        )}
+                      </>
+                    )}
+                  </View>
+
+                  <View style={styles.arrivalSection}>
+                    <Text style={styles.arrivalSectionLabel}>Cambio de monto base desde ahora</Text>
+                    <Text style={styles.arrivalHelper}>
+                      Si este ingreso cambió de forma permanente, indícalo aquí para que las próximas llegadas usen el nuevo base.
+                    </Text>
+                    <View style={styles.filterPillWrap}>
+                      {[
+                        { key: "none" as const, label: "Sin cambio" },
+                        { key: "bonus" as const, label: "Bonificación" },
+                        { key: "discount" as const, label: "Descuento" },
+                      ].map((option) => (
+                        <TouchableOpacity
+                          key={option.key}
+                          style={[styles.filterPill, arrivalBaseChangeMode === option.key && styles.filterPillActive]}
+                          onPress={() => setArrivalBaseChangeMode(option.key)}
+                        >
+                          <Text style={[styles.filterPillText, arrivalBaseChangeMode === option.key && styles.filterPillTextActive]}>
+                            {option.label}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+
+                    {arrivalBaseChangeMode !== "none" ? (
+                      <>
+                        <CurrencyInput
+                          label="Nuevo monto base para próximas llegadas"
+                          value={arrivalNewBaseAmount}
+                          onChangeText={setArrivalNewBaseAmount}
+                          currencyCode={arrivalTarget.currencyCode}
+                        />
+                        <View style={styles.arrivalInfoCard}>
+                          <Text style={styles.arrivalInfoBody}>
+                            Base actual: {formatCurrency(arrivalTarget.amount, arrivalTarget.currencyCode)}
+                          </Text>
+                          <Text style={styles.arrivalInfoBody}>
+                            Nuevo base: {parsedArrivalNewBaseAmount != null
+                              ? formatCurrency(parsedArrivalNewBaseAmount, arrivalTarget.currencyCode)
+                              : "Pendiente"}
+                          </Text>
+                          <Text style={styles.arrivalInfoBody}>
+                            Cambio: {arrivalBaseDelta == null
+                              ? "Pendiente"
+                              : `${arrivalBaseDelta >= 0 ? "+" : "-"}${formatCurrency(Math.abs(arrivalBaseDelta), arrivalTarget.currencyCode)}`}
+                          </Text>
+                        </View>
+                      </>
+                    ) : null}
+                  </View>
+
+                  <TextInput
+                    style={styles.notesInput}
+                    multiline
+                    value={arrivalNotes}
+                    onChangeText={setArrivalNotes}
+                    placeholder="Notas (opcional)"
+                    placeholderTextColor={COLORS.textDisabled}
+                  />
+
+                  {arrivalError ? <Text style={styles.arrivalErrorText}>{arrivalError}</Text> : null}
+
+                  <View style={styles.arrivalActions}>
+                    <Button
+                      label="Cancelar"
+                      variant="ghost"
+                      onPress={() => {
+                        setArrivalTarget(null);
+                        setArrivalError("");
+                      }}
+                      style={styles.cancelBtn}
+                    />
+                    <Button
+                      label="Confirmar y crear movimiento"
+                      onPress={handleConfirmArrival}
+                      loading={confirmArrivalMutation.isPending}
+                      style={styles.submitBtn}
+                    />
+                  </View>
+                </>
+              ) : null}
+            </ScrollView>
+          </View>
+        </Pressable>
+      </Modal>
+
+      <Modal
+        visible={Boolean(historyTarget)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setHistoryTarget(null)}
+      >
+        <Pressable style={styles.overlay} onPress={() => setHistoryTarget(null)}>
+          <View style={styles.arrivalSheet} onStartShouldSetResponder={() => true}>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.arrivalSheetContent}>
+              <Text style={styles.arrivalTitle}>Historial de llegadas</Text>
+              {historyTarget ? (
+                <Text style={styles.arrivalSubtitle}>
+                  {historyTarget.name} · Base actual {formatCurrency(historyTarget.amount, historyTarget.currencyCode)}
+                </Text>
+              ) : null}
+
+              {historyLoading ? (
+                <SkeletonCard style={{ minHeight: 120 }} />
+              ) : historyItems.length === 0 ? (
+                <View style={styles.arrivalInfoCard}>
+                  <Text style={styles.arrivalInfoBody}>
+                    Aún no hay llegadas confirmadas para este ingreso fijo.
+                  </Text>
                 </View>
-              </>
-            ) : null}
+              ) : (
+                historyItems.map((occurrence) => (
+                  <View key={occurrence.id} style={styles.historyCard}>
+                    <View style={styles.historyHeader}>
+                      <Text style={styles.historyAmount}>
+                        {formatCurrency(occurrence.amount, occurrence.currencyCode)}
+                      </Text>
+                      <View
+                        style={[
+                          styles.historyStatusBadge,
+                          occurrence.status === "late" && styles.historyStatusBadgeLate,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.historyStatusText,
+                            occurrence.status === "late" && styles.historyStatusTextLate,
+                          ]}
+                        >
+                          {occurrenceStatusLabel(occurrence.status)}
+                        </Text>
+                      </View>
+                    </View>
+                    <Text style={styles.historyDates}>
+                      Esperada: {formatYmdLocal(occurrence.expectedDate, "d MMM yyyy")} · Llegó: {formatYmdLocal(occurrence.actualDate, "d MMM yyyy")}
+                    </Text>
+                    {occurrence.notes?.trim() ? (
+                      <Text style={styles.historyNotes}>{occurrence.notes.trim()}</Text>
+                    ) : null}
+                    {occurrence.movementId ? (
+                      <TouchableOpacity
+                        style={styles.inlineActionChip}
+                        onPress={() => {
+                          const movementId = occurrence.movementId;
+                          setHistoryTarget(null);
+                          router.push(`/movement/${movementId}`);
+                        }}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={styles.inlineActionText}>Ver movimiento</Text>
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
+                ))
+              )}
+
+              <View style={styles.arrivalActions}>
+                <Button label="Cerrar" variant="ghost" onPress={() => setHistoryTarget(null)} style={styles.cancelBtn} />
+              </View>
+            </ScrollView>
           </View>
         </Pressable>
       </Modal>
@@ -721,6 +1020,7 @@ const styles = StyleSheet.create({
   statusBadgeText: { color: COLORS.primary, fontSize: FONT_SIZE.xs, fontFamily: FONT_FAMILY.bodySemibold },
   statusBadgeTextMuted: { color: COLORS.storm },
   metaWrap: { flexDirection: "row", gap: SPACING.xs, flexWrap: "wrap" },
+  cardActionsRow: { flexDirection: "row", marginTop: SPACING.xs },
   metaChip: {
     paddingHorizontal: SPACING.sm,
     paddingVertical: 6,
@@ -730,18 +1030,127 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.xs,
     overflow: "hidden",
   } as any,
+  inlineActionChip: {
+    alignSelf: "flex-start",
+    paddingHorizontal: SPACING.sm + 2,
+    paddingVertical: 7,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    borderColor: COLORS.primary + "55",
+    backgroundColor: COLORS.primary + "14",
+  },
+  inlineActionText: {
+    color: COLORS.primary,
+    fontSize: FONT_SIZE.xs,
+    fontFamily: FONT_FAMILY.bodySemibold,
+  },
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.52)", justifyContent: "flex-end" },
   arrivalSheet: {
     backgroundColor: COLORS.bg,
     margin: SPACING.lg,
     borderRadius: RADIUS.xl,
     padding: SPACING.lg,
-    gap: SPACING.md,
     borderWidth: 1,
     borderColor: GLASS.cardBorder,
+    maxHeight: SCREEN_HEIGHT * 0.84,
   } as any,
+  arrivalSheetContent: { gap: SPACING.md },
   arrivalTitle: { color: COLORS.ink, fontFamily: FONT_FAMILY.heading, fontSize: FONT_SIZE.xl },
   arrivalSubtitle: { color: COLORS.storm, fontSize: FONT_SIZE.sm },
+  arrivalSummaryCard: {
+    gap: SPACING.xs,
+    padding: SPACING.md,
+    borderRadius: RADIUS.lg,
+    backgroundColor: COLORS.primary + "12",
+    borderWidth: 1,
+    borderColor: COLORS.primary + "32",
+  },
+  arrivalSummaryTitle: {
+    color: COLORS.storm,
+    fontSize: FONT_SIZE.xs,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  arrivalSummaryAmount: {
+    color: COLORS.primary,
+    fontFamily: FONT_FAMILY.heading,
+    fontSize: FONT_SIZE.xl,
+  },
+  arrivalSummaryBody: {
+    color: COLORS.storm,
+    fontSize: FONT_SIZE.xs,
+    lineHeight: 18,
+  },
+  arrivalSection: { gap: SPACING.sm },
+  arrivalSectionLabel: {
+    color: COLORS.ink,
+    fontSize: FONT_SIZE.sm,
+    fontFamily: FONT_FAMILY.bodySemibold,
+  },
+  arrivalHelper: {
+    color: COLORS.storm,
+    fontSize: FONT_SIZE.xs,
+    lineHeight: 18,
+  },
+  arrivalInfoCard: {
+    gap: SPACING.xs,
+    padding: SPACING.md,
+    borderRadius: RADIUS.lg,
+    backgroundColor: GLASS.card,
+    borderWidth: 1,
+    borderColor: GLASS.cardBorder,
+  },
+  arrivalInfoBody: {
+    color: COLORS.storm,
+    fontSize: FONT_SIZE.xs,
+    lineHeight: 18,
+  },
+  historyCard: {
+    gap: SPACING.xs,
+    padding: SPACING.md,
+    borderRadius: RADIUS.lg,
+    backgroundColor: GLASS.card,
+    borderWidth: 1,
+    borderColor: GLASS.cardBorder,
+  },
+  historyHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: SPACING.sm,
+  },
+  historyAmount: {
+    color: COLORS.ink,
+    fontSize: FONT_SIZE.md,
+    fontFamily: FONT_FAMILY.bodySemibold,
+  },
+  historyStatusBadge: {
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 5,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.primary + "18",
+  },
+  historyStatusBadgeLate: {
+    backgroundColor: COLORS.gold + "18",
+  },
+  historyStatusText: {
+    color: COLORS.primary,
+    fontSize: FONT_SIZE.xs,
+    fontFamily: FONT_FAMILY.bodySemibold,
+  },
+  historyStatusTextLate: {
+    color: COLORS.gold,
+  },
+  historyDates: {
+    color: COLORS.storm,
+    fontSize: FONT_SIZE.xs,
+    lineHeight: 18,
+  },
+  historyNotes: {
+    color: COLORS.ink,
+    fontSize: FONT_SIZE.xs,
+    lineHeight: 18,
+  },
   notesInput: {
     minHeight: 96,
     borderRadius: RADIUS.lg,
@@ -751,6 +1160,12 @@ const styles = StyleSheet.create({
     padding: SPACING.md,
     color: COLORS.ink,
     textAlignVertical: "top",
+  },
+  arrivalErrorText: {
+    color: COLORS.danger,
+    fontSize: FONT_SIZE.xs,
+    lineHeight: 18,
+    fontFamily: FONT_FAMILY.bodyMedium,
   },
   arrivalActions: { flexDirection: "row", gap: SPACING.md },
   cancelBtn: { flex: 1 },

@@ -20,6 +20,7 @@ import {
   suggestCategoryFromCounterparty,
   suggestCategoryFromDescription,
 } from "../../lib/movement-patterns";
+import { computeNextRecurringDate, subscriptionFrequencyListLabel } from "../../lib/subscription-helpers";
 import type { SubscriptionSummary } from "../../types/domain";
 import { BottomSheet } from "../ui/BottomSheet";
 import { Button } from "../ui/Button";
@@ -42,22 +43,43 @@ const FREQUENCY_OPTIONS: { value: SubscriptionFormInput["frequency"]; label: str
   { value: "custom",    label: "Personalizado" },
 ];
 
-const WEEKDAY_OPTIONS: { value: number; label: string }[] = [
-  { value: 0, label: "Dom" },
-  { value: 1, label: "Lun" },
-  { value: 2, label: "Mar" },
-  { value: 3, label: "Mié" },
-  { value: 4, label: "Jue" },
-  { value: 5, label: "Vie" },
-  { value: 6, label: "Sáb" },
-];
-
 const REMIND_OPTIONS = [
   { label: "1 día", value: 1 },
   { label: "3 días", value: 3 },
   { label: "7 días", value: 7 },
   { label: "Sin aviso", value: 0 },
 ];
+
+const FREQUENCY_LABELS: Record<SubscriptionFormInput["frequency"], string> = {
+  daily: "Diario",
+  weekly: "Semanal",
+  monthly: "Mensual",
+  quarterly: "Trimestral",
+  yearly: "Anual",
+  custom: "Personalizado",
+};
+
+function parseLocalYmd(ymd: string): Date {
+  const parts = ymd.trim().split("-").map(Number);
+  if (parts.length !== 3 || parts.some((value) => Number.isNaN(value))) return new Date(ymd);
+  return new Date(parts[0], parts[1] - 1, parts[2]);
+}
+
+function formatYmdPreview(ymd: string): string {
+  if (!ymd.trim()) return "sin fecha";
+  return format(parseLocalYmd(ymd), "d MMM yyyy");
+}
+
+function buildIntervalHelperCopy(
+  frequency: SubscriptionFormInput["frequency"],
+  intervalCount: number,
+  frequencyLabel: string,
+): string {
+  if (frequency === "custom") {
+    return `Personalizado siempre usa días. ${intervalCount} significa ${frequencyLabel.toLowerCase()}.`;
+  }
+  return `Cadencia resultante: ${frequencyLabel}. El sistema siempre parte del próximo cobro que elijas.`;
+}
 
 type Props = {
   visible: boolean;
@@ -214,12 +236,12 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
     }
     if (!nextDueDate?.trim()) {
       haptics.error();
-      setSubmitError("El próximo vencimiento es obligatorio");
+      setSubmitError("El próximo cobro es obligatorio");
       return;
     }
     if (nextDueDate < startDate) {
       haptics.error();
-      setSubmitError("El próximo vencimiento debe ser igual o posterior al inicio");
+      setSubmitError("El próximo cobro debe ser igual o posterior al inicio");
       return;
     }
     if (endDate.trim() && endDate < startDate) {
@@ -263,6 +285,10 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
     const cc = currencyCode.trim().toUpperCase();
     if (!cc) {
       setSubmitError("Indica una moneda");
+      return;
+    }
+    if (autoCreateMovement && accountId === null) {
+      setSubmitError("Para crear el movimiento automáticamente debes elegir una cuenta de débito.");
       return;
     }
 
@@ -324,6 +350,15 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
     [snapshot?.counterparties],
   );
   const isLoading = createMutation.isPending || updateMutation.isPending;
+  const intervalValue = Math.max(1, parseInt(intervalCount, 10) || 1);
+  const recurrenceLabel = subscriptionFrequencyListLabel(intervalValue, frequency, FREQUENCY_LABELS);
+  const nextCycleDate = nextDueDate.trim()
+    ? computeNextRecurringDate(nextDueDate, frequency, intervalValue)
+    : "";
+  const selectedAccountName = accountId !== null
+    ? activeAccounts.find((account) => account.id === accountId)?.name ?? null
+    : null;
+  const intervalHelperCopy = buildIntervalHelperCopy(frequency, intervalValue, recurrenceLabel);
 
   // Name → suggest category (debounced)
   useEffect(() => {
@@ -451,73 +486,59 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
             </TouchableOpacity>
           ))}
         </View>
+        <Text style={styles.helperText}>
+          El sistema usa el próximo cobro como base para repetir esta suscripción. En personalizado, el intervalo siempre se mide en días.
+        </Text>
       </View>
 
       {/* Interval count */}
-      <View style={styles.twoCol}>
-        <View style={styles.colHalf}>
-          <Text style={styles.label}>Cada (N)</Text>
-          <TextInput
-            style={styles.textInput}
-            value={intervalCount}
-            onChangeText={setIntervalCount}
-            placeholder="1"
-            placeholderTextColor={COLORS.textDisabled}
-            keyboardType="number-pad"
-          />
-        </View>
-        {frequency === "monthly" || frequency === "quarterly" || frequency === "yearly" ? (
-          <View style={styles.colHalf}>
-            <Text style={styles.label}>Día del mes</Text>
-            <TextInput
-              style={styles.textInput}
-              value={dayOfMonth}
-              onChangeText={setDayOfMonth}
-              placeholder="1-31"
-              placeholderTextColor={COLORS.textDisabled}
-              keyboardType="number-pad"
-            />
-          </View>
-        ) : null}
+      <View>
+        <Text style={styles.label}>
+          {frequency === "custom" ? "Repetir cada N días" : "Repetir cada N periodos"}
+        </Text>
+        <TextInput
+          style={styles.textInput}
+          value={intervalCount}
+          onChangeText={setIntervalCount}
+          placeholder="1"
+          placeholderTextColor={COLORS.textDisabled}
+          keyboardType="number-pad"
+        />
+        <Text style={styles.helperText}>{intervalHelperCopy}</Text>
       </View>
 
-      {frequency === "weekly" ? (
-        <View>
-          <Text style={styles.label}>Día de la semana (opcional)</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View style={styles.pillRow}>
-              <TouchableOpacity
-                style={[styles.pill, dayOfWeek === null && styles.pillActive]}
-                onPress={() => setDayOfWeek(null)}
-              >
-                <Text style={[styles.pillText, dayOfWeek === null && styles.pillTextActive]}>—</Text>
-              </TouchableOpacity>
-              {WEEKDAY_OPTIONS.map((w) => (
-                <TouchableOpacity
-                  key={w.value}
-                  style={[styles.pill, dayOfWeek === w.value && styles.pillActive]}
-                  onPress={() => setDayOfWeek(w.value)}
-                >
-                  <Text style={[styles.pillText, dayOfWeek === w.value && styles.pillTextActive]}>{w.label}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </ScrollView>
-        </View>
-      ) : null}
+      <View style={styles.systemCard}>
+        <Text style={styles.systemCardTitle}>Así lo hará el sistema</Text>
+        <Text style={styles.systemCardLine}>
+          Inicio: {formatYmdPreview(startDate)}. Esta fecha es referencia y evita que el próximo cobro quede antes del inicio.
+        </Text>
+        <Text style={styles.systemCardLine}>
+          Próximo cobro: {formatYmdPreview(nextDueDate)}. Esta es la fecha real que se mostrará en listados y recordatorios.
+        </Text>
+        <Text style={styles.systemCardLine}>
+          Repetición: {recurrenceLabel}. Después del cobro del {formatYmdPreview(nextDueDate)}, el siguiente pasará al {formatYmdPreview(nextCycleDate)}.
+        </Text>
+        <Text style={styles.systemCardLine}>
+          {autoCreateMovement
+            ? selectedAccountName
+              ? `Movimiento automático activo: ese día se registrará un gasto en ${selectedAccountName}.`
+              : "Movimiento automático activo, pero aún falta elegir la cuenta donde se registrará el gasto."
+            : "Movimiento automático desactivado: la suscripción solo avisará y mostrará el próximo cobro."}
+        </Text>
+      </View>
 
       {/* Fechas — campos con ayuda y selector unificado */}
       <View style={styles.datesBlock}>
         <View style={styles.datesIntro}>
           <Text style={styles.datesIntroTitle}>Fechas de la suscripción</Text>
           <Text style={styles.datesIntroBody}>
-            Toca cada bloque para elegir fecha. En «Fin» puedes dejar vacío: usa el botón ✕ al lado o «Quitar» dentro del calendario.
+            El sistema no adivina las fechas: toma el próximo cobro que elijas y desde ahí repite según la frecuencia. En «Fin» puedes dejar vacío si no hay fecha de baja.
           </Text>
         </View>
 
       <FormDateField
-        title="Inicio del cobro"
-        description="Desde qué día cuenta esta suscripción: suele ser la primera factura, el alta del servicio o la fecha que quieras tomar como referencia. Sirve para que vencimiento y fin tengan sentido frente a ese inicio."
+        title="Inicio de la suscripción"
+        description="Marca desde cuándo existe este servicio o contrato. No mueve por sí sola el próximo cobro; sirve como referencia y como fecha mínima válida."
         required
         value={startDate}
         onChange={setStartDate}
@@ -527,12 +548,12 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
       />
 
       <FormDateField
-        title="Próximo vencimiento"
-        description="El próximo día en que vence o se renueva el pago. Es la fecha que verás en listados, recordatorios y lógica de «próximo cobro»."
+        title="Próximo cobro o renovación"
+        description="Esta es la fecha real que usará el sistema para mostrar vencimientos, enviar recordatorios y calcular el siguiente ciclo."
         required
         value={nextDueDate}
         onChange={setNextDueDate}
-        placeholder="Elegir próximo vencimiento"
+        placeholder="Elegir próximo cobro"
         minimumDate={
           startDate
             ? (() => {
@@ -569,7 +590,7 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
       {/* Account */}
       {activeAccounts.length > 0 ? (
         <View style={{ gap: SPACING.xs }}>
-          <Text style={styles.label}>Cuenta de débito (opcional)</Text>
+          <Text style={styles.label}>Cuenta de débito</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             <View style={styles.pillRow}>
               <TouchableOpacity
@@ -591,6 +612,9 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
               ))}
             </View>
           </ScrollView>
+          <Text style={styles.helperText}>
+            Si activas movimiento automático, esta cuenta es obligatoria porque aquí se registrará el gasto.
+          </Text>
           {accSuggestionId !== null ? (() => {
             const acc = activeAccounts.find((a) => a.id === accSuggestionId);
             return acc ? (
@@ -658,13 +682,16 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
             </TouchableOpacity>
           ))}
         </View>
+        <Text style={styles.helperText}>
+          Solo envía un aviso antes del próximo cobro. No registra el gasto por sí mismo.
+        </Text>
       </View>
 
       {/* Auto create movement */}
       <View style={styles.switchRow}>
         <View style={styles.switchInfo}>
           <Text style={styles.switchLabel}>Crear movimiento automáticamente</Text>
-          <Text style={styles.switchDesc}>Registra el gasto al llegar la fecha de cobro</Text>
+          <Text style={styles.switchDesc}>Al llegar el próximo cobro, registra el gasto y luego mueve la fecha al siguiente ciclo.</Text>
         </View>
         <Switch
           value={autoCreateMovement}
@@ -749,10 +776,36 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.md,
     color: COLORS.ink,
   },
+  helperText: {
+    marginTop: SPACING.xs,
+    fontSize: FONT_SIZE.xs,
+    fontFamily: FONT_FAMILY.body,
+    color: COLORS.storm,
+    lineHeight: 18,
+  },
   inputError: { borderColor: COLORS.danger },
   fieldError: { fontSize: FONT_SIZE.xs, color: COLORS.danger, marginTop: 4 },
   pillRow: { flexDirection: "row", gap: SPACING.sm },
   pillWrap: { flexDirection: "row", flexWrap: "wrap", gap: SPACING.sm },
+  systemCard: {
+    gap: SPACING.xs,
+    padding: SPACING.md,
+    borderRadius: RADIUS.lg,
+    backgroundColor: COLORS.secondary + "10",
+    borderWidth: 1,
+    borderColor: COLORS.secondary + "30",
+  },
+  systemCardTitle: {
+    fontSize: FONT_SIZE.sm,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    color: COLORS.ink,
+  },
+  systemCardLine: {
+    fontSize: FONT_SIZE.xs,
+    fontFamily: FONT_FAMILY.body,
+    color: COLORS.storm,
+    lineHeight: 18,
+  },
   pill: {
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.xs + 2,

@@ -41,6 +41,7 @@ import { shareCsvAsFile } from "../../lib/share-csv-file";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
 import { useSwipeTab } from "../../hooks/useSwipeTab";
 import type { AccountSummary } from "../../types/domain";
+import { StaggeredItem } from "../../components/ui/StaggeredItem";
 
 const TYPE_FILTERS = [
   { label: "Todas", value: "all" },
@@ -365,19 +366,20 @@ function AccountsScreen() {
             action={{ label: "Nueva cuenta", onPress: () => setFormVisible(true) }}
           />
         ) : (
-          activeFiltered.map((account) => (
-            <AccountCard
-              key={account.id}
-              account={account}
-              selected={selectedIds.has(account.id)}
-              selectMode={selectMode}
-              onPress={() => {
-                if (selectMode) { toggleSelect(account.id); return; }
-                router.push(`/account/${account.id}?from=accounts`);
-              }}
-              onArchive={() => handleArchive(account)}
-              onAnalytics={() => setAnalyticsAccount(account)}
-            />
+          activeFiltered.map((account, index) => (
+            <StaggeredItem key={account.id} index={index}>
+              <AccountCard
+                account={account}
+                selected={selectedIds.has(account.id)}
+                selectMode={selectMode}
+                onPress={() => {
+                  if (selectMode) { toggleSelect(account.id); return; }
+                  router.push(`/account/${account.id}?from=accounts`);
+                }}
+                onArchive={() => handleArchive(account)}
+                onAnalytics={() => setAnalyticsAccount(account)}
+              />
+            </StaggeredItem>
           ))
         )}
 

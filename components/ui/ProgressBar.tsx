@@ -1,4 +1,5 @@
-import { StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
+import { useEffect, useRef } from "react";
+import { Animated, StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
 import { COLORS, GLASS, RADIUS } from "../../constants/theme";
 
 type Props = {
@@ -10,15 +11,30 @@ type Props = {
 
 export function ProgressBar({ percent, alertPercent = 80, height = 6, style }: Props) {
   const clamped = Math.min(Math.max(percent, 0), 100);
+  const animatedWidth = useRef(new Animated.Value(0)).current;
 
   let fillColor = COLORS.pine;
   if (clamped >= 100) fillColor = COLORS.rosewood;
   else if (clamped >= alertPercent) fillColor = COLORS.gold;
 
+  useEffect(() => {
+    Animated.spring(animatedWidth, {
+      toValue: clamped,
+      tension: 55,
+      friction: 10,
+      useNativeDriver: false,
+    }).start();
+  }, [animatedWidth, clamped]);
+
+  const widthPercent = animatedWidth.interpolate({
+    inputRange: [0, 100],
+    outputRange: ["0%", "100%"],
+  });
+
   return (
     <View style={[styles.track, { height }, style]}>
-      <View
-        style={[styles.fill, { width: `${clamped}%`, backgroundColor: fillColor, height }]}
+      <Animated.View
+        style={[styles.fill, { width: widthPercent, backgroundColor: fillColor, height }]}
       />
     </View>
   );

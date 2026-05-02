@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
+import { Animated, Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
+
+const UNDO_LOGO = require("../../assets/images/logo-sin-fondo.png");
 
 type Props = {
   visible: boolean;
@@ -94,6 +96,9 @@ export function UndoBanner({
 
       {/* Main row */}
       <View style={styles.row}>
+        <View style={styles.logoBubble}>
+          <Image source={UNDO_LOGO} style={styles.logo} resizeMode="contain" />
+        </View>
         <Text style={styles.message} numberOfLines={1}>{message}</Text>
         <Pressable
           onPress={onUndo}
@@ -117,35 +122,46 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: SPACING.lg,
     right: SPACING.lg,
-    backgroundColor: "rgba(12,17,26,0.97)",
-    borderRadius: RADIUS.lg,
-    borderTopWidth: 1,
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
-    borderBottomWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.18)",
-    borderLeftColor: "rgba(255,255,255,0.10)",
-    borderRightColor: "rgba(255,255,255,0.08)",
-    borderBottomColor: "rgba(255,255,255,0.04)",
+    backgroundColor: COLORS.mist,
+    borderRadius: 28,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
     overflow: "hidden",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.5,
-    shadowRadius: 20,
-    elevation: 16,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    elevation: 8,
     zIndex: 50,
   },
   tint: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: GLASS.card,
-    opacity: 0.18,
+    backgroundColor: "rgba(255,255,255,0.02)",
   },
   row: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.md,
-    gap: SPACING.md,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.sm,
+    gap: SPACING.sm,
+  },
+  logoBubble: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: "rgba(8,12,20,0.98)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.16,
+    shadowRadius: 8,
+  },
+  logo: {
+    width: 26,
+    height: 26,
   },
   message: {
     fontFamily: FONT_FAMILY.bodyMedium,
@@ -157,9 +173,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.md,
     paddingVertical: 6,
     borderRadius: RADIUS.full,
-    backgroundColor: COLORS.primary + "20",
+    backgroundColor: COLORS.primary + "14",
     borderWidth: 1,
-    borderColor: COLORS.primary + "55",
+    borderColor: COLORS.primary + "40",
   },
   undoBtnPressed: {
     backgroundColor: COLORS.primary + "40",
@@ -167,11 +183,11 @@ const styles = StyleSheet.create({
   undoBtnText: {
     fontFamily: FONT_FAMILY.bodySemibold,
     fontSize: FONT_SIZE.sm,
-    color: COLORS.pine,
+    color: COLORS.primary,
   },
   progressTrack: {
     height: 2,
-    backgroundColor: "rgba(255,255,255,0.06)",
+    backgroundColor: "rgba(255,255,255,0.05)",
   },
   progressFill: {
     height: "100%",

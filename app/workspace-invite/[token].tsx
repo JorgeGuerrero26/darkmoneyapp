@@ -12,6 +12,7 @@ import { setPendingWorkspaceInviteToken } from "../../lib/pending-workspace-invi
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
+import { useToast } from "../../hooks/useToast";
 import { COLORS, FONT_SIZE, FONT_WEIGHT, SPACING } from "../../constants/theme";
 import { fetchUserWorkspaces } from "../../services/queries/workspace-data";
 
@@ -22,6 +23,7 @@ export default function WorkspaceInviteScreen() {
   const { session } = useAuth();
   const queryClient = useQueryClient();
   const { setActiveWorkspaceId, setWorkspaces } = useWorkspace();
+  const { showToast } = useToast();
 
   const [isLoading, setIsLoading] = useState(true);
   const [invite, setInvite] = useState<any>(null);
@@ -74,10 +76,13 @@ export default function WorkspaceInviteScreen() {
       }
       await queryClient.invalidateQueries({ queryKey: ["notifications"] });
       await queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+      showToast(data.alreadyAccepted ? "Esta invitación ya estaba aceptada" : "Te uniste al workspace", "success");
       setAccepted(true);
       setTimeout(() => router.replace("/(app)/dashboard"), 1500);
     } catch (err: unknown) {
-      setError(humanizeError(err));
+      const message = humanizeError(err);
+      setError(message);
+      showToast(message, "error");
     } finally {
       setIsAccepting(false);
     }

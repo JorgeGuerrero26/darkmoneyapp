@@ -5,7 +5,7 @@
     "version": "1.0.0",
     "scheme": "darkmoney",
     "orientation": "portrait",
-    "icon": "./assets/images/app-icon.png",
+    "icon": "./assets/images/logo-sin-fondo.png",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
@@ -28,15 +28,15 @@
     "web": {
       "bundler": "metro",
       "output": "static",
-      "favicon": "./assets/images/app-icon.png"
+      "favicon": "./assets/images/logo-sin-fondo.png"
     },
     "plugins": [
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/logo-back-sin-fondo.png",
-          "imageWidth": 250,
+          "image": "./assets/images/logo-sin-fondo.png",
+          "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#05070B"
         }

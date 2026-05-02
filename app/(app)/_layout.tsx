@@ -1,6 +1,6 @@
 import { Tabs } from "expo-router";
-import { memo } from "react";
-import { StyleSheet, View } from "react-native";
+import { memo, useEffect, useRef } from "react";
+import { Animated, StyleSheet, View } from "react-native";
 import { Home, ArrowLeftRight, WalletCards, Scale, LayoutGrid } from "lucide-react-native";
 
 import { COLORS, FONT_FAMILY, GLASS, RADIUS, SPACING } from "../../constants/theme";
@@ -22,11 +22,27 @@ function TabBarBackground() {
 }
 
 function TabIcon({ icon, color, focused }: { icon: React.ReactNode; color: string; focused: boolean }) {
+  const scale = useRef(new Animated.Value(1)).current;
+  const prevFocused = useRef(focused);
+
+  useEffect(() => {
+    if (focused && !prevFocused.current) {
+      scale.setValue(0.82);
+      Animated.spring(scale, {
+        toValue: 1,
+        tension: 200,
+        friction: 8,
+        useNativeDriver: true,
+      }).start();
+    }
+    prevFocused.current = focused;
+  }, [focused, scale]);
+
   return (
     <View style={styles.tabIconWrap}>
-      <View style={[styles.tabIconPill, focused && styles.tabIconPillActive]}>
+      <Animated.View style={[styles.tabIconPill, focused && styles.tabIconPillActive, { transform: [{ scale }] }]}>
         {icon}
-      </View>
+      </Animated.View>
     </View>
   );
 }

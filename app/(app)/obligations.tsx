@@ -29,11 +29,14 @@ import { parseDisplayDate } from "../../lib/date";
 import { useWorkspace } from "../../lib/workspace-context";
 import {
   buildShareByObligationId,
-  getDirectionLabel,
   getObligationStatusLabel,
   getShareStatusLabel,
 } from "../../lib/obligation-labels";
-import { obligationSwipeActionLabel } from "../../lib/obligation-viewer-labels";
+import {
+  obligationPerspectiveDirectionLabel,
+  obligationSwipeActionLabel,
+  obligationViewerActsAsCollector,
+} from "../../lib/obligation-viewer-labels";
 import {
   useWorkspaceSnapshotQuery,
   useDeleteObligationEventMutation,
@@ -73,6 +76,7 @@ import { PrincipalAdjustmentForm } from "../../components/forms/PrincipalAdjustm
 import { formatCurrency } from "../../components/ui/AmountDisplay";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
 import { useSwipeTab } from "../../hooks/useSwipeTab";
+import { StaggeredItem } from "../../components/ui/StaggeredItem";
 
 // ─── Status config ───────────────────────────────────────────────────────────
 
@@ -125,7 +129,6 @@ const FILTER_CHIPS: FilterChip[] = [
   { id: "defaulted", label: "Incumplido" },
   { id: "draft",     label: "Borrador" },
   { id: "paid",      label: "Liquidada" },
-  { id: "cancelled", label: "Cancelada" },
 ];
 
 // ─── Swipeable row ────────────────────────────────────────────────────────────
@@ -237,11 +240,12 @@ function SwipeableObligationRow({
   }
 
   const isPaid = obligation.status === "paid" || obligation.status === "cancelled";
-  const color = obligation.direction === "receivable" ? COLORS.income : COLORS.expense;
-  const directionColor = obligation.direction === "receivable" ? COLORS.income : COLORS.expense;
+  const actsAsCollector = obligationViewerActsAsCollector(obligation.direction, Boolean(isSharedWithMe));
+  const color = actsAsCollector ? COLORS.income : COLORS.expense;
+  const directionColor = actsAsCollector ? COLORS.income : COLORS.expense;
   const obligationStatusColor = STATUS_COLORS[obligation.status] ?? STATUS_COLORS.active;
   const obligationStatusLabel = getObligationStatusLabel(obligation.status);
-  const directionLabel = getDirectionLabel(obligation.direction);
+  const directionLabel = obligationPerspectiveDirectionLabel(obligation.direction, Boolean(isSharedWithMe));
   const shareLabel = obligationShare ? getShareStatusLabel(obligationShare.status) : null;
   const shareColor =
     obligationShare?.status === "pending"
@@ -402,6 +406,7 @@ function ObligationsScreen() {
   );
 
   const [activeFilter, setActiveFilter] = useState("all");
+  const [showArchived, setShowArchived] = useState(false);
   const [createFormVisible, setCreateFormVisible] = useState(false);
   const [paymentObligation, setPaymentObligation] = useState<ObligationSummary | null>(null);
   const [paymentRequestObligation, setPaymentRequestObligation] = useState<SharedObligationSummary | null>(null);
@@ -607,35 +612,67 @@ function ObligationsScreen() {
     () => filtered.filter((ob) => !pendingDeleteIds.has(ob.id)),
     [filtered, pendingDeleteIds],
   );
+  const activeWorkspaceData = useMemo(
+    () => workspaceData.filter((ob) => ob.status !== "cancelled"),
+    [workspaceData],
+  );
+  const archivedWorkspaceData = useMemo(
+    () => (showArchived ? workspaceData.filter((ob) => ob.status === "cancelled") : []),
+    [showArchived, workspaceData],
+  );
+  const activeSharedData = useMemo(
+    () => filteredShared.filter((ob) => ob.status !== "cancelled"),
+    [filteredShared],
+  );
+  const archivedSharedData = useMemo(
+    () => (showArchived ? filteredShared.filter((ob) => ob.status === "cancelled") : []),
+    [filteredShared, showArchived],
+  );
 
   const obligationSections = useMemo(() => {
     type OblSection = {
-      key: "workspace" | "shared";
+      key: "workspace" | "shared" | "archived-divider" | "workspace-archived" | "shared-archived";
       label: string;
       hint?: string;
       data: (ObligationSummary | SharedObligationSummary)[];
     };
     const sections: OblSection[] = [];
-    if (workspaceData.length > 0) {
-      sections.push({ key: "workspace", label: "Tu workspace", data: workspaceData });
+    if (activeWorkspaceData.length > 0) {
+      sections.push({ key: "workspace", label: "Tu workspace", data: activeWorkspaceData });
     }
-    if (filteredShared.length > 0) {
+    if (activeSharedData.length > 0) {
       sections.push({
         key: "shared",
         label: "Compartidos contigo",
         hint: "Créditos o deudas que otro usuario compartió contigo (invitación aceptada).",
-        data: filteredShared,
+        data: activeSharedData,
       });
     }
+    const archivedCount = archivedWorkspaceData.length + archivedSharedData.length;
+    if (archivedCount > 0) {
+      sections.push({ key: "archived-divider", label: `Archivadas (${archivedCount})`, data: [] });
+      if (archivedWorkspaceData.length > 0) {
+        sections.push({ key: "workspace-archived", label: "Tu workspace", data: archivedWorkspaceData });
+      }
+      if (archivedSharedData.length > 0) {
+        sections.push({
+          key: "shared-archived",
+          label: "Compartidos contigo",
+          hint: "Créditos o deudas archivadas que otro usuario compartió contigo.",
+          data: archivedSharedData,
+        });
+      }
+    }
     return sections;
-  }, [workspaceData, filteredShared]);
+  }, [activeSharedData, activeWorkspaceData, archivedSharedData, archivedWorkspaceData]);
 
 
   const renderObligationItem = useCallback(
-    ({ item, section }: { item: ObligationSummary | SharedObligationSummary; section: { key: string } }) => {
+    ({ item, index, section }: { item: ObligationSummary | SharedObligationSummary; index: number; section: { key: string } }) => {
       if (section.key === "shared") {
         const ob = item as SharedObligationSummary;
         return (
+          <StaggeredItem index={index}>
           <SwipeableObligationRow
             obligation={ob}
             obligationShare={ob.share}
@@ -645,11 +682,13 @@ function ObligationsScreen() {
             onDelete={() => {}}
             onAnalytics={() => setAnalyticsObligation(ob)}
           />
+          </StaggeredItem>
         );
       }
       const ob = item as ObligationSummary;
       const allowDelete = canDeleteObligation(ob);
       return (
+        <StaggeredItem index={index}>
         <SwipeableObligationRow
           obligation={ob}
           obligationShare={shareByObligationId.get(ob.id) ?? null}
@@ -663,6 +702,7 @@ function ObligationsScreen() {
           deleteActionBg={allowDelete ? COLORS.danger + "28" : COLORS.storm + "22"}
           deleteActionIcon={allowDelete ? Trash2 : Archive}
         />
+        </StaggeredItem>
       );
     },
     [router, shareByObligationId, pendingRequestCounts, handleObligationRemoveAction],
@@ -787,36 +827,53 @@ function ObligationsScreen() {
       <ScreenHeader title="Créditos y Deudas" />
 
       {/* Filter chips */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.filtersRow}
-        style={styles.filtersScroll}
-      >
-        {FILTER_CHIPS.map((chip) => (
-          <TouchableOpacity
-            key={chip.id}
-            style={[styles.filterChip, activeFilter === chip.id && styles.filterChipActive]}
-            onPress={() => setActiveFilter(chip.id)}
-          >
-            <Text style={[styles.filterChipText, activeFilter === chip.id && styles.filterChipTextActive]}>
-              {chip.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+      <View style={styles.filterControlsRow}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filtersRow}
+          style={styles.filtersScroll}
+        >
+          {FILTER_CHIPS.map((chip) => (
+            <TouchableOpacity
+              key={chip.id}
+              style={[styles.filterChip, activeFilter === chip.id && styles.filterChipActive]}
+              onPress={() => setActiveFilter(chip.id)}
+            >
+              <Text style={[styles.filterChipText, activeFilter === chip.id && styles.filterChipTextActive]}>
+                {chip.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+        <TouchableOpacity
+          style={[styles.archivedToggle, showArchived && styles.archivedToggleActive]}
+          onPress={() => setShowArchived((value) => !value)}
+          accessibilityRole="button"
+          accessibilityLabel={showArchived ? "Ocultar archivadas" : "Mostrar archivadas"}
+        >
+          <Archive size={13} color={showArchived ? COLORS.primary : COLORS.storm} />
+        </TouchableOpacity>
+      </View>
 
       <SectionList
         sections={obligationSections}
         keyExtractor={(item) => `${(item as SharedObligationSummary).workspaceId ?? ""}-${item.id}`}
         renderItem={renderObligationItem}
         renderSectionHeader={({ section }) => (
-          <View>
-            <Text style={styles.sectionLabel}>{section.label}</Text>
-            {section.hint ? (
-              <Text style={styles.sectionHint}>{section.hint}</Text>
-            ) : null}
-          </View>
+          section.key === "archived-divider" ? (
+            <View style={styles.archivedHeader}>
+              <Archive size={13} color={COLORS.storm} strokeWidth={2} />
+              <Text style={styles.archivedLabel}>{section.label}</Text>
+            </View>
+          ) : (
+            <View>
+              <Text style={styles.sectionLabel}>{section.label}</Text>
+              {section.hint ? (
+                <Text style={styles.sectionHint}>{section.hint}</Text>
+              ) : null}
+            </View>
+          )
         )}
         stickySectionHeadersEnabled={false}
         ListHeaderComponent={
@@ -824,7 +881,7 @@ function ObligationsScreen() {
             <>
               <SkeletonCard /><SkeletonCard /><SkeletonCard />
             </>
-          ) : sharedLoading && filteredShared.length === 0 && obligationSections.length === 0 ? (
+          ) : sharedLoading && activeSharedData.length === 0 && obligationSections.length === 0 ? (
             <View style={styles.sharedLoading}>
               <ActivityIndicator color={COLORS.primary} />
               <Text style={styles.sharedLoadingText}>Cargando compartidos contigo…</Text>
@@ -832,7 +889,7 @@ function ObligationsScreen() {
           ) : null
         }
         ListEmptyComponent={
-          !isLoading && workspaceData.length === 0 && filteredShared.length === 0 && !sharedLoading ? (
+          !isLoading && obligationSections.length === 0 && !sharedLoading ? (
             <EmptyState
               title="Sin obligaciones"
               description="Registra préstamos, deudas y créditos aquí. Las que otros compartan contigo aparecen abajo en «Compartidos contigo»."
@@ -995,7 +1052,7 @@ function ObligationsScreen() {
           archiveTarget
             ? archiveTarget.status === "cancelled"
               ? `"${archiveTarget.title}" ya está archivada.`
-              : `Se archivará "${archiveTarget.title}". No se elimina — puedes filtrar por estado "Cancelada" para verla.`
+              : `Se archivará "${archiveTarget.title}". No se elimina; podrás verla activando el icono de archivadas.`
             : ""
         }
         confirmLabel={archiveTarget?.status === "cancelled" ? "Entendido" : "Archivar"}
@@ -1170,6 +1227,12 @@ const swipeStyles = StyleSheet.create({
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: COLORS.bg },
   filtersScroll: { flexGrow: 0 },
+  filterControlsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+    paddingRight: SPACING.lg,
+  },
   filtersRow: {
     paddingHorizontal: SPACING.lg,
     paddingVertical: SPACING.sm,
@@ -1199,7 +1262,35 @@ const styles = StyleSheet.create({
     textAlignVertical: "center",
   },
   filterChipTextActive: { color: COLORS.pine },
+  archivedToggle: {
+    width: 38,
+    height: 38,
+    borderRadius: RADIUS.full,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: GLASS.card,
+    borderWidth: 1,
+    borderColor: GLASS.cardBorder,
+  },
+  archivedToggleActive: {
+    backgroundColor: COLORS.primary + "22",
+    borderColor: COLORS.primary + "44",
+  },
   listContent: { padding: SPACING.lg, paddingBottom: 100 },
+  archivedHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.xs,
+    marginTop: SPACING.sm,
+    paddingTop: SPACING.md,
+    borderTopWidth: 1,
+    borderTopColor: GLASS.separator,
+  },
+  archivedLabel: {
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.storm,
+    fontFamily: FONT_FAMILY.bodyMedium,
+  },
   sectionLabel: {
     fontSize: FONT_SIZE.xs,
     fontFamily: FONT_FAMILY.bodySemibold,
@@ -1313,5 +1404,3 @@ export default function ObligationsScreenRoot() {
     </ErrorBoundary>
   );
 }
-
-

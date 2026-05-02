@@ -32,15 +32,30 @@ export function convertAmountToWorkspaceBase(
   return null;
 }
 
-/** Lista: interval_count > 1 → "N × etiqueta", si no solo la etiqueta. */
+/** Etiqueta legible para frecuencia: "Mensual", "Cada 14 días", etc. */
 export function subscriptionFrequencyListLabel(
   intervalCount: number,
   frequency: SubscriptionFrequency,
   labels: Record<SubscriptionFrequency, string>,
 ): string {
   const n = Math.max(1, Math.floor(intervalCount) || 1);
-  const base = labels[frequency] ?? frequency;
-  return n > 1 ? `${n} × ${base}` : base;
+  if (n <= 1) return labels[frequency] ?? frequency;
+
+  switch (frequency) {
+    case "daily":
+    case "custom":
+      return `Cada ${n} días`;
+    case "weekly":
+      return `Cada ${n} semanas`;
+    case "monthly":
+      return `Cada ${n} meses`;
+    case "quarterly":
+      return `Cada ${n} trimestres`;
+    case "yearly":
+      return `Cada ${n} años`;
+    default:
+      return labels[frequency] ?? frequency;
+  }
 }
 
 /**

@@ -47,7 +47,7 @@ const STATUS_COLOR: Record<string, string> = {
 };
 
 export function AccountAnalyticsModal({ visible, account, onClose }: Props) {
-  const { activeWorkspaceId } = useWorkspace();
+  const { activeWorkspaceId, activeWorkspace } = useWorkspace();
   const { backdropStyle, panHandlers, sheetStyle } = useDismissibleSheet({ visible, onClose });
   const { data: movements = [], isLoading } = useAccountAnalyticsQuery(
     activeWorkspaceId,
@@ -55,6 +55,7 @@ export function AccountAnalyticsModal({ visible, account, onClose }: Props) {
   );
 
   const currency = account?.currencyCode ?? "PEN";
+  const baseCurrency = activeWorkspace?.baseCurrencyCode ?? "PEN";
 
   // ── Core metrics ────────────────────────────────────────────────────────
   const metrics = useMemo(() => {
@@ -202,11 +203,24 @@ export function AccountAnalyticsModal({ visible, account, onClose }: Props) {
               showsVerticalScrollIndicator={false}
             >
               {/* 4 Key metrics */}
+              <View style={styles.currencyHintCard}>
+                <Text style={styles.currencyHintTitle}>Moneda del análisis</Text>
+                <Text style={styles.currencyHintBody}>
+                  Este análisis usa la moneda propia de la cuenta ({currency}) para que entradas, salidas y saldo no mezclen divisas.
+                </Text>
+                {account.currentBalanceInBaseCurrency != null && currency !== baseCurrency ? (
+                  <Text style={styles.currencyHintSub}>
+                    Saldo actual equivalente: {formatCurrency(account.currentBalanceInBaseCurrency, baseCurrency)} en {baseCurrency}.
+                  </Text>
+                ) : null}
+              </View>
+
+              {/* 4 Key metrics */}
               <View style={styles.metricsGrid}>
                 {[
-                  { label: "Total entradas", value: formatCurrency(metrics.totalIn, currency), color: COLORS.income, Icon: TrendingUp },
-                  { label: "Total salidas",  value: formatCurrency(metrics.totalOut, currency), color: COLORS.expense, Icon: TrendingDown },
-                  { label: "Flujo neto",     value: formatCurrency(Math.abs(metrics.netFlow), currency), color: isPositiveFlow ? COLORS.income : COLORS.expense, Icon: ArrowLeftRight, prefix: isPositiveFlow ? "+" : "−" },
+                  { label: `Total entradas (${currency})`, value: formatCurrency(metrics.totalIn, currency), color: COLORS.income, Icon: TrendingUp },
+                  { label: `Total salidas (${currency})`,  value: formatCurrency(metrics.totalOut, currency), color: COLORS.expense, Icon: TrendingDown },
+                  { label: `Flujo neto (${currency})`,     value: formatCurrency(Math.abs(metrics.netFlow), currency), color: isPositiveFlow ? COLORS.income : COLORS.expense, Icon: ArrowLeftRight, prefix: isPositiveFlow ? "+" : "−" },
                   { label: "Movimientos",    value: String(metrics.count), color: COLORS.storm, Icon: Layers },
                 ].map((m) => (
                   <View key={m.label} style={styles.metricCard}>
@@ -222,7 +236,7 @@ export function AccountAnalyticsModal({ visible, account, onClose }: Props) {
               {/* Income / expense ratio ring */}
               {ratioSegments.length > 0 ? (
                 <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>Distribución entradas/salidas</Text>
+                  <Text style={styles.sectionTitle}>Distribución entradas/salidas · {currency}</Text>
                   <View style={styles.ratioRow}>
                     <RingChart segments={ratioSegments} size={96} thickness={16} />
                     <View style={styles.ratioStats}>
@@ -252,7 +266,7 @@ export function AccountAnalyticsModal({ visible, account, onClose }: Props) {
               {/* Historical balance sparkline */}
               {balanceHistory.length > 1 ? (
                 <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>Evolución del saldo</Text>
+                  <Text style={styles.sectionTitle}>Evolución del saldo · {currency}</Text>
                   <View style={styles.balanceSparkCard}>
                     <View style={styles.balanceSparkRow}>
                       <View>
@@ -284,7 +298,7 @@ export function AccountAnalyticsModal({ visible, account, onClose }: Props) {
 
               {/* Monthly flow chart */}
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Flujo mensual (últimos 6 meses)</Text>
+                <Text style={styles.sectionTitle}>Flujo mensual (últimos 6 meses) · {currency}</Text>
                 <View style={styles.chart}>
                   {monthlyFlow.map((m) => (
                     <View key={m.key} style={styles.chartGroup}>
@@ -317,7 +331,7 @@ export function AccountAnalyticsModal({ visible, account, onClose }: Props) {
               {/* Top 5 categories */}
               {topCategories.length > 0 ? (
                 <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>Top categorías de gasto</Text>
+                  <Text style={styles.sectionTitle}>Top categorías de gasto · {currency}</Text>
                   {topCategories.map(([name, total]) => (
                     <View key={name} style={styles.catRow}>
                       <Text style={styles.catName} numberOfLines={1}>{name}</Text>
@@ -338,7 +352,7 @@ export function AccountAnalyticsModal({ visible, account, onClose }: Props) {
               {/* Day-of-week spending pattern */}
               {dowSpending.some((d) => d.total > 0) ? (
                 <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>Gasto por día de semana</Text>
+                  <Text style={styles.sectionTitle}>Gasto por día de semana · {currency}</Text>
                   <View style={styles.dowChart}>
                     {dowSpending.map((d) => {
                       const pct = Math.round((d.total / maxDowSpend) * 100);
@@ -364,7 +378,7 @@ export function AccountAnalyticsModal({ visible, account, onClose }: Props) {
               {/* Recent movements */}
               {recentMovements.length > 0 ? (
                 <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>Movimientos recientes</Text>
+                  <Text style={styles.sectionTitle}>Movimientos recientes · {currency}</Text>
                   {recentMovements.map((m) => {
                     const isIncoming = m.destinationAccountId === account.id;
                     const amount = isIncoming ? (m.destinationAmount ?? 0) : (m.sourceAmount ?? 0);
@@ -469,6 +483,33 @@ const styles = StyleSheet.create({
     padding: SPACING.lg,
     gap: SPACING.lg,
     paddingBottom: SPACING.xxxl,
+  },
+  currencyHintCard: {
+    backgroundColor: GLASS.card,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: GLASS.cardBorder,
+    padding: SPACING.md,
+    gap: 6,
+  },
+  currencyHintTitle: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.primary,
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+  },
+  currencyHintBody: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.ink,
+    lineHeight: 20,
+  },
+  currencyHintSub: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    lineHeight: 18,
   },
 
   // Metrics

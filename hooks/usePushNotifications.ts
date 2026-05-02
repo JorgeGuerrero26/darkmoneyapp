@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef } from "react";
 import { Platform } from "react-native";
 import Constants from "expo-constants";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { supabase } from "../lib/supabase";
+import { todayPeru } from "../lib/date";
 import { calendarDaysFromTodayLocal } from "../lib/subscription-helpers";
 import { getNotificationsModule } from "../lib/notifications-runtime";
 
@@ -101,26 +103,78 @@ export type PushNotificationHandlers = {
   /** Toque en notificación con data.type === "obligation_reminder" */
   onObligationReminderTap?: (obligationId: number) => void;
   onRecurringIncomeReminderTap?: (recurringIncomeId: number) => void;
+  onGenericNotificationTap?: (data: Record<string, unknown>) => void;
 };
+
+const LOCAL_REMINDER_ID_PREFIX = "darkmoney_local_reminder_id:";
+const LOCAL_REMINDER_DAY_PREFIX = "darkmoney_local_reminder_day:";
+
+function localReminderStorageKey(type: string, entityId: number, anchorDate: string) {
+  return `${LOCAL_REMINDER_ID_PREFIX}${type}:${entityId}:${anchorDate}`;
+}
+
+function localReminderDayKey(type: string, entityId: number, anchorDate: string) {
+  return `${LOCAL_REMINDER_DAY_PREFIX}${type}:${entityId}:${anchorDate}`;
+}
+
+async function shouldThrottleImmediateLocalReminder(
+  type: string,
+  entityId: number,
+  anchorDate: string,
+) {
+  const lastDay = await AsyncStorage.getItem(localReminderDayKey(type, entityId, anchorDate));
+  return lastDay === todayPeru();
+}
+
+async function rememberImmediateLocalReminder(
+  type: string,
+  entityId: number,
+  anchorDate: string,
+) {
+  await AsyncStorage.setItem(localReminderDayKey(type, entityId, anchorDate), todayPeru());
+}
+
+async function setStoredLocalReminderId(type: string, entityId: number, anchorDate: string, id: string) {
+  await AsyncStorage.setItem(localReminderStorageKey(type, entityId, anchorDate), id);
+}
 
 export function usePushNotifications(userId?: string, handlers?: PushNotificationHandlers) {
   const notificationListener = useRef<ExpoEventSubscription | null>(null);
   const responseListener = useRef<ExpoEventSubscription | null>(null);
+  const handledResponseKeysRef = useRef<Set<string>>(new Set());
   const onInviteTapRef = useRef(handlers?.onObligationShareInviteTap);
   const onWorkspaceInviteTapRef = useRef(handlers?.onWorkspaceInviteTap);
   const onDailyDigestTapRef = useRef(handlers?.onDailyDigestTap);
   const onSubTapRef = useRef(handlers?.onSubscriptionReminderTap);
   const onObTapRef = useRef(handlers?.onObligationReminderTap);
   const onRecurringTapRef = useRef(handlers?.onRecurringIncomeReminderTap);
+  const onGenericTapRef = useRef(handlers?.onGenericNotificationTap);
   onInviteTapRef.current = handlers?.onObligationShareInviteTap;
   onWorkspaceInviteTapRef.current = handlers?.onWorkspaceInviteTap;
   onDailyDigestTapRef.current = handlers?.onDailyDigestTap;
   onSubTapRef.current = handlers?.onSubscriptionReminderTap;
   onObTapRef.current = handlers?.onObligationReminderTap;
   onRecurringTapRef.current = handlers?.onRecurringIncomeReminderTap;
+  onGenericTapRef.current = handlers?.onGenericNotificationTap;
 
   const handleResponse = useCallback((response: ExpoNotificationResponse) => {
+    const identifier = String(response.notification.request.identifier ?? "");
+    const actionIdentifier = String(response.actionIdentifier ?? "");
     const data = response.notification.request.content.data as Record<string, unknown> | undefined;
+    const localReminderKey =
+      data && typeof data.localReminderKey === "string" && data.localReminderKey.trim()
+        ? data.localReminderKey.trim()
+        : "";
+    const dedupeKey = [identifier, actionIdentifier, localReminderKey].filter(Boolean).join("|");
+    if (dedupeKey) {
+      if (handledResponseKeysRef.current.has(dedupeKey)) return;
+      handledResponseKeysRef.current.add(dedupeKey);
+    }
+
+    // Expo can retain the last response and re-emit it when the app is reactivated.
+    // Clear it after handling so reopening the app restores the previous screen.
+    void Notifications?.clearLastNotificationResponseAsync?.().catch(() => {});
+
     if (!data) return;
 
     if (data.type === "obligation_share_invite" && typeof data.token === "string") {
@@ -135,6 +189,8 @@ export function usePushNotifications(userId?: string, handlers?: PushNotificatio
       onObTapRef.current?.(data.obligationId);
     } else if (data.type === "recurring_income_reminder" && typeof data.recurringIncomeId === "number") {
       onRecurringTapRef.current?.(data.recurringIncomeId);
+    } else {
+      onGenericTapRef.current?.(data);
     }
   }, []);
 
@@ -158,6 +214,7 @@ export function usePushNotifications(userId?: string, handlers?: PushNotificatio
       // Badge / invalidación en foreground si hiciera falta
     });
 
+    void Notifications.clearLastNotificationResponseAsync?.().catch(() => {});
     responseListener.current = Notifications.addNotificationResponseReceivedListener(handleResponse);
 
     return () => {
@@ -183,11 +240,11 @@ export async function scheduleSubscriptionReminders(
 ) {
   if (!Notifications) return;
   const scheduled = await Notifications.getAllScheduledNotificationsAsync();
-  for (const notif of scheduled) {
-    if (String(notif.content.data?.type) === "subscription_reminder") {
-      await Notifications.cancelScheduledNotificationAsync(notif.identifier);
-    }
-  }
+  const scheduledKeys = new Set(
+    scheduled
+      .map((notif) => String(notif.content.data?.localReminderKey ?? ""))
+      .filter(Boolean),
+  );
 
   const now = new Date();
 
@@ -205,17 +262,27 @@ export async function scheduleSubscriptionReminders(
     const windowStart = new Date(dueDate);
     windowStart.setDate(windowStart.getDate() - remindWindow);
     windowStart.setHours(9, 0, 0, 0);
-
+    const isImmediateCatchUp = windowStart <= now;
     const triggerDate = windowStart > now ? windowStart : new Date(now.getTime() + 60_000);
+    const reminderKey = `subscription_reminder:${sub.id}:${sub.nextDueDate}`;
 
-    await Notifications.scheduleNotificationAsync({
+    if (scheduledKeys.has(reminderKey)) continue;
+    if (isImmediateCatchUp && await shouldThrottleImmediateLocalReminder("subscription_reminder", sub.id, sub.nextDueDate)) {
+      continue;
+    }
+
+    const identifier = await Notifications.scheduleNotificationAsync({
       content: {
         title: "Suscripción próxima a vencer",
         body: `"${sub.name}" vence el ${dueDate.toLocaleDateString("es", { day: "numeric", month: "long" })}`,
-        data: { type: "subscription_reminder", subscriptionId: sub.id },
+        data: { type: "subscription_reminder", subscriptionId: sub.id, localReminderKey: reminderKey },
       },
       trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: triggerDate },
     });
+    await setStoredLocalReminderId("subscription_reminder", sub.id, sub.nextDueDate, identifier);
+    if (isImmediateCatchUp) {
+      await rememberImmediateLocalReminder("subscription_reminder", sub.id, sub.nextDueDate);
+    }
   }
 }
 
@@ -238,11 +305,11 @@ export async function scheduleObligationReminders(
 ) {
   if (!Notifications) return;
   const scheduled = await Notifications.getAllScheduledNotificationsAsync();
-  for (const notif of scheduled) {
-    if (String(notif.content.data?.type) === "obligation_reminder") {
-      await Notifications.cancelScheduledNotificationAsync(notif.identifier);
-    }
-  }
+  const scheduledKeys = new Set(
+    scheduled
+      .map((notif) => String(notif.content.data?.localReminderKey ?? ""))
+      .filter(Boolean),
+  );
 
   const now = new Date();
 
@@ -277,16 +344,27 @@ export async function scheduleObligationReminders(
     const windowStart = new Date(dueDate);
     windowStart.setDate(windowStart.getDate() - 7);
     windowStart.setHours(9, 0, 0, 0);
+    const isImmediateCatchUp = windowStart <= now;
     const triggerDate = windowStart > now ? windowStart : new Date(now.getTime() + 60_000);
+    const reminderKey = `obligation_reminder:${ob.id}:${ob.dueDate}`;
 
-    await Notifications.scheduleNotificationAsync({
+    if (scheduledKeys.has(reminderKey)) continue;
+    if (isImmediateCatchUp && await shouldThrottleImmediateLocalReminder("obligation_reminder", ob.id, ob.dueDate)) {
+      continue;
+    }
+
+    const identifier = await Notifications.scheduleNotificationAsync({
       content: {
         title,
         body,
-        data: { type: "obligation_reminder", obligationId: ob.id },
+        data: { type: "obligation_reminder", obligationId: ob.id, localReminderKey: reminderKey },
       },
       trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: triggerDate },
     });
+    await setStoredLocalReminderId("obligation_reminder", ob.id, ob.dueDate, identifier);
+    if (isImmediateCatchUp) {
+      await rememberImmediateLocalReminder("obligation_reminder", ob.id, ob.dueDate);
+    }
   }
 }
 
@@ -300,11 +378,11 @@ export async function scheduleRecurringIncomeReminders(
 ) {
   if (!Notifications) return;
   const scheduled = await Notifications.getAllScheduledNotificationsAsync();
-  for (const notif of scheduled) {
-    if (String(notif.content.data?.type) === "recurring_income_reminder") {
-      await Notifications.cancelScheduledNotificationAsync(notif.identifier);
-    }
-  }
+  const scheduledKeys = new Set(
+    scheduled
+      .map((notif) => String(notif.content.data?.localReminderKey ?? ""))
+      .filter(Boolean),
+  );
 
   const now = new Date();
   for (const income of incomes) {
@@ -321,15 +399,26 @@ export async function scheduleRecurringIncomeReminders(
     const windowStart = new Date(expectedDate);
     windowStart.setDate(windowStart.getDate() - remindWindow);
     windowStart.setHours(9, 0, 0, 0);
+    const isImmediateCatchUp = windowStart <= now;
     const triggerDate = windowStart > now ? windowStart : new Date(now.getTime() + 60_000);
+    const reminderKey = `recurring_income_reminder:${income.id}:${income.nextExpectedDate}`;
 
-    await Notifications.scheduleNotificationAsync({
+    if (scheduledKeys.has(reminderKey)) continue;
+    if (isImmediateCatchUp && await shouldThrottleImmediateLocalReminder("recurring_income_reminder", income.id, income.nextExpectedDate)) {
+      continue;
+    }
+
+    const identifier = await Notifications.scheduleNotificationAsync({
       content: {
         title: "Ingreso fijo próximo",
         body: `"${income.name}" se espera para el ${expectedDate.toLocaleDateString("es", { day: "numeric", month: "long" })}`,
-        data: { type: "recurring_income_reminder", recurringIncomeId: income.id },
+        data: { type: "recurring_income_reminder", recurringIncomeId: income.id, localReminderKey: reminderKey },
       },
       trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: triggerDate },
     });
+    await setStoredLocalReminderId("recurring_income_reminder", income.id, income.nextExpectedDate, identifier);
+    if (isImmediateCatchUp) {
+      await rememberImmediateLocalReminder("recurring_income_reminder", income.id, income.nextExpectedDate);
+    }
   }
 }

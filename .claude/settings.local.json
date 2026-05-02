@@ -16,7 +16,9 @@
       "Bash(awk -F: '$2 <= 5700 && $2 >= 5600')",
       "Bash(npx tsc *)",
       "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); [print\\(k,v\\) for k,v in {**d.get\\('dependencies',{}\\), **d.get\\('devDependencies',{}\\)}.items\\(\\) if 'gradient' in k.lower\\(\\) or 'expo' in k.lower\\(\\)]\")",
-      "Bash(npx expo *)"
+      "Bash(npx expo *)",
+      "Bash(identify /Users/clinaresb/Desktop/Proyectos/darkmoneyapp/assets/images/background-darkmoney.png)",
+      "Bash(sips -g pixelWidth -g pixelHeight /Users/clinaresb/Desktop/Proyectos/darkmoneyapp/assets/images/background-darkmoney.png)"
     ]
   }
 }

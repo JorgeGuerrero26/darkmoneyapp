@@ -31,13 +31,15 @@ import {
 
 import { useAuth } from "../lib/auth-context";
 import { obligationShareHref } from "../lib/obligation-share-link";
-import { workspaceInviteHref } from "../lib/workspace-invite-link";
+import { resolveNotificationNavigationTarget } from "../lib/notification-navigation";
 import {
   getNotificationPriority,
   getNotificationPriorityMeta,
   type NotificationPriority,
 } from "../lib/notification-priority";
 import {
+  useDeleteNotificationMutation,
+  useDeleteNotificationsMutation,
   useNotificationsQuery,
   useMarkNotificationReadMutation,
   useMarkAllNotificationsReadMutation,
@@ -173,14 +175,6 @@ function firstPayloadValue(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>;
 }
 
-function payloadNumber(value: unknown, key: string): number | null {
-  const payload = firstPayloadValue(value);
-  if (!payload) return null;
-  const raw = payload[key];
-  const num = typeof raw === "number" ? raw : Number(raw ?? 0);
-  return Number.isFinite(num) && num > 0 ? num : null;
-}
-
 function payloadString(value: unknown, key: string): string | null {
   const payload = firstPayloadValue(value);
   if (!payload) return null;
@@ -194,12 +188,16 @@ function NotifCard({
   item,
   onPress,
   onLongPress,
+  onArchive,
+  onDelete,
   selected = false,
   selectionMode = false,
 }: {
   item: NotificationItem;
   onPress: () => void;
   onLongPress?: () => void;
+  onArchive?: () => void;
+  onDelete?: () => void;
   selected?: boolean;
   selectionMode?: boolean;
 }) {
@@ -267,6 +265,22 @@ function NotifCard({
         <Text style={styles.cardText} numberOfLines={3}>
           {item.body}
         </Text>
+        {!selectionMode ? (
+          <View style={styles.cardActions}>
+            {unread ? (
+              <TouchableOpacity style={styles.cardActionChip} onPress={onArchive} activeOpacity={0.8}>
+                <Text style={styles.cardActionChipText}>Archivar</Text>
+              </TouchableOpacity>
+            ) : null}
+            <TouchableOpacity
+              style={[styles.cardActionChip, styles.cardActionChipDanger]}
+              onPress={onDelete}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.cardActionChipText, styles.cardActionChipDangerText]}>Eliminar</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
       </View>
     </TouchableOpacity>
   );
@@ -382,6 +396,8 @@ function NotificationsScreen() {
   const markAllUnread = useMarkAllNotificationsUnreadMutation(user?.id ?? null);
   const markSelectedRead = useMarkNotificationsReadMutation(user?.id ?? null);
   const markSelectedUnread = useMarkNotificationsUnreadMutation(user?.id ?? null);
+  const deleteNotification = useDeleteNotificationMutation(user?.id ?? null);
+  const deleteSelectedNotifications = useDeleteNotificationsMutation(user?.id ?? null);
   const unreadCount = notificationList.filter((n) => n.status !== "read").length;
   const readCount = notificationList.length - unreadCount;
   const selectionMode = selectedNotificationIds.length > 0;
@@ -395,7 +411,8 @@ function NotificationsScreen() {
     markAllRead.isPending ||
     markAllUnread.isPending ||
     markSelectedRead.isPending ||
-    markSelectedUnread.isPending;
+    markSelectedUnread.isPending ||
+    deleteSelectedNotifications.isPending;
 
   useEffect(() => {
     setSelectedNotificationIds((current) =>
@@ -463,6 +480,50 @@ function NotificationsScreen() {
     }
   }
 
+  async function handleSelectedArchive() {
+    if (!selectedNotificationIds.length) return;
+    try {
+      await markSelectedRead.mutateAsync(selectedNotificationIds);
+      showToast("Notificaciones archivadas", "success");
+      clearSelection();
+    } catch (error: unknown) {
+      showToast(error instanceof Error ? error.message : "No se pudo archivar", "error");
+    }
+  }
+
+  async function handleSelectedDelete() {
+    if (!selectedNotificationIds.length) return;
+    try {
+      await deleteSelectedNotifications.mutateAsync(selectedNotificationIds);
+      showToast("Notificaciones eliminadas", "success");
+      clearSelection();
+    } catch (error: unknown) {
+      showToast(error instanceof Error ? error.message : "No se pudo eliminar", "error");
+    }
+  }
+
+  function handleArchiveSingle(notificationId: number) {
+    markRead.mutate(notificationId, {
+      onSuccess: () => {
+        showToast("Notificación archivada", "success");
+      },
+      onError: (error: unknown) => {
+        showToast(error instanceof Error ? error.message : "No se pudo archivar", "error");
+      },
+    });
+  }
+
+  function handleDeleteSingle(notificationId: number) {
+    deleteNotification.mutate(notificationId, {
+      onSuccess: () => {
+        showToast("Notificación eliminada", "success");
+      },
+      onError: (error: unknown) => {
+        showToast(error instanceof Error ? error.message : "No se pudo eliminar", "error");
+      },
+    });
+  }
+
   function handleTap(n: NotificationItem) {
     if (ignoreTapAfterLongPressRef.current) {
       ignoreTapAfterLongPressRef.current = false;
@@ -477,110 +538,13 @@ function NotificationsScreen() {
       n.kind === "obligation_event_delete_request" ||
       n.kind === "obligation_event_edit_request";
     if (n.status !== "read" && !deferReadUntilResolved) markRead.mutate(n.id);
-    const id = n.relatedEntityId;
-    const obligationIdFromPayload = payloadNumber(n.payload, "obligationId");
-    const requestIdFromPayload = payloadNumber(n.payload, "requestId");
-    const eventIdFromPayload = payloadNumber(n.payload, "eventId");
-    const responseStatusFromPayload = payloadString(n.payload, "responseStatus");
-    const obligationRouteId =
-      obligationIdFromPayload ?? (n.relatedEntityType === "obligation" ? id : null);
-    switch (n.kind) {
-      case "budget_alert":
-      case "budget_period_ending":
-        router.push("/(app)/budgets?from=notifications"); break;
-      case "subscription_reminder":
-      case "subscription_overdue":
-        if (id) router.push(`/subscription/${id}`); break;
-      case "obligation_due":
-      case "obligation_overdue":
-      case "obligation_no_payment":
-      case "high_interest_obligation":
-        if (id) router.push(`/obligation/${id}`); break;
-      case "obligation_event_unlinked":
-        if (obligationRouteId) {
-          router.push({
-            pathname: "/obligation/[id]",
-            params: {
-              id: String(obligationRouteId),
-              eventId: String(eventIdFromPayload ?? ""),
-              notificationKind: n.kind,
-            },
-          });
-        }
-        break;
-      case "obligation_payment_request":
-        if (obligationRouteId) {
-          if (responseStatusFromPayload === "accepted" || responseStatusFromPayload === "rejected") {
-            router.push(`/obligation/${obligationRouteId}`);
-          } else {
-            router.push({
-              pathname: "/obligation/[id]",
-              params: {
-                id: String(obligationRouteId),
-                paymentRequestId: String(requestIdFromPayload ?? id ?? ""),
-                notificationKind: n.kind,
-              },
-            });
-          }
-        }
-        break;
-      case "obligation_share_invite": {
-        const token = payloadString(n.payload, "token");
-        if (token) {
-          router.push(obligationShareHref(token));
-        } else {
-          router.push("/(app)/obligations");
-        }
-        break;
-      }
-      case "workspace_invite": {
-        const token = payloadString(n.payload, "token");
-        if (token) {
-          router.push(workspaceInviteHref(token));
-        } else {
-          router.push("/(app)/dashboard");
-        }
-        break;
-      }
-      case "obligation_request_accepted":
-      case "obligation_request_rejected":
-        if (obligationRouteId) {
-          router.push(`/obligation/${obligationRouteId}`);
-        }
-        break;
-      case "obligation_event_delete_request":
-      case "obligation_event_delete_pending":
-      case "obligation_event_delete_accepted":
-      case "obligation_event_delete_rejected":
-      case "obligation_event_deleted":
-      case "obligation_event_edit_request":
-      case "obligation_event_edit_pending":
-      case "obligation_event_edit_accepted":
-      case "obligation_event_edit_rejected":
-      case "obligation_event_updated":
-        if (obligationRouteId) {
-          router.push({
-            pathname: "/obligation/[id]",
-            params: {
-              id: String(obligationRouteId),
-              eventId: String(eventIdFromPayload ?? id ?? ""),
-              notificationKind: n.kind,
-            },
-          });
-        }
-        break;
-      case "low_balance":
-      case "negative_balance":
-      case "account_dormant":
-        if (id) router.push(`/account/${id}`); break;
-      case "savings_rate_low":
-      case "subscription_cost_heavy":
-      case "no_movements_week":
-        router.push("/(app)/dashboard"); break;
-      case "upcoming_annual_subscription":
-        if (id) router.push(`/subscription/${id}`);
-        else router.push("/subscriptions"); break;
-    }
+    const target = resolveNotificationNavigationTarget({
+      kind: n.kind,
+      relatedEntityType: n.relatedEntityType,
+      relatedEntityId: n.relatedEntityId,
+      payload: n.payload as Record<string, unknown> | null | undefined,
+    });
+    router.push(target as never);
   }
 
   const onRefresh = useCallback(() => {
@@ -682,14 +646,14 @@ function NotificationsScreen() {
           </Text>
           <View style={styles.bulkToolbarActions}>
             <TouchableOpacity
-              onPress={() => void handleSelectedReadState("read")}
+              onPress={() => void handleSelectedArchive()}
               style={[
                 styles.bulkActionBtn,
                 selectedUnreadCount === 0 && styles.bulkActionBtnDisabled,
               ]}
               disabled={selectedUnreadCount === 0 || bulkActionLoading}
             >
-              <Text style={styles.bulkActionText}>Marcar leído</Text>
+              <Text style={styles.bulkActionText}>Archivar</Text>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => void handleSelectedReadState("unread")}
@@ -700,6 +664,13 @@ function NotificationsScreen() {
               disabled={selectedReadCount === 0 || bulkActionLoading}
             >
               <Text style={styles.bulkActionText}>Marcar no leído</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => void handleSelectedDelete()}
+              style={[styles.bulkActionBtn, styles.bulkActionBtnDanger]}
+              disabled={bulkActionLoading}
+            >
+              <Text style={[styles.bulkActionText, styles.bulkActionTextDanger]}>Eliminar</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -813,6 +784,8 @@ function NotificationsScreen() {
                         item={n}
                         onPress={() => handleTap(n)}
                         onLongPress={() => handleNotificationLongPress(n)}
+                        onArchive={() => handleArchiveSingle(n.id)}
+                        onDelete={() => handleDeleteSingle(n.id)}
                         selected={selectedNotificationIds.includes(n.id)}
                         selectionMode={selectionMode}
                       />
@@ -874,6 +847,10 @@ const styles = StyleSheet.create({
     borderColor: COLORS.primary + "50",
     backgroundColor: COLORS.primary + "14",
   },
+  bulkActionBtnDanger: {
+    borderColor: COLORS.danger + "40",
+    backgroundColor: COLORS.danger + "12",
+  },
   bulkActionBtnDisabled: {
     opacity: 0.45,
   },
@@ -881,6 +858,9 @@ const styles = StyleSheet.create({
     fontFamily: FONT_FAMILY.bodyMedium,
     fontSize: FONT_SIZE.xs,
     color: COLORS.primary,
+  },
+  bulkActionTextDanger: {
+    color: COLORS.danger,
   },
   filterBar: {
     flexDirection: "row",
@@ -1099,6 +1079,32 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.sm,
     color: COLORS.storm,
     lineHeight: 18,
+  },
+  cardActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: SPACING.xs,
+    marginTop: SPACING.sm,
+  },
+  cardActionChip: {
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 6,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    borderColor: COLORS.primary + "40",
+    backgroundColor: COLORS.primary + "12",
+  },
+  cardActionChipDanger: {
+    borderColor: COLORS.danger + "40",
+    backgroundColor: COLORS.danger + "10",
+  },
+  cardActionChipText: {
+    fontFamily: FONT_FAMILY.bodyMedium,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.primary,
+  },
+  cardActionChipDangerText: {
+    color: COLORS.danger,
   },
   cardQuote: {
     fontFamily: FONT_FAMILY.body,

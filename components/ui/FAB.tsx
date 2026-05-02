@@ -1,5 +1,6 @@
+import { useEffect, useRef } from "react";
 import { Plus } from "lucide-react-native";
-import { StyleSheet, TouchableOpacity, View } from "react-native";
+import { Animated, StyleSheet, TouchableOpacity, View } from "react-native";
 import { COLORS, SPACING } from "../../constants/theme";
 
 type Props = {
@@ -8,8 +9,19 @@ type Props = {
 };
 
 export function FAB({ onPress, bottom }: Props) {
+  const scale = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.spring(scale, {
+      toValue: 1,
+      tension: 65,
+      friction: 6,
+      useNativeDriver: true,
+    }).start();
+  }, [scale]);
+
   return (
-    <View style={[styles.glowWrap, { bottom }]}>
+    <Animated.View style={[styles.glowWrap, { bottom, transform: [{ scale }] }]}>
       <TouchableOpacity
         style={styles.fab}
         onPress={onPress}
@@ -18,24 +30,21 @@ export function FAB({ onPress, bottom }: Props) {
       >
         <Plus size={22} color="#05070B" strokeWidth={2.5} />
       </TouchableOpacity>
-    </View>
+    </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
-  // Wrapper carries the colored glow (iOS shadow + Android halo ring)
   glowWrap: {
     position: "absolute",
     right: SPACING.lg,
     width: 52,
     height: 52,
     borderRadius: 26,
-    // iOS: mint glow halo
     shadowColor: COLORS.primary,
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.55,
     shadowRadius: 18,
-    // Android: outer colored ring
     borderWidth: 2.5,
     borderColor: COLORS.primary + "40",
     backgroundColor: "transparent",
