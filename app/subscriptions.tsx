@@ -1,5 +1,6 @@
 import {
   BarChart3,
+  CalendarClock,
   Download,
   Pause,
   Play,
@@ -8,6 +9,7 @@ import {
   Trash2,
   X,
 } from "lucide-react-native";
+import * as Haptics from "expo-haptics";
 import { FAB } from "../components/ui/FAB";
 import { ErrorBoundary } from "../components/ui/ErrorBoundary";
 import { UndoBanner } from "../components/ui/UndoBanner";
@@ -79,10 +81,8 @@ const FREQ_FILTERS: { label: string; value: "all" | SubscriptionFrequency }[] = 
   { label: "Personalizado", value: "custom" },
 ];
 
-/** Ancho de la zona al deslizar: izquierda → pausar/reactivar, derecha → eliminar */
-const SUB_SWIPE_REVEAL = 88;
-
-type SubSwipeOpen = "delete" | "pause" | null;
+const SUB_SWIPE_REVEAL = 96;
+const SUB_ACTION_PANEL_W = 176;
 
 function SwipeableSubscriptionRow({
   sub,
@@ -98,82 +98,66 @@ function SwipeableSubscriptionRow({
   cardContent: ReactNode;
 }) {
   const translateX = useRef(new Animated.Value(0)).current;
-  const openKind = useRef<SubSwipeOpen>(null);
+  const openSideRef = useRef<"right" | null>(null);
   const startBaseRef = useRef(0);
 
   const canPause = sub.status === "active" || sub.status === "paused";
   const pauseLabel = sub.status === "active" ? "Pausar" : "Reactivar";
 
-  const leftOpacity = translateX.interpolate({
-    inputRange: [0, SUB_SWIPE_REVEAL],
-    outputRange: [0, 1],
-    extrapolate: "clamp",
-  });
   const rightOpacity = translateX.interpolate({
-    inputRange: [-SUB_SWIPE_REVEAL, 0],
-    outputRange: [1, 0],
+    inputRange: [-SUB_ACTION_PANEL_W, -12, 0],
+    outputRange: [1, 0.4, 0],
     extrapolate: "clamp",
   });
 
-  const snapTo = useCallback((to: number, kind: SubSwipeOpen) => {
-    openKind.current = kind;
+  const snapTo = useCallback((to: number, side: "right" | null, cb?: () => void) => {
+    openSideRef.current = side;
     Animated.spring(translateX, {
       toValue: to,
       useNativeDriver: true,
       tension: 80,
       friction: 11,
-    }).start();
+    }).start(({ finished }) => {
+      if (finished) cb?.();
+    });
   }, [translateX]);
 
-  const panResponder = useRef(
-    PanResponder.create({
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
       onMoveShouldSetPanResponder: (_, { dx, dy }) =>
         Math.abs(dx) > Math.abs(dy) * 1.5 && Math.abs(dx) > 12,
       onPanResponderGrant: () => {
         translateX.stopAnimation();
         startBaseRef.current =
-          openKind.current === "delete"
-            ? -SUB_SWIPE_REVEAL
-            : openKind.current === "pause"
-              ? SUB_SWIPE_REVEAL
-              : 0;
+          openSideRef.current === "right"
+            ? -SUB_ACTION_PANEL_W
+            : 0;
       },
       onPanResponderMove: (_, { dx }) => {
-        const maxExtent = canPause ? SUB_SWIPE_REVEAL * 1.35 : 0;
         const next = Math.max(
-          -SUB_SWIPE_REVEAL * 1.35,
-          Math.min(maxExtent, startBaseRef.current + dx),
+          -SUB_ACTION_PANEL_W * 1.15,
+          Math.min(0, startBaseRef.current + dx),
         );
         translateX.setValue(next);
       },
       onPanResponderRelease: (_, { dx, vx }) => {
-        const maxExtent = canPause ? SUB_SWIPE_REVEAL * 1.35 : 0;
         const v = Math.max(
-          -SUB_SWIPE_REVEAL * 1.35,
-          Math.min(maxExtent, startBaseRef.current + dx),
+          -SUB_ACTION_PANEL_W * 1.15,
+          Math.min(0, startBaseRef.current + dx),
         );
-        let snap = 0;
-        let nextOpen: SubSwipeOpen = null;
-        if (v < -SUB_SWIPE_REVEAL / 2 || vx < -0.35) {
-          snap = -SUB_SWIPE_REVEAL;
-          nextOpen = "delete";
-        } else if (canPause && (v > SUB_SWIPE_REVEAL / 2 || vx > 0.35)) {
-          snap = SUB_SWIPE_REVEAL;
-          nextOpen = "pause";
+        if (v < -SUB_ACTION_PANEL_W / 2 || vx < -0.35) {
+          snapTo(-SUB_ACTION_PANEL_W, "right");
+          return;
         }
-        openKind.current = nextOpen;
-        Animated.spring(translateX, {
-          toValue: snap,
-          useNativeDriver: true,
-          tension: 80,
-          friction: 11,
-        }).start();
+        snapTo(0, null);
       },
-    }),
-  ).current;
+      }),
+    [snapTo, translateX],
+  );
 
   function handleCardPress() {
-    if (openKind.current !== null) {
+    if (openSideRef.current !== null) {
       snapTo(0, null);
       return;
     }
@@ -181,41 +165,44 @@ function SwipeableSubscriptionRow({
   }
 
   function handleDeleteAction() {
-    snapTo(0, null);
-    onDeleteRequest();
+    snapTo(0, null, onDeleteRequest);
   }
 
   function handlePauseAction() {
-    snapTo(0, null);
-    onTogglePause();
+    snapTo(0, null, onTogglePause);
   }
 
   return (
     <View style={subSwipeStyles.wrap}>
-      {canPause ? (
-        <Animated.View style={[subSwipeStyles.leftReveal, { opacity: leftOpacity }]}>
-          <TouchableOpacity style={subSwipeStyles.swipeActionInner} onPress={handlePauseAction} activeOpacity={0.85}>
+      <Animated.View style={[subSwipeStyles.rightActionsPanel, { opacity: rightOpacity }]} pointerEvents="box-none">
+        {canPause ? (
+          <TouchableOpacity
+            style={[subSwipeStyles.panelActionCell, subSwipeStyles.panelActionCellBorder]}
+            onPress={handlePauseAction}
+            activeOpacity={0.85}
+          >
             {sub.status === "active" ? (
-              <Pause size={20} color={COLORS.gold} strokeWidth={2} />
+              <Pause size={18} color={COLORS.gold} strokeWidth={2} />
             ) : (
-              <Play size={20} color={COLORS.primary} strokeWidth={2} />
+              <Play size={18} color={COLORS.primary} strokeWidth={2} />
             )}
             <Text
               style={[
-                subSwipeStyles.swipeActionLabel,
+                subSwipeStyles.panelActionLabel,
                 { color: sub.status === "active" ? COLORS.gold : COLORS.primary },
               ]}
             >
               {pauseLabel}
             </Text>
           </TouchableOpacity>
-        </Animated.View>
-      ) : null}
-
-      <Animated.View style={[subSwipeStyles.rightReveal, { opacity: rightOpacity }]}>
-        <TouchableOpacity style={subSwipeStyles.swipeActionInner} onPress={handleDeleteAction} activeOpacity={0.85}>
-          <Trash2 size={20} color={COLORS.danger} strokeWidth={2} />
-          <Text style={subSwipeStyles.swipeActionLabelDanger}>Eliminar</Text>
+        ) : null}
+        <TouchableOpacity
+          style={[subSwipeStyles.panelActionCell, subSwipeStyles.panelActionDelete]}
+          onPress={handleDeleteAction}
+          activeOpacity={0.85}
+        >
+          <Trash2 size={18} color={COLORS.danger} strokeWidth={2} />
+          <Text style={[subSwipeStyles.panelActionLabel, { color: COLORS.danger }]}>Eliminar</Text>
         </TouchableOpacity>
       </Animated.View>
 
@@ -232,45 +219,38 @@ const subSwipeStyles = StyleSheet.create({
     overflow: "hidden",
     borderRadius: RADIUS.xl,
   },
-  leftReveal: {
-    position: "absolute",
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: SUB_SWIPE_REVEAL,
-    backgroundColor: COLORS.warningMuted,
-    justifyContent: "center",
-    alignItems: "center",
-    borderTopRightRadius: RADIUS.xl,
-    borderBottomRightRadius: RADIUS.xl,
-  },
-  rightReveal: {
+  rightActionsPanel: {
     position: "absolute",
     right: 0,
     top: 0,
     bottom: 0,
-    width: SUB_SWIPE_REVEAL,
-    backgroundColor: COLORS.dangerMuted,
-    justifyContent: "center",
-    alignItems: "center",
+    width: SUB_ACTION_PANEL_W,
+    flexDirection: "row",
+    backgroundColor: GLASS.card,
     borderTopLeftRadius: RADIUS.xl,
     borderBottomLeftRadius: RADIUS.xl,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: GLASS.cardBorder,
   },
-  swipeActionInner: {
+  panelActionCell: {
     flex: 1,
-    width: "100%",
-    alignItems: "center",
     justifyContent: "center",
-    gap: 4,
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: SPACING.sm,
   },
-  swipeActionLabel: {
+  panelActionCellBorder: {
+    borderRightWidth: 1,
+    borderRightColor: GLASS.cardBorder,
+  },
+  panelActionDelete: {
+    backgroundColor: COLORS.danger + "10",
+  },
+  panelActionLabel: {
     fontSize: FONT_SIZE.xs,
     fontFamily: FONT_FAMILY.bodySemibold,
-  },
-  swipeActionLabelDanger: {
-    fontSize: FONT_SIZE.xs,
-    fontFamily: FONT_FAMILY.bodySemibold,
-    color: COLORS.danger,
+    textAlign: "center",
   },
 });
 
@@ -506,7 +486,10 @@ function SubscriptionsScreen() {
             <TouchableOpacity
               key={opt.value}
               style={[styles.pill, statusFilter === opt.value && styles.pillActive]}
-              onPress={() => setStatusFilter(opt.value)}
+              onPress={() => {
+                void Haptics.selectionAsync();
+                setStatusFilter(opt.value);
+              }}
             >
               <Text style={[styles.pillText, statusFilter === opt.value && styles.pillTextActive]}>{opt.label}</Text>
             </TouchableOpacity>
@@ -582,9 +565,14 @@ function SubscriptionsScreen() {
             <SkeletonCard />
           </>
         ) : subscriptions.length === 0 ? (
-          <EmptyState title="Sin suscripciones" description="Registra tus pagos recurrentes." action={{ label: "Nueva suscripción", onPress: () => setCreateFormVisible(true) }} />
+          <EmptyState
+            icon={CalendarClock}
+            title="Sin suscripciones"
+            description="Lleva el control de Netflix, Spotify y todo lo que pagas cada mes. Te avisamos antes de que se cobren."
+            action={{ label: "Agregar suscripción", onPress: () => setCreateFormVisible(true) }}
+          />
         ) : filteredSubscriptions.length === 0 ? (
-          <EmptyState title="Sin resultados" description="Prueba otros filtros o la búsqueda." />
+          <EmptyState variant="no-results" title="Sin resultados" description="Prueba con otros filtros o limpia la búsqueda." />
         ) : null}
 
         {active.length > 0 ? (

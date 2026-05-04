@@ -19,7 +19,7 @@ import {
 } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Users, CreditCard, TrendingUp, TrendingDown, Trash2, BarChart2, Archive } from "lucide-react-native";
+import { Users, CreditCard, TrendingUp, TrendingDown, Trash2, BarChart2, Archive, HandCoins, SlidersHorizontal } from "lucide-react-native";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { useAuth } from "../../lib/auth-context";
@@ -67,7 +67,7 @@ import type {
 import { Card } from "../../components/ui/Card";
 import { ProgressBar } from "../../components/ui/ProgressBar";
 import { EmptyState } from "../../components/ui/EmptyState";
-import { SkeletonCard } from "../../components/ui/Skeleton";
+import { SkeletonObligationRow } from "../../components/ui/Skeleton";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { Button } from "../../components/ui/Button";
 import { ObligationForm } from "../../components/forms/ObligationForm";
@@ -838,7 +838,10 @@ function ObligationsScreen() {
             <TouchableOpacity
               key={chip.id}
               style={[styles.filterChip, activeFilter === chip.id && styles.filterChipActive]}
-              onPress={() => setActiveFilter(chip.id)}
+              onPress={() => {
+                void Haptics.selectionAsync();
+                setActiveFilter(chip.id);
+              }}
             >
               <Text style={[styles.filterChipText, activeFilter === chip.id && styles.filterChipTextActive]}>
                 {chip.label}
@@ -878,9 +881,11 @@ function ObligationsScreen() {
         stickySectionHeadersEnabled={false}
         ListHeaderComponent={
           isLoading ? (
-            <>
-              <SkeletonCard /><SkeletonCard /><SkeletonCard />
-            </>
+            <View style={{ gap: 10 }}>
+              <SkeletonObligationRow />
+              <SkeletonObligationRow />
+              <SkeletonObligationRow />
+            </View>
           ) : sharedLoading && activeSharedData.length === 0 && obligationSections.length === 0 ? (
             <View style={styles.sharedLoading}>
               <ActivityIndicator color={COLORS.primary} />
@@ -891,11 +896,16 @@ function ObligationsScreen() {
         ListEmptyComponent={
           !isLoading && obligationSections.length === 0 && !sharedLoading ? (
             <EmptyState
-              title="Sin obligaciones"
-              description="Registra préstamos, deudas y créditos aquí. Las que otros compartan contigo aparecen abajo en «Compartidos contigo»."
+              icon={activeFilter === "all" ? HandCoins : SlidersHorizontal}
+              title={activeFilter === "all" ? "Sin créditos ni deudas" : "Sin resultados"}
+              description={
+                activeFilter === "all"
+                  ? "Registra lo que le prestas a alguien o lo que debes. Cuando alguien comparta un crédito contigo, también aparecerá aquí."
+                  : "Ninguna obligación coincide con ese filtro. Prueba con «Todas» para ver todo."
+              }
               action={
                 activeFilter === "all"
-                  ? { label: "Nueva obligación", onPress: () => setCreateFormVisible(true) }
+                  ? { label: "Registrar primera obligación", onPress: () => setCreateFormVisible(true) }
                   : undefined
               }
             />

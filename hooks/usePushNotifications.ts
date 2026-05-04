@@ -214,8 +214,13 @@ export function usePushNotifications(userId?: string, handlers?: PushNotificatio
       // Badge / invalidación en foreground si hiciera falta
     });
 
-    void Notifications.clearLastNotificationResponseAsync?.().catch(() => {});
-    responseListener.current = Notifications.addNotificationResponseReceivedListener(handleResponse);
+    // Clear BEFORE registering the response listener to avoid Expo re-firing the
+    // last stored response (which would navigate the user on every app open).
+    void (async () => {
+      await Notifications.clearLastNotificationResponseAsync?.().catch(() => {});
+      if (cancelled) return;
+      responseListener.current = Notifications.addNotificationResponseReceivedListener(handleResponse);
+    })();
 
     return () => {
       cancelled = true;

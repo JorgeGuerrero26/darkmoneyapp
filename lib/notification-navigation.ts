@@ -34,7 +34,7 @@ export function resolveNotificationNavigationTarget(input: {
       return "/notifications";
     case "budget_alert":
     case "budget_period_ending":
-      return "/(app)/budgets?from=notifications";
+      return "/budgets?from=notifications";
     case "subscription_reminder":
     case "subscription_overdue":
       return id ? `/subscription/${id}` : "/subscriptions";

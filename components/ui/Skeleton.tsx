@@ -68,7 +68,50 @@ export function SkeletonKpi({ style }: { style?: StyleProp<ViewStyle> }) {
   );
 }
 
+export function SkeletonObligationRow({ style }: { style?: StyleProp<ViewStyle> }) {
+  return (
+    <View style={[skStyles.obligationCard, style]}>
+      <View style={skStyles.obligationHeader}>
+        <View style={skStyles.lines}>
+          <Skeleton width="50%" height={14} />
+          <Skeleton width="30%" height={11} />
+        </View>
+        <View style={skStyles.obligationRight}>
+          <Skeleton width={80} height={18} />
+          <Skeleton width={56} height={10} />
+        </View>
+      </View>
+      <View style={skStyles.obligationBadges}>
+        <Skeleton width={60} height={20} borderRadius={99} />
+        <Skeleton width={52} height={20} borderRadius={99} />
+      </View>
+      <Skeleton width="100%" height={4} borderRadius={4} />
+    </View>
+  );
+}
+
 const skStyles = StyleSheet.create({
+  obligationCard: {
+    backgroundColor: GLASS.card,
+    borderWidth: 1,
+    borderColor: GLASS.cardBorder,
+    borderRadius: RADIUS.xl,
+    padding: SPACING.lg,
+    gap: SPACING.md,
+  },
+  obligationHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: SPACING.md,
+  },
+  obligationRight: {
+    alignItems: "flex-end",
+    gap: SPACING.xs,
+  },
+  obligationBadges: {
+    flexDirection: "row",
+    gap: SPACING.xs,
+  },
   card: {
     backgroundColor: GLASS.card,
     borderWidth: 1,

@@ -9,6 +9,8 @@ import { detectHistoryChangePoint } from "../../services/analytics/history-chang
 import { clusterHistoryMonths } from "../../services/analytics/month-clustering";
 import { buildPaymentOptimizationPlan } from "../../services/analytics/payment-optimization";
 import { buildPatternClusters } from "../../services/analytics/pattern-clustering";
+import { buildBudgetComputedMetrics, type BudgetScopedMovement } from "../../lib/budget-metrics";
+import type { BudgetOverview } from "../../types/domain";
 
 type Movement = {
   id: number;
@@ -275,6 +277,80 @@ function runEdgeCaseTests() {
   assert(graph.length > 0, "grafo debe tolerar movimientos sin categoría, cuenta o contraparte");
 }
 
+function runBudgetConsumptionTest() {
+  const budget: BudgetOverview = {
+    id: 1,
+    workspaceId: 10,
+    name: "Alimentación mayo",
+    periodStart: "2026-05-01",
+    periodEnd: "2026-05-31",
+    currencyCode: "PEN",
+    categoryId: 7,
+    categoryName: "Alimentación",
+    accountId: null,
+    accountName: null,
+    scopeKind: "category",
+    scopeLabel: "Categoría · Alimentación",
+    limitAmount: 1000,
+    spentAmount: 90,
+    remainingAmount: 910,
+    usedPercent: 9,
+    alertPercent: 80,
+    movementCount: 1,
+    rolloverEnabled: false,
+    notes: null,
+    isActive: true,
+    isNearLimit: false,
+    isOverLimit: false,
+    createdAt: "2026-05-01T10:00:00.000Z",
+    updatedAt: "2026-05-01T10:00:00.000Z",
+  };
+
+  const movements: BudgetScopedMovement[] = [
+    {
+      id: 11,
+      movementType: "income",
+      occurredAt: "2026-05-01T12:00:00.000Z",
+      description: "Sueldo",
+      categoryId: 7,
+      categoryName: "Alimentación",
+      sourceAccountId: null,
+      sourceAccountName: null,
+      sourceCurrencyCode: null,
+      sourceAmount: null,
+      destinationAccountId: 2,
+      destinationAccountName: "BBVA",
+      destinationCurrencyCode: "PEN",
+      destinationAmount: 90,
+    },
+    {
+      id: 12,
+      movementType: "expense",
+      occurredAt: "2026-05-02T12:00:00.000Z",
+      description: "Mercado",
+      categoryId: 7,
+      categoryName: "Alimentación",
+      sourceAccountId: 2,
+      sourceAccountName: "BBVA",
+      sourceCurrencyCode: "PEN",
+      sourceAmount: 45,
+      destinationAccountId: null,
+      destinationAccountName: null,
+      destinationCurrencyCode: null,
+      destinationAmount: null,
+    },
+  ];
+
+  const metrics = buildBudgetComputedMetrics(budget, movements, {
+    workspaceBaseCurrencyCode: "PEN",
+    exchangeRates: [],
+  });
+
+  assert(metrics.spentAmount === 45, "presupuesto debe sumar solo gastos reales publicados");
+  assert(metrics.usedPercent === 4.5, "ingresos no deben consumir porcentaje de presupuesto");
+  assert(metrics.movementCount === 1, "solo el gasto debe explicar el consumo del presupuesto");
+}
+
 runCategorySuggestionTest();
 runDuplicateTest();
 runPatternClusteringTest();
@@ -285,5 +361,6 @@ runFocusAndPaymentTests();
 runHistoryTests();
 runHistoryFactorTest();
 runEdgeCaseTests();
+runBudgetConsumptionTest();
 
 console.log("analytics smoke tests passed");

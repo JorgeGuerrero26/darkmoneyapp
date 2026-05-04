@@ -16,28 +16,28 @@ import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import { CalendarClock, Pause, Play, Search, SlidersHorizontal, Trash2, X } from "lucide-react-native";
+import * as Haptics from "expo-haptics";
+import { BarChart2, CalendarClock, Pause, Play, Search, SlidersHorizontal, Trash2, TrendingUp, X } from "lucide-react-native";
 
 import { useAuth } from "../lib/auth-context";
 import { useWorkspace } from "../lib/workspace-context";
 import {
   useConfirmRecurringIncomeArrivalMutation,
   useDeleteRecurringIncomeMutation,
-  useRecurringIncomeOccurrencesQuery,
   useUpdateRecurringIncomeMutation,
   useWorkspaceSnapshotQuery,
 } from "../services/queries/workspace-data";
 import type {
   RecurringIncomeFrequency,
-  RecurringIncomeOccurrenceSummary,
   RecurringIncomeSummary,
 } from "../types/domain";
+import { RecurringIncomeAnalyticsModal } from "../components/domain/RecurringIncomeAnalyticsModal";
 import { ScreenHeader } from "../components/layout/ScreenHeader";
 import { Card } from "../components/ui/Card";
 import { EmptyState } from "../components/ui/EmptyState";
 import { SkeletonCard } from "../components/ui/Skeleton";
 import { FAB } from "../components/ui/FAB";
-import { ConfirmDialog } from "../components/ui/ConfirmDialog";
+import { UndoBanner } from "../components/ui/UndoBanner";
 import { RecurringIncomeForm } from "../components/forms/RecurringIncomeForm";
 import { DatePickerInput } from "../components/ui/DatePickerInput";
 import { Button } from "../components/ui/Button";
@@ -88,10 +88,6 @@ function ymdWithin30Days(ymd: string) {
 function parseMoneyInput(value: string) {
   const parsed = Number(value.replace(",", "."));
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
-}
-
-function occurrenceStatusLabel(status: RecurringIncomeOccurrenceSummary["status"]) {
-  return status === "late" ? "Tardía" : "A tiempo";
 }
 
 function SwipeableRecurringIncomeRow({
@@ -247,15 +243,13 @@ export default function RecurringIncomeScreen() {
   const updateMutation = useUpdateRecurringIncomeMutation(activeWorkspaceId);
   const deleteMutation = useDeleteRecurringIncomeMutation(activeWorkspaceId);
   const confirmArrivalMutation = useConfirmRecurringIncomeArrivalMutation(activeWorkspaceId);
-  const [historyTarget, setHistoryTarget] = useState<RecurringIncomeSummary | null>(null);
-  const { data: historyItems = [], isLoading: historyLoading } = useRecurringIncomeOccurrencesQuery(
-    activeWorkspaceId,
-    historyTarget?.id ?? null,
-  );
 
   const [createFormVisible, setCreateFormVisible] = useState(false);
   const [editTarget, setEditTarget] = useState<RecurringIncomeSummary | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<RecurringIncomeSummary | null>(null);
+  const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<number>>(new Set());
+  const [pendingDeleteLabels, setPendingDeleteLabels] = useState<Record<number, string>>({});
+  const deleteTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+  const [analyticsTarget, setAnalyticsTarget] = useState<RecurringIncomeSummary | null>(null);
   const [arrivalTarget, setArrivalTarget] = useState<RecurringIncomeSummary | null>(null);
   const [arrivalDate, setArrivalDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [arrivalAmount, setArrivalAmount] = useState("");
@@ -309,8 +303,9 @@ export default function RecurringIncomeScreen() {
           item.notes ?? "",
         ].some((value) => value.toLowerCase().includes(q));
       })
-      .sort((a, b) => a.nextExpectedDate.localeCompare(b.nextExpectedDate));
-  }, [accountFilter, categoryFilter, frequencyFilter, items, payerFilter, search, statusFilter, upcomingOnly]);
+      .sort((a, b) => a.nextExpectedDate.localeCompare(b.nextExpectedDate))
+      .filter((item) => !pendingDeleteIds.has(item.id));
+  }, [accountFilter, categoryFilter, frequencyFilter, items, payerFilter, pendingDeleteIds, search, statusFilter, upcomingOnly]);
 
   const activeAccounts = useMemo(() => snapshot?.accounts.filter((a) => !a.isArchived) ?? [], [snapshot?.accounts]);
   const categories = useMemo(() => snapshot?.categories.filter((c) => c.isActive && (c.kind === "income" || c.kind === "both")) ?? [], [snapshot?.categories]);
@@ -324,6 +319,28 @@ export default function RecurringIncomeScreen() {
   const arrivalBaseDelta = arrivalTarget && parsedArrivalNewBaseAmount != null
     ? parsedArrivalNewBaseAmount - arrivalTarget.amount
     : null;
+
+  function startUndoDelete(item: RecurringIncomeSummary) {
+    setPendingDeleteIds((prev) => new Set(prev).add(item.id));
+    setPendingDeleteLabels((prev) => ({ ...prev, [item.id]: item.name }));
+    const timer = setTimeout(() => {
+      deleteMutation.mutate(item.id, {
+        onError: (e) => showToast(e.message, "error"),
+      });
+      setPendingDeleteIds((prev) => { const n = new Set(prev); n.delete(item.id); return n; });
+      deleteTimers.current.delete(item.id);
+    }, 5000);
+    deleteTimers.current.set(item.id, timer);
+  }
+
+  function undoDelete(id: number) {
+    const timer = deleteTimers.current.get(id);
+    if (timer) clearTimeout(timer);
+    deleteTimers.current.delete(id);
+    setPendingDeleteIds((prev) => { const n = new Set(prev); n.delete(id); return n; });
+  }
+
+  useEffect(() => () => { deleteTimers.current.forEach(clearTimeout); }, []);
 
   function openConfirmArrival(item: RecurringIncomeSummary) {
     setArrivalTarget(item);
@@ -448,7 +465,10 @@ export default function RecurringIncomeScreen() {
               <TouchableOpacity
                 key={filter.value}
                 style={[styles.tabChip, statusFilter === filter.value && styles.tabChipActive]}
-                onPress={() => setStatusFilter(filter.value)}
+                onPress={() => {
+                  void Haptics.selectionAsync();
+                  setStatusFilter(filter.value);
+                }}
               >
                 <Text style={[styles.tabChipText, statusFilter === filter.value && styles.tabChipTextActive]}>
                   {filter.label}
@@ -465,12 +485,13 @@ export default function RecurringIncomeScreen() {
           </>
         ) : filtered.length === 0 ? (
           <EmptyState
+            icon={items.length === 0 ? TrendingUp : undefined}
             variant={items.length === 0 ? "empty" : "no-results"}
             title={items.length === 0 ? "Sin ingresos fijos" : "Sin resultados"}
             description={items.length === 0
-              ? "Registra tus sueldos, rentas y otros ingresos recurrentes."
+              ? "Registra tu sueldo, renta u otros ingresos recurrentes para llevar un seguimiento de lo que entra cada mes."
               : "Prueba ajustando tus filtros o búsqueda."}
-            action={{ label: "Nuevo ingreso fijo", onPress: () => setCreateFormVisible(true) }}
+            action={items.length === 0 ? { label: "Agregar ingreso fijo", onPress: () => setCreateFormVisible(true) } : undefined}
           />
         ) : (
           filtered.map((item) => (
@@ -480,43 +501,50 @@ export default function RecurringIncomeScreen() {
               onEdit={() => setEditTarget(item)}
               onConfirmArrival={() => openConfirmArrival(item)}
               onToggleStatus={() => handleToggleStatus(item)}
-              onDelete={() => setDeleteTarget(item)}
+              onDelete={() => startUndoDelete(item)}
               cardContent={(
                 <>
-              <View style={styles.itemHeader}>
-                <View style={styles.itemTitleWrap}>
-                  <Text style={styles.itemTitle}>{item.name}</Text>
-                  <Text style={styles.itemMeta}>
-                    {item.payer?.trim() ? item.payer : "Sin pagador"} · {item.frequencyLabel}
-                  </Text>
-                </View>
-                <View style={[styles.statusBadge, item.status !== "active" && styles.statusBadgeMuted]}>
-                  <Text style={[styles.statusBadgeText, item.status !== "active" && styles.statusBadgeTextMuted]}>
-                    {item.status === "active" ? "Activo" : item.status === "paused" ? "Pausado" : "Cancelado"}
-                  </Text>
-                </View>
-              </View>
+                  <View style={styles.itemHeader}>
+                    <View style={styles.itemTitleWrap}>
+                      <Text style={styles.itemTitle} numberOfLines={1}>{item.name}</Text>
+                      <Text style={styles.itemMeta} numberOfLines={1}>
+                        {item.payer?.trim() ? item.payer : "Sin pagador"} · {item.frequencyLabel}
+                      </Text>
+                    </View>
 
-              <View style={styles.amountRow}>
-                <Text style={styles.amountValue}>{formatCurrency(item.amount, item.currencyCode)}</Text>
-                <Text style={styles.expectedDate}>Próxima llegada: {formatYmdLocal(item.nextExpectedDate, "d MMM yyyy")}</Text>
-              </View>
+                    <View style={styles.itemHeaderRight}>
+                      <TouchableOpacity
+                        style={styles.analyticsBtn}
+                        onPress={() => setAnalyticsTarget(item)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <BarChart2 size={14} color={COLORS.storm} strokeWidth={2} />
+                      </TouchableOpacity>
+                      <View style={[styles.statusBadge, item.status !== "active" && styles.statusBadgeMuted]}>
+                        <Text style={[styles.statusBadgeText, item.status !== "active" && styles.statusBadgeTextMuted]}>
+                          {item.status === "active" ? "Activo" : item.status === "paused" ? "Pausado" : "Cancelado"}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
 
-              <View style={styles.metaWrap}>
-                {item.accountName ? <Text style={styles.metaChip}>{item.accountName}</Text> : null}
-                {item.categoryName ? <Text style={styles.metaChip}>{item.categoryName}</Text> : null}
-              </View>
+                  <View style={styles.amountRow}>
+                    <Text style={styles.amountValue}>{formatCurrency(item.amount, item.currencyCode)}</Text>
+                    <Text style={styles.expectedDate}>
+                      Próx. {formatYmdLocal(item.nextExpectedDate, "d MMM yyyy")}
+                    </Text>
+                  </View>
 
-              <View style={styles.cardActionsRow}>
-                <TouchableOpacity
-                  style={styles.inlineActionChip}
-                  onPress={() => setHistoryTarget(item)}
-                  activeOpacity={0.85}
-                >
-                  <Text style={styles.inlineActionText}>Ver historial</Text>
-                </TouchableOpacity>
-              </View>
-
+                  {item.accountName ? (
+                    <Text style={styles.supportingLine} numberOfLines={1}>
+                      Cuenta destino: {item.accountName}
+                    </Text>
+                  ) : null}
+                  {item.description?.trim() ? (
+                    <Text style={styles.supportingLine} numberOfLines={1}>
+                      {item.description.trim()}
+                    </Text>
+                  ) : null}
                 </>
               )}
             />
@@ -537,25 +565,22 @@ export default function RecurringIncomeScreen() {
         onSuccess={() => setEditTarget(null)}
         editRecurringIncome={editTarget ?? undefined}
       />
+      <RecurringIncomeAnalyticsModal
+        visible={Boolean(analyticsTarget)}
+        item={analyticsTarget}
+        baseCurrencyCode={activeWorkspace?.baseCurrencyCode ?? profile?.baseCurrencyCode ?? "PEN"}
+        exchangeRates={snapshot?.exchangeRates ?? []}
+        onClose={() => setAnalyticsTarget(null)}
+      />
 
-      <ConfirmDialog
-        visible={Boolean(deleteTarget)}
-        title="Eliminar ingreso fijo"
-        body={deleteTarget ? `¿Eliminar “${deleteTarget.name}”?` : undefined}
-        confirmLabel="Eliminar"
-        cancelLabel="Cancelar"
-        destructive
-        onCancel={() => setDeleteTarget(null)}
-        onConfirm={() => {
-          if (!deleteTarget) return;
-          deleteMutation.mutate(deleteTarget.id, {
-            onSuccess: () => {
-              showToast("Ingreso fijo eliminado", "success");
-              setDeleteTarget(null);
-            },
-            onError: (error) => showToast(error.message, "error"),
-          });
-        }}
+      <UndoBanner
+        visible={pendingDeleteIds.size > 0}
+        message={pendingDeleteIds.size === 1
+          ? ('”' + (Object.values(pendingDeleteLabels).at(-1) ?? “”) + '” eliminado')
+          : (String(pendingDeleteIds.size) + “ ingresos fijos eliminados”)}
+        onUndo={() => pendingDeleteIds.forEach((id) => undoDelete(id))}
+        durationMs={5000}
+        bottomOffset={insets.bottom + 80}
       />
 
       <Modal
@@ -721,84 +746,6 @@ export default function RecurringIncomeScreen() {
                   </View>
                 </>
               ) : null}
-            </ScrollView>
-          </View>
-        </Pressable>
-      </Modal>
-
-      <Modal
-        visible={Boolean(historyTarget)}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setHistoryTarget(null)}
-      >
-        <Pressable style={styles.overlay} onPress={() => setHistoryTarget(null)}>
-          <View style={styles.arrivalSheet} onStartShouldSetResponder={() => true}>
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.arrivalSheetContent}>
-              <Text style={styles.arrivalTitle}>Historial de llegadas</Text>
-              {historyTarget ? (
-                <Text style={styles.arrivalSubtitle}>
-                  {historyTarget.name} · Base actual {formatCurrency(historyTarget.amount, historyTarget.currencyCode)}
-                </Text>
-              ) : null}
-
-              {historyLoading ? (
-                <SkeletonCard style={{ minHeight: 120 }} />
-              ) : historyItems.length === 0 ? (
-                <View style={styles.arrivalInfoCard}>
-                  <Text style={styles.arrivalInfoBody}>
-                    Aún no hay llegadas confirmadas para este ingreso fijo.
-                  </Text>
-                </View>
-              ) : (
-                historyItems.map((occurrence) => (
-                  <View key={occurrence.id} style={styles.historyCard}>
-                    <View style={styles.historyHeader}>
-                      <Text style={styles.historyAmount}>
-                        {formatCurrency(occurrence.amount, occurrence.currencyCode)}
-                      </Text>
-                      <View
-                        style={[
-                          styles.historyStatusBadge,
-                          occurrence.status === "late" && styles.historyStatusBadgeLate,
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.historyStatusText,
-                            occurrence.status === "late" && styles.historyStatusTextLate,
-                          ]}
-                        >
-                          {occurrenceStatusLabel(occurrence.status)}
-                        </Text>
-                      </View>
-                    </View>
-                    <Text style={styles.historyDates}>
-                      Esperada: {formatYmdLocal(occurrence.expectedDate, "d MMM yyyy")} · Llegó: {formatYmdLocal(occurrence.actualDate, "d MMM yyyy")}
-                    </Text>
-                    {occurrence.notes?.trim() ? (
-                      <Text style={styles.historyNotes}>{occurrence.notes.trim()}</Text>
-                    ) : null}
-                    {occurrence.movementId ? (
-                      <TouchableOpacity
-                        style={styles.inlineActionChip}
-                        onPress={() => {
-                          const movementId = occurrence.movementId;
-                          setHistoryTarget(null);
-                          router.push(`/movement/${movementId}`);
-                        }}
-                        activeOpacity={0.85}
-                      >
-                        <Text style={styles.inlineActionText}>Ver movimiento</Text>
-                      </TouchableOpacity>
-                    ) : null}
-                  </View>
-                ))
-              )}
-
-              <View style={styles.arrivalActions}>
-                <Button label="Cerrar" variant="ghost" onPress={() => setHistoryTarget(null)} style={styles.cancelBtn} />
-              </View>
             </ScrollView>
           </View>
         </Pressable>
@@ -1002,13 +949,28 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   itemCard: { gap: SPACING.xs },
-  itemHeader: { flexDirection: "row", gap: SPACING.md },
+  itemHeader: { flexDirection: "row", alignItems: "flex-start", gap: SPACING.md },
   itemTitleWrap: { flex: 1, gap: 4 },
+  itemHeaderRight: {
+    alignItems: "flex-end",
+    gap: SPACING.xs,
+  },
   itemTitle: { color: COLORS.ink, fontFamily: FONT_FAMILY.heading, fontSize: FONT_SIZE.lg },
   itemMeta: { color: COLORS.storm, fontSize: FONT_SIZE.xs },
-  amountRow: { gap: 4 },
+  analyticsBtn: {
+    padding: 4,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderRadius: 6,
+    marginRight: 2,
+  },
+  amountRow: { gap: 4, marginTop: SPACING.xs },
   amountValue: { color: COLORS.primary, fontFamily: FONT_FAMILY.heading, fontSize: 24 },
   expectedDate: { color: COLORS.storm, fontSize: FONT_SIZE.sm },
+  supportingLine: {
+    color: COLORS.storm,
+    fontSize: FONT_SIZE.xs,
+    lineHeight: 18,
+  },
   statusBadge: {
     alignSelf: "flex-start",
     paddingHorizontal: SPACING.sm,
@@ -1019,31 +981,6 @@ const styles = StyleSheet.create({
   statusBadgeMuted: { backgroundColor: COLORS.storm + "20" },
   statusBadgeText: { color: COLORS.primary, fontSize: FONT_SIZE.xs, fontFamily: FONT_FAMILY.bodySemibold },
   statusBadgeTextMuted: { color: COLORS.storm },
-  metaWrap: { flexDirection: "row", gap: SPACING.xs, flexWrap: "wrap" },
-  cardActionsRow: { flexDirection: "row", marginTop: SPACING.xs },
-  metaChip: {
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 6,
-    borderRadius: RADIUS.full,
-    backgroundColor: "rgba(255,255,255,0.04)",
-    color: COLORS.storm,
-    fontSize: FONT_SIZE.xs,
-    overflow: "hidden",
-  } as any,
-  inlineActionChip: {
-    alignSelf: "flex-start",
-    paddingHorizontal: SPACING.sm + 2,
-    paddingVertical: 7,
-    borderRadius: RADIUS.full,
-    borderWidth: 1,
-    borderColor: COLORS.primary + "55",
-    backgroundColor: COLORS.primary + "14",
-  },
-  inlineActionText: {
-    color: COLORS.primary,
-    fontSize: FONT_SIZE.xs,
-    fontFamily: FONT_FAMILY.bodySemibold,
-  },
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.52)", justifyContent: "flex-end" },
   arrivalSheet: {
     backgroundColor: COLORS.bg,
@@ -1102,52 +1039,6 @@ const styles = StyleSheet.create({
   },
   arrivalInfoBody: {
     color: COLORS.storm,
-    fontSize: FONT_SIZE.xs,
-    lineHeight: 18,
-  },
-  historyCard: {
-    gap: SPACING.xs,
-    padding: SPACING.md,
-    borderRadius: RADIUS.lg,
-    backgroundColor: GLASS.card,
-    borderWidth: 1,
-    borderColor: GLASS.cardBorder,
-  },
-  historyHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: SPACING.sm,
-  },
-  historyAmount: {
-    color: COLORS.ink,
-    fontSize: FONT_SIZE.md,
-    fontFamily: FONT_FAMILY.bodySemibold,
-  },
-  historyStatusBadge: {
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 5,
-    borderRadius: RADIUS.full,
-    backgroundColor: COLORS.primary + "18",
-  },
-  historyStatusBadgeLate: {
-    backgroundColor: COLORS.gold + "18",
-  },
-  historyStatusText: {
-    color: COLORS.primary,
-    fontSize: FONT_SIZE.xs,
-    fontFamily: FONT_FAMILY.bodySemibold,
-  },
-  historyStatusTextLate: {
-    color: COLORS.gold,
-  },
-  historyDates: {
-    color: COLORS.storm,
-    fontSize: FONT_SIZE.xs,
-    lineHeight: 18,
-  },
-  historyNotes: {
-    color: COLORS.ink,
     fontSize: FONT_SIZE.xs,
     lineHeight: 18,
   },

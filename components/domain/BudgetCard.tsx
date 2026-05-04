@@ -1,5 +1,5 @@
-import { StyleSheet, Text, View } from "react-native";
-import { AlertTriangle, Zap } from "lucide-react-native";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { AlertTriangle, BarChart2, Zap } from "lucide-react-native";
 import { Card } from "../ui/Card";
 import { ProgressBar } from "../ui/ProgressBar";
 import { formatCurrency } from "../ui/AmountDisplay";
@@ -9,9 +9,10 @@ import type { BudgetOverview } from "../../types/domain";
 type Props = {
   budget: BudgetOverview;
   onPress?: () => void;
+  onAnalytics?: () => void;
 };
 
-export function BudgetCard({ budget, onPress }: Props) {
+export function BudgetCard({ budget, onPress, onAnalytics }: Props) {
   const statusColor = budget.isOverLimit
     ? COLORS.rosewood
     : budget.isNearLimit
@@ -25,9 +26,20 @@ export function BudgetCard({ budget, onPress }: Props) {
           <Text style={styles.name} numberOfLines={1}>{budget.name}</Text>
           <Text style={styles.scope}>{budget.scopeLabel}</Text>
         </View>
-        <Text style={[styles.percent, { color: statusColor }]}>
-          {Math.round(budget.usedPercent)}%
-        </Text>
+        <View style={styles.headerRight}>
+          {onAnalytics ? (
+            <TouchableOpacity
+              onPress={onAnalytics}
+              style={styles.analyticsBtn}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <BarChart2 size={14} color={COLORS.storm} strokeWidth={2} />
+            </TouchableOpacity>
+          ) : null}
+          <Text style={[styles.percent, { color: statusColor }]}>
+            {Math.round(budget.usedPercent)}%
+          </Text>
+        </View>
       </View>
 
       <View style={styles.progressWrap}>
@@ -69,6 +81,11 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 3,
   },
+  headerRight: {
+    alignItems: "flex-end",
+    gap: 8,
+    marginLeft: SPACING.md,
+  },
   name: {
     fontFamily: FONT_FAMILY.bodySemibold,
     fontSize: FONT_SIZE.md,
@@ -82,6 +99,13 @@ const styles = StyleSheet.create({
   percent: {
     fontFamily: FONT_FAMILY.heading,
     fontSize: FONT_SIZE.xxl,
+  },
+  analyticsBtn: {
+    padding: 4,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderRadius: 6,
+    justifyContent: "center",
+    alignItems: "center",
   },
   progressWrap: {
     marginBottom: SPACING.sm,

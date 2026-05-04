@@ -52,7 +52,7 @@ export default function MoreScreen() {
       Icon: BarChart3,
       title: "Presupuestos",
       subtitle: "Controla tus gastos por categoría",
-      route: "/(app)/budgets?from=more",
+      route: "/budgets?from=more",
     },
     {
       Icon: RefreshCw,
