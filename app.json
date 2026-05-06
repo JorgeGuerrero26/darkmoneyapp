@@ -20,6 +20,7 @@
       "package": "com.darkmoney.app",
       "permissions": [
         "android.permission.CAMERA",
+        "android.permission.POST_NOTIFICATIONS",
         "android.permission.RECORD_AUDIO",
         "android.permission.USE_BIOMETRIC",
         "android.permission.USE_FINGERPRINT"

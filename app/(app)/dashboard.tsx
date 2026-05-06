@@ -59,7 +59,8 @@ import {
   type DashboardMovementRow,
   type DashboardAnalyticsBundle,
 } from "../../services/queries/workspace-data";
-import type { ExchangeRateSummary } from "../../types/domain";
+import { useBudgetScopeMovementsQuery } from "../../services/queries/budget-analytics";
+import type { BudgetOverview, ExchangeRateSummary } from "../../types/domain";
 import { useUiStore } from "../../store/ui-store";
 import { Card } from "../../components/ui/Card";
 import { Button } from "../../components/ui/Button";
@@ -84,6 +85,10 @@ import {
 } from "../../lib/movement-display";
 import { getAccountIcon } from "../../lib/account-icons";
 import { parseDisplayDate } from "../../lib/date";
+import {
+  applyBudgetComputedMetrics,
+  buildBudgetMetricsMap,
+} from "../../lib/budget-metrics";
 import { RingChart, type RingSegment } from "../../components/ui/RingChart";
 import { SparkLine } from "../../components/ui/SparkLine";
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
@@ -9667,7 +9672,11 @@ function DashboardScreen() {
   const hasAdvancedDashboardGift = profile?.email?.trim().toLowerCase() === ADVANCED_DASHBOARD_GIFT_EMAIL;
   const hasAdvancedDashboardAccess = isPro || hasAdvancedDashboardGift;
 
-  const { data: snapshot, isLoading: snapLoading } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
+  const {
+    data: snapshot,
+    isLoading: snapLoading,
+    dataUpdatedAt,
+  } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const { data: movements = [] } = useDashboardMovementsQuery(activeWorkspaceId, profile?.id);
   const { data: dashboardAnalytics } = useDashboardAnalyticsQuery(activeWorkspaceId, profile?.id);
   const { data: sharedObligations = [] } = useSharedObligationsQuery(session?.user?.id ?? null);
@@ -9689,12 +9698,45 @@ function DashboardScreen() {
   const resolvedActiveWorkspace = activeWorkspace ?? snapshotActiveWorkspace;
   const baseCurrency = resolvedActiveWorkspace?.baseCurrencyCode ?? profile?.baseCurrencyCode ?? "PEN";
   const workspaceDisplayName = resolvedActiveWorkspace?.name ?? "Tu workspace";
+  const snapshotBudgets = useMemo(() => snapshot?.budgets ?? [], [snapshot?.budgets]);
+
+  const {
+    data: scopedBudgetMovements = [],
+    error: dashboardBudgetMovementsError,
+  } = useBudgetScopeMovementsQuery(activeWorkspaceId, snapshotBudgets, dataUpdatedAt);
 
   // Build exchange rate map from snapshot
   const exchangeRateMap = useMemo(
     () => buildExchangeRateMap(snapshot?.exchangeRates ?? []),
     [snapshot?.exchangeRates],
   );
+
+  const dashboardBudgetMetricsMap = useMemo(
+    () =>
+      buildBudgetMetricsMap(snapshotBudgets, scopedBudgetMovements, {
+        workspaceBaseCurrencyCode: baseCurrency,
+        exchangeRates: snapshot?.exchangeRates ?? [],
+      }),
+    [baseCurrency, scopedBudgetMovements, snapshot?.exchangeRates, snapshotBudgets],
+  );
+
+  const correctedDashboardBudgets = useMemo<BudgetOverview[]>(() => {
+    if (dashboardBudgetMovementsError) return snapshotBudgets;
+    return snapshotBudgets.map((budget) =>
+      applyBudgetComputedMetrics(
+        budget,
+        dashboardBudgetMetricsMap.get(budget.id) ?? {
+          spentAmount: 0,
+          remainingAmount: budget.limitAmount,
+          usedPercent: 0,
+          movementCount: 0,
+          contributions: [],
+          averageMovementAmount: 0,
+          maxMovementAmount: 0,
+        },
+      ),
+    );
+  }, [dashboardBudgetMetricsMap, dashboardBudgetMovementsError, snapshotBudgets]);
 
   // Map accountId -> currencyCode for movement conversion
   const accountCurrencyMap = useMemo(() => {
@@ -9761,6 +9803,7 @@ function DashboardScreen() {
     Promise.all([
       queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] }),
       queryClient.invalidateQueries({ queryKey: ["dashboard-movements"] }),
+      queryClient.invalidateQueries({ queryKey: ["budget-scope-movements"] }),
       queryClient.invalidateQueries({ queryKey: ["shared-obligations"] }),
     ]).finally(() => setIsRefreshing(false));
   }, [queryClient]);
@@ -9840,7 +9883,7 @@ function DashboardScreen() {
         {/* 1b. Urgent alerts */}
         <UrgentAlertsCard
           obligations={obligationsMerged}
-          budgets={snapshot?.budgets ?? []}
+          budgets={correctedDashboardBudgets}
           subscriptions={snapshot?.subscriptions ?? []}
           router={router}
         />
@@ -9930,7 +9973,7 @@ function DashboardScreen() {
         />
 
         {/* 8. Budget alerts */}
-        <BudgetsSection budgets={snapshot?.budgets ?? []} router={router} />
+        <BudgetsSection budgets={correctedDashboardBudgets} router={router} />
 
         {/* 9. Category comparison (simple) */}
         <CategoryComparison

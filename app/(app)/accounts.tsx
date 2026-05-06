@@ -1,21 +1,12 @@
 import { GestureDetector } from "react-native-gesture-handler";
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
-import { useCallback, useMemo, useState } from "react";
-import {
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { SectionListRenderItem } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
-  Archive, ArchiveRestore, CheckSquare, Download,
-  Search, Square, Trash2, X,
+  Archive, CheckSquare, Download, X,
 } from "lucide-react-native";
 import { format } from "date-fns";
 
@@ -25,25 +16,33 @@ import { useWorkspace } from "../../lib/workspace-context";
 import {
   useWorkspaceSnapshotQuery,
   useArchiveAccountMutation,
+  useSyncExchangeRatePairMutation,
 } from "../../services/queries/workspace-data";
 import { AccountCard } from "../../components/domain/AccountCard";
 import { AccountAnalyticsModal } from "../../components/domain/AccountAnalyticsModal";
 import { SkeletonCard } from "../../components/ui/Skeleton";
-import { EmptyState } from "../../components/ui/EmptyState";
+import { BulkActionBar } from "../../components/ui/BulkActionBar";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { FAB } from "../../components/ui/FAB";
+import { FilterToolbar } from "../../components/ui/FilterToolbar";
+import { ActiveFilterBar, type ActiveFilterItem } from "../../components/ui/ActiveFilterBar";
+import { HeaderActionGroup } from "../../components/ui/HeaderActionGroup";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
-import { formatCurrency } from "../../components/ui/AmountDisplay";
+import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTemplate";
+import { ResourceSectionList, type ResourceSection } from "../../components/ui/ResourceSectionList";
 import { AccountForm } from "../../components/forms/AccountForm";
+import { AccountNetWorthSummary } from "../../features/accounts/components/AccountNetWorthSummary";
 import { useToast } from "../../hooks/useToast";
 import { humanizeError } from "../../lib/errors";
 import { shareCsvAsFile } from "../../lib/share-csv-file";
-import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
+import { DEFAULT_EXCHANGE_CURRENCY } from "../../constants/currencies";
 import { useSwipeTab } from "../../hooks/useSwipeTab";
 import type { AccountSummary } from "../../types/domain";
-import { StaggeredItem } from "../../components/ui/StaggeredItem";
 
-const TYPE_FILTERS = [
+type AccountTypeFilter = "all" | "bank" | "cash" | "savings" | "credit_card" | "investment" | "loan" | "other";
+type AccountListSection = ResourceSection<AccountSummary, "active" | "archived">;
+
+const TYPE_FILTERS: { label: string; value: AccountTypeFilter }[] = [
   { label: "Todas", value: "all" },
   { label: "Banco",       value: "bank" },
   { label: "Efectivo",    value: "cash" },
@@ -87,6 +86,11 @@ function resolveConversion(map: Map<string, number>, from: string, to: string): 
   return 1;
 }
 
+function hasConversionRate(map: Map<string, number>, from: string, to: string): boolean {
+  if (from === to) return true;
+  return map.has(`${from}:${to}`) || map.has(`${to}:${from}`);
+}
+
 function AccountsScreen() {
   const swipeGesture = useSwipeTab();
   const insets = useSafeAreaInsets();
@@ -98,6 +102,8 @@ function AccountsScreen() {
 
   const { data: snapshot, isLoading } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const archiveAccount = useArchiveAccountMutation(activeWorkspaceId);
+  const syncExchangeRatePair = useSyncExchangeRatePairMutation();
+  const syncPairRequestRef = useRef<string | null>(null);
 
   // ── Currency display ──────────────────────────────────────────────────────
   const [displayCurrency, setDisplayCurrency] = useState<string | null>(null);
@@ -109,27 +115,59 @@ function AccountsScreen() {
   );
 
   const currencyOptions = useMemo(() => {
-    const all = new Set<string>([baseCurrency]);
-    for (const a of snapshot?.accounts ?? []) all.add(a.currencyCode.toUpperCase());
-    return Array.from(all).filter(
-      (c) => c === baseCurrency || resolveConversion(exchangeRateMap, baseCurrency, c) !== 1 || resolveConversion(exchangeRateMap, c, baseCurrency) !== 1,
-    );
-  }, [baseCurrency, exchangeRateMap, snapshot?.accounts]);
+    const options = [baseCurrency];
+    if (baseCurrency !== DEFAULT_EXCHANGE_CURRENCY) options.push(DEFAULT_EXCHANGE_CURRENCY);
+    return Array.from(new Set(options));
+  }, [baseCurrency]);
 
-  // Load persisted currency
+  const disabledCurrencyOptions = useMemo(
+    () => currencyOptions.filter((currency) => !hasConversionRate(exchangeRateMap, baseCurrency, currency)),
+    [baseCurrency, currencyOptions, exchangeRateMap],
+  );
+
   const [currencyLoaded, setCurrencyLoaded] = useState(false);
-  useMemo(() => {
+  useEffect(() => {
     if (currencyLoaded) return;
     void AsyncStorage.getItem(ACCOUNTS_CURRENCY_KEY).then((stored) => {
       setDisplayCurrency(stored && currencyOptions.includes(stored) ? stored : baseCurrency);
       setCurrencyLoaded(true);
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [baseCurrency]);
+  }, [baseCurrency, currencyLoaded, currencyOptions]);
 
-  const activeCurrency = displayCurrency ?? baseCurrency;
+  useEffect(() => {
+    if (!currencyLoaded || !displayCurrency || currencyOptions.includes(displayCurrency)) return;
+    setDisplayCurrency(baseCurrency);
+    void AsyncStorage.setItem(ACCOUNTS_CURRENCY_KEY, baseCurrency);
+  }, [baseCurrency, currencyLoaded, currencyOptions, displayCurrency]);
+
+  useEffect(() => {
+    if (baseCurrency === DEFAULT_EXCHANGE_CURRENCY) return;
+    if (hasConversionRate(exchangeRateMap, baseCurrency, DEFAULT_EXCHANGE_CURRENCY)) return;
+
+    const pairKey = `${baseCurrency}:${DEFAULT_EXCHANGE_CURRENCY}`;
+    if (syncPairRequestRef.current === pairKey || syncExchangeRatePair.isPending) return;
+
+    syncPairRequestRef.current = pairKey;
+    syncExchangeRatePair.mutate(
+      {
+        fromCurrencyCode: baseCurrency,
+        toCurrencyCode: DEFAULT_EXCHANGE_CURRENCY,
+      },
+      {
+        onError: (err: unknown) => {
+          showToast(humanizeError(err), "warning");
+        },
+      },
+    );
+  }, [baseCurrency, exchangeRateMap, showToast, syncExchangeRatePair]);
+
+  const requestedCurrency = displayCurrency ?? baseCurrency;
+  const activeCurrency = hasConversionRate(exchangeRateMap, baseCurrency, requestedCurrency)
+    ? requestedCurrency
+    : baseCurrency;
 
   function handleCurrencyChange(c: string) {
+    if (!hasConversionRate(exchangeRateMap, baseCurrency, c)) return;
     setDisplayCurrency(c);
     void AsyncStorage.setItem(ACCOUNTS_CURRENCY_KEY, c);
   }
@@ -139,7 +177,7 @@ function AccountsScreen() {
   const [editAccount, setEditAccount] = useState<AccountSummary | null>(null);
   const [analyticsAccount, setAnalyticsAccount] = useState<AccountSummary | null>(null);
   const [searchText, setSearchText] = useState("");
-  const [typeFilter, setTypeFilter] = useState("all");
+  const [typeFilters, setTypeFilters] = useState<AccountTypeFilter[]>([]);
   const [showArchived, setShowArchived] = useState(false);
 
   // ── Multi-select ──────────────────────────────────────────────────────────
@@ -147,13 +185,13 @@ function AccountsScreen() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [bulkArchiveConfirm, setBulkArchiveConfirm] = useState(false);
 
-  function toggleSelect(id: number) {
+  const toggleSelect = useCallback((id: number) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
-  }
+  }, []);
 
   function exitSelectMode() {
     setSelectMode(false);
@@ -178,14 +216,66 @@ function AccountsScreen() {
     const q = searchText.toLowerCase();
     return allAccounts.filter((a) => {
       if (!showArchived && a.isArchived) return false;
-      if (typeFilter !== "all" && a.type !== typeFilter) return false;
+      if (typeFilters.length > 0 && !typeFilters.includes(a.type as AccountTypeFilter)) return false;
       if (q && !a.name.toLowerCase().includes(q) && !a.currencyCode.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [allAccounts, searchText, typeFilter, showArchived]);
+  }, [allAccounts, searchText, typeFilters, showArchived]);
 
   const activeFiltered = filtered.filter((a) => !a.isArchived);
   const archivedFiltered = filtered.filter((a) => a.isArchived);
+  const accountSections = useMemo<AccountListSection[]>(() => {
+    const sections: AccountListSection[] = [];
+    if (activeFiltered.length > 0) {
+      sections.push({ key: "active", label: "Activas", data: activeFiltered, headerVariant: "hidden" });
+    }
+    if (archivedFiltered.length > 0) {
+      sections.push({
+        key: "archived",
+        label: `Archivadas (${archivedFiltered.length})`,
+        data: archivedFiltered,
+        headerVariant: "divider",
+        headerIcon: Archive,
+      });
+    }
+    return sections;
+  }, [activeFiltered, archivedFiltered]);
+
+  const activeFilterItems = useMemo<ActiveFilterItem[]>(() => {
+    const items: ActiveFilterItem[] = [];
+
+    for (const typeFilter of typeFilters) {
+      items.push({
+        key: `type-${typeFilter}`,
+        label: TYPE_FILTERS.find((filter) => filter.value === typeFilter)?.label ?? "Tipo",
+        onRemove: () => setTypeFilters((current) => current.filter((value) => value !== typeFilter)),
+      });
+    }
+
+    if (showArchived) {
+      items.push({
+        key: "archived",
+        label: "Archivadas",
+        onRemove: () => setShowArchived(false),
+      });
+    }
+
+    if (searchText.trim()) {
+      items.push({
+        key: "search",
+        label: `Busqueda: ${searchText.trim()}`,
+        onRemove: () => setSearchText(""),
+      });
+    }
+
+    return items;
+  }, [searchText, showArchived, typeFilters]);
+
+  function clearAccountFilters() {
+    setTypeFilters([]);
+    setShowArchived(false);
+    setSearchText("");
+  }
 
   const onRefresh = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
@@ -197,14 +287,14 @@ function AccountsScreen() {
     }, [queryClient]),
   );
 
-  async function handleArchive(account: AccountSummary) {
+  const handleArchive = useCallback(async (account: AccountSummary) => {
     try {
       await archiveAccount.mutateAsync({ id: account.id, archived: !account.isArchived });
       showToast(account.isArchived ? "Cuenta restaurada ✓" : "Cuenta archivada ✓", "success");
     } catch (err: unknown) {
       showToast(humanizeError(err), "error");
     }
-  }
+  }, [archiveAccount, showToast]);
 
   async function executeBulkArchive() {
     for (const id of selectedIds) {
@@ -229,355 +319,201 @@ function AccountsScreen() {
 
   const selectedAccounts = allAccounts.filter((a) => selectedIds.has(a.id));
 
+  const renderAccount: SectionListRenderItem<AccountSummary, AccountListSection> = useCallback(({ item: account, section }) => (
+    section.key === "active" ? (
+      <AccountCard
+        account={account}
+        selected={selectedIds.has(account.id)}
+        selectMode={selectMode}
+        onPress={() => {
+          if (selectMode) { toggleSelect(account.id); return; }
+          router.push(`/account/${account.id}?from=accounts`);
+        }}
+        onLongPress={() => {
+          if (!selectMode) {
+            setSelectMode(true);
+            toggleSelect(account.id);
+          }
+        }}
+        onArchive={() => handleArchive(account)}
+        onAnalytics={() => setAnalyticsAccount(account)}
+      />
+    ) : (
+      <AccountCard
+        account={account}
+        selected={selectedIds.has(account.id)}
+        selectMode={selectMode}
+        onPress={() => {
+          if (selectMode) { toggleSelect(account.id); return; }
+          setEditAccount(account);
+          setFormVisible(true);
+        }}
+        onLongPress={() => {
+          if (!selectMode) {
+            setSelectMode(true);
+            toggleSelect(account.id);
+          }
+        }}
+        onRestore={() => handleArchive(account)}
+        onAnalytics={() => setAnalyticsAccount(account)}
+      />
+    )
+  ), [handleArchive, router, selectMode, selectedIds, toggleSelect]);
+
+  const summaryHeader = !selectMode && activeFiltered.length > 0 ? (
+    <AccountNetWorthSummary
+      totalNetWorth={totalNetWorth}
+      activeCurrency={activeCurrency}
+      currencyOptions={currencyOptions}
+      disabledCurrencyOptions={disabledCurrencyOptions}
+      onCurrencyChange={handleCurrencyChange}
+    />
+  ) : null;
+
   return (
     <GestureDetector gesture={swipeGesture}>
-    <View style={[styles.screen, { paddingTop: insets.top }]}>
-      {/* Header */}
-      <ScreenHeader
-        title={selectMode ? `${selectedIds.size} seleccionadas` : "Cuentas"}
-        rightAction={
-          selectMode ? (
-            <TouchableOpacity onPress={exitSelectMode} style={styles.headerBtn}>
-              <X size={14} color={COLORS.storm} />
-              <Text style={styles.headerBtnText}>Cancelar</Text>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              style={styles.headerBtn}
-              onPress={() => exportCSV(filtered)}
-            >
-              <Download size={14} color={COLORS.storm} />
-            </TouchableOpacity>
-          )
-        }
-      />
-
-      {/* Search */}
-      <View style={styles.searchWrap}>
-        <Search size={15} color={COLORS.storm} />
-        <TextInput
-          style={styles.searchInput}
-          value={searchText}
-          onChangeText={setSearchText}
-          placeholder="Buscar cuentas…"
-          placeholderTextColor={COLORS.storm}
-          returnKeyType="search"
-        />
-        {searchText.length > 0 ? (
-          <TouchableOpacity onPress={() => setSearchText("")}>
-            <X size={15} color={COLORS.storm} />
-          </TouchableOpacity>
-        ) : null}
-      </View>
-
-      {/* Type filter + archived toggle */}
-      <View style={styles.filterRow}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterPills}>
-          {TYPE_FILTERS.map((f) => (
-            <TouchableOpacity
-              key={f.value}
-              style={[styles.pill, typeFilter === f.value && styles.pillActive]}
-              onPress={() => setTypeFilter(f.value)}
-            >
-              <Text style={[styles.pillText, typeFilter === f.value && styles.pillTextActive]}>{f.label}</Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-        <TouchableOpacity
-          style={[styles.archivedToggle, showArchived && styles.archivedToggleActive]}
-          onPress={() => setShowArchived((v) => !v)}
-        >
-          <Archive size={13} color={showArchived ? COLORS.primary : COLORS.storm} />
-        </TouchableOpacity>
-      </View>
-
-      {/* Bulk bar */}
-      {selectMode && selectedIds.size > 0 ? (
-        <View style={styles.bulkBar}>
-          <TouchableOpacity
-            style={styles.bulkBtn}
-            onPress={() => setSelectedIds(new Set(activeFiltered.map((a) => a.id)))}
-          >
-            <CheckSquare size={13} color={COLORS.storm} />
-            <Text style={styles.bulkBtnText}>Sel. todas ({activeFiltered.length})</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.bulkBtn}
-            onPress={() => exportCSV(selectedAccounts)}
-          >
-            <Download size={13} color={COLORS.primary} />
-            <Text style={[styles.bulkBtnText, { color: COLORS.primary }]}>CSV</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.bulkBtn, { borderColor: COLORS.warning + "44" }]}
-            onPress={() => setBulkArchiveConfirm(true)}
-          >
-            <Archive size={13} color={COLORS.warning} />
-            <Text style={[styles.bulkBtnText, { color: COLORS.warning }]}>
-              Archivar ({selectedIds.size})
-            </Text>
-          </TouchableOpacity>
-        </View>
-      ) : null}
-
-      <ScrollView
-        contentContainerStyle={styles.content}
-        refreshControl={
-          <RefreshControl refreshing={isLoading} onRefresh={onRefresh} tintColor={COLORS.primary} />
-        }
-      >
-        {/* Net worth */}
-        {!selectMode && activeFiltered.length > 0 ? (
-          <View style={styles.summaryCard}>
-            <View style={styles.summaryRow}>
-              <View>
-                <Text style={styles.summaryLabel}>Patrimonio neto</Text>
-                <Text style={styles.summaryAmount}>{formatCurrency(totalNetWorth, activeCurrency)}</Text>
-              </View>
-              {currencyOptions.length > 1 && (
-                <View style={styles.currencyPills}>
-                  {currencyOptions.map((c) => (
-                    <TouchableOpacity
-                      key={c}
-                      style={[styles.currencyPill, activeCurrency === c && styles.currencyPillActive]}
-                      onPress={() => handleCurrencyChange(c)}
-                    >
-                      <Text style={[styles.currencyPillText, activeCurrency === c && styles.currencyPillTextActive]}>
-                        {c}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
-            </View>
-          </View>
-        ) : null}
-
-        {isLoading ? (
-          <>
-            <SkeletonCard />
-            <SkeletonCard />
-            <SkeletonCard />
-          </>
-        ) : activeFiltered.length === 0 && !showArchived ? (
-          <EmptyState
-            title="Sin cuentas"
-            description="Agrega tu primera cuenta con el botón +"
-            action={{ label: "Nueva cuenta", onPress: () => setFormVisible(true) }}
+      <ResourceModuleTemplate
+        topInset={insets.top}
+        header={
+          <ScreenHeader
+            title={selectMode ? `${selectedIds.size} seleccionadas` : "Cuentas"}
+            rightAction={
+              selectMode ? (
+                <HeaderActionGroup
+                  actions={[{
+                    key: "cancel",
+                    icon: X,
+                    label: "Cancelar",
+                    onPress: exitSelectMode,
+                    accessibilityLabel: "Cancelar seleccion",
+                  }]}
+                />
+              ) : (
+                <HeaderActionGroup
+                  actions={[{
+                    key: "export",
+                    icon: Download,
+                    onPress: () => exportCSV(filtered),
+                    accessibilityLabel: "Exportar CSV",
+                  }]}
+                />
+              )
+            }
           />
-        ) : (
-          activeFiltered.map((account, index) => (
-            <StaggeredItem key={account.id} index={index}>
-              <AccountCard
-                account={account}
-                selected={selectedIds.has(account.id)}
-                selectMode={selectMode}
-                onPress={() => {
-                  if (selectMode) { toggleSelect(account.id); return; }
-                  router.push(`/account/${account.id}?from=accounts`);
-                }}
-                onArchive={() => handleArchive(account)}
-                onAnalytics={() => setAnalyticsAccount(account)}
-              />
-            </StaggeredItem>
-          ))
-        )}
-
-        {/* Archived section */}
-        {archivedFiltered.length > 0 ? (
+        }
+        toolbar={
+          <FilterToolbar
+            options={TYPE_FILTERS}
+            selectedValues={typeFilters}
+            onSelectedValuesChange={setTypeFilters}
+            allValue="all"
+            searchValue={searchText}
+            onSearchChange={setSearchText}
+            searchPlaceholder="Buscar cuentas..."
+            actions={[{
+              key: "archived",
+              icon: Archive,
+              onPress: () => setShowArchived((v) => !v),
+              active: showArchived,
+              accessibilityLabel: "Mostrar cuentas archivadas",
+            }]}
+          />
+        }
+        activeFilters={
+          !selectMode ? (
+            <ActiveFilterBar items={activeFilterItems} onClear={clearAccountFilters} />
+          ) : null
+        }
+        summary={summaryHeader}
+        bulkActions={
+          selectMode && selectedIds.size > 0 ? (
+            <BulkActionBar
+              selectedCount={selectedIds.size}
+              onClear={exitSelectMode}
+              actions={[
+                {
+                  key: "select-all",
+                  label: `Sel. todas (${activeFiltered.length})`,
+                  icon: CheckSquare,
+                  onPress: () => setSelectedIds(new Set(activeFiltered.map((a) => a.id))),
+                },
+                {
+                  key: "csv",
+                  label: "CSV",
+                  icon: Download,
+                  tone: "primary",
+                  onPress: () => exportCSV(selectedAccounts),
+                },
+                {
+                  key: "archive",
+                  label: `Archivar (${selectedIds.size})`,
+                  icon: Archive,
+                  tone: "neutral",
+                  onPress: () => setBulkArchiveConfirm(true),
+                },
+              ]}
+            />
+          ) : null
+        }
+        list={
+          <ResourceSectionList
+            sections={accountSections}
+            keyExtractor={(account) => String(account.id)}
+            renderItem={renderAccount}
+            loading={{
+              isLoading,
+              skeleton: (
+                <>
+                  <SkeletonCard />
+                  <SkeletonCard />
+                  <SkeletonCard />
+                </>
+              ),
+            }}
+            empty={{
+              title: "Sin cuentas",
+              description: "Agrega tu primera cuenta con el botón +",
+              action: { label: "Nueva cuenta", onPress: () => setFormVisible(true) },
+            }}
+            refreshing={isLoading}
+            onRefresh={onRefresh}
+          />
+        }
+        fab={
+          !selectMode ? (
+            <FAB onPress={() => { setEditAccount(null); setFormVisible(true); }} bottom={insets.bottom + 16} />
+          ) : null
+        }
+        overlays={
           <>
-            <View style={styles.archivedHeader}>
-              <Archive size={13} color={COLORS.storm} strokeWidth={2} />
-              <Text style={styles.archivedLabel}>Archivadas ({archivedFiltered.length})</Text>
-            </View>
-            {archivedFiltered.map((account) => (
-              <AccountCard
-                key={account.id}
-                account={account}
-                selected={selectedIds.has(account.id)}
-                onPress={() => {
-                  if (selectMode) { toggleSelect(account.id); return; }
-                  setEditAccount(account);
-                  setFormVisible(true);
-                }}
-                onRestore={() => handleArchive(account)}
-                onAnalytics={() => setAnalyticsAccount(account)}
-              />
-            ))}
+            <AccountForm
+              visible={formVisible}
+              editAccount={editAccount ?? undefined}
+              onClose={() => { setFormVisible(false); setEditAccount(null); }}
+              onSuccess={() => { setFormVisible(false); setEditAccount(null); }}
+            />
+
+            <AccountAnalyticsModal
+              visible={Boolean(analyticsAccount)}
+              account={analyticsAccount}
+              onClose={() => setAnalyticsAccount(null)}
+            />
+
+            <ConfirmDialog
+              visible={bulkArchiveConfirm}
+              title={`Archivar ${selectedIds.size} cuentas`}
+              body="Las cuentas dejarán de aparecer en la lista principal. Podrás restaurarlas después."
+              confirmLabel="Archivar"
+              cancelLabel="Cancelar"
+              onCancel={() => setBulkArchiveConfirm(false)}
+              onConfirm={executeBulkArchive}
+            />
           </>
-        ) : null}
-      </ScrollView>
-
-      {!selectMode ? (
-        <FAB onPress={() => { setEditAccount(null); setFormVisible(true); }} bottom={insets.bottom + 16} />
-      ) : null}
-
-      <AccountForm
-        visible={formVisible}
-        editAccount={editAccount ?? undefined}
-        onClose={() => { setFormVisible(false); setEditAccount(null); }}
-        onSuccess={() => { setFormVisible(false); setEditAccount(null); }}
+        }
       />
-
-      <AccountAnalyticsModal
-        visible={Boolean(analyticsAccount)}
-        account={analyticsAccount}
-        onClose={() => setAnalyticsAccount(null)}
-      />
-
-      <ConfirmDialog
-        visible={bulkArchiveConfirm}
-        title={`Archivar ${selectedIds.size} cuentas`}
-        body="Las cuentas dejarán de aparecer en la lista principal. Podrás restaurarlas después."
-        confirmLabel="Archivar"
-        cancelLabel="Cancelar"
-        onCancel={() => setBulkArchiveConfirm(false)}
-        onConfirm={executeBulkArchive}
-      />
-    </View>
     </GestureDetector>
   );
 }
-
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: COLORS.bg },
-  content: { padding: SPACING.lg, gap: SPACING.md, paddingBottom: 100 },
-
-  searchWrap: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginHorizontal: SPACING.lg,
-    marginTop: SPACING.xs,
-    marginBottom: SPACING.lg,
-    backgroundColor: GLASS.card,
-    borderRadius: RADIUS.md,
-    paddingHorizontal: SPACING.md,
-    gap: SPACING.sm,
-    borderWidth: 0.5,
-    borderColor: "rgba(255,255,255,0.10)",
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.ink,
-    fontFamily: FONT_FAMILY.body,
-    paddingVertical: SPACING.sm + 2,
-  },
-
-  filterRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingRight: SPACING.md,
-    marginBottom: SPACING.sm,
-  },
-  filterPills: {
-    paddingHorizontal: SPACING.lg,
-    gap: SPACING.xs,
-    alignItems: "center",
-  },
-  pill: {
-    height: 30,
-    paddingHorizontal: SPACING.md,
-    borderRadius: RADIUS.full,
-    backgroundColor: GLASS.card,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  pillActive: { backgroundColor: COLORS.primary },
-  pillText: { fontSize: FONT_SIZE.xs, color: COLORS.storm, fontFamily: FONT_FAMILY.bodyMedium, includeFontPadding: false },
-  pillTextActive: { color: "#FFF", fontFamily: FONT_FAMILY.bodySemibold },
-
-  archivedToggle: {
-    width: 30,
-    height: 30,
-    borderRadius: RADIUS.full,
-    backgroundColor: GLASS.card,
-    alignItems: "center",
-    justifyContent: "center",
-    flexShrink: 0,
-  },
-  archivedToggleActive: { backgroundColor: COLORS.primary + "22" },
-
-  headerBtn: {
-    height: 34,
-    paddingHorizontal: SPACING.md,
-    borderRadius: RADIUS.full,
-    backgroundColor: GLASS.card,
-    alignItems: "center",
-    justifyContent: "center",
-    flexDirection: "row",
-    gap: 5,
-  },
-  headerBtnText: { fontSize: FONT_SIZE.xs, color: COLORS.storm, fontFamily: FONT_FAMILY.bodyMedium },
-
-  bulkBar: {
-    flexDirection: "row",
-    gap: SPACING.sm,
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.sm,
-    alignItems: "center",
-    borderBottomWidth: 0.5,
-    borderBottomColor: "rgba(255,255,255,0.07)",
-  },
-  bulkBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: SPACING.sm + 2,
-    paddingVertical: 5,
-    borderRadius: RADIUS.full,
-    backgroundColor: GLASS.card,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.10)",
-  },
-  bulkBtnText: { fontSize: FONT_SIZE.xs, color: COLORS.storm, fontFamily: FONT_FAMILY.bodyMedium },
-
-  summaryCard: {
-    backgroundColor: GLASS.card,
-    borderRadius: RADIUS.xl,
-    borderWidth: 1,
-    borderColor: GLASS.cardBorder,
-    padding: SPACING.md,
-    marginBottom: SPACING.xs,
-  },
-  summaryRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  summaryLabel: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.xs, color: COLORS.storm, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 2 },
-  summaryAmount: { fontSize: FONT_SIZE.xl, fontFamily: FONT_FAMILY.heading, color: COLORS.ink },
-  currencyPills: { flexDirection: "row", gap: 4 },
-  currencyPill: {
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 5,
-    borderRadius: RADIUS.full,
-    backgroundColor: GLASS.card,
-    borderWidth: 1,
-    borderColor: GLASS.cardBorder,
-  },
-  currencyPillActive: {
-    backgroundColor: COLORS.pine + "22",
-    borderColor: COLORS.pine + "55",
-  },
-  currencyPillText: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.xs, color: COLORS.storm },
-  currencyPillTextActive: { fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.pine },
-
-  archivedHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: SPACING.xs,
-    marginTop: SPACING.sm,
-    paddingTop: SPACING.md,
-    borderTopWidth: 1,
-    borderTopColor: GLASS.separator,
-  },
-  archivedLabel: {
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.storm,
-    fontFamily: FONT_FAMILY.bodyMedium,
-  },
-});
 
 export default function AccountsScreenRoot() {
   return (

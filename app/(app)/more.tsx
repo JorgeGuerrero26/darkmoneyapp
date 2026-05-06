@@ -39,14 +39,14 @@ export default function MoreScreen() {
       Icon: Bell,
       title: "Notificaciones",
       subtitle: unreadCount > 0 ? `${unreadCount} sin leer` : "Sin notificaciones nuevas",
-      route: "/notifications",
+      route: "/(app)/notifications?from=more",
       badge: unreadCount,
     },
     {
       Icon: Users,
       title: "Contactos",
       subtitle: "Clientes, proveedores y más",
-      route: "/contacts/",
+      route: "/(app)/contacts?from=more",
     },
     {
       Icon: BarChart3,
@@ -58,31 +58,31 @@ export default function MoreScreen() {
       Icon: RefreshCw,
       title: "Suscripciones",
       subtitle: "Pagos recurrentes",
-      route: "/subscriptions",
+      route: "/(app)/subscriptions?from=more",
     },
     {
       Icon: TrendingUp,
       title: "Ingresos fijos",
       subtitle: "Sueldos, rentas y cobros recurrentes",
-      route: "/recurring-income",
+      route: "/(app)/recurring-income?from=more",
     },
     {
       Icon: Tag,
       title: "Categorías",
       subtitle: "Organiza tus movimientos",
-      route: "/categories",
+      route: "/(app)/categories?from=more",
     },
     {
       Icon: ArrowLeftRight,
       title: "Tipos de cambio",
       subtitle: "Tasas para conversión de monedas",
-      route: "/exchange-rates",
+      route: "/(app)/exchange-rates?from=more",
     },
     {
       Icon: Settings,
       title: "Configuración",
       subtitle: "Perfil, workspace y preferencias",
-      route: "/settings",
+      route: "/(app)/settings?from=more",
     },
   ];
 

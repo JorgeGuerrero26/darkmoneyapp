@@ -26,7 +26,7 @@ if (Notifications) {
   });
 }
 
-async function registerForPushNotifications(): Promise<string | null> {
+export async function registerForPushNotifications(): Promise<string | null> {
   console.log("[PushNotifications] isDevice:", Constants.isDevice, "executionEnv:", Constants.executionEnvironment);
   if (!Constants.isDevice) {
     console.warn("[PushNotifications] Not a real device, skipping.");
@@ -82,7 +82,7 @@ async function registerForPushNotifications(): Promise<string | null> {
   }
 }
 
-async function saveTokenToSupabase(userId: string, token: string) {
+export async function savePushTokenToSupabase(userId: string, token: string) {
   if (!supabase) return;
   await supabase
     .from("notification_preferences")
@@ -203,7 +203,7 @@ export function usePushNotifications(userId?: string, handlers?: PushNotificatio
       try {
         const token = await registerForPushNotifications();
         if (!cancelled && token) {
-          await saveTokenToSupabase(userId, token);
+          await savePushTokenToSupabase(userId, token);
         }
       } catch (error) {
         console.warn("[PushNotifications] bootstrap failed:", error);

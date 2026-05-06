@@ -17,7 +17,6 @@ import {
   View,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
-import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as LocalAuthentication from "expo-local-authentication";
 import * as SecureStore from "expo-secure-store";
@@ -33,17 +32,24 @@ import {
   useCreateWorkspaceInvitationMutation,
   useNotificationPreferencesQuery,
   useUpdateNotificationPreferencesMutation,
+  useSyncExchangeRatePairMutation,
   type WorkspaceInvitationInput,
 } from "../services/queries/workspace-data";
 import { Input } from "../components/ui/Input";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
+import { CurrencySelector } from "../components/ui/CurrencySelector";
+import { ResourceContextNote } from "../components/ui/ResourceContextNote";
+import { ResourceModuleTemplate } from "../components/ui/ResourceModuleTemplate";
 import { ScreenHeader } from "../components/layout/ScreenHeader";
 import { useToast } from "../hooks/useToast";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../constants/theme";
+import { DEFAULT_EXCHANGE_CURRENCY, normalizeSupportedCurrencyCode } from "../constants/currencies";
 import type { WorkspaceRole } from "../types/domain";
 import { SafeBlurView } from "../components/ui/SafeBlurView";
 import { useDismissibleSheet } from "../components/ui/useDismissibleSheet";
+import { useOriginBackNavigation } from "../hooks/useOriginBackNavigation";
+import { registerForPushNotifications, savePushTokenToSupabase } from "../hooks/usePushNotifications";
 
 const ROLE_OPTIONS: { label: string; value: Exclude<WorkspaceRole, "owner"> }[] = [
   { label: "Administrador", value: "admin" },
@@ -53,7 +59,7 @@ const ROLE_OPTIONS: { label: string; value: Exclude<WorkspaceRole, "owner"> }[] 
 
 function SettingsScreen() {
   const insets = useSafeAreaInsets();
-  const router = useRouter();
+  const { handleBack } = useOriginBackNavigation();
   const queryClient = useQueryClient();
   const { profile, saveProfile, saveAvatar, removeAvatar, signOut } = useAuth();
   const { activeWorkspace, activeWorkspaceId, setActiveWorkspaceId, setWorkspaces } = useWorkspace();
@@ -61,10 +67,11 @@ function SettingsScreen() {
   const { showToast } = useToast();
   const notificationPreferencesQuery = useNotificationPreferencesQuery(profile?.id ?? null);
   const updateNotificationPreferencesMutation = useUpdateNotificationPreferencesMutation(profile?.id ?? null);
+  const syncExchangeRatePair = useSyncExchangeRatePairMutation();
 
   // ── Profile ──────────────────────────────────────────────────────────────
   const [fullName, setFullName] = useState(profile?.fullName ?? "");
-  const [baseCurrencyCode, setBaseCurrencyCode] = useState(profile?.baseCurrencyCode ?? "PEN");
+  const [baseCurrencyCode, setBaseCurrencyCode] = useState(normalizeSupportedCurrencyCode(profile?.baseCurrencyCode));
   const [isSaving, setIsSaving] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
 
@@ -186,13 +193,27 @@ function SettingsScreen() {
     onClose: () => setCreateWsSheetOpen(false),
   });
   const [newWsName, setNewWsName] = useState("");
-  const [newWsCurrency, setNewWsCurrency] = useState(profile?.baseCurrencyCode ?? "PEN");
+  const [newWsCurrency, setNewWsCurrency] = useState(normalizeSupportedCurrencyCode(profile?.baseCurrencyCode));
   const createWsMutation = useCreateSharedWorkspaceMutation();
 
   function openCreateWsSheet() {
     setNewWsName("");
-    setNewWsCurrency(profile?.baseCurrencyCode ?? "PEN");
+    setNewWsCurrency(normalizeSupportedCurrencyCode(profile?.baseCurrencyCode));
     setCreateWsSheetOpen(true);
+  }
+
+  async function syncDefaultExchangeCurrency(currencyCode: string) {
+    const normalized = normalizeSupportedCurrencyCode(currencyCode);
+    if (normalized === DEFAULT_EXCHANGE_CURRENCY) return;
+
+    try {
+      await syncExchangeRatePair.mutateAsync({
+        fromCurrencyCode: normalized,
+        toCurrencyCode: DEFAULT_EXCHANGE_CURRENCY,
+      });
+    } catch (err: unknown) {
+      showToast(`No se pudo sincronizar ${normalized}/${DEFAULT_EXCHANGE_CURRENCY}: ${humanizeError(err)}`, "warning");
+    }
   }
 
   async function handleCreateWorkspace() {
@@ -200,8 +221,9 @@ function SettingsScreen() {
     try {
       const workspace = await createWsMutation.mutateAsync({
         name: newWsName.trim(),
-        baseCurrencyCode: newWsCurrency.trim().toUpperCase() || null,
+        baseCurrencyCode: newWsCurrency,
       });
+      await syncDefaultExchangeCurrency(newWsCurrency);
       const refreshedWorkspaces = await queryClient.fetchQuery({
         queryKey: ["user-workspaces", profile.id],
         queryFn: () => fetchUserWorkspaces(profile.id),
@@ -222,9 +244,10 @@ function SettingsScreen() {
     try {
       await saveProfile({
         fullName: fullName.trim(),
-        baseCurrencyCode: baseCurrencyCode.trim().toUpperCase(),
+        baseCurrencyCode,
         timezone: profile?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
       });
+      await syncDefaultExchangeCurrency(baseCurrencyCode);
       showToast("Perfil guardado", "success");
     } catch (err: unknown) {
       showToast(humanizeError(err), "error");
@@ -278,6 +301,24 @@ function SettingsScreen() {
     (activeWorkspace?.role === "owner" || activeWorkspace?.role === "admin");
   const dailyDigestEnabled = notificationPreferencesQuery.data?.dailyDigestEnabled !== false;
   const pushEnabled = notificationPreferencesQuery.data?.pushEnabled === true;
+  const pushToken = notificationPreferencesQuery.data?.pushToken ?? null;
+  const pushPlatform = notificationPreferencesQuery.data?.platform ?? null;
+
+  async function handlePushReconnect() {
+    if (!profile?.id) return;
+    try {
+      const token = await registerForPushNotifications();
+      if (!token) {
+        showToast("No se pudo obtener permiso o token push en este dispositivo", "warning");
+        return;
+      }
+      await savePushTokenToSupabase(profile.id, token);
+      await queryClient.invalidateQueries({ queryKey: ["notification-preferences", profile.id] });
+      showToast("Push reactivado en este dispositivo", "success");
+    } catch (err: unknown) {
+      showToast(humanizeError(err), "error");
+    }
+  }
 
   async function handleDailyDigestToggle(nextValue: boolean) {
     try {
@@ -292,9 +333,11 @@ function SettingsScreen() {
   }
 
   return (
-    <View style={[styles.screen, { paddingTop: insets.top }]}>
-      <ScreenHeader title="Configuración" onBack={() => router.replace("/(app)/more")} />
-
+    <ResourceModuleTemplate
+      topInset={insets.top}
+      header={<ScreenHeader title="Configuración" onBack={handleBack} />}
+      context={<ResourceContextNote>Administra perfil, workspaces, seguridad y preferencias del dispositivo.</ResourceContextNote>}
+      list={
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : "height"}>
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
 
@@ -328,13 +371,11 @@ function SettingsScreen() {
             <View style={styles.form}>
               <Input label="Nombre completo" value={fullName} onChangeText={setFullName} autoCapitalize="words" />
               <Input label="Correo electrónico" value={profile?.email ?? ""} editable={false} style={styles.disabledInput} />
-              <Input
+              <CurrencySelector
                 label="Moneda base"
                 value={baseCurrencyCode}
-                onChangeText={(v) => setBaseCurrencyCode(v.toUpperCase())}
-                autoCapitalize="characters"
-                maxLength={3}
-                hint="Código de 3 letras (PEN, USD, EUR…)"
+                onChange={setBaseCurrencyCode}
+                hint={`Se sincronizara automaticamente contra ${DEFAULT_EXCHANGE_CURRENCY}.`}
               />
             </View>
             <Button label="Guardar perfil" onPress={handleSave} loading={isSaving} style={styles.saveButton} />
@@ -392,6 +433,24 @@ function SettingsScreen() {
 
           <Card>
             <Text style={styles.sectionTitle}>Notificaciones</Text>
+            <View style={styles.pushStatusBox}>
+              <Text style={styles.pushStatusTitle}>
+                Push {pushEnabled && pushToken ? "activo" : "pendiente"}
+              </Text>
+              <Text style={styles.pushStatusDesc}>
+                {pushEnabled && pushToken
+                  ? `Token registrado para ${pushPlatform ?? Platform.OS}.`
+                  : "Este dispositivo no tiene token push activo. Reintenta permisos si no recibes alertas."}
+              </Text>
+              <TouchableOpacity
+                style={styles.pushReconnectBtn}
+                onPress={() => void handlePushReconnect()}
+                disabled={notificationPreferencesQuery.isLoading}
+                activeOpacity={0.84}
+              >
+                <Text style={styles.pushReconnectText}>Reintentar activar push</Text>
+              </TouchableOpacity>
+            </View>
             <View style={styles.switchRow}>
               <View style={styles.switchInfo}>
                 <Text style={styles.switchLabel}>Resumen diario informativo</Text>
@@ -415,7 +474,9 @@ function SettingsScreen() {
           <Button label="Cerrar sesión" variant="danger" size="lg" onPress={handleSignOut} />
         </ScrollView>
       </KeyboardAvoidingView>
-
+      }
+      overlays={
+      <>
       {/* Biometric setup — password prompt */}
       <Modal
         visible={bioSetupVisible}
@@ -574,13 +635,11 @@ function SettingsScreen() {
               placeholder="Ej. Empresa ABC"
               autoCapitalize="words"
             />
-            <Input
+            <CurrencySelector
               label="Moneda base"
               value={newWsCurrency}
-              onChangeText={(v) => setNewWsCurrency(v.toUpperCase())}
-              autoCapitalize="characters"
-              maxLength={3}
-              hint="PEN, USD, EUR…"
+              onChange={setNewWsCurrency}
+              hint={`El tipo de cambio contra ${DEFAULT_EXCHANGE_CURRENCY} se guardara automaticamente.`}
             />
 
             <Button
@@ -592,7 +651,9 @@ function SettingsScreen() {
           </Animated.View>
         </Animated.View>
       </Modal>
-    </View>
+      </>
+      }
+    />
   );
 }
 
@@ -672,6 +733,41 @@ const styles = StyleSheet.create({
   switchInfo: { flex: 1, gap: 2, marginRight: SPACING.md },
   switchLabel: { fontSize: FONT_SIZE.sm, fontFamily: FONT_FAMILY.bodyMedium, color: COLORS.ink },
   switchDesc: { fontSize: FONT_SIZE.xs, color: COLORS.storm },
+  pushStatusBox: {
+    marginBottom: SPACING.md,
+    padding: SPACING.md,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: GLASS.cardBorder,
+    backgroundColor: GLASS.card,
+    gap: SPACING.xs,
+  },
+  pushStatusTitle: {
+    fontSize: FONT_SIZE.sm,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    color: COLORS.ink,
+  },
+  pushStatusDesc: {
+    fontSize: FONT_SIZE.xs,
+    fontFamily: FONT_FAMILY.body,
+    color: COLORS.storm,
+    lineHeight: 18,
+  },
+  pushReconnectBtn: {
+    alignSelf: "flex-start",
+    marginTop: SPACING.xs,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs + 2,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    borderColor: COLORS.primary + "55",
+    backgroundColor: COLORS.primary + "14",
+  },
+  pushReconnectText: {
+    fontSize: FONT_SIZE.xs,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    color: COLORS.primary,
+  },
   // Sheet styles
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
   sheet: {

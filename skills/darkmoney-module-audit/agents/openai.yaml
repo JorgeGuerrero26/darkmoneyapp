@@ -1,0 +1,4 @@
+interface:
+  display_name: "DarkMoney Module Audit"
+  short_description: "Audita modulos contra la plantilla comun."
+  default_prompt: "Usa esta skill para auditar un modulo de DarkMoney y detectar desviaciones de componentes genericos, orden visual, datos, estilos y validaciones."

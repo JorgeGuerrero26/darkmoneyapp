@@ -58,17 +58,63 @@ Reglas:
 3. Los callbacks de navegacion se inyectan desde la pantalla o controller.
 4. Los estilos de componentes extraidos viven junto al componente.
 
+Toda pantalla de modulo tipo recurso debe usar `ResourceModuleTemplate` y respetar este orden:
+
+1. `header`: titulo y acciones globales.
+2. `toolbar`: busqueda, filtros principales y toggles globales.
+3. `activeFilters`: chips o indicadores de filtros secundarios activos.
+4. `context`: notas o hints del rango/estado actual.
+5. `summary`: metricas principales del resultado actual.
+6. `bulkActions`: acciones sobre seleccion multiple.
+7. `list`: `ResourceSectionList`.
+8. `fab`: accion primaria de creacion.
+9. `overlays`: forms, sheets, modals, confirms y banners.
+
+| Componente | Ubicacion | Uso |
+|---|---|---|
+| `ResourceModuleTemplate` | `components/ui/ResourceModuleTemplate.tsx` | Plantilla generica de orden visual para modulos tipo recurso |
+
+## Patron de navegacion de origen
+
+Las pantallas abiertas desde `Mas` deben recibir `?from=more` y resolver el regreso con `useOriginBackNavigation`. Esto evita que cada modulo dependa del historial real del stack y mantiene la misma animacion/comportamiento de entrada y salida.
+
+Reglas:
+
+1. En `app/(app)/more.tsx`, usar rutas tipo `/contacts?from=more`.
+2. En la pantalla destino, usar `const { handleBack } = useOriginBackNavigation()`.
+3. Pasar `onBack={handleBack}` a `ScreenHeader`.
+4. No usar `router.back()` directo en pantallas abiertas desde `Mas`.
+5. Crear un wrapper en `app/(app)/<modulo>.tsx` si la pantalla real vive en el stack raiz, y registrar esa pantalla oculta en `app/(app)/_layout.tsx` con `href: null`.
+6. Si el modulo tambien puede abrirse desde Dashboard o Notificaciones, pasar `originRoutes` al hook.
+
 ## Patron de lista
 
 Toda lista profesional debe tener:
 
 1. `FilterBar` reutilizable si hay filtros.
-2. `SectionHeader` si hay agrupacion.
+2. `SectionHeader` solo si hay agrupacion real; la seccion principal puede usar `headerVariant: "hidden"` para mantener la plantilla sin ruido visual.
 3. `Row/Card` puro y memoizable si crece.
 4. `EmptyState` con accion primaria cuando aplique.
 5. Skeleton consistente para carga inicial.
 6. Pull-to-refresh si usa datos remotos.
 7. `keyExtractor` estable que incluya workspace si puede haber ids repetidos.
+
+Componentes base disponibles:
+
+| Componente | Ubicacion | Uso |
+|---|---|---|
+| `HeaderActionGroup` | `components/ui/HeaderActionGroup.tsx` | Grupo generico de acciones del header con icono, label opcional y estado activo |
+| `FilterToolbar` | `components/ui/FilterToolbar.tsx` | Barra generica de filtros, busqueda opcional y acciones iconicas como archivadas/exportar |
+| `ActiveFilterBar` | `components/ui/ActiveFilterBar.tsx` | Barra generica para chips de filtros activos y accion de limpiar |
+| `ResourceContextNote` | `components/ui/ResourceContextNote.tsx` | Texto contextual debajo de filtros activos, por ejemplo rango de fechas aplicado |
+| `ResourceSectionList` | `components/ui/ResourceSectionList.tsx` | Lista generica estandar para modulos con loading, empty state, refresh, footer paginado, headers visibles u ocultos |
+| `SwipeActionRow` | `components/ui/SwipeActionRow.tsx` | Contenedor swipeable generico con accion izquierda/derecha; el modulo inyecta el contenido y las acciones |
+| `BulkActionBar` | `components/ui/BulkActionBar.tsx` | Barra generica para operaciones masivas sobre items seleccionados |
+| `MetricSummaryBar` | `components/ui/MetricSummaryBar.tsx` | Barra compacta de KPIs para resumenes de listas, filtros activos y acciones cortas tipo selector |
+
+Los modulos deben crear wrappers finos con copy de dominio cuando sea necesario. Ejemplo: `ObligationFilterBar` configura `FilterToolbar` con filtros de creditos/deudas, pero no redefine estilos.
+
+La animacion de entrada de items de listas vive en `ResourceSectionList` mediante el patron estandar de stagger. Las pantallas de modulo no deben envolver rows/cards con `StaggeredItem`; si un modulo necesita desactivar esa animacion por rendimiento o por una vista especial, debe usar una prop explicita del componente generico.
 
 Contrato recomendado:
 
@@ -78,7 +124,7 @@ type FeatureListProps<T, S> = {
   loading: boolean;
   refreshing: boolean;
   onRefresh: () => void;
-  renderItem: ListRenderItem<T>;
+  renderItem: SectionListRenderItem<T, S>;
   empty: {
     icon: React.ComponentType<any>;
     title: string;
@@ -98,6 +144,13 @@ type FeatureListProps<T, S> = {
 6. Acciones secundarias: icon button pequeño, no texto largo.
 7. No mezclar `TouchableOpacity` y `Pressable` arbitrariamente; usar el patron del componente base salvo necesidad de gesture.
 
+Componente base disponible:
+
+| Componente | Ubicacion | Uso |
+|---|---|---|
+| `ResourceCard` | `components/ui/ResourceCard.tsx` | Card estandar para entidades/list items con leading, title, subtitle, meta, trailing, acciones y estado seleccionado/archivado |
+| `MetricSummaryCard` | `components/ui/MetricSummaryCard.tsx` | Card de metrica principal con label, valor destacado y selector opcional |
+
 ## Patron de filtros
 
 1. Chips horizontales para 3 o mas filtros.
@@ -105,6 +158,14 @@ type FeatureListProps<T, S> = {
 3. Los filtros son valores tipados, no strings sueltos.
 4. El componente no filtra; emite `onChange`.
 5. El filtro activo debe cambiar border, fondo y texto.
+
+Componentes base disponibles:
+
+| Componente | Ubicacion | Uso |
+|---|---|---|
+| `PillSelector` | `components/ui/PillSelector.tsx` | Selector horizontal de opciones cortas con estado controlado |
+| `OptionCardGroup` | `components/ui/OptionCardGroup.tsx` | Grupo de cards seleccionables para opciones con titulo, descripcion e icono opcional |
+| `CurrencySelector` | `components/ui/CurrencySelector.tsx` | Selector controlado de moneda soportada; no permite texto libre |
 
 ## Patron de formularios
 
@@ -124,6 +185,13 @@ Reglas:
 4. Los errores de API pasan por `humanizeError`.
 5. El formulario no debe conocer detalles de invalidacion de queries.
 
+Componentes base disponibles:
+
+| Componente | Ubicacion | Uso |
+|---|---|---|
+| `FormSheetScaffold` | `components/ui/FormSheetScaffold.tsx` | Estructura generica de bottom sheet para formularios con header, scroll y acciones |
+| `EmptyRequirementCard` | `components/ui/EmptyRequirementCard.tsx` | Card para requisitos faltantes antes de crear una entidad, por ejemplo contactos o cuentas |
+
 ## Patron de modales y sheets
 
 1. Usar `BottomSheet` para forms y acciones contextuales.
@@ -131,6 +199,12 @@ Reglas:
 3. Usar union state para modales relacionados.
 4. El cierre siempre debe limpiar target y loading local.
 5. No abrir dos sheets del mismo flujo al mismo tiempo.
+
+Componentes base disponibles:
+
+| Componente | Ubicacion | Uso |
+|---|---|---|
+| `EntityActionSheet` | `components/ui/EntityActionSheet.tsx` | Sheet generico para resumen, notices, quick actions y acciones principales de una entidad |
 
 Ejemplo:
 

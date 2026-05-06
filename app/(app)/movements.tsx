@@ -1,41 +1,32 @@
 import { GestureDetector } from "react-native-gesture-handler";
-import { StaggeredItem } from "../../components/ui/StaggeredItem";
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
-import { Download, Search, SlidersHorizontal, Trash2, TrendingDown, TrendingUp, X } from "lucide-react-native";
+import { Download, SlidersHorizontal, Trash2, X } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
-import { formatCurrency } from "../../components/ui/AmountDisplay";
-import { DatePickerInput } from "../../components/ui/DatePickerInput";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ActivityIndicator,
-  Animated,
-  Dimensions,
-  FlatList,
-  Modal,
-  Pressable,
-  RefreshControl,
-  ScrollView,
   StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
   View,
+  type SectionListRenderItem,
 } from "react-native";
-
-const SCREEN_HEIGHT = Dimensions.get("window").height;
 import { useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { startOfMonth, endOfMonth, subMonths, format } from "date-fns";
-import { es } from "date-fns/locale";
 
 import { useAuth } from "../../lib/auth-context";
 import { useWorkspace } from "../../lib/workspace-context";
-import { useWorkspaceSnapshotQuery, type WorkspaceSnapshot } from "../../services/queries/workspace-data";
+import { useWorkspaceSnapshotQuery } from "../../services/queries/workspace-data";
 import { usePaginatedMovements } from "../../services/queries/movements";
 import { useMovementAttachmentCountsQuery } from "../../services/queries/attachments";
+import { MovementDeleteImpact } from "../../components/domain/MovementDeleteImpact";
 import { SwipeableMovementRow } from "../../components/domain/SwipeableMovementRow";
-import { EmptyState } from "../../components/ui/EmptyState";
+import { BulkActionBar } from "../../components/ui/BulkActionBar";
+import { FilterToolbar } from "../../components/ui/FilterToolbar";
+import { ActiveFilterBar, type ActiveFilterItem } from "../../components/ui/ActiveFilterBar";
+import { HeaderActionGroup } from "../../components/ui/HeaderActionGroup";
+import { ResourceContextNote } from "../../components/ui/ResourceContextNote";
+import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTemplate";
+import { ResourceSectionList, type ResourceSection } from "../../components/ui/ResourceSectionList";
 import { Skeleton } from "../../components/ui/Skeleton";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { MovementForm } from "../../components/forms/MovementForm";
@@ -47,12 +38,15 @@ import { isoToDateStr } from "../../lib/date";
 import { buildDateRangeNotice } from "../../lib/date-range-notice";
 import { shareCsvAsFile } from "../../lib/share-csv-file";
 import { sortByName } from "../../lib/sort-locale";
-import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
+import { SPACING } from "../../constants/theme";
 import { useSwipeTab } from "../../hooks/useSwipeTab";
+import { MovementFilterSheet } from "../../features/movements/components/MovementFilterSheet";
+import { MovementSummaryBar } from "../../features/movements/components/MovementSummaryBar";
 import type { MovementRecord, MovementType, MovementStatus } from "../../types/domain";
 
 type FilterType = MovementType | "all";
 type FilterStatus = MovementStatus | "all";
+type MovementListSection = ResourceSection<MovementRecord, "movements">;
 
 const TYPE_FILTERS: { label: string; value: FilterType }[] = [
   { label: "Todos", value: "all" },
@@ -130,7 +124,7 @@ function MovementsScreen() {
   const { data: snapshot } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
 
   // ── Filters ──────────────────────────────────────────────────────────────
-  const [activeTypeFilter, setActiveTypeFilter] = useState<FilterType>("all");
+  const [activeTypeFilters, setActiveTypeFilters] = useState<MovementType[]>([]);
   const [activeStatusFilter, setActiveStatusFilter] = useState<FilterStatus>("all");
   const [activeDatePreset, setActiveDatePreset] = useState<string | null>("Este mes");
   const [activeCategoryId, setActiveCategoryId] = useState<number | null>(null);
@@ -141,22 +135,6 @@ function MovementsScreen() {
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [customDateFrom, setCustomDateFrom] = useState("");
   const [customDateTo, setCustomDateTo] = useState("");
-  const filterOverlayOpacity = useRef(new Animated.Value(0)).current;
-  const filterSheetY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
-
-  useEffect(() => {
-    if (filterSheetOpen) {
-      Animated.parallel([
-        Animated.timing(filterOverlayOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
-        Animated.spring(filterSheetY, { toValue: 0, tension: 65, friction: 11, useNativeDriver: true }),
-      ]).start();
-    } else {
-      Animated.parallel([
-        Animated.timing(filterOverlayOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
-        Animated.timing(filterSheetY, { toValue: SCREEN_HEIGHT, duration: 250, useNativeDriver: true }),
-      ]).start();
-    }
-  }, [filterSheetOpen, filterOverlayOpacity, filterSheetY]);
 
   // ── Delete / undo ─────────────────────────────────────────────────────────
   const { showToast, showRichToast } = useToast();
@@ -248,7 +226,7 @@ function MovementsScreen() {
   const isCustomRange = activeDatePreset === "Rango…";
 
   const filters = useMemo(() => ({
-    ...(activeTypeFilter !== "all" ? { type: activeTypeFilter as MovementType } : {}),
+    ...(activeTypeFilters.length > 0 ? { types: activeTypeFilters } : {}),
     ...(activeStatusFilter !== "all" ? { status: activeStatusFilter as MovementStatus } : {}),
     ...(isCustomRange && customDateFrom && customDateTo
       ? { dateFrom: customDateFrom, dateTo: customDateTo }
@@ -260,7 +238,7 @@ function MovementsScreen() {
     ...(activeAccountId ? { accountId: activeAccountId } : {}),
     ...(activeMovementIds?.length ? { movementIds: activeMovementIds } : {}),
     ...(debouncedSearch ? { search: debouncedSearch } : {}),
-  }), [activeTypeFilter, activeStatusFilter, selectedPreset, isCustomRange, customDateFrom, customDateTo, activeCategoryId, activeCategoryScope, activeAccountId, activeMovementIds, debouncedSearch]);
+  }), [activeTypeFilters, activeStatusFilter, selectedPreset, isCustomRange, customDateFrom, customDateTo, activeCategoryId, activeCategoryScope, activeAccountId, activeMovementIds, debouncedSearch]);
 
   const {
     data,
@@ -310,7 +288,7 @@ function MovementsScreen() {
     activeStatusFilter !== "all" ? activeStatusFilter : null,
   ].filter(Boolean).length;
 
-  const hasFilters = activeTypeFilter !== "all" || activeStatusFilter !== "all" || extraFiltersCount > 0 || Boolean(debouncedSearch);
+  const hasFilters = activeTypeFilters.length > 0 || activeStatusFilter !== "all" || extraFiltersCount > 0 || Boolean(debouncedSearch);
   const activeDateRangeNotice = useMemo(() => {
     if (activeQuickLabel) {
       return `Mostrando selección del dashboard: ${activeQuickLabel}.`;
@@ -368,7 +346,7 @@ function MovementsScreen() {
       setActiveStatusFilter("all");
     }
     if (scopedQuickFiltersRef.current.type) {
-      setActiveTypeFilter("all");
+      setActiveTypeFilters([]);
     }
     if (scopedQuickFiltersRef.current.dateRange) {
       setActiveDatePreset("Este mes");
@@ -461,7 +439,7 @@ function MovementsScreen() {
           setActiveStatusFilter("all");
         }
         if (!scopedType) {
-          setActiveTypeFilter("all");
+          setActiveTypeFilters([]);
         }
         if (!quickSearch) {
           setSearchText("");
@@ -483,7 +461,7 @@ function MovementsScreen() {
           setActiveStatusFilter(quickStatus as FilterStatus);
         }
         if (scopedType) {
-          setActiveTypeFilter(scopedType);
+          setActiveTypeFilters([scopedType as MovementType]);
         }
         if (quickDateFrom && quickDateTo) {
           setActiveDatePreset("Rango…");
@@ -535,7 +513,7 @@ function MovementsScreen() {
   }, [isLoading]);
 
   function clearAllFilters() {
-    setActiveTypeFilter("all");
+    setActiveTypeFilters([]);
     setActiveStatusFilter("all");
     setActiveDatePreset(null);
     setActiveCategoryId(null);
@@ -583,8 +561,103 @@ function MovementsScreen() {
     [allMovements, selectedIds],
   );
 
-  const renderItem = useCallback(({ item, index }: { item: MovementRecord; index: number }) => (
-    <StaggeredItem index={index}>
+  const movementSections = useMemo<MovementListSection[]>(
+    () => [{
+      key: "movements",
+      label: "Movimientos",
+      data: allMovements,
+      headerVariant: "hidden",
+    }],
+    [allMovements],
+  );
+
+  const activeFilterItems = useMemo<ActiveFilterItem[]>(() => {
+    const items: ActiveFilterItem[] = [];
+
+    if (activeQuickLabel) {
+      items.push({
+        key: "quick-label",
+        label: activeQuickLabel,
+        onRemove: () => {
+          setActiveQuickLabel(null);
+          setActiveMovementIds(null);
+        },
+      });
+    } else if (activeMovementIds?.length) {
+      items.push({
+        key: "dashboard-selection",
+        label: `Selección dashboard (${activeMovementIds.length})`,
+        onRemove: () => setActiveMovementIds(null),
+      });
+    }
+
+    for (const typeFilter of activeTypeFilters) {
+      items.push({
+        key: `type-${typeFilter}`,
+        label: TYPE_FILTERS.find((filter) => filter.value === typeFilter)?.label ?? "Tipo",
+        onRemove: () => setActiveTypeFilters((current) => current.filter((value) => value !== typeFilter)),
+      });
+    }
+
+    if (activeStatusFilter !== "all") {
+      items.push({
+        key: "status",
+        label: STATUS_FILTERS.find((filter) => filter.value === activeStatusFilter)?.label ?? "Estado",
+        onRemove: () => setActiveStatusFilter("all"),
+      });
+    }
+
+    if (activeDatePreset) {
+      items.push({
+        key: "date",
+        label: activeDatePreset === "Rango…" && customDateFrom && customDateTo
+          ? `${customDateFrom} - ${customDateTo}`
+          : activeDatePreset,
+        onRemove: () => setActiveDatePreset(null),
+      });
+    }
+
+    if (activeCategoryScope === "uncategorized") {
+      items.push({
+        key: "uncategorized",
+        label: "Sin categoría",
+        onRemove: () => setActiveCategoryScope(null),
+      });
+    }
+
+    if (activeCategoryId) {
+      items.push({
+        key: "category",
+        label: categoriesSorted.find((category) => category.id === activeCategoryId)?.name ?? "Categoría",
+        onRemove: () => setActiveCategoryId(null),
+      });
+    }
+
+    if (activeAccountId) {
+      items.push({
+        key: "account",
+        label: accountsSorted.find((account) => account.id === activeAccountId)?.name ?? "Cuenta",
+        onRemove: () => setActiveAccountId(null),
+      });
+    }
+
+    return items;
+  }, [
+    accountsSorted,
+    activeAccountId,
+    activeCategoryId,
+    activeCategoryScope,
+    activeDatePreset,
+    activeMovementIds,
+    activeQuickLabel,
+    activeStatusFilter,
+    activeTypeFilters,
+    categoriesSorted,
+    customDateFrom,
+    customDateTo,
+  ]);
+
+  const renderItem: SectionListRenderItem<MovementRecord, MovementListSection> = useCallback(({ item }) => (
     <SwipeableMovementRow
       movement={item}
       baseCurrencyCode={baseCurrency}
@@ -607,738 +680,220 @@ function MovementsScreen() {
       }}
       onDelete={() => confirmDelete(item)}
     />
-    </StaggeredItem>
   ), [baseCurrency, movementAttachmentCounts, selectedIds, selectMode, toggleSelect, confirmDelete, router]);
 
   return (
     <GestureDetector gesture={swipeGesture}>
-    <View style={[styles.screen, { paddingTop: insets.top }]}>
-      {/* Header */}
-      <ScreenHeader
-        title={selectMode ? `${selectedIds.size} seleccionados` : "Movimientos"}
-        rightAction={
-          selectMode ? (
-            <TouchableOpacity onPress={exitSelectMode} style={styles.filterBtn}>
-              <X size={14} color={COLORS.storm} />
-              <Text style={styles.filterBtnText}>Cancelar</Text>
-            </TouchableOpacity>
-          ) : (
-            <View style={{ flexDirection: "row", gap: SPACING.xs }}>
-              <TouchableOpacity
-                style={styles.filterBtn}
-                onPress={() => exportCSV(allMovements)}
-                accessibilityLabel="Exportar CSV"
-              >
-                <Download size={14} color={COLORS.storm} />
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.filterBtn, extraFiltersCount > 0 && styles.filterBtnActive]}
-                onPress={() => setFilterSheetOpen(true)}
-              >
-                <SlidersHorizontal size={14} color={extraFiltersCount > 0 ? COLORS.primary : COLORS.storm} />
-                <Text style={[styles.filterBtnText, extraFiltersCount > 0 && styles.filterBtnTextActive]}>
-                  {extraFiltersCount > 0 ? `Filtros (${extraFiltersCount})` : "Filtros"}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          )
-        }
-      />
-
-      {/* Search bar — hide in select mode */}
-      {!selectMode ? (
-        <View style={styles.searchWrap}>
-          <Search size={15} color={COLORS.storm} />
-          <TextInput
-            style={styles.searchInput}
-            value={searchText}
-            onChangeText={setSearchText}
-            placeholder="Buscar movimientos…"
-            placeholderTextColor={COLORS.storm}
-            returnKeyType="search"
+      <ResourceModuleTemplate
+        topInset={insets.top}
+        header={
+          <ScreenHeader
+            title={selectMode ? `${selectedIds.size} seleccionados` : "Movimientos"}
+            rightAction={
+              selectMode ? (
+                <HeaderActionGroup
+                  actions={[{
+                    key: "cancel",
+                    icon: X,
+                    label: "Cancelar",
+                    onPress: exitSelectMode,
+                    accessibilityLabel: "Cancelar seleccion",
+                  }]}
+                />
+              ) : (
+                <HeaderActionGroup
+                  actions={[
+                    {
+                      key: "export",
+                      icon: Download,
+                      onPress: () => exportCSV(allMovements),
+                      accessibilityLabel: "Exportar CSV",
+                    },
+                    {
+                      key: "filters",
+                      icon: SlidersHorizontal,
+                      label: extraFiltersCount > 0 ? `Filtros (${extraFiltersCount})` : "Filtros",
+                      active: extraFiltersCount > 0,
+                      onPress: () => setFilterSheetOpen(true),
+                      accessibilityLabel: "Abrir filtros avanzados",
+                    },
+                  ]}
+                />
+              )
+            }
           />
-          {searchText.length > 0 ? (
-            <TouchableOpacity onPress={() => setSearchText("")}>
-              <X size={15} color={COLORS.storm} />
-            </TouchableOpacity>
-          ) : null}
-        </View>
-      ) : null}
-
-      {/* Type filter pills */}
-      {!selectMode ? (
-        <View style={styles.segmentedWrap}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.segmentedRow}>
-            {TYPE_FILTERS.map((opt) => (
-              <TouchableOpacity
-                key={opt.value}
-                style={[styles.pill, activeTypeFilter === opt.value && styles.pillActive]}
-                onPress={() => setActiveTypeFilter(opt.value as FilterType)}
-              >
-                <Text style={[styles.pillText, activeTypeFilter === opt.value && styles.pillTextActive]}>
-                  {opt.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-      ) : null}
-
-      {/* Active filter chips */}
-      {!selectMode && (activeDatePreset !== null || activeCategoryId || activeCategoryScope || activeAccountId || activeMovementIds?.length || activeQuickLabel || activeStatusFilter !== "all") ? (
-        <View style={styles.activeFiltersBar}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.activeFiltersPills}>
-            {activeQuickLabel ? (
-              <TouchableOpacity style={styles.activeFilterChip} onPress={() => { setActiveQuickLabel(null); setActiveMovementIds(null); }}>
-                <Text style={styles.activeFilterChipText}>
-                  {activeQuickLabel} ×
-                </Text>
-              </TouchableOpacity>
-            ) : activeMovementIds?.length ? (
-              <TouchableOpacity style={styles.activeFilterChip} onPress={() => setActiveMovementIds(null)}>
-                <Text style={styles.activeFilterChipText}>
-                  Selección dashboard ({activeMovementIds.length}) ×
-                </Text>
-              </TouchableOpacity>
-            ) : null}
-            {activeStatusFilter !== "all" ? (
-              <TouchableOpacity style={styles.activeFilterChip} onPress={() => setActiveStatusFilter("all")}>
-                <Text style={styles.activeFilterChipText}>
-                  {STATUS_FILTERS.find((f) => f.value === activeStatusFilter)?.label ?? "Estado"} ×
-                </Text>
-              </TouchableOpacity>
-            ) : null}
-            {activeDatePreset ? (
-              <TouchableOpacity style={styles.activeFilterChip} onPress={() => setActiveDatePreset(null)}>
-                <Text style={styles.activeFilterChipText}>
-                  {activeDatePreset === "Rango…" && customDateFrom && customDateTo
-                    ? `${customDateFrom} – ${customDateTo}`
-                    : activeDatePreset}{" "}
-                  ×
-                </Text>
-              </TouchableOpacity>
-            ) : null}
-            {activeCategoryScope === "uncategorized" ? (
-              <TouchableOpacity style={styles.activeFilterChip} onPress={() => setActiveCategoryScope(null)}>
-                <Text style={styles.activeFilterChipText}>
-                  Sin categoría ×
-                </Text>
-              </TouchableOpacity>
-            ) : null}
-            {activeCategoryId ? (
-              <TouchableOpacity style={styles.activeFilterChip} onPress={() => setActiveCategoryId(null)}>
-                <Text style={styles.activeFilterChipText}>
-                  {categoriesSorted.find((c) => c.id === activeCategoryId)?.name ?? "Categoría"} ×
-                </Text>
-              </TouchableOpacity>
-            ) : null}
-            {activeAccountId ? (
-              <TouchableOpacity style={styles.activeFilterChip} onPress={() => setActiveAccountId(null)}>
-                <Text style={styles.activeFilterChipText}>
-                  {accountsSorted.find((a) => a.id === activeAccountId)?.name ?? "Cuenta"} ×
-                </Text>
-              </TouchableOpacity>
-            ) : null}
-            <TouchableOpacity onPress={clearAllFilters}>
-              <Text style={styles.clearAll}>Limpiar</Text>
-            </TouchableOpacity>
-          </ScrollView>
-        </View>
-      ) : null}
-
-      {!selectMode ? (
-        <View style={styles.dateRangeHintWrap}>
-          <Text style={styles.dateRangeHintText}>{activeDateRangeNotice}</Text>
-        </View>
-      ) : null}
-
-      {/* Summary bar */}
-      {!selectMode && allMovements.length > 0 ? (
-        <View style={styles.summaryBar}>
-          <View style={styles.summaryItem}>
-            <TrendingUp size={11} color={COLORS.income} strokeWidth={2.5} />
-            <Text style={[styles.summaryValue, { color: COLORS.income }]}>
-              {formatCurrency(filterSummary.incomeTotal, baseCurrency)}
-            </Text>
-            <Text style={styles.summaryCount}>{filterSummary.incomeCount} mov</Text>
-          </View>
-          <View style={styles.summarySep} />
-          <View style={styles.summaryItem}>
-            <TrendingDown size={11} color={COLORS.expense} strokeWidth={2.5} />
-            <Text style={[styles.summaryValue, { color: COLORS.expense }]}>
-              {formatCurrency(filterSummary.expenseTotal, baseCurrency)}
-            </Text>
-            <Text style={styles.summaryCount}>{filterSummary.expenseCount} mov</Text>
-          </View>
-          <View style={styles.summarySep} />
-          <View style={styles.summaryItem}>
-            <Text
-              style={[
-                styles.summaryNet,
-                { color: filterSummary.net >= 0 ? COLORS.income : COLORS.expense },
-              ]}
-            >
-              {filterSummary.net >= 0 ? "+" : "−"}
-              {formatCurrency(Math.abs(filterSummary.net), baseCurrency)}
-            </Text>
-            <Text style={styles.summaryCount}>neto</Text>
-          </View>
-          {hasNextPage ? (
-            <Text style={styles.summaryPartial}>parcial ↓</Text>
-          ) : null}
-        </View>
-      ) : null}
-
-      {/* Bulk action bar */}
-      {selectMode && selectedIds.size > 0 ? (
-        <View style={styles.bulkBar}>
-          <TouchableOpacity
-            style={styles.bulkBtn}
-            onPress={() => {
-              setSelectedIds(new Set(allMovements.map((m) => m.id)));
-            }}
-          >
-            <Text style={styles.bulkBtnText}>Sel. todos ({allMovements.length})</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.bulkBtn}
-            onPress={() => exportCSV(selectedMovements)}
-          >
-            <Download size={14} color={COLORS.primary} />
-            <Text style={[styles.bulkBtnText, { color: COLORS.primary }]}>CSV</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.bulkBtn, styles.bulkBtnDanger]}
-            onPress={() => setBulkDeleteConfirm(true)}
-          >
-            <Trash2 size={14} color={COLORS.danger} />
-            <Text style={[styles.bulkBtnText, { color: COLORS.danger }]}>
-              Eliminar ({selectedIds.size})
-            </Text>
-          </TouchableOpacity>
-        </View>
-      ) : null}
-
-      {/* Filter bottom sheet */}
-      <Modal
-        visible={filterSheetOpen}
-        transparent
-        animationType="none"
-        onRequestClose={() => setFilterSheetOpen(false)}
-      >
-        <Animated.View style={[styles.filterOverlay, { opacity: filterOverlayOpacity }]}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setFilterSheetOpen(false)} />
-          <Animated.View
-            style={[styles.filterSheet, { paddingBottom: insets.bottom + SPACING.lg, transform: [{ translateY: filterSheetY }] }]}
-            onStartShouldSetResponder={() => true}
-          >
-            <View style={styles.filterSheetHandle} />
-            <Text style={styles.filterSheetTitle}>Filtros</Text>
-
-            <Text style={styles.filterSectionLabel}>Estado</Text>
-            <View style={styles.filterPillWrap}>
-              {STATUS_FILTERS.map((f) => (
-                <TouchableOpacity
-                  key={f.value}
-                  style={[styles.pill, activeStatusFilter === f.value && styles.pillActive]}
-                  onPress={() => setActiveStatusFilter(f.value as FilterStatus)}
-                >
-                  <Text style={[styles.pillText, activeStatusFilter === f.value && styles.pillTextActive]}>{f.label}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <Text style={styles.filterSectionLabel}>Período</Text>
-            <View style={styles.filterPillWrap}>
-              <TouchableOpacity
-                style={[styles.pill, activeDatePreset === null && styles.pillActive]}
-                onPress={() => setActiveDatePreset(null)}
-              >
-                <Text style={[styles.pillText, activeDatePreset === null && styles.pillTextActive]}>Todo</Text>
-              </TouchableOpacity>
-              {DATE_PRESETS.map((p) => (
-                <TouchableOpacity
-                  key={p.label}
-                  style={[styles.pill, activeDatePreset === p.label && styles.pillActive]}
-                  onPress={() => setActiveDatePreset(p.label)}
-                >
-                  <Text style={[styles.pillText, activeDatePreset === p.label && styles.pillTextActive]}>{p.label}</Text>
-                </TouchableOpacity>
-              ))}
-              <TouchableOpacity
-                style={[styles.pill, activeDatePreset === "Rango…" && styles.pillActive]}
-                onPress={() => {
-                  setActiveDatePreset("Rango…");
-                  if (!customDateFrom || !customDateTo) {
-                    const now = new Date();
-                    setCustomDateFrom(format(startOfMonth(now), "yyyy-MM-dd"));
-                    setCustomDateTo(format(endOfMonth(now), "yyyy-MM-dd"));
-                  }
-                }}
-              >
-                <Text style={[styles.pillText, activeDatePreset === "Rango…" && styles.pillTextActive]}>Rango…</Text>
-              </TouchableOpacity>
-            </View>
-            {activeDatePreset === "Rango…" ? (
-              <View style={styles.customRangeRow}>
-                <DatePickerInput
-                  label="Desde"
-                  value={customDateFrom}
-                  onChange={setCustomDateFrom}
-                  hideLabel
-                  variant="formRow"
-                />
-                <DatePickerInput
-                  label="Hasta"
-                  value={customDateTo}
-                  onChange={setCustomDateTo}
-                  hideLabel
-                  variant="formRow"
-                  minimumDate={
-                    customDateFrom
-                      ? (() => {
-                          const [y, m, d] = customDateFrom.split("-").map(Number);
-                          return new Date(y, m - 1, d);
-                        })()
-                      : undefined
-                  }
-                />
-              </View>
-            ) : null}
-
-            {categoriesSorted.length > 0 ? (
-              <>
-                <Text style={styles.filterSectionLabel}>Categoría</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  <View style={styles.filterPillWrap}>
-                    <TouchableOpacity style={[styles.pill, activeCategoryId === null && activeCategoryScope === null && styles.pillActive]} onPress={() => { setActiveCategoryId(null); setActiveCategoryScope(null); }}>
-                      <Text style={[styles.pillText, activeCategoryId === null && activeCategoryScope === null && styles.pillTextActive]}>Todas</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={[styles.pill, activeCategoryScope === "uncategorized" && styles.pillActive]} onPress={() => { setActiveCategoryId(null); setActiveCategoryScope("uncategorized"); }}>
-                      <Text style={[styles.pillText, activeCategoryScope === "uncategorized" && styles.pillTextActive]}>Sin categoría</Text>
-                    </TouchableOpacity>
-                    {categoriesSorted.map((cat) => (
-                      <TouchableOpacity key={cat.id} style={[styles.pill, activeCategoryId === cat.id && styles.pillActive]} onPress={() => { setActiveCategoryScope(null); setActiveCategoryId(cat.id); }}>
-                        <Text style={[styles.pillText, activeCategoryId === cat.id && styles.pillTextActive]}>{cat.name}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </ScrollView>
-              </>
-            ) : null}
-
-            {accountsSorted.length > 0 ? (
-              <>
-                <Text style={styles.filterSectionLabel}>Cuenta</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  <View style={styles.filterPillWrap}>
-                    <TouchableOpacity style={[styles.pill, activeAccountId === null && styles.pillActive]} onPress={() => setActiveAccountId(null)}>
-                      <Text style={[styles.pillText, activeAccountId === null && styles.pillTextActive]}>Todas</Text>
-                    </TouchableOpacity>
-                    {accountsSorted.map((acc) => (
-                      <TouchableOpacity key={acc.id} style={[styles.pill, activeAccountId === acc.id && styles.pillActive]} onPress={() => setActiveAccountId(acc.id)}>
-                        <Text style={[styles.pillText, activeAccountId === acc.id && styles.pillTextActive]}>{acc.name}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </ScrollView>
-              </>
-            ) : null}
-
-            <TouchableOpacity style={styles.applyBtn} onPress={() => setFilterSheetOpen(false)}>
-              <Text style={styles.applyBtnText}>Aplicar</Text>
-            </TouchableOpacity>
-          </Animated.View>
-        </Animated.View>
-      </Modal>
-
-      {/* List */}
-      <FlatList
-        data={allMovements}
-        keyExtractor={(item) => String(item.id)}
-        renderItem={renderItem}
-        removeClippedSubviews
-        maxToRenderPerBatch={10}
-        windowSize={5}
-        initialNumToRender={15}
-        refreshControl={
-          <RefreshControl refreshing={isLoading && !isFetchingNextPage} onRefresh={onRefresh} tintColor={COLORS.primary} />
         }
-        onEndReached={() => {
-          if (hasNextPage && !isFetchingNextPage) void fetchNextPage();
-        }}
-        onEndReachedThreshold={0.3}
-        ListFooterComponent={
-          isFetchingNextPage ? (
-            <View style={styles.footer}>
-              <ActivityIndicator color={COLORS.primary} size="small" />
-              <Text style={styles.footerText}>Cargando más...</Text>
-            </View>
-          ) : !hasNextPage && allMovements.length > 0 ? (
-            <View style={styles.footer}>
-              <Text style={styles.footerEnd}>· · ·</Text>
-            </View>
-          ) : null
-        }
-        ListHeaderComponent={
-          isLoading ? (
-            <View style={styles.skeletonList}>
-              {[...Array(8)].map((_, i) => (
-                <View key={i} style={styles.skeletonRow}>
-                  <Skeleton width={42} height={42} borderRadius={14} />
-                  <View style={styles.skeletonRowText}>
-                    <Skeleton width="60%" height={14} />
-                    <Skeleton width="40%" height={12} style={{ marginTop: 6 }} />
-                  </View>
-                  <Skeleton width={70} height={16} />
-                </View>
-              ))}
-            </View>
-          ) : null
-        }
-        ListEmptyComponent={
-          isLoading ? null : (
-            <EmptyState
-              variant={hasFilters ? "no-results" : "empty"}
-              title={hasFilters ? "Sin resultados" : "Sin movimientos"}
-              description={
-                hasFilters
-                  ? "Prueba cambiando los filtros aplicados."
-                  : "Registra tu primer movimiento con el botón +"
-              }
-              action={!hasFilters ? { label: "Nuevo movimiento", onPress: () => setFormVisible(true) } : undefined}
+        toolbar={
+          !selectMode ? (
+            <FilterToolbar
+              options={TYPE_FILTERS}
+              selectedValues={activeTypeFilters}
+              onSelectedValuesChange={(values) => {
+                setActiveTypeFilters(values.filter((value): value is MovementType => value !== "all"));
+              }}
+              allValue="all"
+              searchValue={searchText}
+              onSearchChange={setSearchText}
+              searchPlaceholder="Buscar movimientos..."
             />
-          )
+          ) : null
         }
-        contentContainerStyle={allMovements.length === 0 ? styles.emptyContainer : undefined}
+        activeFilters={
+          !selectMode ? (
+            <ActiveFilterBar items={activeFilterItems} onClear={clearAllFilters} />
+          ) : null
+        }
+        context={
+          !selectMode ? (
+            <ResourceContextNote>{activeDateRangeNotice}</ResourceContextNote>
+          ) : null
+        }
+        summary={
+          !selectMode && allMovements.length > 0 ? (
+            <MovementSummaryBar
+              summary={filterSummary}
+              baseCurrency={baseCurrency}
+              partial={hasNextPage}
+            />
+          ) : null
+        }
+        bulkActions={
+          selectMode && selectedIds.size > 0 ? (
+            <BulkActionBar
+              selectedCount={selectedIds.size}
+              onClear={exitSelectMode}
+              actions={[
+                {
+                  key: "select-all",
+                  label: `Sel. todos (${allMovements.length})`,
+                  onPress: () => setSelectedIds(new Set(allMovements.map((m) => m.id))),
+                },
+                {
+                  key: "csv",
+                  label: "CSV",
+                  icon: Download,
+                  tone: "primary",
+                  onPress: () => exportCSV(selectedMovements),
+                },
+                {
+                  key: "delete",
+                  label: `Eliminar (${selectedIds.size})`,
+                  icon: Trash2,
+                  tone: "danger",
+                  onPress: () => setBulkDeleteConfirm(true),
+                },
+              ]}
+            />
+          ) : null
+        }
+        list={
+          <ResourceSectionList
+            sections={movementSections}
+            keyExtractor={(item) => String(item.id)}
+            renderItem={renderItem}
+            refreshing={isLoading && !isFetchingNextPage}
+            onRefresh={onRefresh}
+            onEndReached={() => {
+              if (hasNextPage && !isFetchingNextPage) void fetchNextPage();
+            }}
+            loading={{
+              isLoading,
+              fetchingMore: isFetchingNextPage,
+              endReached: !hasNextPage,
+              skeleton: (
+                <View style={styles.skeletonList}>
+                  {[...Array(8)].map((_, i) => (
+                    <View key={i} style={styles.skeletonRow}>
+                      <Skeleton width={42} height={42} borderRadius={14} />
+                      <View style={styles.skeletonRowText}>
+                        <Skeleton width="60%" height={14} />
+                        <Skeleton width="40%" height={12} style={{ marginTop: 6 }} />
+                      </View>
+                      <Skeleton width={70} height={16} />
+                    </View>
+                  ))}
+                </View>
+              ),
+            }}
+            empty={{
+              variant: hasFilters ? "no-results" : "empty",
+              title: hasFilters ? "Sin resultados" : "Sin movimientos",
+              description: hasFilters
+                ? "Prueba cambiando los filtros aplicados."
+                : "Registra tu primer movimiento con el botón +",
+              action: !hasFilters ? { label: "Nuevo movimiento", onPress: () => setFormVisible(true) } : undefined,
+            }}
+          />
+        }
+        fab={
+          !selectMode ? (
+            <FAB onPress={() => setFormVisible(true)} bottom={insets.bottom + 16} />
+          ) : null
+        }
+        overlays={
+          <>
+            <MovementFilterSheet
+              visible={filterSheetOpen}
+              onClose={() => setFilterSheetOpen(false)}
+              statusOptions={STATUS_FILTERS}
+              statusFilter={activeStatusFilter}
+              onStatusFilterChange={setActiveStatusFilter}
+              datePresets={DATE_PRESETS}
+              activeDatePreset={activeDatePreset}
+              onDatePresetChange={setActiveDatePreset}
+              customDateFrom={customDateFrom}
+              customDateTo={customDateTo}
+              onCustomDateFromChange={setCustomDateFrom}
+              onCustomDateToChange={setCustomDateTo}
+              categories={categoriesSorted}
+              activeCategoryId={activeCategoryId}
+              activeCategoryScope={activeCategoryScope}
+              onCategoryIdChange={setActiveCategoryId}
+              onCategoryScopeChange={setActiveCategoryScope}
+              accounts={accountsSorted}
+              activeAccountId={activeAccountId}
+              onAccountIdChange={setActiveAccountId}
+            />
+
+            <MovementForm
+              visible={formVisible}
+              onClose={() => setFormVisible(false)}
+            />
+
+            <ConfirmDialog
+              visible={bulkDeleteConfirm}
+              title={`Eliminar ${selectedIds.size} movimientos`}
+              body="Esta acción no se puede deshacer."
+              confirmLabel="Eliminar"
+              cancelLabel="Cancelar"
+              onCancel={() => setBulkDeleteConfirm(false)}
+              onConfirm={executeBulkDelete}
+            />
+
+            <ConfirmDialog
+              visible={deleteTarget !== null}
+              title="¿Eliminar movimiento?"
+              body="Se eliminará permanentemente. Tienes 5 segundos para deshacer."
+              confirmLabel="Eliminar"
+              cancelLabel="Cancelar"
+              onCancel={cancelDelete}
+              onConfirm={executeDelete}
+            >
+              {deleteTarget ? (
+                <MovementDeleteImpact movement={deleteTarget} snapshot={snapshot} />
+              ) : null}
+            </ConfirmDialog>
+          </>
+        }
       />
-
-
-      {!selectMode ? (
-        <FAB onPress={() => setFormVisible(true)} bottom={insets.bottom + 16} />
-      ) : null}
-
-      <MovementForm
-        visible={formVisible}
-        onClose={() => setFormVisible(false)}
-      />
-
-      {/* Bulk delete confirm */}
-      <ConfirmDialog
-        visible={bulkDeleteConfirm}
-        title={`Eliminar ${selectedIds.size} movimientos`}
-        body="Esta acción no se puede deshacer."
-        confirmLabel="Eliminar"
-        cancelLabel="Cancelar"
-        onCancel={() => setBulkDeleteConfirm(false)}
-        onConfirm={executeBulkDelete}
-      />
-
-      {/* Single delete confirm with balance impact */}
-      <ConfirmDialog
-        visible={deleteTarget !== null}
-        title="¿Eliminar movimiento?"
-        body="Se eliminará permanentemente. Tienes 5 segundos para deshacer."
-        confirmLabel="Eliminar"
-        cancelLabel="Cancelar"
-        onCancel={cancelDelete}
-        onConfirm={executeDelete}
-      >
-        {deleteTarget ? (
-          <MovementDeleteImpact movement={deleteTarget} snapshot={snapshot} />
-        ) : null}
-      </ConfirmDialog>
-    </View>
     </GestureDetector>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: COLORS.bg },
-
-  searchWrap: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginHorizontal: SPACING.lg,
-    marginTop: SPACING.xs,
-    marginBottom: SPACING.sm,
-    backgroundColor: GLASS.card,
-    borderRadius: RADIUS.md,
-    paddingHorizontal: SPACING.md,
-    gap: SPACING.sm,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.ink,
-    fontFamily: FONT_FAMILY.body,
-    paddingVertical: SPACING.md,
-  },
-
-  filterBtn: {
-    height: 34,
-    paddingHorizontal: SPACING.md,
-    borderRadius: RADIUS.full,
-    backgroundColor: GLASS.card,
-    alignItems: "center",
-    justifyContent: "center",
-    flexDirection: "row",
-    gap: 5,
-  },
-  filterBtnActive: { backgroundColor: COLORS.primary + "18" },
-  filterBtnText: { fontSize: FONT_SIZE.xs, color: COLORS.storm, fontFamily: FONT_FAMILY.bodyMedium },
-  filterBtnTextActive: { color: COLORS.primary },
-
-  segmentedWrap: { height: 44, justifyContent: "center" },
-  segmentedRow: { paddingHorizontal: SPACING.lg, gap: SPACING.xs, alignItems: "center" },
-  pill: {
-    height: 32,
-    paddingHorizontal: SPACING.md,
-    borderRadius: RADIUS.full,
-    backgroundColor: GLASS.card,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  pillActive: { backgroundColor: COLORS.primary },
-  pillText: { fontSize: FONT_SIZE.xs, color: COLORS.storm, fontFamily: FONT_FAMILY.bodyMedium, includeFontPadding: false },
-  pillTextActive: { color: "#FFFFFF", fontFamily: FONT_FAMILY.bodySemibold },
-
-  activeFiltersBar: { paddingVertical: SPACING.xs },
-  activeFiltersPills: { paddingHorizontal: SPACING.lg, gap: SPACING.xs, alignItems: "center" },
-  activeFilterChip: {
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 3,
-    borderRadius: RADIUS.full,
-    backgroundColor: COLORS.primary + "18",
-  },
-  activeFilterChipText: { fontSize: FONT_SIZE.xs, color: COLORS.primary, fontFamily: FONT_FAMILY.bodyMedium },
-  clearAll: { fontSize: FONT_SIZE.xs, color: COLORS.storm, fontFamily: FONT_FAMILY.body, paddingHorizontal: SPACING.xs },
-  dateRangeHintWrap: {
-    paddingHorizontal: SPACING.lg,
-    paddingBottom: SPACING.xs,
-  },
-  dateRangeHintText: {
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.textDisabled,
-    fontFamily: FONT_FAMILY.body,
-    lineHeight: 18,
-  },
-
-  // Summary bar
-  summaryBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.xs + 2,
-    backgroundColor: "rgba(255,255,255,0.04)",
-    borderTopWidth: 0.5,
-    borderBottomWidth: 0.5,
-    borderColor: "rgba(255,255,255,0.07)",
-    gap: SPACING.sm,
-  },
-  summaryItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    flex: 1,
-  },
-  summaryValue: {
-    fontFamily: FONT_FAMILY.bodySemibold,
-    fontSize: FONT_SIZE.xs,
-  },
-  summaryCount: {
-    fontFamily: FONT_FAMILY.body,
-    fontSize: 10,
-    color: COLORS.textDisabled,
-  },
-  summarySep: {
-    width: 0.5,
-    height: 16,
-    backgroundColor: "rgba(255,255,255,0.12)",
-  },
-  summaryNet: {
-    fontFamily: FONT_FAMILY.heading,
-    fontSize: FONT_SIZE.sm,
-  },
-  summaryPartial: {
-    fontFamily: FONT_FAMILY.body,
-    fontSize: 9,
-    color: COLORS.textDisabled,
-    marginLeft: "auto" as any,
-  },
-
-  // Bulk bar
-  bulkBar: {
-    flexDirection: "row",
-    gap: SPACING.sm,
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.sm,
-    alignItems: "center",
-    borderBottomWidth: 0.5,
-    borderBottomColor: "rgba(255,255,255,0.07)",
-  },
-  bulkBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: SPACING.sm + 2,
-    paddingVertical: 5,
-    borderRadius: RADIUS.full,
-    backgroundColor: GLASS.card,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.10)",
-  },
-  bulkBtnDanger: { borderColor: COLORS.danger + "44" },
-  bulkBtnText: { fontSize: FONT_SIZE.xs, color: COLORS.storm, fontFamily: FONT_FAMILY.bodyMedium },
-
-  footer: { paddingVertical: SPACING.lg, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: SPACING.sm },
-  footerText: { fontSize: FONT_SIZE.xs, color: COLORS.textDisabled, fontFamily: FONT_FAMILY.body },
-  footerEnd: { fontSize: FONT_SIZE.sm, color: COLORS.textDisabled, letterSpacing: 4 },
-  emptyContainer: { flexGrow: 1 },
   skeletonList: { padding: SPACING.md, gap: SPACING.md },
   skeletonRow: { flexDirection: "row", alignItems: "center", gap: SPACING.md },
   skeletonRowText: { flex: 1, gap: 6 },
-
-  filterOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.55)" },
-  filterSheet: {
-    position: "absolute",
-    bottom: 0, left: 0, right: 0,
-    backgroundColor: "rgba(8,12,18,0.97)",
-    borderTopLeftRadius: RADIUS.xl,
-    borderTopRightRadius: RADIUS.xl,
-    borderTopWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.14)",
-    padding: SPACING.lg,
-    gap: SPACING.md,
-    maxHeight: "80%",
-  },
-  filterSheetHandle: {
-    width: 36, height: 4,
-    borderRadius: 2,
-    backgroundColor: "rgba(255,255,255,0.22)",
-    alignSelf: "center",
-    marginBottom: SPACING.xs,
-  },
-  filterSheetTitle: {
-    fontSize: FONT_SIZE.md,
-    fontFamily: FONT_FAMILY.heading,
-    color: COLORS.ink,
-    textAlign: "center",
-  },
-  filterSectionLabel: {
-    fontSize: FONT_SIZE.xs,
-    fontFamily: FONT_FAMILY.bodyMedium,
-    color: COLORS.storm,
-    letterSpacing: 0.2,
-  },
-  filterPillWrap: { flexDirection: "row", flexWrap: "wrap", gap: SPACING.sm },
-  customRangeRow: { flexDirection: "row", gap: SPACING.sm, marginTop: SPACING.xs },
-  applyBtn: {
-    backgroundColor: COLORS.primary,
-    borderRadius: RADIUS.md,
-    paddingVertical: SPACING.md,
-    alignItems: "center",
-    marginTop: SPACING.sm,
-  },
-  applyBtnText: { color: "#FFF", fontSize: FONT_SIZE.sm, fontFamily: FONT_FAMILY.bodySemibold },
-
-});
-
-// ─── Balance impact for movement deletion ─────────────────────────────────────
-
-function MovementDeleteImpact({
-  movement,
-  snapshot,
-}: {
-  movement: MovementRecord;
-  snapshot: WorkspaceSnapshot | undefined;
-}) {
-  const accounts = snapshot?.accounts ?? [];
-  const obligations = snapshot?.obligations ?? [];
-
-  const isIncome = movement.movementType === "income" || movement.movementType === "refund";
-  const isExpense = !isIncome && movement.movementType !== "transfer";
-  const isTransfer = movement.movementType === "transfer";
-
-  const sourceAcc = accounts.find((a) => a.id === movement.sourceAccountId);
-  const destAcc = accounts.find((a) => a.id === movement.destinationAccountId);
-  const obligation = obligations.find((o) => o.id === movement.obligationId);
-
-  // Projected balances after deletion (reverse the original effect)
-  const projectedSource = sourceAcc != null
-    ? isIncome
-      ? null // income has no source account
-      : sourceAcc.currentBalance + (movement.sourceAmount ?? 0) // expense/transfer: removing it gives money back
-    : null;
-
-  const projectedDest = destAcc != null
-    ? isExpense
-      ? null // expense has no destination
-      : destAcc.currentBalance - (movement.destinationAmount ?? 0) // income/transfer: removing it takes money away
-    : null;
-
-  // Obligation: removing a payment increases pending
-  const projectedPending = obligation != null
-    ? obligation.pendingAmount + (movement.sourceAmount ?? movement.destinationAmount ?? 0)
-    : null;
-
-  const items: { label: string; from: number; to: number; currency: string }[] = [];
-  if (projectedSource !== null && sourceAcc) {
-    items.push({ label: sourceAcc.name, from: sourceAcc.currentBalance, to: projectedSource, currency: sourceAcc.currencyCode });
-  }
-  if (projectedDest !== null && destAcc) {
-    items.push({ label: destAcc.name, from: destAcc.currentBalance, to: projectedDest, currency: destAcc.currencyCode });
-  }
-  if (projectedPending !== null && obligation) {
-    items.push({ label: `Pendiente: ${obligation.title}`, from: obligation.pendingAmount, to: projectedPending, currency: obligation.currencyCode });
-  }
-
-  if (items.length === 0) return null;
-
-  return (
-    <View style={impactStyles.container}>
-      {items.map((item) => (
-        <ImpactRow key={item.label} {...item} />
-      ))}
-    </View>
-  );
-}
-
-function ImpactRow({ label, from, to, currency }: { label: string; from: number; to: number; currency: string }) {
-  const worse = to < from;
-  return (
-    <View style={impactStyles.row}>
-      <Text style={impactStyles.label} numberOfLines={1}>{label}</Text>
-      <View style={impactStyles.values}>
-        <Text style={impactStyles.fromVal}>{formatImpactAmount(from, currency)}</Text>
-        <Text style={impactStyles.arrow}>→</Text>
-        <Text style={[impactStyles.toVal, worse && impactStyles.toValWorse]}>
-          {formatImpactAmount(to, currency)}
-        </Text>
-      </View>
-    </View>
-  );
-}
-
-function formatImpactAmount(amount: number, currency: string) {
-  return `${currency} ${amount.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
-
-const impactStyles = StyleSheet.create({
-  container: {
-    marginTop: SPACING.xs,
-    borderTopWidth: 1,
-    borderTopColor: GLASS.separator,
-    paddingTop: SPACING.sm,
-    gap: SPACING.xs + 2,
-  },
-  row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: SPACING.sm },
-  label: { fontSize: FONT_SIZE.xs, color: COLORS.storm, flex: 1 },
-  values: { flexDirection: "row", alignItems: "center", gap: SPACING.xs },
-  fromVal: { fontSize: FONT_SIZE.xs, color: COLORS.textDisabled },
-  arrow: { fontSize: FONT_SIZE.xs, color: COLORS.textDisabled },
-  toVal: { fontSize: FONT_SIZE.xs, fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.primary },
-  toValWorse: { color: COLORS.danger },
 });
 
 export default function MovementsScreenRoot() {

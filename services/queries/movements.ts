@@ -7,6 +7,7 @@ import type { MovementRecord, MovementStatus, MovementType } from "../../types/d
 
 export type MovementFilters = {
   type?: MovementType;
+  types?: MovementType[];
   status?: MovementStatus;
   accountId?: number;
   categoryId?: number;
@@ -53,7 +54,8 @@ async function fetchMovementsPage(
     .order("id", { ascending: false })
     .range(from, to);
 
-  if (filters.type) query = query.eq("movement_type", filters.type);
+  if (filters.types?.length) query = query.in("movement_type", filters.types);
+  else if (filters.type) query = query.eq("movement_type", filters.type);
   if (filters.status) query = query.eq("status", filters.status);
   if (filters.dateFrom) query = query.gte("occurred_at", filterDateFrom(filters.dateFrom));
   if (filters.dateTo) query = query.lte("occurred_at", filterDateTo(filters.dateTo));

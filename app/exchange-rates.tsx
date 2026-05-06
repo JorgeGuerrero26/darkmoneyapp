@@ -1,47 +1,47 @@
-import { useEffect, useRef, useMemo, useState } from "react";
-import { ErrorBoundary } from "../components/ui/ErrorBoundary";
-import {
-  Animated,
-  PanResponder,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from "react-native";
-import { useRouter } from "expo-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { SectionListRenderItem } from "react-native";
+import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { ArrowRight, RefreshCw, SlidersHorizontal } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ArrowRight, RefreshCw, Search, Trash2, X } from "lucide-react-native";
-import { format } from "date-fns";
-import { es } from "date-fns/locale";
 
+import { ErrorBoundary } from "../components/ui/ErrorBoundary";
+import { UndoBanner } from "../components/ui/UndoBanner";
+import { ScreenHeader } from "../components/layout/ScreenHeader";
+import { HeaderActionGroup } from "../components/ui/HeaderActionGroup";
+import { FilterToolbar } from "../components/ui/FilterToolbar";
+import { ActiveFilterBar, type ActiveFilterItem } from "../components/ui/ActiveFilterBar";
+import { ResourceContextNote } from "../components/ui/ResourceContextNote";
+import { ResourceModuleTemplate } from "../components/ui/ResourceModuleTemplate";
+import { ResourceSectionList } from "../components/ui/ResourceSectionList";
+import { BottomSheet } from "../components/ui/BottomSheet";
+import { FAB } from "../components/ui/FAB";
+import { SkeletonCard } from "../components/ui/Skeleton";
+import { ExchangeRateFilterSheet } from "../features/exchange-rates/components/ExchangeRateFilterSheet";
+import { ExchangeRateSwipeRow } from "../features/exchange-rates/components/ExchangeRateSwipeRow";
+import { ExchangeRatesSummaryBar } from "../features/exchange-rates/components/ExchangeRatesSummaryBar";
 import {
-  useExchangeRatesQuery,
+  buildExchangeRateSections,
+  exchangeRateAdvancedFilterLabel,
+  filterExchangeRates,
+  getExchangeRatePairCount,
+  isExchangeRateSameLocalDay,
+  type ExchangeRateAdvancedFilter,
+  type ExchangeRateListSection,
+} from "../features/exchange-rates/lib/exchangeRateFilters";
+import {
   useCreateExchangeRateMutation,
-  useUpdateExchangeRateMutation,
   useDeleteExchangeRateMutation,
+  useExchangeRatesQuery,
   useSyncExchangeRatePairMutation,
+  useUpdateExchangeRateMutation,
   type ExchangeRateRecord,
 } from "../services/queries/workspace-data";
-import { ScreenHeader } from "../components/layout/ScreenHeader";
-import { BottomSheet } from "../components/ui/BottomSheet";
-import { EmptyState } from "../components/ui/EmptyState";
-import { FAB } from "../components/ui/FAB";
-import { UndoBanner } from "../components/ui/UndoBanner";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../constants/theme";
+import { SUPPORTED_CURRENCY_CODES } from "../constants/currencies";
 import { useToast } from "../hooks/useToast";
+import { useOriginBackNavigation } from "../hooks/useOriginBackNavigation";
 
-const REVEAL_W = 80;
-
-function isSameLocalDay(left: string, right: Date) {
-  const date = new Date(left);
-  if (Number.isNaN(date.getTime())) return false;
-  return date.toLocaleDateString("en-CA") === right.toLocaleDateString("en-CA");
-}
-
-// ─── Currency picker ──────────────────────────────────────────────────────────
+type CurrencyFilter = string;
 
 function CurrencyPicker({
   label,
@@ -52,90 +52,70 @@ function CurrencyPicker({
 }: {
   label: string;
   value: string;
-  onChange: (v: string) => void;
+  onChange: (value: string) => void;
   options: string[];
-  /** Currency to hide from pills (the "other side" of the pair) */
   exclude?: string;
 }) {
-  const visible = options.filter((o) => o !== exclude);
+  const visible = options.filter((option) => option !== exclude);
   const isKnown = visible.includes(value);
-
-  // mode: one of the known options or "otro"
   const [mode, setMode] = useState<string>(() => {
-    if (!value) return visible.length ? "" : "otro";
-    return isKnown ? value : "otro";
+    if (!value) return visible.length ? "" : "other";
+    return isKnown ? value : "other";
   });
   const [custom, setCustom] = useState(() => (isKnown ? "" : value));
 
-  function pick(opt: string) {
-    setMode(opt);
-    if (opt !== "otro") {
-      onChange(opt);
-    } else {
-      onChange(custom);
-    }
+  function pick(option: string) {
+    setMode(option);
+    onChange(option === "other" ? custom : option);
   }
 
-  function handleCustom(v: string) {
-    const upper = v.toUpperCase();
+  function handleCustomChange(value: string) {
+    const upper = value.toUpperCase();
     setCustom(upper);
     onChange(upper);
   }
 
-  // When no pills, auto-show text input
-  const showInput = mode === "otro" || visible.length === 0;
+  const showInput = mode === "other" || visible.length === 0;
 
   return (
-    <View style={pickerStyles.wrap}>
-      <Text style={styles.inputLabel}>{label}</Text>
-
-      {visible.length > 0 && (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={pickerStyles.pillRow}
-        >
-          {visible.map((opt) => (
+    <View style={formStyles.pickerWrap}>
+      <Text style={formStyles.inputLabel}>{label}</Text>
+      {visible.length > 0 ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={formStyles.pillRow}>
+          {visible.map((option) => (
             <TouchableOpacity
-              key={opt}
-              style={[pickerStyles.pill, mode === opt && pickerStyles.pillActive]}
-              onPress={() => pick(opt)}
+              key={option}
+              style={[formStyles.pill, mode === option && formStyles.pillActive]}
+              onPress={() => pick(option)}
               activeOpacity={0.7}
             >
-              <Text style={[pickerStyles.pillText, mode === opt && pickerStyles.pillTextActive]}>
-                {opt}
-              </Text>
+              <Text style={[formStyles.pillText, mode === option && formStyles.pillTextActive]}>{option}</Text>
             </TouchableOpacity>
           ))}
           <TouchableOpacity
-            style={[pickerStyles.pill, pickerStyles.pillOtro, mode === "otro" && pickerStyles.pillOtroActive]}
-            onPress={() => pick("otro")}
+            style={[formStyles.pill, formStyles.pillOther, mode === "other" && formStyles.pillOtherActive]}
+            onPress={() => pick("other")}
             activeOpacity={0.7}
           >
-            <Text style={[pickerStyles.pillText, mode === "otro" && pickerStyles.pillTextActive]}>
-              Otro
-            </Text>
+            <Text style={[formStyles.pillText, mode === "other" && formStyles.pillTextActive]}>Otro</Text>
           </TouchableOpacity>
         </ScrollView>
-      )}
-
-      {showInput && (
+      ) : null}
+      {showInput ? (
         <TextInput
-          style={[styles.input, visible.length > 0 && { marginTop: SPACING.xs }]}
+          style={[formStyles.input, visible.length > 0 && formStyles.inputStacked]}
           placeholder="ej. EUR"
           placeholderTextColor={COLORS.storm}
           value={custom}
-          onChangeText={handleCustom}
+          onChangeText={handleCustomChange}
           autoCapitalize="characters"
           maxLength={3}
-          autoFocus={mode === "otro"}
+          autoFocus={mode === "other"}
         />
-      )}
+      ) : null}
     </View>
   );
 }
-
-// ─── Add / Edit form ──────────────────────────────────────────────────────────
 
 function RateForm({
   initialFrom = "",
@@ -168,46 +148,34 @@ function RateForm({
     const rateNum = parseFloat(rate.replace(",", "."));
     if (!fromTrim || fromTrim.length !== 3) { setError("Moneda origen inválida (ej. USD)"); return; }
     if (!toTrim || toTrim.length !== 3) { setError("Moneda destino inválida (ej. PEN)"); return; }
-    if (isNaN(rateNum) || rateNum <= 0) { setError("Tasa debe ser un número positivo"); return; }
+    if (Number.isNaN(rateNum) || rateNum <= 0) { setError("Tasa debe ser un número positivo"); return; }
     if (fromTrim === toTrim) { setError("Las monedas no pueden ser iguales"); return; }
     setError(null);
     onSave(fromTrim, toTrim, rateNum, notes.trim());
   }
 
   return (
-    <View style={styles.formBody}>
-      <Text style={styles.formHint}>
+    <View style={formStyles.body}>
+      <Text style={formStyles.hint}>
         1 [origen] = tasa [destino]{"  "}
-        <Text style={styles.formHintExample}>ej. 1 USD = 3.72 PEN</Text>
+        <Text style={formStyles.hintExample}>ej. 1 USD = 3.72 PEN</Text>
       </Text>
 
-      <View style={styles.pairRow}>
-        <View style={styles.pairInputWrap}>
-          <CurrencyPicker
-            label="Moneda origen"
-            value={from}
-            onChange={setFrom}
-            options={currencyOptions}
-            exclude={to}
-          />
+      <View style={formStyles.pairRow}>
+        <View style={formStyles.pairInputWrap}>
+          <CurrencyPicker label="Moneda origen" value={from} onChange={setFrom} options={currencyOptions} exclude={to} />
         </View>
-        <View style={styles.arrowWrap}>
+        <View style={formStyles.arrowWrap}>
           <ArrowRight size={18} color={COLORS.storm} />
         </View>
-        <View style={styles.pairInputWrap}>
-          <CurrencyPicker
-            label="Moneda destino"
-            value={to}
-            onChange={setTo}
-            options={currencyOptions}
-            exclude={from}
-          />
+        <View style={formStyles.pairInputWrap}>
+          <CurrencyPicker label="Moneda destino" value={to} onChange={setTo} options={currencyOptions} exclude={from} />
         </View>
       </View>
 
-      <Text style={styles.inputLabel}>Tasa de cambio</Text>
+      <Text style={formStyles.inputLabel}>Tasa de cambio</Text>
       <TextInput
-        style={styles.input}
+        style={formStyles.input}
         placeholder="3.72"
         placeholderTextColor={COLORS.storm}
         value={rate}
@@ -215,9 +183,9 @@ function RateForm({
         keyboardType="decimal-pad"
       />
 
-      <Text style={styles.inputLabel}>Notas (opcional)</Text>
+      <Text style={formStyles.inputLabel}>Notas (opcional)</Text>
       <TextInput
-        style={styles.input}
+        style={formStyles.input}
         placeholder="ej. Tipo de cambio BCP"
         placeholderTextColor={COLORS.storm}
         value={notes}
@@ -225,116 +193,41 @@ function RateForm({
       />
 
       {error ? (
-        <View style={styles.errorBanner}>
-          <Text style={styles.errorText}>{error}</Text>
+        <View style={formStyles.errorBanner}>
+          <Text style={formStyles.errorText}>{error}</Text>
         </View>
       ) : null}
 
-      <View style={styles.formActions}>
-        <TouchableOpacity style={styles.cancelBtn} onPress={onCancel}>
-          <Text style={styles.cancelText}>Cancelar</Text>
+      <View style={formStyles.actions}>
+        <TouchableOpacity style={formStyles.cancelBtn} onPress={onCancel}>
+          <Text style={formStyles.cancelText}>Cancelar</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.saveBtn, loading && { opacity: 0.6 }]}
+          style={[formStyles.saveBtn, loading && formStyles.disabled]}
           onPress={handleSave}
           disabled={loading}
         >
-          <Text style={styles.saveText}>{loading ? "Guardando..." : "Guardar"}</Text>
+          <Text style={formStyles.saveText}>{loading ? "Guardando..." : "Guardar"}</Text>
         </TouchableOpacity>
       </View>
     </View>
   );
 }
 
-// ─── Swipeable rate row ────────────────────────────────────────────────────────
-
-function SwipeableRateRow({
-  item,
-  onEdit,
-  onDelete,
-}: {
-  item: ExchangeRateRecord;
-  onEdit: () => void;
-  onDelete: () => void;
-}) {
-  const translateX = useRef(new Animated.Value(0)).current;
-  const openDir = useRef<"left" | null>(null);
-
-  const deleteOpacity = translateX.interpolate({
-    inputRange: [-REVEAL_W, -16, 0],
-    outputRange: [1, 0.6, 0],
-    extrapolate: "clamp",
-  });
-
-  const snapTo = (toValue: number, cb?: () => void) => {
-    openDir.current = toValue < 0 ? "left" : null;
-    Animated.spring(translateX, { toValue, useNativeDriver: true, tension: 80, friction: 11 }).start(cb);
-  };
-
-  const panResponder = useRef(
-    PanResponder.create({
-      onMoveShouldSetPanResponder: (_, { dx, dy }) =>
-        Math.abs(dx) > Math.abs(dy) * 1.5 && Math.abs(dx) > 10,
-      onPanResponderGrant: () => { translateX.stopAnimation(); },
-      onPanResponderMove: (_, { dx }) => {
-        const base = openDir.current === "left" ? -REVEAL_W : 0;
-        translateX.setValue(Math.min(0, Math.max(-REVEAL_W * 1.4, base + dx)));
-      },
-      onPanResponderRelease: (_, { dx, vx }) => {
-        const base = openDir.current === "left" ? -REVEAL_W : 0;
-        if (base + dx < -REVEAL_W / 2 || vx < -0.4) snapTo(-REVEAL_W);
-        else snapTo(0);
-      },
-    })
-  ).current;
-
-  return (
-    <View style={styles.swipeContainer}>
-      <Animated.View style={[styles.deleteBg, { opacity: deleteOpacity }]}>
-        <TouchableOpacity style={styles.deleteAction} onPress={() => snapTo(0, onDelete)} activeOpacity={0.8}>
-          <Trash2 size={20} color={COLORS.danger} strokeWidth={2} />
-          <Text style={styles.deleteActionLabel}>Eliminar</Text>
-        </TouchableOpacity>
-      </Animated.View>
-
-      <Animated.View style={{ transform: [{ translateX }] }} {...panResponder.panHandlers}>
-        <TouchableOpacity
-          style={styles.rateRow}
-          onPress={() => { if (openDir.current !== null) { snapTo(0); return; } onEdit(); }}
-          activeOpacity={0.7}
-        >
-          <View style={styles.rateLeft}>
-            <View style={styles.pairBadge}>
-              <Text style={styles.pairFrom}>{item.fromCurrencyCode}</Text>
-              <ArrowRight size={11} color={COLORS.pine} />
-              <Text style={styles.pairTo}>{item.toCurrencyCode}</Text>
-            </View>
-            <Text style={styles.rateValue}>
-              1 {item.fromCurrencyCode} = <Text style={styles.rateNum}>{item.rate.toFixed(4)}</Text> {item.toCurrencyCode}
-            </Text>
-            <Text style={styles.rateDate}>
-              {format(new Date(item.effectiveAt), "d MMM yyyy, HH:mm", { locale: es })}
-              {item.source === "manual" ? "  ·  manual" : ""}
-            </Text>
-            {item.notes ? <Text style={styles.rateNotes}>{item.notes}</Text> : null}
-          </View>
-        </TouchableOpacity>
-      </Animated.View>
-    </View>
-  );
-}
-
-// ─── Screen ────────────────────────────────────────────────────────────────────
-
 function ExchangeRatesScreen() {
   const insets = useSafeAreaInsets();
-  const router = useRouter();
+  const { handleBack } = useOriginBackNavigation();
   const { showToast } = useToast();
 
   const [showForm, setShowForm] = useState(false);
   const [editItem, setEditItem] = useState<ExchangeRateRecord | null>(null);
-  const [search, setSearch] = useState("");
-  const [currencyFilter, setCurrencyFilter] = useState("all");
+  const [filterSheetOpen, setFilterSheetOpen] = useState(false);
+  const [searchText, setSearchText] = useState("");
+  const [currencyFilter, setCurrencyFilter] = useState<CurrencyFilter>("all");
+  const [advancedFilter, setAdvancedFilter] = useState<ExchangeRateAdvancedFilter>("all");
+  const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<number>>(new Set());
+  const [pendingDeleteLabels, setPendingDeleteLabels] = useState<Record<number, string>>({});
+  const deleteTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
 
   const { data: rates = [], isLoading, refetch } = useExchangeRatesQuery();
   const createRate = useCreateExchangeRateMutation();
@@ -342,48 +235,116 @@ function ExchangeRatesScreen() {
   const deleteRate = useDeleteExchangeRateMutation();
   const syncRatePair = useSyncExchangeRatePairMutation();
 
-  const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<number>>(new Set());
-  const [pendingDeleteLabels, setPendingDeleteLabels] = useState<Record<number, string>>({});
-  const deleteTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+  const activeRates = useMemo(
+    () => rates.filter((rate) => !pendingDeleteIds.has(rate.id)),
+    [pendingDeleteIds, rates],
+  );
+  const currencyOptions = useMemo(() => {
+    const set = new Set<string>(SUPPORTED_CURRENCY_CODES);
+    for (const rate of rates) {
+      set.add(rate.fromCurrencyCode.toUpperCase());
+      set.add(rate.toCurrencyCode.toUpperCase());
+    }
+    return Array.from(set).sort();
+  }, [rates]);
+  const filterOptions = useMemo(
+    () => [{ label: "Todas", value: "all" }, ...currencyOptions.map((currency) => ({ label: currency, value: currency }))],
+    [currencyOptions],
+  );
+  const filteredRates = useMemo(
+    () => filterExchangeRates(activeRates, currencyFilter, searchText, advancedFilter),
+    [activeRates, advancedFilter, currencyFilter, searchText],
+  );
+  const sections = useMemo(() => buildExchangeRateSections(filteredRates), [filteredRates]);
+  const pairCount = useMemo(() => getExchangeRatePairCount(activeRates), [activeRates]);
 
-  function startUndoDelete(item: ExchangeRateRecord) {
+  const activeFilterItems = useMemo<ActiveFilterItem[]>(() => {
+    const items: ActiveFilterItem[] = [];
+    if (currencyFilter !== "all") {
+      items.push({
+        key: "currency",
+        label: `Moneda: ${currencyFilter}`,
+        onRemove: () => setCurrencyFilter("all"),
+      });
+    }
+    if (advancedFilter !== "all") {
+      items.push({
+        key: "advanced",
+        label: exchangeRateAdvancedFilterLabel(advancedFilter),
+        onRemove: () => setAdvancedFilter("all"),
+      });
+    }
+    if (searchText.trim()) {
+      items.push({
+        key: "search",
+        label: `Búsqueda: ${searchText.trim()}`,
+        onRemove: () => setSearchText(""),
+      });
+    }
+    return items;
+  }, [advancedFilter, currencyFilter, searchText]);
+
+  const extraFiltersCount = advancedFilter !== "all" ? 1 : 0;
+  const hasFilters = currencyFilter !== "all" || advancedFilter !== "all" || Boolean(searchText.trim());
+  const contextNote = hasFilters
+    ? `Mostrando ${filteredRates.length} de ${activeRates.length} tipos de cambio.`
+    : "Define cuántas unidades de la moneda destino equivalen a 1 unidad de la moneda origen.";
+
+  useEffect(() => () => {
+    deleteTimers.current.forEach(clearTimeout);
+  }, []);
+
+  function openNew() {
+    setEditItem(null);
+    setShowForm(true);
+  }
+
+  function openEdit(item: ExchangeRateRecord) {
+    setEditItem(item);
+    setShowForm(true);
+  }
+
+  function closeForm() {
+    setShowForm(false);
+    setEditItem(null);
+  }
+
+  const clearFilters = useCallback(() => {
+    setCurrencyFilter("all");
+    setAdvancedFilter("all");
+    setSearchText("");
+  }, []);
+
+  const startUndoDelete = useCallback((item: ExchangeRateRecord) => {
     const label = `${item.fromCurrencyCode} → ${item.toCurrencyCode}`;
     setPendingDeleteIds((prev) => new Set(prev).add(item.id));
     setPendingDeleteLabels((prev) => ({ ...prev, [item.id]: label }));
     const timer = setTimeout(() => {
       deleteRate.mutate(item.id, {
-        onError: (err: any) => showToast(err?.message ?? "No se pudo eliminar", "error"),
+        onError: (error: Error) => showToast(error.message, "error"),
       });
-      setPendingDeleteIds((prev) => { const n = new Set(prev); n.delete(item.id); return n; });
+      setPendingDeleteIds((prev) => {
+        const next = new Set(prev);
+        next.delete(item.id);
+        return next;
+      });
       deleteTimers.current.delete(item.id);
     }, 5000);
     deleteTimers.current.set(item.id, timer);
-  }
+  }, [deleteRate, showToast]);
 
-  function undoDelete(id: number) {
+  const undoDelete = useCallback((id: number) => {
     const timer = deleteTimers.current.get(id);
     if (timer) clearTimeout(timer);
     deleteTimers.current.delete(id);
-    setPendingDeleteIds((prev) => { const n = new Set(prev); n.delete(id); return n; });
-  }
+    setPendingDeleteIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  }, []);
 
-  useEffect(() => () => { deleteTimers.current.forEach(clearTimeout); }, []);
-
-  // Derive known currencies from existing rates
-  const currencyOptions = useMemo(() => {
-    const set = new Set<string>();
-    for (const r of rates) {
-      set.add(r.fromCurrencyCode.toUpperCase());
-      set.add(r.toCurrencyCode.toUpperCase());
-    }
-    return Array.from(set).sort();
-  }, [rates]);
-
-  function openNew() { setEditItem(null); setShowForm(true); }
-  function openEdit(item: ExchangeRateRecord) { setEditItem(item); setShowForm(true); }
-  function closeForm() { setShowForm(false); setEditItem(null); }
-
-  async function handleSave(from: string, to: string, rate: number, notes: string) {
+  const handleSave = useCallback(async (from: string, to: string, rate: number, notes: string) => {
     try {
       if (editItem) {
         await updateRate.mutateAsync({ id: editItem.id, fromCurrencyCode: from, toCurrencyCode: to, rate, notes });
@@ -393,234 +354,196 @@ function ExchangeRatesScreen() {
         showToast("Tipo de cambio creado", "success");
       }
       closeForm();
-    } catch (err: any) {
-      showToast(err?.message ?? "No se pudo guardar el tipo de cambio", "error");
+    } catch (error: unknown) {
+      showToast(error instanceof Error ? error.message : "No se pudo guardar el tipo de cambio", "error");
     }
-  }
+  }, [createRate, editItem, showToast, updateRate]);
 
-  const activeRates = useMemo(
-    () => rates.filter((r) => !pendingDeleteIds.has(r.id)),
-    [pendingDeleteIds, rates],
-  );
-
-  const filteredRates = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return activeRates.filter((r) => {
-      const from = r.fromCurrencyCode.toUpperCase();
-      const to = r.toCurrencyCode.toUpperCase();
-      if (currencyFilter !== "all" && from !== currencyFilter && to !== currencyFilter) return false;
-      if (!q) return true;
-      return (
-        from.toLowerCase().includes(q) ||
-        to.toLowerCase().includes(q) ||
-        `${from} ${to}`.toLowerCase().includes(q) ||
-        `${from}:${to}`.toLowerCase().includes(q) ||
-        String(r.rate).includes(q) ||
-        (r.notes ?? "").toLowerCase().includes(q)
-      );
-    });
-  }, [activeRates, currencyFilter, search]);
-
-  const pairMap = new Map<string, ExchangeRateRecord[]>();
-  for (const r of filteredRates) {
-    if (pendingDeleteIds.has(r.id)) continue;
-    const key = `${r.fromCurrencyCode}:${r.toCurrencyCode}`;
-    if (!pairMap.has(key)) pairMap.set(key, []);
-    pairMap.get(key)!.push(r);
-  }
-
-  const pairCount = new Set(activeRates.map((r) => `${r.fromCurrencyCode}:${r.toCurrencyCode}`)).size;
-
-  async function handleRefreshRates(silent = false) {
+  const handleRefreshRates = useCallback(async (silent = false) => {
     if (activeRates.length === 0) {
       await refetch();
       return;
     }
 
-    const pairMap = new Map<string, string>();
+    const pairs = new Map<string, string>();
     for (const rate of activeRates) {
       const from = rate.fromCurrencyCode.toUpperCase();
       const to = rate.toCurrencyCode.toUpperCase();
       const canonical = [from, to].sort().join(":");
-      if (!pairMap.has(canonical)) pairMap.set(canonical, `${from}:${to}`);
+      if (!pairs.has(canonical)) pairs.set(canonical, `${from}:${to}`);
     }
-    const uniquePairs = Array.from(pairMap.values());
+
     try {
-      await Promise.all(uniquePairs.map((pair) => {
+      await Promise.all(Array.from(pairs.values()).map((pair) => {
         const [fromCurrencyCode, toCurrencyCode] = pair.split(":");
         return syncRatePair.mutateAsync({ fromCurrencyCode, toCurrencyCode });
       }));
       if (!silent) showToast("Tipos de cambio actualizados", "success");
-    } catch (error: any) {
-      if (!silent) showToast(error?.message ?? "No se pudo actualizar tipos de cambio", "error");
+    } catch (error: unknown) {
+      if (!silent) showToast(error instanceof Error ? error.message : "No se pudo actualizar tipos de cambio", "error");
     }
-  }
+  }, [activeRates, refetch, showToast, syncRatePair]);
 
   const dailySyncStartedRef = useRef(false);
   useEffect(() => {
     if (dailySyncStartedRef.current || isLoading || activeRates.length === 0) return;
     const today = new Date();
-    const needsSync = activeRates.some((rate) => !isSameLocalDay(rate.effectiveAt, today));
+    const needsSync = activeRates.some((rate) => !isExchangeRateSameLocalDay(rate.effectiveAt, today));
     if (!needsSync) return;
     dailySyncStartedRef.current = true;
     void handleRefreshRates(true);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeRates, isLoading]);
+  }, [activeRates, handleRefreshRates, isLoading]);
+
+  const renderRate: SectionListRenderItem<ExchangeRateRecord, ExchangeRateListSection> = useCallback(({ item }) => (
+    <ExchangeRateSwipeRow
+      rate={item}
+      onEdit={() => openEdit(item)}
+      onDelete={() => startUndoDelete(item)}
+    />
+  ), [startUndoDelete]);
 
   return (
-    <View style={[styles.screen, { paddingTop: insets.top }]}>
-      <ScreenHeader
-        title="Tipos de cambio"
-        onBack={() => router.back()}
-        rightAction={
-          <TouchableOpacity
-            style={styles.filterBtn}
-            onPress={() => void handleRefreshRates()}
-            accessibilityLabel="Actualizar tipos de cambio"
-            activeOpacity={0.75}
-            disabled={syncRatePair.isPending}
-          >
-            <RefreshCw size={14} color={COLORS.storm} />
-          </TouchableOpacity>
-        }
-      />
-
-      <View style={styles.searchWrap}>
-        <Search size={15} color={COLORS.storm} />
-        <TextInput
-          style={styles.searchInput}
-          value={search}
-          onChangeText={setSearch}
-          placeholder="Buscar moneda, tasa o nota..."
-          placeholderTextColor={COLORS.storm}
-          returnKeyType="search"
-          autoCapitalize="characters"
+    <ResourceModuleTemplate
+      topInset={insets.top}
+      header={
+        <ScreenHeader
+          title="Tipos de cambio"
+          onBack={handleBack}
+          rightAction={
+            <HeaderActionGroup
+              actions={[{
+                key: "refresh",
+                icon: RefreshCw,
+                onPress: () => void handleRefreshRates(),
+                disabled: syncRatePair.isPending,
+                accessibilityLabel: "Actualizar tipos de cambio",
+              }, {
+                key: "filters",
+                icon: SlidersHorizontal,
+                label: extraFiltersCount > 0 ? `Filtros (${extraFiltersCount})` : "Filtros",
+                active: extraFiltersCount > 0,
+                onPress: () => setFilterSheetOpen(true),
+                accessibilityLabel: "Abrir filtros avanzados de tipos de cambio",
+              }]}
+            />
+          }
         />
-        {search.length > 0 ? (
-          <TouchableOpacity onPress={() => setSearch("")} hitSlop={8}>
-            <X size={15} color={COLORS.storm} />
-          </TouchableOpacity>
-        ) : null}
-      </View>
-
-      <View style={styles.segmentedWrap}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.segmentedRow}>
-          <TouchableOpacity
-            style={[styles.pill, currencyFilter === "all" && styles.pillActive]}
-            onPress={() => setCurrencyFilter("all")}
-          >
-            <Text style={[styles.pillText, currencyFilter === "all" && styles.pillTextActive]}>Todas</Text>
-          </TouchableOpacity>
-          {currencyOptions.map((currency) => (
-            <TouchableOpacity
-              key={currency}
-              style={[styles.pill, currencyFilter === currency && styles.pillActive]}
-              onPress={() => setCurrencyFilter(currency)}
-            >
-              <Text style={[styles.pillText, currencyFilter === currency && styles.pillTextActive]}>
-                {currency}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </View>
-
-      <ScrollView
-        contentContainerStyle={styles.content}
-        refreshControl={
-          <RefreshControl
-            refreshing={isLoading || syncRatePair.isPending}
-            onRefresh={() => void handleRefreshRates()}
-            tintColor={COLORS.primary}
-          />
-        }
-      >
-        <View style={styles.summaryCard}>
-          <View style={styles.summaryTopRow}>
-            <View style={styles.summaryMetric}>
-              <Text style={styles.summaryLabel}>Pares</Text>
-              <Text style={styles.summaryValue}>{pairCount}</Text>
-            </View>
-            <View style={styles.summaryDivider} />
-            <View style={styles.summaryMetric}>
-              <Text style={styles.summaryLabel}>Monedas</Text>
-              <Text style={styles.summaryValue}>{currencyOptions.length}</Text>
-            </View>
-          </View>
-          <Text style={styles.summaryHint}>
-            Define cuántas unidades de la moneda destino equivalen a 1 unidad de la moneda origen.
-            Ej: 1 USD = 3.72 PEN.
-          </Text>
-        </View>
-
-        {isLoading ? (
-          <Text style={styles.empty}>Cargando...</Text>
-        ) : activeRates.length === 0 ? (
-          <EmptyState
-            title="Sin tipos de cambio"
-            description="Agrega el primer par para convertir saldos entre monedas."
-            action={{ label: "Nuevo tipo de cambio", onPress: openNew }}
-          />
-        ) : filteredRates.length === 0 ? (
-          <EmptyState
-            variant="no-results"
-            title="Sin resultados"
-            description="Prueba otra moneda o limpia la búsqueda."
-          />
-        ) : (
-          Array.from(pairMap.entries()).map(([pair, items]) => (
-            <View key={pair} style={styles.group}>
-              <Text style={styles.groupLabel}>{pair.replace(":", " → ")}</Text>
-              {items.map((item) => (
-                <SwipeableRateRow
-                  key={item.id}
-                  item={item}
-                  onEdit={() => openEdit(item)}
-                  onDelete={() => startUndoDelete(item)}
-                />
-              ))}
-            </View>
-          ))
-        )}
-      </ScrollView>
-
-      <FAB onPress={openNew} bottom={insets.bottom + 16} />
-
-      <BottomSheet
-        visible={showForm}
-        onClose={closeForm}
-        title={editItem ? `Editar ${editItem.fromCurrencyCode} → ${editItem.toCurrencyCode}` : "Nuevo tipo de cambio"}
-        snapHeight={0.75}
-      >
-        <RateForm
-          key={editItem?.id ?? "new"}
-          initialFrom={editItem?.fromCurrencyCode ?? ""}
-          initialTo={editItem?.toCurrencyCode ?? ""}
-          initialRate={editItem ? String(editItem.rate) : ""}
-          initialNotes={editItem?.notes ?? ""}
-          currencyOptions={currencyOptions}
-          onSave={(from, to, rate, notes) => void handleSave(from, to, rate, notes)}
-          onCancel={closeForm}
-          loading={createRate.isPending || updateRate.isPending}
+      }
+      toolbar={
+        <FilterToolbar
+          options={filterOptions}
+          value={currencyFilter}
+          onChange={setCurrencyFilter}
+          searchValue={searchText}
+          onSearchChange={setSearchText}
+          searchPlaceholder="Buscar moneda, tasa o nota..."
         />
-      </BottomSheet>
-      <UndoBanner
-        visible={pendingDeleteIds.size > 0}
-        message={pendingDeleteIds.size === 1
-          ? `Tipo de cambio "${Object.values(pendingDeleteLabels).at(-1) ?? ""}" eliminado`
-          : `${pendingDeleteIds.size} tipos de cambio eliminados`}
-        onUndo={() => pendingDeleteIds.forEach((id) => undoDelete(id))}
-        durationMs={5000}
-        bottomOffset={insets.bottom + 80}
-      />
-    </View>
+      }
+      activeFilters={<ActiveFilterBar items={activeFilterItems} onClear={clearFilters} />}
+      context={activeRates.length > 0 ? <ResourceContextNote>{contextNote}</ResourceContextNote> : null}
+      summary={
+        activeRates.length > 0 ? (
+          <ExchangeRatesSummaryBar pairCount={pairCount} currencyCount={currencyOptions.length} />
+        ) : null
+      }
+      list={
+        <ResourceSectionList
+          sections={sections}
+          keyExtractor={(item) => String(item.id)}
+          renderItem={renderRate}
+          loading={{
+            isLoading,
+            secondaryLoading: syncRatePair.isPending && sections.length === 0,
+            secondaryMessage: "Sincronizando tipos de cambio...",
+            skeleton: (
+              <>
+                <SkeletonCard />
+                <SkeletonCard />
+                <SkeletonCard />
+              </>
+            ),
+          }}
+          empty={{
+            title: hasFilters ? "Sin resultados" : "Sin tipos de cambio",
+            description: hasFilters
+              ? "Prueba otra moneda o limpia la búsqueda."
+              : "Agrega el primer par para convertir saldos entre monedas.",
+            action: !hasFilters ? { label: "Nuevo tipo de cambio", onPress: openNew } : undefined,
+          }}
+          refreshing={isLoading || syncRatePair.isPending}
+          onRefresh={() => void handleRefreshRates()}
+        />
+      }
+      fab={<FAB onPress={openNew} bottom={insets.bottom + 16} />}
+      overlays={
+        <>
+          <ExchangeRateFilterSheet
+            visible={filterSheetOpen}
+            onClose={() => setFilterSheetOpen(false)}
+            advancedFilter={advancedFilter}
+            onAdvancedFilterChange={setAdvancedFilter}
+          />
+          <BottomSheet
+            visible={showForm}
+            onClose={closeForm}
+            title={editItem ? `Editar ${editItem.fromCurrencyCode} → ${editItem.toCurrencyCode}` : "Nuevo tipo de cambio"}
+            snapHeight={0.75}
+          >
+            <RateForm
+              key={editItem?.id ?? "new"}
+              initialFrom={editItem?.fromCurrencyCode ?? ""}
+              initialTo={editItem?.toCurrencyCode ?? ""}
+              initialRate={editItem ? String(editItem.rate) : ""}
+              initialNotes={editItem?.notes ?? ""}
+              currencyOptions={currencyOptions}
+              onSave={(from, to, rate, notes) => void handleSave(from, to, rate, notes)}
+              onCancel={closeForm}
+              loading={createRate.isPending || updateRate.isPending}
+            />
+          </BottomSheet>
+          <UndoBanner
+            visible={pendingDeleteIds.size > 0}
+            message={pendingDeleteIds.size === 1
+              ? `Tipo de cambio "${Object.values(pendingDeleteLabels).at(-1) ?? ""}" eliminado`
+              : `${pendingDeleteIds.size} tipos de cambio eliminados`}
+            onUndo={() => pendingDeleteIds.forEach((id) => undoDelete(id))}
+            durationMs={5000}
+            bottomOffset={insets.bottom + 80}
+          />
+        </>
+      }
+    />
   );
 }
 
-// ─── Styles ────────────────────────────────────────────────────────────────────
-
-const pickerStyles = StyleSheet.create({
-  wrap: { gap: 6 },
+const formStyles = StyleSheet.create({
+  body: {
+    gap: SPACING.md,
+    paddingBottom: SPACING.lg,
+  },
+  hint: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.storm,
+  },
+  hintExample: {
+    color: COLORS.pine,
+    fontFamily: FONT_FAMILY.bodySemibold,
+  },
+  pairRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: SPACING.sm,
+  },
+  pairInputWrap: {
+    flex: 1,
+  },
+  arrowWrap: {
+    paddingTop: 26,
+  },
+  pickerWrap: {
+    gap: 6,
+  },
   pillRow: {
     flexDirection: "row",
     gap: SPACING.xs,
@@ -638,10 +561,10 @@ const pickerStyles = StyleSheet.create({
     backgroundColor: COLORS.pine + "20",
     borderColor: COLORS.pine + "60",
   },
-  pillOtro: {
+  pillOther: {
     borderStyle: "dashed",
   },
-  pillOtroActive: {
+  pillOtherActive: {
     backgroundColor: COLORS.ember + "20",
     borderColor: COLORS.ember + "60",
     borderStyle: "solid",
@@ -655,170 +578,6 @@ const pickerStyles = StyleSheet.create({
     fontFamily: FONT_FAMILY.bodySemibold,
     color: COLORS.ink,
   },
-});
-
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: COLORS.bg },
-  content: { padding: SPACING.lg, gap: SPACING.lg, paddingBottom: 100 },
-
-  filterBtn: {
-    height: 34,
-    paddingHorizontal: SPACING.md,
-    borderRadius: RADIUS.full,
-    backgroundColor: GLASS.card,
-    alignItems: "center",
-    justifyContent: "center",
-    flexDirection: "row",
-    gap: 5,
-  },
-  searchWrap: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginHorizontal: SPACING.lg,
-    marginTop: SPACING.xs,
-    marginBottom: SPACING.sm,
-    backgroundColor: GLASS.card,
-    borderRadius: RADIUS.md,
-    paddingHorizontal: SPACING.md,
-    gap: SPACING.sm,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.ink,
-    fontFamily: FONT_FAMILY.body,
-    paddingVertical: SPACING.md,
-  },
-  segmentedWrap: { height: 44, justifyContent: "center" },
-  segmentedRow: { paddingHorizontal: SPACING.lg, gap: SPACING.xs, alignItems: "center" },
-  pill: {
-    height: 32,
-    paddingHorizontal: SPACING.md,
-    borderRadius: RADIUS.full,
-    backgroundColor: GLASS.card,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  pillActive: { backgroundColor: COLORS.primary },
-  pillText: {
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.storm,
-    fontFamily: FONT_FAMILY.bodyMedium,
-    includeFontPadding: false,
-  },
-  pillTextActive: { color: "#FFFFFF", fontFamily: FONT_FAMILY.bodySemibold },
-
-  summaryCard: {
-    backgroundColor: GLASS.card,
-    borderRadius: RADIUS.lg,
-    borderWidth: 1,
-    borderColor: GLASS.cardBorder,
-    padding: SPACING.md,
-    gap: SPACING.md,
-  },
-  summaryTopRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  summaryMetric: { flex: 1, gap: 2 },
-  summaryLabel: {
-    fontFamily: FONT_FAMILY.bodyMedium,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.storm,
-    textTransform: "uppercase",
-  },
-  summaryValue: {
-    fontFamily: FONT_FAMILY.heading,
-    fontSize: FONT_SIZE.xl,
-    color: COLORS.ink,
-  },
-  summaryDivider: {
-    width: 1,
-    height: 38,
-    backgroundColor: GLASS.separator,
-    marginHorizontal: SPACING.md,
-  },
-  summaryHint: {
-    fontFamily: FONT_FAMILY.body,
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.storm,
-    lineHeight: 20,
-  },
-
-  empty: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.sm, color: COLORS.storm, textAlign: "center" },
-
-  group: { gap: SPACING.xs },
-  groupLabel: {
-    fontFamily: FONT_FAMILY.bodySemibold,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.storm,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginBottom: 2,
-  },
-
-  // Swipeable
-  swipeContainer: { position: "relative", overflow: "hidden", borderRadius: RADIUS.lg },
-  deleteBg: {
-    position: "absolute",
-    right: 0, top: 0, bottom: 0,
-    width: REVEAL_W,
-    backgroundColor: COLORS.danger + "28",
-    alignItems: "center",
-    justifyContent: "center",
-    borderTopLeftRadius: RADIUS.lg,
-    borderBottomLeftRadius: RADIUS.lg,
-  },
-  deleteAction: {
-    width: REVEAL_W,
-    height: "100%",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 4,
-  },
-  deleteActionLabel: {
-    fontFamily: FONT_FAMILY.bodyMedium,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.danger,
-  },
-
-  rateRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: GLASS.card,
-    borderRadius: RADIUS.lg,
-    borderWidth: 1,
-    borderColor: GLASS.cardBorder,
-    padding: SPACING.md,
-    gap: SPACING.sm,
-  },
-  rateLeft: { flex: 1, gap: 4 },
-  pairBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    alignSelf: "flex-start",
-    backgroundColor: GLASS.cardActive,
-    borderRadius: RADIUS.full,
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 3,
-    borderWidth: 1,
-    borderColor: GLASS.cardActiveBorder,
-  },
-  pairFrom: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.xs, color: COLORS.pine },
-  pairTo: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.xs, color: COLORS.pine },
-  rateValue: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.storm },
-  rateNum: { fontFamily: FONT_FAMILY.heading, fontSize: FONT_SIZE.sm, color: COLORS.ink },
-  rateDate: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm, opacity: 0.6 },
-  rateNotes: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm, fontStyle: "italic" },
-
-  // Form
-  formBody: { gap: SPACING.md, paddingBottom: SPACING.lg },
-  formHint: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.storm },
-  formHintExample: { color: COLORS.pine, fontFamily: FONT_FAMILY.bodySemibold },
-  pairRow: { flexDirection: "row", alignItems: "flex-start", gap: SPACING.sm },
-  pairInputWrap: { flex: 1 },
-  arrowWrap: { paddingTop: 26 },
   inputLabel: {
     fontFamily: FONT_FAMILY.bodySemibold,
     fontSize: FONT_SIZE.xs,
@@ -836,6 +595,9 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.md,
     color: COLORS.ink,
   },
+  inputStacked: {
+    marginTop: SPACING.xs,
+  },
   errorBanner: {
     backgroundColor: GLASS.dangerBg,
     borderRadius: RADIUS.sm,
@@ -843,8 +605,16 @@ const styles = StyleSheet.create({
     borderColor: GLASS.dangerBorder,
     padding: SPACING.sm,
   },
-  errorText: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.xs, color: COLORS.rosewood },
-  formActions: { flexDirection: "row", gap: SPACING.sm, marginTop: SPACING.xs },
+  errorText: {
+    fontFamily: FONT_FAMILY.bodyMedium,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.rosewood,
+  },
+  actions: {
+    flexDirection: "row",
+    gap: SPACING.sm,
+    marginTop: SPACING.xs,
+  },
   cancelBtn: {
     flex: 1,
     paddingVertical: SPACING.sm + 2,
@@ -854,7 +624,11 @@ const styles = StyleSheet.create({
     borderColor: GLASS.cardBorder,
     alignItems: "center",
   },
-  cancelText: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.sm, color: COLORS.storm },
+  cancelText: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.storm,
+  },
   saveBtn: {
     flex: 1,
     paddingVertical: SPACING.sm + 2,
@@ -862,7 +636,14 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.pine,
     alignItems: "center",
   },
-  saveText: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.sm, color: "#05070B" },
+  saveText: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.sm,
+    color: "#05070B",
+  },
+  disabled: {
+    opacity: 0.6,
+  },
 });
 
 export default function ExchangeRatesScreenRoot() {

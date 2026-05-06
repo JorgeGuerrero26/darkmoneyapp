@@ -14,9 +14,9 @@ import { useAuth } from "../lib/auth-context";
 import { humanizeError } from "../lib/errors";
 import { Input } from "../components/ui/Input";
 import { Button } from "../components/ui/Button";
+import { CurrencySelector } from "../components/ui/CurrencySelector";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../constants/theme";
-
-const POPULAR_CURRENCIES = ["PEN", "USD", "EUR", "MXN", "COP", "ARS", "BRL", "CLP"];
+import { DEFAULT_EXCHANGE_CURRENCY, normalizeSupportedCurrencyCode } from "../constants/currencies";
 
 export default function OnboardingScreen() {
   const insets = useSafeAreaInsets();
@@ -24,7 +24,7 @@ export default function OnboardingScreen() {
   const { profile, saveProfile } = useAuth();
 
   const [fullName, setFullName] = useState(profile?.fullName ?? "");
-  const [baseCurrencyCode, setBaseCurrencyCode] = useState(profile?.baseCurrencyCode ?? "PEN");
+  const [baseCurrencyCode, setBaseCurrencyCode] = useState(normalizeSupportedCurrencyCode(profile?.baseCurrencyCode));
   const [nameError, setNameError] = useState<string | undefined>();
   const [isLoading, setIsLoading] = useState(false);
   const [generalError, setGeneralError] = useState<string | undefined>();
@@ -86,32 +86,12 @@ export default function OnboardingScreen() {
             autoCapitalize="words"
           />
 
-          <View>
-            <Text style={styles.currencyLabel}>Moneda base</Text>
-            <Text style={styles.currencyHint}>
-              Todos los totales del dashboard se mostrarán en esta moneda.
-            </Text>
-            <View style={styles.currencyGrid}>
-              {POPULAR_CURRENCIES.map((code) => (
-                <Button
-                  key={code}
-                  label={code}
-                  variant={baseCurrencyCode === code ? "primary" : "secondary"}
-                  size="sm"
-                  onPress={() => setBaseCurrencyCode(code)}
-                  style={styles.currencyButton}
-                />
-              ))}
-            </View>
-            <Input
-              placeholder="Otro código (ej. GBP)"
-              value={POPULAR_CURRENCIES.includes(baseCurrencyCode) ? "" : baseCurrencyCode}
-              onChangeText={(v) => setBaseCurrencyCode(v.toUpperCase())}
-              autoCapitalize="characters"
-              maxLength={3}
-              style={styles.customCurrencyInput}
-            />
-          </View>
+          <CurrencySelector
+            label="Moneda base"
+            value={baseCurrencyCode}
+            onChange={setBaseCurrencyCode}
+            hint={`Todos los totales se mostraran en esta moneda y se compararan contra ${DEFAULT_EXCHANGE_CURRENCY}.`}
+          />
         </View>
 
         <Button label="Comenzar" onPress={handleSave} loading={isLoading} size="lg" />
@@ -133,9 +113,4 @@ const styles = StyleSheet.create({
   },
   errorBannerText: { fontFamily: FONT_FAMILY.bodyMedium, color: COLORS.rosewood, fontSize: FONT_SIZE.sm },
   form: { gap: SPACING.xl },
-  currencyLabel: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.sm, color: COLORS.storm, marginBottom: SPACING.xs },
-  currencyHint: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm, opacity: 0.6, marginBottom: SPACING.md },
-  currencyGrid: { flexDirection: "row", flexWrap: "wrap", gap: SPACING.sm, marginBottom: SPACING.md },
-  currencyButton: { minWidth: 60 },
-  customCurrencyInput: {},
 });

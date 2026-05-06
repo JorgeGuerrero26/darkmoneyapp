@@ -131,7 +131,14 @@ export default function AppLayout() {
         }}
       />
       {/* Screens inside (app) that should NOT appear in the tab bar */}
+      <Tabs.Screen name="notifications" options={{ href: null }} />
+      <Tabs.Screen name="contacts" options={{ href: null }} />
       <Tabs.Screen name="budgets" options={{ href: null }} />
+      <Tabs.Screen name="subscriptions" options={{ href: null }} />
+      <Tabs.Screen name="recurring-income" options={{ href: null }} />
+      <Tabs.Screen name="categories" options={{ href: null }} />
+      <Tabs.Screen name="exchange-rates" options={{ href: null }} />
+      <Tabs.Screen name="settings" options={{ href: null }} />
     </Tabs>
   );
 }

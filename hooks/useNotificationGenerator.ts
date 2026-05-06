@@ -66,6 +66,17 @@ type NotificationRow = {
 
 // ─── Date helpers ─────────────────────────────────────────────────────────────
 
+const LIMA_TIMEZONE = "America/Lima";
+
+function usageDateInLima(date = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: LIMA_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
 function startOfMonth(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), 1);
 }
@@ -634,18 +645,25 @@ async function generateNotifications(
     return;
   }
 
+  const todayKey = usageDateInLima(now);
   const { data: existing } = await supabase
     .from("notifications")
-    .select("related_entity_type, related_entity_id, kind")
+    .select("related_entity_type, related_entity_id, kind, scheduled_for")
     .eq("user_id", userId)
     .in("kind", ALL_KINDS);
 
   const existingSet = new Set(
-    (existing ?? []).map((r: any) => `${r.related_entity_type}:${r.related_entity_id}:${r.kind}`)
+    (existing ?? [])
+      .filter((row: any) => {
+        const scheduledFor = typeof row.scheduled_for === "string" ? row.scheduled_for : "";
+        if (!scheduledFor) return false;
+        return usageDateInLima(new Date(scheduledFor)) === todayKey;
+      })
+      .map((row: any) => `${row.related_entity_type}:${row.related_entity_id}:${row.kind}:${todayKey}`),
   );
 
   const newRows = rows.filter(
-    (r) => !existingSet.has(`${r.related_entity_type}:${r.related_entity_id}:${r.kind}`)
+    (row) => !existingSet.has(`${row.related_entity_type}:${row.related_entity_id}:${row.kind}:${todayKey}`),
   );
 
   if (newRows.length) {

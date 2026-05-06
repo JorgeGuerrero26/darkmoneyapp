@@ -5288,6 +5288,8 @@ export type NotificationPreferenceSummary = {
   userId: string;
   pushEnabled: boolean;
   dailyDigestEnabled: boolean;
+  pushToken: string | null;
+  platform: string | null;
 };
 
 export function useNotificationPreferencesQuery(userId: string | null | undefined) {
@@ -5301,12 +5303,14 @@ export function useNotificationPreferencesQuery(userId: string | null | undefine
           userId: userId ?? "",
           pushEnabled: false,
           dailyDigestEnabled: true,
+          pushToken: null,
+          platform: null,
         };
       }
 
       const { data, error } = await supabase
         .from("notification_preferences")
-        .select("user_id, is_active, daily_digest_enabled")
+        .select("user_id, is_active, daily_digest_enabled, push_token, platform")
         .eq("user_id", userId)
         .maybeSingle();
 
@@ -5316,6 +5320,8 @@ export function useNotificationPreferencesQuery(userId: string | null | undefine
         userId,
         pushEnabled: data?.is_active === true,
         dailyDigestEnabled: data?.daily_digest_enabled !== false,
+        pushToken: typeof data?.push_token === "string" ? data.push_token : null,
+        platform: typeof data?.platform === "string" ? data.platform : null,
       };
     },
   });

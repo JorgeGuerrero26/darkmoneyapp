@@ -1,241 +1,114 @@
-import { FAB } from "../../components/ui/FAB";
-import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
-import { useCallback, useMemo, useRef, useState } from "react";
-import {
-  Animated,
-  PanResponder,
-  SectionList,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { useCallback, useMemo, useState } from "react";
+import type { SectionListRenderItem } from "react-native";
 import { useRouter } from "expo-router";
+import { useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Archive, ArchiveRestore, Trash2 } from "lucide-react-native";
+import { Archive, Download, Users } from "lucide-react-native";
+import { format } from "date-fns";
 
+import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
+import { FAB } from "../../components/ui/FAB";
+import { ScreenHeader } from "../../components/layout/ScreenHeader";
+import { HeaderActionGroup } from "../../components/ui/HeaderActionGroup";
+import { FilterToolbar } from "../../components/ui/FilterToolbar";
+import { ActiveFilterBar, type ActiveFilterItem } from "../../components/ui/ActiveFilterBar";
+import { MetricSummaryBar } from "../../components/ui/MetricSummaryBar";
+import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTemplate";
+import { ResourceSectionList, type ResourceSection } from "../../components/ui/ResourceSectionList";
+import { SkeletonCard } from "../../components/ui/Skeleton";
+import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
+import { ContactCard, type ContactMetrics } from "../../components/domain/ContactCard";
+import { ContactForm } from "../../components/forms/ContactForm";
 import { useAuth } from "../../lib/auth-context";
 import { humanizeError } from "../../lib/errors";
+import { shareCsvAsFile } from "../../lib/share-csv-file";
 import { useWorkspace } from "../../lib/workspace-context";
 import {
   useWorkspaceSnapshotQuery,
   useDeleteCounterpartyMutation,
   useUpdateCounterpartyMutation,
 } from "../../services/queries/workspace-data";
-import { ScreenHeader } from "../../components/layout/ScreenHeader";
-import { EmptyState } from "../../components/ui/EmptyState";
-import { Card } from "../../components/ui/Card";
-import { SkeletonCard } from "../../components/ui/Skeleton";
-import { ContactForm } from "../../components/forms/ContactForm";
-import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { useToast } from "../../hooks/useToast";
-import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING } from "../../constants/theme";
-import type { CounterpartyOverview } from "../../types/domain";
+import { useOriginBackNavigation } from "../../hooks/useOriginBackNavigation";
+import { COLORS } from "../../constants/theme";
+import type { CounterpartyOverview, CounterpartyType } from "../../types/domain";
 
-const TYPE_EMOJI: Record<string, string> = {
-  person: "👤", company: "🏢", merchant: "🏪",
-  service: "⚙️", bank: "🏦", other: "◦",
+type ContactTypeFilter = CounterpartyType | "all";
+type ContactListSection = ResourceSection<CounterpartyOverview, "active" | "archived">;
+
+const TYPE_FILTERS: { label: string; value: ContactTypeFilter }[] = [
+  { label: "Todos", value: "all" },
+  { label: "Personas", value: "person" },
+  { label: "Empresas", value: "company" },
+  { label: "Comercios", value: "merchant" },
+  { label: "Servicios", value: "service" },
+  { label: "Bancos", value: "bank" },
+  { label: "Otros", value: "other" },
+];
+
+const TYPE_LABELS: Record<CounterpartyType, string> = {
+  person: "Persona",
+  company: "Empresa",
+  merchant: "Comercio",
+  service: "Servicio",
+  bank: "Banco",
+  other: "Otro",
 };
 
-const TYPE_LABEL: Record<string, string> = {
-  person: "Persona", company: "Empresa", merchant: "Comercio",
-  service: "Servicio", bank: "Banco", other: "Otro",
-};
+function csvEscape(value: unknown) {
+  return `"${String(value ?? "").replace(/"/g, '""')}"`;
+}
 
-const REVEAL_WIDTH = 90;
-
-type SwipeableContactRowProps = {
-  contact: CounterpartyOverview;
-  metrics?: {
-    movementCount: number;
-    receivablePendingTotal: number;
-    payablePendingTotal: number;
-    subscriptionCount: number;
-    recurringIncomeCount: number;
-  };
-  onPress: () => void;
-  onArchive: () => void;
-  onDelete: () => void;
-  onRestore: () => void;
-  canDelete: boolean;
-};
-
-function SwipeableContactRow({
-  contact,
-  metrics,
-  onPress,
-  onArchive,
-  onDelete,
-  onRestore,
-  canDelete,
-}: SwipeableContactRowProps) {
-  const translateX = useRef(new Animated.Value(0)).current;
-  const isOpen = useRef(false);
-
-  const actionOpacity = translateX.interpolate({
-    inputRange: [-REVEAL_WIDTH, -16, 0],
-    outputRange: [1, 0.6, 0],
-    extrapolate: "clamp",
+function buildContactCSV(contacts: CounterpartyOverview[], metricsById: Map<number, ContactMetrics>) {
+  const BOM = "\uFEFF";
+  const headers = [
+    "Nombre",
+    "Tipo",
+    "Telefono",
+    "Email",
+    "Documento",
+    "Archivado",
+    "Movimientos",
+    "Por cobrar",
+    "Por pagar",
+    "Suscripciones",
+    "Ingresos fijos",
+    "Notas",
+  ];
+  const rows = contacts.map((contact) => {
+    const metrics = metricsById.get(contact.id);
+    return [
+      contact.name,
+      TYPE_LABELS[contact.type] ?? contact.type,
+      contact.phone ?? "",
+      contact.email ?? "",
+      contact.documentNumber ?? "",
+      contact.isArchived ? "Si" : "No",
+      metrics?.movementCount ?? contact.movementCount,
+      metrics?.receivablePendingTotal ?? 0,
+      metrics?.payablePendingTotal ?? 0,
+      metrics?.subscriptionCount ?? 0,
+      metrics?.recurringIncomeCount ?? 0,
+      contact.notes ?? "",
+    ].map(csvEscape).join(",");
   });
+  return BOM + [headers.join(","), ...rows].join("\n");
+}
 
-  const snapTo = (toValue: number, cb?: () => void) => {
-    isOpen.current = toValue !== 0;
-    Animated.spring(translateX, {
-      toValue,
-      useNativeDriver: true,
-      tension: 80,
-      friction: 11,
-    }).start(cb);
+function getContactMetricSeed(contact: CounterpartyOverview): ContactMetrics {
+  return {
+    movementCount: contact.movementCount,
+    receivablePendingTotal: 0,
+    payablePendingTotal: 0,
+    subscriptionCount: 0,
+    recurringIncomeCount: 0,
   };
-
-  const panResponder = useRef(
-    PanResponder.create({
-      onMoveShouldSetPanResponder: (_, { dx, dy }) =>
-        Math.abs(dx) > Math.abs(dy) * 1.5 && Math.abs(dx) > 10,
-      onPanResponderGrant: () => { translateX.stopAnimation(); },
-      onPanResponderMove: (_, { dx }) => {
-        const base = isOpen.current ? -REVEAL_WIDTH : 0;
-        const next = Math.max(-REVEAL_WIDTH * 1.4, Math.min(0, base + dx));
-        translateX.setValue(next);
-      },
-      onPanResponderRelease: (_, { dx, vx }) => {
-        const base = isOpen.current ? -REVEAL_WIDTH : 0;
-        const finalX = base + dx;
-        if (finalX < -REVEAL_WIDTH / 2 || vx < -0.4) {
-          snapTo(-REVEAL_WIDTH);
-        } else {
-          snapTo(0);
-        }
-      },
-    })
-  ).current;
-
-  function handleActionPress() {
-    snapTo(0, () => {
-      if (contact.isArchived) {
-        onRestore();
-      } else if (canDelete) {
-        onDelete();
-      } else {
-        onArchive();
-      }
-    });
-  }
-
-  function handleCardPress() {
-    if (isOpen.current) {
-      snapTo(0);
-      return;
-    }
-    onPress();
-  }
-
-  return (
-    <View style={styles.swipeContainer}>
-      {/* Action revealed on the right */}
-      <Animated.View style={[
-        styles.actionBg,
-        contact.isArchived
-          ? styles.actionBgRestore
-          : canDelete
-            ? styles.actionBgDelete
-            : styles.actionBgArchive,
-        { opacity: actionOpacity },
-      ]}>
-        <TouchableOpacity style={styles.actionBtn} onPress={handleActionPress} activeOpacity={0.8}>
-          {contact.isArchived
-            ? <ArchiveRestore size={20} color={COLORS.pine} strokeWidth={2} />
-            : canDelete
-              ? <Trash2 size={20} color={COLORS.danger} strokeWidth={2} />
-              : <Archive size={20} color={COLORS.ember} strokeWidth={2} />
-          }
-          <Text
-            style={[
-              styles.actionLabel,
-              contact.isArchived
-                ? styles.actionLabelRestore
-                : canDelete
-                  ? styles.actionLabelDelete
-                  : styles.actionLabelArchive,
-            ]}
-          >
-            {contact.isArchived ? "Restaurar" : canDelete ? "Eliminar" : "Archivar"}
-          </Text>
-        </TouchableOpacity>
-      </Animated.View>
-
-      {/* Swipeable card */}
-      <Animated.View
-        style={{ transform: [{ translateX }] }}
-        {...panResponder.panHandlers}
-      >
-        <Card onPress={handleCardPress} style={styles.card}>
-          <View style={styles.row}>
-            <View style={styles.avatarCircle}>
-              <Text style={styles.avatarText}>{TYPE_EMOJI[contact.type] ?? "◦"}</Text>
-            </View>
-            <View style={styles.info}>
-              <Text style={styles.name}>{contact.name}</Text>
-              <Text style={styles.type}>{TYPE_LABEL[contact.type] ?? contact.type}</Text>
-              {contact.phone?.trim() ? (
-                <Text style={styles.subMeta} numberOfLines={1}>
-                  {contact.phone.trim()}
-                </Text>
-              ) : contact.email?.trim() ? (
-                <Text style={styles.subMeta} numberOfLines={1}>
-                  {contact.email.trim()}
-                </Text>
-              ) : contact.documentNumber?.trim() ? (
-                <Text style={styles.subMeta} numberOfLines={1}>
-                  Doc. {contact.documentNumber.trim()}
-                </Text>
-              ) : null}
-              {metrics && (
-                <View style={styles.metricRow}>
-                  {metrics.receivablePendingTotal > 0 ? (
-                    <View style={[styles.metricChip, styles.metricChipIncome]}>
-                      <Text style={[styles.metricChipText, styles.metricChipTextIncome]}>Cobra</Text>
-                    </View>
-                  ) : null}
-                  {metrics.payablePendingTotal > 0 ? (
-                    <View style={[styles.metricChip, styles.metricChipExpense]}>
-                      <Text style={[styles.metricChipText, styles.metricChipTextExpense]}>Debe</Text>
-                    </View>
-                  ) : null}
-                  {metrics.movementCount > 0 ? (
-                    <View style={styles.metricChip}>
-                      <Text style={styles.metricChipText}>
-                        {metrics.movementCount} mov.
-                      </Text>
-                    </View>
-                  ) : null}
-                  {metrics.subscriptionCount > 0 ? (
-                    <View style={styles.metricChip}>
-                      <Text style={styles.metricChipText}>
-                        {metrics.subscriptionCount} subs.
-                      </Text>
-                    </View>
-                  ) : null}
-                  {metrics.recurringIncomeCount > 0 ? (
-                    <View style={styles.metricChip}>
-                      <Text style={styles.metricChipText}>
-                        {metrics.recurringIncomeCount} ingresos
-                      </Text>
-                    </View>
-                  ) : null}
-                </View>
-              )}
-            </View>
-          </View>
-        </Card>
-      </Animated.View>
-    </View>
-  );
 }
 
 function ContactsScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { profile } = useAuth();
   const { activeWorkspaceId } = useWorkspace();
   const { showToast } = useToast();
@@ -246,68 +119,147 @@ function ContactsScreen() {
 
   const [createFormVisible, setCreateFormVisible] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<CounterpartyOverview | null>(null);
+  const [searchText, setSearchText] = useState("");
+  const [typeFilters, setTypeFilters] = useState<ContactTypeFilter[]>([]);
+  const [showArchived, setShowArchived] = useState(false);
 
   const counterparties = snapshot?.counterparties ?? [];
   const obligations = snapshot?.obligations ?? [];
   const subscriptions = snapshot?.subscriptions ?? [];
   const recurringIncome = snapshot?.recurringIncome ?? [];
-  const active = counterparties.filter((c) => !c.isArchived);
-  const archived = counterparties.filter((c) => c.isArchived);
 
   const contactMetricsById = useMemo(() => {
-    const map = new Map<number, {
-      movementCount: number;
-      receivablePendingTotal: number;
-      payablePendingTotal: number;
-      subscriptionCount: number;
-      recurringIncomeCount: number;
-    }>();
+    const map = new Map<number, ContactMetrics>();
+    const contactById = new Map(counterparties.map((contact) => [contact.id, contact]));
 
-    for (const obligation of obligations) {
-      if (obligation.counterpartyId == null || obligation.status === "cancelled") continue;
-      const current = map.get(obligation.counterpartyId) ?? {
-        movementCount: counterparties.find((contact) => contact.id === obligation.counterpartyId)?.movementCount ?? 0,
+    function ensureMetrics(contactId: number) {
+      const current = map.get(contactId);
+      if (current) return current;
+      const contact = contactById.get(contactId);
+      const next = contact ? getContactMetricSeed(contact) : {
+        movementCount: 0,
         receivablePendingTotal: 0,
         payablePendingTotal: 0,
         subscriptionCount: 0,
         recurringIncomeCount: 0,
       };
+      map.set(contactId, next);
+      return next;
+    }
+
+    for (const obligation of obligations) {
+      if (obligation.counterpartyId == null || obligation.status === "cancelled") continue;
+      const metrics = ensureMetrics(obligation.counterpartyId);
       if (obligation.direction === "receivable") {
-        current.receivablePendingTotal += obligation.pendingAmount;
+        metrics.receivablePendingTotal += obligation.pendingAmount;
       } else {
-        current.payablePendingTotal += obligation.pendingAmount;
+        metrics.payablePendingTotal += obligation.pendingAmount;
       }
-      map.set(obligation.counterpartyId, current);
     }
 
     for (const subscription of subscriptions) {
       if (subscription.vendorPartyId == null) continue;
-      const current = map.get(subscription.vendorPartyId) ?? {
-        movementCount: counterparties.find((contact) => contact.id === subscription.vendorPartyId)?.movementCount ?? 0,
-        receivablePendingTotal: 0,
-        payablePendingTotal: 0,
-        subscriptionCount: 0,
-        recurringIncomeCount: 0,
-      };
-      current.subscriptionCount += 1;
-      map.set(subscription.vendorPartyId, current);
+      ensureMetrics(subscription.vendorPartyId).subscriptionCount += 1;
     }
 
     for (const income of recurringIncome) {
       if (income.payerPartyId == null) continue;
-      const current = map.get(income.payerPartyId) ?? {
-        movementCount: counterparties.find((contact) => contact.id === income.payerPartyId)?.movementCount ?? 0,
-        receivablePendingTotal: 0,
-        payablePendingTotal: 0,
-        subscriptionCount: 0,
-        recurringIncomeCount: 0,
-      };
-      current.recurringIncomeCount += 1;
-      map.set(income.payerPartyId, current);
+      ensureMetrics(income.payerPartyId).recurringIncomeCount += 1;
     }
 
     return map;
-  }, [counterparties, obligations, subscriptions, recurringIncome]);
+  }, [counterparties, obligations, recurringIncome, subscriptions]);
+
+  const filteredContacts = useMemo(() => {
+    const query = searchText.trim().toLowerCase();
+    return counterparties.filter((contact) => {
+      if (!showArchived && contact.isArchived) return false;
+      if (typeFilters.length > 0 && !typeFilters.includes(contact.type)) return false;
+      if (query) {
+        const haystack = [
+          contact.name,
+          contact.type,
+          contact.phone,
+          contact.email,
+          contact.documentNumber,
+          contact.notes,
+        ].filter(Boolean).join(" ").toLowerCase();
+        if (!haystack.includes(query)) return false;
+      }
+      return true;
+    });
+  }, [counterparties, searchText, showArchived, typeFilters]);
+
+  const activeContacts = filteredContacts.filter((contact) => !contact.isArchived);
+  const archivedContacts = filteredContacts.filter((contact) => contact.isArchived);
+
+  const contactSections = useMemo<ContactListSection[]>(() => {
+    const sections: ContactListSection[] = [];
+    if (activeContacts.length > 0) {
+      sections.push({ key: "active", label: "Activos", data: activeContacts, headerVariant: "hidden" });
+    }
+    if (archivedContacts.length > 0) {
+      sections.push({
+        key: "archived",
+        label: `Archivados (${archivedContacts.length})`,
+        data: archivedContacts,
+        headerVariant: "divider",
+        headerIcon: Archive,
+      });
+    }
+    return sections;
+  }, [activeContacts, archivedContacts]);
+
+  const activeFilterItems = useMemo<ActiveFilterItem[]>(() => {
+    const items: ActiveFilterItem[] = typeFilters.map((type) => ({
+      key: `type-${type}`,
+      label: TYPE_FILTERS.find((filter) => filter.value === type)?.label ?? "Tipo",
+      onRemove: () => setTypeFilters((current) => current.filter((value) => value !== type)),
+    }));
+
+    if (showArchived) {
+      items.push({
+        key: "archived",
+        label: "Archivados",
+        onRemove: () => setShowArchived(false),
+      });
+    }
+
+    if (searchText.trim()) {
+      items.push({
+        key: "search",
+        label: `Busqueda: ${searchText.trim()}`,
+        onRemove: () => setSearchText(""),
+      });
+    }
+
+    return items;
+  }, [searchText, showArchived, typeFilters]);
+
+  const summary = useMemo(() => {
+    const linkedContacts = filteredContacts.filter((contact) => {
+      const metrics = contactMetricsById.get(contact.id);
+      return (
+        contact.movementCount > 0 ||
+        contact.receivableCount > 0 ||
+        contact.payableCount > 0 ||
+        Boolean(metrics && (
+          metrics.receivablePendingTotal > 0 ||
+          metrics.payablePendingTotal > 0 ||
+          metrics.subscriptionCount > 0 ||
+          metrics.recurringIncomeCount > 0
+        ))
+      );
+    }).length;
+    return {
+      total: filteredContacts.length,
+      active: activeContacts.length,
+      linked: linkedContacts,
+    };
+  }, [activeContacts.length, contactMetricsById, filteredContacts]);
+
+  const hasFilters = typeFilters.length > 0 || showArchived || Boolean(searchText.trim());
+  const { handleBack } = useOriginBackNavigation();
 
   const canDeleteContact = useCallback((contact: CounterpartyOverview) =>
     contact.movementCount === 0 && contact.receivableCount === 0 && contact.payableCount === 0,
@@ -318,7 +270,7 @@ function ContactsScreen() {
       { id, input: { isArchived: true } },
       {
         onSuccess: () => showToast("Contacto archivado", "success"),
-        onError: (e) => showToast(e.message, "error"),
+        onError: (error) => showToast(error.message, "error"),
       },
     );
   }, [archiveMutation, showToast]);
@@ -328,7 +280,7 @@ function ContactsScreen() {
       { id, input: { isArchived: false } },
       {
         onSuccess: () => showToast("Contacto restaurado", "success"),
-        onError: (e) => showToast(e.message, "error"),
+        onError: (error) => showToast(error.message, "error"),
       },
     );
   }, [archiveMutation, showToast]);
@@ -341,192 +293,172 @@ function ContactsScreen() {
     setDeleteTarget(contact);
   }, [canDeleteContact, showToast]);
 
-  const contactSections = useMemo(() => {
-    const sections: Array<{ key: string; data: CounterpartyOverview[] }> = [];
-    if (active.length > 0) sections.push({ key: "active", data: active });
-    if (archived.length > 0) sections.push({ key: "archived", data: archived });
-    return sections;
-  }, [active, archived]);
+  const onRefresh = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+  }, [queryClient]);
 
-  const renderContactItem = useCallback(({ item: cp }: { item: CounterpartyOverview }) => (
-    <SwipeableContactRow
-      contact={cp}
-      metrics={contactMetricsById.get(cp.id)}
-      onPress={() => router.push(`/contacts/${cp.id}`)}
-      onArchive={() => handleArchive(cp.id)}
-      onDelete={() => handleDelete(cp)}
-      onRestore={() => handleRestore(cp.id)}
-      canDelete={canDeleteContact(cp)}
+  function clearContactFilters() {
+    setTypeFilters([]);
+    setShowArchived(false);
+    setSearchText("");
+  }
+
+  async function exportCSV(contacts: CounterpartyOverview[]) {
+    const csv = buildContactCSV(contacts, contactMetricsById);
+    const fileName = `contactos_${format(new Date(), "yyyyMMdd")}.csv`;
+    try {
+      await shareCsvAsFile(csv, fileName);
+    } catch {
+      showToast("No se pudo exportar", "error");
+    }
+  }
+
+  const renderContactItem: SectionListRenderItem<CounterpartyOverview, ContactListSection> = useCallback(({ item }) => (
+    <ContactCard
+      contact={item}
+      metrics={contactMetricsById.get(item.id)}
+      onPress={() => router.push(`/contacts/${item.id}`)}
+      onArchive={() => handleArchive(item.id)}
+      onDelete={() => handleDelete(item)}
+      onRestore={() => handleRestore(item.id)}
+      canDelete={canDeleteContact(item)}
     />
-  ), [router, handleArchive, handleDelete, handleRestore, canDeleteContact, contactMetricsById]);
+  ), [canDeleteContact, contactMetricsById, handleArchive, handleDelete, handleRestore, router]);
 
   return (
-    <View style={[styles.screen, { paddingTop: insets.top }]}>
-      <ScreenHeader title="Contactos" onBack={() => router.replace("/(app)/more")} />
-
-      <SectionList
-        sections={contactSections}
-        keyExtractor={(item) => String(item.id)}
-        renderItem={renderContactItem}
-        renderSectionHeader={({ section }) =>
-          section.key === "archived" ? (
-            <Text style={styles.archivedLabel}>
-              Archivados ({archived.length})
-            </Text>
-          ) : null
-        }
-        stickySectionHeadersEnabled={false}
-        ListHeaderComponent={
-          isLoading ? (
-            <>
-              <SkeletonCard />
-              <SkeletonCard />
-              <SkeletonCard />
-            </>
-          ) : null
-        }
-        ListEmptyComponent={
-          !isLoading && counterparties.length === 0 ? (
-            <EmptyState
-              title="Sin contactos"
-              description="Agrega clientes, proveedores y más."
-              action={{ label: "Nuevo contacto", onPress: () => setCreateFormVisible(true) }}
+    <ResourceModuleTemplate
+      topInset={insets.top}
+      header={
+        <ScreenHeader
+          title="Contactos"
+          onBack={handleBack}
+          rightAction={
+            <HeaderActionGroup
+              actions={[{
+                key: "export",
+                icon: Download,
+                onPress: () => exportCSV(filteredContacts),
+                accessibilityLabel: "Exportar CSV",
+              }]}
             />
-          ) : null
-        }
-        ItemSeparatorComponent={() => <View style={{ height: SPACING.sm }} />}
-        SectionSeparatorComponent={() => <View style={{ height: SPACING.md }} />}
-        removeClippedSubviews
-        maxToRenderPerBatch={10}
-        windowSize={5}
-        initialNumToRender={20}
-        contentContainerStyle={styles.listContent}
-      />
-
-      <FAB onPress={() => setCreateFormVisible(true)} bottom={insets.bottom + 16} />
-
-      <ContactForm
-        visible={createFormVisible}
-        onClose={() => setCreateFormVisible(false)}
-        onSuccess={() => setCreateFormVisible(false)}
-      />
-
-      <ConfirmDialog
-        visible={Boolean(deleteTarget)}
-        title="¿Eliminar contacto?"
-        body={
-          deleteTarget
-            ? `Se eliminará "${deleteTarget.name}" permanentemente.`
-            : undefined
-        }
-        confirmLabel="Sí, eliminar"
-        cancelLabel="Cancelar"
-        onCancel={() => setDeleteTarget(null)}
-        onConfirm={async () => {
-          if (!deleteTarget) return;
-          try {
-            await deleteMutation.mutateAsync(deleteTarget.id);
-            showToast("Contacto eliminado", "success");
-            setDeleteTarget(null);
-          } catch (error: unknown) {
-            showToast(humanizeError(error), "error");
           }
-        }}
-      />
-    </View>
+        />
+      }
+      toolbar={
+        <FilterToolbar
+          options={TYPE_FILTERS}
+          selectedValues={typeFilters}
+          onSelectedValuesChange={(values) => {
+            setTypeFilters(values.filter((value): value is CounterpartyType => value !== "all"));
+          }}
+          allValue="all"
+          searchValue={searchText}
+          onSearchChange={setSearchText}
+          searchPlaceholder="Buscar contactos..."
+          actions={[{
+            key: "archived",
+            icon: Archive,
+            active: showArchived,
+            onPress: () => setShowArchived((value) => !value),
+            accessibilityLabel: showArchived ? "Ocultar archivados" : "Mostrar archivados",
+          }]}
+        />
+      }
+      activeFilters={<ActiveFilterBar items={activeFilterItems} onClear={clearContactFilters} />}
+      summary={
+        filteredContacts.length > 0 ? (
+          <MetricSummaryBar
+            items={[
+              {
+                key: "total",
+                icon: Users,
+                value: String(summary.total),
+                label: "contactos",
+                color: COLORS.primary,
+                strong: true,
+                helpTitle: "Contactos visibles",
+                helpDescription: "Cantidad total de contactos que coinciden con la búsqueda y filtros actuales.",
+              },
+              {
+                key: "active",
+                value: String(summary.active),
+                label: "activos",
+                helpTitle: "Contactos activos",
+                helpDescription: "Contactos disponibles para usarse en créditos, deudas, movimientos u otros módulos.",
+              },
+              {
+                key: "linked",
+                value: String(summary.linked),
+                label: "vinculados",
+                helpTitle: "Contactos vinculados",
+                helpDescription: "Contactos que ya tienen relación con registros financieros, como créditos, deudas o movimientos.",
+              },
+            ]}
+          />
+        ) : null
+      }
+      list={
+        <ResourceSectionList
+          sections={contactSections}
+          keyExtractor={(item) => String(item.id)}
+          renderItem={renderContactItem}
+          loading={{
+            isLoading,
+            skeleton: (
+              <>
+                <SkeletonCard />
+                <SkeletonCard />
+                <SkeletonCard />
+              </>
+            ),
+          }}
+          empty={{
+            title: hasFilters ? "Sin resultados" : "Sin contactos",
+            description: hasFilters
+              ? "Prueba quitando filtros o ajustando la búsqueda."
+              : "Agrega clientes, proveedores y más.",
+            action: !hasFilters ? { label: "Nuevo contacto", onPress: () => setCreateFormVisible(true) } : undefined,
+          }}
+          refreshing={isLoading}
+          onRefresh={onRefresh}
+        />
+      }
+      fab={<FAB onPress={() => setCreateFormVisible(true)} bottom={insets.bottom + 16} />}
+      overlays={
+        <>
+          <ContactForm
+            visible={createFormVisible}
+            onClose={() => setCreateFormVisible(false)}
+            onSuccess={() => setCreateFormVisible(false)}
+          />
+
+          <ConfirmDialog
+            visible={Boolean(deleteTarget)}
+            title="¿Eliminar contacto?"
+            body={
+              deleteTarget
+                ? `Se eliminará "${deleteTarget.name}" permanentemente.`
+                : undefined
+            }
+            confirmLabel="Sí, eliminar"
+            cancelLabel="Cancelar"
+            onCancel={() => setDeleteTarget(null)}
+            onConfirm={async () => {
+              if (!deleteTarget) return;
+              try {
+                await deleteMutation.mutateAsync(deleteTarget.id);
+                showToast("Contacto eliminado", "success");
+                setDeleteTarget(null);
+              } catch (error: unknown) {
+                showToast(humanizeError(error), "error");
+              }
+            }}
+          />
+        </>
+      }
+    />
   );
 }
-
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: COLORS.bg },
-  listContent: { padding: SPACING.lg, paddingBottom: 100 },
-
-  // Swipeable
-  swipeContainer: {
-    position: "relative",
-    overflow: "hidden",
-    borderRadius: RADIUS.xl,
-  },
-  actionBg: {
-    position: "absolute",
-    top: 0,
-    right: 0,
-    bottom: 0,
-    width: REVEAL_WIDTH,
-    justifyContent: "center",
-    alignItems: "center",
-    borderTopLeftRadius: RADIUS.xl,
-    borderBottomLeftRadius: RADIUS.xl,
-  },
-  actionBgArchive: {
-    backgroundColor: COLORS.ember + "30",
-  },
-  actionBgDelete: {
-    backgroundColor: COLORS.danger + "28",
-  },
-  actionBgRestore: {
-    backgroundColor: COLORS.pine + "30",
-  },
-  actionBtn: {
-    flex: 1,
-    width: "100%",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 4,
-  },
-  actionLabel: {
-    fontSize: FONT_SIZE.xs,
-    fontFamily: FONT_FAMILY.bodySemibold,
-  },
-  actionLabelArchive: { color: COLORS.ember },
-  actionLabelDelete: { color: COLORS.danger },
-  actionLabelRestore: { color: COLORS.pine },
-
-  // Card content
-  card: { padding: SPACING.md },
-  row: { flexDirection: "row", alignItems: "center", gap: SPACING.md },
-  avatarCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: COLORS.bgInput,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  avatarText: { fontSize: 18 },
-  info: { flex: 1 },
-  name: { fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.bodyMedium, color: COLORS.ink },
-  type: { fontSize: FONT_SIZE.xs, color: COLORS.storm, marginTop: 2 },
-  subMeta: { fontSize: FONT_SIZE.xs, color: COLORS.storm, marginTop: 4, opacity: 0.9 },
-  metricRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 },
-  metricChip: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: RADIUS.full,
-    backgroundColor: COLORS.bgInput,
-  },
-  metricChipIncome: {
-    backgroundColor: COLORS.income + "18",
-  },
-  metricChipExpense: {
-    backgroundColor: COLORS.expense + "18",
-  },
-  metricChipText: {
-    fontSize: 10,
-    fontFamily: FONT_FAMILY.bodySemibold,
-    color: COLORS.storm,
-  },
-  metricChipTextIncome: {
-    color: COLORS.income,
-  },
-  metricChipTextExpense: {
-    color: COLORS.expense,
-  },
-
-  // Archived section
-  archivedSection: { marginTop: SPACING.md, gap: SPACING.sm },
-  archivedLabel: { fontSize: FONT_SIZE.sm, color: COLORS.storm, fontFamily: FONT_FAMILY.bodyMedium },
-});
 
 export default function ContactsScreenRoot() {
   return (

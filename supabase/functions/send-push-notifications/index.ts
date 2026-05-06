@@ -2,14 +2,14 @@
  * send-push-notifications
  *
  * Supabase Edge Function triggered by a Database Webhook on the `notifications`
- * table (INSERT events). For each new notification row it:
+ * table (INSERT and UPDATE events). For each pending notification row it:
  *   1. Looks up the user's Expo push token in `notification_preferences`
  *   2. Sends the notification via the Expo Push API
  *   3. Marks the row as `sent`
  *
  * Setup (Supabase Dashboard → Database → Webhooks):
  *   - Table:  notifications
- *   - Events: INSERT
+ *   - Events: INSERT, UPDATE
  *   - URL:    https://cawrdzrcipgibcoefltr.supabase.co/functions/v1/send-push-notifications
  *   - HTTP method: POST
  *   - Add header: x-webhook-secret: <any secret you choose>
@@ -105,15 +105,16 @@ Deno.serve(async (req: Request) => {
     return new Response("Invalid JSON", { status: 400 });
   }
 
-  // Only handle INSERT events on the notifications table
-  if (payload.type !== "INSERT" || payload.table !== "notifications") {
+  // Only handle INSERT/UPDATE events on the notifications table.
+  if ((payload.type !== "INSERT" && payload.type !== "UPDATE") || payload.table !== "notifications") {
     return new Response("Ignored", { status: 200 });
   }
 
   const record = payload.record;
 
-  // Only process in_app channel notifications (our generator produces these)
-  if (!record?.user_id || record.channel !== "in_app") {
+  // Only process pending in_app notifications. Updates to "sent" or "read"
+  // must not re-send the same push.
+  if (!record?.user_id || record.channel !== "in_app" || record.status !== "pending") {
     return new Response("Skipped", { status: 200 });
   }
 
