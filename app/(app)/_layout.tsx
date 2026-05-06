@@ -8,6 +8,7 @@ import { useNotificationsQuery, usePendingObligationShareInvitesQuery } from "..
 import { useAuth } from "../../lib/auth-context";
 import { Badge } from "../../components/ui/Badge";
 import { SafeBlurView } from "../../components/ui/SafeBlurView";
+import { useTabPersistence } from "../../hooks/useTabPersistence";
 
 function TabBarBackground() {
   return (
@@ -73,11 +74,11 @@ const MoreTabIcon = memo(function MoreTabIcon({ color, focused }: { color: strin
 });
 
 export default function AppLayout() {
+  useTabPersistence();
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        freezeOnBlur: true,
         tabBarStyle: {
           backgroundColor: "transparent",
           borderTopWidth: 0,

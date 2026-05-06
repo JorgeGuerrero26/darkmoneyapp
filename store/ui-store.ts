@@ -98,6 +98,7 @@ export const useUiStore = create<UiState>()(
       partialize: (state) => ({
         lastMovementAccountId: state.lastMovementAccountId,
         dashboardMode: state.dashboardMode,
+        biometricEnabled: state.biometricEnabled,
       }),
       /** Quita `lastMovementCategoryId` de almacenamientos antiguos (ya no se persiste). */
       merge: (persisted, current) => {

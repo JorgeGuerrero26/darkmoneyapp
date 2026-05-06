@@ -7,6 +7,7 @@ import { AppState } from "react-native";
 import { supabase, isSupabaseConfigured } from "./supabase";
 import { clearSessionScopedClientState } from "./session-data-reset";
 import { uploadAvatar, deleteAvatarFile } from "./avatar-utils";
+import { clearLastTabRoute } from "../hooks/useTabPersistence";
 
 type ProfileRow = {
   id: string;
@@ -117,7 +118,7 @@ function buildFallbackProfile(user: User): AppProfile {
   };
 }
 
-const AUTH_BOOT_TIMEOUT_MS = 8_000;
+const AUTH_BOOT_TIMEOUT_MS = 5_000;
 
 function withTimeout<T>(promise: Promise<T>, ms = AUTH_BOOT_TIMEOUT_MS): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -340,6 +341,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     const { error } = await supabase.auth.signOut();
     if (error) throw error;
     clearSessionScopedClientState();
+    clearLastTabRoute();
     setSession(null);
     setUser(null);
     setProfile(null);

@@ -62,6 +62,7 @@ import { useNotificationGenerator } from "../hooks/useNotificationGenerator";
 import { BiometricLock } from "../components/ui/BiometricLock";
 import { getNotificationsModule } from "../lib/notifications-runtime";
 import { hasSavedAuthOnDevice } from "../lib/device-auth-state";
+import { clearLastTabRoute, getLastTabRoute } from "../hooks/useTabPersistence";
 
 const Notifications = getNotificationsModule();
 
@@ -126,19 +127,14 @@ function AppSplash() {
   useEffect(() => {
     if (isLoading) return;
     pulseAnim.stopAnimation();
-    Animated.timing(progressAnim, {
-      toValue: 1,
-      duration: 320,
+    // Jump progress to 1 instantly, then fade out in 400ms
+    progressAnim.setValue(1);
+    Animated.timing(screenOpacity, {
+      toValue: 0,
+      duration: 400,
       easing: Easing.out(Easing.quad),
-      useNativeDriver: false,
-    }).start(() => {
-      Animated.timing(screenOpacity, {
-        toValue: 0,
-        duration: 550,
-        easing: Easing.out(Easing.quad),
-        useNativeDriver: true,
-      }).start(() => setVisible(false));
-    });
+      useNativeDriver: true,
+    }).start(() => setVisible(false));
   }, [isLoading, pulseAnim, progressAnim, screenOpacity]);
 
   if (!visible) return null;
@@ -771,7 +767,14 @@ function NavigationGuard() {
     }
 
     if (inAuthGroup) {
-      router.replace("/(app)/dashboard");
+      // Restore last active tab instead of always going to dashboard
+      getLastTabRoute().then((lastTab) => {
+        if (lastTab) {
+          router.replace(`/(app)${lastTab}` as never);
+        } else {
+          router.replace("/(app)/dashboard");
+        }
+      });
     }
   }, [isLoading, session, profile, segments, pathname, router, preferredAuthEntry]);
 
@@ -810,7 +813,6 @@ function NavigationGuard() {
           headerShown: false,
           animation: Platform.OS === "android" ? "slide_from_right" : "default",
           contentStyle: { backgroundColor: "transparent" },
-          freezeOnBlur: true,
         }}
       />
     </ThemeProvider>
