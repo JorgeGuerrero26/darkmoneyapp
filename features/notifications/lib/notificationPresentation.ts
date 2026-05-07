@@ -28,6 +28,12 @@ export function getNotificationKindMeta(kind: string): NotificationKindMeta {
       return { icon: TrendingUp, color: COLORS.warning };
     case "budget_period_ending":
       return { icon: Clock, color: COLORS.warning };
+    case "daily_workspace_summary":
+      return { icon: Bell, color: COLORS.storm };
+    case "daily_cashflow_check":
+      return { icon: Scale, color: COLORS.storm };
+    case "daily_budget_review":
+      return { icon: BarChart2, color: COLORS.storm };
     case "subscription_reminder":
       return { icon: RefreshCw, color: COLORS.ember };
     case "subscription_overdue":

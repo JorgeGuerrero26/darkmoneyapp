@@ -1,7 +1,7 @@
-import { GestureDetector } from "react-native-gesture-handler";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useState } from "react";
 import {
   Bell, Users, BarChart3, RefreshCw, Tag, Settings, ArrowLeftRight, ChevronRight, TrendingUp, type LucideIcon,
 } from "lucide-react-native";
@@ -14,7 +14,6 @@ import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { Badge } from "../../components/ui/Badge";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, SPACING } from "../../constants/theme";
-import { useSwipeTab } from "../../hooks/useSwipeTab";
 
 type MenuItem = {
   Icon: LucideIcon;
@@ -25,11 +24,11 @@ type MenuItem = {
 };
 
 export default function MoreScreen() {
-  const swipeGesture = useSwipeTab();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { user, signOut } = useAuth();
   const haptics = useHaptics();
+  const [signingOut, setSigningOut] = useState(false);
 
   const { data: notifications } = useNotificationsQuery(user?.id ?? null);
   const unreadCount = (notifications ?? []).filter((n) => n.status !== "read").length;
@@ -87,7 +86,6 @@ export default function MoreScreen() {
   ];
 
   return (
-    <GestureDetector gesture={swipeGesture}>
     <View style={[styles.screen, { paddingTop: insets.top }]}>
       <ScreenHeader title="Más" />
 
@@ -116,12 +114,17 @@ export default function MoreScreen() {
           label="Cerrar sesión"
           variant="danger"
           size="lg"
+          loading={signingOut}
+          loadingLabel="Cerrando sesión"
           style={styles.signOutButton}
-          onPress={() => { haptics.warning(); void signOut(); }}
+          onPress={() => {
+            haptics.warning();
+            setSigningOut(true);
+            void signOut().finally(() => setSigningOut(false));
+          }}
         />
       </ScrollView>
     </View>
-    </GestureDetector>
   );
 }
 

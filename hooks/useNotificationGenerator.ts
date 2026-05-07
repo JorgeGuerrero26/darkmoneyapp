@@ -2,11 +2,16 @@
  * useNotificationGenerator
  *
  * Genera notificaciones in-app en la tabla `notifications` basándose en el
- * estado actual del workspace. Se ejecuta cuando el snapshot cambia y el
- * usuario tiene sesión activa. Es idempotente: consulta existentes antes de
- * insertar para evitar duplicados sin depender de constraints DB.
+ * estado actual del workspace. Se ejecuta cuando el snapshot o el día cambian
+ * y el usuario tiene sesión activa. Es idempotente: consulta existentes y usa
+ * el índice único de notifications para evitar duplicados.
  *
  * Tipos de alerta generados:
+ *
+ *  DIARIAS
+ *  - daily_workspace_summary : resumen mínimo diario del workspace
+ *  - daily_cashflow_check    : chequeo mínimo diario de flujo
+ *  - daily_budget_review     : revisión mínima diaria de presupuestos
  *
  *  PRESUPUESTOS
  *  - budget_alert           : presupuesto >= alertPercent% o sobre el límite
@@ -45,9 +50,10 @@
  *  - no_movements_week          : sin movimientos 7 días consecutivos (con actividad previa)
  */
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { queryClient } from "../lib/query-client";
+import { getNotificationPriority } from "../lib/notification-priority";
 import { calendarDaysFromTodayLocal } from "../lib/subscription-helpers";
 import type { WorkspaceSnapshot } from "../services/queries/workspace-data";
 
@@ -96,6 +102,9 @@ function daysBetween(a: Date, b: Date): number {
 // ─── Stale cleanup ────────────────────────────────────────────────────────────
 
 const ALL_KINDS = [
+  "daily_workspace_summary",
+  "daily_cashflow_check",
+  "daily_budget_review",
   "budget_alert",
   "budget_period_ending",
   "subscription_reminder",
@@ -120,6 +129,8 @@ const ALL_KINDS = [
   "upcoming_annual_subscription",
   "no_movements_week",
 ];
+
+const DAILY_INFORMATIONAL_MINIMUM = 3;
 
 async function cleanupStaleNotifications(
   userId: string,
@@ -148,6 +159,103 @@ async function cleanupStaleNotifications(
 
 // ─── Generator ────────────────────────────────────────────────────────────────
 
+function dailyBaselineEntityId(dayKey: string, index: number): number {
+  return Number(dayKey.replace(/-/g, "")) * 10 + index + 1;
+}
+
+function countLabel(count: number, singular: string, plural: string): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function appendDailyBaselineNotifications(input: {
+  rows: NotificationRow[];
+  userId: string;
+  snapshot: WorkspaceSnapshot;
+  nowIso: string;
+  todayKey: string;
+  workspaceId: number;
+  thisMonthIncome: number;
+  thisMonthExpenses: number;
+}) {
+  const informationalCount = input.rows.filter(
+    (row) => getNotificationPriority(row.kind) === "informational",
+  ).length;
+  const missingCount = DAILY_INFORMATIONAL_MINIMUM - informationalCount;
+  if (missingCount <= 0) return;
+
+  const activeBudgetCount = input.snapshot.budgets.filter((budget) => budget.isActive).length;
+  const activeSubscriptionCount = input.snapshot.subscriptions.filter((sub) => sub.status === "active").length;
+  const activeObligationCount = input.snapshot.obligations.filter((obligation) => obligation.status === "active").length;
+  const openAccountCount = input.snapshot.accounts.filter((account) => !account.isArchived).length;
+  const movementCount = input.snapshot.categoryPostedMovements.length;
+  const expenseIncomeRatio = input.thisMonthIncome > 0
+    ? Math.round((input.thisMonthExpenses / input.thisMonthIncome) * 100)
+    : null;
+
+  const baselineRows: NotificationRow[] = [
+    {
+      user_id: input.userId,
+      channel: "in_app",
+      status: "pending",
+      kind: "daily_workspace_summary",
+      title: "Resumen financiero del día",
+      body: `Tu workspace tiene ${countLabel(openAccountCount, "cuenta activa", "cuentas activas")}, ${countLabel(activeBudgetCount, "presupuesto", "presupuestos")} y ${countLabel(movementCount, "movimiento registrado", "movimientos registrados")}.`,
+      scheduled_for: input.nowIso,
+      related_entity_type: "daily_digest",
+      related_entity_id: dailyBaselineEntityId(input.todayKey, 0),
+      payload: {
+        workspaceId: input.workspaceId,
+        todayKey: input.todayKey,
+        accountCount: openAccountCount,
+        budgetCount: activeBudgetCount,
+        movementCount,
+      },
+    },
+    {
+      user_id: input.userId,
+      channel: "in_app",
+      status: "pending",
+      kind: "daily_cashflow_check",
+      title: "Chequeo de flujo",
+      body: expenseIncomeRatio === null
+        ? "Todavía no hay ingresos suficientes este mes para calcular tu margen. Mantén tus movimientos al día."
+        : `Este mes tus gastos representan el ${expenseIncomeRatio}% de tus ingresos registrados.`,
+      scheduled_for: input.nowIso,
+      related_entity_type: "daily_digest",
+      related_entity_id: dailyBaselineEntityId(input.todayKey, 1),
+      payload: {
+        workspaceId: input.workspaceId,
+        todayKey: input.todayKey,
+        income: input.thisMonthIncome,
+        expenses: input.thisMonthExpenses,
+        expenseIncomeRatio,
+      },
+    },
+    {
+      user_id: input.userId,
+      channel: "in_app",
+      status: "pending",
+      kind: "daily_budget_review",
+      title: "Revisión diaria",
+      body: activeBudgetCount > 0
+        ? `Tienes ${countLabel(activeBudgetCount, "presupuesto", "presupuestos")}, ${countLabel(activeSubscriptionCount, "suscripción", "suscripciones")} y ${countLabel(activeObligationCount, "obligación activa", "obligaciones activas")} para revisar.`
+        : "Aún no tienes presupuestos activos. Crea uno para recibir alertas más precisas sobre tus gastos.",
+      scheduled_for: input.nowIso,
+      related_entity_type: "daily_digest",
+      related_entity_id: dailyBaselineEntityId(input.todayKey, 2),
+      payload: {
+        workspaceId: input.workspaceId,
+        todayKey: input.todayKey,
+        budgetCount: activeBudgetCount,
+        subscriptionCount: activeSubscriptionCount,
+        obligationCount: activeObligationCount,
+      },
+    },
+  ];
+
+  input.rows.push(...baselineRows.slice(0, missingCount));
+}
+
 async function generateNotifications(
   userId: string,
   snapshot: WorkspaceSnapshot,
@@ -156,6 +264,7 @@ async function generateNotifications(
 
   const now = new Date();
   const nowIso = now.toISOString();
+  const todayKey = usageDateInLima(now);
   const rows: NotificationRow[] = [];
 
   // Workspace ID (used for workspace-level alerts)
@@ -638,6 +747,17 @@ async function generateNotifications(
     });
   }
 
+  appendDailyBaselineNotifications({
+    rows,
+    userId,
+    snapshot,
+    nowIso,
+    todayKey,
+    workspaceId,
+    thisMonthIncome,
+    thisMonthExpenses,
+  });
+
   // ── Insert only new notifications (idempotent without DB constraint) ──────
   if (!rows.length) {
     await cleanupStaleNotifications(userId, rows);
@@ -645,7 +765,6 @@ async function generateNotifications(
     return;
   }
 
-  const todayKey = usageDateInLima(now);
   const { data: existing } = await supabase
     .from("notifications")
     .select("related_entity_type, related_entity_id, kind, scheduled_for")
@@ -667,7 +786,12 @@ async function generateNotifications(
   );
 
   if (newRows.length) {
-    const { error } = await supabase.from("notifications").insert(newRows);
+    const { error } = await supabase
+      .from("notifications")
+      .upsert(newRows, {
+        onConflict: "user_id,related_entity_type,related_entity_id,kind",
+        ignoreDuplicates: true,
+      });
     if (error) console.warn("[NotificationGenerator] insert error:", error.message);
   }
 
@@ -682,12 +806,24 @@ export function useNotificationGenerator(
   snapshot: WorkspaceSnapshot | undefined,
 ) {
   const lastSnapshotRef = useRef<string | null>(null);
+  const [generationDayKey, setGenerationDayKey] = useState(() => usageDateInLima());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setGenerationDayKey((current) => {
+        const next = usageDateInLima();
+        return current === next ? current : next;
+      });
+    }, 60_000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (!userId || !snapshot) return;
 
     // Fingerprint: recalculate when any relevant data changes
     const fingerprint = [
+      generationDayKey,
       snapshot.budgets.map((b) => `${b.id}:${b.usedPercent}`).join(","),
       snapshot.subscriptions.map((s) => `${s.id}:${s.nextDueDate}:${s.status}`).join(","),
       snapshot.obligations.map((o) => `${o.id}:${o.pendingAmount}:${o.status}:${o.lastPaymentDate ?? ""}`).join(","),
@@ -702,5 +838,5 @@ export function useNotificationGenerator(
       console.warn("[NotificationGenerator] error:", err);
       lastSnapshotRef.current = null; // allow retry on next change
     });
-  }, [userId, snapshot]);
+  }, [userId, snapshot, generationDayKey]);
 }

@@ -1,8 +1,7 @@
-import { GestureDetector } from "react-native-gesture-handler";
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SectionListRenderItem } from "react-native";
-import { useRouter, useFocusEffect } from "expo-router";
+import { useRouter } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
@@ -36,7 +35,6 @@ import { useToast } from "../../hooks/useToast";
 import { humanizeError } from "../../lib/errors";
 import { shareCsvAsFile } from "../../lib/share-csv-file";
 import { DEFAULT_EXCHANGE_CURRENCY } from "../../constants/currencies";
-import { useSwipeTab } from "../../hooks/useSwipeTab";
 import type { AccountSummary } from "../../types/domain";
 
 type AccountTypeFilter = "all" | "bank" | "cash" | "savings" | "credit_card" | "investment" | "loan" | "other";
@@ -92,7 +90,6 @@ function hasConversionRate(map: Map<string, number>, from: string, to: string): 
 }
 
 function AccountsScreen() {
-  const swipeGesture = useSwipeTab();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -100,10 +97,22 @@ function AccountsScreen() {
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
   const { showToast } = useToast();
 
-  const { data: snapshot, isLoading } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
+  const { data: snapshot, isLoading, dataUpdatedAt } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const archiveAccount = useArchiveAccountMutation(activeWorkspaceId);
   const syncExchangeRatePair = useSyncExchangeRatePairMutation();
   const syncPairRequestRef = useRef<string | null>(null);
+
+  const lastUpdateLabel = useMemo(() => {
+    if (!dataUpdatedAt) return "";
+    const seconds = Math.floor((Date.now() - dataUpdatedAt) / 1000);
+    if (seconds < 10) return "Ahora";
+    if (seconds < 60) return `Actualizado hace ${seconds}s`;
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `Actualizado hace ${minutes}min`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `Actualizado hace ${hours}h`;
+    return `Actualizado hace ${Math.floor(hours / 24)}d`;
+  }, [dataUpdatedAt]);
 
   // ── Currency display ──────────────────────────────────────────────────────
   const [displayCurrency, setDisplayCurrency] = useState<string | null>(null);
@@ -281,11 +290,6 @@ function AccountsScreen() {
     void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
   }, [queryClient]);
 
-  useFocusEffect(
-    useCallback(() => {
-      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
-    }, [queryClient]),
-  );
 
   const handleArchive = useCallback(async (account: AccountSummary) => {
     try {
@@ -371,12 +375,12 @@ function AccountsScreen() {
   ) : null;
 
   return (
-    <GestureDetector gesture={swipeGesture}>
-      <ResourceModuleTemplate
-        topInset={insets.top}
-        header={
-          <ScreenHeader
+    <ResourceModuleTemplate
+      topInset={insets.top}
+      header={
+        <ScreenHeader
             title={selectMode ? `${selectedIds.size} seleccionadas` : "Cuentas"}
+            subtitle={lastUpdateLabel || undefined}
             rightAction={
               selectMode ? (
                 <HeaderActionGroup
@@ -511,7 +515,6 @@ function AccountsScreen() {
           </>
         }
       />
-    </GestureDetector>
   );
 }
 

@@ -44,7 +44,7 @@ export default function LoginScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ fromWelcome?: string }>();
   const { signIn } = useAuth();
-  const { biometricEnabled, setBiometricEnabled } = useUiStore();
+  const { setBiometricEnabled } = useUiStore();
   const logoFlipScale = useRef(new Animated.Value(1)).current;
   const logoFlipDepth = useRef(new Animated.Value(1)).current;
   const logoBounceScale = useRef(new Animated.Value(1)).current;
@@ -53,6 +53,7 @@ export default function LoginScreen() {
   const logoFlipInFlightRef = useRef(false);
   const logoBounceInFlightRef = useRef(false);
   const logoTapTimesRef = useRef<number[]>([]);
+  const hasAutoTriggeredBio = useRef(false);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -99,8 +100,11 @@ export default function LoginScreen() {
       setBioAvailable(available);
 
       if (available) {
-        const stored = await SecureStore.getItemAsync(SECURE_EMAIL_KEY);
-        setBioCredsStored(Boolean(stored));
+        const [storedEmail, storedPass] = await Promise.all([
+          SecureStore.getItemAsync(SECURE_EMAIL_KEY),
+          SecureStore.getItemAsync(SECURE_PASS_KEY),
+        ]);
+        setBioCredsStored(Boolean(storedEmail && storedPass));
       }
 
       // Load remembered credentials
@@ -114,15 +118,6 @@ export default function LoginScreen() {
       }
     })();
   }, []);
-
-  // Auto-trigger biometric login on mount if enabled + creds stored
-  useEffect(() => {
-    if (biometricEnabled && bioCredsStored && bioAvailable) {
-      void triggerBiometricLogin();
-    }
-    // Only on initial mount
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bioCredsStored]);
 
   const triggerBiometricLogin = useCallback(async () => {
     setIsBioLoading(true);
@@ -147,6 +142,14 @@ export default function LoginScreen() {
       setIsBioLoading(false);
     }
   }, [signIn]);
+
+  // Auto-trigger biometric login when this device has a saved biometric login.
+  useEffect(() => {
+    if (hasAutoTriggeredBio.current) return;
+    if (!bioAvailable || !bioCredsStored) return;
+    hasAutoTriggeredBio.current = true;
+    void triggerBiometricLogin();
+  }, [bioAvailable, bioCredsStored, triggerBiometricLogin]);
 
   function validate(): boolean {
     const newErrors: FormErrors = {};
@@ -191,6 +194,7 @@ export default function LoginScreen() {
     if (!pendingCreds) return;
     await SecureStore.setItemAsync(SECURE_EMAIL_KEY, pendingCreds.email);
     await SecureStore.setItemAsync(SECURE_PASS_KEY, pendingCreds.password);
+    hasAutoTriggeredBio.current = true;
     setBiometricEnabled(true);
     setBioCredsStored(true);
     setPendingCreds(null);
@@ -397,8 +401,12 @@ export default function LoginScreen() {
                   <Fingerprint size={26} color={COLORS.primary} strokeWidth={1.5} />
                 </View>
                 <View style={styles.bioBtnContent}>
-                  <Text style={styles.bioBtnTitle}>Acceder con huella digital</Text>
-                  <Text style={styles.bioBtnSub}>Toca para autenticarte</Text>
+                  <Text style={styles.bioBtnTitle}>
+                    {isBioLoading ? "Iniciando sesión" : "Acceder con huella digital"}
+                  </Text>
+                  <Text style={styles.bioBtnSub}>
+                    {isBioLoading ? "Verificando tu acceso..." : "Toca para autenticarte"}
+                  </Text>
                 </View>
               </TouchableOpacity>
             ) : null}
@@ -470,6 +478,7 @@ export default function LoginScreen() {
               label="Iniciar sesión"
               onPress={handleLogin}
               loading={isLoading}
+              loadingLabel="Iniciando sesión"
               style={styles.submitButton}
             />
 

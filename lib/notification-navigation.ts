@@ -32,6 +32,10 @@ export function resolveNotificationNavigationTarget(input: {
   switch (kind) {
     case "daily_digest":
       return "/notifications";
+    case "daily_workspace_summary":
+    case "daily_cashflow_check":
+    case "daily_budget_review":
+      return "/(app)/dashboard";
     case "budget_alert":
     case "budget_period_ending":
       return "/budgets?from=notifications";

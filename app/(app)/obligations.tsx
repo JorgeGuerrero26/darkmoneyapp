@@ -1,6 +1,5 @@
-import { useRouter, useFocusEffect } from "expo-router";
+import { useRouter } from "expo-router";
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
-import { GestureDetector } from "react-native-gesture-handler";
 import * as Haptics from "expo-haptics";
 import { FAB } from "../../components/ui/FAB";
 import { UndoBanner } from "../../components/ui/UndoBanner";
@@ -53,7 +52,6 @@ import { HeaderActionGroup } from "../../components/ui/HeaderActionGroup";
 import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTemplate";
 import { COLORS } from "../../constants/theme";
 import { shareCsvAsFile } from "../../lib/share-csv-file";
-import { useSwipeTab } from "../../hooks/useSwipeTab";
 import { ObligationFilterBar } from "../../features/obligations/components/ObligationFilterBar";
 import { ObligationList } from "../../features/obligations/components/ObligationList";
 import { ObligationSummaryBar } from "../../features/obligations/components/ObligationSummaryBar";
@@ -185,7 +183,6 @@ function searchObligations<T extends ObligationSummary | SharedObligationSummary
 // ─── Screen ──────────────────────────────────────────────────────────────────
 
 function ObligationsScreen() {
-  const swipeGesture = useSwipeTab();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -196,11 +193,23 @@ function ObligationsScreen() {
   const archiveMutation = useArchiveObligationMutation(activeWorkspaceId);
   const deleteEventMutation = useDeleteObligationEventMutation();
 
-  const { data: snapshot, isLoading } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
+  const { data: snapshot, isLoading, dataUpdatedAt } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const { data: obligationShares = [] } = useObligationSharesQuery(activeWorkspaceId);
   const { data: sharedObligations = [], isLoading: sharedLoading, isFetching: sharedFetching } =
     useSharedObligationsQuery(session?.user?.id ?? null);
   const { data: pendingRequestCounts } = usePendingPaymentRequestCountsQuery(activeWorkspaceId);
+
+  const lastUpdateLabel = useMemo(() => {
+    if (!dataUpdatedAt) return "";
+    const seconds = Math.floor((Date.now() - dataUpdatedAt) / 1000);
+    if (seconds < 10) return "Ahora";
+    if (seconds < 60) return `Actualizado hace ${seconds}s`;
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `Actualizado hace ${minutes}min`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `Actualizado hace ${hours}h`;
+    return `Actualizado hace ${Math.floor(hours / 24)}d`;
+  }, [dataUpdatedAt]);
 
   const shareByObligationId = useMemo(
     () => buildShareByObligationId(obligationShares),
@@ -401,12 +410,6 @@ function ObligationsScreen() {
     }
   }, [queryClient, activeWorkspaceId]);
 
-  useFocusEffect(
-    useCallback(() => {
-      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
-      void queryClient.invalidateQueries({ queryKey: ["shared-obligations"] });
-    }, [queryClient]),
-  );
 
   useEffect(() => {
     if (!listRefreshing && refreshTriggeredRef.current) {
@@ -648,12 +651,12 @@ function ObligationsScreen() {
   }
 
   return (
-    <GestureDetector gesture={swipeGesture}>
-      <ResourceModuleTemplate
-        topInset={insets.top}
-        header={
-          <ScreenHeader
+    <ResourceModuleTemplate
+      topInset={insets.top}
+      header={
+        <ScreenHeader
             title="Créditos y Deudas"
+            subtitle={lastUpdateLabel || undefined}
             rightAction={
               <HeaderActionGroup
                 actions={[{
@@ -876,7 +879,6 @@ function ObligationsScreen() {
           </>
         }
       />
-    </GestureDetector>
   );
 }
 

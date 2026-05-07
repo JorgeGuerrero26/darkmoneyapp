@@ -13,6 +13,8 @@ type Props = {
   onConfirm: () => void;
   onCancel: () => void;
   destructive?: boolean;
+  confirmLoading?: boolean;
+  confirmLoadingLabel?: string;
 };
 
 export function ConfirmDialog({
@@ -25,9 +27,11 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
   destructive = true,
+  confirmLoading = false,
+  confirmLoadingLabel,
 }: Props) {
   return (
-    <Modal transparent visible={visible} animationType="fade" onRequestClose={onCancel}>
+    <Modal transparent visible={visible} animationType="fade" onRequestClose={confirmLoading ? undefined : onCancel}>
       <View style={styles.overlay}>
         <SafeBlurView intensity={45} tint="dark" style={StyleSheet.absoluteFillObject} />
         <View style={styles.card}>
@@ -40,12 +44,15 @@ export function ConfirmDialog({
               variant={destructive ? "danger" : "primary"}
               size="lg"
               onPress={onConfirm}
+              loading={confirmLoading}
+              loadingLabel={confirmLoadingLabel}
             />
             <Button
               label={cancelLabel}
               variant="ghost"
               size="md"
               onPress={onCancel}
+              disabled={confirmLoading}
             />
           </View>
         </View>

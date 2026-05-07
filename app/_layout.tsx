@@ -1,4 +1,4 @@
-import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
+import { QueryClientProvider, useIsFetching, useQueryClient } from "@tanstack/react-query";
 import * as Linking from "expo-linking";
 import { Stack, usePathname, useRouter, useSegments } from "expo-router";
 import { useFonts } from "expo-font";
@@ -65,6 +65,20 @@ import { hasSavedAuthOnDevice } from "../lib/device-auth-state";
 import { clearLastTabRoute, getLastTabRoute } from "../hooks/useTabPersistence";
 
 const Notifications = getNotificationsModule();
+
+const INITIAL_WORKSPACE_BOOTSTRAP_QUERY_KEYS = new Set([
+  "user-workspaces",
+  "workspace-snapshot",
+  "dashboard-movements",
+  "dashboard-analytics",
+  "budget-scope-movements",
+  "movements",
+  "shared-obligations",
+  "notifications",
+  "obligation-shares",
+  "obligation-payment-request-counts",
+  "user-entitlement",
+]);
 
 SplashScreen.preventAutoHideAsync();
 
@@ -159,6 +173,9 @@ function AppSplash() {
       <Animated.View style={[styles.splashProgressTrack, { opacity: progressOpacity }]}>
         <Animated.View style={[styles.splashProgressFill, { width: progressWidth }]} />
       </Animated.View>
+      <Animated.Text style={[styles.splashMessage, { opacity: progressOpacity }]}>
+        Verificando sesión...
+      </Animated.Text>
     </Animated.View>
   );
 }
@@ -183,6 +200,14 @@ function NotificationSetup() {
   const eventSyncInFlightRef = useRef(false);
   const orphanViewerLinkInFlightRef = useRef<Set<number>>(new Set());
   const orphanViewerMovementInFlightRef = useRef<Set<number>>(new Set());
+  const [settledInitialQueryKey, setSettledInitialQueryKey] = useState<string | null>(null);
+  const [waitingForInitialQueryRegistration, setWaitingForInitialQueryRegistration] = useState(false);
+  const initialWorkspaceQueryFetches = useIsFetching({
+    predicate: (query) => {
+      const rootKey = query.queryKey[0];
+      return typeof rootKey === "string" && INITIAL_WORKSPACE_BOOTSTRAP_QUERY_KEYS.has(rootKey);
+    },
+  });
 
   // Bootstrap: load workspaces on login so activeWorkspaceId can be set
   const { data: workspaces, isLoading: workspacesLoading } = useUserWorkspacesQuery(profile?.id);
@@ -217,22 +242,62 @@ function NotificationSetup() {
 
   const isCheckingSession = authLoading;
 
+  const hasSignedInSession = Boolean(session?.user?.id);
+  const hasWorkspaceRows = (workspaces?.length ?? 0) > 0;
+  const workspaceCoreLoading =
+    !profile?.id ||
+    workspacesLoading ||
+    workspaces === undefined ||
+    (
+      hasWorkspaceRows &&
+      (
+        !activeWorkspaceId ||
+        !resolvedActiveWorkspace ||
+        snapshotLoading ||
+        !snapshot
+      )
+    );
+  const initialQueryKey =
+    profile?.id && activeWorkspaceId && snapshot
+      ? `${profile.id}:${activeWorkspaceId}`
+      : null;
+  const shouldWaitForInitialQueries = Boolean(hasWorkspaceRows && initialQueryKey);
+  const initialWorkspaceQueriesSettled =
+    !shouldWaitForInitialQueries ||
+    settledInitialQueryKey === initialQueryKey;
+
+  useEffect(() => {
+    if (!initialQueryKey || !hasWorkspaceRows || workspaceCoreLoading) {
+      setSettledInitialQueryKey(null);
+      setWaitingForInitialQueryRegistration(false);
+      return;
+    }
+
+    setSettledInitialQueryKey((current) => (current === initialQueryKey ? current : null));
+    setWaitingForInitialQueryRegistration(true);
+    const timer = setTimeout(() => setWaitingForInitialQueryRegistration(false), 300);
+    return () => clearTimeout(timer);
+  }, [hasWorkspaceRows, initialQueryKey, workspaceCoreLoading]);
+
+  useEffect(() => {
+    if (!initialQueryKey || !hasWorkspaceRows || workspaceCoreLoading) return;
+    if (waitingForInitialQueryRegistration || initialWorkspaceQueryFetches > 0) return;
+    setSettledInitialQueryKey(initialQueryKey);
+  }, [
+    hasWorkspaceRows,
+    initialQueryKey,
+    initialWorkspaceQueryFetches,
+    waitingForInitialQueryRegistration,
+    workspaceCoreLoading,
+  ]);
+
   const showWorkspaceBootstrapOverlay =
     isCheckingSession ||
     (
-      Boolean(session?.user?.id && profile?.id) &&
+      hasSignedInSession &&
       (
-        workspacesLoading ||
-        workspaces === undefined ||
-        (
-          (workspaces?.length ?? 0) > 0 &&
-          (
-            !activeWorkspaceId ||
-            !resolvedActiveWorkspace ||
-            snapshotLoading ||
-            !snapshot
-          )
-        )
+        workspaceCoreLoading ||
+        !initialWorkspaceQueriesSettled
       )
     );
 
@@ -245,13 +310,12 @@ function NotificationSetup() {
   const workspaceBootstrapPulse = useRef(new Animated.Value(0)).current;
   const workspaceBootstrapLogoScale = workspaceBootstrapPulse.interpolate({
     inputRange: [0, 1],
-    outputRange: [0.98, 1.04],
+    outputRange: [0.90, 1.13],
   });
   const workspaceBootstrapLogoOpacity = workspaceBootstrapPulse.interpolate({
     inputRange: [0, 1],
-    outputRange: [0.92, 1],
+    outputRange: [0.72, 1],
   });
-
   useAutoSubscriptionMovements({
     userId: profile?.id,
     workspaceId: activeWorkspaceId,
@@ -285,14 +349,14 @@ function NotificationSetup() {
       Animated.sequence([
         Animated.timing(workspaceBootstrapPulse, {
           toValue: 1,
-          duration: 2400,
-          easing: Easing.inOut(Easing.quad),
+          duration: 1100,
+          easing: Easing.inOut(Easing.sin),
           useNativeDriver: true,
         }),
         Animated.timing(workspaceBootstrapPulse, {
           toValue: 0,
-          duration: 2400,
-          easing: Easing.inOut(Easing.quad),
+          duration: 1100,
+          easing: Easing.inOut(Easing.sin),
           useNativeDriver: true,
         }),
       ]),
@@ -776,7 +840,7 @@ function NavigationGuard() {
         }
       });
     }
-  }, [isLoading, session, profile, segments, pathname, router, preferredAuthEntry]);
+  }, [isLoading, session, profile, router, preferredAuthEntry]);
 
   // Tras login + onboarding: abrir invitación pendiente (misma URL que el correo / web)
   useEffect(() => {
@@ -940,5 +1004,12 @@ const styles = StyleSheet.create({
     fontFamily: "Manrope_400Regular",
     textAlign: "center",
     lineHeight: 20,
+  },
+  splashMessage: {
+    color: "#96A2B5",
+    fontSize: 14,
+    fontFamily: "Manrope_400Regular",
+    textAlign: "center",
+    marginTop: 20,
   },
 });

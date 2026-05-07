@@ -1,10 +1,11 @@
 import type { Session, User } from "@supabase/supabase-js";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { MutableRefObject } from "react";
 import type { PropsWithChildren } from "react";
 import { AppState } from "react-native";
 
-import { supabase, isSupabaseConfigured } from "./supabase";
+import { supabase, supabaseUrl, isSupabaseConfigured } from "./supabase";
 import { clearSessionScopedClientState } from "./session-data-reset";
 import { uploadAvatar, deleteAvatarFile } from "./avatar-utils";
 import { clearLastTabRoute } from "../hooks/useTabPersistence";
@@ -136,6 +137,37 @@ function withTimeout<T>(promise: Promise<T>, ms = AUTH_BOOT_TIMEOUT_MS): Promise
   });
 }
 
+type SupabaseAuthInternals = {
+  _removeSession?: () => Promise<void>;
+  storageKey?: string;
+};
+
+function getSupabaseStorageKey() {
+  try {
+    const hostname = new URL(supabaseUrl).hostname.trim().toLowerCase();
+    const projectRef = hostname.split(".")[0];
+    return projectRef ? `sb-${projectRef}-auth-token` : "supabase.auth.token";
+  } catch {
+    return "supabase.auth.token";
+  }
+}
+
+async function clearLocalSupabaseAuthSession() {
+  if (!supabase) return;
+  const auth = supabase.auth as unknown as SupabaseAuthInternals;
+  if (typeof auth._removeSession === "function") {
+    await auth._removeSession.call(supabase.auth);
+    return;
+  }
+
+  const storageKey = auth.storageKey || getSupabaseStorageKey();
+  await Promise.all([
+    AsyncStorage.removeItem(storageKey),
+    AsyncStorage.removeItem(`${storageKey}-code-verifier`),
+    AsyncStorage.removeItem(`${storageKey}-user`),
+  ]);
+}
+
 async function ensureProfile(user: User): Promise<AppProfile> {
   if (!supabase) throw new Error("Supabase no está configurado.");
 
@@ -195,7 +227,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
       if (!nextSession?.user) {
         setProfile(null);
-        clearSessionScopedClientState();
+        await clearSessionScopedClientState();
         setIsLoading(false);
         return;
       }
@@ -220,11 +252,10 @@ export function AuthProvider({ children }: PropsWithChildren) {
         await syncSession(data.session);
       } catch {
         if (!cancelled) {
-          clearSessionScopedClientState();
-          setSession(null);
-          setUser(null);
-          setProfile(null);
-          setIsLoading(false);
+          // Error transitorio (timeout, red, etc.): mantener la sesión existente.
+          // Si la sesión expiró de verdad, getSession() retorna { data: { session: null } }
+          // exitosamente (sin lanzar), y syncSession(null) limpia todo. El catch solo
+          // se alcanza por timeouts o errores de red, que NO implican sesión inválida.
         }
       } finally {
         resumeSessionSyncInFlightRef.current = false;
@@ -338,13 +369,24 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
   async function signOut() {
     if (!supabase) return;
-    const { error } = await supabase.auth.signOut();
-    if (error) throw error;
-    clearSessionScopedClientState();
-    clearLastTabRoute();
+    const accessToken = session?.access_token;
+
     setSession(null);
     setUser(null);
     setProfile(null);
+    setIsLoading(false);
+
+    await Promise.allSettled([
+      clearLocalSupabaseAuthSession(),
+      clearSessionScopedClientState(),
+      clearLastTabRoute(),
+    ]);
+
+    if (accessToken) {
+      void supabase.auth.admin.signOut(accessToken, "global").catch(() => {
+        // Local logout already completed. Remote token revocation is best-effort.
+      });
+    }
   }
 
   async function resetPassword(email: string) {

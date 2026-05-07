@@ -7,6 +7,7 @@ export const queryClient = new QueryClient({
       staleTime: 120_000,
       retry: 1,
       refetchOnWindowFocus: false,
+      placeholderData: (previousData: unknown) => previousData,
     },
   },
 });

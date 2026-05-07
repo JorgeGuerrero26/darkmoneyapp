@@ -10,8 +10,9 @@ Guia obligatoria para agentes y programadores que modifiquen este repo. La prior
 
 ## Skills Del Repo
 
-- `skills/darkmoney-resource-module/SKILL.md`: usar al crear o migrar pantallas tipo recurso, como cuentas, movimientos, contactos, creditos y deudas.
-- `skills/darkmoney-module-audit/SKILL.md`: usar al auditar si un modulo respeta la plantilla, reutiliza componentes genericos y no reintroduce UI duplicada.
+- `.agents/skills/darkmoney-resource-module/SKILL.md`: usar al crear o migrar pantallas tipo recurso, como cuentas, movimientos, contactos, créditos, deudas, presupuestos y suscripciones.
+- `.agents/skills/darkmoney-module-audit/SKILL.md`: usar al auditar si un módulo respeta la plantilla, reutiliza componentes genéricos y no reintroduce UI duplicada.
+- `.agents/skills/darkmoney-origin-back-navigation/SKILL.md`: usar al crear, revisar o corregir navegación de retroceso en módulos; asegura que cada pantalla vuelva al origen real y no siempre al dashboard.
 
 ## Plantilla De Modulo
 

@@ -16,6 +16,7 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
+import { supabase } from "../../lib/supabase";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   format,
@@ -71,11 +72,9 @@ import { formatCurrency } from "../../components/ui/AmountDisplay";
 import { MovementForm } from "../../components/forms/MovementForm";
 import { BottomSheet } from "../../components/ui/BottomSheet";
 import { WorkspaceSelector } from "../../components/layout/WorkspaceSelector";
-import { GestureDetector } from "react-native-gesture-handler";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
 import { FAB } from "../../components/ui/FAB";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
-import { useSwipeTab } from "../../hooks/useSwipeTab";
 import { DayMovementsSheet, type DaySheetMode } from "../../components/dashboard/DayMovementsSheet";
 import {
   movementActsAsExpense,
@@ -9635,9 +9634,15 @@ function DashboardScreen() {
   const { activeWorkspaceId, activeWorkspace, setWorkspaces } = useWorkspace();
 
   const [signOutVisible, setSignOutVisible] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
 
   function handleSignOut() {
     setSignOutVisible(true);
+  }
+
+  async function confirmSignOut() {
+    setSigningOut(true);
+    await signOut().finally(() => setSigningOut(false));
   }
   const { dashboardMode, setDashboardMode, dashboardScrollY, setDashboardScrollY } = useUiStore();
   const scrollRef = useRef<import("react-native").ScrollView>(null);
@@ -9647,13 +9652,17 @@ function DashboardScreen() {
   // Restaurar posición de scroll cuando el dashboard recupera el foco
   useFocusEffect(
     useCallback(() => {
+      let t: ReturnType<typeof setTimeout> | undefined;
       if (dashboardScrollY > 0) {
-        // Pequeño delay para que el layout esté listo
-        const t = setTimeout(() => {
+        t = setTimeout(() => {
           scrollRef.current?.scrollTo({ y: dashboardScrollY, animated: false });
         }, 80);
-        return () => clearTimeout(t);
       }
+      return () => {
+        if (t !== undefined) clearTimeout(t);
+        if (scrollSaveTimer.current) clearTimeout(scrollSaveTimer.current);
+        scrollSaveTimer.current = null;
+      };
     }, [dashboardScrollY]),
   );
 
@@ -9681,6 +9690,18 @@ function DashboardScreen() {
   const { data: dashboardAnalytics } = useDashboardAnalyticsQuery(activeWorkspaceId, profile?.id);
   const { data: sharedObligations = [] } = useSharedObligationsQuery(session?.user?.id ?? null);
 
+  const lastUpdateLabel = useMemo(() => {
+    if (!dataUpdatedAt) return "";
+    const seconds = Math.floor((Date.now() - dataUpdatedAt) / 1000);
+    if (seconds < 10) return "Ahora";
+    if (seconds < 60) return `Actualizado hace ${seconds}s`;
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `Actualizado hace ${minutes}min`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `Actualizado hace ${hours}h`;
+    return `Actualizado hace ${Math.floor(hours / 24)}d`;
+  }, [dataUpdatedAt]);
+
   const obligationsMerged = useMemo(
     () => mergeWorkspaceAndSharedObligations(snapshot?.obligations ?? [], sharedObligations),
     [snapshot?.obligations, sharedObligations],
@@ -9689,6 +9710,60 @@ function DashboardScreen() {
   useEffect(() => {
     if (snapshot?.workspaces?.length) setWorkspaces(snapshot.workspaces);
   }, [snapshot?.workspaces, setWorkspaces]);
+
+  // Prefetch queries for other tabs after workspace is ready
+  useEffect(() => {
+    if (!supabase || !activeWorkspaceId) return;
+    void queryClient.prefetchQuery({
+      queryKey: ["obligation-shares", activeWorkspaceId],
+      staleTime: 120_000,
+      queryFn: async () => {
+        const { data, error } = await supabase!
+          .from("obligation_shares")
+          .select("id, workspace_id, obligation_id, owner_user_id, invited_by_user_id, invited_user_id, owner_display_name, invited_display_name, invited_email, status, token, message, accepted_at, responded_at, last_sent_at, created_at, updated_at")
+          .eq("workspace_id", activeWorkspaceId)
+          .in("status", ["pending", "accepted"])
+          .order("updated_at", { ascending: false });
+        if (error) return [];
+        return (data ?? []).map((row: Record<string, unknown>) => ({
+          id: Number(row.id),
+          workspaceId: Number(row.workspace_id),
+          obligationId: Number(row.obligation_id),
+          ownerUserId: String(row.owner_user_id ?? ""),
+          invitedByUserId: String(row.invited_by_user_id ?? ""),
+          invitedUserId: String(row.invited_user_id ?? ""),
+          ownerDisplayName: (row.owner_display_name as string) ?? null,
+          invitedDisplayName: (row.invited_display_name as string) ?? null,
+          invitedEmail: String(row.invited_email ?? ""),
+          status: row.status as string,
+          token: String(row.token ?? ""),
+          message: (row.message as string) ?? null,
+          acceptedAt: (row.accepted_at as string) ?? null,
+          respondedAt: (row.responded_at as string) ?? null,
+          lastSentAt: (row.last_sent_at as string) ?? null,
+          createdAt: String(row.created_at ?? ""),
+          updatedAt: String(row.updated_at ?? ""),
+        }));
+      },
+    });
+    void queryClient.prefetchQuery({
+      queryKey: ["obligation-payment-request-counts", activeWorkspaceId],
+      staleTime: 120_000,
+      queryFn: async () => {
+        const { data, error } = await supabase!
+          .from("obligation_payment_requests")
+          .select("obligation_id")
+          .eq("workspace_id", activeWorkspaceId)
+          .eq("status", "pending");
+        if (error) return new Map();
+        const counts = new Map<number, number>();
+        for (const row of (data ?? []) as { obligation_id: number }[]) {
+          counts.set(Number(row.obligation_id), (counts.get(Number(row.obligation_id)) ?? 0) + 1);
+        }
+        return counts;
+      },
+    });
+  }, [activeWorkspaceId, queryClient]);
 
   const snapshotActiveWorkspace = useMemo(
     () => snapshot?.workspaces?.find((workspace) => workspace.id === activeWorkspaceId) ?? null,
@@ -9808,8 +9883,6 @@ function DashboardScreen() {
     ]).finally(() => setIsRefreshing(false));
   }, [queryClient]);
 
-  const swipeGesture = useSwipeTab();
-
   const activeAccounts = useMemo(
     () => (snapshot?.accounts ?? []).filter((a) => !a.isArchived),
     [snapshot],
@@ -9836,7 +9909,7 @@ function DashboardScreen() {
       <View style={[styles.screen, { paddingTop: insets.top }]}>
         <ScreenHeader
           title={`Hola, ${profile?.fullName?.split(" ")[0] ?? "usuario"}`}
-          subtitle={`${workspaceDisplayName} · ${format(new Date(), "d MMM yyyy", { locale: es })}`}
+          subtitle={`${workspaceDisplayName} · ${format(new Date(), "d MMM yyyy", { locale: es })}${lastUpdateLabel ? ` · ${lastUpdateLabel}` : ""}`}
           showPlanBadge
         />
         <ScrollView contentContainerStyle={styles.content}>
@@ -9847,11 +9920,10 @@ function DashboardScreen() {
   }
 
   return (
-    <GestureDetector gesture={swipeGesture}>
     <View style={[styles.screen, { paddingTop: insets.top }]}>
       <ScreenHeader
         title={`Hola, ${profile?.fullName?.split(" ")[0] ?? "usuario"}`}
-        subtitle={`${workspaceDisplayName} · ${format(new Date(), "d MMM yyyy", { locale: es })}`}
+        subtitle={`${workspaceDisplayName} · ${format(new Date(), "d MMM yyyy", { locale: es })}${lastUpdateLabel ? ` · ${lastUpdateLabel}` : ""}`}
         rightAction={<DashboardHeaderRight onSignOut={handleSignOut} />}
         showPlanBadge
       />
@@ -10060,11 +10132,12 @@ function DashboardScreen() {
         confirmLabel="Salir"
         cancelLabel="Cancelar"
         destructive
+        confirmLoading={signingOut}
+        confirmLoadingLabel="Cerrando sesión"
         onCancel={() => setSignOutVisible(false)}
-        onConfirm={() => { setSignOutVisible(false); void signOut(); }}
+        onConfirm={() => { void confirmSignOut(); }}
       />
     </View>
-    </GestureDetector>
   );
 }
 

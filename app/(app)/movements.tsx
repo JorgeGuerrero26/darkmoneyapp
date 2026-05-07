@@ -1,4 +1,3 @@
-import { GestureDetector } from "react-native-gesture-handler";
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { Download, SlidersHorizontal, Trash2, X } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
@@ -39,7 +38,6 @@ import { buildDateRangeNotice } from "../../lib/date-range-notice";
 import { shareCsvAsFile } from "../../lib/share-csv-file";
 import { sortByName } from "../../lib/sort-locale";
 import { SPACING } from "../../constants/theme";
-import { useSwipeTab } from "../../hooks/useSwipeTab";
 import { MovementFilterSheet } from "../../features/movements/components/MovementFilterSheet";
 import { MovementSummaryBar } from "../../features/movements/components/MovementSummaryBar";
 import type { MovementRecord, MovementType, MovementStatus } from "../../types/domain";
@@ -102,7 +100,6 @@ function buildCSV(movements: MovementRecord[]): string {
 }
 
 function MovementsScreen() {
-  const swipeGesture = useSwipeTab();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const params = useLocalSearchParams<{
@@ -121,7 +118,19 @@ function MovementsScreen() {
   const queryClient = useQueryClient();
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
-  const { data: snapshot } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
+  const { data: snapshot, dataUpdatedAt } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
+
+  const lastUpdateLabel = useMemo(() => {
+    if (!dataUpdatedAt) return "";
+    const seconds = Math.floor((Date.now() - dataUpdatedAt) / 1000);
+    if (seconds < 10) return "Ahora";
+    if (seconds < 60) return `Actualizado hace ${seconds}s`;
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `Actualizado hace ${minutes}min`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `Actualizado hace ${hours}h`;
+    return `Actualizado hace ${Math.floor(hours / 24)}d`;
+  }, [dataUpdatedAt]);
 
   // ── Filters ──────────────────────────────────────────────────────────────
   const [activeTypeFilters, setActiveTypeFilters] = useState<MovementType[]>([]);
@@ -372,7 +381,6 @@ function MovementsScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      void queryClient.invalidateQueries({ queryKey: ["movements"] });
       const quickFilter = Array.isArray(params.quickFilter) ? params.quickFilter[0] : params.quickFilter;
       const quickScope = Array.isArray(params.quickScope) ? params.quickScope[0] : params.quickScope;
       const quickToken = Array.isArray(params.quickToken) ? params.quickToken[0] : params.quickToken;
@@ -683,12 +691,12 @@ function MovementsScreen() {
   ), [baseCurrency, movementAttachmentCounts, selectedIds, selectMode, toggleSelect, confirmDelete, router]);
 
   return (
-    <GestureDetector gesture={swipeGesture}>
-      <ResourceModuleTemplate
-        topInset={insets.top}
-        header={
-          <ScreenHeader
+    <ResourceModuleTemplate
+      topInset={insets.top}
+      header={
+        <ScreenHeader
             title={selectMode ? `${selectedIds.size} seleccionados` : "Movimientos"}
+            subtitle={lastUpdateLabel || undefined}
             rightAction={
               selectMode ? (
                 <HeaderActionGroup
@@ -886,7 +894,6 @@ function MovementsScreen() {
           </>
         }
       />
-    </GestureDetector>
   );
 }
 

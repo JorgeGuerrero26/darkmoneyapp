@@ -144,6 +144,12 @@ function SettingsScreen() {
 
   // ── Sign out dialog ───────────────────────────────────────────────────────
   const [signOutVisible, setSignOutVisible] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+
+  async function confirmSignOut() {
+    setSigningOut(true);
+    await signOut().finally(() => setSigningOut(false));
+  }
 
   // ── Workspace invite sheet ────────────────────────────────────────────────
   const [inviteSheetOpen, setInviteSheetOpen] = useState(false);
@@ -530,7 +536,7 @@ function SettingsScreen() {
         visible={signOutVisible}
         transparent
         animationType="fade"
-        onRequestClose={() => setSignOutVisible(false)}
+        onRequestClose={signingOut ? undefined : () => setSignOutVisible(false)}
       >
         <View style={styles.soOverlay}>
           <View style={styles.soCard}>
@@ -546,13 +552,16 @@ function SettingsScreen() {
               variant="danger"
               size="lg"
               style={styles.soFullBtn}
-              onPress={() => { setSignOutVisible(false); void signOut(); }}
+              loading={signingOut}
+              loadingLabel="Cerrando sesión"
+              onPress={() => { void confirmSignOut(); }}
             />
             <Button
               label="Cancelar"
               variant="ghost"
               size="md"
               style={styles.soFullBtn}
+              disabled={signingOut}
               onPress={() => setSignOutVisible(false)}
             />
           </View>

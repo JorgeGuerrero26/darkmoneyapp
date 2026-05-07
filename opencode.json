@@ -1,0 +1,35 @@
+{
+    "$schema": "https://opencode.ai/config.json",
+    "model": "deepseek/deepseek-v4-flash",
+    "small_model": "deepseek/deepseek-v4-flash",
+    "default_agent": "plan",
+    "agent": {
+      "plan": {
+        "mode": "primary",
+        "model": "deepseek/deepseek-v4-pro",
+        "prompt": "Actúa como senior engineer. Estás en modo PLAN. Analiza solo archivos relevantes, no modifiques archivos, no ejecutes comandos destructivos, propón un plan corto con riesgos y validación. Si el usuario pide implementar, indícale que cambie a Build.",
+        "permission": {
+          "edit": "deny",
+          "bash": "deny"
+        }
+      },
+      "build": {
+        "mode": "primary",
+        "model": "deepseek/deepseek-v4-flash",
+        "prompt": "Actúa como senior engineer. Estás en modo BUILD. Implementa solo el plan aprobado. Haz el cambio mínimo, no replantees el diagnóstico, no modifiques archivos fuera del alcance y valida con los comandos indicados.",
+        "permission": {
+          "edit": "ask",
+          "bash": "ask"
+        }
+      }
+    },
+    "permission": {
+      "edit": "ask",
+      "bash": "ask"
+    },
+    "compaction": {
+      "auto": true,
+      "prune": true,
+      "reserved": 10000
+    }
+  }

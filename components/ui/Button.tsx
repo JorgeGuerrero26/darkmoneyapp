@@ -18,6 +18,7 @@ type Props = PressableProps & {
   variant?: Variant;
   size?: Size;
   loading?: boolean;
+  loadingLabel?: string;
   style?: StyleProp<ViewStyle>;
 };
 
@@ -26,6 +27,7 @@ export function Button({
   variant = "primary",
   size = "md",
   loading = false,
+  loadingLabel,
   disabled,
   style,
   onPress,
@@ -57,10 +59,17 @@ export function Button({
       {...rest}
     >
       {loading ? (
-        <ActivityIndicator
-          size="small"
-          color={variant === "primary" ? COLORS.textInverse : COLORS.pine}
-        />
+        <>
+          <ActivityIndicator
+            size="small"
+            color={variant === "primary" ? COLORS.textInverse : COLORS.pine}
+          />
+          {loadingLabel ? (
+            <Text style={[styles.label, styles[`${variant}Label`], styles[`${size}Label`]]}>
+              {loadingLabel}
+            </Text>
+          ) : null}
+        </>
       ) : (
         <Text style={[styles.label, styles[`${variant}Label`], styles[`${size}Label`]]}>
           {label}
@@ -76,6 +85,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     flexDirection: "row",
+    gap: SPACING.sm,
   },
   // Variants
   primary: {
