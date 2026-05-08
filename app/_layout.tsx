@@ -816,7 +816,11 @@ function NavigationGuard() {
         if (obligationPathToken) void setPendingObligationInviteToken(obligationPathToken);
         if (workspacePathToken) void setPendingWorkspaceInviteToken(workspacePathToken);
         const hasPendingInvite = Boolean(obligationPathToken || workspacePathToken);
-        const target = hasPendingInvite ? "/(auth)/login" : preferredAuthEntry;
+        // preferredAuthEntry puede ser null transitoriamente porque se calcula
+        // de forma asíncrona via hasSavedAuthOnDevice() en el efecto de línea 772.
+        // Si esperamos a que se resuelva el redirect nunca ocurre (se queda colgado).
+        // Usamos "/(auth)/login" como fallback seguro para que el redirect sea inmediato.
+        const target = hasPendingInvite ? "/(auth)/login" : (preferredAuthEntry ?? "/(auth)/login");
         if (!target) return;
         router.replace(target);
       }

@@ -368,25 +368,35 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }
 
   async function signOut() {
-    if (!supabase) return;
-    const accessToken = session?.access_token;
+    if (!supabase) {
+      // Even without Supabase, clear local state so NavigationGuard can react
+      setSession(null);
+      setUser(null);
+      setProfile(null);
+      setIsLoading(false);
+      return;
+    }
 
+    // 1. Clear React state immediately so NavigationGuard redirects
     setSession(null);
     setUser(null);
     setProfile(null);
     setIsLoading(false);
 
+    // 2. Call standard Supabase signOut — revokes token, clears internal
+    //    storage and fires onAuthStateChange (SIGNED_OUT) which triggers
+    //    syncSession(null) as a safety net. This is the correct client‑side
+    //    API; the previous admin.signOut requires a service_role key and
+    //    silently fails on the client.
+    await supabase.auth.signOut().catch(() => {
+      // Local logout already completed. Remote revocation is best-effort.
+    });
+
+    // 3. Clean up additional client state that syncSession(null) does not cover
     await Promise.allSettled([
-      clearLocalSupabaseAuthSession(),
       clearSessionScopedClientState(),
       clearLastTabRoute(),
     ]);
-
-    if (accessToken) {
-      void supabase.auth.admin.signOut(accessToken, "global").catch(() => {
-        // Local logout already completed. Remote token revocation is best-effort.
-      });
-    }
   }
 
   async function resetPassword(email: string) {

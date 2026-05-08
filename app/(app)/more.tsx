@@ -13,6 +13,7 @@ import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { Badge } from "../../components/ui/Badge";
+import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, SPACING } from "../../constants/theme";
 
 type MenuItem = {
@@ -28,7 +29,13 @@ export default function MoreScreen() {
   const router = useRouter();
   const { user, signOut } = useAuth();
   const haptics = useHaptics();
+  const [signOutVisible, setSignOutVisible] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+
+  async function confirmSignOut() {
+    setSigningOut(true);
+    await signOut().finally(() => setSigningOut(false));
+  }
 
   const { data: notifications } = useNotificationsQuery(user?.id ?? null);
   const unreadCount = (notifications ?? []).filter((n) => n.status !== "read").length;
@@ -114,16 +121,27 @@ export default function MoreScreen() {
           label="Cerrar sesión"
           variant="danger"
           size="lg"
-          loading={signingOut}
-          loadingLabel="Cerrando sesión"
           style={styles.signOutButton}
           onPress={() => {
             haptics.warning();
-            setSigningOut(true);
-            void signOut().finally(() => setSigningOut(false));
+            setSignOutVisible(true);
           }}
         />
       </ScrollView>
+
+      <ConfirmDialog
+        visible={signOutVisible}
+        icon="👋"
+        title="¿Cerrar sesión?"
+        body="Se cerrará tu sesión en este dispositivo. Podrás volver a ingresar cuando quieras."
+        confirmLabel="Cerrar sesión"
+        cancelLabel="Cancelar"
+        destructive
+        confirmLoading={signingOut}
+        confirmLoadingLabel="Cerrando sesión"
+        onCancel={() => setSignOutVisible(false)}
+        onConfirm={() => { void confirmSignOut(); }}
+      />
     </View>
   );
 }

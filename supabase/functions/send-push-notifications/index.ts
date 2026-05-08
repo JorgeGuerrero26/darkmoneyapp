@@ -167,13 +167,13 @@ Deno.serve(async (req: Request) => {
   }
 
   // Send via Expo Push API
-  const payload =
+  const notificationPayload =
     record.payload && typeof record.payload === "object" && !Array.isArray(record.payload)
       ? record.payload
       : {};
   const notificationType =
-    typeof payload.type === "string" && payload.type.trim()
-      ? payload.type.trim()
+    typeof notificationPayload.type === "string" && notificationPayload.type.trim()
+      ? notificationPayload.type.trim()
       : record.kind;
 
   const pushBody = {
@@ -181,7 +181,7 @@ Deno.serve(async (req: Request) => {
     title: record.title,
     body: record.body,
     data: {
-      ...payload,
+      ...notificationPayload,
       type: notificationType,
       kind: record.kind,
       priority,

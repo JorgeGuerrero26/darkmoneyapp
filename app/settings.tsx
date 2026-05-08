@@ -38,6 +38,7 @@ import {
 import { Input } from "../components/ui/Input";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
+import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { CurrencySelector } from "../components/ui/CurrencySelector";
 import { ResourceContextNote } from "../components/ui/ResourceContextNote";
 import { ResourceModuleTemplate } from "../components/ui/ResourceModuleTemplate";
@@ -59,7 +60,12 @@ const ROLE_OPTIONS: { label: string; value: Exclude<WorkspaceRole, "owner"> }[] 
 
 function SettingsScreen() {
   const insets = useSafeAreaInsets();
-  const { handleBack } = useOriginBackNavigation();
+
+  // ── Sign out dialog (must be before useOriginBackNavigation) ────────────
+  const [signOutVisible, setSignOutVisible] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+
+  const { handleBack } = useOriginBackNavigation({ skipInterception: signingOut });
   const queryClient = useQueryClient();
   const { profile, saveProfile, saveAvatar, removeAvatar, signOut } = useAuth();
   const { activeWorkspace, activeWorkspaceId, setActiveWorkspaceId, setWorkspaces } = useWorkspace();
@@ -141,10 +147,6 @@ function SettingsScreen() {
     setBioSetupPassword("");
     setBioSetupError("");
   }
-
-  // ── Sign out dialog ───────────────────────────────────────────────────────
-  const [signOutVisible, setSignOutVisible] = useState(false);
-  const [signingOut, setSigningOut] = useState(false);
 
   async function confirmSignOut() {
     setSigningOut(true);
@@ -531,42 +533,19 @@ function SettingsScreen() {
         </View>
       </Modal>
 
-      {/* Sign out confirmation modal */}
-      <Modal
+      <ConfirmDialog
         visible={signOutVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={signingOut ? undefined : () => setSignOutVisible(false)}
-      >
-        <View style={styles.soOverlay}>
-          <View style={styles.soCard}>
-            <View style={styles.soIconWrap}>
-              <Text style={styles.soIcon}>👋</Text>
-            </View>
-            <Text style={styles.soTitle}>¿Cerrar sesión?</Text>
-            <Text style={styles.soBody}>
-              Se cerrará tu sesión en este dispositivo. Podrás volver a ingresar cuando quieras.
-            </Text>
-            <Button
-              label="Cerrar sesión"
-              variant="danger"
-              size="lg"
-              style={styles.soFullBtn}
-              loading={signingOut}
-              loadingLabel="Cerrando sesión"
-              onPress={() => { void confirmSignOut(); }}
-            />
-            <Button
-              label="Cancelar"
-              variant="ghost"
-              size="md"
-              style={styles.soFullBtn}
-              disabled={signingOut}
-              onPress={() => setSignOutVisible(false)}
-            />
-          </View>
-        </View>
-      </Modal>
+        icon="👋"
+        title="¿Cerrar sesión?"
+        body="Se cerrará tu sesión en este dispositivo. Podrás volver a ingresar cuando quieras."
+        confirmLabel="Cerrar sesión"
+        cancelLabel="Cancelar"
+        destructive
+        confirmLoading={signingOut}
+        confirmLoadingLabel="Cerrando sesión"
+        onCancel={() => setSignOutVisible(false)}
+        onConfirm={() => { void confirmSignOut(); }}
+      />
 
       {/* ── Invite member sheet ───────────────────────────────────────── */}
       <Modal visible={inviteSheetOpen} transparent animationType="fade" onRequestClose={() => setInviteSheetOpen(false)}>
@@ -817,26 +796,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     padding: SPACING.xl,
   },
-  soCard: {
-    width: "100%",
-    backgroundColor: COLORS.mist,
-    borderRadius: RADIUS.xl,
-    padding: SPACING.xl,
-    borderWidth: 1,
-    borderColor: GLASS.sheetBorder,
-    alignItems: "center",
-    gap: SPACING.sm,
-  },
-  soIconWrap: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: COLORS.dangerMuted,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: SPACING.xs,
-  },
-  soIcon: { fontSize: 32 },
   soTitle: {
     fontSize: FONT_SIZE.lg,
     fontFamily: FONT_FAMILY.heading,
@@ -850,7 +809,6 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginBottom: SPACING.sm,
   },
-  soFullBtn: { alignSelf: "stretch" },
   bioSetupInput: { width: "100%", alignSelf: "stretch" },
   bioCard: {
     width: "100%",

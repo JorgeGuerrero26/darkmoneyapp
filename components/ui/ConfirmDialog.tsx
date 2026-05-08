@@ -7,6 +7,8 @@ type Props = {
   visible: boolean;
   title: string;
   body?: string;
+  /** Emoji string (e.g. "👋") rendered centered above the title in a circular wrapper. */
+  icon?: string;
   children?: React.ReactNode;
   confirmLabel?: string;
   cancelLabel?: string;
@@ -21,6 +23,7 @@ export function ConfirmDialog({
   visible,
   title,
   body,
+  icon,
   children,
   confirmLabel = "Confirmar",
   cancelLabel = "Cancelar",
@@ -35,6 +38,11 @@ export function ConfirmDialog({
       <View style={styles.overlay}>
         <SafeBlurView intensity={45} tint="dark" style={StyleSheet.absoluteFillObject} />
         <View style={styles.card}>
+          {icon ? (
+            <View style={styles.iconWrap}>
+              <Text style={styles.icon}>{icon}</Text>
+            </View>
+          ) : null}
           <Text style={styles.title}>{title}</Text>
           {body ? <Text style={styles.body}>{body}</Text> : null}
           {children ?? null}
@@ -89,6 +97,17 @@ const styles = StyleSheet.create({
     shadowRadius: 28,
     elevation: 20,
   },
+  iconWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: COLORS.dangerMuted,
+    alignItems: "center",
+    justifyContent: "center",
+    alignSelf: "center",
+    marginBottom: SPACING.xs,
+  },
+  icon: { fontSize: 32 },
   title: {
     fontSize: FONT_SIZE.lg,
     fontWeight: "700",
