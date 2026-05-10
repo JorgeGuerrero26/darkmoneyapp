@@ -49,7 +49,7 @@ Este documento audita el modulo de obligaciones, llamado en UI "Creditos y Deuda
 | Media | Textos hardcodeados por pantalla | Labels de eventos, estados y botones aparecen en varios archivos | Copy inconsistente y dificil localizacion |
 | Media | Validacion de formularios acoplada al render | `ObligationForm` mezcla schema, focus/scroll, submit y UI | Dificil extraer pasos o tests |
 | Media | Estado de modales disperso | Lista y detalle administran muchos booleans y targets | Bugs al cerrar/abrir flujos combinados |
-| Media | Mojibake en strings del archivo de queries | Ej. `ObligaciÃ³n`, `crÃ©dito`, `notificaciÃ³n` en `workspace-data.ts` | Mala experiencia en errores/notificaciones |
+| Media | Mojibake en strings del archivo de queries | Ej. `obligación`, `crédito`, `notificación` en `workspace-data.ts` | Mala experiencia en errores/notificaciones |
 | Baja | Codigo muerto | En `useCreateObligationEventDeleteRequestMutation`, hay `return;` antes de un bloque `upsert` legacy | Ruido y mantenimiento confuso |
 
 ## Fortalezas existentes

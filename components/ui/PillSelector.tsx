@@ -1,7 +1,7 @@
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View, type StyleProp, type ViewStyle } from "react-native";
 import * as Haptics from "expo-haptics";
 
-import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 
 export type PillSelectorOption<T extends string | number> = {
   value: T;
@@ -76,9 +76,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.xs + 2,
     borderRadius: RADIUS.full,
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
   },
   pillActive: {
     backgroundColor: COLORS.pine,

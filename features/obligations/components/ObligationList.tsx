@@ -1,8 +1,8 @@
-import { View, type SectionListRenderItem } from "react-native";
+import { type SectionListRenderItem } from "react-native";
 import { Archive, HandCoins, SlidersHorizontal } from "lucide-react-native";
 
 import { ResourceSectionList } from "../../../components/ui/ResourceSectionList";
-import { SkeletonObligationRow } from "../../../components/ui/Skeleton";
+import { SkeletonList, SkeletonObligationRow } from "../../../components/ui/Skeleton";
 import type {
   ObligationListItem,
   ObligationListSection,
@@ -52,11 +52,11 @@ export function ObligationList({
       loading={{
         isLoading: loading,
         skeleton: (
-          <View style={{ gap: 10 }}>
+          <SkeletonList>
             <SkeletonObligationRow />
             <SkeletonObligationRow />
             <SkeletonObligationRow />
-          </View>
+          </SkeletonList>
         ),
         secondaryLoading: sharedLoading && !hasActiveSharedItems,
         secondaryMessage: "Cargando compartidos contigo...",

@@ -8,7 +8,7 @@ import {
   type ViewStyle,
 } from "react-native";
 import * as Haptics from "expo-haptics";
-import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 
 type Variant = "primary" | "secondary" | "ghost" | "danger";
 type Size = "sm" | "md" | "lg";
@@ -92,19 +92,18 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.pine,
   },
   secondary: {
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
   },
   ghost: {
-    backgroundColor: GLASS.card,
-    borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    backgroundColor: "transparent",
+    borderWidth: 0,
   },
   danger: {
-    backgroundColor: GLASS.dangerBg,
+    backgroundColor: SURFACE.dangerBg,
     borderWidth: 1,
-    borderColor: GLASS.dangerBorder,
+    borderColor: SURFACE.dangerBorder,
   },
   // Sizes
   sm: { paddingVertical: SPACING.xs + 2, paddingHorizontal: SPACING.md },

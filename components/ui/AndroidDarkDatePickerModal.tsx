@@ -21,7 +21,7 @@ import {
 } from "date-fns";
 import { es } from "date-fns/locale";
 import { ChevronLeft, ChevronRight } from "lucide-react-native";
-import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 
 const WEEK_LABELS = ["L", "M", "X", "J", "V", "S", "D"];
 
@@ -252,7 +252,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderRadius: RADIUS.md,
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
   },
   monthTitle: {
     flex: 1,
@@ -315,7 +315,7 @@ const styles = StyleSheet.create({
     marginTop: SPACING.lg,
     paddingTop: SPACING.md,
     borderTopWidth: 1,
-    borderTopColor: GLASS.separator,
+    borderTopColor: SURFACE.separator,
   },
   btnGhost: {
     paddingVertical: SPACING.sm,

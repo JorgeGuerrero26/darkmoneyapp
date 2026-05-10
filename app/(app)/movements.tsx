@@ -3,7 +3,6 @@ import { Download, SlidersHorizontal, Trash2, X } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  StyleSheet,
   View,
   type SectionListRenderItem,
 } from "react-native";
@@ -26,7 +25,7 @@ import { HeaderActionGroup } from "../../components/ui/HeaderActionGroup";
 import { ResourceContextNote } from "../../components/ui/ResourceContextNote";
 import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTemplate";
 import { ResourceSectionList, type ResourceSection } from "../../components/ui/ResourceSectionList";
-import { Skeleton } from "../../components/ui/Skeleton";
+import { SkeletonList, SkeletonMovementRow } from "../../components/ui/Skeleton";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { MovementForm } from "../../components/forms/MovementForm";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
@@ -37,7 +36,6 @@ import { isoToDateStr } from "../../lib/date";
 import { buildDateRangeNotice } from "../../lib/date-range-notice";
 import { shareCsvAsFile } from "../../lib/share-csv-file";
 import { sortByName } from "../../lib/sort-locale";
-import { SPACING } from "../../constants/theme";
 import { MovementFilterSheet } from "../../features/movements/components/MovementFilterSheet";
 import { MovementSummaryBar } from "../../features/movements/components/MovementSummaryBar";
 import type { MovementRecord, MovementType, MovementStatus } from "../../types/domain";
@@ -229,6 +227,14 @@ function MovementsScreen() {
     setSelectMode(false);
     setSelectedIds(new Set());
   }
+
+  // Auto-exit select mode when all items are deselected
+  useEffect(() => {
+    if (selectMode && selectedIds.size === 0) {
+      setSelectMode(false);
+      setSelectedIds(new Set());
+    }
+  }, [selectMode, selectedIds.size]);
 
   // ── Query ─────────────────────────────────────────────────────────────────
   const selectedPreset = DATE_PRESETS.find((p) => p.label === activeDatePreset);
@@ -809,18 +815,9 @@ function MovementsScreen() {
               fetchingMore: isFetchingNextPage,
               endReached: !hasNextPage,
               skeleton: (
-                <View style={styles.skeletonList}>
-                  {[...Array(8)].map((_, i) => (
-                    <View key={i} style={styles.skeletonRow}>
-                      <Skeleton width={42} height={42} borderRadius={14} />
-                      <View style={styles.skeletonRowText}>
-                        <Skeleton width="60%" height={14} />
-                        <Skeleton width="40%" height={12} style={{ marginTop: 6 }} />
-                      </View>
-                      <Skeleton width={70} height={16} />
-                    </View>
-                  ))}
-                </View>
+                <SkeletonList>
+                  {[...Array(6)].map((_, i) => <SkeletonMovementRow key={i} />)}
+                </SkeletonList>
               ),
             }}
             empty={{
@@ -897,11 +894,6 @@ function MovementsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  skeletonList: { padding: SPACING.md, gap: SPACING.md },
-  skeletonRow: { flexDirection: "row", alignItems: "center", gap: SPACING.md },
-  skeletonRowText: { flex: 1, gap: 6 },
-});
 
 export default function MovementsScreenRoot() {
   return (

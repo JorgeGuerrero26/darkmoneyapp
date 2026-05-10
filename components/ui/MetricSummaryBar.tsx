@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { LucideIcon } from "lucide-react-native";
 
-import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { BottomSheet } from "./BottomSheet";
 
 export type MetricSummaryBarItem = {
@@ -118,10 +118,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: SPACING.lg,
     paddingVertical: SPACING.xs + 2,
-    backgroundColor: "rgba(255,255,255,0.04)",
+    backgroundColor: SURFACE.separator,
     borderTopWidth: 0.5,
     borderBottomWidth: 0.5,
-    borderColor: "rgba(255,255,255,0.07)",
+    borderColor: SURFACE.sheetBorder,
     gap: SPACING.sm,
   },
   itemWrap: {
@@ -148,7 +148,7 @@ const styles = StyleSheet.create({
   separator: {
     width: 0.5,
     height: 16,
-    backgroundColor: "rgba(255,255,255,0.12)",
+    backgroundColor: SURFACE.cardBorder,
   },
   value: {
     fontFamily: FONT_FAMILY.bodySemibold,
@@ -183,9 +183,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.sm,
     paddingVertical: 5,
     borderRadius: RADIUS.full,
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
   },
   actionActive: {
     backgroundColor: COLORS.pine + "22",

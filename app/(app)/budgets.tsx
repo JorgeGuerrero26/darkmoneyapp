@@ -19,7 +19,7 @@ import { HeaderActionGroup } from "../../components/ui/HeaderActionGroup";
 import { ResourceContextNote } from "../../components/ui/ResourceContextNote";
 import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTemplate";
 import { ResourceSectionList } from "../../components/ui/ResourceSectionList";
-import { SkeletonCard } from "../../components/ui/Skeleton";
+import { SkeletonCard, SkeletonList } from "../../components/ui/Skeleton";
 import { UndoBanner } from "../../components/ui/UndoBanner";
 import { BudgetSummaryBar } from "../../features/budgets/components/BudgetSummaryBar";
 import { BudgetSwipeRow } from "../../features/budgets/components/BudgetSwipeRow";
@@ -448,11 +448,11 @@ function BudgetsScreen() {
           loading={{
             isLoading: snapshotLoading || isMetricsLoading,
             skeleton: (
-              <>
+              <SkeletonList>
                 <SkeletonCard />
                 <SkeletonCard />
                 <SkeletonCard />
-              </>
+              </SkeletonList>
             ),
           }}
           empty={

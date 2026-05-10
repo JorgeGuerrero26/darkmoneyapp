@@ -1,6 +1,6 @@
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
-import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 
 export type MetricSummaryCardOption = {
   value: string;
@@ -57,10 +57,10 @@ export function MetricSummaryCard({
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderRadius: RADIUS.xl,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
     padding: SPACING.md,
     marginBottom: SPACING.xs,
   },
@@ -97,9 +97,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.sm,
     paddingVertical: 5,
     borderRadius: RADIUS.full,
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
   },
   optionActive: {
     backgroundColor: COLORS.pine + "22",

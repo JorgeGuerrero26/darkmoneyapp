@@ -16,7 +16,7 @@ import type { CategoryOverview, CategoryPostedMovement } from "../../types/domai
 import { buildCurrencyBreakdown, formatCurrencyBreakdownLine } from "../../lib/analytics-currency";
 import { movementAmountForSubscriptionAnalytics } from "../../lib/subscription-helpers";
 import { formatCurrency } from "../ui/AmountDisplay";
-import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { useDismissibleSheet } from "../ui/useDismissibleSheet";
 
 type Props = {
@@ -298,7 +298,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: RADIUS.lg,
     borderTopRightRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
   },
   header: {
     flexDirection: "row",
@@ -308,7 +308,7 @@ const styles = StyleSheet.create({
     paddingTop: SPACING.lg,
     paddingBottom: SPACING.md,
     borderBottomWidth: 0.5,
-    borderBottomColor: GLASS.sheetBorder,
+    borderBottomColor: SURFACE.sheetBorder,
   },
   title: {
     flex: 1,
@@ -324,10 +324,10 @@ const styles = StyleSheet.create({
   },
   body: { padding: SPACING.lg, gap: SPACING.lg, paddingBottom: SPACING.xl },
   heroCard: {
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
     padding: SPACING.lg,
     gap: SPACING.xs,
   },
@@ -361,10 +361,10 @@ const styles = StyleSheet.create({
   },
   metricCard: {
     width: "48%",
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
     padding: SPACING.md,
     gap: 4,
   },
@@ -417,9 +417,9 @@ const styles = StyleSheet.create({
     width: 32,
     height: 128,
     borderRadius: RADIUS.sm,
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
     justifyContent: "flex-end",
     overflow: "hidden",
   },
@@ -444,10 +444,10 @@ const styles = StyleSheet.create({
   },
   breakdownList: { gap: SPACING.sm },
   breakdownCard: {
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
     padding: SPACING.md,
     gap: 4,
   },
@@ -469,10 +469,10 @@ const styles = StyleSheet.create({
     color: COLORS.storm,
   },
   latestCard: {
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
     padding: SPACING.md,
     gap: 4,
   },

@@ -20,7 +20,8 @@
       "Bash(identify /Users/clinaresb/Desktop/Proyectos/darkmoneyapp/assets/images/background-darkmoney.png)",
       "Bash(sips -g pixelWidth -g pixelHeight /Users/clinaresb/Desktop/Proyectos/darkmoneyapp/assets/images/background-darkmoney.png)",
       "Bash(grep -E \"\\\\.\\(tsx|ts\\)$\")",
-      "Bash(awk '/^function DashboardScreen/,/^function/ {print NR\": \"$0}' /Users/clinaresb/Desktop/Proyectos/darkmoneyapp/app/\\\\\\(app\\\\\\)/dashboard.tsx)"
+      "Bash(awk '/^function DashboardScreen/,/^function/ {print NR\": \"$0}' /Users/clinaresb/Desktop/Proyectos/darkmoneyapp/app/\\\\\\(app\\\\\\)/dashboard.tsx)",
+      "Bash(rtk git *)"
     ]
   }
 }

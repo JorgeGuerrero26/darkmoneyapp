@@ -1,17 +1,18 @@
 import { useMemo, useState } from "react";
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
+import { useOriginBackNavigation } from "../../hooks/useOriginBackNavigation";
 import { useAuth } from "../../lib/auth-context";
 import { useWorkspace } from "../../lib/workspace-context";
 import { useWorkspaceSnapshotQuery } from "../../services/queries/workspace-data";
 import type { CounterpartyOverview } from "../../types/domain";
 import { Card } from "../../components/ui/Card";
-import { SkeletonCard } from "../../components/ui/Skeleton";
+import { SkeletonCard, SkeletonList } from "../../components/ui/Skeleton";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { ContactForm } from "../../components/forms/ContactForm";
 import { formatCurrency } from "../../components/ui/AmountDisplay";
@@ -26,7 +27,7 @@ const TYPE_LABEL: Record<string, string> = {
 function ContactDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
-  const router = useRouter();
+  const { handleBack } = useOriginBackNavigation();
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
 
@@ -192,7 +193,7 @@ function ContactDetailScreen() {
                 <Text style={styles.editBtnText}>Editar</Text>
               </TouchableOpacity>
             ) : null}
-            <TouchableOpacity onPress={() => router.back()}>
+            <TouchableOpacity onPress={handleBack}>
               <Text style={styles.back}>‹ Volver</Text>
             </TouchableOpacity>
           </View>
@@ -200,11 +201,11 @@ function ContactDetailScreen() {
       />
 
       {isLoading ? (
-        <View style={styles.content}>
+        <SkeletonList>
           <SkeletonCard />
           <SkeletonCard />
           <SkeletonCard />
-        </View>
+        </SkeletonList>
       ) : !contact ? (
         <View style={styles.center}><Text style={styles.errorText}>No encontrado</Text></View>
       ) : (

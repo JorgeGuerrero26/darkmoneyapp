@@ -15,7 +15,7 @@ import { humanizeError } from "../lib/errors";
 import { Input } from "../components/ui/Input";
 import { Button } from "../components/ui/Button";
 import { CurrencySelector } from "../components/ui/CurrencySelector";
-import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../constants/theme";
 import { DEFAULT_EXCHANGE_CURRENCY, normalizeSupportedCurrencyCode } from "../constants/currencies";
 
 export default function OnboardingScreen() {
@@ -108,8 +108,8 @@ const styles = StyleSheet.create({
   title: { fontFamily: FONT_FAMILY.heading, fontSize: FONT_SIZE.xxl, color: COLORS.ink, textAlign: "center" },
   subtitle: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.md, color: COLORS.storm, textAlign: "center", lineHeight: 22 },
   errorBanner: {
-    backgroundColor: GLASS.dangerBg, borderRadius: RADIUS.md,
-    padding: SPACING.md, borderWidth: 1, borderColor: GLASS.dangerBorder,
+    backgroundColor: SURFACE.dangerBg, borderRadius: RADIUS.md,
+    padding: SPACING.md, borderWidth: 1, borderColor: SURFACE.dangerBorder,
   },
   errorBannerText: { fontFamily: FONT_FAMILY.bodyMedium, color: COLORS.rosewood, fontSize: FONT_SIZE.sm },
   form: { gap: SPACING.xl },

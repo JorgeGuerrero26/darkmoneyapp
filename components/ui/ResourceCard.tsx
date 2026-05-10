@@ -2,7 +2,7 @@ import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } fro
 import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react-native";
 
-import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, ELEVATION, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 
 export type ResourceCardAction = {
   key: string;
@@ -148,30 +148,15 @@ export function ResourceCardMetaText({
 const styles = StyleSheet.create({
   card: {
     borderRadius: RADIUS.xl,
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     padding: SPACING.lg,
-    // Non-uniform borders — top edge brighter (specular reflection of light from above)
-    borderTopWidth: 1,
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
-    borderBottomWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.20)",    // brightest — light hits top
-    borderLeftColor: "rgba(255,255,255,0.12)",   // medium — side light
-    borderRightColor: "rgba(255,255,255,0.09)",  // slightly dimmer
-    borderBottomColor: "rgba(255,255,255,0.05)", // dimmest — opposite to light source
-    // Deep diffuse shadow for floating depth
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.48,
-    shadowRadius: 20,
-    elevation: 10,
+    borderWidth: 1,
+    borderColor: SURFACE.cardBorder,
+    ...ELEVATION[2],
   },
   selected: {
-    borderTopColor: "rgba(107,228,197,0.38)",
-    borderLeftColor: "rgba(107,228,197,0.25)",
-    borderRightColor: "rgba(107,228,197,0.20)",
-    borderBottomColor: "rgba(107,228,197,0.14)",
-    backgroundColor: COLORS.primary + "10",
+    backgroundColor: SURFACE.cardActive,
+    borderColor: SURFACE.cardActiveBorder,
   },
   archived: {
     opacity: 0.72,
@@ -223,10 +208,10 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.full,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.06)",
+    backgroundColor: SURFACE.separator,
   },
   actionPressed: {
-    backgroundColor: "rgba(255,255,255,0.12)",
+    backgroundColor: SURFACE.cardBorder,
   },
   trailing: {
     alignItems: "flex-end",
@@ -236,7 +221,7 @@ const styles = StyleSheet.create({
     marginTop: SPACING.sm,
     paddingTop: SPACING.sm,
     borderTopWidth: 1,
-    borderTopColor: GLASS.separator,
+    borderTopColor: SURFACE.separator,
   },
   iconWrap: {
     width: 44,

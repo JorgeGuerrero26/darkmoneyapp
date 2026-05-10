@@ -15,7 +15,7 @@ import { BottomSheet } from "../ui/BottomSheet";
 import { Button } from "../ui/Button";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { sortByLabel } from "../../lib/sort-locale";
-import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 
 const TYPE_OPTIONS: { value: CounterpartyFormInput["type"]; label: string; emoji: string }[] = sortByLabel([
   { value: "person", label: "Persona", emoji: "👤" },
@@ -254,10 +254,10 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.xs,
   },
   textInput: {
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
     fontSize: FONT_SIZE.md,
@@ -275,10 +275,10 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.sm,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
-    backgroundColor: GLASS.card,
+    borderColor: SURFACE.cardBorder,
+    backgroundColor: SURFACE.card,
   },
-  typeBtnActive: { borderColor: GLASS.cardActiveBorder, backgroundColor: GLASS.cardActive },
+  typeBtnActive: { borderColor: SURFACE.cardActiveBorder, backgroundColor: SURFACE.cardActive },
   typeEmoji: { fontSize: 16 },
   typeLabel: { fontSize: FONT_SIZE.sm, color: COLORS.storm, fontFamily: FONT_FAMILY.bodyMedium },
   typeLabelActive: { color: COLORS.pine },

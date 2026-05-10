@@ -109,6 +109,11 @@ export type PushNotificationHandlers = {
 const LOCAL_REMINDER_ID_PREFIX = "darkmoney_local_reminder_id:";
 const LOCAL_REMINDER_DAY_PREFIX = "darkmoney_local_reminder_day:";
 
+// Module-level: persist dedup across hook remounts and track when the
+// active listener was registered so stale re-fired responses are rejected.
+const _handledResponseKeys = new Set<string>();
+let _responseListenerRegisteredAt = 0;
+
 function localReminderStorageKey(type: string, entityId: number, anchorDate: string) {
   return `${LOCAL_REMINDER_ID_PREFIX}${type}:${entityId}:${anchorDate}`;
 }
@@ -141,7 +146,6 @@ async function setStoredLocalReminderId(type: string, entityId: number, anchorDa
 export function usePushNotifications(userId?: string, handlers?: PushNotificationHandlers) {
   const notificationListener = useRef<ExpoEventSubscription | null>(null);
   const responseListener = useRef<ExpoEventSubscription | null>(null);
-  const handledResponseKeysRef = useRef<Set<string>>(new Set());
   const onInviteTapRef = useRef(handlers?.onObligationShareInviteTap);
   const onWorkspaceInviteTapRef = useRef(handlers?.onWorkspaceInviteTap);
   const onDailyDigestTapRef = useRef(handlers?.onDailyDigestTap);
@@ -158,6 +162,16 @@ export function usePushNotifications(userId?: string, handlers?: PushNotificatio
   onGenericTapRef.current = handlers?.onGenericNotificationTap;
 
   const handleResponse = useCallback((response: ExpoNotificationResponse) => {
+    // Reject stale responses that Expo may re-emit when a listener is
+    // registered (e.g. after background→foreground if component remounted).
+    // notification.date is seconds since epoch on iOS, ms on Android — normalise.
+    const rawDate = response.notification.date ?? 0;
+    const notifDateMs = rawDate > 1e10 ? rawDate : rawDate * 1000;
+    if (notifDateMs > 0 && notifDateMs < _responseListenerRegisteredAt - 500) {
+      void Notifications?.clearLastNotificationResponseAsync?.().catch(() => {});
+      return;
+    }
+
     const identifier = String(response.notification.request.identifier ?? "");
     const actionIdentifier = String(response.actionIdentifier ?? "");
     const data = response.notification.request.content.data as Record<string, unknown> | undefined;
@@ -167,8 +181,8 @@ export function usePushNotifications(userId?: string, handlers?: PushNotificatio
         : "";
     const dedupeKey = [identifier, actionIdentifier, localReminderKey].filter(Boolean).join("|");
     if (dedupeKey) {
-      if (handledResponseKeysRef.current.has(dedupeKey)) return;
-      handledResponseKeysRef.current.add(dedupeKey);
+      if (_handledResponseKeys.has(dedupeKey)) return;
+      _handledResponseKeys.add(dedupeKey);
     }
 
     // Expo can retain the last response and re-emit it when the app is reactivated.
@@ -219,6 +233,7 @@ export function usePushNotifications(userId?: string, handlers?: PushNotificatio
     void (async () => {
       await Notifications.clearLastNotificationResponseAsync?.().catch(() => {});
       if (cancelled) return;
+      _responseListenerRegisteredAt = Date.now();
       responseListener.current = Notifications.addNotificationResponseReceivedListener(handleResponse);
     })();
 

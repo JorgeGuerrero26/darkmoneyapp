@@ -9,7 +9,7 @@ import type {
   SharedObligationSummary,
 } from "../../types/domain";
 import { formatCurrency } from "../ui/AmountDisplay";
-import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 
 type Props = {
   event: ObligationEventSummary;
@@ -110,10 +110,10 @@ const styles = StyleSheet.create({
   arrow: { fontSize: FONT_SIZE.xs, color: COLORS.textDisabled },
   to: { fontSize: FONT_SIZE.xs, fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.warning },
   accountCard: {
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
     padding: SPACING.md,
     gap: SPACING.xs,
   },

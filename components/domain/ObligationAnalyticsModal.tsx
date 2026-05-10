@@ -37,7 +37,7 @@ import { humanizeError } from "../../lib/errors";
 import { useWorkspace } from "../../lib/workspace-context";
 import { sortObligationEventsNewestFirst } from "../../lib/sort-obligation-events";
 import { sortByName } from "../../lib/sort-locale";
-import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, ELEVATION, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { OBLIGATION_EVENT_HISTORY_PAGE_SIZE } from "../../constants/config";
 import type {
   NotificationItem,
@@ -426,7 +426,7 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
 
   const deleteRequests = isSharedViewer ? viewerDeleteRequests : ownerDeleteRequests;
 
-  // Todos los hooks deben ejecutarse siempre (nunca despuÃƒÂ©s de `return null`).
+  // Todos los hooks deben ejecutarse siempre (nunca después de `return null`).
   const paymentEvents = useMemo(() => {
     return eventsForModal
       .filter((e) => e.eventType === "payment")
@@ -720,12 +720,12 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
   );
 
   /**
-   * Obligaciones compartidas (edge) a veces traen `principal` / `currentPrincipal` en 0 pero sÃƒÂ­
-   * `pendingAmount` y `progressPercent`. Entonces "Pagado" y "Principal" salÃƒÂ­an 0 aunque la barra
-   * mostraba el % correcto. Si aplica: principal Ã¢â€°Ë† pendiente / (1 Ã¢Ë†â€™ progress/100).
+   * Obligaciones compartidas (edge) a veces traen `principal` / `currentPrincipal` en 0 pero sí
+   * `pendingAmount` y `progressPercent`. Entonces "Pagado" y "Principal" salían 0 aunque la barra
+   * mostraba el % correcto. Si aplica: principal ≈ pendiente / (1 − progress/100).
    *
    * El % de avance puede redondearse o calcularse distinto que la suma de eventos; si hay cobros/pagos
-   * en el historial, priorizamos **pendiente + suma(eventos)** para alinear tarjetas con el historial y el grÃƒÂ¡fico.
+   * en el historial, priorizamos **pendiente + suma(eventos)** para alinear tarjetas con el historial y el gráfico.
    */
   const analyticsAmounts = useMemo(() => {
     if (!obligation) return { currentPrincipal: 0, paidAmount: 0 };
@@ -2382,20 +2382,16 @@ const styles = StyleSheet.create({
   },
   card: {
     maxHeight: "92%",
-    backgroundColor: "rgba(8,12,18,0.96)",
+    backgroundColor: SURFACE.sheet,
     borderTopLeftRadius: RADIUS.xl,
     borderTopRightRadius: RADIUS.xl,
     borderTopWidth: 1,
     borderLeftWidth: 1,
     borderRightWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.18)",
-    borderLeftColor: "rgba(255,255,255,0.10)",
-    borderRightColor: "rgba(255,255,255,0.07)",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: -8 },
-    shadowOpacity: 0.55,
-    shadowRadius: 28,
-    elevation: 20,
+    borderTopColor: SURFACE.separator,
+    borderLeftColor: SURFACE.separator,
+    borderRightColor: SURFACE.separator,
+    ...ELEVATION[4],
   },
   handle: {
     alignSelf: "center",
@@ -2437,7 +2433,7 @@ const styles = StyleSheet.create({
     paddingBottom: SPACING.xxxl,
   },
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Progress Ã¢â€â‚¬Ã¢â€â‚¬
+  // ── Progress ──
   progressSection: { gap: SPACING.xs },
   progressLabels: {
     flexDirection: "row",
@@ -2460,7 +2456,7 @@ const styles = StyleSheet.create({
   },
   amountSmall: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Metrics Ã¢â€â‚¬Ã¢â€â‚¬
+  // ── Metrics ──
   metricsGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -2474,13 +2470,10 @@ const styles = StyleSheet.create({
   metricCard: {
     flex: 1,
     minWidth: "45%",
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.14)",
-    borderLeftColor: "rgba(255,255,255,0.08)",
-    borderRightColor: "rgba(255,255,255,0.06)",
-    borderBottomColor: "rgba(255,255,255,0.04)",
+    borderColor: SURFACE.cardBorder,
     padding: SPACING.md,
     gap: 4,
     alignItems: "flex-start",
@@ -2537,7 +2530,7 @@ const styles = StyleSheet.create({
     color: COLORS.danger,
   },
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Section Ã¢â€â‚¬Ã¢â€â‚¬
+  // ── Section ──
   section: { gap: SPACING.sm },
   sectionTitle: {
     fontFamily: FONT_FAMILY.bodySemibold,
@@ -2547,10 +2540,10 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   comparisonNarrativeCard: {
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
     padding: SPACING.md,
     gap: 6,
   },
@@ -2605,9 +2598,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.md,
     paddingVertical: 6,
     borderRadius: RADIUS.full,
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
   },
   filterPillActive: {
     backgroundColor: COLORS.primary,
@@ -2624,7 +2617,7 @@ const styles = StyleSheet.create({
   },
   customRange: { gap: SPACING.sm, marginTop: SPACING.xs },
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Chart Ã¢â€â‚¬Ã¢â€â‚¬
+  // ── Chart ──
   chartScroll: {
     flexGrow: 1,
     paddingVertical: SPACING.xs,
@@ -2683,7 +2676,7 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
   },
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Installment grid Ã¢â€â‚¬Ã¢â€â‚¬
+  // ── Installment grid ──
   installmentGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -2710,7 +2703,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
   },
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Event history Ã¢â€â‚¬Ã¢â€â‚¬
+  // ── Event history ──
   historyPager: {
     flexDirection: "row",
     alignItems: "center",
@@ -2908,10 +2901,10 @@ const styles = StyleSheet.create({
 
   // Spark card
   sparkCard: {
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
     padding: SPACING.md,
     gap: SPACING.sm,
   },
@@ -3004,10 +2997,10 @@ const styles = StyleSheet.create({
     color: COLORS.storm,
   },
   timelineCard: {
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
     padding: SPACING.md,
     gap: SPACING.sm,
   },

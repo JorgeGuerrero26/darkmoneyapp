@@ -13,7 +13,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useUiStore } from "../../store/ui-store";
-import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING } from "../../constants/theme";
+import { COLORS, ELEVATION, FONT_FAMILY, FONT_SIZE, SPACING, SURFACE } from "../../constants/theme";
 import { TOAST_DURATION_MS } from "../../constants/config";
 
 const TOAST_LOGO = require("../../assets/images/logo-sin-fondo.png");
@@ -387,37 +387,30 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     backgroundColor: COLORS.mist,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
+    borderColor: SURFACE.cardBorder,
     borderRadius: BUBBLE_SIZE / 2,
     overflow: "hidden",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.18,
-    shadowRadius: 10,
-    elevation: 8,
+    ...ELEVATION[3],
   },
   tint: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(255,255,255,0.02)",
-  },
-  logoOrbit: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: "center",
-    justifyContent: "center",
+    backgroundColor: SURFACE.separator,
   },
   logoBubble: {
     width: 42,
     height: 42,
     borderRadius: 21,
-    backgroundColor: "rgba(8,12,20,0.98)",
+    backgroundColor: SURFACE.card,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
+    borderColor: SURFACE.cardBorder,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.16,
-    shadowRadius: 8,
+    ...ELEVATION[2],
+  },
+  logoOrbit: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    justifyContent: "center",
   },
   logo: {
     width: 22,
@@ -442,7 +435,7 @@ const styles = StyleSheet.create({
     marginTop: 3,
     borderBottomLeftRadius: BUBBLE_SIZE / 2,
     borderBottomRightRadius: BUBBLE_SIZE / 2,
-    backgroundColor: "rgba(255,255,255,0.06)",
+    backgroundColor: SURFACE.separator,
     overflow: "hidden",
   },
   progressFill: {

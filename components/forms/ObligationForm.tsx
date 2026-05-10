@@ -35,7 +35,7 @@ import { Input } from "../ui/Input";
 import { CurrencyInput } from "../ui/CurrencyInput";
 import { BusinessDateNotice } from "../ui/BusinessDateNotice";
 import { DatePickerInput } from "../ui/DatePickerInput";
-import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 
 const POPULAR_CURRENCIES = ["PEN", "USD", "EUR", "MXN", "COP", "ARS", "CLP", "BRL"];
 
@@ -1141,10 +1141,10 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.xs,
   },
   textInput: {
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
     fontSize: FONT_SIZE.md,
@@ -1191,8 +1191,8 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.md,
     borderRadius: RADIUS.md,
     borderWidth: 2,
-    borderColor: GLASS.cardBorder,
-    backgroundColor: GLASS.card,
+    borderColor: SURFACE.cardBorder,
+    backgroundColor: SURFACE.card,
   },
   directionEmoji: { fontSize: FONT_SIZE.xl },
   directionLabel: { fontSize: FONT_SIZE.sm, fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.storm },
@@ -1202,9 +1202,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.xs + 2,
     borderRadius: RADIUS.full,
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
   },
   pillActive: { backgroundColor: COLORS.pine, borderColor: COLORS.pine },
   pillText: { fontSize: FONT_SIZE.sm, color: COLORS.storm, fontFamily: FONT_FAMILY.bodyMedium },
@@ -1216,12 +1216,9 @@ const styles = StyleSheet.create({
     marginTop: SPACING.md,
     padding: SPACING.md,
     borderRadius: RADIUS.lg,
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.12)",
-    borderLeftColor: "rgba(255,255,255,0.08)",
-    borderRightColor: "rgba(255,255,255,0.06)",
-    borderBottomColor: "rgba(255,255,255,0.04)",
+    borderColor: SURFACE.cardBorder,
     gap: SPACING.sm,
   },
   shareTitleRow: {
@@ -1271,7 +1268,7 @@ const styles = StyleSheet.create({
   },
   shareStatusPending: {
     backgroundColor: COLORS.storm + "18",
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
   },
   shareStatusBadgeText: {
     fontFamily: FONT_FAMILY.bodyMedium,
@@ -1283,8 +1280,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.md,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
-    backgroundColor: GLASS.card,
+    borderColor: SURFACE.cardBorder,
+    backgroundColor: SURFACE.card,
     alignSelf: "flex-start",
   },
   shareActionRow: {
@@ -1319,7 +1316,7 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.sm,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
   },
   adjustBtnIncrease: { borderColor: COLORS.income + "44" },
   adjustBtnDecrease: { borderColor: COLORS.expense + "44" },
@@ -1348,8 +1345,8 @@ const styles = StyleSheet.create({
     padding: SPACING.md,
     borderRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
-    backgroundColor: GLASS.card,
+    borderColor: SURFACE.cardBorder,
+    backgroundColor: SURFACE.card,
     gap: SPACING.xs,
   },
   originCardSelected: {
@@ -1398,9 +1395,9 @@ const styles = StyleSheet.create({
     gap: SPACING.xs,
     padding: SPACING.md,
     borderRadius: RADIUS.lg,
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
   },
   manualImpactRow: {
     flexDirection: "row",

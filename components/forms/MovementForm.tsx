@@ -51,7 +51,7 @@ import { buildCategorySuggestionCandidates } from "../../services/analytics/cate
 import { findProbableDuplicateGroups } from "../../services/analytics/duplicate-detection";
 import { normalizeAnalyticsText } from "../../services/analytics/movement-features";
 import { sortByName } from "../../lib/sort-locale";
-import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import type { MovementType, MovementStatus, MovementRecord, AccountSummary, CategorySummary, CounterpartySummary, ExchangeRateSummary } from "../../types/domain";
 
 type Props = {
@@ -1629,7 +1629,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.12)",
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
   },
   typeButtonInner: {
     flex: 1,
@@ -1662,7 +1662,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.full,
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.11)",
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
   },
   statusPillActive: {
     backgroundColor: COLORS.pine + "28",
@@ -1692,7 +1692,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.md,
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.12)",
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     gap: 2,
     minWidth: 100,
     shadowColor: "#000",
@@ -1714,7 +1714,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.full,
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.11)",
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
   },
   categoryChipActive: {
     backgroundColor: COLORS.pine + "28",
@@ -1773,12 +1773,12 @@ const styles = StyleSheet.create({
     color: COLORS.ink,
   },
   sameCurrencyNote: {
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderRadius: RADIUS.md,
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
   },
   sameCurrencyText: {
     fontSize: FONT_SIZE.xs,

@@ -1,6 +1,6 @@
 import { StyleSheet, Text, View } from "react-native";
 
-import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { BottomSheet } from "./BottomSheet";
 import { Button } from "./Button";
 import { Card } from "./Card";
@@ -307,7 +307,7 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingTop: SPACING.xs,
     borderTopWidth: 1,
-    borderTopColor: GLASS.separator,
+    borderTopColor: SURFACE.separator,
   },
   copyLabel: {
     fontFamily: FONT_FAMILY.bodySemibold,

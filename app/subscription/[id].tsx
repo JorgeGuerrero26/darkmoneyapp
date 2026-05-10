@@ -2,11 +2,12 @@ import { useMemo, useState, useCallback } from "react";
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { BarChart3 } from "lucide-react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
+import { useOriginBackNavigation } from "../../hooks/useOriginBackNavigation";
 import { useAuth } from "../../lib/auth-context";
 import { useWorkspace } from "../../lib/workspace-context";
 import {
@@ -33,7 +34,7 @@ function formatYmdLocal(ymd: string, pattern: string) {
 function SubscriptionDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
-  const router = useRouter();
+  const { handleBack } = useOriginBackNavigation();
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
   const { showToast } = useToast();
@@ -71,7 +72,7 @@ function SubscriptionDetailScreen() {
       onSuccess: () => {
         setDeleteConfirmVisible(false);
         showToast("Suscripción eliminada", "success");
-        router.back();
+        handleBack();
       },
       onError: (e) => showToast(e.message, "error"),
     });
@@ -102,7 +103,7 @@ function SubscriptionDetailScreen() {
                 </TouchableOpacity>
               </>
             ) : null}
-            <TouchableOpacity onPress={() => router.back()}>
+            <TouchableOpacity onPress={handleBack}>
               <Text style={styles.back}>‹ Volver</Text>
             </TouchableOpacity>
           </View>

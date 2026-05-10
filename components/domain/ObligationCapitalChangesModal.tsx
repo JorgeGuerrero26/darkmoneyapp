@@ -7,7 +7,7 @@ import type { ObligationEventSummary } from "../../types/domain";
 import { parseDisplayDate } from "../../lib/date";
 import { formatCurrency } from "../ui/AmountDisplay";
 import { BottomSheet } from "../ui/BottomSheet";
-import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 
 type CapitalChangeTab = "increase" | "decrease";
 
@@ -136,8 +136,8 @@ const styles = StyleSheet.create({
   summaryCard: {
     borderRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
-    backgroundColor: GLASS.card,
+    borderColor: SURFACE.cardBorder,
+    backgroundColor: SURFACE.card,
     padding: SPACING.md,
     gap: 4,
   },
@@ -165,9 +165,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.md,
     paddingVertical: 7,
     borderRadius: RADIUS.full,
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
   },
   tabChipActive: {
     backgroundColor: COLORS.primary,
@@ -185,8 +185,8 @@ const styles = StyleSheet.create({
   emptyCard: {
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
-    backgroundColor: GLASS.card,
+    borderColor: SURFACE.cardBorder,
+    backgroundColor: SURFACE.card,
     padding: SPACING.md,
   },
   emptyText: {
@@ -198,7 +198,7 @@ const styles = StyleSheet.create({
   eventCard: {
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
     backgroundColor: "rgba(255,255,255,0.04)",
     padding: SPACING.md,
     gap: SPACING.xs,

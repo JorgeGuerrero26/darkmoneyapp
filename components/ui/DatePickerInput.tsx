@@ -15,7 +15,7 @@ import DateTimePicker, { type DateTimePickerEvent } from "@react-native-communit
 import { format, isValid } from "date-fns";
 import { es } from "date-fns/locale";
 import { CalendarDays, ChevronRight, Check, X } from "lucide-react-native";
-import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, ELEVATION, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { AndroidDarkDatePickerModal } from "./AndroidDarkDatePickerModal";
 import { useDismissibleSheet } from "./useDismissibleSheet";
 
@@ -245,9 +245,9 @@ const styles = StyleSheet.create({
   inlineClearBtn: {
     width: 48,
     borderRadius: RADIUS.md,
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderWidth: 1,
-    borderColor: GLASS.dangerBorder,
+    borderColor: SURFACE.dangerBorder,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -284,7 +284,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(5,8,12,0.55)",
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: GLASS.inputBorder,
+    borderColor: SURFACE.inputBorder,
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
     minHeight: 48,
@@ -309,22 +309,18 @@ const styles = StyleSheet.create({
   },
 
   iosSheet: {
-    backgroundColor: "rgba(10,14,20,0.94)",
+    backgroundColor: SURFACE.sheet,
     borderTopLeftRadius: RADIUS.xl,
     borderTopRightRadius: RADIUS.xl,
     borderTopWidth: 1,
     borderLeftWidth: 1,
     borderRightWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.18)",
-    borderLeftColor: "rgba(255,255,255,0.10)",
-    borderRightColor: "rgba(255,255,255,0.08)",
+    borderTopColor: SURFACE.separator,
+    borderLeftColor: SURFACE.separator,
+    borderRightColor: SURFACE.separator,
     paddingBottom: SPACING.lg,
     maxHeight: "92%",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: -6 },
-    shadowOpacity: 0.50,
-    shadowRadius: 24,
-    elevation: 16,
+    ...ELEVATION[4],
   },
 
   handle: {

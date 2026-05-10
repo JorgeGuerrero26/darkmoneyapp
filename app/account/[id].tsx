@@ -1,17 +1,17 @@
 import { Archive, ArchiveRestore } from "lucide-react-native";
 import { FAB } from "../../components/ui/FAB";
+import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTemplate";
+import { ResourceSectionList } from "../../components/ui/ResourceSectionList";
 import { useCallback, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
-  FlatList,
   Modal,
-  RefreshControl,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { useOriginBackNavigation } from "../../hooks/useOriginBackNavigation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -23,7 +23,6 @@ import { usePaginatedMovements } from "../../services/queries/movements";
 import { useMovementAttachmentCountsQuery } from "../../services/queries/attachments";
 import { SwipeableMovementRow } from "../../components/domain/SwipeableMovementRow";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
-import { EmptyState } from "../../components/ui/EmptyState";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { AccountForm } from "../../components/forms/AccountForm";
 import { MovementForm } from "../../components/forms/MovementForm";
@@ -31,7 +30,7 @@ import { formatCurrency } from "../../components/ui/AmountDisplay";
 import { useToast } from "../../hooks/useToast";
 import { humanizeError } from "../../lib/errors";
 import { getAccountIcon } from "../../lib/account-icons";
-import { COLORS, FONT_FAMILY, FONT_SIZE, FONT_WEIGHT, GLASS, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, ELEVATION, FONT_FAMILY, FONT_SIZE, FONT_WEIGHT, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 
 const ACCOUNT_TYPE_LABEL: Record<string, string> = {
   cash: "Efectivo",
@@ -46,14 +45,12 @@ const ACCOUNT_TYPE_LABEL: Record<string, string> = {
 
 function AccountDetailScreen() {
   const { id, from } = useLocalSearchParams<{ id: string; from?: string }>();
-
-  function handleBack() {
-    if (from === "accounts") {
-      router.replace("/(app)/accounts");
-    } else {
-      router.back();
-    }
-  }
+  const { handleBack } = useOriginBackNavigation({
+    originRoutes: {
+      accounts: "/(app)/accounts",
+      dashboard: "/(app)/dashboard",
+    },
+  });
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -101,7 +98,7 @@ function AccountDetailScreen() {
       showToast(account.isArchived ? "Cuenta restaurada ✓" : "Cuenta archivada ✓", "success");
       setArchiveConfirmVisible(false);
       if (!account.isArchived) {
-        router.replace("/(app)/accounts");
+        router.back();
       }
     } catch (err: unknown) {
       showToast(humanizeError(err), "error");
@@ -125,14 +122,16 @@ function AccountDetailScreen() {
   ), [baseCurrency, movementAttachmentCounts, router]);
 
   return (
-    <View style={[styles.screen, { paddingTop: insets.top }]}>
-      <ScreenHeader
-        title={account?.name ?? "Cuenta"}
-        subtitle={activeWorkspace?.name}
-        rightAction={
-          <View style={styles.headerActions}>
-            {account ? (
-              <>
+    <ResourceModuleTemplate
+      topInset={insets.top}
+      header={
+        <ScreenHeader
+          title={account?.name ?? "Cuenta"}
+          subtitle={activeWorkspace?.name}
+          onBack={handleBack}
+          rightAction={
+            account ? (
+              <View style={styles.headerActions}>
                 <TouchableOpacity
                   style={[styles.actionBtn, account.isArchived ? styles.actionBtnRestore : styles.actionBtnArchive]}
                   onPress={() => setArchiveConfirmVisible(true)}
@@ -148,178 +147,152 @@ function AccountDetailScreen() {
                 <TouchableOpacity style={styles.editBtn} onPress={() => setEditFormVisible(true)}>
                   <Text style={styles.editBtnText}>Editar</Text>
                 </TouchableOpacity>
-              </>
-            ) : null}
-            <TouchableOpacity onPress={handleBack}>
-              <Text style={styles.back}>‹ Volver</Text>
-            </TouchableOpacity>
-          </View>
-        }
-      />
-
-      {/* Account summary card */}
-      {account ? (
-        <View style={styles.summaryCard}>
-          <View style={styles.summaryRow}>
-            <View style={[styles.iconContainer, { backgroundColor: account.color + "33" }]}>
-              {(() => {
-                const Icon = getAccountIcon(account.icon, account.type);
-                return <Icon size={22} color={account.color} />;
-              })()}
-            </View>
-            <View style={styles.summaryInfo}>
-              <Text style={styles.accountName}>{account.name}</Text>
-              <Text style={styles.accountMeta}>
-                {ACCOUNT_TYPE_LABEL[account.type] ?? account.type} · {account.currencyCode}
-                {account.isArchived ? " · Archivada" : ""}
-              </Text>
-            </View>
-            <View style={styles.balanceContainer}>
-              <Text style={styles.balanceLabel}>Saldo</Text>
-              <Text style={[
-                styles.balanceAmount,
-                account.currentBalance < 0 ? styles.negative : styles.positive,
-              ]}>
-                {formatCurrency(account.currentBalance, account.currencyCode)}
-              </Text>
-            </View>
-          </View>
-          {!account.includeInNetWorth ? (
-            <Text style={styles.notInNetWorthNote}>No incluida en patrimonio neto</Text>
-          ) : null}
-        </View>
-      ) : null}
-
-      {/* Movements list */}
-      <FlatList
-        data={movements}
-        keyExtractor={(item) => String(item.id)}
-        renderItem={renderMovementItem}
-        removeClippedSubviews
-        maxToRenderPerBatch={10}
-        windowSize={5}
-        initialNumToRender={15}
-        ItemSeparatorComponent={undefined}
-        refreshControl={
-          <RefreshControl
-            refreshing={isLoading && !isFetchingNextPage}
-            onRefresh={onRefresh}
-            tintColor={COLORS.primary}
-          />
-        }
-        onEndReached={() => {
-          if (hasNextPage && !isFetchingNextPage) void fetchNextPage();
-        }}
-        onEndReachedThreshold={0.3}
-        ListFooterComponent={
-          isFetchingNextPage ? (
-            <View style={styles.footer}>
-              <ActivityIndicator color={COLORS.primary} />
-            </View>
-          ) : null
-        }
-        ListEmptyComponent={
-          isLoading ? null : (
-            <EmptyState
-              title="Sin movimientos"
-              description="Registra el primer movimiento con el botón +"
-            />
-          )
-        }
-        contentContainerStyle={movements.length === 0 ? styles.emptyContainer : styles.listContent}
-      />
-
-      <FAB onPress={() => setMovementFormVisible(true)} bottom={insets.bottom + 16} />
-
-      {/* Edit account form */}
-      {account ? (
-        <AccountForm
-          visible={editFormVisible}
-          onClose={() => setEditFormVisible(false)}
-          onSuccess={() => setEditFormVisible(false)}
-          editAccount={account}
+              </View>
+            ) : null
+          }
         />
-      ) : null}
-
-      {/* New movement form (pre-filtered to this account) */}
-      <MovementForm
-        visible={movementFormVisible}
-        onClose={() => setMovementFormVisible(false)}
-        onSuccess={() => {
-          setMovementFormVisible(false);
-          onRefresh();
-        }}
-        initialAccountId={accountId ?? undefined}
-      />
-
-      <ConfirmDialog
-        visible={Boolean(deleteMovementTarget)}
-        title="Eliminar movimiento"
-        body={deleteMovementTarget ? `¿Eliminar "${deleteMovementTarget.description ?? "este movimiento"}"? Esta acción no se puede deshacer.` : ""}
-        confirmLabel="Eliminar"
-        cancelLabel="Cancelar"
-        onCancel={() => setDeleteMovementTarget(null)}
-        onConfirm={() => {
-          if (!deleteMovementTarget) return;
-          deleteMovement.mutate(deleteMovementTarget.id, {
-            onSuccess: () => showToast("Movimiento eliminado", "success"),
-            onError: (e) => showToast(e.message, "error"),
-          });
-          setDeleteMovementTarget(null);
-        }}
-      />
-
-      {/* Archive / restore confirmation */}
-      <Modal
-        transparent
-        visible={archiveConfirmVisible}
-        animationType="fade"
-        onRequestClose={() => setArchiveConfirmVisible(false)}
-      >
-        <View style={styles.confirmOverlay}>
-          <View style={styles.confirmCard}>
-            <View style={[styles.confirmIconWrap, account?.isArchived ? styles.confirmIconRestore : styles.confirmIconArchive]}>
-              {account?.isArchived
-                ? <ArchiveRestore size={24} color={COLORS.pine} />
-                : <Archive size={24} color={COLORS.ember} />
-              }
+      }
+      summary={
+        account ? (
+          <View style={styles.summaryCard}>
+            <View style={styles.summaryRow}>
+              <View style={[styles.iconContainer, { backgroundColor: account.color + "33" }]}>
+                {(() => {
+                  const Icon = getAccountIcon(account.icon, account.type);
+                  return <Icon size={22} color={account.color} />;
+                })()}
+              </View>
+              <View style={styles.summaryInfo}>
+                <Text style={styles.accountName}>{account.name}</Text>
+                <Text style={styles.accountMeta}>
+                  {ACCOUNT_TYPE_LABEL[account.type] ?? account.type} · {account.currencyCode}
+                  {account.isArchived ? " · Archivada" : ""}
+                </Text>
+              </View>
+              <View style={styles.balanceContainer}>
+                <Text style={styles.balanceLabel}>Saldo</Text>
+                <Text style={[
+                  styles.balanceAmount,
+                  account.currentBalance < 0 ? styles.negative : styles.positive,
+                ]}>
+                  {formatCurrency(account.currentBalance, account.currencyCode)}
+                </Text>
+              </View>
             </View>
-            <Text style={styles.confirmTitle}>
-              {account?.isArchived ? "¿Restaurar cuenta?" : "¿Archivar cuenta?"}
-            </Text>
-            <Text style={styles.confirmBody}>
-              {account?.isArchived
-                ? "La cuenta volverá a aparecer en tu lista activa y en el patrimonio neto."
-                : "La cuenta quedará oculta de la vista principal. Sus movimientos se conservarán intactos."
-              }
-            </Text>
-            <TouchableOpacity
-              style={[styles.confirmBtn, account?.isArchived ? styles.confirmBtnRestore : styles.confirmBtnArchive]}
-              onPress={handleToggleArchive}
-              disabled={archiveAccount.isPending}
-            >
-              <Text style={[styles.confirmBtnText, account?.isArchived ? styles.confirmBtnTextRestore : styles.confirmBtnTextArchive]}>
-                {archiveAccount.isPending
-                  ? "Procesando…"
-                  : account?.isArchived ? "Sí, restaurar" : "Sí, archivar"
-                }
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.confirmCancelBtn}
-              onPress={() => setArchiveConfirmVisible(false)}
-            >
-              <Text style={styles.confirmCancelText}>Cancelar</Text>
-            </TouchableOpacity>
+            {!account.includeInNetWorth ? (
+              <Text style={styles.notInNetWorthNote}>No incluida en patrimonio neto</Text>
+            ) : null}
           </View>
-        </View>
-      </Modal>
-    </View>
+        ) : null
+      }
+      list={
+        <ResourceSectionList
+          sections={[{ key: "movements", label: "Movimientos", data: movements, headerVariant: "hidden" }]}
+          keyExtractor={(item) => String(item.id)}
+          renderItem={renderMovementItem}
+          refreshing={isLoading && !isFetchingNextPage}
+          onRefresh={onRefresh}
+          onEndReached={() => {
+            if (hasNextPage && !isFetchingNextPage) void fetchNextPage();
+          }}
+          onEndReachedThreshold={0.3}
+          loading={{ isLoading, fetchingMore: isFetchingNextPage, endReached: !hasNextPage }}
+          empty={{ variant: "empty", title: "Sin movimientos", description: "Registra el primer movimiento con el botón +" }}
+        />
+      }
+      fab={<FAB onPress={() => setMovementFormVisible(true)} bottom={insets.bottom + 16} />}
+      overlays={
+        <>
+          {/* Edit account form */}
+          {account ? (
+            <AccountForm
+              visible={editFormVisible}
+              onClose={() => setEditFormVisible(false)}
+              onSuccess={() => setEditFormVisible(false)}
+              editAccount={account}
+            />
+          ) : null}
+
+          {/* New movement form (pre-filtered to this account) */}
+          <MovementForm
+            visible={movementFormVisible}
+            onClose={() => setMovementFormVisible(false)}
+            onSuccess={() => {
+              setMovementFormVisible(false);
+              onRefresh();
+            }}
+            initialAccountId={accountId ?? undefined}
+          />
+
+          <ConfirmDialog
+            visible={Boolean(deleteMovementTarget)}
+            title="Eliminar movimiento"
+            body={deleteMovementTarget ? `¿Eliminar "${deleteMovementTarget.description ?? "este movimiento"}"? Esta acción no se puede deshacer.` : ""}
+            confirmLabel="Eliminar"
+            cancelLabel="Cancelar"
+            onCancel={() => setDeleteMovementTarget(null)}
+            onConfirm={() => {
+              if (!deleteMovementTarget) return;
+              deleteMovement.mutate(deleteMovementTarget.id, {
+                onSuccess: () => showToast("Movimiento eliminado", "success"),
+                onError: (e) => showToast(e.message, "error"),
+              });
+              setDeleteMovementTarget(null);
+            }}
+          />
+
+          {/* Archive / restore confirmation */}
+          <Modal
+            transparent
+            visible={archiveConfirmVisible}
+            animationType="fade"
+            onRequestClose={() => setArchiveConfirmVisible(false)}
+          >
+            <View style={styles.confirmOverlay}>
+              <View style={styles.confirmCard}>
+                <View style={[styles.confirmIconWrap, account?.isArchived ? styles.confirmIconRestore : styles.confirmIconArchive]}>
+                  {account?.isArchived
+                    ? <ArchiveRestore size={24} color={COLORS.pine} />
+                    : <Archive size={24} color={COLORS.ember} />
+                  }
+                </View>
+                <Text style={styles.confirmTitle}>
+                  {account?.isArchived ? "¿Restaurar cuenta?" : "¿Archivar cuenta?"}
+                </Text>
+                <Text style={styles.confirmBody}>
+                  {account?.isArchived
+                    ? "La cuenta volverá a aparecer en tu lista activa y en el patrimonio neto."
+                    : "La cuenta quedará oculta de la vista principal. Sus movimientos se conservarán intactos."
+                  }
+                </Text>
+                <TouchableOpacity
+                  style={[styles.confirmBtn, account?.isArchived ? styles.confirmBtnRestore : styles.confirmBtnArchive]}
+                  onPress={handleToggleArchive}
+                  disabled={archiveAccount.isPending}
+                >
+                  <Text style={[styles.confirmBtnText, account?.isArchived ? styles.confirmBtnTextRestore : styles.confirmBtnTextArchive]}>
+                    {archiveAccount.isPending
+                      ? "Procesando…"
+                      : account?.isArchived ? "Sí, restaurar" : "Sí, archivar"
+                    }
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.confirmCancelBtn}
+                  onPress={() => setArchiveConfirmVisible(false)}
+                >
+                  <Text style={styles.confirmCancelText}>Cancelar</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </Modal>
+        </>
+      }
+    />
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: COLORS.bg },
   headerActions: { flexDirection: "row", alignItems: "center", gap: SPACING.sm },
   actionBtn: {
     flexDirection: "row",
@@ -349,7 +322,6 @@ const styles = StyleSheet.create({
     borderColor: COLORS.primary,
   },
   editBtnText: { fontSize: FONT_SIZE.xs, color: COLORS.primary, fontWeight: FONT_WEIGHT.medium },
-  back: { fontSize: FONT_SIZE.sm, color: COLORS.primary },
   summaryCard: {
     backgroundColor: COLORS.bgCard,
     borderBottomWidth: 1,
@@ -375,10 +347,6 @@ const styles = StyleSheet.create({
   positive: { color: COLORS.text },
   negative: { color: COLORS.danger },
   notInNetWorthNote: { fontSize: FONT_SIZE.xs, color: COLORS.textDisabled },
-  separator: { height: 1, backgroundColor: COLORS.border, marginLeft: SPACING.lg + 36 + SPACING.md },
-  footer: { padding: SPACING.lg, alignItems: "center" },
-  listContent: { paddingTop: SPACING.md },
-  emptyContainer: { flexGrow: 1 },
   // Archive/restore confirmation modal
   confirmOverlay: {
     flex: 1,
@@ -389,24 +357,14 @@ const styles = StyleSheet.create({
   },
   confirmCard: {
     width: "100%",
-    backgroundColor: "rgba(7,11,20,0.96)",
+    backgroundColor: SURFACE.sheet,
     borderRadius: RADIUS.xl,
     padding: SPACING.xl,
-    borderTopWidth: 1,
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
-    borderBottomWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.20)",
-    borderLeftColor: "rgba(255,255,255,0.12)",
-    borderRightColor: "rgba(255,255,255,0.12)",
-    borderBottomColor: "rgba(255,255,255,0.08)",
+    borderWidth: 1,
+    borderColor: SURFACE.cardBorder,
     alignItems: "center",
     gap: SPACING.sm,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.55,
-    shadowRadius: 28,
-    elevation: 20,
+    ...ELEVATION[4],
   },
   confirmIconWrap: {
     width: 52,
@@ -474,9 +432,9 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.md,
     borderRadius: RADIUS.md,
     alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: SURFACE.separator,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.10)",
+    borderColor: SURFACE.cardBorder,
   },
   confirmCancelText: {
     fontSize: FONT_SIZE.sm,

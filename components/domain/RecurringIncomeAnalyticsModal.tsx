@@ -37,7 +37,7 @@ import { RingChart, type RingSegment } from "../ui/RingChart";
 import { ProgressBar } from "../ui/ProgressBar";
 import { SafeBlurView } from "../ui/SafeBlurView";
 import { useDismissibleSheet } from "../ui/useDismissibleSheet";
-import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 
 type Props = {
   visible: boolean;
@@ -510,7 +510,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: RADIUS.xl,
     borderTopRightRadius: RADIUS.xl,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
   },
   handle: {
     alignSelf: "center",
@@ -528,7 +528,7 @@ const styles = StyleSheet.create({
     paddingTop: SPACING.md,
     paddingBottom: SPACING.md,
     borderBottomWidth: 0.5,
-    borderBottomColor: GLASS.sheetBorder,
+    borderBottomColor: SURFACE.sheetBorder,
   },
   headerText: {
     flex: 1,
@@ -558,10 +558,10 @@ const styles = StyleSheet.create({
     paddingBottom: SPACING.xl,
   },
   heroCard: {
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderRadius: RADIUS.xl,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
     padding: SPACING.lg,
     gap: SPACING.md,
   },
@@ -629,10 +629,10 @@ const styles = StyleSheet.create({
   },
   metricCard: {
     width: "48%",
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
     padding: SPACING.md,
     gap: 5,
   },
@@ -692,9 +692,9 @@ const styles = StyleSheet.create({
     width: 30,
     height: 120,
     borderRadius: RADIUS.md,
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
     justifyContent: "flex-end",
     overflow: "hidden",
   },
@@ -728,10 +728,10 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   selectionCard: {
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
     padding: SPACING.md,
     gap: 3,
   },
@@ -753,10 +753,10 @@ const styles = StyleSheet.create({
     color: COLORS.storm,
   },
   insightCard: {
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
     padding: SPACING.md,
     gap: SPACING.sm,
   },
@@ -774,9 +774,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.sm + 2,
     paddingVertical: 6,
     borderRadius: RADIUS.full,
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
   },
   pillActive: {
     backgroundColor: COLORS.primary,
@@ -792,10 +792,10 @@ const styles = StyleSheet.create({
     fontFamily: FONT_FAMILY.bodySemibold,
   },
   emptyCard: {
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
     padding: SPACING.md,
     gap: 6,
   },
@@ -811,10 +811,10 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   timelineCard: {
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
     padding: SPACING.md,
     gap: SPACING.sm,
   },

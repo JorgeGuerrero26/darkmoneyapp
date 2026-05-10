@@ -15,7 +15,7 @@ import { ActiveFilterBar, type ActiveFilterItem } from "../../components/ui/Acti
 import { MetricSummaryBar } from "../../components/ui/MetricSummaryBar";
 import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTemplate";
 import { ResourceSectionList, type ResourceSection } from "../../components/ui/ResourceSectionList";
-import { SkeletonCard } from "../../components/ui/Skeleton";
+import { SkeletonCard, SkeletonList } from "../../components/ui/Skeleton";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { ContactCard, type ContactMetrics } from "../../components/domain/ContactCard";
 import { ContactForm } from "../../components/forms/ContactForm";
@@ -405,11 +405,11 @@ function ContactsScreen() {
           loading={{
             isLoading,
             skeleton: (
-              <>
+              <SkeletonList>
                 <SkeletonCard />
                 <SkeletonCard />
                 <SkeletonCard />
-              </>
+              </SkeletonList>
             ),
           }}
           empty={{

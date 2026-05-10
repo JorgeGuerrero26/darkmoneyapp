@@ -15,6 +15,7 @@ import {
   Manrope_600SemiBold,
 } from "@expo-google-fonts/manrope";
 
+import { COLORS } from "../constants/theme";
 import { AuthProvider, useAuth } from "../lib/auth-context";
 import { queryClient } from "../lib/query-client";
 import { supabase } from "../lib/supabase";
@@ -882,7 +883,12 @@ function NavigationGuard() {
           animation: Platform.OS === "android" ? "slide_from_right" : "default",
           contentStyle: { backgroundColor: "transparent" },
         }}
-      />
+      >
+        <Stack.Screen name="(app)" options={{ animation: "none" }} />
+        <Stack.Screen name="movement/[id]" options={{ animation: "none" }} />
+        <Stack.Screen name="account/[id]" options={{ animation: "none" }} />
+        <Stack.Screen name="obligation/[id]" options={{ animation: "none" }} />
+      </Stack>
     </ThemeProvider>
   );
 }
@@ -895,7 +901,6 @@ export default function RootLayout() {
       style={styles.background}
       resizeMode="cover"
       blurRadius={0}
-      imageStyle={{ backgroundColor: "#05070B" }}
     >
       <View style={styles.overlay} />
       <SafeAreaProvider>
@@ -949,11 +954,11 @@ const styles = StyleSheet.create({
   },
   background: {
     flex: 1,
-    backgroundColor: "#05070B",
+    backgroundColor: COLORS.void,
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(5, 7, 11, 0.72)",
+    backgroundColor: "rgba(5, 7, 11, 0.12)",
   },
   workspaceBootstrapOverlay: {
     ...StyleSheet.absoluteFillObject,

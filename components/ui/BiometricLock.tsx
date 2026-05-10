@@ -6,12 +6,12 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { useUiStore } from "../../store/ui-store";
 import { useAuth } from "../../lib/auth-context";
-import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { Button } from "./Button";
 import { SafeBlurView } from "./SafeBlurView";
 
 const BG_TIMESTAMP_KEY = "darkmoney_bg_timestamp";
-const LOCK_TIMEOUT_MS = 120_000; // 2 minutos en background → cierre de sesión
+const LOCK_TIMEOUT_MS = 3_600_000; // 1 hora en background → cierre de sesión
 /** Tras login/registro: ignorar el timeout (Samsung Pass / autofill ponen la app en `inactive` un rato). */
 const POST_LOGIN_GRACE_MS = 120_000;
 
@@ -201,7 +201,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.xl,
     marginHorizontal: SPACING.xl,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
     shadowColor: COLORS.primary,
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.12,
@@ -214,9 +214,9 @@ const styles = StyleSheet.create({
     width: 100,
     height: 100,
     borderRadius: 50,
-    backgroundColor: GLASS.cardActive,
+    backgroundColor: SURFACE.cardActive,
     borderWidth: 1.5,
-    borderColor: GLASS.cardActiveBorder,
+    borderColor: SURFACE.cardActiveBorder,
     alignItems: "center",
     justifyContent: "center",
     shadowColor: COLORS.primary,

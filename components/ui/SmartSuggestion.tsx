@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Sparkles } from "lucide-react-native";
-import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { useHaptics } from "../../hooks/useHaptics";
 
 type Props = {
@@ -66,10 +66,10 @@ const styles = StyleSheet.create({
   applyBadge: {
     paddingHorizontal: SPACING.sm,
     paddingVertical: 2,
-    backgroundColor: GLASS.cardActive,
+    backgroundColor: SURFACE.cardActive,
     borderRadius: RADIUS.full,
     borderWidth: 1,
-    borderColor: GLASS.cardActiveBorder,
+    borderColor: SURFACE.cardActiveBorder,
   },
   applyText: {
     fontFamily: FONT_FAMILY.bodySemibold,

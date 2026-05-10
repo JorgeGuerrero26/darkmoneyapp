@@ -1,6 +1,6 @@
 import { memo } from "react";
-import { StyleSheet, TouchableOpacity, View } from "react-native";
-import { CheckCircle2, Circle, Trash2 } from "lucide-react-native";
+import { StyleSheet } from "react-native";
+import { Trash2 } from "lucide-react-native";
 
 import { MovementRow } from "./MovementRow";
 import { SwipeActionRow } from "../ui/SwipeActionRow";
@@ -32,29 +32,14 @@ export const SwipeableMovementRow = memo(function SwipeableMovementRow({
 }: Props) {
   if (selectMode) {
     return (
-      <View style={[styles.container, selected && styles.containerSelected]}>
-        <View style={styles.selectRow}>
-          <TouchableOpacity
-            style={styles.checkWrap}
-            onPress={() => onPress?.()}
-            activeOpacity={0.7}
-          >
-            {selected
-              ? <CheckCircle2 size={20} color={COLORS.primary} />
-              : <Circle size={20} color={COLORS.storm} />}
-          </TouchableOpacity>
-          <View style={{ flex: 1 }}>
-            <MovementRow
-              movement={movement}
-              baseCurrencyCode={baseCurrencyCode}
-              attachmentCount={attachmentCount}
-              selected={selected}
-              onPress={onPress}
-              onLongPress={onLongPress}
-            />
-          </View>
-        </View>
-      </View>
+      <MovementRow
+        movement={movement}
+        baseCurrencyCode={baseCurrencyCode}
+        attachmentCount={attachmentCount}
+        selected={selected}
+        onPress={onPress}
+        onLongPress={onLongPress}
+      />
     );
   }
 
@@ -97,20 +82,4 @@ export const SwipeableMovementRow = memo(function SwipeableMovementRow({
 
 const styles = StyleSheet.create({
   container: {},
-  containerSelected: {
-    backgroundColor: COLORS.primary + "12",
-    borderWidth: 1,
-    borderColor: COLORS.primary + "30",
-    borderRadius: RADIUS.xl,
-    overflow: "hidden",
-  },
-  selectRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  checkWrap: {
-    paddingLeft: SPACING.sm,
-    paddingRight: 4,
-    paddingVertical: SPACING.sm,
-  },
 });

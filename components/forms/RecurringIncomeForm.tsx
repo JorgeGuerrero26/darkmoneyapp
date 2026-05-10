@@ -30,7 +30,7 @@ import { BusinessDateNotice } from "../ui/BusinessDateNotice";
 import { FormDateField } from "./FormDateField";
 import { SmartSuggestion } from "../ui/SmartSuggestion";
 import { sortByName } from "../../lib/sort-locale";
-import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 
 const POPULAR_CURRENCIES = ["PEN", "USD", "EUR", "MXN", "COP", "ARS", "CLP"];
 const FREQUENCY_OPTIONS: { value: RecurringIncomeFormInput["frequency"]; label: string }[] = [
@@ -602,10 +602,10 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   input: {
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.md,
     color: COLORS.ink,
@@ -621,10 +621,10 @@ const styles = StyleSheet.create({
   },
   notesInput: {
     minHeight: 120,
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.md,
     color: COLORS.ink,
@@ -638,7 +638,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.full,
     backgroundColor: "rgba(255,255,255,0.03)",
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
     alignItems: "center",
     justifyContent: "center",
   },

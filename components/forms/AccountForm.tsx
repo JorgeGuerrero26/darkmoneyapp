@@ -34,7 +34,7 @@ import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { Button } from "../ui/Button";
 import { CurrencyInput } from "../ui/CurrencyInput";
 import { formatCurrency } from "../ui/AmountDisplay";
-import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 
 // ── Icon picker ────────────────────────────────────────────────────────────
 // ── Color palette ──────────────────────────────────────────────────────────
@@ -542,14 +542,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: SPACING.md,
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderRadius: RADIUS.lg,
     padding: SPACING.md,
     borderWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.14)",
-    borderLeftColor: "rgba(255,255,255,0.08)",
-    borderRightColor: "rgba(255,255,255,0.06)",
-    borderBottomColor: "rgba(255,255,255,0.04)",
+    borderColor: SURFACE.cardBorder,
   },
   previewIcon: {
     width: 52,
@@ -616,7 +613,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: RADIUS.md,
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
@@ -650,10 +647,10 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.xs,
   },
   textInput: {
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm + 2,
     fontSize: FONT_SIZE.md,
@@ -667,9 +664,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.xs + 2,
     borderRadius: RADIUS.full,
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
   },
   pillActive: { backgroundColor: COLORS.pine, borderColor: COLORS.pine },
   pillText: { fontSize: FONT_SIZE.sm, color: COLORS.storm, fontFamily: FONT_FAMILY.bodyMedium },
@@ -678,11 +675,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderRadius: RADIUS.md,
     padding: SPACING.md,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
   },
   switchInfo: { flex: 1, gap: 2, marginRight: SPACING.md },
   switchLabel: { fontSize: FONT_SIZE.sm, fontFamily: FONT_FAMILY.bodyMedium, color: COLORS.ink },

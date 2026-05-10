@@ -15,7 +15,7 @@ import { ResourceModuleTemplate } from "../components/ui/ResourceModuleTemplate"
 import { ResourceSectionList } from "../components/ui/ResourceSectionList";
 import { BottomSheet } from "../components/ui/BottomSheet";
 import { FAB } from "../components/ui/FAB";
-import { SkeletonCard } from "../components/ui/Skeleton";
+import { SkeletonCard, SkeletonList } from "../components/ui/Skeleton";
 import { ExchangeRateFilterSheet } from "../features/exchange-rates/components/ExchangeRateFilterSheet";
 import { ExchangeRateSwipeRow } from "../features/exchange-rates/components/ExchangeRateSwipeRow";
 import { ExchangeRatesSummaryBar } from "../features/exchange-rates/components/ExchangeRatesSummaryBar";
@@ -36,7 +36,7 @@ import {
   useUpdateExchangeRateMutation,
   type ExchangeRateRecord,
 } from "../services/queries/workspace-data";
-import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../constants/theme";
 import { SUPPORTED_CURRENCY_CODES } from "../constants/currencies";
 import { useToast } from "../hooks/useToast";
 import { useOriginBackNavigation } from "../hooks/useOriginBackNavigation";
@@ -456,11 +456,11 @@ function ExchangeRatesScreen() {
             secondaryLoading: syncRatePair.isPending && sections.length === 0,
             secondaryMessage: "Sincronizando tipos de cambio...",
             skeleton: (
-              <>
+              <SkeletonList>
                 <SkeletonCard />
                 <SkeletonCard />
                 <SkeletonCard />
-              </>
+              </SkeletonList>
             ),
           }}
           empty={{
@@ -553,9 +553,9 @@ const formStyles = StyleSheet.create({
     paddingHorizontal: SPACING.md,
     paddingVertical: 7,
     borderRadius: RADIUS.full,
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
   },
   pillActive: {
     backgroundColor: COLORS.pine + "20",
@@ -585,10 +585,10 @@ const formStyles = StyleSheet.create({
     marginBottom: 4,
   },
   input: {
-    backgroundColor: GLASS.input,
+    backgroundColor: SURFACE.input,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: GLASS.inputBorder,
+    borderColor: SURFACE.inputBorder,
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
     fontFamily: FONT_FAMILY.body,
@@ -599,10 +599,10 @@ const formStyles = StyleSheet.create({
     marginTop: SPACING.xs,
   },
   errorBanner: {
-    backgroundColor: GLASS.dangerBg,
+    backgroundColor: SURFACE.dangerBg,
     borderRadius: RADIUS.sm,
     borderWidth: 1,
-    borderColor: GLASS.dangerBorder,
+    borderColor: SURFACE.dangerBorder,
     padding: SPACING.sm,
   },
   errorText: {
@@ -619,9 +619,9 @@ const formStyles = StyleSheet.create({
     flex: 1,
     paddingVertical: SPACING.sm + 2,
     borderRadius: RADIUS.md,
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
     alignItems: "center",
   },
   cancelText: {

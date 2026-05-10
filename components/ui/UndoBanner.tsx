@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Animated, Image, Pressable, StyleSheet, Text, View } from "react-native";
-import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, ELEVATION, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 
 const UNDO_LOGO = require("../../assets/images/logo-sin-fondo.png");
 
@@ -125,18 +125,14 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.mist,
     borderRadius: 28,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
+    borderColor: SURFACE.cardBorder,
     overflow: "hidden",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.18,
-    shadowRadius: 10,
-    elevation: 8,
     zIndex: 50,
+    ...ELEVATION[3],
   },
   tint: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(255,255,255,0.02)",
+    backgroundColor: SURFACE.separator,
   },
   row: {
     flexDirection: "row",
@@ -149,15 +145,12 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 21,
-    backgroundColor: "rgba(8,12,20,0.98)",
+    backgroundColor: SURFACE.card,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
+    borderColor: SURFACE.cardBorder,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.16,
-    shadowRadius: 8,
+    ...ELEVATION[2],
   },
   logo: {
     width: 26,
@@ -187,7 +180,7 @@ const styles = StyleSheet.create({
   },
   progressTrack: {
     height: 2,
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: SURFACE.separator,
   },
   progressFill: {
     height: "100%",

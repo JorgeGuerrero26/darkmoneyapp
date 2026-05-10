@@ -13,7 +13,7 @@ import { ActiveFilterBar, type ActiveFilterItem } from "../components/ui/ActiveF
 import { ResourceContextNote } from "../components/ui/ResourceContextNote";
 import { ResourceModuleTemplate } from "../components/ui/ResourceModuleTemplate";
 import { ResourceSectionList } from "../components/ui/ResourceSectionList";
-import { SkeletonCard } from "../components/ui/Skeleton";
+import { SkeletonCard, SkeletonList } from "../components/ui/Skeleton";
 import { BulkActionBar } from "../components/ui/BulkActionBar";
 import { NotificationCard } from "../components/domain/NotificationCard";
 import { NotificationInviteCard } from "../components/domain/NotificationInviteCard";
@@ -371,11 +371,11 @@ function NotificationsScreen() {
           loading={{
             isLoading: showSkeleton,
             skeleton: (
-              <>
+              <SkeletonList>
                 <SkeletonCard />
                 <SkeletonCard />
                 <SkeletonCard />
-              </>
+              </SkeletonList>
             ),
           }}
           empty={{

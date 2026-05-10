@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { Animated, FlatList, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View, ScrollView, ActivityIndicator, Image } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { useOriginBackNavigation } from "../../hooks/useOriginBackNavigation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
@@ -22,7 +23,7 @@ import { AmountDisplay, formatCurrency } from "../../components/ui/AmountDisplay
 import { AttachmentPreviewModal } from "../../components/domain/AttachmentPreviewModal";
 import { MovementForm } from "../../components/forms/MovementForm";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
-import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { useDismissibleSheet } from "../../components/ui/useDismissibleSheet";
 
 const TYPE_LABEL: Record<string, string> = {
@@ -59,6 +60,12 @@ function readMovementLinkedEventId(metadata: unknown): number | null {
 
 function MovementDetailScreen() {
   const { id, from, edit } = useLocalSearchParams<{ id: string; from?: string; edit?: string }>();
+  const { handleBack } = useOriginBackNavigation({
+    originRoutes: {
+      movements: "/(app)/movements",
+      dashboard: "/(app)/dashboard",
+    },
+  });
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -313,7 +320,7 @@ function MovementDetailScreen() {
         subtitle={activeWorkspace?.name}
         rightAction={
           <TouchableOpacity
-            onPress={() => router.back()}
+            onPress={handleBack}
             accessibilityLabel="Volver"
           >
             <Text style={styles.back}>Volver</Text>
@@ -779,22 +786,22 @@ const rowStyles = StyleSheet.create({
   row: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: SPACING.md },
   label: { fontSize: FONT_SIZE.sm, color: COLORS.storm, flex: 1 },
   value: { fontSize: FONT_SIZE.sm, color: COLORS.ink, fontFamily: FONT_FAMILY.bodyMedium, flex: 2, textAlign: "right" },
-  divider: { height: 1, backgroundColor: GLASS.separator, marginVertical: SPACING.sm },
+  divider: { height: 1, backgroundColor: SURFACE.separator, marginVertical: SPACING.sm },
 });
 
 const voidImpactStyles = StyleSheet.create({
   container: {
     marginTop: SPACING.xs,
     borderTopWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.08)",
+    borderTopColor: SURFACE.separator,
     paddingTop: SPACING.sm,
     gap: SPACING.sm,
   },
   card: {
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
     padding: SPACING.md,
     gap: SPACING.xs,
   },
@@ -857,7 +864,7 @@ const styles = StyleSheet.create({
   bottomBar: {
     flexDirection: "row",
     borderTopWidth: 1,
-    borderTopColor: GLASS.separator,
+    borderTopColor: SURFACE.separator,
     backgroundColor: COLORS.shell,
     paddingTop: SPACING.md,
     paddingHorizontal: SPACING.lg,
@@ -866,7 +873,7 @@ const styles = StyleSheet.create({
   actionBtnPrimary: { fontSize: FONT_SIZE.sm, color: COLORS.primary, fontFamily: FONT_FAMILY.bodySemibold },
   actionBtnSecondary: { fontSize: FONT_SIZE.sm, color: COLORS.storm, fontFamily: FONT_FAMILY.bodyMedium },
   actionBtnDanger: { fontSize: FONT_SIZE.sm, color: COLORS.danger, fontFamily: FONT_FAMILY.bodyMedium },
-  actionSep: { width: 1, backgroundColor: GLASS.separator, marginVertical: 4 },
+  actionSep: { width: 1, backgroundColor: SURFACE.separator, marginVertical: 4 },
   linkedRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -916,9 +923,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.06)",
+    backgroundColor: SURFACE.separator,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.1)",
+    borderColor: SURFACE.cardBorder,
   },
   attachmentsLoading: {
     flexDirection: "row",
@@ -971,9 +978,9 @@ const styles = StyleSheet.create({
     width: 144,
     borderRadius: RADIUS.lg,
     overflow: "hidden",
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
   },
   attachmentCardSelected: {
     borderColor: COLORS.primary,
@@ -996,9 +1003,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(7,11,20,0.72)",
+    backgroundColor: SURFACE.card,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.18)",
+    borderColor: SURFACE.cardBorder,
   },
   attachmentSelectionBadgeActive: {
     backgroundColor: COLORS.primary,
@@ -1045,7 +1052,7 @@ const styles = StyleSheet.create({
   pickerItemTitle: { fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.bodyMedium, color: COLORS.ink },
   pickerItemSub: { fontSize: FONT_SIZE.xs, color: COLORS.storm },
   pickerItemAmount: { fontSize: FONT_SIZE.sm, fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.warning },
-  pickerSep: { height: 1, backgroundColor: GLASS.separator },
+  pickerSep: { height: 1, backgroundColor: SURFACE.separator },
   previewOverlay: {
     flex: 1,
     backgroundColor: "rgba(3,5,8,0.94)",
@@ -1073,9 +1080,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.sm + 2,
     paddingVertical: SPACING.xs + 2,
     borderRadius: RADIUS.full,
-    backgroundColor: "rgba(255,255,255,0.08)",
+    backgroundColor: SURFACE.cardBorder,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.14)",
+    borderColor: SURFACE.sheetBorder,
   },
   previewCloseText: {
     fontSize: FONT_SIZE.xs,

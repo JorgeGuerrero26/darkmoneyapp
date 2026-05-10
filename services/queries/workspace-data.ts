@@ -190,11 +190,11 @@ function buildFallbackEntitlement(
 
 function edgeFunctionFallbackMessage(name: string, response?: Response): string {
   const status = response?.status ?? null;
-  if (status === 404) return `La funciÃ³n ${name} no estÃ¡ disponible.`;
-  if (status === 401) return "Tu sesiÃ³n expirÃ³. Vuelve a iniciar sesiÃ³n.";
-  if (status === 403) return `La funciÃ³n ${name} devolviÃ³ 403. Puede ser permisos o plan Pro.`;
-  if (status != null) return `La funciÃ³n ${name} devolviÃ³ error (${status}).`;
-  return `No se pudo completar la funciÃ³n ${name}.`;
+  if (status === 404) return `La función ${name} no está disponible.`;
+  if (status === 401) return "Tu sesión expiró. Vuelve a iniciar sesión.";
+  if (status === 403) return `La función ${name} devolvió 403. Puede ser permisos o plan Pro.`;
+  if (status != null) return `La función ${name} devolvió error (${status}).`;
+  return `No se pudo completar la función ${name}.`;
 }
 
 function logEdgeFunctionDebug(name: string, meta: Record<string, unknown>) {
@@ -410,7 +410,7 @@ async function insertObligationPaymentEventWithFallback(input: {
   throw new Error(error.message ?? "Error de base de datos");
 }
 
-// â”€â”€â”€ Row types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Row types ────────────────────────────────────────────────────────────────
 
 type WorkspaceMemberRow = {
   workspace_id: number;
@@ -569,7 +569,7 @@ type ExchangeRateRow = {
   effective_at: string;
 };
 
-// â”€â”€â”€ Mappers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Mappers ──────────────────────────────────────────────────────────────────
 
 function mapWorkspace(row: WorkspaceRow, memberRow: WorkspaceMemberRow): Workspace {
   return {
@@ -763,7 +763,7 @@ type CounterpartyDbRow = {
   notes: string | null;
 };
 
-/** Fila de `counterparties` â†’ overview para snapshot (mÃ©tricas financieras: 0 hasta enlazar v_counterparty_summary). */
+/** Fila de `counterparties` → overview para snapshot (métricas financieras: 0 hasta enlazar v_counterparty_summary). */
 function mapCounterpartyFromRow(row: CounterpartyDbRow): CounterpartyOverview {
   return {
     id: row.id,
@@ -799,20 +799,20 @@ const FREQUENCY_LABELS: Record<SubscriptionFrequency, string> = {
   custom: "Personalizado",
 };
 
-// â”€â”€â”€ Snapshot query â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Snapshot query ───────────────────────────────────────────────────────────
 
 export type WorkspaceSnapshot = {
   workspaces: Workspace[];
   accounts: AccountSummary[];
-  /** CatÃ¡logo completo (activas e inactivas), orden sort_order + name. */
+  /** Catálogo completo (activas e inactivas), orden sort_order + name. */
   categories: CategorySummary[];
   budgets: BudgetOverview[];
   obligations: ObligationSummary[];
   subscriptions: SubscriptionSummary[];
   recurringIncome: RecurringIncomeSummary[];
-  /** Movimientos posted con subscription_id (analÃ­ticas sin query extra). */
+  /** Movimientos posted con subscription_id (analíticas sin query extra). */
   subscriptionPostedMovements: SubscriptionPostedMovement[];
-  /** Movimientos posted con category_id (analÃ­ticas categorÃ­as). */
+  /** Movimientos posted con category_id (analíticas categorías). */
   categoryPostedMovements: CategoryPostedMovement[];
   counterparties: CounterpartyOverview[];
   exchangeRates: ExchangeRateSummary[];
@@ -883,7 +883,7 @@ async function fetchWorkspaceSnapshot(
   userId: string,
   activeWorkspaceId: number,
 ): Promise<WorkspaceSnapshot> {
-  if (!supabase) throw new Error("Supabase no estÃ¡ configurado.");
+  if (!supabase) throw new Error("Supabase no está configurado.");
 
   // Limit movement history to last 2 years to keep payload manageable
   const twoYearsAgo = new Date();
@@ -942,7 +942,7 @@ async function fetchWorkspaceSnapshot(
       .from("v_obligation_summary")
       .select("*")
       .eq("workspace_id", activeWorkspaceId),
-    // DescripciÃ³n/notas desde la tabla base: v_obligation_summary a veces no incluye estas columnas.
+    // Descripción/notas desde la tabla base: v_obligation_summary a veces no incluye estas columnas.
     supabase
       .from("obligations")
       .select("id, description, notes")
@@ -1234,9 +1234,9 @@ function maxIsoDate(a: string | null | undefined, b: string | null | undefined):
   return a >= b ? a : b;
 }
 
-/** Lista enriquecida (conteos, Ãºltima actividad) â€” pantalla CategorÃ­as. */
+/** Lista enriquecida (conteos, última actividad) — pantalla Categorías. */
 async function fetchCategoriesOverview(workspaceId: number): Promise<CategoryOverview[]> {
-  if (!supabase) throw new Error("Supabase no estÃ¡ configurado.");
+  if (!supabase) throw new Error("Supabase no está configurado.");
 
   const [catRes, movRes, subRes] = await Promise.all([
     supabase
@@ -1257,7 +1257,7 @@ async function fetchCategoriesOverview(workspaceId: number): Promise<CategoryOve
       .not("category_id", "is", null),
   ]);
 
-  if (catRes.error) throw new Error(catRes.error.message ?? "Error al cargar categorÃ­as");
+  if (catRes.error) throw new Error(catRes.error.message ?? "Error al cargar categorías");
 
   const rows = (catRes.data ?? []) as {
     id: number;
@@ -1336,10 +1336,10 @@ export function useCategoriesOverviewQuery(profile: AppProfile | null, workspace
   });
 }
 
-// â”€â”€â”€ Workspace list init (no activeWorkspaceId needed) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Workspace list init (no activeWorkspaceId needed) ────────────────────────
 
 export async function fetchUserWorkspaces(userId: string) {
-  if (!supabase) throw new Error("Supabase no estÃ¡ configurado.");
+  if (!supabase) throw new Error("Supabase no está configurado.");
   const [membershipsResult, workspacesResult] = await Promise.all([
     supabase.from("workspace_members").select("workspace_id, role, is_default_workspace, joined_at").eq("user_id", userId),
     supabase.from("workspaces").select("id, owner_user_id, name, kind, base_currency_code, description, is_archived"),
@@ -1375,7 +1375,7 @@ export function useWorkspaceSnapshotQuery(
   });
 }
 
-// â”€â”€â”€ Dashboard movements query â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Dashboard movements query ────────────────────────────────────────────────
 
 export type DashboardMovementRow = {
   id: number;
@@ -1388,7 +1388,7 @@ export type DashboardMovementRow = {
   destinationAccountId: number | null;
   categoryId: number | null;
   counterpartyId: number | null;
-  /** Para listados en dashboard (detalle por dÃ­a) */
+  /** Para listados en dashboard (detalle por día) */
   description: string;
 };
 
@@ -1525,13 +1525,13 @@ export function useDashboardAnalyticsQuery(
         snapshotResult.error && isMissingRelationError(snapshotResult.error, "workspace_analytics_snapshots");
 
       if (signalsResult.error && !missingSignals) {
-        throw new Error(signalsResult.error.message ?? "No se pudieron cargar las seÃ±ales analÃ­ticas.");
+        throw new Error(signalsResult.error.message ?? "No se pudieron cargar las señales analíticas.");
       }
       if (feedbackResult.error && !missingFeedback) {
         throw new Error(feedbackResult.error.message ?? "No se pudo cargar el aprendizaje persistido.");
       }
       if (snapshotResult.error && !missingSnapshot) {
-        throw new Error(snapshotResult.error.message ?? "No se pudo cargar la proyecciÃ³n persistida.");
+        throw new Error(snapshotResult.error.message ?? "No se pudo cargar la proyección persistida.");
       }
 
       const signals: MovementAnalyticsSignal[] = missingSignals
@@ -1843,7 +1843,7 @@ export function usePersistLearningFeedbackMutation(
   });
 }
 
-// â”€â”€â”€ Movement mutations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Movement mutations ───────────────────────────────────────────────────────
 
 export type MovementFormInput = {
   movementType: MovementType;
@@ -1867,7 +1867,7 @@ async function createMovement(
   workspaceId: number,
   input: MovementFormInput,
 ): Promise<MovementRecord> {
-  if (!supabase) throw new Error("Supabase no estÃ¡ configurado.");
+  if (!supabase) throw new Error("Supabase no está configurado.");
 
   const payload: Record<string, unknown> = {
     workspace_id: workspaceId,
@@ -1936,7 +1936,7 @@ export function useCreateMovementMutation(workspaceId: number | null) {
   });
 }
 
-// â”€â”€â”€ Account mutations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Account mutations ────────────────────────────────────────────────────────
 
 export type AccountFormInput = {
   name: string;
@@ -2004,7 +2004,7 @@ export function useUpdateAccountMutation(workspaceId: number | null) {
   });
 }
 
-// â”€â”€â”€ Budget mutations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Budget mutations ─────────────────────────────────────────────────────────
 
 export type BudgetFormInput = {
   name: string;
@@ -2050,7 +2050,7 @@ export function useCreateBudgetMutation(workspaceId: number | null) {
   });
 }
 
-// â”€â”€â”€ Movement mutations (update / void) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Movement mutations (update / void) ──────────────────────────────────────
 
 export type MovementUpdateInput = {
   description?: string;
@@ -2163,7 +2163,7 @@ export function useVoidMovementMutation(workspaceId: number | null) {
   });
 }
 
-// â”€â”€â”€ Budget mutations (update / delete) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Budget mutations (update / delete) ──────────────────────────────────────
 
 export type BudgetUpdateInput = Partial<BudgetFormInput>;
 
@@ -2228,7 +2228,7 @@ export function useDeleteBudgetMutation(workspaceId: number | null) {
   });
 }
 
-// â”€â”€â”€ Movement delete mutation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Movement delete mutation ─────────────────────────────────────────────────
 
 export function useDeleteMovementMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
@@ -2271,7 +2271,7 @@ export function useDeleteMovementMutation(workspaceId: number | null) {
   });
 }
 
-// â”€â”€â”€ Account mutations (archive) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Account mutations (archive) ─────────────────────────────────────────────
 
 export function useArchiveAccountMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
@@ -2340,7 +2340,7 @@ export function useDeleteAccountMutation(workspaceId: number | null) {
   });
 }
 
-// â”€â”€â”€ Account analytics â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Account analytics ────────────────────────────────────────────────────────
 
 export type AccountMovementAnalytics = {
   id: number;
@@ -2393,7 +2393,7 @@ export function useAccountAnalyticsQuery(
   });
 }
 
-// â”€â”€â”€ Obligation mutations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Obligation mutations ─────────────────────────────────────────────────────
 
 export type ObligationFormInput = {
   userId: string;
@@ -2425,9 +2425,9 @@ export function useDeleteObligationMutation(workspaceId: number | null) {
         .select("id", { head: true, count: "exact" })
         .eq("obligation_id", id)
         .neq("event_type", "opening");
-      if (eventsError) throw new Error(eventsError.message ?? "Error al validar la obligaciÃ³n");
+      if (eventsError) throw new Error(eventsError.message ?? "Error al validar la obligación");
       if ((count ?? 0) > 0) {
-        throw new Error("No puedes eliminar esta obligaciÃ³n porque tiene eventos. ArchÃ­vala o elimina sus eventos primero.");
+        throw new Error("No puedes eliminar esta obligación porque tiene eventos. Archívala o elimina sus eventos primero.");
       }
       const { error } = await supabase
         .from("obligations")
@@ -2506,7 +2506,7 @@ export function useCreateObligationMutation(workspaceId: number | null) {
       if (openingImpact !== "none" && input.openingAccountId) {
         const isInflow = openingImpact === "inflow";
         const openingDesc = input.direction === "receivable"
-          ? `PrÃ©stamo entregado: ${input.title}`
+          ? `Préstamo entregado: ${input.title}`
           : `Dinero recibido: ${input.title}`;
         await createMovement(workspaceId, {
           movementType: "obligation_opening" as MovementType,
@@ -2576,7 +2576,7 @@ export type ObligationPaymentInput = {
   description?: string | null;
   notes?: string | null;
   createMovement: boolean;
-  /** Si es "receivable" (me deben), textos automÃ¡ticos usan â€œcobroâ€. */
+  /** Si es "receivable" (me deben), textos automáticos usan "cobro". */
   direction?: ObligationDirection;
   attachments?: AttachmentLike[];
 };
@@ -2588,7 +2588,7 @@ async function fetchObligationWorkspaceId(obligationId: number): Promise<number>
     .select("workspace_id")
     .eq("id", obligationId)
     .single();
-  if (error) throw new Error(error.message ?? "ObligaciÃ³n no encontrada");
+  if (error) throw new Error(error.message ?? "obligación no encontrada");
   const ws = toNum(data?.workspace_id);
   if (!ws) throw new Error("Workspace no disponible.");
   return ws;
@@ -2601,7 +2601,7 @@ export function useCreateObligationPaymentMutation(workspaceId: number | null) {
       if (!supabase) throw new Error("Supabase no disponible.");
       const wsId = await fetchObligationWorkspaceId(input.obligationId);
       if (workspaceId != null && workspaceId !== wsId) {
-        throw new Error("La obligaciÃ³n no pertenece al workspace activo.");
+        throw new Error("La obligación no pertenece al workspace activo.");
       }
       const isReceivable = input.direction === "receivable";
       const autoDesc =
@@ -2669,7 +2669,7 @@ export function useCreateObligationPaymentMutation(workspaceId: number | null) {
   });
 }
 
-// â”€â”€â”€ Link existing movement to obligation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Link existing movement to obligation ────────────────────────────────────
 
 export function useLinkMovementToObligationMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
@@ -2703,7 +2703,7 @@ export function useLinkMovementToObligationMutation(workspaceId: number | null) 
           installment_no: installmentNo ?? null,
           metadata: {},
         });
-      if (evError) throw new Error(evError.message ?? "Error al crear evento de obligaciÃ³n");
+      if (evError) throw new Error(evError.message ?? "Error al crear evento de obligación");
       // 2. Tag the movement with the obligation id
       const { error: mvError } = await supabase
         .from("movements")
@@ -2742,7 +2742,7 @@ export function useCreatePrincipalAdjustmentMutation(workspaceId: number | null)
       if (!supabase) throw new Error("Supabase no disponible.");
       const wsId = await fetchObligationWorkspaceId(input.obligationId);
       if (workspaceId != null && workspaceId !== wsId) {
-        throw new Error("La obligaciÃ³n no pertenece al workspace activo.");
+        throw new Error("La obligación no pertenece al workspace activo.");
       }
       const eventType = input.mode === "increase" ? "principal_increase" : "principal_decrease";
       const { data, error } = await supabase
@@ -2801,14 +2801,14 @@ export function useCreatePrincipalAdjustmentMutation(workspaceId: number | null)
         ["movements"],
         ["obligation-events", variables.obligationId],
       ], {
-        message: "Actualizando deuda o crÃ©dito",
+        message: "Actualizando deuda o crédito",
         description: "Estamos sincronizando el evento y los balances asociados en segundo plano.",
       });
     },
   });
 }
 
-// â”€â”€â”€ Obligation event update / delete â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Obligation event update / delete ────────────────────────────────────────
 
 export type UpdateObligationEventInput = {
   eventId: number;
@@ -3190,7 +3190,7 @@ export function useUpdateObligationEventMutation() {
       }
       runBackgroundQueryRefresh(queryClient, queryKeys, {
         message: "Actualizando evento",
-        description: "Estamos sincronizando el historial de la deuda o crÃ©dito en segundo plano.",
+        description: "Estamos sincronizando el historial de la deuda o crédito en segundo plano.",
       });
     },
   });
@@ -3425,7 +3425,7 @@ async function fetchViewerLinksForEvent(eventId: number): Promise<ViewerEventLin
     .from("obligation_event_viewer_links")
     .select("id, movement_id, linked_by_user_id, account_id, viewer_workspace_id")
     .eq("event_id", eventId);
-  if (error) throw new Error(error.message ?? "Error al cargar vÃ­nculos del evento");
+  if (error) throw new Error(error.message ?? "Error al cargar vínculos del evento");
   return (data ?? []) as ViewerEventLinkRow[];
 }
 
@@ -3446,7 +3446,7 @@ async function deleteViewerLinksForEvent(eventId: number): Promise<ViewerEventLi
       .from("obligation_event_viewer_links")
       .delete()
       .eq("event_id", eventId);
-    if (linkErr) throw new Error(linkErr.message ?? "Error al limpiar vÃ­nculos del evento");
+    if (linkErr) throw new Error(linkErr.message ?? "Error al limpiar vínculos del evento");
   }
   return viewerLinks;
 }
@@ -3784,7 +3784,7 @@ async function createOrRefreshNotificationRow(row: NotificationRefreshInput) {
     .eq("related_entity_id", row.related_entity_id)
     .order("id", { ascending: false });
   if (findErr) {
-    throw new Error(findErr.message ?? "Error al comprobar la notificaciÃ³n");
+    throw new Error(findErr.message ?? "Error al comprobar la notificación");
   }
 
   if ((existing?.length ?? 0) > 0) {
@@ -3804,7 +3804,7 @@ async function createOrRefreshNotificationRow(row: NotificationRefreshInput) {
       .eq("related_entity_type", row.related_entity_type)
       .eq("related_entity_id", row.related_entity_id);
     if (updateErr) {
-      throw new Error(updateErr.message ?? "Error al actualizar la notificaciÃ³n");
+      throw new Error(updateErr.message ?? "Error al actualizar la notificación");
     }
     return;
   }
@@ -3816,7 +3816,7 @@ async function createOrRefreshNotificationRow(row: NotificationRefreshInput) {
       payload: row.payload ?? null,
     });
   if (insertErr) {
-    throw new Error(insertErr.message ?? "Error al crear la notificaciÃ³n");
+    throw new Error(insertErr.message ?? "Error al crear la notificación");
   }
 }
 
@@ -3849,7 +3849,7 @@ export function useDeleteObligationEventMutation() {
         .eq("obligation_id", input.obligationId)
         .eq("status", "accepted");
       if (shareRowsError) {
-        throw new Error(shareRowsError.message ?? "Error al cargar viewers de la obligaciÃ³n");
+        throw new Error(shareRowsError.message ?? "Error al cargar viewers de la obligación");
       }
       for (const row of (shareRows ?? []) as Array<{ invited_user_id: string | null }>) {
         if (typeof row.invited_user_id === "string" && row.invited_user_id.trim().length > 0) {
@@ -3920,8 +3920,8 @@ export function useDeleteObligationEventMutation() {
         channel: "in_app",
         status: "pending",
         kind: "obligation_event_delete_accepted",
-        title: "EliminaciÃ³n aprobada",
-        body: `Se eliminÃ³ el evento${amountLabel}${input.obligationTitle ? ` en "${input.obligationTitle}"` : ""}.`,
+        title: "Eliminación aprobada",
+        body: `Se eliminó el evento${amountLabel}${input.obligationTitle ? ` en "${input.obligationTitle}"` : ""}.`,
         scheduled_for: new Date().toISOString(),
         related_entity_type: "obligation_event",
         related_entity_id: input.eventId,
@@ -3943,7 +3943,7 @@ export function useDeleteObligationEventMutation() {
               status: "pending",
               kind: "obligation_event_deleted",
               title: "Evento eliminado",
-              body: `Se eliminÃ³ un evento${amountLabel}${input.obligationTitle ? ` en "${input.obligationTitle}"` : ""}.`,
+              body: `Se eliminó un evento${amountLabel}${input.obligationTitle ? ` en "${input.obligationTitle}"` : ""}.`,
               scheduled_for: new Date().toISOString(),
               related_entity_type: "obligation_event",
               related_entity_id: input.eventId,
@@ -4043,7 +4043,7 @@ export function useCreateObligationEventDeleteRequestMutation() {
           .eq("related_entity_type", row.related_entity_type)
           .eq("related_entity_id", row.related_entity_id)
           .order("id", { ascending: false });
-        if (findErr) throw new Error(findErr.message ?? "Error al comprobar la notificaciÃ³n");
+        if (findErr) throw new Error(findErr.message ?? "Error al comprobar la notificación");
 
         if ((existing?.length ?? 0) > 0) {
           const { error: updateErr } = await client
@@ -4061,14 +4061,14 @@ export function useCreateObligationEventDeleteRequestMutation() {
             .eq("kind", row.kind)
             .eq("related_entity_type", row.related_entity_type)
             .eq("related_entity_id", row.related_entity_id);
-          if (updateErr) throw new Error(updateErr.message ?? "Error al actualizar la notificaciÃ³n");
+          if (updateErr) throw new Error(updateErr.message ?? "Error al actualizar la notificación");
           return;
         }
 
         const { error: insertErr } = await client
           .from("notifications")
           .insert(row);
-        if (insertErr) throw new Error(insertErr.message ?? "Error al crear la notificaciÃ³n");
+        if (insertErr) throw new Error(insertErr.message ?? "Error al crear la notificación");
       }
 
       await createOrRefreshNotification({
@@ -4076,8 +4076,8 @@ export function useCreateObligationEventDeleteRequestMutation() {
         channel: "in_app",
         status: "pending",
         kind: "obligation_event_delete_request",
-        title: "Solicitud de eliminaciÃ³n",
-        body: `${ownerName} solicitÃ³ eliminar un evento${amountLabel}${input.obligationTitle ? ` en "${input.obligationTitle}"` : ""}.`,
+        title: "Solicitud de Eliminación",
+        body: `${ownerName} solicitó eliminar un evento${amountLabel}${input.obligationTitle ? ` en "${input.obligationTitle}"` : ""}.`,
         scheduled_for: now,
         related_entity_type: "obligation_event",
         related_entity_id: input.eventId,
@@ -4090,7 +4090,7 @@ export function useCreateObligationEventDeleteRequestMutation() {
         status: "pending",
         kind: "obligation_event_delete_pending",
         title: "Solicitud enviada",
-        body: `Tu solicitud para eliminar este evento quedÃ³ pendiente${input.obligationTitle ? ` en "${input.obligationTitle}"` : ""}.`,
+        body: `Tu solicitud para eliminar este evento quedó pendiente${input.obligationTitle ? ` en "${input.obligationTitle}"` : ""}.`,
         scheduled_for: now,
         related_entity_type: "obligation_event",
         related_entity_id: input.eventId,
@@ -4106,8 +4106,8 @@ export function useCreateObligationEventDeleteRequestMutation() {
             channel: "in_app",
             status: "pending",
             kind: "obligation_event_delete_request",
-            title: "Solicitud de eliminaciÃ³n",
-            body: `${ownerName} solicitÃ³ eliminar un evento${amountLabel}${input.obligationTitle ? ` en "${input.obligationTitle}"` : ""}.`,
+            title: "Solicitud de Eliminación",
+            body: `${ownerName} solicitó eliminar un evento${amountLabel}${input.obligationTitle ? ` en "${input.obligationTitle}"` : ""}.`,
             scheduled_for: now,
             related_entity_type: "obligation_event",
             related_entity_id: input.eventId,
@@ -4126,7 +4126,7 @@ export function useCreateObligationEventDeleteRequestMutation() {
             status: "pending",
             kind: "obligation_event_delete_pending",
             title: "Solicitud enviada",
-            body: `Tu solicitud para eliminar este evento quedÃ³ pendiente${input.obligationTitle ? ` en "${input.obligationTitle}"` : ""}.`,
+            body: `Tu solicitud para eliminar este evento quedó pendiente${input.obligationTitle ? ` en "${input.obligationTitle}"` : ""}.`,
             scheduled_for: now,
             related_entity_type: "obligation_event",
             related_entity_id: input.eventId,
@@ -4196,7 +4196,7 @@ export function useRejectObligationEventDeleteRequestMutation() {
         status: "pending",
         kind: "obligation_event_delete_rejected",
         title: "Solicitud rechazada",
-        body: `No se aprobÃ³ la eliminaciÃ³n del evento${input.rejectionReason?.trim() ? `. Motivo: ${input.rejectionReason.trim()}` : ""}.`,
+        body: `No se aprobó la Eliminación del evento${input.rejectionReason?.trim() ? `. Motivo: ${input.rejectionReason.trim()}` : ""}.`,
         scheduled_for: now,
         related_entity_type: "obligation_event",
         related_entity_id: input.eventId,
@@ -4495,7 +4495,7 @@ export function useRejectObligationEventEditRequestMutation() {
   });
 }
 
-// â”€â”€â”€ Subscription mutations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Subscription mutations ───────────────────────────────────────────────────
 
 export type SubscriptionFormInput = {
   name: string;
@@ -4509,7 +4509,7 @@ export type SubscriptionFormInput = {
   dayOfMonth?: number | null;
   dayOfWeek?: number | null;
   startDate: string;
-  /** PrÃ³ximo vencimiento (YYYY-MM-DD). */
+  /** Próximo vencimiento (YYYY-MM-DD). */
   nextDueDate: string;
   endDate?: string | null;
   remindDaysBefore: number;
@@ -4543,9 +4543,9 @@ export function useCreateRecurringIncomeMutation(workspaceId: number | null) {
     mutationFn: async (input: RecurringIncomeFormInput) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const { data: authData, error: authErr } = await supabase.auth.getUser();
-      if (authErr) throw new Error(authErr.message ?? "No se pudo verificar la sesiÃ³n");
+      if (authErr) throw new Error(authErr.message ?? "No se pudo verificar la sesión");
       const uid = authData.user?.id;
-      if (!uid) throw new Error("No hay sesiÃ³n");
+      if (!uid) throw new Error("No hay sesión");
 
       const { data, error } = await supabase
         .from("recurring_income")
@@ -4819,9 +4819,9 @@ export function useCreateSubscriptionMutation(workspaceId: number | null) {
     mutationFn: async (input: SubscriptionFormInput) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const { data: authData, error: authErr } = await supabase.auth.getUser();
-      if (authErr) throw new Error(authErr.message ?? "No se pudo verificar la sesiÃ³n");
+      if (authErr) throw new Error(authErr.message ?? "No se pudo verificar la sesión");
       const uid = authData.user?.id;
-      if (!uid) throw new Error("No hay sesiÃ³n");
+      if (!uid) throw new Error("No hay sesión");
 
       const { data, error } = await supabase
         .from("subscriptions")
@@ -4908,7 +4908,7 @@ export function useDeleteSubscriptionMutation(workspaceId: number | null) {
         .eq("subscription_id", id);
       if (countErr) throw new Error(countErr.message ?? "Error al comprobar movimientos");
       if ((count ?? 0) > 0) {
-        throw new Error("No se puede eliminar: hay movimientos vinculados a esta suscripciÃ³n.");
+        throw new Error("No se puede eliminar: hay movimientos vinculados a esta suscripción.");
       }
 
       const { error: occErr } = await supabase
@@ -4952,10 +4952,10 @@ export function useDeleteSubscriptionMutation(workspaceId: number | null) {
   });
 }
 
-// â”€â”€â”€ Category mutations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Category mutations ───────────────────────────────────────────────────────
 
 function invalidateCategoryRelatedQueries(queryClient: QueryClient, workspaceId: number | null) {
-  // Mark snapshot stale but don't trigger an immediate expensive refetch â€”
+  // Mark snapshot stale but don't trigger an immediate expensive refetch —
   // category name changes don't affect balances and will be picked up next navigation.
   void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"], refetchType: "none" });
   if (workspaceId != null) {
@@ -4979,9 +4979,9 @@ export function useCreateCategoryMutation(workspaceId: number | null) {
     mutationFn: async (input: CategoryFormInput) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const { data: authData, error: authErr } = await supabase.auth.getUser();
-      if (authErr) throw new Error(authErr.message ?? "No se pudo verificar la sesiÃ³n");
+      if (authErr) throw new Error(authErr.message ?? "No se pudo verificar la sesión");
       const uid = authData.user?.id;
-      if (!uid) throw new Error("No hay sesiÃ³n");
+      if (!uid) throw new Error("No hay sesión");
 
       const { data: maxRow, error: maxErr } = await supabase
         .from("categories")
@@ -4990,7 +4990,7 @@ export function useCreateCategoryMutation(workspaceId: number | null) {
         .order("sort_order", { ascending: false })
         .limit(1)
         .maybeSingle();
-      if (maxErr) throw new Error(maxErr.message ?? "Error al leer orden de categorÃ­as");
+      if (maxErr) throw new Error(maxErr.message ?? "Error al leer orden de categorías");
       const maxSort = maxRow?.sort_order != null ? toNum(maxRow.sort_order as NumericLike) : 0;
 
       const clientSort = input.sortOrder;
@@ -5031,11 +5031,11 @@ export function useUpdateCategoryMutation(workspaceId: number | null) {
     mutationFn: async ({ id, input }: { id: number; input: Partial<CategoryFormInput> }) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       if (input.parentId !== undefined && input.parentId === id) {
-        throw new Error("La categorÃ­a no puede ser su propia categorÃ­a padre.");
+        throw new Error("La categoría no puede ser su propia categoría padre.");
       }
 
       const { data: authData, error: authErr } = await supabase.auth.getUser();
-      if (authErr) throw new Error(authErr.message ?? "No se pudo verificar la sesiÃ³n");
+      if (authErr) throw new Error(authErr.message ?? "No se pudo verificar la sesión");
       const uid = authData.user?.id ?? null;
 
       const payload: Record<string, unknown> = { updated_by_user_id: uid };
@@ -5060,14 +5060,14 @@ export function useUpdateCategoryMutation(workspaceId: number | null) {
   });
 }
 
-/** Solo activar / desactivar (toggle rÃ¡pido en lista). */
+/** Solo activar / desactivar (toggle rápido en lista). */
 export function useToggleCategoryMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, isActive }: { id: number; isActive: boolean }) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const { data: authData, error: authErr } = await supabase.auth.getUser();
-      if (authErr) throw new Error(authErr.message ?? "No se pudo verificar la sesiÃ³n");
+      if (authErr) throw new Error(authErr.message ?? "No se pudo verificar la sesión");
       const uid = authData.user?.id ?? null;
       const { error } = await supabase
         .from("categories")
@@ -5094,10 +5094,10 @@ export function useDeleteCategoryMutation(workspaceId: number | null) {
         .eq("id", id)
         .eq("workspace_id", workspaceId)
         .maybeSingle();
-      if (catErr) throw new Error(catErr.message ?? "Error al cargar categorÃ­a");
-      if (!catRow) throw new Error("CategorÃ­a no encontrada.");
+      if (catErr) throw new Error(catErr.message ?? "Error al cargar categoría");
+      if (!catRow) throw new Error("Categoría no encontrada.");
       if ((catRow as { is_system?: boolean }).is_system) {
-        throw new Error("No se puede eliminar una categorÃ­a base del sistema.");
+        throw new Error("No se puede eliminar una categoría base del sistema.");
       }
 
       const { count: movCount, error: movErr } = await supabase
@@ -5107,7 +5107,7 @@ export function useDeleteCategoryMutation(workspaceId: number | null) {
         .eq("category_id", id);
       if (movErr) throw new Error(movErr.message ?? "Error al comprobar movimientos");
       if ((movCount ?? 0) > 0) {
-        throw new Error("No se puede eliminar: hay movimientos que usan esta categorÃ­a.");
+        throw new Error("No se puede eliminar: hay movimientos que usan esta categoría.");
       }
 
       const { count: subCount, error: subErr } = await supabase
@@ -5117,7 +5117,7 @@ export function useDeleteCategoryMutation(workspaceId: number | null) {
         .eq("category_id", id);
       if (subErr) throw new Error(subErr.message ?? "Error al comprobar suscripciones");
       if ((subCount ?? 0) > 0) {
-        throw new Error("No se puede eliminar: hay suscripciones que usan esta categorÃ­a.");
+        throw new Error("No se puede eliminar: hay suscripciones que usan esta categoría.");
       }
 
       const { count: childCount, error: childErr } = await supabase
@@ -5125,9 +5125,9 @@ export function useDeleteCategoryMutation(workspaceId: number | null) {
         .select("*", { count: "exact", head: true })
         .eq("workspace_id", workspaceId)
         .eq("parent_id", id);
-      if (childErr) throw new Error(childErr.message ?? "Error al comprobar subcategorÃ­as");
+      if (childErr) throw new Error(childErr.message ?? "Error al comprobar subcategorías");
       if ((childCount ?? 0) > 0) {
-        throw new Error("No se puede eliminar: existen subcategorÃ­as. ReasÃ­gnalas o elimÃ­nalas primero.");
+        throw new Error("No se puede eliminar: existen subcategorías. Reasígnalas o elimínalas primero.");
       }
 
       const { error } = await supabase.from("categories").delete().eq("id", id).eq("workspace_id", workspaceId);
@@ -5139,7 +5139,7 @@ export function useDeleteCategoryMutation(workspaceId: number | null) {
   });
 }
 
-// â”€â”€â”€ Counterparty (contact) mutations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Counterparty (contact) mutations ────────────────────────────────────────
 
 export type CounterpartyFormInput = {
   name: string;
@@ -5230,7 +5230,7 @@ export function useDeleteCounterpartyMutation(workspaceId: number | null) {
       if (obligationError) throw new Error(obligationError.message ?? "Error al validar obligaciones del contacto");
 
       if ((movementCount ?? 0) > 0 || (obligationCount ?? 0) > 0) {
-        throw new Error("No puedes eliminar este contacto porque tiene movimientos o crÃ©ditos/deudas asociados. ArchÃ­valo en su lugar.");
+        throw new Error("No puedes eliminar este contacto porque tiene movimientos o créditos/deudas asociados. Archívalo en su lugar.");
       }
 
       const { error } = await supabase
@@ -5247,7 +5247,7 @@ export function useDeleteCounterpartyMutation(workspaceId: number | null) {
   });
 }
 
-// â”€â”€â”€ Notification queries â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Notification queries ─────────────────────────────────────────────────────
 
 export function useNotificationsQuery(userId: string | null) {
   return useQuery({
@@ -5376,7 +5376,7 @@ export function useMarkNotificationReadMutation(userId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (notificationId: number) => {
-      if (!supabase) throw new Error("Supabase no estÃ¡ configurado.");
+      if (!supabase) throw new Error("Supabase no está configurado.");
       const { error } = await supabase
         .from("notifications")
         .update({ status: "read", read_at: new Date().toISOString() })
@@ -5411,7 +5411,7 @@ export function useMarkNotificationUnreadMutation(userId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (notificationId: number) => {
-      if (!supabase) throw new Error("Supabase no estÃ¡ configurado.");
+      if (!supabase) throw new Error("Supabase no está configurado.");
       const { error } = await supabase
         .from("notifications")
         .update({ status: "sent", read_at: null })
@@ -5446,7 +5446,7 @@ export function useMarkNotificationsReadMutation(userId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (notificationIds: number[]) => {
-      if (!supabase) throw new Error("Supabase no estÃ¡ configurado.");
+      if (!supabase) throw new Error("Supabase no está configurado.");
       if (!notificationIds.length) return;
       const { error } = await supabase
         .from("notifications")
@@ -5464,7 +5464,7 @@ export function useMarkNotificationsUnreadMutation(userId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (notificationIds: number[]) => {
-      if (!supabase) throw new Error("Supabase no estÃ¡ configurado.");
+      if (!supabase) throw new Error("Supabase no está configurado.");
       if (!notificationIds.length) return;
       const { error } = await supabase
         .from("notifications")
@@ -5513,10 +5513,10 @@ export function useDeleteNotificationsMutation(userId: string | null) {
   });
 }
 
-// â”€â”€â”€ Edge Function helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Edge Function helper ─────────────────────────────────────────────────────
 
 async function invokeEdgeFunction<T>(name: string, body: Record<string, unknown>): Promise<T> {
-  if (!supabase) throw new Error("Supabase no estÃ¡ configurado.");
+  if (!supabase) throw new Error("Supabase no está configurado.");
   let accessToken: string | null = null;
   let activeSession: Awaited<ReturnType<typeof supabase.auth.getSession>>["data"]["session"] | null = null;
   const configuredProjectRef = extractSupabaseProjectRef(supabaseUrl);
@@ -5526,7 +5526,7 @@ async function invokeEdgeFunction<T>(name: string, body: Record<string, unknown>
       stage: "get-session-error",
       error: sessionError.message ?? String(sessionError),
     });
-    throw new Error(sessionError.message ?? "No se pudo validar tu sesiÃ³n.");
+    throw new Error(sessionError.message ?? "No se pudo validar tu sesión.");
   }
   activeSession = sessionData.session ?? null;
   accessToken = activeSession?.access_token ?? null;
@@ -5558,7 +5558,7 @@ async function invokeEdgeFunction<T>(name: string, body: Record<string, unknown>
         userId: activeSession?.user?.id ?? null,
         expiresAt: activeSession?.expires_at ?? null,
       });
-      throw new Error(refreshError.message ?? "Tu sesiÃ³n expirÃ³. Vuelve a iniciar sesiÃ³n.");
+      throw new Error(refreshError.message ?? "Tu sesión expiró. Vuelve a iniciar sesión.");
     }
     activeSession = refreshedData.session ?? activeSession;
     accessToken = activeSession?.access_token ?? accessToken;
@@ -5579,7 +5579,7 @@ async function invokeEdgeFunction<T>(name: string, body: Record<string, unknown>
         userId: activeSession?.user?.id ?? null,
         expiresAt: activeSession?.expires_at ?? null,
       });
-      throw new Error(refreshError.message ?? "Tu sesiÃ³n expirÃ³. Vuelve a iniciar sesiÃ³n.");
+      throw new Error(refreshError.message ?? "Tu sesión expiró. Vuelve a iniciar sesión.");
     }
     activeSession = refreshedData.session ?? null;
     accessToken = activeSession?.access_token ?? null;
@@ -5592,7 +5592,7 @@ async function invokeEdgeFunction<T>(name: string, body: Record<string, unknown>
       expiresAt: activeSession?.expires_at ?? null,
       bodyKeys: Object.keys(body),
     });
-    throw new Error("Tu sesiÃ³n expirÃ³. Vuelve a iniciar sesiÃ³n.");
+    throw new Error("Tu sesión expiró. Vuelve a iniciar sesión.");
   }
 
   if (!supabaseUrl || !supabaseAnonKey) {
@@ -5612,7 +5612,7 @@ async function invokeEdgeFunction<T>(name: string, body: Record<string, unknown>
     });
     await clearLocalSessionSilently();
     throw new Error(
-      "La sesiÃ³n guardada pertenece a otro proyecto de Supabase. Cierra sesiÃ³n e ingresa otra vez.",
+      "La sesión guardada pertenece a otro proyecto de Supabase. Cierra sesión e ingresa otra vez.",
     );
   }
 
@@ -5642,7 +5642,7 @@ async function invokeEdgeFunction<T>(name: string, body: Record<string, unknown>
         configuredProjectRef,
         tokenProjectRef,
       });
-      throw new Error(refreshError.message ?? authError?.message ?? "Tu sesiÃ³n expirÃ³. Vuelve a iniciar sesiÃ³n.");
+      throw new Error(refreshError.message ?? authError?.message ?? "Tu sesión expiró. Vuelve a iniciar sesión.");
     }
     activeSession = refreshedData.session ?? activeSession;
     accessToken = activeSession?.access_token ?? accessToken;
@@ -5659,7 +5659,7 @@ async function invokeEdgeFunction<T>(name: string, body: Record<string, unknown>
       });
       await clearLocalSessionSilently();
       throw new Error(
-        "La sesiÃ³n guardada pertenece a otro proyecto de Supabase. Cierra sesiÃ³n e ingresa otra vez.",
+        "La sesión guardada pertenece a otro proyecto de Supabase. Cierra sesión e ingresa otra vez.",
       );
     }
 
@@ -5668,7 +5668,7 @@ async function invokeEdgeFunction<T>(name: string, body: Record<string, unknown>
       if ((authError?.message ?? "").toLowerCase().includes("invalid jwt")) {
         await clearLocalSessionSilently();
       }
-      throw new Error(authError?.message ?? "Tu sesiÃ³n expirÃ³. Vuelve a iniciar sesiÃ³n.");
+      throw new Error(authError?.message ?? "Tu sesión expiró. Vuelve a iniciar sesión.");
     }
   }
 
@@ -5707,7 +5707,7 @@ async function invokeEdgeFunction<T>(name: string, body: Record<string, unknown>
     } catch (error) {
       const message =
         error instanceof Error && error.name === "AbortError"
-          ? "La solicitud tardÃ³ demasiado. Intenta de nuevo."
+          ? "La solicitud tardó demasiado. Intenta de nuevo."
           : "No pudimos conectarnos al servidor. Revisa tu internet e intenta de nuevo.";
       logEdgeFunctionDebug(name, {
         stage: "network-error",
@@ -5770,7 +5770,7 @@ async function invokeEdgeFunction<T>(name: string, body: Record<string, unknown>
           });
           await clearLocalSessionSilently();
           throw new Error(
-            "La sesiÃ³n guardada pertenece a otro proyecto de Supabase. Cierra sesiÃ³n e ingresa otra vez.",
+            "La sesión guardada pertenece a otro proyecto de Supabase. Cierra sesión e ingresa otra vez.",
           );
         }
 
@@ -5807,7 +5807,7 @@ async function invokeEdgeFunction<T>(name: string, body: Record<string, unknown>
         tokenIssuer: typeof tokenPayload?.iss === "string" ? tokenPayload.iss : null,
       });
       await clearLocalSessionSilently();
-      throw new Error("Tu sesiÃ³n expirÃ³. Cierra sesiÃ³n e ingresa nuevamente.");
+      throw new Error("Tu sesión expiró. Cierra sesión e ingresa nuevamente.");
     }
 
     const shouldRetryViaClient =
@@ -5876,7 +5876,7 @@ async function invokeEdgeFunction<T>(name: string, body: Record<string, unknown>
   return (await response.json()) as T;
 }
 
-// â”€â”€â”€ Workspace creation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Workspace creation ───────────────────────────────────────────────────────
 
 export type CreateSharedWorkspaceInput = {
   name: string;
@@ -5903,7 +5903,7 @@ export function useCreateSharedWorkspaceMutation() {
   });
 }
 
-// â”€â”€â”€ Workspace invitation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Workspace invitation ─────────────────────────────────────────────────────
 
 export type WorkspaceInvitationInput = {
   workspaceId: number;
@@ -5945,7 +5945,7 @@ export function useCreateWorkspaceInvitationMutation(workspaceId?: number | null
         },
       );
       if (!response.ok || !response.invitedEmail) {
-        throw new Error(response.error ?? "No se pudo enviar la invitaciÃ³n.");
+        throw new Error(response.error ?? "No se pudo enviar la invitación.");
       }
       return {
         invitationId: response.invitationId ?? null,
@@ -5964,7 +5964,7 @@ export function useCreateWorkspaceInvitationMutation(workspaceId?: number | null
   });
 }
 
-// â”€â”€â”€ Obligation active share (pending / accepted) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Obligation active share (pending / accepted) ───────────────────────────────
 
 function mapObligationShareRow(r: Record<string, unknown>): ObligationShareSummary {
   return {
@@ -6008,7 +6008,7 @@ export function useObligationActiveShareQuery(
         .order("updated_at", { ascending: false })
         .limit(1)
         .maybeSingle();
-      if (error) throw new Error(error.message ?? "Error al cargar comparticiÃ³n");
+      if (error) throw new Error(error.message ?? "Error al cargar compartición");
       if (!data) return null;
       return mapObligationShareRow(data as Record<string, unknown>);
     },
@@ -6037,13 +6037,13 @@ export function useObligationSharesQuery(workspaceId: number | null | undefined)
   });
 }
 
-// â”€â”€â”€ Obligaciones compartidas contigo (edge list-shared-obligations) â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Obligaciones compartidas contigo (edge list-shared-obligations) ─────────
 
 function copyIfMissing(target: Record<string, unknown>, snake: string, camel: string) {
   if (target[snake] === undefined && target[camel] !== undefined) target[snake] = target[camel];
 }
 
-/** Normaliza fila share snake_case si la edge devolviÃ³ camelCase. */
+/** Normaliza fila share snake_case si la edge devolvió camelCase. */
 function obligationShareRecordToSnake(input: Record<string, unknown>): Record<string, unknown> {
   const o = { ...input };
   copyIfMissing(o, "workspace_id", "workspaceId");
@@ -6209,7 +6209,7 @@ async function fetchSharedObligations(): Promise<SharedObligationSummary[]> {
   if (!supabase) return [];
   const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
   if (sessionError) {
-    throw new Error(sessionError.message ?? "No se pudo validar tu sesiÃ³n.");
+    throw new Error(sessionError.message ?? "No se pudo validar tu sesión.");
   }
   if (!sessionData.session?.user?.id) {
     return [];
@@ -6258,7 +6258,7 @@ export function mergeWorkspaceAndSharedObligations(
   return [...byId.values()];
 }
 
-/** Eventos de una obligaciÃ³n (Ãºtil cuando el resumen compartido no trae `events` completos). */
+/** Eventos de una obligación (útil cuando el resumen compartido no trae `events` completos). */
 export function useObligationEventsQuery(
   obligationId: number | null | undefined,
   enabled: boolean,
@@ -6343,7 +6343,7 @@ export function usePendingObligationShareInvitesQuery(
   });
 }
 
-// â”€â”€â”€ Obligation share invite â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Obligation share invite ──────────────────────────────────────────────────
 
 export type ObligationShareInviteInput = {
   workspaceId: number;
@@ -6387,7 +6387,7 @@ export function useCreateObligationShareInviteMutation(workspaceId?: number | nu
         },
       );
       if (!response.ok || !response.shareId || !response.invitedEmail) {
-        throw new Error(response.error ?? "No se pudo compartir la obligaciÃ³n.");
+        throw new Error(response.error ?? "No se pudo compartir la obligación.");
       }
       return {
         shareId: response.shareId,
@@ -6441,7 +6441,7 @@ export function useUnlinkObligationShareMutation(workspaceId?: number | null) {
   });
 }
 
-// â”€â”€â”€ Exchange Rates CRUD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Exchange Rates CRUD ───────────────────────────────────────────────────────
 
 export type ExchangeRateRecord = {
   id: number;
@@ -6636,7 +6636,7 @@ export function useDeleteExchangeRateMutation() {
   });
 }
 
-// â”€â”€â”€ Obligation Payment Requests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Obligation Payment Requests ──────────────────────────────────────────────
 
 function rowToPaymentRequest(row: Record<string, unknown>): ObligationPaymentRequest {
   return {
@@ -6686,7 +6686,7 @@ export function usePendingPaymentRequestCountsQuery(workspaceId: number | null |
   });
 }
 
-/** Solicitudes enviadas por el viewer para una obligaciÃ³n (vista del shared viewer). */
+/** Solicitudes enviadas por el viewer para una obligación (vista del shared viewer). */
 export function useViewerPaymentRequestsQuery(
   obligationId: number | null | undefined,
   userId: string | null | undefined,
@@ -6709,7 +6709,7 @@ export function useViewerPaymentRequestsQuery(
   });
 }
 
-/** Solicitudes de pago pendientes para una obligaciÃ³n (vista del owner). */
+/** Solicitudes de pago pendientes para una obligación (vista del owner). */
 export function useObligationPaymentRequestsQuery(obligationId: number | null | undefined) {
   return useQuery({
     queryKey: ["obligation-payment-requests", obligationId ?? null],
@@ -6739,15 +6739,15 @@ export type PaymentRequestInput = {
   installmentNo?: number | null;
   description?: string | null;
   notes?: string | null;
-  /** Cuenta del viewer donde se reflejarÃ¡ el movimiento al aceptarse */
+  /** Cuenta del viewer donde se reflejará el movimiento al aceptarse */
   viewerAccountId?: number | null;
   viewerWorkspaceId?: number | null;
-  /** Owner user id â€” used to send in-app notification */
+  /** Owner user id — used to send in-app notification */
   ownerUserId?: string | null;
   obligationTitle?: string | null;
 };
 
-/** Shared viewer envÃ­a una solicitud de pago/cobro al owner. */
+/** Shared viewer envía una solicitud de pago/cobro al owner. */
 export function useCreatePaymentRequestMutation() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -6788,8 +6788,8 @@ export function useCreatePaymentRequestMutation() {
           kind: "obligation_payment_request",
           title: `Solicitud pendiente${obligationLabel}`,
           body: desc
-            ? `${senderName} solicitÃ³ un pago de ${input.amount} Â· ${desc}`
-            : `${senderName} enviÃ³ una solicitud de pago de ${input.amount}${input.obligationTitle ? ` para "${input.obligationTitle}"` : ""}.`,
+            ? `${senderName} solicitó un pago de ${input.amount} Â· ${desc}`
+            : `${senderName} envió una solicitud de pago de ${input.amount}${input.obligationTitle ? ` para "${input.obligationTitle}"` : ""}.`,
           scheduled_for: new Date().toISOString(),
           related_entity_type: "obligation_payment_request",
           related_entity_id: requestId,
@@ -6811,7 +6811,7 @@ export function useCreatePaymentRequestMutation() {
             .eq("related_entity_id", row.related_entity_id)
             .order("id", { ascending: false })
             .limit(1);
-          if (findErr) throw new Error(findErr.message ?? "Error al comprobar la notificaciÃ³n");
+          if (findErr) throw new Error(findErr.message ?? "Error al comprobar la notificación");
 
           if ((existing?.length ?? 0) > 0) {
             const { error: updateErr } = await client
@@ -6829,12 +6829,12 @@ export function useCreatePaymentRequestMutation() {
               .eq("kind", row.kind)
               .eq("related_entity_type", row.related_entity_type)
               .eq("related_entity_id", row.related_entity_id);
-            if (updateErr) throw new Error(updateErr.message ?? "Error al actualizar la notificaciÃ³n");
+            if (updateErr) throw new Error(updateErr.message ?? "Error al actualizar la notificación");
           } else {
             const { error: notificationErr } = await client
               .from("notifications")
               .insert(row);
-            if (notificationErr) throw new Error(notificationErr.message ?? "Error al crear la notificaciÃ³n");
+            if (notificationErr) throw new Error(notificationErr.message ?? "Error al crear la notificación");
           }
         } catch (notificationErr) {
           console.warn("[PaymentRequestNotification]", notificationErr);
@@ -6857,8 +6857,8 @@ export function useCreatePaymentRequestMutation() {
           kind: "obligation_payment_request",
           title: `Solicitud pendiente${obligationLabel}`,
           body: desc
-            ? `${senderName} solicitÃ³ un pago de ${variables.amount} Â· ${desc}`
-            : `${senderName} enviÃ³ una solicitud de pago de ${variables.amount}${variables.obligationTitle ? ` para "${variables.obligationTitle}"` : ""}.`,
+            ? `${senderName} solicitó un pago de ${variables.amount} Â· ${desc}`
+            : `${senderName} envió una solicitud de pago de ${variables.amount}${variables.obligationTitle ? ` para "${variables.obligationTitle}"` : ""}.`,
           scheduled_for: new Date().toISOString(),
           related_entity_type: "obligation_payment_request",
           related_entity_id: data.id,
@@ -6901,7 +6901,7 @@ export type AcceptPaymentRequestInput = {
   shareId?: number | null;
 };
 
-/** Owner acepta la solicitud â†’ crea evento + movimiento del owner + movimiento del viewer â†’ actualiza status. */
+/** Owner acepta la solicitud → crea evento + movimiento del owner + movimiento del viewer → actualiza status. */
 export function useAcceptPaymentRequestMutation() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -6994,7 +6994,7 @@ export function useAcceptPaymentRequestMutation() {
       if (input.viewerUserId) {
         const recentCutoffIso = new Date(Date.now() - 5 * 60_000).toISOString();
         const acceptedBody = input.viewerAccountId
-          ? `Tu solicitud de ${input.amount} fue aceptada${input.obligationTitle ? ` para "${input.obligationTitle}"` : ""} y se registrarÃ¡ en tu cuenta.`
+          ? `Tu solicitud de ${input.amount} fue aceptada${input.obligationTitle ? ` para "${input.obligationTitle}"` : ""} y se registrará en tu cuenta.`
           : `Tu solicitud de ${input.amount} fue aceptada${input.obligationTitle ? ` para "${input.obligationTitle}"` : ""}. Puedes asociar el movimiento a una cuenta desde el historial.`;
 
         void supabase
@@ -7134,9 +7134,9 @@ export function useRejectPaymentRequestMutation() {
   });
 }
 
-// â”€â”€â”€ Obligation Event Viewer Links â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Obligation Event Viewer Links ────────────────────────────────────────────
 
-/** Links ya creados por el viewer para esta obligaciÃ³n (quÃ© eventos ya vinculÃ³ a sus cuentas). */
+/** Links ya creados por el viewer para esta obligación (qué eventos ya vinculó a sus cuentas). */
 export function useObligationEventViewerLinksQuery(
   obligationId: number | null | undefined,
   shareId: number | null | undefined,
@@ -7152,7 +7152,7 @@ export function useObligationEventViewerLinksQuery(
         .select("id, obligation_id, event_id, share_id, linked_by_user_id, viewer_workspace_id, account_id, movement_id, created_at")
         .eq("obligation_id", obligationId)
         .eq("share_id", shareId);
-      if (error) throw new Error(error.message ?? "Error al cargar vÃ­nculos");
+      if (error) throw new Error(error.message ?? "Error al cargar vínculos");
       return (data ?? []).map((row: Record<string, unknown>) => ({
         id: Number(row.id),
         obligationId: Number(row.obligation_id),
@@ -7314,7 +7314,7 @@ export function useLinkEventToAccountMutation() {
           account_id: input.accountId,
           movement_id: movementId,
         });
-      if (linkError) throw new Error(linkError.message ?? "Error al guardar vÃ­nculo");
+      if (linkError) throw new Error(linkError.message ?? "Error al guardar vínculo");
 
       let attachmentSyncError: string | null = null;
       try {
@@ -7377,7 +7377,7 @@ export function useUpsertLinkEventToAccountMutation() {
         .eq("share_id", input.shareId)
         .order("id", { ascending: false })
         .limit(1);
-      if (existingErr) throw new Error(existingErr.message ?? "Error al comprobar vÃ­nculo existente");
+      if (existingErr) throw new Error(existingErr.message ?? "Error al comprobar vínculo existente");
 
       const existingLink = (existingLinks ?? [])[0] as
         | { id: number; movement_id: number | null; viewer_workspace_id: number | null }
@@ -7413,7 +7413,7 @@ export function useUpsertLinkEventToAccountMutation() {
             movement_id: movementId,
           })
           .eq("id", existingLink.id);
-        if (linkUpdateError) throw new Error(linkUpdateError.message ?? "Error al actualizar vÃ­nculo");
+        if (linkUpdateError) throw new Error(linkUpdateError.message ?? "Error al actualizar vínculo");
       } else {
         const { error: linkError } = await client
           .from("obligation_event_viewer_links")
@@ -7426,7 +7426,7 @@ export function useUpsertLinkEventToAccountMutation() {
             account_id: input.accountId,
             movement_id: movementId,
           });
-        if (linkError) throw new Error(linkError.message ?? "Error al guardar vÃ­nculo");
+        if (linkError) throw new Error(linkError.message ?? "Error al guardar vínculo");
       }
 
       let attachmentSyncError: string | null = null;
@@ -7488,7 +7488,7 @@ export function useDeleteViewerEventLinkMutation() {
         .from("obligation_event_viewer_links")
         .delete()
         .eq("id", input.linkId);
-      if (linkErr) throw new Error(linkErr.message ?? "Error al eliminar vÃ­nculo del evento");
+      if (linkErr) throw new Error(linkErr.message ?? "Error al eliminar vínculo del evento");
     },
     onSuccess: (_data, variables) => {
       void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });

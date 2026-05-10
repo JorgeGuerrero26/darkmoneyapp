@@ -44,7 +44,7 @@ import { ResourceContextNote } from "../components/ui/ResourceContextNote";
 import { ResourceModuleTemplate } from "../components/ui/ResourceModuleTemplate";
 import { ScreenHeader } from "../components/layout/ScreenHeader";
 import { useToast } from "../hooks/useToast";
-import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../constants/theme";
 import { DEFAULT_EXCHANGE_CURRENCY, normalizeSupportedCurrencyCode } from "../constants/currencies";
 import type { WorkspaceRole } from "../types/domain";
 import { SafeBlurView } from "../components/ui/SafeBlurView";
@@ -701,7 +701,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingVertical: SPACING.sm,
     borderBottomWidth: 1,
-    borderBottomColor: GLASS.separator,
+    borderBottomColor: SURFACE.separator,
   },
   wsRowActive: { backgroundColor: COLORS.primary + "11", marginHorizontal: -SPACING.md, paddingHorizontal: SPACING.md, borderRadius: RADIUS.sm },
   wsInfo: { gap: 2 },
@@ -726,8 +726,8 @@ const styles = StyleSheet.create({
     padding: SPACING.md,
     borderRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
-    backgroundColor: GLASS.card,
+    borderColor: SURFACE.cardBorder,
+    backgroundColor: SURFACE.card,
     gap: SPACING.xs,
   },
   pushStatusTitle: {
@@ -782,7 +782,7 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.xs + 2,
     borderRadius: RADIUS.full,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
     alignItems: "center",
   },
   rolePillActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
@@ -817,7 +817,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.xl,
     paddingVertical: SPACING.xxxl,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
     alignItems: "center",
     gap: SPACING.lg,
     shadowColor: COLORS.primary,
@@ -830,9 +830,9 @@ const styles = StyleSheet.create({
     width: 90,
     height: 90,
     borderRadius: 45,
-    backgroundColor: GLASS.cardActive,
+    backgroundColor: SURFACE.cardActive,
     borderWidth: 1.5,
-    borderColor: GLASS.cardActiveBorder,
+    borderColor: SURFACE.cardActiveBorder,
     alignItems: "center",
     justifyContent: "center",
     shadowColor: COLORS.primary,

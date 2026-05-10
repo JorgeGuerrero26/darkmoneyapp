@@ -1,0 +1,4 @@
+interface:
+  display_name: "DarkMoney Origin Back Navigation"
+  short_description: "Estandariza el retroceso según el origen real."
+  default_prompt: "Usa esta skill para crear, revisar o corregir navegación de retroceso en módulos DarkMoney. La pantalla debe volver al origen real, no necesariamente al dashboard."

@@ -9,7 +9,7 @@ import { Paperclip, X } from "lucide-react-native";
 import type { DashboardMovementRow } from "../../services/queries/workspace-data";
 import { useMovementAttachmentCountsQuery } from "../../services/queries/attachments";
 import { formatCurrency } from "../ui/AmountDisplay";
-import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import {
   movementActsAsExpense,
   movementActsAsIncome,
@@ -285,15 +285,15 @@ const styles = StyleSheet.create({
   },
   sheet: {
     maxHeight: "88%",
-    backgroundColor: "rgba(10,14,20,0.98)",
+    backgroundColor: SURFACE.sheet,
     borderTopLeftRadius: RADIUS.xl,
     borderTopRightRadius: RADIUS.xl,
     borderTopWidth: 1,
     borderLeftWidth: 1,
     borderRightWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.16)",
-    borderLeftColor: "rgba(255,255,255,0.08)",
-    borderRightColor: "rgba(255,255,255,0.08)",
+    borderTopColor: SURFACE.separator,
+    borderLeftColor: SURFACE.separator,
+    borderRightColor: SURFACE.separator,
     paddingHorizontal: SPACING.lg,
     paddingTop: SPACING.sm,
   },
@@ -332,10 +332,10 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.md,
   },
   summaryCard: {
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
     padding: SPACING.md,
     marginBottom: SPACING.md,
     gap: SPACING.xs,
@@ -349,7 +349,7 @@ const styles = StyleSheet.create({
     marginTop: SPACING.xs,
     paddingTop: SPACING.sm,
     borderTopWidth: 1,
-    borderTopColor: GLASS.separator,
+    borderTopColor: SURFACE.separator,
   },
   summaryLabel: { fontSize: FONT_SIZE.sm, color: COLORS.storm, fontFamily: FONT_FAMILY.body },
   summaryValue: { fontSize: FONT_SIZE.sm, fontFamily: FONT_FAMILY.bodySemibold },
@@ -385,7 +385,7 @@ const styles = StyleSheet.create({
     gap: SPACING.md,
     paddingVertical: SPACING.sm,
     borderBottomWidth: 1,
-    borderBottomColor: GLASS.separator,
+    borderBottomColor: SURFACE.separator,
   },
   movRowMain: { flex: 1, minWidth: 0 },
   movTitle: {

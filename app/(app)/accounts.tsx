@@ -19,7 +19,7 @@ import {
 } from "../../services/queries/workspace-data";
 import { AccountCard } from "../../components/domain/AccountCard";
 import { AccountAnalyticsModal } from "../../components/domain/AccountAnalyticsModal";
-import { SkeletonCard } from "../../components/ui/Skeleton";
+import { SkeletonCard, SkeletonList } from "../../components/ui/Skeleton";
 import { BulkActionBar } from "../../components/ui/BulkActionBar";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { FAB } from "../../components/ui/FAB";
@@ -206,6 +206,14 @@ function AccountsScreen() {
     setSelectMode(false);
     setSelectedIds(new Set());
   }
+
+  // Auto-exit select mode when all items are deselected
+  useEffect(() => {
+    if (selectMode && selectedIds.size === 0) {
+      setSelectMode(false);
+      setSelectedIds(new Set());
+    }
+  }, [selectMode, selectedIds.size]);
 
   // ── Data ──────────────────────────────────────────────────────────────────
   const { allAccounts, totalNetWorth } = useMemo(() => {
@@ -467,11 +475,11 @@ function AccountsScreen() {
             loading={{
               isLoading,
               skeleton: (
-                <>
+                <SkeletonList>
                   <SkeletonCard />
                   <SkeletonCard />
                   <SkeletonCard />
-                </>
+                </SkeletonList>
               ),
             }}
             empty={{

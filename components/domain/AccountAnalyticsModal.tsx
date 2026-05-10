@@ -24,7 +24,7 @@ import { SparkLine } from "../ui/SparkLine";
 import { parseDisplayDate } from "../../lib/date";
 import { useAccountAnalyticsQuery } from "../../services/queries/workspace-data";
 import { useWorkspace } from "../../lib/workspace-context";
-import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, ELEVATION, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import type { AccountSummary } from "../../types/domain";
 import { SafeBlurView } from "../ui/SafeBlurView";
 import { useDismissibleSheet } from "../ui/useDismissibleSheet";
@@ -423,20 +423,16 @@ const styles = StyleSheet.create({
   },
   card: {
     maxHeight: "92%",
-    backgroundColor: "rgba(8,12,18,0.97)",
+    backgroundColor: SURFACE.sheet,
     borderTopLeftRadius: RADIUS.xl,
     borderTopRightRadius: RADIUS.xl,
     borderTopWidth: 1,
     borderLeftWidth: 1,
     borderRightWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.18)",
-    borderLeftColor: "rgba(255,255,255,0.10)",
-    borderRightColor: "rgba(255,255,255,0.07)",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: -8 },
-    shadowOpacity: 0.55,
-    shadowRadius: 28,
-    elevation: 20,
+    borderTopColor: SURFACE.separator,
+    borderLeftColor: SURFACE.separator,
+    borderRightColor: SURFACE.separator,
+    ...ELEVATION[4],
   },
   handle: {
     alignSelf: "center",
@@ -485,10 +481,10 @@ const styles = StyleSheet.create({
     paddingBottom: SPACING.xxxl,
   },
   currencyHintCard: {
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
     padding: SPACING.md,
     gap: 6,
   },
@@ -517,16 +513,10 @@ const styles = StyleSheet.create({
   metricCard: {
     flex: 1,
     minWidth: "45%",
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderRadius: RADIUS.md,
-    borderTopWidth: 1,
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
-    borderBottomWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.14)",
-    borderLeftColor: "rgba(255,255,255,0.08)",
-    borderRightColor: "rgba(255,255,255,0.06)",
-    borderBottomColor: "rgba(255,255,255,0.04)",
+    borderWidth: 1,
+    borderColor: SURFACE.cardBorder,
     padding: SPACING.md,
     gap: 4,
     alignItems: "flex-start",
@@ -647,10 +637,10 @@ const styles = StyleSheet.create({
 
   // Balance history sparkline
   balanceSparkCard: {
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
     padding: SPACING.md,
     gap: SPACING.xs,
   },

@@ -1,7 +1,7 @@
 import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
 import { Inbox, Search, type LucideIcon } from "lucide-react-native";
 import { Button } from "./Button";
-import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 
 type Variant = "empty" | "no-results";
 
@@ -65,9 +65,9 @@ const styles = StyleSheet.create({
     width: 60,
     height: 60,
     borderRadius: RADIUS.lg,
-    backgroundColor: "rgba(255,255,255,0.04)",
+    backgroundColor: SURFACE.separator,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.09)",
+    borderColor: SURFACE.cardBorder,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: SPACING.xs,

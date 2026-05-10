@@ -8,7 +8,7 @@ import {
   type StyleProp,
   type ViewStyle,
 } from "react-native";
-import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 
 type Props = TextInputProps & {
   label?: string;
@@ -56,16 +56,16 @@ const styles = StyleSheet.create({
   inputWrap: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: GLASS.input,
+    backgroundColor: SURFACE.input,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: GLASS.inputBorder,
+    borderColor: SURFACE.inputBorder,
   },
   inputWrapFocused: {
-    borderColor: GLASS.inputFocus,
+    borderColor: SURFACE.inputFocus,
   },
   inputWrapError: {
-    borderColor: GLASS.dangerBorder,
+    borderColor: SURFACE.dangerBorder,
   },
   input: {
     flex: 1,
@@ -81,10 +81,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   inputFocused: {
-    borderColor: GLASS.inputFocus,
+    borderColor: SURFACE.inputFocus,
   },
   inputError: {
-    borderColor: GLASS.dangerBorder,
+    borderColor: SURFACE.dangerBorder,
   },
   error: {
     fontFamily: FONT_FAMILY.body,

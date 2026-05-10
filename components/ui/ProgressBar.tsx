@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Animated, StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
-import { COLORS, GLASS, RADIUS } from "../../constants/theme";
+import { COLORS, RADIUS, SURFACE } from "../../constants/theme";
 
 type Props = {
   percent: number; // 0–100
@@ -43,11 +43,11 @@ export function ProgressBar({ percent, alertPercent = 80, height = 6, style }: P
 const styles = StyleSheet.create({
   track: {
     width: "100%",
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderRadius: RADIUS.full,
     overflow: "hidden",
     borderWidth: 0.5,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
   },
   fill: {
     borderRadius: RADIUS.full,

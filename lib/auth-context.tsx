@@ -211,6 +211,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   /** Login/registro antes de que resuelva el primer `getSession()` (evita marcar "sesión al arranque" por carrera). */
   const authBeforeInitialGetSessionRef = useRef(false);
   const resumeSessionSyncInFlightRef = useRef(false);
+  const signingOutRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -219,7 +220,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       nextSession: Session | null,
       options: { blockUi?: boolean } = {},
     ) {
-      if (cancelled) return;
+      if (cancelled || signingOutRef.current) return;
       if (options.blockUi) setIsLoading(true);
 
       setSession(nextSession);
@@ -368,12 +369,14 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }
 
   async function signOut() {
+    signingOutRef.current = true;
     if (!supabase) {
       // Even without Supabase, clear local state so NavigationGuard can react
       setSession(null);
       setUser(null);
       setProfile(null);
       setIsLoading(false);
+      signingOutRef.current = false;
       return;
     }
 
@@ -397,6 +400,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       clearSessionScopedClientState(),
       clearLastTabRoute(),
     ]);
+    signingOutRef.current = false;
   }
 
   async function resetPassword(email: string) {

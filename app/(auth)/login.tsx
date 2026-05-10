@@ -25,7 +25,7 @@ import { humanizeError } from "../../lib/errors";
 import { Input } from "../../components/ui/Input";
 import { Button } from "../../components/ui/Button";
 import { SafeBlurView } from "../../components/ui/SafeBlurView";
-import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import {
   REMEMBER_EMAIL_KEY,
   REMEMBER_FLAG_KEY,
@@ -584,12 +584,12 @@ const styles = StyleSheet.create({
     padding: SPACING.lg,
     borderRadius: RADIUS.xl,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
     backgroundColor: "rgba(10,14,20,0.78)",
   },
   errorBanner: {
-    backgroundColor: GLASS.dangerBg, borderRadius: RADIUS.md,
-    padding: SPACING.md, borderWidth: 1, borderColor: GLASS.dangerBorder,
+    backgroundColor: SURFACE.dangerBg, borderRadius: RADIUS.md,
+    padding: SPACING.md, borderWidth: 1, borderColor: SURFACE.dangerBorder,
   },
   errorBannerText: { fontFamily: FONT_FAMILY.bodyMedium, color: COLORS.rosewood, fontSize: FONT_SIZE.sm },
 
@@ -598,10 +598,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: SPACING.md,
-    backgroundColor: GLASS.cardActive,
+    backgroundColor: SURFACE.cardActive,
     borderRadius: RADIUS.xl,
     borderWidth: 1,
-    borderColor: GLASS.cardActiveBorder,
+    borderColor: SURFACE.cardActiveBorder,
     padding: SPACING.md,
     paddingRight: SPACING.lg,
   },
@@ -611,7 +611,7 @@ const styles = StyleSheet.create({
     borderRadius: 26,
     backgroundColor: "rgba(107,228,197,0.12)",
     borderWidth: 1,
-    borderColor: GLASS.cardActiveBorder,
+    borderColor: SURFACE.cardActiveBorder,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -621,7 +621,7 @@ const styles = StyleSheet.create({
 
   // Divider
   divider: { flexDirection: "row", alignItems: "center", gap: SPACING.sm },
-  dividerLine: { flex: 1, height: 0.5, backgroundColor: GLASS.separator },
+  dividerLine: { flex: 1, height: 0.5, backgroundColor: SURFACE.separator },
   dividerText: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
 
   rememberRow: {
@@ -661,7 +661,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.xl,
     paddingVertical: SPACING.xxxl,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
     alignItems: "center",
     gap: SPACING.xl,
     shadowColor: COLORS.primary,
@@ -674,9 +674,9 @@ const styles = StyleSheet.create({
     width: 90,
     height: 90,
     borderRadius: 45,
-    backgroundColor: GLASS.cardActive,
+    backgroundColor: SURFACE.cardActive,
     borderWidth: 1.5,
-    borderColor: GLASS.cardActiveBorder,
+    borderColor: SURFACE.cardActiveBorder,
     alignItems: "center",
     justifyContent: "center",
     shadowColor: COLORS.primary,

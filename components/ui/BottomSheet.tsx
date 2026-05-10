@@ -15,7 +15,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { X } from "lucide-react-native";
-import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, ELEVATION, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { SafeBlurView } from "./SafeBlurView";
 
 const SCREEN_HEIGHT = Dimensions.get("window").height;
@@ -154,9 +154,6 @@ export function BottomSheet({
           },
         ]}
       >
-        {/* Top specular edge highlight */}
-        <View style={styles.topSpecular} pointerEvents="none" />
-
         <View {...panResponder.panHandlers}>
           {/* Drag handle */}
           <View style={styles.handleWrap}>
@@ -202,32 +199,16 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: "rgba(7,11,20,0.96)",
+    backgroundColor: SURFACE.sheet,
     borderTopLeftRadius: RADIUS.xl,
     borderTopRightRadius: RADIUS.xl,
-    // Non-uniform border: top edge brighter (specular reflection on glass)
     borderTopWidth: 1,
     borderLeftWidth: 1,
     borderRightWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.22)",
-    borderLeftColor: "rgba(255,255,255,0.12)",
-    borderRightColor: "rgba(255,255,255,0.12)",
-    // Deep upward shadow
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: -8 },
-    shadowOpacity: 0.55,
-    shadowRadius: 28,
-    elevation: 22,
-  },
-  // Thin bright strip at the very top edge — simulates specular glass reflection
-  topSpecular: {
-    position: "absolute",
-    top: 0,
-    left: 28,
-    right: 28,
-    height: 1,
-    backgroundColor: "rgba(255,255,255,0.30)",
-    borderRadius: 1,
+    borderTopColor: SURFACE.sheetBorder,
+    borderLeftColor: SURFACE.sheetBorder,
+    borderRightColor: SURFACE.sheetBorder,
+    ...ELEVATION[4],
   },
   handleWrap: {
     alignItems: "center",
@@ -238,7 +219,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 4,
     borderRadius: 2,
-    backgroundColor: "rgba(255,255,255,0.18)",
+    backgroundColor: "rgba(255,255,255,0.24)",
   },
   header: {
     flexDirection: "row",
@@ -246,7 +227,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.lg,
     paddingBottom: SPACING.md,
     borderBottomWidth: 0.5,
-    borderBottomColor: "rgba(255,255,255,0.08)",
+    borderBottomColor: SURFACE.separator,
   },
   title: {
     flex: 1,
@@ -260,9 +241,9 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: "rgba(255,255,255,0.08)",
+    backgroundColor: SURFACE.cardBorder,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
+    borderColor: SURFACE.sheetBorder,
     alignItems: "center",
     justifyContent: "center",
   },

@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import type { LucideIcon } from "lucide-react-native";
 
-import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING, SURFACE } from "../../constants/theme";
 import { EmptyState } from "./EmptyState";
 import { StaggeredItem } from "./StaggeredItem";
 
@@ -195,7 +195,7 @@ const styles = StyleSheet.create({
     marginTop: SPACING.sm,
     paddingTop: SPACING.md,
     borderTopWidth: 1,
-    borderTopColor: GLASS.separator,
+    borderTopColor: SURFACE.separator,
   },
   dividerLabel: {
     fontSize: FONT_SIZE.sm,

@@ -66,13 +66,13 @@ import { useUiStore } from "../../store/ui-store";
 import { Card } from "../../components/ui/Card";
 import { Button } from "../../components/ui/Button";
 import { ProgressBar } from "../../components/ui/ProgressBar";
-import { SkeletonCard } from "../../components/ui/Skeleton";
+import { SkeletonCard, SkeletonList } from "../../components/ui/Skeleton";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { formatCurrency } from "../../components/ui/AmountDisplay";
 import { MovementForm } from "../../components/forms/MovementForm";
 import { BottomSheet } from "../../components/ui/BottomSheet";
 import { WorkspaceSelector } from "../../components/layout/WorkspaceSelector";
-import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, ELEVATION, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { FAB } from "../../components/ui/FAB";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { DayMovementsSheet, type DaySheetMode } from "../../components/dashboard/DayMovementsSheet";
@@ -1105,7 +1105,7 @@ function HeroCard({
 
       {/* Income / Expense row */}
       <View style={subStyles.heroFlow}>
-        <View style={[subStyles.heroFlowItem, { borderRightWidth: 0.5, borderRightColor: GLASS.separator, paddingRight: SPACING.lg }]}>
+        <View style={[subStyles.heroFlowItem, { borderRightWidth: 0.5, borderRightColor: SURFACE.separator, paddingRight: SPACING.lg }]}>
           <View style={[subStyles.heroFlowIconWrap, { backgroundColor: COLORS.pine + "22" }]}>
             <View style={[subStyles.heroFlowDot, { backgroundColor: COLORS.pine }]} />
           </View>
@@ -4182,14 +4182,14 @@ const tabBarStyles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: SURFACE.separator,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
+    borderColor: SURFACE.cardBorder,
     position: "relative",
   },
   chipActive: {
-    backgroundColor: 'rgba(107,228,197,0.14)',
-    borderColor: 'rgba(107,228,197,0.45)',
+    backgroundColor: COLORS.successMuted,
+    borderColor: COLORS.primary + "45",
   },
   chipText: {
     fontFamily: FONT_FAMILY.bodyMedium,
@@ -4197,7 +4197,7 @@ const tabBarStyles = StyleSheet.create({
     color: COLORS.storm,
   },
   chipTextActive: {
-    color: '#6BE4C5',
+    color: COLORS.primary,
     fontFamily: FONT_FAMILY.bodySemibold,
   },
   badge: {
@@ -4215,7 +4215,7 @@ const tabBarStyles = StyleSheet.create({
   badgeText: {
     fontFamily: FONT_FAMILY.bodySemibold,
     fontSize: 9,
-    color: "#090D12",
+    color: COLORS.textInverse,
   },
   dot: {
     position: "absolute",
@@ -9913,7 +9913,11 @@ function DashboardScreen() {
           showPlanBadge
         />
         <ScrollView contentContainerStyle={styles.content}>
-          <SkeletonCard /><SkeletonCard /><SkeletonCard />
+          <SkeletonList>
+            <SkeletonCard />
+            <SkeletonCard />
+            <SkeletonCard />
+          </SkeletonList>
         </ScrollView>
       </View>
     );
@@ -10145,9 +10149,9 @@ function DashboardScreen() {
 
 const alertStyles = StyleSheet.create({
   container: {
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
     borderRadius: RADIUS.xl,
     overflow: "hidden",
     marginBottom: SPACING.xs,
@@ -10176,7 +10180,7 @@ const alertStyles = StyleSheet.create({
   },
   rowBorder: {
     borderBottomWidth: 0.5,
-    borderBottomColor: GLASS.separator,
+    borderBottomColor: SURFACE.separator,
   },
   iconDot: {
     width: 28,
@@ -10211,10 +10215,10 @@ const subStyles = StyleSheet.create({
     marginBottom: SPACING.sm,
   },
   macroCard: {
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
     padding: SPACING.md,
     gap: SPACING.md,
   },
@@ -10271,7 +10275,7 @@ const subStyles = StyleSheet.create({
   macroDivider: {
     width: 1,
     height: 40,
-    backgroundColor: GLASS.separator,
+    backgroundColor: SURFACE.separator,
     marginHorizontal: SPACING.md,
   },
   macroHint: {
@@ -10284,23 +10288,13 @@ const subStyles = StyleSheet.create({
   // Mode toggle
   toggleRow: {
     flexDirection: "row",
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderRadius: RADIUS.md,
     padding: 3,
     gap: 3,
-    borderTopWidth: 1,
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
-    borderBottomWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.18)",
-    borderLeftColor: "rgba(255,255,255,0.10)",
-    borderRightColor: "rgba(255,255,255,0.08)",
-    borderBottomColor: "rgba(255,255,255,0.05)",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.40,
-    shadowRadius: 10,
-    elevation: 7,
+    borderWidth: 1,
+    borderColor: SURFACE.cardBorder,
+    ...ELEVATION[2],
   },
   toggleBtn: {
     flex: 1,
@@ -10311,9 +10305,9 @@ const subStyles = StyleSheet.create({
     justifyContent: "center",
   },
   toggleBtnActive: {
-    backgroundColor: GLASS.cardActive,
+    backgroundColor: SURFACE.cardActive,
     borderWidth: 0.5,
-    borderColor: "rgba(107,228,197,0.15)",
+    borderColor: COLORS.successMuted,
   },
   toggleText: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.sm, color: COLORS.storm },
   toggleTextActive: { fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.ink },
@@ -10321,23 +10315,13 @@ const subStyles = StyleSheet.create({
 
   // Hero card - most prominent, gets the full premium glass treatment
   heroCard: {
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderRadius: RADIUS.xl,
     padding: SPACING.xl,
     gap: SPACING.xs,
-    borderTopWidth: 1,
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
-    borderBottomWidth: 1,
-    borderTopColor: "rgba(107,228,197,0.22)",
-    borderLeftColor: "rgba(255,255,255,0.14)",
-    borderRightColor: "rgba(255,255,255,0.10)",
-    borderBottomColor: "rgba(255,255,255,0.05)",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.52,
-    shadowRadius: 24,
-    elevation: 14,
+    borderWidth: 1,
+    borderColor: SURFACE.cardBorder,
+    ...ELEVATION[3],
   },
   heroTopRow: {
     flexDirection: "row",
@@ -10410,7 +10394,7 @@ const subStyles = StyleSheet.create({
     marginTop: SPACING.md,
     paddingTop: SPACING.md,
     borderTopWidth: 0.5,
-    borderTopColor: GLASS.separator,
+    borderTopColor: SURFACE.separator,
   },
   heroFlowItem: { flex: 1, gap: 4 },
   heroFlowIconWrap: {
@@ -10423,30 +10407,20 @@ const subStyles = StyleSheet.create({
   heroFlowDot: { width: 8, height: 8, borderRadius: 4 },
   heroFlowLabel: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
   heroFlowAmt: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.md },
-  heroSep: { width: 0.5, height: 44, backgroundColor: GLASS.separator, marginHorizontal: SPACING.lg },
+  heroSep: { width: 0.5, height: 44, backgroundColor: SURFACE.separator, marginHorizontal: SPACING.lg },
 
   // KPI row
   kpiRow: { flexDirection: "row", gap: SPACING.sm },
   kpiCard: {
     flex: 1,
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderRadius: RADIUS.xl,
     padding: SPACING.md,
     gap: 3,
     overflow: "hidden",
-    borderTopWidth: 1,
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
-    borderBottomWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.20)",
-    borderLeftColor: "rgba(255,255,255,0.12)",
-    borderRightColor: "rgba(255,255,255,0.08)",
-    borderBottomColor: "rgba(255,255,255,0.04)",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.45,
-    shadowRadius: 16,
-    elevation: 10,
+    borderWidth: 1,
+    borderColor: SURFACE.cardBorder,
+    ...ELEVATION[2],
   },
   kpiAccent: {
     ...StyleSheet.absoluteFillObject,
@@ -10493,26 +10467,16 @@ const subStyles = StyleSheet.create({
   // Accounts
   accountsRow: { flexDirection: "row", gap: SPACING.sm, paddingVertical: SPACING.xs },
   accountChip: {
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderRadius: RADIUS.xl,
     padding: SPACING.md,
     alignItems: "center",
     gap: SPACING.xs,
     minWidth: 100,
     maxWidth: 130,
-    borderTopWidth: 1,
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
-    borderBottomWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.20)",
-    borderLeftColor: "rgba(255,255,255,0.12)",
-    borderRightColor: "rgba(255,255,255,0.08)",
-    borderBottomColor: "rgba(255,255,255,0.04)",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.42,
-    shadowRadius: 12,
-    elevation: 7,
+    borderWidth: 1,
+    borderColor: SURFACE.cardBorder,
+    ...ELEVATION[2],
   },
   accountChipIcon: {
     width: 30,
@@ -10575,7 +10539,7 @@ const subStyles = StyleSheet.create({
     borderRadius: RADIUS.xl,
     backgroundColor: "rgba(255,255,255,0.04)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.07)",
+    borderColor: SURFACE.track,
   },
   upcomingRowTop: {
     flexDirection: "row",
@@ -10651,24 +10615,14 @@ const subStyles = StyleSheet.create({
 
   // Budgets
   budgetRow: {
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderRadius: RADIUS.xl,
     padding: SPACING.md,
     gap: SPACING.xs,
     marginBottom: SPACING.sm,
-    borderTopWidth: 1,
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
-    borderBottomWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.20)",
-    borderLeftColor: "rgba(255,255,255,0.12)",
-    borderRightColor: "rgba(255,255,255,0.08)",
-    borderBottomColor: "rgba(255,255,255,0.04)",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.45,
-    shadowRadius: 16,
-    elevation: 10,
+    borderWidth: 1,
+    borderColor: SURFACE.cardBorder,
+    ...ELEVATION[2],
   },
   budgetHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   budgetName: { flex: 1, fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.sm, color: COLORS.ink },
@@ -10679,23 +10633,13 @@ const subStyles = StyleSheet.create({
   leadersRowContainer: { flexDirection: "row", gap: SPACING.sm },
   leadersCard: {
     flex: 1,
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderRadius: RADIUS.xl,
     padding: SPACING.md,
     gap: SPACING.xs,
-    borderTopWidth: 1,
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
-    borderBottomWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.20)",
-    borderLeftColor: "rgba(255,255,255,0.12)",
-    borderRightColor: "rgba(255,255,255,0.08)",
-    borderBottomColor: "rgba(255,255,255,0.04)",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.45,
-    shadowRadius: 16,
-    elevation: 10,
+    borderWidth: 1,
+    borderColor: SURFACE.cardBorder,
+    ...ELEVATION[2],
   },
   leadersTitle: {
     fontFamily: FONT_FAMILY.bodySemibold,
@@ -10705,7 +10649,7 @@ const subStyles = StyleSheet.create({
     marginBottom: SPACING.xs,
   },
   leadersRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: SPACING.xs },
-  leadersSep: { borderBottomWidth: 0.5, borderBottomColor: GLASS.separator },
+  leadersSep: { borderBottomWidth: 0.5, borderBottomColor: SURFACE.separator },
   leadersName: { flex: 1, fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.xs, color: COLORS.ink, paddingRight: 4 },
   leadersAmt: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.xs },
 
@@ -10716,7 +10660,7 @@ const subStyles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: SPACING.sm,
     borderBottomWidth: 0.5,
-    borderBottomColor: GLASS.separator,
+    borderBottomColor: SURFACE.separator,
     gap: SPACING.sm,
   },
   obLeft: { flex: 1, gap: 2 },
@@ -10729,7 +10673,7 @@ const subStyles = StyleSheet.create({
   catLabelRow: { flexDirection: "row", justifyContent: "space-between" },
   catName: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.sm, color: COLORS.ink, flex: 1 },
   catAmount: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.sm, color: COLORS.rosewood },
-  catTrack: { height: 6, backgroundColor: "rgba(255,255,255,0.07)", borderRadius: RADIUS.full, overflow: "hidden" },
+  catTrack: { height: 6, backgroundColor: SURFACE.track, borderRadius: RADIUS.full, overflow: "hidden" },
   catFill: { height: 6, backgroundColor: COLORS.rosewood + "88", borderRadius: RADIUS.full },
 
   // Category comparison
@@ -10737,7 +10681,7 @@ const subStyles = StyleSheet.create({
   catCompRow: { flexDirection: "row", alignItems: "center", gap: SPACING.sm, marginBottom: SPACING.sm },
   catCompName: { width: 80, fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.xs, color: COLORS.ink },
   catCompBars: { flex: 1, gap: 3 },
-  catCompBarTrack: { height: 6, backgroundColor: "rgba(255,255,255,0.07)", borderRadius: RADIUS.full, overflow: "hidden" },
+  catCompBarTrack: { height: 6, backgroundColor: SURFACE.track, borderRadius: RADIUS.full, overflow: "hidden" },
   catCompBarFill: { height: 6, borderRadius: RADIUS.full },
   catCompAmt: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: 10, color: COLORS.rosewood, width: 60, textAlign: "right" },
 
@@ -10749,7 +10693,7 @@ const subStyles = StyleSheet.create({
     justifyContent: "space-between",
     paddingVertical: SPACING.xs + 2,
     borderBottomWidth: 0.5,
-    borderBottomColor: GLASS.separator,
+    borderBottomColor: SURFACE.separator,
   },
   subName: { flex: 1, fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.sm, color: COLORS.ink },
   subAmt: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.storm },
@@ -10770,7 +10714,7 @@ const subStyles = StyleSheet.create({
   healthLabelRow: { flexDirection: "row", justifyContent: "space-between" },
   healthLabel: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.xs, color: COLORS.ink },
   healthDesc: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
-  healthTrack: { height: 5, backgroundColor: "rgba(255,255,255,0.07)", borderRadius: RADIUS.full, overflow: "hidden" },
+  healthTrack: { height: 5, backgroundColor: SURFACE.track, borderRadius: RADIUS.full, overflow: "hidden" },
   healthFill: { height: 5, borderRadius: RADIUS.full },
 
   // Alert center
@@ -10790,9 +10734,9 @@ const subStyles = StyleSheet.create({
     minWidth: 92,
     padding: SPACING.sm,
     borderRadius: RADIUS.lg,
-    backgroundColor: "rgba(255,255,255,0.045)",
+    backgroundColor: SURFACE.subtle,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
+    borderColor: SURFACE.separator,
     gap: 3,
   },
   weeklyPatternPillLabel: {
@@ -10851,7 +10795,7 @@ const subStyles = StyleSheet.create({
   currencyDot: { width: 8, height: 8, borderRadius: 4 },
   currencyCode: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.xs, color: COLORS.ink },
   currencyPct: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm, marginLeft: "auto" },
-  currencyTrack: { height: 6, backgroundColor: "rgba(255,255,255,0.07)", borderRadius: RADIUS.full, overflow: "hidden" },
+  currencyTrack: { height: 6, backgroundColor: SURFACE.track, borderRadius: RADIUS.full, overflow: "hidden" },
   currencyFill: { height: 6, borderRadius: RADIUS.full },
 
   // Period radar
@@ -10900,9 +10844,9 @@ const subStyles = StyleSheet.create({
     gap: SPACING.sm,
     padding: SPACING.md,
     borderRadius: RADIUS.xl,
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
   },
   reviewItemIconWrap: {
     width: 34,
@@ -10941,9 +10885,9 @@ const subStyles = StyleSheet.create({
   futureWindowCard: {
     padding: SPACING.md,
     borderRadius: RADIUS.xl,
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
     gap: SPACING.xs,
   },
   futureWindowTop: {
@@ -10993,9 +10937,9 @@ const subStyles = StyleSheet.create({
     minWidth: "45%",
     padding: SPACING.md,
     borderRadius: RADIUS.xl,
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
     gap: 4,
   },
   learningMetricValue: {
@@ -11016,7 +10960,7 @@ const subStyles = StyleSheet.create({
     borderRadius: RADIUS.xl,
     backgroundColor: "rgba(255,255,255,0.04)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
+    borderColor: SURFACE.separator,
     gap: SPACING.xs,
   },
   phaseHeader: {
@@ -11045,7 +10989,7 @@ const subStyles = StyleSheet.create({
   phaseTrack: {
     height: 6,
     borderRadius: RADIUS.full,
-    backgroundColor: "rgba(255,255,255,0.08)",
+    backgroundColor: SURFACE.separator,
     overflow: "hidden",
   },
   phaseFill: {
@@ -11135,9 +11079,9 @@ const subStyles = StyleSheet.create({
     gap: SPACING.sm,
     padding: SPACING.md,
     borderRadius: RADIUS.xl,
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
   },
   commandActionCopy: {
     flex: 1,
@@ -11172,7 +11116,7 @@ const subStyles = StyleSheet.create({
     borderRadius: RADIUS.xl,
     backgroundColor: "rgba(255,255,255,0.04)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
+    borderColor: SURFACE.separator,
     gap: 4,
   },
   commandMetricLabel: {
@@ -11200,7 +11144,7 @@ const subStyles = StyleSheet.create({
     borderRadius: RADIUS.xl,
     backgroundColor: "rgba(255,255,255,0.04)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
+    borderColor: SURFACE.separator,
   },
   readinessTop: {
     flexDirection: "row",
@@ -11221,7 +11165,7 @@ const subStyles = StyleSheet.create({
   readinessTrack: {
     height: 6,
     borderRadius: RADIUS.full,
-    backgroundColor: "rgba(255,255,255,0.08)",
+    backgroundColor: SURFACE.separator,
     overflow: "hidden",
   },
   readinessFill: {
@@ -11297,7 +11241,7 @@ const subStyles = StyleSheet.create({
   },
   advMetricSectionBorder: {
     borderTopWidth: 0.5,
-    borderTopColor: GLASS.cardBorder,
+    borderTopColor: SURFACE.cardBorder,
     marginTop: SPACING.xs,
   },
   advMetricHeader: {
@@ -11346,7 +11290,7 @@ const subStyles = StyleSheet.create({
   },
   advScoreBar: {
     height: 5,
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderRadius: 3,
     overflow: "hidden",
     marginTop: SPACING.xs,
@@ -11394,7 +11338,7 @@ const subStyles = StyleSheet.create({
     borderRadius: RADIUS.xl,
     backgroundColor: "rgba(12,18,31,0.92)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.11)",
+    borderColor: SURFACE.softBorder,
     gap: SPACING.xs,
   },
   executiveCardWide: {
@@ -11463,7 +11407,7 @@ const subStyles = StyleSheet.create({
     borderRadius: RADIUS.xl,
     margin: 1.5,
     padding: SPACING.lg,
-    backgroundColor: "rgba(7,11,22,0.96)",
+    backgroundColor: SURFACE.deepNavy,
     gap: SPACING.md,
   },
   aiSummaryAmbientGlow: {
@@ -11503,7 +11447,7 @@ const subStyles = StyleSheet.create({
     paddingHorizontal: SPACING.md,
     paddingVertical: 7,
     borderRadius: RADIUS.full,
-    backgroundColor: "rgba(14,22,44,0.94)",
+    backgroundColor: SURFACE.deepNavy,
     borderWidth: 1,
     borderColor: "rgba(73,215,190,0.30)",
   },
@@ -11561,7 +11505,7 @@ const subStyles = StyleSheet.create({
     borderRadius: 28,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(7,12,26,0.96)",
+    backgroundColor: SURFACE.deepNavy,
     borderWidth: 1.5,
     borderColor: "rgba(73,215,190,0.36)",
     shadowColor: "#49D7BE",
@@ -11610,9 +11554,9 @@ const subStyles = StyleSheet.create({
     borderRadius: RADIUS.lg,
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
-    backgroundColor: "rgba(255,255,255,0.03)",
+    backgroundColor: SURFACE.subtle,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
+    borderColor: SURFACE.separator,
     gap: 6,
     overflow: "hidden",
   },
@@ -11643,7 +11587,7 @@ const subStyles = StyleSheet.create({
     borderRadius: RADIUS.lg,
     paddingHorizontal: SPACING.lg,
     paddingVertical: SPACING.md,
-    backgroundColor: "rgba(8,15,32,0.98)",
+    backgroundColor: SURFACE.deepNavy,
     borderWidth: 1.5,
     borderColor: "rgba(73,215,190,0.36)",
     alignItems: "center",
@@ -11693,7 +11637,7 @@ const subStyles = StyleSheet.create({
     paddingRight: SPACING.md,
     paddingLeft: SPACING.md + 4,
     borderRadius: RADIUS.lg,
-    backgroundColor: "rgba(6,11,24,0.95)",
+    backgroundColor: SURFACE.deepNavy,
     borderWidth: 1,
     borderColor: "rgba(92,141,255,0.16)",
     overflow: "hidden",
@@ -11787,7 +11731,7 @@ const subStyles = StyleSheet.create({
     borderRadius: RADIUS.xl,
     backgroundColor: "#0B1020",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
+    borderColor: SURFACE.inputBorder,
     padding: SPACING.lg,
     gap: SPACING.md,
   },
@@ -11809,7 +11753,7 @@ const subStyles = StyleSheet.create({
     borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.10)",
+    backgroundColor: SURFACE.cardBorder,
   },
   executiveModalTitle: {
     fontFamily: FONT_FAMILY.heading,
@@ -11839,7 +11783,7 @@ const subStyles = StyleSheet.create({
     borderRadius: RADIUS.xl,
     backgroundColor: "#0B1020",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
+    borderColor: SURFACE.inputBorder,
     padding: SPACING.lg,
     gap: SPACING.sm,
   },
@@ -11867,7 +11811,7 @@ const subStyles = StyleSheet.create({
     borderRadius: 17,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.10)",
+    backgroundColor: SURFACE.cardBorder,
   },
   movementPreviewSubtitle: {
     fontFamily: FONT_FAMILY.body,
@@ -11918,7 +11862,7 @@ const subStyles = StyleSheet.create({
     borderRadius: RADIUS.lg,
     backgroundColor: "rgba(255,255,255,0.055)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
+    borderColor: SURFACE.separator,
   },
   movementPreviewStatLabel: {
     fontFamily: FONT_FAMILY.body,
@@ -11944,9 +11888,9 @@ const subStyles = StyleSheet.create({
     gap: SPACING.sm,
     padding: SPACING.sm,
     borderRadius: RADIUS.lg,
-    backgroundColor: "rgba(255,255,255,0.045)",
+    backgroundColor: SURFACE.subtle,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
+    borderColor: SURFACE.separator,
   },
   movementPreviewRowTitle: {
     fontFamily: FONT_FAMILY.bodySemibold,
@@ -12015,9 +11959,9 @@ const subStyles = StyleSheet.create({
   explanationIntroCard: {
     padding: SPACING.md,
     borderRadius: RADIUS.xl,
-    backgroundColor: "rgba(255,255,255,0.045)",
+    backgroundColor: SURFACE.subtle,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
+    borderColor: SURFACE.separator,
     gap: SPACING.xs,
   },
   explanationKicker: {
@@ -12067,7 +12011,7 @@ const subStyles = StyleSheet.create({
     gap: 5,
     padding: SPACING.sm,
     borderRadius: RADIUS.lg,
-    backgroundColor: "rgba(255,255,255,0.045)",
+    backgroundColor: SURFACE.subtle,
   },
   explanationVisualMetricLabel: {
     fontFamily: FONT_FAMILY.body,
@@ -12228,7 +12172,7 @@ const subStyles = StyleSheet.create({
   },
   resultMeaningCardPositive: {
     backgroundColor: "rgba(18,48,40,0.92)",
-    borderColor: "rgba(107,228,197,0.18)",
+    borderColor: COLORS.primary + "18",
   },
   resultMeaningCardWarning: {
     backgroundColor: "rgba(44,34,20,0.94)",
@@ -12265,7 +12209,7 @@ const subStyles = StyleSheet.create({
     borderRadius: RADIUS.xl,
     backgroundColor: "rgba(59,166,142,0.24)",
     borderWidth: 1,
-    borderColor: "rgba(107,228,197,0.26)",
+    borderColor: COLORS.primary + "26",
   },
   executiveActionBtnText: {
     flex: 1,
@@ -12351,7 +12295,7 @@ const subStyles = StyleSheet.create({
     paddingHorizontal: SPACING.sm,
     paddingVertical: 6,
     borderRadius: RADIUS.full,
-    backgroundColor: "rgba(255,255,255,0.11)",
+    backgroundColor: SURFACE.softBorder,
   },
   miniChipText: {
     fontFamily: FONT_FAMILY.bodySemibold,
@@ -12409,7 +12353,7 @@ const subStyles = StyleSheet.create({
     borderRadius: RADIUS.xl,
     backgroundColor: "rgba(12,18,31,0.90)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.11)",
+    borderColor: SURFACE.softBorder,
     gap: SPACING.xs,
   },
   presetCardActive: {
@@ -12455,7 +12399,7 @@ const subStyles = StyleSheet.create({
     borderRadius: RADIUS.xl,
     backgroundColor: "rgba(12,18,31,0.90)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.11)",
+    borderColor: SURFACE.softBorder,
     gap: SPACING.sm,
   },
   widgetPanelTitle: {
@@ -12486,7 +12430,7 @@ const subStyles = StyleSheet.create({
     borderRadius: RADIUS.full,
     backgroundColor: "rgba(255,255,255,0.09)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.10)",
+    borderColor: SURFACE.cardBorder,
   },
   widgetChipText: {
     fontFamily: FONT_FAMILY.bodyMedium,
@@ -12503,7 +12447,7 @@ const subStyles = StyleSheet.create({
     borderRadius: RADIUS.xl,
     backgroundColor: "rgba(16,34,31,0.94)",
     borderWidth: 1,
-    borderColor: "rgba(107,228,197,0.22)",
+    borderColor: COLORS.primary + "22",
     gap: SPACING.md,
   },
   focusHeroTop: {
@@ -12543,7 +12487,7 @@ const subStyles = StyleSheet.create({
     paddingHorizontal: SPACING.sm,
     paddingVertical: 5,
     borderRadius: RADIUS.full,
-    backgroundColor: "rgba(255,255,255,0.11)",
+    backgroundColor: SURFACE.softBorder,
   },
   focusHeroToneTextMuted: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.xs, color: COLORS.storm },
   focusHeroMiddle: { flexDirection: "row", alignItems: "center", gap: SPACING.md },
@@ -12570,7 +12514,7 @@ const subStyles = StyleSheet.create({
     borderRadius: RADIUS.xl,
     backgroundColor: "rgba(12,18,31,0.90)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.11)",
+    borderColor: SURFACE.softBorder,
     gap: SPACING.xs,
   },
   focusMetricLabel: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.storm },
@@ -12582,7 +12526,7 @@ const subStyles = StyleSheet.create({
     borderRadius: RADIUS.xl,
     backgroundColor: "rgba(8,13,24,0.58)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
+    borderColor: SURFACE.separator,
     borderLeftWidth: 2,
     borderLeftColor: COLORS.primary + "88",
   },
@@ -12640,7 +12584,7 @@ const subStyles = StyleSheet.create({
     borderRadius: RADIUS.full,
     backgroundColor: "rgba(255,255,255,0.06)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
+    borderColor: SURFACE.separator,
   },
   annualYearPillActive: {
     backgroundColor: COLORS.primary,
@@ -12663,7 +12607,7 @@ const subStyles = StyleSheet.create({
     width: "48%",
     padding: SPACING.md,
     borderRadius: RADIUS.xl,
-    backgroundColor: "rgba(255,255,255,0.045)",
+    backgroundColor: SURFACE.subtle,
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.075)",
     gap: 4,
@@ -12723,7 +12667,7 @@ const subStyles = StyleSheet.create({
     flex: 1,
     height: 8,
     borderRadius: RADIUS.full,
-    backgroundColor: "rgba(255,255,255,0.07)",
+    backgroundColor: SURFACE.track,
     overflow: "hidden",
   },
   annualNetFill: {
@@ -12744,9 +12688,9 @@ const subStyles = StyleSheet.create({
     gap: SPACING.xs,
     padding: SPACING.md,
     borderRadius: RADIUS.xl,
-    backgroundColor: "rgba(255,255,255,0.045)",
+    backgroundColor: SURFACE.subtle,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
+    borderColor: SURFACE.separator,
   },
   annualDetailTitle: {
     fontFamily: FONT_FAMILY.heading,
@@ -12794,9 +12738,9 @@ const subStyles = StyleSheet.create({
     gap: SPACING.sm,
     padding: SPACING.md,
     borderRadius: RADIUS.xl,
-    backgroundColor: "rgba(255,255,255,0.045)",
+    backgroundColor: SURFACE.subtle,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.07)",
+    borderColor: SURFACE.track,
   },
   annualMovementTitle: {
     fontFamily: FONT_FAMILY.bodySemibold,
@@ -12881,7 +12825,7 @@ const subStyles = StyleSheet.create({
     position: "relative",
     height: 12,
     borderRadius: RADIUS.full,
-    backgroundColor: "rgba(255,255,255,0.07)",
+    backgroundColor: SURFACE.track,
     overflow: "hidden",
   },
   bridgeAxis: {
@@ -12913,9 +12857,9 @@ const subStyles = StyleSheet.create({
     flex: 1,
     padding: SPACING.sm,
     borderRadius: RADIUS.lg,
-    backgroundColor: "rgba(255,255,255,0.045)",
+    backgroundColor: SURFACE.subtle,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.07)",
+    borderColor: SURFACE.track,
     gap: 3,
   },
   savingsStatLabel: {
@@ -12986,9 +12930,9 @@ const subStyles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 6,
-    backgroundColor: "rgba(7,11,20,0.92)",
+    backgroundColor: SURFACE.deepNavy,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.07)",
+    borderColor: SURFACE.track,
   },
   donutCenterValue: {
     fontFamily: FONT_FAMILY.heading,
@@ -13052,9 +12996,9 @@ const subStyles = StyleSheet.create({
     paddingHorizontal: SPACING.sm,
     paddingVertical: 6,
     borderRadius: RADIUS.full,
-    backgroundColor: "rgba(255,255,255,0.10)",
+    backgroundColor: SURFACE.cardBorder,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
+    borderColor: SURFACE.inputBorder,
   },
   inlineExplainBtnText: {
     fontFamily: FONT_FAMILY.bodySemibold,
@@ -13083,7 +13027,7 @@ const subStyles = StyleSheet.create({
     borderRadius: RADIUS.xl,
     backgroundColor: "rgba(12,18,31,0.90)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.11)",
+    borderColor: SURFACE.softBorder,
     gap: SPACING.sm,
   },
   projectionTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: SPACING.sm },
@@ -13222,8 +13166,8 @@ const subStyles = StyleSheet.create({
     paddingVertical: SPACING.sm,
     borderRadius: RADIUS.full,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
-    backgroundColor: "rgba(255,255,255,0.08)",
+    borderColor: SURFACE.cardBorder,
+    backgroundColor: SURFACE.separator,
   },
   secondaryOutlineBtnText: {
     fontFamily: FONT_FAMILY.bodySemibold,
@@ -13459,9 +13403,9 @@ const hdrStyles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: RADIUS.lg,
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
     alignItems: "center",
     justifyContent: "center",
   },

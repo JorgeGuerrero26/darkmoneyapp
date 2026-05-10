@@ -1,7 +1,7 @@
 import type { LucideIcon } from "lucide-react-native";
 import { StyleSheet, Text, View } from "react-native";
 import { DatePickerInput } from "../ui/DatePickerInput";
-import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 
 export type FormDateFieldProps = {
   /** Título corto (también se usa en el modal del calendario) */
@@ -70,10 +70,10 @@ export function FormDateField({
 const styles = StyleSheet.create({
   card: {
     borderLeftWidth: 3,
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
     padding: SPACING.md,
     gap: SPACING.md,
   },

@@ -13,7 +13,7 @@ import { ActiveFilterBar, type ActiveFilterItem } from "../components/ui/ActiveF
 import { ResourceContextNote } from "../components/ui/ResourceContextNote";
 import { ResourceModuleTemplate } from "../components/ui/ResourceModuleTemplate";
 import { ResourceSectionList } from "../components/ui/ResourceSectionList";
-import { SkeletonCard } from "../components/ui/Skeleton";
+import { SkeletonCard, SkeletonList } from "../components/ui/Skeleton";
 import { FAB } from "../components/ui/FAB";
 import { CategoryForm } from "../components/forms/CategoryForm";
 import { CategoryAnalyticsModal } from "../components/domain/CategoryAnalyticsModal";
@@ -271,11 +271,11 @@ function CategoriesScreen() {
           loading={{
             isLoading,
             skeleton: (
-              <>
+              <SkeletonList>
                 <SkeletonCard />
                 <SkeletonCard />
                 <SkeletonCard />
-              </>
+              </SkeletonList>
             ),
           }}
           empty={{

@@ -15,6 +15,7 @@ import {
   View,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { useOriginBackNavigation } from "../../hooks/useOriginBackNavigation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
 import { endOfMonth, format, startOfMonth, subMonths } from "date-fns";
@@ -94,7 +95,7 @@ import { ObligationCapitalChangesModal } from "../../components/domain/Obligatio
 import { formatCurrency } from "../../components/ui/AmountDisplay";
 import { StaggeredItem } from "../../components/ui/StaggeredItem";
 import { useToast } from "../../hooks/useToast";
-import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { getObligationStatusLabel } from "../../lib/obligation-labels";
 
 const EVENT_LABEL_PAYABLE: Record<string, string> = {
@@ -454,6 +455,7 @@ function ObligationDetailScreen() {
     notificationKind?: string | string[];
     eventId?: string | string[];
   }>();
+  const { handleBack } = useOriginBackNavigation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -1695,7 +1697,7 @@ function ObligationDetailScreen() {
       });
       setUnlinkShareConfirmVisible(false);
       showToast("Te desvinculaste de este registro compartido", "success");
-      router.replace("/(app)/obligations");
+      router.back();
     } catch (err: unknown) {
       showToast(humanizeError(err), "error");
     }
@@ -2127,6 +2129,7 @@ function ObligationDetailScreen() {
             ? `Compartido - ${(obligation as SharedObligationSummary).share.ownerDisplayName?.trim() || "Otro usuario"}`
             : activeWorkspace?.name
         }
+        onBack={handleBack}
         rightAction={
           <View style={styles.headerActions}>
             {obligation && !isSharedViewer ? (
@@ -2151,9 +2154,6 @@ function ObligationDetailScreen() {
                 <Text style={[styles.shareBtnText, styles.unlinkHeaderBtnText]}>Desvincular</Text>
               </TouchableOpacity>
             ) : null}
-            <TouchableOpacity onPress={() => router.replace("/(app)/obligations")}>
-              <Text style={styles.back}>Volver</Text>
-            </TouchableOpacity>
           </View>
         }
       />
@@ -3947,7 +3947,7 @@ const rowStyles = StyleSheet.create({
     textAlign: "right",
     lineHeight: 19,
   },
-  divider: { height: 1, backgroundColor: "rgba(255,255,255,0.07)", marginVertical: SPACING.xs },
+  divider: { height: 1, backgroundColor: SURFACE.separator, marginVertical: SPACING.xs },
 });
 
 const styles = StyleSheet.create({
@@ -3972,8 +3972,8 @@ const styles = StyleSheet.create({
     gap: SPACING.sm,
     borderRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.10)",
-    backgroundColor: "rgba(10,14,20,0.50)",
+    borderColor: SURFACE.cardBorder,
+    backgroundColor: SURFACE.card,
     padding: SPACING.sm,
   },
   detailPrimaryAction: {
@@ -4019,8 +4019,8 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.sm,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.10)",
-    backgroundColor: "rgba(255,255,255,0.04)",
+    borderColor: SURFACE.cardBorder,
+    backgroundColor: SURFACE.separator,
     alignItems: "center",
     justifyContent: "center",
     gap: SPACING.xs,
@@ -4078,7 +4078,6 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.xs,
     fontFamily: FONT_FAMILY.bodySemibold,
   },
-  back: { fontSize: FONT_SIZE.sm, color: COLORS.primary },
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
   shareSheet: {
     gap: SPACING.md,
@@ -4104,8 +4103,8 @@ const styles = StyleSheet.create({
     minWidth: "46%",
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
-    backgroundColor: GLASS.card,
+    borderColor: SURFACE.cardBorder,
+    backgroundColor: SURFACE.card,
     padding: SPACING.sm,
     gap: 4,
   },
@@ -4192,9 +4191,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.md,
     paddingVertical: 6,
     borderRadius: RADIUS.full,
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
   },
   filterPillActive: {
     backgroundColor: COLORS.primary,
@@ -4247,12 +4246,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.sm,
     paddingVertical: 5,
     borderRadius: RADIUS.full,
-    backgroundColor: "rgba(255,255,255,0.04)",
+    backgroundColor: SURFACE.separator,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
+    borderColor: SURFACE.cardBorder,
   },
   historyGroupBadge: {
-    backgroundColor: "rgba(255,255,255,0.08)",
+    backgroundColor: SURFACE.cardBorder,
     borderRadius: RADIUS.full,
     paddingHorizontal: 7,
     paddingVertical: 1,
@@ -4284,15 +4283,15 @@ const styles = StyleSheet.create({
   dateSepLine: {
     flex: 1,
     height: 1,
-    backgroundColor: "rgba(255,255,255,0.07)",
+    backgroundColor: SURFACE.separator,
   },
   datePill: {
-    backgroundColor: "rgba(255,255,255,0.06)",
+    backgroundColor: SURFACE.separator,
     borderRadius: 99,
     paddingHorizontal: 10,
     paddingVertical: 3,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.11)",
+    borderColor: SURFACE.cardBorder,
   },
   datePillText: {
     fontSize: 10,
@@ -4317,8 +4316,8 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: RADIUS.full,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
-    backgroundColor: "rgba(255,255,255,0.04)",
+    borderColor: SURFACE.cardBorder,
+    backgroundColor: SURFACE.separator,
   },
   viewerTabChipActive: {
     borderColor: COLORS.primary + "66",
@@ -5087,8 +5086,8 @@ const styles = StyleSheet.create({
   viewerEmptyState: {
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
-    backgroundColor: GLASS.card,
+    borderColor: SURFACE.cardBorder,
+    backgroundColor: SURFACE.card,
     padding: SPACING.md,
   },
   viewerEmptyStateText: {

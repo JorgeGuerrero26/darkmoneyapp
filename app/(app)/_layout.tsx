@@ -3,7 +3,7 @@ import { memo, useEffect, useRef } from "react";
 import { Animated, StyleSheet, View } from "react-native";
 import { Home, ArrowLeftRight, WalletCards, Scale, LayoutGrid } from "lucide-react-native";
 
-import { COLORS, FONT_FAMILY, GLASS, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, RADIUS, SPACING } from "../../constants/theme";
 import { useNotificationsQuery, usePendingObligationShareInvitesQuery } from "../../services/queries/workspace-data";
 import { useAuth } from "../../lib/auth-context";
 import { Badge } from "../../components/ui/Badge";

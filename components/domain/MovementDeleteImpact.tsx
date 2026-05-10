@@ -1,6 +1,6 @@
 import { StyleSheet, Text, View } from "react-native";
 
-import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING, SURFACE } from "../../constants/theme";
 import type { WorkspaceSnapshot } from "../../services/queries/workspace-data";
 import type { MovementRecord } from "../../types/domain";
 
@@ -82,7 +82,7 @@ const styles = StyleSheet.create({
   container: {
     marginTop: SPACING.xs,
     borderTopWidth: 1,
-    borderTopColor: GLASS.separator,
+    borderTopColor: SURFACE.separator,
     paddingTop: SPACING.sm,
     gap: SPACING.xs + 2,
   },

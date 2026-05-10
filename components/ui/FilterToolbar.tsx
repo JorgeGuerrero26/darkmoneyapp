@@ -2,7 +2,7 @@ import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 
 import * as Haptics from "expo-haptics";
 import { Search, X, type LucideIcon } from "lucide-react-native";
 
-import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 
 export type FilterToolbarOption<T extends string> = {
   value: T;
@@ -149,8 +149,8 @@ const styles = StyleSheet.create({
     minHeight: 42,
     borderRadius: RADIUS.full,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
-    backgroundColor: GLASS.card,
+    borderColor: SURFACE.cardBorder,
+    backgroundColor: SURFACE.card,
     flexDirection: "row",
     alignItems: "center",
     gap: SPACING.sm,
@@ -180,9 +180,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.md,
     minHeight: 38,
     borderRadius: RADIUS.full,
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -205,9 +205,9 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.full,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
   },
   actionButtonActive: {
     backgroundColor: COLORS.primary + "22",

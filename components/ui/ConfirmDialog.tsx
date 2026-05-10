@@ -1,5 +1,5 @@
 import { Modal, StyleSheet, Text, View } from "react-native";
-import { COLORS, FONT_SIZE, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, ELEVATION, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { SafeBlurView } from "./SafeBlurView";
 import { Button } from "./Button";
 
@@ -72,36 +72,26 @@ export function ConfirmDialog({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.45)",
+    backgroundColor: "rgba(0,0,0,0.55)",
     alignItems: "center",
     justifyContent: "center",
     padding: SPACING.xl,
   },
   card: {
     width: "100%",
-    backgroundColor: "rgba(10,14,20,0.92)",
+    backgroundColor: SURFACE.card,
     borderRadius: RADIUS.xl,
     padding: SPACING.xl,
-    borderTopWidth: 1,
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
-    borderBottomWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.20)",
-    borderLeftColor: "rgba(255,255,255,0.12)",
-    borderRightColor: "rgba(255,255,255,0.08)",
-    borderBottomColor: "rgba(255,255,255,0.05)",
+    borderWidth: 1,
+    borderColor: SURFACE.cardBorder,
     gap: SPACING.sm,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.55,
-    shadowRadius: 28,
-    elevation: 20,
+    ...ELEVATION[4],
   },
   iconWrap: {
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: COLORS.dangerMuted,
+    backgroundColor: SURFACE.dangerBg,
     alignItems: "center",
     justifyContent: "center",
     alignSelf: "center",

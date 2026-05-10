@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { Plus } from "lucide-react-native";
 import { Animated, StyleSheet, TouchableOpacity, View } from "react-native";
-import { COLORS, SPACING } from "../../constants/theme";
+import { COLORS, ELEVATION, SPACING } from "../../constants/theme";
 
 type Props = {
   onPress: () => void;
@@ -41,13 +41,10 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 26,
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.55,
-    shadowRadius: 18,
     borderWidth: 2.5,
     borderColor: COLORS.primary + "40",
     backgroundColor: "transparent",
+    ...ELEVATION[3],
   },
   fab: {
     width: "100%",
@@ -56,6 +53,5 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
     alignItems: "center",
     justifyContent: "center",
-    elevation: 10,
   },
 });

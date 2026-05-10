@@ -1,0 +1,4 @@
+interface:
+  display_name: "DarkMoney Resource Module"
+  short_description: "Migra modulos a la plantilla comun."
+  default_prompt: "Usa esta skill para crear o migrar un modulo tipo recurso siguiendo ResourceModuleTemplate y los componentes genericos del proyecto."

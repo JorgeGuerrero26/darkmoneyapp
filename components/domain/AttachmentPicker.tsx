@@ -31,9 +31,9 @@ import {
   COLORS,
   FONT_FAMILY,
   FONT_SIZE,
-  GLASS,
   RADIUS,
   SPACING,
+  SURFACE,
 } from "../../constants/theme";
 
 export type Attachment = {
@@ -531,9 +531,9 @@ const styles = StyleSheet.create({
     gap: SPACING.md,
     padding: SPACING.lg,
     borderRadius: RADIUS.xl,
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.24,

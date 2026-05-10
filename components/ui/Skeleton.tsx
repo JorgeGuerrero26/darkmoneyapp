@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Animated, StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
-import { GLASS, RADIUS, SPACING } from "../../constants/theme";
+import { RADIUS, SPACING, SURFACE } from "../../constants/theme";
 
 type Props = {
   width?: number | string;
@@ -25,18 +25,22 @@ export function Skeleton({ width = "100%", height = 16, borderRadius = RADIUS.sm
 
   return (
     <Animated.View
-      style={[{ width: width as any, height, borderRadius, backgroundColor: GLASS.card, opacity }, style]}
+      style={[{ width: width as any, height, borderRadius, backgroundColor: SURFACE.card, opacity }, style]}
     />
   );
+}
+
+export function SkeletonList({ children, style }: { children: React.ReactNode; style?: StyleProp<ViewStyle> }) {
+  return <View style={[skStyles.list, style]}>{children}</View>;
 }
 
 export function SkeletonCard({ style }: { style?: StyleProp<ViewStyle> }) {
   return (
     <View style={[skStyles.card, style]}>
       <View style={skStyles.row}>
-        <Skeleton width={40} height={40} borderRadius={RADIUS.lg} />
+        <Skeleton width={44} height={44} borderRadius={RADIUS.lg} />
         <View style={skStyles.lines}>
-          <Skeleton width="55%" height={14} />
+          <Skeleton width="55%" height={15} />
           <Skeleton width="35%" height={11} />
         </View>
         <Skeleton width={70} height={14} />
@@ -48,7 +52,7 @@ export function SkeletonCard({ style }: { style?: StyleProp<ViewStyle> }) {
 export function SkeletonMovementRow({ style }: { style?: StyleProp<ViewStyle> }) {
   return (
     <View style={[skStyles.rowPad, style]}>
-      <Skeleton width={40} height={40} borderRadius={RADIUS.lg} />
+      <Skeleton width={42} height={42} borderRadius={RADIUS.lg} />
       <View style={skStyles.lines}>
         <Skeleton width="50%" height={13} />
         <Skeleton width="30%" height={10} />
@@ -91,12 +95,18 @@ export function SkeletonObligationRow({ style }: { style?: StyleProp<ViewStyle> 
 }
 
 const skStyles = StyleSheet.create({
+  list: {
+    gap: SPACING.md,
+    paddingHorizontal: SPACING.lg,
+    paddingTop: SPACING.sm,
+    paddingBottom: SPACING.md,
+  },
   obligationCard: {
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
     borderRadius: RADIUS.xl,
-    padding: SPACING.lg,
+    padding: SPACING.xl,
     gap: SPACING.md,
   },
   obligationHeader: {
@@ -113,34 +123,36 @@ const skStyles = StyleSheet.create({
     gap: SPACING.xs,
   },
   card: {
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
     borderRadius: RADIUS.xl,
-    padding: SPACING.lg,
+    padding: SPACING.xl,
   },
   row: {
     flexDirection: "row",
     alignItems: "center",
-    gap: SPACING.md,
+    gap: SPACING.lg,
   },
   rowPad: {
     flexDirection: "row",
     alignItems: "center",
-    gap: SPACING.md,
-    paddingVertical: SPACING.md,
+    gap: SPACING.lg,
+    paddingVertical: SPACING.lg,
     paddingHorizontal: SPACING.lg,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: SURFACE.cardBorder,
   },
   lines: {
     flex: 1,
-    gap: SPACING.xs,
+    gap: SPACING.sm,
   },
   kpi: {
-    backgroundColor: GLASS.card,
+    backgroundColor: SURFACE.card,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
     borderRadius: RADIUS.xl,
-    padding: SPACING.lg,
+    padding: SPACING.xl,
     gap: SPACING.sm,
   },
 });

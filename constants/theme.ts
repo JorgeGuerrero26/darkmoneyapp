@@ -4,19 +4,20 @@ export const COLORS = {
   canvas:  "transparent",   // root bg
   void:    "#090D12",   // sheets / modals
   shell:   "#0F141B",   // sidebars / navbars / tab bar
-  mist:    "#141B24",   // cards
+  mist:    "#161F2A",   // cards (slightly separated from shell)
 
   // Aliases (keep compatibility with existing screens)
   bgDeep:  "transparent",
   bgVoid:  "#090D12",
   bg:      "transparent",
-  bgCard:  "#141B24",
-  bgInput: "#141B24",
+  bgCard:  "#161F2A",   // matches mist
+  bgInput: "#161F2A",   // matches mist
   bgModal: "#090D12",
 
   // Text
   ink:     "#F5F7FB",   // primary text
   storm:   "#96A2B5",   // secondary / placeholders / muted icons
+  fog:     "#A7B2C2",   // subtitles, metadata, stats, chips
   text:    "#F5F7FB",
   textMuted:    "#96A2B5",
   textDisabled: "#4A5568",
@@ -26,13 +27,16 @@ export const COLORS = {
   pine:     "#6BE4C5",  // primary action, success, focus
   ember:    "#8EA5FF",  // info, secondary, pending
   gold:     "#D7BE7B",  // alerts, warnings, due dates
-  rosewood: "#FF8F9E",  // errors, danger, destructive
+  // Danger split: soft for financial loss, strong for destructive actions
+  dangerSoft:   "#FF8F9E",  // expenses, negative balance, debt (was rosewood)
+  dangerStrong: "#FF637D",  // delete, error, validation, destructive
 
   // Aliases
   primary:     "#6BE4C5",
   primaryDark: "#4BC9A8",
   secondary:   "#8EA5FF",
-  danger:      "#FF8F9E",
+  danger:      "#FF637D",   // now points to dangerStrong (destructive actions)
+  rosewood:    "#FF8F9E",   // kept for backward compat (financial loss)
   dangerMuted: "rgba(255,143,158,0.12)",
   success:     "#6BE4C5",
   successMuted: "rgba(107,228,197,0.12)",
@@ -43,14 +47,14 @@ export const COLORS = {
 
   // Financial
   income:   "#6BE4C5",
-  expense:  "#FF8F9E",
+  expense:  "#FF8F9E",   // keeps soft (spending ≠ error)
   transfer: "#8EA5FF",
   neutral:  "#96A2B5",
 
   // Budget progress
   budgetGood: "#6BE4C5",
   budgetWarn: "#D7BE7B",
-  budgetOver: "#FF8F9E",
+  budgetOver: "#FF8F9E",  // keeps soft (overspending ≠ destructive)
 
   // Tab bar
   tabActive:   "#6BE4C5",
@@ -79,6 +83,91 @@ export const GLASS = {
   dangerBg:         "rgba(255,143,158,0.14)",
 };
 
+// ─── Material Elevation (standard elevation scale) ────────────────────────────
+// Each level provides shadow props for React Native `style`.
+// Usage: style={ELEVATION[2]}
+export const ELEVATION: Record<
+  number,
+  {
+    shadowColor: string;
+    shadowOffset: { width: number; height: number };
+    shadowOpacity: number;
+    shadowRadius: number;
+    elevation: number;
+  }
+> = {
+  0: {
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0,
+    shadowRadius: 0,
+    elevation: 0,
+  },
+  1: {
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  2: {
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.18,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  3: {
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.22,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  4: {
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+  5: {
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.30,
+    shadowRadius: 24,
+    elevation: 24,
+  },
+};
+
+// ─── Material Surface Tokens (solid, non-glass) ───────────────────────────────
+// Replacements for GLASS when migrating to Material Design elevation style.
+// Keeps surface backgrounds as solid colors instead of translucent rgba.
+// GLASS is kept for backward compatibility; migrate components progressively.
+export const SURFACE = {
+  card:             COLORS.mist,          // GLASS.card            → solid
+  cardBorder:       "rgba(255,255,255,0.10)",   // GLASS.cardBorder  → subtler
+  cardActive:       COLORS.successMuted,  // GLASS.cardActive      → from COLORS
+  cardActiveBorder: GLASS.cardActiveBorder,
+  input:            COLORS.mist,          // GLASS.input           → solid
+  inputBorder:      "rgba(255,255,255,0.12)",   // GLASS.inputBorder → subtler
+  inputFocus:       GLASS.inputFocus,
+  sheet:            COLORS.void,          // BottomSheet bg        → solid
+  sheetBorder:      "rgba(255,255,255,0.10)",   // GLASS.sheetBorder → subtler
+  tabBorder:        "rgba(255,255,255,0.10)",   // GLASS.tabBorder   → subtler
+  separator:        "rgba(255,255,255,0.08)",   // GLASS.separator   → subtler
+  /// Chart / progress bar track backgrounds
+  track:             "rgba(255,255,255,0.07)",   // progress bar base, chart fills
+  /// Subtle panel backgrounds (panels, chip lists)
+  softBorder:        "rgba(255,255,255,0.11)",   // executive cards, preset cards
+  /// Barely-there surface tint (always backgroundColor)
+  subtle:            "rgba(255,255,255,0.045)",  // explanation cards, metric cards
+  /// Premium deep navy for AI summary shell, donut center
+  deepNavy:          "rgba(7,11,22,0.96)",       // aiSummary shell, donut center
+  dangerBorder:     GLASS.dangerBorder,
+  dangerBg:         GLASS.dangerBg,
+};
+
 // ─── Spacing ──────────────────────────────────────────────────────────────────
 export const SPACING = {
   xs:   4,
@@ -98,6 +187,11 @@ export const RADIUS = {
   xl:   28,    // cards, modals, sheets
   full: 9999,  // badges, status pills
 };
+
+// ─── Material Shape (alias for RADIUS) ─────────────────────────────────────────
+// Semantic name following Material Design 3 shape categories.
+// Use when you want to express intent: SHAPE.small vs RADIUS.sm.
+export const SHAPE = RADIUS;
 
 // ─── Font sizes ───────────────────────────────────────────────────────────────
 export const FONT_SIZE = {
