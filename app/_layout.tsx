@@ -31,6 +31,7 @@ import { ActivityNoticeContainer } from "../components/ui/ActivityNotice";
 import { ToastProvider } from "../components/DarkMoneyToast";
 import { SuccessGlow } from "../components/ui/SuccessGlow";
 import { SafeBlurView } from "../components/ui/SafeBlurView";
+import { ErrorBoundary } from "../components/ui/ErrorBoundary";
 import {
   obligationShareHref,
   parseObligationShareTokenFromPath,
@@ -909,13 +910,15 @@ export default function RootLayout() {
             <AuthProvider>
               <WorkspaceProvider>
                 <ToastProvider>
-                  <OfflineBanner />
-                  <NotificationSetup />
-                  <NavigationGuard />
-                  <AppSplash />
-                  <BiometricLock />
-                  <SuccessGlow />
-                  <ActivityNoticeContainer />
+                  <ErrorBoundary>
+                    <OfflineBanner />
+                    <NotificationSetup />
+                    <NavigationGuard />
+                    <AppSplash />
+                    <BiometricLock />
+                    <SuccessGlow />
+                    <ActivityNoticeContainer />
+                  </ErrorBoundary>
                 </ToastProvider>
               </WorkspaceProvider>
             </AuthProvider>

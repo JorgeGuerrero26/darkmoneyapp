@@ -6,6 +6,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { useUiStore } from "../../store/ui-store";
 import { useAuth } from "../../lib/auth-context";
+import { logInfo } from "../../lib/error-logger";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { Button } from "./Button";
 import { SafeBlurView } from "./SafeBlurView";
@@ -30,7 +31,7 @@ const POST_LOGIN_GRACE_MS = 120_000;
  */
 export function BiometricLock() {
   const { isBiometricLocked, biometricEnabled, setBiometricLocked } = useUiStore();
-  const { session, signOut, hadSessionAtLaunchRef } = useAuth();
+  const { session, hadSessionAtLaunchRef } = useAuth();
 
   // Previene que el chequeo inicial se dispare más de una vez por ciclo de vida
   const initialCheckDone = useRef(false);
@@ -74,20 +75,25 @@ export function BiometricLock() {
   const requireReauth = useCallback(async () => {
     if (!session) return;
 
-    if (biometricEnabled) {
-      const hasHardware = await LocalAuthentication.hasHardwareAsync();
-      const isEnrolled = await LocalAuthentication.isEnrolledAsync();
-      if (hasHardware && isEnrolled) {
-        setBiometricLocked(true);
-        // Lanza la UI de biometría automáticamente
-        void authenticate();
-        return;
-      }
+    // Sin biometría activada NO hay nada que reautenticar. Antes esta rama caía
+    // en signOut() y produjo cierres silenciosos al volver tras >1h en background
+    // o tras kill+reapertura con BG_TIMESTAMP guardado.
+    if (!biometricEnabled) {
+      logInfo("biometric_lock", "requireReauth skipped: biometric disabled");
+      return;
     }
 
-    // Sin biometría → cerrar sesión completamente
-    try { await signOut(); } catch { /* silent */ }
-  }, [session, biometricEnabled, setBiometricLocked, signOut, authenticate]);
+    const hasHardware = await LocalAuthentication.hasHardwareAsync();
+    const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+    if (hasHardware && isEnrolled) {
+      logInfo("biometric_lock", "requireReauth -> showing biometric prompt");
+      setBiometricLocked(true);
+      void authenticate();
+    }
+    // Si biometría está activada pero el hardware/enrollment ya no está disponible
+    // (huellas borradas del SO, etc.), no forzamos signOut: el usuario puede salir
+    // manualmente. Evita lockouts inesperados.
+  }, [session, biometricEnabled, setBiometricLocked, authenticate]);
 
   // ── Chequeo al iniciar (kill + reabrir) ───────────────────────────────────
 
@@ -108,8 +114,9 @@ export function BiometricLock() {
         // Elapsed ≤ 10s: volvió rápido, no hace falta reauth
       } else {
         // Sin timestamp: cold start sin pasar por background, o primer login (nunca se guardó BG).
-        // Solo reautenticar si ya había sesión al arrancar (kill con sesión persistida).
-        if (hadSessionAtLaunchRef.current) {
+        // Solo reautenticar si ya había sesión al arrancar Y biometría está activada.
+        // Sin biometría no hay nada que proteger → dejar pasar sin signout forzado.
+        if (hadSessionAtLaunchRef.current && biometricEnabled) {
           void requireReauth();
         }
       }

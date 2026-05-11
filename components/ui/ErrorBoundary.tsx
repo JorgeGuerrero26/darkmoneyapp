@@ -1,7 +1,8 @@
-import { Component, type ReactNode } from "react";
+import { Component, type ErrorInfo, type ReactNode } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { AlertTriangle } from "lucide-react-native";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING } from "../../constants/theme";
+import { logError } from "../../lib/error-logger";
 
 type Props = {
   children: ReactNode;
@@ -16,6 +17,14 @@ export class ErrorBoundary extends Component<Props, State> {
   static getDerivedStateFromError(error: unknown): State {
     const message = error instanceof Error ? error.message : String(error);
     return { hasError: true, message };
+  }
+
+  componentDidCatch(error: unknown, info: ErrorInfo) {
+    const message = error instanceof Error ? error.message : String(error);
+    logError("error_boundary", message, {
+      stack: error instanceof Error ? error.stack : undefined,
+      componentStack: info.componentStack ?? undefined,
+    });
   }
 
   reset = () => this.setState({ hasError: false, message: "" });

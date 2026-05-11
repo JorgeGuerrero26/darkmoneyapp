@@ -21,12 +21,16 @@ WHERE n1.id < n2.id
   AND n1.related_entity_type  IS NOT NULL
   AND n1.related_entity_id    IS NOT NULL;
 
--- Drop the index-only approach from the previous migration.
-DROP INDEX IF EXISTS public.uq_notifications_user_entity_kind;
-
--- Drop constraint if it somehow already exists (idempotent).
+-- Si el nombre ya existe como CONSTRAINT, debe tirarse PRIMERO la constraint
+-- (el índice owned se va con ella). Postgres rechaza DROP INDEX sobre un índice
+-- que pertenece a una constraint con 2BP01: cannot drop index ... because
+-- constraint ... requires it.
 ALTER TABLE public.notifications
   DROP CONSTRAINT IF EXISTS uq_notifications_user_entity_kind;
+
+-- Si en cambio existe como índice suelto (estado intermedio del 202605070001),
+-- esta línea lo limpia. No-op cuando la constraint anterior ya se lo llevó.
+DROP INDEX IF EXISTS public.uq_notifications_user_entity_kind;
 
 -- Add the proper UNIQUE CONSTRAINT on non-null entity rows.
 -- NULL entity rows (daily baselines) are intentionally excluded via the

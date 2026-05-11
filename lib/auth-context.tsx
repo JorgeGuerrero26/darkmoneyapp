@@ -8,6 +8,7 @@ import { AppState } from "react-native";
 import { supabase, supabaseUrl, isSupabaseConfigured } from "./supabase";
 import { clearSessionScopedClientState } from "./session-data-reset";
 import { uploadAvatar, deleteAvatarFile } from "./avatar-utils";
+import { logInfo, logWarn } from "./error-logger";
 import { clearLastTabRoute } from "../hooks/useTabPersistence";
 
 type ProfileRow = {
@@ -251,12 +252,15 @@ export function AuthProvider({ children }: PropsWithChildren) {
         if (cancelled) return;
         // Sin blockUi: ya hay sesión cargada, no hace falta mostrar el overlay al volver del background
         await syncSession(data.session);
-      } catch {
+      } catch (err) {
         if (!cancelled) {
           // Error transitorio (timeout, red, etc.): mantener la sesión existente.
           // Si la sesión expiró de verdad, getSession() retorna { data: { session: null } }
           // exitosamente (sin lanzar), y syncSession(null) limpia todo. El catch solo
           // se alcanza por timeouts o errores de red, que NO implican sesión inválida.
+          logInfo("auth", "foreground reconcile getSession failed (transient)", {
+            message: err instanceof Error ? err.message : String(err),
+          });
         }
       } finally {
         resumeSessionSyncInFlightRef.current = false;
@@ -289,8 +293,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
         await syncSession(nextSession, { blockUi: true });
         authBeforeInitialGetSessionRef.current = false;
       })
-      .catch(() => {
+      .catch((err) => {
         if (!cancelled) {
+          logWarn("auth", "initial getSession failed", {
+            message: err instanceof Error ? err.message : String(err),
+          });
           hasResolvedInitialSession.current = true;
           authBeforeInitialGetSessionRef.current = false;
           setIsLoading(false);
