@@ -9,6 +9,7 @@ import { useAuth } from "../../lib/auth-context";
 import { Badge } from "../../components/ui/Badge";
 import { SafeBlurView } from "../../components/ui/SafeBlurView";
 import { useTabPersistence } from "../../hooks/useTabPersistence";
+import { useNotificationDetectionRuntimeSync } from "../../hooks/useNotificationDetectionRuntimeSync";
 
 function TabBarBackground() {
   return (
@@ -75,6 +76,7 @@ const MoreTabIcon = memo(function MoreTabIcon({ color, focused }: { color: strin
 
 export default function AppLayout() {
   useTabPersistence();
+  useNotificationDetectionRuntimeSync();
   return (
     <Tabs
       detachInactiveScreens={false}
@@ -146,6 +148,7 @@ export default function AppLayout() {
       <Tabs.Screen name="categories" options={{ href: null }} />
       <Tabs.Screen name="exchange-rates" options={{ href: null }} />
       <Tabs.Screen name="settings" options={{ href: null }} />
+      <Tabs.Screen name="notification-detection" options={{ href: null }} />
     </Tabs>
   );
 }

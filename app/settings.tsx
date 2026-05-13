@@ -17,10 +17,11 @@ import {
   View,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
+import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as LocalAuthentication from "expo-local-authentication";
 import * as SecureStore from "expo-secure-store";
-import { Fingerprint, Pencil } from "lucide-react-native";
+import { ChevronRight, Fingerprint, Pencil, ShieldCheck } from "lucide-react-native";
 
 import { useAuth } from "../lib/auth-context";
 import { useWorkspace, useWorkspaceListStore } from "../lib/workspace-context";
@@ -66,6 +67,7 @@ function SettingsScreen() {
   const [signingOut, setSigningOut] = useState(false);
 
   const { handleBack } = useOriginBackNavigation({ skipInterception: signingOut });
+  const router = useRouter();
   const queryClient = useQueryClient();
   const { profile, saveProfile, saveAvatar, removeAvatar, signOut } = useAuth();
   const { activeWorkspace, activeWorkspaceId, setActiveWorkspaceId, setWorkspaces } = useWorkspace();
@@ -311,6 +313,7 @@ function SettingsScreen() {
   const pushEnabled = notificationPreferencesQuery.data?.pushEnabled === true;
   const pushToken = notificationPreferencesQuery.data?.pushToken ?? null;
   const pushPlatform = notificationPreferencesQuery.data?.platform ?? null;
+  const biometricActive = biometricEnabled && bioCredsStored;
 
   async function handlePushReconnect() {
     if (!profile?.id) return;
@@ -424,13 +427,15 @@ function SettingsScreen() {
                 <View style={styles.switchInfo}>
                   <Text style={styles.switchLabel}>Acceso con huella digital</Text>
                   <Text style={styles.switchDesc}>
-                    {bioCredsStored
+                    {biometricActive
                       ? "Activo · puedes entrar sin contraseña"
-                      : "Inicia sesión tocando tu huella"}
+                      : bioCredsStored
+                        ? "Desactivado · tus credenciales siguen guardadas"
+                        : "Actívalo para entrar tocando tu huella"}
                   </Text>
                 </View>
                 <Switch
-                  value={biometricEnabled && bioCredsStored}
+                  value={biometricActive}
                   onValueChange={(v) => void handleBiometricToggle(v)}
                   trackColor={{ false: COLORS.border, true: COLORS.primary }}
                   thumbColor="#FFFFFF"
@@ -441,6 +446,20 @@ function SettingsScreen() {
 
           <Card>
             <Text style={styles.sectionTitle}>Notificaciones</Text>
+            <TouchableOpacity
+              style={styles.settingsNavRow}
+              activeOpacity={0.82}
+              onPress={() => router.push("/(app)/notification-detection?from=settings" as any)}
+            >
+              <View style={styles.settingsNavIcon}>
+                <ShieldCheck size={18} color={COLORS.primary} />
+              </View>
+              <View style={styles.settingsNavCopy}>
+                <Text style={styles.switchLabel}>Detección automática</Text>
+                <Text style={styles.switchDesc}>Sugiere movimientos desde apps financieras seleccionadas.</Text>
+              </View>
+              <ChevronRight size={16} color={COLORS.storm} />
+            </TouchableOpacity>
             <View style={styles.pushStatusBox}>
               <Text style={styles.pushStatusTitle}>
                 Push {pushEnabled && pushToken ? "activo" : "pendiente"}
@@ -721,6 +740,27 @@ const styles = StyleSheet.create({
   switchInfo: { flex: 1, gap: 2, marginRight: SPACING.md },
   switchLabel: { fontSize: FONT_SIZE.sm, fontFamily: FONT_FAMILY.bodyMedium, color: COLORS.ink },
   switchDesc: { fontSize: FONT_SIZE.xs, color: COLORS.storm },
+  settingsNavRow: {
+    minHeight: 56,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.md,
+    padding: SPACING.md,
+    marginBottom: SPACING.md,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: SURFACE.cardBorder,
+    backgroundColor: SURFACE.card,
+  },
+  settingsNavIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: RADIUS.md,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.primary + "1A",
+  },
+  settingsNavCopy: { flex: 1, gap: 2 },
   pushStatusBox: {
     marginBottom: SPACING.md,
     padding: SPACING.md,

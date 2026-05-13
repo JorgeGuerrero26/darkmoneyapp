@@ -12,6 +12,8 @@ const REVEAL_WIDTH = 80;
 type Props = {
   movement: MovementRecord;
   baseCurrencyCode: string;
+  perspectiveAccountId?: number | null;
+  perspectiveCurrencyCode?: string | null;
   attachmentCount?: number;
   onPress?: () => void;
   onLongPress?: () => void;
@@ -23,6 +25,8 @@ type Props = {
 export const SwipeableMovementRow = memo(function SwipeableMovementRow({
   movement,
   baseCurrencyCode,
+  perspectiveAccountId,
+  perspectiveCurrencyCode,
   attachmentCount,
   onPress,
   onLongPress,
@@ -35,6 +39,8 @@ export const SwipeableMovementRow = memo(function SwipeableMovementRow({
       <MovementRow
         movement={movement}
         baseCurrencyCode={baseCurrencyCode}
+        perspectiveAccountId={perspectiveAccountId}
+        perspectiveCurrencyCode={perspectiveCurrencyCode}
         attachmentCount={attachmentCount}
         selected={selected}
         onPress={onPress}
@@ -65,6 +71,8 @@ export const SwipeableMovementRow = memo(function SwipeableMovementRow({
         <MovementRow
           movement={movement}
           baseCurrencyCode={baseCurrencyCode}
+          perspectiveAccountId={perspectiveAccountId}
+          perspectiveCurrencyCode={perspectiveCurrencyCode}
           attachmentCount={attachmentCount}
           onPress={() => {
             if (isOpen()) {

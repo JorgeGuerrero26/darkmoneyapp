@@ -47,7 +47,11 @@ async function fetchMovementsPage(
   let query = supabase
     .from("movements")
     .select(
-      "id, workspace_id, movement_type, status, occurred_at, description, notes, source_account_id, source_amount, destination_account_id, destination_amount, fx_rate, category_id, counterparty_id, obligation_id, subscription_id, metadata",
+      `id, workspace_id, movement_type, status, occurred_at, description, notes,
+       source_account_id, source_amount, destination_account_id, destination_amount,
+       fx_rate, category_id, counterparty_id, obligation_id, subscription_id, metadata,
+       source_account:accounts!movements_source_account_id_fkey(name,currency_code),
+       destination_account:accounts!movements_destination_account_id_fkey(name,currency_code)`,
     )
     .eq("workspace_id", workspaceId)
     .order("occurred_at", { ascending: false })
@@ -95,10 +99,12 @@ async function fetchMovementsPage(
     counterpartyId: row.counterparty_id,
     occurredAt: row.occurred_at,
     sourceAccountId: row.source_account_id,
-    sourceAccountName: null,
+    sourceAccountName: row.source_account?.name ?? null,
+    sourceCurrencyCode: row.source_account?.currency_code ?? null,
     sourceAmount: row.source_amount ? Number(row.source_amount) : null,
     destinationAccountId: row.destination_account_id,
-    destinationAccountName: null,
+    destinationAccountName: row.destination_account?.name ?? null,
+    destinationCurrencyCode: row.destination_account?.currency_code ?? null,
     destinationAmount: row.destination_amount ? Number(row.destination_amount) : null,
     fxRate: row.fx_rate ? Number(row.fx_rate) : null,
     obligationId: row.obligation_id,
@@ -124,8 +130,8 @@ export function useMovementQuery(movementId?: number | null) {
           `id, workspace_id, movement_type, status, occurred_at, description, notes,
            source_account_id, source_amount, destination_account_id, destination_amount,
            fx_rate, category_id, counterparty_id, obligation_id, subscription_id, metadata,
-           source_account:accounts!movements_source_account_id_fkey(name),
-           destination_account:accounts!movements_destination_account_id_fkey(name),
+           source_account:accounts!movements_source_account_id_fkey(name,currency_code),
+           destination_account:accounts!movements_destination_account_id_fkey(name,currency_code),
            category:categories(name),
            counterparty:counterparties(name)`,
         )
@@ -147,9 +153,11 @@ export function useMovementQuery(movementId?: number | null) {
         occurredAt: row.occurred_at,
         sourceAccountId: row.source_account_id,
         sourceAccountName: row.source_account?.name ?? null,
+        sourceCurrencyCode: row.source_account?.currency_code ?? null,
         sourceAmount: row.source_amount ? Number(row.source_amount) : null,
         destinationAccountId: row.destination_account_id,
         destinationAccountName: row.destination_account?.name ?? null,
+        destinationCurrencyCode: row.destination_account?.currency_code ?? null,
         destinationAmount: row.destination_amount ? Number(row.destination_amount) : null,
         fxRate: row.fx_rate ? Number(row.fx_rate) : null,
         obligationId: row.obligation_id,

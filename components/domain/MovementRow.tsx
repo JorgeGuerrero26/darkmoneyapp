@@ -34,6 +34,8 @@ import {
 type Props = {
   movement: MovementRecord;
   baseCurrencyCode: string;
+  perspectiveAccountId?: number | null;
+  perspectiveCurrencyCode?: string | null;
   attachmentCount?: number;
   selected?: boolean;
   onPress?: () => void;
@@ -70,9 +72,45 @@ const STATUS_BADGE: Record<string, { label: string; color: string }> = {
   voided: { label: "Anulado", color: COLORS.rosewood },
 };
 
+function transferDisplayForPerspective(
+  movement: MovementRecord,
+  baseCurrencyCode: string,
+  perspectiveAccountId?: number | null,
+  perspectiveCurrencyCode?: string | null,
+) {
+  const isSourcePerspective =
+    perspectiveAccountId != null && movement.sourceAccountId === perspectiveAccountId;
+  const isDestinationPerspective =
+    perspectiveAccountId != null && movement.destinationAccountId === perspectiveAccountId;
+
+  if (isDestinationPerspective) {
+    return {
+      amount: Math.abs(Number(movement.destinationAmount ?? movement.sourceAmount ?? 0)),
+      currencyCode: perspectiveCurrencyCode ?? movement.destinationCurrencyCode ?? baseCurrencyCode,
+      prefix: "+",
+    };
+  }
+
+  if (isSourcePerspective) {
+    return {
+      amount: Math.abs(Number(movement.sourceAmount ?? movement.destinationAmount ?? 0)),
+      currencyCode: perspectiveCurrencyCode ?? movement.sourceCurrencyCode ?? baseCurrencyCode,
+      prefix: "−",
+    };
+  }
+
+  return {
+    amount: Math.abs(Number(movement.sourceAmount ?? movement.destinationAmount ?? 0)),
+    currencyCode: movement.sourceCurrencyCode ?? movement.destinationCurrencyCode ?? baseCurrencyCode,
+    prefix: "",
+  };
+}
+
 export const MovementRow = memo(function MovementRow({
   movement,
   baseCurrencyCode,
+  perspectiveAccountId,
+  perspectiveCurrencyCode,
   attachmentCount = 0,
   selected,
   onPress,
@@ -80,11 +118,19 @@ export const MovementRow = memo(function MovementRow({
 }: Props) {
   const config = TYPE_ICON[movement.movementType] ?? { Icon: Circle, color: COLORS.storm };
   const { Icon } = config;
-  const amount = movementDisplayAmount(movement);
+  const transferDisplay = movement.movementType === "transfer"
+    ? transferDisplayForPerspective(
+      movement,
+      baseCurrencyCode,
+      perspectiveAccountId,
+      perspectiveCurrencyCode,
+    )
+    : null;
+  const amount = transferDisplay?.amount ?? movementDisplayAmount(movement);
   const displayColor = movementDisplayColor(movement);
   const iconColor = movement.movementType === "obligation_payment" ? displayColor : config.color;
 
-  const currencyCode = movement.sourceCurrencyCode ?? movement.destinationCurrencyCode ?? baseCurrencyCode;
+  const currencyCode = transferDisplay?.currencyCode ?? movement.sourceCurrencyCode ?? movement.destinationCurrencyCode ?? baseCurrencyCode;
   const amountColor = movement.movementType === "obligation_payment"
     ? displayColor
     : movementActsAsIncome(movement)
@@ -98,7 +144,7 @@ export const MovementRow = memo(function MovementRow({
     : movementActsAsIncome(movement)
       ? "+"
       : movement.movementType === "transfer"
-        ? ""
+        ? transferDisplay?.prefix ?? ""
         : "-";
   const statusBadge = STATUS_BADGE[movement.status];
   const typeLabel = TYPE_LABEL[movement.movementType] ?? movement.movementType;

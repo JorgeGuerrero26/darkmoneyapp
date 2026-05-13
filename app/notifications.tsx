@@ -17,6 +17,7 @@ import { SkeletonCard, SkeletonList } from "../components/ui/Skeleton";
 import { BulkActionBar } from "../components/ui/BulkActionBar";
 import { NotificationCard } from "../components/domain/NotificationCard";
 import { NotificationInviteCard } from "../components/domain/NotificationInviteCard";
+import { QuickDetectedMovementEntry } from "../components/domain/QuickDetectedMovementEntry";
 import { NotificationSummaryBar } from "../features/notifications/components/NotificationSummaryBar";
 import {
   buildNotificationSections,
@@ -47,6 +48,12 @@ import { useOriginBackNavigation } from "../hooks/useOriginBackNavigation";
 
 const Notifications = getNotificationsModule();
 
+function payloadNumber(payload: unknown, key: string): number | null {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const parsed = Number((payload as Record<string, unknown>)[key]);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
 function NotificationsScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -55,6 +62,7 @@ function NotificationsScreen() {
   const { showToast } = useToast();
   const [selectedNotificationIds, setSelectedNotificationIds] = useState<number[]>([]);
   const [activeFilter, setActiveFilter] = useState<NotificationFilter>("all");
+  const [quickEntry, setQuickEntry] = useState<{ suggestionId: number; notificationId: number } | null>(null);
   const ignoreTapAfterLongPressRef = useRef(false);
 
   useEffect(() => {
@@ -240,7 +248,17 @@ function NotificationsScreen() {
     const deferReadUntilResolved =
       notification.kind === "obligation_payment_request" ||
       notification.kind === "obligation_event_delete_request" ||
-      notification.kind === "obligation_event_edit_request";
+      notification.kind === "obligation_event_edit_request" ||
+      notification.kind === "detected_movement_suggestion";
+    if (notification.kind === "detected_movement_suggestion") {
+      const suggestionId =
+        payloadNumber(notification.payload, "suggestionId") ??
+        (notification.relatedEntityType === "detected_movement_suggestion" ? notification.relatedEntityId ?? null : null);
+      if (suggestionId) {
+        setQuickEntry({ suggestionId, notificationId: notification.id });
+        return;
+      }
+    }
     if (notification.status !== "read" && !deferReadUntilResolved) markRead.mutate(notification.id);
     const target = resolveNotificationNavigationTarget({
       kind: notification.kind,
@@ -284,111 +302,119 @@ function NotificationsScreen() {
   }, [router, selectedNotificationIds, selectionMode]);
 
   return (
-    <ResourceModuleTemplate
-      topInset={insets.top}
-      header={
-        <ScreenHeader
-          title={selectionMode ? `${selectedNotificationIds.length} seleccionadas` : "Notificaciones"}
-          onBack={() => {
-            if (selectionMode) {
-              clearSelection();
-              return;
+    <>
+      <ResourceModuleTemplate
+        topInset={insets.top}
+        header={
+          <ScreenHeader
+            title={selectionMode ? `${selectedNotificationIds.length} seleccionadas` : "Notificaciones"}
+            onBack={() => {
+              if (selectionMode) {
+                clearSelection();
+                return;
+              }
+              handleBack();
+            }}
+            rightAction={
+              selectionMode ? (
+                <HeaderActionGroup
+                  actions={[{
+                    key: "cancel",
+                    icon: X,
+                    label: "Cancelar",
+                    onPress: clearSelection,
+                    accessibilityLabel: "Cancelar selección",
+                  }]}
+                />
+              ) : null
             }
-            handleBack();
-          }}
-          rightAction={
-            selectionMode ? (
-              <HeaderActionGroup
-                actions={[{
-                  key: "cancel",
-                  icon: X,
-                  label: "Cancelar",
-                  onPress: clearSelection,
-                  accessibilityLabel: "Cancelar selección",
-                }]}
-              />
-            ) : null
-          }
-        />
-      }
-      toolbar={
-        !selectionMode && notificationList.length > 0 ? (
-          <FilterToolbar
-            options={NOTIFICATION_FILTERS}
-            value={activeFilter}
-            onChange={setActiveFilter}
           />
-        ) : null
-      }
-      activeFilters={!selectionMode ? <ActiveFilterBar items={activeFilterItems} onClear={clearFilters} /> : null}
-      context={hasContent ? <ResourceContextNote>{contextNote}</ResourceContextNote> : null}
-      summary={
-        !selectionMode && hasContent ? (
-          <NotificationSummaryBar
-            unreadCount={unreadCount}
-            readCount={readCount}
-            inviteCount={pendingInvites.length}
-            onMarkAllRead={handleMarkAll}
-            onMarkAllUnread={handleMarkAllUnread}
-            actionsDisabled={bulkActionLoading}
+        }
+        toolbar={
+          !selectionMode && notificationList.length > 0 ? (
+            <FilterToolbar
+              options={NOTIFICATION_FILTERS}
+              value={activeFilter}
+              onChange={setActiveFilter}
+            />
+          ) : null
+        }
+        activeFilters={!selectionMode ? <ActiveFilterBar items={activeFilterItems} onClear={clearFilters} /> : null}
+        context={hasContent ? <ResourceContextNote>{contextNote}</ResourceContextNote> : null}
+        summary={
+          !selectionMode && hasContent ? (
+            <NotificationSummaryBar
+              unreadCount={unreadCount}
+              readCount={readCount}
+              inviteCount={pendingInvites.length}
+              onMarkAllRead={handleMarkAll}
+              onMarkAllUnread={handleMarkAllUnread}
+              actionsDisabled={bulkActionLoading}
+            />
+          ) : null
+        }
+        bulkActions={
+          selectionMode ? (
+            <BulkActionBar
+              selectedCount={selectedNotificationIds.length}
+              onClear={clearSelection}
+              actions={[
+                {
+                  key: "archive",
+                  label: "Archivar",
+                  disabled: selectedUnreadCount === 0 || bulkActionLoading,
+                  onPress: () => void handleSelectedArchive(),
+                },
+                {
+                  key: "unread",
+                  label: "No leído",
+                  disabled: selectedReadCount === 0 || bulkActionLoading,
+                  onPress: () => void handleSelectedReadState("unread"),
+                },
+                {
+                  key: "delete",
+                  label: "Eliminar",
+                  tone: "danger",
+                  disabled: bulkActionLoading,
+                  onPress: () => void handleSelectedDelete(),
+                },
+              ]}
+            />
+          ) : null
+        }
+        list={
+          <ResourceSectionList
+            sections={sections}
+            keyExtractor={(item) => item.key}
+            renderItem={renderItem}
+            loading={{
+              isLoading: showSkeleton,
+              skeleton: (
+                <SkeletonList>
+                  <SkeletonCard />
+                  <SkeletonCard />
+                  <SkeletonCard />
+                </SkeletonList>
+              ),
+            }}
+            empty={{
+              title: hasContent ? "Nada en esta vista" : "Sin notificaciones",
+              description: hasContent
+                ? "Cambia el filtro para ver otras prioridades o espera nuevas alertas."
+                : "Aquí verás alertas de presupuestos, suscripciones, obligaciones y salud financiera cuando corresponda.",
+            }}
+            refreshing={isLoading || loadingPendingInvites}
+            onRefresh={onRefresh}
           />
-        ) : null
-      }
-      bulkActions={
-        selectionMode ? (
-          <BulkActionBar
-            selectedCount={selectedNotificationIds.length}
-            onClear={clearSelection}
-            actions={[
-              {
-                key: "archive",
-                label: "Archivar",
-                disabled: selectedUnreadCount === 0 || bulkActionLoading,
-                onPress: () => void handleSelectedArchive(),
-              },
-              {
-                key: "unread",
-                label: "No leído",
-                disabled: selectedReadCount === 0 || bulkActionLoading,
-                onPress: () => void handleSelectedReadState("unread"),
-              },
-              {
-                key: "delete",
-                label: "Eliminar",
-                tone: "danger",
-                disabled: bulkActionLoading,
-                onPress: () => void handleSelectedDelete(),
-              },
-            ]}
-          />
-        ) : null
-      }
-      list={
-        <ResourceSectionList
-          sections={sections}
-          keyExtractor={(item) => item.key}
-          renderItem={renderItem}
-          loading={{
-            isLoading: showSkeleton,
-            skeleton: (
-              <SkeletonList>
-                <SkeletonCard />
-                <SkeletonCard />
-                <SkeletonCard />
-              </SkeletonList>
-            ),
-          }}
-          empty={{
-            title: hasContent ? "Nada en esta vista" : "Sin notificaciones",
-            description: hasContent
-              ? "Cambia el filtro para ver otras prioridades o espera nuevas alertas."
-              : "Aquí verás alertas de presupuestos, suscripciones, obligaciones y salud financiera cuando corresponda.",
-          }}
-          refreshing={isLoading || loadingPendingInvites}
-          onRefresh={onRefresh}
-        />
-      }
-    />
+        }
+      />
+      <QuickDetectedMovementEntry
+        visible={Boolean(quickEntry)}
+        suggestionId={quickEntry?.suggestionId ?? null}
+        notificationId={quickEntry?.notificationId ?? null}
+        onClose={() => setQuickEntry(null)}
+      />
+    </>
   );
 }
 

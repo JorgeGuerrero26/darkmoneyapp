@@ -22,9 +22,11 @@ import {
   useWorkspaceSnapshotQuery,
   useCreateMovementMutation,
   useUpdateMovementMutation,
+  useCreateCategoryMutation,
   useDashboardAnalyticsQuery,
   usePersistLearningFeedbackMutation,
   useSyncExchangeRatePairMutation,
+  useUserEntitlementQuery,
 } from "../../services/queries/workspace-data";
 import { useMovementAttachmentsQuery } from "../../services/queries/movements";
 import { useMovementPatternsQuery, type PatternMovement } from "../../services/queries/movement-patterns";
@@ -38,6 +40,7 @@ import {
 import { useAuth } from "../../lib/auth-context";
 import { useToast } from "../../hooks/useToast";
 import { useHaptics } from "../../hooks/useHaptics";
+import { useMovementCategoryAiSuggestion } from "../../hooks/useMovementCategoryAiSuggestion";
 import { BottomSheet } from "../ui/BottomSheet";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { Button } from "../ui/Button";
@@ -93,10 +96,12 @@ type MovementSuggestionLike = {
 };
 
 type CategorySuggestionState = {
-  categoryId: number;
+  categoryId: number | null;
   categoryName: string;
+  newCategoryName?: string | null;
   confidence: number;
   reasons: string[];
+  source?: "deepseek" | "local";
 };
 
 type DuplicateWarningState = {
@@ -118,6 +123,7 @@ type CategoryFeedbackIntent = {
   categoryName?: string | null;
   confidence?: number | null;
   reasons?: string[];
+  source?: "deepseek" | "local";
 };
 
 function readMovementLinkedEventId(metadata: unknown): number | null {
@@ -170,6 +176,13 @@ function formatExchangeRateInput(value: number) {
   return String(Math.round(value * 1_000_000) / 1_000_000);
 }
 
+function formatExchangeRateLabel(fromCurrencyCode: string, toCurrencyCode: string, rate: number) {
+  const from = fromCurrencyCode.trim().toUpperCase();
+  const to = toCurrencyCode.trim().toUpperCase();
+  if (!from || !to || !Number.isFinite(rate) || rate <= 0) return "";
+  return `1 ${from} = ${rate.toLocaleString("es-PE", { maximumFractionDigits: 6 })} ${to}`;
+}
+
 function parseDecimalInput(value: string) {
   const parsed = Number(value.replace(",", "."));
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
@@ -209,7 +222,7 @@ function findTransferExchangeRate(
   return {
     rate: resolvedRate,
     effectiveAt: best.effectiveAt,
-    label: `1 ${from} = ${resolvedRate.toLocaleString("es-PE", { maximumFractionDigits: 6 })} ${to}`,
+    label: formatExchangeRateLabel(from, to, resolvedRate),
   };
 }
 
@@ -258,8 +271,10 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   const { data: snapshot } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const createMovement = useCreateMovementMutation(activeWorkspaceId);
   const updateMovement = useUpdateMovementMutation(activeWorkspaceId);
+  const createCategory = useCreateCategoryMutation(activeWorkspaceId);
   const syncExchangeRatePair = useSyncExchangeRatePairMutation();
   const { data: dashboardAnalytics } = useDashboardAnalyticsQuery(activeWorkspaceId, profile?.id);
+  const entitlementQuery = useUserEntitlementQuery(profile?.id ?? null, profile?.email ?? null);
   const persistLearningFeedback = usePersistLearningFeedbackMutation(activeWorkspaceId, profile?.id);
   const {
     data: editMovementAttachments = [],
@@ -442,7 +457,71 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     };
   }, [categoriesForPicker, currentSuggestionMovement, form.categoryId, suggestionHistory]);
 
-  const bestCategorySuggestion = learnedCategorySuggestion ?? algorithmicCategorySuggestion;
+  const localCategorySuggestion = learnedCategorySuggestion ?? algorithmicCategorySuggestion;
+  const aiCategoryInput = useMemo(() => {
+    if (!activeWorkspaceId || !currentSuggestionMovement || form.categoryId !== null) return null;
+    if (form.movementType === "transfer") return null;
+    const description = currentSuggestionMovement.description.trim();
+    if (description.length < 3 || categoriesForPicker.length === 0) return null;
+    return {
+      workspaceId: activeWorkspaceId,
+      surface: "movement_form" as const,
+      movementType: form.movementType === "income" ? "income" as const : "expense" as const,
+      amount: currentSuggestionMovement.amount > 0 ? currentSuggestionMovement.amount : null,
+      currencyCode: baseCurrency,
+      description,
+      occurredAt: currentSuggestionMovement.occurredAt,
+      categories: categoriesForPicker.map((category) => ({
+        id: category.id,
+        name: category.name,
+        kind: category.kind,
+      })),
+      localSuggestion: localCategorySuggestion
+        ? {
+          categoryId: localCategorySuggestion.categoryId,
+          categoryName: localCategorySuggestion.categoryName,
+          confidence: localCategorySuggestion.confidence,
+          reasons: localCategorySuggestion.reasons,
+        }
+        : null,
+    };
+  }, [
+    activeWorkspaceId,
+    baseCurrency,
+    categoriesForPicker,
+    currentSuggestionMovement,
+    form.categoryId,
+    form.movementType,
+    localCategorySuggestion,
+  ]);
+  const { recommendation: aiCategoryRecommendation } = useMovementCategoryAiSuggestion({
+    enabled: Boolean(visible && entitlementQuery.data?.proAccessEnabled && aiCategoryInput),
+    input: aiCategoryInput,
+  });
+  const aiCategorySuggestion = useMemo<CategorySuggestionState | null>(() => {
+    if (!aiCategoryRecommendation) return null;
+    if (aiCategoryRecommendation.type === "existing_category" && aiCategoryRecommendation.categoryId) {
+      return {
+        categoryId: aiCategoryRecommendation.categoryId,
+        categoryName: aiCategoryRecommendation.categoryName ?? "Categoría sugerida",
+        confidence: aiCategoryRecommendation.confidence,
+        reasons: aiCategoryRecommendation.reasons,
+        source: "deepseek",
+      };
+    }
+    if (aiCategoryRecommendation.type === "new_category" && aiCategoryRecommendation.newCategoryName) {
+      return {
+        categoryId: null,
+        categoryName: `Crear categoría "${aiCategoryRecommendation.newCategoryName}"`,
+        newCategoryName: aiCategoryRecommendation.newCategoryName,
+        confidence: aiCategoryRecommendation.confidence,
+        reasons: aiCategoryRecommendation.reasons,
+        source: "deepseek",
+      };
+    }
+    return null;
+  }, [aiCategoryRecommendation]);
+  const bestCategorySuggestion = aiCategorySuggestion ?? localCategorySuggestion;
 
   const duplicateWarning = useMemo<DuplicateWarningState | null>(() => {
     if (!currentSuggestionMovement || currentSuggestionMovement.amount <= 0.009 || !currentSuggestionMovement.description.trim()) return null;
@@ -603,14 +682,36 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     });
   }
 
-  function applyCategorySuggestion(suggestion: CategorySuggestionState) {
-    patch({ categoryId: suggestion.categoryId });
+  async function applyCategorySuggestion(suggestion: CategorySuggestionState) {
+    let nextCategoryId = suggestion.categoryId;
+    let nextCategoryName = suggestion.categoryName;
+
+    if (nextCategoryId == null && suggestion.newCategoryName) {
+      const normalizedNewName = normalizeAnalyticsText(suggestion.newCategoryName);
+      const existing = categoriesForPicker.find((category) => normalizeAnalyticsText(category.name) === normalizedNewName);
+      if (existing) {
+        nextCategoryId = existing.id;
+        nextCategoryName = existing.name;
+      } else {
+        const created = await createCategory.mutateAsync({
+          name: suggestion.newCategoryName,
+          kind: form.movementType === "income" ? "income" : "expense",
+        });
+        nextCategoryId = created.id;
+        nextCategoryName = suggestion.newCategoryName;
+        showToast("Categoría creada", "success");
+      }
+    }
+
+    if (nextCategoryId == null) return;
+    patch({ categoryId: nextCategoryId });
     setCategoryFeedbackIntent({
       kind: "accepted_category_suggestion",
-      categoryId: suggestion.categoryId,
-      categoryName: suggestion.categoryName,
+      categoryId: nextCategoryId,
+      categoryName: nextCategoryName,
       confidence: suggestion.confidence,
       reasons: suggestion.reasons,
+      source: suggestion.source,
     });
   }
 
@@ -638,10 +739,11 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
       previousCategoryId,
       acceptedCategoryId: form.categoryId,
       confidence: intent.confidence ?? (intent.kind === "accepted_category_suggestion" ? 0.7 : null),
-      source: "movement-form",
+      source: intent.source === "deepseek" ? "movement-form-ai" : "movement-form",
       metadata: {
         categoryName: intent.categoryName ?? category?.name ?? null,
         reasons: intent.reasons ?? [],
+        aiProvider: intent.source === "deepseek" ? "deepseek" : null,
         movementType: form.movementType,
         counterpartyId: form.counterpartyId,
         sourceAccountId: form.sourceAccountId,
@@ -695,6 +797,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     setTransferRateError(null);
     setTransferLiveRate(null);
     setTransferRateEdited(false);
+    setTransferRateInput("");
 
     void syncExchangeRatePair.mutateAsync({ fromCurrencyCode, toCurrencyCode })
       .then((result) => {
@@ -704,7 +807,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
           effectiveAt: result.effectiveAt,
           source: "api",
           provider: result.provider,
-          label: `1 ${fromCurrencyCode} = ${result.rate.toLocaleString("es-PE", { maximumFractionDigits: 6 })} ${toCurrencyCode}`,
+          label: formatExchangeRateLabel(fromCurrencyCode, toCurrencyCode, result.rate),
         });
       })
       .catch((error) => {
@@ -730,7 +833,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         rate: transferManualRate,
         effectiveAt: null,
         source: "manual",
-        label: `1 ${from} = ${transferManualRate.toLocaleString("es-PE", { maximumFractionDigits: 6 })} ${to}`,
+        label: formatExchangeRateLabel(from, to, transferManualRate),
       };
     }
     return transferBaseFxSuggestion ?? null;
@@ -759,6 +862,26 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   }, [transferBaseFxSuggestion, transferCurrenciesDiffer, transferRateEdited, transferRateInput]);
 
   useEffect(() => {
+    if (form.movementType !== "transfer" || !transferCurrenciesDiffer || !transferDestinationEdited) return;
+    if (sourceAmountNum <= 0 || destinationAmountNum <= 0) return;
+
+    const nextRate = formatExchangeRateInput(destinationAmountNum / sourceAmountNum);
+    if (!nextRate) return;
+    if (!transferRateEdited) setTransferRateEdited(true);
+    if (nextRate !== transferRateInput) {
+      setTransferRateInput(nextRate);
+    }
+  }, [
+    destinationAmountNum,
+    form.movementType,
+    sourceAmountNum,
+    transferCurrenciesDiffer,
+    transferDestinationEdited,
+    transferRateEdited,
+    transferRateInput,
+  ]);
+
+  useEffect(() => {
     if (form.movementType !== "transfer" || !transferCurrenciesDiffer || transferDestinationEdited) return;
     if (sourceAmountNum <= 0) {
       if (form.destinationAmount) patch({ destinationAmount: "" });
@@ -780,6 +903,15 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     transferDestinationEdited,
     effectiveTransferFxSuggestion,
   ]);
+
+  const transferInverseFxLabel = useMemo(() => {
+    if (!sourceAccount || !destinationAccount || !effectiveTransferFxSuggestion) return "";
+    return formatExchangeRateLabel(
+      destinationAccount.currencyCode,
+      sourceAccount.currencyCode,
+      1 / effectiveTransferFxSuggestion.rate,
+    );
+  }, [destinationAccount, effectiveTransferFxSuggestion, sourceAccount]);
 
   // When editing a posted movement, currentBalance already reflects the original movement.
   // We must reverse it first, then apply the new amount to get the correct projection.
@@ -1259,7 +1391,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
                     !effectiveTransferFxSuggestion && styles.fxRateNoteTextMissing,
                   ]}>
                     {effectiveTransferFxSuggestion
-                      ? `Monto destino calculado con ${effectiveTransferFxSuggestion.label}. Puedes editar la tasa o el monto.`
+                      ? `${transferDestinationEdited ? "Tipo de cambio recalculado con los montos" : "Monto destino calculado con"} ${effectiveTransferFxSuggestion.label}${transferInverseFxLabel ? `. Referencia inversa: ${transferInverseFxLabel}` : ""}.`
                       : transferRateError
                         ? `No pude obtener tipo de cambio ${sourceAccount.currencyCode} → ${destinationAccount.currencyCode}. Ingresa la tasa o el monto destino manualmente.`
                         : `Buscando tipo de cambio ${sourceAccount.currencyCode} → ${destinationAccount.currencyCode}...`}
@@ -1376,8 +1508,8 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
           {categorySuggestionToShow ? (
             <SmartSuggestion
               label={categorySuggestionToShow.categoryName}
-              detail={`${Math.round(categorySuggestionToShow.confidence * 100)}% · ${categorySuggestionToShow.reasons.join(" · ")}`}
-              onApply={() => applyCategorySuggestion(categorySuggestionToShow)}
+              detail={`${categorySuggestionToShow.source === "deepseek" ? "IA Pro · " : ""}${Math.round(categorySuggestionToShow.confidence * 100)}% · ${categorySuggestionToShow.reasons.join(" · ")}`}
+              onApply={() => void applyCategorySuggestion(categorySuggestionToShow)}
             />
           ) : null}
 

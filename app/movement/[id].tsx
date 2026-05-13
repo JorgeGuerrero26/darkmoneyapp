@@ -58,6 +58,18 @@ function readMovementLinkedEventId(metadata: unknown): number | null {
   return Number.isFinite(eventId) && eventId > 0 ? eventId : null;
 }
 
+function formatExchangeRateLabel(fromCurrencyCode: string, toCurrencyCode: string, rate: number) {
+  const from = fromCurrencyCode.trim().toUpperCase();
+  const to = toCurrencyCode.trim().toUpperCase();
+  if (!from || !to || !Number.isFinite(rate) || rate <= 0) return "";
+  return `1 ${from} = ${rate.toLocaleString("es-PE", { maximumFractionDigits: 6 })} ${to}`;
+}
+
+function formatAccountLabel(name: string | null | undefined, id: number | null | undefined, currencyCode: string) {
+  const accountName = name ?? (id != null ? `Cuenta #${id}` : "-");
+  return `${accountName} · ${currencyCode}`;
+}
+
 function MovementDetailScreen() {
   const { id, from, edit } = useLocalSearchParams<{ id: string; from?: string; edit?: string }>();
   const { handleBack } = useOriginBackNavigation({
@@ -108,6 +120,37 @@ function MovementDetailScreen() {
   const isTransfer = movement?.movementType === "transfer";
   const isExpense = movement ? movementActsAsExpense(movement) : false;
   const isVoided = movement?.status === "voided";
+  const sourceAccount = useMemo(
+    () => snapshot?.accounts.find((item) => item.id === movement?.sourceAccountId) ?? null,
+    [movement?.sourceAccountId, snapshot?.accounts],
+  );
+  const destinationAccount = useMemo(
+    () => snapshot?.accounts.find((item) => item.id === movement?.destinationAccountId) ?? null,
+    [movement?.destinationAccountId, snapshot?.accounts],
+  );
+  const transferSourceCurrencyCode = movement?.sourceCurrencyCode ?? sourceAccount?.currencyCode ?? baseCurrency;
+  const transferDestinationCurrencyCode = movement?.destinationCurrencyCode ?? destinationAccount?.currencyCode ?? baseCurrency;
+  const transferCurrenciesDiffer =
+    Boolean(isTransfer) &&
+    transferSourceCurrencyCode.toUpperCase() !== transferDestinationCurrencyCode.toUpperCase();
+  const transferFxRate = useMemo(() => {
+    if (!movement || !isTransfer) return null;
+    const savedRate = Number(movement.fxRate ?? 0);
+    if (Number.isFinite(savedRate) && savedRate > 0) return savedRate;
+
+    const sourceAmount = Number(movement.sourceAmount ?? 0);
+    const destinationAmount = Number(movement.destinationAmount ?? 0);
+    if (sourceAmount > 0 && destinationAmount > 0) return destinationAmount / sourceAmount;
+    return null;
+  }, [isTransfer, movement?.destinationAmount, movement?.fxRate, movement?.sourceAmount]);
+  const transferDirectFxLabel =
+    transferCurrenciesDiffer && transferFxRate
+      ? formatExchangeRateLabel(transferSourceCurrencyCode, transferDestinationCurrencyCode, transferFxRate)
+      : "";
+  const transferInverseFxLabel =
+    transferCurrenciesDiffer && transferFxRate
+      ? formatExchangeRateLabel(transferDestinationCurrencyCode, transferSourceCurrencyCode, 1 / transferFxRate)
+      : "";
   const linkedEventId = useMemo(() => readMovementLinkedEventId(movement?.metadata), [movement?.metadata]);
   const isSelectingAttachments = selectedAttachmentPaths.length > 0;
   const selectedAttachments = useMemo(
@@ -349,7 +392,7 @@ function MovementDetailScreen() {
                 <Text style={styles.typeLabel}>{TYPE_LABEL[movement.movementType] ?? movement.movementType}</Text>
                 <AmountDisplay
                   amount={isTransfer ? (movement.sourceAmount ?? 0) : (movement.sourceAmount ?? movement.destinationAmount ?? 0)}
-                  currencyCode={baseCurrency}
+                  currencyCode={isTransfer ? transferSourceCurrencyCode : baseCurrency}
                   movementType={movement.movementType}
                   sourceAmount={movement.sourceAmount}
                   destinationAmount={movement.destinationAmount}
@@ -521,24 +564,48 @@ function MovementDetailScreen() {
             {/* Accounts */}
             {isTransfer ? (
               <Card>
-                <Text style={styles.sectionTitle}>Cuentas</Text>
+                <Text style={styles.sectionTitle}>Transferencia</Text>
                 <DetailRow
-                  label="Origen"
-                  value={movement.sourceAccountName ?? `Cuenta #${movement.sourceAccountId}`}
+                  label="Cuenta origen"
+                  value={formatAccountLabel(
+                    movement.sourceAccountName,
+                    movement.sourceAccountId,
+                    transferSourceCurrencyCode,
+                  )}
+                />
+                <Divider />
+                <DetailRow
+                  label="Salió"
+                  value={formatCurrency(movement.sourceAmount ?? 0, transferSourceCurrencyCode)}
                 />
                 {movement.destinationAccountId ? (
                   <>
                     <Divider />
                     <DetailRow
-                      label="Destino"
-                      value={movement.destinationAccountName ?? `Cuenta #${movement.destinationAccountId}`}
+                      label="Cuenta destino"
+                      value={formatAccountLabel(
+                        movement.destinationAccountName,
+                        movement.destinationAccountId,
+                        transferDestinationCurrencyCode,
+                      )}
+                    />
+                    <Divider />
+                    <DetailRow
+                      label="Llegó"
+                      value={formatCurrency(movement.destinationAmount ?? 0, transferDestinationCurrencyCode)}
                     />
                   </>
                 ) : null}
-                {movement.fxRate && movement.fxRate !== 1 ? (
+                {transferDirectFxLabel ? (
                   <>
                     <Divider />
-                    <DetailRow label="Tipo de cambio" value={movement.fxRate.toFixed(4)} />
+                    <DetailRow label="Tipo guardado" value={transferDirectFxLabel} />
+                  </>
+                ) : null}
+                {transferInverseFxLabel ? (
+                  <>
+                    <Divider />
+                    <DetailRow label="Tipo inverso" value={transferInverseFxLabel} />
                   </>
                 ) : null}
               </Card>

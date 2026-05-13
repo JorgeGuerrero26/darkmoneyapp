@@ -115,11 +115,13 @@ function AccountDetailScreen() {
     <SwipeableMovementRow
       movement={item}
       baseCurrencyCode={baseCurrency}
+      perspectiveAccountId={accountId}
+      perspectiveCurrencyCode={account?.currencyCode}
       attachmentCount={movementAttachmentCounts[item.id] ?? 0}
       onPress={() => router.push(`/movement/${item.id}`)}
       onDelete={() => setDeleteMovementTarget({ id: item.id, description: item.description })}
     />
-  ), [baseCurrency, movementAttachmentCounts, router]);
+  ), [account?.currencyCode, accountId, baseCurrency, movementAttachmentCounts, router]);
 
   return (
     <ResourceModuleTemplate

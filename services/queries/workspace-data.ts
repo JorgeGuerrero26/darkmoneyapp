@@ -1744,6 +1744,64 @@ export function useDashboardAiHealthMutation() {
   });
 }
 
+export type MovementCategoryAiSurface = "movement_form" | "notification_form" | "android_overlay";
+
+export type MovementCategoryAiCategoryInput = {
+  id: number;
+  name: string;
+  kind: "expense" | "income" | "both";
+};
+
+export type MovementCategoryAiLocalSuggestion = {
+  categoryId: number | null;
+  categoryName: string | null;
+  confidence: number | null;
+  reasons: string[];
+} | null;
+
+export type MovementCategoryAiRecommendation = {
+  type: "existing_category" | "new_category" | "none";
+  categoryId: number | null;
+  categoryName: string | null;
+  newCategoryName: string | null;
+  confidence: number;
+  reasons: string[];
+};
+
+export type MovementCategoryAiSuggestionInput = {
+  workspaceId: number;
+  surface: MovementCategoryAiSurface;
+  movementType: "expense" | "income";
+  amount?: number | null;
+  currencyCode?: string | null;
+  description: string;
+  occurredAt?: string | null;
+  categories: MovementCategoryAiCategoryInput[];
+  localSuggestion?: MovementCategoryAiLocalSuggestion;
+};
+
+export type MovementCategoryAiSuggestionResponse = {
+  ok: boolean;
+  recommendation: MovementCategoryAiRecommendation | null;
+  model?: string | null;
+  error?: string | null;
+};
+
+export async function requestMovementCategoryAiSuggestion(
+  input: MovementCategoryAiSuggestionInput,
+): Promise<MovementCategoryAiSuggestionResponse> {
+  if (!input.workspaceId) throw new Error("No se encontró el workspace activo.");
+  if (!input.description.trim()) throw new Error("No hay descripción suficiente para sugerir categoría.");
+  if (!input.categories.length) throw new Error("No hay categorías disponibles para sugerir.");
+  return invokeEdgeFunction<MovementCategoryAiSuggestionResponse>("movement-category-ai-suggestion", input);
+}
+
+export function useMovementCategoryAiSuggestionMutation() {
+  return useMutation({
+    mutationFn: requestMovementCategoryAiSuggestion,
+  });
+}
+
 export function usePersistDashboardAnalyticsMutation(workspaceId: number | null) {
   return useMutation({
     mutationFn: async (input: PersistDashboardAnalyticsInput) => {

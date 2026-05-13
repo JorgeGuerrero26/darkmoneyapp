@@ -162,7 +162,6 @@ function AppSplash() {
         { opacity: screenOpacity, backgroundColor: "#05070B", zIndex: 999, alignItems: "center", justifyContent: "center" },
       ]}
     >
-      <View style={styles.splashGlow} />
       <Animated.View style={{ opacity: logoOpacity, transform: [{ scale: logoScale }] }}>
         <Animated.View style={{ opacity: pulseAnim }}>
           <Image
@@ -934,13 +933,6 @@ const styles = StyleSheet.create({
   splashLogo: {
     width: 220,
     height: 220,
-  },
-  splashGlow: {
-    position: "absolute",
-    width: 340,
-    height: 340,
-    borderRadius: 170,
-    backgroundColor: "rgba(180, 140, 50, 0.07)",
   },
   splashProgressTrack: {
     width: 160,

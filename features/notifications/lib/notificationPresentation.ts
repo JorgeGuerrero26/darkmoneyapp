@@ -64,6 +64,8 @@ export function getNotificationKindMeta(kind: string): NotificationKindMeta {
       return { icon: Mail, color: COLORS.pine };
     case "workspace_invite":
       return { icon: Mail, color: COLORS.primary };
+    case "detected_movement_suggestion":
+      return { icon: Wallet, color: COLORS.primary };
     case "multiple_obligations_overdue":
       return { icon: AlertTriangle, color: COLORS.danger };
     case "high_interest_obligation":
