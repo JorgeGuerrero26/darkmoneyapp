@@ -9,6 +9,7 @@ import {
   Percent,
   RefreshCw,
   Scale,
+  Sparkles,
   TrendingDown,
   TrendingUp,
   Wallet,
@@ -34,6 +35,8 @@ export function getNotificationKindMeta(kind: string): NotificationKindMeta {
       return { icon: Scale, color: COLORS.storm };
     case "daily_budget_review":
       return { icon: BarChart2, color: COLORS.storm };
+    case "daily_ai_digest":
+      return { icon: Sparkles, color: COLORS.primary };
     case "subscription_reminder":
       return { icon: RefreshCw, color: COLORS.ember };
     case "subscription_overdue":

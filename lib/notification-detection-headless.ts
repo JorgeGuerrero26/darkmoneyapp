@@ -274,6 +274,8 @@ export async function notificationDetectionHeadlessTask(payload: HeadlessPayload
         categoryAi: nativeSuggestion.aiCategoryRecommendation ?? null,
         counterpartyAi: nativeSuggestion.counterpartyRecommendation ?? null,
         recurringAi: nativeSuggestion.recurringRecommendation ?? null,
+        riskAi: nativeSuggestion.riskExplanation ?? null,
+        budgetAi: nativeSuggestion.budgetImpact ?? null,
         recurring_income_id: recurringIncomeId,
       },
     })

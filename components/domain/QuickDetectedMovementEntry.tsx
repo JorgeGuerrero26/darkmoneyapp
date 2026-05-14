@@ -36,12 +36,15 @@ import { useMovementDescriptionCleanup } from "../../hooks/useMovementDescriptio
 import { useMovementCounterpartyAiSuggestion } from "../../hooks/useMovementCounterpartyAiSuggestion";
 import type { CounterpartySuggestionResult } from "../../lib/movement-counterparty-suggestions";
 import { useMovementRecurringAiSuggestion } from "../../hooks/useMovementRecurringAiSuggestion";
+import { useMovementRiskExplanation } from "../../hooks/useMovementRiskExplanation";
+import { useMovementBudgetImpact } from "../../hooks/useMovementBudgetImpact";
 import {
   recurringFrequencyLabel,
   recurringFrequencyToSubscriptionFields,
   type MovementRecurringHistoryItem,
   type MovementRecurringSuggestionResult,
 } from "../../lib/movement-recurring-suggestions";
+import type { MovementRiskItem } from "../../lib/movement-risk-analysis";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import type { CategorySummary, CounterpartySummary } from "../../types/domain";
 
@@ -112,7 +115,7 @@ function localDate(value?: string | null) {
 export function QuickDetectedMovementEntry({ visible, suggestionId, notificationId, onClose }: Props) {
   const router = useRouter();
   const { profile } = useAuth();
-  const { activeWorkspaceId } = useWorkspace();
+  const { activeWorkspaceId, activeWorkspace } = useWorkspace();
   const { showToast } = useToast();
   const suggestionQuery = useDetectedMovementSuggestionQuery(suggestionId);
   const suggestion = suggestionQuery.data;
@@ -178,6 +181,47 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
       counterpartyId: movement.counterparty_id ?? null,
     }));
   }, [patternMovements]);
+  const riskHistory = useMemo<MovementRiskItem[]>(() => {
+    return (patternMovements ?? []).map((movement) => {
+      const category = (snapshot?.categories ?? []).find((item) => item.id === movement.category_id) ?? null;
+      const counterparty = (snapshot?.counterparties ?? []).find((item) => item.id === movement.counterparty_id) ?? null;
+      const accountId = movement.destination_account_id ?? movement.source_account_id ?? null;
+      const account = (snapshot?.accounts ?? []).find((item) => item.id === accountId) ?? null;
+      return {
+        id: movement.id,
+        movementType: movement.movement_type,
+        occurredAt: movement.occurred_at,
+        description: movement.description ?? "",
+        amount: patternMovementAmount(movement),
+        categoryId: movement.category_id ?? null,
+        categoryName: category?.name ?? null,
+        counterpartyId: movement.counterparty_id ?? null,
+        counterpartyName: counterparty?.name ?? null,
+        accountId,
+        accountName: account?.name ?? null,
+      };
+    });
+  }, [patternMovements, snapshot?.accounts, snapshot?.categories, snapshot?.counterparties]);
+  const currentRiskMovement = useMemo<MovementRiskItem | null>(() => {
+    const parsedAmount = Number(amount.replace(",", ".")) || suggestion?.amount || 0;
+    if (!parsedAmount || !description.trim()) return null;
+    const category = categoryId == null ? null : categories.find((item) => item.id === categoryId) ?? null;
+    const counterparty = counterpartyId == null ? null : counterparties.find((item) => item.id === counterpartyId) ?? null;
+    const account = accountId == null ? null : activeAccounts.find((item) => item.id === accountId) ?? null;
+    return {
+      id: -1,
+      movementType,
+      occurredAt: date ? new Date(`${date}T12:00:00`).toISOString() : suggestion?.occurredAt ?? new Date().toISOString(),
+      description,
+      amount: parsedAmount,
+      categoryId,
+      categoryName: category?.name ?? null,
+      counterpartyId,
+      counterpartyName: counterparty?.name ?? null,
+      accountId,
+      accountName: account?.name ?? null,
+    };
+  }, [accountId, activeAccounts, amount, categories, categoryId, counterparties, counterpartyId, date, description, movementType, suggestion]);
 
   const localCategorySuggestion = useMemo<CategorySuggestionState | null>(() => {
     if (categoryId !== null || !description.trim()) return null;
@@ -330,6 +374,38 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
     recentMovements: recurringSuggestionHistory,
     subscriptions: snapshot?.subscriptions ?? [],
     recurringIncome: snapshot?.recurringIncome ?? [],
+    proAccessEnabled: entitlementQuery.data?.proAccessEnabled,
+  });
+  const { risk: movementRisk, isLoading: movementRiskLoading } = useMovementRiskExplanation({
+    enabled: Boolean(visible),
+    workspaceId: activeWorkspaceId,
+    surface: "notification_form",
+    current: currentRiskMovement,
+    history: riskHistory,
+    proAccessEnabled: entitlementQuery.data?.proAccessEnabled,
+  });
+  const selectedBudgetAccount = accountId == null ? null : activeAccounts.find((account) => account.id === accountId) ?? null;
+  const { impact: budgetImpact, isLoading: budgetImpactLoading } = useMovementBudgetImpact({
+    enabled: Boolean(visible && movementType === "expense" && categoryId != null),
+    workspaceId: activeWorkspaceId,
+    surface: "notification_form",
+    movement: Number(amount.replace(",", ".")) > 0
+      ? {
+        movementType: "expense",
+        occurredAt: date ? new Date(`${date}T12:00:00`).toISOString() : suggestion?.occurredAt ?? new Date().toISOString(),
+        description: descriptionCleanup?.cleanedDescription ?? description,
+        amount: Number(amount.replace(",", ".")) || suggestion?.amount || 0,
+        currencyCode: selectedBudgetAccount?.currencyCode ?? suggestion?.currencyCode ?? "PEN",
+        categoryId,
+        categoryName: selectedRecurringCategory?.name ?? null,
+        counterpartyName: selectedRecurringCounterparty?.name ?? null,
+        accountId,
+        accountName: selectedBudgetAccount?.name ?? null,
+      }
+      : null,
+    budgets: snapshot?.budgets ?? [],
+    exchangeRates: snapshot?.exchangeRates ?? [],
+    workspaceBaseCurrencyCode: activeWorkspace?.baseCurrencyCode ?? "PEN",
     proAccessEnabled: entitlementQuery.data?.proAccessEnabled,
   });
 
@@ -526,8 +602,8 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
         });
         if (duplicate) {
           Alert.alert(
-            "Puede que este movimiento ya exista",
-            "Encontramos un movimiento con la misma fecha, cuenta, monto y descripción.",
+            movementRisk?.title ?? "Puede que este movimiento ya exista",
+            movementRisk?.explanation ?? "Encontramos un movimiento con la misma fecha, cuenta, monto y descripción.",
             [
               { text: "Revisar", style: "cancel" },
               { text: "Registrar de todas formas", onPress: () => void submit(true) },
@@ -563,6 +639,8 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
           counterpartyAi: counterpartySuggestion?.source === "deepseek" ? counterpartySuggestion : null,
           recurring_income_id: linkedRecurringIncomeId,
           recurringAi: recurringSuggestion?.source === "deepseek" ? recurringSuggestion : null,
+          riskAi: movementRisk?.source === "deepseek" ? movementRisk : null,
+          budgetAi: budgetImpact?.source === "deepseek" ? budgetImpact : null,
         },
       });
       await markSuggestion.mutateAsync({ suggestionId: suggestion.id, status: "registered", movementId: created.id });
@@ -728,6 +806,36 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
             detail={`${recurringSuggestion.source === "deepseek" ? "Mejor sugerencia · " : ""}${Math.round(recurringSuggestion.confidence * 100)}% · ${recurringFrequencyLabel(recurringSuggestion.frequency)} · ${recurringSuggestion.reasons.join(" · ")}`}
             onApply={() => void applyRecurringSuggestion(recurringSuggestion)}
           />
+        ) : null}
+        {movementRiskLoading ? (
+          <SmartSuggestionLoading
+            title="Revisando antes de guardar"
+            detail="Analizando si este movimiento podría estar repetido o fuera de patrón."
+          />
+        ) : null}
+        {movementRisk ? (
+          <View style={styles.riskWarning}>
+            <Text style={styles.riskWarningTitle}>{movementRisk.title}</Text>
+            <Text style={styles.riskWarningText}>
+              {movementRisk.source === "deepseek" ? "Revisión inteligente: " : ""}
+              {movementRisk.explanation}
+            </Text>
+          </View>
+        ) : null}
+        {budgetImpactLoading ? (
+          <SmartSuggestionLoading
+            title="Revisando presupuesto"
+            detail="Calculando si este movimiento afecta un presupuesto sensible."
+          />
+        ) : null}
+        {budgetImpact ? (
+          <View style={styles.riskWarning}>
+            <Text style={styles.riskWarningTitle}>{budgetImpact.title}</Text>
+            <Text style={styles.riskWarningText}>
+              {budgetImpact.source === "deepseek" ? "Recomendación inteligente: " : ""}
+              {budgetImpact.recommendation}
+            </Text>
+          </View>
         ) : null}
 
         <DatePickerInput label="Fecha" value={date} onChange={setDate} variant="formRow" />
@@ -904,6 +1012,24 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.sm,
     padding: SPACING.md,
     textAlignVertical: "top",
+  },
+  riskWarning: {
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: "rgba(245,181,82,0.35)",
+    backgroundColor: "rgba(245,181,82,0.10)",
+    padding: SPACING.md,
+    gap: 2,
+  },
+  riskWarningTitle: {
+    color: COLORS.gold,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.sm,
+  },
+  riskWarningText: {
+    color: COLORS.textMuted,
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
   },
   actions: { gap: SPACING.sm, paddingTop: SPACING.sm },
   resolvedContainer: { gap: SPACING.md, paddingVertical: SPACING.lg },

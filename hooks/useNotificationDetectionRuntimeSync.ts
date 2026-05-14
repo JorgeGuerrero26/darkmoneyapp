@@ -8,6 +8,8 @@ import { useNotificationDetectionSettingsQuery, syncNativeDetectedSuggestion } f
 import { cleanupMovementDescriptionLocally, shouldShowDescriptionCleanup } from "../lib/movement-description-cleanup";
 import { suggestCounterpartyLocally } from "../lib/movement-counterparty-suggestions";
 import { suggestRecurringLocally, type MovementRecurringHistoryItem } from "../lib/movement-recurring-suggestions";
+import { analyzeMovementRiskLocally, type MovementRiskItem } from "../lib/movement-risk-analysis";
+import { analyzeMovementBudgetImpactLocally } from "../lib/movement-budget-impact";
 import { buildPatternMaps, scoreCategoryFromDescription, type PatternMaps } from "../lib/movement-patterns";
 import { useMovementPatternsQuery } from "../services/queries/movement-patterns";
 import {
@@ -15,6 +17,8 @@ import {
   requestMovementCounterpartyAiSuggestion,
   requestMovementRecurringAiSuggestion,
   requestMovementCategoryAiSuggestion,
+  requestMovementRiskAiExplanation,
+  requestMovementBudgetAiRecommendation,
   requestNotificationMovementAiClassification,
   useUserEntitlementQuery,
   useWorkspaceSnapshotQuery,
@@ -54,7 +58,7 @@ function patternMovementAmount(movement: {
 
 export function useNotificationDetectionRuntimeSync() {
   const { profile } = useAuth();
-  const { activeWorkspaceId } = useWorkspace();
+  const { activeWorkspaceId, activeWorkspace } = useWorkspace();
   const { data: snapshot } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const entitlementQuery = useUserEntitlementQuery(profile?.id ?? null, profile?.email ?? null);
   const settingsQuery = useNotificationDetectionSettingsQuery(profile?.id, activeWorkspaceId);
@@ -71,6 +75,27 @@ export function useNotificationDetectionRuntimeSync() {
       counterpartyId: movement.counterparty_id ?? null,
     }));
   }, [patternMovementsQuery.data]);
+  const riskHistory = useMemo<MovementRiskItem[]>(() => {
+    return (patternMovementsQuery.data ?? []).map((movement) => {
+      const category = (snapshot?.categories ?? []).find((item) => item.id === movement.category_id) ?? null;
+      const counterparty = (snapshot?.counterparties ?? []).find((item) => item.id === movement.counterparty_id) ?? null;
+      const accountId = movement.destination_account_id ?? movement.source_account_id ?? null;
+      const account = (snapshot?.accounts ?? []).find((item) => item.id === accountId) ?? null;
+      return {
+        id: movement.id,
+        movementType: movement.movement_type,
+        occurredAt: movement.occurred_at,
+        description: movement.description ?? "",
+        amount: patternMovementAmount(movement),
+        categoryId: movement.category_id ?? null,
+        categoryName: category?.name ?? null,
+        counterpartyId: movement.counterparty_id ?? null,
+        counterpartyName: counterparty?.name ?? null,
+        accountId,
+        accountName: account?.name ?? null,
+      };
+    });
+  }, [patternMovementsQuery.data, snapshot?.accounts, snapshot?.categories, snapshot?.counterparties]);
   const settings = settingsQuery.data ?? [];
 
   useEffect(() => {
@@ -288,6 +313,145 @@ export function useNotificationDetectionRuntimeSync() {
             }
           }
         }
+        if (!suggestion.riskExplanation && description) {
+          const amount = parseAmountLabel(suggestion.amountLabel);
+          const movementType = suggestion.movementType === "income" ? "income" : "expense";
+          const counterpartyRecommendation = suggestion.counterpartyRecommendation as { counterpartyId?: unknown } | undefined;
+          const categoryRecommendation = suggestion.aiCategoryRecommendation as { categoryId?: unknown } | undefined;
+          const counterpartyId = Number(counterpartyRecommendation?.counterpartyId ?? 0);
+          const categoryId = Number(categoryRecommendation?.categoryId ?? 0);
+          const category = categoryId > 0
+            ? (snapshot?.categories ?? []).find((item) => item.id === categoryId) ?? null
+            : null;
+          const counterparty = counterpartyId > 0
+            ? (snapshot?.counterparties ?? []).find((item) => item.id === counterpartyId) ?? null
+            : null;
+          const currentRisk: MovementRiskItem | null = amount
+            ? {
+              id: -1,
+              movementType,
+              occurredAt: new Date(suggestion.postTime ?? suggestion.createdAt ?? Date.now()).toISOString(),
+              description,
+              amount,
+              categoryId: category?.id ?? null,
+              categoryName: category?.name ?? null,
+              counterpartyId: counterparty?.id ?? null,
+              counterpartyName: counterparty?.name ?? null,
+              accountId: null,
+              accountName: null,
+            }
+            : null;
+          const localRisk = analyzeMovementRiskLocally(currentRisk, riskHistory);
+          if (localRisk && localRisk.confidence >= 0.75) {
+            notificationDetection.setSuggestionRiskExplanation(suggestion.id, localRisk);
+          } else if (localRisk && entitlementQuery.data?.proAccessEnabled) {
+            const related = riskHistory.filter((movement) => localRisk.relatedMovementIds.includes(movement.id)).slice(0, 5);
+            const response = await requestMovementRiskAiExplanation({
+              workspaceId: activeWorkspaceId!,
+              surface: "android_overlay",
+              currentMovement: {
+                movementType: currentRisk!.movementType,
+                occurredAt: currentRisk!.occurredAt,
+                description: currentRisk!.description,
+                amount: currentRisk!.amount,
+                categoryName: currentRisk!.categoryName,
+                counterpartyName: currentRisk!.counterpartyName,
+              },
+              relatedMovements: related.map((movement) => ({
+                id: movement.id,
+                movementType: movement.movementType,
+                occurredAt: movement.occurredAt,
+                description: movement.description,
+                amount: movement.amount,
+                categoryName: movement.categoryName,
+                counterpartyName: movement.counterpartyName,
+              })),
+              localRisk,
+            }).catch(() => null);
+            if (response?.ok && response.explanation) {
+              notificationDetection.setSuggestionRiskExplanation(suggestion.id, {
+                ...response.explanation,
+                source: "deepseek",
+              });
+            }
+          }
+        }
+        if (!suggestion.budgetImpact && description) {
+          const amount = parseAmountLabel(suggestion.amountLabel);
+          const movementType = suggestion.movementType === "income" ? "income" : "expense";
+          if (amount && movementType === "expense") {
+            const categories = (snapshot?.categories ?? [])
+              .filter((category) => category.isActive && (category.kind === "expense" || category.kind === "both"));
+            const aiCategory = suggestion.aiCategoryRecommendation as { categoryId?: unknown } | undefined;
+            const aiCategoryId = Number(aiCategory?.categoryId ?? 0);
+            const scoredLocal = scoreCategoryFromDescription(description, patternMaps);
+            const categoryId = aiCategoryId > 0 ? aiCategoryId : scoredLocal?.categoryId ?? null;
+            const category = categoryId ? categories.find((item) => item.id === categoryId) ?? null : null;
+            const defaultAccountId = settings.find(
+              (setting) => setting.financialAppKey === suggestion.financialAppKey && setting.enabled,
+            )?.defaultAccountId ?? null;
+            const account = defaultAccountId
+              ? (snapshot?.accounts ?? []).find((item) => item.id === defaultAccountId) ?? null
+              : null;
+            const localImpact = analyzeMovementBudgetImpactLocally({
+              movement: {
+                movementType,
+                occurredAt: new Date(suggestion.postTime ?? suggestion.createdAt ?? Date.now()).toISOString(),
+                description,
+                amount,
+                currencyCode: account?.currencyCode ?? currencyFromAmountLabel(suggestion.amountLabel),
+                categoryId: category?.id ?? null,
+                accountId: account?.id ?? null,
+              },
+              budgets: snapshot?.budgets ?? [],
+              exchangeRates: snapshot?.exchangeRates ?? [],
+              workspaceBaseCurrencyCode: activeWorkspace?.baseCurrencyCode ?? "PEN",
+            });
+            if (localImpact && localImpact.confidence >= 0.75 && localImpact.severity !== "high") {
+              notificationDetection.setSuggestionBudgetImpact(suggestion.id, localImpact);
+            } else if (localImpact && entitlementQuery.data?.proAccessEnabled) {
+              const response = await requestMovementBudgetAiRecommendation({
+                workspaceId: activeWorkspaceId!,
+                surface: "android_overlay",
+                movement: {
+                  movementType,
+                  occurredAt: new Date(suggestion.postTime ?? suggestion.createdAt ?? Date.now()).toISOString(),
+                  description,
+                  amount,
+                  currencyCode: account?.currencyCode ?? currencyFromAmountLabel(suggestion.amountLabel),
+                  categoryName: category?.name ?? null,
+                  accountName: account?.name ?? null,
+                },
+                budgetImpact: {
+                  budgetId: localImpact.budgetId,
+                  budgetName: localImpact.budgetName,
+                  currencyCode: localImpact.currencyCode,
+                  impactAmount: localImpact.impactAmount,
+                  previousSpentAmount: localImpact.previousSpentAmount,
+                  projectedSpentAmount: localImpact.projectedSpentAmount,
+                  limitAmount: localImpact.limitAmount,
+                  previousUsedPercent: localImpact.previousUsedPercent,
+                  projectedUsedPercent: localImpact.projectedUsedPercent,
+                  overAmount: localImpact.overAmount,
+                  severity: localImpact.severity,
+                  confidence: localImpact.confidence,
+                  reasons: localImpact.reasons,
+                },
+              }).catch(() => null);
+              if (response?.ok && response.recommendation) {
+                notificationDetection.setSuggestionBudgetImpact(suggestion.id, {
+                  ...localImpact,
+                  severity: response.recommendation.severity,
+                  confidence: response.recommendation.confidence,
+                  title: response.recommendation.title,
+                  recommendation: response.recommendation.recommendation,
+                  reasons: response.recommendation.reasons,
+                  source: "deepseek",
+                });
+              }
+            }
+          }
+        }
         if (cancelled || !entitlementQuery.data?.proAccessEnabled || suggestion.aiCategoryRecommendation) continue;
         const movementType = suggestion.movementType === "income" ? "income" : "expense";
         const compatibleKind = movementType === "income" ? "income" : "expense";
@@ -332,12 +496,18 @@ export function useNotificationDetectionRuntimeSync() {
     };
   }, [
     activeWorkspaceId,
+    activeWorkspace?.baseCurrencyCode,
     entitlementQuery.data?.proAccessEnabled,
     patternMaps,
     profile?.id,
     recurringHistory,
+    riskHistory,
+    settings,
+    snapshot?.accounts,
+    snapshot?.budgets,
     snapshot?.categories,
     snapshot?.counterparties,
+    snapshot?.exchangeRates,
     snapshot?.recurringIncome,
     snapshot?.subscriptions,
   ]);

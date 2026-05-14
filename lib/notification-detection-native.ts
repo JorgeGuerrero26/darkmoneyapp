@@ -17,6 +17,8 @@ type NativeNotificationDetection = {
   setSuggestionDescriptionCleanup?(suggestionId: string, cleanupJson: string): void;
   setSuggestionCounterpartyRecommendation?(suggestionId: string, recommendationJson: string): void;
   setSuggestionRecurringRecommendation?(suggestionId: string, recommendationJson: string): void;
+  setSuggestionRiskExplanation?(suggestionId: string, explanationJson: string): void;
+  setSuggestionBudgetImpact?(suggestionId: string, impactJson: string): void;
   requestActiveNotificationScan(): void;
   showSuggestionNotification(suggestionId: string): void;
   setRuntimeContext?(contextJson: string): void;
@@ -42,6 +44,8 @@ export type NotificationDetectionSuggestion = {
   descriptionCleanup?: unknown;
   counterpartyRecommendation?: unknown;
   recurringRecommendation?: unknown;
+  riskExplanation?: unknown;
+  budgetImpact?: unknown;
   createdAt?: number;
   updatedAt?: number;
   notificationId?: number;
@@ -106,6 +110,12 @@ export const notificationDetection = {
   },
   setSuggestionRecurringRecommendation(suggestionId: string, recommendation: unknown) {
     nativeModule?.setSuggestionRecurringRecommendation?.(suggestionId, JSON.stringify(recommendation ?? null));
+  },
+  setSuggestionRiskExplanation(suggestionId: string, explanation: unknown) {
+    nativeModule?.setSuggestionRiskExplanation?.(suggestionId, JSON.stringify(explanation ?? null));
+  },
+  setSuggestionBudgetImpact(suggestionId: string, impact: unknown) {
+    nativeModule?.setSuggestionBudgetImpact?.(suggestionId, JSON.stringify(impact ?? null));
   },
   requestActiveNotificationScan() {
     nativeModule?.requestActiveNotificationScan();

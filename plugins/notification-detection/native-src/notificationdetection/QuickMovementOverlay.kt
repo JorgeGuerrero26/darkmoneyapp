@@ -51,9 +51,11 @@ object QuickMovementOverlay {
     val descriptionCleanup = suggestion?.optJSONObject("descriptionCleanup")
     val counterpartyRecommendation = suggestion?.optJSONObject("counterpartyRecommendation")
     val recurringRecommendation = suggestion?.optJSONObject("recurringRecommendation")
+    val riskExplanation = suggestion?.optJSONObject("riskExplanation")
+    val budgetImpact = suggestion?.optJSONObject("budgetImpact")
 
     val runtimeContext = NotificationDetectionStore.getRuntimeContext(appContext)
-    val view = buildOverlay(appContext, suggestionId, notificationId, appName, financialAppKey, amount, description, movementType, runtimeContext, aiCategoryRecommendation, descriptionCleanup, counterpartyRecommendation, recurringRecommendation)
+    val view = buildOverlay(appContext, suggestionId, notificationId, appName, financialAppKey, amount, description, movementType, runtimeContext, aiCategoryRecommendation, descriptionCleanup, counterpartyRecommendation, recurringRecommendation, riskExplanation, budgetImpact)
 
     val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
       WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -150,6 +152,8 @@ object QuickMovementOverlay {
     descriptionCleanup: JSONObject?,
     counterpartyRecommendation: JSONObject?,
     recurringRecommendation: JSONObject?,
+    riskExplanation: JSONObject?,
+    budgetImpact: JSONObject?,
   ): View {
     val density = context.resources.displayMetrics.density
     fun dp(value: Int) = (value * density).toInt()
@@ -345,6 +349,26 @@ object QuickMovementOverlay {
         setPadding(0, dp(6), 0, 0)
       }
       suggestionWrap.addView(suggestionRow)
+      root.addView(suggestionWrap)
+    }
+
+    val riskLabel = riskLabel(riskExplanation)
+    if (riskLabel != null) {
+      val suggestionWrap = LinearLayout(context).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(0, dp(6), 0, 0)
+      }
+      suggestionWrap.addView(categorySuggestionRow(context, riskLabel, riskDetail(riskExplanation)) {})
+      root.addView(suggestionWrap)
+    }
+
+    val budgetLabel = budgetLabel(budgetImpact)
+    if (budgetLabel != null) {
+      val suggestionWrap = LinearLayout(context).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(0, dp(6), 0, 0)
+      }
+      suggestionWrap.addView(categorySuggestionRow(context, budgetLabel, budgetDetail(budgetImpact)) {})
       root.addView(suggestionWrap)
     }
 
@@ -794,6 +818,36 @@ object QuickMovementOverlay {
       "recurring_income" -> "Crear ingreso fijo: $name"
       else -> null
     }
+  }
+
+  private fun riskConfidence(explanation: JSONObject?): Double {
+    return explanation?.optDouble("confidence", 0.0)?.takeIf { !it.isNaN() } ?: 0.0
+  }
+
+  private fun riskLabel(explanation: JSONObject?): String? {
+    if (explanation == null || riskConfidence(explanation) < 0.65) return null
+    return explanation.optString("title").ifBlank { "Revisar antes de guardar" }
+  }
+
+  private fun riskDetail(explanation: JSONObject?): String {
+    val confidence = (riskConfidence(explanation) * 100).toInt().coerceIn(0, 100)
+    val text = explanation?.optString("explanation").orEmpty()
+    return listOf("$confidence%", text.ifBlank { null }).filterNotNull().joinToString(" · ")
+  }
+
+  private fun budgetConfidence(impact: JSONObject?): Double {
+    return impact?.optDouble("confidence", 0.0)?.takeIf { !it.isNaN() } ?: 0.0
+  }
+
+  private fun budgetLabel(impact: JSONObject?): String? {
+    if (impact == null || budgetConfidence(impact) < 0.65) return null
+    return impact.optString("title").ifBlank { "Impacto en presupuesto" }
+  }
+
+  private fun budgetDetail(impact: JSONObject?): String {
+    val confidence = (budgetConfidence(impact) * 100).toInt().coerceIn(0, 100)
+    val text = impact?.optString("recommendation").orEmpty()
+    return listOf("$confidence%", text.ifBlank { null }).filterNotNull().joinToString(" · ")
   }
 
   private fun readOptions(runtimeContext: JSONObject, key: String, fallbackLabel: String, metaKey: String? = null): List<Option> {

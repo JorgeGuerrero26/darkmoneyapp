@@ -59,6 +59,8 @@ export type NativeDetectedMovementSuggestion = {
   descriptionCleanup?: unknown;
   counterpartyRecommendation?: unknown;
   recurringRecommendation?: unknown;
+  riskExplanation?: unknown;
+  budgetImpact?: unknown;
   createdAt?: number;
   updatedAt?: number;
   notificationId?: number;
@@ -265,6 +267,8 @@ export async function syncNativeDetectedSuggestion(input: {
         descriptionCleanup: input.nativeSuggestion.descriptionCleanup ?? null,
         counterpartyRecommendation: input.nativeSuggestion.counterpartyRecommendation ?? null,
         recurringRecommendation: input.nativeSuggestion.recurringRecommendation ?? null,
+        riskExplanation: input.nativeSuggestion.riskExplanation ?? null,
+        budgetImpact: input.nativeSuggestion.budgetImpact ?? null,
       },
       updated_at: new Date().toISOString(),
     }, { onConflict: "user_id,workspace_id,dedupe_key" })

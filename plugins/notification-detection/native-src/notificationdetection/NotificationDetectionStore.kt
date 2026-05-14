@@ -169,6 +169,44 @@ object NotificationDetectionStore {
     writeSuggestionsArray(context, suggestions)
   }
 
+  fun setRiskExplanation(context: Context, suggestionId: String, explanationJson: String) {
+    val explanation = try {
+      if (explanationJson.isBlank() || explanationJson == "null") null else JSONObject(explanationJson)
+    } catch (_: Exception) {
+      null
+    }
+    val suggestions = readSuggestionsArray(context)
+    for (index in 0 until suggestions.length()) {
+      val current = suggestions.optJSONObject(index) ?: continue
+      if (current.optString("id") == suggestionId) {
+        if (explanation == null) current.remove("riskExplanation") else current.put("riskExplanation", explanation)
+        current.put("updatedAt", System.currentTimeMillis())
+        suggestions.put(index, current)
+        break
+      }
+    }
+    writeSuggestionsArray(context, suggestions)
+  }
+
+  fun setBudgetImpact(context: Context, suggestionId: String, impactJson: String) {
+    val impact = try {
+      if (impactJson.isBlank() || impactJson == "null") null else JSONObject(impactJson)
+    } catch (_: Exception) {
+      null
+    }
+    val suggestions = readSuggestionsArray(context)
+    for (index in 0 until suggestions.length()) {
+      val current = suggestions.optJSONObject(index) ?: continue
+      if (current.optString("id") == suggestionId) {
+        if (impact == null) current.remove("budgetImpact") else current.put("budgetImpact", impact)
+        current.put("updatedAt", System.currentTimeMillis())
+        suggestions.put(index, current)
+        break
+      }
+    }
+    writeSuggestionsArray(context, suggestions)
+  }
+
   fun getSuggestions(context: Context): JSONArray {
     return readSuggestionsArray(context)
   }

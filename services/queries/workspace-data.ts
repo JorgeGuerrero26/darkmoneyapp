@@ -2008,6 +2008,114 @@ export async function requestNotificationMovementAiClassification(
   return invokeEdgeFunction<NotificationMovementAiClassificationResponse>("notification-movement-ai-classifier", input);
 }
 
+export type MovementRiskAiExplanationInput = {
+  workspaceId: number;
+  surface: "movement_form" | "notification_form" | "android_overlay";
+  currentMovement: {
+    movementType: string;
+    occurredAt: string;
+    description: string;
+    amount: number;
+    categoryName?: string | null;
+    counterpartyName?: string | null;
+    accountName?: string | null;
+  };
+  relatedMovements: Array<{
+    id: number;
+    movementType: string;
+    occurredAt: string;
+    description: string;
+    amount: number;
+    categoryName?: string | null;
+    counterpartyName?: string | null;
+    accountName?: string | null;
+  }>;
+  localRisk?: {
+    kind: "duplicate" | "amount_anomaly";
+    severity: "low" | "medium" | "high";
+    confidence: number;
+    title: string;
+    explanation: string;
+    reasons: string[];
+    relatedMovementIds: number[];
+  } | null;
+};
+
+export type MovementRiskAiExplanationResponse = {
+  ok: boolean;
+  explanation: {
+    kind: "duplicate" | "amount_anomaly";
+    severity: "low" | "medium" | "high";
+    confidence: number;
+    title: string;
+    explanation: string;
+    reasons: string[];
+    relatedMovementIds: number[];
+  } | null;
+  model?: string | null;
+  error?: string | null;
+};
+
+export async function requestMovementRiskAiExplanation(
+  input: MovementRiskAiExplanationInput,
+): Promise<MovementRiskAiExplanationResponse> {
+  if (!input.workspaceId) throw new Error("No se encontró el workspace activo.");
+  if (!input.currentMovement.description.trim()) throw new Error("No hay descripción suficiente para explicar el riesgo.");
+  return invokeEdgeFunction<MovementRiskAiExplanationResponse>("movement-risk-ai-explanation", input);
+}
+
+export type MovementBudgetAiRecommendationInput = {
+  workspaceId: number;
+  surface: "movement_form" | "notification_form" | "android_overlay";
+  movement: {
+    movementType: string;
+    occurredAt: string;
+    description: string;
+    amount: number;
+    currencyCode: string;
+    categoryName?: string | null;
+    counterpartyName?: string | null;
+    accountName?: string | null;
+  };
+  budgetImpact: {
+    budgetId: number;
+    budgetName: string;
+    currencyCode: string;
+    impactAmount: number;
+    previousSpentAmount: number;
+    projectedSpentAmount: number;
+    limitAmount: number;
+    previousUsedPercent: number;
+    projectedUsedPercent: number;
+    overAmount: number;
+    severity: "low" | "medium" | "high";
+    confidence: number;
+    reasons: string[];
+  };
+};
+
+export type MovementBudgetAiRecommendationResponse = {
+  ok: boolean;
+  recommendation: {
+    budgetId: number;
+    budgetName: string;
+    severity: "low" | "medium" | "high";
+    confidence: number;
+    title: string;
+    recommendation: string;
+    reasons: string[];
+  } | null;
+  model?: string | null;
+  error?: string | null;
+};
+
+export async function requestMovementBudgetAiRecommendation(
+  input: MovementBudgetAiRecommendationInput,
+): Promise<MovementBudgetAiRecommendationResponse> {
+  if (!input.workspaceId) throw new Error("No se encontró el workspace activo.");
+  return invokeEdgeFunction<MovementBudgetAiRecommendationResponse>("movement-budget-ai-recommendation", input);
+}
+
 export function usePersistDashboardAnalyticsMutation(workspaceId: number | null) {
   return useMutation({
     mutationFn: async (input: PersistDashboardAnalyticsInput) => {

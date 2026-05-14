@@ -136,6 +136,16 @@ class NotificationDetectionModule(
   }
 
   @ReactMethod
+  fun setSuggestionRiskExplanation(suggestionId: String, explanationJson: String) {
+    NotificationDetectionStore.setRiskExplanation(reactContext, suggestionId, explanationJson)
+  }
+
+  @ReactMethod
+  fun setSuggestionBudgetImpact(suggestionId: String, impactJson: String) {
+    NotificationDetectionStore.setBudgetImpact(reactContext, suggestionId, impactJson)
+  }
+
+  @ReactMethod
   fun isIgnoringBatteryOptimizations(promise: Promise) {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
       promise.resolve(true)

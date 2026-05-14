@@ -48,12 +48,15 @@ import { useMovementDescriptionCleanup } from "../../hooks/useMovementDescriptio
 import { useMovementCounterpartyAiSuggestion } from "../../hooks/useMovementCounterpartyAiSuggestion";
 import type { CounterpartySuggestionResult } from "../../lib/movement-counterparty-suggestions";
 import { useMovementRecurringAiSuggestion } from "../../hooks/useMovementRecurringAiSuggestion";
+import { useMovementRiskExplanation } from "../../hooks/useMovementRiskExplanation";
+import { useMovementBudgetImpact } from "../../hooks/useMovementBudgetImpact";
 import {
   recurringFrequencyLabel,
   recurringFrequencyToSubscriptionFields,
   type MovementRecurringHistoryItem,
   type MovementRecurringSuggestionResult,
 } from "../../lib/movement-recurring-suggestions";
+import type { MovementRiskItem } from "../../lib/movement-risk-analysis";
 import { BottomSheet } from "../ui/BottomSheet";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { Button } from "../ui/Button";
@@ -64,7 +67,6 @@ import { AttachmentPicker, type Attachment } from "../domain/AttachmentPicker";
 import { DatePickerInput } from "../ui/DatePickerInput";
 import { SmartSuggestion, SmartSuggestionLoading } from "../ui/SmartSuggestion";
 import { buildCategorySuggestionCandidates } from "../../services/analytics/category-suggestions";
-import { findProbableDuplicateGroups } from "../../services/analytics/duplicate-detection";
 import { normalizeAnalyticsText } from "../../services/analytics/movement-features";
 import { sortByName } from "../../lib/sort-locale";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
@@ -115,11 +117,6 @@ type CategorySuggestionState = {
   confidence: number;
   reasons: string[];
   source?: "deepseek" | "local";
-};
-
-type DuplicateWarningState = {
-  movementIds: number[];
-  reasons: string[];
 };
 
 type TransferFxState = {
@@ -395,6 +392,9 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   const selectedRecurringCounterparty = form.counterpartyId != null
     ? counterparties.find((counterparty) => counterparty.id === form.counterpartyId) ?? null
     : null;
+  const budgetImpactAccount = form.sourceAccountId != null
+    ? accounts.find((account) => account.id === form.sourceAccountId) ?? null
+    : null;
   const recurringSuggestionHistory = useMemo<MovementRecurringHistoryItem[]>(() => {
     return (patternMovements ?? [])
       .filter((movement) => movement.id !== editMovement?.id)
@@ -436,6 +436,29 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     recentMovements: recurringSuggestionHistory,
     subscriptions: snapshot?.subscriptions ?? [],
     recurringIncome: snapshot?.recurringIncome ?? [],
+    proAccessEnabled: entitlementQuery.data?.proAccessEnabled,
+  });
+  const { impact: budgetImpact, isLoading: budgetImpactLoading } = useMovementBudgetImpact({
+    enabled: Boolean(visible && form.movementType === "expense" && form.categoryId != null),
+    workspaceId: activeWorkspaceId,
+    surface: "movement_form",
+    movement: sourceAmountNum > 0
+      ? {
+        movementType: "expense",
+        occurredAt: dateStrToISO(form.occurredAt),
+        description: counterpartyDescriptionForSuggestion,
+        amount: sourceAmountNum,
+        currencyCode: budgetImpactAccount?.currencyCode ?? baseCurrency,
+        categoryId: form.categoryId,
+        categoryName: selectedRecurringCategory?.name ?? null,
+        counterpartyName: selectedRecurringCounterparty?.name ?? null,
+        accountId: form.sourceAccountId,
+        accountName: budgetImpactAccount?.name ?? null,
+      }
+      : null,
+    budgets: snapshot?.budgets ?? [],
+    exchangeRates,
+    workspaceBaseCurrencyCode: baseCurrency,
     proAccessEnabled: entitlementQuery.data?.proAccessEnabled,
   });
   const {
@@ -623,20 +646,56 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   }, [aiCategoryRecommendation]);
   const bestCategorySuggestion = aiCategorySuggestion ?? localCategorySuggestion;
 
-  const duplicateWarning = useMemo<DuplicateWarningState | null>(() => {
-    if (!currentSuggestionMovement || currentSuggestionMovement.amount <= 0.009 || !currentSuggestionMovement.description.trim()) return null;
-    const groups = findProbableDuplicateGroups<MovementSuggestionLike>({
-      movements: [...suggestionHistory, currentSuggestionMovement],
-      getAmount: (movement) => movement.amount,
-      maxDaysApart: 2,
-    });
-    const group = groups.find((item) => item.movementIds.includes(currentSuggestionMovement.id));
-    if (!group) return null;
+  const currentRiskMovement = useMemo<MovementRiskItem | null>(() => {
+    if (!currentSuggestionMovement) return null;
+    const category = categories.find((item) => item.id === currentSuggestionMovement.categoryId) ?? null;
+    const counterparty = counterparties.find((item) => item.id === currentSuggestionMovement.counterpartyId) ?? null;
+    const account = accounts.find((item) =>
+      item.id === (currentSuggestionMovement.destinationAccountId ?? currentSuggestionMovement.sourceAccountId),
+    ) ?? null;
     return {
-      movementIds: group.movementIds.filter((id) => id !== currentSuggestionMovement.id),
-      reasons: group.reasons,
+      id: currentSuggestionMovement.id,
+      movementType: currentSuggestionMovement.movementType,
+      occurredAt: currentSuggestionMovement.occurredAt,
+      description: currentSuggestionMovement.description,
+      amount: currentSuggestionMovement.amount,
+      categoryId: currentSuggestionMovement.categoryId,
+      categoryName: category?.name ?? null,
+      counterpartyId: currentSuggestionMovement.counterpartyId,
+      counterpartyName: counterparty?.name ?? null,
+      accountId: currentSuggestionMovement.destinationAccountId ?? currentSuggestionMovement.sourceAccountId,
+      accountName: account?.name ?? null,
     };
-  }, [currentSuggestionMovement, suggestionHistory]);
+  }, [accounts, categories, counterparties, currentSuggestionMovement]);
+  const riskHistory = useMemo<MovementRiskItem[]>(() => {
+    return suggestionHistory.map((movement) => {
+      const category = categories.find((item) => item.id === movement.categoryId) ?? null;
+      const counterparty = counterparties.find((item) => item.id === movement.counterpartyId) ?? null;
+      const accountId = movement.destinationAccountId ?? movement.sourceAccountId;
+      const account = accounts.find((item) => item.id === accountId) ?? null;
+      return {
+        id: movement.id,
+        movementType: movement.movementType,
+        occurredAt: movement.occurredAt,
+        description: movement.description,
+        amount: movement.amount,
+        categoryId: movement.categoryId,
+        categoryName: category?.name ?? null,
+        counterpartyId: movement.counterpartyId,
+        counterpartyName: counterparty?.name ?? null,
+        accountId,
+        accountName: account?.name ?? null,
+      };
+    });
+  }, [accounts, categories, counterparties, suggestionHistory]);
+  const { risk: movementRisk, isLoading: movementRiskLoading } = useMovementRiskExplanation({
+    enabled: Boolean(visible && form.movementType !== "transfer"),
+    workspaceId: activeWorkspaceId,
+    surface: "movement_form",
+    current: currentRiskMovement,
+    history: riskHistory,
+    proAccessEnabled: entitlementQuery.data?.proAccessEnabled,
+  });
 
   const accountSuggestionId = useMemo(() => {
     if (!patternMaps || form.counterpartyId == null || form.movementType === "transfer") return null;
@@ -1320,6 +1379,8 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
           subscriptionId: linkedSubscriptionId,
           metadata: {
             recurring_income_id: linkedRecurringIncomeId,
+            riskAi: movementRisk?.source === "deepseek" ? movementRisk : null,
+            budgetAi: budgetImpact?.source === "deepseek" ? budgetImpact : null,
           },
         };
         const created = await createMovement.mutateAsync(payload);
@@ -1679,13 +1740,38 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         );
         return (
         <View style={styles.section}>
-          {duplicateWarning ? (
+          {movementRiskLoading ? (
+            <SmartSuggestionLoading
+              title="Revisando antes de guardar"
+              detail="Analizando si este movimiento podría estar repetido o fuera de patrón."
+            />
+          ) : null}
+          {movementRisk ? (
             <View style={styles.duplicateWarning}>
               <AlertCircle size={16} color={COLORS.gold} strokeWidth={2} />
               <View style={{ flex: 1 }}>
-                <Text style={styles.duplicateWarningTitle}>Podría estar repetido</Text>
+                <Text style={styles.duplicateWarningTitle}>{movementRisk.title}</Text>
                 <Text style={styles.duplicateWarningText}>
-                  Hay {duplicateWarning.movementIds.length} movimiento{duplicateWarning.movementIds.length === 1 ? "" : "s"} parecido{duplicateWarning.movementIds.length === 1 ? "" : "s"} por {duplicateWarning.reasons.join(", ") || "fecha y monto cercanos"}.
+                  {movementRisk.source === "deepseek" ? "Revisión inteligente: " : ""}
+                  {movementRisk.explanation}
+                </Text>
+              </View>
+            </View>
+          ) : null}
+          {budgetImpactLoading ? (
+            <SmartSuggestionLoading
+              title="Revisando presupuesto"
+              detail="Calculando si este movimiento afecta un presupuesto sensible."
+            />
+          ) : null}
+          {budgetImpact ? (
+            <View style={styles.duplicateWarning}>
+              <AlertCircle size={16} color={budgetImpact.severity === "high" ? COLORS.danger : COLORS.gold} strokeWidth={2} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.duplicateWarningTitle}>{budgetImpact.title}</Text>
+                <Text style={styles.duplicateWarningText}>
+                  {budgetImpact.source === "deepseek" ? "Recomendación inteligente: " : ""}
+                  {budgetImpact.recommendation}
                 </Text>
               </View>
             </View>

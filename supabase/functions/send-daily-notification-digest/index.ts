@@ -5,6 +5,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { isInformationalNotificationKind } from "../_shared/notification-priority.ts";
+import { generateDailyAiDigest } from "../_shared/daily-ai-digest.ts";
 
 const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
 const LIMA_TIMEZONE = "America/Lima";
@@ -30,10 +31,13 @@ const KIND_LABELS: Record<string, string> = {
 
 type DigestNotificationRow = {
   kind: string | null;
+  title?: string | null;
+  body?: string | null;
   scheduled_for: string | null;
   status: string | null;
   related_entity_type: string | null;
   related_entity_id: number | null;
+  payload?: unknown;
 };
 
 function json(body: Record<string, unknown>, status = 200) {
@@ -69,6 +73,10 @@ function buildDigestBody(count: number, labels: string[]): string {
   return count === 1
     ? `Hoy tienes 1 alerta informativa sobre ${topics}. Revísala cuando tengas un momento.`
     : `Hoy tienes ${count} alertas informativas sobre ${topics}. Revísalas en tu bandeja cuando tengas un momento.`;
+}
+
+function buildDailyAiDigestEntityId(digestDate: string): number {
+  return Number(digestDate.replace(/-/g, "")) * 10 + 9;
 }
 
 function dailyBaselineEntityId(digestDate: string, index: number): number {
@@ -124,7 +132,9 @@ function filterTodaysInformational(
     const kind = typeof row.kind === "string" ? row.kind : "";
     const scheduledFor = typeof row.scheduled_for === "string" ? row.scheduled_for : "";
     const status = typeof row.status === "string" ? row.status : "";
-    if (status === "read" || !isInformationalNotificationKind(kind) || !scheduledFor) return false;
+    if (kind === "daily_ai_digest" || status === "read" || !isInformationalNotificationKind(kind) || !scheduledFor) {
+      return false;
+    }
     return usageDateInLima(new Date(scheduledFor)) === digestDate;
   });
 }
@@ -169,10 +179,13 @@ async function ensureDailyInformationalMinimum(
       ...notifications,
       ...rows.map((row) => ({
         kind: row.kind,
+        title: row.title,
+        body: row.body,
         scheduled_for: row.scheduled_for,
         status: row.status,
         related_entity_type: row.related_entity_type,
         related_entity_id: row.related_entity_id,
+        payload: row.payload,
       })),
     ],
     addedCount: rows.length,
@@ -244,7 +257,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: notifications, error: notificationsError } = await supabase
       .from("notifications")
-      .select("kind, scheduled_for, status, related_entity_type, related_entity_id")
+      .select("kind, title, body, payload, scheduled_for, status, related_entity_type, related_entity_id")
       .eq("user_id", userId)
       .eq("channel", "in_app")
       .order("scheduled_for", { ascending: false })
@@ -279,14 +292,59 @@ Deno.serve(async (req: Request) => {
       .map((row) => typeof row.kind === "string" ? row.kind : "")
       .filter(Boolean);
     const labels = topTopicLabels(kinds);
+    const aiDigestResult = await generateDailyAiDigest({
+      client: supabase,
+      userId,
+      digestDate,
+      notifications: todaysInformational,
+      topicLabels: labels,
+      surface: "send_daily_notification_digest",
+    });
+    let pushTitle = "Resumen diario de DarkMoney";
+    let pushBodyText = buildDigestBody(todaysInformational.length, labels);
+    let aiDigestInserted = false;
+
+    if (aiDigestResult.digest) {
+      const nowIso = new Date().toISOString();
+      const { error: aiDigestError } = await supabase
+        .from("notifications")
+        .upsert({
+          user_id: userId,
+          channel: "in_app",
+          status: "pending",
+          kind: "daily_ai_digest",
+          title: aiDigestResult.digest.title,
+          body: aiDigestResult.digest.summary,
+          scheduled_for: nowIso,
+          related_entity_type: "daily_digest",
+          related_entity_id: buildDailyAiDigestEntityId(digestDate),
+          payload: {
+            todayKey: digestDate,
+            generatedBy: "daily_ai_digest",
+            model: aiDigestResult.model,
+            workspaceId: aiDigestResult.digest.workspaceId,
+            highlights: aiDigestResult.digest.highlights,
+            actionItems: aiDigestResult.digest.actionItems,
+            confidence: aiDigestResult.digest.confidence,
+          },
+        }, {
+          onConflict: "user_id,related_entity_type,related_entity_id,kind",
+        });
+      if (!aiDigestError) {
+        pushTitle = aiDigestResult.digest.title;
+        pushBodyText = aiDigestResult.digest.body;
+        aiDigestInserted = true;
+      }
+    }
     const pushBody = {
       to: pushToken,
-      title: "Resumen diario de DarkMoney",
-      body: buildDigestBody(todaysInformational.length, labels),
+      title: pushTitle,
+      body: pushBodyText,
       data: {
         type: "daily_digest",
         count: todaysInformational.length,
         topKinds: kinds.slice(0, 5),
+        aiDigest: aiDigestInserted,
       },
       sound: "default",
       badge: 1,
@@ -334,6 +392,7 @@ Deno.serve(async (req: Request) => {
       sent: true,
       count: todaysInformational.length,
       dailyBaselineAdded: minimumResult.addedCount,
+      aiDigest: aiDigestInserted ? "sent" : aiDigestResult.skipped ?? aiDigestResult.error ?? "not_generated",
     });
   }
 
