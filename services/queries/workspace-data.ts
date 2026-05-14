@@ -1802,6 +1802,212 @@ export function useMovementCategoryAiSuggestionMutation() {
   });
 }
 
+export type MovementDescriptionCleanupSurface = "movement_form" | "notification_form" | "android_overlay";
+
+export type MovementDescriptionCleanupInput = {
+  workspaceId: number;
+  surface: MovementDescriptionCleanupSurface;
+  rawDescription: string;
+  appLabel?: string | null;
+  financialAppKey?: string | null;
+  amount?: number | null;
+  currencyCode?: string | null;
+  localCleanup?: {
+    cleanedDescription: string;
+    confidence: number;
+    reasons: string[];
+  } | null;
+};
+
+export type MovementDescriptionCleanupResponse = {
+  ok: boolean;
+  cleanedDescription: string | null;
+  confidence: number;
+  reasons: string[];
+  model?: string | null;
+  error?: string | null;
+};
+
+export async function requestMovementDescriptionCleanup(
+  input: MovementDescriptionCleanupInput,
+): Promise<MovementDescriptionCleanupResponse> {
+  if (!input.workspaceId) throw new Error("No se encontró el workspace activo.");
+  if (!input.rawDescription.trim()) throw new Error("No hay descripción suficiente para limpiar.");
+  return invokeEdgeFunction<MovementDescriptionCleanupResponse>("movement-description-ai-cleanup", input);
+}
+
+export function useMovementDescriptionCleanupMutation() {
+  return useMutation({
+    mutationFn: requestMovementDescriptionCleanup,
+  });
+}
+
+export type MovementCounterpartyAiSurface = "movement_form" | "notification_form" | "android_overlay";
+
+export type MovementCounterpartyAiInput = {
+  workspaceId: number;
+  surface: MovementCounterpartyAiSurface;
+  description: string;
+  movementType: "expense" | "income";
+  amount?: number | null;
+  currencyCode?: string | null;
+  counterparties: Array<{
+    id: number;
+    name: string;
+    type: CounterpartySummary["type"];
+  }>;
+  localSuggestion?: {
+    type: "existing_counterparty" | "new_counterparty" | "none";
+    counterpartyId: number | null;
+    counterpartyName: string | null;
+    newCounterpartyName: string | null;
+    counterpartyType?: CounterpartySummary["type"] | null;
+    confidence: number;
+    reasons: string[];
+  } | null;
+};
+
+export type MovementCounterpartyAiRecommendation = {
+  type: "existing_counterparty" | "new_counterparty" | "none";
+  counterpartyId: number | null;
+  counterpartyName: string | null;
+  newCounterpartyName: string | null;
+  counterpartyType: CounterpartySummary["type"];
+  confidence: number;
+  reasons: string[];
+};
+
+export type MovementCounterpartyAiResponse = {
+  ok: boolean;
+  recommendation: MovementCounterpartyAiRecommendation | null;
+  model?: string | null;
+  error?: string | null;
+};
+
+export async function requestMovementCounterpartyAiSuggestion(
+  input: MovementCounterpartyAiInput,
+): Promise<MovementCounterpartyAiResponse> {
+  if (!input.workspaceId) throw new Error("No se encontró el workspace activo.");
+  if (!input.description.trim()) throw new Error("No hay descripción suficiente para sugerir contraparte.");
+  return invokeEdgeFunction<MovementCounterpartyAiResponse>("movement-counterparty-ai-suggestion", input);
+}
+
+export function useMovementCounterpartyAiSuggestionMutation() {
+  return useMutation({
+    mutationFn: requestMovementCounterpartyAiSuggestion,
+  });
+}
+
+export type MovementRecurringAiSurface = "movement_form" | "notification_form" | "android_overlay";
+export type MovementRecurringAiFrequency = "weekly" | "biweekly" | "monthly" | "quarterly" | "yearly";
+
+export type MovementRecurringAiRecommendation = {
+  type: "subscription" | "recurring_income" | "none";
+  name: string | null;
+  frequency: MovementRecurringAiFrequency | null;
+  intervalCount: number | null;
+  confidence: number;
+  reasons: string[];
+};
+
+export type MovementRecurringAiInput = {
+  workspaceId: number;
+  surface: MovementRecurringAiSurface;
+  movementType: "expense" | "income";
+  description: string;
+  amount?: number | null;
+  currencyCode?: string | null;
+  occurredAt: string;
+  category?: { id: number; name: string } | null;
+  counterparty?: { id: number; name: string } | null;
+  recentMovements: Array<{
+    id: number;
+    movementType: string;
+    occurredAt: string;
+    description: string;
+    amount: number;
+    currencyCode?: string | null;
+    categoryId?: number | null;
+    counterpartyId?: number | null;
+  }>;
+  subscriptions: Array<{
+    id: number;
+    name: string;
+    amount: number;
+    currencyCode: string;
+    frequency: SubscriptionFrequency;
+    intervalCount: number;
+    vendorPartyId?: number | null;
+    categoryId?: number | null;
+  }>;
+  recurringIncome: Array<{
+    id: number;
+    name: string;
+    amount: number;
+    currencyCode: string;
+    frequency: RecurringIncomeFrequency;
+    intervalCount: number;
+    payerPartyId?: number | null;
+    categoryId?: number | null;
+  }>;
+  localSuggestion?: MovementRecurringAiRecommendation | null;
+};
+
+export type MovementRecurringAiResponse = {
+  ok: boolean;
+  recommendation: MovementRecurringAiRecommendation | null;
+  model?: string | null;
+  error?: string | null;
+};
+
+export async function requestMovementRecurringAiSuggestion(
+  input: MovementRecurringAiInput,
+): Promise<MovementRecurringAiResponse> {
+  if (!input.workspaceId) throw new Error("No se encontró el workspace activo.");
+  if (!input.description.trim()) throw new Error("No hay descripción suficiente para detectar recurrentes.");
+  return invokeEdgeFunction<MovementRecurringAiResponse>("movement-recurring-ai-suggestion", input);
+}
+
+export function useMovementRecurringAiSuggestionMutation() {
+  return useMutation({
+    mutationFn: requestMovementRecurringAiSuggestion,
+  });
+}
+
+export type NotificationMovementAiClassificationInput = {
+  workspaceId: number;
+  packageName?: string | null;
+  appLabel?: string | null;
+  financialAppKey?: string | null;
+  title?: string | null;
+  text?: string | null;
+  subText?: string | null;
+  amountLabel?: string | null;
+  movementType?: "expense" | "income" | "unknown" | string | null;
+  localConfidence?: "high" | "medium" | "low" | string | null;
+};
+
+export type NotificationMovementAiClassificationResponse = {
+  ok: boolean;
+  classification: {
+    isMovement: boolean;
+    movementType: "expense" | "income" | "unknown";
+    confidence: number;
+    reason: string;
+  } | null;
+  model?: string | null;
+  error?: string | null;
+};
+
+export async function requestNotificationMovementAiClassification(
+  input: NotificationMovementAiClassificationInput,
+): Promise<NotificationMovementAiClassificationResponse> {
+  if (!input.workspaceId) throw new Error("No se encontró el workspace activo.");
+  const text = [input.title, input.text, input.subText].filter(Boolean).join(" ").trim();
+  if (!text) throw new Error("No hay texto suficiente para clasificar la notificación.");
+  return invokeEdgeFunction<NotificationMovementAiClassificationResponse>("notification-movement-ai-classifier", input);
+}
+
 export function usePersistDashboardAnalyticsMutation(workspaceId: number | null) {
   return useMutation({
     mutationFn: async (input: PersistDashboardAnalyticsInput) => {

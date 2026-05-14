@@ -14,6 +14,9 @@ type NativeNotificationDetection = {
   discardSuggestion(suggestionId: string): void;
   markSuggestionRegistered(suggestionId: string, notificationId: number): void;
   setSuggestionAiCategoryRecommendation?(suggestionId: string, recommendationJson: string): void;
+  setSuggestionDescriptionCleanup?(suggestionId: string, cleanupJson: string): void;
+  setSuggestionCounterpartyRecommendation?(suggestionId: string, recommendationJson: string): void;
+  setSuggestionRecurringRecommendation?(suggestionId: string, recommendationJson: string): void;
   requestActiveNotificationScan(): void;
   showSuggestionNotification(suggestionId: string): void;
   setRuntimeContext?(contextJson: string): void;
@@ -36,6 +39,9 @@ export type NotificationDetectionSuggestion = {
   movementType?: "expense" | "income" | "unknown" | string;
   confidence?: "high" | "medium" | "low" | string;
   aiCategoryRecommendation?: unknown;
+  descriptionCleanup?: unknown;
+  counterpartyRecommendation?: unknown;
+  recurringRecommendation?: unknown;
   createdAt?: number;
   updatedAt?: number;
   notificationId?: number;
@@ -91,6 +97,15 @@ export const notificationDetection = {
   },
   setSuggestionAiCategoryRecommendation(suggestionId: string, recommendation: unknown) {
     nativeModule?.setSuggestionAiCategoryRecommendation?.(suggestionId, JSON.stringify(recommendation ?? null));
+  },
+  setSuggestionDescriptionCleanup(suggestionId: string, cleanup: unknown) {
+    nativeModule?.setSuggestionDescriptionCleanup?.(suggestionId, JSON.stringify(cleanup ?? null));
+  },
+  setSuggestionCounterpartyRecommendation(suggestionId: string, recommendation: unknown) {
+    nativeModule?.setSuggestionCounterpartyRecommendation?.(suggestionId, JSON.stringify(recommendation ?? null));
+  },
+  setSuggestionRecurringRecommendation(suggestionId: string, recommendation: unknown) {
+    nativeModule?.setSuggestionRecurringRecommendation?.(suggestionId, JSON.stringify(recommendation ?? null));
   },
   requestActiveNotificationScan() {
     nativeModule?.requestActiveNotificationScan();

@@ -112,6 +112,63 @@ object NotificationDetectionStore {
     writeSuggestionsArray(context, suggestions)
   }
 
+  fun setDescriptionCleanup(context: Context, suggestionId: String, cleanupJson: String) {
+    val cleanup = try {
+      if (cleanupJson.isBlank() || cleanupJson == "null") null else JSONObject(cleanupJson)
+    } catch (_: Exception) {
+      null
+    }
+    val suggestions = readSuggestionsArray(context)
+    for (index in 0 until suggestions.length()) {
+      val current = suggestions.optJSONObject(index) ?: continue
+      if (current.optString("id") == suggestionId) {
+        if (cleanup == null) current.remove("descriptionCleanup") else current.put("descriptionCleanup", cleanup)
+        current.put("updatedAt", System.currentTimeMillis())
+        suggestions.put(index, current)
+        break
+      }
+    }
+    writeSuggestionsArray(context, suggestions)
+  }
+
+  fun setCounterpartyRecommendation(context: Context, suggestionId: String, recommendationJson: String) {
+    val recommendation = try {
+      if (recommendationJson.isBlank() || recommendationJson == "null") null else JSONObject(recommendationJson)
+    } catch (_: Exception) {
+      null
+    }
+    val suggestions = readSuggestionsArray(context)
+    for (index in 0 until suggestions.length()) {
+      val current = suggestions.optJSONObject(index) ?: continue
+      if (current.optString("id") == suggestionId) {
+        if (recommendation == null) current.remove("counterpartyRecommendation") else current.put("counterpartyRecommendation", recommendation)
+        current.put("updatedAt", System.currentTimeMillis())
+        suggestions.put(index, current)
+        break
+      }
+    }
+    writeSuggestionsArray(context, suggestions)
+  }
+
+  fun setRecurringRecommendation(context: Context, suggestionId: String, recommendationJson: String) {
+    val recommendation = try {
+      if (recommendationJson.isBlank() || recommendationJson == "null") null else JSONObject(recommendationJson)
+    } catch (_: Exception) {
+      null
+    }
+    val suggestions = readSuggestionsArray(context)
+    for (index in 0 until suggestions.length()) {
+      val current = suggestions.optJSONObject(index) ?: continue
+      if (current.optString("id") == suggestionId) {
+        if (recommendation == null) current.remove("recurringRecommendation") else current.put("recurringRecommendation", recommendation)
+        current.put("updatedAt", System.currentTimeMillis())
+        suggestions.put(index, current)
+        break
+      }
+    }
+    writeSuggestionsArray(context, suggestions)
+  }
+
   fun getSuggestions(context: Context): JSONArray {
     return readSuggestionsArray(context)
   }

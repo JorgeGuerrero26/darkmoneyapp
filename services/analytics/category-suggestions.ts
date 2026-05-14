@@ -203,7 +203,7 @@ export function buildCategorySuggestionCandidates<TMovement extends AnalyticsMov
     const [bestCategoryId, best] = ranked[0];
     const secondScore = ranked[1]?.[1].score ?? 0;
     const scoreGap = Math.max(0, best.score - secondScore);
-    const confidence = Math.max(
+    const rawConfidence = Math.max(
       0.44,
       Math.min(
         0.98,
@@ -218,6 +218,13 @@ export function buildCategorySuggestionCandidates<TMovement extends AnalyticsMov
           Math.min(best.strongestSampleScore / 24, 0.09),
       ),
     );
+    let confidence = rawConfidence;
+    const hasDirectSemanticEvidence = best.exactDescription > 0 || best.strongText > 0 || best.sameCounterparty > 0;
+    if (!hasDirectSemanticEvidence) confidence = Math.min(confidence, 0.55);
+    if (targetFeature.tokens.length <= 1 && best.exactDescription === 0 && best.sameCounterparty === 0) {
+      confidence = Math.min(confidence, 0.58);
+    }
+    if (secondScore > 0 && scoreGap < 1.2) confidence = Math.min(confidence, 0.57);
 
     if (best.score < 3.8 || confidence < 0.6) continue;
 

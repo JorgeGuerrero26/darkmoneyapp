@@ -29,6 +29,13 @@ class NotificationDetectionSaveTaskService : HeadlessJsTaskService() {
       accountId: Int,
       categoryId: Int?,
       newCategoryName: String?,
+      counterpartyId: Int?,
+      newCounterpartyName: String?,
+      counterpartyType: String?,
+      recurringType: String?,
+      recurringName: String?,
+      recurringFrequency: String?,
+      recurringIntervalCount: Int?,
       description: String,
     ) {
       val extras = Bundle().apply {
@@ -40,6 +47,13 @@ class NotificationDetectionSaveTaskService : HeadlessJsTaskService() {
         putInt("accountId", accountId)
         if (categoryId != null) putInt("categoryId", categoryId)
         if (!newCategoryName.isNullOrBlank()) putString("newCategoryName", newCategoryName)
+        if (counterpartyId != null) putInt("counterpartyId", counterpartyId)
+        if (!newCounterpartyName.isNullOrBlank()) putString("newCounterpartyName", newCounterpartyName)
+        if (!counterpartyType.isNullOrBlank()) putString("counterpartyType", counterpartyType)
+        if (!recurringType.isNullOrBlank()) putString("recurringType", recurringType)
+        if (!recurringName.isNullOrBlank()) putString("recurringName", recurringName)
+        if (!recurringFrequency.isNullOrBlank()) putString("recurringFrequency", recurringFrequency)
+        if (recurringIntervalCount != null) putInt("recurringIntervalCount", recurringIntervalCount)
         putString("description", description)
       }
       val intent = Intent(context, NotificationDetectionSaveTaskService::class.java).putExtras(extras)

@@ -1,5 +1,6 @@
 package com.darkmoney.app.notificationdetection
 
+import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.PixelFormat
 import android.graphics.Typeface
@@ -12,6 +13,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
+import android.view.animation.AccelerateDecelerateInterpolator
 import android.view.animation.DecelerateInterpolator
 import android.view.animation.OvershootInterpolator
 import android.widget.EditText
@@ -46,9 +48,12 @@ object QuickMovementOverlay {
     }
     val movementType = suggestion?.optString("movementType").orEmpty()
     val aiCategoryRecommendation = suggestion?.optJSONObject("aiCategoryRecommendation")
+    val descriptionCleanup = suggestion?.optJSONObject("descriptionCleanup")
+    val counterpartyRecommendation = suggestion?.optJSONObject("counterpartyRecommendation")
+    val recurringRecommendation = suggestion?.optJSONObject("recurringRecommendation")
 
     val runtimeContext = NotificationDetectionStore.getRuntimeContext(appContext)
-    val view = buildOverlay(appContext, suggestionId, notificationId, appName, financialAppKey, amount, description, movementType, runtimeContext, aiCategoryRecommendation)
+    val view = buildOverlay(appContext, suggestionId, notificationId, appName, financialAppKey, amount, description, movementType, runtimeContext, aiCategoryRecommendation, descriptionCleanup, counterpartyRecommendation, recurringRecommendation)
 
     val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
       WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -142,6 +147,9 @@ object QuickMovementOverlay {
     movementType: String,
     runtimeContext: JSONObject,
     aiCategoryRecommendation: JSONObject?,
+    descriptionCleanup: JSONObject?,
+    counterpartyRecommendation: JSONObject?,
+    recurringRecommendation: JSONObject?,
   ): View {
     val density = context.resources.displayMetrics.density
     fun dp(value: Int) = (value * density).toInt()
@@ -277,6 +285,15 @@ object QuickMovementOverlay {
     val categorySelect = categoryChipField(context, "CATEGORÍA (OPCIONAL)", categories, 0)
     root.addView(categorySelect.container)
 
+    if (aiCategoryPending(aiCategoryRecommendation)) {
+      val loadingWrap = LinearLayout(context).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(0, dp(6), 0, 0)
+      }
+      loadingWrap.addView(aiLoadingRow(context))
+      root.addView(loadingWrap)
+    }
+
     val aiSuggestedIdx = aiSuggestedCategoryIndex(aiCategoryRecommendation, categories)
     val suggestedIdx = aiSuggestedIdx ?: suggestCategoryForOverlay(description, runtimeContext, categories)
     val suggestedCategory = if (suggestedIdx != null && suggestedIdx > 0) categories.getOrNull(suggestedIdx) else null
@@ -293,10 +310,53 @@ object QuickMovementOverlay {
       root.addView(suggestionWrap)
     }
 
+    var selectedCounterpartyId: Int? = null
+    var selectedNewCounterpartyName: String? = null
+    var selectedCounterpartyType: String? = null
+    val counterpartyLabel = counterpartyLabel(counterpartyRecommendation, runtimeContext)
+    if (counterpartyLabel != null) {
+      val suggestionRow = categorySuggestionRow(context, counterpartyLabel, counterpartyDetail(counterpartyRecommendation)) {
+        selectedCounterpartyId = counterpartyRecommendation?.optInt("counterpartyId", 0)?.takeIf { it > 0 }
+        selectedNewCounterpartyName = counterpartyRecommendation?.optString("newCounterpartyName").orEmpty().trim().takeIf { it.length >= 3 }
+        selectedCounterpartyType = counterpartyRecommendation?.optString("counterpartyType").orEmpty().ifBlank { "merchant" }
+      }
+      val suggestionWrap = LinearLayout(context).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(0, dp(6), 0, 0)
+      }
+      suggestionWrap.addView(suggestionRow)
+      root.addView(suggestionWrap)
+    }
+
+    var selectedRecurringType: String? = null
+    var selectedRecurringName: String? = null
+    var selectedRecurringFrequency: String? = null
+    var selectedRecurringIntervalCount: Int? = null
+    val recurringLabel = recurringLabel(recurringRecommendation)
+    if (recurringLabel != null) {
+      val suggestionRow = categorySuggestionRow(context, recurringLabel, recurringDetail(recurringRecommendation)) {
+        selectedRecurringType = recurringRecommendation?.optString("type").orEmpty().takeIf { it == "subscription" || it == "recurring_income" }
+        selectedRecurringName = recurringRecommendation?.optString("name").orEmpty().trim().takeIf { it.length >= 3 }
+        selectedRecurringFrequency = recurringRecommendation?.optString("frequency").orEmpty().trim().takeIf { it.isNotBlank() }
+        selectedRecurringIntervalCount = recurringRecommendation?.optInt("intervalCount", 1)?.takeIf { it > 0 } ?: 1
+      }
+      val suggestionWrap = LinearLayout(context).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(0, dp(6), 0, 0)
+      }
+      suggestionWrap.addView(suggestionRow)
+      root.addView(suggestionWrap)
+    }
+
+    val initialDescription = descriptionCleanup
+      ?.optString("cleanedDescription")
+      ?.trim()
+      ?.takeIf { it.length >= 4 }
+      ?: description
     val descriptionInput = field(
       context,
       "Descripción",
-      description,
+      initialDescription,
       InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE,
     )
     descriptionInput.input.minLines = 2
@@ -345,6 +405,13 @@ object QuickMovementOverlay {
           accounts[selectedAccountIdx].id ?: 0,
           categories[selectedCategoryIdx].id,
           categories[selectedCategoryIdx].createName,
+          selectedCounterpartyId,
+          selectedNewCounterpartyName,
+          selectedCounterpartyType,
+          selectedRecurringType,
+          selectedRecurringName,
+          selectedRecurringFrequency,
+          selectedRecurringIntervalCount,
           descriptionInput.input.text.toString(),
         )
         Handler(Looper.getMainLooper()).postDelayed({ animatedDismiss() }, 900)
@@ -636,7 +703,11 @@ object QuickMovementOverlay {
   private fun aiDetail(recommendation: JSONObject?): String {
     val confidence = (aiConfidence(recommendation) * 100).toInt().coerceIn(0, 100)
     val firstReason = recommendation?.optJSONArray("reasons")?.optString(0).orEmpty()
-    return listOf("IA Pro · $confidence%", firstReason.ifBlank { null }).filterNotNull().joinToString(" · ")
+    return listOf("Mejor sugerencia · $confidence%", firstReason.ifBlank { null }).filterNotNull().joinToString(" · ")
+  }
+
+  private fun aiCategoryPending(recommendation: JSONObject?): Boolean {
+    return recommendation?.optString("status") == "pending"
   }
 
   private fun aiSuggestedCategoryIndex(recommendation: JSONObject?, categories: List<Option>): Int? {
@@ -658,7 +729,71 @@ object QuickMovementOverlay {
     if (recommendation == null || recommendation.optString("type") != "new_category" || aiConfidence(recommendation) < 0.65) return null
     val newName = recommendation.optString("newCategoryName").trim().replace(Regex("\\s+"), " ")
     if (newName.length < 3) return null
-    return Option(null, "Crear: $newName", "IA Pro", newName)
+    return Option(null, "Crear: $newName", "Inteligente", newName)
+  }
+
+  private fun counterpartyConfidence(recommendation: JSONObject?): Double {
+    return recommendation?.optDouble("confidence", 0.0)?.takeIf { !it.isNaN() } ?: 0.0
+  }
+
+  private fun counterpartyDetail(recommendation: JSONObject?): String {
+    val confidence = (counterpartyConfidence(recommendation) * 100).toInt().coerceIn(0, 100)
+    val firstReason = recommendation?.optJSONArray("reasons")?.optString(0).orEmpty()
+    return listOf("Contraparte · $confidence%", firstReason.ifBlank { null }).filterNotNull().joinToString(" · ")
+  }
+
+  private fun counterpartyLabel(recommendation: JSONObject?, runtimeContext: JSONObject): String? {
+    if (recommendation == null || counterpartyConfidence(recommendation) < 0.65) return null
+    val type = recommendation.optString("type")
+    if (type == "existing_counterparty") {
+      val counterpartyId = recommendation.optInt("counterpartyId", 0).takeIf { it > 0 } ?: return null
+      val array = runtimeContext.optJSONArray("counterparties") ?: return recommendation.optString("counterpartyName").takeIf { it.isNotBlank() }
+      for (index in 0 until array.length()) {
+        val item = array.optJSONObject(index) ?: continue
+        if (item.optInt("id", 0) == counterpartyId) return item.optString("name").takeIf { it.isNotBlank() }
+      }
+      return recommendation.optString("counterpartyName").takeIf { it.isNotBlank() }
+    }
+    if (type == "new_counterparty") {
+      val newName = recommendation.optString("newCounterpartyName").trim().replace(Regex("\\s+"), " ")
+      if (newName.length < 3) return null
+      return "Crear: $newName"
+    }
+    return null
+  }
+
+  private fun recurringConfidence(recommendation: JSONObject?): Double {
+    return recommendation?.optDouble("confidence", 0.0)?.takeIf { !it.isNaN() } ?: 0.0
+  }
+
+  private fun recurringFrequencyLabel(frequency: String): String {
+    return when (frequency) {
+      "weekly" -> "semanal"
+      "biweekly" -> "quincenal"
+      "monthly" -> "mensual"
+      "quarterly" -> "trimestral"
+      "yearly" -> "anual"
+      else -> "recurrente"
+    }
+  }
+
+  private fun recurringDetail(recommendation: JSONObject?): String {
+    val confidence = (recurringConfidence(recommendation) * 100).toInt().coerceIn(0, 100)
+    val frequency = recurringFrequencyLabel(recommendation?.optString("frequency").orEmpty())
+    val firstReason = recommendation?.optJSONArray("reasons")?.optString(0).orEmpty()
+    return listOf("$confidence% · $frequency", firstReason.ifBlank { null }).filterNotNull().joinToString(" · ")
+  }
+
+  private fun recurringLabel(recommendation: JSONObject?): String? {
+    if (recommendation == null || recurringConfidence(recommendation) < 0.65) return null
+    val type = recommendation.optString("type")
+    val name = recommendation.optString("name").trim().replace(Regex("\\s+"), " ")
+    if (name.length < 3) return null
+    return when (type) {
+      "subscription" -> "Crear suscripción: $name"
+      "recurring_income" -> "Crear ingreso fijo: $name"
+      else -> null
+    }
   }
 
   private fun readOptions(runtimeContext: JSONObject, key: String, fallbackLabel: String, metaKey: String? = null): List<Option> {
@@ -696,7 +831,7 @@ object QuickMovementOverlay {
     val words = normalized.split(" ").filter { it.length >= 3 }
     if (words.isEmpty()) return null
 
-    // Tier 1: learningFeedback — Jaccard similarity ≥ 0.58
+    // Tier 1: learningFeedback with stricter confidence for short or ambiguous text.
     val feedback = runtimeContext.optJSONArray("learningFeedback")
     if (feedback != null) {
       val wordSet = words.toSet()
@@ -710,7 +845,9 @@ object QuickMovementOverlay {
         if (union == 0) continue
         val intersection = (wordSet intersect fbWords).size
         val sim = intersection.toDouble() / union
-        if (sim >= 0.58 && sim > bestSim) {
+        val exact = fbDesc == normalized
+        val confident = exact || (wordSet.size > 1 && fbWords.size > 1 && sim >= 0.62)
+        if (confident && sim > bestSim) {
           bestSim = sim
           bestCatId = fb.optInt("acceptedCategoryId", 0).takeIf { it > 0 }
         }
@@ -736,6 +873,14 @@ object QuickMovementOverlay {
       }
       val best = scores.entries.maxByOrNull { it.value }
       if (best != null) {
+        val secondScore = scores.entries
+          .filter { it.key != best.key }
+          .maxOfOrNull { it.value } ?: 0
+        val scoreGap = best.value - secondScore
+        val singleWord = words.toSet().size <= 1
+        if (best.value < 2) return null
+        if (secondScore > 0 && scoreGap < 2) return null
+        if (singleWord && !(best.value >= 4 && secondScore == 0)) return null
         val idx = categories.indexOfFirst { it.id == best.key }
         if (idx > 0) return idx
       }
@@ -790,6 +935,81 @@ object QuickMovementOverlay {
       leftMargin = dp(8)
     })
     return row
+  }
+
+  private fun aiLoadingRow(context: Context): FrameLayout {
+    val density = context.resources.displayMetrics.density
+    fun dp(value: Int) = (value * density).toInt()
+
+    val container = FrameLayout(context).apply {
+      background = roundedBg(0xFF07101A.toInt(), dp(12), 0x386BE4C5, dp(1))
+    }
+    val gradient = View(context).apply {
+      alpha = 0.55f
+      background = GradientDrawable(
+        GradientDrawable.Orientation.LEFT_RIGHT,
+        intArrayOf(
+          0xFF8EA5FF.toInt(),
+          0xFFFF8F9E.toInt(),
+          0xFFD7BE7B.toInt(),
+          0xFF6BE4C5.toInt(),
+        ),
+      )
+    }
+    container.addView(gradient, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(2), Gravity.TOP))
+
+    val content = LinearLayout(context).apply {
+      orientation = LinearLayout.HORIZONTAL
+      gravity = Gravity.CENTER_VERTICAL
+      setPadding(dp(12), dp(9), dp(12), dp(9))
+    }
+    val badge = TextView(context).apply {
+      text = "IA"
+      textSize = 10f
+      typeface = Typeface.DEFAULT_BOLD
+      gravity = Gravity.CENTER
+      setTextColor(0xFF6BE4C5.toInt())
+      background = roundedBg(0x1A6BE4C5.toInt(), dp(999), 0x3D6BE4C5, dp(1))
+    }
+    val textCol = LinearLayout(context).apply {
+      orientation = LinearLayout.VERTICAL
+    }
+    textCol.addView(TextView(context).apply {
+      text = "Preparando mejor sugerencia"
+      textSize = 12f
+      typeface = Typeface.DEFAULT_BOLD
+      setTextColor(0xFFF5F7FB.toInt())
+    })
+    textCol.addView(TextView(context).apply {
+      text = "Confirmaremos o mejoraremos la categoría actual."
+      textSize = 10f
+      setTextColor(0xFF96A2B5.toInt())
+    })
+    content.addView(badge, LinearLayout.LayoutParams(dp(28), dp(28)).apply { rightMargin = dp(9) })
+    content.addView(textCol, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+    container.addView(content)
+
+    val animator = ValueAnimator.ofFloat(0f, 1f).apply {
+      duration = 2200L
+      repeatMode = ValueAnimator.REVERSE
+      repeatCount = ValueAnimator.INFINITE
+      interpolator = AccelerateDecelerateInterpolator()
+      addUpdateListener {
+        val value = it.animatedValue as Float
+        gradient.alpha = 0.45f + (value * 0.4f)
+        gradient.scaleX = 0.98f + (value * 0.04f)
+      }
+    }
+    container.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+      override fun onViewAttachedToWindow(v: View) {
+        if (!animator.isStarted) animator.start()
+      }
+
+      override fun onViewDetachedFromWindow(v: View) {
+        animator.cancel()
+      }
+    })
+    return container
   }
 
   private fun defaultAccountIndex(runtimeContext: JSONObject, financialAppKey: String, accounts: List<Option>): Int {

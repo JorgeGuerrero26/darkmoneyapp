@@ -56,6 +56,9 @@ export type NativeDetectedMovementSuggestion = {
   movementType?: string;
   confidence?: string;
   aiCategoryRecommendation?: unknown;
+  descriptionCleanup?: unknown;
+  counterpartyRecommendation?: unknown;
+  recurringRecommendation?: unknown;
   createdAt?: number;
   updatedAt?: number;
   notificationId?: number;
@@ -253,11 +256,15 @@ export async function syncNativeDetectedSuggestion(input: {
       description,
       occurred_at: occurredAt,
       confidence: input.nativeSuggestion.confidence === "high" ? "high" : "medium",
+      status: input.nativeSuggestion.status === "discarded" ? "discarded" : "pending",
       dedupe_key: dedupeKey,
       notification_key: input.nativeSuggestion.notificationKey ?? null,
       metadata: {
         nativeSuggestionId: input.nativeSuggestion.id,
         notificationId: input.nativeSuggestion.notificationId ?? null,
+        descriptionCleanup: input.nativeSuggestion.descriptionCleanup ?? null,
+        counterpartyRecommendation: input.nativeSuggestion.counterpartyRecommendation ?? null,
+        recurringRecommendation: input.nativeSuggestion.recurringRecommendation ?? null,
       },
       updated_at: new Date().toISOString(),
     }, { onConflict: "user_id,workspace_id,dedupe_key" })

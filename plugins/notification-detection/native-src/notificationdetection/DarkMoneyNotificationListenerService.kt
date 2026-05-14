@@ -56,6 +56,7 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
       .filter { it.isNotBlank() }
       .joinToString(" · ")
 
+    if (isPromotionalNotification(combined)) return
     val amount = extractAmount(combined) ?: return
     val detection = inferMovementDetection(combined)
     if (detection.confidence == "low") return
@@ -117,6 +118,50 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
       mediumExpense.any { normalized.contains(it) } -> DetectionResult("expense", "medium")
       else -> DetectionResult("unknown", "low")
     }
+  }
+
+  private fun isPromotionalNotification(value: String): Boolean {
+    val normalized = value
+      .lowercase()
+      .replace(Regex("\\s+"), " ")
+
+    val transactionalSignals = listOf(
+      "pagaste",
+      "enviaste",
+      "recibiste",
+      "te enviaron",
+      "te envió",
+      "te envio",
+      "compra aprobada",
+      "consumo aprobado",
+      "cargo realizado",
+      "operación realizada",
+      "operacion realizada",
+    )
+    if (transactionalSignals.any { normalized.contains(it) }) return false
+
+    val promotionalSignals = listOf(
+      "tu compra viene con premio",
+      "gana hasta",
+      "gana s/",
+      "gana soles",
+      "premio",
+      "premios",
+      "promoción",
+      "promocion",
+      "campaña",
+      "campana",
+      "sorteo",
+      "participa",
+      "por cada consumo",
+      "por tus consumos",
+      "cashback",
+      "descuento",
+      "oferta",
+      "beneficio",
+    )
+
+    return promotionalSignals.any { normalized.contains(it) }
   }
 
   private fun humanAppLabel(packageName: String): String {

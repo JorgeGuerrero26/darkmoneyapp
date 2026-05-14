@@ -2,6 +2,12 @@ import type { PatternMovement } from "../services/queries/movement-patterns";
 
 type FreqEntry = { id: number; count: number };
 
+export type DescriptionCategorySuggestion = {
+  categoryId: number;
+  confidence: number;
+  reasons: string[];
+};
+
 export type PatternMaps = {
   /** normalized word → [{categoryId, count}] sorted desc */
   wordToCategory: Map<string, FreqEntry[]>;
@@ -84,19 +90,60 @@ export function suggestCategoryFromDescription(
   maps: PatternMaps,
   excludeId?: number | null,
 ): number | null {
+  const suggestion = scoreCategoryFromDescription(description, maps, excludeId);
+  return suggestion && suggestion.confidence >= 0.6 ? suggestion.categoryId : null;
+}
+
+export function scoreCategoryFromDescription(
+  description: string,
+  maps: PatternMaps,
+  excludeId?: number | null,
+): DescriptionCategorySuggestion | null {
   const words = normalizeWords(description);
   if (!words.length) return null;
 
   const scores = new Map<number, number>();
+  const matchedWords = new Map<number, Set<string>>();
   for (const word of words) {
     for (const { id, count } of maps.wordToCategory.get(word) ?? []) {
       scores.set(id, (scores.get(id) ?? 0) + count);
+      if (!matchedWords.has(id)) matchedWords.set(id, new Set());
+      matchedWords.get(id)!.add(word);
     }
   }
 
   const sorted = Array.from(scores.entries()).sort((a, b) => b[1] - a[1]);
   const best = sorted.find(([id, count]) => id !== excludeId && count >= 2);
-  return best ? best[0] : null;
+  if (!best) return null;
+
+  const [categoryId, score] = best;
+  const secondScore = sorted.find(([id]) => id !== categoryId && id !== excludeId)?.[1] ?? 0;
+  const scoreGap = Math.max(0, score - secondScore);
+  const matchedCount = matchedWords.get(categoryId)?.size ?? 0;
+  const uniqueWords = new Set(words);
+  const singleWord = uniqueWords.size <= 1;
+
+  let confidence =
+    0.36 +
+    Math.min(score, 10) * 0.025 +
+    Math.min(matchedCount, 3) * 0.065 +
+    Math.min(scoreGap / 8, 0.12);
+
+  if (secondScore > 0 && scoreGap < 2) confidence = Math.min(confidence, 0.56);
+  if (singleWord) {
+    confidence = Math.min(confidence, score >= 4 && secondScore === 0 ? 0.62 : 0.58);
+  }
+
+  confidence = Math.max(0.4, Math.min(0.82, confidence));
+
+  return {
+    categoryId,
+    confidence,
+    reasons: [
+      matchedCount > 1 ? "varias palabras repetidas en tu historial" : "palabra repetida en tu historial",
+      scoreGap >= 2 ? "mejor coincidencia que otras categorías" : "coincidencia ambigua",
+    ],
+  };
 }
 
 /** Suggests a categoryId based on which category this counterparty has been assigned to most. */

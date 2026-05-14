@@ -16,6 +16,13 @@ type HeadlessPayload = {
   accountId?: number;
   categoryId?: number;
   newCategoryName?: string;
+  counterpartyId?: number;
+  newCounterpartyName?: string;
+  counterpartyType?: "person" | "company" | "merchant" | "service" | "bank" | "other";
+  recurringType?: "subscription" | "recurring_income";
+  recurringName?: string;
+  recurringFrequency?: "weekly" | "biweekly" | "monthly" | "quarterly" | "yearly";
+  recurringIntervalCount?: number;
   description?: string;
 };
 
@@ -61,6 +68,9 @@ export async function notificationDetectionHeadlessTask(payload: HeadlessPayload
   const movementType = payload.movementType === "income" ? "income" : "expense";
   const description = payload.description?.trim() || suggestion.description;
   let categoryId = payload.categoryId ?? null;
+  let counterpartyId = payload.counterpartyId ?? null;
+  let subscriptionId: number | null = null;
+  let recurringIncomeId: number | null = null;
   const newCategoryName = payload.newCategoryName?.trim().replace(/\s+/g, " ") ?? "";
   if (!categoryId && newCategoryName.length >= 3) {
     const normalizedNewName = newCategoryName
@@ -113,6 +123,119 @@ export async function notificationDetectionHeadlessTask(payload: HeadlessPayload
       if (createdCategory?.id) categoryId = Number(createdCategory.id);
     }
   }
+  const newCounterpartyName = payload.newCounterpartyName?.trim().replace(/\s+/g, " ") ?? "";
+  if (!counterpartyId && newCounterpartyName.length >= 3) {
+    const normalizedNewName = newCounterpartyName
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/\s+/g, " ")
+      .trim();
+    const { data: existingCounterparties } = await supabase
+      .from("counterparties")
+      .select("id, name")
+      .eq("workspace_id", workspaceId)
+      .eq("is_archived", false);
+    const existing = (existingCounterparties ?? []).find((counterparty: any) => {
+      const normalizedName = String(counterparty.name ?? "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .replace(/\s+/g, " ")
+        .trim();
+      return normalizedName === normalizedNewName;
+    });
+    if (existing?.id) {
+      counterpartyId = Number(existing.id);
+    } else {
+      const type = payload.counterpartyType && ["person", "company", "merchant", "service", "bank", "other"].includes(payload.counterpartyType)
+        ? payload.counterpartyType
+        : "merchant";
+      const { data: createdCounterparty } = await supabase
+        .from("counterparties")
+        .insert({
+          workspace_id: workspaceId,
+          name: newCounterpartyName,
+          type,
+          phone: null,
+          email: null,
+          document_number: null,
+          notes: null,
+          is_archived: false,
+        })
+        .select("id")
+        .single();
+      if (createdCounterparty?.id) counterpartyId = Number(createdCounterparty.id);
+    }
+  }
+  const recurringName = payload.recurringName?.trim().replace(/\s+/g, " ") ?? "";
+  const recurringFrequency = payload.recurringFrequency && ["weekly", "biweekly", "monthly", "quarterly", "yearly"].includes(payload.recurringFrequency)
+    ? payload.recurringFrequency
+    : null;
+  const recurringIntervalCount = Math.max(1, Number(payload.recurringIntervalCount ?? (recurringFrequency === "biweekly" ? 2 : 1)) || 1);
+  const scheduleFrequency = recurringFrequency === "biweekly" ? "weekly" : recurringFrequency;
+  const scheduleInterval = recurringFrequency === "biweekly" ? 2 : recurringIntervalCount;
+  const scheduleDate = String(suggestion.occurredAt ?? new Date().toISOString()).slice(0, 10);
+  const dayOfMonth = Math.max(1, Math.min(31, Number(scheduleDate.slice(8, 10)) || 1));
+  const dayOfWeek = new Date(`${scheduleDate}T12:00:00`).getDay();
+  if (recurringName.length >= 3 && scheduleFrequency) {
+    if (movementType === "expense" && payload.recurringType === "subscription") {
+      const { data: createdSubscription } = await supabase
+        .from("subscriptions")
+        .insert({
+          workspace_id: workspaceId,
+          created_by_user_id: userId,
+          name: recurringName,
+          vendor_party_id: counterpartyId,
+          account_id: payload.accountId,
+          category_id: categoryId,
+          amount,
+          currency_code: suggestion.currencyCode,
+          frequency: scheduleFrequency,
+          interval_count: scheduleInterval,
+          day_of_month: ["monthly", "quarterly", "yearly"].includes(scheduleFrequency) ? dayOfMonth : null,
+          day_of_week: scheduleFrequency === "weekly" ? dayOfWeek : null,
+          start_date: scheduleDate,
+          next_due_date: scheduleDate,
+          end_date: null,
+          remind_days_before: 3,
+          auto_create_movement: false,
+          description,
+          notes: "Creada desde sugerencia recurrente del overlay.",
+          status: "active",
+        })
+        .select("id")
+        .single();
+      if (createdSubscription?.id) subscriptionId = Number(createdSubscription.id);
+    } else if (movementType === "income" && payload.recurringType === "recurring_income") {
+      const { data: createdRecurringIncome } = await supabase
+        .from("recurring_income")
+        .insert({
+          workspace_id: workspaceId,
+          created_by_user_id: userId,
+          name: recurringName,
+          payer_party_id: counterpartyId,
+          account_id: payload.accountId,
+          category_id: categoryId,
+          amount,
+          currency_code: suggestion.currencyCode,
+          frequency: scheduleFrequency,
+          interval_count: scheduleInterval,
+          day_of_month: ["monthly", "quarterly", "yearly"].includes(scheduleFrequency) ? dayOfMonth : null,
+          day_of_week: scheduleFrequency === "weekly" ? dayOfWeek : null,
+          start_date: scheduleDate,
+          next_expected_date: scheduleDate,
+          end_date: null,
+          remind_days_before: 3,
+          description,
+          notes: "Creado desde sugerencia recurrente del overlay.",
+          status: "active",
+        })
+        .select("id")
+        .single();
+      if (createdRecurringIncome?.id) recurringIncomeId = Number(createdRecurringIncome.id);
+    }
+  }
   const duplicate = await findPossibleDuplicateMovement({
     workspaceId,
     movementType,
@@ -141,13 +264,17 @@ export async function notificationDetectionHeadlessTask(payload: HeadlessPayload
       destination_amount: movementType === "income" ? amount : null,
       fx_rate: null,
       category_id: categoryId,
-      counterparty_id: null,
+      counterparty_id: counterpartyId,
+      subscription_id: subscriptionId,
       metadata: {
         source: "notification_detection_overlay",
         suggestionId: suggestion.id,
         financialAppKey: suggestion.financialAppKey,
         confidence: suggestion.confidence,
         categoryAi: nativeSuggestion.aiCategoryRecommendation ?? null,
+        counterpartyAi: nativeSuggestion.counterpartyRecommendation ?? null,
+        recurringAi: nativeSuggestion.recurringRecommendation ?? null,
+        recurring_income_id: recurringIncomeId,
       },
     })
     .select("id")

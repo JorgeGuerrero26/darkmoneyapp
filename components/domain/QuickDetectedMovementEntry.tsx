@@ -5,7 +5,7 @@ import { useRouter } from "expo-router";
 import { BottomSheet } from "../ui/BottomSheet";
 import { Button } from "../ui/Button";
 import { DatePickerInput } from "../ui/DatePickerInput";
-import { SmartSuggestion } from "../ui/SmartSuggestion";
+import { SmartSuggestion, SmartSuggestionLoading } from "../ui/SmartSuggestion";
 import { useAuth } from "../../lib/auth-context";
 import { useWorkspace } from "../../lib/workspace-context";
 import { useToast } from "../../hooks/useToast";
@@ -18,7 +18,10 @@ import {
 import { getFinancialAppByKey, resolveFinancialAppByPackage } from "../../lib/notification-detection-apps";
 import {
   useCreateCategoryMutation,
+  useCreateCounterpartyMutation,
   useCreateMovementMutation,
+  useCreateRecurringIncomeMutation,
+  useCreateSubscriptionMutation,
   useDashboardAnalyticsQuery,
   useMarkNotificationReadMutation,
   usePersistLearningFeedbackMutation,
@@ -26,11 +29,21 @@ import {
   useWorkspaceSnapshotQuery,
 } from "../../services/queries/workspace-data";
 import { useMovementPatternsQuery } from "../../services/queries/movement-patterns";
-import { buildPatternMaps, suggestCategoryFromDescription } from "../../lib/movement-patterns";
+import { buildPatternMaps, scoreCategoryFromDescription } from "../../lib/movement-patterns";
 import { normalizeAnalyticsText } from "../../services/analytics/movement-features";
 import { useMovementCategoryAiSuggestion } from "../../hooks/useMovementCategoryAiSuggestion";
+import { useMovementDescriptionCleanup } from "../../hooks/useMovementDescriptionCleanup";
+import { useMovementCounterpartyAiSuggestion } from "../../hooks/useMovementCounterpartyAiSuggestion";
+import type { CounterpartySuggestionResult } from "../../lib/movement-counterparty-suggestions";
+import { useMovementRecurringAiSuggestion } from "../../hooks/useMovementRecurringAiSuggestion";
+import {
+  recurringFrequencyLabel,
+  recurringFrequencyToSubscriptionFields,
+  type MovementRecurringHistoryItem,
+  type MovementRecurringSuggestionResult,
+} from "../../lib/movement-recurring-suggestions";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING, SURFACE } from "../../constants/theme";
-import type { CategorySummary } from "../../types/domain";
+import type { CategorySummary, CounterpartySummary } from "../../types/domain";
 
 function textSimilarity(left: string, right: string): number {
   const leftTokens = new Set(normalizeAnalyticsText(left).split(" ").filter((t) => t.length >= 3));
@@ -40,6 +53,28 @@ function textSimilarity(left: string, right: string): number {
   let overlap = 0;
   for (const t of all) if (leftTokens.has(t) && rightTokens.has(t)) overlap++;
   return overlap / all.size;
+}
+
+const LOCAL_CATEGORY_AI_CONFIDENCE_THRESHOLD = 0.6;
+
+function learnedConfidence(currentText: string, learnedText: string, similarity: number) {
+  const currentTokens = normalizeAnalyticsText(currentText).split(" ").filter((token) => token.length >= 3);
+  const learnedTokens = normalizeAnalyticsText(learnedText).split(" ").filter((token) => token.length >= 3);
+  const exact = normalizeAnalyticsText(currentText) === normalizeAnalyticsText(learnedText);
+  if (exact) return Math.min(0.9, currentTokens.length <= 1 ? 0.68 : 0.76 + Math.min(currentTokens.length, 4) * 0.03);
+  if (currentTokens.length <= 1 || learnedTokens.length <= 1) return Math.min(0.58, 0.42 + similarity * 0.18);
+  return Math.min(0.86, 0.38 + similarity * 0.48);
+}
+
+function patternMovementAmount(movement: {
+  movement_type: string;
+  source_amount: number | null;
+  destination_amount: number | null;
+}) {
+  const source = Math.abs(Number(movement.source_amount ?? 0));
+  const destination = Math.abs(Number(movement.destination_amount ?? 0));
+  if (movement.movement_type === "income" || movement.movement_type === "refund") return destination || source;
+  return source || destination;
 }
 
 type Props = {
@@ -86,6 +121,9 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
   const settings = settingsQuery.data ?? [];
   const createMovement = useCreateMovementMutation(activeWorkspaceId);
   const createCategory = useCreateCategoryMutation(activeWorkspaceId);
+  const createCounterparty = useCreateCounterpartyMutation(activeWorkspaceId);
+  const createSubscription = useCreateSubscriptionMutation(activeWorkspaceId);
+  const createRecurringIncome = useCreateRecurringIncomeMutation(activeWorkspaceId);
   const markSuggestion = useMarkDetectedMovementSuggestionMutation();
   const markNotificationRead = useMarkNotificationReadMutation(profile?.id ?? null);
   const entitlementQuery = useUserEntitlementQuery(profile?.id ?? null, profile?.email ?? null);
@@ -105,11 +143,14 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
   const [amount, setAmount] = useState("");
   const [accountId, setAccountId] = useState<number | null>(null);
   const [categoryId, setCategoryId] = useState<number | null>(null);
+  const [counterpartyId, setCounterpartyId] = useState<number | null>(null);
   const [description, setDescription] = useState("");
   const [date, setDate] = useState("");
   const [checkingDuplicate, setCheckingDuplicate] = useState(false);
   const [isDiscarding, setIsDiscarding] = useState(false);
   const [categoryFeedbackIntent, setCategoryFeedbackIntent] = useState<CategoryFeedbackIntent | null>(null);
+  const [linkedSubscriptionId, setLinkedSubscriptionId] = useState<number | null>(null);
+  const [linkedRecurringIncomeId, setLinkedRecurringIncomeId] = useState<number | null>(null);
 
   const categories = useMemo(() => {
     const kind = movementType === "income" ? "income" : "expense";
@@ -117,6 +158,26 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
       category.isActive && (category.kind === kind || category.kind === "both"),
     );
   }, [movementType, snapshot?.categories]);
+  const counterparties = useMemo<CounterpartySummary[]>(() => {
+    return (snapshot?.counterparties ?? []).filter((counterparty) => !counterparty.isArchived);
+  }, [snapshot?.counterparties]);
+  const selectedRecurringCategory = categoryId != null
+    ? categories.find((category) => category.id === categoryId) ?? null
+    : null;
+  const selectedRecurringCounterparty = counterpartyId != null
+    ? counterparties.find((counterparty) => counterparty.id === counterpartyId) ?? null
+    : null;
+  const recurringSuggestionHistory = useMemo<MovementRecurringHistoryItem[]>(() => {
+    return (patternMovements ?? []).map((movement) => ({
+      id: movement.id,
+      movementType: movement.movement_type,
+      occurredAt: movement.occurred_at,
+      description: movement.description ?? "",
+      amount: patternMovementAmount(movement),
+      categoryId: movement.category_id ?? null,
+      counterpartyId: movement.counterparty_id ?? null,
+    }));
+  }, [patternMovements]);
 
   const localCategorySuggestion = useMemo<CategorySuggestionState | null>(() => {
     if (categoryId !== null || !description.trim()) return null;
@@ -134,11 +195,12 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
         .sort((a, b) => b.sim - a.sim || new Date(b.fb.createdAt).getTime() - new Date(a.fb.createdAt).getTime())[0];
       if (best?.fb.acceptedCategoryId) {
         const cat = categories.find((c) => c.id === best.fb.acceptedCategoryId);
-        if (cat) return {
+        const confidence = learnedConfidence(normalized, best.fb.normalizedDescription ?? "", best.sim);
+        if (cat && confidence >= LOCAL_CATEGORY_AI_CONFIDENCE_THRESHOLD) return {
           categoryId: cat.id,
           categoryName: cat.name,
-          confidence: Math.max(0.68, Math.min(0.98, 0.62 + best.sim * 0.28)),
-          detail: `${Math.round(Math.max(0.68, Math.min(0.98, 0.62 + best.sim * 0.28)) * 100)}% · aprendido de tus correcciones`,
+          confidence,
+          detail: `${Math.round(confidence * 100)}% · aprendido de tus correcciones`,
           reasons: ["aprendido de tus correcciones"],
           source: "local",
         };
@@ -147,15 +209,15 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
 
     // Pattern-based: word frequency against recent movements
     if (patternMaps) {
-      const suggestedId = suggestCategoryFromDescription(description, patternMaps);
-      if (suggestedId !== null) {
-        const cat = categories.find((c) => c.id === suggestedId);
+      const scored = scoreCategoryFromDescription(description, patternMaps);
+      if (scored && scored.confidence >= LOCAL_CATEGORY_AI_CONFIDENCE_THRESHOLD) {
+        const cat = categories.find((c) => c.id === scored.categoryId);
         if (cat) return {
           categoryId: cat.id,
           categoryName: cat.name,
-          confidence: 0.62,
-          detail: "patrón repetido en tu historial",
-          reasons: ["patrón repetido en tu historial"],
+          confidence: scored.confidence,
+          detail: `${Math.round(scored.confidence * 100)}% · ${scored.reasons.join(" · ")}`,
+          reasons: scored.reasons,
           source: "local",
         };
       }
@@ -189,13 +251,19 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
         : null,
     };
   }, [activeWorkspaceId, amount, categories, categoryId, date, description, localCategorySuggestion, movementType, suggestion]);
-  const { recommendation: aiCategoryRecommendation } = useMovementCategoryAiSuggestion({
-    enabled: Boolean(visible && entitlementQuery.data?.proAccessEnabled && aiCategoryInput),
+  const shouldRequestAiCategorySuggestion = Boolean(
+    visible &&
+      entitlementQuery.data?.proAccessEnabled &&
+      aiCategoryInput &&
+      (!localCategorySuggestion || localCategorySuggestion.confidence < LOCAL_CATEGORY_AI_CONFIDENCE_THRESHOLD),
+  );
+  const { recommendation: aiCategoryRecommendation, isLoading: aiCategorySuggestionLoading } = useMovementCategoryAiSuggestion({
+    enabled: shouldRequestAiCategorySuggestion,
     input: aiCategoryInput,
   });
   const aiCategorySuggestion = useMemo<CategorySuggestionState | null>(() => {
     if (!aiCategoryRecommendation) return null;
-    const detail = `IA Pro · ${Math.round(aiCategoryRecommendation.confidence * 100)}% · ${aiCategoryRecommendation.reasons.join(" · ")}`;
+    const detail = `Mejor sugerencia · ${Math.round(aiCategoryRecommendation.confidence * 100)}% · ${aiCategoryRecommendation.reasons.join(" · ")}`;
     if (aiCategoryRecommendation.type === "existing_category" && aiCategoryRecommendation.categoryId) {
       return {
         categoryId: aiCategoryRecommendation.categoryId,
@@ -220,6 +288,50 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
     return null;
   }, [aiCategoryRecommendation]);
   const categorySuggestion = aiCategorySuggestion ?? localCategorySuggestion;
+  const { cleanup: descriptionCleanup, isLoading: descriptionCleanupLoading } = useMovementDescriptionCleanup({
+    enabled: Boolean(visible),
+    workspaceId: activeWorkspaceId,
+    surface: "notification_form",
+    rawDescription: description,
+    appLabel: suggestion?.appLabel ?? null,
+    financialAppKey: suggestion?.financialAppKey ?? null,
+    amount: Number(amount.replace(",", ".")) || suggestion?.amount || null,
+    currencyCode: suggestion?.currencyCode ?? "PEN",
+    proAccessEnabled: entitlementQuery.data?.proAccessEnabled,
+  });
+  const {
+    suggestion: counterpartySuggestion,
+    isLoading: counterpartySuggestionLoading,
+  } = useMovementCounterpartyAiSuggestion({
+    enabled: Boolean(visible && counterpartyId == null),
+    workspaceId: activeWorkspaceId,
+    surface: "notification_form",
+    description: descriptionCleanup?.cleanedDescription ?? description,
+    movementType,
+    amount: Number(amount.replace(",", ".")) || suggestion?.amount || null,
+    currencyCode: suggestion?.currencyCode ?? "PEN",
+    counterparties,
+    proAccessEnabled: entitlementQuery.data?.proAccessEnabled,
+  });
+  const {
+    suggestion: recurringSuggestion,
+    isLoading: recurringSuggestionLoading,
+  } = useMovementRecurringAiSuggestion({
+    enabled: Boolean(visible),
+    workspaceId: activeWorkspaceId,
+    surface: "notification_form",
+    description: descriptionCleanup?.cleanedDescription ?? description,
+    movementType,
+    amount: Number(amount.replace(",", ".")) || suggestion?.amount || null,
+    currencyCode: suggestion?.currencyCode ?? "PEN",
+    occurredAt: date ? new Date(`${date}T12:00:00`).toISOString() : suggestion?.occurredAt ?? new Date().toISOString(),
+    category: selectedRecurringCategory,
+    counterparty: selectedRecurringCounterparty,
+    recentMovements: recurringSuggestionHistory,
+    subscriptions: snapshot?.subscriptions ?? [],
+    recurringIncome: snapshot?.recurringIncome ?? [],
+    proAccessEnabled: entitlementQuery.data?.proAccessEnabled,
+  });
 
   useEffect(() => {
     if (!suggestion || !visible) return;
@@ -232,8 +344,11 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
     setDescription(suggestion.description);
     setDate(localDate(suggestion.occurredAt));
     setCategoryId(null);
+    setCounterpartyId(null);
     setAccountId(defaultAccount?.id ?? null);
     setCategoryFeedbackIntent(null);
+    setLinkedSubscriptionId(null);
+    setLinkedRecurringIncomeId(null);
   }, [activeAccounts, settings, suggestion, visible]);
 
   function selectCategoryManually(id: number | null) {
@@ -284,6 +399,91 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
       source: suggestionState.source,
     });
   }
+
+  async function applyCounterpartySuggestion(suggestionState: CounterpartySuggestionResult) {
+    if (suggestionState.type === "existing_counterparty" && suggestionState.counterpartyId) {
+      setCounterpartyId(suggestionState.counterpartyId);
+      return;
+    }
+    if (suggestionState.type !== "new_counterparty" || !suggestionState.newCounterpartyName) return;
+    const normalizedNewName = normalizeAnalyticsText(suggestionState.newCounterpartyName);
+    const existing = counterparties.find((counterparty) => normalizeAnalyticsText(counterparty.name) === normalizedNewName);
+    if (existing) {
+      setCounterpartyId(existing.id);
+      return;
+    }
+    try {
+      const created = await createCounterparty.mutateAsync({
+        name: suggestionState.newCounterpartyName,
+        type: suggestionState.counterpartyType,
+      });
+      setCounterpartyId(created.id);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "No se pudo crear la contraparte.", "error");
+    }
+  }
+
+  async function applyRecurringSuggestion(suggestionState: MovementRecurringSuggestionResult) {
+    if (!suggestionState.name || !suggestionState.frequency) return;
+    const parsedAmount = Number(amount.replace(",", ".")) || suggestion?.amount || 0;
+    if (!parsedAmount) return;
+    const fields = recurringFrequencyToSubscriptionFields(suggestionState.frequency);
+    const ymd = date || localDate(suggestion?.occurredAt);
+    const day = new Date(`${ymd}T12:00:00`).getDay();
+    const dayOfMonth = Math.max(1, Math.min(31, Number(ymd.slice(8, 10)) || 1));
+    try {
+      if (suggestionState.type === "subscription") {
+        const created = await createSubscription.mutateAsync({
+          name: suggestionState.name,
+          vendorPartyId: counterpartyId,
+          accountId,
+          categoryId,
+          amount: parsedAmount,
+          currencyCode: suggestion?.currencyCode ?? "PEN",
+          frequency: fields.frequency,
+          intervalCount: fields.intervalCount,
+          dayOfMonth: fields.frequency === "monthly" || fields.frequency === "quarterly" || fields.frequency === "yearly" ? dayOfMonth : null,
+          dayOfWeek: fields.frequency === "weekly" ? day : null,
+          startDate: ymd,
+          nextDueDate: ymd,
+          endDate: null,
+          remindDaysBefore: 3,
+          autoCreateMovement: false,
+          description: description.trim() || null,
+          notes: `Creada desde sugerencia recurrente (${Math.round(suggestionState.confidence * 100)}%).`,
+        });
+        setLinkedSubscriptionId(created.id);
+        showToast("Suscripción creada", "success");
+      } else if (suggestionState.type === "recurring_income") {
+        const created = await createRecurringIncome.mutateAsync({
+          name: suggestionState.name,
+          payerPartyId: counterpartyId,
+          accountId,
+          categoryId,
+          amount: parsedAmount,
+          currencyCode: suggestion?.currencyCode ?? "PEN",
+          frequency: fields.frequency,
+          intervalCount: fields.intervalCount,
+          dayOfMonth: fields.frequency === "monthly" || fields.frequency === "quarterly" || fields.frequency === "yearly" ? dayOfMonth : null,
+          dayOfWeek: fields.frequency === "weekly" ? day : null,
+          startDate: ymd,
+          nextExpectedDate: ymd,
+          endDate: null,
+          remindDaysBefore: 3,
+          description: description.trim() || null,
+          notes: `Creado desde sugerencia recurrente (${Math.round(suggestionState.confidence * 100)}%).`,
+        });
+        setLinkedRecurringIncomeId(created.id);
+        showToast("Ingreso fijo creado", "success");
+      }
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "No se pudo crear el recurrente.", "error");
+    }
+  }
+
+  const selectedCounterparty = useMemo(() => {
+    return counterpartyId == null ? null : counterparties.find((counterparty) => counterparty.id === counterpartyId) ?? null;
+  }, [counterparties, counterpartyId]);
 
   async function discard() {
     if (!suggestion) return;
@@ -353,12 +553,16 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
         destinationAmount: movementType === "income" ? parsedAmount : null,
         fxRate: null,
         categoryId,
-        counterpartyId: null,
+        counterpartyId,
+        subscriptionId: linkedSubscriptionId,
         metadata: {
           source: "notification_detection",
           suggestionId: suggestion.id,
           financialAppKey: suggestion.financialAppKey,
           confidence: suggestion.confidence,
+          counterpartyAi: counterpartySuggestion?.source === "deepseek" ? counterpartySuggestion : null,
+          recurring_income_id: linkedRecurringIncomeId,
+          recurringAi: recurringSuggestion?.source === "deepseek" ? recurringSuggestion : null,
         },
       });
       await markSuggestion.mutateAsync({ suggestionId: suggestion.id, status: "registered", movementId: created.id });
@@ -459,6 +663,15 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
           selectedId={categoryId}
           onSelect={selectCategoryManually}
         />
+        {aiCategorySuggestionLoading ? (
+          <SmartSuggestionLoading
+            detail={
+              localCategorySuggestion
+                ? "Puede confirmar la sugerencia actual; si aparece una mejor, la actualizaremos."
+                : "Buscando una categoría más precisa para este movimiento."
+            }
+          />
+        ) : null}
         {categorySuggestion ? (
           <SmartSuggestion
             label={categorySuggestion.categoryName}
@@ -469,6 +682,53 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
 
         <Text style={styles.selectRowLabel}>Descripción</Text>
         <TextInput value={description} onChangeText={setDescription} style={styles.input} multiline />
+        {descriptionCleanupLoading ? (
+          <SmartSuggestionLoading
+            title="Limpiando descripción"
+            detail="Estamos revisando si el texto de la notificación puede quedar más claro."
+          />
+        ) : null}
+        {descriptionCleanup ? (
+          <SmartSuggestion
+            label={descriptionCleanup.cleanedDescription}
+            detail={`Descripción limpia · ${Math.round(descriptionCleanup.confidence * 100)}% · ${descriptionCleanup.reasons.join(" · ")}`}
+            onApply={() => setDescription(descriptionCleanup.cleanedDescription)}
+          />
+        ) : null}
+        {counterpartySuggestionLoading ? (
+          <SmartSuggestionLoading
+            title="Buscando contraparte"
+            detail="Revisando si este movimiento corresponde a un contacto o comercio."
+          />
+        ) : null}
+        {!selectedCounterparty && counterpartySuggestion ? (
+          <SmartSuggestion
+            label={
+              counterpartySuggestion.type === "new_counterparty" && counterpartySuggestion.newCounterpartyName
+                ? `Crear contraparte "${counterpartySuggestion.newCounterpartyName}"`
+                : counterpartySuggestion.counterpartyName ?? "Contraparte sugerida"
+            }
+            detail={`${counterpartySuggestion.source === "deepseek" ? "Mejor sugerencia · " : ""}${Math.round(counterpartySuggestion.confidence * 100)}% · ${counterpartySuggestion.reasons.join(" · ")}`}
+            onApply={() => void applyCounterpartySuggestion(counterpartySuggestion)}
+          />
+        ) : null}
+        {recurringSuggestionLoading ? (
+          <SmartSuggestionLoading
+            title="Detectando recurrencia"
+            detail="Revisando si este movimiento se repite como cargo o ingreso fijo."
+          />
+        ) : null}
+        {!linkedSubscriptionId && !linkedRecurringIncomeId && recurringSuggestion ? (
+          <SmartSuggestion
+            label={
+              recurringSuggestion.type === "recurring_income"
+                ? `Crear ingreso fijo "${recurringSuggestion.name}"`
+                : `Crear suscripción "${recurringSuggestion.name}"`
+            }
+            detail={`${recurringSuggestion.source === "deepseek" ? "Mejor sugerencia · " : ""}${Math.round(recurringSuggestion.confidence * 100)}% · ${recurringFrequencyLabel(recurringSuggestion.frequency)} · ${recurringSuggestion.reasons.join(" · ")}`}
+            onApply={() => void applyRecurringSuggestion(recurringSuggestion)}
+          />
+        ) : null}
 
         <DatePickerInput label="Fecha" value={date} onChange={setDate} variant="formRow" />
 
@@ -477,7 +737,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
           <Button
             label="Guardar"
             onPress={() => void submit(false)}
-            loading={createMovement.isPending || (markSuggestion.isPending && !isDiscarding) || checkingDuplicate}
+            loading={createMovement.isPending || createCounterparty.isPending || createSubscription.isPending || createRecurringIncome.isPending || (markSuggestion.isPending && !isDiscarding) || checkingDuplicate}
           />
         </View>
       </ScrollView>

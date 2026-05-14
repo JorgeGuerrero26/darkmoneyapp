@@ -23,8 +23,11 @@ import {
   useCreateMovementMutation,
   useUpdateMovementMutation,
   useCreateCategoryMutation,
+  useCreateCounterpartyMutation,
+  useCreateRecurringIncomeMutation,
   useDashboardAnalyticsQuery,
   usePersistLearningFeedbackMutation,
+  useCreateSubscriptionMutation,
   useSyncExchangeRatePairMutation,
   useUserEntitlementQuery,
 } from "../../services/queries/workspace-data";
@@ -41,6 +44,16 @@ import { useAuth } from "../../lib/auth-context";
 import { useToast } from "../../hooks/useToast";
 import { useHaptics } from "../../hooks/useHaptics";
 import { useMovementCategoryAiSuggestion } from "../../hooks/useMovementCategoryAiSuggestion";
+import { useMovementDescriptionCleanup } from "../../hooks/useMovementDescriptionCleanup";
+import { useMovementCounterpartyAiSuggestion } from "../../hooks/useMovementCounterpartyAiSuggestion";
+import type { CounterpartySuggestionResult } from "../../lib/movement-counterparty-suggestions";
+import { useMovementRecurringAiSuggestion } from "../../hooks/useMovementRecurringAiSuggestion";
+import {
+  recurringFrequencyLabel,
+  recurringFrequencyToSubscriptionFields,
+  type MovementRecurringHistoryItem,
+  type MovementRecurringSuggestionResult,
+} from "../../lib/movement-recurring-suggestions";
 import { BottomSheet } from "../ui/BottomSheet";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { Button } from "../ui/Button";
@@ -49,7 +62,7 @@ import { CurrencyInput } from "../ui/CurrencyInput";
 import { BalanceImpactPreview } from "../domain/BalanceImpactPreview";
 import { AttachmentPicker, type Attachment } from "../domain/AttachmentPicker";
 import { DatePickerInput } from "../ui/DatePickerInput";
-import { SmartSuggestion } from "../ui/SmartSuggestion";
+import { SmartSuggestion, SmartSuggestionLoading } from "../ui/SmartSuggestion";
 import { buildCategorySuggestionCandidates } from "../../services/analytics/category-suggestions";
 import { findProbableDuplicateGroups } from "../../services/analytics/duplicate-detection";
 import { normalizeAnalyticsText } from "../../services/analytics/movement-features";
@@ -126,6 +139,8 @@ type CategoryFeedbackIntent = {
   source?: "deepseek" | "local";
 };
 
+const LOCAL_CATEGORY_AI_CONFIDENCE_THRESHOLD = 0.6;
+
 function readMovementLinkedEventId(metadata: unknown): number | null {
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
   const raw = metadata as Record<string, unknown>;
@@ -164,6 +179,15 @@ function movementFormTextSimilarity(left: string, right: string) {
     if (leftTokens.has(token) && rightTokens.has(token)) overlap += 1;
   }
   return overlap / allTokens.size;
+}
+
+function movementFormLearnedConfidence(currentText: string, learnedText: string, similarity: number) {
+  const currentTokens = normalizeAnalyticsText(currentText).split(" ").filter((token) => token.length >= 3);
+  const learnedTokens = normalizeAnalyticsText(learnedText).split(" ").filter((token) => token.length >= 3);
+  const exact = normalizeAnalyticsText(currentText) === normalizeAnalyticsText(learnedText);
+  if (exact) return Math.min(0.9, currentTokens.length <= 1 ? 0.68 : 0.76 + Math.min(currentTokens.length, 4) * 0.03);
+  if (currentTokens.length <= 1 || learnedTokens.length <= 1) return Math.min(0.58, 0.42 + similarity * 0.18);
+  return Math.min(0.86, 0.38 + similarity * 0.48);
 }
 
 function formatTransferAmount(value: number) {
@@ -272,6 +296,9 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   const createMovement = useCreateMovementMutation(activeWorkspaceId);
   const updateMovement = useUpdateMovementMutation(activeWorkspaceId);
   const createCategory = useCreateCategoryMutation(activeWorkspaceId);
+  const createCounterparty = useCreateCounterpartyMutation(activeWorkspaceId);
+  const createSubscription = useCreateSubscriptionMutation(activeWorkspaceId);
+  const createRecurringIncome = useCreateRecurringIncomeMutation(activeWorkspaceId);
   const syncExchangeRatePair = useSyncExchangeRatePairMutation();
   const { data: dashboardAnalytics } = useDashboardAnalyticsQuery(activeWorkspaceId, profile?.id);
   const entitlementQuery = useUserEntitlementQuery(profile?.id ?? null, profile?.email ?? null);
@@ -317,6 +344,8 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   const [transferRateEdited, setTransferRateEdited] = useState(false);
   const [transferLiveRate, setTransferLiveRate] = useState<TransferFxState | null>(null);
   const [transferRateError, setTransferRateError] = useState<string | null>(null);
+  const [linkedSubscriptionId, setLinkedSubscriptionId] = useState<number | null>(editMovement?.subscriptionId ?? null);
+  const [linkedRecurringIncomeId, setLinkedRecurringIncomeId] = useState<number | null>(null);
   const attachmentsHydratedRef = useRef<string | null>(null);
   const initialAttachmentSignatureRef = useRef("::ready");
 
@@ -360,6 +389,69 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   const counterpartiesSorted = useMemo(() => sortByName(counterparties), [counterparties]);
   const sourceAmountNum = parseFloat(form.sourceAmount) || 0;
   const destinationAmountNum = parseFloat(form.destinationAmount) || 0;
+  const selectedRecurringCategory = form.categoryId != null
+    ? categories.find((category) => category.id === form.categoryId) ?? null
+    : null;
+  const selectedRecurringCounterparty = form.counterpartyId != null
+    ? counterparties.find((counterparty) => counterparty.id === form.counterpartyId) ?? null
+    : null;
+  const recurringSuggestionHistory = useMemo<MovementRecurringHistoryItem[]>(() => {
+    return (patternMovements ?? [])
+      .filter((movement) => movement.id !== editMovement?.id)
+      .map((movement) => ({
+        id: movement.id,
+        movementType: movement.movement_type,
+        occurredAt: movement.occurred_at,
+        description: movement.description ?? "",
+        amount: patternMovementAmount(movement),
+        categoryId: movement.category_id ?? null,
+        counterpartyId: movement.counterparty_id ?? null,
+      }));
+  }, [editMovement?.id, patternMovements]);
+  const descriptionCleanupAmount = form.movementType === "income" ? destinationAmountNum : sourceAmountNum;
+  const { cleanup: descriptionCleanup, isLoading: descriptionCleanupLoading } = useMovementDescriptionCleanup({
+    enabled: Boolean(visible && form.movementType !== "transfer"),
+    workspaceId: activeWorkspaceId,
+    surface: "movement_form",
+    rawDescription: form.description,
+    amount: descriptionCleanupAmount > 0 ? descriptionCleanupAmount : null,
+    currencyCode: baseCurrency,
+    proAccessEnabled: entitlementQuery.data?.proAccessEnabled,
+  });
+  const counterpartyDescriptionForSuggestion = descriptionCleanup?.cleanedDescription ?? form.description;
+  const {
+    suggestion: recurringSuggestion,
+    isLoading: recurringSuggestionLoading,
+  } = useMovementRecurringAiSuggestion({
+    enabled: Boolean(visible && !isEditing && form.movementType !== "transfer"),
+    workspaceId: activeWorkspaceId,
+    surface: "movement_form",
+    description: counterpartyDescriptionForSuggestion,
+    movementType: form.movementType === "income" ? "income" : "expense",
+    amount: descriptionCleanupAmount > 0 ? descriptionCleanupAmount : null,
+    currencyCode: baseCurrency,
+    occurredAt: dateStrToISO(form.occurredAt),
+    category: selectedRecurringCategory,
+    counterparty: selectedRecurringCounterparty,
+    recentMovements: recurringSuggestionHistory,
+    subscriptions: snapshot?.subscriptions ?? [],
+    recurringIncome: snapshot?.recurringIncome ?? [],
+    proAccessEnabled: entitlementQuery.data?.proAccessEnabled,
+  });
+  const {
+    suggestion: aiCounterpartySuggestion,
+    isLoading: aiCounterpartySuggestionLoading,
+  } = useMovementCounterpartyAiSuggestion({
+    enabled: Boolean(visible && form.counterpartyId == null && form.movementType !== "transfer"),
+    workspaceId: activeWorkspaceId,
+    surface: "movement_form",
+    description: counterpartyDescriptionForSuggestion,
+    movementType: form.movementType === "income" ? "income" : "expense",
+    amount: descriptionCleanupAmount > 0 ? descriptionCleanupAmount : null,
+    currencyCode: baseCurrency,
+    counterparties: counterpartiesSorted,
+    proAccessEnabled: entitlementQuery.data?.proAccessEnabled,
+  });
 
   const currentSuggestionMovement = useMemo<MovementSuggestionLike | null>(() => {
     const amount = form.movementType === "income" ? destinationAmountNum : sourceAmountNum;
@@ -425,10 +517,12 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     if (!best?.feedback.acceptedCategoryId) return null;
     const category = categoriesForPicker.find((item) => item.id === best.feedback.acceptedCategoryId);
     if (!category) return null;
+    const confidence = movementFormLearnedConfidence(normalized, best.feedback.normalizedDescription ?? "", best.similarity);
+    if (confidence < LOCAL_CATEGORY_AI_CONFIDENCE_THRESHOLD) return null;
     return {
       categoryId: category.id,
       categoryName: category.name,
-      confidence: Math.max(0.68, Math.min(0.98, 0.62 + best.similarity * 0.28)),
+      confidence,
       reasons: ["aprendido de una corrección tuya", best.similarity >= 0.92 ? "texto casi igual" : "texto parecido"],
     };
   }, [categoriesForPicker, currentSuggestionMovement, dashboardAnalytics?.learningFeedback, form.categoryId]);
@@ -494,8 +588,14 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     form.movementType,
     localCategorySuggestion,
   ]);
-  const { recommendation: aiCategoryRecommendation } = useMovementCategoryAiSuggestion({
-    enabled: Boolean(visible && entitlementQuery.data?.proAccessEnabled && aiCategoryInput),
+  const shouldRequestAiCategorySuggestion = Boolean(
+    visible &&
+      entitlementQuery.data?.proAccessEnabled &&
+      aiCategoryInput &&
+      (!localCategorySuggestion || localCategorySuggestion.confidence < LOCAL_CATEGORY_AI_CONFIDENCE_THRESHOLD),
+  );
+  const { recommendation: aiCategoryRecommendation, isLoading: aiCategorySuggestionLoading } = useMovementCategoryAiSuggestion({
+    enabled: shouldRequestAiCategorySuggestion,
     input: aiCategoryInput,
   });
   const aiCategorySuggestion = useMemo<CategorySuggestionState | null>(() => {
@@ -637,6 +737,8 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     setAttachments([]);
     setSavedMovementId(editMovement?.id);
     setCategoryFeedbackIntent(null);
+    setLinkedSubscriptionId(editMovement?.subscriptionId ?? null);
+    setLinkedRecurringIncomeId(null);
     setTransferDestinationEdited(Boolean(editMovement?.destinationAmount));
     setTransferRateInput("");
     setTransferRateEdited(false);
@@ -713,6 +815,89 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
       reasons: suggestion.reasons,
       source: suggestion.source,
     });
+  }
+
+  async function applyCounterpartySuggestion(suggestion: CounterpartySuggestionResult) {
+    if (suggestion.type === "existing_counterparty" && suggestion.counterpartyId) {
+      patch({ counterpartyId: suggestion.counterpartyId });
+      haptics.success();
+      return;
+    }
+    if (suggestion.type !== "new_counterparty" || !suggestion.newCounterpartyName) return;
+    const normalizedNewName = normalizeAnalyticsText(suggestion.newCounterpartyName);
+    const existing = counterpartiesSorted.find((counterparty) => normalizeAnalyticsText(counterparty.name) === normalizedNewName);
+    if (existing) {
+      patch({ counterpartyId: existing.id });
+      haptics.success();
+      return;
+    }
+    try {
+      const created = await createCounterparty.mutateAsync({
+        name: suggestion.newCounterpartyName,
+        type: suggestion.counterpartyType,
+      });
+      patch({ counterpartyId: created.id });
+      haptics.success();
+    } catch (error) {
+      showToast(humanizeError(error) || "No se pudo crear la contraparte.", "error");
+    }
+  }
+
+  async function applyRecurringSuggestion(suggestion: MovementRecurringSuggestionResult) {
+    if (!suggestion.name || !suggestion.frequency || !descriptionCleanupAmount) return;
+    const fields = recurringFrequencyToSubscriptionFields(suggestion.frequency);
+    const date = form.occurredAt;
+    const day = new Date(`${date}T12:00:00`).getDay();
+    const dayOfMonth = Math.max(1, Math.min(31, Number(date.slice(8, 10)) || 1));
+    try {
+      if (suggestion.type === "subscription") {
+        const created = await createSubscription.mutateAsync({
+          name: suggestion.name,
+          vendorPartyId: form.counterpartyId,
+          accountId: form.sourceAccountId,
+          categoryId: form.categoryId,
+          amount: descriptionCleanupAmount,
+          currencyCode: baseCurrency,
+          frequency: fields.frequency,
+          intervalCount: fields.intervalCount,
+          dayOfMonth: fields.frequency === "monthly" || fields.frequency === "quarterly" || fields.frequency === "yearly" ? dayOfMonth : null,
+          dayOfWeek: fields.frequency === "weekly" ? day : null,
+          startDate: date,
+          nextDueDate: date,
+          endDate: null,
+          remindDaysBefore: 3,
+          autoCreateMovement: false,
+          description: form.description.trim() || null,
+          notes: `Creada desde sugerencia recurrente (${Math.round(suggestion.confidence * 100)}%).`,
+        });
+        setLinkedSubscriptionId(created.id);
+        showToast("Suscripción creada", "success");
+      } else if (suggestion.type === "recurring_income") {
+        const created = await createRecurringIncome.mutateAsync({
+          name: suggestion.name,
+          payerPartyId: form.counterpartyId,
+          accountId: form.destinationAccountId,
+          categoryId: form.categoryId,
+          amount: descriptionCleanupAmount,
+          currencyCode: baseCurrency,
+          frequency: fields.frequency,
+          intervalCount: fields.intervalCount,
+          dayOfMonth: fields.frequency === "monthly" || fields.frequency === "quarterly" || fields.frequency === "yearly" ? dayOfMonth : null,
+          dayOfWeek: fields.frequency === "weekly" ? day : null,
+          startDate: date,
+          nextExpectedDate: date,
+          endDate: null,
+          remindDaysBefore: 3,
+          description: form.description.trim() || null,
+          notes: `Creado desde sugerencia recurrente (${Math.round(suggestion.confidence * 100)}%).`,
+        });
+        setLinkedRecurringIncomeId(created.id);
+        showToast("Ingreso fijo creado", "success");
+      }
+      haptics.success();
+    } catch (error) {
+      showToast(humanizeError(error) || "No se pudo crear el recurrente.", "error");
+    }
   }
 
   function persistCategoryLearning(movementId: number, description: string) {
@@ -1132,6 +1317,10 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
           fxRate: effectiveFxRate,
           categoryId: form.categoryId,
           counterpartyId: form.counterpartyId,
+          subscriptionId: linkedSubscriptionId,
+          metadata: {
+            recurring_income_id: linkedRecurringIncomeId,
+          },
         };
         const created = await createMovement.mutateAsync(payload);
         setSavedMovementId(created.id);
@@ -1461,6 +1650,20 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         const cpSuggestion = cpSuggestionId !== null
           ? counterpartiesSorted.find((c) => c.id === cpSuggestionId) ?? null
           : null;
+        const counterpartySuggestionToShow: CounterpartySuggestionResult | null = aiCounterpartySuggestion ?? (
+          cpSuggestion
+            ? {
+              type: "existing_counterparty",
+              counterpartyId: cpSuggestion.id,
+              counterpartyName: cpSuggestion.name,
+              newCounterpartyName: null,
+              counterpartyType: cpSuggestion.type,
+              confidence: 0.62,
+              reasons: ["normalmente usas esta contraparte con esa categoría"],
+              source: "local",
+            }
+            : null
+        );
         const accountSuggestion = accountSuggestionId !== null
           ? activeAccountsSorted.find((account) => account.id === accountSuggestionId) ?? null
           : null;
@@ -1498,6 +1701,19 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
             returnKeyType="next"
             onSubmitEditing={() => notesRef.current?.focus()}
           />
+          {descriptionCleanupLoading ? (
+            <SmartSuggestionLoading
+              title="Limpiando descripción"
+              detail="Estamos revisando si el texto puede quedar más claro antes de guardar."
+            />
+          ) : null}
+          {descriptionCleanup ? (
+            <SmartSuggestion
+              label={descriptionCleanup.cleanedDescription}
+              detail={`Descripción limpia · ${Math.round(descriptionCleanup.confidence * 100)}% · ${descriptionCleanup.reasons.join(" · ")}`}
+              onApply={() => patch({ description: descriptionCleanup.cleanedDescription })}
+            />
+          ) : null}
 
           <CategoryPicker
             label="Categoría (opcional)"
@@ -1505,10 +1721,19 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
             selectedId={form.categoryId}
             onSelect={selectCategoryManually}
           />
+          {aiCategorySuggestionLoading ? (
+            <SmartSuggestionLoading
+              detail={
+                localCategorySuggestion
+                  ? "Puede confirmar la sugerencia actual; si aparece una mejor, la actualizaremos."
+                  : "Buscando una categoría más precisa para este movimiento."
+              }
+            />
+          ) : null}
           {categorySuggestionToShow ? (
             <SmartSuggestion
               label={categorySuggestionToShow.categoryName}
-              detail={`${categorySuggestionToShow.source === "deepseek" ? "IA Pro · " : ""}${Math.round(categorySuggestionToShow.confidence * 100)}% · ${categorySuggestionToShow.reasons.join(" · ")}`}
+              detail={`${categorySuggestionToShow.source === "deepseek" ? "Mejor sugerencia · " : ""}${Math.round(categorySuggestionToShow.confidence * 100)}% · ${categorySuggestionToShow.reasons.join(" · ")}`}
               onApply={() => void applyCategorySuggestion(categorySuggestionToShow)}
             />
           ) : null}
@@ -1519,10 +1744,38 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
             selectedId={form.counterpartyId}
             onSelect={(id) => patch({ counterpartyId: id })}
           />
-          {cpSuggestion ? (
+          {aiCounterpartySuggestionLoading ? (
+            <SmartSuggestionLoading
+              title="Buscando contraparte"
+              detail="Revisando si este movimiento corresponde a un contacto o comercio."
+            />
+          ) : null}
+          {counterpartySuggestionToShow ? (
             <SmartSuggestion
-              label={cpSuggestion.name}
-              onApply={() => patch({ counterpartyId: cpSuggestion.id })}
+              label={
+                counterpartySuggestionToShow.type === "new_counterparty" && counterpartySuggestionToShow.newCounterpartyName
+                  ? `Crear contraparte "${counterpartySuggestionToShow.newCounterpartyName}"`
+                  : counterpartySuggestionToShow.counterpartyName ?? "Contraparte sugerida"
+              }
+              detail={`${counterpartySuggestionToShow.source === "deepseek" ? "Mejor sugerencia · " : ""}${Math.round(counterpartySuggestionToShow.confidence * 100)}% · ${counterpartySuggestionToShow.reasons.join(" · ")}`}
+              onApply={() => void applyCounterpartySuggestion(counterpartySuggestionToShow)}
+            />
+          ) : null}
+          {recurringSuggestionLoading ? (
+            <SmartSuggestionLoading
+              title="Detectando recurrencia"
+              detail="Revisando si este movimiento se repite como cargo o ingreso fijo."
+            />
+          ) : null}
+          {!linkedSubscriptionId && !linkedRecurringIncomeId && recurringSuggestion ? (
+            <SmartSuggestion
+              label={
+                recurringSuggestion.type === "recurring_income"
+                  ? `Crear ingreso fijo "${recurringSuggestion.name}"`
+                  : `Crear suscripción "${recurringSuggestion.name}"`
+              }
+              detail={`${recurringSuggestion.source === "deepseek" ? "Mejor sugerencia · " : ""}${Math.round(recurringSuggestion.confidence * 100)}% · ${recurringFrequencyLabel(recurringSuggestion.frequency)} · ${recurringSuggestion.reasons.join(" · ")}`}
+              onApply={() => void applyRecurringSuggestion(recurringSuggestion)}
             />
           ) : null}
           {accountSuggestion ? (
@@ -1574,7 +1827,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
             <Button
               label={isEditing ? "Actualizar" : "Guardar"}
               onPress={handleSubmit}
-              loading={createMovement.isPending || updateMovement.isPending}
+              loading={createMovement.isPending || updateMovement.isPending || createSubscription.isPending || createRecurringIncome.isPending}
               style={styles.btnHalf}
             />
           </View>

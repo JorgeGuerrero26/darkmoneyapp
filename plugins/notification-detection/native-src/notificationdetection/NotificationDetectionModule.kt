@@ -99,7 +99,12 @@ class NotificationDetectionModule(
 
   @ReactMethod
   fun discardSuggestion(suggestionId: String) {
+    val suggestion = NotificationDetectionStore.getSuggestion(reactContext, suggestionId)
     NotificationDetectionStore.markStatus(reactContext, suggestionId, "discarded")
+    val notificationId = suggestion?.optInt("notificationId", 0) ?: 0
+    if (notificationId > 0) {
+      reactContext.getSystemService(NotificationManager::class.java).cancel(notificationId)
+    }
   }
 
   @ReactMethod
@@ -113,6 +118,21 @@ class NotificationDetectionModule(
   @ReactMethod
   fun setSuggestionAiCategoryRecommendation(suggestionId: String, recommendationJson: String) {
     NotificationDetectionStore.setAiCategoryRecommendation(reactContext, suggestionId, recommendationJson)
+  }
+
+  @ReactMethod
+  fun setSuggestionDescriptionCleanup(suggestionId: String, cleanupJson: String) {
+    NotificationDetectionStore.setDescriptionCleanup(reactContext, suggestionId, cleanupJson)
+  }
+
+  @ReactMethod
+  fun setSuggestionCounterpartyRecommendation(suggestionId: String, recommendationJson: String) {
+    NotificationDetectionStore.setCounterpartyRecommendation(reactContext, suggestionId, recommendationJson)
+  }
+
+  @ReactMethod
+  fun setSuggestionRecurringRecommendation(suggestionId: String, recommendationJson: String) {
+    NotificationDetectionStore.setRecurringRecommendation(reactContext, suggestionId, recommendationJson)
   }
 
   @ReactMethod
