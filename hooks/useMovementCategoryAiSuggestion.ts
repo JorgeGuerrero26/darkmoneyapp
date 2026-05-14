@@ -5,6 +5,7 @@ import {
   type MovementCategoryAiRecommendation,
   type MovementCategoryAiSuggestionInput,
 } from "../services/queries/workspace-data";
+import { waitForMinimumVisibleTime } from "../lib/ai-request-utils";
 
 type Params = {
   enabled: boolean;
@@ -16,6 +17,7 @@ type Params = {
 type State = {
   recommendation: MovementCategoryAiRecommendation | null;
   isLoading: boolean;
+  aiAttempted: boolean;
 };
 
 const responseCache = new Map<string, MovementCategoryAiRecommendation | null>();
@@ -40,14 +42,25 @@ export function useMovementCategoryAiSuggestion({
   minConfidence = 0.65,
   debounceMs = 700,
 }: Params): State {
-  const [state, setState] = useState<State>({ recommendation: null, isLoading: false });
+  const [state, setState] = useState<State>({ recommendation: null, isLoading: false, aiAttempted: false });
   const latestKeyRef = useRef<string | null>(null);
-  const key = useMemo(() => (input ? cacheKey(input) : null), [input]);
+
+  // Stable key: null when input is missing or description too short.
+  // Using a string dep in the effect prevents re-runs caused by input reference instability.
+  const key = useMemo(() => {
+    if (!input || input.description.trim().length < 3 || input.categories.length === 0) return null;
+    return cacheKey(input);
+  }, [input]);
+
+  // Keep input in a ref so the async callback always uses the latest value
+  // without being an effect dependency.
+  const inputRef = useRef(input);
+  inputRef.current = input;
 
   useEffect(() => {
-    if (!enabled || !input || !key || input.description.trim().length < 3 || input.categories.length === 0) {
+    if (!enabled || !key) {
       latestKeyRef.current = null;
-      setState({ recommendation: null, isLoading: false });
+      setState({ recommendation: null, isLoading: false, aiAttempted: false });
       return;
     }
 
@@ -57,31 +70,40 @@ export function useMovementCategoryAiSuggestion({
       setState({
         recommendation: cached && cached.confidence >= minConfidence ? cached : null,
         isLoading: false,
+        aiAttempted: true,
       });
       return;
     }
 
-    setState((prev) => ({ ...prev, isLoading: true }));
+    setState((prev) => ({ ...prev, recommendation: null, aiAttempted: false }));
     const timer = setTimeout(() => {
-      void requestMovementCategoryAiSuggestion(input)
-        .then((response) => {
+      const loadingStartedAt = Date.now();
+      setState((prev) => ({ ...prev, isLoading: true }));
+      void (async () => {
+        const currentInput = inputRef.current;
+        if (!currentInput) return;
+        try {
+          const response = await requestMovementCategoryAiSuggestion(currentInput);
           const recommendation = response.ok ? response.recommendation : null;
           responseCache.set(key, recommendation);
+          await waitForMinimumVisibleTime(loadingStartedAt);
           if (latestKeyRef.current !== key) return;
           setState({
             recommendation: recommendation && recommendation.confidence >= minConfidence ? recommendation : null,
             isLoading: false,
+            aiAttempted: true,
           });
-        })
-        .catch(() => {
+        } catch {
           responseCache.set(key, null);
+          await waitForMinimumVisibleTime(loadingStartedAt);
           if (latestKeyRef.current !== key) return;
-          setState({ recommendation: null, isLoading: false });
-        });
+          setState({ recommendation: null, isLoading: false, aiAttempted: true });
+        }
+      })();
     }, debounceMs);
 
     return () => clearTimeout(timer);
-  }, [debounceMs, enabled, input, key, minConfidence]);
+  }, [debounceMs, enabled, key, minConfidence]);
 
   return state;
 }

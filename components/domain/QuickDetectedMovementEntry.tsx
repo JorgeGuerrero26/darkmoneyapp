@@ -5,7 +5,7 @@ import { useRouter } from "expo-router";
 import { BottomSheet } from "../ui/BottomSheet";
 import { Button } from "../ui/Button";
 import { DatePickerInput } from "../ui/DatePickerInput";
-import { SmartSuggestion, SmartSuggestionLoading } from "../ui/SmartSuggestion";
+import { SmartSuggestion, SmartSuggestionEmpty, SmartSuggestionLoading } from "../ui/SmartSuggestion";
 import { useAuth } from "../../lib/auth-context";
 import { useWorkspace } from "../../lib/workspace-context";
 import { useToast } from "../../hooks/useToast";
@@ -301,7 +301,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
       aiCategoryInput &&
       (!localCategorySuggestion || localCategorySuggestion.confidence < LOCAL_CATEGORY_AI_CONFIDENCE_THRESHOLD),
   );
-  const { recommendation: aiCategoryRecommendation, isLoading: aiCategorySuggestionLoading } = useMovementCategoryAiSuggestion({
+  const { recommendation: aiCategoryRecommendation, isLoading: aiCategorySuggestionLoading, aiAttempted: aiCategorySuggestionAttempted } = useMovementCategoryAiSuggestion({
     enabled: shouldRequestAiCategorySuggestion,
     input: aiCategoryInput,
   });
@@ -346,6 +346,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
   const {
     suggestion: counterpartySuggestion,
     isLoading: counterpartySuggestionLoading,
+    aiAttempted: counterpartySuggestionAttempted,
   } = useMovementCounterpartyAiSuggestion({
     enabled: Boolean(visible && counterpartyId == null),
     workspaceId: activeWorkspaceId,
@@ -360,6 +361,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
   const {
     suggestion: recurringSuggestion,
     isLoading: recurringSuggestionLoading,
+    aiAttempted: recurringSuggestionAttempted,
   } = useMovementRecurringAiSuggestion({
     enabled: Boolean(visible),
     workspaceId: activeWorkspaceId,
@@ -749,6 +751,8 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
                 : "Buscando una categoría más precisa para este movimiento."
             }
           />
+        ) : aiCategorySuggestionAttempted && !categorySuggestion ? (
+          <SmartSuggestionEmpty message="Sin sugerencia de categoría" />
         ) : null}
         {categorySuggestion ? (
           <SmartSuggestion
@@ -778,6 +782,8 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
             title="Buscando contraparte"
             detail="Revisando si este movimiento corresponde a un contacto o comercio."
           />
+        ) : counterpartySuggestionAttempted && !counterpartySuggestion ? (
+          <SmartSuggestionEmpty message="Sin sugerencia de contraparte" />
         ) : null}
         {!selectedCounterparty && counterpartySuggestion ? (
           <SmartSuggestion
@@ -795,6 +801,8 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
             title="Detectando recurrencia"
             detail="Revisando si este movimiento se repite como cargo o ingreso fijo."
           />
+        ) : recurringSuggestionAttempted && !recurringSuggestion && !linkedSubscriptionId && !linkedRecurringIncomeId ? (
+          <SmartSuggestionEmpty message="Sin detección de recurrencia" />
         ) : null}
         {!linkedSubscriptionId && !linkedRecurringIncomeId && recurringSuggestion ? (
           <SmartSuggestion

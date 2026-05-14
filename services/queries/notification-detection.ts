@@ -175,7 +175,7 @@ export function useNotificationDetectionSettingsQuery(userId?: string | null, wo
         const row = rows.get(app.key) as any | undefined;
         return {
           financialAppKey: app.key,
-          enabled: row?.enabled !== false,
+          enabled: row?.enabled ?? app.defaultEnabled ?? true,
           defaultAccountId: row?.default_account_id == null ? null : Number(row.default_account_id),
         };
       });

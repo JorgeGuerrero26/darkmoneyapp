@@ -4,6 +4,7 @@ import {
   requestMovementRiskAiExplanation,
   type MovementRiskAiExplanationInput,
 } from "../services/queries/workspace-data";
+import { waitForMinimumVisibleTime } from "../lib/ai-request-utils";
 import {
   analyzeMovementRiskLocally,
   type MovementRiskExplanation,
@@ -90,37 +91,52 @@ export function useMovementRiskExplanation({
     };
   }, [current, enabled, localRisk, proAccessEnabled, relatedMovements, surface, workspaceId]);
 
+  // Stable key string — prevents effect re-runs when input reference changes
+  // but content hasn't changed.
   const key = useMemo(() => (input ? cacheKey(input) : null), [input]);
+
+  // Keep input in a ref so the async callback uses the latest value
+  // without being an effect dependency.
+  const inputRef = useRef(input);
+  inputRef.current = input;
 
   useEffect(() => {
     setAiExplanation(null);
-    setIsLoading(false);
     latestKeyRef.current = key;
-    if (!input || !key) return;
-    if (CACHE.has(key)) {
-      setAiExplanation(CACHE.get(key) ?? null);
+    if (!key) {
+      setIsLoading(false);
       return;
     }
-    setIsLoading(true);
+    if (CACHE.has(key)) {
+      setAiExplanation(CACHE.get(key) ?? null);
+      setIsLoading(false);
+      return;
+    }
     const timer = setTimeout(() => {
-      void requestMovementRiskAiExplanation(input)
-        .then((response) => {
+      const loadingStartedAt = Date.now();
+      setIsLoading(true);
+      void (async () => {
+        const currentInput = inputRef.current;
+        if (!currentInput) return;
+        try {
+          const response = await requestMovementRiskAiExplanation(currentInput);
           const explanation = response.ok && response.explanation && response.explanation.confidence >= 0.65
             ? { ...response.explanation, source: "deepseek" as const }
             : null;
           CACHE.set(key, explanation);
+          await waitForMinimumVisibleTime(loadingStartedAt);
           if (latestKeyRef.current === key) setAiExplanation(explanation);
-        })
-        .catch(() => {
+        } catch {
           CACHE.set(key, null);
+          await waitForMinimumVisibleTime(loadingStartedAt);
           if (latestKeyRef.current === key) setAiExplanation(null);
-        })
-        .finally(() => {
+        } finally {
           if (latestKeyRef.current === key) setIsLoading(false);
-        });
+        }
+      })();
     }, 700);
     return () => clearTimeout(timer);
-  }, [input, key]);
+  }, [key]);
 
   return {
     risk: aiExplanation ?? localRisk,

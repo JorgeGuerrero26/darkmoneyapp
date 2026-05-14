@@ -5,13 +5,15 @@ export type FinancialAppKey =
   | "interbank"
   | "bbva"
   | "scotiabank"
-  | "google_wallet";
+  | "google_wallet"
+  | "gmail_financial";
 
 export type FinancialAppDefinition = {
   key: FinancialAppKey;
   label: string;
   subtitle: string;
   packageNames: string[];
+  defaultEnabled?: boolean;
 };
 
 export const FINANCIAL_APPS: FinancialAppDefinition[] = [
@@ -61,6 +63,13 @@ export const FINANCIAL_APPS: FinancialAppDefinition[] = [
     label: "Google Wallet",
     subtitle: "Pagos con Google Wallet",
     packageNames: ["com.google.android.apps.walletnfcrel"],
+  },
+  {
+    key: "gmail_financial",
+    label: "Correos bancarios",
+    subtitle: "Alertas transaccionales de bancos peruanos recibidas en Gmail",
+    packageNames: ["com.google.android.gm"],
+    defaultEnabled: false,
   },
 ];
 

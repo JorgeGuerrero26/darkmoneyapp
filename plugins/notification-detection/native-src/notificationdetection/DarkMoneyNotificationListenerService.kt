@@ -11,6 +11,7 @@ import android.service.notification.StatusBarNotification
 import com.darkmoney.app.R
 import org.json.JSONObject
 import java.lang.ref.WeakReference
+import java.text.Normalizer
 
 class DarkMoneyNotificationListenerService : NotificationListenerService() {
   override fun onListenerConnected() {
@@ -56,12 +57,14 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
       .filter { it.isNotBlank() }
       .joinToString(" · ")
 
+    if (sourcePackage == GMAIL_PACKAGE && !isFinancialGmailNotification(combined)) return
     if (isPromotionalNotification(combined)) return
     val amount = extractAmount(combined) ?: return
     val detection = inferMovementDetection(combined)
     if (detection.confidence == "low") return
-    val appName = readAppName(sourcePackage)
+    val appName = readAppName(sourcePackage, combined)
     val financialAppKey = financialAppKeyFor(sourcePackage)
+    val suggestionDescription = buildSuggestionDescription(sourcePackage, title, text, bigText, subText, combined)
     val suggestionId = NotificationDetectionStore.createSuggestionId(
       sourcePackage,
       sbn.key.orEmpty(),
@@ -77,7 +80,7 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
       .put("financialAppKey", financialAppKey)
       .put("appName", appName)
       .put("title", title)
-      .put("text", text.ifBlank { bigText })
+      .put("text", suggestionDescription)
       .put("subText", subText)
       .put("postTime", sbn.postTime)
       .put("notificationKey", sbn.key.orEmpty())
@@ -89,7 +92,7 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
 
     val shouldNotify = NotificationDetectionStore.upsertSuggestion(context, suggestion)
     if (shouldNotify) {
-      showDetectedMovementNotification(suggestionId, notificationId, appName, amount, detection.movementType, text.ifBlank { title })
+      showDetectedMovementNotification(suggestionId, notificationId, appName, amount, detection.movementType, suggestionDescription)
     }
   }
 
@@ -105,11 +108,19 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
   }
 
   private fun inferMovementDetection(value: String): DetectionResult {
-    val normalized = value.lowercase()
-    val highIncome = listOf("recibiste", "te enviaron", "te envió", "te envio", "transferencia recibida")
-    val mediumIncome = listOf("abono", "depósito", "deposito", "envió un pago", "envio un pago", "pago por")
-    val highExpense = listOf("pagaste", "enviaste")
-    val mediumExpense = listOf("compra aprobada", "consumo", "cargo", "débito", "debito")
+    val normalized = normalizeForMatching(value)
+    val highIncome = listOf("recibiste", "te enviaron", "te envio", "transferencia recibida", "abono recibido")
+    val mediumIncome = listOf("abono", "deposito", "envio un pago", "pago por", "te depositaron")
+    val highExpense = listOf(
+      "pagaste",
+      "enviaste",
+      "realizaste un consumo",
+      "realizaste una compra",
+      "compra realizada",
+      "operacion realizada consumo",
+      "consumo con tu tarjeta",
+    )
+    val mediumExpense = listOf("compra aprobada", "consumo", "cargo", "debito", "pago realizado", "se cargo")
 
     return when {
       highIncome.any { normalized.contains(it) } -> DetectionResult("income", "high")
@@ -121,9 +132,7 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
   }
 
   private fun isPromotionalNotification(value: String): Boolean {
-    val normalized = value
-      .lowercase()
-      .replace(Regex("\\s+"), " ")
+    val normalized = normalizeForMatching(value)
 
     val transactionalSignals = listOf(
       "pagaste",
@@ -133,9 +142,12 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
       "te envió",
       "te envio",
       "compra aprobada",
+      "compra realizada",
+      "realizaste una compra",
+      "realizaste un consumo",
+      "consumo con tu tarjeta",
       "consumo aprobado",
       "cargo realizado",
-      "operación realizada",
       "operacion realizada",
     )
     if (transactionalSignals.any { normalized.contains(it) }) return false
@@ -164,6 +176,118 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
     return promotionalSignals.any { normalized.contains(it) }
   }
 
+  private fun isFinancialGmailNotification(value: String): Boolean {
+    if (financialEmailBankLabel(value) == null) return false
+    if (extractAmount(value) == null) return false
+    if (!hasFinancialEmailTransactionSignal(value)) return false
+
+    val normalized = normalizeForMatching(value)
+    val blockedSubjects = listOf(
+      "estado de cuenta",
+      "promocion",
+      "oferta",
+      "beneficio",
+      "campana",
+      "sorteo",
+      "premio",
+      "publicidad",
+    )
+    val hasExplicitTransaction = listOf(
+      "realizaste un consumo",
+      "realizaste una compra",
+      "operacion realizada",
+      "compra realizada",
+      "consumo con tu tarjeta",
+      "transferencia recibida",
+      "abono recibido",
+      "pago realizado",
+    ).any { normalized.contains(it) }
+
+    return hasExplicitTransaction || blockedSubjects.none { normalized.contains(it) }
+  }
+
+  private fun hasFinancialEmailTransactionSignal(value: String): Boolean {
+    val normalized = normalizeForMatching(value)
+    val transactionSignals = listOf(
+      "realizaste un consumo",
+      "realizaste una compra",
+      "consumo con tu tarjeta",
+      "compra realizada",
+      "compra aprobada",
+      "operacion realizada",
+      "cargo realizado",
+      "pago realizado",
+      "retiro realizado",
+      "transferencia recibida",
+      "abono recibido",
+      "deposito recibido",
+      "te depositaron",
+    )
+    return transactionSignals.any { normalized.contains(it) }
+  }
+
+  private fun buildSuggestionDescription(
+    packageName: String,
+    title: String,
+    text: String,
+    bigText: String,
+    subText: String,
+    combined: String,
+  ): String {
+    if (packageName == GMAIL_PACKAGE) {
+      val merchant = extractFinancialEmailMerchant(combined)
+      if (!merchant.isNullOrBlank()) return "Compra en $merchant"
+      val bankLabel = financialEmailBankLabel(combined)
+      if (!bankLabel.isNullOrBlank()) return "Movimiento $bankLabel"
+    }
+    return listOf(text, bigText, title, subText)
+      .firstOrNull { it.isNotBlank() }
+      ?.trim()
+      ?.take(240)
+      ?: "Movimiento detectado"
+  }
+
+  private fun extractFinancialEmailMerchant(value: String): String? {
+    val patterns = listOf(
+      Regex("""(?i)\bempresa\s*[:\-]?\s*([A-Z0-9ÁÉÍÓÚÑ&.' \-]{3,60})"""),
+      Regex("""(?i)\bcomercio\s*[:\-]?\s*([A-Z0-9ÁÉÍÓÚÑ&.' \-]{3,60})"""),
+      Regex("""(?i)\bestablecimiento\s*[:\-]?\s*([A-Z0-9ÁÉÍÓÚÑ&.' \-]{3,60})"""),
+      Regex("""(?i)\ben\s+([A-Z0-9ÁÉÍÓÚÑ&.' \-]{3,60})(?:[.,\n\r]|$)"""),
+    )
+    for (pattern in patterns) {
+      val raw = pattern.find(value)?.groupValues?.getOrNull(1)?.trim().orEmpty()
+      val cleaned = raw
+        .replace(Regex("""(?i)\s+(monto|datos|operaci[oó]n|fecha|n[uú]mero|por tu seguridad).*$"""), "")
+        .replace(Regex("""\s+"""), " ")
+        .trim(' ', '.', ',', '-', ':', ';')
+      if (cleaned.length >= 3 && !normalizeForMatching(cleaned).startsWith("tu tarjeta")) return cleaned.take(48)
+    }
+    return null
+  }
+
+  private fun financialEmailBankLabel(value: String): String? {
+    val normalized = normalizeForMatching(value)
+    return when {
+      listOf("notificacionesbcp.com.pe", "viabcp", "banco de credito", " bcp ", "bcp notificaciones").any { normalized.contains(it) } -> "BCP"
+      listOf("interbank", "intercorp").any { normalized.contains(it) } -> "Interbank"
+      listOf("bbva", "continental").any { normalized.contains(it) } -> "BBVA"
+      normalized.contains("scotiabank") -> "Scotiabank"
+      normalized.contains("banbif") || normalized.contains("banco interamericano de finanzas") -> "BanBif"
+      normalized.contains("pichincha") -> "Banco Pichincha"
+      normalized.contains("banco falabella") || normalized.contains("cmr falabella") -> "Banco Falabella"
+      normalized.contains("banco ripley") || normalized.contains("tarjeta ripley") -> "Banco Ripley"
+      normalized.contains("mibanco") || normalized.contains("mi banco") -> "Mibanco"
+      normalized.contains("banco de la nacion") || normalized.contains("bn.com.pe") -> "Banco de la Nación"
+      else -> null
+    }
+  }
+
+  private fun normalizeForMatching(value: String): String {
+    val noAccents = Normalizer.normalize(value.lowercase(), Normalizer.Form.NFD)
+      .replace(Regex("\\p{Mn}+"), "")
+    return " ${noAccents.replace(Regex("\\s+"), " ")} "
+  }
+
   private fun humanAppLabel(packageName: String): String {
     return when (packageName) {
       "com.bcp.innovacxion.yapeapp" -> "Yape"
@@ -172,6 +296,7 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
       "com.bbva.nxt_peru" -> "BBVA"
       "pe.com.scotiabank.blpm.android.client" -> "Scotiabank"
       "com.google.android.apps.walletnfcrel" -> "Google Wallet"
+      GMAIL_PACKAGE -> "Correos bancarios"
       else -> try {
         val appInfo = packageManager.getApplicationInfo(packageName, 0)
         packageManager.getApplicationLabel(appInfo).toString()
@@ -181,15 +306,20 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
     }
   }
 
-  private fun readAppName(packageName: String): String = humanAppLabel(packageName)
+  private fun readAppName(packageName: String, content: String = ""): String {
+    if (packageName == GMAIL_PACKAGE) return financialEmailBankLabel(content) ?: "Correos bancarios"
+    return humanAppLabel(packageName)
+  }
 
   private fun financialAppKeyFor(packageName: String): String {
     return when (packageName) {
+      "com.bcp.bank.bcp" -> "bcp"
       "com.bcp.innovacxion.yapeapp" -> "yape"
       "pe.com.interbank.mobilebanking" -> "interbank"
       "com.bbva.nxt_peru" -> "bbva"
       "pe.com.scotiabank.blpm.android.client" -> "scotiabank"
       "com.google.android.apps.walletnfcrel" -> "google_wallet"
+      GMAIL_PACKAGE -> "gmail_financial"
       else -> "yape"
     }
   }
@@ -269,6 +399,7 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
   )
 
   companion object {
+    private const val GMAIL_PACKAGE = "com.google.android.gm"
     private var currentService: WeakReference<DarkMoneyNotificationListenerService>? = null
 
     fun requestActiveScan() {

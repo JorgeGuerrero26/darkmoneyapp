@@ -10,6 +10,7 @@ import {
   requestMovementDescriptionCleanup,
   type MovementDescriptionCleanupInput,
 } from "../services/queries/workspace-data";
+import { waitForMinimumVisibleTime } from "../lib/ai-request-utils";
 
 type Params = {
   enabled: boolean;
@@ -86,19 +87,31 @@ export function useMovementDescriptionCleanup({
     };
   }, [amount, appLabel, currencyCode, financialAppKey, localCleanup, rawDescription, surface, workspaceId]);
 
+  // Stable key string — prevents effect re-runs when input reference changes
+  // but content hasn't changed.
   const key = useMemo(() => (input ? cacheKey(input) : null), [input]);
 
+  // Keep input and localCleanup in refs so async callbacks use latest values
+  // without being effect dependencies.
+  const inputRef = useRef(input);
+  inputRef.current = input;
+  const localCleanupRef = useRef(localCleanup);
+  localCleanupRef.current = localCleanup;
+
   useEffect(() => {
-    if (!enabled || !input || !key) {
+    if (!enabled || !key) {
       latestKeyRef.current = null;
       setState({ cleanup: null, isLoading: false });
       return;
     }
 
-    if (localCleanup && localCleanup.confidence >= localConfidenceThreshold) {
+    const currentLocalCleanup = localCleanupRef.current;
+    const currentInput = inputRef.current;
+
+    if (currentLocalCleanup && currentLocalCleanup.confidence >= localConfidenceThreshold) {
       latestKeyRef.current = null;
       setState({
-        cleanup: shouldShowDescriptionCleanup(input.rawDescription, localCleanup.cleanedDescription) ? localCleanup : null,
+        cleanup: currentInput && shouldShowDescriptionCleanup(currentInput.rawDescription, currentLocalCleanup.cleanedDescription) ? currentLocalCleanup : null,
         isLoading: false,
       });
       return;
@@ -107,7 +120,7 @@ export function useMovementDescriptionCleanup({
     if (!proAccessEnabled) {
       latestKeyRef.current = null;
       setState({
-        cleanup: localCleanup && shouldShowDescriptionCleanup(input.rawDescription, localCleanup.cleanedDescription) ? localCleanup : null,
+        cleanup: currentInput && currentLocalCleanup && shouldShowDescriptionCleanup(currentInput.rawDescription, currentLocalCleanup.cleanedDescription) ? currentLocalCleanup : null,
         isLoading: false,
       });
       return;
@@ -120,36 +133,44 @@ export function useMovementDescriptionCleanup({
     }
 
     setState({
-      cleanup: localCleanup && shouldShowDescriptionCleanup(input.rawDescription, localCleanup.cleanedDescription) ? localCleanup : null,
-      isLoading: true,
+      cleanup: currentInput && currentLocalCleanup && shouldShowDescriptionCleanup(currentInput.rawDescription, currentLocalCleanup.cleanedDescription) ? currentLocalCleanup : null,
+      isLoading: false,
     });
     const timer = setTimeout(() => {
-      void requestMovementDescriptionCleanup(input)
-        .then((response) => {
-          const cleanup = response.ok && response.cleanedDescription && shouldShowDescriptionCleanup(input.rawDescription, response.cleanedDescription)
+      const loadingStartedAt = Date.now();
+      setState((prev) => ({ ...prev, isLoading: true }));
+      void (async () => {
+        const apiInput = inputRef.current;
+        const fallbackCleanup = localCleanupRef.current;
+        if (!apiInput) return;
+        try {
+          const response = await requestMovementDescriptionCleanup(apiInput);
+          const cleanup = response.ok && response.cleanedDescription && shouldShowDescriptionCleanup(apiInput.rawDescription, response.cleanedDescription)
             ? {
               cleanedDescription: response.cleanedDescription,
               confidence: Math.max(0, Math.min(1, response.confidence)),
               reasons: response.reasons,
               source: "deepseek" as const,
             }
-            : localCleanup && shouldShowDescriptionCleanup(input.rawDescription, localCleanup.cleanedDescription)
-              ? localCleanup
+            : fallbackCleanup && shouldShowDescriptionCleanup(apiInput.rawDescription, fallbackCleanup.cleanedDescription)
+              ? fallbackCleanup
               : null;
           responseCache.set(key, cleanup);
+          await waitForMinimumVisibleTime(loadingStartedAt);
           if (latestKeyRef.current !== key) return;
           setState({ cleanup, isLoading: false });
-        })
-        .catch(() => {
-          const cleanup = localCleanup && shouldShowDescriptionCleanup(input.rawDescription, localCleanup.cleanedDescription) ? localCleanup : null;
+        } catch {
+          const cleanup = fallbackCleanup && shouldShowDescriptionCleanup(apiInput.rawDescription, fallbackCleanup.cleanedDescription) ? fallbackCleanup : null;
           responseCache.set(key, cleanup);
+          await waitForMinimumVisibleTime(loadingStartedAt);
           if (latestKeyRef.current !== key) return;
           setState({ cleanup, isLoading: false });
-        });
+        }
+      })();
     }, debounceMs);
 
     return () => clearTimeout(timer);
-  }, [debounceMs, enabled, input, key, localCleanup, localConfidenceThreshold, proAccessEnabled]);
+  }, [debounceMs, enabled, key, localConfidenceThreshold, proAccessEnabled]);
 
   return state;
 }

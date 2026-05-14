@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
 import { useAuth } from "../lib/auth-context";
 import { useWorkspace } from "../lib/workspace-context";
@@ -59,6 +59,9 @@ function patternMovementAmount(movement: {
 export function useNotificationDetectionRuntimeSync() {
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
+  // Track suggestion IDs that have been processed in this session to avoid
+  // re-calling AI APIs when the effect re-runs due to reference changes.
+  const processedSuggestionIdsRef = useRef(new Set<string>());
   const { data: snapshot } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const entitlementQuery = useUserEntitlementQuery(profile?.id ?? null, profile?.email ?? null);
   const settingsQuery = useNotificationDetectionSettingsQuery(profile?.id, activeWorkspaceId);
@@ -130,6 +133,8 @@ export function useNotificationDetectionRuntimeSync() {
       const suggestions = await notificationDetection.getSuggestions();
       for (const suggestion of suggestions) {
         if (cancelled || suggestion.status !== "pending") continue;
+        if (processedSuggestionIdsRef.current.has(suggestion.id)) continue;
+        processedSuggestionIdsRef.current.add(suggestion.id);
         if (entitlementQuery.data?.proAccessEnabled && suggestion.confidence !== "high") {
           const classification = await requestNotificationMovementAiClassification({
             workspaceId: activeWorkspaceId!,
@@ -451,6 +456,14 @@ export function useNotificationDetectionRuntimeSync() {
               }
             }
           }
+        }
+        const aiCategoryStatus = (suggestion.aiCategoryRecommendation as { status?: unknown } | undefined)?.status;
+        if (aiCategoryStatus === "pending") {
+          const updatedAt = Number(suggestion.updatedAt ?? suggestion.createdAt ?? 0);
+          if (updatedAt > 0 && Date.now() - updatedAt > 12_000) {
+            notificationDetection.setSuggestionAiCategoryRecommendation(suggestion.id, null);
+          }
+          continue;
         }
         if (cancelled || !entitlementQuery.data?.proAccessEnabled || suggestion.aiCategoryRecommendation) continue;
         const movementType = suggestion.movementType === "income" ? "income" : "expense";

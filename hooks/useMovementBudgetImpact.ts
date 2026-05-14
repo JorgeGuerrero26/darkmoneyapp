@@ -4,6 +4,7 @@ import {
   requestMovementBudgetAiRecommendation,
   type MovementBudgetAiRecommendationInput,
 } from "../services/queries/workspace-data";
+import { waitForMinimumVisibleTime } from "../lib/ai-request-utils";
 import {
   analyzeMovementBudgetImpactLocally,
   type MovementBudgetImpact,
@@ -96,24 +97,41 @@ export function useMovementBudgetImpact({
     };
   }, [localImpact, movement, proAccessEnabled, surface, workspaceId]);
 
+  // Stable key string — prevents effect re-runs when input reference changes
+  // but content hasn't changed.
   const key = useMemo(() => (input ? cacheKey(input) : null), [input]);
+
+  // Keep input and localImpact in refs so async callbacks use latest values
+  // without being effect dependencies.
+  const inputRef = useRef(input);
+  inputRef.current = input;
+  const localImpactRef = useRef(localImpact);
+  localImpactRef.current = localImpact;
 
   useEffect(() => {
     setAiImpact(null);
-    setIsLoading(false);
     latestKeyRef.current = key;
-    if (!input || !key) return;
-    if (CACHE.has(key)) {
-      setAiImpact(CACHE.get(key) ?? null);
+    if (!key) {
+      setIsLoading(false);
       return;
     }
-    setIsLoading(true);
+    if (CACHE.has(key)) {
+      setAiImpact(CACHE.get(key) ?? null);
+      setIsLoading(false);
+      return;
+    }
     const timer = setTimeout(() => {
-      void requestMovementBudgetAiRecommendation(input)
-        .then((response) => {
-          const recommendation = response.ok && response.recommendation && response.recommendation.confidence >= 0.65
+      const loadingStartedAt = Date.now();
+      setIsLoading(true);
+      void (async () => {
+        const currentInput = inputRef.current;
+        const currentLocalImpact = localImpactRef.current;
+        if (!currentInput) return;
+        try {
+          const response = await requestMovementBudgetAiRecommendation(currentInput);
+          const recommendation = response.ok && response.recommendation && response.recommendation.confidence >= 0.65 && currentLocalImpact
             ? {
-              ...localImpact!,
+              ...currentLocalImpact,
               severity: response.recommendation.severity,
               confidence: response.recommendation.confidence,
               title: response.recommendation.title,
@@ -123,18 +141,19 @@ export function useMovementBudgetImpact({
             }
             : null;
           CACHE.set(key, recommendation);
+          await waitForMinimumVisibleTime(loadingStartedAt);
           if (latestKeyRef.current === key) setAiImpact(recommendation);
-        })
-        .catch(() => {
+        } catch {
           CACHE.set(key, null);
+          await waitForMinimumVisibleTime(loadingStartedAt);
           if (latestKeyRef.current === key) setAiImpact(null);
-        })
-        .finally(() => {
+        } finally {
           if (latestKeyRef.current === key) setIsLoading(false);
-        });
+        }
+      })();
     }, 700);
     return () => clearTimeout(timer);
-  }, [input, key, localImpact]);
+  }, [key]);
 
   return {
     impact: aiImpact ?? localImpact,

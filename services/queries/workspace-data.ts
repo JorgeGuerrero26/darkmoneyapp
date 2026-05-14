@@ -4,6 +4,7 @@ import type { WorkspaceInvitationStatus } from "../../types/domain";
 
 import { UNIVERSAL_LINK_HOST } from "../../constants/config";
 import { supabase, supabaseAnonKey, supabaseUrl } from "../../lib/supabase";
+import { INTERACTIVE_AI_TIMEOUT_MS, isInteractiveAiEdgeFunction } from "../../lib/ai-request-utils";
 import { dateStrToISO, filterDateFrom, filterDateTo } from "../../lib/date";
 import {
   mirrorObligationEventAttachmentsToMovement,
@@ -6063,7 +6064,8 @@ async function invokeEdgeFunction<T>(name: string, body: Record<string, unknown>
   const endpoint = `${supabaseUrl.replace(/\/+$/, "")}/functions/v1/${name}`;
   const fetchEdgeResponse = async (token: string) => {
     const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
-    const timeoutId = controller ? setTimeout(() => controller.abort(), 15_000) : null;
+    const timeoutMs = isInteractiveAiEdgeFunction(name) ? INTERACTIVE_AI_TIMEOUT_MS : 15_000;
+    const timeoutId = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
 
     try {
       return await fetch(endpoint, {

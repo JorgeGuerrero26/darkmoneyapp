@@ -16,6 +16,10 @@ type LoadingProps = {
   detail?: string;
 };
 
+type EmptyProps = {
+  message?: string;
+};
+
 const AI_GRADIENT_COLORS = [COLORS.secondary, COLORS.dangerSoft, COLORS.gold, COLORS.primary] as const;
 
 export function SmartSuggestion({ label, detail, onApply }: Props) {
@@ -100,6 +104,15 @@ export function SmartSuggestionLoading({
   );
 }
 
+export function SmartSuggestionEmpty({ message = "IA sin sugerencia" }: EmptyProps) {
+  return (
+    <View style={styles.emptyRow}>
+      <Sparkles size={11} color={COLORS.storm} strokeWidth={1.5} />
+      <Text style={styles.emptyText}>{message}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   row: {
     flexDirection: "row",
@@ -180,5 +193,18 @@ const styles = StyleSheet.create({
     fontFamily: FONT_FAMILY.bodySemibold,
     fontSize: FONT_SIZE.xs,
     color: COLORS.ink,
+  },
+  emptyRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.xs,
+    paddingVertical: SPACING.xs,
+    paddingHorizontal: SPACING.md,
+    marginTop: -SPACING.xs,
+  },
+  emptyText: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: 10,
+    color: COLORS.storm,
   },
 });

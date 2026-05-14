@@ -65,7 +65,7 @@ import { CurrencyInput } from "../ui/CurrencyInput";
 import { BalanceImpactPreview } from "../domain/BalanceImpactPreview";
 import { AttachmentPicker, type Attachment } from "../domain/AttachmentPicker";
 import { DatePickerInput } from "../ui/DatePickerInput";
-import { SmartSuggestion, SmartSuggestionLoading } from "../ui/SmartSuggestion";
+import { SmartSuggestion, SmartSuggestionEmpty, SmartSuggestionLoading } from "../ui/SmartSuggestion";
 import { buildCategorySuggestionCandidates } from "../../services/analytics/category-suggestions";
 import { normalizeAnalyticsText } from "../../services/analytics/movement-features";
 import { sortByName } from "../../lib/sort-locale";
@@ -422,6 +422,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   const {
     suggestion: recurringSuggestion,
     isLoading: recurringSuggestionLoading,
+    aiAttempted: recurringSuggestionAttempted,
   } = useMovementRecurringAiSuggestion({
     enabled: Boolean(visible && !isEditing && form.movementType !== "transfer"),
     workspaceId: activeWorkspaceId,
@@ -464,6 +465,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   const {
     suggestion: aiCounterpartySuggestion,
     isLoading: aiCounterpartySuggestionLoading,
+    aiAttempted: aiCounterpartySuggestionAttempted,
   } = useMovementCounterpartyAiSuggestion({
     enabled: Boolean(visible && form.counterpartyId == null && form.movementType !== "transfer"),
     workspaceId: activeWorkspaceId,
@@ -617,7 +619,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
       aiCategoryInput &&
       (!localCategorySuggestion || localCategorySuggestion.confidence < LOCAL_CATEGORY_AI_CONFIDENCE_THRESHOLD),
   );
-  const { recommendation: aiCategoryRecommendation, isLoading: aiCategorySuggestionLoading } = useMovementCategoryAiSuggestion({
+  const { recommendation: aiCategoryRecommendation, isLoading: aiCategorySuggestionLoading, aiAttempted: aiCategorySuggestionAttempted } = useMovementCategoryAiSuggestion({
     enabled: shouldRequestAiCategorySuggestion,
     input: aiCategoryInput,
   });
@@ -1815,6 +1817,8 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
                   : "Buscando una categoría más precisa para este movimiento."
               }
             />
+          ) : aiCategorySuggestionAttempted && !categorySuggestionToShow ? (
+            <SmartSuggestionEmpty message="Sin sugerencia de categoría" />
           ) : null}
           {categorySuggestionToShow ? (
             <SmartSuggestion
@@ -1835,6 +1839,8 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
               title="Buscando contraparte"
               detail="Revisando si este movimiento corresponde a un contacto o comercio."
             />
+          ) : aiCounterpartySuggestionAttempted && !counterpartySuggestionToShow ? (
+            <SmartSuggestionEmpty message="Sin sugerencia de contraparte" />
           ) : null}
           {counterpartySuggestionToShow ? (
             <SmartSuggestion
@@ -1852,6 +1858,8 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
               title="Detectando recurrencia"
               detail="Revisando si este movimiento se repite como cargo o ingreso fijo."
             />
+          ) : recurringSuggestionAttempted && !recurringSuggestion && !linkedSubscriptionId && !linkedRecurringIncomeId ? (
+            <SmartSuggestionEmpty message="Sin detección de recurrencia" />
           ) : null}
           {!linkedSubscriptionId && !linkedRecurringIncomeId && recurringSuggestion ? (
             <SmartSuggestion

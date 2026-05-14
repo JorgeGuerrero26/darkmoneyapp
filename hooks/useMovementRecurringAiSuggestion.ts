@@ -4,6 +4,7 @@ import {
   requestMovementRecurringAiSuggestion,
   type MovementRecurringAiInput,
 } from "../services/queries/workspace-data";
+import { waitForMinimumVisibleTime } from "../lib/ai-request-utils";
 import {
   suggestRecurringLocally,
   type MovementRecurringHistoryItem,
@@ -15,21 +16,6 @@ import type { CategorySummary, CounterpartySummary, RecurringIncomeSummary, Subs
 const LOCAL_CONFIDENCE_THRESHOLD = 0.7;
 const AI_CONFIDENCE_THRESHOLD = 0.65;
 const CACHE = new Map<string, MovementRecurringSuggestionResult | null>();
-
-function cacheKey(input: MovementRecurringAiInput) {
-  return JSON.stringify({
-    workspaceId: input.workspaceId,
-    surface: input.surface,
-    movementType: input.movementType,
-    amount: input.amount,
-    currencyCode: input.currencyCode,
-    description: input.description,
-    occurredAt: input.occurredAt,
-    categoryId: input.category?.id ?? null,
-    counterpartyId: input.counterparty?.id ?? null,
-    local: input.localSuggestion,
-  });
-}
 
 type Input = {
   enabled: boolean;
@@ -66,6 +52,7 @@ export function useMovementRecurringAiSuggestion({
 }: Input) {
   const [aiSuggestion, setAiSuggestion] = useState<MovementRecurringSuggestionResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [aiAttempted, setAiAttempted] = useState(false);
   const requestIdRef = useRef(0);
 
   const localSuggestion = useMemo(() => {
@@ -96,6 +83,41 @@ export function useMovementRecurringAiSuggestion({
     subscriptions,
   ]);
 
+  // Stable key based only on scalar fields — NOT on large arrays (recentMovements/subscriptions/recurringIncome).
+  // Those arrays are passed to the API via inputRef but must not cause the effect to re-run
+  // when their reference changes without a content change.
+  const stableKey = useMemo(() => {
+    if (!enabled || !workspaceId || !description.trim() || !proAccessEnabled) return null;
+    if (localSuggestion && localSuggestion.confidence >= LOCAL_CONFIDENCE_THRESHOLD) return null;
+    return JSON.stringify({
+      workspaceId,
+      surface,
+      movementType,
+      amount,
+      currencyCode: currencyCode ?? null,
+      description: description.trim(),
+      occurredAt,
+      categoryId: category?.id ?? null,
+      counterpartyId: counterparty?.id ?? null,
+      local: localSuggestion,
+    });
+  }, [
+    enabled,
+    workspaceId,
+    description,
+    proAccessEnabled,
+    localSuggestion,
+    surface,
+    movementType,
+    amount,
+    currencyCode,
+    occurredAt,
+    category,
+    counterparty,
+  ]);
+
+  // Build the full API input (includes large arrays). Kept in a ref so the async
+  // callback always uses the latest values without being an effect dependency.
   const input = useMemo<MovementRecurringAiInput | null>(() => {
     if (!enabled || !workspaceId || !description.trim()) return null;
     if (localSuggestion && localSuggestion.confidence >= LOCAL_CONFIDENCE_THRESHOLD) return null;
@@ -156,49 +178,66 @@ export function useMovementRecurringAiSuggestion({
     surface,
     workspaceId,
   ]);
+  const inputRef = useRef(input);
+  inputRef.current = input;
 
   useEffect(() => {
     requestIdRef.current += 1;
     const requestId = requestIdRef.current;
     setAiSuggestion(null);
-    setIsLoading(false);
-    if (!input) return;
-
-    const key = cacheKey(input);
-    if (CACHE.has(key)) {
-      setAiSuggestion(CACHE.get(key) ?? null);
+    setAiAttempted(false);
+    if (!stableKey) {
+      setIsLoading(false);
       return;
     }
 
-    setIsLoading(true);
+    if (CACHE.has(stableKey)) {
+      setAiSuggestion(CACHE.get(stableKey) ?? null);
+      setIsLoading(false);
+      setAiAttempted(true);
+      return;
+    }
+
     const timer = setTimeout(() => {
-      void requestMovementRecurringAiSuggestion(input)
-        .then((response) => {
+      const loadingStartedAt = Date.now();
+      setIsLoading(true);
+      void (async () => {
+        const currentInput = inputRef.current;
+        if (!currentInput) return;
+        try {
+          const response = await requestMovementRecurringAiSuggestion(currentInput);
           if (requestIdRef.current !== requestId) return;
           const recommendation = response.ok && response.recommendation && response.recommendation.confidence >= AI_CONFIDENCE_THRESHOLD
             ? { ...response.recommendation, source: "deepseek" as const }
             : null;
-          CACHE.set(key, recommendation);
-          setAiSuggestion(recommendation);
-        })
-        .catch(() => {
+          CACHE.set(stableKey, recommendation);
+          await waitForMinimumVisibleTime(loadingStartedAt);
           if (requestIdRef.current !== requestId) return;
-          CACHE.set(key, null);
+          setAiSuggestion(recommendation);
+        } catch {
+          if (requestIdRef.current !== requestId) return;
+          CACHE.set(stableKey, null);
+          await waitForMinimumVisibleTime(loadingStartedAt);
+          if (requestIdRef.current !== requestId) return;
           setAiSuggestion(null);
-        })
-        .finally(() => {
-          if (requestIdRef.current === requestId) setIsLoading(false);
-        });
+        } finally {
+          if (requestIdRef.current === requestId) {
+            setIsLoading(false);
+            setAiAttempted(true);
+          }
+        }
+      })();
     }, 750);
 
     return () => {
       clearTimeout(timer);
     };
-  }, [input]);
+  }, [stableKey]);
 
   return {
     suggestion: aiSuggestion ?? localSuggestion,
     isLoading,
+    aiAttempted,
     localSuggestion,
   };
 }

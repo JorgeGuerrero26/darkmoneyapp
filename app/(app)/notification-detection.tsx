@@ -63,7 +63,7 @@ export default function NotificationDetectionScreen() {
   );
   const settings = settingsQuery.data ?? FINANCIAL_APPS.map((app) => ({
     financialAppKey: app.key,
-    enabled: true,
+    enabled: app.defaultEnabled ?? true,
     defaultAccountId: null,
   }));
   const settingsByKey = useMemo(
@@ -164,7 +164,8 @@ export default function NotificationDetectionScreen() {
   }
 
   function patchSetting(key: FinancialAppKey, patch: Partial<NotificationDetectionAppSetting>) {
-    const current = settingsByKey.get(key) ?? { financialAppKey: key, enabled: true, defaultAccountId: null };
+    const app = FINANCIAL_APPS.find((item) => item.key === key);
+    const current = settingsByKey.get(key) ?? { financialAppKey: key, enabled: app?.defaultEnabled ?? true, defaultAccountId: null };
     upsertSetting.mutate({ ...current, ...patch, financialAppKey: key });
   }
 

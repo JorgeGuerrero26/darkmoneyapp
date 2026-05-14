@@ -9,6 +9,7 @@ import {
   requestMovementCounterpartyAiSuggestion,
   type MovementCounterpartyAiInput,
 } from "../services/queries/workspace-data";
+import { waitForMinimumVisibleTime } from "../lib/ai-request-utils";
 import type { CounterpartySummary } from "../types/domain";
 
 type Params = {
@@ -29,6 +30,7 @@ type Params = {
 type State = {
   suggestion: CounterpartySuggestionResult | null;
   isLoading: boolean;
+  aiAttempted: boolean;
 };
 
 const responseCache = new Map<string, CounterpartySuggestionResult | null>();
@@ -60,7 +62,7 @@ export function useMovementCounterpartyAiSuggestion({
   minAiConfidence = 0.65,
   debounceMs = 700,
 }: Params): State {
-  const [state, setState] = useState<State>({ suggestion: null, isLoading: false });
+  const [state, setState] = useState<State>({ suggestion: null, isLoading: false, aiAttempted: false });
   const latestKeyRef = useRef<string | null>(null);
 
   const localSuggestion = useMemo(() => {
@@ -89,37 +91,54 @@ export function useMovementCounterpartyAiSuggestion({
     };
   }, [amount, counterparties, currencyCode, description, localSuggestion, movementType, surface, workspaceId]);
 
+  // Stable key string — prevents effect re-runs when input reference changes
+  // but content hasn't changed.
   const key = useMemo(() => (input ? cacheKey(input) : null), [input]);
 
+  // Keep input and localSuggestion in refs so async callbacks use latest values
+  // without being effect dependencies.
+  const inputRef = useRef(input);
+  inputRef.current = input;
+  const localSuggestionRef = useRef(localSuggestion);
+  localSuggestionRef.current = localSuggestion;
+
   useEffect(() => {
-    if (!enabled || !input || !key) {
+    if (!enabled || !key) {
       latestKeyRef.current = null;
-      setState({ suggestion: null, isLoading: false });
+      setState({ suggestion: null, isLoading: false, aiAttempted: false });
       return;
     }
 
-    if (localSuggestion && localSuggestion.confidence >= localConfidenceThreshold) {
+    const currentLocalSuggestion = localSuggestionRef.current;
+
+    if (currentLocalSuggestion && currentLocalSuggestion.confidence >= localConfidenceThreshold) {
       latestKeyRef.current = null;
-      setState({ suggestion: localSuggestion, isLoading: false });
+      setState({ suggestion: currentLocalSuggestion, isLoading: false, aiAttempted: false });
       return;
     }
 
     if (!proAccessEnabled) {
       latestKeyRef.current = null;
-      setState({ suggestion: localSuggestion, isLoading: false });
+      setState({ suggestion: currentLocalSuggestion, isLoading: false, aiAttempted: false });
       return;
     }
 
     latestKeyRef.current = key;
     if (responseCache.has(key)) {
-      setState({ suggestion: responseCache.get(key) ?? localSuggestion, isLoading: false });
+      setState({ suggestion: responseCache.get(key) ?? currentLocalSuggestion, isLoading: false, aiAttempted: true });
       return;
     }
 
-    setState({ suggestion: localSuggestion, isLoading: true });
+    setState((prev) => ({ ...prev, suggestion: currentLocalSuggestion, aiAttempted: false }));
     const timer = setTimeout(() => {
-      void requestMovementCounterpartyAiSuggestion(input)
-        .then((response) => {
+      const loadingStartedAt = Date.now();
+      setState((prev) => ({ ...prev, isLoading: true }));
+      void (async () => {
+        const currentInput = inputRef.current;
+        const fallback = localSuggestionRef.current;
+        if (!currentInput) return;
+        try {
+          const response = await requestMovementCounterpartyAiSuggestion(currentInput);
           const recommendation = response.ok && response.recommendation && response.recommendation.confidence >= minAiConfidence
             ? {
               type: response.recommendation.type,
@@ -131,21 +150,23 @@ export function useMovementCounterpartyAiSuggestion({
               reasons: response.recommendation.reasons,
               source: "deepseek" as const,
             }
-            : localSuggestion;
+            : fallback;
           const suggestion = recommendation?.type === "none" ? null : recommendation ?? null;
           responseCache.set(key, suggestion);
+          await waitForMinimumVisibleTime(loadingStartedAt);
           if (latestKeyRef.current !== key) return;
-          setState({ suggestion, isLoading: false });
-        })
-        .catch(() => {
-          responseCache.set(key, localSuggestion);
+          setState({ suggestion, isLoading: false, aiAttempted: true });
+        } catch {
+          responseCache.set(key, fallback);
+          await waitForMinimumVisibleTime(loadingStartedAt);
           if (latestKeyRef.current !== key) return;
-          setState({ suggestion: localSuggestion, isLoading: false });
-        });
+          setState({ suggestion: fallback, isLoading: false, aiAttempted: true });
+        }
+      })();
     }, debounceMs);
 
     return () => clearTimeout(timer);
-  }, [debounceMs, enabled, input, key, localConfidenceThreshold, localSuggestion, minAiConfidence, proAccessEnabled]);
+  }, [debounceMs, enabled, key, localConfidenceThreshold, minAiConfidence, proAccessEnabled]);
 
   return state;
 }
