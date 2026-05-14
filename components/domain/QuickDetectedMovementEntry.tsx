@@ -202,6 +202,11 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
       };
     });
   }, [patternMovements, snapshot?.accounts, snapshot?.categories, snapshot?.counterparties]);
+  // Memoize to avoid new Date().toISOString() producing a new string each render.
+  const occurredAtISO = useMemo(
+    () => date ? new Date(`${date}T12:00:00`).toISOString() : suggestion?.occurredAt ?? new Date().toISOString(),
+    [date, suggestion?.occurredAt],
+  );
   const currentRiskMovement = useMemo<MovementRiskItem | null>(() => {
     const parsedAmount = Number(amount.replace(",", ".")) || suggestion?.amount || 0;
     if (!parsedAmount || !description.trim()) return null;
@@ -211,7 +216,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
     return {
       id: -1,
       movementType,
-      occurredAt: date ? new Date(`${date}T12:00:00`).toISOString() : suggestion?.occurredAt ?? new Date().toISOString(),
+      occurredAt: occurredAtISO,
       description,
       amount: parsedAmount,
       categoryId,
@@ -279,7 +284,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
       amount: Number(amount.replace(",", ".")) || suggestion?.amount || null,
       currencyCode: suggestion?.currencyCode ?? "PEN",
       description: description.trim(),
-      occurredAt: date ? new Date(`${date}T12:00:00`).toISOString() : suggestion?.occurredAt ?? null,
+      occurredAt: occurredAtISO,
       categories: categories.map((category) => ({
         id: category.id,
         name: category.name,
@@ -370,7 +375,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
     movementType,
     amount: Number(amount.replace(",", ".")) || suggestion?.amount || null,
     currencyCode: suggestion?.currencyCode ?? "PEN",
-    occurredAt: date ? new Date(`${date}T12:00:00`).toISOString() : suggestion?.occurredAt ?? new Date().toISOString(),
+    occurredAt: occurredAtISO,
     category: selectedRecurringCategory,
     counterparty: selectedRecurringCounterparty,
     recentMovements: recurringSuggestionHistory,
@@ -394,7 +399,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
     movement: Number(amount.replace(",", ".")) > 0
       ? {
         movementType: "expense",
-        occurredAt: date ? new Date(`${date}T12:00:00`).toISOString() : suggestion?.occurredAt ?? new Date().toISOString(),
+        occurredAt: occurredAtISO,
         description: descriptionCleanup?.cleanedDescription ?? description,
         amount: Number(amount.replace(",", ".")) || suggestion?.amount || 0,
         currencyCode: selectedBudgetAccount?.currencyCode ?? suggestion?.currencyCode ?? "PEN",

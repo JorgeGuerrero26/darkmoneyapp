@@ -409,6 +409,9 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
       }));
   }, [editMovement?.id, patternMovements]);
   const descriptionCleanupAmount = form.movementType === "income" ? destinationAmountNum : sourceAmountNum;
+  // Memoize to avoid dateStrToISO (which includes current ms) from producing a
+  // new string on every render and invalidating AI hook stable keys.
+  const occurredAtISO = useMemo(() => dateStrToISO(form.occurredAt), [form.occurredAt]);
   const { cleanup: descriptionCleanup, isLoading: descriptionCleanupLoading } = useMovementDescriptionCleanup({
     enabled: Boolean(visible && form.movementType !== "transfer"),
     workspaceId: activeWorkspaceId,
@@ -431,7 +434,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     movementType: form.movementType === "income" ? "income" : "expense",
     amount: descriptionCleanupAmount > 0 ? descriptionCleanupAmount : null,
     currencyCode: baseCurrency,
-    occurredAt: dateStrToISO(form.occurredAt),
+    occurredAt: occurredAtISO,
     category: selectedRecurringCategory,
     counterparty: selectedRecurringCounterparty,
     recentMovements: recurringSuggestionHistory,
@@ -446,7 +449,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     movement: sourceAmountNum > 0
       ? {
         movementType: "expense",
-        occurredAt: dateStrToISO(form.occurredAt),
+        occurredAt: occurredAtISO,
         description: counterpartyDescriptionForSuggestion,
         amount: sourceAmountNum,
         currencyCode: budgetImpactAccount?.currencyCode ?? baseCurrency,
@@ -485,7 +488,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
       id: editMovement?.id ? -editMovement.id : -1,
       movementType: form.movementType,
       status: "posted",
-      occurredAt: dateStrToISO(form.occurredAt),
+      occurredAt: occurredAtISO,
       sourceAccountId: form.movementType === "income" ? null : form.sourceAccountId,
       destinationAccountId: form.movementType === "income" ? form.destinationAccountId : null,
       categoryId: form.categoryId,
@@ -501,7 +504,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     form.description,
     form.destinationAccountId,
     form.movementType,
-    form.occurredAt,
+    occurredAtISO,
     form.sourceAccountId,
     sourceAmountNum,
   ]);
