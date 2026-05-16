@@ -93,6 +93,38 @@ function normalizeDescription(value: string) {
     .trim();
 }
 
+const DEDUPE_STOPWORDS = new Set([
+  "compra",
+  "consumo",
+  "pago",
+  "pagaste",
+  "tarjeta",
+  "debito",
+  "credito",
+  "visa",
+  "mastercard",
+  "soles",
+  "movimiento",
+  "banco",
+  "cuenta",
+  "cuentas",
+  "transferencia",
+  "operacion",
+  "yape",
+  "yapeo",
+  "yapear",
+  "clasica",
+  "detectado",
+  "realizaste",
+  "desde",
+]);
+
+function significantTokens(value: string): string[] {
+  return normalizeDescription(value)
+    .split(" ")
+    .filter((token) => token.length >= 4 && !DEDUPE_STOPWORDS.has(token));
+}
+
 function dateKey(value: string | number | null | undefined) {
   const date = value ? new Date(value) : new Date();
   if (Number.isNaN(date.getTime())) return new Date().toISOString().slice(0, 10);
@@ -219,7 +251,9 @@ export async function syncNativeDetectedSuggestion(input: {
     getFinancialAppByKey(input.nativeSuggestion.financialAppKey) ??
     resolveFinancialAppByPackage(input.nativeSuggestion.packageName);
   const occurredAt = new Date(input.nativeSuggestion.postTime ?? input.nativeSuggestion.createdAt ?? Date.now()).toISOString();
-  const movementType = input.nativeSuggestion.movementType === "income" ? "income" : "expense";
+  const nativeMovementType = input.nativeSuggestion.movementType;
+  const movementType =
+    nativeMovementType === "income" ? "income" : nativeMovementType === "transfer" ? "transfer" : "expense";
   const description = (
     input.nativeSuggestion.text ||
     input.nativeSuggestion.title ||
@@ -243,6 +277,31 @@ export async function syncNativeDetectedSuggestion(input: {
     occurredAt,
     notificationKey: input.nativeSuggestion.notificationKey ?? null,
   });
+
+  // Dedupe cruzado: la misma compra puede llegar por 2 fuentes (Billetera Google + correo del banco).
+  // Si existe una sugerencia pendiente reciente con mismo monto+moneda y comercio solapado, se suprime la 2da.
+  const dedupeWindowStart = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+  const { data: recentRows } = await supabase
+    .from("notification_detected_movement_suggestions")
+    .select("*")
+    .eq("workspace_id", input.workspaceId)
+    .eq("currency_code", parsedAmount.currencyCode)
+    .eq("amount", parsedAmount.amount)
+    .eq("status", "pending")
+    .gte("created_at", dedupeWindowStart)
+    .limit(20);
+  const newNorm = normalizeDescription(description);
+  const newTokens = significantTokens(description);
+  const duplicateRow = (recentRows ?? []).find((row: any) => {
+    if (row.dedupe_key === dedupeKey) return false; // mismo origen: lo maneja el upsert onConflict
+    const existingNorm = normalizeDescription(row.description ?? "");
+    if (existingNorm && newNorm && (existingNorm.includes(newNorm) || newNorm.includes(existingNorm))) return true;
+    const existingTokens = significantTokens(row.description ?? "");
+    return newTokens.some((token) => existingTokens.includes(token));
+  });
+  if (duplicateRow) {
+    return mapSuggestion(duplicateRow);
+  }
 
   const { data: suggestionRow, error: suggestionError } = await supabase
     .from("notification_detected_movement_suggestions")
@@ -403,31 +462,76 @@ export async function findPossibleDuplicateMovement(input: DuplicateMovementInpu
   };
 }
 
+export async function findDetectedSuggestionIdByNativeId(
+  workspaceId: number,
+  nativeId: string,
+): Promise<number | null> {
+  if (!supabase || !nativeId) return null;
+  const { data, error } = await supabase
+    .from("notification_detected_movement_suggestions")
+    .select("id")
+    .eq("workspace_id", workspaceId)
+    .eq("metadata->>nativeSuggestionId", nativeId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) return null;
+  return data ? Number(data.id) : null;
+}
+
 export function buildMovementInputFromDetectedSuggestion(input: {
   suggestion: DetectedMovementSuggestion;
-  accountId: number;
+  accountId?: number | null;
   categoryId: number | null;
+  counterpartyId?: number | null;
   description: string;
-  movementType: "expense" | "income";
+  movementType: "expense" | "income" | "transfer";
+  sourceAccountId?: number | null;
+  destinationAccountId?: number | null;
+  destinationAmount?: number | null;
+  fxRate?: number | null;
 }): MovementFormInput {
+  const metadata = {
+    source: "notification_detection",
+    suggestionId: input.suggestion.id,
+    financialAppKey: input.suggestion.financialAppKey,
+    confidence: input.suggestion.confidence,
+  };
+  const description = input.description.trim() || input.suggestion.description;
+
+  if (input.movementType === "transfer") {
+    const sourceAmount = input.suggestion.amount;
+    return {
+      movementType: "transfer",
+      status: "posted",
+      occurredAt: input.suggestion.occurredAt,
+      description,
+      notes: null,
+      sourceAccountId: input.sourceAccountId ?? null,
+      sourceAmount,
+      destinationAccountId: input.destinationAccountId ?? null,
+      destinationAmount: input.destinationAmount ?? sourceAmount,
+      fxRate: input.fxRate ?? null,
+      categoryId: null,
+      counterpartyId: null,
+      metadata,
+    };
+  }
+
+  const accountId = input.accountId ?? null;
   return {
     movementType: input.movementType,
     status: "posted",
     occurredAt: input.suggestion.occurredAt,
-    description: input.description.trim() || input.suggestion.description,
+    description,
     notes: null,
-    sourceAccountId: input.movementType === "expense" ? input.accountId : null,
+    sourceAccountId: input.movementType === "expense" ? accountId : null,
     sourceAmount: input.movementType === "expense" ? input.suggestion.amount : null,
-    destinationAccountId: input.movementType === "income" ? input.accountId : null,
+    destinationAccountId: input.movementType === "income" ? accountId : null,
     destinationAmount: input.movementType === "income" ? input.suggestion.amount : null,
     fxRate: null,
     categoryId: input.categoryId,
-    counterpartyId: null,
-    metadata: {
-      source: "notification_detection",
-      suggestionId: input.suggestion.id,
-      financialAppKey: input.suggestion.financialAppKey,
-      confidence: input.suggestion.confidence,
-    },
+    counterpartyId: input.counterpartyId ?? null,
+    metadata,
   };
 }

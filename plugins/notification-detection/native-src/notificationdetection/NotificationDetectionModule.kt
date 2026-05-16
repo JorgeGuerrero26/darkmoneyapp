@@ -23,6 +23,10 @@ class NotificationDetectionModule(
 ) : ReactContextBaseJavaModule(reactContext) {
   override fun getName(): String = "NotificationDetection"
 
+  companion object {
+    private const val NOTIF_CLEANUP_KEY = "2026-05-16-v1"
+  }
+
   @ReactMethod
   fun isNotificationAccessEnabled(promise: Promise) {
     promise.resolve(hasNotificationListenerAccess())
@@ -83,7 +87,33 @@ class NotificationDetectionModule(
 
   @ReactMethod
   fun setRuntimeContext(contextJson: String) {
+    cancelStaleMovementNotificationsOnVersionChange()
     NotificationDetectionStore.setRuntimeContext(reactContext, contextJson)
+  }
+
+  private fun cancelStaleMovementNotificationsOnVersionChange() {
+    val prefs = reactContext.getSharedPreferences("darkmoney_notification_detection", android.content.Context.MODE_PRIVATE)
+    val storedCleanupKey = prefs.getString("last_notif_cleanup_key", "")
+    android.util.Log.d("DarkMoneyND", "cancelStale: stored=$storedCleanupKey current=$NOTIF_CLEANUP_KEY")
+    if (storedCleanupKey == NOTIF_CLEANUP_KEY) return
+    prefs.edit().putString("last_notif_cleanup_key", NOTIF_CLEANUP_KEY).apply()
+    val manager = reactContext.getSystemService(android.app.NotificationManager::class.java)
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+      val active = manager.activeNotifications
+      android.util.Log.d("DarkMoneyND", "cancelStale: activeNotifications count=${active.size}")
+      active.forEach { sbn ->
+        val channelId = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) sbn.notification.channelId else "n/a"
+        android.util.Log.d("DarkMoneyND", "cancelStale: notif id=${sbn.id} channel=$channelId")
+        val isMoveChannel = android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.O ||
+          channelId == "movement_detection"
+        if (isMoveChannel) {
+          manager.cancel(sbn.id)
+          android.util.Log.d("DarkMoneyND", "cancelStale: cancelled id=${sbn.id}")
+        }
+      }
+    }
+    NotificationDetectionStore.removePendingSuggestions(reactContext)
+    android.util.Log.d("DarkMoneyND", "cancelStale: removePendingSuggestions done")
   }
 
   @ReactMethod
@@ -100,6 +130,10 @@ class NotificationDetectionModule(
   @ReactMethod
   fun discardSuggestion(suggestionId: String) {
     val suggestion = NotificationDetectionStore.getSuggestion(reactContext, suggestionId)
+    val fingerprint = suggestion?.optString("discardFingerprint")
+    if (!fingerprint.isNullOrBlank()) {
+      NotificationDetectionStore.addDiscardFingerprint(reactContext, fingerprint)
+    }
     NotificationDetectionStore.markStatus(reactContext, suggestionId, "discarded")
     val notificationId = suggestion?.optInt("notificationId", 0) ?: 0
     if (notificationId > 0) {
@@ -221,14 +255,24 @@ class NotificationDetectionModule(
       )
     }
 
-    val registerIntent = Intent(reactContext, NotificationDetectionActionReceiver::class.java)
-      .setAction(NotificationDetectionActionReceiver.ACTION_REGISTER)
+    val quickIntent = Intent(reactContext, QuickMovementDialogActivity::class.java)
+      .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
       .putExtra(QuickMovementDialogActivity.EXTRA_SUGGESTION_ID, suggestionId)
       .putExtra(QuickMovementDialogActivity.EXTRA_NOTIFICATION_ID, notificationId)
-    val registerPendingIntent = PendingIntent.getBroadcast(
+    val quickPendingIntent = PendingIntent.getActivity(
       reactContext,
       notificationId,
-      registerIntent,
+      quickIntent,
+      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
+
+    val openAppIntent = Intent(Intent.ACTION_VIEW, Uri.parse("darkmoney://detected-suggestion/$suggestionId"))
+      .setComponent(ComponentName(reactContext, "com.darkmoney.app.MainActivity"))
+      .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    val openAppPendingIntent = PendingIntent.getActivity(
+      reactContext,
+      notificationId + 2,
+      openAppIntent,
       PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
 
@@ -252,9 +296,9 @@ class NotificationDetectionModule(
       .setContentTitle("Movimiento detectado")
       .setContentText(body)
       .setStyle(Notification.BigTextStyle().bigText(body))
-      .setContentIntent(registerPendingIntent)
+      .setContentIntent(openAppPendingIntent)
       .setAutoCancel(true)
-      .addAction(Notification.Action.Builder(0, "Registrar", registerPendingIntent).build())
+      .addAction(Notification.Action.Builder(0, "Registro rápido", quickPendingIntent).build())
       .addAction(Notification.Action.Builder(0, "Descartar", discardPendingIntent).build())
       .build()
 

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Alert, Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useRouter } from "expo-router";
 
+import { AccountPicker } from "./AccountPicker";
 import { BottomSheet } from "../ui/BottomSheet";
 import { Button } from "../ui/Button";
 import { DatePickerInput } from "../ui/DatePickerInput";
@@ -142,12 +143,16 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
     () => (snapshot?.accounts ?? []).filter((account) => !account.isArchived),
     [snapshot?.accounts],
   );
-  const [movementType, setMovementType] = useState<"expense" | "income">("expense");
+  const [movementType, setMovementType] = useState<"expense" | "income" | "transfer">("expense");
   const [amount, setAmount] = useState("");
   const [accountId, setAccountId] = useState<number | null>(null);
+  const [destinationAccountId, setDestinationAccountId] = useState<number | null>(null);
+  const [destinationAmount, setDestinationAmount] = useState("");
+  const [transferFxRate, setTransferFxRate] = useState("");
   const [categoryId, setCategoryId] = useState<number | null>(null);
   const [counterpartyId, setCounterpartyId] = useState<number | null>(null);
   const [description, setDescription] = useState("");
+  const [cleanupAppliedText, setCleanupAppliedText] = useState<string | null>(null);
   const [date, setDate] = useState("");
   const [checkingDuplicate, setCheckingDuplicate] = useState(false);
   const [isDiscarding, setIsDiscarding] = useState(false);
@@ -161,6 +166,13 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
       category.isActive && (category.kind === kind || category.kind === "both"),
     );
   }, [movementType, snapshot?.categories]);
+  const isTransfer = movementType === "transfer";
+  const aiMovementType: "income" | "expense" = movementType === "income" ? "income" : "expense";
+  const transferSourceAccount = accountId == null ? null : activeAccounts.find((a) => a.id === accountId) ?? null;
+  const transferDestAccount = destinationAccountId == null ? null : activeAccounts.find((a) => a.id === destinationAccountId) ?? null;
+  const transferCurrenciesDiffer = Boolean(
+    transferSourceAccount && transferDestAccount && transferSourceAccount.currencyCode !== transferDestAccount.currencyCode,
+  );
   const counterparties = useMemo<CounterpartySummary[]>(() => {
     return (snapshot?.counterparties ?? []).filter((counterparty) => !counterparty.isArchived);
   }, [snapshot?.counterparties]);
@@ -276,11 +288,11 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
   }, [categoryId, description, dashboardAnalytics?.learningFeedback, categories, patternMaps]);
 
   const aiCategoryInput = useMemo(() => {
-    if (!activeWorkspaceId || categoryId !== null || !description.trim() || !categories.length) return null;
+    if (isTransfer || !activeWorkspaceId || categoryId !== null || !description.trim() || !categories.length) return null;
     return {
       workspaceId: activeWorkspaceId,
       surface: "notification_form" as const,
-      movementType,
+      movementType: aiMovementType,
       amount: Number(amount.replace(",", ".")) || suggestion?.amount || null,
       currencyCode: suggestion?.currencyCode ?? "PEN",
       description: description.trim(),
@@ -338,7 +350,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
   }, [aiCategoryRecommendation]);
   const categorySuggestion = aiCategorySuggestion ?? localCategorySuggestion;
   const { cleanup: descriptionCleanup, isLoading: descriptionCleanupLoading } = useMovementDescriptionCleanup({
-    enabled: Boolean(visible),
+    enabled: Boolean(visible && !isTransfer && description !== cleanupAppliedText),
     workspaceId: activeWorkspaceId,
     surface: "notification_form",
     rawDescription: description,
@@ -353,11 +365,11 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
     isLoading: counterpartySuggestionLoading,
     aiAttempted: counterpartySuggestionAttempted,
   } = useMovementCounterpartyAiSuggestion({
-    enabled: Boolean(visible && counterpartyId == null),
+    enabled: Boolean(visible && !isTransfer && counterpartyId == null),
     workspaceId: activeWorkspaceId,
     surface: "notification_form",
     description: descriptionCleanup?.cleanedDescription ?? description,
-    movementType,
+    movementType: aiMovementType,
     amount: Number(amount.replace(",", ".")) || suggestion?.amount || null,
     currencyCode: suggestion?.currencyCode ?? "PEN",
     counterparties,
@@ -368,11 +380,11 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
     isLoading: recurringSuggestionLoading,
     aiAttempted: recurringSuggestionAttempted,
   } = useMovementRecurringAiSuggestion({
-    enabled: Boolean(visible),
+    enabled: Boolean(visible && !isTransfer),
     workspaceId: activeWorkspaceId,
     surface: "notification_form",
     description: descriptionCleanup?.cleanedDescription ?? description,
-    movementType,
+    movementType: aiMovementType,
     amount: Number(amount.replace(",", ".")) || suggestion?.amount || null,
     currencyCode: suggestion?.currencyCode ?? "PEN",
     occurredAt: occurredAtISO,
@@ -384,7 +396,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
     proAccessEnabled: entitlementQuery.data?.proAccessEnabled,
   });
   const { risk: movementRisk, isLoading: movementRiskLoading } = useMovementRiskExplanation({
-    enabled: Boolean(visible),
+    enabled: Boolean(visible && !isTransfer),
     workspaceId: activeWorkspaceId,
     surface: "notification_form",
     current: currentRiskMovement,
@@ -422,13 +434,23 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
       (setting) => setting.financialAppKey === suggestion.financialAppKey && setting.enabled,
     )?.defaultAccountId;
     const defaultAccount = activeAccounts.find((account) => account.id === defaultAccountId) ?? activeAccounts[0];
-    setMovementType(suggestion.movementType === "income" ? "income" : "expense");
+    setMovementType(
+      suggestion.movementType === "income"
+        ? "income"
+        : suggestion.movementType === "transfer"
+          ? "transfer"
+          : "expense",
+    );
     setAmount(String(suggestion.amount));
     setDescription(suggestion.description);
     setDate(localDate(suggestion.occurredAt));
     setCategoryId(null);
     setCounterpartyId(null);
     setAccountId(defaultAccount?.id ?? null);
+    const altAccount = activeAccounts.find((account) => account.id !== defaultAccount?.id) ?? null;
+    setDestinationAccountId(altAccount?.id ?? null);
+    setDestinationAmount(String(suggestion.amount));
+    setTransferFxRate("");
     setCategoryFeedbackIntent(null);
     setLinkedSubscriptionId(null);
     setLinkedRecurringIncomeId(null);
@@ -484,6 +506,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
   }
 
   async function applyCounterpartySuggestion(suggestionState: CounterpartySuggestionResult) {
+    if (createCounterparty.isPending) return;
     if (suggestionState.type === "existing_counterparty" && suggestionState.counterpartyId) {
       setCounterpartyId(suggestionState.counterpartyId);
       return;
@@ -501,6 +524,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
         type: suggestionState.counterpartyType,
       });
       setCounterpartyId(created.id);
+      showToast(`Contraparte "${suggestionState.newCounterpartyName}" creada`, "success");
     } catch (error) {
       showToast(error instanceof Error ? error.message : "No se pudo crear la contraparte.", "error");
     }
@@ -596,6 +620,54 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
     }
 
     const occurredAt = new Date(`${date}T12:00:00`).toISOString();
+
+    if (movementType === "transfer") {
+      if (!destinationAccountId || destinationAccountId === accountId) {
+        showToast("Selecciona cuentas de origen y destino distintas", "error");
+        return;
+      }
+      let destAmt = parsedAmount;
+      let fx: number | null = null;
+      if (transferCurrenciesDiffer) {
+        destAmt = Number(destinationAmount.replace(",", "."));
+        fx = Number(transferFxRate.replace(",", "."));
+        if (!Number.isFinite(destAmt) || destAmt <= 0 || !Number.isFinite(fx) || fx <= 0) {
+          showToast("Ingresa monto destino y tipo de cambio válidos", "error");
+          return;
+        }
+      }
+      try {
+        const created = await createMovement.mutateAsync({
+          movementType: "transfer",
+          status: "posted",
+          occurredAt,
+          description: description.trim() || suggestion.description,
+          notes: null,
+          sourceAccountId: accountId,
+          sourceAmount: parsedAmount,
+          destinationAccountId,
+          destinationAmount: destAmt,
+          fxRate: fx,
+          categoryId: null,
+          counterpartyId: null,
+          subscriptionId: linkedSubscriptionId,
+          metadata: {
+            source: "notification_detection",
+            suggestionId: suggestion.id,
+            financialAppKey: suggestion.financialAppKey,
+            confidence: suggestion.confidence,
+          },
+        });
+        await markSuggestion.mutateAsync({ suggestionId: suggestion.id, status: "registered", movementId: created.id });
+        if (notificationId) markNotificationRead.mutate(notificationId);
+        showToast("Transferencia guardada", "success");
+        onClose();
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : "No se pudo guardar la transferencia", "error");
+      }
+      return;
+    }
+
     if (!force) {
       setCheckingDuplicate(true);
       try {
@@ -733,15 +805,63 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
         <View style={styles.segment}>
           <SegmentButton label="Gasto" active={movementType === "expense"} activeColor={COLORS.expense} onPress={() => setMovementType("expense")} />
           <SegmentButton label="Ingreso" active={movementType === "income"} activeColor={COLORS.income} onPress={() => setMovementType("income")} />
+          <SegmentButton label="Transferencia" active={movementType === "transfer"} activeColor={COLORS.transfer} onPress={() => setMovementType("transfer")} />
         </View>
 
-        <AccountChipPicker
-          label="Cuenta"
-          accounts={activeAccounts}
-          selectedId={accountId}
-          onSelect={setAccountId}
-        />
+        {isTransfer ? (
+          <>
+            <AccountPicker
+              label="Cuenta origen"
+              accounts={activeAccounts}
+              selectedId={accountId}
+              onSelect={setAccountId}
+            />
+            <AccountPicker
+              label="Cuenta destino"
+              accounts={activeAccounts}
+              selectedId={destinationAccountId}
+              onSelect={setDestinationAccountId}
+              error={
+                accountId != null && destinationAccountId === accountId
+                  ? "El origen y el destino deben ser distintos"
+                  : undefined
+              }
+            />
+            {transferCurrenciesDiffer ? (
+              <>
+                <Text style={styles.selectRowLabel}>
+                  Monto destino ({transferDestAccount?.currencyCode})
+                </Text>
+                <TextInput
+                  value={destinationAmount}
+                  onChangeText={setDestinationAmount}
+                  keyboardType="decimal-pad"
+                  style={styles.input}
+                  placeholderTextColor={COLORS.textMuted}
+                />
+                <Text style={styles.selectRowLabel}>Tipo de cambio</Text>
+                <TextInput
+                  value={transferFxRate}
+                  onChangeText={setTransferFxRate}
+                  keyboardType="decimal-pad"
+                  style={styles.input}
+                  placeholder="0.00"
+                  placeholderTextColor={COLORS.textMuted}
+                />
+              </>
+            ) : null}
+          </>
+        ) : (
+          <AccountChipPicker
+            label="Cuenta"
+            accounts={activeAccounts}
+            selectedId={accountId}
+            onSelect={setAccountId}
+          />
+        )}
 
+        {!isTransfer && (
+        <>
         <CategoryChipPicker
           label="Categoría (opcional)"
           categories={categories}
@@ -766,9 +886,21 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
             onApply={() => void applyCategorySuggestion(categorySuggestion)}
           />
         ) : null}
+        </>
+        )}
 
         <Text style={styles.selectRowLabel}>Descripción</Text>
-        <TextInput value={description} onChangeText={setDescription} style={styles.input} multiline />
+        <TextInput
+          value={description}
+          onChangeText={(text) => {
+            if (text !== cleanupAppliedText) setCleanupAppliedText(null);
+            setDescription(text);
+          }}
+          style={styles.input}
+          multiline
+        />
+        {!isTransfer && (
+        <>
         {descriptionCleanupLoading ? (
           <SmartSuggestionLoading
             title="Limpiando descripción"
@@ -779,7 +911,10 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
           <SmartSuggestion
             label={descriptionCleanup.cleanedDescription}
             detail={`Descripción limpia · ${Math.round(descriptionCleanup.confidence * 100)}% · ${descriptionCleanup.reasons.join(" · ")}`}
-            onApply={() => setDescription(descriptionCleanup.cleanedDescription)}
+            onApply={() => {
+              setCleanupAppliedText(descriptionCleanup.cleanedDescription);
+              setDescription(descriptionCleanup.cleanedDescription);
+            }}
           />
         ) : null}
         {counterpartySuggestionLoading ? (
@@ -850,6 +985,8 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
             </Text>
           </View>
         ) : null}
+        </>
+        )}
 
         <DatePickerInput label="Fecha" value={date} onChange={setDate} variant="formRow" />
 

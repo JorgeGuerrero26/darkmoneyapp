@@ -5,19 +5,21 @@ import android.app.NotificationManager
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
+import android.provider.Settings
 import android.text.InputType
 import android.view.Gravity
 import android.view.ViewGroup
 import android.view.Window
 import android.view.WindowManager
+import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.RadioButton
 import android.widget.RadioGroup
 import android.widget.ScrollView
 import android.widget.TextView
-import android.widget.Button
 import com.darkmoney.app.R
+import org.json.JSONObject
 
 class QuickMovementDialogActivity : Activity() {
   private var suggestionId: String = ""
@@ -26,28 +28,38 @@ class QuickMovementDialogActivity : Activity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     overridePendingTransition(0, 0)
+
+    suggestionId = intent.getStringExtra(EXTRA_SUGGESTION_ID).orEmpty()
+    notificationId = intent.getIntExtra(EXTRA_NOTIFICATION_ID, 0)
+
+    // Camino principal: overlay flotante nativo (sin abrir la app).
+    if (Settings.canDrawOverlays(this)) {
+      QuickMovementOverlay.show(applicationContext, suggestionId, notificationId)
+      finish()
+      overridePendingTransition(0, 0)
+      return
+    }
+
+    // Fallback funcional (sin permiso de overlay): formulario que guarda de verdad.
     requestWindowFeature(Window.FEATURE_NO_TITLE)
     setFinishOnTouchOutside(true)
     window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
     window.setGravity(Gravity.CENTER)
     window.setDimAmount(0.42f)
-    window.attributes = window.attributes.apply {
-      windowAnimations = 0
-    }
+    window.attributes = window.attributes.apply { windowAnimations = 0 }
     window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
 
-    suggestionId = intent.getStringExtra(EXTRA_SUGGESTION_ID).orEmpty()
-    notificationId = intent.getIntExtra(EXTRA_NOTIFICATION_ID, 0)
     val suggestion = NotificationDetectionStore.getSuggestion(this, suggestionId)
-
+    val runtimeContext = NotificationDetectionStore.getRuntimeContext(this)
     val appName = suggestion?.optString("appName").orEmpty().ifBlank { "App financiera" }
     val amount = suggestion?.optString("amountLabel").orEmpty().replace(Regex("[^0-9.,]"), "")
     val description = suggestion?.optString("text").orEmpty().ifBlank {
       suggestion?.optString("title").orEmpty()
     }
     val movementType = suggestion?.optString("movementType").orEmpty()
+    val financialAppKey = suggestion?.optString("financialAppKey").orEmpty()
 
-    setContentView(buildContent(appName, amount, description, movementType))
+    setContentView(buildContent(appName, amount, description, movementType, financialAppKey, runtimeContext))
   }
 
   override fun finish() {
@@ -55,11 +67,37 @@ class QuickMovementDialogActivity : Activity() {
     overridePendingTransition(0, 0)
   }
 
+  private fun defaultAccountId(runtimeContext: JSONObject, financialAppKey: String): Int {
+    val settings = runtimeContext.optJSONArray("settings")
+    if (settings != null) {
+      for (index in 0 until settings.length()) {
+        val setting = settings.optJSONObject(index) ?: continue
+        if (setting.optString("financialAppKey") == financialAppKey) {
+          val id = setting.optInt("defaultAccountId", 0)
+          if (id > 0) return id
+        }
+      }
+    }
+    val accounts = runtimeContext.optJSONArray("accounts")
+    return accounts?.optJSONObject(0)?.optInt("id", 0) ?: 0
+  }
+
+  private fun alternateAccountId(runtimeContext: JSONObject, excludeId: Int): Int {
+    val accounts = runtimeContext.optJSONArray("accounts") ?: return 0
+    for (index in 0 until accounts.length()) {
+      val id = accounts.optJSONObject(index)?.optInt("id", 0) ?: 0
+      if (id > 0 && id != excludeId) return id
+    }
+    return 0
+  }
+
   private fun buildContent(
     appName: String,
     amount: String,
     description: String,
     movementType: String,
+    financialAppKey: String,
+    runtimeContext: JSONObject,
   ): ScrollView {
     val density = resources.displayMetrics.density
     fun dp(value: Int) = (value * density).toInt()
@@ -101,25 +139,32 @@ class QuickMovementDialogActivity : Activity() {
     val expense = RadioButton(this).apply {
       id = 1001
       text = "Gasto"
-      textSize = 14f
+      textSize = 13f
       setTextColor(0xFFF5F7FB.toInt())
     }
     val income = RadioButton(this).apply {
       id = 1002
       text = "Ingreso"
-      textSize = 14f
+      textSize = 13f
+      setTextColor(0xFFF5F7FB.toInt())
+    }
+    val transfer = RadioButton(this).apply {
+      id = 1003
+      text = "Transferencia"
+      textSize = 13f
       setTextColor(0xFFF5F7FB.toInt())
     }
     typeGroup.addView(expense)
     typeGroup.addView(income)
-    typeGroup.check(if (movementType == "income") income.id else expense.id)
+    typeGroup.addView(transfer)
+    typeGroup.check(
+      when (movementType) {
+        "income" -> income.id
+        "transfer" -> transfer.id
+        else -> expense.id
+      },
+    )
     root.addView(typeGroup)
-
-    val accountInput = field("Cuenta", appName, InputType.TYPE_CLASS_TEXT)
-    root.addView(accountInput.container)
-
-    val categoryInput = field("Categoría", "Sin categoría", InputType.TYPE_CLASS_TEXT)
-    root.addView(categoryInput.container)
 
     val descriptionInput = field("Descripción", description, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE)
     descriptionInput.input.minLines = 2
@@ -131,9 +176,40 @@ class QuickMovementDialogActivity : Activity() {
     }
 
     actions.addView(Button(this).apply {
-      text = "Simular guardar"
+      text = "Guardar"
       setOnClickListener {
-        NotificationDetectionStore.markStatus(this@QuickMovementDialogActivity, suggestionId, "registered")
+        val selectedType = when (typeGroup.checkedRadioButtonId) {
+          income.id -> "income"
+          transfer.id -> "transfer"
+          else -> "expense"
+        }
+        val workspaceId = runtimeContext.optInt("workspaceId", 0).takeIf { it > 0 }
+        val originId = defaultAccountId(runtimeContext, financialAppKey)
+        val destinationId = if (selectedType == "transfer") {
+          alternateAccountId(runtimeContext, originId).takeIf { it > 0 }
+        } else {
+          null
+        }
+        NotificationDetectionSaveTaskService.start(
+          this@QuickMovementDialogActivity,
+          suggestionId,
+          notificationId,
+          workspaceId,
+          selectedType,
+          amountInput.input.text.toString(),
+          originId,
+          destinationId,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          descriptionInput.input.text.toString(),
+        )
         if (notificationId > 0) {
           getSystemService(NotificationManager::class.java).cancel(notificationId)
         }

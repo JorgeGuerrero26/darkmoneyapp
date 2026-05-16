@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SectionListRenderItem } from "react-native";
 import { Platform } from "react-native";
 import { X } from "lucide-react-native";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "../components/ui/ErrorBoundary";
@@ -64,6 +64,14 @@ function NotificationsScreen() {
   const [activeFilter, setActiveFilter] = useState<NotificationFilter>("all");
   const [quickEntry, setQuickEntry] = useState<{ suggestionId: number; notificationId: number } | null>(null);
   const ignoreTapAfterLongPressRef = useRef(false);
+  const { suggestionId: suggestionIdParam } = useLocalSearchParams<{ suggestionId?: string }>();
+
+  useEffect(() => {
+    const parsed = Number(suggestionIdParam);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      setQuickEntry({ suggestionId: parsed, notificationId: 0 });
+    }
+  }, [suggestionIdParam]);
 
   useEffect(() => {
     if (!Notifications) return;

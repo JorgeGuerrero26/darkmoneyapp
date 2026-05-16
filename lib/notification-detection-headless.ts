@@ -11,9 +11,10 @@ type HeadlessPayload = {
   suggestionId?: string;
   notificationId?: number;
   workspaceId?: number;
-  movementType?: "expense" | "income";
+  movementType?: "expense" | "income" | "transfer";
   amount?: string;
   accountId?: number;
+  destinationAccountId?: number;
   categoryId?: number;
   newCategoryName?: string;
   counterpartyId?: number;
@@ -65,8 +66,86 @@ export async function notificationDetectionHeadlessTask(payload: HeadlessPayload
     return;
   }
 
-  const movementType = payload.movementType === "income" ? "income" : "expense";
+  const movementType =
+    payload.movementType === "income"
+      ? "income"
+      : payload.movementType === "transfer"
+        ? "transfer"
+        : "expense";
   const description = payload.description?.trim() || suggestion.description;
+
+  if (movementType === "transfer") {
+    const destinationAccountId = Number(payload.destinationAccountId ?? 0);
+    if (!destinationAccountId || destinationAccountId === payload.accountId) {
+      nativeDetection?.showSuggestionNotification?.(payload.suggestionId);
+      return;
+    }
+    const { data: accountRows } = await supabase
+      .from("accounts")
+      .select("id, currency_code")
+      .eq("workspace_id", workspaceId)
+      .in("id", [payload.accountId, destinationAccountId]);
+    const srcCur = (accountRows ?? []).find((a: any) => Number(a.id) === Number(payload.accountId))?.currency_code;
+    const dstCur = (accountRows ?? []).find((a: any) => Number(a.id) === destinationAccountId)?.currency_code;
+    if (srcCur && dstCur && srcCur !== dstCur) {
+      // Distinta moneda: requiere tipo de cambio. No inventamos tasa; se completa en la app.
+      nativeDetection?.showSuggestionNotification?.(payload.suggestionId);
+      return;
+    }
+    const { data: transferMovement, error: transferError } = await supabase
+      .from("movements")
+      .insert({
+        workspace_id: workspaceId,
+        movement_type: "transfer",
+        status: "posted",
+        occurred_at: suggestion.occurredAt,
+        description,
+        notes: null,
+        source_account_id: payload.accountId,
+        source_amount: amount,
+        destination_account_id: destinationAccountId,
+        destination_amount: amount,
+        fx_rate: null,
+        category_id: null,
+        counterparty_id: null,
+        subscription_id: null,
+        metadata: {
+          source: "notification_detection_overlay",
+          suggestionId: suggestion.id,
+          financialAppKey: suggestion.financialAppKey,
+          confidence: suggestion.confidence,
+        },
+      })
+      .select("id")
+      .single();
+    if (transferError) {
+      nativeDetection?.showSuggestionNotification?.(payload.suggestionId);
+      return;
+    }
+    await supabase
+      .from("notification_detected_movement_suggestions")
+      .update({ status: "registered", movement_id: transferMovement.id, updated_at: new Date().toISOString() })
+      .eq("id", suggestion.id);
+    await supabase
+      .from("notifications")
+      .update({
+        status: "read",
+        read_at: new Date().toISOString(),
+        payload: {
+          suggestionId: suggestion.id,
+          amount,
+          currencyCode: suggestion.currencyCode,
+          appLabel: suggestion.appLabel,
+          status: "registered",
+        },
+      })
+      .eq("related_entity_type", "detected_movement_suggestion")
+      .eq("related_entity_id", suggestion.id)
+      .eq("kind", "detected_movement_suggestion");
+    nativeDetection?.markSuggestionRegistered?.(payload.suggestionId, payload.notificationId ?? 0);
+    return;
+  }
+
   let categoryId = payload.categoryId ?? null;
   let counterpartyId = payload.counterpartyId ?? null;
   let subscriptionId: number | null = null;

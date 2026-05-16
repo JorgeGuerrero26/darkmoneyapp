@@ -4,7 +4,9 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.ComponentName
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
@@ -17,7 +19,28 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
   override fun onListenerConnected() {
     super.onListenerConnected()
     currentService = WeakReference(this)
+    cancelStalePendingNotifications()
     processActiveNotifications()
+  }
+
+  private fun cancelStalePendingNotifications() {
+    android.util.Log.d("DarkMoneyND", "onListenerConnected: cancelStalePendingNotifications start")
+    val manager = getSystemService(NotificationManager::class.java)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+      val active = manager.activeNotifications
+      android.util.Log.d("DarkMoneyND", "onListenerConnected: activeNotifications count=${active.size}")
+      active.forEach { sbn ->
+        val channelId = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) sbn.notification.channelId else "n/a"
+        android.util.Log.d("DarkMoneyND", "onListenerConnected: notif id=${sbn.id} channel=$channelId")
+        val isMoveChannel = Build.VERSION.SDK_INT < Build.VERSION_CODES.O || channelId == "movement_detection"
+        if (isMoveChannel) {
+          manager.cancel(sbn.id)
+          android.util.Log.d("DarkMoneyND", "onListenerConnected: cancelled id=${sbn.id}")
+        }
+      }
+    }
+    NotificationDetectionStore.removePendingSuggestions(applicationContext)
+    android.util.Log.d("DarkMoneyND", "onListenerConnected: cancelStalePendingNotifications done")
   }
 
   override fun onListenerDisconnected() {
@@ -59,19 +82,25 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
 
     if (sourcePackage == GMAIL_PACKAGE && !isFinancialGmailNotification(combined)) return
     if (isPromotionalNotification(combined)) return
+    val discardFingerprint = NotificationDetectionStore.computeDiscardFingerprint(sourcePackage, combined)
+    if (NotificationDetectionStore.isDiscardedFingerprint(applicationContext, discardFingerprint)) return
     val amount = extractAmount(combined) ?: return
     val detection = inferMovementDetection(combined)
     if (detection.confidence == "low") return
     val appName = readAppName(sourcePackage, combined)
     val financialAppKey = financialAppKeyFor(sourcePackage)
-    val suggestionDescription = buildSuggestionDescription(sourcePackage, title, text, bigText, subText, combined)
+    val suggestionDescription = buildSuggestionDescription(sourcePackage, title, text, bigText, subText, combined, detection.movementType)
     val suggestionId = NotificationDetectionStore.createSuggestionId(
       sourcePackage,
       sbn.key.orEmpty(),
       combined,
       amount,
     )
-    val notificationId = notificationIdFor(suggestionId)
+    // Use source+amount+10min-bucket as notification ID so that when Gmail
+    // updates its notification with more content (different combined → different
+    // suggestionId), Android updates the existing DarkMoney tile instead of
+    // adding a duplicate.
+    val notificationId = notificationIdFor("${sourcePackage}:${amount}:${System.currentTimeMillis() / 600_000}")
 
     val suggestion = JSONObject()
       .put("id", suggestionId)
@@ -89,6 +118,7 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
       .put("confidence", detection.confidence)
       .put("createdAt", System.currentTimeMillis())
       .put("notificationId", notificationId)
+      .put("discardFingerprint", discardFingerprint)
 
     val shouldNotify = NotificationDetectionStore.upsertSuggestion(context, suggestion)
     if (shouldNotify) {
@@ -114,6 +144,12 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
     val highExpense = listOf(
       "pagaste",
       "enviaste",
+      "yapaste",
+      "yapear exitosamente",
+      "yapeo exitoso",
+      "yapeo aprobado",
+      "monto de yapeo",
+      "pago exitoso",
       "realizaste un consumo",
       "realizaste una compra",
       "compra realizada",
@@ -121,8 +157,17 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
       "consumo con tu tarjeta",
     )
     val mediumExpense = listOf("compra aprobada", "consumo", "cargo", "debito", "pago realizado", "se cargo")
+    val transferSignals = listOf(
+      "transferencia entre mis cuentas",
+      "transferencia entre tus cuentas",
+      "constancia de transferencia",
+    )
+    val isOwnTransfer = transferSignals.any { normalized.contains(it) } ||
+      (normalized.contains("realizaste una transferencia") &&
+        (normalized.contains("entre mis cuentas") || normalized.contains("desde tu")))
 
     return when {
+      isOwnTransfer -> DetectionResult("transfer", "high")
       highIncome.any { normalized.contains(it) } -> DetectionResult("income", "high")
       highExpense.any { normalized.contains(it) } -> DetectionResult("expense", "high")
       mediumIncome.any { normalized.contains(it) } -> DetectionResult("income", "medium")
@@ -149,6 +194,14 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
       "consumo aprobado",
       "cargo realizado",
       "operacion realizada",
+      "yapear exitosamente",
+      "yapaste",
+      "yapeo aprobado",
+      "monto de yapeo",
+      "pago exitoso",
+      "constancia de transferencia",
+      "realizaste una transferencia",
+      "transferencia entre mis cuentas",
     )
     if (transactionalSignals.any { normalized.contains(it) }) return false
 
@@ -171,15 +224,24 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
       "descuento",
       "oferta",
       "beneficio",
+      "te ofrecemos",
+      "millas",
+      "pidela",
+      "pidelo",
+      "por confiar en nosotros",
+      "te invitamos",
+      "solicita tu",
+      "solicita la",
+      "te quedan menos de",
+      "te quedan solo",
     )
 
     return promotionalSignals.any { normalized.contains(it) }
   }
 
   private fun isFinancialGmailNotification(value: String): Boolean {
-    if (financialEmailBankLabel(value) == null) return false
+    val bankLabel = financialEmailBankLabel(value) ?: return false
     if (extractAmount(value) == null) return false
-    if (!hasFinancialEmailTransactionSignal(value)) return false
 
     val normalized = normalizeForMatching(value)
     val blockedSubjects = listOf(
@@ -192,6 +254,16 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
       "premio",
       "publicidad",
     )
+
+    // Correos Yape: el preview suele traer solo el asunto + "Monto de yapeo* S/ X",
+    // sin "yapear exitosamente". Aceptamos con señal yape + sin asunto promocional.
+    if (bankLabel == "Yape") {
+      val yapeTxn = listOf("monto de yapeo", "yapear", "yapaste", "yapeo", "pago exitoso", "fue exitoso").any { normalized.contains(it) }
+      if (yapeTxn) return blockedSubjects.none { normalized.contains(it) }
+    }
+
+    if (!hasFinancialEmailTransactionSignal(value)) return false
+
     val hasExplicitTransaction = listOf(
       "realizaste un consumo",
       "realizaste una compra",
@@ -222,6 +294,13 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
       "abono recibido",
       "deposito recibido",
       "te depositaron",
+      "yapear exitosamente",
+      "yapaste",
+      "yapeo exitoso",
+      "monto de yapeo",
+      "pago exitoso",
+      "realizaste una transferencia",
+      "transferencia entre mis cuentas",
     )
     return transactionSignals.any { normalized.contains(it) }
   }
@@ -233,11 +312,15 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
     bigText: String,
     subText: String,
     combined: String,
+    movementType: String = "expense",
   ): String {
     if (packageName == GMAIL_PACKAGE) {
+      val bankLabel = financialEmailBankLabel(combined)
+      if (movementType == "transfer") {
+        return if (!bankLabel.isNullOrBlank()) "Transferencia $bankLabel" else "Transferencia BCP"
+      }
       val merchant = extractFinancialEmailMerchant(combined)
       if (!merchant.isNullOrBlank()) return "Compra en $merchant"
-      val bankLabel = financialEmailBankLabel(combined)
       if (!bankLabel.isNullOrBlank()) return "Movimiento $bankLabel"
     }
     return listOf(text, bigText, title, subText)
@@ -248,6 +331,9 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
   }
 
   private fun extractFinancialEmailMerchant(value: String): String? {
+    // Only search the first 400 chars — merchant fields appear near the top;
+    // the BCP security disclaimer at the bottom contains "en sorteos o promociones"
+    // which would otherwise be captured as a false merchant name.
     val patterns = listOf(
       Regex("""(?i)\bempresa\s*[:\-]?\s*([A-Z0-9ÁÉÍÓÚÑ&.' \-]{3,60})"""),
       Regex("""(?i)\bcomercio\s*[:\-]?\s*([A-Z0-9ÁÉÍÓÚÑ&.' \-]{3,60})"""),
@@ -255,7 +341,7 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
       Regex("""(?i)\ben\s+([A-Z0-9ÁÉÍÓÚÑ&.' \-]{3,60})(?:[.,\n\r]|$)"""),
     )
     for (pattern in patterns) {
-      val raw = pattern.find(value)?.groupValues?.getOrNull(1)?.trim().orEmpty()
+      val raw = pattern.find(value.take(400))?.groupValues?.getOrNull(1)?.trim().orEmpty()
       val cleaned = raw
         .replace(Regex("""(?i)\s+(monto|datos|operaci[oó]n|fecha|n[uú]mero|por tu seguridad).*$"""), "")
         .replace(Regex("""\s+"""), " ")
@@ -268,6 +354,7 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
   private fun financialEmailBankLabel(value: String): String? {
     val normalized = normalizeForMatching(value)
     return when {
+      listOf("yape.pe", "yapeapp", "@yape", "yape notificaciones").any { normalized.contains(it) } || (normalized.contains("yape") && (normalized.contains("yapear") || normalized.contains("yapeo") || normalized.contains("yapaste"))) -> "Yape"
       listOf("notificacionesbcp.com.pe", "viabcp", "banco de credito", " bcp ", "bcp notificaciones").any { normalized.contains(it) } -> "BCP"
       listOf("interbank", "intercorp").any { normalized.contains(it) } -> "Interbank"
       listOf("bbva", "continental").any { normalized.contains(it) } -> "BBVA"
@@ -340,14 +427,26 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
       )
     }
 
-    val registerIntent = Intent(this, NotificationDetectionActionReceiver::class.java)
-      .setAction(NotificationDetectionActionReceiver.ACTION_REGISTER)
+    // "Registro rápido": abre el overlay nativo (sin abrir la app) vía Activity lanzadora.
+    val quickIntent = Intent(this, QuickMovementDialogActivity::class.java)
+      .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
       .putExtra(QuickMovementDialogActivity.EXTRA_SUGGESTION_ID, suggestionId)
       .putExtra(QuickMovementDialogActivity.EXTRA_NOTIFICATION_ID, notificationId)
-    val registerPendingIntent = PendingIntent.getBroadcast(
+    val quickPendingIntent = PendingIntent.getActivity(
       this,
       notificationId,
-      registerIntent,
+      quickIntent,
+      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
+
+    // Tap en el cuerpo: abre la app (deep-link) al movimiento detectado. No es trampoline.
+    val openAppIntent = Intent(Intent.ACTION_VIEW, Uri.parse("darkmoney://detected-suggestion/$suggestionId"))
+      .setComponent(ComponentName(this, "com.darkmoney.app.MainActivity"))
+      .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    val openAppPendingIntent = PendingIntent.getActivity(
+      this,
+      notificationId + 2,
+      openAppIntent,
       PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
 
@@ -376,9 +475,9 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
       .setContentTitle("Movimiento detectado")
       .setContentText(body)
       .setStyle(Notification.BigTextStyle().bigText(body))
-      .setContentIntent(registerPendingIntent)
+      .setContentIntent(openAppPendingIntent)
       .setAutoCancel(true)
-      .addAction(Notification.Action.Builder(0, "Registrar", registerPendingIntent).build())
+      .addAction(Notification.Action.Builder(0, "Registro rápido", quickPendingIntent).build())
       .addAction(Notification.Action.Builder(0, "Descartar", discardPendingIntent).build())
       .setExtras(android.os.Bundle().apply {
         putString("suggestionId", suggestionId)

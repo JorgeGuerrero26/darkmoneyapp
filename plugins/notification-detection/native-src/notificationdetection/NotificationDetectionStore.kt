@@ -4,6 +4,7 @@ import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
 import java.security.MessageDigest
+import java.text.Normalizer
 
 object NotificationDetectionStore {
   private const val PREFS = "darkmoney_notification_detection"
@@ -11,6 +12,7 @@ object NotificationDetectionStore {
   private const val KEY_ALLOWED_PACKAGES = "allowed_packages"
   private const val KEY_SUGGESTIONS = "suggestions_json"
   private const val KEY_RUNTIME_CONTEXT = "runtime_context_json"
+  private const val KEY_DISCARD_FINGERPRINTS = "discard_fingerprints_v1"
 
   val defaultAllowedPackages = setOf(
     "com.bcp.innovacxion.yapeapp",
@@ -237,6 +239,16 @@ object NotificationDetectionStore {
     }
   }
 
+  fun removePendingSuggestions(context: Context) {
+    val suggestions = readSuggestionsArray(context)
+    val kept = JSONArray()
+    for (i in 0 until suggestions.length()) {
+      val s = suggestions.optJSONObject(i) ?: continue
+      if (s.optString("status") != "pending") kept.put(s)
+    }
+    writeSuggestionsArray(context, kept)
+  }
+
   private fun readSuggestionsArray(context: Context): JSONArray {
     val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
       .getString(KEY_SUGGESTIONS, "[]")
@@ -252,6 +264,30 @@ object NotificationDetectionStore {
       .edit()
       .putString(KEY_SUGGESTIONS, suggestions.toString())
       .apply()
+  }
+
+  fun computeDiscardFingerprint(packageName: String, content: String): String {
+    val normalized = Normalizer.normalize(content.lowercase(), Normalizer.Form.NFD)
+      .replace(Regex("\\p{Mn}+"), "")
+      .replace(Regex("[0-9]+"), "")
+      .replace(Regex("\\s+"), " ")
+      .trim()
+      .take(120)
+    return sha256("$packageName|$normalized")
+  }
+
+  fun addDiscardFingerprint(context: Context, fingerprint: String) {
+    val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    val current = prefs.getStringSet(KEY_DISCARD_FINGERPRINTS, emptySet())?.toMutableSet() ?: mutableSetOf()
+    if (current.size >= 500) return
+    current.add(fingerprint)
+    prefs.edit().putStringSet(KEY_DISCARD_FINGERPRINTS, current).apply()
+  }
+
+  fun isDiscardedFingerprint(context: Context, fingerprint: String): Boolean {
+    return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+      .getStringSet(KEY_DISCARD_FINGERPRINTS, emptySet())
+      ?.contains(fingerprint) == true
   }
 
   private fun sha256(value: String): String {

@@ -107,6 +107,61 @@ Usar componentes compartidos:
 - Android back gesture / hardware back debe estar cubierto cuando aplique.
 - iOS / React Navigation beforeRemove debe estar cubierto cuando aplique.
 
+## Android notification detection
+
+El sistema de detección de notificaciones tiene una arquitectura dual que es fácil de romper. Reglas críticas:
+
+### Dual file locations — SIEMPRE sincronizar
+
+Los archivos Kotlin existen en dos rutas. Gradle compila SOLO desde `android/app/src/main/java/`:
+
+- Fuente editable: `plugins/notification-detection/native-src/notificationdetection/*.kt`
+- Fuente compilada: `android/app/src/main/java/com/darkmoney/app/notificationdetection/*.kt`
+
+Después de editar cualquier `.kt` en `plugins/`, copiar al path de `android/`:
+```bash
+cp plugins/notification-detection/native-src/notificationdetection/Foo.kt \
+   android/app/src/main/java/com/darkmoney/app/notificationdetection/Foo.kt
+```
+
+### Verificar el APK antes de instalar
+
+`BUILD SUCCESSFUL` no garantiza que los cambios Kotlin entraron. Verificar siempre:
+```bash
+cd /tmp && unzip -o .../app-release.apk 'classes*.dex' -d apk_extracted
+strings apk_extracted/classes*.dex | grep "texto esperado"
+```
+
+### Forzar recompilación cuando el cache Gradle está stale
+
+```bash
+rm -rf android/.gradle android/app/build/tmp/kotlin-classes android/app/build/intermediates/dex
+./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,armeabi-v7a
+```
+
+### Logs nativos en release builds
+
+`Log.d` es filtrado en release builds en Samsung/Android 12+. Para debugear usar:
+```bash
+adb -s <ID> shell dumpsys notification --noredact | grep -A20 "darkmoney"
+adb -s <ID> logcat -d 2>&1 | grep "NotificationManager.*darkmoney"
+```
+
+### Cleanup de notificaciones stale
+
+Hay dos mecanismos de limpieza:
+1. `cancelStalePendingNotifications()` en `onListenerConnected` — limpia al conectar el servicio
+2. `NOTIF_CLEANUP_KEY` en `NotificationDetectionModule.setRuntimeContext` — limpia una vez al abrir la app con nuevo APK. Bumper la key `"YYYY-MM-DD-vN"` cuando necesites forzar limpieza.
+
+### Detección de emails de Gmail
+
+- No llamar `extractFinancialEmailMerchant` para `movementType == "transfer"` — retornar `"Transferencia $bankLabel"` directamente
+- El patrón `\ben\s+` del extractor puede capturar el disclaimer de BCP "en sorteos o promociones" si aparece antes del char 400. Restringir a `.take(400)` ayuda pero no siempre es suficiente
+
+### Notification ID estable
+
+Usar `notificationIdFor("${sourcePackage}:${amount}:${System.currentTimeMillis() / 600_000}")` para evitar duplicados cuando Gmail dispara `onNotificationPosted` múltiples veces con diferente contenido.
+
 ## Skills
 
 Las skills locales viven en .claude/skills/ o .agents/skills/.
@@ -116,6 +171,7 @@ Usar skills cuando aplique:
 - darkmoney-resource-module: crear o migrar módulos tipo recurso.
 - darkmoney-module-audit: auditar módulos contra el estándar.
 - darkmoney-origin-back-navigation: revisar o corregir navegación de retroceso por origen.
+- darkmoney-notification-detection: debugear, extender o corregir el sistema de detección de notificaciones Android (Kotlin nativo, Gradle build, ADB, capa RN/TypeScript).
 
 ## Validation checklist
 

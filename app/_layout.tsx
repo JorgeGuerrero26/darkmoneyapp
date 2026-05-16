@@ -26,6 +26,7 @@ import {
   useWorkspaceSnapshotQuery,
   useUserWorkspacesQuery,
 } from "../services/queries/workspace-data";
+import { findDetectedSuggestionIdByNativeId } from "../services/queries/notification-detection";
 import { OfflineBanner } from "../components/layout/OfflineBanner";
 import { ActivityNoticeContainer } from "../components/ui/ActivityNotice";
 import { ToastProvider } from "../components/DarkMoneyToast";
@@ -699,6 +700,7 @@ function NavigationGuard() {
   const segments = useSegments();
   const pathname = usePathname();
   const router = useRouter();
+  const { activeWorkspaceId } = useWorkspace();
   const [preferredAuthEntry, setPreferredAuthEntry] = useState<"/(auth)/login" | "/(auth)/welcome" | null>(null);
   const onObligationInviteFromPush = useCallback(
     (token: string) => {
@@ -801,6 +803,32 @@ function NavigationGuard() {
         console.warn("[NavigationGuard] initial URL failed:", error);
       });
   }, [session]);
+
+  // Deep-link nativo de detección: darkmoney://detected-suggestion/<nativeId>
+  // Abre la app y aterriza en el form in-app de esa sugerencia.
+  const openDetectedSuggestion = useCallback(
+    async (url: string | null) => {
+      if (!url) return;
+      const match = url.match(/detected-suggestion\/([^/?#]+)/);
+      if (!match) return;
+      const nativeId = decodeURIComponent(match[1]);
+      if (!activeWorkspaceId) {
+        router.push("/notifications");
+        return;
+      }
+      const id = await findDetectedSuggestionIdByNativeId(activeWorkspaceId, nativeId).catch(() => null);
+      router.push(id ? `/notifications?suggestionId=${id}` : "/notifications");
+    },
+    [activeWorkspaceId, router],
+  );
+
+  useEffect(() => {
+    void Linking.getInitialURL()
+      .then((url) => void openDetectedSuggestion(url))
+      .catch(() => {});
+    const sub = Linking.addEventListener("url", ({ url }) => void openDetectedSuggestion(url));
+    return () => sub.remove();
+  }, [openDetectedSuggestion]);
 
   useEffect(() => {
     if (isLoading) return;

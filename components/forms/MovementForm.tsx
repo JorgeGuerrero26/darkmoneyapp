@@ -70,7 +70,8 @@ import { buildCategorySuggestionCandidates } from "../../services/analytics/cate
 import { normalizeAnalyticsText } from "../../services/analytics/movement-features";
 import { sortByName } from "../../lib/sort-locale";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
-import type { MovementType, MovementStatus, MovementRecord, AccountSummary, CategorySummary, CounterpartySummary, ExchangeRateSummary } from "../../types/domain";
+import type { MovementType, MovementStatus, MovementRecord, CategorySummary, CounterpartySummary, ExchangeRateSummary } from "../../types/domain";
+import { AccountPicker } from "../domain/AccountPicker";
 
 type Props = {
   visible: boolean;
@@ -332,6 +333,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   const [form, setForm] = useState<FormState>(() => getInitialForm(defaultType));
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
   const [submitError, setSubmitError] = useState("");
+  const [cleanupAppliedText, setCleanupAppliedText] = useState<string | null>(null);
   const [isClosingAfterSubmit, setIsClosingAfterSubmit] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [savedMovementId, setSavedMovementId] = useState<number | undefined>(editMovement?.id);
@@ -413,7 +415,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   // new string on every render and invalidating AI hook stable keys.
   const occurredAtISO = useMemo(() => dateStrToISO(form.occurredAt), [form.occurredAt]);
   const { cleanup: descriptionCleanup, isLoading: descriptionCleanupLoading } = useMovementDescriptionCleanup({
-    enabled: Boolean(visible && form.movementType !== "transfer"),
+    enabled: Boolean(visible && form.movementType !== "transfer" && form.description !== cleanupAppliedText),
     workspaceId: activeWorkspaceId,
     surface: "movement_form",
     rawDescription: form.description,
@@ -882,6 +884,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   }
 
   async function applyCounterpartySuggestion(suggestion: CounterpartySuggestionResult) {
+    if (createCounterparty.isPending) return;
     if (suggestion.type === "existing_counterparty" && suggestion.counterpartyId) {
       patch({ counterpartyId: suggestion.counterpartyId });
       haptics.success();
@@ -902,6 +905,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
       });
       patch({ counterpartyId: created.id });
       haptics.success();
+      showToast(`Contraparte "${suggestion.newCounterpartyName}" creada`, "success");
     } catch (error) {
       showToast(humanizeError(error) || "No se pudo crear la contraparte.", "error");
     }
@@ -1786,7 +1790,10 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
             label="Descripción (opcional)"
             placeholder="Se genera automáticamente si la dejas vacía"
             value={form.description}
-            onChangeText={(v) => patch({ description: v })}
+            onChangeText={(v) => {
+              if (v !== cleanupAppliedText) setCleanupAppliedText(null);
+              patch({ description: v });
+            }}
             autoFocus
             ref={descriptionRef}
             returnKeyType="next"
@@ -1802,7 +1809,10 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
             <SmartSuggestion
               label={descriptionCleanup.cleanedDescription}
               detail={`Descripción limpia · ${Math.round(descriptionCleanup.confidence * 100)}% · ${descriptionCleanup.reasons.join(" · ")}`}
-              onApply={() => patch({ description: descriptionCleanup.cleanedDescription })}
+              onApply={() => {
+                setCleanupAppliedText(descriptionCleanup.cleanedDescription);
+                patch({ description: descriptionCleanup.cleanedDescription });
+              }}
             />
           ) : null}
 
@@ -1947,49 +1957,6 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
 }
 
 // -- Sub-components ------------------------------------------------------------
-
-function AccountPicker({
-  label,
-  accounts,
-  selectedId,
-  onSelect,
-  error,
-}: {
-  label: string;
-  accounts: AccountSummary[];
-  selectedId: number | null;
-  onSelect: (id: number) => void;
-  error?: string;
-}) {
-  return (
-    <View style={styles.pickerWrap}>
-      <Text style={styles.sectionLabel}>{label}</Text>
-      {error ? <Text style={styles.fieldError}>{error}</Text> : null}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.accountRow}>
-        {accounts.map((acc) => (
-          <TouchableOpacity
-            key={acc.id}
-            style={[
-              styles.accountChip,
-              selectedId === acc.id && { borderColor: acc.color, backgroundColor: acc.color + "22" },
-            ]}
-            onPress={() => onSelect(acc.id)}
-          >
-            <Text style={[styles.accountChipName, selectedId === acc.id && { color: acc.color }]}>
-              {acc.name}
-            </Text>
-            <Text style={styles.accountChipBalance}>
-              {acc.currencyCode}
-            </Text>
-          </TouchableOpacity>
-        ))}
-        {accounts.length === 0 && (
-          <Text style={styles.emptyPicker}>Sin cuentas activas</Text>
-        )}
-      </ScrollView>
-    </View>
-  );
-}
 
 function CounterpartyPicker({
   label,

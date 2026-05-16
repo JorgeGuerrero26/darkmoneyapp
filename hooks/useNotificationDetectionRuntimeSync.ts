@@ -135,6 +135,16 @@ export function useNotificationDetectionRuntimeSync() {
         if (cancelled || suggestion.status !== "pending") continue;
         if (processedSuggestionIdsRef.current.has(suggestion.id)) continue;
         processedSuggestionIdsRef.current.add(suggestion.id);
+        if (suggestion.movementType === "transfer") {
+          // Transferencias entre cuentas propias: sin comercio/categoría/contraparte.
+          // Solo sincronizar y omitir toda la IA (clasificación, limpieza, contraparte, recurrente).
+          await syncNativeDetectedSuggestion({
+            userId: profile!.id,
+            workspaceId: activeWorkspaceId!,
+            nativeSuggestion: suggestion,
+          }).catch(() => null);
+          continue;
+        }
         if (entitlementQuery.data?.proAccessEnabled && suggestion.confidence !== "high") {
           const classification = await requestNotificationMovementAiClassification({
             workspaceId: activeWorkspaceId!,

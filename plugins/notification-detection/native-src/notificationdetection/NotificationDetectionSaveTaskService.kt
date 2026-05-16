@@ -27,6 +27,7 @@ class NotificationDetectionSaveTaskService : HeadlessJsTaskService() {
       movementType: String,
       amount: String,
       accountId: Int,
+      destinationAccountId: Int?,
       categoryId: Int?,
       newCategoryName: String?,
       counterpartyId: Int?,
@@ -45,6 +46,7 @@ class NotificationDetectionSaveTaskService : HeadlessJsTaskService() {
         putString("movementType", movementType)
         putString("amount", amount)
         putInt("accountId", accountId)
+        if (destinationAccountId != null) putInt("destinationAccountId", destinationAccountId)
         if (categoryId != null) putInt("categoryId", categoryId)
         if (!newCategoryName.isNullOrBlank()) putString("newCategoryName", newCategoryName)
         if (counterpartyId != null) putInt("counterpartyId", counterpartyId)

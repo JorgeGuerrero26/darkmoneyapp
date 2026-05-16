@@ -74,18 +74,27 @@ object QuickMovementOverlay {
       windowAnimations = 0
     }
 
-    manager.addView(view, params)
-    overlayView = view
     windowManager = manager
     isDismissing = false
+    // Delay so the notification shade has time to close before the overlay appears.
+    // Check windowManager is still set (not cleared by a dismiss() call during the delay).
+    Handler(Looper.getMainLooper()).postDelayed({
+      if (windowManager == null) return@postDelayed
+      try {
+        manager.addView(view, params)
+        overlayView = view
+      } catch (_: Exception) {
+        dismiss()
+      }
+    }, 350)
   }
 
   fun dismiss() {
-    val view = overlayView ?: return
     val manager = windowManager
+    windowManager = null
+    val view = overlayView ?: return
     overlayView = null
     panelView = null
-    windowManager = null
     isDismissing = false
     try {
       manager?.removeViewImmediate(view)
@@ -238,7 +247,18 @@ object QuickMovementOverlay {
       ViewGroup.LayoutParams.WRAP_CONTENT,
     ).apply { topMargin = dp(16) })
 
-    var selectedType = if (movementType == "income") "income" else "expense"
+    var selectedType = when (movementType) {
+      "income" -> "income"
+      "transfer" -> "transfer"
+      else -> "expense"
+    }
+    val transferOnlyViews = mutableListOf<View>()
+    val expenseIncomeOnlyViews = mutableListOf<View>()
+    fun applyTypeVisibility() {
+      val isTransfer = selectedType == "transfer"
+      transferOnlyViews.forEach { it.visibility = if (isTransfer) View.VISIBLE else View.GONE }
+      expenseIncomeOnlyViews.forEach { it.visibility = if (isTransfer) View.GONE else View.VISIBLE }
+    }
     val segment = LinearLayout(context).apply {
       orientation = LinearLayout.HORIZONTAL
       setPadding(dp(4), dp(4), dp(4), dp(4))
@@ -246,9 +266,12 @@ object QuickMovementOverlay {
     }
     lateinit var expenseSegment: TextView
     lateinit var incomeSegment: TextView
+    lateinit var transferSegment: TextView
     fun refreshSegments() {
       styleSegment(expenseSegment, selectedType == "expense", 0xFFFF8F9E.toInt(), dp(14))
       styleSegment(incomeSegment, selectedType == "income", 0xFF6BE4C5.toInt(), dp(14))
+      styleSegment(transferSegment, selectedType == "transfer", 0xFF8EA5FF.toInt(), dp(14))
+      applyTypeVisibility()
     }
     expenseSegment = TextView(context).apply {
       text = "Gasto"
@@ -270,9 +293,19 @@ object QuickMovementOverlay {
         refreshSegments()
       }
     }
+    transferSegment = TextView(context).apply {
+      text = "Transferencia"
+      gravity = Gravity.CENTER
+      textSize = 13f
+      typeface = Typeface.DEFAULT_BOLD
+      setOnClickListener {
+        selectedType = "transfer"
+        refreshSegments()
+      }
+    }
     segment.addView(expenseSegment, LinearLayout.LayoutParams(0, dp(42), 1f))
     segment.addView(incomeSegment, LinearLayout.LayoutParams(0, dp(42), 1f))
-    refreshSegments()
+    segment.addView(transferSegment, LinearLayout.LayoutParams(0, dp(42), 1.25f))
     root.addView(segment, LinearLayout.LayoutParams(
       ViewGroup.LayoutParams.MATCH_PARENT,
       ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -280,14 +313,20 @@ object QuickMovementOverlay {
 
     val accounts = readOptions(runtimeContext, "accounts", fallbackLabel = "Sin cuenta asignada", metaKey = "currencyCode")
     val defaultAccountIdx = defaultAccountIndex(runtimeContext, financialAppKey, accounts)
-    val accountSelect = accountChipField(context, "CUENTA", accounts, defaultAccountIdx)
+    val accountSelect = accountChipField(context, "CUENTA / ORIGEN", accounts, defaultAccountIdx)
     root.addView(accountSelect.container)
+
+    val destinationDefaultIdx = if (accounts.size > 1) (defaultAccountIdx + 1) % accounts.size else 0
+    val destinationAccountSelect = accountChipField(context, "CUENTA DESTINO", accounts, destinationDefaultIdx)
+    root.addView(destinationAccountSelect.container)
+    transferOnlyViews.add(destinationAccountSelect.container)
 
     val baseCategories = listOf(Option(null, "Sin categoría")) + readOptions(runtimeContext, "categories", fallbackLabel = "Sin categoría")
     val aiNewCategory = aiNewCategoryOption(aiCategoryRecommendation)
     val categories = if (aiNewCategory != null) baseCategories + aiNewCategory else baseCategories
     val categorySelect = categoryChipField(context, "CATEGORÍA (OPCIONAL)", categories, 0)
     root.addView(categorySelect.container)
+    expenseIncomeOnlyViews.add(categorySelect.container)
 
     if (aiCategoryPending(aiCategoryRecommendation)) {
       val loadingWrap = LinearLayout(context).apply {
@@ -296,6 +335,7 @@ object QuickMovementOverlay {
       }
       loadingWrap.addView(aiLoadingRow(context))
       root.addView(loadingWrap)
+      expenseIncomeOnlyViews.add(loadingWrap)
     }
 
     val aiSuggestedIdx = aiSuggestedCategoryIndex(aiCategoryRecommendation, categories)
@@ -312,6 +352,7 @@ object QuickMovementOverlay {
       }
       suggestionWrap.addView(suggestionRow)
       root.addView(suggestionWrap)
+      expenseIncomeOnlyViews.add(suggestionWrap)
     }
 
     var selectedCounterpartyId: Int? = null
@@ -330,6 +371,7 @@ object QuickMovementOverlay {
       }
       suggestionWrap.addView(suggestionRow)
       root.addView(suggestionWrap)
+      expenseIncomeOnlyViews.add(suggestionWrap)
     }
 
     var selectedRecurringType: String? = null
@@ -350,6 +392,7 @@ object QuickMovementOverlay {
       }
       suggestionWrap.addView(suggestionRow)
       root.addView(suggestionWrap)
+      expenseIncomeOnlyViews.add(suggestionWrap)
     }
 
     val riskLabel = riskLabel(riskExplanation)
@@ -360,6 +403,7 @@ object QuickMovementOverlay {
       }
       suggestionWrap.addView(categorySuggestionRow(context, riskLabel, riskDetail(riskExplanation)) {})
       root.addView(suggestionWrap)
+      expenseIncomeOnlyViews.add(suggestionWrap)
     }
 
     val budgetLabel = budgetLabel(budgetImpact)
@@ -370,6 +414,7 @@ object QuickMovementOverlay {
       }
       suggestionWrap.addView(categorySuggestionRow(context, budgetLabel, budgetDetail(budgetImpact)) {})
       root.addView(suggestionWrap)
+      expenseIncomeOnlyViews.add(suggestionWrap)
     }
 
     val initialDescription = descriptionCleanup
@@ -385,6 +430,8 @@ object QuickMovementOverlay {
     )
     descriptionInput.input.minLines = 2
     root.addView(descriptionInput.container)
+
+    refreshSegments()
 
     val cancelBtn = actionButton(context, "Cancelar", false, dp(18)) { animatedDismiss() }
 
@@ -410,6 +457,7 @@ object QuickMovementOverlay {
       setOnClickListener {
         val workspaceId = runtimeContext.optInt("workspaceId", 0).takeIf { it > 0 }
         val selectedAccountIdx = accountSelect.selectedIndex().coerceIn(0, accounts.lastIndex)
+        val selectedDestinationIdx = destinationAccountSelect.selectedIndex().coerceIn(0, accounts.lastIndex)
         val selectedCategoryIdx = categorySelect.selectedIndex().coerceIn(0, categories.lastIndex)
         // Show loading state
         isClickable = false
@@ -427,8 +475,9 @@ object QuickMovementOverlay {
           selectedType,
           amountInput.text.toString(),
           accounts[selectedAccountIdx].id ?: 0,
-          categories[selectedCategoryIdx].id,
-          categories[selectedCategoryIdx].createName,
+          if (selectedType == "transfer") (accounts[selectedDestinationIdx].id ?: 0) else null,
+          if (selectedType == "transfer") null else categories[selectedCategoryIdx].id,
+          if (selectedType == "transfer") null else categories[selectedCategoryIdx].createName,
           selectedCounterpartyId,
           selectedNewCounterpartyName,
           selectedCounterpartyType,
