@@ -19,6 +19,33 @@ class NotificationDetectionSaveTaskService : HeadlessJsTaskService() {
   }
 
   companion object {
+    fun startAiCategoryEnrichment(
+      context: Context,
+      suggestionId: String,
+      workspaceId: Int,
+      movementType: String,
+      amount: String,
+      description: String,
+      runtimeContextJson: String,
+    ) {
+      val extras = Bundle().apply {
+        putString("taskMode", "aiCategoryEnrichment")
+        putString("suggestionId", suggestionId)
+        putInt("workspaceId", workspaceId)
+        putString("movementType", movementType)
+        putString("amount", amount)
+        putString("description", description)
+        putString("runtimeContextJson", runtimeContextJson)
+      }
+      val intent = Intent(context, NotificationDetectionSaveTaskService::class.java).putExtras(extras)
+      try {
+        context.startService(intent)
+        HeadlessJsTaskService.acquireWakeLockNow(context)
+      } catch (_: Exception) {
+        // App in background; AI enrichment is non-critical, skip silently.
+      }
+    }
+
     fun start(
       context: Context,
       suggestionId: String,
@@ -59,8 +86,12 @@ class NotificationDetectionSaveTaskService : HeadlessJsTaskService() {
         putString("description", description)
       }
       val intent = Intent(context, NotificationDetectionSaveTaskService::class.java).putExtras(extras)
-      context.startService(intent)
-      HeadlessJsTaskService.acquireWakeLockNow(context)
+      try {
+        context.startService(intent)
+        HeadlessJsTaskService.acquireWakeLockNow(context)
+      } catch (e: Exception) {
+        android.util.Log.e("DarkMoney", "startService failed (app in background?): ${e.message}")
+      }
     }
   }
 }

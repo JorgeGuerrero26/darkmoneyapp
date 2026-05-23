@@ -9,6 +9,7 @@ type Props = {
   inviteCount: number;
   onMarkAllRead?: () => void;
   onMarkAllUnread?: () => void;
+  onDeleteAllRead?: () => void;
   actionsDisabled?: boolean;
 };
 
@@ -18,6 +19,7 @@ export function NotificationSummaryBar({
   inviteCount,
   onMarkAllRead,
   onMarkAllUnread,
+  onDeleteAllRead,
   actionsDisabled,
 }: Props) {
   return (
@@ -64,6 +66,13 @@ export function NotificationSummaryBar({
           label: "No leer",
           disabled: readCount === 0 || actionsDisabled,
           onPress: onMarkAllUnread,
+        }] : []),
+        ...(onDeleteAllRead ? [{
+          key: "delete-read",
+          label: "Eliminar leídas",
+          disabled: readCount === 0 || actionsDisabled,
+          onPress: onDeleteAllRead,
+          destructive: true,
         }] : []),
       ]}
     />

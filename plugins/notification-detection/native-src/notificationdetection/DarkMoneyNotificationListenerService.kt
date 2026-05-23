@@ -76,7 +76,12 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
     val text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty()
     val bigText = extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString().orEmpty()
     val subText = extras.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString().orEmpty()
-    val combined = listOf(title, text, bigText, subText)
+    val textLines = extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)
+      ?.map { it.toString() }
+      ?.filter { it.isNotBlank() }
+      ?.joinToString(" · ")
+      .orEmpty()
+    val combined = listOf(title, text, bigText, textLines, subText)
       .filter { it.isNotBlank() }
       .joinToString(" · ")
 
@@ -85,7 +90,15 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
     val discardFingerprint = NotificationDetectionStore.computeDiscardFingerprint(sourcePackage, combined)
     if (NotificationDetectionStore.isDiscardedFingerprint(applicationContext, discardFingerprint)) return
     val amount = extractAmount(combined) ?: return
+    // Skip relay sources (Google Wallet, Samsung Pay) when the bank already has a pending suggestion
+    // for the same amount — they mirror the same transaction and would produce a duplicate tile.
+    if (sourcePackage in RELAY_PACKAGES &&
+        NotificationDetectionStore.hasPendingSuggestionForAmount(context, amount, withinMs = 5 * 60_000L)) return
     val detection = inferMovementDetection(combined)
+    // Skip Gmail transfer emails when the bank app already created a pending suggestion for the same
+    // amount — BCP sends both a push notification and a confirmation email for every transfer.
+    if (sourcePackage == GMAIL_PACKAGE && detection.movementType == "transfer" &&
+        NotificationDetectionStore.hasPendingSuggestionForAmount(context, amount, withinMs = 5 * 60_000L)) return
     if (detection.confidence == "low") return
     val appName = readAppName(sourcePackage, combined)
     val financialAppKey = financialAppKeyFor(sourcePackage)
@@ -96,11 +109,11 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
       combined,
       amount,
     )
-    // Use source+amount+10min-bucket as notification ID so that when Gmail
-    // updates its notification with more content (different combined → different
-    // suggestionId), Android updates the existing DarkMoney tile instead of
-    // adding a duplicate.
-    val notificationId = notificationIdFor("${sourcePackage}:${amount}:${System.currentTimeMillis() / 600_000}")
+    // Use financialApp+amount+10min-bucket as notification ID so that:
+    // 1. Cross-source detections of the same transaction (Yape push + Yape email)
+    //    collapse into one tile (manager.notify with same ID replaces).
+    // 2. Gmail re-fires (different content → different suggestionId) also collapse.
+    val notificationId = notificationIdFor("${appName}:${amount}:${System.currentTimeMillis() / 600_000}")
 
     val suggestion = JSONObject()
       .put("id", suggestionId)
@@ -320,7 +333,7 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
         return if (!bankLabel.isNullOrBlank()) "Transferencia $bankLabel" else "Transferencia BCP"
       }
       val merchant = extractFinancialEmailMerchant(combined)
-      if (!merchant.isNullOrBlank()) return "Compra en $merchant"
+      if (!merchant.isNullOrBlank()) return merchant
       if (!bankLabel.isNullOrBlank()) return "Movimiento $bankLabel"
     }
     return listOf(text, bigText, title, subText)
@@ -331,24 +344,68 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
   }
 
   private fun extractFinancialEmailMerchant(value: String): String? {
-    // Only search the first 400 chars — merchant fields appear near the top;
-    // the BCP security disclaimer at the bottom contains "en sorteos o promociones"
-    // which would otherwise be captured as a false merchant name.
+    val searchable = financialEmailTransactionalBody(value)
     val patterns = listOf(
-      Regex("""(?i)\bempresa\s*[:\-]?\s*([A-Z0-9ÁÉÍÓÚÑ&.' \-]{3,60})"""),
-      Regex("""(?i)\bcomercio\s*[:\-]?\s*([A-Z0-9ÁÉÍÓÚÑ&.' \-]{3,60})"""),
-      Regex("""(?i)\bestablecimiento\s*[:\-]?\s*([A-Z0-9ÁÉÍÓÚÑ&.' \-]{3,60})"""),
-      Regex("""(?i)\ben\s+([A-Z0-9ÁÉÍÓÚÑ&.' \-]{3,60})(?:[.,\n\r]|$)"""),
+      Regex("""(?i)\bempresa\s*[:\-]?\s*([A-Z0-9ÁÉÍÓÚÑ&.'* \-]{3,80})"""),
+      Regex("""(?i)\bcomercio\s*[:\-]?\s*([A-Z0-9ÁÉÍÓÚÑ&.'* \-]{3,80})"""),
+      Regex("""(?i)\bestablecimiento\s*[:\-]?\s*([A-Z0-9ÁÉÍÓÚÑ&.'* \-]{3,80})"""),
+      Regex("""(?i)\ben\s+([A-Z0-9ÁÉÍÓÚÑ&.'* \-]{3,80})(?:[.,\n\r]|$)"""),
     )
     for (pattern in patterns) {
-      val raw = pattern.find(value.take(400))?.groupValues?.getOrNull(1)?.trim().orEmpty()
-      val cleaned = raw
-        .replace(Regex("""(?i)\s+(monto|datos|operaci[oó]n|fecha|n[uú]mero|por tu seguridad).*$"""), "")
-        .replace(Regex("""\s+"""), " ")
-        .trim(' ', '.', ',', '-', ':', ';')
-      if (cleaned.length >= 3 && !normalizeForMatching(cleaned).startsWith("tu tarjeta")) return cleaned.take(48)
+      val raw = pattern.find(searchable)?.groupValues?.getOrNull(1)?.trim().orEmpty()
+      val merchant = cleanFinancialEmailMerchant(raw)
+      if (!merchant.isNullOrBlank()) return merchant
     }
     return null
+  }
+
+  private fun financialEmailTransactionalBody(value: String): String {
+    val cutoffMarkers = listOf(
+      "¿no reconoces esta operación?",
+      "juntos somos más seguros",
+      "juntos somos mas seguros",
+      "el bcp nunca te solicitará",
+      "el bcp nunca te solicitara",
+      "si deseas desafiliarte",
+    )
+    val normalized = normalizeForMatching(value)
+    val markerIndex = cutoffMarkers
+      .mapNotNull { marker ->
+        val index = normalized.indexOf(normalizeForMatching(marker).trim())
+        if (index >= 0) index else null
+      }
+      .minOrNull()
+    return if (markerIndex != null) value.take(markerIndex) else value.take(1400)
+  }
+
+  private fun cleanFinancialEmailMerchant(value: String): String? {
+    val cleaned = value
+        .replace(Regex("""(?i)\s+(monto|datos|operaci[oó]n|fecha|n[uú]mero|por tu seguridad).*$"""), "")
+        .replace("*", " ")
+        .replace(Regex("""(?i)\b(subscr|subscription|suscripci[oó]n|recurrente|recurring|compra|consumo|pago)\b"""), " ")
+        .replace(Regex("""(?i)\b(visa|mastercard|mc|pos|payu|pagoefectivo)\b"""), " ")
+        .replace(Regex("""\s+"""), " ")
+        .trim(' ', '.', ',', '-', ':', ';')
+    val normalized = normalizeForMatching(cleaned)
+    if (cleaned.length < 3 || normalized.startsWith(" tu tarjeta")) return null
+    val aliases = listOf(
+      Regex("""(?i)\b(openai\s+)?chat\s*gpt\b""") to "ChatGPT",
+      Regex("""(?i)\bopenai\b""") to "OpenAI",
+      Regex("""(?i)\bnetflix\b""") to "Netflix",
+      Regex("""(?i)\bspotify\b""") to "Spotify",
+      Regex("""(?i)\bapple\b""") to "Apple",
+      Regex("""(?i)\bgoogle\b""") to "Google",
+      Regex("""(?i)\bamazon\b""") to "Amazon",
+    )
+    for ((pattern, label) in aliases) {
+      if (pattern.containsMatchIn(cleaned)) return label
+    }
+    return cleaned
+      .lowercase()
+      .split(" ")
+      .filter { it.isNotBlank() }
+      .joinToString(" ") { token -> token.replaceFirstChar { char -> char.titlecase() } }
+      .take(48)
   }
 
   private fun financialEmailBankLabel(value: String): String? {
@@ -461,6 +518,17 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
       PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
 
+    val ignoreIntent = Intent(this, NotificationDetectionActionReceiver::class.java)
+      .setAction(NotificationDetectionActionReceiver.ACTION_IGNORE)
+      .putExtra(NotificationDetectionActionReceiver.EXTRA_SUGGESTION_ID, suggestionId)
+      .putExtra(NotificationDetectionActionReceiver.EXTRA_NOTIFICATION_ID, notificationId)
+    val ignorePendingIntent = PendingIntent.getBroadcast(
+      this,
+      notificationId + 3,
+      ignoreIntent,
+      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
+
     val descClean = description
       .replace(Regex("""(?i)(S/|S\.|PEN|US\$|USD|\$)\s*[0-9]+(?:[.,][0-9]{1,2})?"""), "")
       .replace(Regex("""^[\s·.\-,]+|[\s·.\-,]+$"""), "")
@@ -478,7 +546,8 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
       .setContentIntent(openAppPendingIntent)
       .setAutoCancel(true)
       .addAction(Notification.Action.Builder(0, "Registro rápido", quickPendingIntent).build())
-      .addAction(Notification.Action.Builder(0, "Descartar", discardPendingIntent).build())
+      .addAction(Notification.Action.Builder(0, "Ignorar", ignorePendingIntent).build())
+      .addAction(Notification.Action.Builder(0, "No mostrar más", discardPendingIntent).build())
       .setExtras(android.os.Bundle().apply {
         putString("suggestionId", suggestionId)
         putString("movementType", movementType)
@@ -499,6 +568,10 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
 
   companion object {
     private const val GMAIL_PACKAGE = "com.google.android.gm"
+    private val RELAY_PACKAGES = setOf(
+      "com.google.android.apps.walletnfcrel", // Google Wallet mirrors bank card payments
+      "com.samsung.android.spay",             // Samsung Pay mirrors bank card payments
+    )
     private var currentService: WeakReference<DarkMoneyNotificationListenerService>? = null
 
     fun requestActiveScan() {

@@ -287,6 +287,17 @@ class NotificationDetectionModule(
       PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
 
+    val ignoreIntent = Intent(reactContext, NotificationDetectionActionReceiver::class.java)
+      .setAction(NotificationDetectionActionReceiver.ACTION_IGNORE)
+      .putExtra(NotificationDetectionActionReceiver.EXTRA_SUGGESTION_ID, suggestionId)
+      .putExtra(NotificationDetectionActionReceiver.EXTRA_NOTIFICATION_ID, notificationId)
+    val ignorePendingIntent = PendingIntent.getBroadcast(
+      reactContext,
+      notificationId + 3,
+      ignoreIntent,
+      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
+
     val body = listOf(appName, amount, description.take(56))
       .filter { it.isNotBlank() }
       .joinToString(" · ")
@@ -299,7 +310,8 @@ class NotificationDetectionModule(
       .setContentIntent(openAppPendingIntent)
       .setAutoCancel(true)
       .addAction(Notification.Action.Builder(0, "Registro rápido", quickPendingIntent).build())
-      .addAction(Notification.Action.Builder(0, "Descartar", discardPendingIntent).build())
+      .addAction(Notification.Action.Builder(0, "Ignorar", ignorePendingIntent).build())
+      .addAction(Notification.Action.Builder(0, "No mostrar más", discardPendingIntent).build())
       .build()
 
     manager.notify(notificationId, notification)

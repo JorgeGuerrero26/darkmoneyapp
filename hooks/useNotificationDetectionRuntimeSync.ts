@@ -1,16 +1,18 @@
 import { useEffect, useMemo, useRef } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 
 import { useAuth } from "../lib/auth-context";
 import { useWorkspace } from "../lib/workspace-context";
 import { notificationDetection } from "../lib/notification-detection-native";
 import { packageNamesForEnabledApps } from "../lib/notification-detection-apps";
-import { useNotificationDetectionSettingsQuery, syncNativeDetectedSuggestion } from "../services/queries/notification-detection";
+import { useNotificationDetectionSettingsQuery, syncNativeDetectedSuggestion, getFrequentTransferPair } from "../services/queries/notification-detection";
 import { cleanupMovementDescriptionLocally, shouldShowDescriptionCleanup } from "../lib/movement-description-cleanup";
 import { suggestCounterpartyLocally } from "../lib/movement-counterparty-suggestions";
 import { suggestRecurringLocally, type MovementRecurringHistoryItem } from "../lib/movement-recurring-suggestions";
 import { analyzeMovementRiskLocally, type MovementRiskItem } from "../lib/movement-risk-analysis";
 import { analyzeMovementBudgetImpactLocally } from "../lib/movement-budget-impact";
 import { buildPatternMaps, scoreCategoryFromDescription, type PatternMaps } from "../lib/movement-patterns";
+import { normalizeCurrencyCode, sortAccountsForDetectedCurrency } from "../features/movements/lib/movement-creation-rules";
 import { useMovementPatternsQuery } from "../services/queries/movement-patterns";
 import {
   requestMovementDescriptionCleanup,
@@ -23,6 +25,7 @@ import {
   useUserEntitlementQuery,
   useWorkspaceSnapshotQuery,
 } from "../services/queries/workspace-data";
+import type { AccountSummary } from "../types/domain";
 
 function parseAmountLabel(amountLabel?: string | null): number | null {
   if (!amountLabel) return null;
@@ -39,6 +42,18 @@ function currencyFromAmountLabel(amountLabel?: string | null) {
 function serializeWordToCategory(maps: PatternMaps) {
   return Object.fromEntries(
     Array.from(maps.wordToCategory.entries()).map(([word, entries]) => [word, entries]),
+  );
+}
+
+function buildAccountCurrencyPreferences(
+  accounts: Pick<AccountSummary, "id" | "name" | "currencyCode" | "isArchived">[],
+  currencies: string[],
+) {
+  return Object.fromEntries(
+    currencies.map((currencyCode) => [
+      currencyCode,
+      sortAccountsForDetectedCurrency(accounts, currencyCode).map((account) => account.id),
+    ]),
   );
 }
 
@@ -59,6 +74,7 @@ function patternMovementAmount(movement: {
 export function useNotificationDetectionRuntimeSync() {
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
+  const queryClient = useQueryClient();
   // Track suggestion IDs that have been processed in this session to avoid
   // re-calling AI APIs when the effect re-runs due to reference changes.
   const processedSuggestionIdsRef = useRef(new Set<string>());
@@ -104,27 +120,62 @@ export function useNotificationDetectionRuntimeSync() {
   useEffect(() => {
     if (!profile?.id || !activeWorkspaceId || !notificationDetection.isAvailable()) return;
     const activeAccounts = (snapshot?.accounts ?? []).filter((account) => !account.isArchived);
+    const workspaceBaseCurrencyCode = normalizeCurrencyCode(activeWorkspace?.baseCurrencyCode, "PEN");
+    const exchangeRates = (snapshot?.exchangeRates ?? [])
+      .filter((rate) => Number.isFinite(rate.rate) && rate.rate > 0)
+      .map((rate) => ({
+        fromCurrencyCode: normalizeCurrencyCode(rate.fromCurrencyCode),
+        toCurrencyCode: normalizeCurrencyCode(rate.toCurrencyCode),
+        rate: rate.rate,
+        effectiveAt: rate.effectiveAt,
+      }));
+    const runtimeCurrencies = Array.from(new Set([
+      workspaceBaseCurrencyCode,
+      "PEN",
+      "USD",
+      ...activeAccounts.map((account) => normalizeCurrencyCode(account.currencyCode, workspaceBaseCurrencyCode)),
+      ...exchangeRates.flatMap((rate) => [rate.fromCurrencyCode, rate.toCurrencyCode]),
+    ]));
     const enabledKeys = settings.filter((setting) => setting.enabled).map((setting) => setting.financialAppKey);
     notificationDetection.setDetectionEnabled(enabledKeys.length > 0);
     notificationDetection.setAllowedPackages(packageNamesForEnabledApps(enabledKeys));
-    notificationDetection.setRuntimeContext({
-      userId: profile.id,
-      workspaceId: activeWorkspaceId,
-      accounts: activeAccounts.map((account) => ({
-        id: account.id,
-        name: account.name,
-        currencyCode: account.currencyCode,
-      })),
-      categories: (snapshot?.categories ?? [])
-        .filter((category) => category.isActive)
-        .map((category) => ({ id: category.id, name: category.name, kind: category.kind })),
-      counterparties: (snapshot?.counterparties ?? [])
-        .filter((counterparty) => !counterparty.isArchived)
-        .map((counterparty) => ({ id: counterparty.id, name: counterparty.name, type: counterparty.type })),
-      wordToCategory: serializeWordToCategory(patternMaps),
-      settings,
-    });
-  }, [activeWorkspaceId, patternMaps, profile?.id, settings, snapshot?.accounts, snapshot?.categories, snapshot?.counterparties]);
+    const userId = profile.id;
+    async function applyRuntimeContext() {
+      const frequentTransferPair = await getFrequentTransferPair(activeWorkspaceId);
+      notificationDetection.setRuntimeContext({
+        userId,
+        workspaceId: activeWorkspaceId,
+        workspaceBaseCurrencyCode,
+        accounts: activeAccounts.map((account) => ({
+          id: account.id,
+          name: account.name,
+          currencyCode: normalizeCurrencyCode(account.currencyCode, workspaceBaseCurrencyCode),
+        })),
+        accountCurrencyPreferences: buildAccountCurrencyPreferences(activeAccounts, runtimeCurrencies),
+        exchangeRates,
+        categories: (snapshot?.categories ?? [])
+          .filter((category) => category.isActive)
+          .map((category) => ({ id: category.id, name: category.name, kind: category.kind })),
+        counterparties: (snapshot?.counterparties ?? [])
+          .filter((counterparty) => !counterparty.isArchived)
+          .map((counterparty) => ({ id: counterparty.id, name: counterparty.name, type: counterparty.type })),
+        wordToCategory: serializeWordToCategory(patternMaps),
+        settings,
+        frequentTransferPair: frequentTransferPair ?? undefined,
+      });
+    }
+    applyRuntimeContext();
+  }, [
+    activeWorkspace?.baseCurrencyCode,
+    activeWorkspaceId,
+    patternMaps,
+    profile?.id,
+    settings,
+    snapshot?.accounts,
+    snapshot?.categories,
+    snapshot?.counterparties,
+    snapshot?.exchangeRates,
+  ]);
 
   useEffect(() => {
     if (!profile?.id || !activeWorkspaceId || !notificationDetection.isAvailable()) return;
@@ -471,7 +522,7 @@ export function useNotificationDetectionRuntimeSync() {
         if (aiCategoryStatus === "pending") {
           const updatedAt = Number(suggestion.updatedAt ?? suggestion.createdAt ?? 0);
           if (updatedAt > 0 && Date.now() - updatedAt > 12_000) {
-            notificationDetection.setSuggestionAiCategoryRecommendation(suggestion.id, null);
+            notificationDetection.setSuggestionAiCategoryRecommendation(suggestion.id, { status: "unavailable" });
           }
           continue;
         }
@@ -507,10 +558,13 @@ export function useNotificationDetectionRuntimeSync() {
         }).catch(() => null);
         if (cancelled) continue;
         if (!response?.ok || !response.recommendation) {
-          notificationDetection.setSuggestionAiCategoryRecommendation(suggestion.id, null);
+          notificationDetection.setSuggestionAiCategoryRecommendation(suggestion.id, { status: "unavailable" });
           continue;
         }
         notificationDetection.setSuggestionAiCategoryRecommendation(suggestion.id, response.recommendation);
+      }
+      if (!cancelled) {
+        void queryClient.invalidateQueries({ queryKey: ["notifications"] });
       }
     }
     void syncLocalSuggestions();
@@ -523,6 +577,7 @@ export function useNotificationDetectionRuntimeSync() {
     entitlementQuery.data?.proAccessEnabled,
     patternMaps,
     profile?.id,
+    queryClient,
     recurringHistory,
     riskHistory,
     settings,

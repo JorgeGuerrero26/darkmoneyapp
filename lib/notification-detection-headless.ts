@@ -6,8 +6,15 @@ import {
   syncNativeDetectedSuggestion,
   type NativeDetectedMovementSuggestion,
 } from "../services/queries/notification-detection";
+import { scoreCategoryFromDescription, type PatternMaps } from "./movement-patterns";
+import { requestMovementCategoryAiSuggestion, type MovementFormInput } from "../services/queries/workspace-data";
+import { buildMovementCreateInput } from "../features/movements/lib/movement-save-contract";
+import type { JsonValue } from "../types/domain";
+
+const LOCAL_CATEGORY_AI_CONFIDENCE_THRESHOLD = 0.6;
 
 type HeadlessPayload = {
+  taskMode?: "aiCategoryEnrichment";
   suggestionId?: string;
   notificationId?: number;
   workspaceId?: number;
@@ -25,6 +32,7 @@ type HeadlessPayload = {
   recurringFrequency?: "weekly" | "biweekly" | "monthly" | "quarterly" | "yearly";
   recurringIntervalCount?: number;
   description?: string;
+  runtimeContextJson?: string;
 };
 
 const nativeDetection = NativeModules.NotificationDetection as
@@ -32,11 +40,148 @@ const nativeDetection = NativeModules.NotificationDetection as
       getSuggestions?: () => Promise<NativeDetectedMovementSuggestion[]>;
       markSuggestionRegistered?: (suggestionId: string, notificationId: number) => void;
       showSuggestionNotification?: (suggestionId: string) => void;
+      setSuggestionAiCategoryRecommendation?: (suggestionId: string, recommendationJson: string) => void;
     }
   | undefined;
 
+function parseAmountLabel(amountLabel?: string | null): number | null {
+  if (!amountLabel) return null;
+  const match = amountLabel.match(/([0-9]+(?:[.,][0-9]{1,2})?)/);
+  if (!match) return null;
+  const amount = Number(match[1].replace(",", "."));
+  return Number.isFinite(amount) && amount > 0 ? amount : null;
+}
+
+function currencyFromAmountLabel(amountLabel?: string | null) {
+  return /usd|\$/i.test(amountLabel ?? "") && !/S\//i.test(amountLabel ?? "") ? "USD" : "PEN";
+}
+
+function setNativeAiCategoryRecommendation(suggestionId: string, value: unknown) {
+  nativeDetection?.setSuggestionAiCategoryRecommendation?.(suggestionId, JSON.stringify(value ?? null));
+}
+
+function movementInsertPayload(workspaceId: number, input: MovementFormInput) {
+  return {
+    workspace_id: workspaceId,
+    movement_type: input.movementType,
+    status: input.status,
+    occurred_at: input.occurredAt,
+    description: input.description,
+    notes: input.notes ?? null,
+    source_account_id: input.sourceAccountId,
+    source_amount: input.sourceAmount,
+    destination_account_id: input.destinationAccountId,
+    destination_amount: input.destinationAmount,
+    fx_rate: input.fxRate ?? null,
+    category_id: input.categoryId ?? null,
+    counterparty_id: input.counterpartyId ?? null,
+    obligation_id: input.obligationId ?? null,
+    subscription_id: input.subscriptionId ?? null,
+    metadata: input.metadata ?? {},
+  };
+}
+
+function jsonValueOrNull(value: unknown): JsonValue | null {
+  if (value == null) return null;
+  try {
+    return JSON.parse(JSON.stringify(value)) as JsonValue;
+  } catch {
+    return null;
+  }
+}
+
+function parseRuntimeContext(raw?: string): any {
+  if (!raw) return {};
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+
+function patternMapsFromRuntimeContext(runtimeContext: any): PatternMaps {
+  const wordToCategory = new Map<string, { id: number; count: number }[]>();
+  const rawWordMap = runtimeContext?.wordToCategory;
+  if (rawWordMap && typeof rawWordMap === "object") {
+    for (const [word, entries] of Object.entries(rawWordMap)) {
+      if (!Array.isArray(entries)) continue;
+      wordToCategory.set(
+        word,
+        entries
+          .map((entry: any) => ({ id: Number(entry?.id), count: Number(entry?.count) }))
+          .filter((entry) => entry.id > 0 && entry.count > 0),
+      );
+    }
+  }
+  return {
+    wordToCategory,
+    counterpartyToCategory: new Map(),
+    categoryToCounterparty: new Map(),
+    counterpartyToAccount: new Map(),
+  };
+}
+
+async function enrichAiCategorySuggestion(payload: HeadlessPayload) {
+  if (!supabase || !payload.suggestionId) return;
+  const runtimeContext = parseRuntimeContext(payload.runtimeContextJson);
+  const workspaceId = Number(payload.workspaceId ?? runtimeContext?.workspaceId ?? 0);
+  if (!workspaceId) return;
+
+  const movementType = payload.movementType === "income" ? "income" : "expense";
+  const compatibleKind = movementType === "income" ? "income" : "expense";
+  const categories = Array.isArray(runtimeContext?.categories)
+    ? runtimeContext.categories
+      .filter((category: any) => category?.isActive !== false && (category?.kind === "both" || category?.kind === compatibleKind))
+      .map((category: any) => ({ id: Number(category.id), name: String(category.name ?? ""), kind: String(category.kind ?? compatibleKind) }))
+      .filter((category: any) => category.id > 0 && category.name.trim().length > 0)
+    : [];
+  const description = payload.description?.trim();
+  if (!description || categories.length === 0) {
+    setNativeAiCategoryRecommendation(payload.suggestionId, { status: "unavailable" });
+    return;
+  }
+
+  const scoredLocal = scoreCategoryFromDescription(description, patternMapsFromRuntimeContext(runtimeContext));
+  const localCategory = scoredLocal ? categories.find((category: any) => category.id === scoredLocal.categoryId) : null;
+  const localSuggestion = scoredLocal && localCategory
+    ? {
+      categoryId: localCategory.id,
+      categoryName: localCategory.name,
+      confidence: scoredLocal.confidence,
+      reasons: scoredLocal.reasons,
+    }
+    : null;
+  if (localSuggestion && localSuggestion.confidence >= LOCAL_CATEGORY_AI_CONFIDENCE_THRESHOLD) {
+    setNativeAiCategoryRecommendation(payload.suggestionId, { status: "unavailable" });
+    return;
+  }
+
+  setNativeAiCategoryRecommendation(payload.suggestionId, { status: "pending" });
+  const response = await requestMovementCategoryAiSuggestion({
+    workspaceId,
+    surface: "android_overlay",
+    movementType,
+    amount: parseAmountLabel(payload.amount),
+    currencyCode: currencyFromAmountLabel(payload.amount),
+    description,
+    occurredAt: new Date().toISOString(),
+    categories,
+    localSuggestion,
+  }).catch(() => null);
+
+  if (!response?.ok || !response.recommendation) {
+    setNativeAiCategoryRecommendation(payload.suggestionId, { status: "unavailable" });
+    return;
+  }
+  setNativeAiCategoryRecommendation(payload.suggestionId, response.recommendation);
+}
+
 export async function notificationDetectionHeadlessTask(payload: HeadlessPayload) {
   if (!supabase || !payload.suggestionId) return;
+  if (payload.taskMode === "aiCategoryEnrichment") {
+    await enrichAiCategorySuggestion(payload);
+    return;
+  }
   const amount = Number(String(payload.amount ?? "").replace(",", "."));
   if (!Number.isFinite(amount) || amount <= 0 || !payload.accountId) return;
 
@@ -92,30 +237,28 @@ export async function notificationDetectionHeadlessTask(payload: HeadlessPayload
       nativeDetection?.showSuggestionNotification?.(payload.suggestionId);
       return;
     }
+    const movementInput = buildMovementCreateInput({
+      movementType: "transfer",
+      status: "posted",
+      occurredAt: suggestion.occurredAt,
+      description,
+      notes: null,
+      sourceAccountId: payload.accountId,
+      sourceAmount: amount,
+      destinationAccountId,
+      destinationAmount: amount,
+      transferCurrenciesDiffer: false,
+      fxRate: null,
+      metadata: {
+        source: "notification_detection_overlay",
+        suggestionId: suggestion.id,
+        financialAppKey: suggestion.financialAppKey,
+        confidence: suggestion.confidence,
+      },
+    });
     const { data: transferMovement, error: transferError } = await supabase
       .from("movements")
-      .insert({
-        workspace_id: workspaceId,
-        movement_type: "transfer",
-        status: "posted",
-        occurred_at: suggestion.occurredAt,
-        description,
-        notes: null,
-        source_account_id: payload.accountId,
-        source_amount: amount,
-        destination_account_id: destinationAccountId,
-        destination_amount: amount,
-        fx_rate: null,
-        category_id: null,
-        counterparty_id: null,
-        subscription_id: null,
-        metadata: {
-          source: "notification_detection_overlay",
-          suggestionId: suggestion.id,
-          financialAppKey: suggestion.financialAppKey,
-          confidence: suggestion.confidence,
-        },
-      })
+      .insert(movementInsertPayload(workspaceId, movementInput))
       .select("id")
       .single();
     if (transferError) {
@@ -134,7 +277,7 @@ export async function notificationDetectionHeadlessTask(payload: HeadlessPayload
         payload: {
           suggestionId: suggestion.id,
           amount,
-          currencyCode: suggestion.currencyCode,
+          currencyCode: srcCur ?? suggestion.currencyCode,
           appLabel: suggestion.appLabel,
           status: "registered",
         },
@@ -150,6 +293,13 @@ export async function notificationDetectionHeadlessTask(payload: HeadlessPayload
   let counterpartyId = payload.counterpartyId ?? null;
   let subscriptionId: number | null = null;
   let recurringIncomeId: number | null = null;
+  const { data: selectedAccountRow } = await supabase
+    .from("accounts")
+    .select("currency_code")
+    .eq("workspace_id", workspaceId)
+    .eq("id", payload.accountId)
+    .maybeSingle();
+  const selectedAccountCurrencyCode = String((selectedAccountRow as { currency_code?: unknown } | null)?.currency_code ?? suggestion.currencyCode);
   const newCategoryName = payload.newCategoryName?.trim().replace(/\s+/g, " ") ?? "";
   if (!categoryId && newCategoryName.length >= 3) {
     const normalizedNewName = newCategoryName
@@ -269,7 +419,7 @@ export async function notificationDetectionHeadlessTask(payload: HeadlessPayload
           account_id: payload.accountId,
           category_id: categoryId,
           amount,
-          currency_code: suggestion.currencyCode,
+          currency_code: selectedAccountCurrencyCode,
           frequency: scheduleFrequency,
           interval_count: scheduleInterval,
           day_of_month: ["monthly", "quarterly", "yearly"].includes(scheduleFrequency) ? dayOfMonth : null,
@@ -297,7 +447,7 @@ export async function notificationDetectionHeadlessTask(payload: HeadlessPayload
           account_id: payload.accountId,
           category_id: categoryId,
           amount,
-          currency_code: suggestion.currencyCode,
+          currency_code: selectedAccountCurrencyCode,
           frequency: scheduleFrequency,
           interval_count: scheduleInterval,
           day_of_month: ["monthly", "quarterly", "yearly"].includes(scheduleFrequency) ? dayOfMonth : null,
@@ -328,36 +478,37 @@ export async function notificationDetectionHeadlessTask(payload: HeadlessPayload
     return;
   }
 
-  const { data: movement, error: movementError } = await supabase
-    .from("movements")
-    .insert({
-      workspace_id: workspaceId,
-      movement_type: movementType,
-      status: "posted",
-      occurred_at: suggestion.occurredAt,
-      description,
-      notes: null,
-      source_account_id: movementType === "expense" ? payload.accountId : null,
-      source_amount: movementType === "expense" ? amount : null,
-      destination_account_id: movementType === "income" ? payload.accountId : null,
-      destination_amount: movementType === "income" ? amount : null,
-      fx_rate: null,
-      category_id: categoryId,
-      counterparty_id: counterpartyId,
-      subscription_id: subscriptionId,
-      metadata: {
+  const movementInput = buildMovementCreateInput({
+    movementType,
+    status: "posted",
+    occurredAt: suggestion.occurredAt,
+    description,
+    notes: null,
+    sourceAccountId: payload.accountId,
+    sourceAmount: amount,
+    destinationAccountId: payload.accountId,
+    destinationAmount: amount,
+    transferCurrenciesDiffer: false,
+    fxRate: null,
+    categoryId,
+    counterpartyId,
+    subscriptionId,
+    metadata: {
         source: "notification_detection_overlay",
         suggestionId: suggestion.id,
         financialAppKey: suggestion.financialAppKey,
         confidence: suggestion.confidence,
-        categoryAi: nativeSuggestion.aiCategoryRecommendation ?? null,
-        counterpartyAi: nativeSuggestion.counterpartyRecommendation ?? null,
-        recurringAi: nativeSuggestion.recurringRecommendation ?? null,
-        riskAi: nativeSuggestion.riskExplanation ?? null,
-        budgetAi: nativeSuggestion.budgetImpact ?? null,
+        categoryAi: jsonValueOrNull(nativeSuggestion.aiCategoryRecommendation),
+        counterpartyAi: jsonValueOrNull(nativeSuggestion.counterpartyRecommendation),
+        recurringAi: jsonValueOrNull(nativeSuggestion.recurringRecommendation),
+        riskAi: jsonValueOrNull(nativeSuggestion.riskExplanation),
+        budgetAi: jsonValueOrNull(nativeSuggestion.budgetImpact),
         recurring_income_id: recurringIncomeId,
       },
-    })
+  });
+  const { data: movement, error: movementError } = await supabase
+    .from("movements")
+    .insert(movementInsertPayload(workspaceId, movementInput))
     .select("id")
     .single();
   if (movementError) {
@@ -379,12 +530,12 @@ export async function notificationDetectionHeadlessTask(payload: HeadlessPayload
       status: "read",
       read_at: new Date().toISOString(),
       payload: {
-        suggestionId: suggestion.id,
-        amount,
-        currencyCode: suggestion.currencyCode,
-        appLabel: suggestion.appLabel,
-        status: "registered",
-      },
+          suggestionId: suggestion.id,
+          amount,
+          currencyCode: selectedAccountCurrencyCode,
+          appLabel: suggestion.appLabel,
+          status: "registered",
+        },
     })
     .eq("related_entity_type", "detected_movement_suggestion")
     .eq("related_entity_id", suggestion.id)

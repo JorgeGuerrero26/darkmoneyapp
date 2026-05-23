@@ -54,6 +54,8 @@ export function useMovementRecurringAiSuggestion({
   const [isLoading, setIsLoading] = useState(false);
   const [aiAttempted, setAiAttempted] = useState(false);
   const requestIdRef = useRef(0);
+  const categoryId = category?.id ?? null;
+  const counterpartyId = counterparty?.id ?? null;
 
   const localSuggestion = useMemo(() => {
     if (!enabled || !description.trim() || movementType !== "expense" && movementType !== "income") return null;
@@ -82,13 +84,14 @@ export function useMovementRecurringAiSuggestion({
     recurringIncome,
     subscriptions,
   ]);
+  const localSuggestionBlocksAi = Boolean(localSuggestion && localSuggestion.confidence >= LOCAL_CONFIDENCE_THRESHOLD);
 
   // Stable key based only on scalar fields — NOT on large arrays (recentMovements/subscriptions/recurringIncome).
   // Those arrays are passed to the API via inputRef but must not cause the effect to re-run
   // when their reference changes without a content change.
   const stableKey = useMemo(() => {
     if (!enabled || !workspaceId || !description.trim() || !proAccessEnabled) return null;
-    if (localSuggestion && localSuggestion.confidence >= LOCAL_CONFIDENCE_THRESHOLD) return null;
+    if (localSuggestionBlocksAi) return null;
     return JSON.stringify({
       workspaceId,
       surface,
@@ -97,23 +100,22 @@ export function useMovementRecurringAiSuggestion({
       currencyCode: currencyCode ?? null,
       description: description.trim(),
       occurredAt,
-      categoryId: category?.id ?? null,
-      counterpartyId: counterparty?.id ?? null,
-      local: localSuggestion,
+      categoryId,
+      counterpartyId,
     });
   }, [
     enabled,
     workspaceId,
     description,
     proAccessEnabled,
-    localSuggestion,
+    localSuggestionBlocksAi,
     surface,
     movementType,
     amount,
     currencyCode,
     occurredAt,
-    category,
-    counterparty,
+    categoryId,
+    counterpartyId,
   ]);
 
   // Build the full API input (includes large arrays). Kept in a ref so the async

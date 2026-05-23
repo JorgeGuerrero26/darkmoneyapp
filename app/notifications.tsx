@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SectionListRenderItem } from "react-native";
-import { Platform } from "react-native";
-import { X } from "lucide-react-native";
+import { Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Bell, CheckCheck, X } from "lucide-react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -42,9 +42,12 @@ import {
   usePendingObligationShareInvitesQuery,
 } from "../services/queries/workspace-data";
 import type { NotificationItem, PendingObligationShareInviteItem } from "../types/domain";
+import { payloadString } from "../features/notifications/lib/notificationPresentation";
 import { getNotificationsModule } from "../lib/notifications-runtime";
 import { useToast } from "../hooks/useToast";
 import { useOriginBackNavigation } from "../hooks/useOriginBackNavigation";
+import { useNotificationsRealtimeSync } from "../hooks/useNotificationsRealtimeSync";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING } from "../constants/theme";
 
 const Notifications = getNotificationsModule();
 
@@ -54,6 +57,8 @@ function payloadNumber(payload: unknown, key: string): number | null {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
+const STALE_THRESHOLD_MS = 5 * 24 * 60 * 60 * 1000;
+
 function NotificationsScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -62,7 +67,10 @@ function NotificationsScreen() {
   const { showToast } = useToast();
   const [selectedNotificationIds, setSelectedNotificationIds] = useState<number[]>([]);
   const [activeFilter, setActiveFilter] = useState<NotificationFilter>("all");
+  const [showUnreadOnly, setShowUnreadOnly] = useState(false);
   const [quickEntry, setQuickEntry] = useState<{ suggestionId: number; notificationId: number } | null>(null);
+
+  useNotificationsRealtimeSync(user?.id ?? null);
   const ignoreTapAfterLongPressRef = useRef(false);
   const { suggestionId: suggestionIdParam } = useLocalSearchParams<{ suggestionId?: string }>();
 
@@ -123,18 +131,20 @@ function NotificationsScreen() {
     deleteSelectedNotifications.isPending;
 
   const sections = useMemo(
-    () => buildNotificationSections(notificationList, pendingInvites, activeFilter),
-    [activeFilter, notificationList, pendingInvites],
+    () => buildNotificationSections(notificationList, pendingInvites, activeFilter, showUnreadOnly),
+    [activeFilter, notificationList, pendingInvites, showUnreadOnly],
   );
 
   const activeFilterItems = useMemo<ActiveFilterItem[]>(() => {
-    if (activeFilter === "all") return [];
-    return [{
-      key: "priority",
-      label: getNotificationFilterLabel(activeFilter),
-      onRemove: () => setActiveFilter("all"),
-    }];
-  }, [activeFilter]);
+    const items: ActiveFilterItem[] = [];
+    if (showUnreadOnly) {
+      items.push({ key: "unread", label: "No leídas", onRemove: () => setShowUnreadOnly(false) });
+    }
+    if (activeFilter !== "all") {
+      items.push({ key: "priority", label: getNotificationFilterLabel(activeFilter), onRemove: () => setActiveFilter("all") });
+    }
+    return items;
+  }, [activeFilter, showUnreadOnly]);
 
   const filteredNotificationCount = useMemo(
     () => sections.reduce((total, section) => total + section.data.filter((item) => item.kind === "notification").length, 0),
@@ -144,17 +154,76 @@ function NotificationsScreen() {
   const showSkeleton =
     (isLoading && notificationList.length === 0 && pendingInvites.length === 0) ||
     (loadingPendingInvites && !pendingInvites.length && notificationList.length === 0);
+
+  const emptyConfig = useMemo(() => {
+    const resetFilters = () => { setActiveFilter("all"); setShowUnreadOnly(false); };
+    if (notificationList.length === 0 && pendingInvites.length === 0) {
+      return {
+        icon: Bell,
+        variant: "empty" as const,
+        title: "Sin notificaciones",
+        description: "Aquí verás alertas de presupuestos, suscripciones, obligaciones y movimientos detectados.",
+      };
+    }
+    if (showUnreadOnly && unreadCount === 0) {
+      return {
+        icon: CheckCheck,
+        variant: "empty" as const,
+        title: "Todo al día",
+        description: "No tienes notificaciones sin leer.",
+        action: { label: "Ver todas", onPress: () => setShowUnreadOnly(false) },
+      };
+    }
+    if (activeFilter !== "all" && showUnreadOnly) {
+      return {
+        variant: "no-results" as const,
+        title: `Sin ${getNotificationFilterLabel(activeFilter).toLowerCase()} sin leer`,
+        description: "No hay notificaciones que coincidan con los filtros activos.",
+        action: { label: "Quitar filtros", onPress: resetFilters },
+      };
+    }
+    if (activeFilter !== "all") {
+      return {
+        variant: "no-results" as const,
+        title: `Sin ${getNotificationFilterLabel(activeFilter).toLowerCase()}`,
+        description: "No hay notificaciones de esta prioridad.",
+        action: { label: "Ver todas", onPress: () => setActiveFilter("all") },
+      };
+    }
+    return {
+      variant: "no-results" as const,
+      title: "Sin resultados",
+      description: "No hay notificaciones que coincidan con el filtro activo.",
+      action: { label: "Quitar filtros", onPress: resetFilters },
+    };
+  }, [notificationList.length, pendingInvites.length, showUnreadOnly, unreadCount, activeFilter]);
+
   const contextNote = selectionMode
     ? "Elige qué hacer con la selección."
-    : activeFilter === "all"
+    : activeFilter === "all" && !showUnreadOnly
       ? "Mantén presionada una notificación para seleccionar varias."
-      : `Mostrando ${filteredNotificationCount} notificaciones de prioridad ${getNotificationFilterLabel(activeFilter).toLowerCase()}.`;
+      : `Mostrando ${filteredNotificationCount} notificación${filteredNotificationCount !== 1 ? "es" : ""}${showUnreadOnly ? " sin leer" : ""}${activeFilter !== "all" ? ` · ${getNotificationFilterLabel(activeFilter).toLowerCase()}` : ""}.`;
 
   useEffect(() => {
     setSelectedNotificationIds((current) =>
       current.filter((id) => notificationList.some((item) => item.id === id)),
     );
   }, [notificationList]);
+
+  useEffect(() => {
+    if (isLoading || notificationList.length === 0) return;
+    const now = Date.now();
+    const staleIds = notificationList
+      .filter((n) => {
+        if (n.status === "read" || n.kind !== "detected_movement_suggestion") return false;
+        const suggStatus = payloadString(n.payload, "status");
+        if (suggStatus === "registered" || suggStatus === "discarded") return true;
+        return now - new Date(n.scheduledFor).getTime() > STALE_THRESHOLD_MS;
+      })
+      .map((n) => n.id);
+    if (staleIds.length === 0) return;
+    void markSelectedRead.mutateAsync(staleIds).catch(() => null);
+  }, [isLoading, notificationList, markSelectedRead]);
 
   function clearSelection() {
     setSelectedNotificationIds([]);
@@ -190,6 +259,17 @@ function NotificationsScreen() {
       onSuccess: () => showToast("Todas quedaron como no leídas", "success"),
       onError: (error: unknown) => showToast(error instanceof Error ? error.message : "No se pudo actualizar", "error"),
     });
+  }
+
+  async function handleDeleteAllRead() {
+    const readIds = notificationList.filter((n) => n.status === "read").map((n) => n.id);
+    if (readIds.length === 0) return;
+    try {
+      await deleteSelectedNotifications.mutateAsync(readIds);
+      showToast(`${readIds.length} notificación${readIds.length !== 1 ? "es" : ""} eliminada${readIds.length !== 1 ? "s" : ""}`, "success");
+    } catch (error: unknown) {
+      showToast(error instanceof Error ? error.message : "No se pudo eliminar", "error");
+    }
   }
 
   async function handleSelectedReadState(nextState: "read" | "unread") {
@@ -259,6 +339,11 @@ function NotificationsScreen() {
       notification.kind === "obligation_event_edit_request" ||
       notification.kind === "detected_movement_suggestion";
     if (notification.kind === "detected_movement_suggestion") {
+      const suggStatus = payloadString(notification.payload, "status");
+      if (suggStatus === "registered" || suggStatus === "discarded") {
+        if (notification.status !== "read") markRead.mutate(notification.id);
+        return;
+      }
       const suggestionId =
         payloadNumber(notification.payload, "suggestionId") ??
         (notification.relatedEntityType === "detected_movement_suggestion" ? notification.relatedEntityId ?? null : null);
@@ -284,6 +369,7 @@ function NotificationsScreen() {
 
   const clearFilters = useCallback(() => {
     setActiveFilter("all");
+    setShowUnreadOnly(false);
   }, []);
 
   const renderItem: SectionListRenderItem<NotificationListItem, NotificationListSection> = useCallback(({ item }) => {
@@ -340,11 +426,26 @@ function NotificationsScreen() {
         }
         toolbar={
           !selectionMode && notificationList.length > 0 ? (
-            <FilterToolbar
-              options={NOTIFICATION_FILTERS}
-              value={activeFilter}
-              onChange={setActiveFilter}
-            />
+            <View>
+              <FilterToolbar
+                options={NOTIFICATION_FILTERS}
+                value={activeFilter}
+                onChange={setActiveFilter}
+              />
+              {unreadCount > 0 ? (
+                <View style={notifStyles.unreadRow}>
+                  <TouchableOpacity
+                    onPress={() => setShowUnreadOnly((prev) => !prev)}
+                    style={[notifStyles.unreadChip, showUnreadOnly && notifStyles.unreadChipActive]}
+                    accessibilityLabel="Filtrar por no leídas"
+                  >
+                    <Text style={[notifStyles.unreadChipText, showUnreadOnly && notifStyles.unreadChipTextActive]}>
+                      {`No leídas (${unreadCount})`}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              ) : null}
+            </View>
           ) : null
         }
         activeFilters={!selectionMode ? <ActiveFilterBar items={activeFilterItems} onClear={clearFilters} /> : null}
@@ -357,6 +458,7 @@ function NotificationsScreen() {
               inviteCount={pendingInvites.length}
               onMarkAllRead={handleMarkAll}
               onMarkAllUnread={handleMarkAllUnread}
+              onDeleteAllRead={handleDeleteAllRead}
               actionsDisabled={bulkActionLoading}
             />
           ) : null
@@ -405,12 +507,7 @@ function NotificationsScreen() {
                 </SkeletonList>
               ),
             }}
-            empty={{
-              title: hasContent ? "Nada en esta vista" : "Sin notificaciones",
-              description: hasContent
-                ? "Cambia el filtro para ver otras prioridades o espera nuevas alertas."
-                : "Aquí verás alertas de presupuestos, suscripciones, obligaciones y salud financiera cuando corresponda.",
-            }}
+            empty={emptyConfig}
             refreshing={isLoading || loadingPendingInvites}
             onRefresh={onRefresh}
           />
@@ -425,6 +522,35 @@ function NotificationsScreen() {
     </>
   );
 }
+
+const notifStyles = StyleSheet.create({
+  unreadRow: {
+    flexDirection: "row",
+    paddingHorizontal: SPACING.md,
+    paddingTop: SPACING.xs,
+    paddingBottom: SPACING.xs,
+  },
+  unreadChip: {
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 4,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: "transparent",
+  },
+  unreadChipActive: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  unreadChipText: {
+    fontSize: FONT_SIZE.xs,
+    fontFamily: FONT_FAMILY.bodyMedium,
+    color: COLORS.storm,
+  },
+  unreadChipTextActive: {
+    color: COLORS.ink,
+  },
+});
 
 export default function NotificationsScreenRoot() {
   return (

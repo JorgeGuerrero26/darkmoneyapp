@@ -27,6 +27,7 @@ import android.widget.TextView
 import com.darkmoney.app.R
 import org.json.JSONObject
 import java.text.Normalizer
+import java.util.Locale
 
 object QuickMovementOverlay {
   private var overlayView: View? = null
@@ -42,7 +43,8 @@ object QuickMovementOverlay {
     val suggestion = NotificationDetectionStore.getSuggestion(appContext, suggestionId)
     val appName = suggestion?.optString("appName").orEmpty().ifBlank { "App financiera" }
     val financialAppKey = suggestion?.optString("financialAppKey").orEmpty()
-    val amount = suggestion?.optString("amountLabel").orEmpty().replace(Regex("[^0-9.,]"), "")
+    val amountLabel = suggestion?.optString("amountLabel").orEmpty()
+    val amount = amountLabel.replace(Regex("[^0-9.,]"), "")
     val description = suggestion?.optString("text").orEmpty().ifBlank {
       suggestion?.optString("title").orEmpty()
     }
@@ -55,7 +57,7 @@ object QuickMovementOverlay {
     val budgetImpact = suggestion?.optJSONObject("budgetImpact")
 
     val runtimeContext = NotificationDetectionStore.getRuntimeContext(appContext)
-    val view = buildOverlay(appContext, suggestionId, notificationId, appName, financialAppKey, amount, description, movementType, runtimeContext, aiCategoryRecommendation, descriptionCleanup, counterpartyRecommendation, recurringRecommendation, riskExplanation, budgetImpact)
+    val view = buildOverlay(appContext, suggestionId, notificationId, appName, financialAppKey, amountLabel, amount, description, movementType, runtimeContext, aiCategoryRecommendation, descriptionCleanup, counterpartyRecommendation, recurringRecommendation, riskExplanation, budgetImpact)
 
     val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
       WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -101,6 +103,7 @@ object QuickMovementOverlay {
     } catch (_: Exception) {
       // The view may already be detached if Android removed the overlay.
     }
+    QuickMovementDialogActivity.finishLauncher()
   }
 
   private fun animatedDismiss() {
@@ -153,6 +156,7 @@ object QuickMovementOverlay {
     notificationId: Int,
     appName: String,
     financialAppKey: String,
+    amountLabel: String,
     amount: String,
     description: String,
     movementType: String,
@@ -166,6 +170,9 @@ object QuickMovementOverlay {
   ): View {
     val density = context.resources.displayMetrics.density
     fun dp(value: Int) = (value * density).toInt()
+    val detectedCurrencyCode = currencyFromAmountLabel(amountLabel)
+    val detectedAmount = parseAmount(amount)
+    val workspaceBaseCurrencyCode = runtimeContext.optString("workspaceBaseCurrencyCode").ifBlank { "PEN" }.uppercase()
 
     val backdrop = FrameLayout(context).apply {
       setBackgroundColor(0xB3000000.toInt())
@@ -242,6 +249,13 @@ object QuickMovementOverlay {
       background = null
     }
     amountCard.addView(amountInput)
+    val amountMetaText = TextView(context).apply {
+      text = detectedCurrencyCode
+      textSize = 11f
+      setTextColor(0xFF96A2B5.toInt())
+      setPadding(0, dp(2), 0, 0)
+    }
+    amountCard.addView(amountMetaText)
     root.addView(amountCard, LinearLayout.LayoutParams(
       ViewGroup.LayoutParams.MATCH_PARENT,
       ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -254,6 +268,7 @@ object QuickMovementOverlay {
     }
     val transferOnlyViews = mutableListOf<View>()
     val expenseIncomeOnlyViews = mutableListOf<View>()
+    var categorySelect: SelectRefs? = null
     fun applyTypeVisibility() {
       val isTransfer = selectedType == "transfer"
       transferOnlyViews.forEach { it.visibility = if (isTransfer) View.VISIBLE else View.GONE }
@@ -272,6 +287,7 @@ object QuickMovementOverlay {
       styleSegment(incomeSegment, selectedType == "income", 0xFF6BE4C5.toInt(), dp(14))
       styleSegment(transferSegment, selectedType == "transfer", 0xFF8EA5FF.toInt(), dp(14))
       applyTypeVisibility()
+      categorySelect?.refresh()
     }
     expenseSegment = TextView(context).apply {
       text = "Gasto"
@@ -311,40 +327,76 @@ object QuickMovementOverlay {
       ViewGroup.LayoutParams.WRAP_CONTENT,
     ).apply { topMargin = dp(12) })
 
-    val accounts = readOptions(runtimeContext, "accounts", fallbackLabel = "Sin cuenta asignada", metaKey = "currencyCode")
-    val defaultAccountIdx = defaultAccountIndex(runtimeContext, financialAppKey, accounts)
-    val accountSelect = accountChipField(context, "CUENTA / ORIGEN", accounts, defaultAccountIdx)
+    val accounts = sortAccountsForDetectedCurrency(
+      readOptions(runtimeContext, "accounts", fallbackLabel = "Sin cuenta asignada", metaKey = "currencyCode"),
+      detectedCurrencyCode,
+    )
+    fun refreshAmountForAccount(index: Int) {
+      val accountCurrency = accounts.getOrNull(index)?.meta?.uppercase().orEmpty().ifBlank { detectedCurrencyCode }
+      val conversion = convertAmount(detectedAmount, detectedCurrencyCode, accountCurrency, runtimeContext, workspaceBaseCurrencyCode)
+      amountInput.setText(formatAmount(conversion.amount))
+      amountMetaText.text = when {
+        conversion.converted ->
+          "${conversion.currencyCode} · convertido desde ${formatAmount(detectedAmount)} $detectedCurrencyCode${conversion.rate?.let { " · TC ${formatAmount(it, 6)}" } ?: ""}"
+        conversion.missingRate ->
+          "${conversion.currencyCode} · sin tipo de cambio, edita el monto"
+        else -> conversion.currencyCode
+      }
+    }
+    val defaultAccountIdx = defaultAccountIndex(runtimeContext, financialAppKey, accounts, detectedCurrencyCode)
+    val accountSelect = accountChipField(context, "CUENTA / ORIGEN", accounts, defaultAccountIdx) { index ->
+      refreshAmountForAccount(index)
+    }
     root.addView(accountSelect.container)
+    refreshAmountForAccount(defaultAccountIdx)
 
-    val destinationDefaultIdx = if (accounts.size > 1) (defaultAccountIdx + 1) % accounts.size else 0
+    val destinationDefaultIdx = frequentTransferDestinationIndex(runtimeContext, accounts, defaultAccountIdx)
     val destinationAccountSelect = accountChipField(context, "CUENTA DESTINO", accounts, destinationDefaultIdx)
     root.addView(destinationAccountSelect.container)
     transferOnlyViews.add(destinationAccountSelect.container)
 
-    val baseCategories = listOf(Option(null, "Sin categoría")) + readOptions(runtimeContext, "categories", fallbackLabel = "Sin categoría")
-    val aiNewCategory = aiNewCategoryOption(aiCategoryRecommendation)
+    val baseCategories = listOf(Option(null, "Sin categoría")) +
+      readOptions(runtimeContext, "categories", fallbackLabel = "Sin categoría", metaKey = "kind").sortedBy { it.label.lowercase() }
+    val initialCategoryKind = if (movementType == "income") "income" else "expense"
+    val aiNewCategory = aiNewCategoryOption(aiCategoryRecommendation, initialCategoryKind)
     val categories = if (aiNewCategory != null) baseCategories + aiNewCategory else baseCategories
-    val categorySelect = categoryChipField(context, "CATEGORÍA (OPCIONAL)", categories, 0)
-    root.addView(categorySelect.container)
-    expenseIncomeOnlyViews.add(categorySelect.container)
+    fun categoryVisibleForSelectedType(option: Option): Boolean {
+      if (selectedType == "transfer") return option.id == null && option.createName == null
+      if (option.id == null && option.createName == null) return true
+      return option.meta == "both" || option.meta == selectedType
+    }
+    val categorySelectRef = categoryChipField(
+      context,
+      "CATEGORÍA (OPCIONAL)",
+      categories,
+      0,
+      ::categoryVisibleForSelectedType,
+    )
+    categorySelect = categorySelectRef
+    root.addView(categorySelectRef.container)
+    expenseIncomeOnlyViews.add(categorySelectRef.container)
 
-    if (aiCategoryPending(aiCategoryRecommendation)) {
-      val loadingWrap = LinearLayout(context).apply {
+    val aiNeedsUpdate = aiCategoryRecommendation == null || aiCategoryPending(aiCategoryRecommendation)
+    var aiLoadingContainer: LinearLayout? = null
+    if (aiNeedsUpdate && selectedType != "transfer") {
+      aiLoadingContainer = LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(0, dp(6), 0, 0)
+      }.also {
+        it.addView(aiLoadingRow(context))
+        root.addView(it)
+        expenseIncomeOnlyViews.add(it)
       }
-      loadingWrap.addView(aiLoadingRow(context))
-      root.addView(loadingWrap)
-      expenseIncomeOnlyViews.add(loadingWrap)
     }
 
     val aiSuggestedIdx = aiSuggestedCategoryIndex(aiCategoryRecommendation, categories)
-    val suggestedIdx = aiSuggestedIdx ?: suggestCategoryForOverlay(description, runtimeContext, categories)
+      ?.takeIf { categoryVisibleForSelectedType(categories[it]) }
+    val suggestedIdx = aiSuggestedIdx ?: suggestCategoryForOverlay(description, runtimeContext, categories, ::categoryVisibleForSelectedType)
     val suggestedCategory = if (suggestedIdx != null && suggestedIdx > 0) categories.getOrNull(suggestedIdx) else null
     if (suggestedCategory != null && suggestedIdx != null) {
       val detail = if (aiSuggestedIdx != null) aiDetail(aiCategoryRecommendation) else "patrón de tus movimientos"
       val suggestionRow = categorySuggestionRow(context, suggestedCategory.label, detail) {
-        categorySelect.selectIndex(suggestedIdx)
+        categorySelectRef.selectIndex(suggestedIdx)
       }
       val suggestionWrap = LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
@@ -353,6 +405,64 @@ object QuickMovementOverlay {
       suggestionWrap.addView(suggestionRow)
       root.addView(suggestionWrap)
       expenseIncomeOnlyViews.add(suggestionWrap)
+    }
+
+    // Poll SharedPreferences for AI result when it hasn't arrived yet (pending or null).
+    // Covers the case where the overlay opens before the RN sync sets the recommendation.
+    if (aiNeedsUpdate) {
+      val workspaceId = runtimeContext.optInt("workspaceId", 0).takeIf { it > 0 }
+      if (workspaceId != null && selectedType != "transfer") {
+        NotificationDetectionSaveTaskService.startAiCategoryEnrichment(
+          context,
+          suggestionId,
+          workspaceId,
+          if (selectedType == "income") "income" else "expense",
+          amountLabel.ifBlank { amount },
+          description,
+          runtimeContext.toString(),
+        )
+      }
+      val capturedLoading = aiLoadingContainer
+      val pollHandler = Handler(Looper.getMainLooper())
+      var attempts = 0
+      val pollRunnable = object : Runnable {
+        override fun run() {
+          if (windowManager == null) return
+          if (attempts++ >= 12) {
+            capturedLoading?.let {
+              root.removeView(it)
+              expenseIncomeOnlyViews.remove(it)
+            }
+            return
+          }
+          val updated = NotificationDetectionStore.getSuggestion(context.applicationContext, suggestionId)
+          val updatedRec = updated?.optJSONObject("aiCategoryRecommendation")
+          if (updatedRec != null && !aiCategoryPending(updatedRec)) {
+            capturedLoading?.let {
+              root.removeView(it)
+              expenseIncomeOnlyViews.remove(it)
+            }
+            val aiIdx = aiSuggestedCategoryIndex(updatedRec, categories)
+              ?.takeIf { categoryVisibleForSelectedType(categories[it]) }
+            if (aiIdx != null && aiIdx > 0) {
+              val sugCat = categories.getOrNull(aiIdx) ?: return
+              val suggRow = categorySuggestionRow(context, sugCat.label, aiDetail(updatedRec)) {
+                categorySelectRef.selectIndex(aiIdx)
+              }
+              val suggWrap = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(0, dp(6), 0, 0)
+              }
+              suggWrap.addView(suggRow)
+              root.addView(suggWrap)
+              expenseIncomeOnlyViews.add(suggWrap)
+            }
+          } else {
+            pollHandler.postDelayed(this, 1000)
+          }
+        }
+      }
+      pollHandler.postDelayed(pollRunnable, 1000)
     }
 
     var selectedCounterpartyId: Int? = null
@@ -458,7 +568,7 @@ object QuickMovementOverlay {
         val workspaceId = runtimeContext.optInt("workspaceId", 0).takeIf { it > 0 }
         val selectedAccountIdx = accountSelect.selectedIndex().coerceIn(0, accounts.lastIndex)
         val selectedDestinationIdx = destinationAccountSelect.selectedIndex().coerceIn(0, accounts.lastIndex)
-        val selectedCategoryIdx = categorySelect.selectedIndex().coerceIn(0, categories.lastIndex)
+        val selectedCategoryIdx = categorySelectRef.selectedIndex().coerceIn(0, categories.lastIndex)
         // Show loading state
         isClickable = false
         cancelBtn.isClickable = false
@@ -550,6 +660,7 @@ object QuickMovementOverlay {
     label: String,
     options: List<Option>,
     defaultIndex: Int,
+    onSelect: (Int) -> Unit = {},
   ): SelectRefs {
     val density = context.resources.displayMetrics.density
     fun dp(value: Int) = (value * density).toInt()
@@ -598,7 +709,11 @@ object QuickMovementOverlay {
         setPadding(dp(12), dp(8), dp(12), dp(8))
         isClickable = true
         isFocusable = true
-        setOnClickListener { currentIndex = index; refreshChips() }
+        setOnClickListener {
+          currentIndex = index
+          refreshChips()
+          onSelect(index)
+        }
         addView(TextView(context).apply {
           text = option.label
           textSize = 13f
@@ -631,7 +746,12 @@ object QuickMovementOverlay {
       ViewGroup.LayoutParams.MATCH_PARENT,
       ViewGroup.LayoutParams.WRAP_CONTENT,
     ))
-    return SelectRefs(container, { currentIndex })
+    val selectFn: (Int) -> Unit = { index ->
+      currentIndex = index.coerceIn(0, options.lastIndex.coerceAtLeast(0))
+      refreshChips()
+      onSelect(currentIndex)
+    }
+    return SelectRefs(container, { currentIndex }, selectFn)
   }
 
   private fun categoryChipField(
@@ -639,6 +759,7 @@ object QuickMovementOverlay {
     label: String,
     options: List<Option>,
     defaultIndex: Int,
+    isOptionVisible: (Option) -> Boolean = { true },
   ): SelectRefs {
     val density = context.resources.displayMetrics.density
     fun dp(value: Int) = (value * density).toInt()
@@ -659,7 +780,13 @@ object QuickMovementOverlay {
     })
 
     fun refreshChips() {
+      val visibleIndexes = options.indices.filter { isOptionVisible(options[it]) }
+      if (visibleIndexes.isNotEmpty() && !visibleIndexes.contains(currentIndex)) {
+        currentIndex = visibleIndexes.first()
+      }
       chipViews.forEachIndexed { index, chip ->
+        val visible = visibleIndexes.contains(index)
+        chip.visibility = if (visible) View.VISIBLE else View.GONE
         val selected = index == currentIndex
         chip.setTextColor(if (selected) 0xFF05070B.toInt() else 0xFF96A2B5.toInt())
         chip.background = roundedBg(
@@ -708,7 +835,7 @@ object QuickMovementOverlay {
       currentIndex = index.coerceIn(0, options.lastIndex.coerceAtLeast(0))
       refreshChips()
     }
-    return SelectRefs(container, { currentIndex }, selectFn)
+    return SelectRefs(container, { currentIndex }, selectFn, ::refreshChips)
   }
 
   private fun actionButton(
@@ -760,6 +887,7 @@ object QuickMovementOverlay {
     val container: LinearLayout,
     val selectedIndex: () -> Int,
     val selectIndex: (Int) -> Unit = {},
+    val refresh: () -> Unit = {},
   )
 
   private data class Option(
@@ -768,6 +896,108 @@ object QuickMovementOverlay {
     val meta: String? = null,
     val createName: String? = null,
   )
+
+  private data class AmountConversion(
+    val amount: Double,
+    val currencyCode: String,
+    val rate: Double?,
+    val converted: Boolean,
+    val missingRate: Boolean,
+  )
+
+  private fun parseAmount(value: String): Double {
+    val parsed = value.replace(",", ".").toDoubleOrNull()
+    return parsed?.takeIf { it.isFinite() && it > 0 } ?: 0.0
+  }
+
+  private fun formatAmount(value: Double, maxDecimals: Int = 2): String {
+    if (!value.isFinite()) return ""
+    val pattern = "%.${maxDecimals}f"
+    return String.format(Locale.US, pattern, value)
+      .replace(Regex("0+$"), "")
+      .replace(Regex("\\.$"), "")
+  }
+
+  private fun currencyFromAmountLabel(value: String): String {
+    return if (Regex("(?i)(usd|us\\$|\\$)").containsMatchIn(value) && !value.contains("S/", ignoreCase = true)) {
+      "USD"
+    } else {
+      "PEN"
+    }
+  }
+
+  private fun sortAccountsForDetectedCurrency(accounts: List<Option>, currencyCode: String): List<Option> {
+    val normalizedCurrency = currencyCode.uppercase()
+    return accounts.sortedWith(
+      compareByDescending<Option> { it.meta?.uppercase() == normalizedCurrency }
+        .thenBy { it.label.lowercase() }
+    )
+  }
+
+  private fun resolveExchangeRate(
+    runtimeContext: JSONObject,
+    fromCurrencyCode: String,
+    toCurrencyCode: String,
+    workspaceBaseCurrencyCode: String,
+  ): Double? {
+    val from = fromCurrencyCode.uppercase()
+    val to = toCurrencyCode.uppercase()
+    val base = workspaceBaseCurrencyCode.uppercase()
+    if (from.isBlank() || to.isBlank()) return null
+    if (from == to) return 1.0
+
+    val rates = runtimeContext.optJSONArray("exchangeRates")
+    var latestEffectiveAt = ""
+    var resolved: Double? = null
+    if (rates != null) {
+      for (index in 0 until rates.length()) {
+        val rate = rates.optJSONObject(index) ?: continue
+        val rateFrom = rate.optString("fromCurrencyCode").uppercase()
+        val rateTo = rate.optString("toCurrencyCode").uppercase()
+        val value = rate.optDouble("rate", 0.0).takeIf { it.isFinite() && it > 0 } ?: continue
+        val matchesDirect = rateFrom == from && rateTo == to
+        val matchesInverse = rateFrom == to && rateTo == from
+        if (!matchesDirect && !matchesInverse) continue
+        val effectiveAt = rate.optString("effectiveAt")
+        if (resolved != null && effectiveAt < latestEffectiveAt) continue
+        latestEffectiveAt = effectiveAt
+        resolved = if (matchesDirect) value else 1.0 / value
+      }
+    }
+    if (resolved != null) return resolved
+
+    if (from != base && to != base) {
+      val toBase = resolveExchangeRate(runtimeContext, from, base, base)
+      val baseToTarget = resolveExchangeRate(runtimeContext, base, to, base)
+      if (toBase != null && baseToTarget != null) return toBase * baseToTarget
+    }
+    return null
+  }
+
+  private fun convertAmount(
+    amount: Double,
+    fromCurrencyCode: String,
+    toCurrencyCode: String,
+    runtimeContext: JSONObject,
+    workspaceBaseCurrencyCode: String,
+  ): AmountConversion {
+    val from = fromCurrencyCode.uppercase()
+    val to = toCurrencyCode.uppercase()
+    if (from == to) {
+      return AmountConversion(amount, to, 1.0, converted = false, missingRate = false)
+    }
+    val rate = resolveExchangeRate(runtimeContext, from, to, workspaceBaseCurrencyCode)
+    if (rate == null) {
+      return AmountConversion(amount, to, null, converted = false, missingRate = true)
+    }
+    return AmountConversion(
+      amount = kotlin.math.round(amount * rate * 100.0) / 100.0,
+      currencyCode = to,
+      rate = rate,
+      converted = true,
+      missingRate = false,
+    )
+  }
 
   private fun aiConfidence(recommendation: JSONObject?): Double {
     return recommendation?.optDouble("confidence", 0.0)?.takeIf { !it.isNaN() } ?: 0.0
@@ -798,11 +1028,11 @@ object QuickMovementOverlay {
     return null
   }
 
-  private fun aiNewCategoryOption(recommendation: JSONObject?): Option? {
+  private fun aiNewCategoryOption(recommendation: JSONObject?, kind: String): Option? {
     if (recommendation == null || recommendation.optString("type") != "new_category" || aiConfidence(recommendation) < 0.65) return null
     val newName = recommendation.optString("newCategoryName").trim().replace(Regex("\\s+"), " ")
     if (newName.length < 3) return null
-    return Option(null, "Crear: $newName", "Inteligente", newName)
+    return Option(null, "Crear: $newName", kind, newName)
   }
 
   private fun counterpartyConfidence(recommendation: JSONObject?): Double {
@@ -928,6 +1158,7 @@ object QuickMovementOverlay {
     description: String,
     runtimeContext: JSONObject,
     categories: List<Option>,
+    isOptionVisible: (Option) -> Boolean = { true },
   ): Int? {
     if (description.isBlank()) return null
     val normalized = normalizeText(description)
@@ -956,7 +1187,7 @@ object QuickMovementOverlay {
         }
       }
       if (bestCatId != null) {
-        val idx = categories.indexOfFirst { it.id == bestCatId }
+        val idx = categories.indexOfFirst { it.id == bestCatId && isOptionVisible(it) }
         if (idx > 0) return idx
       }
     }
@@ -984,7 +1215,7 @@ object QuickMovementOverlay {
         if (best.value < 2) return null
         if (secondScore > 0 && scoreGap < 2) return null
         if (singleWord && !(best.value >= 4 && secondScore == 0)) return null
-        val idx = categories.indexOfFirst { it.id == best.key }
+        val idx = categories.indexOfFirst { it.id == best.key && isOptionVisible(it) }
         if (idx > 0) return idx
       }
     }
@@ -1115,15 +1346,53 @@ object QuickMovementOverlay {
     return container
   }
 
-  private fun defaultAccountIndex(runtimeContext: JSONObject, financialAppKey: String, accounts: List<Option>): Int {
-    val settings = runtimeContext.optJSONArray("settings") ?: return 0
-    for (index in 0 until settings.length()) {
-      val setting = settings.optJSONObject(index) ?: continue
-      if (setting.optString("financialAppKey") != financialAppKey) continue
-      val accountId = setting.optInt("defaultAccountId", 0)
-      val accountIndex = accounts.indexOfFirst { it.id == accountId }
-      return if (accountIndex >= 0) accountIndex else 0
+  private fun defaultAccountIndex(
+    runtimeContext: JSONObject,
+    financialAppKey: String,
+    accounts: List<Option>,
+    detectedCurrencyCode: String,
+  ): Int {
+    val detected = detectedCurrencyCode.uppercase()
+    val settings = runtimeContext.optJSONArray("settings")
+    if (settings != null) {
+      for (index in 0 until settings.length()) {
+        val setting = settings.optJSONObject(index) ?: continue
+        if (setting.optString("financialAppKey") != financialAppKey) continue
+        val accountId = setting.optInt("defaultAccountId", 0)
+        val accountIndex = accounts.indexOfFirst { it.id == accountId }
+        if (accountIndex >= 0 && accounts[accountIndex].meta?.uppercase() == detected) return accountIndex
+        break
+      }
+    }
+    val currencyIndex = accounts.indexOfFirst { it.meta?.uppercase() == detected }
+    if (currencyIndex >= 0) return currencyIndex
+    if (settings != null) {
+      for (index in 0 until settings.length()) {
+        val setting = settings.optJSONObject(index) ?: continue
+        if (setting.optString("financialAppKey") != financialAppKey) continue
+        val accountId = setting.optInt("defaultAccountId", 0)
+        val accountIndex = accounts.indexOfFirst { it.id == accountId }
+        if (accountIndex >= 0) return accountIndex
+      }
     }
     return 0
+  }
+
+  private fun frequentTransferDestinationIndex(
+    runtimeContext: JSONObject,
+    accounts: List<Option>,
+    sourceIdx: Int,
+  ): Int {
+    val pair = runtimeContext.optJSONObject("frequentTransferPair")
+    if (pair != null) {
+      val srcId = pair.optInt("sourceAccountId", 0)
+      val dstId = pair.optInt("destinationAccountId", 0)
+      val srcMatch = accounts.indexOfFirst { it.id == srcId }
+      val dstMatch = accounts.indexOfFirst { it.id == dstId }
+      if (srcMatch == sourceIdx && dstMatch >= 0) return dstMatch
+      // If source doesn't match (different account selected), still try to use the frequent destination
+      if (dstMatch >= 0 && dstMatch != sourceIdx) return dstMatch
+    }
+    return if (accounts.size > 1) (sourceIdx + 1) % accounts.size else 0
   }
 }

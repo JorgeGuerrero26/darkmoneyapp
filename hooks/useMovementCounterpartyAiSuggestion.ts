@@ -44,7 +44,6 @@ function cacheKey(input: MovementCounterpartyAiInput) {
     amount: input.amount ?? null,
     currencyCode: input.currencyCode ?? null,
     counterparties: input.counterparties.map((counterparty) => [counterparty.id, counterparty.name, counterparty.type]),
-    localSuggestion: input.localSuggestion,
   });
 }
 

@@ -72,6 +72,8 @@ import { sortByName } from "../../lib/sort-locale";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import type { MovementType, MovementStatus, MovementRecord, CategorySummary, CounterpartySummary, ExchangeRateSummary } from "../../types/domain";
 import { AccountPicker } from "../domain/AccountPicker";
+import { useMovementCreationController } from "../../features/movements/hooks/useMovementCreationController";
+import { buildMovementCreateInput, buildMovementUpdateInput } from "../../features/movements/lib/movement-save-contract";
 
 type Props = {
   visible: boolean;
@@ -363,31 +365,25 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   const counterparties = snapshot?.counterparties ?? [];
   const exchangeRates = snapshot?.exchangeRates ?? [];
 
-  const activeAccountsSorted = useMemo(
-    () => sortByName(accounts.filter((a) => !a.isArchived)),
-    [accounts],
-  );
-  /** En transferencia: destino ? origen. En ingreso no hay cuenta origen en el flujo: mostrar todas las activas. */
-  const destinationAccountsSorted = useMemo(() => {
-    const active = sortByName(accounts.filter((a) => !a.isArchived));
-    if (form.movementType === "transfer" && form.sourceAccountId != null) {
-      return active.filter((a) => a.id !== form.sourceAccountId);
-    }
-    return active;
-  }, [accounts, form.sourceAccountId, form.movementType]);
-  const categoriesForPicker = useMemo(() => {
-    const filtered = categories.filter(
-      (c) =>
-        c.isActive &&
-        (c.kind === "both" ||
-          (form.movementType === "income" && c.kind === "income") ||
-          (form.movementType !== "income" && c.kind === "expense")),
-    );
-    return sortByName(filtered);
-  }, [categories, form.movementType]);
+  const {
+    activeAccountsSorted,
+    destinationAccountsSorted,
+    categoriesForPicker,
+    sourceAccount,
+    destinationAccount,
+    sourceAmountNum,
+    destinationAmountNum,
+    transferCurrenciesDiffer,
+  } = useMovementCreationController({
+    accounts,
+    categories,
+    movementType: form.movementType,
+    sourceAccountId: form.sourceAccountId,
+    destinationAccountId: form.destinationAccountId,
+    sourceAmount: form.sourceAmount,
+    destinationAmount: form.destinationAmount,
+  });
   const counterpartiesSorted = useMemo(() => sortByName(counterparties), [counterparties]);
-  const sourceAmountNum = parseFloat(form.sourceAmount) || 0;
-  const destinationAmountNum = parseFloat(form.destinationAmount) || 0;
   const selectedRecurringCategory = form.categoryId != null
     ? categories.find((category) => category.id === form.categoryId) ?? null
     : null;
@@ -1009,16 +1005,8 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   }
 
   // --- Balance impact preview ---
-  const sourceAccount = accounts.find((a) => a.id === form.sourceAccountId) ?? null;
-  const destinationAccount = accounts.find((a) => a.id === form.destinationAccountId) ?? null;
   const originalSourceAccount = accounts.find((a) => a.id === (editMovement?.sourceAccountId ?? null)) ?? null;
   const originalDestinationAccount = accounts.find((a) => a.id === (editMovement?.destinationAccountId ?? null)) ?? null;
-  // Transfer: destination amount only needed when currencies differ
-  const transferCurrenciesDiffer =
-    form.movementType === "transfer" &&
-    sourceAccount !== null &&
-    destinationAccount !== null &&
-    sourceAccount.currencyCode !== destinationAccount.currencyCode;
 
   const transferFxSuggestion = useMemo(() => {
     if (!transferCurrenciesDiffer || !sourceAccount || !destinationAccount) return null;
@@ -1307,7 +1295,6 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
       setIsClosingAfterSubmit(true);
       const autoDesc = buildDescription();
       let backgroundAttachmentSync: (() => void) | null = null;
-      const isIncome = form.movementType === "income";
       const isTransfer = form.movementType === "transfer";
       const effectiveDestAmount = isTransfer && !transferCurrenciesDiffer
         ? sourceAmountNum
@@ -1315,25 +1302,26 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
       const effectiveFxRate = isTransfer && transferCurrenciesDiffer && sourceAmountNum > 0
         ? effectiveDestAmount / sourceAmountNum
         : null;
+      const movementContract = {
+        movementType: form.movementType,
+        status: form.status,
+        occurredAt: dateStrToISO(form.occurredAt),
+        description: autoDesc,
+        notes: form.notes.trim() || null,
+        sourceAccountId: form.sourceAccountId,
+        sourceAmount: sourceAmountNum,
+        destinationAccountId: form.destinationAccountId,
+        destinationAmount: effectiveDestAmount,
+        transferCurrenciesDiffer,
+        fxRate: effectiveFxRate,
+        categoryId: form.categoryId,
+        counterpartyId: form.counterpartyId,
+        subscriptionId: linkedSubscriptionId,
+      };
       if (isEditing && editMovement) {
         await updateMovement.mutateAsync({
           id: editMovement.id,
-          input: {
-            status: form.status,
-            description: autoDesc,
-            notes: form.notes.trim() || null,
-            categoryId: form.categoryId,
-            counterpartyId: form.counterpartyId,
-            occurredAt: dateStrToISO(form.occurredAt),
-            sourceAccountId: form.movementType === "income" ? null : form.sourceAccountId,
-            destinationAccountId:
-              form.movementType === "income" || form.movementType === "transfer"
-                ? form.destinationAccountId
-                : null,
-            sourceAmount: form.sourceAmount ? sourceAmountNum : undefined,
-            destinationAmount: isIncome ? destinationAmountNum : isTransfer ? effectiveDestAmount : undefined,
-            fxRate: effectiveFxRate,
-          },
+          input: buildMovementUpdateInput(movementContract),
         });
         persistCategoryLearning(editMovement.id, autoDesc);
         if (activeWorkspaceId && linkedEventId && hasAttachmentChanges) {
@@ -1372,26 +1360,14 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
           void queryClient.invalidateQueries({ queryKey: ["entity-attachments", activeWorkspaceId, "obligation-event", linkedEventId] });
         }
       } else {
-        const payload = {
-          movementType: form.movementType,
-          status: isTransfer ? "posted" as const : form.status,
-          occurredAt: dateStrToISO(form.occurredAt),
-          description: autoDesc,
-          notes: form.notes.trim() || null,
-          sourceAccountId: isIncome ? null : form.sourceAccountId,
-          sourceAmount: isIncome ? null : sourceAmountNum,
-          destinationAccountId: isIncome || isTransfer ? form.destinationAccountId : null,
-          destinationAmount: isIncome ? destinationAmountNum : isTransfer ? effectiveDestAmount : null,
-          fxRate: effectiveFxRate,
-          categoryId: form.categoryId,
-          counterpartyId: form.counterpartyId,
-          subscriptionId: linkedSubscriptionId,
+        const payload = buildMovementCreateInput({
+          ...movementContract,
           metadata: {
             recurring_income_id: linkedRecurringIncomeId,
             riskAi: movementRisk?.source === "deepseek" ? movementRisk : null,
             budgetAi: budgetImpact?.source === "deepseek" ? budgetImpact : null,
           },
-        };
+        });
         const created = await createMovement.mutateAsync(payload);
         setSavedMovementId(created.id);
         persistCategoryLearning(created.id, autoDesc);

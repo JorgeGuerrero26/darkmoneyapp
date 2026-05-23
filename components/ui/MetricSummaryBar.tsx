@@ -22,6 +22,7 @@ export type MetricSummaryBarAction = {
   label: string;
   active?: boolean;
   disabled?: boolean;
+  destructive?: boolean;
   onPress: () => void;
 };
 
@@ -81,7 +82,7 @@ export function MetricSummaryBar({ items, trailingLabel, actions = [] }: Props) 
                 onPress={action.onPress}
                 disabled={action.disabled}
               >
-                <Text style={[styles.actionText, action.active && styles.actionTextActive]}>
+                <Text style={[styles.actionText, action.active && styles.actionTextActive, action.destructive && styles.actionTextDestructive]}>
                   {action.label}
                 </Text>
               </Pressable>
@@ -202,6 +203,9 @@ const styles = StyleSheet.create({
   actionTextActive: {
     fontFamily: FONT_FAMILY.bodySemibold,
     color: COLORS.pine,
+  },
+  actionTextDestructive: {
+    color: COLORS.danger,
   },
   helpContent: {
     gap: SPACING.md,

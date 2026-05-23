@@ -338,8 +338,21 @@ export async function syncNativeDetectedSuggestion(input: {
 
   if (suggestion.status === "pending") {
     await upsertDetectedMovementNotification(input.userId, suggestion);
+  } else {
+    await autoArchiveDetectedMovementNotification(input.userId, suggestion.id);
   }
   return suggestion;
+}
+
+async function autoArchiveDetectedMovementNotification(userId: string, suggestionId: number) {
+  if (!supabase) return;
+  await supabase
+    .from("notifications")
+    .update({ status: "read", read_at: new Date().toISOString() })
+    .eq("user_id", userId)
+    .eq("kind", "detected_movement_suggestion")
+    .eq("related_entity_id", suggestionId)
+    .neq("status", "read");
 }
 
 export async function upsertDetectedMovementNotification(userId: string, suggestion: DetectedMovementSuggestion) {
@@ -389,7 +402,7 @@ export function useDetectedMovementSuggestionQuery(suggestionId?: number | null)
   });
 }
 
-export function useMarkDetectedMovementSuggestionMutation() {
+export function useMarkDetectedMovementSuggestionMutation(userId?: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (input: { suggestionId: number; status: DetectedMovementStatus; movementId?: number | null }) => {
@@ -403,10 +416,13 @@ export function useMarkDetectedMovementSuggestionMutation() {
         })
         .eq("id", input.suggestionId);
       if (error) throw new Error(error.message ?? "No se pudo actualizar la sugerencia");
+      if (userId && input.status !== "pending") {
+        await autoArchiveDetectedMovementNotification(userId, input.suggestionId);
+      }
     },
     onSuccess: (_data, variables) => {
       void queryClient.invalidateQueries({ queryKey: ["detected-movement-suggestion", variables.suggestionId] });
-      void queryClient.invalidateQueries({ queryKey: ["notifications"] });
+      void queryClient.invalidateQueries({ queryKey: ["notifications", userId ?? null] });
     },
   });
 }
@@ -534,4 +550,32 @@ export function buildMovementInputFromDetectedSuggestion(input: {
     counterpartyId: input.counterpartyId ?? null,
     metadata,
   };
+}
+
+export async function getFrequentTransferPair(
+  workspaceId: number | string | null,
+): Promise<{ sourceAccountId: number; destinationAccountId: number } | null> {
+  if (!supabase || !workspaceId) return null;
+  const { data, error } = await supabase
+    .from("movements")
+    .select("source_account_id, destination_account_id")
+    .eq("workspace_id", workspaceId)
+    .eq("movement_type", "transfer")
+    .not("source_account_id", "is", null)
+    .not("destination_account_id", "is", null)
+    .order("occurred_at", { ascending: false })
+    .limit(100);
+  if (error || !data?.length) return null;
+  const freq = new Map<string, { sourceAccountId: number; destinationAccountId: number; count: number }>();
+  for (const row of data) {
+    const key = `${row.source_account_id}:${row.destination_account_id}`;
+    const existing = freq.get(key);
+    if (existing) existing.count++;
+    else freq.set(key, { sourceAccountId: row.source_account_id, destinationAccountId: row.destination_account_id, count: 1 });
+  }
+  let best: { sourceAccountId: number; destinationAccountId: number; count: number } | null = null;
+  for (const entry of freq.values()) {
+    if (!best || entry.count > best.count) best = entry;
+  }
+  return best ? { sourceAccountId: best.sourceAccountId, destinationAccountId: best.destinationAccountId } : null;
 }

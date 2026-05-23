@@ -20,6 +20,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import com.darkmoney.app.R
 import org.json.JSONObject
+import java.lang.ref.WeakReference
 
 class QuickMovementDialogActivity : Activity() {
   private var suggestionId: String = ""
@@ -33,10 +34,14 @@ class QuickMovementDialogActivity : Activity() {
     notificationId = intent.getIntExtra(EXTRA_NOTIFICATION_ID, 0)
 
     // Camino principal: overlay flotante nativo (sin abrir la app).
+    // La actividad NO llama finish() inmediatamente: permanece activa (transparent) mientras
+    // el overlay está visible, garantizando que el app esté en foreground cuando el usuario
+    // toca "Registrar" y se llama startService(). QuickMovementOverlay.dismiss() llama
+    // finishLauncher() al cerrar el overlay.
     if (Settings.canDrawOverlays(this)) {
+      currentLauncher = WeakReference(this)
+      makeTransparent()
       QuickMovementOverlay.show(applicationContext, suggestionId, notificationId)
-      finish()
-      overridePendingTransition(0, 0)
       return
     }
 
@@ -62,9 +67,42 @@ class QuickMovementDialogActivity : Activity() {
     setContentView(buildContent(appName, amount, description, movementType, financialAppKey, runtimeContext))
   }
 
+  override fun onNewIntent(intent: android.content.Intent?) {
+    super.onNewIntent(intent)
+    // Second notification while overlay is open: dismiss current overlay and let show() re-init.
+    QuickMovementOverlay.dismiss()
+    val newSuggestionId = intent?.getStringExtra(EXTRA_SUGGESTION_ID).orEmpty()
+    val newNotificationId = intent?.getIntExtra(EXTRA_NOTIFICATION_ID, 0) ?: 0
+    if (Settings.canDrawOverlays(this)) {
+      currentLauncher = WeakReference(this)
+      QuickMovementOverlay.show(applicationContext, newSuggestionId, newNotificationId)
+    } else {
+      finish()
+    }
+  }
+
+  @Deprecated("Deprecated in Java")
+  override fun onBackPressed() {
+    QuickMovementOverlay.dismiss()
+    @Suppress("DEPRECATION")
+    super.onBackPressed()
+  }
+
+  override fun onDestroy() {
+    super.onDestroy()
+    if (currentLauncher?.get() == this) currentLauncher = null
+  }
+
   override fun finish() {
     super.finish()
     overridePendingTransition(0, 0)
+  }
+
+  private fun makeTransparent() {
+    window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+    window.setDimAmount(0f)
+    window.attributes = window.attributes.apply { windowAnimations = 0 }
+    setContentView(android.widget.FrameLayout(this))
   }
 
   private fun defaultAccountId(runtimeContext: JSONObject, financialAppKey: String): Int {
@@ -265,5 +303,12 @@ class QuickMovementDialogActivity : Activity() {
   companion object {
     const val EXTRA_SUGGESTION_ID = "suggestionId"
     const val EXTRA_NOTIFICATION_ID = "notificationId"
+
+    internal var currentLauncher: WeakReference<QuickMovementDialogActivity>? = null
+
+    fun finishLauncher() {
+      currentLauncher?.get()?.finish()
+      currentLauncher = null
+    }
   }
 }

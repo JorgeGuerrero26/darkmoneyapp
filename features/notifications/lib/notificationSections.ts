@@ -1,3 +1,4 @@
+import { startOfDay, differenceInCalendarDays } from "date-fns";
 import type { ResourceSection } from "../../../components/ui/ResourceSectionList";
 import {
   getNotificationPriority,
@@ -28,17 +29,43 @@ export type NotificationListItem =
     priority: NotificationPriority;
   };
 
+type DateBucket = "today" | "yesterday" | "this_week" | "earlier";
+
 export type NotificationListSection = ResourceSection<
   NotificationListItem,
-  "invites" | NotificationPriority
+  "invites" | DateBucket
 >;
+
+const DATE_BUCKET_LABELS: Record<DateBucket, string> = {
+  today: "Hoy",
+  yesterday: "Ayer",
+  this_week: "Esta semana",
+  earlier: "Anteriores",
+};
+
+function getDateBucket(dateStr: string): DateBucket {
+  const today = startOfDay(new Date());
+  const date = startOfDay(new Date(dateStr));
+  const diff = differenceInCalendarDays(today, date);
+  if (diff <= 0) return "today";
+  if (diff === 1) return "yesterday";
+  if (diff <= 7) return "this_week";
+  return "earlier";
+}
 
 export function buildNotificationSections(
   notifications: NotificationItem[],
   invites: PendingObligationShareInviteItem[],
   activeFilter: NotificationFilter,
+  unreadOnly?: boolean,
 ): NotificationListSection[] {
   const sections: NotificationListSection[] = [];
+
+  const baseFiltered = unreadOnly ? notifications.filter((n) => n.status !== "read") : notifications;
+  const filtered =
+    activeFilter === "all"
+      ? baseFiltered
+      : baseFiltered.filter((n) => getNotificationPriority(n.kind) === activeFilter);
 
   if (invites.length > 0 && activeFilter === "all") {
     sections.push({
@@ -53,32 +80,30 @@ export function buildNotificationSections(
     });
   }
 
-  const grouped: Record<NotificationPriority, NotificationItem[]> = {
-    critical: [],
-    important: [],
-    informational: [],
+  const grouped: Record<DateBucket, NotificationItem[]> = {
+    today: [],
+    yesterday: [],
+    this_week: [],
+    earlier: [],
   };
 
-  for (const notification of notifications) {
-    const priority = getNotificationPriority(notification.kind);
-    grouped[priority].push(notification);
+  for (const notification of filtered) {
+    const bucket = getDateBucket(notification.scheduledFor);
+    grouped[bucket].push(notification);
   }
 
-  for (const priority of ["critical", "important", "informational"] as const) {
-    if (activeFilter !== "all" && activeFilter !== priority) continue;
-    const items = grouped[priority];
+  for (const bucket of ["today", "yesterday", "this_week", "earlier"] as const) {
+    const items = grouped[bucket];
     if (items.length === 0) continue;
-    const meta = getNotificationPriorityMeta(priority);
     const unreadCount = items.filter((item) => item.status !== "read").length;
     sections.push({
-      key: priority,
-      label: `${meta.title}${unreadCount > 0 ? ` (${unreadCount})` : ""}`,
-      hint: meta.subtitle,
+      key: bucket,
+      label: `${DATE_BUCKET_LABELS[bucket]}${unreadCount > 0 ? ` · ${unreadCount} nuevas` : ""}`,
       data: items.map((notification) => ({
         kind: "notification" as const,
         key: `notification-${notification.id}`,
         notification,
-        priority,
+        priority: getNotificationPriority(notification.kind),
       })),
       headerVariant: "default",
     });

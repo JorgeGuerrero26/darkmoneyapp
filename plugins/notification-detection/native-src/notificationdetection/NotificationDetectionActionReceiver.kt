@@ -22,11 +22,20 @@ class NotificationDetectionActionReceiver : BroadcastReceiver() {
           context.getSystemService(NotificationManager::class.java).cancel(notificationId)
         }
       }
+      ACTION_IGNORE -> {
+        // Skip puntual: descarta esta notificación sin guardar fingerprint.
+        // La próxima detección del mismo patrón volverá a aparecer normalmente.
+        NotificationDetectionStore.markStatus(context, suggestionId, "ignored")
+        if (notificationId > 0) {
+          context.getSystemService(NotificationManager::class.java).cancel(notificationId)
+        }
+      }
     }
   }
 
   companion object {
     const val ACTION_DISCARD = "com.darkmoney.app.notificationdetection.DISCARD"
+    const val ACTION_IGNORE = "com.darkmoney.app.notificationdetection.IGNORE"
     const val EXTRA_SUGGESTION_ID = "suggestionId"
     const val EXTRA_NOTIFICATION_ID = "notificationId"
   }

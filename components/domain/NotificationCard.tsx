@@ -87,7 +87,11 @@ export function NotificationCard({
       footer={
         <View style={styles.footer}>
           <Text style={styles.time}>{formatScheduledFor(notification.scheduledFor)}</Text>
-          <Text style={styles.status}>{notification.status}</Text>
+          {notification.status === "pending" || notification.status === "failed" ? (
+            <Text style={[styles.statusLabel, notification.status === "failed" && styles.statusError]}>
+              {notification.status === "pending" ? "Pendiente" : "Error al enviar"}
+            </Text>
+          ) : null}
         </View>
       }
     />
@@ -106,10 +110,13 @@ const styles = StyleSheet.create({
     fontFamily: FONT_FAMILY.body,
     color: COLORS.textDisabled,
   },
-  status: {
+  statusLabel: {
     flexShrink: 0,
     fontSize: FONT_SIZE.xs,
     fontFamily: FONT_FAMILY.bodyMedium,
     color: COLORS.storm,
+  },
+  statusError: {
+    color: COLORS.danger,
   },
 });

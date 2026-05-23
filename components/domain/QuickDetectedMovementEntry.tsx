@@ -48,6 +48,8 @@ import {
 import type { MovementRiskItem } from "../../lib/movement-risk-analysis";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import type { CategorySummary, CounterpartySummary } from "../../types/domain";
+import { useMovementCreationController } from "../../features/movements/hooks/useMovementCreationController";
+import { buildMovementCreateInput } from "../../features/movements/lib/movement-save-contract";
 
 function textSimilarity(left: string, right: string): number {
   const leftTokens = new Set(normalizeAnalyticsText(left).split(" ").filter((t) => t.length >= 3));
@@ -128,7 +130,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
   const createCounterparty = useCreateCounterpartyMutation(activeWorkspaceId);
   const createSubscription = useCreateSubscriptionMutation(activeWorkspaceId);
   const createRecurringIncome = useCreateRecurringIncomeMutation(activeWorkspaceId);
-  const markSuggestion = useMarkDetectedMovementSuggestionMutation();
+  const markSuggestion = useMarkDetectedMovementSuggestionMutation(profile?.id ?? null);
   const markNotificationRead = useMarkNotificationReadMutation(profile?.id ?? null);
   const entitlementQuery = useUserEntitlementQuery(profile?.id ?? null, profile?.email ?? null);
   const persistLearningFeedback = usePersistLearningFeedbackMutation(activeWorkspaceId, profile?.id);
@@ -139,10 +141,6 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
     [patternMovements],
   );
 
-  const activeAccounts = useMemo(
-    () => (snapshot?.accounts ?? []).filter((account) => !account.isArchived),
-    [snapshot?.accounts],
-  );
   const [movementType, setMovementType] = useState<"expense" | "income" | "transfer">("expense");
   const [amount, setAmount] = useState("");
   const [accountId, setAccountId] = useState<number | null>(null);
@@ -160,19 +158,24 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
   const [linkedSubscriptionId, setLinkedSubscriptionId] = useState<number | null>(null);
   const [linkedRecurringIncomeId, setLinkedRecurringIncomeId] = useState<number | null>(null);
 
-  const categories = useMemo(() => {
-    const kind = movementType === "income" ? "income" : "expense";
-    return (snapshot?.categories ?? []).filter((category) =>
-      category.isActive && (category.kind === kind || category.kind === "both"),
-    );
-  }, [movementType, snapshot?.categories]);
+  const {
+    activeAccountsSorted: activeAccounts,
+    destinationAccountsSorted,
+    categoriesForPicker: categories,
+    sourceAccount: transferSourceAccount,
+    destinationAccount: transferDestAccount,
+    transferCurrenciesDiffer,
+  } = useMovementCreationController({
+    accounts: snapshot?.accounts ?? [],
+    categories: snapshot?.categories ?? [],
+    movementType,
+    sourceAccountId: accountId,
+    destinationAccountId,
+    sourceAmount: amount,
+    destinationAmount,
+  });
   const isTransfer = movementType === "transfer";
   const aiMovementType: "income" | "expense" = movementType === "income" ? "income" : "expense";
-  const transferSourceAccount = accountId == null ? null : activeAccounts.find((a) => a.id === accountId) ?? null;
-  const transferDestAccount = destinationAccountId == null ? null : activeAccounts.find((a) => a.id === destinationAccountId) ?? null;
-  const transferCurrenciesDiffer = Boolean(
-    transferSourceAccount && transferDestAccount && transferSourceAccount.currencyCode !== transferDestAccount.currencyCode,
-  );
   const counterparties = useMemo<CounterpartySummary[]>(() => {
     return (snapshot?.counterparties ?? []).filter((counterparty) => !counterparty.isArchived);
   }, [snapshot?.counterparties]);
@@ -311,7 +314,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
         }
         : null,
     };
-  }, [activeWorkspaceId, amount, categories, categoryId, date, description, localCategorySuggestion, movementType, suggestion]);
+  }, [activeWorkspaceId, amount, categories, categoryId, date, description, localCategorySuggestion, movementType]);
   const shouldRequestAiCategorySuggestion = Boolean(
     visible &&
       entitlementQuery.data?.proAccessEnabled &&
@@ -637,7 +640,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
         }
       }
       try {
-        const created = await createMovement.mutateAsync({
+        const created = await createMovement.mutateAsync(buildMovementCreateInput({
           movementType: "transfer",
           status: "posted",
           occurredAt,
@@ -647,6 +650,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
           sourceAmount: parsedAmount,
           destinationAccountId,
           destinationAmount: destAmt,
+          transferCurrenciesDiffer,
           fxRate: fx,
           categoryId: null,
           counterpartyId: null,
@@ -657,7 +661,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
             financialAppKey: suggestion.financialAppKey,
             confidence: suggestion.confidence,
           },
-        });
+        }));
         await markSuggestion.mutateAsync({ suggestionId: suggestion.id, status: "registered", movementId: created.id });
         if (notificationId) markNotificationRead.mutate(notificationId);
         showToast("Transferencia guardada", "success");
@@ -696,16 +700,17 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
     }
 
     try {
-      const created = await createMovement.mutateAsync({
+      const created = await createMovement.mutateAsync(buildMovementCreateInput({
         movementType,
         status: "posted",
         occurredAt,
         description: description.trim() || suggestion.description,
         notes: null,
-        sourceAccountId: movementType === "expense" ? accountId : null,
-        sourceAmount: movementType === "expense" ? parsedAmount : null,
-        destinationAccountId: movementType === "income" ? accountId : null,
-        destinationAmount: movementType === "income" ? parsedAmount : null,
+        sourceAccountId: accountId,
+        sourceAmount: parsedAmount,
+        destinationAccountId: accountId,
+        destinationAmount: parsedAmount,
+        transferCurrenciesDiffer: false,
         fxRate: null,
         categoryId,
         counterpartyId,
@@ -721,7 +726,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
           riskAi: movementRisk?.source === "deepseek" ? movementRisk : null,
           budgetAi: budgetImpact?.source === "deepseek" ? budgetImpact : null,
         },
-      });
+      }));
       await markSuggestion.mutateAsync({ suggestionId: suggestion.id, status: "registered", movementId: created.id });
       if (categoryId != null && categoryFeedbackIntent) {
         void persistLearningFeedback.mutateAsync({
@@ -803,9 +808,9 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
         </View>
 
         <View style={styles.segment}>
-          <SegmentButton label="Gasto" active={movementType === "expense"} activeColor={COLORS.expense} onPress={() => setMovementType("expense")} />
-          <SegmentButton label="Ingreso" active={movementType === "income"} activeColor={COLORS.income} onPress={() => setMovementType("income")} />
-          <SegmentButton label="Transferencia" active={movementType === "transfer"} activeColor={COLORS.transfer} onPress={() => setMovementType("transfer")} />
+          <SegmentButton label="Gasto" active={movementType === "expense"} activeColor={COLORS.expense} onPress={() => { setMovementType("expense"); setCategoryId(null); }} />
+          <SegmentButton label="Ingreso" active={movementType === "income"} activeColor={COLORS.income} onPress={() => { setMovementType("income"); setCategoryId(null); }} />
+          <SegmentButton label="Transferencia" active={movementType === "transfer"} activeColor={COLORS.transfer} onPress={() => { setMovementType("transfer"); setCategoryId(null); }} />
         </View>
 
         {isTransfer ? (
@@ -818,7 +823,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
             />
             <AccountPicker
               label="Cuenta destino"
-              accounts={activeAccounts}
+              accounts={destinationAccountsSorted}
               selectedId={destinationAccountId}
               onSelect={setDestinationAccountId}
               error={

@@ -290,6 +290,18 @@ object NotificationDetectionStore {
       ?.contains(fingerprint) == true
   }
 
+  fun hasPendingSuggestionForAmount(context: Context, amountLabel: String, withinMs: Long): Boolean {
+    val since = System.currentTimeMillis() - withinMs
+    val suggestions = readSuggestionsArray(context)
+    for (index in 0 until suggestions.length()) {
+      val s = suggestions.optJSONObject(index) ?: continue
+      if (s.optString("status") == "pending"
+          && s.optString("amountLabel") == amountLabel
+          && s.optLong("createdAt", 0L) >= since) return true
+    }
+    return false
+  }
+
   private fun sha256(value: String): String {
     val bytes = MessageDigest.getInstance("SHA-256").digest(value.toByteArray())
     return bytes.joinToString("") { "%02x".format(it) }
