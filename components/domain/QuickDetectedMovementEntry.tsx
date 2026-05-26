@@ -7,15 +7,19 @@ import { BottomSheet } from "../ui/BottomSheet";
 import { Button } from "../ui/Button";
 import { DatePickerInput } from "../ui/DatePickerInput";
 import { SmartSuggestion, SmartSuggestionEmpty, SmartSuggestionLoading } from "../ui/SmartSuggestion";
+import { CategorySuggestionBlock } from "./QuickDetectedMovementSuggestionBlock";
 import { useAuth } from "../../lib/auth-context";
 import { useWorkspace } from "../../lib/workspace-context";
 import { useToast } from "../../hooks/useToast";
 import {
   findPossibleDuplicateMovement,
+  recordSuggestionAction,
+  useAiUsageTodayQuery,
   useNotificationDetectionSettingsQuery,
   useDetectedMovementSuggestionQuery,
   useMarkDetectedMovementSuggestionMutation,
 } from "../../services/queries/notification-detection";
+import { AiQuotaWarningBanner } from "../ui/AiQuotaWarningBanner";
 import { getFinancialAppByKey, resolveFinancialAppByPackage } from "../../lib/notification-detection-apps";
 import {
   useCreateCategoryMutation,
@@ -133,6 +137,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
   const markSuggestion = useMarkDetectedMovementSuggestionMutation(profile?.id ?? null);
   const markNotificationRead = useMarkNotificationReadMutation(profile?.id ?? null);
   const entitlementQuery = useUserEntitlementQuery(profile?.id ?? null, profile?.email ?? null);
+  const aiUsageQuery = useAiUsageTodayQuery(profile?.id ?? null);
   const persistLearningFeedback = usePersistLearningFeedbackMutation(activeWorkspaceId, profile?.id);
   const { data: patternMovements } = useMovementPatternsQuery(activeWorkspaceId);
   const { data: dashboardAnalytics } = useDashboardAnalyticsQuery(activeWorkspaceId, profile?.id);
@@ -600,6 +605,18 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
     setIsDiscarding(true);
     try {
       await markSuggestion.mutateAsync({ suggestionId: suggestion.id, status: "discarded" });
+      if (profile?.id && activeWorkspaceId) {
+        void recordSuggestionAction({
+          userId: profile.id,
+          workspaceId: activeWorkspaceId,
+          suggestionId: suggestion.id,
+          dedupeKey: suggestion.dedupeKey,
+          action: "discard",
+          surface: "quick_entry",
+          confidenceAtDecision: suggestion.confidence,
+          metadata: { financialAppKey: suggestion.financialAppKey },
+        });
+      }
       if (notificationId) markNotificationRead.mutate(notificationId);
       showToast("Sugerencia descartada", "info");
       onClose();
@@ -663,6 +680,18 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
           },
         }));
         await markSuggestion.mutateAsync({ suggestionId: suggestion.id, status: "registered", movementId: created.id });
+        if (profile?.id && activeWorkspaceId) {
+          void recordSuggestionAction({
+            userId: profile.id,
+            workspaceId: activeWorkspaceId,
+            suggestionId: suggestion.id,
+            dedupeKey: suggestion.dedupeKey,
+            action: "register",
+            surface: "quick_entry",
+            confidenceAtDecision: suggestion.confidence,
+            metadata: { movementType: "transfer", financialAppKey: suggestion.financialAppKey },
+          });
+        }
         if (notificationId) markNotificationRead.mutate(notificationId);
         showToast("Transferencia guardada", "success");
         onClose();
@@ -728,6 +757,48 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
         },
       }));
       await markSuggestion.mutateAsync({ suggestionId: suggestion.id, status: "registered", movementId: created.id });
+      if (profile?.id && activeWorkspaceId) {
+        if (categoryFeedbackIntent) {
+          const isAccept = categoryFeedbackIntent.kind === "accepted_category_suggestion";
+          void recordSuggestionAction({
+            userId: profile.id,
+            workspaceId: activeWorkspaceId,
+            suggestionId: suggestion.id,
+            dedupeKey: suggestion.dedupeKey,
+            action: isAccept ? "accept_category" : "override_category",
+            surface: "quick_entry",
+            confidenceAtDecision: categoryFeedbackIntent.confidence ?? null,
+            modelAtDecision: categoryFeedbackIntent.source === "deepseek" ? "deepseek" : null,
+            suggestedValue: categoryFeedbackIntent.categoryName ?? null,
+            finalValue: categoryId != null ? String(categoryId) : null,
+            metadata: { kind: categoryFeedbackIntent.kind },
+          });
+        }
+        const initialDescription = suggestion.description ?? "";
+        const finalDescription = description.trim() || initialDescription;
+        if (finalDescription !== initialDescription) {
+          void recordSuggestionAction({
+            userId: profile.id,
+            workspaceId: activeWorkspaceId,
+            suggestionId: suggestion.id,
+            dedupeKey: suggestion.dedupeKey,
+            action: "edit_description",
+            surface: "quick_entry",
+            suggestedValue: initialDescription,
+            finalValue: finalDescription,
+          });
+        }
+        void recordSuggestionAction({
+          userId: profile.id,
+          workspaceId: activeWorkspaceId,
+          suggestionId: suggestion.id,
+          dedupeKey: suggestion.dedupeKey,
+          action: "register",
+          surface: "quick_entry",
+          confidenceAtDecision: suggestion.confidence,
+          metadata: { movementType, financialAppKey: suggestion.financialAppKey },
+        });
+      }
       if (categoryId != null && categoryFeedbackIntent) {
         void persistLearningFeedback.mutateAsync({
           movementId: created.id,
@@ -794,6 +865,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
   return (
     <BottomSheet visible={visible} onClose={onClose} title="Registrar movimiento" snapHeight={0.88}>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <AiQuotaWarningBanner usage={aiUsageQuery.data} />
         <View style={styles.appRow}>
           <View style={styles.logoWrap}>
             <Image source={require("../../assets/images/logo-sin-fondo.png")} style={styles.heroLogo} resizeMode="contain" />
@@ -873,24 +945,13 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
           selectedId={categoryId}
           onSelect={selectCategoryManually}
         />
-        {aiCategorySuggestionLoading ? (
-          <SmartSuggestionLoading
-            detail={
-              localCategorySuggestion
-                ? "Puede confirmar la sugerencia actual; si aparece una mejor, la actualizaremos."
-                : "Buscando una categoría más precisa para este movimiento."
-            }
-          />
-        ) : aiCategorySuggestionAttempted && !categorySuggestion ? (
-          <SmartSuggestionEmpty message="Sin sugerencia de categoría" />
-        ) : null}
-        {categorySuggestion ? (
-          <SmartSuggestion
-            label={categorySuggestion.categoryName}
-            detail={categorySuggestion.detail}
-            onApply={() => void applyCategorySuggestion(categorySuggestion)}
-          />
-        ) : null}
+        <CategorySuggestionBlock
+          loading={aiCategorySuggestionLoading}
+          attempted={aiCategorySuggestionAttempted}
+          suggestion={categorySuggestion ? { categoryName: categorySuggestion.categoryName, detail: categorySuggestion.detail } : null}
+          hasLocalSuggestion={Boolean(localCategorySuggestion)}
+          onApply={() => categorySuggestion && void applyCategorySuggestion(categorySuggestion)}
+        />
         </>
         )}
 

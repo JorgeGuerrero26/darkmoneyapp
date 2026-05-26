@@ -20,6 +20,8 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
     super.onListenerConnected()
     currentService = WeakReference(this)
     cancelStalePendingNotifications()
+    consumePendingCancellations(this)
+    NotificationDetectionStore.pruneSuggestions(applicationContext)
     processActiveNotifications()
   }
 
@@ -50,6 +52,7 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
   }
 
   override fun onNotificationPosted(sbn: StatusBarNotification) {
+    consumePendingCancellations(this)
     processStatusBarNotification(sbn)
   }
 
@@ -140,14 +143,35 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
   }
 
   private fun extractAmount(value: String): String? {
-    val regex = Regex("""(?i)(S/|S\.|PEN|US\$|USD|\$)\s*([0-9]+(?:[.,][0-9]{1,2})?)""")
+    // Captures amounts in either US format (1,234.56 or 999.99) or European format
+    // (1.234,56 or 999,99). Some Peruvian apps use thousands separators on large amounts.
+    // Group 2 = integer part possibly with thousands separators; group 3 = decimal part.
+    val regex = Regex("""(?i)(S/|S\.|PEN|US\$|USD|\$)\s*([0-9]{1,3}(?:[.,][0-9]{3})*|[0-9]+)(?:([.,])([0-9]{1,2}))?""")
     val match = regex.find(value) ?: return null
     val symbol = match.groupValues[1].uppercase()
-    val amount = match.groupValues[2]
+    val rawInt = match.groupValues[2]
+    val decSep = match.groupValues[3]
+    val rawDec = match.groupValues[4]
+    val normalized = normalizeAmountString(rawInt, decSep, rawDec) ?: return null
     return when {
-      symbol.contains("USD") || symbol.contains("$") -> "USD $amount"
-      else -> "S/ $amount"
+      symbol.contains("USD") || symbol.contains("$") -> "USD $normalized"
+      else -> "S/ $normalized"
     }
+  }
+
+  /**
+   * Normalizes a raw amount string with optional thousands separators and decimal separator
+   * into a canonical "1234.56" or "1234" form, regardless of whether the source used
+   * US (1,234.56) or European (1.234,56) formatting.
+   * Returns null if the input is ambiguous or malformed.
+   */
+  private fun normalizeAmountString(rawInt: String, decSep: String, rawDec: String): String? {
+    if (rawInt.isEmpty()) return null
+    // Strip thousands separators from the integer part. Both . and , can be thousands.
+    val intDigits = rawInt.replace(".", "").replace(",", "")
+    if (intDigits.isEmpty() || !intDigits.all { it.isDigit() }) return null
+    val decDigits = if (rawDec.isNotEmpty() && (decSep == "." || decSep == ",")) rawDec else ""
+    return if (decDigits.isEmpty()) intDigits else "$intDigits.$decDigits"
   }
 
   private fun inferMovementDetection(value: String): DetectionResult {
@@ -173,11 +197,19 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
     val transferSignals = listOf(
       "transferencia entre mis cuentas",
       "transferencia entre tus cuentas",
+      "transferencia entre cuentas propias",
+      "transferencia entre tus productos",
       "constancia de transferencia",
+      "traspaso entre cuentas",
+      "traspaso entre tus cuentas",
+      "movimiento entre cuentas propias",
+      "movimiento entre tus cuentas",
+      "transferencia interbancaria a tu propia cuenta",
     )
     val isOwnTransfer = transferSignals.any { normalized.contains(it) } ||
       (normalized.contains("realizaste una transferencia") &&
-        (normalized.contains("entre mis cuentas") || normalized.contains("desde tu")))
+        (normalized.contains("entre mis cuentas") || normalized.contains("desde tu") ||
+          normalized.contains("a tu cuenta") || normalized.contains("entre tus productos")))
 
     return when {
       isOwnTransfer -> DetectionResult("transfer", "high")
@@ -439,6 +471,19 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
       "pe.com.interbank.mobilebanking" -> "Interbank"
       "com.bbva.nxt_peru" -> "BBVA"
       "pe.com.scotiabank.blpm.android.client" -> "Scotiabank"
+      "pe.com.banbif.mobilebanking" -> "BanBif"
+      "pe.gob.bn.bnmasapp" -> "Banco de la Nación"
+      "pe.com.mibanco.mibancoapp" -> "Mibanco"
+      "pe.com.pichincha.pichinchapp" -> "Banco Pichincha"
+      "pe.com.bancofalabella.movil" -> "Banco Falabella"
+      "com.bancoripley.bancoripleyapp" -> "Banco Ripley"
+      "pe.com.cajaarequipa.app" -> "Caja Arequipa"
+      "pe.com.cajahuancayo.app" -> "Caja Huancayo"
+      "pe.com.cajacusco.app" -> "Caja Cusco"
+      "pe.com.cajasullana.app" -> "Caja Sullana"
+      "pe.com.cajatrujillo.app" -> "Caja Trujillo"
+      "pe.com.cajapiura.app" -> "Caja Piura"
+      "pe.com.interbank.tunki" -> "Tunki"
       "com.google.android.apps.walletnfcrel" -> "Google Wallet"
       GMAIL_PACKAGE -> "Correos bancarios"
       else -> try {
@@ -462,9 +507,25 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
       "pe.com.interbank.mobilebanking" -> "interbank"
       "com.bbva.nxt_peru" -> "bbva"
       "pe.com.scotiabank.blpm.android.client" -> "scotiabank"
+      "pe.com.banbif.mobilebanking" -> "banbif"
+      "pe.gob.bn.bnmasapp" -> "banco_nacion"
+      "pe.com.mibanco.mibancoapp" -> "mibanco"
+      "pe.com.pichincha.pichinchapp" -> "pichincha"
+      "pe.com.bancofalabella.movil" -> "banco_falabella"
+      "com.bancoripley.bancoripleyapp" -> "banco_ripley"
+      "pe.com.cajaarequipa.app" -> "caja_arequipa"
+      "pe.com.cajahuancayo.app" -> "caja_huancayo"
+      "pe.com.cajacusco.app" -> "caja_cusco"
+      "pe.com.cajasullana.app" -> "caja_sullana"
+      "pe.com.cajatrujillo.app" -> "caja_trujillo"
+      "pe.com.cajapiura.app" -> "caja_piura"
+      "pe.com.interbank.tunki" -> "tunki"
       "com.google.android.apps.walletnfcrel" -> "google_wallet"
       GMAIL_PACKAGE -> "gmail_financial"
-      else -> "yape"
+      // Previously defaulted to "yape", which mislabeled every unknown package as Yape.
+      // Returning "unknown" is safer: the suggestion is still created but downstream
+      // (RN side) will know the app was not recognized and can show a generic label.
+      else -> "unknown"
     }
   }
 
@@ -576,6 +637,39 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
 
     fun requestActiveScan() {
       currentService?.get()?.processActiveNotifications()
+    }
+
+    /**
+     * Cancela inmediatamente la notificacion bancaria asociada al sbn.key. Si el listener
+     * service no esta bound (app cerrada hace rato), encola la key en SharedPreferences
+     * para que el listener la consuma en onListenerConnected y onNotificationPosted.
+     */
+    fun cancelBankNotificationByKey(context: android.content.Context, key: String) {
+      if (key.isBlank()) return
+      val service = currentService?.get()
+      if (service != null) {
+        try {
+          service.cancelNotification(key)
+          android.util.Log.d("DarkMoneyND", "cancelBankNotificationByKey: cancelled inline key=$key")
+          return
+        } catch (e: Exception) {
+          android.util.Log.d("DarkMoneyND", "cancelBankNotificationByKey: inline cancel failed, queuing key=$key err=${e.message}")
+        }
+      }
+      NotificationDetectionStore.addPendingCancellationKey(context, key)
+    }
+
+    fun consumePendingCancellations(service: DarkMoneyNotificationListenerService) {
+      val keys = NotificationDetectionStore.takePendingCancellationKeys(service.applicationContext)
+      if (keys.isEmpty()) return
+      for (key in keys) {
+        try {
+          service.cancelNotification(key)
+          android.util.Log.d("DarkMoneyND", "consumePendingCancellations: cancelled key=$key")
+        } catch (e: Exception) {
+          android.util.Log.d("DarkMoneyND", "consumePendingCancellations: failed key=$key err=${e.message}")
+        }
+      }
     }
   }
 }

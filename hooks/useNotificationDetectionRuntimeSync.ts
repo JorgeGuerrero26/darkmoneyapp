@@ -1,24 +1,25 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { useAuth } from "../lib/auth-context";
 import { useWorkspace } from "../lib/workspace-context";
 import { notificationDetection } from "../lib/notification-detection-native";
 import { packageNamesForEnabledApps } from "../lib/notification-detection-apps";
-import { useNotificationDetectionSettingsQuery, syncNativeDetectedSuggestion, getFrequentTransferPair } from "../services/queries/notification-detection";
+import { useNotificationDetectionSettingsQuery, syncNativeDetectedSuggestion, getFrequentTransferPair, recordDetectionEvent } from "../services/queries/notification-detection";
 import { cleanupMovementDescriptionLocally, shouldShowDescriptionCleanup } from "../lib/movement-description-cleanup";
 import { suggestCounterpartyLocally } from "../lib/movement-counterparty-suggestions";
 import { suggestRecurringLocally, type MovementRecurringHistoryItem } from "../lib/movement-recurring-suggestions";
 import { analyzeMovementRiskLocally, type MovementRiskItem } from "../lib/movement-risk-analysis";
 import { analyzeMovementBudgetImpactLocally } from "../lib/movement-budget-impact";
 import { buildPatternMaps, scoreCategoryFromDescription, type PatternMaps } from "../lib/movement-patterns";
+import { filterCategoriesForMovementType, orchestrateCategoryAiRecommendation } from "../lib/movement-ai-orchestrator";
 import { normalizeCurrencyCode, sortAccountsForDetectedCurrency } from "../features/movements/lib/movement-creation-rules";
 import { useMovementPatternsQuery } from "../services/queries/movement-patterns";
 import {
   requestMovementDescriptionCleanup,
   requestMovementCounterpartyAiSuggestion,
   requestMovementRecurringAiSuggestion,
-  requestMovementCategoryAiSuggestion,
   requestMovementRiskAiExplanation,
   requestMovementBudgetAiRecommendation,
   requestNotificationMovementAiClassification,
@@ -45,6 +46,12 @@ function serializeWordToCategory(maps: PatternMaps) {
   );
 }
 
+function serializeNumericKeyedMap(map: Map<number, { id: number; count: number }[]>) {
+  return Object.fromEntries(
+    Array.from(map.entries()).map(([id, entries]) => [String(id), entries]),
+  );
+}
+
 function buildAccountCurrencyPreferences(
   accounts: Pick<AccountSummary, "id" | "name" | "currencyCode" | "isArchived">[],
   currencies: string[],
@@ -57,7 +64,6 @@ function buildAccountCurrencyPreferences(
   );
 }
 
-const LOCAL_CATEGORY_AI_CONFIDENCE_THRESHOLD = 0.6;
 const AI_NOTIFICATION_DISCARD_THRESHOLD = 0.65;
 
 function patternMovementAmount(movement: {
@@ -71,13 +77,23 @@ function patternMovementAmount(movement: {
   return source || destination;
 }
 
+const PROCESSED_SUGGESTIONS_TTL_MS = 24 * 60 * 60 * 1000;
+const PROCESSED_SUGGESTIONS_FLUSH_DEBOUNCE_MS = 800;
+
+function processedSuggestionsStorageKey(workspaceId: number | null | undefined): string | null {
+  if (!workspaceId) return null;
+  return `darkmoney/notif-detection/processed-suggestions/${workspaceId}`;
+}
+
 export function useNotificationDetectionRuntimeSync() {
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
   const queryClient = useQueryClient();
-  // Track suggestion IDs that have been processed in this session to avoid
-  // re-calling AI APIs when the effect re-runs due to reference changes.
-  const processedSuggestionIdsRef = useRef(new Set<string>());
+  // Track suggestion IDs that have been processed (with timestamp) to avoid
+  // re-calling AI APIs when the effect re-runs or the app reopens within 24h.
+  const processedSuggestionIdsRef = useRef(new Map<string, number>());
+  const [processedHydrated, setProcessedHydrated] = useState(false);
+  const flushTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { data: snapshot } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const entitlementQuery = useUserEntitlementQuery(profile?.id ?? null, profile?.email ?? null);
   const settingsQuery = useNotificationDetectionSettingsQuery(profile?.id, activeWorkspaceId);
@@ -143,6 +159,10 @@ export function useNotificationDetectionRuntimeSync() {
     async function applyRuntimeContext() {
       const frequentTransferPair = await getFrequentTransferPair(activeWorkspaceId);
       notificationDetection.setRuntimeContext({
+        // Bump this key (YYYY-MM-DD-vN) when you want every device to clear stale
+        // movement_detection notifications on the next app open. Avoids needing a Kotlin
+        // rebuild just to trigger a one-time cleanup.
+        notifCleanupKey: "2026-05-16-v1",
         userId,
         workspaceId: activeWorkspaceId,
         workspaceBaseCurrencyCode,
@@ -160,6 +180,9 @@ export function useNotificationDetectionRuntimeSync() {
           .filter((counterparty) => !counterparty.isArchived)
           .map((counterparty) => ({ id: counterparty.id, name: counterparty.name, type: counterparty.type })),
         wordToCategory: serializeWordToCategory(patternMaps),
+        counterpartyToCategory: serializeNumericKeyedMap(patternMaps.counterpartyToCategory),
+        categoryToCounterparty: serializeNumericKeyedMap(patternMaps.categoryToCounterparty),
+        counterpartyToAccount: serializeNumericKeyedMap(patternMaps.counterpartyToAccount),
         settings,
         frequentTransferPair: frequentTransferPair ?? undefined,
       });
@@ -177,15 +200,98 @@ export function useNotificationDetectionRuntimeSync() {
     snapshot?.exchangeRates,
   ]);
 
+  // Hidrata el set persistido al cambiar de workspace y limpia entradas >24h.
+  useEffect(() => {
+    let cancelled = false;
+    setProcessedHydrated(false);
+    processedSuggestionIdsRef.current = new Map<string, number>();
+    const storageKey = processedSuggestionsStorageKey(activeWorkspaceId);
+    if (!storageKey) {
+      setProcessedHydrated(true);
+      return () => {
+        cancelled = true;
+      };
+    }
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(storageKey);
+        if (cancelled) return;
+        if (raw) {
+          const parsed = JSON.parse(raw) as Record<string, number> | null;
+          if (parsed && typeof parsed === "object") {
+            const now = Date.now();
+            const fresh = new Map<string, number>();
+            for (const [id, ts] of Object.entries(parsed)) {
+              if (typeof ts === "number" && now - ts < PROCESSED_SUGGESTIONS_TTL_MS) {
+                fresh.set(id, ts);
+              }
+            }
+            processedSuggestionIdsRef.current = fresh;
+          }
+        }
+      } catch {
+        // Corrupted entry, ignore.
+      } finally {
+        if (!cancelled) setProcessedHydrated(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeWorkspaceId]);
+
+  // Flush diferido del set persistido (evita escribir por cada notificacion).
+  function scheduleProcessedFlush() {
+    if (flushTimeoutRef.current) clearTimeout(flushTimeoutRef.current);
+    flushTimeoutRef.current = setTimeout(async () => {
+      const storageKey = processedSuggestionsStorageKey(activeWorkspaceId);
+      if (!storageKey) return;
+      try {
+        const now = Date.now();
+        const payload: Record<string, number> = {};
+        for (const [id, ts] of processedSuggestionIdsRef.current.entries()) {
+          if (now - ts < PROCESSED_SUGGESTIONS_TTL_MS) payload[id] = ts;
+        }
+        await AsyncStorage.setItem(storageKey, JSON.stringify(payload));
+      } catch {
+        // Persistence failure must not break detection.
+      }
+    }, PROCESSED_SUGGESTIONS_FLUSH_DEBOUNCE_MS);
+  }
+
+  // Limpia el timer al desmontar.
+  useEffect(() => {
+    return () => {
+      if (flushTimeoutRef.current) clearTimeout(flushTimeoutRef.current);
+    };
+  }, []);
+
   useEffect(() => {
     if (!profile?.id || !activeWorkspaceId || !notificationDetection.isAvailable()) return;
+    // Espera a que la hidratacion del set persistido termine; evita reprocesar
+    // sugerencias ya vistas en sesiones previas (dentro de 24h).
+    if (!processedHydrated) return;
     let cancelled = false;
     async function syncLocalSuggestions() {
       const suggestions = await notificationDetection.getSuggestions();
       for (const suggestion of suggestions) {
         if (cancelled || suggestion.status !== "pending") continue;
         if (processedSuggestionIdsRef.current.has(suggestion.id)) continue;
-        processedSuggestionIdsRef.current.add(suggestion.id);
+        processedSuggestionIdsRef.current.set(suggestion.id, Date.now());
+        scheduleProcessedFlush();
+        void recordDetectionEvent({
+          userId: profile?.id ?? null,
+          workspaceId: activeWorkspaceId,
+          event: "suggestion_received",
+          nativeSuggestionId: suggestion.id,
+          financialAppKey: suggestion.financialAppKey ?? null,
+          surface: "runtime_sync",
+          metadata: {
+            movementType: suggestion.movementType ?? null,
+            confidence: suggestion.confidence ?? null,
+            packageName: suggestion.packageName,
+          },
+        });
         if (suggestion.movementType === "transfer") {
           // Transferencias entre cuentas propias: sin comercio/categoría/contraparte.
           // Solo sincronizar y omitir toda la IA (clasificación, limpieza, contraparte, recurrente).
@@ -197,6 +303,14 @@ export function useNotificationDetectionRuntimeSync() {
           continue;
         }
         if (entitlementQuery.data?.proAccessEnabled && suggestion.confidence !== "high") {
+          void recordDetectionEvent({
+            userId: profile?.id ?? null,
+            workspaceId: activeWorkspaceId,
+            event: "ai_classifier_called",
+            nativeSuggestionId: suggestion.id,
+            financialAppKey: suggestion.financialAppKey ?? null,
+            surface: "runtime_sync",
+          });
           const classification = await requestNotificationMovementAiClassification({
             workspaceId: activeWorkspaceId!,
             packageName: suggestion.packageName,
@@ -215,6 +329,18 @@ export function useNotificationDetectionRuntimeSync() {
             !classification.classification.isMovement &&
             classification.classification.confidence >= AI_NOTIFICATION_DISCARD_THRESHOLD
           ) {
+            void recordDetectionEvent({
+              userId: profile?.id ?? null,
+              workspaceId: activeWorkspaceId,
+              event: "ai_classifier_discarded",
+              nativeSuggestionId: suggestion.id,
+              financialAppKey: suggestion.financialAppKey ?? null,
+              surface: "runtime_sync",
+              metadata: {
+                confidence: classification.classification.confidence,
+                reason: classification.classification.reason ?? null,
+              },
+            });
             notificationDetection.discardSuggestion(suggestion.id);
             await syncNativeDetectedSuggestion({
               userId: profile!.id,
@@ -526,42 +652,76 @@ export function useNotificationDetectionRuntimeSync() {
           }
           continue;
         }
-        if (cancelled || !entitlementQuery.data?.proAccessEnabled || suggestion.aiCategoryRecommendation) continue;
+        // Only skip if there is already a real AI result (existing_category or new_category).
+        // "pending", "unavailable", or null all mean the headless task did not produce a usable
+        // suggestion — retry here with the full snapshot (categories, patternMaps, counterparties).
+        const existingAiCategory = suggestion.aiCategoryRecommendation as { type?: unknown; status?: unknown } | undefined;
+        const hasRealAiCategory =
+          existingAiCategory?.type === "existing_category" || existingAiCategory?.type === "new_category";
+        if (cancelled || !entitlementQuery.data?.proAccessEnabled || hasRealAiCategory) continue;
         const movementType = suggestion.movementType === "income" ? "income" : "expense";
-        const compatibleKind = movementType === "income" ? "income" : "expense";
-        const categories = (snapshot?.categories ?? [])
-          .filter((category) => category.isActive && (category.kind === "both" || category.kind === compatibleKind))
-          .map((category) => ({ id: category.id, name: category.name, kind: category.kind }));
+        const categories = filterCategoriesForMovementType(snapshot?.categories ?? [], movementType);
         if (!description || categories.length === 0) continue;
-        const scoredLocal = scoreCategoryFromDescription(description, patternMaps);
-        const localCategory = scoredLocal ? categories.find((category) => category.id === scoredLocal.categoryId) : null;
-        const localSuggestion = scoredLocal && localCategory
-          ? {
-            categoryId: localCategory.id,
-            categoryName: localCategory.name,
-            confidence: scoredLocal.confidence,
-            reasons: scoredLocal.reasons,
-          }
-          : null;
-        if (localSuggestion && localSuggestion.confidence >= LOCAL_CATEGORY_AI_CONFIDENCE_THRESHOLD) continue;
         notificationDetection.setSuggestionAiCategoryRecommendation(suggestion.id, { status: "pending" });
-        const response = await requestMovementCategoryAiSuggestion({
+        void recordDetectionEvent({
+          userId: profile?.id ?? null,
+          workspaceId: activeWorkspaceId,
+          event: "ai_category_pending",
+          nativeSuggestionId: suggestion.id,
+          financialAppKey: suggestion.financialAppKey ?? null,
+          surface: "runtime_sync",
+        });
+        const result = await orchestrateCategoryAiRecommendation({
           workspaceId: activeWorkspaceId!,
           surface: "android_overlay",
           movementType,
+          description,
           amount: parseAmountLabel(suggestion.amountLabel),
           currencyCode: currencyFromAmountLabel(suggestion.amountLabel),
-          description,
           occurredAt: new Date(suggestion.postTime ?? suggestion.createdAt ?? Date.now()).toISOString(),
           categories,
-          localSuggestion,
-        }).catch(() => null);
+          patternMaps,
+          canCallAi: true,
+        });
         if (cancelled) continue;
-        if (!response?.ok || !response.recommendation) {
+        if (result.status === "ai_resolved" && result.recommendation) {
+          notificationDetection.setSuggestionAiCategoryRecommendation(suggestion.id, result.recommendation);
+          void recordDetectionEvent({
+            userId: profile?.id ?? null,
+            workspaceId: activeWorkspaceId,
+            event: "ai_category_resolved",
+            nativeSuggestionId: suggestion.id,
+            financialAppKey: suggestion.financialAppKey ?? null,
+            surface: "runtime_sync",
+            metadata: {
+              recommendationType: (result.recommendation as { type?: unknown })?.type ?? null,
+              confidence: (result.recommendation as { confidence?: unknown })?.confidence ?? null,
+            },
+          });
+        } else if (result.status === "local_confident") {
+          // Local score is strong enough; clear "pending" to free the overlay.
           notificationDetection.setSuggestionAiCategoryRecommendation(suggestion.id, { status: "unavailable" });
-          continue;
+          void recordDetectionEvent({
+            userId: profile?.id ?? null,
+            workspaceId: activeWorkspaceId,
+            event: "ai_category_unavailable",
+            nativeSuggestionId: suggestion.id,
+            financialAppKey: suggestion.financialAppKey ?? null,
+            surface: "runtime_sync",
+            metadata: { reason: "local_confident" },
+          });
+        } else {
+          notificationDetection.setSuggestionAiCategoryRecommendation(suggestion.id, { status: "unavailable" });
+          void recordDetectionEvent({
+            userId: profile?.id ?? null,
+            workspaceId: activeWorkspaceId,
+            event: "ai_category_unavailable",
+            nativeSuggestionId: suggestion.id,
+            financialAppKey: suggestion.financialAppKey ?? null,
+            surface: "runtime_sync",
+            metadata: { reason: result.status ?? "unknown" },
+          });
         }
-        notificationDetection.setSuggestionAiCategoryRecommendation(suggestion.id, response.recommendation);
       }
       if (!cancelled) {
         void queryClient.invalidateQueries({ queryKey: ["notifications"] });
@@ -576,6 +736,7 @@ export function useNotificationDetectionRuntimeSync() {
     activeWorkspace?.baseCurrencyCode,
     entitlementQuery.data?.proAccessEnabled,
     patternMaps,
+    processedHydrated,
     profile?.id,
     queryClient,
     recurringHistory,

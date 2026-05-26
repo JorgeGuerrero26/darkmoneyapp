@@ -66,6 +66,41 @@ export const COLORS = {
   borderLight: "rgba(255,255,255,0.06)",
 };
 
+// ─── Extended palette (advanced dashboard / charts) ───────────────────────────
+// Variantes de color usadas por la sección Pro del dashboard. Mantenidas
+// separadas de COLORS principal para evitar inflarlo con tonos de un solo uso.
+export const EXTENDED_PALETTE = {
+  // Rose / danger soft family
+  rosePink:      "#FF9DBA",   // texto/dot en banners de peligro
+  rosePinkSoft:  "#FFB7C3",   // sub-textos en danger
+  rosePale:      "#FFD1D9",   // meta/captions danger
+  rosePaleBg:    "#FFE3E8",   // títulos sobre banner danger
+  rosePaleBgSoft:"#FFE8EC",   // labels secundarios danger
+  wineDeep:      "#7F1020",   // fondo de banner de peligro
+
+  // Sky / lavender / info family
+  skyPale:       "#C8E8FF",
+  skyPaler:      "#CFE0FF",
+  skySoft:       "#9EB7FF",   // gemini accent + textos info
+  lavenderInk:   "#9EA9FF",
+  indigoBg:      "#0B1020",   // fondos de sección Pro
+
+  // Teal / mint family (gemini brand)
+  teal:          "#49D7BE",   // shadow + gemini brand
+  mintLight:     "#7FE8D4",   // textos sobre teal
+  mintLighter:   "#9BEDE0",
+  greenInk:      "#06110F",   // texto sobre fondo verde
+
+  // Chart palette (donut, ring, sparklines)
+  chartIndigo:   "#5C8DFF",
+  chartTeal:     "#49D7BE",
+  chartCoral:    "#FF7D8D",
+  chartGold:     "#FFD15C",
+
+  // Pure
+  white:         "#FFFFFF",
+};
+
 // ─── Glassmorphism surfaces ───────────────────────────────────────────────────
 export const GLASS = {
   card:             "rgba(10,14,20,0.78)",

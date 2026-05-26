@@ -4,6 +4,7 @@ import type { WorkspaceInvitationStatus } from "../../types/domain";
 
 import { UNIVERSAL_LINK_HOST } from "../../constants/config";
 import { supabase, supabaseAnonKey, supabaseUrl } from "../../lib/supabase";
+import { STALE } from "../../lib/query-client";
 import { INTERACTIVE_AI_TIMEOUT_MS, isInteractiveAiEdgeFunction } from "../../lib/ai-request-utils";
 import { dateStrToISO, filterDateFrom, filterDateTo } from "../../lib/date";
 import {
@@ -823,7 +824,7 @@ export function useUserEntitlementQuery(userId?: string | null, email?: string |
   return useQuery({
     queryKey: ["user-entitlement", userId ?? null, email?.trim().toLowerCase() ?? null],
     enabled: Boolean(supabase && userId),
-    staleTime: 60_000,
+    staleTime: STALE.medium,
     placeholderData: (previousData) => previousData,
     queryFn: async (): Promise<UserEntitlementSummary> => {
       const fallback = buildFallbackEntitlement(userId, email);
@@ -1332,7 +1333,7 @@ export function useCategoriesOverviewQuery(profile: AppProfile | null, workspace
     queryKey: ["categories-overview", workspaceId, profile?.id],
     queryFn: () => fetchCategoriesOverview(workspaceId!),
     enabled: Boolean(profile?.id && workspaceId),
-    staleTime: 60_000,
+    staleTime: STALE.medium,
     retry: 1,
   });
 }
@@ -1358,7 +1359,7 @@ export function useUserWorkspacesQuery(userId: string | null | undefined) {
     queryKey: ["user-workspaces", userId],
     queryFn: () => fetchUserWorkspaces(userId!),
     enabled: Boolean(userId),
-    staleTime: 120_000,
+    staleTime: STALE.medium,
     retry: 1,
   });
 }
@@ -1371,34 +1372,16 @@ export function useWorkspaceSnapshotQuery(
     queryKey: ["workspace-snapshot", activeWorkspaceId, profile?.id],
     queryFn: () => fetchWorkspaceSnapshot(profile!.id, activeWorkspaceId!),
     enabled: Boolean(profile?.id && activeWorkspaceId),
-    staleTime: 5 * 60_000,
-    retry: 1,
+    staleTime: STALE.medium,
+    retry: 3,
+    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 10_000),
   });
 }
 
 // ─── Dashboard movements query ────────────────────────────────────────────────
 
-export type DashboardMovementRow = {
-  id: number;
-  movementType: string;
-  status: string;
-  occurredAt: string;
-  sourceAmount: number;
-  destinationAmount: number;
-  sourceAccountId: number | null;
-  destinationAccountId: number | null;
-  categoryId: number | null;
-  counterpartyId: number | null;
-  /** Para listados en dashboard (detalle por día) */
-  description: string;
-};
-
-export type DashboardAnalyticsBundle = {
-  signals: MovementAnalyticsSignal[];
-  learningFeedback: MovementLearningFeedback[];
-  projectionSnapshot: WorkspaceAnalyticsSnapshot | null;
-  available: boolean;
-};
+import type { DashboardAnalyticsBundle, DashboardMovementRow } from "../../features/dashboard/lib/dashboard-row";
+export type { DashboardAnalyticsBundle, DashboardMovementRow };
 
 export type PersistMovementAnalyticsSignalInput = {
   movementId: number;
@@ -1475,7 +1458,7 @@ export function useDashboardMovementsQuery(
       }));
     },
     enabled: Boolean(workspaceId),
-    staleTime: 60_000,
+    staleTime: STALE.short,
     retry: 1,
   });
 }
@@ -1636,7 +1619,7 @@ export function useDashboardAnalyticsQuery(
       };
     },
     enabled: Boolean(workspaceId),
-    staleTime: 60_000,
+    staleTime: STALE.short,
     retry: 1,
   });
 }
@@ -5045,7 +5028,7 @@ export function useRecurringIncomeOccurrencesQuery(
   return useQuery({
     queryKey: ["recurring-income-occurrences", workspaceId ?? null, recurringIncomeId ?? null],
     enabled: Boolean(supabase && workspaceId && recurringIncomeId),
-    staleTime: 20_000,
+    staleTime: STALE.short,
     queryFn: async (): Promise<RecurringIncomeOccurrenceSummary[]> => {
       if (!supabase || !workspaceId || !recurringIncomeId) return [];
       const { data, error } = await supabase
@@ -5649,7 +5632,7 @@ export function useNotificationsQuery(userId: string | null) {
       }));
     },
     enabled: Boolean(userId),
-    staleTime: 5_000,
+    staleTime: STALE.short,
     refetchOnMount: "always",
     refetchOnReconnect: true,
     refetchOnWindowFocus: true,
@@ -5669,7 +5652,7 @@ export function useNotificationPreferencesQuery(userId: string | null | undefine
   return useQuery({
     queryKey: ["notification-preferences", userId ?? null],
     enabled: Boolean(supabase && userId),
-    staleTime: 15_000,
+    staleTime: STALE.short,
     queryFn: async (): Promise<NotificationPreferenceSummary> => {
       if (!supabase || !userId) {
         return {
@@ -6613,7 +6596,7 @@ export function useSharedObligationsQuery(userId: string | null | undefined) {
   return useQuery({
     queryKey: ["shared-obligations", userId ?? null],
     enabled: Boolean(supabase && userId),
-    staleTime: 60_000,
+    staleTime: STALE.medium,
     retry: 1,
     queryFn: fetchSharedObligations,
   });
@@ -6640,7 +6623,7 @@ export function useObligationEventsQuery(
   return useQuery({
     queryKey: ["obligation-events", obligationId ?? null],
     enabled: Boolean(supabase && obligationId != null && enabled),
-    staleTime: 30_000,
+    staleTime: STALE.short,
     retry: 1,
     queryFn: () => fetchObligationEventsByObligationId(obligationId as number),
   });
@@ -6655,7 +6638,7 @@ export function usePendingObligationShareInvitesQuery(
   return useQuery({
     queryKey: ["pending-obligation-share-invites", userId ?? null, normalizedEmail],
     enabled: Boolean(supabase && userId && normalizedEmail),
-    staleTime: 15_000,
+    staleTime: STALE.short,
     queryFn: async (): Promise<PendingObligationShareInviteItem[]> => {
       if (!supabase || !userId || !normalizedEmail) return [];
       const { data, error } = await supabase
@@ -7041,7 +7024,7 @@ export function usePendingPaymentRequestCountsQuery(workspaceId: number | null |
   return useQuery({
     queryKey: ["obligation-payment-request-counts", workspaceId ?? null],
     enabled: Boolean(supabase && workspaceId != null),
-    staleTime: 20_000,
+    staleTime: STALE.short,
     queryFn: async (): Promise<Map<number, number>> => {
       if (!supabase || !workspaceId) return new Map();
       const { data, error } = await supabase
@@ -7068,7 +7051,7 @@ export function useViewerPaymentRequestsQuery(
   return useQuery({
     queryKey: ["viewer-payment-requests", obligationId ?? null, userId ?? null],
     enabled: Boolean(supabase && obligationId != null && userId != null),
-    staleTime: 15_000,
+    staleTime: STALE.short,
     queryFn: async (): Promise<ObligationPaymentRequest[]> => {
       if (!supabase || !obligationId || !userId) return [];
       const { data, error } = await supabase
@@ -7088,7 +7071,7 @@ export function useObligationPaymentRequestsQuery(obligationId: number | null | 
   return useQuery({
     queryKey: ["obligation-payment-requests", obligationId ?? null],
     enabled: Boolean(supabase && obligationId != null),
-    staleTime: 20_000,
+    staleTime: STALE.short,
     queryFn: async (): Promise<ObligationPaymentRequest[]> => {
       if (!supabase || !obligationId) return [];
       const { data, error } = await supabase
@@ -7518,7 +7501,7 @@ export function useObligationEventViewerLinksQuery(
   return useQuery({
     queryKey: ["obligation-event-viewer-links", obligationId ?? null, shareId ?? null],
     enabled: Boolean(supabase && obligationId != null && shareId != null),
-    staleTime: 20_000,
+    staleTime: STALE.short,
     queryFn: async (): Promise<ObligationEventViewerLink[]> => {
       if (!supabase || !obligationId || !shareId) return [];
       const { data, error } = await supabase

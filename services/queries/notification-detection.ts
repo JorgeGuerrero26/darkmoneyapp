@@ -427,6 +427,164 @@ export function useMarkDetectedMovementSuggestionMutation(userId?: string | null
   });
 }
 
+export type SuggestionActionKind =
+  | "accept_category"
+  | "override_category"
+  | "accept_description"
+  | "edit_description"
+  | "accept_counterparty"
+  | "override_counterparty"
+  | "register"
+  | "discard";
+
+export type SuggestionActionSurface = "overlay" | "quick_entry" | "headless" | "list";
+
+export type RecordSuggestionActionInput = {
+  userId: string;
+  workspaceId: number;
+  suggestionId: number | null;
+  dedupeKey?: string | null;
+  action: SuggestionActionKind;
+  surface: SuggestionActionSurface;
+  modelAtDecision?: string | null;
+  confidenceAtDecision?: string | number | null;
+  suggestedValue?: string | null;
+  finalValue?: string | null;
+  metadata?: Record<string, unknown>;
+};
+
+export async function recordSuggestionAction(input: RecordSuggestionActionInput): Promise<void> {
+  if (!supabase) return;
+  try {
+    const confidence = input.confidenceAtDecision == null
+      ? null
+      : typeof input.confidenceAtDecision === "number"
+        ? input.confidenceAtDecision.toString()
+        : input.confidenceAtDecision;
+    await supabase.from("notification_suggestion_actions").insert({
+      user_id: input.userId,
+      workspace_id: input.workspaceId,
+      suggestion_id: input.suggestionId,
+      dedupe_key: input.dedupeKey ?? null,
+      action: input.action,
+      surface: input.surface,
+      model_at_decision: input.modelAtDecision ?? null,
+      confidence_at_decision: confidence,
+      suggested_value: input.suggestedValue ?? null,
+      final_value: input.finalValue ?? null,
+      metadata: input.metadata ?? {},
+    });
+  } catch {
+    // Telemetry must not break the user flow.
+  }
+}
+
+export type DetectionTelemetryEvent =
+  | "suggestion_received"
+  | "ai_classifier_called"
+  | "ai_classifier_discarded"
+  | "ai_category_pending"
+  | "ai_category_resolved"
+  | "ai_category_unavailable"
+  | "user_registered"
+  | "user_discarded";
+
+export type DetectionTelemetrySurface = "headless" | "runtime_sync" | "overlay" | "quick_entry";
+
+export type RecordDetectionEventInput = {
+  userId?: string | null;
+  workspaceId?: number | null;
+  event: DetectionTelemetryEvent;
+  suggestionId?: number | null;
+  nativeSuggestionId?: string | null;
+  financialAppKey?: string | null;
+  surface?: DetectionTelemetrySurface | null;
+  metadata?: Record<string, unknown>;
+};
+
+export async function recordDetectionEvent(input: RecordDetectionEventInput): Promise<void> {
+  if (!supabase) return;
+  try {
+    await supabase.from("notification_detection_telemetry").insert({
+      user_id: input.userId ?? null,
+      workspace_id: input.workspaceId ?? null,
+      event: input.event,
+      suggestion_id: input.suggestionId ?? null,
+      native_suggestion_id: input.nativeSuggestionId ?? null,
+      financial_app_key: input.financialAppKey ?? null,
+      surface: input.surface ?? null,
+      metadata: input.metadata ?? {},
+    });
+  } catch {
+    // Telemetry must not break the user flow.
+  }
+}
+
+// Features que aparecen en el flujo de notificaciones y quick-entry.
+// Cuando alguna pase el 85% de su limite diario, se muestra un banner de aviso.
+export const AI_NOTIFICATION_FEATURE_LIMITS: Record<string, number> = {
+  "movement-category-ai-suggestion": 100,
+  "movement-counterparty-ai-suggestion": 100,
+  "movement-description-ai-cleanup": 100,
+  "movement-risk-ai-explanation": 100,
+};
+
+export type AiFeatureUsageToday = {
+  featureKey: string;
+  used: number;
+  limit: number;
+  ratio: number;
+};
+
+function usageDateLimaToday(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Lima",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
+export function useAiUsageTodayQuery(userId?: string | null) {
+  return useQuery({
+    queryKey: ["ai-usage-today", userId ?? null],
+    enabled: Boolean(supabase && userId),
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+    queryFn: async (): Promise<AiFeatureUsageToday[]> => {
+      if (!supabase || !userId) return [];
+      const usageDate = usageDateLimaToday();
+      const featureKeys = Object.keys(AI_NOTIFICATION_FEATURE_LIMITS);
+      const { data, error } = await supabase
+        .from("ai_feature_usage_events")
+        .select("feature_key")
+        .eq("user_id", userId)
+        .eq("usage_date", usageDate)
+        .in("feature_key", featureKeys);
+      if (error) {
+        // Tabla puede no existir en algunos entornos; degradar a sin uso.
+        return featureKeys.map((featureKey) => ({
+          featureKey,
+          used: 0,
+          limit: AI_NOTIFICATION_FEATURE_LIMITS[featureKey],
+          ratio: 0,
+        }));
+      }
+      const counts = new Map<string, number>();
+      for (const row of (data ?? []) as Array<{ feature_key?: unknown }>) {
+        const key = typeof row.feature_key === "string" ? row.feature_key : null;
+        if (!key) continue;
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+      }
+      return featureKeys.map((featureKey) => {
+        const used = counts.get(featureKey) ?? 0;
+        const limit = AI_NOTIFICATION_FEATURE_LIMITS[featureKey];
+        return { featureKey, used, limit, ratio: limit > 0 ? used / limit : 0 };
+      });
+    },
+  });
+}
+
 export async function findPossibleDuplicateMovement(input: DuplicateMovementInput): Promise<MovementRecord | null> {
   if (!supabase) throw new Error("Supabase no está configurado.");
   const date = new Date(input.occurredAt);

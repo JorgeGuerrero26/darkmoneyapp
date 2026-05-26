@@ -24,6 +24,16 @@ type NativeNotificationDetection = {
   setRuntimeContext?(contextJson: string): void;
   isIgnoringBatteryOptimizations?(): Promise<boolean>;
   requestIgnoreBatteryOptimizations?(): void;
+  setLastSaveError?(suggestionId: string, message: string): void;
+  getLastSaveError?(): Promise<string | null>;
+  clearLastSaveError?(): void;
+  requestCancelBankNotification?(suggestionId: string): void;
+};
+
+export type DetectionLastSaveError = {
+  suggestionId: string;
+  message: string;
+  ts: number;
 };
 
 export type NotificationDetectionSuggestion = {
@@ -132,5 +142,26 @@ export const notificationDetection = {
   },
   requestIgnoreBatteryOptimizations() {
     nativeModule?.requestIgnoreBatteryOptimizations?.();
+  },
+  setLastSaveError(suggestionId: string, message: string) {
+    nativeModule?.setLastSaveError?.(suggestionId, message);
+  },
+  async getLastSaveError(): Promise<DetectionLastSaveError | null> {
+    if (!nativeModule?.getLastSaveError) return null;
+    try {
+      const raw = await nativeModule.getLastSaveError();
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as DetectionLastSaveError;
+      if (!parsed?.suggestionId || !parsed?.message) return null;
+      return parsed;
+    } catch {
+      return null;
+    }
+  },
+  clearLastSaveError() {
+    nativeModule?.clearLastSaveError?.();
+  },
+  requestCancelBankNotification(suggestionId: string) {
+    nativeModule?.requestCancelBankNotification?.(suggestionId);
   },
 };

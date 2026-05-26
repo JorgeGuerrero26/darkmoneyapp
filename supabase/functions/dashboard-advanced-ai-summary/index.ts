@@ -19,6 +19,8 @@ import {
   readJsonBody,
   serviceClient,
 } from "../_shared/obligation-share-utils.ts";
+import { isDashboardAdminEmail } from "../_shared/admin-emails.ts";
+import { readDashboardAiCache, writeDashboardAiCache } from "../_shared/dashboard-ai-cache.ts";
 
 function sanitizeSummary(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -41,7 +43,6 @@ type DashboardAiStructuredReply = {
   reply: string;
   complexTerms: DashboardAiComplexTerm[];
 };
-const DASHBOARD_AI_ADMIN_EMAIL = "joradrianmori@gmail.com";
 const DASHBOARD_AI_FEATURE_KEY = "dashboard-advanced-ai-summary";
 
 function sanitizeTone(value: unknown): DashboardAiTone {
@@ -354,7 +355,7 @@ Deno.serve(async (req) => {
 
     const client = serviceClient();
     const user = await authenticatedUser(req, client);
-    const isAdminUser = user.email?.trim().toLowerCase() === DASHBOARD_AI_ADMIN_EMAIL;
+    const isAdminUser = isDashboardAdminEmail(user.email);
     const usageDate = usageDateInLima();
     const body = await readJsonBody(req);
     const workspaceId = numberFromBody(body.workspaceId);
@@ -377,6 +378,16 @@ Deno.serve(async (req) => {
     if (membershipError) throw membershipError;
     if (!membership) {
       return jsonResponse({ ok: false, error: "No tienes acceso a este workspace." }, 403);
+    }
+
+    const cached = await readDashboardAiCache({
+      client,
+      workspaceId,
+      featureKey: DASHBOARD_AI_FEATURE_KEY,
+      usageDate,
+    });
+    if (cached) {
+      return jsonResponse({ ...cached, cached: true });
     }
 
     if (!isAdminUser) {
@@ -440,13 +451,26 @@ Deno.serve(async (req) => {
       }
     }
 
-    return jsonResponse({
+    const responsePayload = {
       ok: true,
       reply,
       complexTerms,
       model,
       tone: toneLabel(tone),
+    };
+
+    await writeDashboardAiCache({
+      client,
+      workspaceId,
+      userId: user.id,
+      featureKey: DASHBOARD_AI_FEATURE_KEY,
+      usageDate,
+      response: responsePayload,
+      tone,
+      model,
     });
+
+    return jsonResponse(responsePayload);
   } catch (error) {
     console.error("[dashboard-advanced-ai-summary]", error);
     const message = error instanceof Error ? error.message : "No se pudo analizar el resumen.";

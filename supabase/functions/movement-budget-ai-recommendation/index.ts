@@ -11,10 +11,10 @@ import {
   readJsonBody,
   serviceClient,
 } from "../_shared/obligation-share-utils.ts";
+import { isFallbackProEmail } from "../_shared/admin-emails.ts";
 
 const FEATURE_KEY = "movement-budget-ai-recommendation";
 const DAILY_LIMIT = 100;
-const FALLBACK_PRO_EMAILS = new Set(["joradrianmori@gmail.com"]);
 
 function usageDateInLima(date = new Date()) {
   return new Intl.DateTimeFormat("en-CA", {
@@ -94,7 +94,7 @@ function buildPrompt(input: unknown) {
 }
 
 async function hasProAccess(client: ReturnType<typeof serviceClient>, user: { id: string; email?: string | null }) {
-  const fallback = Boolean(user.email && FALLBACK_PRO_EMAILS.has(user.email.trim().toLowerCase()));
+  const fallback = isFallbackProEmail(user.email);
   const { data, error } = await client
     .from("user_entitlements")
     .select("plan_code, pro_access_enabled")

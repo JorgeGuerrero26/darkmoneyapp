@@ -247,6 +247,7 @@ object QuickMovementOverlay {
       setSingleLine(true)
       setPadding(0, dp(2), 0, 0)
       background = null
+      contentDescription = "Monto detectado en $detectedCurrencyCode"
     }
     amountCard.addView(amountInput)
     val amountMetaText = TextView(context).apply {
@@ -294,6 +295,7 @@ object QuickMovementOverlay {
       gravity = Gravity.CENTER
       textSize = 14f
       typeface = Typeface.DEFAULT_BOLD
+      contentDescription = "Tipo de movimiento: gasto"
       setOnClickListener {
         selectedType = "expense"
         refreshSegments()
@@ -304,6 +306,7 @@ object QuickMovementOverlay {
       gravity = Gravity.CENTER
       textSize = 14f
       typeface = Typeface.DEFAULT_BOLD
+      contentDescription = "Tipo de movimiento: ingreso"
       setOnClickListener {
         selectedType = "income"
         refreshSegments()
@@ -314,6 +317,7 @@ object QuickMovementOverlay {
       gravity = Gravity.CENTER
       textSize = 13f
       typeface = Typeface.DEFAULT_BOLD
+      contentDescription = "Tipo de movimiento: transferencia entre cuentas"
       setOnClickListener {
         selectedType = "transfer"
         refreshSegments()
@@ -424,17 +428,14 @@ object QuickMovementOverlay {
       }
       val capturedLoading = aiLoadingContainer
       val pollHandler = Handler(Looper.getMainLooper())
+      // Exponential-ish backoff schedule. Total budget ~15s. Each entry is the delay in ms
+      // before the next poll. After exhausting, the loading container is replaced with a
+      // "no encontrada" hint so the user knows AI gave up and can pick a category manually.
+      val pollSchedule = longArrayOf(1000L, 1500L, 2000L, 2500L, 3000L, 5000L)
       var attempts = 0
       val pollRunnable = object : Runnable {
         override fun run() {
           if (windowManager == null) return
-          if (attempts++ >= 12) {
-            capturedLoading?.let {
-              root.removeView(it)
-              expenseIncomeOnlyViews.remove(it)
-            }
-            return
-          }
           val updated = NotificationDetectionStore.getSuggestion(context.applicationContext, suggestionId)
           val updatedRec = updated?.optJSONObject("aiCategoryRecommendation")
           if (updatedRec != null && !aiCategoryPending(updatedRec)) {
@@ -457,12 +458,38 @@ object QuickMovementOverlay {
               root.addView(suggWrap)
               expenseIncomeOnlyViews.add(suggWrap)
             }
-          } else {
-            pollHandler.postDelayed(this, 1000)
+            return
           }
+          if (attempts >= pollSchedule.size) {
+            // Budget exhausted. Replace the loading view with a brief "manual" hint.
+            capturedLoading?.let {
+              val labelChild = (it.getChildAt(0) as? LinearLayout)?.let { _ -> null }
+              // Walk children to find TextViews and update their text.
+              fun updateChildren(view: ViewGroup) {
+                for (i in 0 until view.childCount) {
+                  val child = view.getChildAt(i)
+                  when (child) {
+                    is ViewGroup -> updateChildren(child)
+                    is TextView -> {
+                      if (child.text == "Preparando mejor sugerencia") {
+                        child.text = "Sin sugerencia automatica"
+                      } else if (child.text == "Confirmaremos o mejoraremos la categoría actual.") {
+                        child.text = "Elige una categoria manualmente."
+                      }
+                    }
+                  }
+                }
+              }
+              updateChildren(it)
+            }
+            return
+          }
+          val delay = pollSchedule[attempts]
+          attempts++
+          pollHandler.postDelayed(this, delay)
         }
       }
-      pollHandler.postDelayed(pollRunnable, 1000)
+      pollHandler.postDelayed(pollRunnable, pollSchedule[0])
     }
 
     var selectedCounterpartyId: Int? = null
@@ -543,7 +570,9 @@ object QuickMovementOverlay {
 
     refreshSegments()
 
-    val cancelBtn = actionButton(context, "Cancelar", false, dp(18)) { animatedDismiss() }
+    val cancelBtn = actionButton(context, "Cancelar", false, dp(18)) { animatedDismiss() }.apply {
+      contentDescription = "Cancelar y cerrar el registro rapido"
+    }
 
     val saveLabel = TextView(context).apply {
       text = "Guardar"
@@ -564,6 +593,7 @@ object QuickMovementOverlay {
       addView(saveLabel)
       isClickable = true
       isFocusable = true
+      contentDescription = "Guardar movimiento detectado"
       setOnClickListener {
         val workspaceId = runtimeContext.optInt("workspaceId", 0).takeIf { it > 0 }
         val selectedAccountIdx = accountSelect.selectedIndex().coerceIn(0, accounts.lastIndex)
@@ -650,6 +680,7 @@ object QuickMovementOverlay {
       setSingleLine(inputTypeValue and InputType.TYPE_TEXT_FLAG_MULTI_LINE == 0)
       setPadding(dp(13), dp(10), dp(13), dp(10))
       background = roundedBg(0xFF161F2A.toInt(), dp(16), 0x1FFFFFFF, dp(1))
+      contentDescription = label
     }
     container.addView(input)
     return FieldRefs(container, input)
@@ -709,6 +740,11 @@ object QuickMovementOverlay {
         setPadding(dp(12), dp(8), dp(12), dp(8))
         isClickable = true
         isFocusable = true
+        contentDescription = if (option.meta.isNullOrBlank()) {
+          "$label: ${option.label}"
+        } else {
+          "$label: ${option.label}, ${option.meta}"
+        }
         setOnClickListener {
           currentIndex = index
           refreshChips()

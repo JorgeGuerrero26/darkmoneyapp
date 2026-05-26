@@ -19,6 +19,7 @@ import {
   readJsonBody,
   serviceClient,
 } from "../_shared/obligation-share-utils.ts";
+import { isFallbackProEmail } from "../_shared/admin-emails.ts";
 
 type MovementType = "expense" | "income";
 type Surface = "movement_form" | "notification_form" | "android_overlay";
@@ -34,7 +35,6 @@ type Recommendation = {
 
 const FEATURE_KEY = "movement-recurring-ai-suggestion";
 const DAILY_LIMIT = 100;
-const FALLBACK_PRO_EMAILS = new Set(["joradrianmori@gmail.com"]);
 const FREQUENCIES = new Set<Frequency>(["weekly", "biweekly", "monthly", "quarterly", "yearly"]);
 
 function usageDateInLima(date = new Date()) {
@@ -165,7 +165,7 @@ function buildPrompt(input: {
 }
 
 async function hasProAccess(client: ReturnType<typeof serviceClient>, user: { id: string; email?: string | null }) {
-  const fallback = Boolean(user.email && FALLBACK_PRO_EMAILS.has(user.email.trim().toLowerCase()));
+  const fallback = isFallbackProEmail(user.email);
   const { data, error } = await client
     .from("user_entitlements")
     .select("plan_code, pro_access_enabled")

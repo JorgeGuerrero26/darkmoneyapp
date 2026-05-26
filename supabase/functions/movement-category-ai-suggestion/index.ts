@@ -19,6 +19,7 @@ import {
   readJsonBody,
   serviceClient,
 } from "../_shared/obligation-share-utils.ts";
+import { isFallbackProEmail } from "../_shared/admin-emails.ts";
 
 type MovementType = "expense" | "income";
 type Surface = "movement_form" | "notification_form" | "android_overlay";
@@ -44,7 +45,6 @@ type AiRecommendation = {
 
 const FEATURE_KEY = "movement-category-ai-suggestion";
 const DAILY_LIMIT = 100;
-const FALLBACK_PRO_EMAILS = new Set(["joradrianmori@gmail.com"]);
 
 function usageDateInLima(date = new Date()) {
   return new Intl.DateTimeFormat("en-CA", {
@@ -219,9 +219,25 @@ function buildPrompt(input: {
     "Eres el clasificador financiero de DarkMoney.",
     "Debes recomendar una categoria para un movimiento usando solo los datos recibidos.",
     "No inventes IDs. Si eliges una categoria existente, categoryId debe estar en categories.",
-    "Si ninguna categoria existente encaja bien, puedes proponer una nueva categoria corta y clara.",
-    "Si la descripcion es insuficiente, responde type none.",
     "No expliques que eres IA ni menciones DeepSeek.",
+    "",
+    "Reglas para localSuggestion:",
+    "- confidence >= 0.75: confirma esa categoria salvo que la descripcion sea claramente incompatible.",
+    "- confidence 0.50-0.74: usala como punto de partida; puedes cambiarla si identificas una mejor coincidencia.",
+    "- null o confidence < 0.50: elige libremente desde las categorias disponibles.",
+    "",
+    "Contexto Peru (moneda PEN):",
+    "Yape/Plin + persona = transferencia social. Netflix/Spotify/Disney = suscripcion entretenimiento.",
+    "Rappi/PedidosYa/Uber Eats = delivery comida. Uber/Cabify/InDriver = movilidad.",
+    "Claro/Movistar/Entel/Bitel/Win = telecomunicaciones. Luz del Sur/Sedapal/Calidda/Enel = servicios publicos.",
+    "Bodytech/SmartFit/gym = salud y deporte. BCP/BBVA/Interbank/Scotiabank CONSUMO = compra con tarjeta.",
+    "",
+    "Regla para new_category: solo propone una nueva categoria si ninguna existente encaja siquiera parcialmente.",
+    "Si hay una categoria que encaje aunque sea de forma general, usa existing_category.",
+    "",
+    "El campo reasons debe explicar la eleccion con terminos del usuario (nombre de categoria, palabras de la descripcion).",
+    "No uses terminologia tecnica ni menciones confianza numerica en reasons.",
+    "",
     "Devuelve solo JSON valido con esta forma exacta:",
     '{"type":"existing_category|new_category|none","categoryId":123|null,"categoryName":"nombre"|null,"newCategoryName":"nombre"|null,"confidence":0.0,"reasons":["razon breve"]}',
     "",
@@ -231,7 +247,7 @@ function buildPrompt(input: {
 }
 
 async function hasProAccess(client: ReturnType<typeof serviceClient>, user: { id: string; email?: string | null }) {
-  const fallback = Boolean(user.email && FALLBACK_PRO_EMAILS.has(user.email.trim().toLowerCase()));
+  const fallback = isFallbackProEmail(user.email);
   const { data, error } = await client
     .from("user_entitlements")
     .select("plan_code, pro_access_enabled")

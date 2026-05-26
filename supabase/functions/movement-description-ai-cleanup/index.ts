@@ -19,6 +19,7 @@ import {
   readJsonBody,
   serviceClient,
 } from "../_shared/obligation-share-utils.ts";
+import { isFallbackProEmail } from "../_shared/admin-emails.ts";
 
 type Surface = "movement_form" | "notification_form" | "android_overlay";
 
@@ -30,7 +31,6 @@ type LocalCleanup = {
 
 const FEATURE_KEY = "movement-description-ai-cleanup";
 const DAILY_LIMIT = 100;
-const FALLBACK_PRO_EMAILS = new Set(["joradrianmori@gmail.com"]);
 
 function usageDateInLima(date = new Date()) {
   return new Intl.DateTimeFormat("en-CA", {
@@ -129,12 +129,30 @@ function buildPrompt(input: {
     "Quita telefonos, codigos, fechas, numeros de operacion, montos y ruido bancario.",
     "Si solo detectas el tipo de comercio, usa una frase generica como 'Compra en botica'.",
     "No menciones IA, DeepSeek ni el proveedor.",
-    "Devuelve solo JSON valido con esta forma exacta:",
-    '{"cleanedDescription":"descripcion"|null,"confidence":0.0,"reasons":["razon breve"]}',
+    "Prohibicion: no uses palabras como 'movimiento', 'transaccion' ni 'operacion' en la descripcion final.",
+    "",
+    "Reglas segun financialAppKey:",
+    "- yape / plin: si aparece un nombre de persona, usalo (ej: 'Pago a Maria Torres'). Si no hay nombre claro, usa 'Transferencia Yape' o 'Transferencia Plin'.",
+    "- bcp / bbva / interbank / scotiabank: extrae el nombre del comercio de 'CONSUMO [NOMBRE]' o 'Compra en [NOMBRE]'.",
+    "- gmail_financial: el texto ya viene parcialmente limpio; enfocate en extraer comercio o descripcion principal.",
+    "",
+    "Regla para localCleanup: si localCleanup.confidence >= 0.75, confirma o mejora levemente esa descripcion en vez de reemplazarla por completo.",
     "",
     "Ejemplos:",
     "PLIN 948*** BOTICAS 13MAY => Compra en botica",
     "YAPE 987*** REST ALEX OP 123456 => Comida en Restaurante Alex",
+    "BCP Consumo SUPERMERCADOS METRO CUSCO 15MAY => Compra en supermercado",
+    "YAPE 999*** SERVICIOS CLARO SAC OP 99999 => Pago de internet Claro",
+    "PLIN 901*** GYM BODYTECH OP 87654 => Mensualidad de gimnasio",
+    "BCP Abono SUELDO EMPRESA SA 01JUN => Ingreso de sueldo",
+    "INTERBANK CONSUMO RAPPI PERU SAC => Pedido por delivery Rappi",
+    "BCP CONSUMO NETFLIX.COM 16MAY => Suscripcion Netflix",
+    "BBVA Transferencia enviada JOSE GARCIA 948*** => Transferencia a Jose Garcia",
+    "YAPE Pago recibido de ANA TORRES => Cobro de Ana Torres",
+    "BCP OP 77543 REF 12345 16MAY => null",
+    "",
+    "Devuelve solo JSON valido con esta forma exacta:",
+    '{"cleanedDescription":"descripcion"|null,"confidence":0.0,"reasons":["razon breve"]}',
     "",
     "Datos:",
     JSON.stringify(input, null, 2),
@@ -142,7 +160,7 @@ function buildPrompt(input: {
 }
 
 async function hasProAccess(client: ReturnType<typeof serviceClient>, user: { id: string; email?: string | null }) {
-  const fallback = Boolean(user.email && FALLBACK_PRO_EMAILS.has(user.email.trim().toLowerCase()));
+  const fallback = isFallbackProEmail(user.email);
   const { data, error } = await client
     .from("user_entitlements")
     .select("plan_code, pro_access_enabled")

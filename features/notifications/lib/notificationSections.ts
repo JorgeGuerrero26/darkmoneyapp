@@ -16,6 +16,42 @@ export const NOTIFICATION_FILTERS: Array<{ label: string; value: NotificationFil
   { label: "Informativas", value: "informational" },
 ];
 
+/** Groups every notification `kind` into a higher-level bucket suitable for filtering UI. */
+export type NotificationKindGroup =
+  | "all"
+  | "detected_movements"
+  | "obligations"
+  | "subscriptions"
+  | "balance"
+  | "invites"
+  | "digest"
+  | "other";
+
+export const NOTIFICATION_KIND_GROUPS: Array<{ label: string; value: NotificationKindGroup }> = [
+  { label: "Todos los tipos", value: "all" },
+  { label: "Movimientos detectados", value: "detected_movements" },
+  { label: "Obligaciones", value: "obligations" },
+  { label: "Suscripciones", value: "subscriptions" },
+  { label: "Saldos", value: "balance" },
+  { label: "Invitaciones", value: "invites" },
+  { label: "Resumen IA", value: "digest" },
+  { label: "Otros", value: "other" },
+];
+
+export function getNotificationKindGroup(kind: string): NotificationKindGroup {
+  if (kind === "detected_movement_suggestion") return "detected_movements";
+  if (kind.startsWith("obligation_")) return "obligations";
+  if (kind.startsWith("subscription_") || kind === "multiple_subscriptions_due") return "subscriptions";
+  if (kind === "low_balance" || kind === "negative_balance") return "balance";
+  if (kind === "workspace_invite" || kind === "obligation_share_invite") return "invites";
+  if (kind === "daily_ai_digest" || kind === "weekly_ai_digest") return "digest";
+  return "other";
+}
+
+export function getNotificationKindGroupLabel(group: NotificationKindGroup) {
+  return NOTIFICATION_KIND_GROUPS.find((item) => item.value === group)?.label ?? group;
+}
+
 export type NotificationListItem =
   | {
     kind: "invite";
@@ -58,16 +94,21 @@ export function buildNotificationSections(
   invites: PendingObligationShareInviteItem[],
   activeFilter: NotificationFilter,
   unreadOnly?: boolean,
+  kindGroup: NotificationKindGroup = "all",
 ): NotificationListSection[] {
   const sections: NotificationListSection[] = [];
 
   const baseFiltered = unreadOnly ? notifications.filter((n) => n.status !== "read") : notifications;
-  const filtered =
+  const filteredByPriority =
     activeFilter === "all"
       ? baseFiltered
       : baseFiltered.filter((n) => getNotificationPriority(n.kind) === activeFilter);
+  const filtered = kindGroup === "all"
+    ? filteredByPriority
+    : filteredByPriority.filter((n) => getNotificationKindGroup(n.kind) === kindGroup);
 
-  if (invites.length > 0 && activeFilter === "all") {
+  // Invites get their own section only when neither filter is narrowing.
+  if (invites.length > 0 && activeFilter === "all" && (kindGroup === "all" || kindGroup === "invites")) {
     sections.push({
       key: "invites",
       label: `Invitaciones pendientes (${invites.length})`,

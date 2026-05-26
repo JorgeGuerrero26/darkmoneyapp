@@ -19,6 +19,7 @@ import {
   readJsonBody,
   serviceClient,
 } from "../_shared/obligation-share-utils.ts";
+import { isFallbackProEmail } from "../_shared/admin-emails.ts";
 
 type MovementType = "expense" | "income" | "unknown";
 
@@ -31,7 +32,6 @@ type Classification = {
 
 const FEATURE_KEY = "notification-movement-ai-classifier";
 const DAILY_LIMIT = 100;
-const FALLBACK_PRO_EMAILS = new Set(["joradrianmori@gmail.com"]);
 
 function usageDateInLima(date = new Date()) {
   return new Intl.DateTimeFormat("en-CA", {
@@ -110,6 +110,21 @@ function buildPrompt(input: {
     "Importante: un monto en una promocion como 'gana hasta S/ 5000' no es monto transaccional.",
     "Si el texto dice 'por cada consumo' o 'tu compra viene con premio' normalmente es promocion, no movimiento.",
     "No menciones IA, DeepSeek ni el proveedor.",
+    "",
+    "Usa estas senales adicionales de los datos:",
+    "- financialAppKey 'yape' o 'plin': estas apps raramente envian promociones; si localConfidence es 'high', casi siempre es movimiento real.",
+    "- movementType 'expense' o 'income' (no 'unknown'): el detector nativo ya identifico el tipo; refuerza que es movimiento real.",
+    "- localConfidence 'high': el detector encontro frases como 'pagaste', 'recibiste' o 'yapeo exitoso'. Con esto, isMovement debe ser true salvo evidencia inequivoca de promo.",
+    "- financialAppKey 'gmail_financial': el email ya paso un filtro antispam nativo; dale beneficio de la duda (isMovement=true salvo texto inequivocamente no transaccional).",
+    "",
+    "El campo reason debe explicar especificamente POR QUE es o no es un movimiento.",
+    "Ejemplos de buenas razones:",
+    "  'contiene yapeo exitoso que indica pago completado'",
+    "  'texto gana hasta S/ 5000 indica sorteo'",
+    "  'frase compra aprobada confirma transaccion ejecutada'",
+    "  'recordatorio de pago sin confirmar ejecucion'",
+    "Evita razones vagas como 'parece un movimiento' o 'texto financiero'.",
+    "",
     "Devuelve solo JSON valido con esta forma exacta:",
     '{"isMovement":true,"movementType":"expense|income|unknown","confidence":0.0,"reason":"razon breve"}',
     "",
@@ -119,7 +134,7 @@ function buildPrompt(input: {
 }
 
 async function hasProAccess(client: ReturnType<typeof serviceClient>, user: { id: string; email?: string | null }) {
-  const fallback = Boolean(user.email && FALLBACK_PRO_EMAILS.has(user.email.trim().toLowerCase()));
+  const fallback = isFallbackProEmail(user.email);
   const { data, error } = await client
     .from("user_entitlements")
     .select("plan_code, pro_access_enabled")
@@ -195,7 +210,7 @@ async function requestDeepSeek(apiKey: string, model: string, prompt: string) {
         { role: "user", content: prompt },
       ],
       temperature: 0,
-      max_tokens: 180,
+      max_tokens: 200,
       response_format: { type: "json_object" },
     }),
   });

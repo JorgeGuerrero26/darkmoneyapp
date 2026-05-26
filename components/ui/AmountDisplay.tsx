@@ -17,18 +17,8 @@ type Props = {
   style?: StyleProp<TextStyle>;
 };
 
-export function formatCurrency(amount: number, currencyCode: string): string {
-  try {
-    return new Intl.NumberFormat("es-PE", {
-      style: "currency",
-      currency: currencyCode,
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(amount);
-  } catch {
-    return `${currencyCode} ${amount.toFixed(2)}`;
-  }
-}
+import { formatCurrency } from "../../lib/format-currency";
+export { formatCurrency };
 
 export function AmountDisplay({
   amount,

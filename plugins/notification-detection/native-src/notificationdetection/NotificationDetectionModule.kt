@@ -24,7 +24,10 @@ class NotificationDetectionModule(
   override fun getName(): String = "NotificationDetection"
 
   companion object {
-    private const val NOTIF_CLEANUP_KEY = "2026-05-16-v1"
+    // Fallback used only when runtime context does not provide notifCleanupKey.
+    // Prefer setting runtimeContext.notifCleanupKey from JS so cleanup can be triggered
+    // without rebuilding the native code.
+    private const val DEFAULT_NOTIF_CLEANUP_KEY = "2026-05-16-v1"
   }
 
   @ReactMethod
@@ -87,16 +90,27 @@ class NotificationDetectionModule(
 
   @ReactMethod
   fun setRuntimeContext(contextJson: String) {
-    cancelStaleMovementNotificationsOnVersionChange()
+    val cleanupKey = extractCleanupKey(contextJson)
+    cancelStaleMovementNotificationsOnVersionChange(cleanupKey)
     NotificationDetectionStore.setRuntimeContext(reactContext, contextJson)
   }
 
-  private fun cancelStaleMovementNotificationsOnVersionChange() {
+  private fun extractCleanupKey(contextJson: String): String {
+    return try {
+      val parsed = org.json.JSONObject(contextJson)
+      val value = parsed.optString("notifCleanupKey", "").trim()
+      if (value.isNotEmpty()) value else DEFAULT_NOTIF_CLEANUP_KEY
+    } catch (_: Exception) {
+      DEFAULT_NOTIF_CLEANUP_KEY
+    }
+  }
+
+  private fun cancelStaleMovementNotificationsOnVersionChange(cleanupKey: String) {
     val prefs = reactContext.getSharedPreferences("darkmoney_notification_detection", android.content.Context.MODE_PRIVATE)
     val storedCleanupKey = prefs.getString("last_notif_cleanup_key", "")
-    android.util.Log.d("DarkMoneyND", "cancelStale: stored=$storedCleanupKey current=$NOTIF_CLEANUP_KEY")
-    if (storedCleanupKey == NOTIF_CLEANUP_KEY) return
-    prefs.edit().putString("last_notif_cleanup_key", NOTIF_CLEANUP_KEY).apply()
+    android.util.Log.d("DarkMoneyND", "cancelStale: stored=$storedCleanupKey current=$cleanupKey")
+    if (storedCleanupKey == cleanupKey) return
+    prefs.edit().putString("last_notif_cleanup_key", cleanupKey).apply()
     val manager = reactContext.getSystemService(android.app.NotificationManager::class.java)
     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
       val active = manager.activeNotifications
@@ -152,6 +166,34 @@ class NotificationDetectionModule(
   @ReactMethod
   fun setSuggestionAiCategoryRecommendation(suggestionId: String, recommendationJson: String) {
     NotificationDetectionStore.setAiCategoryRecommendation(reactContext, suggestionId, recommendationJson)
+  }
+
+  @ReactMethod
+  fun setLastSaveError(suggestionId: String, message: String) {
+    NotificationDetectionStore.setLastSaveError(reactContext, suggestionId, message)
+  }
+
+  @ReactMethod
+  fun getLastSaveError(promise: Promise) {
+    val payload = NotificationDetectionStore.getLastSaveError(reactContext)
+    if (payload == null) {
+      promise.resolve(null)
+    } else {
+      promise.resolve(payload.toString())
+    }
+  }
+
+  @ReactMethod
+  fun clearLastSaveError() {
+    NotificationDetectionStore.clearLastSaveError(reactContext)
+  }
+
+  @ReactMethod
+  fun requestCancelBankNotification(suggestionId: String) {
+    val suggestion = NotificationDetectionStore.getSuggestion(reactContext, suggestionId) ?: return
+    val key = suggestion.optString("notificationKey", "")
+    if (key.isBlank()) return
+    DarkMoneyNotificationListenerService.cancelBankNotificationByKey(reactContext, key)
   }
 
   @ReactMethod

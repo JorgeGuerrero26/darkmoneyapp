@@ -19,6 +19,7 @@ import {
   readJsonBody,
   serviceClient,
 } from "../_shared/obligation-share-utils.ts";
+import { isFallbackProEmail } from "../_shared/admin-emails.ts";
 
 type MovementType = "expense" | "income";
 type Surface = "movement_form" | "notification_form" | "android_overlay";
@@ -40,7 +41,6 @@ type Recommendation = {
 
 const FEATURE_KEY = "movement-counterparty-ai-suggestion";
 const DAILY_LIMIT = 100;
-const FALLBACK_PRO_EMAILS = new Set(["joradrianmori@gmail.com"]);
 const COUNTERPARTY_TYPES = new Set<CounterpartyType>(["person", "company", "merchant", "service", "bank", "other"]);
 
 function usageDateInLima(date = new Date()) {
@@ -213,6 +213,21 @@ function buildPrompt(input: {
     "No inventes IDs. Si eliges una contraparte existente, counterpartyId debe estar en counterparties.",
     "Si no hay evidencia suficiente, responde type none.",
     "No menciones IA, DeepSeek ni el proveedor.",
+    "",
+    "Patrones comunes en notificaciones peruanas:",
+    "- 'YAPE [tel]*** NOMBRE' o 'PLIN [tel]*** NOMBRE': la contraparte es la persona (type: person).",
+    "- 'CONSUMO [NOMBRE_COMERCIO] [CIUDAD]' o 'Compra en [NOMBRE]': la contraparte es el comercio (type: merchant).",
+    "- Netflix / Spotify / Disney / Amazon / Adobe / OpenAI: type service (suscripcion digital).",
+    "- Uber / Cabify / InDriver / Rappi / PedidosYa: type service (app de servicio).",
+    "- Si el texto solo menciona el banco emisor (BCP, BBVA, etc.) sin comercio claro: responde none.",
+    "",
+    "Calibracion de confianza:",
+    "- Nombre de persona extraido de patron Yape/Plin claro: confidence 0.72-0.80.",
+    "- Nombre de comercio extraido de 'CONSUMO NOMBRE': confidence 0.70-0.78.",
+    "- Solo tipo de comercio sin nombre especifico: responde none.",
+    "",
+    "Regla para localSuggestion: si tiene una contraparte con confidence >= 0.75, confirma ese resultado en vez de reemplazarlo.",
+    "",
     "Devuelve solo JSON valido con esta forma exacta:",
     '{"type":"existing_counterparty|new_counterparty|none","counterpartyId":123|null,"counterpartyName":"nombre"|null,"newCounterpartyName":"nombre"|null,"counterpartyType":"person|company|merchant|service|bank|other","confidence":0.0,"reasons":["razon breve"]}',
     "",
@@ -222,7 +237,7 @@ function buildPrompt(input: {
 }
 
 async function hasProAccess(client: ReturnType<typeof serviceClient>, user: { id: string; email?: string | null }) {
-  const fallback = Boolean(user.email && FALLBACK_PRO_EMAILS.has(user.email.trim().toLowerCase()));
+  const fallback = isFallbackProEmail(user.email);
   const { data, error } = await client
     .from("user_entitlements")
     .select("plan_code, pro_access_enabled")

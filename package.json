@@ -9,7 +9,8 @@
     "web": "expo start --web",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test:analytics": "tsc -p tsconfig.analytics-tests.json && node .tmp/analytics-tests/tests/analytics/analytics-smoke.js"
+    "test:analytics": "tsc -p tsconfig.analytics-tests.json && node .tmp/analytics-tests/tests/analytics/analytics-smoke.js",
+    "test:dashboard": "tsc -p tsconfig.dashboard-tests.json && node .tmp/dashboard-tests/tests/dashboard/selectors-smoke.js && node .tmp/dashboard-tests/tests/dashboard/aggregations-smoke.js && node .tmp/dashboard-tests/tests/dashboard/dashboard-builders-smoke.js && node .tmp/dashboard-tests/tests/dashboard/advanced-builders-smoke.js"
   },
   "dependencies": {
     "@expo-google-fonts/manrope": "^0.4.2",

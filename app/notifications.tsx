@@ -11,6 +11,9 @@ import { HeaderActionGroup } from "../components/ui/HeaderActionGroup";
 import { FilterToolbar } from "../components/ui/FilterToolbar";
 import { ActiveFilterBar, type ActiveFilterItem } from "../components/ui/ActiveFilterBar";
 import { ResourceContextNote } from "../components/ui/ResourceContextNote";
+import { AiQuotaWarningBanner } from "../components/ui/AiQuotaWarningBanner";
+import { useAiUsageTodayQuery } from "../services/queries/notification-detection";
+import { notificationDetection } from "../lib/notification-detection-native";
 import { ResourceModuleTemplate } from "../components/ui/ResourceModuleTemplate";
 import { ResourceSectionList } from "../components/ui/ResourceSectionList";
 import { SkeletonCard, SkeletonList } from "../components/ui/Skeleton";
@@ -22,6 +25,9 @@ import { NotificationSummaryBar } from "../features/notifications/components/Not
 import {
   buildNotificationSections,
   getNotificationFilterLabel,
+  NOTIFICATION_KIND_GROUPS,
+  getNotificationKindGroupLabel,
+  type NotificationKindGroup,
   NOTIFICATION_FILTERS,
   type NotificationFilter,
   type NotificationListItem,
@@ -64,9 +70,15 @@ function NotificationsScreen() {
   const router = useRouter();
   const { handleBack } = useOriginBackNavigation();
   const { user, profile } = useAuth();
-  const { showToast } = useToast();
+  const { showToast, showRichToast } = useToast();
   const [selectedNotificationIds, setSelectedNotificationIds] = useState<number[]>([]);
+  // Notifs whose delete has been requested but not yet committed (5s undo window).
+  // Filtered out of the visible list so the row "vanishes" immediately; if the user
+  // taps undo, they reappear automatically once the id leaves this set.
+  const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<number>>(new Set());
+  const deleteTimersRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
   const [activeFilter, setActiveFilter] = useState<NotificationFilter>("all");
+  const [activeKindGroup, setActiveKindGroup] = useState<NotificationKindGroup>("all");
   const [showUnreadOnly, setShowUnreadOnly] = useState(false);
   const [quickEntry, setQuickEntry] = useState<{ suggestionId: number; notificationId: number } | null>(null);
 
@@ -80,6 +92,28 @@ function NotificationsScreen() {
       setQuickEntry({ suggestionId: parsed, notificationId: 0 });
     }
   }, [suggestionIdParam]);
+
+  // Si el headless task fallo definitivamente en background, mostrar aviso al volver.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const lastError = await notificationDetection.getLastSaveError();
+      if (cancelled || !lastError) return;
+      // Solo mostrar si el error es reciente (<24h) para evitar avisos viejos.
+      if (Date.now() - lastError.ts > 24 * 60 * 60 * 1000) {
+        notificationDetection.clearLastSaveError();
+        return;
+      }
+      showToast(
+        `No pudimos guardar el ultimo movimiento detectado. Revisa la sugerencia. (${lastError.message})`,
+        "error",
+      );
+      notificationDetection.clearLastSaveError();
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [showToast]);
 
   useEffect(() => {
     if (!Notifications) return;
@@ -97,11 +131,16 @@ function NotificationsScreen() {
   }, []);
 
   const notificationsQuery = useNotificationsQuery(user?.id ?? null);
-  const notificationList: NotificationItem[] = notificationsQuery.data ?? [];
+  const notificationList: NotificationItem[] = useMemo(() => {
+    const raw = notificationsQuery.data ?? [];
+    if (pendingDeleteIds.size === 0) return raw;
+    return raw.filter((item) => !pendingDeleteIds.has(item.id));
+  }, [notificationsQuery.data, pendingDeleteIds]);
   const isLoading = notificationsQuery.isLoading;
   const refetch = notificationsQuery.refetch;
 
   const pendingInvitesQuery = usePendingObligationShareInvitesQuery(user?.id, profile?.email);
+  const aiUsageQuery = useAiUsageTodayQuery(user?.id ?? null);
   const pendingInvites: PendingObligationShareInviteItem[] = pendingInvitesQuery.data ?? [];
   const refetchInvites = pendingInvitesQuery.refetch;
   const loadingPendingInvites = pendingInvitesQuery.isLoading;
@@ -131,8 +170,8 @@ function NotificationsScreen() {
     deleteSelectedNotifications.isPending;
 
   const sections = useMemo(
-    () => buildNotificationSections(notificationList, pendingInvites, activeFilter, showUnreadOnly),
-    [activeFilter, notificationList, pendingInvites, showUnreadOnly],
+    () => buildNotificationSections(notificationList, pendingInvites, activeFilter, showUnreadOnly, activeKindGroup),
+    [activeFilter, activeKindGroup, notificationList, pendingInvites, showUnreadOnly],
   );
 
   const activeFilterItems = useMemo<ActiveFilterItem[]>(() => {
@@ -143,8 +182,11 @@ function NotificationsScreen() {
     if (activeFilter !== "all") {
       items.push({ key: "priority", label: getNotificationFilterLabel(activeFilter), onRemove: () => setActiveFilter("all") });
     }
+    if (activeKindGroup !== "all") {
+      items.push({ key: "kind", label: getNotificationKindGroupLabel(activeKindGroup), onRemove: () => setActiveKindGroup("all") });
+    }
     return items;
-  }, [activeFilter, showUnreadOnly]);
+  }, [activeFilter, activeKindGroup, showUnreadOnly]);
 
   const filteredNotificationCount = useMemo(
     () => sections.reduce((total, section) => total + section.data.filter((item) => item.kind === "notification").length, 0),
@@ -301,13 +343,71 @@ function NotificationsScreen() {
 
   async function handleSelectedDelete() {
     if (!selectedNotificationIds.length) return;
-    try {
-      await deleteSelectedNotifications.mutateAsync(selectedNotificationIds);
-      showToast("Notificaciones eliminadas", "success");
-      clearSelection();
-    } catch (error: unknown) {
-      showToast(error instanceof Error ? error.message : "No se pudo eliminar", "error");
-    }
+    const idsToDelete = [...selectedNotificationIds];
+    clearSelection();
+    scheduleDeferredDelete(idsToDelete);
+  }
+
+  // Cleans up any pending undo timers when the screen unmounts so a stale timer
+  // does not try to setState on an unmounted component.
+  useEffect(() => {
+    return () => {
+      for (const timer of deleteTimersRef.current.values()) clearTimeout(timer);
+      deleteTimersRef.current.clear();
+    };
+  }, []);
+
+  function scheduleDeferredDelete(ids: number[]) {
+    if (!ids.length) return;
+    setPendingDeleteIds((prev) => {
+      const next = new Set(prev);
+      for (const id of ids) next.add(id);
+      return next;
+    });
+    const undoMessage = ids.length === 1
+      ? "Notificación eliminada"
+      : `${ids.length} notificaciones eliminadas`;
+    const timer = setTimeout(() => {
+      // After 5s, commit the delete on the server.
+      deleteTimersRef.current.delete(ids[0]);
+      void (async () => {
+        try {
+          if (ids.length === 1) {
+            await deleteNotification.mutateAsync(ids[0]);
+          } else {
+            await deleteSelectedNotifications.mutateAsync(ids);
+          }
+        } catch (error: unknown) {
+          // Rollback the optimistic removal so the user sees the item again.
+          setPendingDeleteIds((prev) => {
+            const next = new Set(prev);
+            for (const id of ids) next.delete(id);
+            return next;
+          });
+          showToast(error instanceof Error ? error.message : "No se pudo eliminar", "error");
+        }
+      })();
+    }, 5000);
+    // Track timer under the first id; cancelling any one id in the batch cancels the whole undo.
+    deleteTimersRef.current.set(ids[0], timer);
+    showRichToast({
+      type: "delete",
+      title: undoMessage,
+      duration: 5000,
+      onUndo: () => {
+        const pending = deleteTimersRef.current.get(ids[0]);
+        if (pending) {
+          clearTimeout(pending);
+          deleteTimersRef.current.delete(ids[0]);
+        }
+        setPendingDeleteIds((prev) => {
+          const next = new Set(prev);
+          for (const id of ids) next.delete(id);
+          return next;
+        });
+        // The toast auto-hides itself when onUndo is invoked (DarkMoneyToast.runHide).
+      },
+    });
   }
 
   function handleArchiveSingle(notificationId: number) {
@@ -318,10 +418,7 @@ function NotificationsScreen() {
   }
 
   function handleDeleteSingle(notificationId: number) {
-    deleteNotification.mutate(notificationId, {
-      onSuccess: () => showToast("Notificación eliminada", "success"),
-      onError: (error: unknown) => showToast(error instanceof Error ? error.message : "No se pudo eliminar", "error"),
-    });
+    scheduleDeferredDelete([notificationId]);
   }
 
   function handleTap(notification: NotificationItem) {
@@ -369,6 +466,7 @@ function NotificationsScreen() {
 
   const clearFilters = useCallback(() => {
     setActiveFilter("all");
+    setActiveKindGroup("all");
     setShowUnreadOnly(false);
   }, []);
 
@@ -432,6 +530,11 @@ function NotificationsScreen() {
                 value={activeFilter}
                 onChange={setActiveFilter}
               />
+              <FilterToolbar
+                options={NOTIFICATION_KIND_GROUPS}
+                value={activeKindGroup}
+                onChange={setActiveKindGroup}
+              />
               {unreadCount > 0 ? (
                 <View style={notifStyles.unreadRow}>
                   <TouchableOpacity
@@ -449,7 +552,14 @@ function NotificationsScreen() {
           ) : null
         }
         activeFilters={!selectionMode ? <ActiveFilterBar items={activeFilterItems} onClear={clearFilters} /> : null}
-        context={hasContent ? <ResourceContextNote>{contextNote}</ResourceContextNote> : null}
+        context={
+          hasContent ? (
+            <>
+              <AiQuotaWarningBanner usage={aiUsageQuery.data} />
+              <ResourceContextNote>{contextNote}</ResourceContextNote>
+            </>
+          ) : null
+        }
         summary={
           !selectionMode && hasContent ? (
             <NotificationSummaryBar

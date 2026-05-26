@@ -3,15 +3,47 @@ import { NativeModules } from "react-native";
 import { supabase } from "./supabase";
 import {
   findPossibleDuplicateMovement,
+  recordSuggestionAction,
   syncNativeDetectedSuggestion,
   type NativeDetectedMovementSuggestion,
 } from "../services/queries/notification-detection";
-import { scoreCategoryFromDescription, type PatternMaps } from "./movement-patterns";
-import { requestMovementCategoryAiSuggestion, type MovementFormInput } from "../services/queries/workspace-data";
+import { type PatternMaps } from "./movement-patterns";
+import { type MovementFormInput } from "../services/queries/workspace-data";
 import { buildMovementCreateInput } from "../features/movements/lib/movement-save-contract";
+import {
+  filterCategoriesForMovementType,
+  orchestrateCategoryAiRecommendation,
+} from "./movement-ai-orchestrator";
 import type { JsonValue } from "../types/domain";
+import { logError, logWarn } from "./error-logger";
+import { withRetry, withTimeout } from "./promise-utils";
 
-const LOCAL_CATEGORY_AI_CONFIDENCE_THRESHOLD = 0.6;
+const HEADLESS_QUERY_TIMEOUT_MS = 10_000;
+const HEADLESS_RETRIES = 2;
+
+function reportFailedAttempt(label: string, suggestionId: string | undefined) {
+  return (attempt: number, error: unknown) => {
+    logWarn("notification-detection-headless", `Retry attempt ${attempt + 1} failed at ${label}`, {
+      suggestionId,
+      attempt,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  };
+}
+
+async function verifyMovementExists(movementId: number): Promise<boolean> {
+  if (!supabase) return false;
+  try {
+    const { data } = await withTimeout(
+      supabase.from("movements").select("id").eq("id", movementId).maybeSingle(),
+      HEADLESS_QUERY_TIMEOUT_MS,
+      "movements.verify",
+    );
+    return Boolean(data && (data as { id?: unknown }).id);
+  } catch {
+    return false;
+  }
+}
 
 type HeadlessPayload = {
   taskMode?: "aiCategoryEnrichment";
@@ -41,6 +73,8 @@ const nativeDetection = NativeModules.NotificationDetection as
       markSuggestionRegistered?: (suggestionId: string, notificationId: number) => void;
       showSuggestionNotification?: (suggestionId: string) => void;
       setSuggestionAiCategoryRecommendation?: (suggestionId: string, recommendationJson: string) => void;
+      setLastSaveError?: (suggestionId: string, message: string) => void;
+      requestCancelBankNotification?: (suggestionId: string) => void;
     }
   | undefined;
 
@@ -99,6 +133,21 @@ function parseRuntimeContext(raw?: string): any {
   }
 }
 
+function deserializeNumericKeyedMap(raw: unknown): Map<number, { id: number; count: number }[]> {
+  const out = new Map<number, { id: number; count: number }[]>();
+  if (!raw || typeof raw !== "object") return out;
+  for (const [key, entries] of Object.entries(raw as Record<string, unknown>)) {
+    const numericKey = Number(key);
+    if (!Number.isFinite(numericKey) || numericKey <= 0) continue;
+    if (!Array.isArray(entries)) continue;
+    const cleaned = entries
+      .map((entry: any) => ({ id: Number(entry?.id), count: Number(entry?.count) }))
+      .filter((entry) => entry.id > 0 && entry.count > 0);
+    if (cleaned.length > 0) out.set(numericKey, cleaned);
+  }
+  return out;
+}
+
 function patternMapsFromRuntimeContext(runtimeContext: any): PatternMaps {
   const wordToCategory = new Map<string, { id: number; count: number }[]>();
   const rawWordMap = runtimeContext?.wordToCategory;
@@ -115,9 +164,9 @@ function patternMapsFromRuntimeContext(runtimeContext: any): PatternMaps {
   }
   return {
     wordToCategory,
-    counterpartyToCategory: new Map(),
-    categoryToCounterparty: new Map(),
-    counterpartyToAccount: new Map(),
+    counterpartyToCategory: deserializeNumericKeyedMap(runtimeContext?.counterpartyToCategory),
+    categoryToCounterparty: deserializeNumericKeyedMap(runtimeContext?.categoryToCounterparty),
+    counterpartyToAccount: deserializeNumericKeyedMap(runtimeContext?.counterpartyToAccount),
   };
 }
 
@@ -128,52 +177,35 @@ async function enrichAiCategorySuggestion(payload: HeadlessPayload) {
   if (!workspaceId) return;
 
   const movementType = payload.movementType === "income" ? "income" : "expense";
-  const compatibleKind = movementType === "income" ? "income" : "expense";
-  const categories = Array.isArray(runtimeContext?.categories)
-    ? runtimeContext.categories
-      .filter((category: any) => category?.isActive !== false && (category?.kind === "both" || category?.kind === compatibleKind))
-      .map((category: any) => ({ id: Number(category.id), name: String(category.name ?? ""), kind: String(category.kind ?? compatibleKind) }))
-      .filter((category: any) => category.id > 0 && category.name.trim().length > 0)
-    : [];
-  const description = payload.description?.trim();
+  const categories = filterCategoriesForMovementType(
+    Array.isArray(runtimeContext?.categories) ? runtimeContext.categories : [],
+    movementType,
+  );
+  const description = payload.description?.trim() ?? "";
   if (!description || categories.length === 0) {
     setNativeAiCategoryRecommendation(payload.suggestionId, { status: "unavailable" });
     return;
   }
 
-  const scoredLocal = scoreCategoryFromDescription(description, patternMapsFromRuntimeContext(runtimeContext));
-  const localCategory = scoredLocal ? categories.find((category: any) => category.id === scoredLocal.categoryId) : null;
-  const localSuggestion = scoredLocal && localCategory
-    ? {
-      categoryId: localCategory.id,
-      categoryName: localCategory.name,
-      confidence: scoredLocal.confidence,
-      reasons: scoredLocal.reasons,
-    }
-    : null;
-  if (localSuggestion && localSuggestion.confidence >= LOCAL_CATEGORY_AI_CONFIDENCE_THRESHOLD) {
-    setNativeAiCategoryRecommendation(payload.suggestionId, { status: "unavailable" });
-    return;
-  }
-
   setNativeAiCategoryRecommendation(payload.suggestionId, { status: "pending" });
-  const response = await requestMovementCategoryAiSuggestion({
+  const result = await orchestrateCategoryAiRecommendation({
     workspaceId,
     surface: "android_overlay",
     movementType,
+    description,
     amount: parseAmountLabel(payload.amount),
     currencyCode: currencyFromAmountLabel(payload.amount),
-    description,
     occurredAt: new Date().toISOString(),
     categories,
-    localSuggestion,
-  }).catch(() => null);
+    patternMaps: patternMapsFromRuntimeContext(runtimeContext),
+    canCallAi: true,
+  });
 
-  if (!response?.ok || !response.recommendation) {
+  if (result.status === "ai_resolved" && result.recommendation) {
+    setNativeAiCategoryRecommendation(payload.suggestionId, result.recommendation);
+  } else {
     setNativeAiCategoryRecommendation(payload.suggestionId, { status: "unavailable" });
-    return;
   }
-  setNativeAiCategoryRecommendation(payload.suggestionId, response.recommendation);
 }
 
 export async function notificationDetectionHeadlessTask(payload: HeadlessPayload) {
@@ -182,11 +214,26 @@ export async function notificationDetectionHeadlessTask(payload: HeadlessPayload
     await enrichAiCategorySuggestion(payload);
     return;
   }
+  try {
+    await runRegistrationFlow(payload);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logError("notification-detection-headless", "Registration flow failed permanently", {
+      suggestionId: payload.suggestionId,
+      message,
+    });
+    nativeDetection?.setLastSaveError?.(payload.suggestionId, message);
+    nativeDetection?.showSuggestionNotification?.(payload.suggestionId);
+  }
+}
+
+async function runRegistrationFlow(payload: HeadlessPayload) {
+  if (!supabase || !payload.suggestionId) return;
   const amount = Number(String(payload.amount ?? "").replace(",", "."));
   if (!Number.isFinite(amount) || amount <= 0 || !payload.accountId) return;
 
-  const { data: userData } = await supabase.auth.getUser();
-  const userId = userData.user?.id;
+  const userResult = await withTimeout(supabase.auth.getUser(), HEADLESS_QUERY_TIMEOUT_MS, "auth.getUser");
+  const userId = userResult.data.user?.id;
   if (!userId) return;
 
   const nativeSuggestions = await nativeDetection?.getSuggestions?.();
@@ -195,19 +242,32 @@ export async function notificationDetectionHeadlessTask(payload: HeadlessPayload
 
   let workspaceId = Number(payload.workspaceId ?? 0);
   if (!workspaceId) {
-    const { data: workspaceRows } = await supabase
-      .from("workspace_members")
-      .select("workspace_id, is_default_workspace")
-      .eq("user_id", userId)
-      .order("is_default_workspace", { ascending: false })
-      .limit(1);
+    const { data: workspaceRows } = await withTimeout(
+      supabase
+        .from("workspace_members")
+        .select("workspace_id, is_default_workspace")
+        .eq("user_id", userId)
+        .order("is_default_workspace", { ascending: false })
+        .limit(1),
+      HEADLESS_QUERY_TIMEOUT_MS,
+      "workspace_members.select",
+    );
     workspaceId = Number(workspaceRows?.[0]?.workspace_id);
   }
   if (!workspaceId) return;
 
-  const suggestion = await syncNativeDetectedSuggestion({ userId, workspaceId, nativeSuggestion });
+  const suggestion = await withRetry(
+    () => syncNativeDetectedSuggestion({ userId, workspaceId, nativeSuggestion }),
+    {
+      label: "syncNativeDetectedSuggestion",
+      retries: HEADLESS_RETRIES,
+      timeoutMs: HEADLESS_QUERY_TIMEOUT_MS,
+      onAttemptFailed: reportFailedAttempt("syncNativeDetectedSuggestion", payload.suggestionId),
+    },
+  );
   if (!suggestion || suggestion.status === "registered" || suggestion.movementId) {
     nativeDetection?.markSuggestionRegistered?.(payload.suggestionId, payload.notificationId ?? 0);
+    nativeDetection?.requestCancelBankNotification?.(payload.suggestionId);
     return;
   }
 
@@ -256,12 +316,36 @@ export async function notificationDetectionHeadlessTask(payload: HeadlessPayload
         confidence: suggestion.confidence,
       },
     });
-    const { data: transferMovement, error: transferError } = await supabase
-      .from("movements")
-      .insert(movementInsertPayload(workspaceId, movementInput))
-      .select("id")
-      .single();
-    if (transferError) {
+    const { data: transferMovement, error: transferError } = await withRetry(
+      () =>
+        supabase!
+          .from("movements")
+          .insert(movementInsertPayload(workspaceId, movementInput))
+          .select("id")
+          .single(),
+      {
+        label: "movements.insert (transfer)",
+        retries: HEADLESS_RETRIES,
+        timeoutMs: HEADLESS_QUERY_TIMEOUT_MS,
+        onAttemptFailed: reportFailedAttempt("movements.insert (transfer)", payload.suggestionId),
+      },
+    );
+    if (transferError || !transferMovement?.id) {
+      logError("notification-detection-headless", "Transfer insert failed after retries", {
+        suggestionId: payload.suggestionId,
+        error: transferError?.message ?? "no movement id returned",
+      });
+      nativeDetection?.setLastSaveError?.(payload.suggestionId, transferError?.message ?? "No se pudo guardar la transferencia");
+      nativeDetection?.showSuggestionNotification?.(payload.suggestionId);
+      return;
+    }
+    const transferVerified = await verifyMovementExists(transferMovement.id);
+    if (!transferVerified) {
+      logError("notification-detection-headless", "Transfer insert returned id but verify failed", {
+        suggestionId: payload.suggestionId,
+        movementId: transferMovement.id,
+      });
+      nativeDetection?.setLastSaveError?.(payload.suggestionId, "No se pudo confirmar la transferencia en el servidor");
       nativeDetection?.showSuggestionNotification?.(payload.suggestionId);
       return;
     }
@@ -285,7 +369,18 @@ export async function notificationDetectionHeadlessTask(payload: HeadlessPayload
       .eq("related_entity_type", "detected_movement_suggestion")
       .eq("related_entity_id", suggestion.id)
       .eq("kind", "detected_movement_suggestion");
+    await recordSuggestionAction({
+      userId,
+      workspaceId,
+      suggestionId: suggestion.id,
+      dedupeKey: suggestion.dedupeKey,
+      action: "register",
+      surface: "overlay",
+      confidenceAtDecision: suggestion.confidence,
+      metadata: { movementType: "transfer", financialAppKey: suggestion.financialAppKey },
+    });
     nativeDetection?.markSuggestionRegistered?.(payload.suggestionId, payload.notificationId ?? 0);
+    nativeDetection?.requestCancelBankNotification?.(payload.suggestionId);
     return;
   }
 
@@ -506,12 +601,36 @@ export async function notificationDetectionHeadlessTask(payload: HeadlessPayload
         recurring_income_id: recurringIncomeId,
       },
   });
-  const { data: movement, error: movementError } = await supabase
-    .from("movements")
-    .insert(movementInsertPayload(workspaceId, movementInput))
-    .select("id")
-    .single();
-  if (movementError) {
+  const { data: movement, error: movementError } = await withRetry(
+    () =>
+      supabase!
+        .from("movements")
+        .insert(movementInsertPayload(workspaceId, movementInput))
+        .select("id")
+        .single(),
+    {
+      label: "movements.insert",
+      retries: HEADLESS_RETRIES,
+      timeoutMs: HEADLESS_QUERY_TIMEOUT_MS,
+      onAttemptFailed: reportFailedAttempt("movements.insert", payload.suggestionId),
+    },
+  );
+  if (movementError || !movement?.id) {
+    logError("notification-detection-headless", "Movement insert failed after retries", {
+      suggestionId: payload.suggestionId,
+      error: movementError?.message ?? "no movement id returned",
+    });
+    nativeDetection?.setLastSaveError?.(payload.suggestionId, movementError?.message ?? "No se pudo guardar el movimiento");
+    nativeDetection?.showSuggestionNotification?.(payload.suggestionId);
+    return;
+  }
+  const verified = await verifyMovementExists(movement.id);
+  if (!verified) {
+    logError("notification-detection-headless", "Movement insert returned id but verify failed", {
+      suggestionId: payload.suggestionId,
+      movementId: movement.id,
+    });
+    nativeDetection?.setLastSaveError?.(payload.suggestionId, "No se pudo confirmar el movimiento en el servidor");
     nativeDetection?.showSuggestionNotification?.(payload.suggestionId);
     return;
   }
@@ -540,5 +659,39 @@ export async function notificationDetectionHeadlessTask(payload: HeadlessPayload
     .eq("related_entity_type", "detected_movement_suggestion")
     .eq("related_entity_id", suggestion.id)
     .eq("kind", "detected_movement_suggestion");
+  const aiCategoryRec = nativeSuggestion.aiCategoryRecommendation as
+    | { categoryId?: number | null; newCategoryName?: string | null; confidence?: number | null; type?: string | null }
+    | null
+    | undefined;
+  const aiSuggestedCategoryId = aiCategoryRec?.categoryId != null ? Number(aiCategoryRec.categoryId) : null;
+  const aiSuggestedNewName = aiCategoryRec?.newCategoryName?.trim() ?? null;
+  const userKeptAiCategory =
+    (aiSuggestedCategoryId != null && categoryId != null && aiSuggestedCategoryId === categoryId) ||
+    (aiSuggestedNewName != null && (payload.newCategoryName?.trim() ?? "") === aiSuggestedNewName);
+  if (aiCategoryRec && (aiSuggestedCategoryId != null || aiSuggestedNewName)) {
+    await recordSuggestionAction({
+      userId,
+      workspaceId,
+      suggestionId: suggestion.id,
+      dedupeKey: suggestion.dedupeKey,
+      action: userKeptAiCategory ? "accept_category" : "override_category",
+      surface: "overlay",
+      confidenceAtDecision: aiCategoryRec.confidence ?? null,
+      suggestedValue: aiSuggestedCategoryId != null ? String(aiSuggestedCategoryId) : aiSuggestedNewName,
+      finalValue: categoryId != null ? String(categoryId) : (payload.newCategoryName ?? null),
+      metadata: { aiType: aiCategoryRec.type ?? null },
+    });
+  }
+  await recordSuggestionAction({
+    userId,
+    workspaceId,
+    suggestionId: suggestion.id,
+    dedupeKey: suggestion.dedupeKey,
+    action: "register",
+    surface: "overlay",
+    confidenceAtDecision: suggestion.confidence,
+    metadata: { movementType, financialAppKey: suggestion.financialAppKey },
+  });
   nativeDetection?.markSuggestionRegistered?.(payload.suggestionId, payload.notificationId ?? 0);
+  nativeDetection?.requestCancelBankNotification?.(payload.suggestionId);
 }

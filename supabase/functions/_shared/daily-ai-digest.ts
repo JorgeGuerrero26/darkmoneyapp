@@ -1,6 +1,7 @@
+import { isFallbackProEmail } from "./admin-emails.ts";
+
 const FEATURE_KEY = "daily-ai-digest";
 const DAILY_LIMIT = 5;
-const FALLBACK_PRO_EMAILS = new Set(["joradrianmori@gmail.com"]);
 
 type SupabaseLikeClient = {
   from: (table: string) => any;
@@ -158,8 +159,7 @@ async function authEmailForUser(client: SupabaseLikeClient, userId: string): Pro
 }
 
 async function hasProAccess(client: SupabaseLikeClient, userId: string, email?: string | null) {
-  const normalizedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
-  const fallback = normalizedEmail ? FALLBACK_PRO_EMAILS.has(normalizedEmail) : false;
+  const fallback = isFallbackProEmail(typeof email === "string" ? email : null);
   const { data, error } = await client
     .from("user_entitlements")
     .select("plan_code, pro_access_enabled")

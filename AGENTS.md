@@ -8,6 +8,17 @@ Guia obligatoria para agentes y programadores que modifiquen este repo. La prior
 - `git diff --check`: validacion de whitespace antes de cerrar cambios.
 - `npm run lint`: ejecutar si el repo tiene configuracion ESLint valida en ese entorno. Si falla por configuracion ausente, reportarlo sin bloquear el cambio.
 
+## Migraciones SQL
+
+Toda migracion nueva en `supabase/migrations/` DEBE documentarse en `DATABASE_DICTIONARY.md` antes de cerrar la tarea. Esto incluye:
+
+- Tablas nuevas: agregar seccion `### nombre_tabla` con descripcion, tabla de campos (Campo / Tipo / Nulo / Descripcion) e indices/unicos relevantes.
+- Tipos enumerados nuevos: agregar bajo `## 4. Tipos enumerados`.
+- Vistas nuevas: agregar a `## 6. Vistas de apoyo`.
+- Cambios estructurales (columnas nuevas, renames, drops, cambios de tipo): actualizar la tabla afectada.
+
+Si modificas el esquema sin actualizar el diccionario, la tarea no esta completa.
+
 ## Skills Del Repo
 
 - `.agents/skills/darkmoney-resource-module/SKILL.md`: usar al crear o migrar pantallas tipo recurso, como cuentas, movimientos, contactos, créditos, deudas, presupuestos y suscripciones.

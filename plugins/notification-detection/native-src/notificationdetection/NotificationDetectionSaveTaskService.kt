@@ -38,11 +38,26 @@ class NotificationDetectionSaveTaskService : HeadlessJsTaskService() {
         putString("runtimeContextJson", runtimeContextJson)
       }
       val intent = Intent(context, NotificationDetectionSaveTaskService::class.java).putExtras(extras)
+      startTaskAndAcquireWakelock(context, intent, criticalLogging = false)
+    }
+
+    /**
+     * Starts the headless service and acquires a wake lock ONLY if the service actually started.
+     * If startService fails (background limits, throttling), we do not leak a wake lock.
+     * The wake lock is released automatically by HeadlessJsTaskService once the JS task completes.
+     */
+    private fun startTaskAndAcquireWakelock(context: Context, intent: Intent, criticalLogging: Boolean) {
       try {
-        context.startService(intent)
-        HeadlessJsTaskService.acquireWakeLockNow(context)
-      } catch (_: Exception) {
-        // App in background; AI enrichment is non-critical, skip silently.
+        val started = context.startService(intent)
+        if (started != null) {
+          HeadlessJsTaskService.acquireWakeLockNow(context)
+        } else if (criticalLogging) {
+          android.util.Log.w("DarkMoney", "startService returned null component; task did not start")
+        }
+      } catch (e: Exception) {
+        if (criticalLogging) {
+          android.util.Log.e("DarkMoney", "startService failed (app in background?): ${e.message}")
+        }
       }
     }
 
@@ -86,12 +101,7 @@ class NotificationDetectionSaveTaskService : HeadlessJsTaskService() {
         putString("description", description)
       }
       val intent = Intent(context, NotificationDetectionSaveTaskService::class.java).putExtras(extras)
-      try {
-        context.startService(intent)
-        HeadlessJsTaskService.acquireWakeLockNow(context)
-      } catch (e: Exception) {
-        android.util.Log.e("DarkMoney", "startService failed (app in background?): ${e.message}")
-      }
+      startTaskAndAcquireWakelock(context, intent, criticalLogging = true)
     }
   }
 }

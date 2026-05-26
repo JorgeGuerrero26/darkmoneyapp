@@ -27,6 +27,17 @@ Ejecutar npm run lint solo si el entorno tiene configuración ESLint válida.
 
 Si lint falla por configuración ausente o por ESLint flat config faltante, reportarlo sin bloquear el cambio.
 
+## Database migrations
+
+Toda migración nueva en `supabase/migrations/` DEBE quedar documentada en `DATABASE_DICTIONARY.md` antes de cerrar la tarea.
+
+- Tabla nueva: agregar sección `### nombre_tabla` con descripción, tabla de campos (Campo / Tipo / Nulo / Descripción) e índices/uniques relevantes.
+- Tipo enumerado nuevo: documentar bajo `## 4. Tipos enumerados`.
+- Vista nueva: agregar a `## 6. Vistas de apoyo`.
+- Columna nueva, rename, drop o cambio de tipo: actualizar la tabla afectada.
+
+No cerrar la tarea si modificaste el esquema y no actualizaste el diccionario.
+
 ## Architecture
 
 - app/* orquesta estado, queries, callbacks y slots.
