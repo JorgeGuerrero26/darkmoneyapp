@@ -149,6 +149,7 @@ export default function AppLayout() {
       <Tabs.Screen name="exchange-rates" options={{ href: null }} />
       <Tabs.Screen name="settings" options={{ href: null }} />
       <Tabs.Screen name="notification-detection" options={{ href: null }} />
+      <Tabs.Screen name="notification-onboarding" options={{ href: null }} />
     </Tabs>
   );
 }

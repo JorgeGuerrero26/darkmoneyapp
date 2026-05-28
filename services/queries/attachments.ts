@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 
+import { STALE } from "../../lib/query-client";
 import { SUPABASE_STORAGE_BUCKET } from "../../constants/config";
 import {
   buildEntityAttachmentDir,
@@ -106,7 +107,7 @@ export function useEntityAttachmentsQuery(
       return fetchEntityAttachments(workspaceId, entityType, entityId);
     },
     enabled: Boolean(workspaceId && entityType && entityId),
-    staleTime: 30_000,
+    staleTime: STALE.short,
   });
 }
 
@@ -129,7 +130,7 @@ export function useObligationEventAttachmentCountsQuery(
       return fetchEntityAttachmentCounts(workspaceId, "obligation-event", normalizedIds);
     },
     enabled: Boolean(workspaceId && normalizedIds.length > 0),
-    staleTime: 30_000,
+    staleTime: STALE.short,
   });
 }
 
@@ -145,7 +146,7 @@ export function useMovementAttachmentCountsQuery(
       return fetchEntityAttachmentCounts(workspaceId, "movement", normalizedIds);
     },
     enabled: Boolean(workspaceId && normalizedIds.length > 0),
-    staleTime: 30_000,
+    staleTime: STALE.short,
   });
 }
 

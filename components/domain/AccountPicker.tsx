@@ -17,27 +17,41 @@ export function AccountPicker({
   error?: string;
 }) {
   return (
-    <View style={styles.pickerWrap}>
+    <View style={styles.pickerWrap} accessibilityLabel={label}>
       <Text style={styles.sectionLabel}>{label}</Text>
-      {error ? <Text style={styles.fieldError}>{error}</Text> : null}
+      {error ? (
+        <Text
+          style={styles.fieldError}
+          accessibilityLiveRegion="polite"
+          accessibilityRole="alert"
+        >
+          {error}
+        </Text>
+      ) : null}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.accountRow}>
-        {accounts.map((acc) => (
-          <TouchableOpacity
-            key={acc.id}
-            style={[
-              styles.accountChip,
-              selectedId === acc.id && { borderColor: acc.color, backgroundColor: acc.color + "22" },
-            ]}
-            onPress={() => onSelect(acc.id)}
-          >
-            <Text style={[styles.accountChipName, selectedId === acc.id && { color: acc.color }]}>
-              {acc.name}
-            </Text>
-            <Text style={styles.accountChipBalance}>
-              {acc.currencyCode}
-            </Text>
-          </TouchableOpacity>
-        ))}
+        {accounts.map((acc) => {
+          const isSelected = selectedId === acc.id;
+          return (
+            <TouchableOpacity
+              key={acc.id}
+              style={[
+                styles.accountChip,
+                isSelected && { borderColor: acc.color, backgroundColor: acc.color + "22" },
+              ]}
+              onPress={() => onSelect(acc.id)}
+              accessibilityRole="button"
+              accessibilityLabel={`${acc.name}, ${acc.currencyCode}`}
+              accessibilityState={{ selected: isSelected }}
+            >
+              <Text style={[styles.accountChipName, isSelected && { color: acc.color }]}>
+                {acc.name}
+              </Text>
+              <Text style={styles.accountChipBalance}>
+                {acc.currencyCode}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
         {accounts.length === 0 && (
           <Text style={styles.emptyPicker}>Sin cuentas activas</Text>
         )}

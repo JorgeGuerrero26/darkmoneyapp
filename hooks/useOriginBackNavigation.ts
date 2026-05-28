@@ -6,9 +6,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 type OriginBackNavigationOptions = {
   defaultRoute?: string;
   originRoutes?: Record<string, string>;
-  /** Cuando es true no se instala el listener beforeRemove, permitiendo
-   *  que navegaciones programáticas (ej. sign-out redirect) no sean
-   *  interceptadas ni redirigidas al origen. */
+  /** When true, do not intercept navigation events. Useful for flows such as sign out. */
   skipInterception?: boolean;
 };
 
@@ -31,19 +29,10 @@ export function useOriginBackNavigation({
   const handleBack = useCallback(() => {
     if (navigatingRef.current) return;
     navigatingRef.current = true;
+
     if (from) {
-      // Tabs navigator exposes jumpTo; Stack navigator does not.
-      const tabName = fallbackRoute.split("/").pop() ?? "more";
-      if (typeof (navigation as any).jumpTo === "function") {
-        // Tabs context: switch to the target tab.
-        // Reset guard because Tab screens stay mounted (detachInactiveScreens=false).
-        (navigation as any).jumpTo(tabName);
-        setTimeout(() => { navigatingRef.current = false; }, 300);
-      } else {
-        // Stack context: pop back — animation is already suppressed via
-        // animation:"none" on the screen entry in app/_layout.tsx.
-        router.back();
-      }
+      router.replace(fallbackRoute as any);
+      setTimeout(() => { navigatingRef.current = false; }, 300);
       return;
     }
 
@@ -56,27 +45,21 @@ export function useOriginBackNavigation({
     router.replace(defaultRoute as any);
   }, [defaultRoute, fallbackRoute, from, navigation, router]);
 
-  // Intercept navigation back events (iOS swipe / RN navigation back) and
-  // Android system back gesture/button so they respect the origin route
-  // (e.g. "from=more") instead of navigating to the previous tab (dashboard).
-  // When skipInterception is true (e.g. during sign-out) the interception is
-  // disabled so that NavigationGuard redirects are not blocked.
+  // Intercept back events only when the route declares an origin. Screens without
+  // an origin keep the normal stack/back behavior.
   useEffect(() => {
     if (skipInterception) return;
 
-    // iOS swipe gesture & programmatic back
     const unsubBeforeRemove = navigation.addListener("beforeRemove", (e) => {
-      if (navigatingRef.current) return; // allow programmatic navigation
-      // Si handleBack() llama a router.back() igual que el pop por defecto, no interceptar
-      if (navigation.canGoBack()) return;
+      if (navigatingRef.current || !from) return;
       e.preventDefault();
       handleBack();
     });
 
-    // Android system back gesture / hardware button
     const backHandler = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (!from) return false;
       handleBack();
-      return true; // we handled it, prevent default
+      return true;
     });
 
     return () => {

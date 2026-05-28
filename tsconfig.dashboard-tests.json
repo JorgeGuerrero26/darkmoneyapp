@@ -15,6 +15,7 @@
     "features/dashboard/lib/advanced-types.ts",
     "features/dashboard/lib/dashboard-builders.ts",
     "features/dashboard/lib/dashboard-row.ts",
+    "features/dashboard/lib/entitlement-resolver.ts",
     "features/dashboard/lib/types.ts",
     "features/dashboard/selectors/**/*.ts",
     "tests/dashboard/**/*.ts"

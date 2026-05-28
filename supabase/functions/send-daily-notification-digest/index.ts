@@ -342,13 +342,17 @@ Deno.serve(async (req: Request) => {
       body: pushBodyText,
       data: {
         type: "daily_digest",
+        kind: aiDigestInserted ? "daily_ai_digest" : "daily_digest",
+        relatedEntityType: "daily_digest",
+        relatedEntityId: aiDigestInserted ? buildDailyAiDigestEntityId(digestDate) : null,
         count: todaysInformational.length,
         topKinds: kinds.slice(0, 5),
         aiDigest: aiDigestInserted,
       },
       sound: "default",
       badge: 1,
-      priority: "normal",
+      channelId: "default",
+      priority: "high",
     };
 
     const pushRes = await fetch(EXPO_PUSH_URL, {

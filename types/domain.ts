@@ -320,6 +320,10 @@ export type MovementRecord = {
   obligationId?: number | null;
   subscriptionId?: number | null;
   metadata?: JsonValue | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  createdByUserId?: string | null;
+  updatedByUserId?: string | null;
 };
 
 export type ObligationEventSummary = {

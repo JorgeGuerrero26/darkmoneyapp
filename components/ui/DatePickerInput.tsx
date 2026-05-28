@@ -111,7 +111,14 @@ export function DatePickerInput({
       {hideLabel ? null : <Text style={styles.label}>{label}</Text>}
 
       <View style={styles.triggerRow}>
-        <TouchableOpacity style={[triggerStyles, styles.triggerFlex]} onPress={handleOpen} activeOpacity={0.75}>
+        <TouchableOpacity
+          style={[triggerStyles, styles.triggerFlex]}
+          onPress={handleOpen}
+          activeOpacity={0.75}
+          accessibilityRole="button"
+          accessibilityLabel={`${label}: ${displayText || placeholder}`}
+          accessibilityHint="Toca para abrir el selector de fecha"
+        >
           <View style={styles.triggerIconWrap}>
             <CalendarDays size={18} color={value ? COLORS.pine : COLORS.storm} strokeWidth={2} />
           </View>

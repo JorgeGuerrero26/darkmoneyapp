@@ -132,7 +132,21 @@ function buildHostedAppUrl(): string | null {
   return `https://${host.replace(/^\/+/, "").replace(/\/+$/, "")}`;
 }
 
-const FALLBACK_PRO_EMAILS = new Set(["joradrianmori@gmail.com"]);
+// Lista de emails con acceso Pro de fallback (cuando el cliente no puede llegar
+// a Supabase o el entitlement aun no esta seteado). Configurable via env var
+// EXPO_PUBLIC_FALLBACK_PRO_EMAILS como CSV sin rebuild.
+function parseFallbackProEmails(): Set<string> {
+  const raw = process.env.EXPO_PUBLIC_FALLBACK_PRO_EMAILS;
+  const source = raw && raw.trim().length > 0 ? raw : "joradrianmori@gmail.com";
+  const set = new Set<string>();
+  for (const part of source.split(",")) {
+    const normalized = part.trim().toLowerCase();
+    if (normalized) set.add(normalized);
+  }
+  return set;
+}
+
+const FALLBACK_PRO_EMAILS = parseFallbackProEmails();
 
 function hasFallbackProAccess(email?: string | null): boolean {
   return Boolean(email && FALLBACK_PRO_EMAILS.has(email.trim().toLowerCase()));
@@ -2201,23 +2215,8 @@ export function usePersistLearningFeedbackMutation(
 
 // ─── Movement mutations ───────────────────────────────────────────────────────
 
-export type MovementFormInput = {
-  movementType: MovementType;
-  status: MovementStatus;
-  occurredAt: string;
-  description: string;
-  notes?: string | null;
-  sourceAccountId: number | null;
-  sourceAmount: number | null;
-  destinationAccountId: number | null;
-  destinationAmount: number | null;
-  fxRate?: number | null;
-  categoryId?: number | null;
-  counterpartyId?: number | null;
-  obligationId?: number | null;
-  subscriptionId?: number | null;
-  metadata?: JsonValue | null;
-};
+import type { MovementFormInput } from "../../features/movements/lib/movement-input-types";
+export type { MovementFormInput };
 
 async function createMovement(
   workspaceId: number,
@@ -2292,135 +2291,34 @@ export function useCreateMovementMutation(workspaceId: number | null) {
   });
 }
 
-// ─── Account mutations ────────────────────────────────────────────────────────
+// --- Accounts ---
+// Movido a ./accounts.ts. Se re-exporta para preservar imports existentes.
 
-export type AccountFormInput = {
-  name: string;
-  type: string;
-  currencyCode: string;
-  openingBalance: number;
-  includeInNetWorth: boolean;
-  color: string;
-  icon: string;
-};
+export {
+  type AccountFormInput,
+  type AccountMovementAnalytics,
+  useCreateAccountMutation,
+  useUpdateAccountMutation,
+  useArchiveAccountMutation,
+  useDeleteAccountMutation,
+  useAccountAnalyticsQuery,
+} from "./accounts";
 
-export function useCreateAccountMutation(workspaceId: number | null) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (input: AccountFormInput) => {
-      if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
-      const { data, error } = await supabase
-        .from("accounts")
-        .insert({
-          workspace_id: workspaceId,
-          name: input.name,
-          type: input.type,
-          currency_code: input.currencyCode,
-          opening_balance: input.openingBalance,
-          include_in_net_worth: input.includeInNetWorth,
-          color: input.color,
-          icon: input.icon,
-          sort_order: 0,
-          is_archived: false,
-        })
-        .select("id")
-        .single();
-      if (error) throw new Error(formatSupabaseError(error) || "Error de base de datos");
-      return data as { id: number };
-    },
-    onSuccess: () => {
-      runBackgroundQueryRefresh(queryClient, [["workspace-snapshot"]]);
-    },
-  });
-}
+// --- Budgets ---
+// Movido a ./budgets.ts. Se re-exporta para preservar imports existentes.
 
-export function useUpdateAccountMutation(workspaceId: number | null) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async ({ id, input }: { id: number; input: Partial<AccountFormInput> }) => {
-      if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
-      const { error } = await supabase
-        .from("accounts")
-        .update({
-          name: input.name,
-          type: input.type,
-          currency_code: input.currencyCode,
-          opening_balance: input.openingBalance,
-          include_in_net_worth: input.includeInNetWorth,
-          color: input.color,
-          icon: input.icon,
-        })
-        .eq("id", id)
-        .eq("workspace_id", workspaceId);
-      if (error) throw new Error(error.message ?? "Error de base de datos");
-    },
-    onSuccess: () => {
-      runBackgroundQueryRefresh(queryClient, [["workspace-snapshot"]]);
-    },
-  });
-}
-
-// ─── Budget mutations ─────────────────────────────────────────────────────────
-
-export type BudgetFormInput = {
-  name: string;
-  periodStart: string;
-  periodEnd: string;
-  limitAmount: number;
-  alertPercent: number;
-  currencyCode: string;
-  categoryId?: number | null;
-  accountId?: number | null;
-  rolloverEnabled?: boolean;
-  notes?: string | null;
-};
-
-export function useCreateBudgetMutation(workspaceId: number | null) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (input: BudgetFormInput) => {
-      if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
-      const { data, error } = await supabase
-        .from("budgets")
-        .insert({
-          workspace_id: workspaceId,
-          name: input.name,
-          period_start: input.periodStart,
-          period_end: input.periodEnd,
-          limit_amount: input.limitAmount,
-          alert_percent: input.alertPercent,
-          currency_code: input.currencyCode,
-          category_id: input.categoryId ?? null,
-          account_id: input.accountId ?? null,
-          rollover_enabled: input.rolloverEnabled ?? false,
-          notes: input.notes ?? null,
-        })
-        .select("id")
-        .single();
-      if (error) throw new Error(error.message ?? "Error de base de datos");
-      return data as { id: number };
-    },
-    onSuccess: () => {
-      runBackgroundQueryRefresh(queryClient, [["workspace-snapshot"]]);
-    },
-  });
-}
+export {
+  type BudgetFormInput,
+  type BudgetUpdateInput,
+  useCreateBudgetMutation,
+  useUpdateBudgetMutation,
+  useDeleteBudgetMutation,
+} from "./budgets";
 
 // ─── Movement mutations (update / void) ──────────────────────────────────────
 
-export type MovementUpdateInput = {
-  description?: string;
-  notes?: string | null;
-  categoryId?: number | null;
-  counterpartyId?: number | null;
-  occurredAt?: string;
-  status?: MovementStatus;
-  sourceAmount?: number;
-  destinationAmount?: number;
-  fxRate?: number | null;
-  sourceAccountId?: number | null;
-  destinationAccountId?: number | null;
-};
+import type { MovementUpdateInput } from "../../features/movements/lib/movement-input-types";
+export type { MovementUpdateInput };
 
 export function useUpdateMovementMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
@@ -2519,71 +2417,6 @@ export function useVoidMovementMutation(workspaceId: number | null) {
   });
 }
 
-// ─── Budget mutations (update / delete) ──────────────────────────────────────
-
-export type BudgetUpdateInput = Partial<BudgetFormInput>;
-
-export function useUpdateBudgetMutation(workspaceId: number | null) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async ({ id, input }: { id: number; input: BudgetUpdateInput }) => {
-      if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
-      const payload: Record<string, unknown> = {};
-      if (input.name !== undefined) payload.name = input.name;
-      if (input.limitAmount !== undefined) payload.limit_amount = input.limitAmount;
-      if (input.alertPercent !== undefined) payload.alert_percent = input.alertPercent;
-      if (input.periodStart !== undefined) payload.period_start = input.periodStart;
-      if (input.periodEnd !== undefined) payload.period_end = input.periodEnd;
-      if (input.currencyCode !== undefined) payload.currency_code = input.currencyCode;
-      if (input.categoryId !== undefined) payload.category_id = input.categoryId;
-      if (input.accountId !== undefined) payload.account_id = input.accountId;
-      if (input.rolloverEnabled !== undefined) payload.rollover_enabled = input.rolloverEnabled;
-      if (input.notes !== undefined) payload.notes = input.notes;
-      const { error } = await supabase
-        .from("budgets")
-        .update(payload)
-        .eq("id", id)
-        .eq("workspace_id", workspaceId);
-      if (error) throw new Error(error.message ?? "Error de base de datos");
-    },
-    onSuccess: () => {
-      runBackgroundQueryRefresh(queryClient, [["workspace-snapshot"]]);
-    },
-  });
-}
-
-export function useDeleteBudgetMutation(workspaceId: number | null) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (id: number) => {
-      if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
-      const { error } = await supabase
-        .from("budgets")
-        .delete()
-        .eq("id", id)
-        .eq("workspace_id", workspaceId);
-      if (error) throw new Error(error.message ?? "Error de base de datos");
-    },
-    onMutate: async (id) => {
-      await queryClient.cancelQueries({ queryKey: ["workspace-snapshot"] });
-      const previousEntries = queryClient.getQueriesData<WorkspaceSnapshot>({ queryKey: ["workspace-snapshot"] });
-      queryClient.setQueriesData<WorkspaceSnapshot>({ queryKey: ["workspace-snapshot"] }, (old) => {
-        if (!old) return old;
-        return { ...old, budgets: old.budgets.filter((b) => b.id !== id) };
-      });
-      return { previousEntries };
-    },
-    onError: (_err, _id, context) => {
-      for (const [key, value] of (context?.previousEntries ?? [])) {
-        queryClient.setQueryData(key, value);
-      }
-    },
-    onSuccess: () => {
-      runBackgroundQueryRefresh(queryClient, [["workspace-snapshot"]]);
-    },
-  });
-}
-
 // ─── Movement delete mutation ─────────────────────────────────────────────────
 
 export function useDeleteMovementMutation(workspaceId: number | null) {
@@ -2623,128 +2456,6 @@ export function useDeleteMovementMutation(workspaceId: number | null) {
     },
     onSuccess: () => {
       runBackgroundQueryRefresh(queryClient, [["workspace-snapshot"], ["movements"]]);
-    },
-  });
-}
-
-// ─── Account mutations (archive) ─────────────────────────────────────────────
-
-export function useArchiveAccountMutation(workspaceId: number | null) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async ({ id, archived }: { id: number; archived: boolean }) => {
-      if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
-      const { error } = await supabase
-        .from("accounts")
-        .update({ is_archived: archived })
-        .eq("id", id)
-        .eq("workspace_id", workspaceId);
-      if (error) throw new Error(error.message ?? "Error de base de datos");
-    },
-    onMutate: async ({ id, archived }) => {
-      await queryClient.cancelQueries({ queryKey: ["workspace-snapshot"] });
-      const previousEntries = queryClient.getQueriesData<WorkspaceSnapshot>({ queryKey: ["workspace-snapshot"] });
-      queryClient.setQueriesData<WorkspaceSnapshot>({ queryKey: ["workspace-snapshot"] }, (old) => {
-        if (!old) return old;
-        return {
-          ...old,
-          accounts: old.accounts.map((a) => a.id === id ? { ...a, isArchived: archived } : a),
-        };
-      });
-      return { previousEntries };
-    },
-    onError: (_err, _vars, context) => {
-      for (const [key, value] of (context?.previousEntries ?? [])) {
-        queryClient.setQueryData(key, value);
-      }
-    },
-    onSuccess: () => {
-      runBackgroundQueryRefresh(queryClient, [["workspace-snapshot"]]);
-    },
-  });
-}
-
-export function useDeleteAccountMutation(workspaceId: number | null) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (id: number) => {
-      if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
-      const { error } = await supabase
-        .from("accounts")
-        .delete()
-        .eq("id", id)
-        .eq("workspace_id", workspaceId);
-      if (error) throw new Error(error.message ?? "Error de base de datos");
-    },
-    onMutate: async (id) => {
-      await queryClient.cancelQueries({ queryKey: ["workspace-snapshot"] });
-      const previousEntries = queryClient.getQueriesData<WorkspaceSnapshot>({ queryKey: ["workspace-snapshot"] });
-      queryClient.setQueriesData<WorkspaceSnapshot>({ queryKey: ["workspace-snapshot"] }, (old) => {
-        if (!old) return old;
-        return { ...old, accounts: old.accounts.filter((a) => a.id !== id) };
-      });
-      return { previousEntries };
-    },
-    onError: (_err, _id, context) => {
-      for (const [key, value] of (context?.previousEntries ?? [])) {
-        queryClient.setQueryData(key, value);
-      }
-    },
-    onSuccess: () => {
-      runBackgroundQueryRefresh(queryClient, [["workspace-snapshot"]]);
-    },
-  });
-}
-
-// ─── Account analytics ────────────────────────────────────────────────────────
-
-export type AccountMovementAnalytics = {
-  id: number;
-  movementType: string;
-  status: string;
-  occurredAt: string;
-  description: string | null;
-  sourceAccountId: number | null;
-  sourceAmount: number | null;
-  destinationAccountId: number | null;
-  destinationAmount: number | null;
-  categoryId: number | null;
-  categoryName: string | null;
-};
-
-export function useAccountAnalyticsQuery(
-  workspaceId: number | null,
-  accountId: number | null,
-) {
-  return useQuery({
-    queryKey: ["account-analytics", workspaceId, accountId],
-    enabled: Boolean(workspaceId && accountId),
-    queryFn: async () => {
-      if (!supabase || !workspaceId || !accountId) return [];
-      const { data, error } = await supabase
-        .from("movements")
-        .select(
-          "id, movement_type, status, occurred_at, description, source_account_id, source_amount, destination_account_id, destination_amount, category_id, categories(name)",
-        )
-        .eq("workspace_id", workspaceId)
-        .or(`source_account_id.eq.${accountId},destination_account_id.eq.${accountId}`)
-        .eq("status", "posted")
-        .order("occurred_at", { ascending: false })
-        .limit(300);
-      if (error) throw error;
-      return ((data ?? []) as any[]).map((r) => ({
-        id: r.id,
-        movementType: r.movement_type,
-        status: r.status,
-        occurredAt: r.occurred_at,
-        description: r.description,
-        sourceAccountId: r.source_account_id,
-        sourceAmount: r.source_amount ? Number(r.source_amount) : null,
-        destinationAccountId: r.destination_account_id,
-        destinationAmount: r.destination_amount ? Number(r.destination_amount) : null,
-        categoryId: r.category_id,
-        categoryName: r.categories?.name ?? null,
-      })) as AccountMovementAnalytics[];
     },
   });
 }
@@ -4851,210 +4562,21 @@ export function useRejectObligationEventEditRequestMutation() {
   });
 }
 
-// ─── Subscription mutations ───────────────────────────────────────────────────
+// --- Subscriptions + Recurring Income ---
+// Movido a ./subscriptions-recurring-income.ts. Se re-exporta para preservar imports existentes.
+// useConfirmRecurringIncomeArrivalMutation se queda aquí porque depende de createMovement (interno).
 
-export type SubscriptionFormInput = {
-  name: string;
-  vendorPartyId?: number | null;
-  accountId?: number | null;
-  categoryId?: number | null;
-  amount: number;
-  currencyCode: string;
-  frequency: "daily" | "weekly" | "monthly" | "quarterly" | "yearly" | "custom";
-  intervalCount: number;
-  dayOfMonth?: number | null;
-  dayOfWeek?: number | null;
-  startDate: string;
-  /** Próximo vencimiento (YYYY-MM-DD). */
-  nextDueDate: string;
-  endDate?: string | null;
-  remindDaysBefore: number;
-  autoCreateMovement: boolean;
-  description?: string | null;
-  notes?: string | null;
-};
-
-export type RecurringIncomeFormInput = {
-  name: string;
-  payerPartyId?: number | null;
-  accountId?: number | null;
-  categoryId?: number | null;
-  amount: number;
-  currencyCode: string;
-  frequency: RecurringIncomeFrequency;
-  intervalCount: number;
-  dayOfMonth?: number | null;
-  dayOfWeek?: number | null;
-  startDate: string;
-  nextExpectedDate: string;
-  endDate?: string | null;
-  remindDaysBefore: number;
-  description?: string | null;
-  notes?: string | null;
-};
-
-export function useCreateRecurringIncomeMutation(workspaceId: number | null) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (input: RecurringIncomeFormInput) => {
-      if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
-      const { data: authData, error: authErr } = await supabase.auth.getUser();
-      if (authErr) throw new Error(authErr.message ?? "No se pudo verificar la sesión");
-      const uid = authData.user?.id;
-      if (!uid) throw new Error("No hay sesión");
-
-      const { data, error } = await supabase
-        .from("recurring_income")
-        .insert({
-          workspace_id: workspaceId,
-          created_by_user_id: uid,
-          name: input.name,
-          payer_party_id: input.payerPartyId ?? null,
-          account_id: input.accountId ?? null,
-          category_id: input.categoryId ?? null,
-          amount: input.amount,
-          currency_code: input.currencyCode.trim().toUpperCase(),
-          frequency: input.frequency,
-          interval_count: input.intervalCount,
-          day_of_month: input.dayOfMonth ?? null,
-          day_of_week: input.dayOfWeek ?? null,
-          start_date: input.startDate,
-          next_expected_date: input.nextExpectedDate,
-          end_date: input.endDate ?? null,
-          remind_days_before: input.remindDaysBefore,
-          description: input.description ?? null,
-          notes: input.notes ?? null,
-          status: "active",
-        })
-        .select("id")
-        .single();
-      if (error) throw new Error(error.message ?? "Error de base de datos");
-      return data as { id: number };
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["user-workspaces"] });
-      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
-    },
-  });
-}
-
-export function useUpdateRecurringIncomeMutation(workspaceId: number | null) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async ({ id, input }: { id: number; input: Partial<RecurringIncomeFormInput> & { status?: RecurringIncomeStatus } }) => {
-      if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
-      const payload: Record<string, unknown> = {};
-      if (input.name !== undefined) payload.name = input.name;
-      if (input.payerPartyId !== undefined) payload.payer_party_id = input.payerPartyId;
-      if (input.accountId !== undefined) payload.account_id = input.accountId;
-      if (input.categoryId !== undefined) payload.category_id = input.categoryId;
-      if (input.amount !== undefined) payload.amount = input.amount;
-      if (input.currencyCode !== undefined) payload.currency_code = input.currencyCode.trim().toUpperCase();
-      if (input.frequency !== undefined) payload.frequency = input.frequency;
-      if (input.intervalCount !== undefined) payload.interval_count = input.intervalCount;
-      if (input.dayOfMonth !== undefined) payload.day_of_month = input.dayOfMonth;
-      if (input.dayOfWeek !== undefined) payload.day_of_week = input.dayOfWeek;
-      if (input.startDate !== undefined) payload.start_date = input.startDate;
-      if (input.nextExpectedDate !== undefined) payload.next_expected_date = input.nextExpectedDate;
-      if (input.endDate !== undefined) payload.end_date = input.endDate;
-      if (input.remindDaysBefore !== undefined) payload.remind_days_before = input.remindDaysBefore;
-      if (input.description !== undefined) payload.description = input.description;
-      if (input.notes !== undefined) payload.notes = input.notes;
-      if (input.status !== undefined) payload.status = input.status;
-      const { error } = await supabase
-        .from("recurring_income")
-        .update(payload)
-        .eq("id", id)
-        .eq("workspace_id", workspaceId);
-      if (error) throw new Error(error.message ?? "Error de base de datos");
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["user-workspaces"] });
-      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
-    },
-  });
-}
-
-export function useDeleteRecurringIncomeMutation(workspaceId: number | null) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (id: number) => {
-      if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
-      const { error: occErr } = await supabase
-        .from("recurring_income_occurrences")
-        .delete()
-        .eq("recurring_income_id", id);
-      if (occErr) {
-        const msg = occErr.message ?? "";
-        const ignorable =
-          /recurring_income_occurrences/i.test(msg) ||
-          /does not exist/i.test(msg) ||
-          /schema cache/i.test(msg) ||
-          /could not find/i.test(msg);
-        if (!ignorable) throw new Error(msg || "Error al limpiar ocurrencias");
-      }
-
-      const { error } = await supabase
-        .from("recurring_income")
-        .delete()
-        .eq("id", id)
-        .eq("workspace_id", workspaceId);
-      if (error) throw new Error(error.message ?? "Error de base de datos");
-    },
-    onMutate: async (id) => {
-      await queryClient.cancelQueries({ queryKey: ["workspace-snapshot"] });
-      const previousEntries = queryClient.getQueriesData<WorkspaceSnapshot>({ queryKey: ["workspace-snapshot"] });
-      queryClient.setQueriesData<WorkspaceSnapshot>({ queryKey: ["workspace-snapshot"] }, (old) => {
-        if (!old) return old;
-        return { ...old, recurringIncome: old.recurringIncome.filter((item) => item.id !== id) };
-      });
-      return { previousEntries };
-    },
-    onError: (_err, _id, context) => {
-      for (const [key, value] of (context?.previousEntries ?? [])) {
-        queryClient.setQueryData(key, value);
-      }
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
-    },
-  });
-}
-
-export function useRecurringIncomeOccurrencesQuery(
-  workspaceId: number | null,
-  recurringIncomeId: number | null | undefined,
-) {
-  return useQuery({
-    queryKey: ["recurring-income-occurrences", workspaceId ?? null, recurringIncomeId ?? null],
-    enabled: Boolean(supabase && workspaceId && recurringIncomeId),
-    staleTime: STALE.short,
-    queryFn: async (): Promise<RecurringIncomeOccurrenceSummary[]> => {
-      if (!supabase || !workspaceId || !recurringIncomeId) return [];
-      const { data, error } = await supabase
-        .from("recurring_income_occurrences")
-        .select("id, workspace_id, recurring_income_id, expected_date, actual_date, amount, currency_code, movement_id, status, notes, created_at")
-        .eq("workspace_id", workspaceId)
-        .eq("recurring_income_id", recurringIncomeId)
-        .order("actual_date", { ascending: false })
-        .order("created_at", { ascending: false });
-      if (error) throw new Error(error.message ?? "Error al cargar historial de llegadas");
-      return ((data ?? []) as Array<Record<string, unknown>>).map((row) => ({
-        id: Number(row.id),
-        workspaceId: Number(row.workspace_id),
-        recurringIncomeId: Number(row.recurring_income_id),
-        expectedDate: String(row.expected_date ?? ""),
-        actualDate: String(row.actual_date ?? ""),
-        amount: toNum(row.amount as NumericLike),
-        currencyCode: String(row.currency_code ?? ""),
-        movementId: row.movement_id != null ? Number(row.movement_id) : null,
-        status: row.status === "late" ? "late" : "on_time",
-        notes: typeof row.notes === "string" ? row.notes : null,
-        createdAt: typeof row.created_at === "string" ? row.created_at : null,
-      }));
-    },
-  });
-}
+export {
+  type SubscriptionFormInput,
+  type RecurringIncomeFormInput,
+  useCreateRecurringIncomeMutation,
+  useUpdateRecurringIncomeMutation,
+  useDeleteRecurringIncomeMutation,
+  useRecurringIncomeOccurrencesQuery,
+  useCreateSubscriptionMutation,
+  useUpdateSubscriptionMutation,
+  useDeleteSubscriptionMutation,
+} from "./subscriptions-recurring-income";
 
 export function useConfirmRecurringIncomeArrivalMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
@@ -5169,705 +4691,38 @@ export function useConfirmRecurringIncomeArrivalMutation(workspaceId: number | n
   });
 }
 
-export function useCreateSubscriptionMutation(workspaceId: number | null) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (input: SubscriptionFormInput) => {
-      if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
-      const { data: authData, error: authErr } = await supabase.auth.getUser();
-      if (authErr) throw new Error(authErr.message ?? "No se pudo verificar la sesión");
-      const uid = authData.user?.id;
-      if (!uid) throw new Error("No hay sesión");
+// --- Categories + Counterparties ---
+// Movido a ./categories-counterparties.ts. Se re-exporta para preservar imports existentes.
 
-      const { data, error } = await supabase
-        .from("subscriptions")
-        .insert({
-          workspace_id: workspaceId,
-          created_by_user_id: uid,
-          name: input.name,
-          vendor_party_id: input.vendorPartyId ?? null,
-          account_id: input.accountId ?? null,
-          category_id: input.categoryId ?? null,
-          amount: input.amount,
-          currency_code: input.currencyCode.trim().toUpperCase(),
-          frequency: input.frequency,
-          interval_count: input.intervalCount,
-          day_of_month: input.dayOfMonth ?? null,
-          day_of_week: input.dayOfWeek ?? null,
-          start_date: input.startDate,
-          next_due_date: input.nextDueDate,
-          end_date: input.endDate ?? null,
-          remind_days_before: input.remindDaysBefore,
-          auto_create_movement: input.autoCreateMovement,
-          description: input.description ?? null,
-          notes: input.notes ?? null,
-          status: "active",
-        })
-        .select("id")
-        .single();
-      if (error) throw new Error(error.message ?? "Error de base de datos");
-      return data as { id: number };
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
-    },
-  });
-}
+export {
+  type CategoryFormInput,
+  useCreateCategoryMutation,
+  useUpdateCategoryMutation,
+  useToggleCategoryMutation,
+  useDeleteCategoryMutation,
+  type CounterpartyFormInput,
+  useCreateCounterpartyMutation,
+  useUpdateCounterpartyMutation,
+  useDeleteCounterpartyMutation,
+} from "./categories-counterparties";
 
-export function useUpdateSubscriptionMutation(workspaceId: number | null) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async ({ id, input }: { id: number; input: Partial<SubscriptionFormInput> & { status?: string } }) => {
-      if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
-      const payload: Record<string, unknown> = {};
-      if (input.name !== undefined) payload.name = input.name;
-      if (input.vendorPartyId !== undefined) payload.vendor_party_id = input.vendorPartyId;
-      if (input.accountId !== undefined) payload.account_id = input.accountId;
-      if (input.categoryId !== undefined) payload.category_id = input.categoryId;
-      if (input.amount !== undefined) payload.amount = input.amount;
-      if (input.currencyCode !== undefined) payload.currency_code = input.currencyCode.trim().toUpperCase();
-      if (input.frequency !== undefined) payload.frequency = input.frequency;
-      if (input.intervalCount !== undefined) payload.interval_count = input.intervalCount;
-      if (input.dayOfMonth !== undefined) payload.day_of_month = input.dayOfMonth;
-      if (input.dayOfWeek !== undefined) payload.day_of_week = input.dayOfWeek;
-      if (input.startDate !== undefined) payload.start_date = input.startDate;
-      if (input.nextDueDate !== undefined) payload.next_due_date = input.nextDueDate;
-      if (input.endDate !== undefined) payload.end_date = input.endDate;
-      if (input.remindDaysBefore !== undefined) payload.remind_days_before = input.remindDaysBefore;
-      if (input.autoCreateMovement !== undefined) payload.auto_create_movement = input.autoCreateMovement;
-      if (input.description !== undefined) payload.description = input.description;
-      if (input.notes !== undefined) payload.notes = input.notes;
-      if (input.status !== undefined) payload.status = input.status;
-      const { error } = await supabase
-        .from("subscriptions")
-        .update(payload)
-        .eq("id", id)
-        .eq("workspace_id", workspaceId);
-      if (error) throw new Error(error.message ?? "Error de base de datos");
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
-    },
-  });
-}
+// --- Notifications ---
+// Movido a ./notifications.ts. Se re-exporta para preservar imports existentes.
 
-export function useDeleteSubscriptionMutation(workspaceId: number | null) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (id: number) => {
-      if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
-
-      const { count, error: countErr } = await supabase
-        .from("movements")
-        .select("*", { count: "exact", head: true })
-        .eq("workspace_id", workspaceId)
-        .eq("subscription_id", id);
-      if (countErr) throw new Error(countErr.message ?? "Error al comprobar movimientos");
-      if ((count ?? 0) > 0) {
-        throw new Error("No se puede eliminar: hay movimientos vinculados a esta suscripción.");
-      }
-
-      const { error: occErr } = await supabase
-        .from("subscription_occurrences")
-        .delete()
-        .eq("subscription_id", id);
-      if (occErr) {
-        const msg = occErr.message ?? "";
-        const ignorable =
-          /subscription_occurrences/i.test(msg) ||
-          /does not exist/i.test(msg) ||
-          /schema cache/i.test(msg) ||
-          /could not find/i.test(msg);
-        if (!ignorable) throw new Error(msg || "Error al limpiar ocurrencias");
-      }
-
-      const { error } = await supabase
-        .from("subscriptions")
-        .delete()
-        .eq("id", id)
-        .eq("workspace_id", workspaceId);
-      if (error) throw new Error(error.message ?? "Error de base de datos");
-    },
-    onMutate: async (id) => {
-      await queryClient.cancelQueries({ queryKey: ["workspace-snapshot"] });
-      const previousEntries = queryClient.getQueriesData<WorkspaceSnapshot>({ queryKey: ["workspace-snapshot"] });
-      queryClient.setQueriesData<WorkspaceSnapshot>({ queryKey: ["workspace-snapshot"] }, (old) => {
-        if (!old) return old;
-        return { ...old, subscriptions: old.subscriptions.filter((s) => s.id !== id) };
-      });
-      return { previousEntries };
-    },
-    onError: (_err, _id, context) => {
-      for (const [key, value] of (context?.previousEntries ?? [])) {
-        queryClient.setQueryData(key, value);
-      }
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
-    },
-  });
-}
-
-// ─── Category mutations ───────────────────────────────────────────────────────
-
-function invalidateCategoryRelatedQueries(queryClient: QueryClient, workspaceId: number | null) {
-  // Mark snapshot stale but don't trigger an immediate expensive refetch —
-  // category name changes don't affect balances and will be picked up next navigation.
-  void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"], refetchType: "none" });
-  if (workspaceId != null) {
-    void queryClient.invalidateQueries({ queryKey: ["categories-overview", workspaceId] });
-  }
-}
-
-export type CategoryFormInput = {
-  name: string;
-  kind: "expense" | "income" | "both";
-  parentId?: number | null;
-  color?: string | null;
-  icon?: string | null;
-  sortOrder?: number;
-  isActive?: boolean;
-};
-
-export function useCreateCategoryMutation(workspaceId: number | null) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (input: CategoryFormInput) => {
-      if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
-      const { data: authData, error: authErr } = await supabase.auth.getUser();
-      if (authErr) throw new Error(authErr.message ?? "No se pudo verificar la sesión");
-      const uid = authData.user?.id;
-      if (!uid) throw new Error("No hay sesión");
-
-      const { data: maxRow, error: maxErr } = await supabase
-        .from("categories")
-        .select("sort_order")
-        .eq("workspace_id", workspaceId)
-        .order("sort_order", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (maxErr) throw new Error(maxErr.message ?? "Error al leer orden de categorías");
-      const maxSort = maxRow?.sort_order != null ? toNum(maxRow.sort_order as NumericLike) : 0;
-
-      const clientSort = input.sortOrder;
-      const sortOrder =
-        clientSort !== undefined && Number.isFinite(clientSort) && clientSort > 0 ? Math.floor(clientSort) : maxSort + 10;
-
-      const colorNorm = input.color?.trim() ? input.color.trim() : null;
-      const iconNorm = input.icon?.trim() ? input.icon.trim() : null;
-
-      const { data, error } = await supabase
-        .from("categories")
-        .insert({
-          workspace_id: workspaceId,
-          created_by_user_id: uid,
-          name: input.name.trim(),
-          kind: input.kind,
-          parent_id: input.parentId ?? null,
-          color: colorNorm,
-          icon: iconNorm,
-          is_active: input.isActive !== false,
-          is_system: false,
-          sort_order: sortOrder,
-        })
-        .select("id")
-        .single();
-      if (error) throw new Error(error.message ?? "Error de base de datos");
-      return data as { id: number };
-    },
-    onSuccess: () => {
-      invalidateCategoryRelatedQueries(queryClient, workspaceId);
-    },
-  });
-}
-
-export function useUpdateCategoryMutation(workspaceId: number | null) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async ({ id, input }: { id: number; input: Partial<CategoryFormInput> }) => {
-      if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
-      if (input.parentId !== undefined && input.parentId === id) {
-        throw new Error("La categoría no puede ser su propia categoría padre.");
-      }
-
-      const { data: authData, error: authErr } = await supabase.auth.getUser();
-      if (authErr) throw new Error(authErr.message ?? "No se pudo verificar la sesión");
-      const uid = authData.user?.id ?? null;
-
-      const payload: Record<string, unknown> = { updated_by_user_id: uid };
-      if (input.name !== undefined) payload.name = input.name.trim();
-      if (input.kind !== undefined) payload.kind = input.kind;
-      if (input.parentId !== undefined) payload.parent_id = input.parentId;
-      if (input.color !== undefined) payload.color = input.color?.trim() ? input.color.trim() : null;
-      if (input.icon !== undefined) payload.icon = input.icon?.trim() ? input.icon.trim() : null;
-      if (input.sortOrder !== undefined) payload.sort_order = input.sortOrder;
-      if (input.isActive !== undefined) payload.is_active = input.isActive;
-
-      const { error } = await supabase
-        .from("categories")
-        .update(payload)
-        .eq("id", id)
-        .eq("workspace_id", workspaceId);
-      if (error) throw new Error(error.message ?? "Error de base de datos");
-    },
-    onSuccess: () => {
-      invalidateCategoryRelatedQueries(queryClient, workspaceId);
-    },
-  });
-}
-
-/** Solo activar / desactivar (toggle rápido en lista). */
-export function useToggleCategoryMutation(workspaceId: number | null) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async ({ id, isActive }: { id: number; isActive: boolean }) => {
-      if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
-      const { data: authData, error: authErr } = await supabase.auth.getUser();
-      if (authErr) throw new Error(authErr.message ?? "No se pudo verificar la sesión");
-      const uid = authData.user?.id ?? null;
-      const { error } = await supabase
-        .from("categories")
-        .update({ is_active: isActive, updated_by_user_id: uid })
-        .eq("id", id)
-        .eq("workspace_id", workspaceId);
-      if (error) throw new Error(error.message ?? "Error de base de datos");
-    },
-    onSuccess: () => {
-      invalidateCategoryRelatedQueries(queryClient, workspaceId);
-    },
-  });
-}
-
-export function useDeleteCategoryMutation(workspaceId: number | null) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (id: number) => {
-      if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
-
-      const { data: catRow, error: catErr } = await supabase
-        .from("categories")
-        .select("id, is_system")
-        .eq("id", id)
-        .eq("workspace_id", workspaceId)
-        .maybeSingle();
-      if (catErr) throw new Error(catErr.message ?? "Error al cargar categoría");
-      if (!catRow) throw new Error("Categoría no encontrada.");
-      if ((catRow as { is_system?: boolean }).is_system) {
-        throw new Error("No se puede eliminar una categoría base del sistema.");
-      }
-
-      const { count: movCount, error: movErr } = await supabase
-        .from("movements")
-        .select("*", { count: "exact", head: true })
-        .eq("workspace_id", workspaceId)
-        .eq("category_id", id);
-      if (movErr) throw new Error(movErr.message ?? "Error al comprobar movimientos");
-      if ((movCount ?? 0) > 0) {
-        throw new Error("No se puede eliminar: hay movimientos que usan esta categoría.");
-      }
-
-      const { count: subCount, error: subErr } = await supabase
-        .from("subscriptions")
-        .select("*", { count: "exact", head: true })
-        .eq("workspace_id", workspaceId)
-        .eq("category_id", id);
-      if (subErr) throw new Error(subErr.message ?? "Error al comprobar suscripciones");
-      if ((subCount ?? 0) > 0) {
-        throw new Error("No se puede eliminar: hay suscripciones que usan esta categoría.");
-      }
-
-      const { count: childCount, error: childErr } = await supabase
-        .from("categories")
-        .select("*", { count: "exact", head: true })
-        .eq("workspace_id", workspaceId)
-        .eq("parent_id", id);
-      if (childErr) throw new Error(childErr.message ?? "Error al comprobar subcategorías");
-      if ((childCount ?? 0) > 0) {
-        throw new Error("No se puede eliminar: existen subcategorías. Reasígnalas o elimínalas primero.");
-      }
-
-      const { error } = await supabase.from("categories").delete().eq("id", id).eq("workspace_id", workspaceId);
-      if (error) throw new Error(error.message ?? "Error de base de datos");
-    },
-    onSuccess: () => {
-      invalidateCategoryRelatedQueries(queryClient, workspaceId);
-    },
-  });
-}
-
-// ─── Counterparty (contact) mutations ────────────────────────────────────────
-
-export type CounterpartyFormInput = {
-  name: string;
-  type: "person" | "company" | "merchant" | "service" | "bank" | "other";
-  phone?: string | null;
-  email?: string | null;
-  documentNumber?: string | null;
-  notes?: string | null;
-};
-
-export function useCreateCounterpartyMutation(workspaceId: number | null) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (input: CounterpartyFormInput) => {
-      if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
-      const { data, error } = await supabase
-        .from("counterparties")
-        .insert({
-          workspace_id: workspaceId,
-          name: input.name,
-          type: input.type,
-          phone: input.phone ?? null,
-          email: input.email ?? null,
-          document_number: input.documentNumber ?? null,
-          notes: input.notes ?? null,
-          is_archived: false,
-        })
-        .select("id")
-        .single();
-      if (error) throw new Error(error.message ?? "Error de base de datos");
-      return data as { id: number };
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"], refetchType: "none" });
-      void queryClient.invalidateQueries({ queryKey: ["counterparties"] });
-    },
-  });
-}
-
-export function useUpdateCounterpartyMutation(workspaceId: number | null) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async ({ id, input }: { id: number; input: Partial<CounterpartyFormInput> & { isArchived?: boolean } }) => {
-      if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
-      const payload: Record<string, unknown> = {};
-      if (input.name !== undefined) payload.name = input.name;
-      if (input.type !== undefined) payload.type = input.type;
-      if (input.phone !== undefined) payload.phone = input.phone;
-      if (input.email !== undefined) payload.email = input.email;
-      if (input.documentNumber !== undefined) payload.document_number = input.documentNumber;
-      if (input.notes !== undefined) payload.notes = input.notes;
-      if (input.isArchived !== undefined) payload.is_archived = input.isArchived;
-      const { error } = await supabase
-        .from("counterparties")
-        .update(payload)
-        .eq("id", id)
-        .eq("workspace_id", workspaceId);
-      if (error) throw new Error(error.message ?? "Error de base de datos");
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"], refetchType: "none" });
-      void queryClient.invalidateQueries({ queryKey: ["counterparties"] });
-    },
-  });
-}
-
-export function useDeleteCounterpartyMutation(workspaceId: number | null) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (id: number) => {
-      if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
-
-      const [{ count: movementCount, error: movementError }, { count: obligationCount, error: obligationError }] =
-        await Promise.all([
-          supabase
-            .from("movements")
-            .select("id", { count: "exact", head: true })
-            .eq("workspace_id", workspaceId)
-            .eq("counterparty_id", id),
-          supabase
-            .from("obligations")
-            .select("id", { count: "exact", head: true })
-            .eq("workspace_id", workspaceId)
-            .eq("counterparty_id", id),
-        ]);
-
-      if (movementError) throw new Error(movementError.message ?? "Error al validar movimientos del contacto");
-      if (obligationError) throw new Error(obligationError.message ?? "Error al validar obligaciones del contacto");
-
-      if ((movementCount ?? 0) > 0 || (obligationCount ?? 0) > 0) {
-        throw new Error("No puedes eliminar este contacto porque tiene movimientos o créditos/deudas asociados. Archívalo en su lugar.");
-      }
-
-      const { error } = await supabase
-        .from("counterparties")
-        .delete()
-        .eq("id", id)
-        .eq("workspace_id", workspaceId);
-      if (error) throw new Error(error.message ?? "Error de base de datos");
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"], refetchType: "none" });
-      void queryClient.invalidateQueries({ queryKey: ["counterparties"] });
-    },
-  });
-}
-
-// ─── Notification queries ─────────────────────────────────────────────────────
-
-export function useNotificationsQuery(userId: string | null) {
-  return useQuery({
-    queryKey: ["notifications", userId],
-    queryFn: async () => {
-      if (!supabase || !userId) return [];
-      const { data, error } = await supabase
-        .from("notifications")
-        .select("id, title, body, status, scheduled_for, kind, channel, read_at, related_entity_type, related_entity_id, payload")
-        .eq("user_id", userId)
-        .order("scheduled_for", { ascending: false })
-        .limit(100);
-      if (error) throw new Error(error.message ?? "Error de base de datos");
-      return (data ?? []).map((row: any) => ({
-        id: row.id,
-        title: row.title,
-        body: row.body,
-        status: row.status,
-        scheduledFor: row.scheduled_for,
-        kind: row.kind,
-        channel: row.channel,
-        readAt: row.read_at,
-        relatedEntityType: row.related_entity_type,
-        relatedEntityId: row.related_entity_id,
-        payload: (row.payload as JsonValue | null) ?? null,
-      }));
-    },
-    enabled: Boolean(userId),
-    staleTime: STALE.short,
-    refetchOnMount: "always",
-    refetchOnReconnect: true,
-    refetchOnWindowFocus: true,
-    refetchInterval: userId ? 10_000 : false,
-  });
-}
-
-export type NotificationPreferenceSummary = {
-  userId: string;
-  pushEnabled: boolean;
-  dailyDigestEnabled: boolean;
-  pushToken: string | null;
-  platform: string | null;
-};
-
-export function useNotificationPreferencesQuery(userId: string | null | undefined) {
-  return useQuery({
-    queryKey: ["notification-preferences", userId ?? null],
-    enabled: Boolean(supabase && userId),
-    staleTime: STALE.short,
-    queryFn: async (): Promise<NotificationPreferenceSummary> => {
-      if (!supabase || !userId) {
-        return {
-          userId: userId ?? "",
-          pushEnabled: false,
-          dailyDigestEnabled: true,
-          pushToken: null,
-          platform: null,
-        };
-      }
-
-      const { data, error } = await supabase
-        .from("notification_preferences")
-        .select("user_id, is_active, daily_digest_enabled, push_token, platform")
-        .eq("user_id", userId)
-        .maybeSingle();
-
-      if (error) throw new Error(error.message ?? "Error al cargar preferencias de notificaciones");
-
-      return {
-        userId,
-        pushEnabled: data?.is_active === true,
-        dailyDigestEnabled: data?.daily_digest_enabled !== false,
-        pushToken: typeof data?.push_token === "string" ? data.push_token : null,
-        platform: typeof data?.platform === "string" ? data.platform : null,
-      };
-    },
-  });
-}
-
-export function useUpdateNotificationPreferencesMutation(userId: string | null | undefined) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (input: { dailyDigestEnabled: boolean }) => {
-      if (!supabase || !userId) throw new Error("Usuario no disponible.");
-
-      const { data: existing, error: existingError } = await supabase
-        .from("notification_preferences")
-        .select("user_id")
-        .eq("user_id", userId)
-        .maybeSingle();
-
-      if (existingError) {
-        throw new Error(existingError.message ?? "Error al leer preferencias de notificaciones");
-      }
-
-      const operation = existing
-        ? supabase
-          .from("notification_preferences")
-          .update({
-            daily_digest_enabled: input.dailyDigestEnabled,
-          })
-          .eq("user_id", userId)
-        : supabase
-          .from("notification_preferences")
-          .insert({
-            user_id: userId,
-            platform: Platform.OS,
-            is_active: false,
-            daily_digest_enabled: input.dailyDigestEnabled,
-          });
-
-      const { error } = await operation;
-      if (error) {
-        throw new Error(error.message ?? "Error al guardar preferencias de notificaciones");
-      }
-
-      return input;
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["notification-preferences", userId ?? null] });
-    },
-  });
-}
-
-export function useMarkNotificationReadMutation(userId: string | null) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (notificationId: number) => {
-      if (!supabase) throw new Error("Supabase no está configurado.");
-      const { error } = await supabase
-        .from("notifications")
-        .update({ status: "read", read_at: new Date().toISOString() })
-        .eq("id", notificationId);
-      if (error) throw new Error(error.message ?? "Error de base de datos");
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["notifications", userId] });
-    },
-  });
-}
-
-export function useMarkAllNotificationsReadMutation(userId: string | null) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async () => {
-      if (!supabase || !userId) throw new Error("Usuario no disponible.");
-      const { error } = await supabase
-        .from("notifications")
-        .update({ status: "read", read_at: new Date().toISOString() })
-        .eq("user_id", userId)
-        .neq("status", "read");
-      if (error) throw new Error(error.message ?? "Error de base de datos");
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["notifications", userId] });
-    },
-  });
-}
-
-export function useMarkNotificationUnreadMutation(userId: string | null) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (notificationId: number) => {
-      if (!supabase) throw new Error("Supabase no está configurado.");
-      const { error } = await supabase
-        .from("notifications")
-        .update({ status: "sent", read_at: null })
-        .eq("id", notificationId);
-      if (error) throw new Error(error.message ?? "Error de base de datos");
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["notifications", userId] });
-    },
-  });
-}
-
-export function useMarkAllNotificationsUnreadMutation(userId: string | null) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async () => {
-      if (!supabase || !userId) throw new Error("Usuario no disponible.");
-      const { error } = await supabase
-        .from("notifications")
-        .update({ status: "sent", read_at: null })
-        .eq("user_id", userId)
-        .eq("status", "read");
-      if (error) throw new Error(error.message ?? "Error de base de datos");
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["notifications", userId] });
-    },
-  });
-}
-
-export function useMarkNotificationsReadMutation(userId: string | null) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (notificationIds: number[]) => {
-      if (!supabase) throw new Error("Supabase no está configurado.");
-      if (!notificationIds.length) return;
-      const { error } = await supabase
-        .from("notifications")
-        .update({ status: "read", read_at: new Date().toISOString() })
-        .in("id", notificationIds);
-      if (error) throw new Error(error.message ?? "Error de base de datos");
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["notifications", userId] });
-    },
-  });
-}
-
-export function useMarkNotificationsUnreadMutation(userId: string | null) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (notificationIds: number[]) => {
-      if (!supabase) throw new Error("Supabase no está configurado.");
-      if (!notificationIds.length) return;
-      const { error } = await supabase
-        .from("notifications")
-        .update({ status: "sent", read_at: null })
-        .in("id", notificationIds);
-      if (error) throw new Error(error.message ?? "Error de base de datos");
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["notifications", userId] });
-    },
-  });
-}
-
-export function useDeleteNotificationMutation(userId: string | null) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (notificationId: number) => {
-      if (!supabase) throw new Error("Supabase no está configurado.");
-      const { error } = await supabase
-        .from("notifications")
-        .delete()
-        .eq("id", notificationId);
-      if (error) throw new Error(error.message ?? "Error de base de datos");
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["notifications", userId] });
-    },
-  });
-}
-
-export function useDeleteNotificationsMutation(userId: string | null) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (notificationIds: number[]) => {
-      if (!supabase) throw new Error("Supabase no está configurado.");
-      if (!notificationIds.length) return;
-      const { error } = await supabase
-        .from("notifications")
-        .delete()
-        .in("id", notificationIds);
-      if (error) throw new Error(error.message ?? "Error de base de datos");
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["notifications", userId] });
-    },
-  });
-}
+export {
+  useNotificationsQuery,
+  type NotificationPreferenceSummary,
+  useNotificationPreferencesQuery,
+  useUpdateNotificationPreferencesMutation,
+  useMarkNotificationReadMutation,
+  useMarkAllNotificationsReadMutation,
+  useMarkNotificationUnreadMutation,
+  useMarkAllNotificationsUnreadMutation,
+  useMarkNotificationsReadMutation,
+  useMarkNotificationsUnreadMutation,
+  useDeleteNotificationMutation,
+  useDeleteNotificationsMutation,
+} from "./notifications";
 
 // ─── Edge Function helper ─────────────────────────────────────────────────────
 
@@ -6798,200 +5653,17 @@ export function useUnlinkObligationShareMutation(workspaceId?: number | null) {
   });
 }
 
-// ─── Exchange Rates CRUD ───────────────────────────────────────────────────────
+// ─── Exchange Rates CRUD ──────────────────────────────────────────────────────────────────────
+// Movido a ./exchange-rates.ts. Se re-exporta para preservar imports existentes.
 
-export type ExchangeRateRecord = {
-  id: number;
-  fromCurrencyCode: string;
-  toCurrencyCode: string;
-  rate: number;
-  effectiveAt: string;
-  source: string | null;
-  notes: string | null;
-};
-
-export function useExchangeRatesQuery() {
-  return useQuery({
-    queryKey: ["exchange-rates"],
-    queryFn: async () => {
-      if (!supabase) throw new Error("Supabase no configurado");
-      const { data, error } = await supabase
-        .from("exchange_rates")
-        .select("id, from_currency_code, to_currency_code, rate, effective_at, source, notes")
-        .order("effective_at", { ascending: false });
-      if (error) throw new Error(error.message);
-      return (data ?? []).map((row: any) => ({
-        id: row.id as number,
-        fromCurrencyCode: row.from_currency_code as string,
-        toCurrencyCode: row.to_currency_code as string,
-        rate: toNum(row.rate),
-        effectiveAt: row.effective_at as string,
-        source: row.source as string | null,
-        notes: row.notes as string | null,
-      })) as ExchangeRateRecord[];
-    },
-  });
-}
-
-export function useCreateExchangeRateMutation() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (input: { fromCurrencyCode: string; toCurrencyCode: string; rate: number; notes?: string }) => {
-      if (!supabase) throw new Error("Supabase no configurado");
-      const { error } = await supabase.from("exchange_rates").insert({
-        from_currency_code: input.fromCurrencyCode.toUpperCase().trim(),
-        to_currency_code: input.toCurrencyCode.toUpperCase().trim(),
-        rate: input.rate,
-        effective_at: new Date().toISOString(),
-        source: "manual",
-        notes: input.notes?.trim() ?? null,
-      });
-      if (error) throw new Error(error.message);
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["exchange-rates"] });
-      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
-    },
-  });
-}
-
-export function useUpdateExchangeRateMutation() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (input: {
-      id: number;
-      fromCurrencyCode: string;
-      toCurrencyCode: string;
-      rate: number;
-      notes?: string;
-    }) => {
-      if (!supabase) throw new Error("Supabase no configurado");
-      const { error } = await supabase
-        .from("exchange_rates")
-        .update({
-          from_currency_code: input.fromCurrencyCode.toUpperCase().trim(),
-          to_currency_code: input.toCurrencyCode.toUpperCase().trim(),
-          rate: input.rate,
-          effective_at: new Date().toISOString(),
-          source: "manual",
-          notes: input.notes?.trim() ?? null,
-        })
-        .eq("id", input.id);
-      if (error) throw new Error(error.message);
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["exchange-rates"] });
-      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
-    },
-  });
-}
-
-async function upsertExchangeRateRow(input: {
-  fromCurrencyCode: string;
-  toCurrencyCode: string;
-  rate: number;
-  effectiveAt: string;
-  source: string;
-  notes: string | null;
-}) {
-  if (!supabase) throw new Error("Supabase no configurado");
-  const from = input.fromCurrencyCode.toUpperCase().trim();
-  const to = input.toCurrencyCode.toUpperCase().trim();
-  const { data: existing, error: selectError } = await supabase
-    .from("exchange_rates")
-    .select("id")
-    .eq("from_currency_code", from)
-    .eq("to_currency_code", to)
-    .order("effective_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (selectError) throw new Error(selectError.message);
-
-  const payload = {
-    from_currency_code: from,
-    to_currency_code: to,
-    rate: input.rate,
-    effective_at: input.effectiveAt,
-    source: input.source,
-    notes: input.notes,
-  };
-
-  if (existing?.id) {
-    const { error } = await supabase
-      .from("exchange_rates")
-      .update(payload)
-      .eq("id", existing.id);
-    if (error) throw new Error(error.message);
-    return Number(existing.id);
-  }
-
-  const { data, error } = await supabase
-    .from("exchange_rates")
-    .insert(payload)
-    .select("id")
-    .single();
-  if (error) throw new Error(error.message);
-  return Number(data.id);
-}
-
-export function useSyncExchangeRatePairMutation() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (input: { fromCurrencyCode: string; toCurrencyCode: string }) => {
-      const liveRate = await fetchLiveExchangeRate(input.fromCurrencyCode, input.toCurrencyCode);
-      const from = liveRate.fromCurrencyCode.toUpperCase().trim();
-      const to = liveRate.toCurrencyCode.toUpperCase().trim();
-      const source = `api:${liveRate.provider}`;
-
-      const directId = await upsertExchangeRateRow({
-        fromCurrencyCode: from,
-        toCurrencyCode: to,
-        rate: liveRate.rate,
-        effectiveAt: liveRate.effectiveAt,
-        source,
-        notes: "Sincronizado automáticamente",
-      });
-
-      const inverseRate = 1 / liveRate.rate;
-      let inverseId: number | null = null;
-      if (Number.isFinite(inverseRate) && inverseRate > 0) {
-        inverseId = await upsertExchangeRateRow({
-          fromCurrencyCode: to,
-          toCurrencyCode: from,
-          rate: inverseRate,
-          effectiveAt: liveRate.effectiveAt,
-          source,
-          notes: `Inverso calculado desde ${from}→${to}`,
-        });
-      }
-
-      return {
-        ...liveRate,
-        directId,
-        inverseId,
-      } satisfies LiveExchangeRate & { directId: number; inverseId: number | null };
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["exchange-rates"] });
-      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
-    },
-  });
-}
-
-export function useDeleteExchangeRateMutation() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (id: number) => {
-      if (!supabase) throw new Error("Supabase no configurado");
-      const { error } = await supabase.from("exchange_rates").delete().eq("id", id);
-      if (error) throw new Error(error.message);
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["exchange-rates"] });
-      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
-    },
-  });
-}
+export {
+  type ExchangeRateRecord,
+  useExchangeRatesQuery,
+  useCreateExchangeRateMutation,
+  useUpdateExchangeRateMutation,
+  useSyncExchangeRatePairMutation,
+  useDeleteExchangeRateMutation,
+} from "./exchange-rates";
 
 // ─── Obligation Payment Requests ──────────────────────────────────────────────
 

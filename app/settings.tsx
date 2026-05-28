@@ -6,6 +6,7 @@ import {
   Animated,
   Image,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -318,14 +319,36 @@ function SettingsScreen() {
   async function handlePushReconnect() {
     if (!profile?.id) return;
     try {
-      const token = await registerForPushNotifications();
-      if (!token) {
-        showToast("No se pudo obtener permiso o token push en este dispositivo", "warning");
+      const result = await registerForPushNotifications();
+      if (result.ok) {
+        await savePushTokenToSupabase(profile.id, result.token);
+        await queryClient.invalidateQueries({ queryKey: ["notification-preferences", profile.id] });
+        showToast("Notificaciones push activadas en este dispositivo", "success");
         return;
       }
-      await savePushTokenToSupabase(profile.id, token);
-      await queryClient.invalidateQueries({ queryKey: ["notification-preferences", profile.id] });
-      showToast("Push reactivado en este dispositivo", "success");
+      switch (result.reason) {
+        case "permissions_denied":
+          showToast(
+            "Permisos denegados. Abre los ajustes del sistema para concederlos.",
+            "warning",
+          );
+          break;
+        case "expo_go":
+          showToast(
+            "Las notificaciones push no funcionan en Expo Go. Necesitas la app instalada desde Play Store.",
+            "warning",
+          );
+          break;
+        case "not_device":
+          showToast("Las notificaciones push no están disponibles en simuladores.", "warning");
+          break;
+        case "module_unavailable":
+          showToast("El módulo de notificaciones no está disponible en este build.", "warning");
+          break;
+        case "network_error":
+          showToast("No pudimos contactar al servidor de Expo. Revisa tu conexión y reintenta.", "warning");
+          break;
+      }
     } catch (err: unknown) {
       showToast(humanizeError(err), "error");
     }
@@ -461,22 +484,33 @@ function SettingsScreen() {
               <ChevronRight size={16} color={COLORS.storm} />
             </TouchableOpacity>
             <View style={styles.pushStatusBox}>
-              <Text style={styles.pushStatusTitle}>
-                Push {pushEnabled && pushToken ? "activo" : "pendiente"}
-              </Text>
+              <Text style={styles.pushStatusTitle}>Notificaciones push</Text>
               <Text style={styles.pushStatusDesc}>
                 {pushEnabled && pushToken
-                  ? `Token registrado para ${pushPlatform ?? Platform.OS}.`
-                  : "Este dispositivo no tiene token push activo. Reintenta permisos si no recibes alertas."}
+                  ? `Activo en este dispositivo (${pushPlatform ?? Platform.OS}). Recibirás alertas y recordatorios.`
+                  : "No configurado en este dispositivo. Si denegaste los permisos, ábrelos en los ajustes del sistema y luego pulsa reintentar."}
               </Text>
-              <TouchableOpacity
-                style={styles.pushReconnectBtn}
-                onPress={() => void handlePushReconnect()}
-                disabled={notificationPreferencesQuery.isLoading}
-                activeOpacity={0.84}
-              >
-                <Text style={styles.pushReconnectText}>Reintentar activar push</Text>
-              </TouchableOpacity>
+              <View style={styles.pushButtonRow}>
+                <TouchableOpacity
+                  style={styles.pushReconnectBtn}
+                  onPress={() => void handlePushReconnect()}
+                  disabled={notificationPreferencesQuery.isLoading}
+                  activeOpacity={0.84}
+                >
+                  <Text style={styles.pushReconnectText}>
+                    {pushEnabled && pushToken ? "Reintentar activación" : "Activar push"}
+                  </Text>
+                </TouchableOpacity>
+                {!(pushEnabled && pushToken) ? (
+                  <TouchableOpacity
+                    style={styles.pushSecondaryBtn}
+                    onPress={() => void Linking.openSettings()}
+                    activeOpacity={0.84}
+                  >
+                    <Text style={styles.pushSecondaryText}>Abrir ajustes del sistema</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
             </View>
             <View style={styles.switchRow}>
               <View style={styles.switchInfo}>
@@ -781,9 +815,13 @@ const styles = StyleSheet.create({
     color: COLORS.storm,
     lineHeight: 18,
   },
-  pushReconnectBtn: {
-    alignSelf: "flex-start",
+  pushButtonRow: {
     marginTop: SPACING.xs,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: SPACING.xs,
+  },
+  pushReconnectBtn: {
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.xs + 2,
     borderRadius: RADIUS.full,
@@ -795,6 +833,19 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.xs,
     fontFamily: FONT_FAMILY.bodySemibold,
     color: COLORS.primary,
+  },
+  pushSecondaryBtn: {
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs + 2,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    borderColor: SURFACE.cardBorder,
+    backgroundColor: "transparent",
+  },
+  pushSecondaryText: {
+    fontSize: FONT_SIZE.xs,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    color: COLORS.storm,
   },
   // Sheet styles
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },

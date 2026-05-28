@@ -6,8 +6,14 @@ import { AccountPicker } from "./AccountPicker";
 import { BottomSheet } from "../ui/BottomSheet";
 import { Button } from "../ui/Button";
 import { DatePickerInput } from "../ui/DatePickerInput";
-import { SmartSuggestion, SmartSuggestionEmpty, SmartSuggestionLoading } from "../ui/SmartSuggestion";
 import { CategorySuggestionBlock } from "./QuickDetectedMovementSuggestionBlock";
+import {
+  BudgetBlock,
+  CounterpartySuggestionBlock,
+  DescriptionCleanupBlock,
+  RecurringSuggestionBlock,
+  RiskBlock,
+} from "./QuickDetectedMovementBlocks";
 import { useAuth } from "../../lib/auth-context";
 import { useWorkspace } from "../../lib/workspace-context";
 import { useToast } from "../../hooks/useToast";
@@ -44,7 +50,6 @@ import { useMovementRecurringAiSuggestion } from "../../hooks/useMovementRecurri
 import { useMovementRiskExplanation } from "../../hooks/useMovementRiskExplanation";
 import { useMovementBudgetImpact } from "../../hooks/useMovementBudgetImpact";
 import {
-  recurringFrequencyLabel,
   recurringFrequencyToSubscriptionFields,
   type MovementRecurringHistoryItem,
   type MovementRecurringSuggestionResult,
@@ -967,90 +972,30 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
         />
         {!isTransfer && (
         <>
-        {descriptionCleanupLoading ? (
-          <SmartSuggestionLoading
-            title="Limpiando descripción"
-            detail="Estamos revisando si el texto de la notificación puede quedar más claro."
-          />
-        ) : null}
-        {descriptionCleanup ? (
-          <SmartSuggestion
-            label={descriptionCleanup.cleanedDescription}
-            detail={`Descripción limpia · ${Math.round(descriptionCleanup.confidence * 100)}% · ${descriptionCleanup.reasons.join(" · ")}`}
-            onApply={() => {
-              setCleanupAppliedText(descriptionCleanup.cleanedDescription);
-              setDescription(descriptionCleanup.cleanedDescription);
-            }}
-          />
-        ) : null}
-        {counterpartySuggestionLoading ? (
-          <SmartSuggestionLoading
-            title="Buscando contraparte"
-            detail="Revisando si este movimiento corresponde a un contacto o comercio."
-          />
-        ) : counterpartySuggestionAttempted && !counterpartySuggestion ? (
-          <SmartSuggestionEmpty message="Sin sugerencia de contraparte" />
-        ) : null}
-        {!selectedCounterparty && counterpartySuggestion ? (
-          <SmartSuggestion
-            label={
-              counterpartySuggestion.type === "new_counterparty" && counterpartySuggestion.newCounterpartyName
-                ? `Crear contraparte "${counterpartySuggestion.newCounterpartyName}"`
-                : counterpartySuggestion.counterpartyName ?? "Contraparte sugerida"
-            }
-            detail={`${counterpartySuggestion.source === "deepseek" ? "Mejor sugerencia · " : ""}${Math.round(counterpartySuggestion.confidence * 100)}% · ${counterpartySuggestion.reasons.join(" · ")}`}
-            onApply={() => void applyCounterpartySuggestion(counterpartySuggestion)}
-          />
-        ) : null}
-        {recurringSuggestionLoading ? (
-          <SmartSuggestionLoading
-            title="Detectando recurrencia"
-            detail="Revisando si este movimiento se repite como cargo o ingreso fijo."
-          />
-        ) : recurringSuggestionAttempted && !recurringSuggestion && !linkedSubscriptionId && !linkedRecurringIncomeId ? (
-          <SmartSuggestionEmpty message="Sin detección de recurrencia" />
-        ) : null}
-        {!linkedSubscriptionId && !linkedRecurringIncomeId && recurringSuggestion ? (
-          <SmartSuggestion
-            label={
-              recurringSuggestion.type === "recurring_income"
-                ? `Crear ingreso fijo "${recurringSuggestion.name}"`
-                : `Crear suscripción "${recurringSuggestion.name}"`
-            }
-            detail={`${recurringSuggestion.source === "deepseek" ? "Mejor sugerencia · " : ""}${Math.round(recurringSuggestion.confidence * 100)}% · ${recurringFrequencyLabel(recurringSuggestion.frequency)} · ${recurringSuggestion.reasons.join(" · ")}`}
-            onApply={() => void applyRecurringSuggestion(recurringSuggestion)}
-          />
-        ) : null}
-        {movementRiskLoading ? (
-          <SmartSuggestionLoading
-            title="Revisando antes de guardar"
-            detail="Analizando si este movimiento podría estar repetido o fuera de patrón."
-          />
-        ) : null}
-        {movementRisk ? (
-          <View style={styles.riskWarning}>
-            <Text style={styles.riskWarningTitle}>{movementRisk.title}</Text>
-            <Text style={styles.riskWarningText}>
-              {movementRisk.source === "deepseek" ? "Revisión inteligente: " : ""}
-              {movementRisk.explanation}
-            </Text>
-          </View>
-        ) : null}
-        {budgetImpactLoading ? (
-          <SmartSuggestionLoading
-            title="Revisando presupuesto"
-            detail="Calculando si este movimiento afecta un presupuesto sensible."
-          />
-        ) : null}
-        {budgetImpact ? (
-          <View style={styles.riskWarning}>
-            <Text style={styles.riskWarningTitle}>{budgetImpact.title}</Text>
-            <Text style={styles.riskWarningText}>
-              {budgetImpact.source === "deepseek" ? "Recomendación inteligente: " : ""}
-              {budgetImpact.recommendation}
-            </Text>
-          </View>
-        ) : null}
+        <DescriptionCleanupBlock
+          loading={descriptionCleanupLoading}
+          cleanup={descriptionCleanup}
+          onApply={(cleaned) => {
+            setCleanupAppliedText(cleaned);
+            setDescription(cleaned);
+          }}
+        />
+        <CounterpartySuggestionBlock
+          loading={counterpartySuggestionLoading}
+          attempted={counterpartySuggestionAttempted}
+          hasSelectedCounterparty={Boolean(selectedCounterparty)}
+          suggestion={counterpartySuggestion}
+          onApply={(sug) => void applyCounterpartySuggestion(sug)}
+        />
+        <RecurringSuggestionBlock
+          loading={recurringSuggestionLoading}
+          attempted={recurringSuggestionAttempted}
+          alreadyLinked={Boolean(linkedSubscriptionId || linkedRecurringIncomeId)}
+          suggestion={recurringSuggestion}
+          onApply={(sug) => void applyRecurringSuggestion(sug)}
+        />
+        <RiskBlock loading={movementRiskLoading} risk={movementRisk} />
+        <BudgetBlock loading={budgetImpactLoading} impact={budgetImpact} />
         </>
         )}
 
@@ -1228,24 +1173,6 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.sm,
     padding: SPACING.md,
     textAlignVertical: "top",
-  },
-  riskWarning: {
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: "rgba(245,181,82,0.35)",
-    backgroundColor: "rgba(245,181,82,0.10)",
-    padding: SPACING.md,
-    gap: 2,
-  },
-  riskWarningTitle: {
-    color: COLORS.gold,
-    fontFamily: FONT_FAMILY.bodySemibold,
-    fontSize: FONT_SIZE.sm,
-  },
-  riskWarningText: {
-    color: COLORS.textMuted,
-    fontFamily: FONT_FAMILY.body,
-    fontSize: FONT_SIZE.xs,
   },
   actions: { gap: SPACING.sm, paddingTop: SPACING.sm },
   resolvedContainer: { gap: SPACING.md, paddingVertical: SPACING.lg },

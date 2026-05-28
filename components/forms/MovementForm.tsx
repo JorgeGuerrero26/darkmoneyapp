@@ -1,14 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDownCircle, ArrowUpCircle, ArrowLeftRight, AlertCircle } from "lucide-react-native";
 import type { TextInput } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
-import {
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { StyleSheet, View } from "react-native";
 
 import { useUiStore } from "../../store/ui-store";
 import {
@@ -51,7 +44,6 @@ import { useMovementRecurringAiSuggestion } from "../../hooks/useMovementRecurri
 import { useMovementRiskExplanation } from "../../hooks/useMovementRiskExplanation";
 import { useMovementBudgetImpact } from "../../hooks/useMovementBudgetImpact";
 import {
-  recurringFrequencyLabel,
   recurringFrequencyToSubscriptionFields,
   type MovementRecurringHistoryItem,
   type MovementRecurringSuggestionResult,
@@ -59,21 +51,21 @@ import {
 import type { MovementRiskItem } from "../../lib/movement-risk-analysis";
 import { BottomSheet } from "../ui/BottomSheet";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
-import { Button } from "../ui/Button";
-import { Input } from "../ui/Input";
-import { CurrencyInput } from "../ui/CurrencyInput";
-import { BalanceImpactPreview } from "../domain/BalanceImpactPreview";
-import { AttachmentPicker, type Attachment } from "../domain/AttachmentPicker";
-import { DatePickerInput } from "../ui/DatePickerInput";
-import { SmartSuggestion, SmartSuggestionEmpty, SmartSuggestionLoading } from "../ui/SmartSuggestion";
+import { type Attachment } from "../domain/AttachmentPicker";
 import { buildCategorySuggestionCandidates } from "../../services/analytics/category-suggestions";
 import { normalizeAnalyticsText } from "../../services/analytics/movement-features";
 import { sortByName } from "../../lib/sort-locale";
-import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
-import type { MovementType, MovementStatus, MovementRecord, CategorySummary, CounterpartySummary, ExchangeRateSummary } from "../../types/domain";
-import { AccountPicker } from "../domain/AccountPicker";
+import { COLORS, SPACING, SURFACE } from "../../constants/theme";
+import type { MovementType, MovementStatus, MovementRecord, ExchangeRateSummary } from "../../types/domain";
 import { useMovementCreationController } from "../../features/movements/hooks/useMovementCreationController";
 import { buildMovementCreateInput, buildMovementUpdateInput } from "../../features/movements/lib/movement-save-contract";
+import {
+  validateMovementForm,
+  type MovementFormWarnings,
+} from "../../features/movements/lib/form-validation";
+import { StepTypeAndStatus } from "../../features/movements/components/form/steps/StepTypeAndStatus";
+import { StepAccountsAndAmounts } from "../../features/movements/components/form/steps/StepAccountsAndAmounts";
+import { StepDetails } from "../../features/movements/components/form/steps/StepDetails";
 
 type Props = {
   visible: boolean;
@@ -212,12 +204,6 @@ function parseDecimalInput(value: string) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
-function formatShortDate(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleDateString("es-PE", { day: "2-digit", month: "short" });
-}
-
 function findTransferExchangeRate(
   exchangeRates: ExchangeRateSummary[],
   fromCurrencyCode: string,
@@ -249,18 +235,6 @@ function findTransferExchangeRate(
     label: formatExchangeRateLabel(from, to, resolvedRate),
   };
 }
-
-const TYPE_OPTIONS: { type: MovementType; label: string; Icon: typeof ArrowDownCircle; color: string }[] = [
-  { type: "expense",  label: "Gasto",        Icon: ArrowDownCircle, color: COLORS.expense  },
-  { type: "income",   label: "Ingreso",       Icon: ArrowUpCircle,   color: COLORS.income   },
-  { type: "transfer", label: "Transferencia", Icon: ArrowLeftRight,  color: COLORS.transfer },
-];
-
-const STATUS_OPTIONS: { status: MovementStatus; label: string }[] = [
-  { status: "posted",  label: "Confirmado" },
-  { status: "pending", label: "Pendiente"  },
-  { status: "planned", label: "Planificado" },
-];
 
 function getInitialForm(defaultType: MovementType): FormState {
   return {
@@ -334,6 +308,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   const [discardVisible, setDiscardVisible] = useState(false);
   const [form, setForm] = useState<FormState>(() => getInitialForm(defaultType));
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
+  const [warnings, setWarnings] = useState<MovementFormWarnings>({});
   const [submitError, setSubmitError] = useState("");
   const [cleanupAppliedText, setCleanupAppliedText] = useState<string | null>(null);
   const [isClosingAfterSubmit, setIsClosingAfterSubmit] = useState(false);
@@ -795,6 +770,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
       setForm(initial);
     }
     setErrors({});
+    setWarnings({});
     setSubmitError("");
     setAttachments([]);
     setSavedMovementId(editMovement?.id);
@@ -1202,40 +1178,62 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   }, [isEditing, originalDestinationAccount, editOriginalDestAmt, destinationAccount?.id]);
   const hasAttachmentChanges = attachmentSignature !== initialAttachmentSignatureRef.current;
 
+  // Live warnings (overdraft, fecha futura) — barato, pura, sin re-render extra.
+  useEffect(() => {
+    const result = validateMovementForm(
+      {
+        movementType: form.movementType,
+        status: form.status,
+        sourceAccountId: form.sourceAccountId,
+        destinationAccountId: form.destinationAccountId,
+        sourceAmount: form.sourceAmount,
+        destinationAmount: form.destinationAmount,
+        occurredAt: form.occurredAt,
+      },
+      {
+        sourceCurrencyCode: sourceAccount?.currencyCode ?? null,
+        destinationCurrencyCode: destinationAccount?.currencyCode ?? null,
+        hasTransferFxAvailable: Boolean(transferManualRate || transferBaseFxSuggestion),
+        sourceAccountBalance: sourceAccount?.currentBalance ?? null,
+        todayYmd: todayPeru(),
+      },
+    );
+    setWarnings(result.warnings);
+  }, [
+    form,
+    sourceAccount,
+    destinationAccount,
+    transferManualRate,
+    transferBaseFxSuggestion,
+  ]);
+
   // --- Validation per step ---
   function validateStep1(): boolean {
     return true; // type is always selected
   }
 
   function validateStep2(): boolean {
-    const newErrors: typeof errors = {};
-    if (!form.sourceAccountId && form.movementType !== "income") {
-      newErrors.sourceAccountId = "Selecciona una cuenta";
-    }
-    if (form.movementType === "income" && !form.destinationAccountId) {
-      newErrors.destinationAccountId = "Selecciona una cuenta de destino";
-    }
-    if (form.movementType === "transfer") {
-      if (!form.destinationAccountId) newErrors.destinationAccountId = "Selecciona cuenta destino";
-      if (form.sourceAccountId === form.destinationAccountId) {
-        newErrors.destinationAccountId = "Debe ser una cuenta diferente";
-      }
-      if (transferCurrenciesDiffer) {
-        if (!transferManualRate && !transferBaseFxSuggestion) {
-          newErrors.destinationAmount = "No se pudo resolver el tipo de cambio";
-        } else if (!form.destinationAmount) {
-          newErrors.destinationAmount = "Ingresa monto destino";
-        }
-      }
-    }
-    if (!form.sourceAmount && form.movementType !== "income") {
-      newErrors.sourceAmount = "Ingresa un monto";
-    }
-    if (form.movementType === "income" && !form.destinationAmount) {
-      newErrors.destinationAmount = "Ingresa un monto";
-    }
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    const result = validateMovementForm(
+      {
+        movementType: form.movementType,
+        status: form.status,
+        sourceAccountId: form.sourceAccountId,
+        destinationAccountId: form.destinationAccountId,
+        sourceAmount: form.sourceAmount,
+        destinationAmount: form.destinationAmount,
+        occurredAt: form.occurredAt,
+      },
+      {
+        sourceCurrencyCode: sourceAccount?.currencyCode ?? null,
+        destinationCurrencyCode: destinationAccount?.currencyCode ?? null,
+        hasTransferFxAvailable: Boolean(transferManualRate || transferBaseFxSuggestion),
+        sourceAccountBalance: sourceAccount?.currentBalance ?? null,
+        todayYmd: todayPeru(),
+      },
+    );
+    setErrors(result.errors);
+    setWarnings(result.warnings);
+    return result.valid;
   }
 
   function validateStep3(): boolean {
@@ -1461,7 +1459,12 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     >
       {/* Step indicator · hidden when editing */}
       {!isEditing ? (
-        <View style={styles.stepRow}>
+        <View
+          style={styles.stepRow}
+          accessibilityRole="progressbar"
+          accessibilityLabel={`Paso ${step} de 3: ${stepTitle}`}
+          accessibilityValue={{ min: 1, max: 3, now: step }}
+        >
           {([1, 2, 3] as Step[]).map((s) => (
             <View key={s} style={[styles.stepDot, step >= s && styles.stepDotActive]} />
           ))}
@@ -1469,227 +1472,75 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
       ) : null}
 
       {/* -- STEP 1: type + status -- */}
-      {step === 1 && (
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Tipo</Text>
-          <View style={styles.typeGrid}>
-            {TYPE_OPTIONS.map((opt) => {
-              const isActive = form.movementType === opt.type;
-              return (
-                <View
-                  key={opt.type}
-                  style={[
-                    styles.typeButtonWrap,
-                    isActive && {
-                      borderColor: opt.color + "AA",
-                      borderTopColor: opt.color + "CC",
-                    },
-                  ]}
-                >
-                  <TouchableOpacity
-                    style={styles.typeButtonInner}
-                    onPress={() => {
-                      setTransferDestinationEdited(false);
-                      patch({ movementType: opt.type });
-                    }}
-                    activeOpacity={0.75}
-                  >
-                    <opt.Icon size={26} color={isActive ? opt.color : COLORS.storm} />
-                    <Text style={[styles.typeLabel, isActive && { color: opt.color }]}>
-                      {opt.label}
-                    </Text>
-                    {isActive && <View style={[styles.typeActiveDot, { backgroundColor: opt.color }]} />}
-                  </TouchableOpacity>
-                </View>
-              );
-            })}
-          </View>
-
-          {/* Status · hidden for transfers (always posted) */}
-          {form.movementType !== "transfer" ? (
-            <>
-              <Text style={[styles.sectionLabel, { marginTop: SPACING.md }]}>Estado</Text>
-              <View style={styles.statusRow}>
-                {STATUS_OPTIONS.map((opt) => (
-                  <TouchableOpacity
-                    key={opt.status}
-                    style={[styles.statusPill, form.status === opt.status && styles.statusPillActive]}
-                    onPress={() => patch({ status: opt.status })}
-                    activeOpacity={0.75}
-                  >
-                    <Text style={[styles.statusText, form.status === opt.status && styles.statusTextActive]}>
-                      {opt.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </>
-          ) : null}
-
-          <Button label="Siguiente →" onPress={goNext} style={styles.btn} />
-        </View>
-      )}
+      {step === 1 ? (
+        <StepTypeAndStatus
+          movementType={form.movementType}
+          status={form.status}
+          onChangeType={(type) => {
+            setTransferDestinationEdited(false);
+            patch({ movementType: type });
+          }}
+          onChangeStatus={(status) => patch({ status })}
+          onNext={goNext}
+        />
+      ) : null}
 
       {/* -- STEP 2: amount + accounts -- */}
-      {step === 2 && (
-        <View style={styles.section}>
-          {/* Source amount / account (for expense and transfer) */}
-          {form.movementType !== "income" && (
-            <>
-              <CurrencyInput
-                label={form.movementType === "transfer" ? "Monto origen" : "Monto"}
-                value={form.sourceAmount}
-                onChangeText={(v) => patch({ sourceAmount: v })}
-                currencyCode={sourceAccount?.currencyCode ?? baseCurrency}
-                error={errors.sourceAmount}
-              />
-              <AccountPicker
-                label="Cuenta origen"
-                accounts={activeAccountsSorted}
-                selectedId={form.sourceAccountId}
-                onSelect={(id) => {
-                  if (form.movementType === "transfer") setTransferDestinationEdited(false);
-                  patch({ sourceAccountId: id });
-                }}
-                error={errors.sourceAccountId as string | undefined}
-              />
-            </>
-          )}
-
-          {/* Destination account + amount (income, transfer) */}
-          {(form.movementType === "income" || form.movementType === "transfer") && (
-            <>
-              <AccountPicker
-                label="Cuenta destino"
-                accounts={destinationAccountsSorted}
-                selectedId={form.destinationAccountId}
-                onSelect={(id) => {
-                  if (form.movementType === "transfer") setTransferDestinationEdited(false);
-                  patch({ destinationAccountId: id });
-                }}
-                error={errors.destinationAccountId as string | undefined}
-              />
-              {/* Income amount */}
-              {form.movementType === "income" && (
-                <CurrencyInput
-                  label="Monto"
-                  value={form.destinationAmount}
-                  onChangeText={(v) => patch({ destinationAmount: v })}
-                  currencyCode={destinationAccount?.currencyCode ?? baseCurrency}
-                  error={errors.destinationAmount}
-                />
-              )}
-              {/* Transfer destination amount · only when currencies differ */}
-              {form.movementType === "transfer" && transferCurrenciesDiffer && (
-                <CurrencyInput
-                  label={`Monto destino (${destinationAccount?.currencyCode ?? ""})`}
-                  value={form.destinationAmount}
-                  onChangeText={(v) => {
-                    setTransferDestinationEdited(true);
-                    patch({ destinationAmount: v });
-                  }}
-                  currencyCode={destinationAccount?.currencyCode ?? baseCurrency}
-                  error={errors.destinationAmount}
-                />
-              )}
-              {form.movementType === "transfer" && transferCurrenciesDiffer && sourceAccount && destinationAccount ? (
-                <Input
-                  label={`Tipo de cambio (${sourceAccount.currencyCode} → ${destinationAccount.currencyCode})`}
-                  value={transferRateInput}
-                  onChangeText={(value) => {
-                    setTransferRateEdited(true);
-                    setTransferDestinationEdited(false);
-                    setTransferRateInput(value);
-                  }}
-                  placeholder="0.0000"
-                  keyboardType="decimal-pad"
-                  hint={
-                    syncExchangeRatePair.isPending
-                      ? "Actualizando desde la API..."
-                      : effectiveTransferFxSuggestion?.source === "api"
-                        ? `Actualizado con ${effectiveTransferFxSuggestion.provider ?? "API"}${effectiveTransferFxSuggestion.effectiveAt ? ` · ${formatShortDate(effectiveTransferFxSuggestion.effectiveAt)}` : ""}`
-                        : effectiveTransferFxSuggestion?.source === "manual"
-                          ? "Usaremos esta tasa solo para este movimiento."
-                          : transferRateError && transferBaseFxSuggestion
-                            ? "No se pudo actualizar en línea; usamos el tipo de cambio guardado."
-                            : undefined
-                  }
-                />
-              ) : null}
-              {form.movementType === "transfer" && transferCurrenciesDiffer && sourceAccount && destinationAccount ? (
-                <View style={[
-                  styles.fxRateNote,
-                  !effectiveTransferFxSuggestion && styles.fxRateNoteMissing,
-                ]}>
-                  <Text style={[
-                    styles.fxRateNoteText,
-                    !effectiveTransferFxSuggestion && styles.fxRateNoteTextMissing,
-                  ]}>
-                    {effectiveTransferFxSuggestion
-                      ? `${transferDestinationEdited ? "Tipo de cambio recalculado con los montos" : "Monto destino calculado con"} ${effectiveTransferFxSuggestion.label}${transferInverseFxLabel ? `. Referencia inversa: ${transferInverseFxLabel}` : ""}.`
-                      : transferRateError
-                        ? `No pude obtener tipo de cambio ${sourceAccount.currencyCode} → ${destinationAccount.currencyCode}. Ingresa la tasa o el monto destino manualmente.`
-                        : `Buscando tipo de cambio ${sourceAccount.currencyCode} → ${destinationAccount.currencyCode}...`}
-                  </Text>
-                </View>
-              ) : null}
-              {form.movementType === "transfer" && !transferCurrenciesDiffer && sourceAccount && destinationAccount && (
-                <View style={styles.sameCurrencyNote}>
-                  <Text style={styles.sameCurrencyText}>
-                    Misma moneda ({sourceAccount.currencyCode}) · el monto se transfiere igual.
-                  </Text>
-                </View>
-              )}
-            </>
-          )}
-
-          {/* Balance impact preview */}
-          {sourceAccount && projectedSourceBalance !== null && (
-            <BalanceImpactPreview
-              label={isEditing && originalSourceAccount && originalSourceAccount.id !== sourceAccount.id
-                ? `Cuenta seleccionada: ${sourceAccount.name}`
-                : sourceAccount.name}
-              currentBalance={sourceAccount.currentBalance}
-              projectedBalance={projectedSourceBalance}
-              currencyCode={sourceAccount.currencyCode}
-            />
-          )}
-          {originalSourceAccount && revertedOriginalSourceBalance !== null && (
-            <BalanceImpactPreview
-              label={`Cuenta anterior: ${originalSourceAccount.name}`}
-              currentBalance={originalSourceAccount.currentBalance}
-              projectedBalance={revertedOriginalSourceBalance}
-              currencyCode={originalSourceAccount.currencyCode}
-            />
-          )}
-          {destinationAccount && projectedDestBalance !== null && (
-            <BalanceImpactPreview
-              label={isEditing && originalDestinationAccount && originalDestinationAccount.id !== destinationAccount.id
-                ? `Cuenta seleccionada: ${destinationAccount.name}`
-                : destinationAccount.name}
-              currentBalance={destinationAccount.currentBalance}
-              projectedBalance={projectedDestBalance}
-              currencyCode={destinationAccount.currencyCode}
-            />
-          )}
-          {originalDestinationAccount && revertedOriginalDestBalance !== null && (
-            <BalanceImpactPreview
-              label={`Cuenta anterior: ${originalDestinationAccount.name}`}
-              currentBalance={originalDestinationAccount.currentBalance}
-              projectedBalance={revertedOriginalDestBalance}
-              currencyCode={originalDestinationAccount.currencyCode}
-            />
-          )}
-
-          <View style={styles.navRow}>
-            <Button label="← Atrás" variant="ghost" onPress={goBack} style={styles.btnHalf} />
-            <Button label="Siguiente →" onPress={goNext} style={styles.btnHalf} />
-          </View>
-        </View>
-      )}
+      {step === 2 ? (
+        <StepAccountsAndAmounts
+          movementType={form.movementType}
+          isEditing={isEditing}
+          sourceAmount={form.sourceAmount}
+          destinationAmount={form.destinationAmount}
+          onChangeSourceAmount={(v) => patch({ sourceAmount: v })}
+          onChangeDestinationAmount={(v) => patch({ destinationAmount: v })}
+          onChangeTransferDestinationAmount={(v) => {
+            setTransferDestinationEdited(true);
+            patch({ destinationAmount: v });
+          }}
+          sourceAccountId={form.sourceAccountId}
+          destinationAccountId={form.destinationAccountId}
+          activeAccountsSorted={activeAccountsSorted}
+          destinationAccountsSorted={destinationAccountsSorted}
+          sourceAccount={sourceAccount}
+          destinationAccount={destinationAccount}
+          onChangeSourceAccount={(id) => {
+            if (form.movementType === "transfer") setTransferDestinationEdited(false);
+            patch({ sourceAccountId: id });
+          }}
+          onChangeDestinationAccount={(id) => {
+            if (form.movementType === "transfer") setTransferDestinationEdited(false);
+            patch({ destinationAccountId: id });
+          }}
+          transferCurrenciesDiffer={transferCurrenciesDiffer}
+          transferRateInput={transferRateInput}
+          onChangeTransferRate={(value) => {
+            setTransferRateEdited(true);
+            setTransferDestinationEdited(false);
+            setTransferRateInput(value);
+          }}
+          effectiveTransferFxSuggestion={effectiveTransferFxSuggestion}
+          transferBaseFxSuggestion={transferBaseFxSuggestion}
+          transferInverseFxLabel={transferInverseFxLabel}
+          transferDestinationEdited={transferDestinationEdited}
+          syncExchangeRateIsPending={syncExchangeRatePair.isPending}
+          transferRateError={Boolean(transferRateError)}
+          projectedSourceBalance={projectedSourceBalance}
+          revertedOriginalSourceBalance={revertedOriginalSourceBalance}
+          projectedDestBalance={projectedDestBalance}
+          revertedOriginalDestBalance={revertedOriginalDestBalance}
+          originalSourceAccount={originalSourceAccount}
+          originalDestinationAccount={originalDestinationAccount}
+          baseCurrencyCode={baseCurrency}
+          errors={errors}
+          warnings={warnings}
+          onBack={goBack}
+          onNext={goNext}
+        />
+      ) : null}
 
       {/* -- STEP 3: description + category + counterparty + date -- */}
-      {step === 3 && (() => {
+      {step === 3 ? (() => {
         const catSuggestion = catSuggestionId !== null
           ? categoriesForPicker.find((c) => c.id === catSuggestionId) ?? null
           : null;
@@ -1724,199 +1575,67 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
             : null
         );
         return (
-        <View style={styles.section}>
-          {movementRiskLoading ? (
-            <SmartSuggestionLoading
-              title="Revisando antes de guardar"
-              detail="Analizando si este movimiento podría estar repetido o fuera de patrón."
-            />
-          ) : null}
-          {movementRisk ? (
-            <View style={styles.duplicateWarning}>
-              <AlertCircle size={16} color={COLORS.gold} strokeWidth={2} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.duplicateWarningTitle}>{movementRisk.title}</Text>
-                <Text style={styles.duplicateWarningText}>
-                  {movementRisk.source === "deepseek" ? "Revisión inteligente: " : ""}
-                  {movementRisk.explanation}
-                </Text>
-              </View>
-            </View>
-          ) : null}
-          {budgetImpactLoading ? (
-            <SmartSuggestionLoading
-              title="Revisando presupuesto"
-              detail="Calculando si este movimiento afecta un presupuesto sensible."
-            />
-          ) : null}
-          {budgetImpact ? (
-            <View style={styles.duplicateWarning}>
-              <AlertCircle size={16} color={budgetImpact.severity === "high" ? COLORS.danger : COLORS.gold} strokeWidth={2} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.duplicateWarningTitle}>{budgetImpact.title}</Text>
-                <Text style={styles.duplicateWarningText}>
-                  {budgetImpact.source === "deepseek" ? "Recomendación inteligente: " : ""}
-                  {budgetImpact.recommendation}
-                </Text>
-              </View>
-            </View>
-          ) : null}
-
-          <Input
-            label="Descripción (opcional)"
-            placeholder="Se genera automáticamente si la dejas vacía"
-            value={form.description}
-            onChangeText={(v) => {
+          <StepDetails
+            isEditing={isEditing}
+            descriptionRef={descriptionRef}
+            notesRef={notesRef}
+            description={form.description}
+            onChangeDescription={(v) => {
               if (v !== cleanupAppliedText) setCleanupAppliedText(null);
               patch({ description: v });
             }}
-            autoFocus
-            ref={descriptionRef}
-            returnKeyType="next"
-            onSubmitEditing={() => notesRef.current?.focus()}
-          />
-          {descriptionCleanupLoading ? (
-            <SmartSuggestionLoading
-              title="Limpiando descripción"
-              detail="Estamos revisando si el texto puede quedar más claro antes de guardar."
-            />
-          ) : null}
-          {descriptionCleanup ? (
-            <SmartSuggestion
-              label={descriptionCleanup.cleanedDescription}
-              detail={`Descripción limpia · ${Math.round(descriptionCleanup.confidence * 100)}% · ${descriptionCleanup.reasons.join(" · ")}`}
-              onApply={() => {
-                setCleanupAppliedText(descriptionCleanup.cleanedDescription);
-                patch({ description: descriptionCleanup.cleanedDescription });
-              }}
-            />
-          ) : null}
-
-          <CategoryPicker
-            label="Categoría (opcional)"
-            categories={categoriesForPicker}
-            selectedId={form.categoryId}
-            onSelect={selectCategoryManually}
-          />
-          {aiCategorySuggestionLoading ? (
-            <SmartSuggestionLoading
-              detail={
-                localCategorySuggestion
-                  ? "Puede confirmar la sugerencia actual; si aparece una mejor, la actualizaremos."
-                  : "Buscando una categoría más precisa para este movimiento."
-              }
-            />
-          ) : aiCategorySuggestionAttempted && !categorySuggestionToShow ? (
-            <SmartSuggestionEmpty message="Sin sugerencia de categoría" />
-          ) : null}
-          {categorySuggestionToShow ? (
-            <SmartSuggestion
-              label={categorySuggestionToShow.categoryName}
-              detail={`${categorySuggestionToShow.source === "deepseek" ? "Mejor sugerencia · " : ""}${Math.round(categorySuggestionToShow.confidence * 100)}% · ${categorySuggestionToShow.reasons.join(" · ")}`}
-              onApply={() => void applyCategorySuggestion(categorySuggestionToShow)}
-            />
-          ) : null}
-
-          <CounterpartyPicker
-            label="Contraparte (opcional)"
-            counterparties={counterpartiesSorted}
-            selectedId={form.counterpartyId}
-            onSelect={(id) => patch({ counterpartyId: id })}
-          />
-          {aiCounterpartySuggestionLoading ? (
-            <SmartSuggestionLoading
-              title="Buscando contraparte"
-              detail="Revisando si este movimiento corresponde a un contacto o comercio."
-            />
-          ) : aiCounterpartySuggestionAttempted && !counterpartySuggestionToShow ? (
-            <SmartSuggestionEmpty message="Sin sugerencia de contraparte" />
-          ) : null}
-          {counterpartySuggestionToShow ? (
-            <SmartSuggestion
-              label={
-                counterpartySuggestionToShow.type === "new_counterparty" && counterpartySuggestionToShow.newCounterpartyName
-                  ? `Crear contraparte "${counterpartySuggestionToShow.newCounterpartyName}"`
-                  : counterpartySuggestionToShow.counterpartyName ?? "Contraparte sugerida"
-              }
-              detail={`${counterpartySuggestionToShow.source === "deepseek" ? "Mejor sugerencia · " : ""}${Math.round(counterpartySuggestionToShow.confidence * 100)}% · ${counterpartySuggestionToShow.reasons.join(" · ")}`}
-              onApply={() => void applyCounterpartySuggestion(counterpartySuggestionToShow)}
-            />
-          ) : null}
-          {recurringSuggestionLoading ? (
-            <SmartSuggestionLoading
-              title="Detectando recurrencia"
-              detail="Revisando si este movimiento se repite como cargo o ingreso fijo."
-            />
-          ) : recurringSuggestionAttempted && !recurringSuggestion && !linkedSubscriptionId && !linkedRecurringIncomeId ? (
-            <SmartSuggestionEmpty message="Sin detección de recurrencia" />
-          ) : null}
-          {!linkedSubscriptionId && !linkedRecurringIncomeId && recurringSuggestion ? (
-            <SmartSuggestion
-              label={
-                recurringSuggestion.type === "recurring_income"
-                  ? `Crear ingreso fijo "${recurringSuggestion.name}"`
-                  : `Crear suscripción "${recurringSuggestion.name}"`
-              }
-              detail={`${recurringSuggestion.source === "deepseek" ? "Mejor sugerencia · " : ""}${Math.round(recurringSuggestion.confidence * 100)}% · ${recurringFrequencyLabel(recurringSuggestion.frequency)} · ${recurringSuggestion.reasons.join(" · ")}`}
-              onApply={() => void applyRecurringSuggestion(recurringSuggestion)}
-            />
-          ) : null}
-          {accountSuggestion ? (
-            <SmartSuggestion
-              label={`Usar ${accountSuggestion.name}`}
-              detail="Normalmente usas esta cuenta con esa persona o comercio"
-              onApply={() => {
-                if (form.movementType === "income") patch({ destinationAccountId: accountSuggestion.id });
-                else patch({ sourceAccountId: accountSuggestion.id });
-              }}
-            />
-          ) : null}
-
-          <DatePickerInput
-            label="Fecha"
-            value={form.occurredAt}
-            onChange={(v) => patch({ occurredAt: v })}
-          />
-
-          <Input
-            label="Notas (opcional)"
-            placeholder="Notas adicionales…"
-            value={form.notes}
-            onChangeText={(v) => patch({ notes: v })}
-            multiline
-            numberOfLines={3}
-            style={styles.notesInput}
-            ref={notesRef}
-            returnKeyType="done"
-            blurOnSubmit
-          />
-
-          <AttachmentPicker
-            movementId={savedMovementId}
+            notes={form.notes}
+            onChangeNotes={(v) => patch({ notes: v })}
+            movementRiskLoading={movementRiskLoading}
+            movementRisk={movementRisk}
+            budgetImpactLoading={budgetImpactLoading}
+            budgetImpact={budgetImpact}
+            descriptionCleanupLoading={descriptionCleanupLoading}
+            descriptionCleanup={descriptionCleanup}
+            onApplyDescriptionCleanup={(cleaned) => {
+              setCleanupAppliedText(cleaned);
+              patch({ description: cleaned });
+            }}
+            categoriesForPicker={categoriesForPicker}
+            categoryId={form.categoryId}
+            onSelectCategory={selectCategoryManually}
+            aiCategorySuggestionLoading={aiCategorySuggestionLoading}
+            aiCategorySuggestionAttempted={aiCategorySuggestionAttempted}
+            hasLocalCategorySuggestion={Boolean(localCategorySuggestion)}
+            categorySuggestionToShow={categorySuggestionToShow}
+            onApplyCategorySuggestion={(sug) => void applyCategorySuggestion(sug)}
+            counterpartiesSorted={counterpartiesSorted}
+            counterpartyId={form.counterpartyId}
+            onSelectCounterparty={(id) => patch({ counterpartyId: id })}
+            aiCounterpartySuggestionLoading={aiCounterpartySuggestionLoading}
+            aiCounterpartySuggestionAttempted={aiCounterpartySuggestionAttempted}
+            counterpartySuggestionToShow={counterpartySuggestionToShow}
+            onApplyCounterpartySuggestion={(sug) => void applyCounterpartySuggestion(sug)}
+            recurringSuggestionLoading={recurringSuggestionLoading}
+            recurringSuggestionAttempted={recurringSuggestionAttempted}
+            recurringAlreadyLinked={Boolean(linkedSubscriptionId || linkedRecurringIncomeId)}
+            recurringSuggestion={recurringSuggestion}
+            onApplyRecurringSuggestion={(sug) => void applyRecurringSuggestion(sug)}
+            accountSuggestion={accountSuggestion}
+            movementType={form.movementType}
+            onPickSuggestedAccount={(account) => {
+              if (form.movementType === "income") patch({ destinationAccountId: account.id });
+              else patch({ sourceAccountId: account.id });
+            }}
+            occurredAt={form.occurredAt}
+            onChangeOccurredAt={(v) => patch({ occurredAt: v })}
+            warnings={warnings}
             attachments={attachments}
-            onChange={setAttachments}
-            isHydratingExisting={isEditing && editMovementAttachmentsLoading}
+            onChangeAttachments={setAttachments}
+            savedMovementId={savedMovementId}
+            isHydratingExistingAttachments={editMovementAttachmentsLoading}
+            submitError={submitError}
+            submitLoading={createMovement.isPending || updateMovement.isPending || createSubscription.isPending || createRecurringIncome.isPending}
+            onBack={goBack}
+            onSubmit={handleSubmit}
           />
-
-          {submitError ? (
-            <View style={styles.submitErrorBanner}>
-              <AlertCircle size={16} color={COLORS.danger} strokeWidth={2} />
-              <Text style={styles.submitErrorText}>{submitError}</Text>
-            </View>
-          ) : null}
-
-          <View style={styles.navRow}>
-            <Button label="← Atrás" variant="ghost" onPress={goBack} style={styles.btnHalf} />
-            <Button
-              label={isEditing ? "Actualizar" : "Guardar"}
-              onPress={handleSubmit}
-              loading={createMovement.isPending || updateMovement.isPending || createSubscription.isPending || createRecurringIncome.isPending}
-              style={styles.btnHalf}
-            />
-          </View>
-        </View>
         );
-      })()}
+      })() : null}
     </BottomSheet>
 
     <ConfirmDialog
@@ -1934,85 +1653,6 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
 
 // -- Sub-components ------------------------------------------------------------
 
-function CounterpartyPicker({
-  label,
-  counterparties,
-  selectedId,
-  onSelect,
-}: {
-  label: string;
-  counterparties: CounterpartySummary[];
-  selectedId: number | null;
-  onSelect: (id: number | null) => void;
-}) {
-  if (counterparties.length === 0) return null;
-  return (
-    <View style={styles.pickerWrap}>
-      <Text style={styles.sectionLabel}>{label}</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.accountRow}>
-        <TouchableOpacity
-          style={[styles.categoryChip, selectedId === null && styles.categoryChipActive]}
-          onPress={() => onSelect(null)}
-        >
-          <Text style={[styles.categoryChipText, selectedId === null && styles.categoryChipTextActive]}>
-            Ninguna
-          </Text>
-        </TouchableOpacity>
-        {counterparties.map((cp) => (
-          <TouchableOpacity
-            key={cp.id}
-            style={[styles.categoryChip, selectedId === cp.id && styles.categoryChipActive]}
-            onPress={() => onSelect(cp.id)}
-          >
-            <Text style={[styles.categoryChipText, selectedId === cp.id && styles.categoryChipTextActive]}>
-              {cp.name}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-    </View>
-  );
-}
-
-function CategoryPicker({
-  label,
-  categories,
-  selectedId,
-  onSelect,
-}: {
-  label: string;
-  categories: CategorySummary[];
-  selectedId: number | null;
-  onSelect: (id: number | null) => void;
-}) {
-  return (
-    <View style={styles.pickerWrap}>
-      <Text style={styles.sectionLabel}>{label}</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.accountRow}>
-        <TouchableOpacity
-          style={[styles.categoryChip, selectedId === null && styles.categoryChipActive]}
-          onPress={() => onSelect(null)}
-        >
-          <Text style={[styles.categoryChipText, selectedId === null && styles.categoryChipTextActive]}>
-            Sin categoría
-          </Text>
-        </TouchableOpacity>
-        {categories.map((cat) => (
-          <TouchableOpacity
-            key={cat.id}
-            style={[styles.categoryChip, selectedId === cat.id && styles.categoryChipActive]}
-            onPress={() => onSelect(cat.id)}
-          >
-            <Text style={[styles.categoryChipText, selectedId === cat.id && styles.categoryChipTextActive]}>
-              {cat.name}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-    </View>
-  );
-}
-
 // --- Styles -------------------------------------------------------------------
 const styles = StyleSheet.create({
   stepRow: {
@@ -2026,7 +1666,7 @@ const styles = StyleSheet.create({
     width: 24,
     height: 4,
     borderRadius: 2,
-    backgroundColor: "rgba(255,255,255,0.12)",
+    backgroundColor: SURFACE.inputBorder,
   },
   stepDotActive: {
     backgroundColor: COLORS.pine,
@@ -2035,196 +1675,5 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.6,
     shadowRadius: 6,
-  },
-  section: { gap: SPACING.md },
-  sectionLabel: {
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.storm,
-    fontFamily: FONT_FAMILY.bodySemibold,
-    textTransform: "uppercase",
-    letterSpacing: 0.8,
-  },
-  typeGrid: {
-    flexDirection: "row",
-    gap: SPACING.sm,
-  },
-  typeButtonWrap: {
-    flex: 1,
-    borderRadius: RADIUS.lg,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
-    backgroundColor: SURFACE.card,
-  },
-  typeButtonInner: {
-    flex: 1,
-    alignItems: "center",
-    paddingVertical: SPACING.xl,
-    gap: SPACING.sm,
-    backgroundColor: "transparent",
-  },
-  typeActiveDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 3,
-    marginTop: 2,
-  },
-  typeLabel: {
-    fontSize: FONT_SIZE.sm,
-    fontFamily: FONT_FAMILY.bodySemibold,
-    color: COLORS.storm,
-    letterSpacing: 0.2,
-  },
-  statusRow: {
-    flexDirection: "row",
-    gap: SPACING.sm,
-  },
-  statusPill: {
-    flex: 1,
-    alignItems: "center",
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: SPACING.xs + 3,
-    borderRadius: RADIUS.full,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.11)",
-    backgroundColor: SURFACE.card,
-  },
-  statusPillActive: {
-    backgroundColor: COLORS.pine + "28",
-    borderColor: COLORS.pine + "99",
-    shadowColor: COLORS.pine,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.20,
-    shadowRadius: 8,
-  },
-  statusText: { fontSize: FONT_SIZE.sm, color: COLORS.storm, fontFamily: FONT_FAMILY.bodyMedium },
-  statusTextActive: { color: COLORS.pine, fontFamily: FONT_FAMILY.bodySemibold },
-  btn: { marginTop: SPACING.sm },
-  navRow: {
-    flexDirection: "row",
-    gap: SPACING.sm,
-    marginTop: SPACING.sm,
-  },
-  btnHalf: { flex: 1 },
-  pickerWrap: { gap: SPACING.sm },
-  accountRow: {
-    gap: SPACING.sm,
-    paddingVertical: SPACING.xs,
-  },
-  accountChip: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
-    backgroundColor: SURFACE.card,
-    gap: 2,
-    minWidth: 100,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  accountChipName: {
-    fontSize: FONT_SIZE.sm,
-    fontFamily: FONT_FAMILY.bodySemibold,
-    color: COLORS.ink,
-  },
-  accountChipBalance: { fontSize: FONT_SIZE.xs, color: COLORS.storm },
-  emptyPicker: { fontSize: FONT_SIZE.sm, color: COLORS.storm },
-  categoryChip: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs + 3,
-    borderRadius: RADIUS.full,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.11)",
-    backgroundColor: SURFACE.card,
-  },
-  categoryChipActive: {
-    backgroundColor: COLORS.pine + "28",
-    borderColor: COLORS.pine + "99",
-    shadowColor: COLORS.pine,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.18,
-    shadowRadius: 8,
-  },
-  categoryChipText: { fontSize: FONT_SIZE.sm, color: COLORS.storm },
-  categoryChipTextActive: { color: COLORS.pine, fontFamily: FONT_FAMILY.bodySemibold },
-  notesInput: { height: 72, textAlignVertical: "top" },
-  fieldError: { fontSize: FONT_SIZE.xs, color: COLORS.danger },
-  duplicateWarning: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: SPACING.sm,
-    padding: SPACING.md,
-    borderRadius: RADIUS.lg,
-    backgroundColor: COLORS.gold + "16",
-    borderWidth: 1,
-    borderColor: COLORS.gold + "44",
-  },
-  duplicateWarningTitle: {
-    fontFamily: FONT_FAMILY.bodySemibold,
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.ink,
-  },
-  duplicateWarningText: {
-    marginTop: 2,
-    fontFamily: FONT_FAMILY.body,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.storm,
-    lineHeight: 17,
-  },
-  fxRateNote: {
-    marginTop: -SPACING.xs,
-    paddingVertical: SPACING.sm,
-    paddingHorizontal: SPACING.md,
-    borderRadius: RADIUS.md,
-    backgroundColor: COLORS.primary + "12",
-    borderWidth: 1,
-    borderColor: COLORS.primary + "2E",
-  },
-  fxRateNoteMissing: {
-    backgroundColor: COLORS.gold + "14",
-    borderColor: COLORS.gold + "3D",
-  },
-  fxRateNoteText: {
-    fontFamily: FONT_FAMILY.body,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.storm,
-    lineHeight: 17,
-  },
-  fxRateNoteTextMissing: {
-    color: COLORS.ink,
-  },
-  sameCurrencyNote: {
-    backgroundColor: SURFACE.card,
-    borderRadius: RADIUS.md,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    borderWidth: 1,
-    borderColor: SURFACE.cardBorder,
-  },
-  sameCurrencyText: {
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.storm,
-    fontFamily: FONT_FAMILY.body,
-  },
-  submitErrorBanner: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: SPACING.sm,
-    padding: SPACING.md,
-    borderRadius: RADIUS.lg,
-    backgroundColor: COLORS.danger + "18",
-    borderWidth: 1,
-    borderColor: COLORS.danger + "44",
-  },
-  submitErrorText: {
-    flex: 1,
-    fontFamily: FONT_FAMILY.bodyMedium,
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.danger,
-    lineHeight: 20,
   },
 });

@@ -60,9 +60,19 @@ export const CurrencyInput = forwardRef<TextInput, Props>(function CurrencyInput
           placeholder={placeholder}
           placeholderTextColor={COLORS.textDisabled}
           returnKeyType="done"
+          accessibilityLabel={label ? `${label} en ${currencyCode}` : `Monto en ${currencyCode}`}
+          accessibilityHint={error ? `Error: ${error}` : undefined}
         />
       </View>
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {error ? (
+        <Text
+          style={styles.error}
+          accessibilityLiveRegion="polite"
+          accessibilityRole="alert"
+        >
+          {error}
+        </Text>
+      ) : null}
     </TouchableOpacity>
   );
 });

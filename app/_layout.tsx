@@ -110,9 +110,17 @@ function readMovementMetadataNumber(payload: unknown, key: string): number | nul
   return Number.isFinite(value) && value > 0 ? value : null;
 }
 
+/**
+ * Tiempo mínimo (ms) durante el cual el splash queda visible antes de empezar
+ * el fade-out, incluso si `isLoading` resolvió antes. Evita el "flash" de la
+ * pantalla cuando la sesión ya está cacheada y getSession() retorna instantáneo.
+ */
+const SPLASH_MIN_VISIBLE_MS = 1200;
+
 function AppSplash() {
   const { isLoading } = useAuth();
   const [visible, setVisible] = useState(true);
+  const mountedAtRef = useRef(Date.now());
   const screenOpacity = useRef(new Animated.Value(1)).current;
   const enterAnim = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -126,7 +134,7 @@ function AppSplash() {
   useEffect(() => {
     Animated.timing(enterAnim, {
       toValue: 1,
-      duration: 800,
+      duration: 600,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start(() => {
@@ -136,22 +144,30 @@ function AppSplash() {
           Animated.timing(pulseAnim, { toValue: 1, duration: 2200, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
         ]),
       ).start();
-      Animated.timing(progressOpacity, { toValue: 1, duration: 400, useNativeDriver: true }).start();
-      Animated.timing(progressAnim, { toValue: 0.85, duration: 4500, easing: Easing.out(Easing.cubic), useNativeDriver: false }).start();
     });
+    // Progress bar empieza a llenarse inmediatamente, en paralelo al fade-in del logo
+    Animated.timing(progressOpacity, { toValue: 1, duration: 280, useNativeDriver: true }).start();
+    Animated.timing(progressAnim, { toValue: 0.85, duration: 3500, easing: Easing.out(Easing.cubic), useNativeDriver: false }).start();
   }, [enterAnim, pulseAnim, progressAnim, progressOpacity]);
 
   useEffect(() => {
     if (isLoading) return;
-    pulseAnim.stopAnimation();
-    // Jump progress to 1 instantly, then fade out in 400ms
-    progressAnim.setValue(1);
-    Animated.timing(screenOpacity, {
-      toValue: 0,
-      duration: 400,
-      easing: Easing.out(Easing.quad),
-      useNativeDriver: true,
-    }).start(() => setVisible(false));
+    // Respetar tiempo mínimo de visibilidad: si la auth resolvió muy rápido,
+    // mantener el splash en pantalla hasta completar SPLASH_MIN_VISIBLE_MS.
+    const elapsed = Date.now() - mountedAtRef.current;
+    const remaining = Math.max(0, SPLASH_MIN_VISIBLE_MS - elapsed);
+    const timer = setTimeout(() => {
+      pulseAnim.stopAnimation();
+      // Jump progress to 1 instantly, then fade out in 400ms
+      progressAnim.setValue(1);
+      Animated.timing(screenOpacity, {
+        toValue: 0,
+        duration: 400,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }).start(() => setVisible(false));
+    }, remaining);
+    return () => clearTimeout(timer);
   }, [isLoading, pulseAnim, progressAnim, screenOpacity]);
 
   if (!visible) return null;
@@ -715,7 +731,8 @@ function NavigationGuard() {
     [router],
   );
   const onDailyDigestTap = useCallback(() => {
-    router.push("/notifications");
+    const target = resolveNotificationNavigationTarget({ kind: "daily_digest" });
+    router.push(target as never);
   }, [router]);
 
   const onSubscriptionReminderTap = useCallback(

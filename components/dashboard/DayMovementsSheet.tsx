@@ -17,6 +17,7 @@ import {
   movementDisplayAmount,
 } from "../../lib/movement-display";
 import { useDismissibleSheet } from "../ui/useDismissibleSheet";
+import { DAY_MOVEMENTS_LABELS as L } from "./DayMovementsSheet.labels";
 
 export type ConversionCtx = {
   accountCurrencyMap: Map<number, string>;
@@ -82,16 +83,7 @@ function transferAmt(m: DashboardMovementRow, ctx: ConversionCtx): number {
   return convertAmt(raw, currency, ctx.displayCurrency, ctx.exchangeRateMap);
 }
 
-const TYPE_LABEL: Record<string, string> = {
-  expense: "Gasto",
-  income: "Ingreso",
-  transfer: "Transferencia",
-  subscription_payment: "Suscripción",
-  obligation_opening: "Obligación",
-  obligation_payment: "Pago obligación",
-  refund: "Devolución",
-  adjustment: "Ajuste",
-};
+const TYPE_LABEL = L.movementType;
 
 export type DaySheetMode = "all" | "expense" | "income" | "transfer";
 
@@ -142,14 +134,14 @@ export function DayMovementsSheet({
   const sumEx = expenses.reduce((s, m) => s + expenseAmt(m, ctx), 0);
   const savings = sumIn - sumEx;
 
-  const title = format(dayStart, "EEEE d MMMM yyyy", { locale: es });
+  const title = format(dayStart, L.dateFormat, { locale: es });
 
   function renderMovementRow(m: DashboardMovementRow, amount: number, amountColor: string) {
     const cat = m.categoryId != null ? categoryMap.get(m.categoryId) : null;
     const accSrc = m.sourceAccountId != null ? accountMap.get(m.sourceAccountId) : null;
     const accDst = m.destinationAccountId != null ? accountMap.get(m.destinationAccountId) : null;
     const typeLabel = TYPE_LABEL[m.movementType] ?? m.movementType;
-    const timeStr = format(new Date(m.occurredAt), "HH:mm", { locale: es });
+    const timeStr = format(new Date(m.occurredAt), L.timeFormat, { locale: es });
     const attCount = attachmentCounts[m.id] ?? 0;
     return (
       <TouchableOpacity
@@ -160,7 +152,7 @@ export function DayMovementsSheet({
       >
         <View style={styles.movRowMain}>
           <Text style={styles.movTitle} numberOfLines={2}>
-            {m.description?.trim() || `Movimiento #${m.id}`}
+            {m.description?.trim() || L.movementFallback(m.id)}
           </Text>
           <View style={styles.movMetaRow}>
             <Text style={styles.movMeta}>
@@ -209,41 +201,34 @@ export function DayMovementsSheet({
           </View>
 
           <Text style={styles.sheetTitle}>{title}</Text>
-          <Text style={styles.sheetSubtitle}>
-            {mode === "all" && "Ingresos, gastos y transferencias de ese día"}
-            {mode === "expense" && "Solo gastos registrados"}
-            {mode === "income" && "Solo ingresos registrados"}
-            {mode === "transfer" && "Solo transferencias entre cuentas"}
-          </Text>
+          <Text style={styles.sheetSubtitle}>{L.subtitle[mode]}</Text>
 
           {showAll ? (
             <View style={styles.summaryCard}>
               <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>Ingresos</Text>
+                <Text style={styles.summaryLabel}>{L.summary.incomes}</Text>
                 <Text style={[styles.summaryValue, { color: COLORS.income }]}>{formatCurrency(sumIn, ctx.displayCurrency)}</Text>
               </View>
               <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>Gastos</Text>
+                <Text style={styles.summaryLabel}>{L.summary.expenses}</Text>
                 <Text style={[styles.summaryValue, { color: COLORS.expense }]}>{formatCurrency(sumEx, ctx.displayCurrency)}</Text>
               </View>
               <View style={[styles.summaryRow, styles.summaryRowLast]}>
-                <Text style={styles.summaryLabelStrong}>Ahorro del día</Text>
+                <Text style={styles.summaryLabelStrong}>{L.summary.savings}</Text>
                 <Text style={[styles.summaryValueStrong, { color: savings >= 0 ? COLORS.primary : COLORS.expense }]}>
                   {formatCurrency(savings, ctx.displayCurrency)}
                 </Text>
               </View>
-              <Text style={styles.summaryHint}>
-                Ahorro = ingresos − gastos (sin contar transferencias entre tus cuentas).
-              </Text>
+              <Text style={styles.summaryHint}>{L.summary.savingsHint}</Text>
             </View>
           ) : null}
 
           <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
             {listIncome &&
               section(
-                `Ingresos (${incomes.length})`,
+                L.sections.incomes(incomes.length),
                 incomes.length === 0 ? (
-                  <Text style={styles.empty}>Nada que mostrar este día.</Text>
+                  <Text style={styles.empty}>{L.empty}</Text>
                 ) : (
                   incomes.map((m) => renderMovementRow(m, incomeAmt(m, ctx), COLORS.income))
                 ),
@@ -251,9 +236,9 @@ export function DayMovementsSheet({
 
             {listExpense &&
               section(
-                `Gastos (${expenses.length})`,
+                L.sections.expenses(expenses.length),
                 expenses.length === 0 ? (
-                  <Text style={styles.empty}>Nada que mostrar este día.</Text>
+                  <Text style={styles.empty}>{L.empty}</Text>
                 ) : (
                   expenses.map((m) => renderMovementRow(m, expenseAmt(m, ctx), COLORS.expense))
                 ),
@@ -261,15 +246,15 @@ export function DayMovementsSheet({
 
             {listTransfer &&
               section(
-                `Transferencias (${transfers.length})`,
+                L.sections.transfers(transfers.length),
                 transfers.length === 0 ? (
-                  <Text style={styles.empty}>Nada que mostrar este día.</Text>
+                  <Text style={styles.empty}>{L.empty}</Text>
                 ) : (
                   transfers.map((m) => renderMovementRow(m, transferAmt(m, ctx), COLORS.secondary))
                 ),
               )}
 
-            <Text style={styles.footerHint}>Toca un movimiento para ver el detalle.</Text>
+            <Text style={styles.footerHint}>{L.footerHint}</Text>
           </ScrollView>
         </Animated.View>
       </Animated.View>

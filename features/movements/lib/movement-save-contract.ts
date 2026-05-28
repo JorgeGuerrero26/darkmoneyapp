@@ -1,5 +1,5 @@
 import type { JsonValue, MovementStatus, MovementType } from "../../../types/domain";
-import type { MovementFormInput, MovementUpdateInput } from "../../../services/queries/workspace-data";
+import type { MovementFormInput, MovementUpdateInput } from "./movement-input-types";
 
 type BuildMovementInput = {
   movementType: MovementType;

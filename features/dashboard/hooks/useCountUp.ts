@@ -1,22 +1,42 @@
-import { useEffect, useRef, useState } from "react";
-import { Animated, Easing } from "react-native";
+import { useEffect, useState } from "react";
+import {
+  Easing,
+  cancelAnimation,
+  runOnJS,
+  useAnimatedReaction,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
 
+/**
+ * Anima un número desde 0 hasta `target` con easing easeOutCubic.
+ * Migrado de Animated legacy a Reanimated. La animación corre en el UI thread;
+ * el valor se sincroniza al JS thread vía useAnimatedReaction para que el
+ * componente que lo consume haga el formateo del número.
+ */
 export function useCountUp(target: number, duration = 950): number {
-  const animRef = useRef(new Animated.Value(0));
+  const progress = useSharedValue(0);
   const [displayed, setDisplayed] = useState(0);
+
   useEffect(() => {
-    animRef.current.setValue(0);
-    const id = animRef.current.addListener(({ value }) => setDisplayed(value));
-    Animated.timing(animRef.current, {
-      toValue: target,
+    cancelAnimation(progress);
+    progress.value = 0;
+    progress.value = withTiming(target, {
       duration,
       easing: Easing.out(Easing.cubic),
-      useNativeDriver: false,
-    }).start();
+    });
     return () => {
-      animRef.current.removeListener(id);
-      animRef.current.stopAnimation();
+      cancelAnimation(progress);
     };
-  }, [target, duration]);
+  }, [target, duration, progress]);
+
+  useAnimatedReaction(
+    () => progress.value,
+    (value) => {
+      runOnJS(setDisplayed)(value);
+    },
+    [],
+  );
+
   return displayed;
 }

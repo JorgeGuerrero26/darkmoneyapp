@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppState, ScrollView, StyleSheet, Text, View } from "react-native";
-import { useRouter, useFocusEffect } from "expo-router";
+import { useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Battery, Bell, CheckCircle2, Eye, ShieldCheck } from "lucide-react-native";
+import { Battery, Bell, BellRing, CheckCircle2, Eye, ShieldCheck } from "lucide-react-native";
 
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { Button } from "../../components/ui/Button";
@@ -30,15 +30,21 @@ export async function hasSeenNotificationOnboarding(): Promise<boolean> {
   }
 }
 
-type StepKey = "intro" | "notification_access" | "overlay" | "battery";
+type StepKey = "intro" | "push" | "notification_access" | "overlay" | "battery";
 
-const STEP_ORDER: StepKey[] = ["intro", "notification_access", "overlay", "battery"];
+const STEP_ORDER: StepKey[] = ["intro", "push", "notification_access", "overlay", "battery"];
 
 export default function NotificationOnboardingScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const params = useLocalSearchParams<{ replay?: string }>();
+  const isReplay = (Array.isArray(params.replay) ? params.replay[0] : params.replay) === "1";
   const { handleBack } = useOriginBackNavigation({
-    originRoutes: { settings: "/(app)/settings" },
+    originRoutes: {
+      settings: "/(app)/settings",
+      "notification-detection": "/(app)/notification-detection",
+      more: "/(app)/more",
+    },
   });
 
   const [stepIndex, setStepIndex] = useState(0);
@@ -46,10 +52,13 @@ export default function NotificationOnboardingScreen() {
   const [notificationAccess, setNotificationAccess] = useState(false);
   const [overlayAccess, setOverlayAccess] = useState(false);
   const [batteryOptimized, setBatteryOptimized] = useState(true);
+  const [pushAccess, setPushAccess] = useState(false);
 
   const refreshPermissions = useCallback(async () => {
     const available = notificationDetection.isAvailable();
     setNativeAvailable(available);
+    const pushPermissions = Notifications ? await Notifications.getPermissionsAsync() : null;
+    setPushAccess(pushPermissions?.status === "granted");
     if (!available) return;
     const [hasNotificationAccess, hasOverlayAccess, ignoringBattery] = await Promise.all([
       notificationDetection.isNotificationAccessEnabled(),
@@ -85,17 +94,22 @@ export default function NotificationOnboardingScreen() {
   }, [totalSteps]);
 
   const finish = useCallback(async () => {
+    if (isReplay) {
+      handleBack();
+      return;
+    }
     try {
       await AsyncStorage.setItem(NOTIFICATION_ONBOARDING_SEEN_KEY, "1");
     } catch {
       // Non-blocking: even if AsyncStorage fails, do not trap the user.
     }
     router.replace("/(app)/notification-detection" as never);
-  }, [router]);
+  }, [handleBack, isReplay, router]);
 
   const requestNotificationsPush = useCallback(async () => {
     if (!Notifications) return;
-    await Notifications.requestPermissionsAsync();
+    const result = await Notifications.requestPermissionsAsync();
+    setPushAccess(result.status === "granted");
   }, []);
 
   const stepContent = useMemo(() => {
@@ -109,6 +123,24 @@ export default function NotificationOnboardingScreen() {
           status: undefined as boolean | undefined,
           cta: { label: "Continuar", onPress: goNext },
           help: undefined as string | undefined,
+        };
+      case "push":
+        return {
+          icon: <BellRing size={36} color={COLORS.secondary} />,
+          title: "Notificaciones de DarkMoney",
+          body:
+            "Necesitamos enviarte avisos cuando detectemos un movimiento para que puedas confirmarlo en un toque, sin abrir la app.",
+          status: pushAccess,
+          cta: pushAccess
+            ? { label: "Listo, continuar", onPress: goNext }
+            : Notifications
+              ? { label: "Permitir notificaciones", onPress: () => void requestNotificationsPush() }
+              : { label: "Continuar", onPress: goNext },
+          help: pushAccess
+            ? undefined
+            : Notifications
+              ? "Android te pedirá confirmación. Sin este permiso no podremos mostrarte el registro rápido."
+              : "Este build no soporta notificaciones push. Puedes continuar.",
         };
       case "notification_access":
         return {
@@ -153,7 +185,16 @@ export default function NotificationOnboardingScreen() {
             : "Sin esta exclusión, las notificaciones detectadas pueden retrasarse o perderse cuando el teléfono está inactivo.",
         };
     }
-  }, [batteryOptimized, currentStep, finish, goNext, notificationAccess, overlayAccess]);
+
+    return {
+      icon: <Bell size={36} color={COLORS.primary} />,
+      title: "Configurar deteccion",
+      body: "Preparamos los permisos necesarios para detectar movimientos.",
+      status: undefined as boolean | undefined,
+      cta: { label: "Continuar", onPress: goNext },
+      help: undefined as string | undefined,
+    };
+  }, [batteryOptimized, currentStep, finish, goNext, notificationAccess, overlayAccess, pushAccess, requestNotificationsPush]);
 
   const isLastStep = stepIndex === totalSteps - 1;
 

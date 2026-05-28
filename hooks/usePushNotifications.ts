@@ -26,21 +26,32 @@ if (Notifications) {
   });
 }
 
-export async function registerForPushNotifications(): Promise<string | null> {
+export type PushRegistrationReason =
+  | "not_device"
+  | "expo_go"
+  | "module_unavailable"
+  | "permissions_denied"
+  | "network_error";
+
+export type PushRegistrationResult =
+  | { ok: true; token: string }
+  | { ok: false; reason: PushRegistrationReason; detail?: string };
+
+export async function registerForPushNotifications(): Promise<PushRegistrationResult> {
   console.log("[PushNotifications] isDevice:", Constants.isDevice, "executionEnv:", Constants.executionEnvironment);
   if (!Constants.isDevice) {
     console.warn("[PushNotifications] Not a real device, skipping.");
-    return null;
+    return { ok: false, reason: "not_device" };
   }
 
   const isExpoGo = Constants.executionEnvironment === "storeClient";
   if (isExpoGo) {
     console.warn("[PushNotifications] Expo Go detected, skipping.");
-    return null;
+    return { ok: false, reason: "expo_go" };
   }
   if (!Notifications) {
     console.warn("[PushNotifications] Notifications module unavailable.");
-    return null;
+    return { ok: false, reason: "module_unavailable" };
   }
 
   const { status: existingStatus } = await Notifications.getPermissionsAsync();
@@ -55,7 +66,7 @@ export async function registerForPushNotifications(): Promise<string | null> {
 
   if (finalStatus !== "granted") {
     console.warn("[PushNotifications] Permission not granted:", finalStatus);
-    return null;
+    return { ok: false, reason: "permissions_denied", detail: finalStatus };
   }
 
   if (Platform.OS === "android") {
@@ -75,10 +86,11 @@ export async function registerForPushNotifications(): Promise<string | null> {
     console.log("[PushNotifications] using projectId:", projectId);
     const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
     console.log("[PushNotifications] got token:", token);
-    return token;
+    return { ok: true, token };
   } catch (error) {
     console.warn("[PushNotifications] token registration failed:", error);
-    return null;
+    const detail = error instanceof Error ? error.message : String(error ?? "");
+    return { ok: false, reason: "network_error", detail };
   }
 }
 
@@ -215,9 +227,9 @@ export function usePushNotifications(userId?: string, handlers?: PushNotificatio
     // Register and save token
     void (async () => {
       try {
-        const token = await registerForPushNotifications();
-        if (!cancelled && token) {
-          await savePushTokenToSupabase(userId, token);
+        const result = await registerForPushNotifications();
+        if (!cancelled && result.ok) {
+          await savePushTokenToSupabase(userId, result.token);
         }
       } catch (error) {
         console.warn("[PushNotifications] bootstrap failed:", error);

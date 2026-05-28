@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { Battery, Bell, ChevronDown, Eye, ShieldCheck } from "lucide-react-native";
 import {
   AppState,
+  Linking,
   Modal,
   Platform,
   ScrollView,
@@ -12,13 +13,14 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { useOriginBackNavigation } from "../../hooks/useOriginBackNavigation";
+import { hasSeenNotificationOnboarding } from "./notification-onboarding";
 import { useAuth } from "../../lib/auth-context";
 import { useWorkspace } from "../../lib/workspace-context";
 import { getNotificationsModule } from "../../lib/notifications-runtime";
@@ -39,9 +41,30 @@ const Notifications = getNotificationsModule();
 
 export default function NotificationDetectionScreen() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
+  const params = useLocalSearchParams<{ from?: string | string[] }>();
+  const fromParam = Array.isArray(params.from) ? params.from[0] : params.from;
   const { handleBack } = useOriginBackNavigation({
     originRoutes: { settings: "/(app)/settings" },
   });
+  const [onboardingChecked, setOnboardingChecked] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const seen = await hasSeenNotificationOnboarding();
+      if (cancelled) return;
+      if (!seen && Platform.OS === "android" && notificationDetection.isAvailable()) {
+        const suffix = fromParam ? `?from=${encodeURIComponent(fromParam)}` : "";
+        router.replace((`/(app)/notification-onboarding${suffix}`) as never);
+        return;
+      }
+      setOnboardingChecked(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [fromParam, router]);
   const { profile } = useAuth();
   const { activeWorkspaceId } = useWorkspace();
   const { data: snapshot } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
@@ -174,6 +197,10 @@ export default function NotificationDetectionScreen() {
     return activeAccounts.find((account) => account.id === accountId)?.name ?? "Cuenta no disponible";
   }
 
+  if (!onboardingChecked) {
+    return <View style={[styles.screen, { paddingTop: insets.top }]} />;
+  }
+
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
       <ScreenHeader title="Detección automática" onBack={handleBack} />
@@ -192,37 +219,59 @@ export default function NotificationDetectionScreen() {
           </View>
         </Card>
 
-        <Card style={styles.card}>
-          <Text style={styles.title}>Permisos</Text>
-          <PermissionRow
-            icon={<Bell size={17} color={COLORS.primary} />}
-            label="Acceso a notificaciones"
-            enabled={notificationAccess}
-            onActivate={nativeAvailable ? () => notificationDetection.openNotificationAccessSettings() : undefined}
-            activateLabel="Abrir ajustes"
-          />
-          <PermissionRow
-            icon={<Bell size={17} color={COLORS.secondary} />}
-            label="Notificaciones de DarkMoney"
-            enabled={pushAccess}
-            onActivate={Notifications ? requestPushPermission : undefined}
-            activateLabel="Activar"
-          />
-          <PermissionRow
-            icon={<Eye size={17} color={COLORS.warning} />}
-            label="Mostrar sobre otras apps"
-            enabled={overlayAccess}
-            onActivate={nativeAvailable ? () => notificationDetection.openOverlaySettings() : undefined}
-            activateLabel="Abrir ajustes"
-          />
-          <PermissionRow
-            icon={<Battery size={17} color={COLORS.success ?? COLORS.primary} />}
-            label="Sin restricción de batería"
-            enabled={batteryOptimized}
-            onActivate={nativeAvailable ? () => notificationDetection.requestIgnoreBatteryOptimizations() : undefined}
-            activateLabel="Desactivar optimización"
-          />
-        </Card>
+        {!nativeAvailable ? (
+          <Card style={styles.card}>
+            <Text style={styles.title}>Detección no disponible en este build</Text>
+            <Text style={styles.text}>
+              La detección automática de movimientos desde notificaciones requiere la app instalada desde Play Store (build nativo de Android). En Expo Go o en web no está disponible.
+            </Text>
+            <TouchableOpacity
+              style={styles.bannerCta}
+              onPress={() => void Linking.openSettings()}
+              activeOpacity={0.84}
+            >
+              <Text style={styles.bannerCtaText}>Abrir ajustes del sistema</Text>
+            </TouchableOpacity>
+          </Card>
+        ) : (
+          <Card style={styles.card}>
+            <Text style={styles.title}>Permisos</Text>
+            <PermissionRow
+              icon={<Bell size={17} color={COLORS.primary} />}
+              label="Acceso a notificaciones"
+              enabled={notificationAccess}
+              onActivate={() => {
+                notificationDetection.openNotificationAccessSettings();
+              }}
+              activateLabel="Abrir ajustes"
+            />
+            <PermissionRow
+              icon={<Bell size={17} color={COLORS.secondary} />}
+              label="Notificaciones de DarkMoney"
+              enabled={pushAccess}
+              onActivate={Notifications ? requestPushPermission : () => void Linking.openSettings()}
+              activateLabel={Notifications ? "Activar" : "Abrir ajustes"}
+            />
+            <PermissionRow
+              icon={<Eye size={17} color={COLORS.warning} />}
+              label="Mostrar sobre otras apps"
+              enabled={overlayAccess}
+              onActivate={() => {
+                notificationDetection.openOverlaySettings();
+              }}
+              activateLabel="Abrir ajustes"
+            />
+            <PermissionRow
+              icon={<Battery size={17} color={COLORS.success ?? COLORS.primary} />}
+              label="Sin restricción de batería"
+              enabled={batteryOptimized}
+              onActivate={() => {
+                notificationDetection.requestIgnoreBatteryOptimizations();
+              }}
+              activateLabel="Desactivar optimización"
+            />
+          </Card>
+        )}
 
         <Card style={styles.card}>
           <View style={styles.switchHeader}>
@@ -269,6 +318,12 @@ export default function NotificationDetectionScreen() {
             );
           })}
         </Card>
+
+        <Button
+          label="Ver tutorial paso a paso"
+          variant="ghost"
+          onPress={() => router.push("/(app)/notification-onboarding?replay=1" as never)}
+        />
       </ScrollView>
 
       <Modal visible={Boolean(accountPickerFor)} transparent animationType="fade" onRequestClose={() => setAccountPickerFor(null)}>
@@ -361,6 +416,21 @@ const styles = StyleSheet.create({
   permissionValue: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.xs },
   activateButton: { alignSelf: "flex-start" },
   activateLabel: { color: COLORS.primary, fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.xs },
+  bannerCta: {
+    alignSelf: "flex-start",
+    marginTop: SPACING.xs,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs + 2,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    borderColor: COLORS.primary + "55",
+    backgroundColor: COLORS.primary + "14",
+  },
+  bannerCtaText: {
+    fontSize: FONT_SIZE.xs,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    color: COLORS.primary,
+  },
   ok: { color: COLORS.income },
   warn: { color: COLORS.warning },
   switchHeader: { flexDirection: "row", alignItems: "center", gap: SPACING.md },

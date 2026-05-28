@@ -101,6 +101,34 @@ export const EXTENDED_PALETTE = {
   white:         "#FFFFFF",
 };
 
+// ─── Chart palette ───────────────────────────────────────────────────────────
+// Paleta semantica para charts (donut, ring, sparklines, advanced dashboard).
+// Usar estos tokens en lugar de hex hardcoded. Cuando se necesite agregar mas
+// tonos, extender aqui y reusar — no introducir hex inline en componentes.
+export const CHART_PALETTE = {
+  primary:   EXTENDED_PALETTE.chartIndigo,
+  secondary: EXTENDED_PALETTE.chartTeal,
+  tertiary:  EXTENDED_PALETTE.chartCoral,
+  quaternary: EXTENDED_PALETTE.chartGold,
+  series: [
+    EXTENDED_PALETTE.chartIndigo,
+    EXTENDED_PALETTE.chartTeal,
+    EXTENDED_PALETTE.chartCoral,
+    EXTENDED_PALETTE.chartGold,
+  ] as const,
+};
+
+// ─── Badge tones ─────────────────────────────────────────────────────────────
+// Tonos para badges, dots y banners contextuales. Cada tono tiene un color de
+// acento + un fondo translucido derivado. Usar en componentes en lugar de hex.
+export const BADGE_TONES = {
+  danger:  { accent: COLORS.dangerSoft, bg: COLORS.dangerMuted },
+  warning: { accent: COLORS.warning,    bg: COLORS.warningMuted },
+  success: { accent: COLORS.success,    bg: COLORS.successMuted },
+  info:    { accent: COLORS.info,       bg: COLORS.infoMuted },
+  neutral: { accent: COLORS.storm,      bg: "rgba(150,162,181,0.12)" },
+};
+
 // ─── Glassmorphism surfaces ───────────────────────────────────────────────────
 export const GLASS = {
   card:             "rgba(10,14,20,0.78)",
@@ -193,6 +221,10 @@ export const SURFACE = {
   separator:        "rgba(255,255,255,0.08)",   // GLASS.separator   → subtler
   /// Chart / progress bar track backgrounds
   track:             "rgba(255,255,255,0.07)",   // progress bar base, chart fills
+  /// Pressable feedback (cards, rows, list items en estado pressed)
+  pressed:           "rgba(255,255,255,0.07)",
+  /// Subtle divider/border (≤ inputBorder; for step indicators, chip dividers)
+  subtleBorder:      "rgba(255,255,255,0.12)",
   /// Subtle panel backgrounds (panels, chip lists)
   softBorder:        "rgba(255,255,255,0.11)",   // executive cards, preset cards
   /// Barely-there surface tint (always backgroundColor)

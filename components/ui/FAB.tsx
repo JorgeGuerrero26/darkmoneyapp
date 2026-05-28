@@ -6,9 +6,14 @@ import { COLORS, ELEVATION, SPACING } from "../../constants/theme";
 type Props = {
   onPress: () => void;
   bottom: number;
+  /** Acción long-press opcional (quick-add menu, etc.). */
+  onLongPress?: () => void;
+  /** Override del accessibilityLabel para describir mejor el contexto. */
+  accessibilityLabel?: string;
+  accessibilityHint?: string;
 };
 
-export function FAB({ onPress, bottom }: Props) {
+export function FAB({ onPress, bottom, onLongPress, accessibilityLabel = "Agregar", accessibilityHint }: Props) {
   const scale = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -25,10 +30,14 @@ export function FAB({ onPress, bottom }: Props) {
       <TouchableOpacity
         style={styles.fab}
         onPress={onPress}
+        onLongPress={onLongPress}
+        delayLongPress={350}
         activeOpacity={0.82}
-        accessibilityLabel="Agregar"
+        accessibilityRole="button"
+        accessibilityLabel={accessibilityLabel}
+        accessibilityHint={accessibilityHint}
       >
-        <Plus size={22} color="#05070B" strokeWidth={2.5} />
+        <Plus size={22} color={COLORS.textInverse} strokeWidth={2.5} />
       </TouchableOpacity>
     </Animated.View>
   );

@@ -1,0 +1,436 @@
+{
+  "features/categories/components/CategoryFilterSheet.tsx": [
+    {
+      "line": 32,
+      "match": "\"#FFFFFF\""
+    }
+  ],
+  "features/obligations/components/ObligationSwipeRow.tsx": [
+    {
+      "line": 205,
+      "match": "\"#FFF\""
+    }
+  ],
+  "components/DarkMoneyToast.tsx": [
+    {
+      "line": 43,
+      "match": "'#0A1E14'"
+    },
+    {
+      "line": 43,
+      "match": "'#112B1C'"
+    },
+    {
+      "line": 43,
+      "match": "'#2CC787'"
+    },
+    {
+      "line": 43,
+      "match": "'#6AAF90'"
+    },
+    {
+      "line": 44,
+      "match": "'#1C1700'"
+    },
+    {
+      "line": 44,
+      "match": "'#302700'"
+    },
+    {
+      "line": 44,
+      "match": "'#E8C44A'"
+    },
+    {
+      "line": 44,
+      "match": "'#A08830'"
+    },
+    {
+      "line": 45,
+      "match": "'#130E28'"
+    },
+    {
+      "line": 45,
+      "match": "'#1E1440'"
+    },
+    {
+      "line": 45,
+      "match": "'#9B7AE8'"
+    },
+    {
+      "line": 45,
+      "match": "'#6A5090'"
+    },
+    {
+      "line": 46,
+      "match": "'#200A0A'"
+    },
+    {
+      "line": 46,
+      "match": "'#381212'"
+    },
+    {
+      "line": 46,
+      "match": "'#E85A5A'"
+    },
+    {
+      "line": 46,
+      "match": "'#A04040'"
+    },
+    {
+      "line": 47,
+      "match": "'#0A1824'"
+    },
+    {
+      "line": 47,
+      "match": "'#10243A'"
+    },
+    {
+      "line": 47,
+      "match": "'#60A5FA'"
+    },
+    {
+      "line": 47,
+      "match": "'#7EA9D8'"
+    }
+  ],
+  "components/domain/AccountPicker.tsx": [
+    {
+      "line": 70,
+      "match": "\"#000\""
+    }
+  ],
+  "components/domain/AttachmentPicker.tsx": [
+    {
+      "line": 537,
+      "match": "\"#000\""
+    }
+  ],
+  "components/domain/BudgetAnalyticsModal.tsx": [
+    {
+      "line": 660,
+      "match": "\"#FFF\""
+    }
+  ],
+  "components/domain/ObligationAnalyticsModal.tsx": [
+    {
+      "line": 2615,
+      "match": "\"#FFFFFF\""
+    }
+  ],
+  "components/domain/ObligationCapitalChangesModal.tsx": [
+    {
+      "line": 182,
+      "match": "\"#FFFFFF\""
+    }
+  ],
+  "components/domain/RecurringIncomeAnalyticsModal.tsx": [
+    {
+      "line": 791,
+      "match": "\"#FFF\""
+    }
+  ],
+  "components/forms/AccountForm.tsx": [
+    {
+      "line": 42,
+      "match": "\"#1b6a58\""
+    },
+    {
+      "line": 42,
+      "match": "\"#2d9076\""
+    },
+    {
+      "line": 42,
+      "match": "\"#4566d6\""
+    },
+    {
+      "line": 42,
+      "match": "\"#6f82f1\""
+    },
+    {
+      "line": 43,
+      "match": "\"#b48b34\""
+    },
+    {
+      "line": 43,
+      "match": "\"#d39d3a\""
+    },
+    {
+      "line": 43,
+      "match": "\"#8f3e3e\""
+    },
+    {
+      "line": 43,
+      "match": "\"#c55f5f\""
+    },
+    {
+      "line": 44,
+      "match": "\"#8366f2\""
+    },
+    {
+      "line": 44,
+      "match": "\"#9c7dff\""
+    },
+    {
+      "line": 44,
+      "match": "\"#c46a31\""
+    },
+    {
+      "line": 44,
+      "match": "\"#6b7280\""
+    },
+    {
+      "line": 49,
+      "match": "\"#b48b34\""
+    },
+    {
+      "line": 50,
+      "match": "\"#4566d6\""
+    },
+    {
+      "line": 51,
+      "match": "\"#1b6a58\""
+    },
+    {
+      "line": 52,
+      "match": "\"#8f3e3e\""
+    },
+    {
+      "line": 53,
+      "match": "\"#8366f2\""
+    },
+    {
+      "line": 54,
+      "match": "\"#c46a31\""
+    },
+    {
+      "line": 55,
+      "match": "\"#6b7280\""
+    },
+    {
+      "line": 449,
+      "match": "\"#FFFFFF\""
+    }
+  ],
+  "components/forms/BudgetForm.tsx": [
+    {
+      "line": 417,
+      "match": "\"#FFFFFF\""
+    }
+  ],
+  "components/forms/CategoryForm.tsx": [
+    {
+      "line": 36,
+      "match": "\"#6366F1\""
+    },
+    {
+      "line": 36,
+      "match": "\"#10B981\""
+    },
+    {
+      "line": 36,
+      "match": "\"#F59E0B\""
+    },
+    {
+      "line": 36,
+      "match": "\"#EF4444\""
+    },
+    {
+      "line": 37,
+      "match": "\"#3B82F6\""
+    },
+    {
+      "line": 37,
+      "match": "\"#8B5CF6\""
+    },
+    {
+      "line": 37,
+      "match": "\"#EC4899\""
+    },
+    {
+      "line": 37,
+      "match": "\"#14B8A6\""
+    },
+    {
+      "line": 38,
+      "match": "\"#F97316\""
+    },
+    {
+      "line": 38,
+      "match": "\"#84CC16\""
+    },
+    {
+      "line": 333,
+      "match": "\"#FFFFFF\""
+    }
+  ],
+  "components/forms/MovementForm.tsx": [
+    {
+      "line": 2080,
+      "match": "\"#000\""
+    }
+  ],
+  "components/forms/PaymentForm.tsx": [
+    {
+      "line": 524,
+      "match": "\"#FFFFFF\""
+    }
+  ],
+  "components/forms/PrincipalAdjustmentForm.tsx": [
+    {
+      "line": 292,
+      "match": "\"#FFFFFF\""
+    }
+  ],
+  "components/forms/RecurringIncomeForm.tsx": [
+    {
+      "line": 448,
+      "match": "\"#9AA7FF\""
+    },
+    {
+      "line": 459,
+      "match": "\"#E7C878\""
+    }
+  ],
+  "components/forms/SubscriptionForm.tsx": [
+    {
+      "line": 700,
+      "match": "\"#FFFFFF\""
+    }
+  ],
+  "components/layout/OfflineBanner.tsx": [
+    {
+      "line": 48,
+      "match": "\"#000000\""
+    }
+  ],
+  "components/ui/ActivityNotice.tsx": [
+    {
+      "line": 135,
+      "match": "\"#000\""
+    }
+  ],
+  "components/ui/AndroidDarkDatePickerModal.tsx": [
+    {
+      "line": 220,
+      "match": "\"#000\""
+    }
+  ],
+  "components/ui/SparkLine.tsx": [
+    {
+      "line": 16,
+      "match": "\"#10B981\""
+    },
+    {
+      "line": 17,
+      "match": "\"#EF4444\""
+    }
+  ],
+  "components/ui/SuccessGlow.tsx": [
+    {
+      "line": 5,
+      "match": "\"#6BE4C5\""
+    }
+  ],
+  "app/(app)/notification-detection.tsx": [
+    {
+      "line": 253,
+      "match": "\"#FFFFFF\""
+    }
+  ],
+  "app/(auth)/login.tsx": [
+    {
+      "line": 559,
+      "match": "\"#000000\""
+    }
+  ],
+  "app/(auth)/recovery.tsx": [
+    {
+      "line": 136,
+      "match": "\"#FFF\""
+    }
+  ],
+  "app/(auth)/register.tsx": [
+    {
+      "line": 241,
+      "match": "\"#FFF\""
+    }
+  ],
+  "app/exchange-rates.tsx": [
+    {
+      "line": 642,
+      "match": "\"#05070B\""
+    }
+  ],
+  "app/obligation/[id].tsx": [
+    {
+      "line": 4208,
+      "match": "\"#FFFFFF\""
+    },
+    {
+      "line": 4641,
+      "match": "\"#FFFFFF\""
+    },
+    {
+      "line": 4652,
+      "match": "\"#FFF\""
+    }
+  ],
+  "app/settings.tsx": [
+    {
+      "line": 373,
+      "match": "\"#FFF\""
+    },
+    {
+      "line": 374,
+      "match": "\"#FFF\""
+    },
+    {
+      "line": 441,
+      "match": "\"#FFFFFF\""
+    },
+    {
+      "line": 495,
+      "match": "\"#FFFFFF\""
+    },
+    {
+      "line": 713,
+      "match": "\"#FFF\""
+    },
+    {
+      "line": 830,
+      "match": "\"#FFF\""
+    }
+  ],
+  "app/_layout.tsx": [
+    {
+      "line": 163,
+      "match": "\"#05070B\""
+    },
+    {
+      "line": 192,
+      "match": "\"#05070B\""
+    },
+    {
+      "line": 975,
+      "match": "\"#C9A84C\""
+    },
+    {
+      "line": 1028,
+      "match": "\"#F5F7FB\""
+    },
+    {
+      "line": 1034,
+      "match": "\"#96A2B5\""
+    },
+    {
+      "line": 1041,
+      "match": "\"#96A2B5\""
+    }
+  ],
+  "services/queries/workspace-data.ts": [
+    {
+      "line": 1091,
+      "match": "\"#6366F1\""
+    }
+  ]
+}

@@ -1,4 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
+
+import { STALE } from "../../lib/query-client";
 import { supabase } from "../../lib/supabase";
 
 export type PatternMovement = {
@@ -33,7 +35,7 @@ export function useMovementPatternsQuery(workspaceId: number | null) {
     queryKey: ["movement-patterns", workspaceId],
     queryFn: () => fetchMovementPatterns(workspaceId!),
     enabled: !!workspaceId,
-    staleTime: 5 * 60 * 1000,
+    staleTime: STALE.medium,
     gcTime: 10 * 60 * 1000,
   });
 }

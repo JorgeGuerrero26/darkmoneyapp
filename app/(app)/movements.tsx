@@ -2,6 +2,7 @@ import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { Download, SlidersHorizontal, Trash2, X } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   View,
   type SectionListRenderItem,
@@ -24,7 +25,7 @@ import { ActiveFilterBar, type ActiveFilterItem } from "../../components/ui/Acti
 import { HeaderActionGroup } from "../../components/ui/HeaderActionGroup";
 import { ResourceContextNote } from "../../components/ui/ResourceContextNote";
 import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTemplate";
-import { ResourceSectionList, type ResourceSection } from "../../components/ui/ResourceSectionList";
+import { ResourceSectionList } from "../../components/ui/ResourceSectionList";
 import { SkeletonList, SkeletonMovementRow } from "../../components/ui/Skeleton";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { MovementForm } from "../../components/forms/MovementForm";
@@ -38,11 +39,16 @@ import { shareCsvAsFile } from "../../lib/share-csv-file";
 import { sortByName } from "../../lib/sort-locale";
 import { MovementFilterSheet } from "../../features/movements/components/MovementFilterSheet";
 import { MovementSummaryBar } from "../../features/movements/components/MovementSummaryBar";
+import { QuickAddSheet } from "../../features/movements/components/QuickAddSheet";
 import type { MovementRecord, MovementType, MovementStatus } from "../../types/domain";
 
 type FilterType = MovementType | "all";
 type FilterStatus = MovementStatus | "all";
-type MovementListSection = ResourceSection<MovementRecord, "movements">;
+import { groupMovementsByDate, type MovementListSection } from "../../features/movements/lib/group-by-date";
+import { useMovementsRealtimeSync } from "../../features/movements/hooks/useMovementsRealtimeSync";
+import { buildExchangeRateMap, resolveRate } from "../../features/dashboard/lib/aggregations";
+
+const MOVEMENTS_CURRENCY_KEY = "darkmoney.movements.displayCurrency";
 
 const TYPE_FILTERS: { label: string; value: FilterType }[] = [
   { label: "Todos", value: "all" },
@@ -116,6 +122,7 @@ function MovementsScreen() {
   const queryClient = useQueryClient();
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
+  useMovementsRealtimeSync({ workspaceId: activeWorkspaceId });
   const { data: snapshot, dataUpdatedAt } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
 
   const lastUpdateLabel = useMemo(() => {
@@ -142,6 +149,8 @@ function MovementsScreen() {
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [customDateFrom, setCustomDateFrom] = useState("");
   const [customDateTo, setCustomDateTo] = useState("");
+  const [amountMin, setAmountMin] = useState("");
+  const [amountMax, setAmountMax] = useState("");
 
   // ── Delete / undo ─────────────────────────────────────────────────────────
   const { showToast, showRichToast } = useToast();
@@ -180,6 +189,8 @@ function MovementsScreen() {
 
   // ── FAB / formulario (igual que en el dashboard) ───────────────────────────
   const [formVisible, setFormVisible] = useState(false);
+  const [formDefaultType, setFormDefaultType] = useState<MovementType>("expense");
+  const [quickAddSheetVisible, setQuickAddSheetVisible] = useState(false);
 
   // ── Search ────────────────────────────────────────────────────────────────
   const [searchText, setSearchText] = useState("");
@@ -263,36 +274,89 @@ function MovementsScreen() {
     fetchNextPage,
   } = usePaginatedMovements(activeWorkspaceId, filters, profile?.id);
 
-  const allMovements = useMemo(
-    () => (data?.pages.flatMap((p) => p.data) ?? []).filter((m) => !pendingDeleteIds.has(m.id)),
-    [data, pendingDeleteIds],
-  );
+  const allMovements = useMemo(() => {
+    const base = (data?.pages.flatMap((p) => p.data) ?? []).filter((m) => !pendingDeleteIds.has(m.id));
+    const min = Number(amountMin.replace(",", "."));
+    const max = Number(amountMax.replace(",", "."));
+    const hasMin = Number.isFinite(min) && min > 0;
+    const hasMax = Number.isFinite(max) && max > 0;
+    if (!hasMin && !hasMax) return base;
+    return base.filter((m) => {
+      // Comparamos contra el monto "principal" del movimiento según el tipo.
+      // Para income/refund usamos destinationAmount; para el resto, sourceAmount.
+      const amount = m.movementType === "income" || m.movementType === "refund"
+        ? Math.abs(Number(m.destinationAmount ?? 0))
+        : Math.abs(Number(m.sourceAmount ?? 0));
+      if (hasMin && amount < min) return false;
+      if (hasMax && amount > max) return false;
+      return true;
+    });
+  }, [data, pendingDeleteIds, amountMin, amountMax]);
 
   const allMovementIds = useMemo(() => allMovements.map((m) => m.id), [allMovements]);
   const { data: movementAttachmentCounts = {} } = useMovementAttachmentCountsQuery(activeWorkspaceId, allMovementIds);
 
   const baseCurrency = activeWorkspace?.baseCurrencyCode ?? profile?.baseCurrencyCode ?? "PEN";
 
+  const exchangeRateMap = useMemo(
+    () => buildExchangeRateMap(snapshot?.exchangeRates ?? []),
+    [snapshot?.exchangeRates],
+  );
+
+  // Lista de currencies disponibles del workspace (la base + las de cuentas
+  // activas). Solo se renderiza el selector si hay >1.
+  const currencyOptions = useMemo(() => {
+    const set = new Set<string>();
+    set.add(baseCurrency.toUpperCase());
+    for (const account of snapshot?.accounts ?? []) {
+      if (!account.isArchived && account.currencyCode) {
+        set.add(account.currencyCode.toUpperCase());
+      }
+    }
+    return Array.from(set);
+  }, [baseCurrency, snapshot?.accounts]);
+
+  // Display currency persistido en AsyncStorage (similar al patrón de dashboard).
+  const [displayCurrency, setDisplayCurrency] = useState<string | null>(null);
+  const displayCurrencyLoadedRef = useRef(false);
+  useEffect(() => {
+    if (displayCurrencyLoadedRef.current) return;
+    displayCurrencyLoadedRef.current = true;
+    void AsyncStorage.getItem(MOVEMENTS_CURRENCY_KEY).then((stored) => {
+      if (stored && currencyOptions.includes(stored)) setDisplayCurrency(stored);
+      else setDisplayCurrency(baseCurrency.toUpperCase());
+    });
+  }, [baseCurrency, currencyOptions]);
+  const activeCurrency = (displayCurrency ?? baseCurrency).toUpperCase();
+  const handleCurrencyChange = useCallback((code: string) => {
+    setDisplayCurrency(code);
+    void AsyncStorage.setItem(MOVEMENTS_CURRENCY_KEY, code);
+  }, []);
+
   const filterSummary = useMemo(() => {
     let incomeTotal = 0;
     let expenseTotal = 0;
     let incomeCount = 0;
     let expenseCount = 0;
+    const baseUpper = baseCurrency.toUpperCase();
+    const baseToActiveRate = resolveRate(exchangeRateMap, baseUpper, activeCurrency);
     for (const m of allMovements) {
       if (m.movementType === "income") {
-        incomeTotal += m.destinationAmountInBaseCurrency ?? m.destinationAmount ?? 0;
+        const amount = m.destinationAmountInBaseCurrency ?? m.destinationAmount ?? 0;
+        incomeTotal += amount * baseToActiveRate;
         incomeCount++;
       } else if (
         m.movementType === "expense" ||
         m.movementType === "obligation_payment" ||
         m.movementType === "subscription_payment"
       ) {
-        expenseTotal += m.sourceAmountInBaseCurrency ?? m.sourceAmount ?? 0;
+        const amount = m.sourceAmountInBaseCurrency ?? m.sourceAmount ?? 0;
+        expenseTotal += amount * baseToActiveRate;
         expenseCount++;
       }
     }
     return { incomeTotal, expenseTotal, incomeCount, expenseCount, net: incomeTotal - expenseTotal };
-  }, [allMovements]);
+  }, [allMovements, exchangeRateMap, baseCurrency, activeCurrency]);
 
   const extraFiltersCount = [
     activeDatePreset,
@@ -303,7 +367,8 @@ function MovementsScreen() {
     activeStatusFilter !== "all" ? activeStatusFilter : null,
   ].filter(Boolean).length;
 
-  const hasFilters = activeTypeFilters.length > 0 || activeStatusFilter !== "all" || extraFiltersCount > 0 || Boolean(debouncedSearch);
+  const hasAmountRangeActive = Boolean(amountMin || amountMax);
+  const hasFilters = activeTypeFilters.length > 0 || activeStatusFilter !== "all" || extraFiltersCount > 0 || Boolean(debouncedSearch) || hasAmountRangeActive;
   const activeDateRangeNotice = useMemo(() => {
     if (activeQuickLabel) {
       return `Mostrando selección del dashboard: ${activeQuickLabel}.`;
@@ -536,6 +601,8 @@ function MovementsScreen() {
     setActiveMovementIds(null);
     setActiveQuickLabel(null);
     setSearchText("");
+    setAmountMin("");
+    setAmountMax("");
     setDebouncedSearch("");
     setCustomDateFrom("");
     setCustomDateTo("");
@@ -576,12 +643,7 @@ function MovementsScreen() {
   );
 
   const movementSections = useMemo<MovementListSection[]>(
-    () => [{
-      key: "movements",
-      label: "Movimientos",
-      data: allMovements,
-      headerVariant: "hidden",
-    }],
+    () => groupMovementsByDate(allMovements),
     [allMovements],
   );
 
@@ -655,6 +717,19 @@ function MovementsScreen() {
       });
     }
 
+    if (amountMin || amountMax) {
+      const min = amountMin || "0";
+      const max = amountMax || "∞";
+      items.push({
+        key: "amount-range",
+        label: `${min} – ${max}`,
+        onRemove: () => {
+          setAmountMin("");
+          setAmountMax("");
+        },
+      });
+    }
+
     return items;
   }, [
     accountsSorted,
@@ -666,6 +741,8 @@ function MovementsScreen() {
     activeQuickLabel,
     activeStatusFilter,
     activeTypeFilters,
+    amountMin,
+    amountMax,
     categoriesSorted,
     customDateFrom,
     customDateTo,
@@ -768,6 +845,9 @@ function MovementsScreen() {
               summary={filterSummary}
               baseCurrency={baseCurrency}
               partial={hasNextPage}
+              currencyOptions={currencyOptions}
+              displayCurrency={activeCurrency}
+              onCurrencyChange={handleCurrencyChange}
             />
           ) : null
         }
@@ -805,6 +885,7 @@ function MovementsScreen() {
             sections={movementSections}
             keyExtractor={(item) => String(item.id)}
             renderItem={renderItem}
+            stickyHeaders
             refreshing={isLoading && !isFetchingNextPage}
             onRefresh={onRefresh}
             onEndReached={() => {
@@ -832,7 +913,16 @@ function MovementsScreen() {
         }
         fab={
           !selectMode ? (
-            <FAB onPress={() => setFormVisible(true)} bottom={insets.bottom + 16} />
+            <FAB
+              onPress={() => {
+                setFormDefaultType("expense");
+                setFormVisible(true);
+              }}
+              onLongPress={() => setQuickAddSheetVisible(true)}
+              bottom={insets.bottom + 16}
+              accessibilityLabel="Nuevo movimiento"
+              accessibilityHint="Mantén presionado para elegir tipo (gasto, ingreso o transferencia)"
+            />
           ) : null
         }
         overlays={
@@ -858,11 +948,26 @@ function MovementsScreen() {
               accounts={accountsSorted}
               activeAccountId={activeAccountId}
               onAccountIdChange={setActiveAccountId}
+              amountMin={amountMin}
+              amountMax={amountMax}
+              onAmountMinChange={setAmountMin}
+              onAmountMaxChange={setAmountMax}
+              onClearAll={clearAllFilters}
             />
 
             <MovementForm
               visible={formVisible}
               onClose={() => setFormVisible(false)}
+              defaultType={formDefaultType}
+            />
+
+            <QuickAddSheet
+              visible={quickAddSheetVisible}
+              onClose={() => setQuickAddSheetVisible(false)}
+              onSelect={(type) => {
+                setFormDefaultType(type);
+                setFormVisible(true);
+              }}
             />
 
             <ConfirmDialog

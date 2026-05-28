@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { STALE } from "../../lib/query-client";
 import { supabase } from "../../lib/supabase";
 import {
   FINANCIAL_APPS,
@@ -549,7 +550,7 @@ export function useAiUsageTodayQuery(userId?: string | null) {
   return useQuery({
     queryKey: ["ai-usage-today", userId ?? null],
     enabled: Boolean(supabase && userId),
-    staleTime: 60_000,
+    staleTime: STALE.short,
     refetchOnWindowFocus: false,
     queryFn: async (): Promise<AiFeatureUsageToday[]> => {
       if (!supabase || !userId) return [];

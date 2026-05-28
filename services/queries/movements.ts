@@ -1,22 +1,16 @@
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 
+import { STALE } from "../../lib/query-client";
 import { supabase } from "../../lib/supabase";
 import { MOVEMENTS_PAGE_SIZE, SUPABASE_STORAGE_BUCKET } from "../../constants/config";
-import { filterDateFrom, filterDateTo } from "../../lib/date";
-import type { MovementRecord, MovementStatus, MovementType } from "../../types/domain";
+import type { MovementRecord } from "../../types/domain";
+import {
+  applyMovementFilters,
+  type MovementFilters,
+} from "../../features/movements/lib/filters";
 
-export type MovementFilters = {
-  type?: MovementType;
-  types?: MovementType[];
-  status?: MovementStatus;
-  accountId?: number;
-  categoryId?: number;
-  uncategorized?: boolean;
-  dateFrom?: string;
-  dateTo?: string;
-  search?: string;
-  movementIds?: number[];
-};
+export type { MovementFilters, MovementFiltersBuilder } from "../../features/movements/lib/filters";
+export { applyMovementFilters } from "../../features/movements/lib/filters";
 
 type MovementPage = {
   data: MovementRecord[];
@@ -44,7 +38,7 @@ async function fetchMovementsPage(
   const from = page * MOVEMENTS_PAGE_SIZE;
   const to = from + MOVEMENTS_PAGE_SIZE - 1;
 
-  let query = supabase
+  const baseQuery = supabase
     .from("movements")
     .select(
       `id, workspace_id, movement_type, status, occurred_at, description, notes,
@@ -58,28 +52,7 @@ async function fetchMovementsPage(
     .order("id", { ascending: false })
     .range(from, to);
 
-  if (filters.types?.length) query = query.in("movement_type", filters.types);
-  else if (filters.type) query = query.eq("movement_type", filters.type);
-  if (filters.status) query = query.eq("status", filters.status);
-  if (filters.dateFrom) query = query.gte("occurred_at", filterDateFrom(filters.dateFrom));
-  if (filters.dateTo) query = query.lte("occurred_at", filterDateTo(filters.dateTo));
-  if (filters.accountId) {
-    query = query.or(
-      `source_account_id.eq.${filters.accountId},destination_account_id.eq.${filters.accountId}`,
-    );
-  }
-  if (filters.uncategorized) {
-    query = query
-      .is("category_id", null)
-      .in("movement_type", ["income", "refund", "expense", "subscription_payment", "obligation_payment"]);
-  }
-  else if (filters.categoryId) query = query.eq("category_id", filters.categoryId);
-  if (filters.search) {
-    query = query.ilike("description", `%${filters.search}%`);
-  }
-  if (filters.movementIds?.length) {
-    query = query.in("id", filters.movementIds);
-  }
+  const query = applyMovementFilters(baseQuery, filters);
 
   const { data, error } = await query;
 
@@ -130,6 +103,7 @@ export function useMovementQuery(movementId?: number | null) {
           `id, workspace_id, movement_type, status, occurred_at, description, notes,
            source_account_id, source_amount, destination_account_id, destination_amount,
            fx_rate, category_id, counterparty_id, obligation_id, subscription_id, metadata,
+           created_at, updated_at, created_by_user_id, updated_by_user_id,
            source_account:accounts!movements_source_account_id_fkey(name,currency_code),
            destination_account:accounts!movements_destination_account_id_fkey(name,currency_code),
            category:categories(name),
@@ -163,10 +137,14 @@ export function useMovementQuery(movementId?: number | null) {
         obligationId: row.obligation_id,
         subscriptionId: row.subscription_id,
         metadata: row.metadata,
+        createdAt: row.created_at ?? null,
+        updatedAt: row.updated_at ?? null,
+        createdByUserId: row.created_by_user_id ?? null,
+        updatedByUserId: row.updated_by_user_id ?? null,
       } as MovementRecord;
     },
     enabled: Boolean(movementId),
-    staleTime: 30_000,
+    staleTime: STALE.short,
   });
 }
 
@@ -221,7 +199,7 @@ export function useMovementAttachmentsQuery(
       return attachments.filter((item): item is MovementAttachmentFile => item !== null);
     },
     enabled: Boolean(workspaceId && movementId),
-    staleTime: 30_000,
+    staleTime: STALE.short,
   });
 }
 
@@ -239,6 +217,6 @@ export function usePaginatedMovements(
     getNextPageParam: (lastPage) =>
       lastPage.hasMore ? lastPage.nextPage : undefined,
     enabled: Boolean(workspaceId),
-    staleTime: 30_000,
+    staleTime: STALE.short,
   });
 }

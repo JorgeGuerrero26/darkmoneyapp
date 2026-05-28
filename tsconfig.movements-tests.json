@@ -1,0 +1,25 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "Node16",
+    "moduleResolution": "Node16",
+    "target": "ES2020",
+    "outDir": ".tmp/movements-tests",
+    "rootDir": ".",
+    "noEmit": false,
+    "types": []
+  },
+  "include": [
+    "features/movements/lib/movement-save-contract.ts",
+    "features/movements/lib/movement-creation-rules.ts",
+    "features/movements/lib/movement-input-types.ts",
+    "features/movements/lib/group-by-date.ts",
+    "features/movements/lib/form-validation.ts",
+    "features/movements/lib/filters.ts",
+    "types/domain.ts",
+    "lib/sort-locale.ts",
+    "lib/date.ts",
+    "tests/movements/**/*.ts"
+  ],
+  "exclude": []
+}

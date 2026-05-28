@@ -32,7 +32,7 @@ export function UndoBanner({
   const opacity = useRef(new Animated.Value(0)).current;
   const progress = useRef(new Animated.Value(1)).current;
   const progressAnimRef = useRef<Animated.CompositeAnimation | null>(null);
-  const [bannerWidth, setBannerWidth] = useState(0);
+  const [trackWidth, setTrackWidth] = useState(0);
 
   useEffect(() => {
     if (visible) {
@@ -41,7 +41,7 @@ export function UndoBanner({
       progressAnimRef.current = Animated.timing(progress, {
         toValue: 0,
         duration: durationMs,
-        useNativeDriver: false,
+        useNativeDriver: true,
       });
       progressAnimRef.current.start();
 
@@ -77,19 +77,10 @@ export function UndoBanner({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
-  const progressWidth =
-    bannerWidth > 0
-      ? progress.interpolate({ inputRange: [0, 1], outputRange: [0, bannerWidth] })
-      : 0;
-
   return (
     <Animated.View
       pointerEvents={visible ? "auto" : "none"}
       style={[styles.banner, { bottom: bottomOffset, opacity, transform: [{ translateY }] }]}
-      onLayout={(e) => {
-        const w = e.nativeEvent.layout.width;
-        if (w > 0) setBannerWidth(w);
-      }}
     >
       {/* Glass tint */}
       <View style={styles.tint} />
@@ -110,8 +101,29 @@ export function UndoBanner({
       </View>
 
       {/* Progress bar */}
-      <View style={styles.progressTrack}>
-        <Animated.View style={[styles.progressFill, { width: progressWidth }]} />
+      <View
+        style={styles.progressTrack}
+        onLayout={(e) => {
+          const w = e.nativeEvent.layout.width;
+          if (w > 0 && w !== trackWidth) setTrackWidth(w);
+        }}
+      >
+        <Animated.View
+          style={[
+            styles.progressFill,
+            {
+              transform: [
+                {
+                  translateX: progress.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [-trackWidth / 2, 0],
+                  }),
+                },
+                { scaleX: progress },
+              ],
+            },
+          ]}
+        />
       </View>
     </Animated.View>
   );
@@ -184,6 +196,7 @@ const styles = StyleSheet.create({
   },
   progressFill: {
     height: "100%",
+    width: "100%",
     backgroundColor: COLORS.primary,
     opacity: 0.85,
   },

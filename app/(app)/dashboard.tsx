@@ -16,6 +16,7 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
+import { STALE } from "../../lib/query-client";
 import { supabase } from "../../lib/supabase";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
@@ -50,7 +51,6 @@ import {
   useUpdateMovementMutation,
   useSharedObligationsQuery,
   useNotificationsQuery,
-  useUserEntitlementQuery,
   useDashboardAiFlowMutation,
   useDashboardAiHealthMutation,
   useDashboardAiHistoryMutation,
@@ -110,8 +110,7 @@ import { LinearGradient } from "expo-linear-gradient";
 // --- Constants & helpers (extraídos a features/dashboard/lib) -----------------
 
 import {
-  ADVANCED_DASHBOARD_GIFT_EMAIL,
-  DASHBOARD_AI_ADMIN_EMAIL,
+  isAdvancedDashboardGiftEmail,
   DASHBOARD_AI_FLOW_CACHE_KEY_PREFIX,
   DASHBOARD_AI_HEALTH_CACHE_KEY_PREFIX,
   DASHBOARD_AI_HISTORY_CACHE_KEY_PREFIX,
@@ -159,6 +158,8 @@ import {
 
 import { useDashboardStats } from "../../features/dashboard/hooks/useDashboardStats";
 import { useDashboardRealtimeSync } from "../../features/dashboard/hooks/useDashboardRealtimeSync";
+import { useDashboardEntitlement } from "../../features/dashboard/hooks/useDashboardEntitlement";
+import { DashboardSectionBoundary } from "../../features/dashboard/components/shared/DashboardSectionBoundary";
 
 // DashboardReviewInbox/FutureFlowWindow + builders extraídos a features/dashboard/lib/dashboard-builders.ts
 
@@ -363,14 +364,25 @@ function DashboardScreen() {
   const scrollRef = useRef<import("react-native").ScrollView>(null);
   const scrollSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const advancedSectionY = useRef(0);
+  // Lee dashboardScrollY desde una ref para evitar que el useFocusEffect se
+  // re-dispare en cada cambio (cada 200ms mientras el usuario scrollea), lo
+  // cual provocaba "pops" si el scrollTo de restauración llegaba mientras el
+  // usuario ya había empezado a scrollear.
+  const dashboardScrollYRef = useRef(dashboardScrollY);
+  dashboardScrollYRef.current = dashboardScrollY;
+  const userHasScrolledRef = useRef(false);
 
-  // Restaurar posición de scroll cuando el dashboard recupera el foco
+  // Restaurar posición de scroll solo al recuperar foco — una vez por focus.
   useFocusEffect(
     useCallback(() => {
+      userHasScrolledRef.current = false;
       let t: ReturnType<typeof setTimeout> | undefined;
-      if (dashboardScrollY > 0) {
+      const initialY = dashboardScrollYRef.current;
+      if (initialY > 0) {
         t = setTimeout(() => {
-          scrollRef.current?.scrollTo({ y: dashboardScrollY, animated: false });
+          if (!userHasScrolledRef.current) {
+            scrollRef.current?.scrollTo({ y: initialY, animated: false });
+          }
         }, 80);
       }
       return () => {
@@ -378,7 +390,7 @@ function DashboardScreen() {
         if (scrollSaveTimer.current) clearTimeout(scrollSaveTimer.current);
         scrollSaveTimer.current = null;
       };
-    }, [dashboardScrollY]),
+    }, []),
   );
 
   const [period, setPeriod] = useState<Period>("month");
@@ -391,10 +403,13 @@ function DashboardScreen() {
   const [displayCurrency, setDisplayCurrency] = useState<string | null>(null);
   const currencyLoadedRef = useRef(false);
 
-  const entitlementQuery = useUserEntitlementQuery(session?.user?.id ?? profile?.id ?? null, profile?.email);
-  const isPro = entitlementQuery.data?.proAccessEnabled ?? false;
-  const hasAdvancedDashboardGift = profile?.email?.trim().toLowerCase() === ADVANCED_DASHBOARD_GIFT_EMAIL;
-  const hasAdvancedDashboardAccess = isPro || hasAdvancedDashboardGift;
+  const dashboardEntitlement = useDashboardEntitlement({
+    userId: session?.user?.id ?? profile?.id ?? null,
+    email: profile?.email,
+  });
+  const isPro = dashboardEntitlement.tier === "pro" && dashboardEntitlement.reason === "pro_subscription";
+  const hasAdvancedDashboardGift = dashboardEntitlement.reason === "gift_email";
+  const hasAdvancedDashboardAccess = dashboardEntitlement.features.advancedDashboard;
 
   const {
     data: snapshot,
@@ -431,7 +446,7 @@ function DashboardScreen() {
     if (!supabase || !activeWorkspaceId) return;
     void queryClient.prefetchQuery({
       queryKey: ["obligation-shares", activeWorkspaceId],
-      staleTime: 120_000,
+      staleTime: STALE.medium,
       queryFn: async () => {
         const { data, error } = await supabase!
           .from("obligation_shares")
@@ -463,7 +478,7 @@ function DashboardScreen() {
     });
     void queryClient.prefetchQuery({
       queryKey: ["obligation-payment-request-counts", activeWorkspaceId],
-      staleTime: 120_000,
+      staleTime: STALE.medium,
       queryFn: async () => {
         const { data, error } = await supabase!
           .from("obligation_payment_requests")
@@ -616,7 +631,7 @@ function DashboardScreen() {
   }, [snapshot?.accounts]);
 
   const isAdvanced = dashboardMode === "advanced";
-  const isCheckingAdvancedAccess = isAdvanced && !hasAdvancedDashboardGift && entitlementQuery.isLoading && !entitlementQuery.data;
+  const isCheckingAdvancedAccess = isAdvanced && !hasAdvancedDashboardGift && dashboardEntitlement.isLoading;
   const shouldShowAdvancedProGate = isAdvanced && !isCheckingAdvancedAccess && !hasAdvancedDashboardAccess;
 
   if (snapLoading) {
@@ -653,6 +668,7 @@ function DashboardScreen() {
         scrollEventThrottle={16}
         onScroll={(e) => {
           const y = e.nativeEvent.contentOffset.y;
+          userHasScrolledRef.current = true;
           if (scrollSaveTimer.current) clearTimeout(scrollSaveTimer.current);
           scrollSaveTimer.current = setTimeout(() => setDashboardScrollY(y), 200);
         }}
@@ -672,110 +688,112 @@ function DashboardScreen() {
         {!isAdvanced ? (
           <>
         {/* 1b. Urgent alerts */}
-        <UrgentAlertsCard
-          obligations={obligationsMerged}
-          budgets={correctedDashboardBudgets}
-          subscriptions={snapshot?.subscriptions ?? []}
-          router={router}
-        />
+        <DashboardSectionBoundary sectionLabel="Alertas urgentes">
+          <UrgentAlertsCard
+            obligations={obligationsMerged}
+            budgets={correctedDashboardBudgets}
+            subscriptions={snapshot?.subscriptions ?? []}
+            router={router}
+          />
+        </DashboardSectionBoundary>
 
-        {/* 2. Hero balance (period + currency selector inside) */}
-        <HeroCard
-          netWorth={netWorth}
-          income={stats.income}
-          expense={stats.expense}
-          currency={activeCurrency}
-          period={period}
-          setPeriod={setPeriod}
-          currencyOptions={currencyOptions}
-          onCurrencyChange={handleCurrencyChange}
-        />
-        <MacroContextCard />
+        {/* 2. Hero balance + Macro context */}
+        <DashboardSectionBoundary sectionLabel="Balance y contexto">
+          <HeroCard
+            netWorth={netWorth}
+            income={stats.income}
+            expense={stats.expense}
+            currency={activeCurrency}
+            period={period}
+            setPeriod={setPeriod}
+            currencyOptions={currencyOptions}
+            onCurrencyChange={handleCurrencyChange}
+          />
+          <MacroContextCard />
+        </DashboardSectionBoundary>
 
-        {/* 3. Flow KPI row */}
-        <FlowRow
-          income={stats.income}
-          expense={stats.expense}
-          net={stats.net}
-          currency={activeCurrency}
-          prevIncome={stats.prevIncome}
-          prevExpense={stats.prevExpense}
-        />
+        {/* 3-4. Flow KPI + charts */}
+        <DashboardSectionBoundary sectionLabel="Flujo y cronología">
+          <FlowRow
+            income={stats.income}
+            expense={stats.expense}
+            net={stats.net}
+            currency={activeCurrency}
+            prevIncome={stats.prevIncome}
+            prevExpense={stats.prevExpense}
+          />
+          <MiniBarChart
+            data={stats.chartDays}
+            onSelectDay={(d) => setDaySheet({ dayStart: d.dayStart, dayEnd: d.dayEnd, mode: "all" })}
+          />
+          <ChronologyStrip
+            title="Cronología de gastos"
+            hint="Últimos 7 días · toca un día para ver cada gasto de esa fecha"
+            mode="expense"
+            data={stats.chartDays}
+            barColor={COLORS.expense}
+            currency={activeCurrency}
+            getValue={(d) => d.expense}
+            onSelectDay={(d, mode) => setDaySheet({ dayStart: d.dayStart, dayEnd: d.dayEnd, mode })}
+          />
+          <ChronologyStrip
+            title="Cronología de ingresos"
+            hint="Últimos 7 días · toca un día para ver cada ingreso"
+            mode="income"
+            data={stats.chartDays}
+            barColor={COLORS.income}
+            currency={activeCurrency}
+            getValue={(d) => d.income}
+            onSelectDay={(d, mode) => setDaySheet({ dayStart: d.dayStart, dayEnd: d.dayEnd, mode })}
+          />
+          <ChronologyStrip
+            title="Cronología de transferencias"
+            hint="Últimos 7 días · toca un día para ver transferencias entre cuentas"
+            mode="transfer"
+            data={stats.chartDays}
+            barColor={COLORS.secondary}
+            currency={activeCurrency}
+            getValue={(d) => d.transferTotal}
+            onSelectDay={(d, mode) => setDaySheet({ dayStart: d.dayStart, dayEnd: d.dayEnd, mode })}
+          />
+        </DashboardSectionBoundary>
 
-        {/* 4. Mini chart + detalle por día */}
-        <MiniBarChart
-          data={stats.chartDays}
-          onSelectDay={(d) => setDaySheet({ dayStart: d.dayStart, dayEnd: d.dayEnd, mode: "all" })}
-        />
-        <ChronologyStrip
-          title="Cronología de gastos"
-          hint="Últimos 7 días · toca un día para ver cada gasto de esa fecha"
-          mode="expense"
-          data={stats.chartDays}
-          barColor={COLORS.expense}
-          currency={activeCurrency}
-          getValue={(d) => d.expense}
-          onSelectDay={(d, mode) => setDaySheet({ dayStart: d.dayStart, dayEnd: d.dayEnd, mode })}
-        />
-        <ChronologyStrip
-          title="Cronología de ingresos"
-          hint="Últimos 7 días · toca un día para ver cada ingreso"
-          mode="income"
-          data={stats.chartDays}
-          barColor={COLORS.income}
-          currency={activeCurrency}
-          getValue={(d) => d.income}
-          onSelectDay={(d, mode) => setDaySheet({ dayStart: d.dayStart, dayEnd: d.dayEnd, mode })}
-        />
-        <ChronologyStrip
-          title="Cronología de transferencias"
-          hint="Últimos 7 días · toca un día para ver transferencias entre cuentas"
-          mode="transfer"
-          data={stats.chartDays}
-          barColor={COLORS.secondary}
-          currency={activeCurrency}
-          getValue={(d) => d.transferTotal}
-          onSelectDay={(d, mode) => setDaySheet({ dayStart: d.dayStart, dayEnd: d.dayEnd, mode })}
-        />
+        {/* 5-5b. Accounts */}
+        <DashboardSectionBoundary sectionLabel="Cuentas">
+          <AccountsScroll
+            accounts={activeAccounts}
+            onPress={(id) => router.push(`/account/${id}?from=dashboard`)}
+          />
+          <AccountsBreakdown
+            accounts={snapshot?.accounts ?? []}
+            displayCurrency={activeCurrency}
+            baseCurrency={baseCurrency}
+            exchangeRateMap={exchangeRateMap}
+          />
+        </DashboardSectionBoundary>
 
-        {/* 5. Accounts */}
-        <AccountsScroll
-          accounts={activeAccounts}
-          onPress={(id) => router.push(`/account/${id}?from=dashboard`)}
-        />
+        {/* 6-8. Obligations + Upcoming + Budgets */}
+        <DashboardSectionBoundary sectionLabel="Obligaciones y presupuestos">
+          <LeadersRow obligations={obligationsMerged} router={router} />
+          <UpcomingSection
+            obligations={obligationsMerged}
+            subscriptions={snapshot?.subscriptions ?? []}
+            recurringIncome={snapshot?.recurringIncome ?? []}
+            router={router}
+          />
+          <BudgetsSection budgets={correctedDashboardBudgets} router={router} />
+        </DashboardSectionBoundary>
 
-        {/* 5b. Accounts distribution ring chart */}
-        <AccountsBreakdown
-          accounts={snapshot?.accounts ?? []}
-          displayCurrency={activeCurrency}
-          baseCurrency={baseCurrency}
-          exchangeRateMap={exchangeRateMap}
-        />
-
-        {/* 6. Receivable + Payable leaders */}
-        <LeadersRow obligations={obligationsMerged} router={router} />
-
-        {/* 7. Upcoming */}
-        <UpcomingSection
-          obligations={obligationsMerged}
-          subscriptions={snapshot?.subscriptions ?? []}
-          recurringIncome={snapshot?.recurringIncome ?? []}
-          router={router}
-        />
-
-        {/* 8. Budget alerts */}
-        <BudgetsSection budgets={correctedDashboardBudgets} router={router} />
-
-        {/* 9. Category comparison (simple) */}
-        <CategoryComparison
-          catTotals={stats.catTotals}
-          prevCatTotals={stats.prevCatTotals}
-          categories={snapshot?.categories ?? []}
-          currency={activeCurrency}
-        />
-
-        {/* 10. Savings trend sparkline */}
-        <SavingsTrendCard monthlyPulse={stats.monthlyPulse} currency={activeCurrency} />
+        {/* 9-10. Categories + Savings */}
+        <DashboardSectionBoundary sectionLabel="Categorías y ahorro">
+          <CategoryComparison
+            catTotals={stats.catTotals}
+            prevCatTotals={stats.prevCatTotals}
+            categories={snapshot?.categories ?? []}
+            currency={activeCurrency}
+          />
+          <SavingsTrendCard monthlyPulse={stats.monthlyPulse} currency={activeCurrency} />
+        </DashboardSectionBoundary>
           </>
         ) : null}
 
@@ -936,7 +954,7 @@ const hdrStyles = StyleSheet.create({
   badgeText: {
     fontSize: 9,
     fontFamily: FONT_FAMILY.bodySemibold,
-    color: "#FFFFFF",
+    color: COLORS.ink,
     lineHeight: 12,
   },
   avatar: {

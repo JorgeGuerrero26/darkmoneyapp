@@ -9,8 +9,10 @@
     "web": "expo start --web",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
+    "check:no-hex": "node scripts/check-no-hex.mjs",
     "test:analytics": "tsc -p tsconfig.analytics-tests.json && node .tmp/analytics-tests/tests/analytics/analytics-smoke.js",
-    "test:dashboard": "tsc -p tsconfig.dashboard-tests.json && node .tmp/dashboard-tests/tests/dashboard/selectors-smoke.js && node .tmp/dashboard-tests/tests/dashboard/aggregations-smoke.js && node .tmp/dashboard-tests/tests/dashboard/dashboard-builders-smoke.js && node .tmp/dashboard-tests/tests/dashboard/advanced-builders-smoke.js"
+    "test:dashboard": "tsc -p tsconfig.dashboard-tests.json && node .tmp/dashboard-tests/tests/dashboard/selectors-smoke.js && node .tmp/dashboard-tests/tests/dashboard/aggregations-smoke.js && node .tmp/dashboard-tests/tests/dashboard/dashboard-builders-smoke.js && node .tmp/dashboard-tests/tests/dashboard/advanced-builders-smoke.js && node .tmp/dashboard-tests/tests/dashboard/multi-currency-smoke.js && node .tmp/dashboard-tests/tests/dashboard/entitlement-smoke.js",
+    "test:movements": "tsc -p tsconfig.movements-tests.json && node .tmp/movements-tests/tests/movements/save-contract-smoke.js && node .tmp/movements-tests/tests/movements/creation-rules-smoke.js && node .tmp/movements-tests/tests/movements/group-by-date-smoke.js && node .tmp/movements-tests/tests/movements/form-validation-smoke.js && node .tmp/movements-tests/tests/movements/filters-smoke.js"
   },
   "dependencies": {
     "@expo-google-fonts/manrope": "^0.4.2",

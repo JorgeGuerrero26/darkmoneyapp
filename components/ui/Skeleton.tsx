@@ -1,6 +1,9 @@
-import { useEffect, useRef } from "react";
-import { Animated, StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { Animated, StyleSheet, View, type LayoutChangeEvent, type StyleProp, type ViewStyle } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import { RADIUS, SPACING, SURFACE } from "../../constants/theme";
+
+const AnimatedLinearGradient = Animated.createAnimatedComponent(LinearGradient);
 
 type Props = {
   width?: number | string;
@@ -10,23 +13,50 @@ type Props = {
 };
 
 export function Skeleton({ width = "100%", height = 16, borderRadius = RADIUS.sm, style }: Props) {
-  const opacity = useRef(new Animated.Value(0.3)).current;
+  const progress = useRef(new Animated.Value(0)).current;
+  const [measuredWidth, setMeasuredWidth] = useState(0);
 
   useEffect(() => {
     const anim = Animated.loop(
-      Animated.sequence([
-        Animated.timing(opacity, { toValue: 0.85, duration: 700, useNativeDriver: true }),
-        Animated.timing(opacity, { toValue: 0.3, duration: 700, useNativeDriver: true }),
-      ]),
+      Animated.timing(progress, {
+        toValue: 1,
+        duration: 1400,
+        useNativeDriver: true,
+      }),
     );
     anim.start();
     return () => anim.stop();
-  }, [opacity]);
+  }, [progress]);
+
+  function handleLayout(event: LayoutChangeEvent) {
+    const w = event.nativeEvent.layout.width;
+    if (w > 0 && w !== measuredWidth) setMeasuredWidth(w);
+  }
+
+  const translateX = measuredWidth
+    ? progress.interpolate({
+        inputRange: [0, 1],
+        outputRange: [-measuredWidth, measuredWidth],
+      })
+    : 0;
 
   return (
-    <Animated.View
-      style={[{ width: width as any, height, borderRadius, backgroundColor: SURFACE.card, opacity }, style]}
-    />
+    <View
+      onLayout={handleLayout}
+      style={[
+        { width: width as any, height, borderRadius, backgroundColor: SURFACE.card, overflow: "hidden" },
+        style,
+      ]}
+    >
+      {measuredWidth > 0 ? (
+        <AnimatedLinearGradient
+          colors={["rgba(255,255,255,0)", "rgba(255,255,255,0.12)", "rgba(255,255,255,0)"]}
+          start={{ x: 0, y: 0.5 }}
+          end={{ x: 1, y: 0.5 }}
+          style={[StyleSheet.absoluteFillObject, { transform: [{ translateX }] }]}
+        />
+      ) : null}
+    </View>
   );
 }
 

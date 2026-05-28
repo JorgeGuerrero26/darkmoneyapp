@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 
+import { STALE } from "../../lib/query-client";
 import { filterDateFrom, filterDateTo } from "../../lib/date";
 import { supabase } from "../../lib/supabase";
 import type { BudgetOverview } from "../../types/domain";
@@ -114,7 +115,7 @@ export function useBudgetScopeMovementsQuery(
       refreshKey,
     ],
     enabled: Boolean(workspaceId && periodStart && periodEnd && budgets.length > 0),
-    staleTime: 30_000,
+    staleTime: STALE.short,
     placeholderData: (previousData) => previousData,
     queryFn: () => fetchBudgetScopeMovements(workspaceId!, periodStart!, periodEnd!),
   });

@@ -166,7 +166,7 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.82,
-    backgroundColor: "rgba(255,255,255,0.07)",
+    backgroundColor: SURFACE.pressed,
   },
   mainRow: {
     flexDirection: "row",

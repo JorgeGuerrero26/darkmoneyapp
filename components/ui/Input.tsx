@@ -19,10 +19,24 @@ type Props = TextInputProps & {
 };
 
 export const Input = forwardRef<TextInput, Props>(function Input(
-  { label, error, hint, containerStyle, style, onFocus, onBlur, rightElement, ...rest },
+  {
+    label,
+    error,
+    hint,
+    containerStyle,
+    style,
+    onFocus,
+    onBlur,
+    rightElement,
+    accessibilityLabel,
+    accessibilityHint,
+    ...rest
+  },
   ref,
 ) {
   const [focused, setFocused] = useState(false);
+  const resolvedAccessibilityLabel = accessibilityLabel ?? label ?? rest.placeholder;
+  const resolvedAccessibilityHint = accessibilityHint ?? (error ? `${hint ? `${hint}. ` : ""}Error: ${error}` : hint);
 
   return (
     <View style={[styles.container, containerStyle]}>
@@ -34,11 +48,21 @@ export const Input = forwardRef<TextInput, Props>(function Input(
           placeholderTextColor={COLORS.storm}
           onFocus={(e) => { setFocused(true); onFocus?.(e); }}
           onBlur={(e) => { setFocused(false); onBlur?.(e); }}
+          accessibilityLabel={resolvedAccessibilityLabel}
+          accessibilityHint={resolvedAccessibilityHint}
           {...rest}
         />
         {rightElement ? <View style={styles.rightSlot}>{rightElement}</View> : null}
       </View>
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {error ? (
+        <Text
+          style={styles.error}
+          accessibilityLiveRegion="polite"
+          accessibilityRole="alert"
+        >
+          {error}
+        </Text>
+      ) : null}
       {!error && hint ? <Text style={styles.hint}>{hint}</Text> : null}
     </View>
   );

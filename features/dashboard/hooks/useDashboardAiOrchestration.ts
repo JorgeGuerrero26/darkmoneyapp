@@ -8,7 +8,7 @@ import {
   useDashboardAiPatternsMutation,
   useDashboardAiSummaryMutation,
 } from "../../../services/queries/workspace-data";
-import { DASHBOARD_AI_ADMIN_EMAIL } from "../lib/constants";
+import { isDashboardAiAdminEmail } from "../lib/constants";
 import {
   getDashboardAiFlowCacheKey,
   getDashboardAiHealthCacheKey,
@@ -67,7 +67,7 @@ export function useDashboardAiOrchestration({ userId, userEmail }: UseDashboardA
   );
 
   const usageDate = getDashboardAiUsageDate();
-  const isAdmin = userEmail?.trim().toLowerCase() === DASHBOARD_AI_ADMIN_EMAIL;
+  const isAdmin = isDashboardAiAdminEmail(userEmail);
 
   // Reset state + load tone when user changes
   useEffect(() => {

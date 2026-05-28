@@ -59,6 +59,7 @@ type Props<T, S extends ResourceSection<T> = ResourceSection<T>> = {
   itemAnimationMaxStagger?: number;
   onEndReached?: () => void;
   onEndReachedThreshold?: number;
+  stickyHeaders?: boolean;
 };
 
 export function ResourceSectionList<T, S extends ResourceSection<T> = ResourceSection<T>>({
@@ -78,6 +79,7 @@ export function ResourceSectionList<T, S extends ResourceSection<T> = ResourceSe
   itemAnimationMaxStagger = 10,
   onEndReached,
   onEndReachedThreshold,
+  stickyHeaders = false,
 }: Props<T, S>) {
   return (
     <SectionList<T, S>
@@ -93,7 +95,7 @@ export function ResourceSectionList<T, S extends ResourceSection<T> = ResourceSe
         );
       }}
       renderSectionHeader={({ section }) => <ResourceSectionHeader section={section as ResourceSection<T>} />}
-      stickySectionHeadersEnabled={false}
+      stickySectionHeadersEnabled={stickyHeaders}
       ListHeaderComponent={
         <>
           {listHeaderComponent}
@@ -140,7 +142,7 @@ export function ResourceSectionList<T, S extends ResourceSection<T> = ResourceSe
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} />
         ) : undefined
       }
-      removeClippedSubviews
+      removeClippedSubviews={!stickyHeaders}
       maxToRenderPerBatch={10}
       windowSize={5}
       initialNumToRender={15}
