@@ -27,6 +27,8 @@ Ejecutar npm run lint solo si el entorno tiene configuración ESLint válida.
 
 Si lint falla por configuración ausente o por ESLint flat config faltante, reportarlo sin bloquear el cambio.
 
+Para builds release del APK Android (cualquier cambio en `plugins/notification-detection/native-src/**/*.kt` o `android/app/src/**`), seguir `docs/BUILD_APK.md`. Reglas no negociables: sincronizar `plugins/` → `android/app/src/main/java/`, limpiar caches, build con `-P` quoteado en PowerShell, y verificar que los strings nuevos aparecen en el DEX antes de declarar el APK listo. `BUILD SUCCESSFUL` no garantiza que el cambio entró.
+
 ## Database migrations
 
 Toda migración nueva en `supabase/migrations/` DEBE quedar documentada en `DATABASE_DICTIONARY.md` antes de cerrar la tarea.
