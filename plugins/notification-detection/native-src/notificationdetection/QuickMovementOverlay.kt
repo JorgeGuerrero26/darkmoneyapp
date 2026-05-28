@@ -1,6 +1,7 @@
 package com.darkmoney.app.notificationdetection
 
 import android.animation.ValueAnimator
+import android.app.NotificationManager
 import android.content.Context
 import android.graphics.PixelFormat
 import android.graphics.Typeface
@@ -380,58 +381,46 @@ object QuickMovementOverlay {
     root.addView(categorySelectRef.container)
     expenseIncomeOnlyViews.add(categorySelectRef.container)
 
-    val aiNeedsUpdate = aiCategoryRecommendation == null || aiCategoryPending(aiCategoryRecommendation)
-    var aiLoadingContainer: LinearLayout? = null
-    if (aiNeedsUpdate && selectedType != "transfer") {
-      aiLoadingContainer = LinearLayout(context).apply {
-        orientation = LinearLayout.VERTICAL
-        setPadding(0, dp(6), 0, 0)
-      }.also {
-        it.addView(aiLoadingRow(context))
-        root.addView(it)
-        expenseIncomeOnlyViews.add(it)
-      }
-    }
-
+    // Local-first: priorizar resolver local instantáneo; IA refina luego con swap animado.
+    // El pre-cómputo de IA ya fue disparado por DarkMoneyNotificationListenerService al detectar.
     val aiSuggestedIdx = aiSuggestedCategoryIndex(aiCategoryRecommendation, categories)
       ?.takeIf { categoryVisibleForSelectedType(categories[it]) }
-    val suggestedIdx = aiSuggestedIdx ?: suggestCategoryForOverlay(description, runtimeContext, categories, ::categoryVisibleForSelectedType)
-    val suggestedCategory = if (suggestedIdx != null && suggestedIdx > 0) categories.getOrNull(suggestedIdx) else null
-    if (suggestedCategory != null && suggestedIdx != null) {
-      val detail = if (aiSuggestedIdx != null) aiDetail(aiCategoryRecommendation) else "patrón de tus movimientos"
-      val suggestionRow = categorySuggestionRow(context, suggestedCategory.label, detail) {
-        categorySelectRef.selectIndex(suggestedIdx)
+    val localSuggestedIdx = suggestCategoryForOverlay(description, runtimeContext, categories, ::categoryVisibleForSelectedType)
+    val initialIdx = aiSuggestedIdx ?: localSuggestedIdx
+    val aiPending = aiCategoryRecommendation == null || aiCategoryPending(aiCategoryRecommendation)
+    val showingLocalWhileAiPending = aiSuggestedIdx == null && localSuggestedIdx != null && aiPending && selectedType != "transfer"
+
+    val suggestionWrap = LinearLayout(context).apply {
+      orientation = LinearLayout.VERTICAL
+      setPadding(0, dp(6), 0, 0)
+    }
+    var currentSuggestionRow: View? = null
+    if (initialIdx != null && initialIdx > 0) {
+      val sugCat = categories.getOrNull(initialIdx)
+      if (sugCat != null) {
+        val detail = if (aiSuggestedIdx != null) aiDetail(aiCategoryRecommendation) else "patrón de tus movimientos"
+        currentSuggestionRow = categorySuggestionRow(context, sugCat.label, detail) {
+          categorySelectRef.selectIndex(initialIdx)
+        }
+        suggestionWrap.addView(currentSuggestionRow)
       }
-      val suggestionWrap = LinearLayout(context).apply {
-        orientation = LinearLayout.VERTICAL
-        setPadding(0, dp(6), 0, 0)
-      }
-      suggestionWrap.addView(suggestionRow)
+    }
+    // Skeleton ligero SOLO cuando no hay ninguna sugerencia para mostrar y la IA puede llegar.
+    val showSkeleton = initialIdx == null && aiPending && selectedType != "transfer"
+    if (showSkeleton) {
+      suggestionWrap.addView(aiLoadingRow(context))
+    }
+    if (suggestionWrap.childCount > 0) {
       root.addView(suggestionWrap)
       expenseIncomeOnlyViews.add(suggestionWrap)
     }
 
-    // Poll SharedPreferences for AI result when it hasn't arrived yet (pending or null).
-    // Covers the case where the overlay opens before the RN sync sets the recommendation.
-    if (aiNeedsUpdate) {
-      val workspaceId = runtimeContext.optInt("workspaceId", 0).takeIf { it > 0 }
-      if (workspaceId != null && selectedType != "transfer") {
-        NotificationDetectionSaveTaskService.startAiCategoryEnrichment(
-          context,
-          suggestionId,
-          workspaceId,
-          if (selectedType == "income") "income" else "expense",
-          amountLabel.ifBlank { amount },
-          description,
-          runtimeContext.toString(),
-        )
-      }
-      val capturedLoading = aiLoadingContainer
+    // Polling: solo si la IA aún no resolvió. Sirve para hacer swap animado cuando llega tras
+    // abrirse el overlay (caso: local mostrado pero IA refina) o para reemplazar skeleton.
+    if (aiPending && selectedType != "transfer") {
       val pollHandler = Handler(Looper.getMainLooper())
-      // Exponential-ish backoff schedule. Total budget ~15s. Each entry is the delay in ms
-      // before the next poll. After exhausting, the loading container is replaced with a
-      // "no encontrada" hint so the user knows AI gave up and can pick a category manually.
-      val pollSchedule = longArrayOf(1000L, 1500L, 2000L, 2500L, 3000L, 5000L)
+      // Presupuesto reducido: ~5s (la IA ya pre-corrió al detectar, normalmente está lista al abrir).
+      val pollSchedule = longArrayOf(500L, 700L, 900L, 1200L, 1700L)
       var attempts = 0
       val pollRunnable = object : Runnable {
         override fun run() {
@@ -439,48 +428,33 @@ object QuickMovementOverlay {
           val updated = NotificationDetectionStore.getSuggestion(context.applicationContext, suggestionId)
           val updatedRec = updated?.optJSONObject("aiCategoryRecommendation")
           if (updatedRec != null && !aiCategoryPending(updatedRec)) {
-            capturedLoading?.let {
-              root.removeView(it)
-              expenseIncomeOnlyViews.remove(it)
-            }
             val aiIdx = aiSuggestedCategoryIndex(updatedRec, categories)
               ?.takeIf { categoryVisibleForSelectedType(categories[it]) }
+            // Si la IA produjo una sugerencia válida, hacer swap animado.
             if (aiIdx != null && aiIdx > 0) {
               val sugCat = categories.getOrNull(aiIdx) ?: return
-              val suggRow = categorySuggestionRow(context, sugCat.label, aiDetail(updatedRec)) {
+              val newRow = categorySuggestionRow(context, sugCat.label, aiDetail(updatedRec)) {
                 categorySelectRef.selectIndex(aiIdx)
               }
-              val suggWrap = LinearLayout(context).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(0, dp(6), 0, 0)
+              animatedSwapSuggestionRow(suggestionWrap, currentSuggestionRow, newRow)
+              currentSuggestionRow = newRow
+            } else if (currentSuggestionRow == null) {
+              // IA respondió sin sugerencia útil; si solo había skeleton, ocultarlo en silencio.
+              suggestionWrap.removeAllViews()
+              if (suggestionWrap.childCount == 0) {
+                (suggestionWrap.parent as? ViewGroup)?.removeView(suggestionWrap)
+                expenseIncomeOnlyViews.remove(suggestionWrap)
               }
-              suggWrap.addView(suggRow)
-              root.addView(suggWrap)
-              expenseIncomeOnlyViews.add(suggWrap)
             }
             return
           }
           if (attempts >= pollSchedule.size) {
-            // Budget exhausted. Replace the loading view with a brief "manual" hint.
-            capturedLoading?.let {
-              val labelChild = (it.getChildAt(0) as? LinearLayout)?.let { _ -> null }
-              // Walk children to find TextViews and update their text.
-              fun updateChildren(view: ViewGroup) {
-                for (i in 0 until view.childCount) {
-                  val child = view.getChildAt(i)
-                  when (child) {
-                    is ViewGroup -> updateChildren(child)
-                    is TextView -> {
-                      if (child.text == "Preparando mejor sugerencia") {
-                        child.text = "Sin sugerencia automatica"
-                      } else if (child.text == "Confirmaremos o mejoraremos la categoría actual.") {
-                        child.text = "Elige una categoria manualmente."
-                      }
-                    }
-                  }
-                }
-              }
-              updateChildren(it)
+            // Presupuesto agotado. Si solo había skeleton, removerlo silenciosamente; si hay
+            // sugerencia local mostrada, dejarla en paz.
+            if (currentSuggestionRow == null) {
+              suggestionWrap.removeAllViews()
+              (suggestionWrap.parent as? ViewGroup)?.removeView(suggestionWrap)
+              expenseIncomeOnlyViews.remove(suggestionWrap)
             }
             return
           }
@@ -627,6 +601,11 @@ object QuickMovementOverlay {
           selectedRecurringIntervalCount,
           descriptionInput.input.text.toString(),
         )
+        // Cancela el tile inmediatamente para que la bandeja se sienta responsiva.
+        // markSuggestionRegistered (al final del headless task) volverá a cancelar, lo cual es idempotente.
+        if (notificationId > 0) {
+          context.getSystemService(NotificationManager::class.java)?.cancel(notificationId)
+        }
         Handler(Looper.getMainLooper()).postDelayed({ animatedDismiss() }, 900)
       }
     }
@@ -1228,7 +1207,9 @@ object QuickMovementOverlay {
       }
     }
 
-    // Tier 2: wordToCategory pattern map — cumulative word-frequency score
+    // Tier 2: wordToCategory pattern map — cumulative word-frequency score.
+    // Umbrales más permisivos: sugerimos con evidencia moderada y dejamos que el badge
+    // "patrón histórico" haga el trabajo de transparencia.
     val wordToCategory = runtimeContext.optJSONObject("wordToCategory")
     if (wordToCategory != null) {
       val scores = mutableMapOf<Int, Int>()
@@ -1247,16 +1228,69 @@ object QuickMovementOverlay {
           .filter { it.key != best.key }
           .maxOfOrNull { it.value } ?: 0
         val scoreGap = best.value - secondScore
+        val relativeGap = if (best.value + secondScore > 0) best.value.toDouble() / (best.value + secondScore) else 0.0
         val singleWord = words.toSet().size <= 1
-        if (best.value < 2) return null
-        if (secondScore > 0 && scoreGap < 2) return null
-        if (singleWord && !(best.value >= 4 && secondScore == 0)) return null
+        if (best.value < 1) return null
+        // Si el gap absoluto es chico pero el relativo es dominante (≥65%), igual sugerimos.
+        if (secondScore > 0 && scoreGap < 2 && relativeGap < 0.65) return null
+        if (singleWord && best.value < 2) return null
         val idx = categories.indexOfFirst { it.id == best.key && isOptionVisible(it) }
         if (idx > 0) return idx
       }
     }
 
+    // Tier 3: counterpartyToCategory. Si alguna contraparte conocida aparece en la descripción,
+    // y tiene una categoría dominante en el historial, sugerirla. Cubre casos como
+    // "Yape Mama" → Familia cuando "Yape" y "Mama" individualmente no son señal fuerte.
+    val counterpartyToCategory = runtimeContext.optJSONObject("counterpartyToCategory")
+    val counterparties = runtimeContext.optJSONArray("counterparties")
+    if (counterpartyToCategory != null && counterparties != null) {
+      for (i in 0 until counterparties.length()) {
+        val entry = counterparties.optJSONObject(i) ?: continue
+        val name = entry.optString("name").ifBlank { continue }
+        val normalizedName = normalizeText(name)
+        if (normalizedName.length < 3 || !normalized.contains(normalizedName)) continue
+        val cpId = entry.optInt("id", 0).takeIf { it > 0 } ?: continue
+        val catArray = counterpartyToCategory.optJSONArray(cpId.toString()) ?: continue
+        var bestCatId = 0
+        var bestCount = 0
+        var totalCount = 0
+        for (j in 0 until catArray.length()) {
+          val catEntry = catArray.optJSONObject(j) ?: continue
+          val cId = catEntry.optInt("id", 0)
+          val c = catEntry.optInt("count", 0)
+          totalCount += c
+          if (c > bestCount && cId > 0) { bestCount = c; bestCatId = cId }
+        }
+        if (bestCatId > 0 && totalCount >= 2 && bestCount.toDouble() / totalCount >= 0.6) {
+          val idx = categories.indexOfFirst { it.id == bestCatId && isOptionVisible(it) }
+          if (idx > 0) return idx
+        }
+      }
+    }
+
     return null
+  }
+
+  /**
+   * Swap suave del row de sugerencia cuando la IA llega tras mostrar la local.
+   * Fade out 180 ms del viejo, replace, fade in 200 ms del nuevo. Si oldRow es null
+   * (era skeleton), reemplaza directo con fade in.
+   */
+  private fun animatedSwapSuggestionRow(container: LinearLayout, oldRow: View?, newRow: View) {
+    if (oldRow == null) {
+      container.removeAllViews()
+      newRow.alpha = 0f
+      container.addView(newRow)
+      newRow.animate().alpha(1f).setDuration(200L).start()
+      return
+    }
+    oldRow.animate().alpha(0f).setDuration(180L).withEndAction {
+      container.removeView(oldRow)
+      newRow.alpha = 0f
+      container.addView(newRow)
+      newRow.animate().alpha(1f).setDuration(200L).start()
+    }.start()
   }
 
   private fun categorySuggestionRow(

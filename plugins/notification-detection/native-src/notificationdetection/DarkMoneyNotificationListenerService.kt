@@ -93,15 +93,11 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
     val discardFingerprint = NotificationDetectionStore.computeDiscardFingerprint(sourcePackage, combined)
     if (NotificationDetectionStore.isDiscardedFingerprint(applicationContext, discardFingerprint)) return
     val amount = extractAmount(combined) ?: return
-    // Skip relay sources (Google Wallet, Samsung Pay) when the bank already has a pending suggestion
-    // for the same amount — they mirror the same transaction and would produce a duplicate tile.
-    if (sourcePackage in RELAY_PACKAGES &&
-        NotificationDetectionStore.hasPendingSuggestionForAmount(context, amount, withinMs = 5 * 60_000L)) return
+    // Cross-app dedup: cualquier fuente (banco, Gmail, Google Wallet, Samsung Pay) se salta si ya
+    // existe una pending suggestion del mismo monto en los últimos 5 min. Política: el primero
+    // llegado gana. Cubre BCP push + BCP email + Wallet/SPay para una misma transacción.
+    if (NotificationDetectionStore.hasPendingSuggestionForAmount(context, amount, withinMs = 5 * 60_000L)) return
     val detection = inferMovementDetection(combined)
-    // Skip Gmail transfer emails when the bank app already created a pending suggestion for the same
-    // amount — BCP sends both a push notification and a confirmation email for every transfer.
-    if (sourcePackage == GMAIL_PACKAGE && detection.movementType == "transfer" &&
-        NotificationDetectionStore.hasPendingSuggestionForAmount(context, amount, withinMs = 5 * 60_000L)) return
     if (detection.confidence == "low") return
     val appName = readAppName(sourcePackage, combined)
     val financialAppKey = financialAppKeyFor(sourcePackage)
@@ -139,6 +135,25 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
     val shouldNotify = NotificationDetectionStore.upsertSuggestion(context, suggestion)
     if (shouldNotify) {
       showDetectedMovementNotification(suggestionId, notificationId, appName, amount, detection.movementType, suggestionDescription)
+      // Pre-cómputo IA: dispara el headless task de enrichment ya, sin esperar a que el usuario
+      // toque "Registro rápido". Cuando abra el overlay, la categoría IA ya estará lista en
+      // SharedPreferences. Requiere workspaceId del runtimeContext — si no lo hay (sesión vacía),
+      // se salta y el overlay caerá al local-only.
+      if (detection.movementType != "transfer") {
+        val runtimeContext = NotificationDetectionStore.getRuntimeContext(context)
+        val workspaceId = runtimeContext.optInt("workspaceId", 0).takeIf { it > 0 }
+        if (workspaceId != null) {
+          NotificationDetectionSaveTaskService.startAiCategoryEnrichment(
+            context,
+            suggestionId,
+            workspaceId,
+            if (detection.movementType == "income") "income" else "expense",
+            amount,
+            suggestionDescription,
+            runtimeContext.toString(),
+          )
+        }
+      }
     }
   }
 

@@ -27,7 +27,7 @@ class NotificationDetectionModule(
     // Fallback used only when runtime context does not provide notifCleanupKey.
     // Prefer setting runtimeContext.notifCleanupKey from JS so cleanup can be triggered
     // without rebuilding the native code.
-    private const val DEFAULT_NOTIF_CLEANUP_KEY = "2026-05-16-v1"
+    private const val DEFAULT_NOTIF_CLEANUP_KEY = "2026-05-27-v1"
   }
 
   @ReactMethod
