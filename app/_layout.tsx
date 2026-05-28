@@ -20,6 +20,7 @@ import { AuthProvider, useAuth } from "../lib/auth-context";
 import { queryClient } from "../lib/query-client";
 import { supabase } from "../lib/supabase";
 import { WorkspaceProvider, useWorkspace } from "../lib/workspace-context";
+import { DisplayCurrencyProvider } from "../features/accounts/lib/display-currency-context";
 import {
   useNotificationsQuery,
   useSharedObligationsQuery,
@@ -953,6 +954,7 @@ export default function RootLayout() {
           <QueryClientProvider client={queryClient}>
             <AuthProvider>
               <WorkspaceProvider>
+                <DisplayCurrencyProvider>
                 <ToastProvider>
                   <ErrorBoundary>
                     <OfflineBanner />
@@ -964,6 +966,7 @@ export default function RootLayout() {
                     <ActivityNoticeContainer />
                   </ErrorBoundary>
                 </ToastProvider>
+                </DisplayCurrencyProvider>
               </WorkspaceProvider>
             </AuthProvider>
           </QueryClientProvider>

@@ -190,6 +190,8 @@ export type AccountSummary = {
   color: string;
   icon: string;
   isArchived: boolean;
+  /** Slug from `lib/account-institutions.ts` (e.g. "bcp", "interbank"). Null/undefined when none. */
+  institutionCode?: string | null;
 };
 
 /** Catálogo en snapshot (pickers); campos extra opcionales para compatibilidad. */

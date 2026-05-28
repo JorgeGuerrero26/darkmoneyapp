@@ -1,4 +1,4 @@
-import { StyleSheet, Text } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { Archive, ArchiveRestore, BarChart2 } from "lucide-react-native";
 
 import {
@@ -7,12 +7,16 @@ import {
 } from "../ui/ResourceCard";
 import { SwipeActionRow } from "../ui/SwipeActionRow";
 import { formatCurrency } from "../ui/AmountDisplay";
-import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING } from "../../constants/theme";
 import { getAccountIcon } from "../../lib/account-icons";
+import { findInstitution } from "../../lib/account-institutions";
+import { pickAccountBadge } from "../../features/accounts/lib/badges";
 import type { AccountSummary } from "../../types/domain";
 
 type Props = {
   account: AccountSummary;
+  /** Workspace base currency, used to detect foreign-currency accounts. */
+  baseCurrencyCode?: string;
   onPress?: () => void;
   onArchive?: () => void;
   onRestore?: () => void;
@@ -36,12 +40,14 @@ const ACCOUNT_TYPE_LABELS: Record<string, string> = {
 
 function AccountCardContent({
   account,
+  baseCurrencyCode,
   onPress,
   onLongPress,
   onAnalytics,
   selected,
 }: {
   account: AccountSummary;
+  baseCurrencyCode?: string;
   onPress?: () => void;
   onLongPress?: () => void;
   onAnalytics?: () => void;
@@ -50,16 +56,30 @@ function AccountCardContent({
   const typeLabel = ACCOUNT_TYPE_LABELS[account.type] ?? account.type;
   const isNegative = account.currentBalance < 0;
   const AccountIcon = getAccountIcon(account.icon, account.type);
+  const badge = pickAccountBadge(account, baseCurrencyCode);
+  const institution = findInstitution(account.institutionCode);
+  const subtitle = institution
+    ? `${institution.label} · ${typeLabel} · ${account.currencyCode}`
+    : `${typeLabel} · ${account.currencyCode}`;
 
   return (
     <ResourceCard
       title={account.name}
-      subtitle={`${typeLabel} · ${account.currencyCode}`}
+      subtitle={subtitle}
       selected={selected}
       archived={account.isArchived}
       onPress={onPress}
       onLongPress={onLongPress}
       leading={<ResourceCardIcon icon={AccountIcon} color={account.color} />}
+      meta={
+        badge ? (
+          <View style={[styles.badge, badge.tone === "danger" && styles.badgeDanger, badge.tone === "muted" && styles.badgeMuted, badge.tone === "info" && styles.badgeInfo]}>
+            <Text style={[styles.badgeText, badge.tone === "danger" && styles.badgeTextDanger, badge.tone === "muted" && styles.badgeTextMuted, badge.tone === "info" && styles.badgeTextInfo]}>
+              {badge.label}
+            </Text>
+          </View>
+        ) : null
+      }
       actions={
         onAnalytics
           ? [{
@@ -81,6 +101,7 @@ function AccountCardContent({
 
 export function AccountCard({
   account,
+  baseCurrencyCode,
   onPress,
   onArchive,
   onRestore,
@@ -109,6 +130,7 @@ export function AccountCard({
     return (
       <AccountCardContent
         account={account}
+        baseCurrencyCode={baseCurrencyCode}
         onPress={onPress}
         onLongPress={onLongPress}
         onAnalytics={onAnalytics}
@@ -122,6 +144,7 @@ export function AccountCard({
       {({ close, isOpen }) => (
         <AccountCardContent
           account={account}
+          baseCurrencyCode={baseCurrencyCode}
           onAnalytics={onAnalytics}
           selected={selected}
           onLongPress={onLongPress}
@@ -147,4 +170,31 @@ const styles = StyleSheet.create({
   balanceNegative: {
     color: COLORS.rosewood,
   },
+  badge: {
+    alignSelf: "flex-start",
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 2,
+    borderRadius: RADIUS.full,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  badgeDanger: {
+    backgroundColor: COLORS.dangerSoft + "1F",
+    borderColor: COLORS.dangerSoft + "55",
+  },
+  badgeMuted: {
+    backgroundColor: COLORS.storm + "1A",
+    borderColor: COLORS.storm + "44",
+  },
+  badgeInfo: {
+    backgroundColor: COLORS.ember + "1F",
+    borderColor: COLORS.ember + "55",
+  },
+  badgeText: {
+    fontFamily: FONT_FAMILY.bodyMedium,
+    fontSize: FONT_SIZE.xs,
+    letterSpacing: 0.2,
+  },
+  badgeTextDanger: { color: COLORS.dangerSoft },
+  badgeTextMuted: { color: COLORS.storm },
+  badgeTextInfo: { color: COLORS.ember },
 });

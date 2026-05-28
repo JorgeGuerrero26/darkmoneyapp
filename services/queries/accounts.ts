@@ -12,6 +12,8 @@ export type AccountFormInput = {
   includeInNetWorth: boolean;
   color: string;
   icon: string;
+  /** Optional institution slug (`bcp`, `interbank`, ...). Null/undefined clears it. */
+  institutionCode?: string | null;
 };
 
 export function useCreateAccountMutation(workspaceId: number | null) {
@@ -32,6 +34,7 @@ export function useCreateAccountMutation(workspaceId: number | null) {
           icon: input.icon,
           sort_order: 0,
           is_archived: false,
+          institution_code: input.institutionCode ?? null,
         })
         .select("id")
         .single();
@@ -59,6 +62,7 @@ export function useUpdateAccountMutation(workspaceId: number | null) {
           include_in_net_worth: input.includeInNetWorth,
           color: input.color,
           icon: input.icon,
+          ...("institutionCode" in input ? { institution_code: input.institutionCode ?? null } : {}),
         })
         .eq("id", id)
         .eq("workspace_id", workspaceId);

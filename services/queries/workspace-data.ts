@@ -930,7 +930,7 @@ async function fetchWorkspaceSnapshot(
     supabase.from("workspaces").select("id, owner_user_id, name, kind, base_currency_code, description, is_archived"),
     supabase
       .from("accounts")
-      .select("id, workspace_id, name, type, currency_code, opening_balance, include_in_net_worth, color, icon, is_archived, sort_order, created_at, updated_at")
+      .select("id, workspace_id, name, type, currency_code, opening_balance, include_in_net_worth, color, icon, is_archived, sort_order, institution_code, created_at, updated_at")
       .eq("workspace_id", activeWorkspaceId)
       .order("sort_order", { ascending: true }),
     supabase
@@ -1091,6 +1091,7 @@ async function fetchWorkspaceSnapshot(
       color: row.color ?? "#6366F1",
       icon: row.icon ?? "wallet",
       isArchived: row.is_archived,
+      institutionCode: row.institution_code ?? null,
     };
   });
 

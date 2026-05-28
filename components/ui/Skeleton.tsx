@@ -102,6 +102,24 @@ export function SkeletonKpi({ style }: { style?: StyleProp<ViewStyle> }) {
   );
 }
 
+export function SkeletonAccountSummary({ style }: { style?: StyleProp<ViewStyle> }) {
+  return (
+    <View style={[skStyles.accountSummary, style]}>
+      <View style={skStyles.row}>
+        <Skeleton width={40} height={40} borderRadius={RADIUS.md} />
+        <View style={skStyles.lines}>
+          <Skeleton width="60%" height={16} />
+          <Skeleton width="40%" height={11} />
+        </View>
+        <View style={skStyles.accountSummaryRight}>
+          <Skeleton width={40} height={10} />
+          <Skeleton width={90} height={18} />
+        </View>
+      </View>
+    </View>
+  );
+}
+
 export function SkeletonObligationRow({ style }: { style?: StyleProp<ViewStyle> }) {
   return (
     <View style={[skStyles.obligationCard, style]}>
@@ -184,5 +202,15 @@ const skStyles = StyleSheet.create({
     borderRadius: RADIUS.xl,
     padding: SPACING.xl,
     gap: SPACING.sm,
+  },
+  accountSummary: {
+    borderBottomWidth: 1,
+    borderBottomColor: SURFACE.cardBorder,
+    padding: SPACING.lg,
+    gap: SPACING.sm,
+  },
+  accountSummaryRight: {
+    alignItems: "flex-end",
+    gap: SPACING.xs,
   },
 });

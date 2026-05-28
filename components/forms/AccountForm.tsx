@@ -2,7 +2,6 @@ import { Archive, ArchiveRestore, Trash2, Clock } from "lucide-react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useEffect, useRef, useState } from "react";
 import {
-  ScrollView,
   StyleSheet,
   Switch,
   Text,
@@ -18,9 +17,8 @@ import { useAuth } from "../../lib/auth-context";
 import { useToast } from "../../hooks/useToast";
 import { useHaptics } from "../../hooks/useHaptics";
 import { humanizeError } from "../../lib/errors";
-import { ACCOUNT_ICON_OPTIONS, getAccountIcon, getAccountIconOption } from "../../lib/account-icons";
+import { getAccountIcon, getAccountIconOption, ACCOUNT_ICON_OPTIONS } from "../../lib/account-icons";
 import { parseDisplayDate } from "../../lib/date";
-import { sortByLabel } from "../../lib/sort-locale";
 import {
   useCreateAccountMutation,
   useUpdateAccountMutation,
@@ -35,37 +33,11 @@ import { Button } from "../ui/Button";
 import { CurrencyInput } from "../ui/CurrencyInput";
 import { formatCurrency } from "../ui/AmountDisplay";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
-
-// ── Icon picker ────────────────────────────────────────────────────────────
-// ── Color palette ──────────────────────────────────────────────────────────
-const ACCOUNT_COLORS = [
-  "#1b6a58", "#2d9076", "#4566d6", "#6f82f1",
-  "#b48b34", "#d39d3a", "#8f3e3e", "#c55f5f",
-  "#8366f2", "#9c7dff", "#c46a31", "#6b7280",
-];
-
-// ── Type presets (default icon + color per account type) ──────────────────
-const TYPE_PRESETS: Record<string, { icon: string; color: string }> = {
-  cash:        { icon: "banknote",    color: "#b48b34" },
-  bank:        { icon: "landmark",    color: "#4566d6" },
-  savings:     { icon: "piggy-bank",  color: "#1b6a58" },
-  credit_card: { icon: "credit-card", color: "#8f3e3e" },
-  investment:  { icon: "trending-up", color: "#8366f2" },
-  loan:        { icon: "briefcase",   color: "#c46a31" },
-  other:       { icon: "wallet",      color: "#6b7280" },
-};
-
-const ACCOUNT_TYPES = sortByLabel([
-  { label: "Efectivo", value: "cash" },
-  { label: "Banco", value: "bank" },
-  { label: "Ahorro", value: "savings" },
-  { label: "Tarjeta", value: "credit_card" },
-  { label: "Inversión", value: "investment" },
-  { label: "Préstamo", value: "loan" },
-  { label: "Otro", value: "other" },
-]);
-
-const POPULAR_CURRENCIES = ["PEN", "USD", "EUR", "MXN", "COP", "ARS", "CLP", "BRL"];
+import { IconPicker } from "../../features/accounts/components/form/IconPicker";
+import { ColorPicker, ACCOUNT_COLORS } from "../../features/accounts/components/form/ColorPicker";
+import { AccountTypePicker, ACCOUNT_TYPES, TYPE_PRESETS } from "../../features/accounts/components/form/AccountTypePicker";
+import { CurrencyPicker } from "../../features/accounts/components/form/CurrencyPicker";
+import { InstitutionPicker } from "../../features/accounts/components/form/InstitutionPicker";
 
 const DRAFT_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
@@ -96,6 +68,7 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
   const [includeInNetWorth, setIncludeInNetWorth] = useState(true);
   const [color, setColor] = useState(TYPE_PRESETS["bank"].color);
   const [icon, setIcon] = useState(TYPE_PRESETS["bank"].icon);
+  const [institutionCode, setInstitutionCode] = useState<string | null>(null);
 
   // Track manual customization so type-change presets don't overwrite user's choice
   const colorCustomized = useRef(false);
@@ -120,7 +93,8 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
       color !== (editAccount.color ?? TYPE_PRESETS["bank"].color) ||
       icon !== (editAccount.icon ?? TYPE_PRESETS["bank"].icon) ||
       includeInNetWorth !== editAccount.includeInNetWorth ||
-      openingBalance !== String(editAccount.openingBalance ?? 0)
+      openingBalance !== String(editAccount.openingBalance ?? 0) ||
+      institutionCode !== (editAccount.institutionCode ?? null)
     );
   }
 
@@ -129,7 +103,7 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
 
   function saveDraft() {
     if (!visible || editAccount) return; // only for new accounts
-    const draft = { name, type, color, icon, currencyCode, customCurrency, openingBalance, includeInNetWorth, ts: Date.now() };
+    const draft = { name, type, color, icon, currencyCode, customCurrency, openingBalance, includeInNetWorth, institutionCode, ts: Date.now() };
     void AsyncStorage.setItem(draftKey, JSON.stringify(draft));
   }
 
@@ -151,6 +125,7 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
       setCustomCurrency(draft.customCurrency ?? "");
       setOpeningBalance(draft.openingBalance ?? "0");
       setIncludeInNetWorth(draft.includeInNetWorth ?? true);
+      setInstitutionCode(draft.institutionCode ?? null);
       colorCustomized.current = true;
       iconCustomized.current = true;
     } catch { /* ignore */ }
@@ -175,6 +150,7 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
       setColor(editAccount.color ?? TYPE_PRESETS[editAccount.type]?.color ?? ACCOUNT_COLORS[0]);
       const iconVal = editAccount.icon ?? ACCOUNT_ICON_OPTIONS[0].value;
       setIcon(getAccountIconOption(iconVal)?.value ?? ACCOUNT_ICON_OPTIONS[0].value);
+      setInstitutionCode(editAccount.institutionCode ?? null);
       colorCustomized.current = true;
       iconCustomized.current = true;
     } else {
@@ -187,6 +163,7 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
       setColor(TYPE_PRESETS["bank"].color);
       setIcon(TYPE_PRESETS["bank"].icon);
       setCustomCurrency("");
+      setInstitutionCode(null);
       void loadDraft();
     }
     setNameError("");
@@ -198,7 +175,7 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
     if (draftTimer.current) clearTimeout(draftTimer.current);
     draftTimer.current = setTimeout(saveDraft, 800);
     return () => { if (draftTimer.current) clearTimeout(draftTimer.current); };
-  }, [name, type, color, icon, currencyCode, customCurrency, openingBalance, includeInNetWorth, visible]);
+  }, [name, type, color, icon, currencyCode, customCurrency, openingBalance, includeInNetWorth, institutionCode, visible]);
 
   // ── Type change with preset auto-apply ────────────────────────────────────
   function handleTypeChange(newType: string) {
@@ -241,6 +218,7 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
       includeInNetWorth,
       color,
       icon,
+      institutionCode,
     };
     try {
       if (editAccount) {
@@ -316,50 +294,24 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
           </View>
         ) : null}
 
-        {/* Icon picker */}
-        <View>
-          <Text style={styles.sectionLabel}>Ícono</Text>
-          <View style={styles.iconGrid}>
-            {ACCOUNT_ICON_OPTIONS.map((item) => (
-              <TouchableOpacity
-                key={item.value}
-                style={[
-                  styles.iconBtn,
-                  icon === item.value && { borderColor: color, backgroundColor: color + "22" },
-                ]}
-                onPress={() => {
-                  setIcon(item.value);
-                  iconCustomized.current = true;
-                }}
-                accessibilityRole="button"
-                accessibilityLabel={`Seleccionar icono ${item.label}`}
-              >
-                <item.Icon size={22} color={icon === item.value ? color : COLORS.storm} />
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
+        {/* Icon */}
+        <IconPicker
+          value={icon}
+          tint={color}
+          onChange={(v) => {
+            setIcon(v);
+            iconCustomized.current = true;
+          }}
+        />
 
-        {/* Color picker */}
-        <View>
-          <Text style={styles.sectionLabel}>Color</Text>
-          <View style={styles.colorGrid}>
-            {ACCOUNT_COLORS.map((c) => (
-              <TouchableOpacity
-                key={c}
-                style={[
-                  styles.colorDot,
-                  { backgroundColor: c },
-                  color === c && styles.colorDotActive,
-                ]}
-                onPress={() => {
-                  setColor(c);
-                  colorCustomized.current = true;
-                }}
-              />
-            ))}
-          </View>
-        </View>
+        {/* Color */}
+        <ColorPicker
+          value={color}
+          onChange={(c) => {
+            setColor(c);
+            colorCustomized.current = true;
+          }}
+        />
 
         {/* Name */}
         <View>
@@ -370,58 +322,34 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
             onChangeText={(t) => { setName(t); setNameError(""); }}
             placeholder="Ej. BCP Soles, Efectivo casa"
             placeholderTextColor={COLORS.storm}
+            accessibilityLabel="Nombre de la cuenta"
+            accessibilityHint="Campo obligatorio. Ejemplo: BCP Soles."
+            returnKeyType="next"
           />
-          {nameError ? <Text style={styles.fieldError}>{nameError}</Text> : null}
+          {nameError ? (
+            <Text
+              style={styles.fieldError}
+              accessibilityLiveRegion="polite"
+              accessibilityRole="alert"
+            >
+              {nameError}
+            </Text>
+          ) : null}
         </View>
 
         {/* Type */}
-        <View>
-          <Text style={styles.sectionLabel}>Tipo</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View style={styles.pillRow}>
-              {ACCOUNT_TYPES.map((t) => (
-                <TouchableOpacity
-                  key={t.value}
-                  style={[styles.pill, type === t.value && styles.pillActive]}
-                  onPress={() => handleTypeChange(t.value)}
-                >
-                  <Text style={[styles.pillText, type === t.value && styles.pillTextActive]}>
-                    {t.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </ScrollView>
-        </View>
+        <AccountTypePicker value={type} onChange={handleTypeChange} />
+
+        {/* Institution (optional) */}
+        <InstitutionPicker value={institutionCode} onChange={setInstitutionCode} />
 
         {/* Currency */}
-        <View>
-          <Text style={styles.sectionLabel}>Moneda</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View style={styles.pillRow}>
-              {POPULAR_CURRENCIES.map((c) => (
-                <TouchableOpacity
-                  key={c}
-                  style={[styles.pill, currencyCode === c && !customCurrency && styles.pillActive]}
-                  onPress={() => { setCurrencyCode(c); setCustomCurrency(""); }}
-                >
-                  <Text style={[styles.pillText, currencyCode === c && !customCurrency && styles.pillTextActive]}>
-                    {c}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </ScrollView>
-          <TextInput
-            style={[styles.textInput, { marginTop: SPACING.sm }]}
-            value={customCurrency}
-            onChangeText={(t) => setCustomCurrency(t.toUpperCase())}
-            placeholder="Otra moneda (ej. JPY)"
-            placeholderTextColor={COLORS.storm}
-            maxLength={5}
-            autoCapitalize="characters"
-          />
-        </View>
+        <CurrencyPicker
+          value={currencyCode}
+          customValue={customCurrency}
+          onChange={setCurrencyCode}
+          onCustomChange={setCustomCurrency}
+        />
 
         {/* Opening balance */}
         <CurrencyInput
@@ -603,41 +531,6 @@ const styles = StyleSheet.create({
     marginTop: -SPACING.xs,
   },
 
-  // Icon picker
-  iconGrid: {
-    flexDirection: "row",
-    gap: SPACING.sm,
-    flexWrap: "wrap",
-  },
-  iconBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: RADIUS.md,
-    backgroundColor: SURFACE.card,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
-  },
-
-  // Color picker
-  colorGrid: {
-    flexDirection: "row",
-    gap: SPACING.sm,
-    flexWrap: "wrap",
-  },
-  colorDot: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    borderWidth: 2,
-    borderColor: "transparent",
-  },
-  colorDotActive: {
-    borderColor: COLORS.ink,
-    borderWidth: 3,
-  },
-
   sectionLabel: {
     fontSize: FONT_SIZE.xs,
     fontFamily: FONT_FAMILY.bodySemibold,
@@ -659,18 +552,6 @@ const styles = StyleSheet.create({
   },
   textInputError: { borderColor: COLORS.danger },
   fieldError: { fontSize: FONT_SIZE.xs, color: COLORS.danger, marginTop: 4 },
-  pillRow: { flexDirection: "row", gap: SPACING.sm },
-  pill: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs + 2,
-    borderRadius: RADIUS.full,
-    backgroundColor: SURFACE.card,
-    borderWidth: 1,
-    borderColor: SURFACE.cardBorder,
-  },
-  pillActive: { backgroundColor: COLORS.pine, borderColor: COLORS.pine },
-  pillText: { fontSize: FONT_SIZE.sm, color: COLORS.storm, fontFamily: FONT_FAMILY.bodyMedium },
-  pillTextActive: { color: COLORS.textInverse },
   switchRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -694,8 +575,8 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.sm + 2,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
-    backgroundColor: "rgba(255,255,255,0.04)",
+    borderColor: SURFACE.cardBorder,
+    backgroundColor: SURFACE.separator,
   },
   secondaryBtnActive: {
     borderColor: COLORS.pine + "55",

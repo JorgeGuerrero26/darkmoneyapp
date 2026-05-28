@@ -1,11 +1,12 @@
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { SectionListRenderItem } from "react-native";
+import { StyleSheet, Text, TouchableOpacity, type SectionListRenderItem } from "react-native";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { useRouter } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
-  Archive, CheckSquare, Download, X,
+  Archive, CheckSquare, ChevronDown, ChevronUp, Download, Layers, PieChart, X,
 } from "lucide-react-native";
 import { format } from "date-fns";
 
@@ -35,10 +36,18 @@ import { useToast } from "../../hooks/useToast";
 import { humanizeError } from "../../lib/errors";
 import { shareCsvAsFile } from "../../lib/share-csv-file";
 import { DEFAULT_EXCHANGE_CURRENCY } from "../../constants/currencies";
+import { buildRateMap, hasConversionRate } from "../../lib/exchange-rate-map";
+import { useDisplayCurrency } from "../../features/accounts/lib/display-currency-context";
+import { buildAccountCSV } from "../../features/accounts/lib/csv";
+import { applyAccountFilter } from "../../features/accounts/lib/filters";
+import { computeNetWorth } from "../../features/accounts/lib/net-worth";
+import { computeComposition } from "../../features/accounts/lib/composition";
+import { NetWorthCompositionChart } from "../../features/accounts/components/NetWorthCompositionChart";
+import { useAccountsRealtimeSync } from "../../features/accounts/hooks/useAccountsRealtimeSync";
 import type { AccountSummary } from "../../types/domain";
 
 type AccountTypeFilter = "all" | "bank" | "cash" | "savings" | "credit_card" | "investment" | "loan" | "other";
-type AccountListSection = ResourceSection<AccountSummary, "active" | "archived">;
+type AccountListSection = ResourceSection<AccountSummary, string>;
 
 const TYPE_FILTERS: { label: string; value: AccountTypeFilter }[] = [
   { label: "Todas", value: "all" },
@@ -51,43 +60,20 @@ const TYPE_FILTERS: { label: string; value: AccountTypeFilter }[] = [
   { label: "Otro",        value: "other" },
 ];
 
-function buildAccountCSV(accounts: AccountSummary[]): string {
-  const BOM = "\uFEFF";
-  const headers = ["Nombre", "Tipo", "Moneda", "Saldo actual", "Saldo inicial", "En patrimonio", "Archivada", "Última actividad"];
-  const rows = accounts.map((a) => [
-    a.name, a.type, a.currencyCode,
-    String(a.currentBalance), String(a.openingBalance),
-    a.includeInNetWorth ? "Sí" : "No",
-    a.isArchived ? "Sí" : "No",
-    a.lastActivity ?? "",
-  ].map((v) => `"${v.replace(/"/g, '""')}"`).join(","));
-  return BOM + [headers.join(","), ...rows].join("\n");
-}
+// Labels and visual order for "group by type" mode.
+const TYPE_GROUP_ORDER: { value: string; label: string }[] = [
+  { value: "bank",        label: "Bancos" },
+  { value: "savings",     label: "Ahorro" },
+  { value: "credit_card", label: "Tarjetas" },
+  { value: "cash",        label: "Efectivo" },
+  { value: "investment",  label: "Inversiones" },
+  { value: "loan",        label: "Préstamos" },
+  { value: "loan_wallet", label: "Cartera de préstamos" },
+  { value: "other",       label: "Otras" },
+];
 
-const ACCOUNTS_CURRENCY_KEY = "darkmoney.accounts.displayCurrency";
-
-function buildRateMap(rates: { fromCurrencyCode: string; toCurrencyCode: string; rate: number }[]) {
-  const map = new Map<string, number>();
-  for (const r of rates) {
-    const key = `${r.fromCurrencyCode.toUpperCase()}:${r.toCurrencyCode.toUpperCase()}`;
-    if (!map.has(key) && r.rate > 0) map.set(key, r.rate);
-  }
-  return map;
-}
-
-function resolveConversion(map: Map<string, number>, from: string, to: string): number {
-  if (from === to) return 1;
-  const direct = map.get(`${from}:${to}`);
-  if (direct) return direct;
-  const inverse = map.get(`${to}:${from}`);
-  if (inverse) return 1 / inverse;
-  return 1;
-}
-
-function hasConversionRate(map: Map<string, number>, from: string, to: string): boolean {
-  if (from === to) return true;
-  return map.has(`${from}:${to}`) || map.has(`${to}:${from}`);
-}
+const ACCOUNTS_GROUPING_KEY = "darkmoney.accounts.groupByType";
+const ACCOUNTS_COMPOSITION_EXPANDED_KEY = "darkmoney.accounts.compositionExpanded";
 
 function AccountsScreen() {
   const insets = useSafeAreaInsets();
@@ -98,6 +84,7 @@ function AccountsScreen() {
   const { showToast } = useToast();
 
   const { data: snapshot, isLoading, dataUpdatedAt } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
+  useAccountsRealtimeSync({ workspaceId: activeWorkspaceId });
   const archiveAccount = useArchiveAccountMutation(activeWorkspaceId);
   const syncExchangeRatePair = useSyncExchangeRatePairMutation();
   const syncPairRequestRef = useRef<string | null>(null);
@@ -114,8 +101,8 @@ function AccountsScreen() {
     return `Actualizado hace ${Math.floor(hours / 24)}d`;
   }, [dataUpdatedAt]);
 
-  // ── Currency display ──────────────────────────────────────────────────────
-  const [displayCurrency, setDisplayCurrency] = useState<string | null>(null);
+  // ── Currency display (shared via DisplayCurrencyProvider) ──────────────────
+  const { displayCurrency, setDisplayCurrency } = useDisplayCurrency();
   const baseCurrency = (activeWorkspace?.baseCurrencyCode ?? profile?.baseCurrencyCode ?? "PEN").toUpperCase();
 
   const exchangeRateMap = useMemo(
@@ -134,20 +121,13 @@ function AccountsScreen() {
     [baseCurrency, currencyOptions, exchangeRateMap],
   );
 
-  const [currencyLoaded, setCurrencyLoaded] = useState(false);
+  // If the persisted preference is for a currency we cannot offer (e.g. workspace
+  // base changed), silently snap back to the base.
   useEffect(() => {
-    if (currencyLoaded) return;
-    void AsyncStorage.getItem(ACCOUNTS_CURRENCY_KEY).then((stored) => {
-      setDisplayCurrency(stored && currencyOptions.includes(stored) ? stored : baseCurrency);
-      setCurrencyLoaded(true);
-    });
-  }, [baseCurrency, currencyLoaded, currencyOptions]);
-
-  useEffect(() => {
-    if (!currencyLoaded || !displayCurrency || currencyOptions.includes(displayCurrency)) return;
+    if (!displayCurrency) return;
+    if (currencyOptions.includes(displayCurrency)) return;
     setDisplayCurrency(baseCurrency);
-    void AsyncStorage.setItem(ACCOUNTS_CURRENCY_KEY, baseCurrency);
-  }, [baseCurrency, currencyLoaded, currencyOptions, displayCurrency]);
+  }, [baseCurrency, currencyOptions, displayCurrency, setDisplayCurrency]);
 
   useEffect(() => {
     if (baseCurrency === DEFAULT_EXCHANGE_CURRENCY) return;
@@ -178,7 +158,6 @@ function AccountsScreen() {
   function handleCurrencyChange(c: string) {
     if (!hasConversionRate(exchangeRateMap, baseCurrency, c)) return;
     setDisplayCurrency(c);
-    void AsyncStorage.setItem(ACCOUNTS_CURRENCY_KEY, c);
   }
 
   // ── UI state ──────────────────────────────────────────────────────────────
@@ -188,6 +167,34 @@ function AccountsScreen() {
   const [searchText, setSearchText] = useState("");
   const [typeFilters, setTypeFilters] = useState<AccountTypeFilter[]>([]);
   const [showArchived, setShowArchived] = useState(false);
+  const [groupByType, setGroupByType] = useState(false);
+  const [compositionExpanded, setCompositionExpanded] = useState(false);
+
+  // Load persisted toggles.
+  useEffect(() => {
+    void AsyncStorage.getItem(ACCOUNTS_GROUPING_KEY).then((stored) => {
+      if (stored === "1") setGroupByType(true);
+    });
+    void AsyncStorage.getItem(ACCOUNTS_COMPOSITION_EXPANDED_KEY).then((stored) => {
+      if (stored === "1") setCompositionExpanded(true);
+    });
+  }, []);
+
+  const toggleGroupByType = useCallback(() => {
+    setGroupByType((prev) => {
+      const next = !prev;
+      void AsyncStorage.setItem(ACCOUNTS_GROUPING_KEY, next ? "1" : "0");
+      return next;
+    });
+  }, []);
+
+  const toggleCompositionExpanded = useCallback(() => {
+    setCompositionExpanded((prev) => {
+      const next = !prev;
+      void AsyncStorage.setItem(ACCOUNTS_COMPOSITION_EXPANDED_KEY, next ? "1" : "0");
+      return next;
+    });
+  }, []);
 
   // ── Multi-select ──────────────────────────────────────────────────────────
   const [selectMode, setSelectMode] = useState(false);
@@ -216,36 +223,56 @@ function AccountsScreen() {
   }, [selectMode, selectedIds.size]);
 
   // ── Data ──────────────────────────────────────────────────────────────────
-  const { allAccounts, totalNetWorth } = useMemo(() => {
-    const accounts = snapshot?.accounts ?? [];
-    const netWorth = accounts
-      .filter((a) => !a.isArchived && a.includeInNetWorth)
-      .reduce((sum, a) => {
-        // currentBalanceInBaseCurrency is already converted to workspace base currency
-        const inBase = a.currentBalanceInBaseCurrency ?? a.currentBalance;
-        // Then convert from baseCurrency → activeCurrency
-        return sum + inBase * resolveConversion(exchangeRateMap, baseCurrency, activeCurrency);
-      }, 0);
-    return { allAccounts: accounts, totalNetWorth: netWorth };
-  }, [snapshot, exchangeRateMap, baseCurrency, activeCurrency]);
+  const allAccounts = snapshot?.accounts ?? [];
+  const totalNetWorth = useMemo(
+    () => computeNetWorth({
+      accounts: allAccounts,
+      baseCurrency,
+      displayCurrency: activeCurrency,
+      exchangeRateMap,
+    }),
+    [allAccounts, exchangeRateMap, baseCurrency, activeCurrency],
+  );
 
-  const filtered = useMemo(() => {
-    const q = searchText.toLowerCase();
-    return allAccounts.filter((a) => {
-      if (!showArchived && a.isArchived) return false;
-      if (typeFilters.length > 0 && !typeFilters.includes(a.type as AccountTypeFilter)) return false;
-      if (q && !a.name.toLowerCase().includes(q) && !a.currencyCode.toLowerCase().includes(q)) return false;
-      return true;
-    });
-  }, [allAccounts, searchText, typeFilters, showArchived]);
+  const filtered = useMemo(
+    () => applyAccountFilter(allAccounts, {
+      searchText,
+      typeFilters,
+      showArchived,
+    }),
+    [allAccounts, searchText, typeFilters, showArchived],
+  );
 
   const activeFiltered = filtered.filter((a) => !a.isArchived);
   const archivedFiltered = filtered.filter((a) => a.isArchived);
   const accountSections = useMemo<AccountListSection[]>(() => {
     const sections: AccountListSection[] = [];
-    if (activeFiltered.length > 0) {
+
+    if (groupByType) {
+      // Group active accounts by type, following TYPE_GROUP_ORDER. Unknown types fall under "other".
+      const buckets = new Map<string, AccountSummary[]>();
+      for (const account of activeFiltered) {
+        const known = TYPE_GROUP_ORDER.some((g) => g.value === account.type);
+        const key = known ? account.type : "other";
+        const bucket = buckets.get(key);
+        if (bucket) bucket.push(account);
+        else buckets.set(key, [account]);
+      }
+      for (const group of TYPE_GROUP_ORDER) {
+        const data = buckets.get(group.value);
+        if (data && data.length > 0) {
+          sections.push({
+            key: `type-${group.value}`,
+            label: `${group.label} (${data.length})`,
+            data,
+            headerVariant: "divider",
+          });
+        }
+      }
+    } else if (activeFiltered.length > 0) {
       sections.push({ key: "active", label: "Activas", data: activeFiltered, headerVariant: "hidden" });
     }
+
     if (archivedFiltered.length > 0) {
       sections.push({
         key: "archived",
@@ -256,7 +283,7 @@ function AccountsScreen() {
       });
     }
     return sections;
-  }, [activeFiltered, archivedFiltered]);
+  }, [activeFiltered, archivedFiltered, groupByType]);
 
   const activeFilterItems = useMemo<ActiveFilterItem[]>(() => {
     const items: ActiveFilterItem[] = [];
@@ -277,6 +304,14 @@ function AccountsScreen() {
       });
     }
 
+    if (groupByType) {
+      items.push({
+        key: "group-by-type",
+        label: "Agrupado por tipo",
+        onRemove: toggleGroupByType,
+      });
+    }
+
     if (searchText.trim()) {
       items.push({
         key: "search",
@@ -286,13 +321,53 @@ function AccountsScreen() {
     }
 
     return items;
-  }, [searchText, showArchived, typeFilters]);
+  }, [groupByType, searchText, showArchived, toggleGroupByType, typeFilters]);
 
   function clearAccountFilters() {
     setTypeFilters([]);
     setShowArchived(false);
     setSearchText("");
+    if (groupByType) toggleGroupByType();
   }
+
+  const totalAccountsCount = allAccounts.length;
+  const totalArchivedCount = useMemo(
+    () => allAccounts.filter((a) => a.isArchived).length,
+    [allAccounts],
+  );
+  const hasActiveFilter = typeFilters.length > 0 || showArchived || searchText.trim().length > 0 || groupByType;
+
+  const emptyConfig = useMemo(() => {
+    if (totalAccountsCount === 0) {
+      return {
+        title: "Sin cuentas",
+        description: "Agrega tu primera cuenta con el botón +",
+        action: { label: "Nueva cuenta", onPress: () => setFormVisible(true) },
+      };
+    }
+    if (hasActiveFilter) {
+      return {
+        variant: "no-results" as const,
+        title: "Sin coincidencias",
+        description: searchText.trim()
+          ? `No encontramos cuentas para "${searchText.trim()}".`
+          : "Ninguna cuenta coincide con los filtros activos.",
+        action: { label: "Limpiar filtros", onPress: clearAccountFilters },
+      };
+    }
+    if (totalArchivedCount > 0 && !showArchived) {
+      return {
+        title: "Sin cuentas activas",
+        description: `Tienes ${totalArchivedCount} cuenta${totalArchivedCount === 1 ? "" : "s"} archivada${totalArchivedCount === 1 ? "" : "s"}. Restaura alguna para que vuelva al patrimonio.`,
+        action: { label: "Ver archivadas", onPress: () => setShowArchived(true) },
+      };
+    }
+    return {
+      title: "Sin cuentas",
+      description: "Agrega tu primera cuenta con el botón +",
+      action: { label: "Nueva cuenta", onPress: () => setFormVisible(true) },
+    };
+  }, [hasActiveFilter, searchText, showArchived, totalAccountsCount, totalArchivedCount]);
 
   const onRefresh = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
@@ -335,6 +410,7 @@ function AccountsScreen() {
     section.key === "active" ? (
       <AccountCard
         account={account}
+        baseCurrencyCode={baseCurrency}
         selected={selectedIds.has(account.id)}
         selectMode={selectMode}
         onPress={() => {
@@ -353,6 +429,7 @@ function AccountsScreen() {
     ) : (
       <AccountCard
         account={account}
+        baseCurrencyCode={baseCurrency}
         selected={selectedIds.has(account.id)}
         selectMode={selectMode}
         onPress={() => {
@@ -370,16 +447,52 @@ function AccountsScreen() {
         onAnalytics={() => setAnalyticsAccount(account)}
       />
     )
-  ), [handleArchive, router, selectMode, selectedIds, toggleSelect]);
+  ), [baseCurrency, handleArchive, router, selectMode, selectedIds, toggleSelect]);
+
+  const composition = useMemo(
+    () => computeComposition({
+      accounts: allAccounts,
+      baseCurrency,
+      displayCurrency: activeCurrency,
+      exchangeRateMap,
+    }),
+    [allAccounts, activeCurrency, baseCurrency, exchangeRateMap],
+  );
+
+  const hasCompositionData = composition.assets.length > 0 || composition.debts > 0;
 
   const summaryHeader = !selectMode && activeFiltered.length > 0 ? (
-    <AccountNetWorthSummary
-      totalNetWorth={totalNetWorth}
-      activeCurrency={activeCurrency}
-      currencyOptions={currencyOptions}
-      disabledCurrencyOptions={disabledCurrencyOptions}
-      onCurrencyChange={handleCurrencyChange}
-    />
+    <>
+      <AccountNetWorthSummary
+        totalNetWorth={totalNetWorth}
+        activeCurrency={activeCurrency}
+        currencyOptions={currencyOptions}
+        disabledCurrencyOptions={disabledCurrencyOptions}
+        onCurrencyChange={handleCurrencyChange}
+      />
+      {hasCompositionData ? (
+        <>
+          <TouchableOpacity
+            style={localStyles.compositionToggle}
+            onPress={toggleCompositionExpanded}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: compositionExpanded }}
+            accessibilityLabel={compositionExpanded ? "Ocultar composición" : "Mostrar composición"}
+          >
+            <PieChart size={14} color={COLORS.pine} strokeWidth={2} />
+            <Text style={localStyles.compositionToggleText}>Composición del patrimonio</Text>
+            {compositionExpanded ? (
+              <ChevronUp size={14} color={COLORS.storm} />
+            ) : (
+              <ChevronDown size={14} color={COLORS.storm} />
+            )}
+          </TouchableOpacity>
+          {compositionExpanded ? (
+            <NetWorthCompositionChart composition={composition} currencyCode={activeCurrency} />
+          ) : null}
+        </>
+      ) : null}
+    </>
   ) : null;
 
   return (
@@ -422,13 +535,22 @@ function AccountsScreen() {
             searchValue={searchText}
             onSearchChange={setSearchText}
             searchPlaceholder="Buscar cuentas..."
-            actions={[{
-              key: "archived",
-              icon: Archive,
-              onPress: () => setShowArchived((v) => !v),
-              active: showArchived,
-              accessibilityLabel: "Mostrar cuentas archivadas",
-            }]}
+            actions={[
+              {
+                key: "group-by-type",
+                icon: Layers,
+                onPress: toggleGroupByType,
+                active: groupByType,
+                accessibilityLabel: "Agrupar por tipo de cuenta",
+              },
+              {
+                key: "archived",
+                icon: Archive,
+                onPress: () => setShowArchived((v) => !v),
+                active: showArchived,
+                accessibilityLabel: "Mostrar cuentas archivadas",
+              },
+            ]}
           />
         }
         activeFilters={
@@ -482,11 +604,7 @@ function AccountsScreen() {
                 </SkeletonList>
               ),
             }}
-            empty={{
-              title: "Sin cuentas",
-              description: "Agrega tu primera cuenta con el botón +",
-              action: { label: "Nueva cuenta", onPress: () => setFormVisible(true) },
-            }}
+            empty={emptyConfig}
             refreshing={isLoading}
             onRefresh={onRefresh}
           />
@@ -525,6 +643,28 @@ function AccountsScreen() {
       />
   );
 }
+
+const localStyles = StyleSheet.create({
+  compositionToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.xs,
+    alignSelf: "flex-start",
+    marginHorizontal: SPACING.lg,
+    marginBottom: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs + 2,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    borderColor: SURFACE.cardBorder,
+    backgroundColor: SURFACE.separator,
+  },
+  compositionToggleText: {
+    fontFamily: FONT_FAMILY.bodyMedium,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.ink,
+  },
+});
 
 export default function AccountsScreenRoot() {
   return (
