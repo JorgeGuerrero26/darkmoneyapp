@@ -29,6 +29,17 @@ Si lint falla por configuración ausente o por ESLint flat config faltante, repo
 
 Para builds release del APK Android (cualquier cambio en `plugins/notification-detection/native-src/**/*.kt` o `android/app/src/**`), seguir `docs/BUILD_APK.md`. Reglas no negociables: sincronizar `plugins/` → `android/app/src/main/java/`, limpiar caches, build con `-P` quoteado en PowerShell, y verificar que los strings nuevos aparecen en el DEX antes de declarar el APK listo. `BUILD SUCCESSFUL` no garantiza que el cambio entró.
 
+## Git workflow
+
+- **Un commit por unidad lógica**, no un commit global con todo. Cada commit cuenta una sola historia: un fix, un refactor, un feature, un cambio de UX. Permite `git bisect`, revert quirúrgico y sirve de checkpoint durante refactors largos.
+- Antes de stagear: `git status` y agrupar archivos por tema. Por cada grupo: `git add <archivos específicos>` + `git commit -m "..."` + verificar `npm run typecheck`. Si rompe: arreglar antes del siguiente commit.
+- Push al final (o cuando el usuario lo pida).
+- Mensajes en imperativo con scope al inicio: `fix(snapshot): ...`, `feat(obligations): ...`, `chore(routes): ...`, `refactor(workspace-data): ...`.
+- Evitar `git add -A` cuando hay varios temas mezclados; usa rutas explícitas.
+- **Refactor multi-fase**: commitear checkpoint al final de cada sub-fase aunque sea WIP. Mensaje `wip(refactor-X): fase N - <qué quedó listo>`. Esto protege contra pérdida por `git checkout`/`git restore` accidental sobre trabajo uncommitted.
+- **Excepciones donde un commit grande sí aplica**: renames masivos automáticos (un solo tema), pasada de format/lint sobre todo el repo, setup inicial sin historia previa.
+- Nunca usar `git checkout <file>` ni `git restore <file>` sobre archivos con trabajo uncommitted no respaldado. Revertir cambios específicos con Edit, o asegurar un commit checkpoint antes.
+
 ## Database migrations
 
 Toda migración nueva en `supabase/migrations/` DEBE quedar documentada en `DATABASE_DICTIONARY.md` antes de cerrar la tarea.

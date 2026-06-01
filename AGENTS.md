@@ -8,6 +8,17 @@ Guia obligatoria para agentes y programadores que modifiquen este repo. La prior
 - `git diff --check`: validacion de whitespace antes de cerrar cambios.
 - `npm run lint`: ejecutar si el repo tiene configuracion ESLint valida en ese entorno. Si falla por configuracion ausente, reportarlo sin bloquear el cambio.
 
+## Git workflow
+
+- **Un commit por unidad logica**, no un commit global con todo. Cada commit cuenta una sola historia: un fix, un refactor, un feature, un cambio de UX. Permite `git bisect`, revert quirurgico y sirve de checkpoint durante refactors largos.
+- Antes de stagear: `git status` y agrupar archivos por tema. Por cada grupo: `git add <archivos especificos>` + `git commit -m "..."` + verificar `npm run typecheck`. Si rompe: arreglar antes del siguiente commit.
+- Push al final (o cuando el usuario lo pida).
+- Mensajes en imperativo con scope al inicio: `fix(snapshot): ...`, `feat(obligations): ...`, `chore(routes): ...`, `refactor(workspace-data): ...`.
+- Evitar `git add -A` cuando hay varios temas mezclados; usa rutas explicitas.
+- **Refactor multi-fase**: commitear checkpoint al final de cada sub-fase aunque sea WIP. Mensaje `wip(refactor-X): fase N - <que quedo listo>`. Esto protege contra perdida por `git checkout` / `git restore` accidental sobre trabajo uncommitted.
+- **Excepciones donde un commit grande si aplica**: renames masivos automaticos (un solo tema), pasada de format/lint sobre todo el repo, setup inicial sin historia previa.
+- Nunca usar `git checkout <file>` ni `git restore <file>` sobre archivos con trabajo uncommitted no respaldado. Revertir cambios especificos con edicion directa, o asegurar un commit checkpoint antes.
+
 ## Migraciones SQL
 
 Toda migracion nueva en `supabase/migrations/` DEBE documentarse en `DATABASE_DICTIONARY.md` antes de cerrar la tarea. Esto incluye:
