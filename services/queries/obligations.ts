@@ -16,11 +16,7 @@
  */
 
 export type {
-  // Form inputs — Form input movido a obligations-impl en 4.2-f.2.
-  ObligationPaymentInput,
-  PrincipalAdjustmentInput,
   // Event inputs
-  UpdateObligationEventInput,
   DeleteObligationEventInput,
   CreateObligationEventDeleteRequestInput,
   RejectObligationEventDeleteRequestInput,
@@ -32,8 +28,13 @@ export type {
 // Share inputs — movidos a obligations-impl.ts en Fase 4.2-c.
 // Payment request + viewer-link inputs — movidos en Fase 4.2-e.
 // ObligationFormInput — movido en Fase 4.2-f.2.
+// ObligationPaymentInput, PrincipalAdjustmentInput, UpdateObligationEventInput
+// — movidos en Fase 4.2-f.3.
 export type {
   ObligationFormInput,
+  ObligationPaymentInput,
+  PrincipalAdjustmentInput,
+  UpdateObligationEventInput,
   ObligationShareInviteInput,
   ObligationShareInviteResult,
   UnlinkObligationShareInput,
@@ -44,12 +45,7 @@ export type {
 } from "./obligations-impl";
 
 export {
-  // Payment / adjustment mutations
-  useCreateObligationPaymentMutation,
-  useLinkMovementToObligationMutation,
-  useCreatePrincipalAdjustmentMutation,
-  // Event mutations
-  useUpdateObligationEventMutation,
+  // Event mutations remaining in workspace-data (se mueven en f.4)
   useDeleteObligationEventMutation,
   // Delete-request mutations
   useCreateObligationEventDeleteRequestMutation,
@@ -66,11 +62,16 @@ export {
 // Shared obligations — movidos en Fase 4.2-d.
 // Payment requests + Viewer event links — movidos en Fase 4.2-e.
 // CRUD mutations — movidas en Fase 4.2-f.2.
+// Payment / link / principal / update event mutations — movidas en Fase 4.2-f.3.
 export {
   useDeleteObligationMutation,
   useArchiveObligationMutation,
   useCreateObligationMutation,
   useUpdateObligationMutation,
+  useCreateObligationPaymentMutation,
+  useLinkMovementToObligationMutation,
+  useCreatePrincipalAdjustmentMutation,
+  useUpdateObligationEventMutation,
   useObligationActiveShareQuery,
   useObligationSharesQuery,
   useCreateObligationShareInviteMutation,

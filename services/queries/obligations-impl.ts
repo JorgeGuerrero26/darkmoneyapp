@@ -19,7 +19,10 @@ import { UNIVERSAL_LINK_HOST } from "../../constants/config";
 import { supabase } from "../../lib/supabase";
 import { STALE } from "../../lib/query-client";
 import { dateStrToISO, filterDateFrom, filterDateTo } from "../../lib/date";
-import { mirrorObligationEventAttachmentsToMovement } from "../../lib/entity-attachments";
+import {
+  mirrorObligationEventAttachmentsToMovement,
+  type AttachmentLike,
+} from "../../lib/entity-attachments";
 import { sortObligationEventsNewestFirst } from "../../lib/sort-obligation-events";
 import {
   eventDeletePayload,
@@ -2230,6 +2233,437 @@ export function useUpdateObligationMutation(workspaceId: number | null) {
           ? [["workspace-snapshot"], ["obligation-active-share"], ["obligation-shares", workspaceId]]
           : [["workspace-snapshot"], ["obligation-active-share"]],
       );
+    },
+  });
+}
+
+// ─── 4.2-f.3: Payment / link / principal / update event mutations ────────────
+
+export type ObligationPaymentInput = {
+  obligationId: number;
+  amount: number;
+  paymentDate: string;
+  accountId?: number | null;
+  installmentNo?: number | null;
+  description?: string | null;
+  notes?: string | null;
+  createMovement: boolean;
+  /** Si es "receivable" (me deben), textos automáticos usan "cobro". */
+  direction?: ObligationDirection;
+  attachments?: AttachmentLike[];
+};
+
+export function useCreateObligationPaymentMutation(workspaceId: number | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: ObligationPaymentInput) => {
+      if (!supabase) throw new Error("Supabase no disponible.");
+      const wsId = await fetchObligationWorkspaceId(input.obligationId);
+      if (workspaceId != null && workspaceId !== wsId) {
+        throw new Error("La obligación no pertenece al workspace activo.");
+      }
+      const isReceivable = input.direction === "receivable";
+      const autoDesc =
+        input.description?.trim() ||
+        (isReceivable ? `Cobro de obligacion #${input.obligationId}` : `Pago de obligacion #${input.obligationId}`);
+      const { id: eventId, installmentNoApplied } = await insertObligationPaymentEventWithFallback({
+        obligationId: input.obligationId,
+        paymentDate: input.paymentDate,
+        amount: input.amount,
+        installmentNo: input.installmentNo,
+        description: input.description,
+        notes: input.notes,
+        metadata: {},
+      });
+      let ownerMovementId: number | null = null;
+      // If requested, also create a movement linked to this obligation
+      if (input.createMovement && input.accountId) {
+        const movementPayload: Record<string, unknown> = {
+          workspace_id: wsId,
+          movement_type: "obligation_payment",
+          status: "posted",
+          occurred_at: dateStrToISO(input.paymentDate),
+          description: autoDesc,
+          obligation_id: input.obligationId,
+          metadata: { obligation_event_id: eventId },
+        };
+        if (isReceivable) {
+          movementPayload.destination_account_id = input.accountId;
+          movementPayload.destination_amount = input.amount;
+        } else {
+          movementPayload.source_account_id = input.accountId;
+          movementPayload.source_amount = input.amount;
+        }
+        const { data: mvData, error: mvErr } = await supabase
+          .from("movements")
+          .insert(movementPayload)
+          .select("id")
+          .single();
+        if (mvErr) throw mvErr;
+        ownerMovementId = (mvData as { id: number }).id;
+        await attachMovementToObligationEvent(eventId, ownerMovementId);
+      }
+      return {
+        id: eventId,
+        movementId: ownerMovementId,
+        workspaceId: wsId,
+        installmentNoApplied,
+      };
+    },
+    onSuccess: (data, variables) => {
+      const queryKeys: Array<readonly unknown[]> = [
+        ["workspace-snapshot"],
+        ["movements"],
+        ["obligation-events", variables.obligationId],
+        ["entity-attachments", data.workspaceId, "obligation-event", data.id],
+      ];
+      if (data.movementId) {
+        queryKeys.push(["movement-attachments", data.workspaceId, data.movementId]);
+      }
+      runBackgroundQueryRefresh(queryClient, queryKeys, {
+        message: "Actualizando pago",
+        description: "Estamos sincronizando el historial y los balances en segundo plano.",
+      });
+    },
+  });
+}
+
+export function useLinkMovementToObligationMutation(workspaceId: number | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      movementId,
+      obligationId,
+      amount,
+      paymentDate,
+      description,
+      installmentNo,
+    }: {
+      movementId: number;
+      obligationId: number;
+      amount: number;
+      paymentDate: string;
+      description?: string | null;
+      installmentNo?: number | null;
+    }) => {
+      if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
+      // 1. Create obligation_event of type "payment" linked to this movement
+      const { error: evError } = await supabase
+        .from("obligation_events")
+        .insert({
+          obligation_id: obligationId,
+          event_type: "payment",
+          event_date: paymentDate,
+          amount,
+          movement_id: movementId,
+          description: description?.trim() || null,
+          installment_no: installmentNo ?? null,
+          metadata: {},
+        });
+      if (evError) throw new Error(evError.message ?? "Error al crear evento de obligación");
+      // 2. Tag the movement with the obligation id
+      const { error: mvError } = await supabase
+        .from("movements")
+        .update({ obligation_id: obligationId })
+        .eq("id", movementId)
+        .eq("workspace_id", workspaceId);
+      if (mvError) throw new Error(mvError.message ?? "Error al vincular movimiento");
+    },
+    onSuccess: (_data, { movementId, obligationId }) => {
+      runBackgroundQueryRefresh(queryClient, [
+        ["workspace-snapshot"],
+        ["movements"],
+        ["movement", movementId],
+        ["obligation-events", obligationId],
+      ]);
+    },
+  });
+}
+
+export type PrincipalAdjustmentInput = {
+  obligationId: number;
+  direction: ObligationDirection;
+  mode: "increase" | "decrease";
+  amount: number;
+  eventDate: string;
+  reason?: string | null;
+  notes?: string | null;
+  accountId?: number | null;
+  createMovement?: boolean;
+};
+
+export function useCreatePrincipalAdjustmentMutation(workspaceId: number | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: PrincipalAdjustmentInput) => {
+      if (!supabase) throw new Error("Supabase no disponible.");
+      const wsId = await fetchObligationWorkspaceId(input.obligationId);
+      if (workspaceId != null && workspaceId !== wsId) {
+        throw new Error("La obligación no pertenece al workspace activo.");
+      }
+      const eventType = input.mode === "increase" ? "principal_increase" : "principal_decrease";
+      const { data, error } = await supabase
+        .from("obligation_events")
+        .insert({
+          obligation_id: input.obligationId,
+          event_type: eventType,
+          event_date: input.eventDate,
+          amount: input.amount,
+          reason: input.reason ?? null,
+          notes: input.notes ?? null,
+          metadata: {},
+        })
+        .select("id")
+        .single();
+      if (error) throw new Error(error.message ?? "Error de base de datos");
+      const eventId = (data as { id: number }).id;
+      // Optionally create a linked account movement
+      if (input.createMovement && input.accountId) {
+        const isReceivable = input.direction === "receivable";
+        const movType =
+          input.mode === "increase"
+            ? (isReceivable ? "expense" : "income")
+            : (isReceivable ? "income" : "expense");
+        const desc = input.mode === "increase"
+          ? (isReceivable
+              ? `Prestamo adicional de obligacion #${input.obligationId}`
+              : `Aumento de deuda #${input.obligationId}`)
+          : (isReceivable
+              ? `Recuperacion de principal de obligacion #${input.obligationId}`
+              : `Reduccion de deuda #${input.obligationId}`);
+        const { data: mvData, error: mvErr } = await supabase
+          .from("movements")
+          .insert({
+            workspace_id: wsId,
+            movement_type: movType,
+            status: "posted",
+            occurred_at: dateStrToISO(input.eventDate),
+            description: desc,
+            ...((movType === "income")
+              ? { destination_account_id: input.accountId, destination_amount: input.amount }
+              : { source_account_id: input.accountId, source_amount: input.amount }),
+            obligation_id: input.obligationId,
+            metadata: { obligation_event_id: eventId },
+          })
+          .select("id")
+          .single();
+        if (mvErr) throw mvErr;
+        await attachMovementToObligationEvent(eventId, (mvData as { id: number }).id);
+      }
+      return { id: eventId };
+    },
+    onSuccess: (data, variables) => {
+      runBackgroundQueryRefresh(queryClient, [
+        ["workspace-snapshot"],
+        ["movements"],
+        ["obligation-events", variables.obligationId],
+      ], {
+        message: "Actualizando deuda o crédito",
+        description: "Estamos sincronizando el evento y los balances asociados en segundo plano.",
+      });
+    },
+  });
+}
+
+export type UpdateObligationEventInput = {
+  eventId: number;
+  obligationId: number;
+  amount: number;
+  eventDate: string;
+  installmentNo?: number | null;
+  description?: string | null;
+  notes?: string | null;
+  reason?: string | null;
+  movementId?: number | null;
+  accountId?: number | null;
+  createMovement?: boolean;
+  direction?: ObligationDirection;
+  eventType?: string | null;
+  currencyCode?: string | null;
+  obligationTitle?: string | null;
+};
+
+type UpdateObligationEventSyncResult = {
+  movementId: number | null;
+  workspaceId: number;
+  removedMovementId: number | null;
+  syncedViewerMovementIds: number[];
+};
+
+export async function updateObligationEventAndSyncMovements(
+  input: UpdateObligationEventInput,
+): Promise<UpdateObligationEventSyncResult> {
+  if (!supabase) throw new Error("Supabase no disponible.");
+
+  const { data: currentEventRow, error: currentEventError } = await supabase
+    .from("obligation_events")
+    .select("amount, event_date, installment_no, description, notes, event_type")
+    .eq("id", input.eventId)
+    .maybeSingle();
+  if (currentEventError) {
+    throw new Error(currentEventError.message ?? "Error al cargar el evento");
+  }
+  const currentEvent = currentEventRow as {
+    amount?: NumericLike | null;
+    event_date?: string | null;
+    installment_no?: NumericLike | null;
+    description?: string | null;
+    notes?: string | null;
+    event_type?: string | null;
+  } | null;
+
+  const { error } = await supabase
+    .from("obligation_events")
+    .update({
+      amount: input.amount,
+      event_date: input.eventDate,
+      installment_no: input.installmentNo ?? null,
+      description: input.description?.trim() || null,
+      notes: input.notes?.trim() || null,
+      reason: input.reason?.trim() || null,
+    })
+    .eq("id", input.eventId);
+  if (error) throw new Error(error.message ?? "Error de base de datos");
+
+  const workspaceId = await fetchObligationWorkspaceId(input.obligationId);
+  const shouldSyncPaymentMovement =
+    input.direction != null &&
+    (input.movementId != null || input.accountId != null || input.createMovement != null);
+
+  if (!shouldSyncPaymentMovement) {
+    return {
+      movementId: input.movementId ?? null,
+      workspaceId,
+      removedMovementId: null,
+      syncedViewerMovementIds: [],
+    };
+  }
+
+  const isReceivable = input.direction === "receivable";
+  const autoDesc =
+    input.description?.trim() ||
+    (isReceivable
+      ? `Cobro de obligacion #${input.obligationId}`
+      : `Pago de obligacion #${input.obligationId}`);
+
+  const createMovementFlag = input.createMovement ?? Boolean(input.movementId ?? input.accountId);
+  const resolvedAccountId =
+    input.accountId ?? (input.movementId ? await resolveMovementAccountId(input.movementId) : null);
+
+  let movementId = input.movementId ?? null;
+  let removedMovementId: number | null = null;
+
+  if (createMovementFlag && resolvedAccountId) {
+    const movementPayload: Record<string, unknown> = {
+      workspace_id: workspaceId,
+      movement_type: "obligation_payment",
+      status: "posted",
+      occurred_at: dateStrToISO(input.eventDate),
+      description: autoDesc,
+      obligation_id: input.obligationId,
+      metadata: { obligation_event_id: input.eventId },
+      source_account_id: isReceivable ? null : resolvedAccountId,
+      source_amount: isReceivable ? null : input.amount,
+      destination_account_id: isReceivable ? resolvedAccountId : null,
+      destination_amount: isReceivable ? input.amount : null,
+    };
+
+    if (movementId) {
+      const { error: movementUpdateError } = await supabase
+        .from("movements")
+        .update(movementPayload)
+        .eq("id", movementId);
+      if (movementUpdateError) {
+        throw new Error(movementUpdateError.message ?? "Error al actualizar movimiento vinculado");
+      }
+    } else {
+      const { data: movementData, error: movementInsertError } = await supabase
+        .from("movements")
+        .insert(movementPayload)
+        .select("id")
+        .single();
+      if (movementInsertError) {
+        throw new Error(movementInsertError.message ?? "Error al crear movimiento vinculado");
+      }
+      movementId = toNum((movementData as { id: NumericLike }).id);
+      await attachMovementToObligationEvent(input.eventId, movementId);
+    }
+  } else if (!createMovementFlag && movementId) {
+    const { error: movementDeleteError } = await supabase
+      .from("movements")
+      .delete()
+      .eq("id", movementId);
+    if (movementDeleteError) {
+      throw new Error(movementDeleteError.message ?? "Error al eliminar movimiento vinculado");
+    }
+    const { error: unlinkError } = await supabase
+      .from("obligation_events")
+      .update({ movement_id: null })
+      .eq("id", input.eventId);
+    if (unlinkError) {
+      throw new Error(unlinkError.message ?? "Error al desvincular movimiento del evento");
+    }
+    removedMovementId = movementId;
+    movementId = null;
+  }
+
+  const syncedViewerMovementIds = await syncViewerLinkedMovementsForEvent({
+    eventId: input.eventId,
+    obligationId: input.obligationId,
+    obligationWorkspaceId: workspaceId,
+    eventType: input.eventType as "payment" | "principal_increase" | "principal_decrease",
+    amount: input.amount,
+    eventDate: input.eventDate,
+    description: input.description,
+    direction: input.direction as ObligationDirection,
+    obligationTitle: input.obligationTitle ?? undefined,
+  });
+
+  await notifyAcceptedViewersObligationEventUpdated({
+    obligationId: input.obligationId,
+    eventId: input.eventId,
+    amount: input.amount,
+    eventDate: input.eventDate,
+    installmentNo: input.installmentNo ?? null,
+    description: input.description ?? null,
+    notes: input.notes ?? null,
+    currencyCode: input.currencyCode ?? null,
+    eventType: input.eventType ?? currentEvent?.event_type ?? null,
+    obligationTitle: input.obligationTitle ?? null,
+    currentAmount: toNum(currentEvent?.amount ?? null),
+    currentEventDate: currentEvent?.event_date ?? null,
+    currentInstallmentNo: toNum(currentEvent?.installment_no ?? null),
+    currentDescription: currentEvent?.description ?? null,
+    currentNotes: currentEvent?.notes ?? null,
+  });
+
+  return {
+    movementId,
+    workspaceId,
+    removedMovementId,
+    syncedViewerMovementIds,
+  };
+}
+
+export function useUpdateObligationEventMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: UpdateObligationEventInput) => updateObligationEventAndSyncMovements(input),
+    onSuccess: (data, variables) => {
+      const queryKeys: Array<readonly unknown[]> = [
+        ["workspace-snapshot"],
+        ["movements"],
+        ["obligation-events", variables.obligationId],
+      ];
+      if (data?.movementId) queryKeys.push(["movement", data.movementId]);
+      if (data?.removedMovementId) queryKeys.push(["movement", data.removedMovementId]);
+      for (const syncedViewerMovementId of data?.syncedViewerMovementIds ?? []) {
+        queryKeys.push(["movement", syncedViewerMovementId]);
+      }
+      runBackgroundQueryRefresh(queryClient, queryKeys, {
+        message: "Actualizando evento",
+        description: "Estamos sincronizando el historial de la deuda o crédito en segundo plano.",
+      });
     },
   });
 }
