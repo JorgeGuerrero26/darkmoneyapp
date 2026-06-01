@@ -1,197 +1,127 @@
 # Fase 4.2 — Pendientes de modularización de obligations
 
 Continuación del plan de **Fase 4 parte 2** (corte físico del megafile
-`services/queries/workspace-data.ts`). Lo entregado hasta hoy:
+`services/queries/workspace-data.ts`).
 
-- **4.1** — `services/queries/obligations.ts` creado como shim de re-exports (48 símbolos). 15 callers migrados.
-- **4.2-a** — Dedup payload helpers: `eventDeletePayload`, `eventEditPayload`, `readEventDeletePayload`, `readEventEditPayload`, tipos `EventDeleteRequestPayload`/`EventEditRequestPayload` movidos a `lib/obligation-event-payloads.ts`. `workspace-data.ts` bajó ~180 líneas.
+## Estado actual (commit `92be1d47`)
 
-Lo que queda son cinco sub-pasos en orden de riesgo creciente. Cada uno debe
-dejar `npm run typecheck` + `git diff --check` verdes antes de seguir.
+- ✅ **4.1** — `services/queries/obligations.ts` creado como shim público (90 líneas).
+- ✅ **4.2-a** — Dedup payload helpers a `lib/obligation-event-payloads.ts`.
+- ✅ **4.2-b** — Helpers compartidos + tipos privados marcados `export` en workspace-data.ts: `toNum`, `joinNotes`, `formatAmountWithCurrency`, `formatSupabaseError`, `isDuplicateConstraintMessage`, `runBackgroundQueryRefresh`, `invokeEdgeFunction`, `createOrRefreshNotificationRow`, `markNotificationReadByEntity`, `createMovement`, `ObligationSummaryRow`, `ObligationEventRow`, `ViewerEventLinkRow`, `OwnerMovementLookupRow`, `NotificationRefreshInput`. `MovementType` y `AttachmentLike` ya venían de `types/domain`.
+- ✅ **4.2-c** — Cluster SHARES movido a `obligations-impl.ts`: 5 hooks (`useObligationActiveShareQuery`, `useObligationSharesQuery`, `usePendingObligationShareInvitesQuery`, `useCreateObligationShareInviteMutation`, `useUnlinkObligationShareMutation`), 3 tipos, 3 helpers privados (`mapObligationShareRow`, `copyIfMissing`, `obligationShareRecordToSnake`).
+- ✅ **4.2-d** — Cluster SHARED-OBLIGATIONS movido: `obligationRowFromUnknown`, `eventRowFromUnknown`, `parseSharedObligationItem`, `fetchSharedObligations`, `useSharedObligationsQuery`, `mergeWorkspaceAndSharedObligations`.
+- ✅ **4.2-e** — Cluster PAYMENT REQUESTS + VIEWER LINKS movido: 4 helpers, 4 tipos, 10 hooks. Exports temporales en workspace-data para `mapObligation`, `insertObligationPaymentEventWithFallback`, `attachMovementToObligationEvent` (consumidos por obligations-impl, se revertirán en 4.2-f).
 
----
+**Tamaños actuales:**
+- `workspace-data.ts`: 6,535 líneas (objetivo final: ~4,400).
+- `obligations-impl.ts`: 1,375 líneas (objetivo final: ~1,800).
+- `obligations.ts`: 90 líneas (shim, no cambia).
 
-## 4.2-b — Exportar helpers compartidos
+**Duplicación física inerte en workspace-data**: las funciones de los clusters 4.2-c/d/e siguen físicamente en workspace-data como código muerto porque el script de extracción falló y se hizo el restore por exports. **NO se ejecutan** (el shim apunta a obligations-impl). Se limpiarán en 4.2-f junto con el resto.
 
-**Objetivo:** que `services/queries/obligations-impl.ts` (a crear en 4.2-c) pueda importar todos los helpers que comparte con otros dominios sin redefinirlos.
+## Reglas obligatorias para 4.2-f
 
-**Helpers a marcar `export` en `services/queries/workspace-data.ts`** (sin moverlos todavía):
+Lecciones aprendidas de fases anteriores:
 
-| Helper | Ubicación aprox | Usado por (obligations) |
-|---|---:|---|
-| `toNum` | l. 66 | mapObligation, fetchObligationWorkspaceId, rowToPaymentRequest |
-| `joinNotes` | l. 72 | payment/principal mutations |
-| `formatAmountWithCurrency` | l. 79 | notification copy generators |
-| `formatSupabaseError` | l. 86 | mutations con manejo de error específico |
-| `isDuplicateConstraintMessage` | l. 97 | insertObligationPaymentEventWithFallback |
-| `runBackgroundQueryRefresh` | l. 165 | TODAS las mutations onSuccess |
-| `invokeEdgeFunction` | l. 4730 | useCreateObligationShareInviteMutation, useUnlinkObligationShareMutation, fetchSharedObligations |
-| `createOrRefreshNotificationRow` | l. 3843 | event mutations que emiten notificaciones |
-| `markNotificationReadByEntity` | l. 3638 | resolve*Notification helpers |
-| `createMovement` | l. 2222 | useCreateObligationPaymentMutation (vía payload directo, NO llamada) |
-
-**Tipos privados a marcar `export`:**
-
-| Tipo | Ubicación | Razón |
-|---|---:|---|
-| `ObligationEventRow` | búsqueda directa | mapObligationEventRowsToSummaries |
-| `ObligationSummaryRow` | búsqueda directa | mapObligation, obligationRowFromUnknown |
-| `ViewerEventLinkRow` | l. 3316 | fetchViewerLinksForEvent, deleteViewerLinksForEvent |
-| `NotificationRefreshInput` | búsqueda directa | createOrRefreshNotificationRow callers |
-| `OwnerMovementLookupRow` | l. 3324 | resolveOwnerMovementIdForObligationEvent |
-| `MovementType` | búsqueda en types/domain | viewerLinkedEventMovementConfig |
-| `AttachmentLike` | búsqueda directa | ObligationPaymentInput |
-
-**Cambio único en el archivo:** prefijar `export` a cada `function` y `type`
-listado arriba. Cero cambio de runtime. Cero cambio en callers existentes
-porque seguirán importando desde donde sea que ya importen.
-
-**Validación:** `npm run typecheck` debe seguir verde sin tocar nada más.
+1. **Un commit por sub-bloque movido**, NO uno solo al final de 4.2-f. Mínimo 4 commits internos. Cada uno con `npm run typecheck` verde antes del siguiente. Mensaje sugerido: `refactor(obligations): fase 4.2-f.N - <qué bloque>`.
+2. **NO usar scripts Node con regex para mover código en bloque** — el intento anterior con `endOfBlock()` y brace-counting falló y se perdieron 4 sub-fases. Hacer cada bloque con `Edit` tool, anclas textuales únicas por símbolo.
+3. **NUNCA `git checkout` ni `git restore`** sobre archivos uncommitted. Si un cambio sale mal, revertir con `Edit`.
+4. **Antes de mover `mapObligation`**: confirmar que `fetchWorkspaceSnapshot` (línea ~1,120) sigue siendo el único caller en workspace-data. Después de moverlo, importarlo de vuelta desde `./obligations-impl`. No es ciclo init-time, solo función — OK.
+5. **Cache keys de React Query**: idénticos.
+6. **Edge function names**: idénticos.
+7. **No cambiar firmas** ni comportamiento runtime.
 
 ---
 
-## 4.2-c — Mover el cluster de SHARES a obligations-impl.ts
+## 4.2-f — Mover el cluster CORE (~1,200 líneas)
 
-**Objetivo:** primer corte físico real. Cluster autónomo, no toca mutations CRUD de obligations.
+Línea numbers son al momento del commit base `92be1d47`. Verificar con `Grep` antes de cada bloque por si cambiaron.
 
-**Crear `services/queries/obligations-impl.ts`** con:
-
-- Imports desde `./workspace-data` (los símbolos exportados en 4.2-b).
-- Tipos exportados: `ObligationShareInviteInput`, `ObligationShareInviteResult`, `UnlinkObligationShareInput`.
-- Helpers privados a mover: `mapObligationShareRow` (l. 5182), `copyIfMissing` (l. 5255), `obligationShareRecordToSnake` (l. 5260).
-- Hooks/queries a mover:
-  - `useObligationActiveShareQuery` (l. 5204)
-  - `useObligationSharesQuery` (l. 5232)
-  - `usePendingObligationShareInvitesQuery` (l. 5489)
-  - `useCreateObligationShareInviteMutation` (l. 5582)
-  - `useUnlinkObligationShareMutation` (l. 5624)
-
-**Borrar** las definiciones movidas de `workspace-data.ts`.
-
-**Cambiar `services/queries/obligations.ts`** (el shim de 4.1) para que estos 5 hooks vengan de `./obligations-impl` en vez de `./workspace-data`.
-
-**Validación adicional al typecheck:** smoke manual del flujo de compartir obligación → invitar a un email → aceptar como viewer → desvincular.
-
----
-
-## 4.2-d — Mover el cluster de SHARED OBLIGATIONS
-
-**Objetivo:** parsing remoto desde edge function `list-shared-obligations`.
+### f.1 — Helpers de lookup y sync (commit propio)
 
 **Mover a `obligations-impl.ts`:**
 
-- Helpers privados: `obligationRowFromUnknown` (l. 5278), `eventRowFromUnknown` (l. 5346), `parseSharedObligationItem` (l. 5373), `fetchSharedObligations` (l. 5421).
-- Funciones públicas:
-  - `useSharedObligationsQuery` (l. 5451)
-  - `mergeWorkspaceAndSharedObligations` (l. 5462)
+- `fetchNextObligationInstallmentNo` (l. 334) — privado en workspace-data, ya consumido internamente.
+- `mapObligation` (l. 637) — **bloqueo crítico**: lo usa `fetchWorkspaceSnapshot` en l. ~1,120. Después de mover: `import { mapObligation } from "./obligations-impl"` en workspace-data y quitar el `export` temporal.
+- `mapObligationEventRowsToSummaries` (l. 694) — privado.
+- `fetchObligationEventsByObligationId` (l. 713) — privado, consumido por `useObligationEventsQuery` (que se mueve en f.4).
+- `fetchObligationWorkspaceId` (l. 2655) — privado, consumido por payment/principal mutations.
+- `resolveMovementAccountId` (l. 2909) — privado, consumido por update/accept-edit mutations.
+- `syncViewerLinkedMovementsForEvent` (l. 2926) — privado, consumido por update mutation. Internamente llama `fetchViewerLinksForEvent` y `viewerLinkedEventMovementConfig` (ya en obligations-impl desde 4.2-e).
+- `notifyAcceptedViewersObligationEventUpdated` (l. 3022) — privado, consumido por update mutation.
+- `movementTypeForObligationEvent` (l. 3525), `readMovementMetadataEventId` (l. 3538) — privados, consumidos por resolveOwnerMovementId.
+- `resolveOwnerMovementIdForObligationEvent` (l. 3563) — privado, consumido por delete mutation.
+- `attachMovementToObligationEvent` (l. 3548) — público temporal, ya marcado `export` en 4.2-e. Mover, quitar el `export` temporal en workspace-data.
 
-**Cuidado con:** estos helpers dependen de `mapObligationShareRow` ya movido en 4.2-c, y de tipos como `SharedObligationSummary`, `ObligationEventSummary` (de `types/domain`).
+**Validación f.1**: typecheck verde. Smoke: abrir cuentas + dashboard (porque `mapObligation` cambió de archivo).
 
-**Validación adicional:** smoke como viewer compartido en una obligación de otra cuenta — debe cargar el snapshot con el evento history correcto.
+### f.2 — Helpers de notificación delete/edit + mutations CRUD básicas (commit propio)
 
----
+**Mover a `obligations-impl.ts`:**
 
-## 4.2-e — Mover el cluster de VIEWER LINKS y PAYMENT REQUESTS
+- `resolveViewerDeletePendingNotification` (l. 3657)
+- `resolveOwnerDeleteRequestNotification` (l. 3701)
+- `resolveViewerEditPendingNotification` (l. 3745)
+- `resolveOwnerEditRequestNotification` (l. 3789)
+- `insertObligationPaymentEventWithFallback` (l. 350) — público temporal desde 4.2-e. Mover, quitar `export` temporal.
+- Tipo `ObligationFormInput` (búsqueda directa).
+- `useDeleteObligationMutation` (l. 2489), `useArchiveObligationMutation` (l. 2519), `useCreateObligationMutation` (l. 2543), `useUpdateObligationMutation` (l. 2608).
 
-**Objetivo:** el cluster más interconectado pero todavía sin mutations CRUD core.
+**Validación f.2**: typecheck verde. Smoke: crear/archivar/editar/eliminar una obligación.
 
-**Helpers privados a mover:**
+### f.3 — Mutations de event update + payment + principal (commit propio)
 
-- `viewerLinkedEventMovementConfig` (l. 6220)
-- `fetchViewerLinksForEvent` (l. 3490)
-- `deleteViewerLinksForEvent` (l. 3500)
-- `rowToPaymentRequest` (l. 5671)
+**Mover a `obligations-impl.ts`:**
 
-**Hooks/mutations a mover:**
+- Tipo `ObligationPaymentInput` y `PrincipalAdjustmentInput` (búsqueda directa).
+- `useCreateObligationPaymentMutation` (l. 2668)
+- `useLinkMovementToObligationMutation` (l. 2745)
+- `useCreatePrincipalAdjustmentMutation` (l. 2809)
+- Tipo `UpdateObligationEventInput` (búsqueda directa).
+- `updateObligationEventAndSyncMovements` (l. 3092) — privado, llama a `syncViewerLinkedMovementsForEvent` y `notifyAcceptedViewersObligationEventUpdated` (ya movidos en f.1).
+- `useUpdateObligationEventMutation` (l. 3247)
 
-- `useObligationEventViewerLinksQuery` (l. 6170)
-- `useLinkEventToAccountMutation` (l. 6300)
-- `useUpsertLinkEventToAccountMutation` (l. 6378)
-- `useDeleteViewerEventLinkMutation` (l. 6504)
-- `useCreatePaymentRequestMutation` (l. 5781)
-- `useAcceptPaymentRequestMutation` (l. 5935)
-- `useRejectPaymentRequestMutation` (l. 6079)
-- `usePendingPaymentRequestCountsQuery` (l. 5696)
-- `useObligationPaymentRequestsQuery` (l. 5743)
-- `useViewerPaymentRequestsQuery` (l. 5720)
+**Validación f.3**: typecheck verde. Smoke: registrar pago + editar evento + ajuste de principal.
 
-**Tipos públicos:** `PaymentRequestInput`, `AcceptPaymentRequestInput`, `LinkEventToAccountInput`, `DeleteViewerEventLinkInput`.
+### f.4 — Mutations de delete/edit request + useObligationEventsQuery + cleanup (commit propio, = 4.2-g integrado)
 
-**Cuidado con:** `useUpsertLinkEventToAccountMutation` invoca `mirrorObligationEventAttachmentsToMovement` (de `services/queries/attachments.ts`) — verificar import path desde el nuevo archivo.
+**Mover a `obligations-impl.ts`:**
 
-**Validación:** smoke completo de flujo bilateral: viewer crea payment request → owner acepta con cuenta seleccionada → verificar movement espejo en cuenta del viewer → viewer cambia cuenta asociada → verificar reasignación.
+- Tipo `DeleteObligationEventInput`, `CreateObligationEventDeleteRequestInput`, `RejectObligationEventDeleteRequestInput`, `CreateObligationEventEditRequestInput`, `AcceptObligationEventEditRequestInput`, `RejectObligationEventEditRequestInput`.
+- `useDeleteObligationEventMutation` (l. 3894)
+- `useCreateObligationEventDeleteRequestMutation` (l. 4075)
+- `useRejectObligationEventDeleteRequestMutation` (l. 4228)
+- `useCreateObligationEventEditRequestMutation` (l. 4346)
+- `useAcceptObligationEventEditRequestMutation` (l. 4406)
+- `useRejectObligationEventEditRequestMutation` (l. 4505)
+- `useObligationEventsQuery` (l. 5478)
 
----
+**Limpieza final (parte del mismo commit):**
 
-## 4.2-f — Mover el cluster CORE de mutations (el más grande)
+- Borrar de workspace-data las definiciones físicas duplicadas de los clusters 4.2-c/d/e que quedaron como código muerto (`mapObligationShareRow` l. 5185 y todo el bloque relacionado).
+- En `obligations.ts` (shim), revisar que todos los re-exports vengan de `./obligations-impl`. Si workspace-data necesita algún símbolo (probable: ninguno excepto `mapObligation`), importarlo desde obligations-impl.
+- Revertir exports temporales en workspace-data: cualquier `export` agregado en 4.2-b/c/d/e que ya no tenga callers (después de los moves de f.1-f.4) debe volver a `function` privada.
 
-**Objetivo:** ~1,200 líneas que arrastran el resto.
+**Validación f.4**: typecheck verde. Smoke completo:
+1. Owner crea obligación → registra pago → ajuste de principal → edita evento → elimina evento.
+2. Owner comparte → viewer acepta.
+3. Viewer pide pago → owner acepta → verificar movement espejo.
+4. Viewer pide edit/delete → owner acepta/rechaza con motivo.
+5. Owner desvincula.
 
-**Helpers privados a mover:**
-
-- `fetchNextObligationInstallmentNo` (l. 334)
-- `insertObligationPaymentEventWithFallback` (l. 350)
-- `mapObligation` (l. 637)
-- `mapObligationEventRowsToSummaries` (l. 694)
-- `fetchObligationEventsByObligationId` (l. 713)
-- `fetchObligationWorkspaceId` (l. 2652)
-- `resolveMovementAccountId` (l. 2906)
-- `syncViewerLinkedMovementsForEvent` (l. 2923)
-- `notifyAcceptedViewersObligationEventUpdated` (l. 3019)
-- `updateObligationEventAndSyncMovements` (l. 3089)
-- `movementTypeForObligationEvent` (l. 3522)
-- `readMovementMetadataEventId` (l. 3535)
-- `attachMovementToObligationEvent` (l. 3545)
-- `resolveOwnerMovementIdForObligationEvent` (l. 3560)
-- `resolveViewerDeletePendingNotification` (l. 3654)
-- `resolveOwnerDeleteRequestNotification` (l. 3698)
-- `resolveViewerEditPendingNotification` (l. 3742)
-- `resolveOwnerEditRequestNotification` (l. 3786)
-
-**Hooks/mutations a mover:**
-
-- `useDeleteObligationMutation` (l. 2486)
-- `useArchiveObligationMutation` (l. 2516)
-- `useCreateObligationMutation` (l. 2540)
-- `useUpdateObligationMutation` (l. 2605)
-- `useCreateObligationPaymentMutation` (l. 2665)
-- `useLinkMovementToObligationMutation` (l. 2742)
-- `useCreatePrincipalAdjustmentMutation` (l. 2806)
-- `useUpdateObligationEventMutation` (l. 3244)
-- `useDeleteObligationEventMutation` (l. 3891)
-- `useCreateObligationEventDeleteRequestMutation` (l. 4072)
-- `useRejectObligationEventDeleteRequestMutation` (l. 4225)
-- `useCreateObligationEventEditRequestMutation` (l. 4343)
-- `useAcceptObligationEventEditRequestMutation` (l. 4403)
-- `useRejectObligationEventEditRequestMutation` (l. 4502)
-- `useObligationEventsQuery` (l. 5475)
-
-**Tipos públicos:** `ObligationFormInput`, `ObligationPaymentInput`, `PrincipalAdjustmentInput`, `UpdateObligationEventInput`, `DeleteObligationEventInput`, `CreateObligationEventDeleteRequestInput`, `RejectObligationEventDeleteRequestInput`, `CreateObligationEventEditRequestInput`, `AcceptObligationEventEditRequestInput`, `RejectObligationEventEditRequestInput`.
-
-**Bloqueo crítico:** `mapObligation` se usa **dentro de `fetchWorkspaceSnapshot`** (línea ~1120). Después de moverlo a `obligations-impl.ts`, `workspace-data.ts` debe importarlo de vuelta: `import { mapObligation } from "./obligations-impl"`. Verificar que no se forma una dependencia circular (no debería: `obligations-impl` importa helpers de `workspace-data`, pero `mapObligation` no llama a esos helpers de vuelta).
-
-**Validación crítica:** smoke completo del módulo entero (todas las acciones del flujo de obligaciones), porque cualquier cosa que cargue snapshot pasa por `mapObligation`.
-
----
-
-## 4.2-g — Limpieza final
-
-**Después de 4.2-f**, el shim `services/queries/obligations.ts` debe re-exportar
-todo desde `./obligations-impl` (no desde `./workspace-data`). Sólo si `workspace-data`
-todavía necesita algún símbolo (probable: `mapObligation`), lo importa desde `obligations-impl`.
-
-**Estimación de tamaños finales:**
-
-- `services/queries/workspace-data.ts`: ~6,350 → ~4,400 líneas.
-- `services/queries/obligations-impl.ts`: nuevo, ~1,800 líneas.
-- `services/queries/obligations.ts`: 86 → 86 líneas (shim sin cambios estructurales).
+**Tamaños finales esperados:**
+- `workspace-data.ts`: ~4,400 líneas.
+- `obligations-impl.ts`: ~2,400 líneas (mayor a la estimación inicial porque se acumuló duplicación física de fases anteriores).
+- `obligations.ts`: 90 líneas.
 
 ---
 
 ## Convenciones para todas las sub-fases
 
-- **Una sub-fase = un commit potencial**. Si el typecheck falla, no avanzar.
+- **Una sub-fase = un commit potencial**. Si typecheck falla, no avanzar.
 - **No cambiar firmas** de hooks/funciones. Solo mover ubicación física.
-- **No cambiar comportamiento runtime**. Si detectas un bug al leer el código, anótalo en este archivo y trátalo aparte.
-- **Cache keys de React Query**: mantener idénticos (`["workspace-snapshot"]`, `["obligation-events", id]`, etc.).
-- **Edge function names**: idénticos (`list-shared-obligations`, `create-obligation-share-invite`, `unlink-obligation-share`).
+- **No cambiar comportamiento runtime**. Si detectas un bug al leer el código, anótalo aquí y trátalo aparte.
+- **Cache keys de React Query**: mantener idénticos.
+- **Edge function names**: idénticos.
+- **Sin scripts Node con regex** para mover bloques. Usar `Edit` con anclas textuales.
+- **Sin `git checkout`/`git restore`** sobre archivos uncommitted. Revertir con `Edit`.
