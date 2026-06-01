@@ -18,10 +18,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { UNIVERSAL_LINK_HOST } from "../../constants/config";
 import { supabase } from "../../lib/supabase";
 import { STALE } from "../../lib/query-client";
-import { dateStrToISO } from "../../lib/date";
+import { dateStrToISO, filterDateFrom, filterDateTo } from "../../lib/date";
 import { mirrorObligationEventAttachmentsToMovement } from "../../lib/entity-attachments";
+import { sortObligationEventsNewestFirst } from "../../lib/sort-obligation-events";
 import type {
   JsonValue,
+  MovementType,
   ObligationDirection,
   ObligationEventSummary,
   ObligationEventViewerLink,
@@ -35,13 +37,16 @@ import type {
 } from "../../types/domain";
 
 import {
-  attachMovementToObligationEvent,
+  createOrRefreshNotificationRow,
+  eventEditPayload,
+  formatNotificationCurrency,
   insertObligationPaymentEventWithFallback,
   invokeEdgeFunction,
-  mapObligation,
   toNum,
+  type DeleteObligationEventInput,
   type ObligationEventRow,
   type ObligationSummaryRow,
+  type OwnerMovementLookupRow,
   type ViewerEventLinkRow,
 } from "./workspace-data";
 
@@ -1372,4 +1377,422 @@ export function useDeleteViewerEventLinkMutation() {
       void queryClient.invalidateQueries({ queryKey: ["notifications"] });
     },
   });
+}
+
+// ─── 4.2-f.1: Helpers de lookup y sync (CORE) ────────────────────────────────
+
+export async function fetchNextObligationInstallmentNo(obligationId: number): Promise<number> {
+  if (!supabase) throw new Error("Supabase no disponible.");
+
+  const { data, error } = await supabase
+    .from("obligation_events")
+    .select("installment_no")
+    .eq("obligation_id", obligationId)
+    .eq("event_type", "payment")
+    .not("installment_no", "is", null)
+    .order("installment_no", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(error.message ?? "Error al calcular la siguiente cuota");
+  return Number((data as { installment_no?: number | null } | null)?.installment_no ?? 0) + 1;
+}
+
+export function mapObligation(
+  row: ObligationSummaryRow,
+  events: ObligationEventRow[],
+  counterpartyMap: Map<number, string>,
+): ObligationSummary {
+  const obligationEvents: ObligationEventSummary[] = sortObligationEventsNewestFirst(
+    events
+      .filter((e) => e.obligation_id === row.id)
+      .map((e) => ({
+        id: e.id,
+        eventType: e.event_type,
+        eventDate: e.event_date,
+        createdAt: e.created_at ?? null,
+        amount: toNum(e.amount),
+        installmentNo: e.installment_no,
+        reason: e.reason,
+        description: e.description,
+        notes: e.notes,
+        movementId: e.movement_id,
+        createdByUserId: e.created_by_user_id,
+        metadata: e.metadata,
+      })),
+  );
+
+  return {
+    id: row.id,
+    workspaceId: row.workspace_id,
+    title: row.title,
+    direction: row.direction,
+    originType: row.origin_type,
+    counterparty: row.counterparty_id ? counterpartyMap.get(row.counterparty_id) ?? "" : "",
+    counterpartyId: row.counterparty_id,
+    settlementAccountId: row.settlement_account_id,
+    settlementAccountName: null,
+    status: row.status,
+    currencyCode: row.currency_code,
+    principalAmount: toNum(row.principal_initial_amount),
+    principalAmountInBaseCurrency: toNum(row.principal_initial_amount),
+    currentPrincipalAmount: toNum(row.principal_current_amount),
+    currentPrincipalAmountInBaseCurrency: toNum(row.principal_current_amount),
+    pendingAmount: toNum(row.pending_amount),
+    pendingAmountInBaseCurrency: toNum(row.pending_amount),
+    progressPercent: toNum(row.progress_percent),
+    startDate: row.start_date,
+    dueDate: row.due_date,
+    installmentAmount: row.installment_amount ? toNum(row.installment_amount) : null,
+    installmentCount: row.installment_count,
+    interestRate: row.interest_rate ? toNum(row.interest_rate) : null,
+    description: row.description,
+    notes: row.notes,
+    paymentCount: row.payment_count,
+    lastPaymentDate: row.last_payment_date,
+    installmentLabel: "",
+    events: obligationEvents,
+  };
+}
+
+export function mapObligationEventRowsToSummaries(rows: ObligationEventRow[]): ObligationEventSummary[] {
+  return sortObligationEventsNewestFirst(
+    rows.map((e) => ({
+      id: e.id,
+      eventType: e.event_type,
+      eventDate: e.event_date,
+      createdAt: e.created_at ?? null,
+      amount: toNum(e.amount),
+      installmentNo: e.installment_no,
+      reason: e.reason,
+      description: e.description,
+      notes: e.notes,
+      movementId: e.movement_id,
+      createdByUserId: e.created_by_user_id,
+      metadata: e.metadata,
+    })),
+  );
+}
+
+export async function fetchObligationEventsByObligationId(obligationId: number): Promise<ObligationEventSummary[]> {
+  if (!supabase) throw new Error("Supabase no disponible.");
+  const { data, error } = await supabase
+    .from("obligation_events")
+    .select(
+      "id, obligation_id, event_type, event_date, created_at, amount, installment_no, reason, description, notes, movement_id, created_by_user_id, metadata",
+    )
+    .eq("obligation_id", obligationId);
+  if (error) throw new Error(error.message ?? "Error al cargar eventos");
+  return mapObligationEventRowsToSummaries((data ?? []) as ObligationEventRow[]);
+}
+
+export async function fetchObligationWorkspaceId(obligationId: number): Promise<number> {
+  if (!supabase) throw new Error("Supabase no disponible.");
+  const { data, error } = await supabase
+    .from("obligations")
+    .select("workspace_id")
+    .eq("id", obligationId)
+    .single();
+  if (error) throw new Error(error.message ?? "obligación no encontrada");
+  const ws = toNum(data?.workspace_id);
+  if (!ws) throw new Error("Workspace no disponible.");
+  return ws;
+}
+
+export async function resolveMovementAccountId(movementId: number | null | undefined): Promise<number | null> {
+  if (!supabase || !movementId) return null;
+  const { data, error } = await supabase
+    .from("movements")
+    .select("source_account_id, destination_account_id")
+    .eq("id", movementId)
+    .maybeSingle();
+  if (error) {
+    throw new Error(error.message ?? "Error al cargar la cuenta del movimiento");
+  }
+  const row = data as { source_account_id?: NumericLike; destination_account_id?: NumericLike } | null;
+  const sourceAccountId = toNum(row?.source_account_id ?? null);
+  if (sourceAccountId) return sourceAccountId;
+  const destinationAccountId = toNum(row?.destination_account_id ?? null);
+  return destinationAccountId || null;
+}
+
+export async function syncViewerLinkedMovementsForEvent(input: {
+  eventId: number;
+  obligationId: number;
+  obligationWorkspaceId: number;
+  eventType: "payment" | "principal_increase" | "principal_decrease";
+  amount: number;
+  eventDate: string;
+  description?: string | null;
+  direction: ObligationDirection;
+  obligationTitle?: string | null;
+}) {
+  if (!supabase) throw new Error("Supabase no disponible.");
+
+  const viewerLinks = await fetchViewerLinksForEvent(input.eventId);
+  if (viewerLinks.length === 0) return [] as number[];
+
+  const movementConfig = viewerLinkedEventMovementConfig({
+    eventType: input.eventType,
+    obligationDirection: input.direction,
+    obligationTitle: input.obligationTitle?.trim() || `Obligacion #${input.obligationId}`,
+  });
+  const autoDesc = input.description?.trim() || movementConfig.autoDesc;
+
+  const syncedMovementIds: number[] = [];
+
+  for (const link of viewerLinks) {
+    const viewerWorkspaceId = link.viewer_workspace_id != null ? Number(link.viewer_workspace_id) : null;
+    let accountId = link.account_id != null ? Number(link.account_id) : null;
+    if (!accountId && link.movement_id) {
+      accountId = await resolveMovementAccountId(link.movement_id);
+    }
+    if (!viewerWorkspaceId || !accountId) continue;
+
+    const movementPayload: Record<string, unknown> = {
+      workspace_id: viewerWorkspaceId,
+      movement_type: movementConfig.movementType,
+      status: "posted",
+      occurred_at: dateStrToISO(input.eventDate),
+      description: autoDesc,
+      obligation_id: null,
+      metadata: { obligation_id: input.obligationId, obligation_event_id: input.eventId },
+      source_account_id: movementConfig.isInflow ? null : accountId,
+      source_amount: movementConfig.isInflow ? null : input.amount,
+      destination_account_id: movementConfig.isInflow ? accountId : null,
+      destination_amount: movementConfig.isInflow ? input.amount : null,
+    };
+
+    let movementId = link.movement_id != null ? Number(link.movement_id) : null;
+    if (movementId) {
+      const { error: movementUpdateError } = await supabase
+        .from("movements")
+        .update(movementPayload)
+        .eq("id", movementId);
+      if (movementUpdateError) {
+        throw new Error(movementUpdateError.message ?? "Error al actualizar movimiento del viewer");
+      }
+    } else {
+      const { data: movementData, error: movementInsertError } = await supabase
+        .from("movements")
+        .insert(movementPayload)
+        .select("id")
+        .single();
+      if (movementInsertError) {
+        throw new Error(movementInsertError.message ?? "Error al crear movimiento del viewer");
+      }
+      movementId = toNum((movementData as { id: NumericLike }).id);
+      const { error: linkUpdateError } = await supabase
+        .from("obligation_event_viewer_links")
+        .update({
+          account_id: accountId,
+          movement_id: movementId,
+        })
+        .eq("id", link.id);
+      if (linkUpdateError) {
+        throw new Error(linkUpdateError.message ?? "Error al actualizar vinculo del viewer");
+      }
+    }
+
+    if (movementId) {
+      syncedMovementIds.push(movementId);
+      try {
+        await mirrorObligationEventAttachmentsToMovement({
+          workspaceId: input.obligationWorkspaceId,
+          targetWorkspaceId: viewerWorkspaceId,
+          eventId: input.eventId,
+          movementId,
+        });
+      } catch (error) {
+        console.warn("[syncViewerLinkedMovementsForEvent] attachment mirror failed", error);
+      }
+    }
+  }
+
+  return syncedMovementIds;
+}
+
+export async function notifyAcceptedViewersObligationEventUpdated(input: {
+  obligationId: number;
+  eventId: number;
+  amount: number;
+  eventDate: string;
+  installmentNo?: number | null;
+  description?: string | null;
+  notes?: string | null;
+  currencyCode?: string | null;
+  eventType?: string | null;
+  obligationTitle?: string | null;
+  currentAmount?: number | null;
+  currentEventDate?: string | null;
+  currentInstallmentNo?: number | null;
+  currentDescription?: string | null;
+  currentNotes?: string | null;
+}) {
+  if (!supabase) throw new Error("Supabase no disponible.");
+
+  const { data: shareRows, error: shareRowsError } = await supabase
+    .from("obligation_shares")
+    .select("invited_user_id")
+    .eq("obligation_id", input.obligationId)
+    .eq("status", "accepted");
+  if (shareRowsError) {
+    throw new Error(shareRowsError.message ?? "Error al cargar viewers de la obligacion");
+  }
+
+  const viewerIds = (shareRows ?? [])
+    .map((row) => (row as { invited_user_id?: string | null }).invited_user_id ?? null)
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+  if (viewerIds.length === 0) return;
+
+  const amountLabel = formatNotificationCurrency(input.amount, input.currencyCode);
+  const payload = eventEditPayload({
+    obligationId: input.obligationId,
+    eventId: input.eventId,
+    currencyCode: input.currencyCode,
+    eventType: input.eventType,
+    obligationTitle: input.obligationTitle,
+    currentAmount: input.currentAmount,
+    currentEventDate: input.currentEventDate,
+    currentInstallmentNo: input.currentInstallmentNo,
+    currentDescription: input.currentDescription,
+    currentNotes: input.currentNotes,
+    proposedAmount: input.amount,
+    proposedEventDate: input.eventDate,
+    proposedInstallmentNo: input.installmentNo ?? null,
+    proposedDescription: input.description?.trim() || null,
+    proposedNotes: input.notes?.trim() || null,
+  });
+
+  await Promise.all(
+    viewerIds.map((viewerUserId) =>
+      createOrRefreshNotificationRow({
+        user_id: viewerUserId,
+        channel: "in_app",
+        status: "pending",
+        kind: "obligation_event_updated",
+        title: "Evento actualizado",
+        body: `Se actualizo un evento${amountLabel}${input.obligationTitle ? ` en "${input.obligationTitle}"` : ""}.`,
+        scheduled_for: new Date().toISOString(),
+        related_entity_type: "obligation_event",
+        related_entity_id: input.eventId,
+        payload,
+      }),
+    ),
+  );
+}
+
+export function movementTypeForObligationEvent(eventType: string | null | undefined): MovementType | null {
+  switch (eventType) {
+    case "payment":
+      return "obligation_payment";
+    case "principal_increase":
+      return "income";
+    case "principal_decrease":
+      return "expense";
+    default:
+      return null;
+  }
+}
+
+export function readMovementMetadataEventId(value: JsonValue | null | undefined): number | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const raw = value as Record<string, JsonValue>;
+  const movementEventId =
+    typeof raw.obligation_event_id === "number"
+      ? raw.obligation_event_id
+      : Number(raw.obligation_event_id ?? 0);
+  return Number.isFinite(movementEventId) && movementEventId > 0 ? movementEventId : null;
+}
+
+export async function attachMovementToObligationEvent(eventId: number, movementId: number) {
+  if (!supabase) throw new Error("Supabase no disponible.");
+  const { error } = await supabase
+    .from("obligation_events")
+    .update({ movement_id: movementId })
+    .eq("id", eventId);
+  if (error) {
+    console.warn("[attachMovementToObligationEvent]", {
+      eventId,
+      movementId,
+      message: error.message ?? "Error al vincular evento y movimiento",
+    });
+  }
+}
+
+export async function resolveOwnerMovementIdForObligationEvent(
+  input: DeleteObligationEventInput,
+): Promise<number | null> {
+  if (!supabase) throw new Error("Supabase no disponible.");
+  if (input.movementId) return input.movementId;
+
+  const { data: eventRow, error: eventErr } = await supabase
+    .from("obligation_events")
+    .select("movement_id, event_date, amount, event_type, description")
+    .eq("id", input.eventId)
+    .maybeSingle();
+  if (eventErr) throw new Error(eventErr.message ?? "Error al cargar el evento");
+
+  const eventMovementId = toNum((eventRow as { movement_id: NumericLike } | null)?.movement_id ?? null);
+  if (eventMovementId) return eventMovementId;
+
+  const eventDate =
+    typeof (eventRow as { event_date?: string | null } | null)?.event_date === "string"
+      ? (eventRow as { event_date: string }).event_date
+      : input.eventDate ?? null;
+  const eventAmount =
+    (eventRow as { amount?: NumericLike | null } | null)?.amount != null
+      ? toNum((eventRow as { amount: NumericLike }).amount)
+      : input.amount ?? null;
+  const eventType =
+    typeof (eventRow as { event_type?: string | null } | null)?.event_type === "string"
+      ? (eventRow as { event_type: string }).event_type
+      : input.eventType ?? null;
+  const eventDescription =
+    typeof (eventRow as { description?: string | null } | null)?.description === "string"
+      ? (eventRow as { description: string }).description.trim().toLowerCase()
+      : "";
+  if (!eventDate) return null;
+
+  let query = supabase
+    .from("movements")
+    .select("id, movement_type, source_amount, destination_amount, description, metadata")
+    .eq("obligation_id", input.obligationId)
+    .gte("occurred_at", filterDateFrom(eventDate))
+    .lte("occurred_at", filterDateTo(eventDate))
+    .order("id", { ascending: false })
+    .limit(25);
+
+  const movementType = movementTypeForObligationEvent(eventType);
+  if (movementType) {
+    query = query.eq("movement_type", movementType);
+  }
+
+  const { data: movementRows, error: movementErr } = await query;
+  if (movementErr) throw new Error(movementErr.message ?? "Error al buscar el movimiento vinculado");
+
+  const candidates = (movementRows ?? []) as OwnerMovementLookupRow[];
+  const metadataMatch = candidates.find((row) => readMovementMetadataEventId(row.metadata) === input.eventId);
+  if (metadataMatch) return toNum(metadataMatch.id);
+
+  if (eventAmount == null) return null;
+  const normalizedAmount = Math.abs(eventAmount);
+  const amountMatches = candidates.filter((row) => {
+    const sourceAmount = Math.abs(toNum(row.source_amount));
+    const destinationAmount = Math.abs(toNum(row.destination_amount));
+    return sourceAmount === normalizedAmount || destinationAmount === normalizedAmount;
+  });
+  if (amountMatches.length === 1) return toNum(amountMatches[0].id);
+
+  const obligationTitleNeedle = input.obligationTitle?.trim().toLowerCase() ?? "";
+  const descriptiveMatches = amountMatches.filter((row) => {
+    const description = row.description?.trim().toLowerCase() ?? "";
+    if (!description) return false;
+    return Boolean(
+      (obligationTitleNeedle && description.includes(obligationTitleNeedle)) ||
+      (eventDescription && description.includes(eventDescription)),
+    );
+  });
+  if (descriptiveMatches.length === 1) return toNum(descriptiveMatches[0].id);
+
+  return null;
 }
