@@ -21,6 +21,11 @@ import { STALE } from "../../lib/query-client";
 import { dateStrToISO, filterDateFrom, filterDateTo } from "../../lib/date";
 import { mirrorObligationEventAttachmentsToMovement } from "../../lib/entity-attachments";
 import { sortObligationEventsNewestFirst } from "../../lib/sort-obligation-events";
+import {
+  eventDeletePayload,
+  readEventDeletePayload,
+  readEventEditPayload,
+} from "../../lib/obligation-event-payloads";
 import type {
   JsonValue,
   MovementType,
@@ -37,11 +42,14 @@ import type {
 } from "../../types/domain";
 
 import {
+  createMovement,
   createOrRefreshNotificationRow,
   eventEditPayload,
   formatNotificationCurrency,
-  insertObligationPaymentEventWithFallback,
   invokeEdgeFunction,
+  isDuplicateConstraintMessage,
+  markNotificationReadByEntity,
+  runBackgroundQueryRefresh,
   toNum,
   type DeleteObligationEventInput,
   type ObligationEventRow,
@@ -1795,4 +1803,433 @@ export async function resolveOwnerMovementIdForObligationEvent(
   if (descriptiveMatches.length === 1) return toNum(descriptiveMatches[0].id);
 
   return null;
+}
+
+// ─── 4.2-f.2: Helpers resolve notif + insert payment + CRUD mutations ────────
+
+export async function insertObligationPaymentEventWithFallback(input: {
+  obligationId: number;
+  paymentDate: string;
+  amount: number;
+  installmentNo?: number | null;
+  description?: string | null;
+  notes?: string | null;
+  metadata?: JsonValue;
+}): Promise<{ id: number; installmentNoApplied: boolean; appliedInstallmentNo: number | null }> {
+  if (!supabase) throw new Error("Supabase no disponible.");
+
+  const payload = {
+    obligation_id: input.obligationId,
+    event_type: "payment" as const,
+    event_date: input.paymentDate,
+    amount: input.amount,
+    installment_no: input.installmentNo ?? null,
+    description: input.description?.trim() || null,
+    notes: input.notes ?? null,
+    metadata: input.metadata ?? {},
+  };
+
+  const { data, error } = await supabase
+    .from("obligation_events")
+    .insert(payload)
+    .select("id")
+    .single();
+  if (!error) {
+    return {
+      id: (data as { id: number }).id,
+      installmentNoApplied: input.installmentNo != null,
+      appliedInstallmentNo: input.installmentNo ?? null,
+    };
+  }
+
+  if (input.installmentNo != null && isDuplicateConstraintMessage(error.message)) {
+    const nextInstallmentNo = await fetchNextObligationInstallmentNo(input.obligationId);
+    if (nextInstallmentNo > input.installmentNo) {
+      const { data: nextData, error: nextErr } = await supabase
+        .from("obligation_events")
+        .insert({
+          ...payload,
+          installment_no: nextInstallmentNo,
+        })
+        .select("id")
+        .single();
+      if (!nextErr) {
+        return {
+          id: (nextData as { id: number }).id,
+          installmentNoApplied: true,
+          appliedInstallmentNo: nextInstallmentNo,
+        };
+      }
+      if (!isDuplicateConstraintMessage(nextErr.message)) {
+        throw new Error(nextErr.message ?? "Error de base de datos");
+      }
+    }
+
+    const { data: retryData, error: retryErr } = await supabase
+      .from("obligation_events")
+      .insert({
+        ...payload,
+        installment_no: null,
+      })
+      .select("id")
+      .single();
+    if (!retryErr) {
+      return {
+        id: (retryData as { id: number }).id,
+        installmentNoApplied: false,
+        appliedInstallmentNo: null,
+      };
+    }
+    throw new Error(retryErr.message ?? "Error de base de datos");
+  }
+
+  throw new Error(error.message ?? "Error de base de datos");
+}
+
+export async function resolveViewerDeletePendingNotification(
+  userId: string | null | undefined,
+  eventId: number,
+  responseStatus: "accepted" | "rejected",
+  rejectionReason?: string | null,
+) {
+  if (!supabase || !userId) return;
+  const nowIso = new Date().toISOString();
+  const { data, error } = await supabase
+    .from("notifications")
+    .select("id, payload")
+    .eq("user_id", userId)
+    .eq("kind", "obligation_event_delete_pending")
+    .eq("related_entity_type", "obligation_event")
+    .eq("related_entity_id", eventId);
+  if (error) {
+    console.warn("[resolveViewerDeletePendingNotification]", error.message ?? error);
+    return;
+  }
+
+  for (const row of (data ?? []) as { id: number; payload: JsonValue | null }[]) {
+    const payload = readEventDeletePayload(row.payload);
+    const updatePayload = payload
+      ? eventDeletePayload({
+          ...payload,
+          rejectionReason:
+            responseStatus === "rejected" ? rejectionReason?.trim() || null : payload.rejectionReason ?? null,
+          responseStatus,
+        })
+      : row.payload;
+    const { error: updateErr } = await supabase
+      .from("notifications")
+      .update({
+        status: "read",
+        read_at: nowIso,
+        payload: updatePayload,
+      })
+      .eq("id", row.id);
+    if (updateErr) {
+      console.warn("[resolveViewerDeletePendingNotification]", updateErr.message ?? updateErr);
+    }
+  }
+}
+
+export async function resolveOwnerDeleteRequestNotification(
+  userId: string | null | undefined,
+  eventId: number,
+  responseStatus: "accepted" | "rejected",
+  rejectionReason?: string | null,
+) {
+  if (!supabase || !userId) return;
+  const nowIso = new Date().toISOString();
+  const { data, error } = await supabase
+    .from("notifications")
+    .select("id, payload")
+    .eq("user_id", userId)
+    .eq("kind", "obligation_event_delete_request")
+    .eq("related_entity_type", "obligation_event")
+    .eq("related_entity_id", eventId);
+  if (error) {
+    console.warn("[resolveOwnerDeleteRequestNotification]", error.message ?? error);
+    return;
+  }
+
+  for (const row of (data ?? []) as { id: number; payload: JsonValue | null }[]) {
+    const payload = readEventDeletePayload(row.payload);
+    const updatePayload = payload
+      ? eventDeletePayload({
+          ...payload,
+          rejectionReason:
+            responseStatus === "rejected" ? rejectionReason?.trim() || null : payload.rejectionReason ?? null,
+          responseStatus,
+        })
+      : row.payload;
+    const { error: updateErr } = await supabase
+      .from("notifications")
+      .update({
+        status: "read",
+        read_at: nowIso,
+        payload: updatePayload,
+      })
+      .eq("id", row.id);
+    if (updateErr) {
+      console.warn("[resolveOwnerDeleteRequestNotification]", updateErr.message ?? updateErr);
+    }
+  }
+}
+
+export async function resolveViewerEditPendingNotification(
+  userId: string | null | undefined,
+  eventId: number,
+  responseStatus: "accepted" | "rejected",
+  rejectionReason?: string | null,
+) {
+  if (!supabase || !userId) return;
+  const nowIso = new Date().toISOString();
+  const { data, error } = await supabase
+    .from("notifications")
+    .select("id, payload")
+    .eq("user_id", userId)
+    .eq("kind", "obligation_event_edit_pending")
+    .eq("related_entity_type", "obligation_event")
+    .eq("related_entity_id", eventId);
+  if (error) {
+    console.warn("[resolveViewerEditPendingNotification]", error.message ?? error);
+    return;
+  }
+
+  for (const row of (data ?? []) as { id: number; payload: JsonValue | null }[]) {
+    const payload = readEventEditPayload(row.payload);
+    const updatePayload = payload
+      ? eventEditPayload({
+          ...payload,
+          rejectionReason:
+            responseStatus === "rejected" ? rejectionReason?.trim() || null : payload.rejectionReason ?? null,
+          responseStatus,
+        })
+      : row.payload;
+    const { error: updateErr } = await supabase
+      .from("notifications")
+      .update({
+        status: "read",
+        read_at: nowIso,
+        payload: updatePayload,
+      })
+      .eq("id", row.id);
+    if (updateErr) {
+      console.warn("[resolveViewerEditPendingNotification]", updateErr.message ?? updateErr);
+    }
+  }
+}
+
+export async function resolveOwnerEditRequestNotification(
+  userId: string | null | undefined,
+  eventId: number,
+  responseStatus: "accepted" | "rejected",
+  rejectionReason?: string | null,
+) {
+  if (!supabase || !userId) return;
+  const nowIso = new Date().toISOString();
+  const { data, error } = await supabase
+    .from("notifications")
+    .select("id, payload")
+    .eq("user_id", userId)
+    .eq("kind", "obligation_event_edit_request")
+    .eq("related_entity_type", "obligation_event")
+    .eq("related_entity_id", eventId);
+  if (error) {
+    console.warn("[resolveOwnerEditRequestNotification]", error.message ?? error);
+    return;
+  }
+
+  for (const row of (data ?? []) as { id: number; payload: JsonValue | null }[]) {
+    const payload = readEventEditPayload(row.payload);
+    const updatePayload = payload
+      ? eventEditPayload({
+          ...payload,
+          rejectionReason:
+            responseStatus === "rejected" ? rejectionReason?.trim() || null : payload.rejectionReason ?? null,
+          responseStatus,
+        })
+      : row.payload;
+    const { error: updateErr } = await supabase
+      .from("notifications")
+      .update({
+        status: "read",
+        read_at: nowIso,
+        payload: updatePayload,
+      })
+      .eq("id", row.id);
+    if (updateErr) {
+      console.warn("[resolveOwnerEditRequestNotification]", updateErr.message ?? updateErr);
+    }
+  }
+}
+
+export type ObligationFormInput = {
+  userId: string;
+  title: string;
+  direction: "receivable" | "payable";
+  originType: "cash_loan" | "sale_financed" | "purchase_financed" | "manual";
+  openingImpact?: "none" | "inflow" | "outflow";
+  openingAccountId?: number | null;
+  counterpartyId?: number | null;
+  settlementAccountId?: number | null;
+  currencyCode: string;
+  principalAmount: number;
+  startDate: string;
+  dueDate?: string | null;
+  installmentAmount?: number | null;
+  installmentCount?: number | null;
+  interestRate?: number | null;
+  description?: string | null;
+  notes?: string | null;
+};
+
+export function useDeleteObligationMutation(workspaceId: number | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: number) => {
+      if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
+      const { count, error: eventsError } = await supabase
+        .from("obligation_events")
+        .select("id", { head: true, count: "exact" })
+        .eq("obligation_id", id)
+        .neq("event_type", "opening");
+      if (eventsError) throw new Error(eventsError.message ?? "Error al validar la obligación");
+      if ((count ?? 0) > 0) {
+        throw new Error("No puedes eliminar esta obligación porque tiene eventos. Archívala o elimina sus eventos primero.");
+      }
+      const { error } = await supabase
+        .from("obligations")
+        .delete()
+        .eq("id", id)
+        .eq("workspace_id", workspaceId);
+      if (error) throw new Error(error.message ?? "Error de base de datos");
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+      if (workspaceId) {
+        void queryClient.invalidateQueries({ queryKey: ["obligation-shares", workspaceId] });
+      }
+    },
+  });
+}
+
+export function useArchiveObligationMutation(workspaceId: number | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, archived }: { id: number; archived: boolean }) => {
+      if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
+      const nextStatus: ObligationStatus = archived ? "cancelled" : "active";
+      const { error } = await supabase
+        .from("obligations")
+        .update({ status: nextStatus })
+        .eq("id", id)
+        .eq("workspace_id", workspaceId);
+      if (error) throw new Error(error.message ?? "Error de base de datos");
+    },
+    onSuccess: () => {
+      runBackgroundQueryRefresh(
+        queryClient,
+        workspaceId
+          ? [["workspace-snapshot"], ["obligation-active-share"], ["obligation-shares", workspaceId]]
+          : [["workspace-snapshot"], ["obligation-active-share"]],
+      );
+    },
+  });
+}
+
+export function useCreateObligationMutation(workspaceId: number | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: ObligationFormInput) => {
+      if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
+      const { data, error } = await supabase
+        .from("obligations")
+        .insert({
+          workspace_id: workspaceId,
+          created_by_user_id: input.userId,
+          updated_by_user_id: input.userId,
+          title: input.title,
+          direction: input.direction,
+          origin_type: input.originType,
+          counterparty_id: input.counterpartyId ?? null,
+          settlement_account_id: input.settlementAccountId ?? null,
+          currency_code: input.currencyCode,
+          principal_amount: input.principalAmount,
+          start_date: input.startDate,
+          due_date: input.dueDate ?? null,
+          installment_amount: input.installmentAmount ?? null,
+          installment_count: input.installmentCount ?? null,
+          interest_rate: input.interestRate ?? null,
+          description: input.description ?? null,
+          notes: input.notes ?? null,
+          status: "active",
+        })
+        .select("id")
+        .single();
+      if (error) throw new Error(error.message ?? "Error de base de datos");
+      const created = data as { id: number };
+
+      // Create opening movement when cash actually moved at obligation start
+      const openingImpact = input.openingImpact ?? "none";
+      if (openingImpact !== "none" && input.openingAccountId) {
+        const isInflow = openingImpact === "inflow";
+        const openingDesc = input.direction === "receivable"
+          ? `Préstamo entregado: ${input.title}`
+          : `Dinero recibido: ${input.title}`;
+        await createMovement(workspaceId, {
+          movementType: "obligation_opening" as MovementType,
+          status: "posted",
+          occurredAt: `${input.startDate}T12:00:00`,
+          description: openingDesc,
+          notes: null,
+          sourceAccountId: isInflow ? null : input.openingAccountId,
+          sourceAmount: isInflow ? null : input.principalAmount,
+          destinationAccountId: isInflow ? input.openingAccountId : null,
+          destinationAmount: isInflow ? input.principalAmount : null,
+          obligationId: created.id,
+        });
+      }
+
+      return created;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+      void queryClient.invalidateQueries({ queryKey: ["obligation-active-share"] });
+      if (workspaceId) {
+        void queryClient.invalidateQueries({ queryKey: ["obligation-shares", workspaceId] });
+      }
+    },
+  });
+}
+
+export function useUpdateObligationMutation(workspaceId: number | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, input }: { id: number; input: Partial<ObligationFormInput> }) => {
+      if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
+      const payload: Record<string, unknown> = {};
+      if (input.title !== undefined) payload.title = input.title;
+      if (input.counterpartyId !== undefined) payload.counterparty_id = input.counterpartyId;
+      if (input.settlementAccountId !== undefined) payload.settlement_account_id = input.settlementAccountId;
+      if (input.dueDate !== undefined) payload.due_date = input.dueDate;
+      if (input.installmentAmount !== undefined) payload.installment_amount = input.installmentAmount;
+      if (input.installmentCount !== undefined) payload.installment_count = input.installmentCount;
+      if (input.interestRate !== undefined) payload.interest_rate = input.interestRate;
+      if (input.description !== undefined) payload.description = input.description;
+      if (input.notes !== undefined) payload.notes = input.notes;
+      const { error } = await supabase
+        .from("obligations")
+        .update(payload)
+        .eq("id", id)
+        .eq("workspace_id", workspaceId);
+      if (error) throw new Error(error.message ?? "Error de base de datos");
+    },
+    onSuccess: () => {
+      runBackgroundQueryRefresh(
+        queryClient,
+        workspaceId
+          ? [["workspace-snapshot"], ["obligation-active-share"], ["obligation-shares", workspaceId]]
+          : [["workspace-snapshot"], ["obligation-active-share"]],
+      );
+    },
+  });
 }
