@@ -4,7 +4,8 @@ import { Animated, StyleSheet, View } from "react-native";
 import { Home, ArrowLeftRight, WalletCards, Scale, LayoutGrid } from "lucide-react-native";
 
 import { COLORS, FONT_FAMILY, RADIUS, SPACING } from "../../constants/theme";
-import { useNotificationsQuery, usePendingObligationShareInvitesQuery } from "../../services/queries/workspace-data";
+import { useNotificationsQuery } from "../../services/queries/workspace-data";
+import { usePendingObligationShareInvitesQuery } from "../../services/queries/obligations";
 import { useAuth } from "../../lib/auth-context";
 import { Badge } from "../../components/ui/Badge";
 import { SafeBlurView } from "../../components/ui/SafeBlurView";

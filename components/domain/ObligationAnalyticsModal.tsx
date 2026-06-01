@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  ActivityIndicator,
   Animated,
   Modal,
   Pressable,
@@ -31,11 +30,9 @@ import { ProgressBar } from "../ui/ProgressBar";
 import { DatePickerInput } from "../ui/DatePickerInput";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { parseDisplayDate, todayPeru } from "../../lib/date";
-import { buildDateRangeNotice } from "../../lib/date-range-notice";
 import { useAuth } from "../../lib/auth-context";
 import { humanizeError } from "../../lib/errors";
 import { useWorkspace } from "../../lib/workspace-context";
-import { sortObligationEventsNewestFirst } from "../../lib/sort-obligation-events";
 import { sortByName } from "../../lib/sort-locale";
 import { COLORS, ELEVATION, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { OBLIGATION_EVENT_HISTORY_PAGE_SIZE } from "../../constants/config";
@@ -47,19 +44,21 @@ import type {
   SharedObligationSummary,
 } from "../../types/domain";
 import {
+  useNotificationsQuery,
+  useWorkspaceSnapshotQuery,
+} from "../../services/queries/workspace-data";
+import {
   useObligationEventsQuery,
   useObligationPaymentRequestsQuery,
   useViewerPaymentRequestsQuery,
   useAcceptPaymentRequestMutation,
   useRejectPaymentRequestMutation,
-  useNotificationsQuery,
   useCreateObligationEventDeleteRequestMutation,
   useDeleteObligationEventMutation,
   useObligationEventViewerLinksQuery,
   useRejectObligationEventDeleteRequestMutation,
   useUpsertLinkEventToAccountMutation,
-  useWorkspaceSnapshotQuery,
-} from "../../services/queries/workspace-data";
+} from "../../services/queries/obligations";
 import { useObligationEventAttachmentsQuery } from "../../services/queries/attachments";
 import {
   analyticsChartSectionTitle,
@@ -78,53 +77,35 @@ import { AttachmentPreviewModal } from "./AttachmentPreviewModal";
 import { ObligationEventDeleteImpact } from "./ObligationEventDeleteImpact";
 import { SafeBlurView } from "../ui/SafeBlurView";
 import { useDismissibleSheet } from "../ui/useDismissibleSheet";
-import { StaggeredItem } from "../ui/StaggeredItem";
-
-function ymdToLocalDate(ymd: string): Date {
-  const [y, m, d] = ymd.split("-").map(Number);
-  return new Date(y, m - 1, d);
-}
-
-function currentMonthRangeYmd(): { from: string; to: string } {
-  const today = ymdToLocalDate(todayPeru());
-  return {
-    from: format(startOfMonth(today), "yyyy-MM-dd"),
-    to: format(endOfMonth(today), "yyyy-MM-dd"),
-  };
-}
-
-function formatSignedCurrencyValue(amount: number, currency: string): string {
-  const absolute = formatCurrency(Math.abs(amount), currency);
-  if (amount > 0) return `+${absolute}`;
-  if (amount < 0) return `-${absolute}`;
-  return absolute;
-}
-
-function formatPeriodLabel(from: Date, to: Date): string {
-  const fromText = format(from, "d MMM", { locale: es });
-  const toText = format(to, "d MMM yyyy", { locale: es });
-  return `${fromText} al ${toText}`;
-}
-
-function firstMeaningfulText(...values: Array<string | null | undefined>): string | null {
-  for (const value of values) {
-    const trimmed = value?.trim();
-    if (trimmed) return trimmed;
-  }
-  return null;
-}
-
-function groupAnalyticsEventsByDate(events: ObligationEventSummary[]): Array<{ date: string; events: ObligationEventSummary[] }> {
-  const map = new Map<string, ObligationEventSummary[]>();
-  for (const e of events) {
-    const date = e.eventDate.slice(0, 10);
-    if (!map.has(date)) map.set(date, []);
-    map.get(date)!.push(e);
-  }
-  return Array.from(map.entries())
-    .sort((a, b) => b[0].localeCompare(a[0]))
-    .map(([date, evs]) => ({ date, events: evs }));
-}
+import {
+  readEventDeletePayload,
+  type EventDeleteStatus,
+} from "../../lib/obligation-event-payloads";
+import { firstMeaningfulText } from "../../lib/text-utils";
+import { currentMonthRangeYmd, ymdToLocalDate } from "../../lib/obligation-date-range";
+import {
+  ANALYTICS_EVENT_LABELS,
+  formatPeriodLabel,
+  formatSignedCurrencyValue,
+  groupAnalyticsEventsByDate,
+  type DeleteRequestHistoryEntry,
+  type HistoryItem,
+} from "../../lib/obligation-analytics-helpers";
+import { buildMonthlySeries } from "../../lib/obligation-monthly-series";
+import { computeAnalyticsAmounts } from "../../lib/obligation-analytics-amounts";
+import {
+  buildCombinedHistoryList,
+  buildHistoryItemsByRequestStatus,
+} from "../../lib/obligation-history-items";
+import { useObligationAnalyticsHistory } from "../../hooks/useObligationAnalyticsHistory";
+import { styles } from "./ObligationAnalyticsModal.styles";
+import { AnalyticsChartBars } from "./analytics/AnalyticsChartBars";
+import { AnalyticsInstallmentGrid } from "./analytics/AnalyticsInstallmentGrid";
+import { AnalyticsInsightCards } from "./analytics/AnalyticsInsightCards";
+import { AnalyticsTimeline } from "./analytics/AnalyticsTimeline";
+import { AnalyticsViewerEventActionSheet } from "./analytics/AnalyticsViewerEventActionSheet";
+import { AnalyticsViewerLinkAccountSheet } from "./analytics/AnalyticsViewerLinkAccountSheet";
+import { AnalyticsApprovalSheet } from "./analytics/AnalyticsApprovalSheet";
 
 type HistoryPreset = "month" | "3m" | "year" | "all" | "custom";
 type ChartScope = "6" | "12" | "all";
@@ -133,15 +114,6 @@ type TimelineToneFilter = "all" | "positive" | "negative";
 type TimelinePerspective = "obligation" | "cash";
 type ComparisonMode = "flow" | "capital" | "all";
 type ComparisonWindow = "month" | "90d";
-
-const EVENT_LABELS: Record<string, { label: string }> = {
-  payment: { label: "Pago" },
-  principal_increase: { label: "Aumento principal" },
-    principal_decrease: { label: "Reduccion principal" },
-  opening: { label: "Apertura" },
-  status_change: { label: "Cambio de estado" },
-    conditions_update: { label: "Actualizacion" },
-};
 
 type Props = {
   visible: boolean;
@@ -152,75 +124,6 @@ type Props = {
 };
 
 type EventTypeFilter = "all" | "approved" | "pending" | "rejected";
-
-type DeleteRequestHistoryEntry = {
-  id: string;
-  status: "pending" | "accepted" | "rejected";
-  payload: EventDeleteRequestPayload;
-  event: ObligationEventSummary | null;
-  notification: NotificationItem;
-  ownerCanRespond: boolean;
-};
-
-type HistoryItem =
-  | { kind: "event"; event: ObligationEventSummary; date: string; sortKey: string; sortId: number }
-  | { kind: "request"; request: ObligationPaymentRequest; date: string; sortKey: string; sortId: number }
-  | {
-      kind: "delete_request";
-      request: DeleteRequestHistoryEntry;
-      date: string;
-      sortKey: string;
-      sortId: number;
-    };
-
-type EventDeleteRequestPayload = {
-  obligationId: number;
-  eventId: number;
-  amount?: number | null;
-  eventType?: string | null;
-  eventDate?: string | null;
-  obligationTitle?: string | null;
-  requestedByUserId?: string | null;
-  requestedByDisplayName?: string | null;
-  rejectionReason?: string | null;
-  responseStatus?: "accepted" | "rejected" | null;
-};
-
-type EventDeleteStatus = {
-  status: "pending" | "accepted" | "rejected";
-  notification: NotificationItem;
-  payload: EventDeleteRequestPayload;
-};
-
-function readEventDeletePayload(value: NotificationItem["payload"]): EventDeleteRequestPayload | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const raw = value as Record<string, unknown>;
-  const obligationId = Number(raw.obligationId ?? 0);
-  const eventId = Number(raw.eventId ?? 0);
-  if (!obligationId || !eventId) return null;
-  return {
-    obligationId,
-    eventId,
-    amount: raw.amount == null ? null : Number(raw.amount),
-    eventType: typeof raw.eventType === "string" ? raw.eventType : null,
-    eventDate: typeof raw.eventDate === "string" ? raw.eventDate : null,
-    obligationTitle: typeof raw.obligationTitle === "string" ? raw.obligationTitle : null,
-    requestedByUserId: typeof raw.requestedByUserId === "string" ? raw.requestedByUserId : null,
-    requestedByDisplayName:
-      typeof raw.requestedByDisplayName === "string" ? raw.requestedByDisplayName : null,
-    rejectionReason: typeof raw.rejectionReason === "string" ? raw.rejectionReason : null,
-    responseStatus:
-      raw.responseStatus === "accepted" || raw.responseStatus === "rejected"
-        ? raw.responseStatus
-        : null,
-  };
-}
-
-function compareHistoryItemsNewestFirst(a: HistoryItem, b: HistoryItem): number {
-  const bySortKey = b.sortKey.localeCompare(a.sortKey);
-  if (bySortKey !== 0) return bySortKey;
-  return b.sortId - a.sortId;
-}
 
 export function ObligationAnalyticsModal({ visible, obligation, onClose, onEventTap, userId }: Props) {
   const { profile } = useAuth();
@@ -427,11 +330,18 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
   const deleteRequests = isSharedViewer ? viewerDeleteRequests : ownerDeleteRequests;
 
   // Todos los hooks deben ejecutarse siempre (nunca después de `return null`).
-  const paymentEvents = useMemo(() => {
-    return eventsForModal
-      .filter((e) => e.eventType === "payment")
-      .sort((a, b) => b.eventDate.localeCompare(a.eventDate));
-  }, [eventsForModal]);
+  const {
+    paymentEvents,
+    allEventsSorted,
+    timelineEvents,
+    filteredHistoryEvents,
+    historyDateRangeNotice,
+  } = useObligationAnalyticsHistory({
+    eventsForModal,
+    historyPreset,
+    historyFrom,
+    historyTo,
+  });
 
   useEffect(() => {
     if (!isSharedViewer || !viewerRequests.length || !profile?.id || !shareId || !activeWorkspaceId || !obligation) return;
@@ -485,39 +395,17 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewerRequests, linkedEventIds.size]);
 
-  const monthlyPayments = useMemo(() => {
-    const eventMonth = (e: ObligationEventSummary) => e.eventDate.slice(0, 7);
-
-    if (chartScope === "all") {
-      const keys = [...new Set(paymentEvents.map(eventMonth))].sort();
-      const anchor = ymdToLocalDate(todayPeru());
-      const fallbackKey = format(startOfMonth(anchor), "yyyy-MM");
-      const monthKeys = keys.length > 0 ? keys : [fallbackKey];
-      return monthKeys.map((key) => {
-        const d = ymdToLocalDate(`${key}-01`);
-        const label = format(d, "MMM yy", { locale: es });
-        const total = paymentEvents.filter((e) => eventMonth(e) === key).reduce((s, e) => s + e.amount, 0);
-        return { label, key, total };
-      });
-    }
-
-    const n = chartScope === "12" ? 12 : 6;
-    const anchor = ymdToLocalDate(todayPeru());
-    const months: { label: string; key: string; total: number }[] = [];
-    for (let i = n - 1; i >= 0; i--) {
-      const d = startOfMonth(subMonths(anchor, i));
-      const key = format(d, "yyyy-MM");
-      const label = format(d, "MMM", { locale: es });
-      const total = paymentEvents.filter((e) => eventMonth(e) === key).reduce((s, e) => s + e.amount, 0);
-      months.push({ label, key, total });
-    }
-    return months;
-  }, [paymentEvents, chartScope]);
-
-  const allEventsSorted = useMemo(
-    () => sortObligationEventsNewestFirst(eventsForModal),
-    [eventsForModal],
+  const monthlyPayments = useMemo(
+    () =>
+      buildMonthlySeries({
+        items: paymentEvents,
+        scope: chartScope,
+        getMonthKey: (e) => e.eventDate.slice(0, 7),
+        getAmount: (e) => e.amount,
+      }),
+    [paymentEvents, chartScope],
   );
+
   const analyticsDirection = obligation?.direction ?? "receivable";
   function shouldUseCashPerspective(eventId: number, perspective: TimelinePerspective) {
     if (!isSharedViewer || perspective !== "cash") return false;
@@ -559,148 +447,43 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
     paymentEvents,
     viewerLinkByEventId,
   ]);
-  const analysisMonthlySeries = useMemo(() => {
-    const eventMonth = (item: { event: ObligationEventSummary }) => item.event.eventDate.slice(0, 7);
-    if (chartScope === "all") {
-      const keys = [...new Set(analysisEvents.map(eventMonth))].sort();
-      const anchor = ymdToLocalDate(todayPeru());
-      const fallbackKey = format(startOfMonth(anchor), "yyyy-MM");
-      const monthKeys = keys.length > 0 ? keys : [fallbackKey];
-      return monthKeys.map((key) => {
-        const d = ymdToLocalDate(`${key}-01`);
-        const label = format(d, "MMM yy", { locale: es });
-        const total = analysisEvents
-          .filter((item) => eventMonth(item) === key)
-          .reduce((sum, item) => sum + item.signedAmount, 0);
-        return { label, key, total };
-      });
-    }
-    const n = chartScope === "12" ? 12 : 6;
-    const anchor = ymdToLocalDate(todayPeru());
-    const months: { label: string; key: string; total: number }[] = [];
-    for (let i = n - 1; i >= 0; i -= 1) {
-      const d = startOfMonth(subMonths(anchor, i));
-      const key = format(d, "yyyy-MM");
-      const label = format(d, "MMM", { locale: es });
-      const total = analysisEvents
-        .filter((item) => eventMonth(item) === key)
-        .reduce((sum, item) => sum + item.signedAmount, 0);
-      months.push({ label, key, total });
-    }
-    return months;
-  }, [analysisEvents, chartScope]);
-  const timelineEvents = useMemo(
-    () => allEventsSorted.filter((event) => event.eventType !== "opening").slice(0, 12),
-    [allEventsSorted],
+  const analysisMonthlySeries = useMemo(
+    () =>
+      buildMonthlySeries({
+        items: analysisEvents,
+        scope: chartScope,
+        getMonthKey: (item) => item.event.eventDate.slice(0, 7),
+        getAmount: (item) => item.signedAmount,
+      }),
+    [analysisEvents, chartScope],
   );
-
-  const filteredHistoryEvents = useMemo(() => {
-    if (historyPreset === "all") {
-      return allEventsSorted;
-    }
-    const from = historyFrom.trim();
-    const to = historyTo.trim();
-    if (!from || !to) {
-      return allEventsSorted;
-    }
-    return allEventsSorted.filter((e) => {
-      const d = e.eventDate.slice(0, 10);
-      return d >= from && d <= to;
-    });
-  }, [allEventsSorted, historyFrom, historyTo, historyPreset]);
-
-  const historyDateRangeNotice = useMemo(() => {
-    const from = historyPreset === "all" ? null : historyFrom.trim() || null;
-    const to = historyPreset === "all" ? null : historyTo.trim() || null;
-    return buildDateRangeNotice({
-      subject: "eventos del historial",
-      from,
-      to,
-      allMessage: "Mostrando todos los eventos del historial.",
-    });
-  }, [historyFrom, historyPreset, historyTo]);
-
   // Combined list: events (approved) + pending/rejected requests
-  const combinedList = useMemo((): HistoryItem[] => {
-    const items: HistoryItem[] = filteredHistoryEvents.map((e) => ({
-      kind: "event",
-      event: e,
-      date: e.eventDate,
-      sortKey: e.createdAt || `${e.eventDate}T00:00:00.000`,
-      sortId: e.id,
-    }));
-    // Add pending and rejected requests to the combined view
-    for (const req of allRequests) {
-      if (req.status === "pending" || req.status === "rejected") {
-        items.push({
-          kind: "request",
-          request: req,
-          date: req.paymentDate,
-          sortKey: req.updatedAt || req.createdAt || `${req.paymentDate}T00:00:00.000`,
-          sortId: req.id,
-        });
-      }
-    }
-    for (const req of deleteRequests) {
-      items.push({
-        kind: "delete_request",
-        request: req,
-        date: req.notification.scheduledFor,
-        sortKey: req.notification.scheduledFor,
-        sortId: req.notification.id,
-      });
-    }
-    return items.sort(compareHistoryItemsNewestFirst);
-  }, [filteredHistoryEvents, allRequests, deleteRequests]);
+  const combinedList = useMemo(
+    () =>
+      buildCombinedHistoryList({
+        events: filteredHistoryEvents,
+        requests: allRequests,
+        deleteRequests,
+      }),
+    [filteredHistoryEvents, allRequests, deleteRequests],
+  );
 
   const displayList = useMemo((): HistoryItem[] => {
     switch (eventTypeFilter) {
       case "approved":
         return combinedList.filter((i) => i.kind === "event");
       case "pending":
-        return [
-          ...allRequests
-            .filter((r) => r.status === "pending")
-            .map((r) => ({
-              kind: "request" as const,
-              request: r,
-              date: r.paymentDate,
-              sortKey: r.updatedAt || r.createdAt || `${r.paymentDate}T00:00:00.000`,
-              sortId: r.id,
-            })),
-          ...deleteRequests
-            .filter((r) => r.status === "pending")
-            .map((r) => ({
-              kind: "delete_request" as const,
-              request: r,
-              date: r.notification.scheduledFor,
-              sortKey: r.notification.scheduledFor,
-              sortId: r.notification.id,
-            })),
-        ]
-          .sort(compareHistoryItemsNewestFirst);
+        return buildHistoryItemsByRequestStatus({
+          requests: allRequests,
+          deleteRequests,
+          status: "pending",
+        });
       case "rejected":
-        return [
-          ...allRequests
-            .filter((r) => r.status === "rejected")
-            .map((r) => ({
-              kind: "request" as const,
-              request: r,
-              date: r.paymentDate,
-              sortKey: r.updatedAt || r.createdAt || `${r.paymentDate}T00:00:00.000`,
-              sortId: r.id,
-            })),
-          ...deleteRequests
-            .filter((r) => r.status === "rejected")
-            .map((r) => ({
-              kind: "delete_request" as const,
-              request: r,
-              date: r.notification.scheduledFor,
-              sortKey: r.notification.scheduledFor,
-              sortId: r.notification.id,
-            })),
-        ]
-          .sort(compareHistoryItemsNewestFirst);
+        return buildHistoryItemsByRequestStatus({
+          requests: allRequests,
+          deleteRequests,
+          status: "rejected",
+        });
       default:
         return combinedList;
     }
@@ -719,53 +502,10 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
     historyPageOffset + historyPageSize,
   );
 
-  /**
-   * Obligaciones compartidas (edge) a veces traen `principal` / `currentPrincipal` en 0 pero sí
-   * `pendingAmount` y `progressPercent`. Entonces "Pagado" y "Principal" salían 0 aunque la barra
-   * mostraba el % correcto. Si aplica: principal ≈ pendiente / (1 − progress/100).
-   *
-   * El % de avance puede redondearse o calcularse distinto que la suma de eventos; si hay cobros/pagos
-   * en el historial, priorizamos **pendiente + suma(eventos)** para alinear tarjetas con el historial y el gráfico.
-   */
-  const analyticsAmounts = useMemo(() => {
-    if (!obligation) return { currentPrincipal: 0, paidAmount: 0 };
-
-    const pendingRaw = Number(obligation.pendingAmount);
-    const safePending = Number.isFinite(pendingRaw) ? Math.max(0, pendingRaw) : 0;
-    const pctRaw = Number(obligation.progressPercent);
-    const pct = Number.isFinite(pctRaw) ? Math.min(100, Math.max(0, pctRaw)) : 0;
-
-    const cp = obligation.currentPrincipalAmount;
-    const p0 = obligation.principalAmount;
-    const principalFromFields =
-      cp != null && cp > 0 ? cp : p0 != null && p0 > 0 ? p0 : 0;
-
-    let currentPrincipal = principalFromFields;
-
-    if (currentPrincipal <= 0 && safePending > 0 && pct > 0 && pct < 100) {
-      currentPrincipal = safePending / (1 - pct / 100);
-    } else if (currentPrincipal <= 0 && safePending > 0) {
-      currentPrincipal = safePending;
-    }
-
-    let paidAmount = currentPrincipal - safePending;
-
-    const paidFromEvents = paymentEvents.reduce((s, e) => s + (Number(e.amount) || 0), 0);
-    if (paidFromEvents > 0.004) {
-      const paidFromBalance = Number.isFinite(paidAmount) ? paidAmount : 0;
-      const noPrincipalFromApi = principalFromFields <= 0;
-      const balanceVsEventsMismatch = Math.abs(paidFromBalance - paidFromEvents) > 0.05;
-      if (noPrincipalFromApi || balanceVsEventsMismatch) {
-        paidAmount = paidFromEvents;
-        currentPrincipal = safePending + paidFromEvents;
-      }
-    }
-
-    return {
-      currentPrincipal: Number.isFinite(currentPrincipal) ? currentPrincipal : 0,
-      paidAmount: Number.isFinite(paidAmount) ? Math.max(0, paidAmount) : 0,
-    };
-  }, [obligation, paymentEvents]);
+  const analyticsAmounts = useMemo(
+    () => computeAnalyticsAmounts(obligation, paymentEvents),
+    [obligation, paymentEvents],
+  );
 
   function handleInlineAccept(req: ObligationPaymentRequest) {
     if (!obligation) return;
@@ -1497,448 +1237,75 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
               </View>
             ) : null}
 
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Ritmo reciente</Text>
-              <View style={styles.insightGrid}>
-                <View style={styles.insightCard}>
-                  <Text style={styles.insightValue}>
-                    {analysisEvents.length > 0
-                      ? analyticsUsesCashPerspective
-                        ? formatSignedCurrencyValue(analysisAveragePaymentAmount, currency)
-                        : formatCurrency(analysisAveragePaymentAmount, currency)
-                      : "Sin eventos"}
-                  </Text>
-                  <Text style={styles.insightLabel}>
-                    {analyticsUsesCashPerspective ? "Promedio por movimiento" : `Promedio por ${eventPaymentNoun}`}
-                  </Text>
-                  <Text style={styles.insightSub}>
-                    {analysisEvents.length > 0
-                      ? `${analysisEvents.length} ${analysisEventLabel} registrados`
-                      : "Aun no hay historial suficiente"}
-                  </Text>
-                </View>
-                <View style={styles.insightCard}>
-                  <Text style={styles.insightValue}>
-                    {analysisLargestEvent
-                      ? analyticsUsesCashPerspective
-                        ? formatSignedCurrencyValue(analysisLargestEvent.signedAmount, currency)
-                        : formatCurrency(analysisLargestEvent.displayAmount, currency)
-                      : "Sin eventos"}
-                  </Text>
-                  <Text style={styles.insightLabel}>
-                    {analyticsUsesCashPerspective ? "Mayor impacto en caja" : `Mayor ${eventPaymentNoun}`}
-                  </Text>
-                  <Text style={styles.insightSub}>
-                    {analysisLargestEvent
-                      ? format(parseDisplayDate(analysisLargestEvent.event.eventDate), "d MMM yyyy", { locale: es })
-                      : "Todavia no hay un pico registrado"}
-                  </Text>
-                </View>
-                <View style={styles.insightCard}>
-                  <Text style={styles.insightValue}>
-                    {analysisLastEvent
-                      ? `${Math.max(0, differenceInDays(todayLocal, ymdToLocalDate(analysisLastEvent.eventDate)))} d`
-                      : "Sin eventos"}
-                  </Text>
-                  <Text style={styles.insightLabel}>Tiempo desde el ultimo</Text>
-                  <Text style={styles.insightSub}>
-                    {analysisLastEvent
-                      ? format(parseDisplayDate(analysisLastEvent.eventDate), "d MMM yyyy", { locale: es })
-                      : "No hay movimientos recientes"}
-                  </Text>
-                </View>
-                <View style={styles.insightCard}>
-                  <Text style={styles.insightValue}>
-                    {analysisAverageGapDays != null ? `${Math.round(analysisAverageGapDays)} d` : "Sin serie"}
-                  </Text>
-                  <Text style={styles.insightLabel}>Separacion promedio</Text>
-                  <Text style={styles.insightSub}>
-                    {analysisFirstEvent && analysisLastEvent && analysisEvents.length > 1
-                      ? `Desde ${format(parseDisplayDate(analysisFirstEvent.eventDate), "d MMM", { locale: es })} hasta ${format(parseDisplayDate(analysisLastEvent.eventDate), "d MMM", { locale: es })}`
-                      : "Necesita al menos dos eventos"}
-                  </Text>
-                </View>
-              </View>
-            </View>
+            <AnalyticsInsightCards
+              analysisEvents={analysisEvents}
+              analyticsUsesCashPerspective={analyticsUsesCashPerspective}
+              analysisAveragePaymentAmount={analysisAveragePaymentAmount}
+              analysisLargestEvent={analysisLargestEvent}
+              analysisLastEvent={analysisLastEvent}
+              analysisFirstEvent={analysisFirstEvent}
+              analysisAverageGapDays={analysisAverageGapDays}
+              analysisEventLabel={analysisEventLabel}
+              eventPaymentNoun={eventPaymentNoun}
+              todayLocal={todayLocal}
+              currency={currency}
+            />
 
-            {/* Monthly payments chart */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>{analysisChartTitle}</Text>
-              {needsChartScroll ? (
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator
-                  contentContainerStyle={styles.chartScroll}
-                >
-                  <View style={[styles.chart, styles.chartWide]}>
-                    {analysisMonthlySeries.map((m) => (
-                      <View key={m.key} style={[styles.chartBar, styles.chartBarFixed]}>
-                        <View style={styles.barTrack}>
-                          <View
-                            style={[
-                              styles.barFill,
-                              m.total > 0 ? styles.barFillPositive : m.total < 0 ? styles.barFillNegative : null,
-                              { height: `${Math.round((Math.abs(m.total) / maxAnalysisMonthly) * 100)}%` as any },
-                              m.total === 0 && styles.barEmpty,
-                            ]}
-                          />
-                        </View>
-                        <Text style={styles.barLabel} numberOfLines={1}>
-                          {m.label}
-                        </Text>
-                        {m.total !== 0 ? (
-                          <Text style={styles.barValue} numberOfLines={1}>
-                            {(analyticsUsesCashPerspective
-                              ? formatSignedCurrencyValue(m.total, currency)
-                              : formatCurrency(m.total, currency)).replace(/\s/g, "")}
-                          </Text>
-                        ) : null}
-                      </View>
-                    ))}
-                  </View>
-                </ScrollView>
-              ) : (
-                <View style={styles.chart}>
-                  {analysisMonthlySeries.map((m) => (
-                    <View key={m.key} style={styles.chartBar}>
-                      <View style={styles.barTrack}>
-                        <View
-                          style={[
-                            styles.barFill,
-                            m.total > 0 ? styles.barFillPositive : m.total < 0 ? styles.barFillNegative : null,
-                            { height: `${Math.round((Math.abs(m.total) / maxAnalysisMonthly) * 100)}%` as any },
-                            m.total === 0 && styles.barEmpty,
-                          ]}
-                        />
-                      </View>
-                      <Text style={styles.barLabel} numberOfLines={1}>
-                        {m.label}
-                      </Text>
-                      {m.total !== 0 ? (
-                        <Text style={styles.barValue} numberOfLines={1}>
-                          {(analyticsUsesCashPerspective
-                            ? formatSignedCurrencyValue(m.total, currency)
-                            : formatCurrency(m.total, currency)).replace(/\s/g, "")}
-                        </Text>
-                      ) : null}
-                    </View>
-                  ))}
-                </View>
-              )}
-              <View style={styles.pillRowWrap}>
-                {(
-                  [
-                    { id: "6" as ChartScope, label: "6 meses" },
-                    { id: "12" as ChartScope, label: "12 meses" },
-                    { id: "all" as ChartScope, label: "Todo" },
-                  ] as const
-                ).map((opt) => (
-                  <TouchableOpacity
-                    key={opt.id}
-                    style={[styles.filterPill, chartScope === opt.id && styles.filterPillActive]}
-                    onPress={() => setChartScope(opt.id)}
-                  >
-                    <Text style={[styles.filterPillText, chartScope === opt.id && styles.filterPillTextActive]}>
-                      {opt.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
+            <AnalyticsChartBars
+              title={analysisChartTitle}
+              series={analysisMonthlySeries}
+              maxAbsValue={maxAnalysisMonthly}
+              currency={currency}
+              signedDisplay={analyticsUsesCashPerspective}
+              needsScroll={needsChartScroll}
+              chartScope={chartScope}
+              onChangeChartScope={setChartScope}
+            />
 
-            {/* Installment grid */}
-            {totalInstallments > 0 ? (
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>
-                  Cuotas: {paidInstallments} de {totalInstallments} {installmentsDoneAdj}
-                </Text>
-                {isSharedViewer ? (
-                  <Text style={styles.sectionHint}>
-                    Este bloque sigue mostrando el avance contractual de la obligacion. No cambia por la perspectiva de caja del analisis.
-                  </Text>
-                ) : null}
-                <View style={styles.installmentGrid}>
-                  {Array.from({ length: totalInstallments }, (_, i) => {
-                    const n = i + 1;
-                    const paid = n <= paidInstallments;
-                    return (
-                      <View
-                        key={n}
-                        style={[styles.installmentCell, paid ? styles.installmentPaid : styles.installmentPending]}
-                      >
-                        <Text style={[styles.installmentNum, { color: paid ? COLORS.pine : COLORS.storm }]}>
-                          {n}
-                        </Text>
-                      </View>
-                    );
-                  })}
-                </View>
-              </View>
-            ) : null}
+            <AnalyticsInstallmentGrid
+              paidInstallments={paidInstallments}
+              totalInstallments={totalInstallments}
+              installmentsDoneAdj={installmentsDoneAdj}
+              isSharedViewer={isSharedViewer}
+            />
 
-            {/* Timeline ESTILO 2 */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Línea de tiempo</Text>
-
-              {/* Filter pills */}
-              <View style={styles.pillRowWrap}>
-                {(
-                  [
-                    { id: "all" as TimelineFilter, label: "Todos" },
-                    { id: "payments" as TimelineFilter, label: `${eventPaymentNoun}s` },
-                    { id: "capital" as TimelineFilter, label: "Capital" },
-                  ] as const
-                ).map((option) => (
-                  <TouchableOpacity
-                    key={option.id}
-                    style={[styles.filterPill, timelineFilter === option.id && styles.filterPillActive]}
-                    onPress={() => setTimelineFilter(option.id)}
-                  >
-                    <Text style={[styles.filterPillText, timelineFilter === option.id && styles.filterPillTextActive]}>
-                      {option.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-              <View style={styles.pillRowWrap}>
-                {(
-                  [
-                    { id: "all" as TimelineToneFilter, label: "Todo impacto" },
-                    { id: "positive" as TimelineToneFilter, label: "Solo positivos" },
-                    { id: "negative" as TimelineToneFilter, label: "Solo negativos" },
-                  ] as const
-                ).map((option) => (
-                  <TouchableOpacity
-                    key={option.id}
-                    style={[styles.filterPill, timelineToneFilter === option.id && styles.filterPillActive]}
-                    onPress={() => setTimelineToneFilter(option.id)}
-                  >
-                    <Text style={[styles.filterPillText, timelineToneFilter === option.id && styles.filterPillTextActive]}>
-                      {option.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              {timelineEvents.length === 0 ? (
-                <Text style={styles.emptyHistory}>Aun no hay eventos para construir la linea de tiempo.</Text>
-              ) : filteredTimelineEvents.length === 0 ? (
-                <Text style={styles.emptyHistory}>No hay eventos que coincidan con esos filtros.</Text>
-              ) : (
-                <View style={styles.tl2Container}>
-                  {groupAnalyticsEventsByDate(filteredTimelineEvents).map(({ date, events: dayEvents }) => {
-                    const dayTotal = dayEvents.reduce((sum, e) => {
-                      const useCash = shouldUseCashPerspective(e.id, analyticsPerspective);
-                      const prefix = obligationHistoryEventAmountPrefix(e.eventType, analyticsDirection, isSharedViewer, useCash);
-                      return sum + (prefix === "+" ? e.amount : -e.amount);
-                    }, 0);
-                    const dayTotalColor = dayTotal >= 0 ? COLORS.income : COLORS.danger;
-                    return (
-                      <View key={date}>
-                        {/* Date node row */}
-                        <View style={styles.tl2DateRow}>
-                          <View style={styles.tl2NodeCol}>
-                            <View style={styles.tl2DateDot} />
-                          </View>
-                          <Text style={styles.tl2DateLabel}>
-                            {format(new Date(date + "T12:00:00"), "d MMM yyyy", { locale: es }).toUpperCase()}
-                          </Text>
-                          <View style={styles.tl2DateLine} />
-                          <Text style={[styles.tl2DayTotal, { color: dayTotalColor }]}>
-                            {dayTotal >= 0 ? "+" : ""}{formatCurrency(Math.abs(dayTotal), currency)}
-                          </Text>
-                        </View>
-
-                        {/* Events */}
-                        {dayEvents.map((event, i) => {
-                          const useCashPerspective = shouldUseCashPerspective(event.id, analyticsPerspective);
-                          const eventTint = obligationHistoryEventColor(
-                            event.eventType,
-                            analyticsDirection,
-                            isSharedViewer,
-                            useCashPerspective,
-                          );
-                          const amountPrefix = obligationHistoryEventAmountPrefix(
-                            event.eventType,
-                            analyticsDirection,
-                            isSharedViewer,
-                            useCashPerspective,
-                          );
-                          const eventLabel =
-                            event.eventType === "payment"
-                              ? eventPaymentNoun
-                              : EVENT_LABELS[event.eventType]?.label ?? event.eventType;
-                          const eventDetail = firstMeaningfulText(event.description, event.reason, event.notes);
-                          const impactLabel =
-                            eventTint === COLORS.income
-                              ? "Positivo"
-                              : eventTint === COLORS.expense
-                                ? "Negativo"
-                                : "Neutro";
-                          const isLastInDay = i === dayEvents.length - 1;
-
-                          return (
-                            <View key={event.id} style={styles.tl2EventRow}>
-                              {/* Line column */}
-                              <View style={styles.tl2LineCol}>
-                                <View style={styles.tl2LineSegment} />
-                                <View style={[styles.tl2Dot, {
-                                  backgroundColor: eventTint,
-                                  shadowColor: eventTint,
-                                  shadowOpacity: 0.5,
-                                  shadowRadius: 3,
-                                  elevation: 3,
-                                }]} />
-                                {isLastInDay
-                                  ? <View style={styles.tl2LineEnd} />
-                                  : <View style={styles.tl2LineSegment} />
-                                }
-                              </View>
-
-                              {/* Card */}
-                              <TouchableOpacity
-                                style={styles.tl2Card}
-                                onPress={() => {
-                                  if (onEventTap) { onEventTap(event); return; }
-                                  if (isSharedViewer) handleViewerEventTap(event);
-                                }}
-                                activeOpacity={onEventTap || isSharedViewer ? 0.8 : 1}
-                              >
-                                <View style={styles.tl2CardBody}>
-                                  <Text style={[styles.tl2TypeLabel, { color: eventTint }]} numberOfLines={1}>
-                                    {eventLabel}
-                                  </Text>
-                                  <View style={styles.tl2CardSubRow}>
-                                    <View style={[styles.tl2Badge, { backgroundColor: eventTint + "18" }]}>
-                                      <Text style={[styles.tl2BadgeText, { color: eventTint }]}>{impactLabel}</Text>
-                                    </View>
-                                    {eventDetail ? (
-                                      <Text style={styles.tl2CardDesc} numberOfLines={1}>
-                                        {eventDetail}
-                                      </Text>
-                                    ) : null}
-                                  </View>
-                                </View>
-                                <Text style={[styles.tl2Amount, { color: eventTint }]} numberOfLines={1}>
-                                  {amountPrefix}{formatCurrency(event.amount, currency)}
-                                </Text>
-                              </TouchableOpacity>
-                            </View>
-                          );
-                        })}
-                      </View>
-                    );
-                  })}
-                </View>
-              )}
-            </View>
+            <AnalyticsTimeline
+              timelineEvents={timelineEvents}
+              filteredTimelineEvents={filteredTimelineEvents}
+              timelineFilter={timelineFilter}
+              timelineToneFilter={timelineToneFilter}
+              onChangeTimelineFilter={setTimelineFilter}
+              onChangeTimelineToneFilter={setTimelineToneFilter}
+              analyticsDirection={analyticsDirection}
+              isSharedViewer={isSharedViewer}
+              currency={currency}
+              eventPaymentNoun={eventPaymentNoun}
+              shouldUseCashPerspective={(eventId) => shouldUseCashPerspective(eventId, analyticsPerspective)}
+              onEventTap={onEventTap}
+              onViewerEventTap={handleViewerEventTap}
+            />
 
           </ScrollView>
         </Animated.View>
       </View>
 
-      <Modal
-        visible={Boolean(selectedViewerEvent)}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setSelectedViewerEvent(null)}
-      >
-        <Pressable
-          style={styles.approvalOverlay}
-          onPress={() => setSelectedViewerEvent(null)}
-        >
-          <View
-            style={styles.approvalSheet}
-            onStartShouldSetResponder={() => true}
-          >
-            <Text style={styles.approvalTitle}>Acciones del evento</Text>
-            {selectedViewerEvent ? (
-              <>
-                <Text style={styles.approvalSub}>
-                  {formatCurrency(selectedViewerEvent.amount, currency)}{" - "}
-                  {format(parseDisplayDate(selectedViewerEvent.eventDate), "d MMM yyyy", { locale: es })}
-                </Text>
-                {selectedViewerEventAttachmentsLoading ? (
-                  <Text style={styles.viewerActionNote}>Buscando comprobantes...</Text>
-                ) : selectedViewerEventAttachments.length > 0 ? (
-                  <TouchableOpacity
-                    style={styles.approvalAcceptBtn}
-                    onPress={() => setViewerAttachmentPreviewVisible(true)}
-                  >
-                    <Text style={styles.approvalAcceptText}>
-                      {selectedViewerEventAttachments.length === 1
-                        ? "Ver comprobante"
-                        : `Ver ${selectedViewerEventAttachments.length} comprobantes`}
-                    </Text>
-                  </TouchableOpacity>
-                ) : null}
-                {selectedViewerEvent.eventType === "payment" &&
-                !(
-                  !linkedEventIds.has(selectedViewerEvent.id) &&
-                  acceptedViewerRequestByEventId.get(selectedViewerEvent.id)?.viewerAccountId
-                ) ? (
-                  <TouchableOpacity
-                    style={styles.approvalAcceptBtn}
-                    onPress={() => openViewerLinkSheet(selectedViewerEvent)}
-                  >
-                    <Text style={styles.approvalAcceptText}>
-                      {linkedEventIds.has(selectedViewerEvent.id)
-                        ? "Cambiar cuenta asociada"
-                        : "Asociar a una cuenta"}
-                    </Text>
-                  </TouchableOpacity>
-                ) : null}
-                {selectedViewerEvent.eventType === "payment" &&
-                !linkedEventIds.has(selectedViewerEvent.id) &&
-                Boolean(
-                  acceptedViewerRequestByEventId.get(selectedViewerEvent.id)?.viewerAccountId &&
-                  acceptedViewerRequestByEventId.get(selectedViewerEvent.id)?.viewerWorkspaceId,
-                ) ? (
-                  <View style={styles.viewerStatusChipAccepted}>
-                    <Text style={styles.viewerStatusChipAcceptedText}>
-                      Registrando movimiento en la cuenta elegida
-                    </Text>
-                  </View>
-                ) : null}
-                {viewerDeleteStatusByEventId.get(selectedViewerEvent.id)?.status === "pending" ? (
-                  <View style={styles.viewerStatusChipPending}>
-                    <Text style={styles.viewerStatusChipPendingText}>Eliminacion pendiente</Text>
-                  </View>
-                ) : viewerDeleteStatusByEventId.get(selectedViewerEvent.id)?.status === "accepted" ? (
-                  <View style={styles.viewerStatusChipAccepted}>
-                    <Text style={styles.viewerStatusChipAcceptedText}>Eliminacion aprobada</Text>
-                  </View>
-                ) : (
-                  <TouchableOpacity
-                    style={styles.viewerDangerBtn}
-                    onPress={() => {
-                      setViewerDeleteRequestEvent(selectedViewerEvent);
-                      setSelectedViewerEvent(null);
-                    }}
-                    disabled={createDeleteRequestMutation.isPending}
-                  >
-                    <Text style={styles.viewerDangerBtnText}>
-                      {viewerDeleteStatusByEventId.get(selectedViewerEvent.id)?.status === "rejected"
-                        ? "Solicitar eliminacion otra vez"
-                        : "Solicitar eliminacion"}
-                    </Text>
-                  </TouchableOpacity>
-                )}
-                {viewerDeleteStatusByEventId.get(selectedViewerEvent.id)?.status === "rejected" ? (
-                  <Text style={styles.viewerActionNote}>
-                    {viewerDeleteStatusByEventId.get(selectedViewerEvent.id)?.payload.rejectionReason?.trim()
-                      ? `Rechazada: ${viewerDeleteStatusByEventId.get(selectedViewerEvent.id)?.payload.rejectionReason?.trim()}`
-                      : "La solicitud anterior fue rechazada"}
-                  </Text>
-                ) : null}
-              </>
-            ) : null}
-            <TouchableOpacity onPress={() => setSelectedViewerEvent(null)}>
-              <Text style={styles.approvalCancelText}>Cerrar</Text>
-            </TouchableOpacity>
-          </View>
-        </Pressable>
-      </Modal>
+      <AnalyticsViewerEventActionSheet
+        selectedViewerEvent={selectedViewerEvent}
+        currency={currency}
+        attachmentsLoading={selectedViewerEventAttachmentsLoading}
+        attachmentsCount={selectedViewerEventAttachments.length}
+        linkedEventIds={linkedEventIds}
+        acceptedViewerRequestByEventId={acceptedViewerRequestByEventId}
+        viewerDeleteStatusByEventId={viewerDeleteStatusByEventId}
+        createDeleteRequestIsPending={createDeleteRequestMutation.isPending}
+        onPressViewAttachments={() => setViewerAttachmentPreviewVisible(true)}
+        onPressLinkAccount={openViewerLinkSheet}
+        onPressRequestDelete={(event) => {
+          setViewerDeleteRequestEvent(event);
+          setSelectedViewerEvent(null);
+        }}
+        onClose={() => setSelectedViewerEvent(null)}
+      />
 
       <AttachmentPreviewModal
         visible={viewerAttachmentPreviewVisible}
@@ -1947,114 +1314,20 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
         title="Comprobantes del evento"
       />
 
-      <Modal
-        visible={Boolean(linkingEvent)}
-        transparent
-        animationType="fade"
-        onRequestClose={() => { setLinkingEvent(null); setLinkingAccountId(null); }}
-      >
-        <Pressable
-          style={styles.approvalOverlay}
-          onPress={() => { setLinkingEvent(null); setLinkingAccountId(null); }}
-        >
-          <View
-            style={styles.approvalSheet}
-            onStartShouldSetResponder={() => true}
-          >
-            <Text style={styles.approvalTitle}>
-              {linkingEvent && viewerLinkByEventId.get(linkingEvent.id)
-                ? "Cambiar cuenta asociada"
-                : "Asociar a una cuenta"}
-            </Text>
-            {linkingEvent ? (
-              <>
-                <Text style={styles.approvalSub}>
-                  {formatCurrency(linkingEvent.amount, currency)}{" - "}
-                  {format(parseDisplayDate(linkingEvent.eventDate), "d MMM yyyy", { locale: es })}
-                </Text>
-                <Text style={styles.sectionHint}>
-                  {viewerLinkByEventId.get(linkingEvent.id)
-                    ? "Elige la nueva cuenta en la que se reflejara este movimiento"
-                    : "Elige la cuenta en la que se refleja este movimiento"}
-                </Text>
-                {viewerAccounts.map((acc) => (
-                  <TouchableOpacity
-                    key={acc.id}
-                    style={[
-                      styles.approvalAccountRow,
-                      linkingAccountId === acc.id && styles.approvalAccountRowSelected,
-                    ]}
-                    onPress={() => setLinkingAccountId(acc.id)}
-                  >
-                    <View style={styles.approvalAccountInfo}>
-                      <Text style={styles.approvalAccountName}>{acc.name}</Text>
-                      <Text style={styles.approvalAccountBalance}>
-                        {formatCurrency(acc.currentBalance, acc.currencyCode)}
-                      </Text>
-                    </View>
-                    {linkingAccountId === acc.id ? (
-                      <Text style={styles.approvalAccountCheck}>OK</Text>
-                    ) : null}
-                  </TouchableOpacity>
-                ))}
-                {viewerProjectedAccount && viewerProjectedBalance != null ? (
-                  <View style={styles.approvalProjectionCard}>
-                    <Text style={styles.approvalProjectionTitle}>Proyectado para {viewerProjectedAccount.name}</Text>
-                    <View style={styles.approvalProjectionRow}>
-                      <Text style={styles.approvalProjectionLabel}>Saldo actual</Text>
-                      <Text style={styles.approvalProjectionValue}>
-                        {formatCurrency(viewerProjectedAccount.currentBalance, viewerProjectedAccount.currencyCode)}
-                      </Text>
-                    </View>
-                    <View style={styles.approvalProjectionRow}>
-                      <Text style={styles.approvalProjectionLabel}>Movimiento</Text>
-                      <Text
-                        style={[
-                          styles.approvalProjectionValue,
-                          viewerLinkDelta >= 0 ? styles.approvalProjectionPositive : styles.approvalProjectionNegative,
-                        ]}
-                      >
-                        {viewerLinkDelta >= 0 ? "+" : "-"}
-                        {formatCurrency(Math.abs(viewerLinkDelta), viewerProjectedAccount.currencyCode)}
-                      </Text>
-                    </View>
-                    <View style={styles.approvalProjectionRow}>
-                      <Text style={styles.approvalProjectionLabel}>Quedara en</Text>
-                      <Text style={styles.approvalProjectionStrong}>
-                        {formatCurrency(viewerProjectedBalance, viewerProjectedAccount.currencyCode)}
-                      </Text>
-                    </View>
-                  </View>
-                ) : null}
-                {viewerAccounts.length === 0 ? (
-                  <Text style={styles.viewerActionNote}>No tienes cuentas registradas en este workspace</Text>
-                ) : null}
-              </>
-            ) : null}
-            <View style={styles.approvalActions}>
-              <TouchableOpacity
-                style={[
-                  styles.approvalAcceptBtn,
-                  (!linkingAccountId || linkEventMutation.isPending) && styles.viewerDisabledBtn,
-                ]}
-                onPress={() => { void handleLinkEvent(); }}
-                disabled={!linkingAccountId || linkEventMutation.isPending}
-              >
-                {linkEventMutation.isPending ? (
-                  <ActivityIndicator size="small" color={COLORS.income} />
-                ) : (
-                  <Text style={styles.approvalAcceptText}>Confirmar asociacion</Text>
-                )}
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => { setLinkingEvent(null); setLinkingAccountId(null); }}
-              >
-                <Text style={styles.approvalCancelText}>Cancelar</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Pressable>
-      </Modal>
+      <AnalyticsViewerLinkAccountSheet
+        linkingEvent={linkingEvent}
+        linkingAccountId={linkingAccountId}
+        currency={currency}
+        viewerAccounts={viewerAccounts}
+        viewerLinkAlreadyExists={Boolean(linkingEvent && viewerLinkByEventId.get(linkingEvent.id))}
+        viewerProjectedAccount={viewerProjectedAccount}
+        viewerProjectedBalance={viewerProjectedBalance}
+        viewerLinkDelta={viewerLinkDelta}
+        linkIsPending={linkEventMutation.isPending}
+        onSelectAccount={setLinkingAccountId}
+        onConfirm={() => { void handleLinkEvent(); }}
+        onClose={() => { setLinkingEvent(null); setLinkingAccountId(null); }}
+      />
 
       <ConfirmDialog
         visible={Boolean(viewerDeleteRequestEvent)}
@@ -2076,1147 +1349,21 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
           />
         ) : null}
       </ConfirmDialog>
-      <Modal
-        visible={Boolean(approvingRequest)}
-        transparent
-        animationType="fade"
-        onRequestClose={() => { setApprovingRequest(null); setApprovalAccountId(null); }}
-      >
-        <Pressable
-          style={styles.approvalOverlay}
-          onPress={() => { setApprovingRequest(null); setApprovalAccountId(null); }}
-        >
-          <View
-            style={styles.approvalSheet}
-            onStartShouldSetResponder={() => true}
-          >
-            <Text style={styles.approvalTitle}>Aceptar solicitud</Text>
-            {approvingRequest ? (
-              <>
-                <Text style={styles.approvalSub}>
-                  {formatCurrency(approvingRequest.amount, currency)}{" - "}
-                  {format(parseDisplayDate(approvingRequest.paymentDate), "d MMM yyyy", { locale: es })}
-                </Text>
-                {approvingRequest.description ? (
-                  <Text style={styles.eventDesc}>{approvingRequest.description}</Text>
-                ) : null}
-                <Text style={styles.sectionHint}>{ownerAccountQuestion}</Text>
-                <Text style={styles.approvalLabel}>{ownerAccountLabel}</Text>
-                {ownerAccounts.map((acc) => (
-                  <TouchableOpacity
-                    key={acc.id}
-                    style={[
-                      styles.approvalAccountRow,
-                      approvalAccountId === acc.id && styles.approvalAccountRowSelected,
-                    ]}
-                    onPress={() => setApprovalAccountId(acc.id)}
-                  >
-                    <View style={styles.approvalAccountInfo}>
-                      <Text style={styles.approvalAccountName}>{acc.name}</Text>
-                      <Text style={styles.approvalAccountBalance}>
-                        {formatCurrency(acc.currentBalance, acc.currencyCode)}
-                      </Text>
-                    </View>
-                    {approvalAccountId === acc.id ? (
-                      <Text style={styles.approvalAccountCheck}>OK</Text>
-                    ) : null}
-                  </TouchableOpacity>
-                ))}
-                {approvalProjectedAccount && approvalProjectedBalance != null ? (
-                  <View style={styles.approvalProjectionCard}>
-                    <Text style={styles.approvalProjectionTitle}>Proyectado para {approvalProjectedAccount.name}</Text>
-                    <View style={styles.approvalProjectionRow}>
-                      <Text style={styles.approvalProjectionLabel}>Saldo actual</Text>
-                      <Text style={styles.approvalProjectionValue}>
-                        {formatCurrency(approvalProjectedAccount.currentBalance, approvalProjectedAccount.currencyCode)}
-                      </Text>
-                    </View>
-                    <View style={styles.approvalProjectionRow}>
-                      <Text style={styles.approvalProjectionLabel}>Movimiento</Text>
-                      <Text
-                        style={[
-                          styles.approvalProjectionValue,
-                          approvalDelta >= 0 ? styles.approvalProjectionPositive : styles.approvalProjectionNegative,
-                        ]}
-                      >
-                        {approvalDelta >= 0 ? "+" : "-"}
-                        {formatCurrency(Math.abs(approvalDelta), approvalProjectedAccount.currencyCode)}
-                      </Text>
-                    </View>
-                    <View style={styles.approvalProjectionRow}>
-                      <Text style={styles.approvalProjectionLabel}>Quedara en</Text>
-                      <Text style={styles.approvalProjectionStrong}>
-                        {formatCurrency(approvalProjectedBalance, approvalProjectedAccount.currencyCode)}
-                      </Text>
-                    </View>
-                  </View>
-                ) : null}
-                <TouchableOpacity
-                  style={[
-                    styles.approvalAccountRow,
-                    approvalAccountId == null && styles.approvalAccountRowSelected,
-                  ]}
-                  onPress={() => setApprovalAccountId(null)}
-                >
-                  <View style={styles.approvalAccountInfo}>
-                    <Text style={styles.approvalAccountName}>No registrar movimiento contable</Text>
-                    <Text style={styles.approvalAccountBalance}>Solo aceptar la solicitud sin cambiar tus cuentas</Text>
-                  </View>
-                  {approvalAccountId == null ? (
-                    <Text style={styles.approvalAccountCheck}>OK</Text>
-                  ) : null}
-                </TouchableOpacity>
-              </>
-            ) : null}
-            <View style={styles.approvalActions}>
-              <TouchableOpacity
-                style={styles.approvalAcceptBtn}
-                onPress={confirmInlineAccept}
-                disabled={acceptMutation.isPending}
-              >
-                {acceptMutation.isPending ? (
-                  <ActivityIndicator size="small" color={COLORS.income} />
-                ) : (
-                  <Text style={styles.approvalAcceptText}>Aceptar</Text>
-                )}
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => { setApprovingRequest(null); setApprovalAccountId(null); }}
-              >
-                <Text style={styles.approvalCancelText}>Cancelar</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Pressable>
-      </Modal>
+      <AnalyticsApprovalSheet
+        approvingRequest={approvingRequest}
+        currency={currency}
+        ownerAccountQuestion={ownerAccountQuestion}
+        ownerAccountLabel={ownerAccountLabel}
+        ownerAccounts={ownerAccounts}
+        approvalAccountId={approvalAccountId}
+        approvalProjectedAccount={approvalProjectedAccount}
+        approvalProjectedBalance={approvalProjectedBalance}
+        approvalDelta={approvalDelta}
+        acceptIsPending={acceptMutation.isPending}
+        onSelectAccount={setApprovalAccountId}
+        onConfirm={confirmInlineAccept}
+        onClose={() => { setApprovingRequest(null); setApprovalAccountId(null); }}
+      />
     </Modal>
   );
 }
-
-const styles = StyleSheet.create({
-  overlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.55)",
-  },
-  approvalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.45)",
-    justifyContent: "center",
-    padding: SPACING.lg,
-  },
-  sheet: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: "flex-end",
-  },
-  approvalSheet: {
-    backgroundColor: "rgba(8,12,18,0.98)",
-    borderRadius: RADIUS.xl,
-    padding: SPACING.lg,
-    gap: SPACING.sm,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.10)",
-  },
-  approvalTitle: {
-    fontFamily: FONT_FAMILY.bodySemibold,
-    fontSize: FONT_SIZE.md,
-    color: COLORS.ink,
-    textAlign: "center",
-  },
-  approvalSub: {
-    fontFamily: FONT_FAMILY.body,
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.storm,
-    textAlign: "center",
-  },
-  approvalLabel: {
-    fontFamily: FONT_FAMILY.bodyMedium,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.ink,
-  },
-  approvalAccountRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: SPACING.sm,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
-    backgroundColor: "rgba(255,255,255,0.04)",
-  },
-  approvalAccountRowSelected: {
-    borderColor: COLORS.primary + "88",
-    backgroundColor: COLORS.primary + "18",
-  },
-  approvalAccountInfo: {
-    flex: 1,
-    gap: 2,
-  },
-  approvalAccountName: {
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.ink,
-    fontFamily: FONT_FAMILY.bodyMedium,
-  },
-  approvalAccountBalance: {
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.storm,
-  },
-  approvalProjectionCard: {
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: COLORS.primary + "33",
-    backgroundColor: COLORS.primary + "12",
-    padding: SPACING.sm,
-    gap: 6,
-  },
-  approvalProjectionTitle: {
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.ink,
-    fontFamily: FONT_FAMILY.bodySemibold,
-  },
-  approvalProjectionRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: SPACING.sm,
-  },
-  approvalProjectionLabel: {
-    flex: 1,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.storm,
-    fontFamily: FONT_FAMILY.body,
-  },
-  approvalProjectionValue: {
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.ink,
-    fontFamily: FONT_FAMILY.bodyMedium,
-  },
-  approvalProjectionStrong: {
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.ink,
-    fontFamily: FONT_FAMILY.bodySemibold,
-  },
-  approvalProjectionPositive: {
-    color: COLORS.income,
-  },
-  approvalProjectionNegative: {
-    color: COLORS.danger,
-  },
-  approvalAccountCheck: {
-    fontSize: FONT_SIZE.md,
-    color: COLORS.primary,
-    fontFamily: FONT_FAMILY.bodySemibold,
-  },
-  approvalActions: {
-    marginTop: SPACING.xs,
-    gap: SPACING.sm,
-  },
-  approvalAcceptBtn: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: SPACING.sm,
-    borderRadius: RADIUS.md,
-    backgroundColor: COLORS.income + "18",
-    borderWidth: 1,
-    borderColor: COLORS.income + "44",
-  },
-  approvalAcceptText: {
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.income,
-    fontFamily: FONT_FAMILY.bodySemibold,
-  },
-  approvalCancelText: {
-    textAlign: "center",
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.storm,
-    fontFamily: FONT_FAMILY.body,
-  },
-  viewerDangerBtn: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: SPACING.sm,
-    borderRadius: RADIUS.md,
-    backgroundColor: COLORS.danger + "18",
-    borderWidth: 1,
-    borderColor: COLORS.danger + "44",
-  },
-  viewerDangerBtnText: {
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.danger,
-    fontFamily: FONT_FAMILY.bodySemibold,
-  },
-  viewerStatusChipPending: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: SPACING.sm,
-    borderRadius: RADIUS.md,
-    backgroundColor: COLORS.warning + "18",
-    borderWidth: 1,
-    borderColor: COLORS.warning + "44",
-  },
-  viewerStatusChipPendingText: {
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.warning,
-    fontFamily: FONT_FAMILY.bodySemibold,
-  },
-  viewerStatusChipAccepted: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: SPACING.sm,
-    borderRadius: RADIUS.md,
-    backgroundColor: COLORS.income + "18",
-    borderWidth: 1,
-    borderColor: COLORS.income + "44",
-  },
-  viewerStatusChipAcceptedText: {
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.income,
-    fontFamily: FONT_FAMILY.bodySemibold,
-  },
-  viewerActionNote: {
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.storm,
-    textAlign: "center",
-    fontFamily: FONT_FAMILY.body,
-  },
-  viewerDisabledBtn: {
-    opacity: 0.45,
-  },
-  card: {
-    maxHeight: "92%",
-    backgroundColor: SURFACE.sheet,
-    borderTopLeftRadius: RADIUS.xl,
-    borderTopRightRadius: RADIUS.xl,
-    borderTopWidth: 1,
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
-    borderTopColor: SURFACE.separator,
-    borderLeftColor: SURFACE.separator,
-    borderRightColor: SURFACE.separator,
-    ...ELEVATION[4],
-  },
-  handle: {
-    alignSelf: "center",
-    width: 36,
-    height: 4,
-    borderRadius: RADIUS.full,
-    backgroundColor: "rgba(255,255,255,0.22)",
-    marginTop: SPACING.md,
-    marginBottom: SPACING.xs,
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.md,
-    borderBottomWidth: 0.5,
-    borderBottomColor: "rgba(255,255,255,0.10)",
-  },
-  headerText: { flex: 1 },
-  title: {
-    fontFamily: FONT_FAMILY.heading,
-    fontSize: FONT_SIZE.lg,
-    color: COLORS.ink,
-  },
-  subtitle: {
-    fontFamily: FONT_FAMILY.body,
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.storm,
-    marginTop: 2,
-  },
-  closeBtn: {
-    padding: SPACING.xs,
-    backgroundColor: "rgba(255,255,255,0.07)",
-    borderRadius: RADIUS.sm,
-  },
-  content: {
-    padding: SPACING.lg,
-    gap: SPACING.lg,
-    paddingBottom: SPACING.xxxl,
-  },
-
-  // ── Progress ──
-  progressSection: { gap: SPACING.xs },
-  progressLabels: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 4,
-  },
-  progressPct: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.sm, color: COLORS.ink },
-  dueDate: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
-  progressHint: {
-    fontFamily: FONT_FAMILY.body,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.storm,
-    lineHeight: 17,
-  },
-  progressAmounts: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 4,
-  },
-  amountSmall: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
-
-  // ── Metrics ──
-  metricsGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: SPACING.sm,
-  },
-  insightGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: SPACING.sm,
-  },
-  metricCard: {
-    flex: 1,
-    minWidth: "45%",
-    backgroundColor: SURFACE.card,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: SURFACE.cardBorder,
-    padding: SPACING.md,
-    gap: 4,
-    alignItems: "flex-start",
-  },
-  metricValue: {
-    fontFamily: FONT_FAMILY.heading,
-    fontSize: FONT_SIZE.md,
-  },
-  metricLabel: {
-    fontFamily: FONT_FAMILY.body,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.storm,
-  },
-  metricsFootnote: {
-    fontFamily: FONT_FAMILY.body,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.storm,
-    lineHeight: 17,
-    marginTop: -SPACING.xs,
-  },
-  insightCard: {
-    flex: 1,
-    minWidth: "45%",
-    backgroundColor: "rgba(255,255,255,0.04)",
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
-    padding: SPACING.md,
-    gap: 4,
-  },
-  insightValue: {
-    fontFamily: FONT_FAMILY.heading,
-    fontSize: FONT_SIZE.md,
-    color: COLORS.ink,
-  },
-  insightLabel: {
-    fontFamily: FONT_FAMILY.bodySemibold,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.ink,
-  },
-  insightSub: {
-    fontFamily: FONT_FAMILY.body,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.storm,
-    lineHeight: 17,
-  },
-  insightPositive: {
-    color: COLORS.income,
-  },
-  insightWarning: {
-    color: COLORS.warning,
-  },
-  insightNegative: {
-    color: COLORS.danger,
-  },
-
-  // ── Section ──
-  section: { gap: SPACING.sm },
-  sectionTitle: {
-    fontFamily: FONT_FAMILY.bodySemibold,
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.storm,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  comparisonNarrativeCard: {
-    backgroundColor: SURFACE.card,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: SURFACE.cardBorder,
-    padding: SPACING.md,
-    gap: 6,
-  },
-  comparisonNarrativeEyebrow: {
-    fontFamily: FONT_FAMILY.bodyMedium,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.storm,
-    textTransform: "uppercase",
-    letterSpacing: 0.6,
-  },
-  comparisonNarrativeLead: {
-    fontFamily: FONT_FAMILY.heading,
-    fontSize: FONT_SIZE.md,
-    color: COLORS.ink,
-  },
-  comparisonNarrativeBody: {
-    fontFamily: FONT_FAMILY.body,
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.ink,
-    lineHeight: 20,
-  },
-  comparisonNarrativeFootnote: {
-    fontFamily: FONT_FAMILY.body,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.storm,
-    lineHeight: 17,
-  },
-  sectionHint: {
-    fontFamily: FONT_FAMILY.body,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.storm,
-    lineHeight: 18,
-  },
-  dateRangeCaption: {
-    fontFamily: FONT_FAMILY.bodyMedium,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.textDisabled,
-    lineHeight: 18,
-  },
-  historyPresetRow: {
-    flexDirection: "row",
-    gap: SPACING.xs,
-    paddingVertical: SPACING.xs,
-  },
-  pillRowWrap: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: SPACING.xs,
-    marginTop: SPACING.sm,
-  },
-  filterPill: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: 6,
-    borderRadius: RADIUS.full,
-    backgroundColor: SURFACE.card,
-    borderWidth: 1,
-    borderColor: SURFACE.cardBorder,
-  },
-  filterPillActive: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
-  },
-  filterPillText: {
-    fontSize: FONT_SIZE.xs,
-    fontFamily: FONT_FAMILY.bodyMedium,
-    color: COLORS.storm,
-  },
-  filterPillTextActive: {
-    color: "#FFFFFF",
-    fontFamily: FONT_FAMILY.bodySemibold,
-  },
-  customRange: { gap: SPACING.sm, marginTop: SPACING.xs },
-
-  // ── Chart ──
-  chartScroll: {
-    flexGrow: 1,
-    paddingVertical: SPACING.xs,
-  },
-  chart: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    gap: SPACING.xs,
-    height: 88,
-    minWidth: "100%",
-  },
-  chartWide: {
-    minWidth: undefined,
-    paddingRight: SPACING.md,
-  },
-  chartBar: {
-    flex: 1,
-    minWidth: 28,
-    alignItems: "center",
-    gap: 3,
-  },
-  chartBarFixed: {
-    flex: 0,
-    width: 40,
-  },
-  barTrack: {
-    flex: 1,
-    width: "100%",
-    justifyContent: "flex-end",
-    backgroundColor: "rgba(255,255,255,0.05)",
-    borderRadius: 4,
-    overflow: "hidden",
-  },
-  barFill: {
-    width: "100%",
-    backgroundColor: COLORS.primary,
-    borderRadius: 4,
-    minHeight: 3,
-  },
-  barFillPositive: {
-    backgroundColor: COLORS.income,
-  },
-  barFillNegative: {
-    backgroundColor: COLORS.danger,
-  },
-  barEmpty: { backgroundColor: "transparent", minHeight: 0 },
-  barLabel: {
-    fontFamily: FONT_FAMILY.body,
-    fontSize: 10,
-    color: COLORS.storm,
-    textTransform: "capitalize",
-  },
-  barValue: {
-    fontFamily: FONT_FAMILY.bodySemibold,
-    fontSize: 9,
-    color: COLORS.primary,
-  },
-
-  // ── Installment grid ──
-  installmentGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 6,
-  },
-  installmentCell: {
-    width: 32,
-    height: 32,
-    borderRadius: RADIUS.sm,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-  },
-  installmentPaid: {
-    backgroundColor: COLORS.pine + "22",
-    borderColor: COLORS.pine + "55",
-  },
-  installmentPending: {
-    backgroundColor: "rgba(255,255,255,0.05)",
-    borderColor: "rgba(255,255,255,0.12)",
-  },
-  installmentNum: {
-    fontFamily: FONT_FAMILY.bodyMedium,
-    fontSize: 11,
-  },
-
-  // ── Event history ──
-  historyPager: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginTop: SPACING.md,
-    paddingTop: SPACING.sm,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "rgba(255,255,255,0.12)",
-    gap: SPACING.sm,
-  },
-  historyPagerBtn: {
-    padding: SPACING.sm,
-    borderRadius: RADIUS.md,
-    backgroundColor: "rgba(255,255,255,0.08)",
-  },
-  historyPagerBtnDisabled: {
-    opacity: 0.35,
-  },
-  historyPagerText: {
-    flex: 1,
-    textAlign: "center",
-    fontSize: FONT_SIZE.xs,
-    fontFamily: FONT_FAMILY.bodyMedium,
-    color: COLORS.storm,
-  },
-  emptyHistory: {
-    fontFamily: FONT_FAMILY.body,
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.storm,
-    textAlign: "center",
-    paddingVertical: SPACING.md,
-  },
-  eventRow: {
-    flexDirection: "row",
-    gap: SPACING.sm,
-    paddingVertical: SPACING.xs,
-  },
-  eventDot: {
-    width: 20,
-    height: 20,
-    borderRadius: RADIUS.full,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 2,
-    flexShrink: 0,
-  },
-  eventDotInner: {
-    width: 7,
-    height: 7,
-    borderRadius: RADIUS.full,
-  },
-  eventInfo: { flex: 1, gap: 2 },
-  eventTopRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: SPACING.xs,
-    flexWrap: "wrap",
-  },
-  eventLabel: {
-    fontFamily: FONT_FAMILY.bodySemibold,
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.ink,
-  },
-  installmentBadge: {
-    backgroundColor: COLORS.primary + "22",
-    borderRadius: RADIUS.full,
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-  },
-  installmentBadgeText: {
-    fontFamily: FONT_FAMILY.bodyMedium,
-    fontSize: 10,
-    color: COLORS.primary,
-  },
-  eventAmount: {
-    fontFamily: FONT_FAMILY.heading,
-    fontSize: FONT_SIZE.sm,
-    marginLeft: "auto" as any,
-  },
-  eventDesc: {
-    fontFamily: FONT_FAMILY.body,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.ink,
-  },
-  eventReason: {
-    fontFamily: FONT_FAMILY.body,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.storm,
-    fontStyle: "italic",
-  },
-  eventDate: {
-    fontFamily: FONT_FAMILY.body,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.storm,
-    marginTop: 1,
-  },
-  historyTitleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: SPACING.xs,
-  },
-  pendingCountBadge: {
-    backgroundColor: COLORS.warning + "22",
-    borderRadius: RADIUS.full,
-    paddingHorizontal: SPACING.xs + 2,
-    paddingVertical: 2,
-    borderWidth: 1,
-    borderColor: COLORS.warning + "44",
-  },
-  pendingCountBadgeText: {
-    fontSize: 10,
-    color: COLORS.warning,
-    fontFamily: FONT_FAMILY.bodySemibold,
-  },
-  filterPillPending: {
-    borderColor: COLORS.warning + "66",
-  },
-  requestRow: {
-    flexDirection: "row",
-    gap: SPACING.sm,
-    paddingVertical: SPACING.xs,
-    borderLeftWidth: 2,
-    paddingLeft: SPACING.xs,
-    marginLeft: -SPACING.xs,
-  },
-  requestActions: {
-    flexDirection: "row",
-    gap: SPACING.sm,
-    marginTop: SPACING.xs,
-  },
-  acceptInlineBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 4,
-    borderRadius: RADIUS.full,
-    backgroundColor: COLORS.income + "18",
-    borderWidth: 1,
-    borderColor: COLORS.income + "44",
-  },
-  rejectInlineBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 4,
-    borderRadius: RADIUS.full,
-    backgroundColor: COLORS.danger + "18",
-    borderWidth: 1,
-    borderColor: COLORS.danger + "44",
-  },
-  requestActionText: {
-    fontSize: FONT_SIZE.xs,
-    fontFamily: FONT_FAMILY.bodyMedium,
-  },
-  rejectInline: {
-    marginTop: SPACING.xs,
-    gap: SPACING.xs,
-  },
-  rejectInlineInput: {
-    backgroundColor: "rgba(255,255,255,0.07)",
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.15)",
-    padding: SPACING.xs + 2,
-    color: COLORS.ink,
-    fontSize: FONT_SIZE.sm,
-    fontFamily: FONT_FAMILY.body,
-  },
-  rejectInlineActions: {
-    flexDirection: "row",
-    gap: SPACING.sm,
-    alignItems: "center",
-  },
-  rejectInlineConfirm: {
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 4,
-    borderRadius: RADIUS.full,
-    backgroundColor: COLORS.danger + "22",
-    borderWidth: 1,
-    borderColor: COLORS.danger + "55",
-  },
-  rejectInlineConfirmText: {
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.danger,
-    fontFamily: FONT_FAMILY.bodyMedium,
-  },
-  rejectInlineCancelText: {
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.storm,
-    fontFamily: FONT_FAMILY.body,
-  },
-
-  // Spark card
-  sparkCard: {
-    backgroundColor: SURFACE.card,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: SURFACE.cardBorder,
-    padding: SPACING.md,
-    gap: SPACING.sm,
-  },
-  sparkHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  sparkAvg: {
-    fontFamily: FONT_FAMILY.heading,
-    fontSize: FONT_SIZE.lg,
-    color: COLORS.ink,
-  },
-  sparkAvgLabel: {
-    fontFamily: FONT_FAMILY.body,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.storm,
-    marginTop: 2,
-  },
-  sparkMonths: {
-    flexDirection: "row",
-    gap: 2,
-  },
-  sparkMonthItem: {
-    flex: 1,
-    alignItems: "center",
-    gap: 2,
-  },
-  sparkMonthLabel: {
-    fontFamily: FONT_FAMILY.body,
-    fontSize: 9,
-    color: COLORS.storm,
-    textTransform: "capitalize",
-  },
-  sparkMonthVal: {
-    fontFamily: FONT_FAMILY.bodyMedium,
-    fontSize: 9,
-    color: COLORS.primary,
-  },
-  sparkMonthZero: {
-    color: COLORS.storm,
-  },
-  timelinePerspectiveHint: {
-    fontFamily: FONT_FAMILY.body,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.storm,
-    lineHeight: 17,
-    marginTop: -SPACING.xs,
-  },
-  timelineSummaryCard: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: SPACING.xs,
-  },
-  timelineSummaryPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 10,
-    borderRadius: RADIUS.full,
-    borderWidth: 1,
-    backgroundColor: "rgba(255,255,255,0.04)",
-  },
-  timelineSummaryPositivePill: {
-    borderColor: COLORS.income + "44",
-    backgroundColor: COLORS.income + "14",
-  },
-  timelineSummaryNegativePill: {
-    borderColor: COLORS.expense + "44",
-    backgroundColor: COLORS.expense + "14",
-  },
-  timelineSummaryNeutralPill: {
-    borderColor: "rgba(255,255,255,0.12)",
-  },
-  timelineSummaryValue: {
-    fontFamily: FONT_FAMILY.heading,
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.ink,
-  },
-  timelineSummaryPositiveValue: {
-    color: COLORS.income,
-  },
-  timelineSummaryNegativeValue: {
-    color: COLORS.expense,
-  },
-  timelineSummaryLabel: {
-    fontFamily: FONT_FAMILY.bodyMedium,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.storm,
-  },
-  timelineCard: {
-    backgroundColor: SURFACE.card,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: SURFACE.cardBorder,
-    padding: SPACING.md,
-    gap: SPACING.sm,
-  },
-  timelineRow: {
-    flexDirection: "row",
-    gap: SPACING.sm,
-    alignItems: "flex-start",
-  },
-  timelineRowBorder: {
-    marginBottom: SPACING.xs,
-  },
-  timelineRail: {
-    width: 24,
-    alignItems: "center",
-    position: "relative",
-    minHeight: 88,
-  },
-  timelineLine: {
-    position: "absolute",
-    top: 18,
-    bottom: -SPACING.md,
-    width: 2,
-    borderRadius: RADIUS.full,
-  },
-  timelineDot: {
-    width: 18,
-    height: 18,
-    borderRadius: RADIUS.full,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 2,
-  },
-  timelineDotInner: {
-    width: 7,
-    height: 7,
-    borderRadius: RADIUS.full,
-  },
-  timelineContent: {
-    flex: 1,
-    minWidth: 0,
-  },
-  timelineSurface: {
-    gap: SPACING.xs,
-    padding: SPACING.md,
-    borderRadius: RADIUS.md,
-    backgroundColor: "rgba(255,255,255,0.03)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
-  },
-  timelineTopRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: SPACING.sm,
-  },
-  timelineMetaRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    flexWrap: "wrap",
-    gap: SPACING.xs,
-  },
-  timelineDatePill: {
-    paddingHorizontal: SPACING.xs + 2,
-    paddingVertical: 4,
-    borderRadius: RADIUS.full,
-    backgroundColor: "rgba(255,255,255,0.05)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
-  },
-  timelineImpactPill: {
-    paddingHorizontal: SPACING.xs + 2,
-    paddingVertical: 4,
-    borderRadius: RADIUS.full,
-    borderWidth: 1,
-  },
-  timelineImpactText: {
-    fontFamily: FONT_FAMILY.bodySemibold,
-    fontSize: 10,
-  },
-  timelineType: {
-    flex: 1,
-    fontFamily: FONT_FAMILY.bodySemibold,
-    fontSize: FONT_SIZE.sm,
-  },
-  timelineAmount: {
-    fontFamily: FONT_FAMILY.heading,
-    fontSize: FONT_SIZE.sm,
-    flexShrink: 0,
-  },
-  timelineDate: {
-    fontFamily: FONT_FAMILY.bodyMedium,
-    fontSize: 10,
-    color: COLORS.storm,
-  },
-  timelineDescription: {
-    fontFamily: FONT_FAMILY.body,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.ink,
-    lineHeight: 18,
-  },
-
-  // ── ESTILO 2 Timeline ──────────────────────────────────────────────────────
-  tl2Container: {
-    paddingHorizontal: 4,
-    marginTop: SPACING.xs,
-  },
-  tl2DateRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 14,
-    marginBottom: 6,
-    gap: 0,
-  },
-  tl2NodeCol: {
-    width: 28,
-    alignItems: "center",
-  },
-  tl2DateDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: COLORS.storm,
-    borderWidth: 2,
-    borderColor: "rgba(18,20,26,1)",
-  },
-  tl2DateLabel: {
-    fontSize: 10,
-    fontFamily: FONT_FAMILY.bodySemibold,
-    color: COLORS.storm,
-    letterSpacing: 0.8,
-    marginLeft: 6,
-  },
-  tl2DateLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: "rgba(255,255,255,0.07)",
-    marginLeft: 10,
-  },
-  tl2DayTotal: {
-    fontSize: 10,
-    fontFamily: FONT_FAMILY.bodySemibold,
-    marginLeft: 8,
-  },
-  tl2EventRow: {
-    flexDirection: "row",
-  },
-  tl2LineCol: {
-    width: 28,
-    alignItems: "center",
-  },
-  tl2LineSegment: {
-    width: 2,
-    flex: 1,
-    backgroundColor: "rgba(255,255,255,0.07)",
-    minHeight: 8,
-  },
-  tl2LineEnd: {
-    flex: 1,
-    minHeight: 6,
-  },
-  tl2Dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    flexShrink: 0,
-  },
-  tl2Card: {
-    flex: 1,
-    marginLeft: 8,
-    marginBottom: 6,
-    backgroundColor: "rgba(255,255,255,0.03)",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.07)",
-    padding: 10,
-    paddingHorizontal: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  tl2CardBody: {
-    flex: 1,
-    minWidth: 0,
-    gap: 3,
-  },
-  tl2TypeLabel: {
-    fontSize: FONT_SIZE.xs,
-    fontFamily: FONT_FAMILY.bodySemibold,
-    lineHeight: 15,
-  },
-  tl2CardSubRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    flexWrap: "wrap",
-    gap: 5,
-    marginTop: 1,
-  },
-  tl2Badge: {
-    borderRadius: 99,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-  },
-  tl2BadgeText: {
-    fontSize: 10,
-    fontFamily: FONT_FAMILY.bodySemibold,
-  },
-  tl2CardDesc: {
-    fontSize: 10,
-    color: COLORS.storm,
-    fontFamily: FONT_FAMILY.body,
-    flex: 1,
-  },
-  tl2Amount: {
-    fontSize: 13,
-    fontFamily: FONT_FAMILY.bodySemibold,
-    flexShrink: 0,
-  },
-});

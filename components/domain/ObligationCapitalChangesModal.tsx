@@ -5,6 +5,7 @@ import { es } from "date-fns/locale";
 
 import type { ObligationEventSummary } from "../../types/domain";
 import { parseDisplayDate } from "../../lib/date";
+import { firstMeaningfulText } from "../../lib/text-utils";
 import { formatCurrency } from "../ui/AmountDisplay";
 import { BottomSheet } from "../ui/BottomSheet";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
@@ -19,14 +20,6 @@ type Props = {
   decreases: ObligationEventSummary[];
   initialTab?: CapitalChangeTab;
 };
-
-function firstMeaningfulText(...values: Array<string | null | undefined>): string | null {
-  for (const value of values) {
-    const trimmed = value?.trim();
-    if (trimmed) return trimmed;
-  }
-  return null;
-}
 
 export function ObligationCapitalChangesModal({
   visible,

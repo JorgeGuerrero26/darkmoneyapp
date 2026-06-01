@@ -561,8 +561,16 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
     }
 
     // "Registro rápido": abre el overlay nativo (sin abrir la app) vía Activity lanzadora.
+    // FLAG_ACTIVITY_MULTIPLE_TASK + FLAG_ACTIVITY_NEW_TASK + taskAffinity vacío en el manifest
+    // garantiza que esta activity se lance en su propia task, sin traer al frente la task
+    // de MainActivity (que es lo que hacía "abrir" visiblemente la app DarkMoney detrás).
     val quickIntent = Intent(this, QuickMovementDialogActivity::class.java)
-      .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
+      .addFlags(
+        Intent.FLAG_ACTIVITY_NEW_TASK
+          or Intent.FLAG_ACTIVITY_MULTIPLE_TASK
+          or Intent.FLAG_ACTIVITY_NO_ANIMATION
+          or Intent.FLAG_ACTIVITY_NO_USER_ACTION,
+      )
       .putExtra(QuickMovementDialogActivity.EXTRA_SUGGESTION_ID, suggestionId)
       .putExtra(QuickMovementDialogActivity.EXTRA_NOTIFICATION_ID, notificationId)
     val quickPendingIntent = PendingIntent.getActivity(

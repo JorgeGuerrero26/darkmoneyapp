@@ -16,15 +16,15 @@ import { useAuth } from "../../lib/auth-context";
 import { humanizeError } from "../../lib/errors";
 import { useToast } from "../../hooks/useToast";
 import { useHaptics } from "../../hooks/useHaptics";
+import { useWorkspaceSnapshotQuery } from "../../services/queries/workspace-data";
 import {
   useCreateObligationMutation,
   useUpdateObligationMutation,
   useCreateObligationShareInviteMutation,
   useUnlinkObligationShareMutation,
   useObligationActiveShareQuery,
-  useWorkspaceSnapshotQuery,
   type ObligationFormInput,
-} from "../../services/queries/workspace-data";
+} from "../../services/queries/obligations";
 import { shouldResendShareInvite } from "../../lib/obligation-share";
 import { sortByName } from "../../lib/sort-locale";
 import type { ObligationSummary, SharedObligationSummary } from "../../types/domain";

@@ -1,6 +1,6 @@
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { StyleSheet, Text, TouchableOpacity, type SectionListRenderItem } from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View, type SectionListRenderItem } from "react-native";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { useRouter } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
@@ -472,24 +472,29 @@ function AccountsScreen() {
       />
       {hasCompositionData ? (
         <>
-          <TouchableOpacity
-            style={localStyles.compositionToggle}
-            onPress={toggleCompositionExpanded}
-            accessibilityRole="button"
-            accessibilityState={{ expanded: compositionExpanded }}
-            accessibilityLabel={compositionExpanded ? "Ocultar composición" : "Mostrar composición"}
-          >
-            <PieChart size={14} color={COLORS.pine} strokeWidth={2} />
-            <Text style={localStyles.compositionToggleText}>Composición del patrimonio</Text>
+          <View style={localStyles.compositionCard}>
+            <TouchableOpacity
+              style={localStyles.compositionHeader}
+              onPress={toggleCompositionExpanded}
+              accessibilityRole="button"
+              accessibilityState={{ expanded: compositionExpanded }}
+              accessibilityLabel={compositionExpanded ? "Ocultar composición" : "Mostrar composición"}
+            >
+              <View style={localStyles.compositionHeaderLeft}>
+                <PieChart size={16} color={COLORS.pine} strokeWidth={2} />
+                <Text style={localStyles.compositionHeaderText}>Composición del patrimonio</Text>
+              </View>
+              {compositionExpanded ? (
+                <ChevronUp size={18} color={COLORS.storm} />
+              ) : (
+                <ChevronDown size={18} color={COLORS.storm} />
+              )}
+            </TouchableOpacity>
             {compositionExpanded ? (
-              <ChevronUp size={14} color={COLORS.storm} />
-            ) : (
-              <ChevronDown size={14} color={COLORS.storm} />
-            )}
-          </TouchableOpacity>
-          {compositionExpanded ? (
-            <NetWorthCompositionChart composition={composition} currencyCode={activeCurrency} />
-          ) : null}
+              <NetWorthCompositionChart composition={composition} currencyCode={activeCurrency} embedded />
+            ) : null}
+          </View>
+          <View style={localStyles.sectionDivider} />
         </>
       ) : null}
     </>
@@ -607,6 +612,7 @@ function AccountsScreen() {
             empty={emptyConfig}
             refreshing={isLoading}
             onRefresh={onRefresh}
+            contentContainerStyle={localStyles.listContent}
           />
         }
         fab={
@@ -645,24 +651,40 @@ function AccountsScreen() {
 }
 
 const localStyles = StyleSheet.create({
-  compositionToggle: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: SPACING.xs,
-    alignSelf: "flex-start",
+  compositionCard: {
     marginHorizontal: SPACING.lg,
-    marginBottom: SPACING.sm,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs + 2,
-    borderRadius: RADIUS.full,
+    marginTop: SPACING.md,
+    borderRadius: RADIUS.xl,
     borderWidth: 1,
     borderColor: SURFACE.cardBorder,
-    backgroundColor: SURFACE.separator,
+    backgroundColor: SURFACE.card,
+    overflow: "hidden",
   },
-  compositionToggleText: {
+  listContent: {
+    paddingTop: SPACING.sm,
+  },
+  compositionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.md,
+  },
+  compositionHeaderLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+  },
+  compositionHeaderText: {
     fontFamily: FONT_FAMILY.bodyMedium,
-    fontSize: FONT_SIZE.xs,
+    fontSize: FONT_SIZE.sm,
     color: COLORS.ink,
+  },
+  sectionDivider: {
+    height: 1,
+    marginTop: SPACING.md,
+    marginHorizontal: SPACING.lg,
+    backgroundColor: SURFACE.separator,
   },
 });
 

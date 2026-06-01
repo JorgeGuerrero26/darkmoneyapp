@@ -158,9 +158,28 @@ class NotificationDetectionModule(
   @ReactMethod
   fun markSuggestionRegistered(suggestionId: String, notificationId: Int) {
     NotificationDetectionStore.markStatus(reactContext, suggestionId, "registered")
+    // Al registrar, añadimos el fingerprint a la lista de descartes para que, si el correo
+    // de Gmail original sigue activo (no se canceló a tiempo) y el listener lo re-procesa
+    // tras un re-foreground o re-bind, no genere una segunda suggestion.
+    val suggestion = NotificationDetectionStore.getSuggestion(reactContext, suggestionId)
+    val fingerprint = suggestion?.optString("discardFingerprint")
+    if (!fingerprint.isNullOrBlank()) {
+      NotificationDetectionStore.addDiscardFingerprint(reactContext, fingerprint)
+    }
     if (notificationId > 0) {
       reactContext.getSystemService(NotificationManager::class.java).cancel(notificationId)
     }
+  }
+
+  @ReactMethod
+  fun tryClaimSuggestionRegistration(suggestionId: String, promise: Promise) {
+    val claimed = NotificationDetectionStore.tryClaimRegistration(reactContext, suggestionId)
+    promise.resolve(claimed)
+  }
+
+  @ReactMethod
+  fun releaseSuggestionRegistrationClaim(suggestionId: String) {
+    NotificationDetectionStore.releaseRegistrationClaim(reactContext, suggestionId)
   }
 
   @ReactMethod

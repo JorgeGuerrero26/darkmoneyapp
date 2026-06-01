@@ -15,16 +15,18 @@ import { humanizeError } from "../../lib/errors";
 import { parseDisplayDate } from "../../lib/date";
 import { useWorkspace } from "../../lib/workspace-context";
 import { buildShareByObligationId } from "../../lib/obligation-labels";
+import { buildRateMap } from "../../lib/exchange-rate-map";
+import { pendingAmountInBaseCurrency } from "../../lib/obligation-pending-base";
 import { mergePreviewAttachments } from "../../lib/attachments/merge-preview-attachments";
+import { useWorkspaceSnapshotQuery } from "../../services/queries/workspace-data";
 import {
-  useWorkspaceSnapshotQuery,
   useDeleteObligationEventMutation,
   useDeleteObligationMutation,
   useArchiveObligationMutation,
   useObligationSharesQuery,
   useSharedObligationsQuery,
   usePendingPaymentRequestCountsQuery,
-} from "../../services/queries/workspace-data";
+} from "../../services/queries/obligations";
 import {
   type EntityAttachmentFile,
   useObligationEventAttachmentsQuery,
@@ -120,40 +122,6 @@ function buildObligationCSV(obligations: Array<ObligationSummary | SharedObligat
     "viewerMode" in obligation ? "Si" : "No",
   ].map(csvEscape).join(","));
   return BOM + [headers.join(","), ...rows].join("\n");
-}
-
-function buildRateMap(rates: { fromCurrencyCode: string; toCurrencyCode: string; rate: number }[]) {
-  const map = new Map<string, number>();
-  for (const rate of rates) {
-    const key = `${rate.fromCurrencyCode.toUpperCase()}:${rate.toCurrencyCode.toUpperCase()}`;
-    if (!map.has(key) && rate.rate > 0) map.set(key, rate.rate);
-  }
-  return map;
-}
-
-function resolveConversion(map: Map<string, number>, from: string, to: string): number {
-  if (from === to) return 1;
-  const direct = map.get(`${from}:${to}`);
-  if (direct) return direct;
-  const inverse = map.get(`${to}:${from}`);
-  if (inverse) return 1 / inverse;
-  return 1;
-}
-
-function pendingAmountInBaseCurrency(
-  obligation: ObligationSummary | SharedObligationSummary,
-  exchangeRateMap: Map<string, number>,
-  baseCurrency: string,
-) {
-  if ("pendingAmountInBaseCurrency" in obligation && obligation.pendingAmountInBaseCurrency != null) {
-    return obligation.pendingAmountInBaseCurrency;
-  }
-
-  return obligation.pendingAmount * resolveConversion(
-    exchangeRateMap,
-    obligation.currencyCode.toUpperCase(),
-    baseCurrency,
-  );
 }
 
 function searchObligations<T extends ObligationSummary | SharedObligationSummary>(

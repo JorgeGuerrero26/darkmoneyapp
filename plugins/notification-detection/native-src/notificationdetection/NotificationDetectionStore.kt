@@ -92,6 +92,50 @@ object NotificationDetectionStore {
     return !replaced || wasPending
   }
 
+  /**
+   * Marca un suggestion como "registrando" de forma atómica. Retorna true si la marca se aplicó
+   * (el caller es el dueño del flujo de guardado), o false si ya estaba en curso (otro flujo
+   * ya lo tomó — el caller debe abortar). Previene dobles inserts cuando el usuario toca
+   * "Registro rápido" y el cuerpo de la notif en rápida sucesión, o cuando un re-disparo del
+   * bridge re-arranca el headless task con el mismo suggestionId.
+   *
+   * El timestamp permite expirar la marca si el headless task se cuelga (>60s) sin completar.
+   */
+  @Synchronized
+  fun tryClaimRegistration(context: Context, suggestionId: String, withinMs: Long = 60_000L): Boolean {
+    val suggestions = readSuggestionsArray(context)
+    for (index in 0 until suggestions.length()) {
+      val current = suggestions.optJSONObject(index) ?: continue
+      if (current.optString("id") != suggestionId) continue
+      val status = current.optString("status", "pending")
+      if (status == "registered" || status == "discarded") return false
+      val claimedAt = current.optLong("registrationClaimedAt", 0L)
+      val now = System.currentTimeMillis()
+      if (claimedAt > 0L && (now - claimedAt) < withinMs) return false
+      current.put("registrationClaimedAt", now)
+      current.put("updatedAt", now)
+      suggestions.put(index, current)
+      writeSuggestionsArray(context, suggestions)
+      return true
+    }
+    return false
+  }
+
+  fun releaseRegistrationClaim(context: Context, suggestionId: String) {
+    val suggestions = readSuggestionsArray(context)
+    for (index in 0 until suggestions.length()) {
+      val current = suggestions.optJSONObject(index) ?: continue
+      if (current.optString("id") != suggestionId) continue
+      if (current.has("registrationClaimedAt")) {
+        current.remove("registrationClaimedAt")
+        current.put("updatedAt", System.currentTimeMillis())
+        suggestions.put(index, current)
+        writeSuggestionsArray(context, suggestions)
+      }
+      return
+    }
+  }
+
   fun markStatus(context: Context, suggestionId: String, status: String) {
     val suggestions = readSuggestionsArray(context)
     for (index in 0 until suggestions.length()) {

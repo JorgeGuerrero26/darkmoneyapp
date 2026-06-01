@@ -306,8 +306,27 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    } = supabase.auth.onAuthStateChange((event, nextSession) => {
       if (!hasResolvedInitialSession.current) return;
+      // Guardia contra logouts espurios: el HeadlessJsTaskService de detección de notificaciones
+      // corre en paralelo con la app, comparte AsyncStorage y puede chocar al refrescar tokens.
+      // Cuando llega un SIGNED_OUT que NO iniciamos nosotros (signingOutRef=false), revalidamos
+      // contra el servidor antes de borrar la sesión local. Si la sesión sigue viva, ignoramos
+      // el evento; si efectivamente está nula, recién hacemos syncSession(null).
+      if (event === "SIGNED_OUT" && !signingOutRef.current && supabase) {
+        void supabase.auth.getSession().then(({ data }) => {
+          if (data.session) {
+            logInfo("auth", "ignored spurious SIGNED_OUT (session still valid server-side)");
+            return;
+          }
+          void syncSession(null);
+        }).catch(() => {
+          // Error de red al revalidar: NO borramos la sesión local. Si el token de verdad expiró,
+          // el siguiente request lo descubrirá y onAuthStateChange volverá a dispararse.
+          logInfo("auth", "spurious SIGNED_OUT revalidation failed, keeping local session");
+        });
+        return;
+      }
       void syncSession(nextSession);
     });
 

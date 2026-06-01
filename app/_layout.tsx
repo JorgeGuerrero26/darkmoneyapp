@@ -23,10 +23,10 @@ import { WorkspaceProvider, useWorkspace } from "../lib/workspace-context";
 import { DisplayCurrencyProvider } from "../features/accounts/lib/display-currency-context";
 import {
   useNotificationsQuery,
-  useSharedObligationsQuery,
   useWorkspaceSnapshotQuery,
   useUserWorkspacesQuery,
 } from "../services/queries/workspace-data";
+import { useSharedObligationsQuery } from "../services/queries/obligations";
 import { findDetectedSuggestionIdByNativeId } from "../services/queries/notification-detection";
 import { OfflineBanner } from "../components/layout/OfflineBanner";
 import { ActivityNoticeContainer } from "../components/ui/ActivityNotice";

@@ -77,9 +77,13 @@ function withNotificationDetectionManifest(config) {
         "android:theme": "@style/Theme.DarkMoney.QuickMovementDialog",
         "android:excludeFromRecents": "true",
         "android:finishOnTaskLaunch": "true",
-        "android:launchMode": "singleTop",
+        "android:launchMode": "singleInstance",
         "android:noHistory": "true",
         "android:exported": "false",
+        // taskAffinity vacío + singleInstance evita que al lanzar el overlay desde la
+        // notificación, Android traiga al frente la task de MainActivity (lo cual abría
+        // visiblemente la app DarkMoney detrás del overlay).
+        "android:taskAffinity": "",
       },
     });
     return config;

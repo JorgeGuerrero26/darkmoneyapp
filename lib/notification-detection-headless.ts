@@ -75,6 +75,8 @@ const nativeDetection = NativeModules.NotificationDetection as
       setSuggestionAiCategoryRecommendation?: (suggestionId: string, recommendationJson: string) => void;
       setLastSaveError?: (suggestionId: string, message: string) => void;
       requestCancelBankNotification?: (suggestionId: string) => void;
+      tryClaimSuggestionRegistration?: (suggestionId: string) => Promise<boolean>;
+      releaseSuggestionRegistrationClaim?: (suggestionId: string) => void;
     }
   | undefined;
 
@@ -214,6 +216,16 @@ export async function notificationDetectionHeadlessTask(payload: HeadlessPayload
     await enrichAiCategorySuggestion(payload);
     return;
   }
+  // Anti-doble-ejecución: si otro headless task (mismo suggestionId) ya está corriendo, abortamos.
+  // Cubre: doble-tap accidental, re-disparo del bridge tras re-foreground, y el caso donde el
+  // usuario toca "Registro rápido" + cuerpo de la notif en sucesión rápida.
+  const claimed = await nativeDetection?.tryClaimSuggestionRegistration?.(payload.suggestionId).catch(() => false);
+  if (claimed === false) {
+    logWarn("notification-detection-headless", "Registration claim denied; another flow is in-flight or done", {
+      suggestionId: payload.suggestionId,
+    });
+    return;
+  }
   try {
     await runRegistrationFlow(payload);
   } catch (error) {
@@ -224,6 +236,8 @@ export async function notificationDetectionHeadlessTask(payload: HeadlessPayload
     });
     nativeDetection?.setLastSaveError?.(payload.suggestionId, message);
     nativeDetection?.showSuggestionNotification?.(payload.suggestionId);
+    // Liberamos el claim ante fallo permanente para permitir un retry posterior desde la app.
+    nativeDetection?.releaseSuggestionRegistrationClaim?.(payload.suggestionId);
   }
 }
 

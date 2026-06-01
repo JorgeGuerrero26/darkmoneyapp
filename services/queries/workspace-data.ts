@@ -63,7 +63,7 @@ import type {
 
 type NumericLike = number | string | null;
 
-function toNum(val: NumericLike): number {
+export function toNum(val: NumericLike): number {
   if (val === null || val === undefined) return 0;
   const n = Number(val);
   return isNaN(n) ? 0 : n;
@@ -347,7 +347,7 @@ async function fetchNextObligationInstallmentNo(obligationId: number): Promise<n
   return Number((data as { installment_no?: number | null } | null)?.installment_no ?? 0) + 1;
 }
 
-async function insertObligationPaymentEventWithFallback(input: {
+export async function insertObligationPaymentEventWithFallback(input: {
   obligationId: number;
   paymentDate: string;
   amount: number;
@@ -481,7 +481,7 @@ type BudgetProgressRow = {
   updated_at: string;
 };
 
-type ObligationSummaryRow = {
+export type ObligationSummaryRow = {
   id: number;
   workspace_id: number;
   direction: ObligationSummary["direction"];
@@ -517,7 +517,7 @@ type ObligationSummaryRow = {
   updated_at: string;
 };
 
-type ObligationEventRow = {
+export type ObligationEventRow = {
   id: number;
   obligation_id: number;
   event_type: ObligationEventSummary["eventType"];
@@ -634,7 +634,7 @@ function mapBudget(row: BudgetProgressRow): BudgetOverview {
   };
 }
 
-function mapObligation(
+export function mapObligation(
   row: ObligationSummaryRow,
   events: ObligationEventRow[],
   counterpartyMap: Map<number, string>,
@@ -996,6 +996,9 @@ async function fetchWorkspaceSnapshot(
       .select("from_currency_code, to_currency_code, rate, effective_at"),
   ]);
 
+  if (accountsResult.error) {
+    throw new Error(accountsResult.error.message ?? "Error al cargar cuentas");
+  }
   if (subscriptionsResult.error) {
     throw new Error(subscriptionsResult.error.message ?? "Error al cargar suscripciones");
   }
@@ -3313,7 +3316,7 @@ type EventEditRequestPayload = {
   proposedNotes?: string | null;
 };
 
-type ViewerEventLinkRow = {
+export type ViewerEventLinkRow = {
   id: number;
   movement_id: number | null;
   linked_by_user_id: string | null;
@@ -3542,7 +3545,7 @@ function readMovementMetadataEventId(value: JsonValue | null | undefined): numbe
   return Number.isFinite(movementEventId) && movementEventId > 0 ? movementEventId : null;
 }
 
-async function attachMovementToObligationEvent(eventId: number, movementId: number) {
+export async function attachMovementToObligationEvent(eventId: number, movementId: number) {
   if (!supabase) throw new Error("Supabase no disponible.");
   const { error } = await supabase
     .from("obligation_events")
@@ -4727,7 +4730,7 @@ export {
 
 // ─── Edge Function helper ─────────────────────────────────────────────────────
 
-async function invokeEdgeFunction<T>(name: string, body: Record<string, unknown>): Promise<T> {
+export async function invokeEdgeFunction<T>(name: string, body: Record<string, unknown>): Promise<T> {
   if (!supabase) throw new Error("Supabase no está configurado.");
   let accessToken: string | null = null;
   let activeSession: Awaited<ReturnType<typeof supabase.auth.getSession>>["data"]["session"] | null = null;

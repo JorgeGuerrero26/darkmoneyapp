@@ -1,7 +1,7 @@
 import { StyleSheet, Text, View } from "react-native";
 
 import { useMovementQuery } from "../../services/queries/movements";
-import { obligationViewerActsAsCollector } from "../../lib/obligation-viewer-labels";
+import { obligationEventCashDeltaSign } from "../../lib/obligation-viewer-labels";
 import type {
   AccountSummary,
   ObligationEventSummary,
@@ -31,12 +31,14 @@ export function ObligationEventDeleteImpact({
   if (event.eventType !== "payment") return null;
 
   const projectedPending = obligation.pendingAmount + event.amount;
-  const ownerActsAsCollector = obligationViewerActsAsCollector(obligation.direction, false);
-  const viewerActsAsCollector = obligationViewerActsAsCollector(obligation.direction, true);
-  const accountDelta =
-    actor === "owner"
-      ? (ownerActsAsCollector ? -event.amount : event.amount)
-      : (viewerActsAsCollector ? -event.amount : event.amount);
+  // Delta when DELETING the event: negate the registration sign so deleting a
+  // recorded cobro removes cash, deleting a recorded pago restores it.
+  const registrationSign = obligationEventCashDeltaSign(
+    event.eventType,
+    obligation.direction,
+    actor === "viewer",
+  );
+  const accountDelta = -registrationSign * event.amount;
 
   const accountId =
     actor === "owner"

@@ -12,12 +12,12 @@ import { humanizeError } from "../../lib/errors";
 import { useToast } from "../../hooks/useToast";
 import { useHaptics } from "../../hooks/useHaptics";
 import { useUiStore } from "../../store/ui-store";
+import { useWorkspaceSnapshotQuery } from "../../services/queries/workspace-data";
 import {
   useCreateObligationPaymentMutation,
   useObligationEventsQuery,
   useUpdateObligationEventMutation,
-  useWorkspaceSnapshotQuery,
-} from "../../services/queries/workspace-data";
+} from "../../services/queries/obligations";
 import { useMovementQuery } from "../../services/queries/movements";
 import { useObligationEventAttachmentsQuery } from "../../services/queries/attachments";
 import { obligationViewerActsAsCollector } from "../../lib/obligation-viewer-labels";

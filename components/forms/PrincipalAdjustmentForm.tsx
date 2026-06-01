@@ -8,11 +8,11 @@ import { todayPeru } from "../../lib/date";
 import { humanizeError } from "../../lib/errors";
 import { useToast } from "../../hooks/useToast";
 import { useHaptics } from "../../hooks/useHaptics";
+import { useWorkspaceSnapshotQuery } from "../../services/queries/workspace-data";
 import {
   useCreatePrincipalAdjustmentMutation,
   useUpdateObligationEventMutation,
-  useWorkspaceSnapshotQuery,
-} from "../../services/queries/workspace-data";
+} from "../../services/queries/obligations";
 import type { ObligationEventSummary, ObligationSummary } from "../../types/domain";
 import { BottomSheet } from "../ui/BottomSheet";
 import { Button } from "../ui/Button";

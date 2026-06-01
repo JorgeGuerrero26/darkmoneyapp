@@ -45,8 +45,8 @@ import {
   useMarkNotificationsReadMutation,
   useMarkNotificationsUnreadMutation,
   useNotificationsQuery,
-  usePendingObligationShareInvitesQuery,
 } from "../services/queries/workspace-data";
+import { usePendingObligationShareInvitesQuery } from "../services/queries/obligations";
 import type { NotificationItem, PendingObligationShareInviteItem } from "../types/domain";
 import { payloadString } from "../features/notifications/lib/notificationPresentation";
 import { getNotificationsModule } from "../lib/notifications-runtime";

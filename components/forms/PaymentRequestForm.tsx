@@ -8,10 +8,8 @@ import { todayPeru } from "../../lib/date";
 import { humanizeError } from "../../lib/errors";
 import { useToast } from "../../hooks/useToast";
 import { useHaptics } from "../../hooks/useHaptics";
-import {
-  useCreatePaymentRequestMutation,
-  useWorkspaceSnapshotQuery,
-} from "../../services/queries/workspace-data";
+import { useWorkspaceSnapshotQuery } from "../../services/queries/workspace-data";
+import { useCreatePaymentRequestMutation } from "../../services/queries/obligations";
 import { obligationViewerActsAsCollector } from "../../lib/obligation-viewer-labels";
 import type { SharedObligationSummary } from "../../types/domain";
 import { BottomSheet } from "../ui/BottomSheet";

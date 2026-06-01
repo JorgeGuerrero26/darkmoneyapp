@@ -49,17 +49,19 @@ import {
   usePersistDashboardAnalyticsMutation,
   usePersistLearningFeedbackMutation,
   useUpdateMovementMutation,
-  useSharedObligationsQuery,
   useNotificationsQuery,
   useDashboardAiFlowMutation,
   useDashboardAiHealthMutation,
   useDashboardAiHistoryMutation,
   useDashboardAiPatternsMutation,
   useDashboardAiSummaryMutation,
-  mergeWorkspaceAndSharedObligations,
   type DashboardMovementRow,
   type DashboardAnalyticsBundle,
 } from "../../services/queries/workspace-data";
+import {
+  useSharedObligationsQuery,
+  mergeWorkspaceAndSharedObligations,
+} from "../../services/queries/obligations";
 import { useBudgetScopeMovementsQuery } from "../../services/queries/budget-analytics";
 import type { BudgetOverview, ExchangeRateSummary } from "../../types/domain";
 import { useUiStore } from "../../store/ui-store";

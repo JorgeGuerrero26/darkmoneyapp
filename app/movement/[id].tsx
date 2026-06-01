@@ -24,8 +24,8 @@ import {
 import {
   useVoidMovementMutation,
   useWorkspaceSnapshotQuery,
-  useLinkMovementToObligationMutation,
 } from "../../services/queries/workspace-data";
+import { useLinkMovementToObligationMutation } from "../../services/queries/obligations";
 import { useWorkspace } from "../../lib/workspace-context";
 import { useAuth } from "../../lib/auth-context";
 import { isoToDateStr } from "../../lib/date";

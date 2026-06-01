@@ -10,6 +10,12 @@ type Props = {
   composition: Composition;
   currencyCode: string;
   size?: number;
+  /**
+   * When true, the chart renders without its own card frame (no border, no
+   * margin, no rounded background) so it can be embedded inside another
+   * container that already provides the surface.
+   */
+  embedded?: boolean;
 };
 
 /**
@@ -18,7 +24,7 @@ type Props = {
  *
  * Drawn with `<Circle>` strokeDasharray segments — no external chart library.
  */
-export function NetWorthCompositionChart({ composition, currencyCode, size = 140 }: Props) {
+export function NetWorthCompositionChart({ composition, currencyCode, size = 140, embedded = false }: Props) {
   const { assets, debts, totalAssets, netWorth } = composition;
   const stroke = 18;
   const radius = (size - stroke) / 2;
@@ -41,7 +47,7 @@ export function NetWorthCompositionChart({ composition, currencyCode, size = 140
   }, [assets, totalAssets, circumference]);
 
   return (
-    <View style={styles.container}>
+    <View style={embedded ? styles.embeddedContainer : styles.container}>
       <View style={styles.chartRow}>
         {/* Donut */}
         <View style={[styles.donutWrap, { width: size, height: size }]}>
@@ -124,6 +130,11 @@ const styles = StyleSheet.create({
     padding: SPACING.lg,
     marginHorizontal: SPACING.lg,
     marginBottom: SPACING.md,
+  },
+  embeddedContainer: {
+    paddingHorizontal: SPACING.lg,
+    paddingBottom: SPACING.lg,
+    paddingTop: SPACING.sm,
   },
   chartRow: {
     flexDirection: "row",

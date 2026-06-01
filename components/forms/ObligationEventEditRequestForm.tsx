@@ -6,7 +6,7 @@ import { useAuth } from "../../lib/auth-context";
 import { humanizeError } from "../../lib/errors";
 import { useToast } from "../../hooks/useToast";
 import { useHaptics } from "../../hooks/useHaptics";
-import { useCreateObligationEventEditRequestMutation } from "../../services/queries/workspace-data";
+import { useCreateObligationEventEditRequestMutation } from "../../services/queries/obligations";
 import type { ObligationEventSummary, SharedObligationSummary } from "../../types/domain";
 import { BottomSheet } from "../ui/BottomSheet";
 import { Button } from "../ui/Button";
