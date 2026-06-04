@@ -1,4 +1,5 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
+import { mergePreviewAttachments } from "../../lib/attachments/merge-preview-attachments";
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import {
   ActivityIndicator,
@@ -125,21 +126,6 @@ import { styles } from "../../features/obligations/lib/obligation-detail.styles"
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 
 type HistoryPreset = "month" | "3m" | "year" | "all" | "custom";
-
-function mergePreviewAttachments(
-  eventAttachments: EntityAttachmentFile[],
-  movementAttachments: EntityAttachmentFile[],
-): EntityAttachmentFile[] {
-  const merged: EntityAttachmentFile[] = [];
-  const seen = new Set<string>();
-  for (const attachment of [...eventAttachments, ...movementAttachments]) {
-    const key = attachment.fileName || attachment.filePath;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    merged.push(attachment);
-  }
-  return merged;
-}
 
 function firstParam(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
