@@ -1,5 +1,5 @@
 import { StyleSheet, Text, View } from "react-native";
-import { Archive, ArchiveRestore, Building2, Landmark, Store, Trash2, User, Wrench, Circle } from "lucide-react-native";
+import { Archive, ArchiveRestore, Trash2 } from "lucide-react-native";
 
 import {
   ResourceCard,
@@ -9,7 +9,8 @@ import {
 } from "../ui/ResourceCard";
 import { SwipeActionRow } from "../ui/SwipeActionRow";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS } from "../../constants/theme";
-import type { CounterpartyOverview, CounterpartyType } from "../../types/domain";
+import { TYPE_ICON, TYPE_LABELS } from "../../features/contacts/lib/contactsLabels";
+import type { CounterpartyOverview } from "../../types/domain";
 
 export type ContactMetrics = {
   movementCount: number;
@@ -27,37 +28,26 @@ type Props = {
   onArchive: () => void;
   onDelete: () => void;
   onRestore: () => void;
-};
-
-const TYPE_LABEL: Record<CounterpartyType, string> = {
-  person: "Persona",
-  company: "Empresa",
-  merchant: "Comercio",
-  service: "Servicio",
-  bank: "Banco",
-  other: "Otro",
-};
-
-const TYPE_ICON: Record<CounterpartyType, typeof Circle> = {
-  person: User,
-  company: Building2,
-  merchant: Store,
-  service: Wrench,
-  bank: Landmark,
-  other: Circle,
+  onLongPress?: () => void;
+  selected?: boolean;
+  selectMode?: boolean;
 };
 
 function ContactCardContent({
   contact,
   metrics,
   onPress,
+  onLongPress,
+  selected,
 }: {
   contact: CounterpartyOverview;
   metrics?: ContactMetrics;
   onPress: () => void;
+  onLongPress?: () => void;
+  selected?: boolean;
 }) {
-  const ContactIcon = TYPE_ICON[contact.type] ?? Circle;
-  const typeLabel = TYPE_LABEL[contact.type] ?? contact.type;
+  const ContactIcon = TYPE_ICON[contact.type];
+  const typeLabel = TYPE_LABELS[contact.type] ?? contact.type;
   const primaryDetail =
     contact.phone?.trim() ||
     contact.email?.trim() ||
@@ -70,6 +60,8 @@ function ContactCardContent({
       subtitle={primaryDetail || typeLabel}
       archived={contact.isArchived}
       onPress={onPress}
+      onLongPress={onLongPress}
+      selected={selected}
       leading={<ResourceCardIcon icon={ContactIcon} color={COLORS.primary} />}
       meta={
         <>
@@ -100,7 +92,22 @@ export function ContactCard({
   onArchive,
   onDelete,
   onRestore,
+  onLongPress,
+  selected = false,
+  selectMode = false,
 }: Props) {
+  if (selectMode) {
+    return (
+      <ContactCardContent
+        contact={contact}
+        metrics={metrics}
+        onPress={onPress}
+        onLongPress={onLongPress}
+        selected={selected}
+      />
+    );
+  }
+
   const rightAction = contact.isArchived
     ? {
         label: "Restaurar",
@@ -139,6 +146,7 @@ export function ContactCard({
             }
             onPress();
           }}
+          onLongPress={onLongPress}
         />
       )}
     </SwipeActionRow>

@@ -1,9 +1,9 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { SectionListRenderItem } from "react-native";
 import { useRouter } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Archive, Download, Users } from "lucide-react-native";
+import { Archive, CheckSquare, Download, Trash2, Users } from "lucide-react-native";
 import { format } from "date-fns";
 
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
@@ -15,6 +15,7 @@ import { ActiveFilterBar, type ActiveFilterItem } from "../../components/ui/Acti
 import { MetricSummaryBar } from "../../components/ui/MetricSummaryBar";
 import { ResourceContextNote } from "../../components/ui/ResourceContextNote";
 import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTemplate";
+import { BulkActionBar } from "../../components/ui/BulkActionBar";
 import { ResourceSectionList, type ResourceSection } from "../../components/ui/ResourceSectionList";
 import { SkeletonCard, SkeletonList } from "../../components/ui/Skeleton";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
@@ -61,6 +62,32 @@ function ContactsScreen() {
   const [searchText, setSearchText] = useState("");
   const [typeFilters, setTypeFilters] = useState<CounterpartyType[]>([]);
   const [showArchived, setShowArchived] = useState(false);
+
+  // Bulk selection
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [bulkArchiveConfirm, setBulkArchiveConfirm] = useState(false);
+  const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
+
+  const toggleSelect = useCallback((id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const exitSelectMode = useCallback(() => {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+  }, []);
+
+  useEffect(() => {
+    if (selectMode && selectedIds.size === 0) {
+      setSelectMode(false);
+    }
+  }, [selectMode, selectedIds.size]);
 
   const counterparties = snapshot?.counterparties ?? [];
   const obligations = snapshot?.obligations ?? [];
@@ -222,38 +249,106 @@ function ContactsScreen() {
     }
   }
 
+  const selectedContacts = useMemo(
+    () => filteredContacts.filter((contact) => selectedIds.has(contact.id)),
+    [filteredContacts, selectedIds],
+  );
+
+  async function executeBulkArchive() {
+    let archivedCount = 0;
+    for (const contact of selectedContacts) {
+      if (contact.isArchived) continue;
+      try {
+        await archiveMutation.mutateAsync({ id: contact.id, input: { isArchived: true } });
+        archivedCount += 1;
+      } catch (err: unknown) {
+        showToast(humanizeError(err), "error");
+      }
+    }
+    setBulkArchiveConfirm(false);
+    exitSelectMode();
+    if (archivedCount > 0) {
+      showToast(
+        archivedCount === 1 ? "1 contacto archivado" : `${archivedCount} contactos archivados`,
+        "success",
+      );
+    }
+  }
+
+  async function executeBulkDelete() {
+    const deletable = selectedContacts.filter(canDeleteContact);
+    const skipped = selectedContacts.length - deletable.length;
+    let deletedCount = 0;
+    for (const contact of deletable) {
+      try {
+        await deleteMutation.mutateAsync(contact.id);
+        deletedCount += 1;
+      } catch (err: unknown) {
+        showToast(humanizeError(err), "error");
+      }
+    }
+    setBulkDeleteConfirm(false);
+    exitSelectMode();
+    if (deletedCount > 0) {
+      const msg = deletedCount === 1 ? "1 contacto eliminado" : `${deletedCount} contactos eliminados`;
+      showToast(
+        skipped > 0 ? `${msg}. ${skipped} con relaciones no se eliminaron.` : msg,
+        "success",
+      );
+    } else if (skipped > 0) {
+      showToast(
+        "Ninguno se eliminó: todos tienen movimientos o créditos/deudas. Archívalos en su lugar.",
+        "error",
+      );
+    }
+  }
+
   const renderContactItem: SectionListRenderItem<CounterpartyOverview, ContactListSection> = useCallback(({ item }) => (
     <ContactCard
       contact={item}
       metrics={contactMetricsById.get(item.id)}
-      onPress={() => router.push(`/contacts/${item.id}`)}
+      onPress={() => {
+        if (selectMode) {
+          toggleSelect(item.id);
+          return;
+        }
+        router.push(`/contacts/${item.id}`);
+      }}
+      onLongPress={() => {
+        if (!selectMode) setSelectMode(true);
+        toggleSelect(item.id);
+      }}
       onArchive={() => handleArchive(item.id)}
       onDelete={() => handleDelete(item)}
       onRestore={() => handleRestore(item.id)}
       canDelete={canDeleteContact(item)}
+      selected={selectedIds.has(item.id)}
+      selectMode={selectMode}
     />
-  ), [canDeleteContact, contactMetricsById, handleArchive, handleDelete, handleRestore, router]);
+  ), [canDeleteContact, contactMetricsById, handleArchive, handleDelete, handleRestore, router, selectMode, selectedIds, toggleSelect]);
 
   return (
     <ResourceModuleTemplate
       topInset={insets.top}
       header={
         <ScreenHeader
-          title="Contactos"
-          onBack={handleBack}
+          title={selectMode ? `${selectedIds.size} seleccionado${selectedIds.size === 1 ? "" : "s"}` : "Contactos"}
+          onBack={selectMode ? exitSelectMode : handleBack}
           rightAction={
-            <HeaderActionGroup
-              actions={[{
-                key: "export",
-                icon: Download,
-                onPress: () => exportCSV(filteredContacts),
-                accessibilityLabel: "Exportar CSV",
-              }]}
-            />
+            selectMode ? null : (
+              <HeaderActionGroup
+                actions={[{
+                  key: "export",
+                  icon: Download,
+                  onPress: () => exportCSV(filteredContacts),
+                  accessibilityLabel: "Exportar CSV",
+                }]}
+              />
+            )
           }
         />
       }
-      toolbar={
+      toolbar={selectMode ? null : (
         <FilterToolbar
           options={TYPE_FILTERS}
           selectedValues={typeFilters}
@@ -272,15 +367,15 @@ function ContactsScreen() {
             accessibilityLabel: showArchived ? "Ocultar archivados" : "Mostrar archivados",
           }]}
         />
-      }
-      activeFilters={<ActiveFilterBar items={activeFilterItems} onClear={clearContactFilters} />}
+      )}
+      activeFilters={selectMode ? null : <ActiveFilterBar items={activeFilterItems} onClear={clearContactFilters} />}
       context={
-        filteredContacts.length > 0 && contextNote ? (
+        !selectMode && filteredContacts.length > 0 && contextNote ? (
           <ResourceContextNote>{contextNote}</ResourceContextNote>
         ) : null
       }
       summary={
-        filteredContacts.length > 0 ? (
+        !selectMode && filteredContacts.length > 0 ? (
           <MetricSummaryBar
             items={[
               {
@@ -306,6 +401,43 @@ function ContactsScreen() {
                 label: "vinculados",
                 helpTitle: "Contactos vinculados",
                 helpDescription: "Contactos que ya tienen relación con registros financieros, como créditos, deudas o movimientos.",
+              },
+            ]}
+          />
+        ) : null
+      }
+      bulkActions={
+        selectMode && selectedIds.size > 0 ? (
+          <BulkActionBar
+            selectedCount={selectedIds.size}
+            onClear={exitSelectMode}
+            actions={[
+              {
+                key: "select-all",
+                label: `Sel. todos (${filteredContacts.length})`,
+                icon: CheckSquare,
+                onPress: () => setSelectedIds(new Set(filteredContacts.map((c) => c.id))),
+              },
+              {
+                key: "csv",
+                label: "CSV",
+                icon: Download,
+                tone: "primary",
+                onPress: () => exportCSV(selectedContacts),
+              },
+              {
+                key: "archive",
+                label: `Archivar (${selectedIds.size})`,
+                icon: Archive,
+                tone: "neutral",
+                onPress: () => setBulkArchiveConfirm(true),
+              },
+              {
+                key: "delete",
+                label: `Eliminar (${selectedIds.size})`,
+                icon: Trash2,
+                tone: "danger",
+                onPress: () => setBulkDeleteConfirm(true),
               },
             ]}
           />
@@ -337,7 +469,7 @@ function ContactsScreen() {
           onRefresh={onRefresh}
         />
       }
-      fab={<FAB onPress={() => setCreateFormVisible(true)} bottom={insets.bottom + 16} />}
+      fab={!selectMode ? <FAB onPress={() => setCreateFormVisible(true)} bottom={insets.bottom + 16} /> : null}
       overlays={
         <>
           <ContactForm
@@ -367,6 +499,26 @@ function ContactsScreen() {
                 showToast(humanizeError(error), "error");
               }
             }}
+          />
+
+          <ConfirmDialog
+            visible={bulkArchiveConfirm}
+            title={`Archivar ${selectedIds.size} contactos`}
+            body="Los contactos seleccionados pasarán a estado archivado. Podrás verlos activando el icono de archivados."
+            confirmLabel="Archivar"
+            cancelLabel="Cancelar"
+            onCancel={() => setBulkArchiveConfirm(false)}
+            onConfirm={() => void executeBulkArchive()}
+          />
+
+          <ConfirmDialog
+            visible={bulkDeleteConfirm}
+            title={`¿Eliminar ${selectedIds.size} contactos?`}
+            body="Solo se eliminarán los que no tengan movimientos ni créditos/deudas. Los demás permanecerán."
+            confirmLabel="Eliminar"
+            cancelLabel="Cancelar"
+            onCancel={() => setBulkDeleteConfirm(false)}
+            onConfirm={() => void executeBulkDelete()}
           />
         </>
       }
