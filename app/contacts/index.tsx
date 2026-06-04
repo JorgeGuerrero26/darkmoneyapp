@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SectionListRenderItem } from "react-native";
 import { useRouter } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
@@ -19,6 +19,7 @@ import { BulkActionBar } from "../../components/ui/BulkActionBar";
 import { ResourceSectionList, type ResourceSection } from "../../components/ui/ResourceSectionList";
 import { SkeletonCard, SkeletonList } from "../../components/ui/Skeleton";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
+import { UndoBanner } from "../../components/ui/UndoBanner";
 import { ContactCard, type ContactMetrics } from "../../components/domain/ContactCard";
 import { ContactForm } from "../../components/forms/ContactForm";
 import { useAuth } from "../../lib/auth-context";
@@ -89,6 +90,53 @@ function ContactsScreen() {
     }
   }, [selectMode, selectedIds.size]);
 
+  // Undo-delete: contactos ocultos pendientes de eliminación real
+  const UNDO_DELETE_MS = 5000;
+  const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<number>>(new Set());
+  const deleteTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+  const pendingDeleteItems = useRef<Map<number, CounterpartyOverview>>(new Map());
+
+  const finalizeDelete = useCallback((id: number) => {
+    const pending = pendingDeleteItems.current.get(id);
+    const timer = deleteTimers.current.get(id);
+    if (timer) clearTimeout(timer);
+    deleteTimers.current.delete(id);
+    pendingDeleteItems.current.delete(id);
+    setPendingDeleteIds((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+    if (!pending) return;
+    deleteMutation.mutate(pending.id, {
+      onError: (err) => showToast(humanizeError(err), "error"),
+    });
+  }, [deleteMutation, showToast]);
+
+  const startUndoDelete = useCallback((contact: CounterpartyOverview) => {
+    pendingDeleteItems.current.set(contact.id, contact);
+    setPendingDeleteIds((prev) => new Set(prev).add(contact.id));
+    const timer = setTimeout(() => finalizeDelete(contact.id), UNDO_DELETE_MS);
+    deleteTimers.current.set(contact.id, timer);
+  }, [finalizeDelete]);
+
+  const undoDelete = useCallback((id: number) => {
+    const timer = deleteTimers.current.get(id);
+    if (timer) clearTimeout(timer);
+    deleteTimers.current.delete(id);
+    pendingDeleteItems.current.delete(id);
+    setPendingDeleteIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    return () => { deleteTimers.current.forEach(clearTimeout); };
+  }, []);
+
   const counterparties = snapshot?.counterparties ?? [];
   const obligations = snapshot?.obligations ?? [];
   const subscriptions = snapshot?.subscriptions ?? [];
@@ -99,15 +147,15 @@ function ContactsScreen() {
     [counterparties, obligations, recurringIncome, subscriptions],
   );
 
-  const filteredContacts = useMemo(
-    () =>
-      applyContactFilter(counterparties, {
-        search: searchText,
-        typeFilters,
-        showArchived,
-      }),
-    [counterparties, searchText, showArchived, typeFilters],
-  );
+  const filteredContacts = useMemo(() => {
+    const filtered = applyContactFilter(counterparties, {
+      search: searchText,
+      typeFilters,
+      showArchived,
+    });
+    if (pendingDeleteIds.size === 0) return filtered;
+    return filtered.filter((contact) => !pendingDeleteIds.has(contact.id));
+  }, [counterparties, pendingDeleteIds, searchText, showArchived, typeFilters]);
 
   const activeContacts = filteredContacts.filter((contact) => !contact.isArchived);
   const archivedContacts = filteredContacts.filter((contact) => contact.isArchived);
@@ -275,31 +323,23 @@ function ContactsScreen() {
     }
   }
 
-  async function executeBulkDelete() {
+  function executeBulkDelete() {
     const deletable = selectedContacts.filter(canDeleteContact);
     const skipped = selectedContacts.length - deletable.length;
-    let deletedCount = 0;
-    for (const contact of deletable) {
-      try {
-        await deleteMutation.mutateAsync(contact.id);
-        deletedCount += 1;
-      } catch (err: unknown) {
-        showToast(humanizeError(err), "error");
-      }
-    }
     setBulkDeleteConfirm(false);
     exitSelectMode();
-    if (deletedCount > 0) {
-      const msg = deletedCount === 1 ? "1 contacto eliminado" : `${deletedCount} contactos eliminados`;
-      showToast(
-        skipped > 0 ? `${msg}. ${skipped} con relaciones no se eliminaron.` : msg,
-        "success",
-      );
-    } else if (skipped > 0) {
-      showToast(
-        "Ninguno se eliminó: todos tienen movimientos o créditos/deudas. Archívalos en su lugar.",
-        "error",
-      );
+    if (deletable.length === 0) {
+      if (skipped > 0) {
+        showToast(
+          "Ninguno se eliminó: todos tienen movimientos o créditos/deudas. Archívalos en su lugar.",
+          "error",
+        );
+      }
+      return;
+    }
+    deletable.forEach(startUndoDelete);
+    if (skipped > 0) {
+      showToast(`${skipped} con relaciones no se pueden eliminar`, "warning");
     }
   }
 
@@ -489,16 +529,18 @@ function ContactsScreen() {
             confirmLabel="Sí, eliminar"
             cancelLabel="Cancelar"
             onCancel={() => setDeleteTarget(null)}
-            onConfirm={async () => {
+            onConfirm={() => {
               if (!deleteTarget) return;
-              try {
-                await deleteMutation.mutateAsync(deleteTarget.id);
-                showToast("Contacto eliminado", "success");
-                setDeleteTarget(null);
-              } catch (error: unknown) {
-                showToast(humanizeError(error), "error");
-              }
+              startUndoDelete(deleteTarget);
+              setDeleteTarget(null);
             }}
+          />
+
+          <UndoBanner
+            visible={pendingDeleteIds.size > 0}
+            message={pendingDeleteIds.size === 1 ? "Contacto eliminado" : `${pendingDeleteIds.size} contactos eliminados`}
+            durationMs={UNDO_DELETE_MS}
+            onUndo={() => pendingDeleteIds.forEach((id) => undoDelete(id))}
           />
 
           <ConfirmDialog
