@@ -15,26 +15,19 @@
  * imported from there directly.
  */
 
+// Todos los tipos y hooks de obligations viven ahora en obligations-impl.ts
+// (refactor completado en Fase 4.2-f.4).
 export type {
-  // Event inputs
+  ObligationFormInput,
+  ObligationPaymentInput,
+  PrincipalAdjustmentInput,
+  UpdateObligationEventInput,
   DeleteObligationEventInput,
   CreateObligationEventDeleteRequestInput,
   RejectObligationEventDeleteRequestInput,
   CreateObligationEventEditRequestInput,
   AcceptObligationEventEditRequestInput,
   RejectObligationEventEditRequestInput,
-} from "./workspace-data";
-
-// Share inputs — movidos a obligations-impl.ts en Fase 4.2-c.
-// Payment request + viewer-link inputs — movidos en Fase 4.2-e.
-// ObligationFormInput — movido en Fase 4.2-f.2.
-// ObligationPaymentInput, PrincipalAdjustmentInput, UpdateObligationEventInput
-// — movidos en Fase 4.2-f.3.
-export type {
-  ObligationFormInput,
-  ObligationPaymentInput,
-  PrincipalAdjustmentInput,
-  UpdateObligationEventInput,
   ObligationShareInviteInput,
   ObligationShareInviteResult,
   UnlinkObligationShareInput,
@@ -45,25 +38,6 @@ export type {
 } from "./obligations-impl";
 
 export {
-  // Event mutations remaining in workspace-data (se mueven en f.4)
-  useDeleteObligationEventMutation,
-  // Delete-request mutations
-  useCreateObligationEventDeleteRequestMutation,
-  useRejectObligationEventDeleteRequestMutation,
-  // Edit-request mutations
-  useCreateObligationEventEditRequestMutation,
-  useAcceptObligationEventEditRequestMutation,
-  useRejectObligationEventEditRequestMutation,
-  // Events
-  useObligationEventsQuery,
-} from "./workspace-data";
-
-// Shares & invites — movidos a obligations-impl.ts en Fase 4.2-c.
-// Shared obligations — movidos en Fase 4.2-d.
-// Payment requests + Viewer event links — movidos en Fase 4.2-e.
-// CRUD mutations — movidas en Fase 4.2-f.2.
-// Payment / link / principal / update event mutations — movidas en Fase 4.2-f.3.
-export {
   useDeleteObligationMutation,
   useArchiveObligationMutation,
   useCreateObligationMutation,
@@ -72,6 +46,13 @@ export {
   useLinkMovementToObligationMutation,
   useCreatePrincipalAdjustmentMutation,
   useUpdateObligationEventMutation,
+  useDeleteObligationEventMutation,
+  useCreateObligationEventDeleteRequestMutation,
+  useRejectObligationEventDeleteRequestMutation,
+  useCreateObligationEventEditRequestMutation,
+  useAcceptObligationEventEditRequestMutation,
+  useRejectObligationEventEditRequestMutation,
+  useObligationEventsQuery,
   useObligationActiveShareQuery,
   useObligationSharesQuery,
   useCreateObligationShareInviteMutation,

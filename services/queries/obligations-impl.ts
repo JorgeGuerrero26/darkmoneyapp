@@ -26,8 +26,10 @@ import {
 import { sortObligationEventsNewestFirst } from "../../lib/sort-obligation-events";
 import {
   eventDeletePayload,
+  eventEditPayload,
   readEventDeletePayload,
   readEventEditPayload,
+  type EventDeleteRequestPayload,
 } from "../../lib/obligation-event-payloads";
 import type {
   JsonValue,
@@ -47,14 +49,13 @@ import type {
 import {
   createMovement,
   createOrRefreshNotificationRow,
-  eventEditPayload,
   formatNotificationCurrency,
   invokeEdgeFunction,
   isDuplicateConstraintMessage,
   markNotificationReadByEntity,
   runBackgroundQueryRefresh,
   toNum,
-  type DeleteObligationEventInput,
+  type NotificationRefreshInput,
   type ObligationEventRow,
   type ObligationSummaryRow,
   type OwnerMovementLookupRow,
@@ -2665,5 +2666,653 @@ export function useUpdateObligationEventMutation() {
         description: "Estamos sincronizando el historial de la deuda o crédito en segundo plano.",
       });
     },
+  });
+}
+
+// ─── 4.2-f.4: Delete + edit request mutations + events query ─────────────────
+
+export type DeleteObligationEventInput = {
+  eventId: number;
+  obligationId: number;
+  workspaceId?: number | null;
+  movementId?: number | null;
+  ownerUserId?: string | null;
+  obligationTitle?: string | null;
+  amount?: number | null;
+  currencyCode?: string | null;
+  eventType?: string | null;
+  eventDate?: string | null;
+};
+
+export function useDeleteObligationEventMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: DeleteObligationEventInput) => {
+      if (!supabase) throw new Error("Supabase no disponible.");
+
+      const ownerMovementId = await resolveOwnerMovementIdForObligationEvent(input);
+      const viewerLinks = await deleteViewerLinksForEvent(input.eventId);
+      const deleteRequesterPayloads: EventDeleteRequestPayload[] = [];
+      if (input.ownerUserId) {
+        const { data: notifRows } = await supabase
+          .from("notifications")
+          .select("payload")
+          .eq("user_id", input.ownerUserId)
+          .eq("kind", "obligation_event_delete_request")
+          .eq("related_entity_type", "obligation_event")
+          .eq("related_entity_id", input.eventId);
+        for (const row of (notifRows ?? []) as { payload: JsonValue | null }[]) {
+          const payload = readEventDeletePayload(row.payload);
+          if (payload?.requestedByUserId) deleteRequesterPayloads.push(payload);
+        }
+      }
+      const acceptedViewerIds = new Set<string>();
+      const { data: shareRows, error: shareRowsError } = await supabase
+        .from("obligation_shares")
+        .select("invited_user_id")
+        .eq("obligation_id", input.obligationId)
+        .eq("status", "accepted");
+      if (shareRowsError) {
+        throw new Error(shareRowsError.message ?? "Error al cargar viewers de la obligación");
+      }
+      for (const row of (shareRows ?? []) as Array<{ invited_user_id: string | null }>) {
+        if (typeof row.invited_user_id === "string" && row.invited_user_id.trim().length > 0) {
+          acceptedViewerIds.add(row.invited_user_id);
+        }
+      }
+
+      const { error } = await supabase
+        .from("obligation_events")
+        .delete()
+        .eq("id", input.eventId);
+      if (error) throw new Error(error.message ?? "Error de base de datos");
+      if (ownerMovementId) {
+        const { error: mvErr } = await supabase
+          .from("movements")
+          .delete()
+          .eq("id", ownerMovementId);
+        if (mvErr) throw new Error(mvErr.message ?? "Error al eliminar movimiento vinculado");
+      }
+
+      if (input.ownerUserId) {
+        void resolveOwnerDeleteRequestNotification(input.ownerUserId, input.eventId, "accepted");
+      }
+
+      const requestViewerIds = new Set(
+        deleteRequesterPayloads
+          .map((payload) => payload.requestedByUserId)
+          .filter((value): value is string => Boolean(value)),
+      );
+      const linkedViewerIds = new Set(
+        viewerLinks
+          .map((link) => link.linked_by_user_id)
+          .filter((value): value is string => typeof value === "string" && value.length > 0),
+      );
+      const allViewerIds = new Set<string>([
+        ...acceptedViewerIds,
+        ...requestViewerIds,
+        ...linkedViewerIds,
+      ]);
+
+      for (const viewerUserId of requestViewerIds) {
+        void markNotificationReadByEntity(
+          viewerUserId,
+          "obligation_event_delete_pending",
+          "obligation_event",
+          input.eventId,
+        );
+        void resolveViewerDeletePendingNotification(
+          viewerUserId,
+          input.eventId,
+          "accepted",
+        );
+      }
+
+      const payload = eventDeletePayload({
+        obligationId: input.obligationId,
+        eventId: input.eventId,
+        amount: input.amount,
+        eventType: input.eventType,
+        eventDate: input.eventDate,
+        obligationTitle: input.obligationTitle,
+      });
+
+      const amountLabel = formatNotificationCurrency(input.amount ?? null, input.currencyCode ?? null);
+
+      const acceptedNotifs: NotificationRefreshInput[] = [...requestViewerIds].map((viewerUserId) => ({
+        user_id: viewerUserId,
+        channel: "in_app",
+        status: "pending",
+        kind: "obligation_event_delete_accepted",
+        title: "Eliminación aprobada",
+        body: `Se eliminó el evento${amountLabel}${input.obligationTitle ? ` en "${input.obligationTitle}"` : ""}.`,
+        scheduled_for: new Date().toISOString(),
+        related_entity_type: "obligation_event",
+        related_entity_id: input.eventId,
+        payload,
+      }));
+      if (acceptedNotifs.length > 0) {
+        await Promise.all(
+          acceptedNotifs.map((notification) => createOrRefreshNotificationRow(notification)),
+        );
+      }
+
+      const otherViewerIds = [...allViewerIds].filter((viewerUserId) => !requestViewerIds.has(viewerUserId));
+      if (otherViewerIds.length > 0) {
+        await Promise.all(
+          otherViewerIds.map((viewerUserId) =>
+            createOrRefreshNotificationRow({
+              user_id: viewerUserId,
+              channel: "in_app",
+              status: "pending",
+              kind: "obligation_event_deleted",
+              title: "Evento eliminado",
+              body: `Se eliminó un evento${amountLabel}${input.obligationTitle ? ` en "${input.obligationTitle}"` : ""}.`,
+              scheduled_for: new Date().toISOString(),
+              related_entity_type: "obligation_event",
+              related_entity_id: input.eventId,
+              payload,
+            }),
+          ),
+        );
+      }
+      return { deletedOwnerMovementId: ownerMovementId };
+    },
+    onSuccess: (data, variables) => {
+      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+      void queryClient.invalidateQueries({ queryKey: ["obligation-events", variables.obligationId] });
+      void queryClient.invalidateQueries({ queryKey: ["shared-obligations"] });
+      void queryClient.invalidateQueries({ queryKey: ["notifications"] });
+      void queryClient.invalidateQueries({ queryKey: ["obligation-event-viewer-links", variables.obligationId] });
+      void queryClient.invalidateQueries({ queryKey: ["movements"] });
+      if (data?.deletedOwnerMovementId) {
+        void queryClient.invalidateQueries({ queryKey: ["movement", data.deletedOwnerMovementId] });
+      }
+      // Refresh attachment counts and lists so both the detail and list screens stay in sync
+      const wsId = variables.workspaceId ?? null;
+      void queryClient.invalidateQueries({ queryKey: ["entity-attachment-counts", wsId, "obligation-event"] });
+      void queryClient.invalidateQueries({ queryKey: ["entity-attachments", wsId, "obligation-event", variables.eventId] });
+    },
+  });
+}
+
+export type CreateObligationEventDeleteRequestInput = {
+  obligationId: number;
+  eventId: number;
+  amount: number;
+  currencyCode: string;
+  eventType: string;
+  eventDate: string;
+  ownerUserId: string;
+  viewerUserId: string;
+  viewerDisplayName?: string | null;
+  obligationTitle?: string | null;
+};
+
+export function useCreateObligationEventDeleteRequestMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: CreateObligationEventDeleteRequestInput) => {
+      if (!supabase) throw new Error("Supabase no disponible.");
+      const client = supabase;
+
+      const payload = eventDeletePayload({
+        obligationId: input.obligationId,
+        eventId: input.eventId,
+        amount: input.amount,
+        currencyCode: input.currencyCode,
+        eventType: input.eventType,
+        eventDate: input.eventDate,
+        obligationTitle: input.obligationTitle,
+        requestedByUserId: input.viewerUserId,
+        requestedByDisplayName: input.viewerDisplayName,
+      });
+      const ownerName = input.viewerDisplayName?.trim() || "El visualizador";
+      const now = new Date().toISOString();
+      const amountLabel = formatNotificationCurrency(input.amount, input.currencyCode);
+
+      async function createOrRefreshNotification(row: {
+        user_id: string;
+        channel: "in_app";
+        status: "pending";
+        kind: string;
+        title: string;
+        body: string;
+        scheduled_for: string;
+        related_entity_type: string;
+        related_entity_id: number;
+        payload: EventDeleteRequestPayload;
+      }) {
+        const { data: existing, error: findErr } = await client
+          .from("notifications")
+          .select("id")
+          .eq("user_id", row.user_id)
+          .eq("kind", row.kind)
+          .eq("related_entity_type", row.related_entity_type)
+          .eq("related_entity_id", row.related_entity_id)
+          .order("id", { ascending: false });
+        if (findErr) throw new Error(findErr.message ?? "Error al comprobar la notificación");
+
+        if ((existing?.length ?? 0) > 0) {
+          const { error: updateErr } = await client
+            .from("notifications")
+            .update({
+              channel: row.channel,
+              status: row.status,
+              title: row.title,
+              body: row.body,
+              scheduled_for: row.scheduled_for,
+              payload: row.payload,
+              read_at: null,
+            })
+            .eq("user_id", row.user_id)
+            .eq("kind", row.kind)
+            .eq("related_entity_type", row.related_entity_type)
+            .eq("related_entity_id", row.related_entity_id);
+          if (updateErr) throw new Error(updateErr.message ?? "Error al actualizar la notificación");
+          return;
+        }
+
+        const { error: insertErr } = await client
+          .from("notifications")
+          .insert(row);
+        if (insertErr) throw new Error(insertErr.message ?? "Error al crear la notificación");
+      }
+
+      await createOrRefreshNotification({
+        user_id: input.ownerUserId,
+        channel: "in_app",
+        status: "pending",
+        kind: "obligation_event_delete_request",
+        title: "Solicitud de Eliminación",
+        body: `${ownerName} solicitó eliminar un evento${amountLabel}${input.obligationTitle ? ` en "${input.obligationTitle}"` : ""}.`,
+        scheduled_for: now,
+        related_entity_type: "obligation_event",
+        related_entity_id: input.eventId,
+        payload,
+      });
+
+      await createOrRefreshNotification({
+        user_id: input.viewerUserId,
+        channel: "in_app",
+        status: "pending",
+        kind: "obligation_event_delete_pending",
+        title: "Solicitud enviada",
+        body: `Tu solicitud para eliminar este evento quedó pendiente${input.obligationTitle ? ` en "${input.obligationTitle}"` : ""}.`,
+        scheduled_for: now,
+        related_entity_type: "obligation_event",
+        related_entity_id: input.eventId,
+        payload,
+      });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
+}
+
+export type RejectObligationEventDeleteRequestInput = {
+  obligationId: number;
+  eventId: number;
+  ownerUserId: string;
+  viewerUserId: string;
+  amount?: number | null;
+  eventType?: string | null;
+  eventDate?: string | null;
+  obligationTitle?: string | null;
+  rejectionReason?: string | null;
+};
+
+export function useRejectObligationEventDeleteRequestMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: RejectObligationEventDeleteRequestInput) => {
+      if (!supabase) throw new Error("Supabase no disponible.");
+      const now = new Date().toISOString();
+
+      await resolveOwnerDeleteRequestNotification(
+        input.ownerUserId,
+        input.eventId,
+        "rejected",
+        input.rejectionReason,
+      );
+      await markNotificationReadByEntity(
+        input.viewerUserId,
+        "obligation_event_delete_pending",
+        "obligation_event",
+        input.eventId,
+      );
+      await resolveViewerDeletePendingNotification(
+        input.viewerUserId,
+        input.eventId,
+        "rejected",
+        input.rejectionReason,
+      );
+
+      const payload = eventDeletePayload({
+        obligationId: input.obligationId,
+        eventId: input.eventId,
+        amount: input.amount,
+        eventType: input.eventType,
+        eventDate: input.eventDate,
+        obligationTitle: input.obligationTitle,
+        rejectionReason: input.rejectionReason,
+      });
+
+      await createOrRefreshNotificationRow({
+        user_id: input.viewerUserId,
+        channel: "in_app",
+        status: "pending",
+        kind: "obligation_event_delete_rejected",
+        title: "Solicitud rechazada",
+        body: `No se aprobó la Eliminación del evento${input.rejectionReason?.trim() ? `. Motivo: ${input.rejectionReason.trim()}` : ""}.`,
+        scheduled_for: now,
+        related_entity_type: "obligation_event",
+        related_entity_id: input.eventId,
+        payload,
+      });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
+}
+
+export type CreateObligationEventEditRequestInput = {
+  obligationId: number;
+  eventId: number;
+  currencyCode: string;
+  eventType: string;
+  ownerUserId: string;
+  viewerUserId: string;
+  viewerDisplayName?: string | null;
+  obligationTitle?: string | null;
+  currentAmount: number;
+  currentEventDate: string;
+  currentInstallmentNo?: number | null;
+  currentDescription?: string | null;
+  currentNotes?: string | null;
+  proposedAmount: number;
+  proposedEventDate: string;
+  proposedInstallmentNo?: number | null;
+  proposedDescription?: string | null;
+  proposedNotes?: string | null;
+};
+
+export type AcceptObligationEventEditRequestInput = {
+  obligationId: number;
+  eventId: number;
+  ownerUserId: string;
+  viewerUserId: string;
+  obligationTitle?: string | null;
+  currencyCode?: string | null;
+  eventType: string;
+  direction?: ObligationDirection;
+  currentAmount?: number | null;
+  currentEventDate?: string | null;
+  currentInstallmentNo?: number | null;
+  currentDescription?: string | null;
+  currentNotes?: string | null;
+  proposedAmount: number;
+  proposedEventDate: string;
+  proposedInstallmentNo?: number | null;
+  proposedDescription?: string | null;
+  proposedNotes?: string | null;
+  accountId?: number | null;
+};
+
+export type RejectObligationEventEditRequestInput = {
+  obligationId: number;
+  eventId: number;
+  ownerUserId: string;
+  viewerUserId: string;
+  currencyCode?: string | null;
+  obligationTitle?: string | null;
+  currentAmount?: number | null;
+  currentEventDate?: string | null;
+  currentInstallmentNo?: number | null;
+  currentDescription?: string | null;
+  currentNotes?: string | null;
+  proposedAmount?: number | null;
+  proposedEventDate?: string | null;
+  proposedInstallmentNo?: number | null;
+  proposedDescription?: string | null;
+  proposedNotes?: string | null;
+  rejectionReason?: string | null;
+};
+
+export function useCreateObligationEventEditRequestMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: CreateObligationEventEditRequestInput) => {
+      if (!supabase) throw new Error("Supabase no disponible.");
+      const now = new Date().toISOString();
+      const amountLabel = formatNotificationCurrency(input.proposedAmount, input.currencyCode);
+      const ownerName = input.viewerDisplayName?.trim() || "El visualizador";
+      const payload = eventEditPayload({
+        obligationId: input.obligationId,
+        eventId: input.eventId,
+        currencyCode: input.currencyCode,
+        eventType: input.eventType,
+        obligationTitle: input.obligationTitle,
+        requestedByUserId: input.viewerUserId,
+        requestedByDisplayName: input.viewerDisplayName,
+        currentAmount: input.currentAmount,
+        currentEventDate: input.currentEventDate,
+        currentInstallmentNo: input.currentInstallmentNo,
+        currentDescription: input.currentDescription,
+        currentNotes: input.currentNotes,
+        proposedAmount: input.proposedAmount,
+        proposedEventDate: input.proposedEventDate,
+        proposedInstallmentNo: input.proposedInstallmentNo,
+        proposedDescription: input.proposedDescription,
+        proposedNotes: input.proposedNotes,
+      });
+
+      await createOrRefreshNotificationRow({
+        user_id: input.ownerUserId,
+        channel: "in_app",
+        status: "pending",
+        kind: "obligation_event_edit_request",
+        title: "Solicitud de edicion",
+        body: `${ownerName} solicito editar un evento${amountLabel}${input.obligationTitle ? ` en "${input.obligationTitle}"` : ""}.`,
+        scheduled_for: now,
+        related_entity_type: "obligation_event",
+        related_entity_id: input.eventId,
+        payload,
+      });
+
+      await createOrRefreshNotificationRow({
+        user_id: input.viewerUserId,
+        channel: "in_app",
+        status: "pending",
+        kind: "obligation_event_edit_pending",
+        title: "Solicitud enviada",
+        body: `Tu solicitud para editar este evento quedo pendiente${input.obligationTitle ? ` en "${input.obligationTitle}"` : ""}.`,
+        scheduled_for: now,
+        related_entity_type: "obligation_event",
+        related_entity_id: input.eventId,
+        payload,
+      });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
+}
+
+export function useAcceptObligationEventEditRequestMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: AcceptObligationEventEditRequestInput) => {
+      if (!supabase) throw new Error("Supabase no disponible.");
+      const now = new Date().toISOString();
+      const { data: eventRow, error: eventError } = await supabase
+        .from("obligation_events")
+        .select("movement_id")
+        .eq("id", input.eventId)
+        .maybeSingle();
+      if (eventError) {
+        throw new Error(eventError.message ?? "Error al cargar el evento");
+      }
+      if (!eventRow) {
+        throw new Error("El evento ya no esta disponible.");
+      }
+
+      const ownerMovementId = toNum((eventRow as { movement_id?: NumericLike | null }).movement_id ?? null) || null;
+      const ownerAccountId =
+        input.accountId !== undefined ? input.accountId : await resolveMovementAccountId(ownerMovementId);
+      const syncResult = await updateObligationEventAndSyncMovements({
+        eventId: input.eventId,
+        obligationId: input.obligationId,
+        amount: input.proposedAmount,
+        eventDate: input.proposedEventDate,
+        installmentNo: input.proposedInstallmentNo ?? null,
+        description: input.proposedDescription ?? null,
+        notes: input.proposedNotes ?? null,
+        movementId: ownerMovementId,
+        accountId: ownerAccountId,
+        createMovement: ownerMovementId != null,
+        direction: input.eventType === "payment" ? input.direction : undefined,
+      });
+
+      await resolveOwnerEditRequestNotification(input.ownerUserId, input.eventId, "accepted");
+      await markNotificationReadByEntity(
+        input.viewerUserId,
+        "obligation_event_edit_pending",
+        "obligation_event",
+        input.eventId,
+      );
+      await resolveViewerEditPendingNotification(input.viewerUserId, input.eventId, "accepted");
+
+      const payload = eventEditPayload({
+        obligationId: input.obligationId,
+        eventId: input.eventId,
+        currencyCode: input.currencyCode,
+        eventType: input.eventType,
+        obligationTitle: input.obligationTitle,
+        responseStatus: "accepted",
+        currentAmount: input.currentAmount,
+        currentEventDate: input.currentEventDate,
+        currentInstallmentNo: input.currentInstallmentNo,
+        currentDescription: input.currentDescription,
+        currentNotes: input.currentNotes,
+        proposedAmount: input.proposedAmount,
+        proposedEventDate: input.proposedEventDate,
+        proposedInstallmentNo: input.proposedInstallmentNo,
+        proposedDescription: input.proposedDescription,
+        proposedNotes: input.proposedNotes,
+      });
+
+      await createOrRefreshNotificationRow({
+        user_id: input.viewerUserId,
+        channel: "in_app",
+        status: "pending",
+        kind: "obligation_event_edit_accepted",
+        title: "Edicion aprobada",
+        body: `Se aprobo la edicion del evento${input.obligationTitle ? ` en "${input.obligationTitle}"` : ""}.`,
+        scheduled_for: now,
+        related_entity_type: "obligation_event",
+        related_entity_id: input.eventId,
+        payload,
+      });
+
+      return syncResult;
+    },
+    onSuccess: (data, variables) => {
+      const queryKeys: Array<readonly unknown[]> = [
+        ["workspace-snapshot"],
+        ["movements"],
+        ["obligation-events", variables.obligationId],
+        ["notifications"],
+        ["shared-obligations"],
+      ];
+      if (data?.movementId) queryKeys.push(["movement", data.movementId]);
+      if (data?.removedMovementId) queryKeys.push(["movement", data.removedMovementId]);
+      for (const syncedViewerMovementId of data?.syncedViewerMovementIds ?? []) {
+        queryKeys.push(["movement", syncedViewerMovementId]);
+      }
+      runBackgroundQueryRefresh(queryClient, queryKeys, {
+        message: "Aprobando edicion",
+        description: "Estamos sincronizando el evento y los movimientos relacionados.",
+      });
+    },
+  });
+}
+
+export function useRejectObligationEventEditRequestMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: RejectObligationEventEditRequestInput) => {
+      if (!supabase) throw new Error("Supabase no disponible.");
+      const now = new Date().toISOString();
+
+      await resolveOwnerEditRequestNotification(
+        input.ownerUserId,
+        input.eventId,
+        "rejected",
+        input.rejectionReason,
+      );
+      await markNotificationReadByEntity(
+        input.viewerUserId,
+        "obligation_event_edit_pending",
+        "obligation_event",
+        input.eventId,
+      );
+      await resolveViewerEditPendingNotification(
+        input.viewerUserId,
+        input.eventId,
+        "rejected",
+        input.rejectionReason,
+      );
+
+      const payload = eventEditPayload({
+        obligationId: input.obligationId,
+        eventId: input.eventId,
+        currencyCode: input.currencyCode,
+        obligationTitle: input.obligationTitle,
+        rejectionReason: input.rejectionReason,
+        responseStatus: "rejected",
+        currentAmount: input.currentAmount,
+        currentEventDate: input.currentEventDate,
+        currentInstallmentNo: input.currentInstallmentNo,
+        currentDescription: input.currentDescription,
+        currentNotes: input.currentNotes,
+        proposedAmount: input.proposedAmount,
+        proposedEventDate: input.proposedEventDate,
+        proposedInstallmentNo: input.proposedInstallmentNo,
+        proposedDescription: input.proposedDescription,
+        proposedNotes: input.proposedNotes,
+      });
+
+      await createOrRefreshNotificationRow({
+        user_id: input.viewerUserId,
+        channel: "in_app",
+        status: "pending",
+        kind: "obligation_event_edit_rejected",
+        title: "Edicion rechazada",
+        body: `No se aprobo la edicion del evento${input.rejectionReason?.trim() ? `. Motivo: ${input.rejectionReason.trim()}` : ""}.`,
+        scheduled_for: now,
+        related_entity_type: "obligation_event",
+        related_entity_id: input.eventId,
+        payload,
+      });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
+}
+
+export function useObligationEventsQuery(
+  obligationId: number | null | undefined,
+  enabled: boolean,
+) {
+  return useQuery({
+    queryKey: ["obligation-events", obligationId ?? null],
+    enabled: Boolean(supabase && obligationId != null && enabled),
+    staleTime: STALE.short,
+    retry: 1,
+    queryFn: () => fetchObligationEventsByObligationId(obligationId as number),
   });
 }
