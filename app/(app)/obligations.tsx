@@ -42,6 +42,7 @@ import { PaymentForm } from "../../components/forms/PaymentForm";
 import { PrincipalAdjustmentForm } from "../../components/forms/PrincipalAdjustmentForm";
 import { formatCurrency } from "../../components/ui/AmountDisplay";
 import { ActiveFilterBar, type ActiveFilterItem } from "../../components/ui/ActiveFilterBar";
+import { ResourceContextNote } from "../../components/ui/ResourceContextNote";
 import { HeaderActionGroup } from "../../components/ui/HeaderActionGroup";
 import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTemplate";
 import { COLORS } from "../../constants/theme";
@@ -68,6 +69,7 @@ import { useObligationAnalyticsActions } from "../../features/obligations/lib/us
 
 import { buildObligationCSV } from "../../features/obligations/lib/obligationsCsv";
 import { searchObligations } from "../../features/obligations/lib/obligationsSearch";
+import { buildObligationsContextNote } from "../../features/obligations/lib/obligationsContextNote";
 import {
   ANALYTICS_EDITABLE_TYPES,
   ANALYTICS_EVENT_LABELS,
@@ -379,6 +381,24 @@ function ObligationsScreen() {
     [obligationSections],
   );
 
+  const totalPendingRequests = useMemo(() => {
+    if (!pendingRequestCounts) return 0;
+    let total = 0;
+    pendingRequestCounts.forEach((count) => {
+      total += count;
+    });
+    return total;
+  }, [pendingRequestCounts]);
+
+  const contextNote = useMemo(
+    () =>
+      buildObligationsContextNote({
+        sharedActiveCount: activeSharedData.length,
+        pendingRequestCount: totalPendingRequests,
+      }),
+    [activeSharedData.length, totalPendingRequests],
+  );
+
   async function exportCSV(obligationsToExport: Array<ObligationSummary | SharedObligationSummary>) {
     const csv = buildObligationCSV(obligationsToExport);
     const fileName = `creditos_deudas_${format(new Date(), "yyyyMMdd")}.csv`;
@@ -457,6 +477,7 @@ function ObligationsScreen() {
           />
         }
         activeFilters={<ActiveFilterBar items={activeFilterItems} onClear={clearObligationFilters} />}
+        context={<ResourceContextNote>{contextNote}</ResourceContextNote>}
         summary={
           obligationSections.some((section) => section.data.length > 0) ? (
             <ObligationSummaryBar
