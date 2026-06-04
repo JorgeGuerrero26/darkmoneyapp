@@ -1,5 +1,6 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { mergePreviewAttachments } from "../../lib/attachments/merge-preview-attachments";
+import { useObligationDetailHistoryFilter } from "../../features/obligations/lib/useObligationDetailHistoryFilter";
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import {
   ActivityIndicator,
@@ -19,7 +20,6 @@ import { useAuth } from "../../lib/auth-context";
 import { removeAttachmentFile } from "../../lib/entity-attachments";
 import { useWorkspace } from "../../lib/workspace-context";
 import { humanizeError } from "../../lib/errors";
-import { buildDateRangeNotice } from "../../lib/date-range-notice";
 import { sortByName } from "../../lib/sort-locale";
 import { sortObligationEventsNewestFirst } from "../../lib/sort-obligation-events";
 import {
@@ -121,11 +121,8 @@ import {
   obligationEventStatusBadge,
 } from "../../lib/obligation-event-action-sheet";
 import { toastedMutate } from "../../lib/toasted-mutate";
-import { currentMonthRangeYmd } from "../../lib/obligation-date-range";
 import { styles } from "../../features/obligations/lib/obligation-detail.styles";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
-
-type HistoryPreset = "month" | "3m" | "year" | "all" | "custom";
 
 function firstParam(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
@@ -189,13 +186,6 @@ function ObligationDetailScreen() {
   const [detailViewportHeight, setDetailViewportHeight] = useState(0);
   const [viewerDetailTab, setViewerDetailTab] = useState<"history" | "requests">("history");
   const [unlinkShareConfirmVisible, setUnlinkShareConfirmVisible] = useState(false);
-  const [historyPreset, setHistoryPreset] = useState<HistoryPreset>("month");
-  const [historyGroupsCollapsed, setHistoryGroupsCollapsed] = useState({
-    payments: false,
-    capital: false,
-  });
-  const [historyFrom, setHistoryFrom] = useState("");
-  const [historyTo, setHistoryTo] = useState("");
   const detailScrollRef = useRef<ScrollView | null>(null);
   const historySectionYRef = useRef<number | null>(null);
   const eventRowLayoutsRef = useRef<Map<number, { y: number; height: number }>>(new Map());
@@ -536,47 +526,26 @@ function ObligationDetailScreen() {
     [viewerDeleteStatusByEventId],
   );
 
-  const filteredHistoryEvents = useMemo(() => {
-    if (historyPreset === "all") {
-      return eventsForDetail;
-    }
-    const from = historyFrom.trim();
-    const to = historyTo.trim();
-    if (!from || !to) {
-      return eventsForDetail;
-    }
-    return eventsForDetail.filter((event) => {
-      const d = event.eventDate.slice(0, 10);
-      return d >= from && d <= to;
-    });
-  }, [eventsForDetail, historyFrom, historyPreset, historyTo]);
-  const paymentHistoryEvents = useMemo(
-    () => filteredHistoryEvents.filter((event) => event.eventType === "payment"),
-    [filteredHistoryEvents],
-  );
-  const capitalHistoryEvents = useMemo(
-    () => filteredHistoryEvents.filter((event) => event.eventType !== "payment"),
-    [filteredHistoryEvents],
-  );
-
-  const historyDateRangeNotice = useMemo(() => {
-    const from = historyPreset === "all" ? null : historyFrom.trim() || null;
-    const to = historyPreset === "all" ? null : historyTo.trim() || null;
-    return buildDateRangeNotice({
-      subject: "eventos del historial",
-      from,
-      to,
-      allMessage: "Mostrando todos los eventos del historial.",
-    });
-  }, [historyFrom, historyPreset, historyTo]);
+  const {
+    historyPreset,
+    setHistoryPreset,
+    historyFrom,
+    setHistoryFrom,
+    historyTo,
+    setHistoryTo,
+    historyGroupsCollapsed,
+    setHistoryGroupsCollapsed,
+    filteredHistoryEvents,
+    paymentHistoryEvents,
+    capitalHistoryEvents,
+    historyDateRangeNotice,
+  } = useObligationDetailHistoryFilter({
+    obligationId: obligation?.id ?? null,
+    events: eventsForDetail,
+  });
 
   useEffect(() => {
     setViewerDetailTab("history");
-    const { from, to } = currentMonthRangeYmd();
-    setHistoryPreset("month");
-    setHistoryFrom(from);
-    setHistoryTo(to);
-    setHistoryGroupsCollapsed({ payments: false, capital: false });
   }, [obligation?.id]);
 
   // Force-refetch attachment list every time the preview modal opens to bypass stale cache
