@@ -52,6 +52,9 @@ export type ObligationSwipeRowProps = {
   onPayment: () => void;
   onDelete: () => void;
   onAnalytics: () => void;
+  onLongPress?: () => void;
+  selected?: boolean;
+  selectMode?: boolean;
   deleteActionLabel?: string;
   deleteActionColor?: string;
   deleteActionBg?: string;
@@ -67,6 +70,9 @@ export function ObligationSwipeRow({
   onPayment,
   onDelete,
   onAnalytics,
+  onLongPress,
+  selected = false,
+  selectMode = false,
   deleteActionLabel = "Eliminar",
   deleteActionColor = COLORS.danger,
   deleteActionBg = COLORS.danger + "28",
@@ -87,6 +93,48 @@ export function ObligationSwipeRow({
         ? COLORS.income
         : COLORS.storm;
   const paySwipeLabel = obligationSwipeActionLabel(obligation.direction, Boolean(isSharedWithMe));
+
+  if (selectMode) {
+    return (
+      <ResourceCard
+        title={obligation.title}
+        subtitle={obligation.counterparty}
+        selected={selected}
+        onPress={onOpenDetail}
+        onLongPress={onLongPress}
+        leading={<ResourceCardIcon icon={CreditCard} color={directionColor} />}
+        trailing={
+          <Text style={[styles.amount, { color }]}>
+            {formatCurrency(obligation.pendingAmount, obligation.currencyCode)}
+          </Text>
+        }
+        meta={
+          <>
+            <ResourceCardBadge label={directionLabel} color={directionColor} />
+            <ResourceCardBadge label={obligationStatusLabel} color={obligationStatusColor} />
+            {shareLabel ? (
+              <ResourceCardBadge label={shareLabel} color={shareColor} icon={Users} />
+            ) : null}
+          </>
+        }
+        footer={
+          !isPaid ? (
+            <View style={styles.footer}>
+              <ProgressBar percent={obligation.progressPercent} alertPercent={100} height={5} />
+              <View style={styles.progressRow}>
+                <Text style={styles.progressText}>{Math.round(obligation.progressPercent)}% pagado</Text>
+                {obligation.dueDate ? (
+                  <Text style={styles.dueDate}>
+                    Vence {format(parseDisplayDate(obligation.dueDate), "d MMM yyyy", { locale: es })}
+                  </Text>
+                ) : null}
+              </View>
+            </View>
+          ) : null
+        }
+      />
+    );
+  }
 
   return (
     <SwipeActionRow
@@ -124,6 +172,7 @@ export function ObligationSwipeRow({
             }
             onOpenDetail();
           }}
+          onLongPress={onLongPress}
           leading={<ResourceCardIcon icon={CreditCard} color={directionColor} />}
           actions={[
             {

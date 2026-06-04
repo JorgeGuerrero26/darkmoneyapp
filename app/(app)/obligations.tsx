@@ -4,7 +4,7 @@ import * as Haptics from "expo-haptics";
 import { FAB } from "../../components/ui/FAB";
 import { UndoBanner } from "../../components/ui/UndoBanner";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Download } from "lucide-react-native";
+import { Archive, CheckSquare, Download, Trash2, X } from "lucide-react-native";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { format } from "date-fns";
@@ -42,6 +42,7 @@ import { PaymentForm } from "../../components/forms/PaymentForm";
 import { PrincipalAdjustmentForm } from "../../components/forms/PrincipalAdjustmentForm";
 import { formatCurrency } from "../../components/ui/AmountDisplay";
 import { ActiveFilterBar, type ActiveFilterItem } from "../../components/ui/ActiveFilterBar";
+import { BulkActionBar } from "../../components/ui/BulkActionBar";
 import { ResourceContextNote } from "../../components/ui/ResourceContextNote";
 import { HeaderActionGroup } from "../../components/ui/HeaderActionGroup";
 import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTemplate";
@@ -125,6 +126,31 @@ function ObligationsScreen() {
     ObligationSummary | SharedObligationSummary | null
   >(null);
 
+  // Bulk selection
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [bulkArchiveConfirm, setBulkArchiveConfirm] = useState(false);
+  const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
+
+  const toggleSelect = useCallback((id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const exitSelectMode = useCallback(() => {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+  }, []);
+
+  useEffect(() => {
+    if (selectMode && selectedIds.size === 0) {
+      setSelectMode(false);
+    }
+  }, [selectMode, selectedIds.size]);
 
   // Undo-delete: hidden list of ids pending actual deletion
   const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<number>>(new Set());
@@ -409,6 +435,64 @@ function ObligationsScreen() {
     }
   }
 
+  // Solo obligaciones del workspace propio son seleccionables (no las compartidas contigo)
+  const bulkSelectableObligations = useMemo(
+    () => workspaceData,
+    [workspaceData],
+  );
+  const selectedObligations = useMemo(
+    () => bulkSelectableObligations.filter((ob) => selectedIds.has(ob.id)),
+    [bulkSelectableObligations, selectedIds],
+  );
+
+  async function executeBulkArchive() {
+    let archivedCount = 0;
+    for (const ob of selectedObligations) {
+      if (ob.status === "cancelled") continue;
+      try {
+        await archiveMutation.mutateAsync({ id: ob.id, archived: true });
+        archivedCount += 1;
+      } catch (err: unknown) {
+        showToast(humanizeError(err), "error");
+      }
+    }
+    exitSelectMode();
+    setBulkArchiveConfirm(false);
+    if (archivedCount > 0) {
+      showToast(
+        archivedCount === 1 ? "1 obligación archivada" : `${archivedCount} obligaciones archivadas`,
+        "success",
+      );
+    }
+  }
+
+  async function executeBulkDelete() {
+    const deletable = selectedObligations.filter((ob) => canDeleteObligation(ob));
+    const skipped = selectedObligations.length - deletable.length;
+    let deletedCount = 0;
+    for (const ob of deletable) {
+      try {
+        await deleteMutation.mutateAsync(ob.id);
+        deletedCount += 1;
+      } catch (err: unknown) {
+        showToast(humanizeError(err), "error");
+      }
+    }
+    exitSelectMode();
+    setBulkDeleteConfirm(false);
+    if (deletedCount > 0) {
+      const msg = deletedCount === 1 ? "1 obligación eliminada" : `${deletedCount} obligaciones eliminadas`;
+      showToast(
+        skipped > 0 ? `${msg}. ${skipped} con eventos no se eliminaron.` : msg,
+        "success",
+      );
+    } else if (skipped > 0) {
+      showToast(
+        "Ninguna se eliminó: todas tienen eventos. Archívalas o borra sus eventos primero.",
+        "error",
+      );
+    }
+  }
 
   const renderObligationItem = useCallback(
     ({ item, section }: { item: ObligationSummary | SharedObligationSummary; section: ObligationListSection }) => {
@@ -433,7 +517,21 @@ function ObligationsScreen() {
           obligation={ob}
           obligationShare={shareByObligationId.get(ob.id) ?? null}
           pendingRequestCount={pendingRequestCounts?.get(ob.id) ?? 0}
-          onOpenDetail={() => router.push(`/obligation/${ob.id}`)}
+          selectMode={selectMode}
+          selected={selectedIds.has(ob.id)}
+          onOpenDetail={() => {
+            if (selectMode) {
+              toggleSelect(ob.id);
+              return;
+            }
+            router.push(`/obligation/${ob.id}`);
+          }}
+          onLongPress={() => {
+            if (!selectMode) {
+              setSelectMode(true);
+              toggleSelect(ob.id);
+            }
+          }}
           onPayment={() => setPaymentObligation(ob)}
           onDelete={() => handleObligationRemoveAction(ob)}
           onAnalytics={() => setAnalyticsObligation(ob)}
@@ -444,7 +542,7 @@ function ObligationsScreen() {
         />
       );
     },
-    [router, shareByObligationId, pendingRequestCounts, handleObligationRemoveAction],
+    [router, shareByObligationId, pendingRequestCounts, handleObligationRemoveAction, selectMode, selectedIds, toggleSelect],
   );
 
   return (
@@ -452,39 +550,91 @@ function ObligationsScreen() {
       topInset={insets.top}
       header={
         <ScreenHeader
-            title="Créditos y Deudas"
-            subtitle={lastUpdateLabel || undefined}
+            title={selectMode ? `${selectedIds.size} seleccionadas` : "Créditos y Deudas"}
+            subtitle={selectMode ? undefined : lastUpdateLabel || undefined}
             rightAction={
               <HeaderActionGroup
-                actions={[{
-                  key: "export",
-                  icon: Download,
-                  onPress: () => exportCSV(exportableObligations),
-                  accessibilityLabel: "Exportar CSV",
-                }]}
+                actions={
+                  selectMode
+                    ? [{
+                        key: "cancel",
+                        icon: X,
+                        onPress: exitSelectMode,
+                        accessibilityLabel: "Cancelar selección",
+                      }]
+                    : [{
+                        key: "export",
+                        icon: Download,
+                        onPress: () => exportCSV(exportableObligations),
+                        accessibilityLabel: "Exportar CSV",
+                      }]
+                }
               />
             }
           />
         }
         toolbar={
-          <ObligationFilterBar
-            activeFilters={activeFilters}
-            showArchived={showArchived}
-            searchValue={searchText}
-            onSearchChange={setSearchText}
-            onFiltersChange={setActiveFilters}
-            onToggleArchived={() => setShowArchived((value) => !value)}
-          />
+          !selectMode ? (
+            <ObligationFilterBar
+              activeFilters={activeFilters}
+              showArchived={showArchived}
+              searchValue={searchText}
+              onSearchChange={setSearchText}
+              onFiltersChange={setActiveFilters}
+              onToggleArchived={() => setShowArchived((value) => !value)}
+            />
+          ) : null
         }
-        activeFilters={<ActiveFilterBar items={activeFilterItems} onClear={clearObligationFilters} />}
-        context={<ResourceContextNote>{contextNote}</ResourceContextNote>}
+        activeFilters={
+          !selectMode ? (
+            <ActiveFilterBar items={activeFilterItems} onClear={clearObligationFilters} />
+          ) : null
+        }
+        context={!selectMode ? <ResourceContextNote>{contextNote}</ResourceContextNote> : null}
         summary={
-          obligationSections.some((section) => section.data.length > 0) ? (
+          !selectMode && obligationSections.some((section) => section.data.length > 0) ? (
             <ObligationSummaryBar
               receivableTotal={obligationSummary.receivableTotal}
               payableTotal={obligationSummary.payableTotal}
               netTotal={obligationSummary.netTotal}
               currencyCode={baseCurrency}
+            />
+          ) : null
+        }
+        bulkActions={
+          selectMode && selectedIds.size > 0 ? (
+            <BulkActionBar
+              selectedCount={selectedIds.size}
+              onClear={exitSelectMode}
+              actions={[
+                {
+                  key: "select-all",
+                  label: `Sel. todas (${bulkSelectableObligations.length})`,
+                  icon: CheckSquare,
+                  onPress: () => setSelectedIds(new Set(bulkSelectableObligations.map((ob) => ob.id))),
+                },
+                {
+                  key: "csv",
+                  label: "CSV",
+                  icon: Download,
+                  tone: "primary",
+                  onPress: () => exportCSV(selectedObligations),
+                },
+                {
+                  key: "archive",
+                  label: `Archivar (${selectedIds.size})`,
+                  icon: Archive,
+                  tone: "neutral",
+                  onPress: () => setBulkArchiveConfirm(true),
+                },
+                {
+                  key: "delete",
+                  label: `Eliminar (${selectedIds.size})`,
+                  icon: Trash2,
+                  tone: "danger",
+                  onPress: () => setBulkDeleteConfirm(true),
+                },
+              ]}
             />
           ) : null
         }
@@ -501,7 +651,7 @@ function ObligationsScreen() {
             onCreateFirst={() => setCreateFormVisible(true)}
           />
         }
-        fab={<FAB onPress={() => setCreateFormVisible(true)} bottom={insets.bottom + 16} />}
+        fab={!selectMode ? <FAB onPress={() => setCreateFormVisible(true)} bottom={insets.bottom + 16} /> : null}
         overlays={
           <>
             <ObligationForm
@@ -650,6 +800,26 @@ function ObligationsScreen() {
                 setArchiveTarget(null);
                 if (target && target.status !== "cancelled") void handleArchiveObligation(target);
               }}
+            />
+
+            <ConfirmDialog
+              visible={bulkArchiveConfirm}
+              title={`Archivar ${selectedIds.size} obligaciones`}
+              body="Las obligaciones seleccionadas pasarán a estado archivado. Podrás verlas activando el icono de archivadas."
+              confirmLabel="Archivar"
+              cancelLabel="Cancelar"
+              onCancel={() => setBulkArchiveConfirm(false)}
+              onConfirm={() => void executeBulkArchive()}
+            />
+
+            <ConfirmDialog
+              visible={bulkDeleteConfirm}
+              title={`¿Eliminar ${selectedIds.size} obligaciones?`}
+              body="Solo se eliminarán las que no tengan eventos. Las demás permanecerán y podrás archivarlas."
+              confirmLabel="Eliminar"
+              cancelLabel="Cancelar"
+              onCancel={() => setBulkDeleteConfirm(false)}
+              onConfirm={() => void executeBulkDelete()}
             />
 
             <ConfirmDialog
