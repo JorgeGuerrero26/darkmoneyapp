@@ -1,6 +1,7 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { mergePreviewAttachments } from "../../lib/attachments/merge-preview-attachments";
 import { useObligationDetailHistoryFilter } from "../../features/obligations/lib/useObligationDetailHistoryFilter";
+import { useObligationDetailOwnerRequests } from "../../features/obligations/lib/useObligationDetailOwnerRequests";
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import {
   ActivityIndicator,
@@ -30,14 +31,8 @@ import {
   useCreateObligationShareInviteMutation,
   useUnlinkObligationShareMutation,
   useSharedObligationsQuery,
-  useDeleteObligationEventMutation,
   useObligationPaymentRequestsQuery,
-  useAcceptPaymentRequestMutation,
-  useRejectPaymentRequestMutation,
   useCreateObligationEventDeleteRequestMutation,
-  useRejectObligationEventDeleteRequestMutation,
-  useAcceptObligationEventEditRequestMutation,
-  useRejectObligationEventEditRequestMutation,
   useObligationEventViewerLinksQuery,
   useUpsertLinkEventToAccountMutation,
   useDeleteViewerEventLinkMutation,
@@ -89,7 +84,6 @@ import { ObligationEventActionSheet } from "../../components/domain/ObligationEv
 import { ObligationAnalyticsModal } from "../../components/domain/ObligationAnalyticsModal";
 import { ObligationCapitalChangesModal } from "../../components/domain/ObligationCapitalChangesModal";
 import { useToast } from "../../hooks/useToast";
-import { useOwnerEditAccount } from "../../hooks/useOwnerEditAccount";
 import { useViewerAutoLink } from "../../hooks/useViewerAutoLink";
 import { useViewerAutoDelete } from "../../hooks/useViewerAutoDelete";
 import { useObligationNotificationDeepLink } from "../../hooks/useObligationNotificationDeepLink";
@@ -174,15 +168,9 @@ function ObligationDetailScreen() {
   const [capitalChangesTab, setCapitalChangesTab] = useState<"increase" | "decrease">("increase");
   const [shareSheetOpen, setShareSheetOpen] = useState(false);
   const [shareEmail, setShareEmail] = useState("");
-  const [rejectingRequest, setRejectingRequest] = useState<ObligationPaymentRequest | null>(null);
-  const [rejectReason, setRejectReason] = useState("");
-  const [notificationRequestTarget, setNotificationRequestTarget] = useState<ObligationPaymentRequest | null>(null);
-  const [ownerResponseAccountId, setOwnerResponseAccountId] = useState<number | null>(null);
   const [linkingEvent, setLinkingEvent] = useState<ObligationEventSummary | null>(null);
   const [linkingAccountId, setLinkingAccountId] = useState<number | null>(null);
   const [viewerDeleteRequestEvent, setViewerDeleteRequestEvent] = useState<ObligationEventSummary | null>(null);
-  const [ownerDeleteRequestTarget, setOwnerDeleteRequestTarget] = useState<PendingOwnerDeleteRequest | null>(null);
-  const [ownerEditRequestTarget, setOwnerEditRequestTarget] = useState<PendingOwnerEditRequest | null>(null);
   const [detailViewportHeight, setDetailViewportHeight] = useState(0);
   const [viewerDetailTab, setViewerDetailTab] = useState<"history" | "requests">("history");
   const [unlinkShareConfirmVisible, setUnlinkShareConfirmVisible] = useState(false);
@@ -196,15 +184,9 @@ function ObligationDetailScreen() {
     }
   }, []);
 
-  const deleteEventMutation = useDeleteObligationEventMutation();
   const shareMutation = useCreateObligationShareInviteMutation(activeWorkspaceId);
   const unlinkShareMutation = useUnlinkObligationShareMutation(activeWorkspaceId);
-  const acceptRequestMutation = useAcceptPaymentRequestMutation();
-  const rejectRequestMutation = useRejectPaymentRequestMutation();
   const createDeleteRequestMutation = useCreateObligationEventDeleteRequestMutation();
-  const rejectDeleteRequestMutation = useRejectObligationEventDeleteRequestMutation();
-  const acceptEditRequestMutation = useAcceptObligationEventEditRequestMutation();
-  const rejectEditRequestMutation = useRejectObligationEventEditRequestMutation();
   const linkEventMutation = useUpsertLinkEventToAccountMutation();
   const deleteViewerLinkMutation = useDeleteViewerEventLinkMutation();
 
@@ -557,10 +539,39 @@ function ObligationDetailScreen() {
   }, [eventAttachmentsVisible, selectedEvent?.id, obligation?.workspaceId, queryClient]);
 
   const {
+    rejectingRequest,
+    setRejectingRequest,
+    rejectReason,
+    setRejectReason,
+    notificationRequestTarget,
+    setNotificationRequestTarget,
+    ownerResponseAccountId,
+    setOwnerResponseAccountId,
+    ownerDeleteRequestTarget,
+    setOwnerDeleteRequestTarget,
+    ownerEditRequestTarget,
+    setOwnerEditRequestTarget,
     ownerEditResponseAccountId,
     ownerEditPreviousAccountId,
     setOwnerEditResponseAccountId,
-  } = useOwnerEditAccount(ownerEditRequestTarget, obligation);
+    acceptRequestMutation,
+    rejectRequestMutation,
+    deleteEventMutation,
+    rejectDeleteRequestMutation,
+    acceptEditRequestMutation,
+    rejectEditRequestMutation,
+    handleAcceptRequest,
+    openOwnerRequestDecision,
+    handleRejectRequest,
+    handleApproveDeleteRequest,
+    handleRejectDeleteRequest,
+    handleAcceptEditRequest,
+    handleRejectEditRequest,
+  } = useObligationDetailOwnerRequests({
+    obligation,
+    ownerUserId: profile?.id,
+    showToast,
+  });
 
   useViewerAutoLink({
     isSharedViewer,
@@ -629,10 +640,6 @@ function ObligationDetailScreen() {
     detailViewportHeight,
   });
 
-  useEffect(() => {
-    if (!notificationRequestTarget) return;
-    setOwnerResponseAccountId(ownerDefaultAccountId(obligation));
-  }, [notificationRequestTarget?.id, obligation]);
 
   function renderHistoryEventRow(
     ev: ObligationEventSummary,
@@ -854,70 +861,6 @@ function ObligationDetailScreen() {
     });
   }
 
-  async function handleAcceptRequest(req: ObligationPaymentRequest) {
-    if (!obligation) return;
-    const selectedAccountId = ownerResponseAccountId;
-    const viewerAutoLinked = Boolean(req.viewerAccountId);
-    await toastedMutate({
-      mutate: acceptRequestMutation.mutateAsync,
-      input: {
-        requestId: req.id,
-        obligationId: req.obligationId,
-        workspaceId: req.workspaceId,
-        amount: req.amount,
-        paymentDate: req.paymentDate,
-        installmentNo: req.installmentNo,
-        description: req.description,
-        accountId: selectedAccountId,
-        createMovement: selectedAccountId != null,
-        direction: obligation.direction,
-        obligationTitle: obligation.title,
-        viewerAccountId: req.viewerAccountId ?? null,
-        viewerWorkspaceId: req.viewerWorkspaceId ?? null,
-        viewerUserId: req.requestedByUserId,
-        ownerUserId: profile?.id,
-        shareId: req.shareId,
-      },
-      showToast,
-      successMessage: viewerAutoLinked
-        ? "Solicitud aceptada - el movimiento quedo registrado en la cuenta del solicitante"
-        : "Solicitud aceptada y evento registrado",
-      onSuccess: () => {
-        setNotificationRequestTarget(null);
-        setOwnerResponseAccountId(null);
-      },
-    });
-  }
-
-  function openOwnerRequestDecision(req: ObligationPaymentRequest) {
-    setNotificationRequestTarget(req);
-    setOwnerResponseAccountId(ownerDefaultAccountId(obligation));
-  }
-
-  async function handleRejectRequest() {
-    if (!rejectingRequest) return;
-    await toastedMutate({
-      mutate: rejectRequestMutation.mutateAsync,
-      input: {
-        requestId: rejectingRequest.id,
-        obligationId: rejectingRequest.obligationId,
-        rejectionReason: rejectReason.trim() || null,
-        viewerUserId: rejectingRequest.requestedByUserId,
-        ownerUserId: profile?.id,
-        amount: rejectingRequest.amount,
-        obligationTitle: obligation?.title,
-      },
-      showToast,
-      successMessage: "Solicitud rechazada",
-      onSuccess: () => {
-        setRejectingRequest(null);
-        setNotificationRequestTarget(null);
-        setOwnerResponseAccountId(null);
-        setRejectReason("");
-      },
-    });
-  }
-
   async function handleCreateDeleteRequest(event: ObligationEventSummary) {
     if (!obligation || !isSharedViewer || !profile?.id || !("share" in obligation)) return;
     await toastedMutate({
@@ -937,111 +880,6 @@ function ObligationDetailScreen() {
       showToast,
       successMessage: "Solicitud de eliminacion enviada",
       onSuccess: () => setViewerDeleteRequestEvent(null),
-    });
-  }
-
-  async function handleApproveDeleteRequest(target: PendingOwnerDeleteRequest) {
-    if (!obligation) return;
-    await toastedMutate({
-      mutate: deleteEventMutation.mutateAsync,
-      input: {
-        eventId: target.payload.eventId,
-        obligationId: obligation.id,
-        workspaceId: obligation.workspaceId,
-        movementId: target.event?.movementId ?? null,
-        ownerUserId: profile?.id,
-        obligationTitle: obligation.title,
-        amount: target.event?.amount ?? target.payload.amount,
-        eventType: target.event?.eventType ?? target.payload.eventType,
-        eventDate: target.event?.eventDate ?? target.payload.eventDate,
-      },
-      showToast,
-      successMessage: target.event
-        ? "Solicitud aprobada y evento eliminado"
-        : "Solicitud aprobada y pendiente resuelta",
-      onSuccess: () => setOwnerDeleteRequestTarget(null),
-    });
-  }
-
-  async function handleRejectDeleteRequest(target: PendingOwnerDeleteRequest) {
-    if (!obligation || !profile?.id || !target.payload.requestedByUserId) return;
-    await toastedMutate({
-      mutate: rejectDeleteRequestMutation.mutateAsync,
-      input: {
-        obligationId: obligation.id,
-        eventId: target.payload.eventId,
-        ownerUserId: profile.id,
-        viewerUserId: target.payload.requestedByUserId,
-        amount: target.payload.amount,
-        eventType: target.payload.eventType,
-        eventDate: target.payload.eventDate,
-        obligationTitle: obligation.title,
-      },
-      showToast,
-      successMessage: "Solicitud de eliminacion rechazada",
-      onSuccess: () => setOwnerDeleteRequestTarget(null),
-    });
-  }
-
-  async function handleAcceptEditRequest(target: PendingOwnerEditRequest) {
-    if (!obligation || !profile?.id) return;
-    await toastedMutate({
-      mutate: acceptEditRequestMutation.mutateAsync,
-      input: {
-        obligationId: obligation.id,
-        eventId: target.payload.eventId,
-        ownerUserId: profile.id,
-        viewerUserId: target.payload.requestedByUserId ?? "",
-        obligationTitle: obligation.title,
-        currencyCode: obligation.currencyCode,
-        eventType: target.payload.eventType ?? target.event?.eventType ?? "payment",
-        direction:
-          (target.payload.eventType ?? target.event?.eventType) === "payment"
-            ? obligation.direction
-            : undefined,
-        currentAmount: target.payload.currentAmount ?? target.event?.amount ?? null,
-        currentEventDate: target.payload.currentEventDate ?? target.event?.eventDate ?? null,
-        currentInstallmentNo: target.payload.currentInstallmentNo ?? target.event?.installmentNo ?? null,
-        currentDescription: target.payload.currentDescription ?? target.event?.description ?? null,
-        currentNotes: target.payload.currentNotes ?? target.event?.notes ?? null,
-        proposedAmount: target.payload.proposedAmount ?? target.event?.amount ?? 0,
-        proposedEventDate: target.payload.proposedEventDate ?? target.event?.eventDate ?? obligation.startDate,
-        proposedInstallmentNo: target.payload.proposedInstallmentNo ?? null,
-        proposedDescription: target.payload.proposedDescription ?? null,
-        proposedNotes: target.payload.proposedNotes ?? null,
-        accountId: ownerEditResponseAccountId,
-      },
-      showToast,
-      successMessage: "Solicitud de edicion aprobada",
-      onSuccess: () => setOwnerEditRequestTarget(null),
-    });
-  }
-
-  async function handleRejectEditRequest(target: PendingOwnerEditRequest) {
-    if (!obligation || !profile?.id || !target.payload.requestedByUserId) return;
-    await toastedMutate({
-      mutate: rejectEditRequestMutation.mutateAsync,
-      input: {
-        obligationId: obligation.id,
-        eventId: target.payload.eventId,
-        ownerUserId: profile.id,
-        viewerUserId: target.payload.requestedByUserId,
-        currencyCode: obligation.currencyCode,
-        obligationTitle: obligation.title,
-        currentAmount: target.payload.currentAmount ?? target.event?.amount ?? null,
-        currentEventDate: target.payload.currentEventDate ?? target.event?.eventDate ?? null,
-        currentInstallmentNo: target.payload.currentInstallmentNo ?? target.event?.installmentNo ?? null,
-        currentDescription: target.payload.currentDescription ?? target.event?.description ?? null,
-        currentNotes: target.payload.currentNotes ?? target.event?.notes ?? null,
-        proposedAmount: target.payload.proposedAmount ?? null,
-        proposedEventDate: target.payload.proposedEventDate ?? null,
-        proposedInstallmentNo: target.payload.proposedInstallmentNo ?? null,
-        proposedDescription: target.payload.proposedDescription ?? null,
-        proposedNotes: target.payload.proposedNotes ?? null,
-      },
-      showToast,
-      successMessage: "Solicitud de edicion rechazada",
-      onSuccess: () => setOwnerEditRequestTarget(null),
     });
   }
 
