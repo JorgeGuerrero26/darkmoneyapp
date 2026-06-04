@@ -1247,7 +1247,8 @@ object QuickMovementOverlay {
     if (counterpartyToCategory != null && counterparties != null) {
       for (i in 0 until counterparties.length()) {
         val entry = counterparties.optJSONObject(i) ?: continue
-        val name = entry.optString("name").ifBlank { continue }
+        val name = entry.optString("name")
+        if (name.isBlank()) continue
         val normalizedName = normalizeText(name)
         if (normalizedName.length < 3 || !normalized.contains(normalizedName)) continue
         val cpId = entry.optInt("id", 0).takeIf { it > 0 } ?: continue
