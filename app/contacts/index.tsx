@@ -13,6 +13,7 @@ import { HeaderActionGroup } from "../../components/ui/HeaderActionGroup";
 import { FilterToolbar } from "../../components/ui/FilterToolbar";
 import { ActiveFilterBar, type ActiveFilterItem } from "../../components/ui/ActiveFilterBar";
 import { MetricSummaryBar } from "../../components/ui/MetricSummaryBar";
+import { ResourceContextNote } from "../../components/ui/ResourceContextNote";
 import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTemplate";
 import { ResourceSectionList, type ResourceSection } from "../../components/ui/ResourceSectionList";
 import { SkeletonCard, SkeletonList } from "../../components/ui/Skeleton";
@@ -32,78 +33,16 @@ import { useToast } from "../../hooks/useToast";
 import { useOriginBackNavigation } from "../../hooks/useOriginBackNavigation";
 import { COLORS } from "../../constants/theme";
 import type { CounterpartyOverview, CounterpartyType } from "../../types/domain";
+import {
+  TYPE_FILTERS,
+  type ContactTypeFilter,
+} from "../../features/contacts/lib/contactsLabels";
+import { buildContactCSV } from "../../features/contacts/lib/contactsCsv";
+import { applyContactFilter } from "../../features/contacts/lib/contactsFilter";
+import { buildContactMetricsById } from "../../features/contacts/lib/contactMetrics";
+import { buildContactsContextNote } from "../../features/contacts/lib/contactsContextNote";
 
-type ContactTypeFilter = CounterpartyType | "all";
 type ContactListSection = ResourceSection<CounterpartyOverview, "active" | "archived">;
-
-const TYPE_FILTERS: { label: string; value: ContactTypeFilter }[] = [
-  { label: "Todos", value: "all" },
-  { label: "Personas", value: "person" },
-  { label: "Empresas", value: "company" },
-  { label: "Comercios", value: "merchant" },
-  { label: "Servicios", value: "service" },
-  { label: "Bancos", value: "bank" },
-  { label: "Otros", value: "other" },
-];
-
-const TYPE_LABELS: Record<CounterpartyType, string> = {
-  person: "Persona",
-  company: "Empresa",
-  merchant: "Comercio",
-  service: "Servicio",
-  bank: "Banco",
-  other: "Otro",
-};
-
-function csvEscape(value: unknown) {
-  return `"${String(value ?? "").replace(/"/g, '""')}"`;
-}
-
-function buildContactCSV(contacts: CounterpartyOverview[], metricsById: Map<number, ContactMetrics>) {
-  const BOM = "\uFEFF";
-  const headers = [
-    "Nombre",
-    "Tipo",
-    "Telefono",
-    "Email",
-    "Documento",
-    "Archivado",
-    "Movimientos",
-    "Por cobrar",
-    "Por pagar",
-    "Suscripciones",
-    "Ingresos fijos",
-    "Notas",
-  ];
-  const rows = contacts.map((contact) => {
-    const metrics = metricsById.get(contact.id);
-    return [
-      contact.name,
-      TYPE_LABELS[contact.type] ?? contact.type,
-      contact.phone ?? "",
-      contact.email ?? "",
-      contact.documentNumber ?? "",
-      contact.isArchived ? "Si" : "No",
-      metrics?.movementCount ?? contact.movementCount,
-      metrics?.receivablePendingTotal ?? 0,
-      metrics?.payablePendingTotal ?? 0,
-      metrics?.subscriptionCount ?? 0,
-      metrics?.recurringIncomeCount ?? 0,
-      contact.notes ?? "",
-    ].map(csvEscape).join(",");
-  });
-  return BOM + [headers.join(","), ...rows].join("\n");
-}
-
-function getContactMetricSeed(contact: CounterpartyOverview): ContactMetrics {
-  return {
-    movementCount: contact.movementCount,
-    receivablePendingTotal: 0,
-    payablePendingTotal: 0,
-    subscriptionCount: 0,
-    recurringIncomeCount: 0,
-  };
-}
 
 function ContactsScreen() {
   const insets = useSafeAreaInsets();
@@ -120,7 +59,7 @@ function ContactsScreen() {
   const [createFormVisible, setCreateFormVisible] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<CounterpartyOverview | null>(null);
   const [searchText, setSearchText] = useState("");
-  const [typeFilters, setTypeFilters] = useState<ContactTypeFilter[]>([]);
+  const [typeFilters, setTypeFilters] = useState<CounterpartyType[]>([]);
   const [showArchived, setShowArchived] = useState(false);
 
   const counterparties = snapshot?.counterparties ?? [];
@@ -128,67 +67,20 @@ function ContactsScreen() {
   const subscriptions = snapshot?.subscriptions ?? [];
   const recurringIncome = snapshot?.recurringIncome ?? [];
 
-  const contactMetricsById = useMemo(() => {
-    const map = new Map<number, ContactMetrics>();
-    const contactById = new Map(counterparties.map((contact) => [contact.id, contact]));
+  const contactMetricsById = useMemo(
+    () => buildContactMetricsById({ counterparties, obligations, subscriptions, recurringIncome }),
+    [counterparties, obligations, recurringIncome, subscriptions],
+  );
 
-    function ensureMetrics(contactId: number) {
-      const current = map.get(contactId);
-      if (current) return current;
-      const contact = contactById.get(contactId);
-      const next = contact ? getContactMetricSeed(contact) : {
-        movementCount: 0,
-        receivablePendingTotal: 0,
-        payablePendingTotal: 0,
-        subscriptionCount: 0,
-        recurringIncomeCount: 0,
-      };
-      map.set(contactId, next);
-      return next;
-    }
-
-    for (const obligation of obligations) {
-      if (obligation.counterpartyId == null || obligation.status === "cancelled") continue;
-      const metrics = ensureMetrics(obligation.counterpartyId);
-      if (obligation.direction === "receivable") {
-        metrics.receivablePendingTotal += obligation.pendingAmount;
-      } else {
-        metrics.payablePendingTotal += obligation.pendingAmount;
-      }
-    }
-
-    for (const subscription of subscriptions) {
-      if (subscription.vendorPartyId == null) continue;
-      ensureMetrics(subscription.vendorPartyId).subscriptionCount += 1;
-    }
-
-    for (const income of recurringIncome) {
-      if (income.payerPartyId == null) continue;
-      ensureMetrics(income.payerPartyId).recurringIncomeCount += 1;
-    }
-
-    return map;
-  }, [counterparties, obligations, recurringIncome, subscriptions]);
-
-  const filteredContacts = useMemo(() => {
-    const query = searchText.trim().toLowerCase();
-    return counterparties.filter((contact) => {
-      if (!showArchived && contact.isArchived) return false;
-      if (typeFilters.length > 0 && !typeFilters.includes(contact.type)) return false;
-      if (query) {
-        const haystack = [
-          contact.name,
-          contact.type,
-          contact.phone,
-          contact.email,
-          contact.documentNumber,
-          contact.notes,
-        ].filter(Boolean).join(" ").toLowerCase();
-        if (!haystack.includes(query)) return false;
-      }
-      return true;
-    });
-  }, [counterparties, searchText, showArchived, typeFilters]);
+  const filteredContacts = useMemo(
+    () =>
+      applyContactFilter(counterparties, {
+        search: searchText,
+        typeFilters,
+        showArchived,
+      }),
+    [counterparties, searchText, showArchived, typeFilters],
+  );
 
   const activeContacts = filteredContacts.filter((contact) => !contact.isArchived);
   const archivedContacts = filteredContacts.filter((contact) => contact.isArchived);
@@ -259,6 +151,23 @@ function ContactsScreen() {
   }, [activeContacts.length, contactMetricsById, filteredContacts]);
 
   const hasFilters = typeFilters.length > 0 || showArchived || Boolean(searchText.trim());
+
+  const hiddenArchivedCount = useMemo(
+    () => (showArchived ? 0 : counterparties.filter((contact) => contact.isArchived).length),
+    [counterparties, showArchived],
+  );
+
+  const contextNote = useMemo(
+    () =>
+      buildContactsContextNote({
+        filteredContacts,
+        metricsById: contactMetricsById,
+        hasFilters,
+        hiddenArchivedCount,
+      }),
+    [contactMetricsById, filteredContacts, hasFilters, hiddenArchivedCount],
+  );
+
   const { handleBack } = useOriginBackNavigation();
 
   const canDeleteContact = useCallback((contact: CounterpartyOverview) =>
@@ -351,7 +260,7 @@ function ContactsScreen() {
           onSelectedValuesChange={(values) => {
             setTypeFilters(values.filter((value): value is CounterpartyType => value !== "all"));
           }}
-          allValue="all"
+          allValue={"all" satisfies ContactTypeFilter}
           searchValue={searchText}
           onSearchChange={setSearchText}
           searchPlaceholder="Buscar contactos..."
@@ -365,6 +274,11 @@ function ContactsScreen() {
         />
       }
       activeFilters={<ActiveFilterBar items={activeFilterItems} onClear={clearContactFilters} />}
+      context={
+        filteredContacts.length > 0 && contextNote ? (
+          <ResourceContextNote>{contextNote}</ResourceContextNote>
+        ) : null
+      }
       summary={
         filteredContacts.length > 0 ? (
           <MetricSummaryBar
