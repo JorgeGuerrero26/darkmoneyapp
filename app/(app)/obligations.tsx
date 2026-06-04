@@ -73,80 +73,14 @@ import {
 } from "../../features/obligations/lib/obligationFilters";
 import { canDeleteObligation } from "../../features/obligations/lib/obligationPermissions";
 
-const ANALYTICS_EVENT_LABELS: Record<string, string> = {
-  opening: "Apertura",
-  payment: "Pago",
-  principal_increase: "Aumento de capital",
-  principal_decrease: "Reducción de capital",
-  interest: "Interés",
-  fee: "Cargo",
-  discount: "Descuento",
-  adjustment: "Ajuste",
-  writeoff: "Castigo",
-};
-
-const ANALYTICS_EDITABLE_TYPES = new Set(["payment", "principal_increase", "principal_decrease"]);
+import { buildObligationCSV } from "../../features/obligations/lib/obligationsCsv";
+import { searchObligations } from "../../features/obligations/lib/obligationsSearch";
+import {
+  ANALYTICS_EDITABLE_TYPES,
+  ANALYTICS_EVENT_LABELS,
+} from "../../features/obligations/lib/obligationEventLabels";
 
 const UNDO_DELETE_MS = 5000;
-
-function csvEscape(value: unknown) {
-  return `"${String(value ?? "").replace(/"/g, '""')}"`;
-}
-
-function buildObligationCSV(obligations: Array<ObligationSummary | SharedObligationSummary>) {
-  const BOM = "\uFEFF";
-  const headers = [
-    "Titulo",
-    "Direccion",
-    "Estado",
-    "Contraparte",
-    "Moneda",
-    "Principal",
-    "Pendiente",
-    "Progreso",
-    "Inicio",
-    "Vencimiento",
-    "Compartida",
-  ];
-  const rows = obligations.map((obligation) => [
-    obligation.title,
-    obligation.direction,
-    obligation.status,
-    obligation.counterparty,
-    obligation.currencyCode,
-    obligation.principalAmount,
-    obligation.pendingAmount,
-    obligation.progressPercent,
-    obligation.startDate,
-    obligation.dueDate ?? "",
-    "viewerMode" in obligation ? "Si" : "No",
-  ].map(csvEscape).join(","));
-  return BOM + [headers.join(","), ...rows].join("\n");
-}
-
-function searchObligations<T extends ObligationSummary | SharedObligationSummary>(
-  obligations: T[],
-  searchText: string,
-): T[] {
-  const query = searchText.trim().toLowerCase();
-  if (!query) return obligations;
-
-  return obligations.filter((obligation) => {
-    const haystack = [
-      obligation.title,
-      obligation.counterparty,
-      obligation.currencyCode,
-      obligation.status,
-      obligation.direction,
-      obligation.description,
-      obligation.notes,
-    ]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase();
-    return haystack.includes(query);
-  });
-}
 
 // ─── Screen ──────────────────────────────────────────────────────────────────
 
