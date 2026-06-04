@@ -1,8 +1,8 @@
 import type { ComponentType } from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import { Archive, BarChart2, CreditCard, Trash2, Users } from "lucide-react-native";
+import { Archive, BarChart2, Bell, CreditCard, Trash2, Users } from "lucide-react-native";
 
 import { ProgressBar } from "../../../components/ui/ProgressBar";
 import {
@@ -143,14 +143,13 @@ export function ObligationSwipeRow({
               <ResourceCardBadge label={directionLabel} color={directionColor} />
               <ResourceCardBadge label={obligationStatusLabel} color={obligationStatusColor} />
               {pendingRequestCount > 0 ? (
-                <TouchableOpacity
-                  style={styles.pendingBadge}
+                <ResourceCardBadge
+                  label={`${pendingRequestCount} pendiente${pendingRequestCount === 1 ? "" : "s"}`}
+                  color={COLORS.danger}
+                  icon={Bell}
                   onPress={onAnalytics}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  activeOpacity={0.84}
-                >
-                  <Text style={styles.pendingBadgeText}>{pendingRequestCount}</Text>
-                </TouchableOpacity>
+                  accessibilityLabel={`${pendingRequestCount} solicitudes pendientes`}
+                />
               ) : null}
             {shareLabel ? (
               <ResourceCardBadge label={shareLabel} color={shareColor} icon={Users} />
@@ -192,21 +191,6 @@ export function ObligationSwipeRow({
 export { Archive as ObligationArchiveIcon, Trash2 as ObligationTrashIcon };
 
 const styles = StyleSheet.create({
-  pendingBadge: {
-    backgroundColor: COLORS.danger,
-    borderRadius: RADIUS.full,
-    minWidth: 18,
-    height: 18,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 4,
-  },
-  pendingBadgeText: {
-    color: "#FFF",
-    fontSize: 10,
-    fontFamily: FONT_FAMILY.bodySemibold,
-    includeFontPadding: false,
-  },
   amount: {
     fontSize: FONT_SIZE.md,
     fontFamily: FONT_FAMILY.heading,

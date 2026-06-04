@@ -124,15 +124,44 @@ export function ResourceCardBadge({
   label,
   color,
   icon: Icon,
+  onPress,
+  accessibilityLabel,
 }: {
   label: string;
   color: string;
   icon?: LucideIcon;
+  onPress?: () => void;
+  accessibilityLabel?: string;
 }) {
-  return (
-    <View style={[styles.badge, { backgroundColor: color + "15" }]}>
+  const content = (
+    <>
       {Icon ? <Icon size={9} color={color} strokeWidth={2} /> : null}
       <Text style={[styles.badgeText, { color }]}>{label}</Text>
+    </>
+  );
+  if (onPress) {
+    return (
+      <Pressable
+        style={({ pressed }) => [
+          styles.badge,
+          { backgroundColor: color + "15" },
+          pressed && styles.badgePressed,
+        ]}
+        onPress={(event) => {
+          event.stopPropagation();
+          onPress();
+        }}
+        hitSlop={8}
+        accessibilityRole="button"
+        accessibilityLabel={accessibilityLabel ?? label}
+      >
+        {content}
+      </Pressable>
+    );
+  }
+  return (
+    <View style={[styles.badge, { backgroundColor: color + "15" }]}>
+      {content}
     </View>
   );
 }
@@ -237,6 +266,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 3,
+  },
+  badgePressed: {
+    opacity: 0.7,
   },
   badgeText: {
     fontFamily: FONT_FAMILY.bodyMedium,
