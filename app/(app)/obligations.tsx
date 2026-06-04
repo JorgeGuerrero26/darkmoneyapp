@@ -10,28 +10,20 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { useAuth } from "../../lib/auth-context";
-import { removeAttachmentFile } from "../../lib/entity-attachments";
 import { humanizeError } from "../../lib/errors";
 import { parseDisplayDate } from "../../lib/date";
 import { useWorkspace } from "../../lib/workspace-context";
 import { buildShareByObligationId } from "../../lib/obligation-labels";
 import { buildRateMap } from "../../lib/exchange-rate-map";
 import { pendingAmountInBaseCurrency } from "../../lib/obligation-pending-base";
-import { mergePreviewAttachments } from "../../lib/attachments/merge-preview-attachments";
 import { useWorkspaceSnapshotQuery } from "../../services/queries/workspace-data";
 import {
-  useDeleteObligationEventMutation,
   useDeleteObligationMutation,
   useArchiveObligationMutation,
   useObligationSharesQuery,
   useSharedObligationsQuery,
   usePendingPaymentRequestCountsQuery,
 } from "../../services/queries/obligations";
-import {
-  type EntityAttachmentFile,
-  useObligationEventAttachmentsQuery,
-  useMovementAttachmentsQuery,
-} from "../../services/queries/attachments";
 import { PaymentRequestForm } from "../../components/forms/PaymentRequestForm";
 import { useToast } from "../../hooks/useToast";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
@@ -72,6 +64,7 @@ import {
   type ObligationFilterValue,
 } from "../../features/obligations/lib/obligationFilters";
 import { canDeleteObligation } from "../../features/obligations/lib/obligationPermissions";
+import { useObligationAnalyticsActions } from "../../features/obligations/lib/useObligationAnalyticsActions";
 
 import { buildObligationCSV } from "../../features/obligations/lib/obligationsCsv";
 import { searchObligations } from "../../features/obligations/lib/obligationsSearch";
@@ -93,7 +86,6 @@ function ObligationsScreen() {
   const { showToast } = useToast();
   const deleteMutation = useDeleteObligationMutation(activeWorkspaceId);
   const archiveMutation = useArchiveObligationMutation(activeWorkspaceId);
-  const deleteEventMutation = useDeleteObligationEventMutation();
 
   const { data: snapshot, isLoading, dataUpdatedAt } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const { data: obligationShares = [] } = useObligationSharesQuery(activeWorkspaceId);
@@ -131,42 +123,6 @@ function ObligationsScreen() {
     ObligationSummary | SharedObligationSummary | null
   >(null);
 
-  // Event editing from analytics modal
-  const [editEventObligation, setEditEventObligation] = useState<
-    ObligationSummary | SharedObligationSummary | null
-  >(null);
-  const [editingEventForPayment, setEditingEventForPayment] = useState<ObligationEventSummary | undefined>(undefined);
-  const [editingEventForAdjustment, setEditingEventForAdjustment] = useState<ObligationEventSummary | undefined>(undefined);
-  const [adjustEventMode, setAdjustEventMode] = useState<"increase" | "decrease">("increase");
-  const [selectedAnalyticsEvent, setSelectedAnalyticsEvent] = useState<ObligationEventSummary | null>(null);
-  const [selectedAnalyticsEventObligation, setSelectedAnalyticsEventObligation] = useState<
-    ObligationSummary | SharedObligationSummary | null
-  >(null);
-  const [analyticsEventMenuVisible, setAnalyticsEventMenuVisible] = useState(false);
-  const [analyticsAttachmentPreviewVisible, setAnalyticsAttachmentPreviewVisible] = useState(false);
-  const [deletingAnalyticsAttachmentPath, setDeletingAnalyticsAttachmentPath] = useState<string | null>(null);
-  const [analyticsConfirmDeleteVisible, setAnalyticsConfirmDeleteVisible] = useState(false);
-  const {
-    data: selectedAnalyticsEventAttachments = [],
-    isLoading: selectedAnalyticsEventAttachmentsLoading,
-  } = useObligationEventAttachmentsQuery(
-    selectedAnalyticsEvent ? selectedAnalyticsEventObligation?.workspaceId ?? null : null,
-    selectedAnalyticsEvent?.id ?? null,
-  );
-  const {
-    data: selectedAnalyticsMovementAttachments = [],
-    isLoading: selectedAnalyticsMovementAttachmentsLoading,
-  } = useMovementAttachmentsQuery(
-    selectedAnalyticsEvent?.movementId ? selectedAnalyticsEventObligation?.workspaceId ?? null : null,
-    selectedAnalyticsEvent?.movementId ?? null,
-  );
-  const selectedAnalyticsPreviewAttachments = useMemo(
-    () => mergePreviewAttachments(selectedAnalyticsEventAttachments, selectedAnalyticsMovementAttachments),
-    [selectedAnalyticsEventAttachments, selectedAnalyticsMovementAttachments],
-  );
-  const selectedAnalyticsPreviewAttachmentsLoading =
-    selectedAnalyticsEventAttachmentsLoading ||
-    (selectedAnalyticsEvent?.movementId != null && selectedAnalyticsMovementAttachmentsLoading);
 
   // Undo-delete: hidden list of ids pending actual deletion
   const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<number>>(new Set());
@@ -299,6 +255,33 @@ function ObligationsScreen() {
     }
     return obligations.find((ob) => ob.id === analyticsObligation.id) ?? analyticsObligation;
   }, [analyticsObligation, obligations, sharedObligations]);
+
+  const {
+    editEventObligation,
+    editingEventForPayment,
+    editingEventForAdjustment,
+    adjustEventMode,
+    resetEditEvent,
+    selectedAnalyticsEvent,
+    selectedAnalyticsEventObligation,
+    analyticsEventMenuVisible,
+    setAnalyticsEventMenuVisible,
+    analyticsAttachmentPreviewVisible,
+    setAnalyticsAttachmentPreviewVisible,
+    deletingAnalyticsAttachmentPath,
+    analyticsConfirmDeleteVisible,
+    setAnalyticsConfirmDeleteVisible,
+    selectedAnalyticsPreviewAttachments,
+    selectedAnalyticsPreviewAttachmentsLoading,
+    handleEventTap,
+    handleAnalyticsEditEvent,
+    handleAnalyticsDeleteEvent,
+    handleDeleteAnalyticsAttachment,
+  } = useObligationAnalyticsActions({
+    liveAnalyticsObligation,
+    ownerUserId: profile?.id,
+    showToast,
+  });
 
   const listRefreshing = isLoading || sharedFetching;
 
@@ -444,114 +427,6 @@ function ObligationsScreen() {
     [router, shareByObligationId, pendingRequestCounts, handleObligationRemoveAction],
   );
 
-  function handleEventTap(ev: ObligationEventSummary) {
-    const ob = liveAnalyticsObligation;
-    if (!ob) return;
-    setSelectedAnalyticsEvent(ev);
-    setSelectedAnalyticsEventObligation(ob);
-    setAnalyticsAttachmentPreviewVisible(false);
-    setAnalyticsEventMenuVisible(true);
-  }
-
-  function handleAnalyticsEditEvent() {
-    if (!selectedAnalyticsEvent || !selectedAnalyticsEventObligation) return;
-    setAnalyticsEventMenuVisible(false);
-    if (selectedAnalyticsEvent.eventType === "payment") {
-      setEditEventObligation(selectedAnalyticsEventObligation);
-      setEditingEventForPayment(selectedAnalyticsEvent);
-    } else if (selectedAnalyticsEvent.eventType === "principal_increase") {
-      setEditEventObligation(selectedAnalyticsEventObligation);
-      setAdjustEventMode("increase");
-      setEditingEventForAdjustment(selectedAnalyticsEvent);
-    } else if (selectedAnalyticsEvent.eventType === "principal_decrease") {
-      setEditEventObligation(selectedAnalyticsEventObligation);
-      setAdjustEventMode("decrease");
-      setEditingEventForAdjustment(selectedAnalyticsEvent);
-    }
-  }
-
-  function handleAnalyticsDeleteEvent() {
-    if (!selectedAnalyticsEvent || !selectedAnalyticsEventObligation) return;
-    deleteEventMutation.mutate(
-      {
-        eventId: selectedAnalyticsEvent.id,
-        obligationId: selectedAnalyticsEventObligation.id,
-        movementId: selectedAnalyticsEvent.movementId,
-        ownerUserId: profile?.id,
-        obligationTitle: selectedAnalyticsEventObligation.title,
-        amount: selectedAnalyticsEvent.amount,
-        eventType: selectedAnalyticsEvent.eventType,
-        eventDate: selectedAnalyticsEvent.eventDate,
-      },
-      {
-        onSuccess: (data) => {
-          setAnalyticsConfirmDeleteVisible(false);
-          setSelectedAnalyticsEvent(null);
-          setSelectedAnalyticsEventObligation(null);
-          showToast(
-            data?.deletedOwnerMovementId ? "Evento y movimiento eliminados" : "Evento eliminado",
-            "success",
-          );
-        },
-        onError: (err) => showToast(humanizeError(err), "error"),
-      },
-    );
-  }
-
-  async function handleDeleteAnalyticsAttachment(
-    attachment: EntityAttachmentFile,
-  ) {
-    if (!selectedAnalyticsEvent || !selectedAnalyticsEventObligation) return;
-    try {
-      setDeletingAnalyticsAttachmentPath(attachment.filePath);
-      await removeAttachmentFile({
-        filePath: attachment.filePath,
-        mirrorTargets: attachment.filePath.includes("/movement/")
-          ? [
-              {
-                workspaceId: selectedAnalyticsEventObligation.workspaceId,
-                entityType: "obligation-event",
-                entityId: selectedAnalyticsEvent.id,
-              },
-            ]
-          : selectedAnalyticsEvent.movementId != null
-            ? [
-                {
-                  workspaceId: selectedAnalyticsEventObligation.workspaceId,
-                  entityType: "movement",
-                  entityId: selectedAnalyticsEvent.movementId,
-                },
-              ]
-            : [],
-      });
-      await queryClient.invalidateQueries({
-        queryKey: [
-          "entity-attachments",
-          selectedAnalyticsEventObligation.workspaceId,
-          "obligation-event",
-          selectedAnalyticsEvent.id,
-        ],
-      });
-      await queryClient.invalidateQueries({
-        queryKey: ["entity-attachment-counts", selectedAnalyticsEventObligation.workspaceId, "obligation-event"],
-      });
-      if (selectedAnalyticsEvent.movementId != null) {
-        await queryClient.invalidateQueries({
-          queryKey: [
-            "movement-attachments",
-            selectedAnalyticsEventObligation.workspaceId,
-            selectedAnalyticsEvent.movementId,
-          ],
-        });
-      }
-      showToast("Comprobante eliminado", "success");
-    } catch (err: unknown) {
-      showToast(humanizeError(err), "error");
-    } finally {
-      setDeletingAnalyticsAttachmentPath(null);
-    }
-  }
-
   return (
     <ResourceModuleTemplate
       topInset={insets.top}
@@ -623,8 +498,8 @@ function ObligationsScreen() {
             ) : null}
             <PaymentForm
               visible={Boolean(paymentObligation) || Boolean(editingEventForPayment)}
-              onClose={() => { setPaymentObligation(null); setEditingEventForPayment(undefined); setEditEventObligation(null); }}
-              onSuccess={() => { setPaymentObligation(null); setEditingEventForPayment(undefined); setEditEventObligation(null); }}
+              onClose={() => { setPaymentObligation(null); resetEditEvent(); }}
+              onSuccess={() => { setPaymentObligation(null); resetEditEvent(); }}
               obligation={paymentObligation ?? editEventObligation}
               editEvent={editingEventForPayment}
             />
@@ -632,8 +507,8 @@ function ObligationsScreen() {
               visible={Boolean(adjustObligation) || Boolean(editingEventForAdjustment)}
               mode={editingEventForAdjustment ? adjustEventMode : adjustMode}
               obligation={adjustObligation ?? editEventObligation}
-              onClose={() => { setAdjustObligation(null); setEditingEventForAdjustment(undefined); setEditEventObligation(null); }}
-              onSuccess={() => { setAdjustObligation(null); setEditingEventForAdjustment(undefined); setEditEventObligation(null); }}
+              onClose={() => { setAdjustObligation(null); resetEditEvent(); }}
+              onSuccess={() => { setAdjustObligation(null); resetEditEvent(); }}
               editEvent={editingEventForAdjustment}
             />
 
