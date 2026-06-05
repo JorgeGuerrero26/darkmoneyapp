@@ -1,4 +1,4 @@
-import { StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { AlertTriangle, BarChart2, Target, Zap } from "lucide-react-native";
 
 import { formatCurrency } from "../ui/AmountDisplay";
@@ -18,9 +18,10 @@ type Props = {
   onPress?: () => void;
   onLongPress?: () => void;
   onAnalytics?: () => void;
+  onQuickEdit?: () => void;
 };
 
-export function BudgetCard({ budget, selected, onPress, onLongPress, onAnalytics }: Props) {
+export function BudgetCard({ budget, selected, onPress, onLongPress, onAnalytics, onQuickEdit }: Props) {
   const statusColor = budget.isOverLimit
     ? COLORS.rosewood
     : budget.isNearLimit
@@ -47,12 +48,30 @@ export function BudgetCard({ budget, selected, onPress, onLongPress, onAnalytics
         accessibilityLabel: "Ver analítica del presupuesto",
       }] : []}
       trailing={
-        <View style={styles.trailing}>
-          <Text style={[styles.percent, { color: statusColor }]}>
-            {Math.round(budget.usedPercent)}%
-          </Text>
-          <Text style={styles.trailingLabel}>usado</Text>
-        </View>
+        onQuickEdit ? (
+          <Pressable
+            onPress={(event) => {
+              event.stopPropagation();
+              onQuickEdit();
+            }}
+            hitSlop={8}
+            style={({ pressed }) => [styles.trailing, pressed && styles.trailingPressed]}
+            accessibilityRole="button"
+            accessibilityLabel="Ajuste rápido del límite"
+          >
+            <Text style={[styles.percent, { color: statusColor }]}>
+              {Math.round(budget.usedPercent)}%
+            </Text>
+            <Text style={styles.trailingLabel}>tocar para editar</Text>
+          </Pressable>
+        ) : (
+          <View style={styles.trailing}>
+            <Text style={[styles.percent, { color: statusColor }]}>
+              {Math.round(budget.usedPercent)}%
+            </Text>
+            <Text style={styles.trailingLabel}>usado</Text>
+          </View>
+        )
       }
       meta={
         <>
@@ -93,6 +112,9 @@ const styles = StyleSheet.create({
   trailing: {
     alignItems: "flex-end",
     gap: 1,
+  },
+  trailingPressed: {
+    opacity: 0.6,
   },
   percent: {
     fontFamily: FONT_FAMILY.heading,

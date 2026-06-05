@@ -21,6 +21,7 @@ import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTempla
 import { ResourceSectionList } from "../../components/ui/ResourceSectionList";
 import { SkeletonCard, SkeletonList } from "../../components/ui/Skeleton";
 import { UndoBanner } from "../../components/ui/UndoBanner";
+import { BudgetQuickEditSheet } from "../../features/budgets/components/BudgetQuickEditSheet";
 import { BudgetSummaryBar } from "../../features/budgets/components/BudgetSummaryBar";
 import { BudgetSwipeRow } from "../../features/budgets/components/BudgetSwipeRow";
 import { buildBudgetSections, type BudgetListSection } from "../../features/budgets/lib/buildBudgetSections";
@@ -67,6 +68,7 @@ function BudgetsScreen() {
   const [formVisible, setFormVisible] = useState(false);
   const [editBudget, setEditBudget] = useState<BudgetOverview | null>(null);
   const [analyticsBudgetId, setAnalyticsBudgetId] = useState<number | null>(null);
+  const [quickEditBudget, setQuickEditBudget] = useState<BudgetOverview | null>(null);
   const [searchText, setSearchText] = useState("");
   const [activeFilters, setActiveFilters] = useState<ActiveBudgetFilter[]>([]);
   const [selectMode, setSelectMode] = useState(false);
@@ -318,6 +320,7 @@ function BudgetsScreen() {
       onDelete={() => handleDelete(budget)}
       onDuplicate={() => void handleDuplicate(budget)}
       onAnalytics={() => setAnalyticsBudgetId(budget.id)}
+      onQuickEdit={selectMode ? undefined : () => setQuickEditBudget(budget)}
     />
   ), [handleDelete, handleDuplicate, selectMode, selectedIds, toggleSelect]);
 
@@ -482,6 +485,11 @@ function BudgetsScreen() {
             budget={analyticsBudget}
             analytics={analyticsMetrics}
             onClose={() => setAnalyticsBudgetId(null)}
+          />
+          <BudgetQuickEditSheet
+            visible={Boolean(quickEditBudget)}
+            budget={quickEditBudget}
+            onClose={() => setQuickEditBudget(null)}
           />
           <UndoBanner
             visible={pendingDeleteIds.size > 0}
