@@ -1,14 +1,24 @@
 import type { ResourceSection } from "../../../components/ui/ResourceSectionList";
 import type { BudgetOverview } from "../../../types/domain";
 
-export type BudgetListSection = ResourceSection<BudgetOverview, "attention" | "ok">;
+export type BudgetListSection = ResourceSection<BudgetOverview, "pinned" | "attention" | "ok">;
 
 export function buildBudgetSections(budgets: BudgetOverview[]): BudgetListSection[] {
-  const attentionBudgets = budgets.filter((budget) => budget.isOverLimit || budget.isNearLimit);
-  const okBudgets = budgets.filter((budget) => !budget.isOverLimit && !budget.isNearLimit);
+  const pinnedBudgets = budgets.filter((budget) => budget.isPinned);
+  const rest = budgets.filter((budget) => !budget.isPinned);
+  const attentionBudgets = rest.filter((budget) => budget.isOverLimit || budget.isNearLimit);
+  const okBudgets = rest.filter((budget) => !budget.isOverLimit && !budget.isNearLimit);
+  const hasPinned = pinnedBudgets.length > 0;
   const hasAttention = attentionBudgets.length > 0;
+  const sectionsBeforeOk = hasPinned || hasAttention;
 
   return [
+    ...(hasPinned ? [{
+      key: "pinned" as const,
+      label: "Fijados",
+      data: pinnedBudgets,
+      headerVariant: "default" as const,
+    }] : []),
     ...(hasAttention ? [{
       key: "attention" as const,
       label: "Requieren atención",
@@ -17,9 +27,9 @@ export function buildBudgetSections(budgets: BudgetOverview[]): BudgetListSectio
     }] : []),
     ...(okBudgets.length > 0 ? [{
       key: "ok" as const,
-      label: hasAttention ? "En buen estado" : "Presupuestos",
+      label: sectionsBeforeOk ? "En buen estado" : "Presupuestos",
       data: okBudgets,
-      headerVariant: hasAttention ? "default" as const : "hidden" as const,
+      headerVariant: sectionsBeforeOk ? "default" as const : "hidden" as const,
     }] : []),
   ];
 }

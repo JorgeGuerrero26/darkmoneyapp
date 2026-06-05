@@ -1,10 +1,11 @@
 import type { BudgetOverview, BudgetScopeKind } from "../../../types/domain";
 
-export type BudgetFilter = "all" | "attention" | BudgetScopeKind;
+export type BudgetFilter = "all" | "attention" | "pinned" | BudgetScopeKind;
 export type ActiveBudgetFilter = Exclude<BudgetFilter, "all">;
 
 export const BUDGET_FILTERS: Array<{ label: string; value: BudgetFilter }> = [
   { label: "Todas", value: "all" },
+  { label: "Fijados", value: "pinned" },
   { label: "Con alerta", value: "attention" },
   { label: "General", value: "general" },
   { label: "Categoría", value: "category" },
@@ -22,10 +23,15 @@ export function filterBudgets(
   searchText: string,
 ) {
   const query = searchText.trim().toLowerCase();
-  const scopeFilters = filters.filter((filter): filter is BudgetScopeKind => filter !== "attention");
+  const scopeFilters = filters.filter(
+    (filter): filter is BudgetScopeKind =>
+      filter !== "attention" && filter !== "pinned",
+  );
   const attentionOnly = filters.includes("attention");
+  const pinnedOnly = filters.includes("pinned");
 
   return budgets.filter((budget) => {
+    if (pinnedOnly && !budget.isPinned) return false;
     if (attentionOnly && !budget.isNearLimit && !budget.isOverLimit) return false;
     if (scopeFilters.length > 0 && !scopeFilters.includes(budget.scopeKind)) return false;
 

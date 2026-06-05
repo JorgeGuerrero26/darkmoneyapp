@@ -81,6 +81,41 @@ export function useUpdateBudgetMutation(workspaceId: number | null) {
   });
 }
 
+export function useTogglePinBudgetMutation(workspaceId: number | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, isPinned }: { id: number; isPinned: boolean }) => {
+      if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
+      const { error } = await supabase
+        .from("budgets")
+        .update({ is_pinned: isPinned })
+        .eq("id", id)
+        .eq("workspace_id", workspaceId);
+      if (error) throw new Error(error.message ?? "Error de base de datos");
+    },
+    onMutate: async ({ id, isPinned }) => {
+      await queryClient.cancelQueries({ queryKey: ["workspace-snapshot"] });
+      const previousEntries = queryClient.getQueriesData<WorkspaceSnapshot>({ queryKey: ["workspace-snapshot"] });
+      queryClient.setQueriesData<WorkspaceSnapshot>({ queryKey: ["workspace-snapshot"] }, (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          budgets: old.budgets.map((b) => (b.id === id ? { ...b, isPinned } : b)),
+        };
+      });
+      return { previousEntries };
+    },
+    onError: (_err, _vars, context) => {
+      for (const [key, value] of (context?.previousEntries ?? [])) {
+        queryClient.setQueryData(key, value);
+      }
+    },
+    onSuccess: () => {
+      runBackgroundQueryRefresh(queryClient, [["workspace-snapshot"]]);
+    },
+  });
+}
+
 export function useDuplicateBudgetMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   return useMutation({

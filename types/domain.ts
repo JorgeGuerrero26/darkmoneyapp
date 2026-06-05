@@ -263,6 +263,7 @@ export type BudgetOverview = {
   isActive: boolean;
   isNearLimit: boolean;
   isOverLimit: boolean;
+  isPinned: boolean;
   createdAt: string;
   updatedAt: string;
 };

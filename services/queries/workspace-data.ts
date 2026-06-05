@@ -404,6 +404,7 @@ type BudgetProgressRow = {
   is_active: boolean;
   is_near_limit: boolean;
   is_over_limit: boolean;
+  is_pinned?: boolean | null;
   created_at: string;
   updated_at: string;
 };
@@ -556,6 +557,7 @@ function mapBudget(row: BudgetProgressRow): BudgetOverview {
     isActive: row.is_active,
     isNearLimit: row.is_near_limit,
     isOverLimit: row.is_over_limit,
+    isPinned: row.is_pinned ?? false,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

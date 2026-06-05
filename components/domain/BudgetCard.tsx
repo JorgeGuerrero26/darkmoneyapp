@@ -1,5 +1,5 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { AlertTriangle, BarChart2, Target, Zap } from "lucide-react-native";
+import { AlertTriangle, BarChart2, Pin, PinOff, Target, Zap } from "lucide-react-native";
 
 import { formatCurrency } from "../ui/AmountDisplay";
 import { ProgressBar } from "../ui/ProgressBar";
@@ -19,9 +19,10 @@ type Props = {
   onLongPress?: () => void;
   onAnalytics?: () => void;
   onQuickEdit?: () => void;
+  onTogglePin?: () => void;
 };
 
-export function BudgetCard({ budget, selected, onPress, onLongPress, onAnalytics, onQuickEdit }: Props) {
+export function BudgetCard({ budget, selected, onPress, onLongPress, onAnalytics, onQuickEdit, onTogglePin }: Props) {
   const statusColor = budget.isOverLimit
     ? COLORS.rosewood
     : budget.isNearLimit
@@ -41,12 +42,21 @@ export function BudgetCard({ budget, selected, onPress, onLongPress, onAnalytics
       onPress={onPress}
       onLongPress={onLongPress}
       leading={<ResourceCardIcon icon={Target} color={statusColor} />}
-      actions={onAnalytics ? [{
-        key: "analytics",
-        icon: BarChart2,
-        onPress: onAnalytics,
-        accessibilityLabel: "Ver analítica del presupuesto",
-      }] : []}
+      actions={[
+        ...(onTogglePin ? [{
+          key: "pin",
+          icon: budget.isPinned ? PinOff : Pin,
+          onPress: onTogglePin,
+          color: budget.isPinned ? COLORS.primary : COLORS.storm,
+          accessibilityLabel: budget.isPinned ? "Desfijar presupuesto" : "Fijar presupuesto",
+        }] : []),
+        ...(onAnalytics ? [{
+          key: "analytics",
+          icon: BarChart2,
+          onPress: onAnalytics,
+          accessibilityLabel: "Ver analítica del presupuesto",
+        }] : []),
+      ]}
       trailing={
         onQuickEdit ? (
           <Pressable

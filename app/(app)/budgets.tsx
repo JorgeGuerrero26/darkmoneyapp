@@ -48,6 +48,7 @@ import { useWorkspaceSnapshotQuery } from "../../services/queries/workspace-data
 import {
   useDeleteBudgetMutation,
   useDuplicateBudgetMutation,
+  useTogglePinBudgetMutation,
 } from "../../services/queries/budgets";
 import type { BudgetOverview } from "../../types/domain";
 
@@ -80,6 +81,7 @@ function BudgetsScreen() {
 
   const deleteMutation = useDeleteBudgetMutation(activeWorkspaceId);
   const duplicateMutation = useDuplicateBudgetMutation(activeWorkspaceId);
+  const togglePinMutation = useTogglePinBudgetMutation(activeWorkspaceId);
   const {
     data: snapshot,
     isLoading: snapshotLoading,
@@ -262,6 +264,15 @@ function BudgetsScreen() {
     exitSelectMode();
   }, [exitSelectMode, selectedBudgets, startUndoDelete]);
 
+  const handleTogglePin = useCallback((budget: BudgetOverview) => {
+    togglePinMutation.mutate(
+      { id: budget.id, isPinned: !budget.isPinned },
+      {
+        onError: (err) => showToast(err.message, "error"),
+      },
+    );
+  }, [showToast, togglePinMutation]);
+
   const handleDuplicate = useCallback(async (budget: BudgetOverview) => {
     try {
       await duplicateMutation.mutateAsync(budget);
@@ -321,8 +332,9 @@ function BudgetsScreen() {
       onDuplicate={() => void handleDuplicate(budget)}
       onAnalytics={() => setAnalyticsBudgetId(budget.id)}
       onQuickEdit={selectMode ? undefined : () => setQuickEditBudget(budget)}
+      onTogglePin={selectMode ? undefined : () => handleTogglePin(budget)}
     />
-  ), [handleDelete, handleDuplicate, selectMode, selectedIds, toggleSelect]);
+  ), [handleDelete, handleDuplicate, handleTogglePin, selectMode, selectedIds, toggleSelect]);
 
   const contextNote = buildBudgetsContextNote({
     visibleCount: filteredBudgets.length,

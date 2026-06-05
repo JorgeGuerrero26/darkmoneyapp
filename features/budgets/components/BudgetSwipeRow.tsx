@@ -14,6 +14,7 @@ type Props = {
   onDuplicate: () => void;
   onAnalytics: () => void;
   onQuickEdit?: () => void;
+  onTogglePin?: () => void;
 };
 
 export function BudgetSwipeRow({
@@ -25,6 +26,7 @@ export function BudgetSwipeRow({
   onDuplicate,
   onAnalytics,
   onQuickEdit,
+  onTogglePin,
 }: Props) {
   return (
     <SwipeActionRow
@@ -61,6 +63,7 @@ export function BudgetSwipeRow({
           onLongPress={onLongPress}
           onAnalytics={onAnalytics}
           onQuickEdit={onQuickEdit}
+          onTogglePin={onTogglePin}
         />
       )}
     </SwipeActionRow>
