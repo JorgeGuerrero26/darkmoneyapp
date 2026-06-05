@@ -71,7 +71,7 @@ function BudgetsScreen() {
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<number>>(new Set());
-  const [pendingDeleteLabels, setPendingDeleteLabels] = useState<Record<number, string>>({});
+  const pendingDeleteLabels = useRef<Map<number, string>>(new Map());
   const deleteTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
   const refreshTriggeredRef = useRef(false);
 
@@ -190,6 +190,8 @@ function BudgetsScreen() {
 
   useEffect(() => () => {
     deleteTimers.current.forEach(clearTimeout);
+    deleteTimers.current.clear();
+    pendingDeleteLabels.current.clear();
   }, []);
 
   useFocusEffect(
@@ -219,7 +221,7 @@ function BudgetsScreen() {
 
   const startUndoDelete = useCallback((budget: BudgetOverview) => {
     setPendingDeleteIds((prev) => new Set(prev).add(budget.id));
-    setPendingDeleteLabels((prev) => ({ ...prev, [budget.id]: budget.name }));
+    pendingDeleteLabels.current.set(budget.id, budget.name);
     const timer = setTimeout(() => {
       deleteMutation.mutate(budget.id, {
         onError: (error) => showToast(error.message, "error"),
@@ -229,6 +231,7 @@ function BudgetsScreen() {
         next.delete(budget.id);
         return next;
       });
+      pendingDeleteLabels.current.delete(budget.id);
       deleteTimers.current.delete(budget.id);
     }, 5000);
     deleteTimers.current.set(budget.id, timer);
@@ -238,6 +241,7 @@ function BudgetsScreen() {
     const timer = deleteTimers.current.get(id);
     if (timer) clearTimeout(timer);
     deleteTimers.current.delete(id);
+    pendingDeleteLabels.current.delete(id);
     setPendingDeleteIds((prev) => {
       const next = new Set(prev);
       next.delete(id);
@@ -441,9 +445,15 @@ function BudgetsScreen() {
           />
           <UndoBanner
             visible={pendingDeleteIds.size > 0}
-            message={pendingDeleteIds.size === 1
-              ? `Presupuesto "${Object.values(pendingDeleteLabels).at(-1) ?? ""}" eliminado`
-              : `${pendingDeleteIds.size} presupuestos eliminados`}
+            message={(() => {
+              if (pendingDeleteIds.size === 0) return "";
+              if (pendingDeleteIds.size === 1) {
+                const [onlyId] = pendingDeleteIds;
+                const label = pendingDeleteLabels.current.get(onlyId) ?? "";
+                return label ? `Presupuesto "${label}" eliminado` : "Presupuesto eliminado";
+              }
+              return `${pendingDeleteIds.size} presupuestos eliminados`;
+            })()}
             onUndo={() => pendingDeleteIds.forEach((id) => undoDelete(id))}
             durationMs={5000}
             bottomOffset={insets.bottom + 80}
