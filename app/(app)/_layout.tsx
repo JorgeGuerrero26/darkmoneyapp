@@ -11,6 +11,7 @@ import { Badge } from "../../components/ui/Badge";
 import { SafeBlurView } from "../../components/ui/SafeBlurView";
 import { useTabPersistence } from "../../hooks/useTabPersistence";
 import { useNotificationDetectionRuntimeSync } from "../../hooks/useNotificationDetectionRuntimeSync";
+import { useNotificationDetectionForegroundReconcile } from "../../hooks/useNotificationDetectionForegroundReconcile";
 
 function TabBarBackground() {
   return (
@@ -78,6 +79,7 @@ const MoreTabIcon = memo(function MoreTabIcon({ color, focused }: { color: strin
 export default function AppLayout() {
   useTabPersistence();
   useNotificationDetectionRuntimeSync();
+  useNotificationDetectionForegroundReconcile();
   return (
     <Tabs
       detachInactiveScreens={false}

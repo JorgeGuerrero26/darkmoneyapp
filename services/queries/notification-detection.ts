@@ -654,6 +654,33 @@ export async function findDetectedSuggestionIdByNativeId(
   return data ? Number(data.id) : null;
 }
 
+/**
+ * Dado un set de IDs de sugerencias nativas que el dispositivo aún tiene como `pending`,
+ * devuelve cuáles YA están registradas en la base (status=registered o con movimiento).
+ * Una sola lectura batched (sin writes) para usar al volver a primer plano: permite
+ * marcar esas sugerencias como registradas en el dispositivo y cancelar su notificación,
+ * evitando que la notificación bancaria vieja re-dispare "movimiento detectado".
+ */
+export async function findRegisteredNativeSuggestionIds(
+  workspaceId: number | string | null,
+  nativeIds: string[],
+): Promise<Set<string>> {
+  const result = new Set<string>();
+  if (!supabase || !workspaceId || nativeIds.length === 0) return result;
+  const { data, error } = await supabase
+    .from("notification_detected_movement_suggestions")
+    .select("status, movement_id, metadata")
+    .eq("workspace_id", workspaceId)
+    .in("metadata->>nativeSuggestionId", nativeIds);
+  if (error || !data) return result;
+  for (const row of data as any[]) {
+    const nativeId = row?.metadata?.nativeSuggestionId;
+    if (typeof nativeId !== "string") continue;
+    if (row.status === "registered" || row.movement_id != null) result.add(nativeId);
+  }
+  return result;
+}
+
 export function buildMovementInputFromDetectedSuggestion(input: {
   suggestion: DetectedMovementSuggestion;
   accountId?: number | null;
