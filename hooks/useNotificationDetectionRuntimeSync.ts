@@ -162,7 +162,7 @@ export function useNotificationDetectionRuntimeSync() {
         // Bump this key (YYYY-MM-DD-vN) when you want every device to clear stale
         // movement_detection notifications on the next app open. Avoids needing a Kotlin
         // rebuild just to trigger a one-time cleanup.
-        notifCleanupKey: "2026-05-26-v1",
+        notifCleanupKey: "2026-06-05-v1",
         userId,
         workspaceId: activeWorkspaceId,
         workspaceBaseCurrencyCode,

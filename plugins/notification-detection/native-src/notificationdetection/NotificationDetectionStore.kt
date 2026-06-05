@@ -497,6 +497,23 @@ object NotificationDetectionStore {
     return false
   }
 
+  /**
+   * ¿Ya hay una sugerencia REGISTRADA con esta huella (mismo paquete + contenido)?
+   * Evita que la notificación bancaria vieja, todavía en la bandeja, vuelva a generar
+   * un "movimiento detectado" tras registrar (especialmente con la app cerrada y luego
+   * `processActiveNotifications` al reconectar el listener). Se basa en la identidad de
+   * dedupe (huella), no en el canal, para no suprimir transacciones genuinamente nuevas.
+   */
+  fun hasRegisteredSuggestionForFingerprint(context: Context, fingerprint: String): Boolean {
+    if (fingerprint.isBlank()) return false
+    val suggestions = readSuggestionsArray(context)
+    for (index in 0 until suggestions.length()) {
+      val s = suggestions.optJSONObject(index) ?: continue
+      if (s.optString("status") == "registered" && s.optString("discardFingerprint") == fingerprint) return true
+    }
+    return false
+  }
+
   private fun sha256(value: String): String {
     val bytes = MessageDigest.getInstance("SHA-256").digest(value.toByteArray())
     return bytes.joinToString("") { "%02x".format(it) }

@@ -92,6 +92,9 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
     if (isPromotionalNotification(combined)) return
     val discardFingerprint = NotificationDetectionStore.computeDiscardFingerprint(sourcePackage, combined)
     if (NotificationDetectionStore.isDiscardedFingerprint(applicationContext, discardFingerprint)) return
+    // Si esta misma notificación (huella) ya derivó en un movimiento registrado, no re-disparar.
+    // Cubre el caso de registrar con la app cerrada y reabrir con la notif. bancaria aún en bandeja.
+    if (NotificationDetectionStore.hasRegisteredSuggestionForFingerprint(applicationContext, discardFingerprint)) return
     val amount = extractAmount(combined) ?: return
     // Cross-app dedup: cualquier fuente (banco, Gmail, Google Wallet, Samsung Pay) se salta si ya
     // existe una pending suggestion del mismo monto en los últimos 5 min. Política: el primero
