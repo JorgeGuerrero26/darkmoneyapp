@@ -271,6 +271,11 @@ object QuickMovementOverlay {
     val transferOnlyViews = mutableListOf<View>()
     val expenseIncomeOnlyViews = mutableListOf<View>()
     var categorySelect: SelectRefs? = null
+    // Ajusta el origen al cambiar de tipo: en transferencia el origen debe honrar el par
+    // frecuente (p. ej. Sueldo→Principal), no el default por moneda (que resolvía a Principal).
+    // Se asigna después de crear los selects de cuenta (necesita `accounts`); puede ser null
+    // hasta entonces, pero los toggles solo ocurren tras construir el overlay.
+    var syncAccountsForType: (() -> Unit)? = null
     fun applyTypeVisibility() {
       val isTransfer = selectedType == "transfer"
       transferOnlyViews.forEach { it.visibility = if (isTransfer) View.VISIBLE else View.GONE }
@@ -289,6 +294,7 @@ object QuickMovementOverlay {
       styleSegment(incomeSegment, selectedType == "income", 0xFF6BE4C5.toInt(), dp(14))
       styleSegment(transferSegment, selectedType == "transfer", 0xFF8EA5FF.toInt(), dp(14))
       applyTypeVisibility()
+      syncAccountsForType?.invoke()
       categorySelect?.refresh()
     }
     expenseSegment = TextView(context).apply {
@@ -349,16 +355,33 @@ object QuickMovementOverlay {
       }
     }
     val defaultAccountIdx = defaultAccountIndex(runtimeContext, financialAppKey, accounts, detectedCurrencyCode)
-    val accountSelect = accountChipField(context, "CUENTA / ORIGEN", accounts, defaultAccountIdx) { index ->
+    // Origen para transferencias: honra el par más frecuente (sourceAccountId). Si no hay par
+    // o no resuelve, cae al default por moneda. Corrige el sentido invertido (antes el origen
+    // siempre era el default por moneda y el destino caía a la "siguiente" cuenta por orden).
+    val transferSourceIdx = frequentTransferSourceIndex(runtimeContext, accounts, defaultAccountIdx)
+    val initialSourceIdx = if (selectedType == "transfer") transferSourceIdx else defaultAccountIdx
+    val accountSelect = accountChipField(context, "CUENTA / ORIGEN", accounts, initialSourceIdx) { index ->
       refreshAmountForAccount(index)
     }
     root.addView(accountSelect.container)
-    refreshAmountForAccount(defaultAccountIdx)
+    refreshAmountForAccount(initialSourceIdx)
 
-    val destinationDefaultIdx = frequentTransferDestinationIndex(runtimeContext, accounts, defaultAccountIdx)
+    val destinationDefaultIdx = frequentTransferDestinationIndex(runtimeContext, accounts, transferSourceIdx)
     val destinationAccountSelect = accountChipField(context, "CUENTA DESTINO", accounts, destinationDefaultIdx)
     root.addView(destinationAccountSelect.container)
     transferOnlyViews.add(destinationAccountSelect.container)
+
+    // Ahora que existen los selects, conectar el ajuste de origen/destino por tipo.
+    syncAccountsForType = sync@{
+      if (selectedType == "transfer") {
+        accountSelect.selectIndex(transferSourceIdx)
+        destinationAccountSelect.selectIndex(
+          frequentTransferDestinationIndex(runtimeContext, accounts, transferSourceIdx),
+        )
+      } else {
+        accountSelect.selectIndex(defaultAccountIdx)
+      }
+    }
 
     val baseCategories = listOf(Option(null, "Sin categoría")) +
       readOptions(runtimeContext, "categories", fallbackLabel = "Sin categoría", metaKey = "kind").sortedBy { it.label.lowercase() }
@@ -388,13 +411,15 @@ object QuickMovementOverlay {
     val localSuggestedIdx = suggestCategoryForOverlay(description, runtimeContext, categories, ::categoryVisibleForSelectedType)
     val initialIdx = aiSuggestedIdx ?: localSuggestedIdx
     val aiPending = aiCategoryRecommendation == null || aiCategoryPending(aiCategoryRecommendation)
-    val showingLocalWhileAiPending = aiSuggestedIdx == null && localSuggestedIdx != null && aiPending && selectedType != "transfer"
 
     val suggestionWrap = LinearLayout(context).apply {
       orientation = LinearLayout.VERTICAL
       setPadding(0, dp(6), 0, 0)
     }
     var currentSuggestionRow: View? = null
+    // Row de carga IA. Transparencia: si hay local mostrada pero la IA sigue corriendo, lo
+    // mostramos debajo (antes corría invisible). Si no hay local, hace de skeleton.
+    var loadingRow: View? = null
     if (initialIdx != null && initialIdx > 0) {
       val sugCat = categories.getOrNull(initialIdx)
       if (sugCat != null) {
@@ -405,18 +430,30 @@ object QuickMovementOverlay {
         suggestionWrap.addView(currentSuggestionRow)
       }
     }
-    // Skeleton ligero SOLO cuando no hay ninguna sugerencia para mostrar y la IA puede llegar.
-    val showSkeleton = initialIdx == null && aiPending && selectedType != "transfer"
-    if (showSkeleton) {
-      suggestionWrap.addView(aiLoadingRow(context))
+    // Afordancia "IA analizando" SIEMPRE que la IA pueda llegar (haya o no sugerencia local).
+    if (aiPending && selectedType != "transfer") {
+      loadingRow = aiLoadingRow(context)
+      suggestionWrap.addView(loadingRow)
     }
     if (suggestionWrap.childCount > 0) {
       root.addView(suggestionWrap)
       expenseIncomeOnlyViews.add(suggestionWrap)
     }
 
-    // Polling: solo si la IA aún no resolvió. Sirve para hacer swap animado cuando llega tras
-    // abrirse el overlay (caso: local mostrado pero IA refina) o para reemplazar skeleton.
+    fun removeLoadingRow() {
+      loadingRow?.let { suggestionWrap.removeView(it) }
+      loadingRow = null
+    }
+    fun detachSuggestionWrapIfEmpty() {
+      if (suggestionWrap.childCount == 0) {
+        (suggestionWrap.parent as? ViewGroup)?.removeView(suggestionWrap)
+        expenseIncomeOnlyViews.remove(suggestionWrap)
+      }
+    }
+
+    // Polling: solo si la IA aún no resolvió. Hace swap animado cuando llega (local→IA), o
+    // reemplaza el row de carga por un estado terminal visible (sugerencia / sin sugerencia /
+    // no disponible). El usuario siempre termina viendo en qué quedó la IA.
     if (aiPending && selectedType != "transfer") {
       val pollHandler = Handler(Looper.getMainLooper())
       // Presupuesto reducido: ~5s (la IA ya pre-corrió al detectar, normalmente está lista al abrir).
@@ -430,32 +467,41 @@ object QuickMovementOverlay {
           if (updatedRec != null && !aiCategoryPending(updatedRec)) {
             val aiIdx = aiSuggestedCategoryIndex(updatedRec, categories)
               ?.takeIf { categoryVisibleForSelectedType(categories[it]) }
-            // Si la IA produjo una sugerencia válida, hacer swap animado.
             if (aiIdx != null && aiIdx > 0) {
+              // IA produjo una sugerencia válida → swap animado (reemplaza local o carga).
               val sugCat = categories.getOrNull(aiIdx) ?: return
               val newRow = categorySuggestionRow(context, sugCat.label, aiDetail(updatedRec)) {
                 categorySelectRef.selectIndex(aiIdx)
               }
-              animatedSwapSuggestionRow(suggestionWrap, currentSuggestionRow, newRow)
+              val replaced = currentSuggestionRow ?: loadingRow
+              animatedSwapSuggestionRow(suggestionWrap, replaced, newRow)
+              if (replaced === loadingRow) loadingRow = null
               currentSuggestionRow = newRow
-            } else if (currentSuggestionRow == null) {
-              // IA respondió sin sugerencia útil; si solo había skeleton, ocultarlo en silencio.
-              suggestionWrap.removeAllViews()
-              if (suggestionWrap.childCount == 0) {
-                (suggestionWrap.parent as? ViewGroup)?.removeView(suggestionWrap)
-                expenseIncomeOnlyViews.remove(suggestionWrap)
+            } else {
+              removeLoadingRow()
+              if (currentSuggestionRow == null) {
+                // No hay local: mostrar estado terminal explícito (transparencia).
+                val terminal = if (aiCategoryUnavailable(updatedRec)) {
+                  aiInfoRow(context, "IA no disponible", "No se pudo completar la sugerencia de categoría.")
+                } else {
+                  aiInfoRow(context, "IA sin sugerencia", "No encontró una categoría con suficiente confianza.")
+                }
+                suggestionWrap.addView(terminal)
               }
+              // Si hay local, queda confirmada y la dejamos como sugerencia accionable.
+              detachSuggestionWrapIfEmpty()
             }
             return
           }
           if (attempts >= pollSchedule.size) {
-            // Presupuesto agotado. Si solo había skeleton, removerlo silenciosamente; si hay
-            // sugerencia local mostrada, dejarla en paz.
+            // Presupuesto agotado sin respuesta. Quitar carga; si no había local, "IA no disponible".
+            removeLoadingRow()
             if (currentSuggestionRow == null) {
-              suggestionWrap.removeAllViews()
-              (suggestionWrap.parent as? ViewGroup)?.removeView(suggestionWrap)
-              expenseIncomeOnlyViews.remove(suggestionWrap)
+              suggestionWrap.addView(
+                aiInfoRow(context, "IA no disponible", "La sugerencia de categoría tardó demasiado."),
+              )
             }
+            detachSuggestionWrapIfEmpty()
             return
           }
           val delay = pollSchedule[attempts]
@@ -1417,6 +1463,52 @@ object QuickMovementOverlay {
     return container
   }
 
+  /**
+   * Row terminal informativo (no accionable): transparencia para el usuario cuando la IA
+   * corrió pero no produjo una mejor sugerencia, no pudo correr, o confirmó la local.
+   * Estilo muteado para no competir con la sugerencia accionable.
+   */
+  private fun aiInfoRow(context: Context, title: String, detail: String): LinearLayout {
+    val density = context.resources.displayMetrics.density
+    fun dp(value: Int) = (value * density).toInt()
+
+    val row = LinearLayout(context).apply {
+      orientation = LinearLayout.HORIZONTAL
+      gravity = Gravity.CENTER_VERTICAL
+      setPadding(dp(12), dp(8), dp(12), dp(8))
+      background = roundedBg(0xFF0B1018.toInt(), dp(12), 0x1FFFFFFF, dp(1))
+    }
+    val badge = TextView(context).apply {
+      text = "IA"
+      textSize = 10f
+      typeface = Typeface.DEFAULT_BOLD
+      gravity = Gravity.CENTER
+      setTextColor(0xFF96A2B5.toInt())
+      background = roundedBg(0x14FFFFFF, dp(999), 0x1FFFFFFF, dp(1))
+    }
+    val textCol = LinearLayout(context).apply {
+      orientation = LinearLayout.VERTICAL
+    }
+    textCol.addView(TextView(context).apply {
+      text = title
+      textSize = 12f
+      typeface = Typeface.DEFAULT_BOLD
+      setTextColor(0xFFC4CCD8.toInt())
+    })
+    textCol.addView(TextView(context).apply {
+      text = detail
+      textSize = 10f
+      setTextColor(0xFF96A2B5.toInt())
+    })
+    row.addView(badge, LinearLayout.LayoutParams(dp(28), dp(28)).apply { rightMargin = dp(9) })
+    row.addView(textCol, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+    return row
+  }
+
+  private fun aiCategoryUnavailable(recommendation: JSONObject?): Boolean {
+    return recommendation?.optString("status") == "unavailable"
+  }
+
   private fun defaultAccountIndex(
     runtimeContext: JSONObject,
     financialAppKey: String,
@@ -1447,6 +1539,26 @@ object QuickMovementOverlay {
       }
     }
     return 0
+  }
+
+  /**
+   * Índice de la cuenta ORIGEN para una transferencia: honra `frequentTransferPair.sourceAccountId`
+   * (par más usado, p. ej. Sueldo). Si no hay par o no resuelve a una cuenta, cae al default por
+   * moneda/settings. Sin esto, el origen siempre era el default por moneda (p. ej. Principal) y el
+   * destino terminaba siendo la "siguiente" cuenta por orden, invirtiendo el sentido.
+   */
+  private fun frequentTransferSourceIndex(
+    runtimeContext: JSONObject,
+    accounts: List<Option>,
+    fallbackIdx: Int,
+  ): Int {
+    val pair = runtimeContext.optJSONObject("frequentTransferPair")
+    if (pair != null) {
+      val srcId = pair.optInt("sourceAccountId", 0)
+      val srcMatch = accounts.indexOfFirst { it.id == srcId }
+      if (srcMatch >= 0) return srcMatch
+    }
+    return fallbackIdx
   }
 
   private fun frequentTransferDestinationIndex(
