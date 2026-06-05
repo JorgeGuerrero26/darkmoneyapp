@@ -738,3 +738,17 @@ export async function getFrequentTransferPair(
   }
   return best ? { sourceAccountId: best.sourceAccountId, destinationAccountId: best.destinationAccountId } : null;
 }
+
+/**
+ * Par de transferencia (origen→destino) más frecuente, cacheado por workspace.
+ * Fuente de verdad única para prellenar transferencias en TODAS las vías React
+ * (registro rápido + formulario completo), igualando el default del overlay nativo.
+ */
+export function useFrequentTransferPairQuery(workspaceId?: number | null) {
+  return useQuery({
+    queryKey: ["frequent-transfer-pair", workspaceId ?? null],
+    enabled: Boolean(supabase && workspaceId),
+    staleTime: 5 * 60 * 1000,
+    queryFn: () => getFrequentTransferPair(workspaceId ?? null),
+  });
+}

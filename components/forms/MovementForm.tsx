@@ -59,6 +59,7 @@ import { COLORS, SPACING, SURFACE } from "../../constants/theme";
 import type { MovementType, MovementStatus, MovementRecord, ExchangeRateSummary } from "../../types/domain";
 import { useMovementCreationController } from "../../features/movements/hooks/useMovementCreationController";
 import { buildMovementCreateInput, buildMovementUpdateInput } from "../../features/movements/lib/movement-save-contract";
+import { useFrequentTransferPairQuery } from "../../services/queries/notification-detection";
 import {
   validateMovementForm,
   type MovementFormWarnings,
@@ -336,6 +337,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
 
   const baseCurrency = activeWorkspace?.baseCurrencyCode ?? "PEN";
   const accounts = snapshot?.accounts ?? [];
+  const frequentTransferPair = useFrequentTransferPairQuery(activeWorkspaceId).data ?? null;
   const categories = snapshot?.categories ?? [];
   const counterparties = snapshot?.counterparties ?? [];
   const exchangeRates = snapshot?.exchangeRates ?? [];
@@ -773,6 +775,15 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
       if (initialAccountId) {
         initial.sourceAccountId = initialAccountId;
       }
+      // Si el form abre directo como transferencia, prellenar con el par más usado.
+      if (defaultType === "transfer" && !initialAccountId && frequentTransferPair) {
+        const source = accounts.find((account) => account.id === frequentTransferPair.sourceAccountId && !account.isArchived);
+        const dest = accounts.find((account) => account.id === frequentTransferPair.destinationAccountId && !account.isArchived);
+        if (source && dest && source.id !== dest.id) {
+          initial.sourceAccountId = source.id;
+          initial.destinationAccountId = dest.id;
+        }
+      }
       setForm(initial);
     }
     setErrors({});
@@ -789,6 +800,16 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     setTransferLiveRate(null);
     setTransferRateError(null);
   }, [visible, editMovement, defaultType, initialAccountId, isClosingAfterSubmit]);
+
+  // El par frecuente puede llegar después de abrir el form (query async). Si el form está
+  // en transferencia NUEVA sin cuentas elegidas, prellénalo cuando los datos estén listos.
+  // No reinicia el form ni pisa una selección del usuario (guardas en setForm).
+  useEffect(() => {
+    if (!visible || isEditing || form.movementType !== "transfer") return;
+    if (form.sourceAccountId != null || form.destinationAccountId != null) return;
+    applyTransferDefaultsIfEmpty();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, isEditing, form.movementType, form.sourceAccountId, form.destinationAccountId, frequentTransferPair, accounts]);
 
   useEffect(() => {
     if (!visible || !isEditing || !editMovement || editMovementAttachmentsLoading) return;
@@ -810,6 +831,20 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
 
   function patch(partial: Partial<FormState>) {
     setForm((prev) => ({ ...prev, ...partial }));
+  }
+
+  // Prellena origen→destino con el par de transferencia más usado al cambiar a "transfer"
+  // en un movimiento NUEVO, solo si el usuario aún no eligió cuentas (no pisa su selección).
+  // Iguala el default del overlay nativo y del registro rápido (consistencia entre vías).
+  function applyTransferDefaultsIfEmpty() {
+    if (isEditing || !frequentTransferPair) return;
+    const source = accounts.find((account) => account.id === frequentTransferPair.sourceAccountId && !account.isArchived);
+    const dest = accounts.find((account) => account.id === frequentTransferPair.destinationAccountId && !account.isArchived);
+    if (!source || !dest || source.id === dest.id) return;
+    setForm((prev) => {
+      if (prev.movementType !== "transfer" || prev.sourceAccountId != null || prev.destinationAccountId != null) return prev;
+      return { ...prev, sourceAccountId: source.id, destinationAccountId: dest.id };
+    });
   }
 
   function selectCategoryManually(id: number | null) {
@@ -1485,6 +1520,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
           onChangeType={(type) => {
             setTransferDestinationEdited(false);
             patch({ movementType: type });
+            if (type === "transfer") applyTransferDefaultsIfEmpty();
           }}
           onChangeStatus={(status) => patch({ status })}
           onNext={goNext}

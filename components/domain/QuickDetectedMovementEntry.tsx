@@ -24,6 +24,7 @@ import {
   useNotificationDetectionSettingsQuery,
   useDetectedMovementSuggestionQuery,
   useMarkDetectedMovementSuggestionMutation,
+  useFrequentTransferPairQuery,
 } from "../../services/queries/notification-detection";
 import { AiQuotaWarningBanner } from "../ui/AiQuotaWarningBanner";
 import { getFinancialAppByKey, resolveFinancialAppByPackage } from "../../lib/notification-detection-apps";
@@ -134,6 +135,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
   const { data: snapshot } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const settingsQuery = useNotificationDetectionSettingsQuery(profile?.id, activeWorkspaceId);
   const settings = settingsQuery.data ?? [];
+  const frequentTransferPair = useFrequentTransferPairQuery(activeWorkspaceId).data ?? null;
   const createMovement = useCreateMovementMutation(activeWorkspaceId);
   const createCategory = useCreateCategoryMutation(activeWorkspaceId);
   const createCounterparty = useCreateCounterpartyMutation(activeWorkspaceId);
@@ -465,15 +467,29 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
     setDate(localDate(suggestion.occurredAt));
     setCategoryId(null);
     setCounterpartyId(null);
-    setAccountId(defaultAccount?.id ?? null);
-    const altAccount = activeAccounts.find((account) => account.id !== defaultAccount?.id) ?? null;
+    // Transferencias: prellenar origen→destino con el par más usado (mismo default que el
+    // overlay nativo). Si el par resuelve a cuentas activas distintas, manda sobre el default
+    // por moneda; si no, cae al comportamiento previo (default + primera "otra").
+    const isTransferSuggestion = suggestion.movementType === "transfer";
+    const pairSource = isTransferSuggestion && frequentTransferPair
+      ? activeAccounts.find((account) => account.id === frequentTransferPair.sourceAccountId)
+      : undefined;
+    const pairDest = isTransferSuggestion && frequentTransferPair
+      ? activeAccounts.find((account) => account.id === frequentTransferPair.destinationAccountId)
+      : undefined;
+    const usePair = Boolean(pairSource && pairDest && pairSource.id !== pairDest.id);
+    const sourceAccount = usePair ? pairSource! : defaultAccount;
+    setAccountId(sourceAccount?.id ?? null);
+    const altAccount = usePair
+      ? pairDest!
+      : activeAccounts.find((account) => account.id !== sourceAccount?.id) ?? null;
     setDestinationAccountId(altAccount?.id ?? null);
     setDestinationAmount(String(suggestion.amount));
     setTransferFxRate("");
     setCategoryFeedbackIntent(null);
     setLinkedSubscriptionId(null);
     setLinkedRecurringIncomeId(null);
-  }, [activeAccounts, settings, suggestion, visible]);
+  }, [activeAccounts, settings, suggestion, visible, frequentTransferPair]);
 
   function selectCategoryManually(id: number | null) {
     setCategoryId(id);
