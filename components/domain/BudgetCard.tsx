@@ -100,7 +100,7 @@ const styles = StyleSheet.create({
   },
   trailingLabel: {
     fontFamily: FONT_FAMILY.body,
-    fontSize: 10,
+    fontSize: FONT_SIZE.xs,
     color: COLORS.textDisabled,
   },
   footer: {
@@ -121,7 +121,7 @@ const styles = StyleSheet.create({
   alertRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    gap: SPACING.xs,
   },
   alertLabel: {
     fontFamily: FONT_FAMILY.bodySemibold,
