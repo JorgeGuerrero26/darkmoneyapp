@@ -331,9 +331,15 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
       aiCategoryInput &&
       (!localCategorySuggestion || localCategorySuggestion.confidence < LOCAL_CATEGORY_AI_CONFIDENCE_THRESHOLD),
   );
-  const { recommendation: aiCategoryRecommendation, isLoading: aiCategorySuggestionLoading, aiAttempted: aiCategorySuggestionAttempted } = useMovementCategoryAiSuggestion({
+  const {
+    recommendation: aiCategoryRecommendation,
+    isLoading: aiCategorySuggestionLoading,
+    aiAttempted: aiCategorySuggestionAttempted,
+    outcome: aiCategorySuggestionOutcome,
+  } = useMovementCategoryAiSuggestion({
     enabled: shouldRequestAiCategorySuggestion,
     input: aiCategoryInput,
+    proAccessEnabled: entitlementQuery.data?.proAccessEnabled,
   });
   const aiCategorySuggestion = useMemo<CategorySuggestionState | null>(() => {
     if (!aiCategoryRecommendation) return null;
@@ -955,6 +961,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
           attempted={aiCategorySuggestionAttempted}
           suggestion={categorySuggestion ? { categoryName: categorySuggestion.categoryName, detail: categorySuggestion.detail } : null}
           hasLocalSuggestion={Boolean(localCategorySuggestion)}
+          errored={aiCategorySuggestionOutcome === "error"}
           onApply={() => categorySuggestion && void applyCategorySuggestion(categorySuggestion)}
         />
         </>

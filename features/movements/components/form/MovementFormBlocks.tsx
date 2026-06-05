@@ -125,6 +125,7 @@ export const DescriptionCleanupBlock = memo(function DescriptionCleanupBlock({
 type CategoryAiBlockProps = {
   loading: boolean;
   attempted: boolean;
+  errored?: boolean;
   hasLocalSuggestion: boolean;
   suggestion: CategorySuggestionState | null;
   onApply: (suggestion: CategorySuggestionState) => void;
@@ -133,6 +134,7 @@ type CategoryAiBlockProps = {
 export const CategoryAiBlock = memo(function CategoryAiBlock({
   loading,
   attempted,
+  errored,
   hasLocalSuggestion,
   suggestion,
   onApply,
@@ -148,8 +150,11 @@ export const CategoryAiBlock = memo(function CategoryAiBlock({
       />
     );
   }
+  if (errored && !suggestion) {
+    return <SmartSuggestionEmpty message="IA no disponible" />;
+  }
   if (attempted && !suggestion) {
-    return <SmartSuggestionEmpty message="Sin sugerencia de categoría" />;
+    return <SmartSuggestionEmpty message="IA sin sugerencia" />;
   }
   if (!suggestion) return null;
   return (

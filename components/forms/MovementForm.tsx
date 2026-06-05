@@ -595,9 +595,15 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
       aiCategoryInput &&
       (!localCategorySuggestion || localCategorySuggestion.confidence < LOCAL_CATEGORY_AI_CONFIDENCE_THRESHOLD),
   );
-  const { recommendation: aiCategoryRecommendation, isLoading: aiCategorySuggestionLoading, aiAttempted: aiCategorySuggestionAttempted } = useMovementCategoryAiSuggestion({
+  const {
+    recommendation: aiCategoryRecommendation,
+    isLoading: aiCategorySuggestionLoading,
+    aiAttempted: aiCategorySuggestionAttempted,
+    outcome: aiCategorySuggestionOutcome,
+  } = useMovementCategoryAiSuggestion({
     enabled: shouldRequestAiCategorySuggestion,
     input: aiCategoryInput,
+    proAccessEnabled: entitlementQuery.data?.proAccessEnabled,
   });
   const aiCategorySuggestion = useMemo<CategorySuggestionState | null>(() => {
     if (!aiCategoryRecommendation) return null;
@@ -1601,6 +1607,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
             onSelectCategory={selectCategoryManually}
             aiCategorySuggestionLoading={aiCategorySuggestionLoading}
             aiCategorySuggestionAttempted={aiCategorySuggestionAttempted}
+            aiCategorySuggestionErrored={aiCategorySuggestionOutcome === "error"}
             hasLocalCategorySuggestion={Boolean(localCategorySuggestion)}
             categorySuggestionToShow={categorySuggestionToShow}
             onApplyCategorySuggestion={(sug) => void applyCategorySuggestion(sug)}

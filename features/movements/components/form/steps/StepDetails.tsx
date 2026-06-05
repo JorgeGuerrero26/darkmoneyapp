@@ -69,6 +69,7 @@ type Props = {
   onSelectCategory: (id: number | null) => void;
   aiCategorySuggestionLoading: boolean;
   aiCategorySuggestionAttempted: boolean;
+  aiCategorySuggestionErrored?: boolean;
   hasLocalCategorySuggestion: boolean;
   categorySuggestionToShow: CategorySuggestionState | null;
   onApplyCategorySuggestion: (sug: CategorySuggestionState) => void;
@@ -132,6 +133,7 @@ export const StepDetails = memo(function StepDetails({
   onSelectCategory,
   aiCategorySuggestionLoading,
   aiCategorySuggestionAttempted,
+  aiCategorySuggestionErrored,
   hasLocalCategorySuggestion,
   categorySuggestionToShow,
   onApplyCategorySuggestion,
@@ -192,6 +194,7 @@ export const StepDetails = memo(function StepDetails({
       <CategoryAiBlock
         loading={aiCategorySuggestionLoading}
         attempted={aiCategorySuggestionAttempted}
+        errored={aiCategorySuggestionErrored}
         hasLocalSuggestion={hasLocalCategorySuggestion}
         suggestion={categorySuggestionToShow}
         onApply={onApplyCategorySuggestion}

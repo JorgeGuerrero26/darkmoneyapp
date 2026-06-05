@@ -11,6 +11,8 @@ type Props = {
   attempted: boolean;
   suggestion: CategorySuggestionStateLike | null;
   hasLocalSuggestion: boolean;
+  /** Cuando la IA falló o no pudo correr (timeout/error edge). Distingue "no disponible" de "sin sugerencia". */
+  errored?: boolean;
   onApply: () => void;
 };
 
@@ -21,7 +23,7 @@ type Props = {
  *
  * This is intentionally a thin presentational wrapper — all decision logic stays in the parent.
  */
-function CategorySuggestionBlockComponent({ loading, attempted, suggestion, hasLocalSuggestion, onApply }: Props) {
+function CategorySuggestionBlockComponent({ loading, attempted, suggestion, hasLocalSuggestion, errored, onApply }: Props) {
   if (loading) {
     return (
       <SmartSuggestionLoading
@@ -33,8 +35,12 @@ function CategorySuggestionBlockComponent({ loading, attempted, suggestion, hasL
       />
     );
   }
+  // Si la IA falló y no hay nada que mostrar, ser transparente: "IA no disponible" (distinto de vacío).
+  if (errored && !suggestion) {
+    return <SmartSuggestionEmpty message="IA no disponible" />;
+  }
   if (attempted && !suggestion) {
-    return <SmartSuggestionEmpty message="Sin sugerencia de categoría" />;
+    return <SmartSuggestionEmpty message="IA sin sugerencia" />;
   }
   if (suggestion) {
     return (
