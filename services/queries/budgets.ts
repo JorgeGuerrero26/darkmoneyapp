@@ -3,6 +3,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../../lib/supabase";
 import { runBackgroundQueryRefresh } from "./_shared";
 import type { WorkspaceSnapshot } from "./workspace-data";
+import { nextPeriodFor } from "../../features/budgets/lib/duplicateBudgetToNextPeriod";
+import type { BudgetOverview } from "../../types/domain";
 
 export type BudgetFormInput = {
   name: string;
@@ -72,6 +74,38 @@ export function useUpdateBudgetMutation(workspaceId: number | null) {
         .eq("id", id)
         .eq("workspace_id", workspaceId);
       if (error) throw new Error(error.message ?? "Error de base de datos");
+    },
+    onSuccess: () => {
+      runBackgroundQueryRefresh(queryClient, [["workspace-snapshot"]]);
+    },
+  });
+}
+
+export function useDuplicateBudgetMutation(workspaceId: number | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (source: BudgetOverview) => {
+      if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
+      const { periodStart, periodEnd } = nextPeriodFor(source.periodStart, source.periodEnd);
+      const { data, error } = await supabase
+        .from("budgets")
+        .insert({
+          workspace_id: workspaceId,
+          name: source.name,
+          period_start: periodStart,
+          period_end: periodEnd,
+          limit_amount: source.limitAmount,
+          alert_percent: source.alertPercent,
+          currency_code: source.currencyCode,
+          category_id: source.categoryId ?? null,
+          account_id: source.accountId ?? null,
+          rollover_enabled: source.rolloverEnabled,
+          notes: source.notes ?? null,
+        })
+        .select("id")
+        .single();
+      if (error) throw new Error(error.message ?? "Error de base de datos");
+      return data as { id: number };
     },
     onSuccess: () => {
       runBackgroundQueryRefresh(queryClient, [["workspace-snapshot"]]);

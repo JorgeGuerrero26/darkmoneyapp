@@ -2,7 +2,7 @@ import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SectionListRenderItem } from "react-native";
 import * as Haptics from "expo-haptics";
-import { CheckSquare, Download, Target, Trash2, X } from "lucide-react-native";
+import { CheckSquare, Copy, Download, Target, Trash2, X } from "lucide-react-native";
 import { format } from "date-fns";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter, useFocusEffect } from "expo-router";
@@ -43,10 +43,11 @@ import { useWorkspace } from "../../lib/workspace-context";
 import { useToast } from "../../hooks/useToast";
 import { useOriginBackNavigation } from "../../hooks/useOriginBackNavigation";
 import { useBudgetScopeMovementsQuery } from "../../services/queries/budget-analytics";
+import { useWorkspaceSnapshotQuery } from "../../services/queries/workspace-data";
 import {
   useDeleteBudgetMutation,
-  useWorkspaceSnapshotQuery,
-} from "../../services/queries/workspace-data";
+  useDuplicateBudgetMutation,
+} from "../../services/queries/budgets";
 import type { BudgetOverview } from "../../types/domain";
 
 function BudgetsScreen() {
@@ -76,6 +77,7 @@ function BudgetsScreen() {
   const refreshTriggeredRef = useRef(false);
 
   const deleteMutation = useDeleteBudgetMutation(activeWorkspaceId);
+  const duplicateMutation = useDuplicateBudgetMutation(activeWorkspaceId);
   const {
     data: snapshot,
     isLoading: snapshotLoading,
@@ -258,6 +260,36 @@ function BudgetsScreen() {
     exitSelectMode();
   }, [exitSelectMode, selectedBudgets, startUndoDelete]);
 
+  const handleDuplicate = useCallback(async (budget: BudgetOverview) => {
+    try {
+      await duplicateMutation.mutateAsync(budget);
+      showToast(`"${budget.name}" duplicado al próximo período`, "success");
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : "No se pudo duplicar", "error");
+    }
+  }, [duplicateMutation, showToast]);
+
+  const handleBulkDuplicate = useCallback(async () => {
+    let count = 0;
+    for (const budget of selectedBudgets) {
+      try {
+        await duplicateMutation.mutateAsync(budget);
+        count += 1;
+      } catch (err: unknown) {
+        showToast(err instanceof Error ? err.message : "No se pudo duplicar uno", "error");
+      }
+    }
+    exitSelectMode();
+    if (count > 0) {
+      showToast(
+        count === 1
+          ? "1 presupuesto duplicado al próximo período"
+          : `${count} presupuestos duplicados al próximo período`,
+        "success",
+      );
+    }
+  }, [duplicateMutation, exitSelectMode, selectedBudgets, showToast]);
+
   const exportCSV = useCallback(async (budgetsToExport: BudgetOverview[]) => {
     const csv = buildBudgetCSV(budgetsToExport);
     const fileName = `presupuestos_${format(new Date(), "yyyyMMdd")}.csv`;
@@ -284,9 +316,10 @@ function BudgetsScreen() {
         toggleSelect(budget.id);
       }}
       onDelete={() => handleDelete(budget)}
+      onDuplicate={() => void handleDuplicate(budget)}
       onAnalytics={() => setAnalyticsBudgetId(budget.id)}
     />
-  ), [handleDelete, selectMode, selectedIds, toggleSelect]);
+  ), [handleDelete, handleDuplicate, selectMode, selectedIds, toggleSelect]);
 
   const contextNote = buildBudgetsContextNote({
     visibleCount: filteredBudgets.length,
@@ -375,6 +408,13 @@ function BudgetsScreen() {
                 icon: Download,
                 tone: "primary",
                 onPress: () => exportCSV(selectedBudgets),
+              },
+              {
+                key: "duplicate",
+                label: `Duplicar (${selectedIds.size})`,
+                icon: Copy,
+                tone: "neutral",
+                onPress: () => void handleBulkDuplicate(),
               },
               {
                 key: "delete",

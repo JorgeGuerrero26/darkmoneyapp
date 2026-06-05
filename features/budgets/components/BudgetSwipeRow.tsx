@@ -1,4 +1,4 @@
-import { Trash2 } from "lucide-react-native";
+import { Copy, Trash2 } from "lucide-react-native";
 
 import { BudgetCard } from "../../../components/domain/BudgetCard";
 import { SwipeActionRow } from "../../../components/ui/SwipeActionRow";
@@ -11,6 +11,7 @@ type Props = {
   onPress: () => void;
   onLongPress?: () => void;
   onDelete: () => void;
+  onDuplicate: () => void;
   onAnalytics: () => void;
 };
 
@@ -20,12 +21,21 @@ export function BudgetSwipeRow({
   onPress,
   onLongPress,
   onDelete,
+  onDuplicate,
   onAnalytics,
 }: Props) {
   return (
     <SwipeActionRow
       revealWidth={88}
       borderRadius={RADIUS.xl}
+      leftAction={{
+        label: "Duplicar",
+        icon: Copy,
+        onPress: onDuplicate,
+        color: COLORS.primary,
+        backgroundColor: COLORS.primary + "30",
+        haptic: "medium",
+      }}
       rightAction={{
         label: "Eliminar",
         icon: Trash2,
