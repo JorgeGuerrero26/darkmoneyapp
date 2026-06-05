@@ -30,6 +30,9 @@ import {
   filterBudgets,
   type ActiveBudgetFilter,
 } from "../../features/budgets/lib/budgetFilters";
+import { buildBudgetCSV } from "../../features/budgets/lib/budgetsCsv";
+import { buildRateMap, convertAmount } from "../../features/budgets/lib/budgetCurrency";
+import { buildBudgetsContextNote } from "../../features/budgets/lib/buildBudgetsContextNote";
 import { useAuth } from "../../lib/auth-context";
 import {
   applyBudgetComputedMetrics,
@@ -44,68 +47,7 @@ import {
   useDeleteBudgetMutation,
   useWorkspaceSnapshotQuery,
 } from "../../services/queries/workspace-data";
-import type { BudgetOverview, ExchangeRateSummary } from "../../types/domain";
-
-function csvEscape(value: string | number | boolean | null | undefined) {
-  return `"${String(value ?? "").replace(/"/g, '""')}"`;
-}
-
-function buildBudgetCSV(budgets: BudgetOverview[]): string {
-  const BOM = "\uFEFF";
-  const headers = [
-    "Nombre",
-    "Ámbito",
-    "Moneda",
-    "Límite",
-    "Gastado",
-    "Restante",
-    "Uso %",
-    "Alerta %",
-    "Movimientos",
-    "Inicio",
-    "Fin",
-    "Rollover",
-    "Notas",
-  ];
-  const rows = budgets.map((budget) => [
-    budget.name,
-    budget.scopeLabel,
-    budget.currencyCode,
-    budget.limitAmount,
-    budget.spentAmount,
-    budget.remainingAmount,
-    Math.round(budget.usedPercent),
-    budget.alertPercent,
-    budget.movementCount,
-    budget.periodStart,
-    budget.periodEnd,
-    budget.rolloverEnabled ? "Sí" : "No",
-    budget.notes ?? "",
-  ].map(csvEscape).join(","));
-
-  return BOM + [headers.join(","), ...rows].join("\n");
-}
-
-function buildRateMap(rates: ExchangeRateSummary[]) {
-  const map = new Map<string, number>();
-  for (const rate of rates) {
-    const from = rate.fromCurrencyCode.toUpperCase();
-    const to = rate.toCurrencyCode.toUpperCase();
-    if (rate.rate > 0 && !map.has(`${from}:${to}`)) map.set(`${from}:${to}`, rate.rate);
-  }
-  return map;
-}
-
-function convertAmount(amount: number, fromCurrency: string, toCurrency: string, rates: Map<string, number>) {
-  const from = fromCurrency.toUpperCase();
-  const to = toCurrency.toUpperCase();
-  if (from === to) return amount;
-  const direct = rates.get(`${from}:${to}`);
-  if (direct) return amount * direct;
-  const inverse = rates.get(`${to}:${from}`);
-  if (inverse) return amount / inverse;
-  return amount;
-}
+import type { BudgetOverview } from "../../types/domain";
 
 function BudgetsScreen() {
   const insets = useSafeAreaInsets();
@@ -342,9 +284,10 @@ function BudgetsScreen() {
     />
   ), [handleDelete, selectMode, selectedIds, toggleSelect]);
 
-  const contextNote = filteredBudgets.length === correctedBudgets.length
-    ? "Presupuestos calculados con movimientos del período configurado en cada presupuesto."
-    : `Mostrando ${filteredBudgets.length} de ${correctedBudgets.length} presupuestos activos.`;
+  const contextNote = buildBudgetsContextNote({
+    visibleCount: filteredBudgets.length,
+    totalCount: correctedBudgets.length,
+  });
 
   return (
     <ResourceModuleTemplate
