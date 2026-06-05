@@ -322,7 +322,7 @@ function BudgetsScreen() {
           toggleSelect(budget.id);
           return;
         }
-        setEditBudget(budget);
+        router.push(`/budget/${budget.id}?from=budgets`);
       }}
       onLongPress={() => {
         if (!selectMode) setSelectMode(true);
