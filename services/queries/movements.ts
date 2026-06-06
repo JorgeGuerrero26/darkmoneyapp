@@ -217,6 +217,9 @@ export function usePaginatedMovements(
     getNextPageParam: (lastPage) =>
       lastPage.hasMore ? lastPage.nextPage : undefined,
     enabled: Boolean(workspaceId),
+    // 30s + refetch al reconectar: al volver al módulo o recuperar red, si pasaron >30s
+    // refetch en background. Realtime cubre el live mientras está abierto.
     staleTime: STALE.short,
+    refetchOnReconnect: true,
   });
 }

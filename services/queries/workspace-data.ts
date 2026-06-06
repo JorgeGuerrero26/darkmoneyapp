@@ -1231,7 +1231,12 @@ export function useWorkspaceSnapshotQuery(
     queryKey: ["workspace-snapshot", activeWorkspaceId, profile?.id],
     queryFn: () => fetchWorkspaceSnapshot(profile!.id, activeWorkspaceId!),
     enabled: Boolean(profile?.id && activeWorkspaceId),
-    staleTime: STALE.medium,
+    // 30s: snapshot core (saldos, categorías, presupuestos). Al entrar a un módulo, si pasaron
+    // >30s refetch en background mostrando lo previo (placeholderData global). Realtime lo
+    // mantiene fresco con la app abierta; esto cubre el hueco al volver de background / otra
+    // pantalla / otro dispositivo, sin polling.
+    staleTime: STALE.short,
+    refetchOnReconnect: true,
     retry: 3,
     retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 10_000),
   });
