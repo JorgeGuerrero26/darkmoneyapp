@@ -498,18 +498,33 @@ object NotificationDetectionStore {
   }
 
   /**
-   * ¿Ya hay una sugerencia REGISTRADA con esta huella (mismo paquete + contenido)?
-   * Evita que la notificación bancaria vieja, todavía en la bandeja, vuelva a generar
-   * un "movimiento detectado" tras registrar (especialmente con la app cerrada y luego
-   * `processActiveNotifications` al reconectar el listener). Se basa en la identidad de
-   * dedupe (huella), no en el canal, para no suprimir transacciones genuinamente nuevas.
+   * ¿Ya hay una sugerencia REGISTRADA RECIENTE que sea exactamente la MISMA transacción que
+   * está re-llegando (misma huella + mismo monto, registrada hace < withinMs)?
+   *
+   * IMPORTANTE: `discardFingerprint` NO incluye el monto (computeDiscardFingerprint borra los
+   * dígitos a propósito, para que "descartar" suprima futuras notificaciones de plantilla
+   * similar). Por eso aquí EXIGIMOS también `amountLabel` y una ventana temporal corta: así solo
+   * suprimimos el re-disparo de la transacción que se acaba de registrar (notif. vieja aún en
+   * bandeja al reabrir), y NUNCA una compra nueva del mismo banco con otro monto, ni una del
+   * mismo monto registrada hace tiempo.
    */
-  fun hasRegisteredSuggestionForFingerprint(context: Context, fingerprint: String): Boolean {
-    if (fingerprint.isBlank()) return false
+  fun hasRecentRegisteredSuggestion(
+    context: Context,
+    fingerprint: String,
+    amountLabel: String,
+    withinMs: Long,
+  ): Boolean {
+    if (fingerprint.isBlank() || amountLabel.isBlank()) return false
+    val since = System.currentTimeMillis() - withinMs
     val suggestions = readSuggestionsArray(context)
     for (index in 0 until suggestions.length()) {
       val s = suggestions.optJSONObject(index) ?: continue
-      if (s.optString("status") == "registered" && s.optString("discardFingerprint") == fingerprint) return true
+      if (s.optString("status") != "registered") continue
+      if (s.optString("discardFingerprint") != fingerprint) continue
+      if (s.optString("amountLabel") != amountLabel) continue
+      // updatedAt se setea al marcar registered; createdAt como respaldo.
+      val ts = s.optLong("updatedAt", s.optLong("createdAt", 0L))
+      if (ts >= since) return true
     }
     return false
   }

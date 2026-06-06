@@ -92,10 +92,12 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
     if (isPromotionalNotification(combined)) return
     val discardFingerprint = NotificationDetectionStore.computeDiscardFingerprint(sourcePackage, combined)
     if (NotificationDetectionStore.isDiscardedFingerprint(applicationContext, discardFingerprint)) return
-    // Si esta misma notificación (huella) ya derivó en un movimiento registrado, no re-disparar.
-    // Cubre el caso de registrar con la app cerrada y reabrir con la notif. bancaria aún en bandeja.
-    if (NotificationDetectionStore.hasRegisteredSuggestionForFingerprint(applicationContext, discardFingerprint)) return
     val amount = extractAmount(combined) ?: return
+    // Si ESTA MISMA transacción (huella + mismo monto) ya se registró hace poco, no re-disparar.
+    // Cubre registrar con la app cerrada y reabrir con la notif. bancaria aún en bandeja. La huella
+    // sola NO basta (ignora el monto), por eso exigimos amount + ventana corta: así una compra
+    // nueva del mismo banco con otro monto sí se detecta.
+    if (NotificationDetectionStore.hasRecentRegisteredSuggestion(applicationContext, discardFingerprint, amount, withinMs = 30 * 60_000L)) return
     // Cross-app dedup: cualquier fuente (banco, Gmail, Google Wallet, Samsung Pay) se salta si ya
     // existe una pending suggestion del mismo monto en los últimos 5 min. Política: el primero
     // llegado gana. Cubre BCP push + BCP email + Wallet/SPay para una misma transacción.
