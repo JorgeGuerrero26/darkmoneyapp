@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { Archive, Trash2 } from "lucide-react-native";
 import { format } from "date-fns";
@@ -24,10 +25,13 @@ type Props = {
   notification: NotificationItem;
   selected?: boolean;
   selectionMode?: boolean;
-  onPress: () => void;
-  onLongPress: () => void;
-  onArchive: () => void;
-  onDelete: () => void;
+  // Callbacks reciben la notificación como argumento, para que el padre pase handlers
+  // ESTABLES (no closures por-item). Junto con memo, evita re-renderizar toda la lista
+  // en cada cambio de selección o refetch — causa principal del lag en acciones masivas.
+  onPress: (notification: NotificationItem) => void;
+  onLongPress: (notification: NotificationItem) => void;
+  onArchive: (id: number) => void;
+  onDelete: (id: number) => void;
 };
 
 function formatScheduledFor(value: string) {
@@ -36,7 +40,7 @@ function formatScheduledFor(value: string) {
   return format(date, "d MMM · HH:mm", { locale: es });
 }
 
-export function NotificationCard({
+function NotificationCardComponent({
   notification,
   selected,
   selectionMode,
@@ -57,21 +61,21 @@ export function NotificationCard({
       subtitle={notification.body}
       selected={selected}
       archived={!unread}
-      onPress={onPress}
-      onLongPress={onLongPress}
+      onPress={() => onPress(notification)}
+      onLongPress={() => onLongPress(notification)}
       leading={<ResourceCardIcon icon={kindMeta.icon} color={kindMeta.color} />}
       actions={selectionMode ? [] : [
         ...(unread ? [{
           key: "archive",
           icon: Archive,
-          onPress: onArchive,
+          onPress: () => onArchive(notification.id),
           accessibilityLabel: "Archivar notificación",
           color: COLORS.primary,
         }] : []),
         {
           key: "delete",
           icon: Trash2,
-          onPress: onDelete,
+          onPress: () => onDelete(notification.id),
           accessibilityLabel: "Eliminar notificación",
           color: COLORS.danger,
         },
@@ -97,6 +101,8 @@ export function NotificationCard({
     />
   );
 }
+
+export const NotificationCard = memo(NotificationCardComponent);
 
 const styles = StyleSheet.create({
   footer: {

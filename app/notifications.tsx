@@ -156,6 +156,12 @@ function NotificationsScreen() {
   const unreadCount = notificationList.filter((notification) => notification.status !== "read").length;
   const readCount = notificationList.length - unreadCount;
   const selectionMode = selectedNotificationIds.length > 0;
+  // Refs espejo para que los handlers de fila (handleTap/longPress) sean estables y no se
+  // recreen al cambiar la selección — junto con NotificationCard memoizado evita re-render
+  // de toda la lista. Set de seleccionados para lookup O(1) en renderItem.
+  const selectionModeRef = useRef(selectionMode);
+  selectionModeRef.current = selectionMode;
+  const selectedIdSet = useMemo(() => new Set(selectedNotificationIds), [selectedNotificationIds]);
   const selectedNotifications = useMemo(
     () => notificationList.filter((item) => selectedNotificationIds.includes(item.id)),
     [notificationList, selectedNotificationIds],
@@ -271,21 +277,21 @@ function NotificationsScreen() {
     setSelectedNotificationIds([]);
   }
 
-  function toggleNotificationSelection(notificationId: number) {
+  const toggleNotificationSelection = useCallback((notificationId: number) => {
     setSelectedNotificationIds((current) =>
       current.includes(notificationId)
         ? current.filter((id) => id !== notificationId)
         : [...current, notificationId],
     );
-  }
+  }, []);
 
-  function handleNotificationLongPress(notification: NotificationItem) {
+  const handleNotificationLongPress = useCallback((notification: NotificationItem) => {
     ignoreTapAfterLongPressRef.current = true;
     setTimeout(() => {
       ignoreTapAfterLongPressRef.current = false;
     }, 250);
     toggleNotificationSelection(notification.id);
-  }
+  }, [toggleNotificationSelection]);
 
   function handleMarkAll() {
     if (unreadCount === 0) return;
@@ -410,23 +416,23 @@ function NotificationsScreen() {
     });
   }
 
-  function handleArchiveSingle(notificationId: number) {
+  const handleArchiveSingle = useCallback((notificationId: number) => {
     markRead.mutate(notificationId, {
       onSuccess: () => showToast("Notificación archivada", "success"),
       onError: (error: unknown) => showToast(error instanceof Error ? error.message : "No se pudo archivar", "error"),
     });
-  }
+  }, [markRead, showToast]);
 
-  function handleDeleteSingle(notificationId: number) {
+  const handleDeleteSingle = useCallback((notificationId: number) => {
     scheduleDeferredDelete([notificationId]);
-  }
+  }, [scheduleDeferredDelete]);
 
-  function handleTap(notification: NotificationItem) {
+  const handleTap = useCallback((notification: NotificationItem) => {
     if (ignoreTapAfterLongPressRef.current) {
       ignoreTapAfterLongPressRef.current = false;
       return;
     }
-    if (selectionMode) {
+    if (selectionModeRef.current) {
       toggleNotificationSelection(notification.id);
       return;
     }
@@ -457,7 +463,7 @@ function NotificationsScreen() {
       payload: notification.payload as Record<string, unknown> | null | undefined,
     });
     router.push(target as never);
-  }
+  }, [markRead, router, setQuickEntry, toggleNotificationSelection]);
 
   const onRefresh = useCallback(() => {
     void refetch();
@@ -483,15 +489,15 @@ function NotificationsScreen() {
     return (
       <NotificationCard
         notification={item.notification}
-        onPress={() => handleTap(item.notification)}
-        onLongPress={() => handleNotificationLongPress(item.notification)}
-        onArchive={() => handleArchiveSingle(item.notification.id)}
-        onDelete={() => handleDeleteSingle(item.notification.id)}
-        selected={selectedNotificationIds.includes(item.notification.id)}
+        onPress={handleTap}
+        onLongPress={handleNotificationLongPress}
+        onArchive={handleArchiveSingle}
+        onDelete={handleDeleteSingle}
+        selected={selectedIdSet.has(item.notification.id)}
         selectionMode={selectionMode}
       />
     );
-  }, [router, selectedNotificationIds, selectionMode]);
+  }, [router, selectedIdSet, selectionMode, handleTap, handleNotificationLongPress, handleArchiveSingle, handleDeleteSingle]);
 
   return (
     <>
