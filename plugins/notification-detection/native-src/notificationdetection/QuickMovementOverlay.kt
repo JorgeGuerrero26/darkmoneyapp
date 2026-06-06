@@ -434,6 +434,22 @@ object QuickMovementOverlay {
     if (aiPending && selectedType != "transfer") {
       loadingRow = aiLoadingRow(context)
       suggestionWrap.addView(loadingRow)
+    } else if (!aiPending && aiSuggestedIdx == null && selectedType != "transfer") {
+      // La IA YA resolvió antes de abrir el overlay y NO produjo una sugerencia mejor que la
+      // local. Sin esto, el usuario no veía NADA de IA (solo la local) — el caso opaco reportado.
+      // Distinguimos: confirmó la local / falló de verdad / corrió sin sugerencia.
+      val terminal = if (aiCategoryUnavailable(aiCategoryRecommendation)) {
+        aiInfoRow(context, "IA no disponible", "No se pudo completar la sugerencia de categoría.")
+      } else if (aiCategoryConfirmedLocal(aiCategoryRecommendation)) {
+        if (currentSuggestionRow != null) {
+          aiInfoRow(context, "IA confirmó tu categoría", "Tu patrón ya era la mejor opción.")
+        } else {
+          aiInfoRow(context, "IA sin sugerencia", "No encontró una categoría con suficiente confianza.")
+        }
+      } else {
+        aiInfoRow(context, "IA sin sugerencia", "No encontró una categoría con suficiente confianza.")
+      }
+      suggestionWrap.addView(terminal)
     }
     if (suggestionWrap.childCount > 0) {
       root.addView(suggestionWrap)
@@ -479,16 +495,17 @@ object QuickMovementOverlay {
               currentSuggestionRow = newRow
             } else {
               removeLoadingRow()
-              if (currentSuggestionRow == null) {
-                // No hay local: mostrar estado terminal explícito (transparencia).
-                val terminal = if (aiCategoryUnavailable(updatedRec)) {
+              // Estado terminal explícito (transparencia), distinguiendo confirmó / no disponible / sin sugerencia.
+              val terminal = when {
+                aiCategoryUnavailable(updatedRec) ->
                   aiInfoRow(context, "IA no disponible", "No se pudo completar la sugerencia de categoría.")
-                } else {
+                aiCategoryConfirmedLocal(updatedRec) && currentSuggestionRow != null ->
+                  aiInfoRow(context, "IA confirmó tu categoría", "Tu patrón ya era la mejor opción.")
+                currentSuggestionRow == null ->
                   aiInfoRow(context, "IA sin sugerencia", "No encontró una categoría con suficiente confianza.")
-                }
-                suggestionWrap.addView(terminal)
+                else -> null
               }
-              // Si hay local, queda confirmada y la dejamos como sugerencia accionable.
+              if (terminal != null) suggestionWrap.addView(terminal)
               detachSuggestionWrapIfEmpty()
             }
             return
@@ -1507,6 +1524,11 @@ object QuickMovementOverlay {
 
   private fun aiCategoryUnavailable(recommendation: JSONObject?): Boolean {
     return recommendation?.optString("status") == "unavailable"
+  }
+
+  /** La IA revisó y confió en la sugerencia local (no llamó al modelo o no halló algo mejor). */
+  private fun aiCategoryConfirmedLocal(recommendation: JSONObject?): Boolean {
+    return recommendation?.optString("status") == "local_confirmed"
   }
 
   private fun defaultAccountIndex(

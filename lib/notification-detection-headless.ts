@@ -205,6 +205,10 @@ async function enrichAiCategorySuggestion(payload: HeadlessPayload) {
 
   if (result.status === "ai_resolved" && result.recommendation) {
     setNativeAiCategoryRecommendation(payload.suggestionId, result.recommendation);
+  } else if (result.status === "local_confident" || result.status === "local_only") {
+    // La IA NO falló: la sugerencia local ya era confiable (o no se llamó por diseño). El overlay
+    // debe mostrar "IA confirmó tu categoría", no "IA no disponible".
+    setNativeAiCategoryRecommendation(payload.suggestionId, { status: "local_confirmed" });
   } else {
     setNativeAiCategoryRecommendation(payload.suggestionId, { status: "unavailable" });
   }
