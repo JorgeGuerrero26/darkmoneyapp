@@ -250,8 +250,12 @@ async function runRegistrationFlow(payload: HeadlessPayload) {
   const amount = Number(String(payload.amount ?? "").replace(",", "."));
   if (!Number.isFinite(amount) || amount <= 0 || !payload.accountId) return;
 
-  const userResult = await withTimeout(supabase.auth.getUser(), HEADLESS_QUERY_TIMEOUT_MS, "auth.getUser");
-  const userId = userResult.data.user?.id;
+  // getSession() lee el token del almacenamiento LOCAL (sin red); getUser() valida contra el
+  // servidor y en el contexto headless (app cerrada) se cuelga frecuentemente → timeout 10s →
+  // el movimiento no se guarda y la sugerencia queda pending (re-disparo al reabrir). RLS valida
+  // el token igual en el insert, así que el userId de la sesión local es suficiente.
+  const sessionResult = await withTimeout(supabase.auth.getSession(), HEADLESS_QUERY_TIMEOUT_MS, "auth.getSession");
+  const userId = sessionResult.data.session?.user?.id;
   if (!userId) return;
 
   const nativeSuggestions = await nativeDetection?.getSuggestions?.();
