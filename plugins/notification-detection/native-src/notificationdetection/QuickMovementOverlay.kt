@@ -1575,9 +1575,15 @@ object QuickMovementOverlay {
     fallbackIdx: Int,
   ): Int {
     val pair = runtimeContext.optJSONObject("frequentTransferPair")
+    // Log temporal de diagnóstico: ver qué par frecuente llega al overlay y qué resuelve.
+    android.util.Log.w(
+      "DarkMoneyND",
+      "transferPair: raw=${pair} accounts=${accounts.map { "${it.id}:${it.label}" }} fallback=$fallbackIdx",
+    )
     if (pair != null) {
       val srcId = pair.optInt("sourceAccountId", 0)
       val srcMatch = accounts.indexOfFirst { it.id == srcId }
+      android.util.Log.w("DarkMoneyND", "transferPair: srcId=$srcId srcMatch=$srcMatch")
       if (srcMatch >= 0) return srcMatch
     }
     return fallbackIdx

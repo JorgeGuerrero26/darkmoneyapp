@@ -49,6 +49,17 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
     super.onListenerDisconnected()
     currentService?.clear()
     currentService = null
+    // Samsung/Android matan el listener cuando la app está cerrada (optimización de batería).
+    // Sin pedir rebind, el servicio queda muerto y NO captura notificaciones nuevas hasta que
+    // el usuario entra a la pantalla de config (que llama requestRebind manualmente). Pedir
+    // rebind aquí hace que Android lo reconecte solo, restaurando la detección en tiempo real.
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+      try {
+        requestRebind(ComponentName(applicationContext, DarkMoneyNotificationListenerService::class.java))
+      } catch (_: Exception) {
+        // Best-effort: si Android rechaza el rebind, el BootCompletedReceiver / abrir la app lo recupera.
+      }
+    }
   }
 
   override fun onNotificationPosted(sbn: StatusBarNotification) {
