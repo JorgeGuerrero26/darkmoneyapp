@@ -166,7 +166,7 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
     // Captures amounts in either US format (1,234.56 or 999.99) or European format
     // (1.234,56 or 999,99). Some Peruvian apps use thousands separators on large amounts.
     // Group 2 = integer part possibly with thousands separators; group 3 = decimal part.
-    val regex = Regex("""(?i)(S/|S\.|PEN|US\$|USD|\$)\s*([0-9]{1,3}(?:[.,][0-9]{3})*|[0-9]+)(?:([.,])([0-9]{1,2}))?""")
+    val regex = Regex("""(?i)(S/|S\.|PEN|US\$|USD|\$)[\s\u00A0]*([0-9]{1,3}(?:[.,][0-9]{3})*|[0-9]+)(?:([.,])([0-9]{1,2}))?""")
     val match = regex.find(value) ?: return null
     val symbol = match.groupValues[1].uppercase()
     val rawInt = match.groupValues[2]
@@ -338,6 +338,7 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
       "transferencia recibida",
       "abono recibido",
       "pago realizado",
+      "constancia de transferencia",
     ).any { normalized.contains(it) }
 
     return hasExplicitTransaction || blockedSubjects.none { normalized.contains(it) }
@@ -364,6 +365,7 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
       "yapeo exitoso",
       "monto de yapeo",
       "pago exitoso",
+      "constancia de transferencia",
       "realizaste una transferencia",
       "transferencia entre mis cuentas",
     )
@@ -464,7 +466,7 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
     val normalized = normalizeForMatching(value)
     return when {
       listOf("yape.pe", "yapeapp", "@yape", "yape notificaciones").any { normalized.contains(it) } || (normalized.contains("yape") && (normalized.contains("yapear") || normalized.contains("yapeo") || normalized.contains("yapaste"))) -> "Yape"
-      listOf("notificacionesbcp.com.pe", "viabcp", "banco de credito", " bcp ", "bcp notificaciones").any { normalized.contains(it) } -> "BCP"
+      listOf("notificacionesbcp.com.pe", "viabcp", "banco de credito", " bcp ", "bcp notificaciones").any { normalized.contains(it) } || looksLikeBcpTransferEmail(normalized) -> "BCP"
       listOf("interbank", "intercorp").any { normalized.contains(it) } -> "Interbank"
       listOf("bbva", "continental").any { normalized.contains(it) } -> "BBVA"
       normalized.contains("scotiabank") -> "Scotiabank"
@@ -478,10 +480,20 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
     }
   }
 
+  private fun looksLikeBcpTransferEmail(normalized: String): Boolean {
+    val hasBcpTransferSubject = normalized.contains("constancia de transferencia entre mis cuentas")
+    val hasBcpAccountProduct = listOf(
+      "desde tu clasica",
+      "desde tu cuenta clasica",
+      "cuenta clasica",
+    ).any { normalized.contains(it) }
+    return hasBcpTransferSubject && (normalized.contains("realizaste una transferencia") || hasBcpAccountProduct)
+  }
+
   private fun normalizeForMatching(value: String): String {
     val noAccents = Normalizer.normalize(value.lowercase(), Normalizer.Form.NFD)
       .replace(Regex("\\p{Mn}+"), "")
-    return " ${noAccents.replace(Regex("\\s+"), " ")} "
+    return " ${noAccents.replace(Regex("""[\s\u00A0]+"""), " ")} "
   }
 
   private fun humanAppLabel(packageName: String): String {
