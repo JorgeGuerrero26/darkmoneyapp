@@ -452,6 +452,19 @@ object NotificationDetectionStore {
   }
 
   /**
+   * Borra todas las huellas de descarte. Se invoca en el cleanup por cambio de notifCleanupKey
+   * para purgar huellas genéricas (sin monto) que versiones anteriores guardaban al registrar y
+   * que bloqueaban futuras transacciones de la misma plantilla bancaria.
+   */
+  fun clearDiscardFingerprints(context: Context) {
+    val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    prefs.edit()
+      .remove(KEY_DISCARD_FINGERPRINTS_V2)
+      .remove(KEY_DISCARD_FINGERPRINTS)
+      .apply()
+  }
+
+  /**
    * Reads v2 fingerprints (JSON array with timestamps) and migrates the legacy v1 StringSet on first read.
    * Migration assigns timestamp 0 to legacy entries so they age out naturally.
    */

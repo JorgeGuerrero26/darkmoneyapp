@@ -127,7 +127,10 @@ class NotificationDetectionModule(
       }
     }
     NotificationDetectionStore.removePendingSuggestions(reactContext)
-    android.util.Log.d("DarkMoneyND", "cancelStale: removePendingSuggestions done")
+    // Purga huellas de descarte genéricas (sin monto) que versiones previas guardaban al
+    // registrar y que bloqueaban futuras transacciones de la misma plantilla bancaria.
+    NotificationDetectionStore.clearDiscardFingerprints(reactContext)
+    android.util.Log.d("DarkMoneyND", "cancelStale: removePendingSuggestions + clearDiscardFingerprints done")
   }
 
   @ReactMethod
@@ -158,14 +161,12 @@ class NotificationDetectionModule(
   @ReactMethod
   fun markSuggestionRegistered(suggestionId: String, notificationId: Int) {
     NotificationDetectionStore.markStatus(reactContext, suggestionId, "registered")
-    // Al registrar, añadimos el fingerprint a la lista de descartes para que, si el correo
-    // de Gmail original sigue activo (no se canceló a tiempo) y el listener lo re-procesa
-    // tras un re-foreground o re-bind, no genere una segunda suggestion.
-    val suggestion = NotificationDetectionStore.getSuggestion(reactContext, suggestionId)
-    val fingerprint = suggestion?.optString("discardFingerprint")
-    if (!fingerprint.isNullOrBlank()) {
-      NotificationDetectionStore.addDiscardFingerprint(reactContext, fingerprint)
-    }
+    // NO agregamos el fingerprint a la lista de descartes: discardFingerprint borra los dígitos
+    // (computeDiscardFingerprint), así que es genérico por plantilla e ignora el monto. Marcarlo
+    // como descarte permanente bloqueaba TODA futura transacción del mismo banco con el mismo
+    // texto plantilla (p. ej. "Constancia de Transferencia Entre mis Cuentas" de cualquier monto).
+    // El re-disparo del MISMO movimiento ya lo evita hasRecentRegisteredSuggestion (huella + monto
+    // exacto + ventana 30 min) en el listener, que es preciso y no mata transacciones nuevas.
     if (notificationId > 0) {
       reactContext.getSystemService(NotificationManager::class.java).cancel(notificationId)
     }
