@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SectionListRenderItem } from "react-native";
-import { Download, SlidersHorizontal } from "lucide-react-native";
+import { CheckSquare, Download, Pause, SlidersHorizontal, Trash2 } from "lucide-react-native";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -12,6 +12,7 @@ import { FilterToolbar } from "../components/ui/FilterToolbar";
 import { ActiveFilterBar, type ActiveFilterItem } from "../components/ui/ActiveFilterBar";
 import { ResourceContextNote } from "../components/ui/ResourceContextNote";
 import { ResourceModuleTemplate } from "../components/ui/ResourceModuleTemplate";
+import { BulkActionBar } from "../components/ui/BulkActionBar";
 import { ResourceSectionList } from "../components/ui/ResourceSectionList";
 import { SkeletonCard } from "../components/ui/Skeleton";
 import { FAB } from "../components/ui/FAB";
@@ -78,6 +79,30 @@ function SubscriptionsScreen() {
   const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<number>>(new Set());
   const pendingDeleteLabels = useRef<Map<number, string>>(new Map());
   const deleteTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+
+  // Bulk selection
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+
+  const toggleSelect = useCallback((id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const exitSelectMode = useCallback(() => {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+  }, []);
+
+  useEffect(() => {
+    if (selectMode && selectedIds.size === 0) {
+      setSelectMode(false);
+    }
+  }, [selectMode, selectedIds.size]);
 
   const subscriptions = useMemo(
     () => (snapshot?.subscriptions ?? []).filter((subscription) => !pendingDeleteIds.has(subscription.id)),
@@ -210,6 +235,36 @@ function SubscriptionsScreen() {
     );
   }, [showToast, updateMutation]);
 
+  const selectedSubscriptions = useMemo(
+    () => filteredSubscriptions.filter((s) => selectedIds.has(s.id)),
+    [filteredSubscriptions, selectedIds],
+  );
+
+  const handleBulkPause = useCallback(async () => {
+    let pausedCount = 0;
+    for (const sub of selectedSubscriptions) {
+      if (sub.status !== "active") continue;
+      try {
+        await updateMutation.mutateAsync({ id: sub.id, input: { status: "paused" } });
+        pausedCount += 1;
+      } catch (err: unknown) {
+        showToast(err instanceof Error ? err.message : "Error al pausar", "error");
+      }
+    }
+    exitSelectMode();
+    if (pausedCount > 0) {
+      showToast(
+        pausedCount === 1 ? "1 suscripción pausada" : `${pausedCount} suscripciones pausadas`,
+        "success",
+      );
+    }
+  }, [exitSelectMode, selectedSubscriptions, showToast, updateMutation]);
+
+  const handleBulkDelete = useCallback(() => {
+    selectedSubscriptions.forEach(startUndoDelete);
+    exitSelectMode();
+  }, [exitSelectMode, selectedSubscriptions, startUndoDelete]);
+
   const exportCSV = useCallback(async (subscriptionsToExport: SubscriptionSummary[]) => {
     if (subscriptionsToExport.length === 0) {
       showToast("No hay filas para exportar", "warning");
@@ -227,13 +282,25 @@ function SubscriptionsScreen() {
     <SubscriptionSwipeRow
       subscription={item}
       monthlyAmount={getMonthlySubscriptionAmount(item)}
-      onPress={() => setEditSubscription(item)}
+      onPress={() => {
+        if (selectMode) {
+          toggleSelect(item.id);
+          return;
+        }
+        setEditSubscription(item);
+      }}
+      onLongPress={() => {
+        if (!selectMode) setSelectMode(true);
+        toggleSelect(item.id);
+      }}
       onDelete={() => startUndoDelete(item)}
       onTogglePause={() => handleTogglePause(item)}
       onAnalytics={() => setAnalyticsTarget(item)}
-      onTogglePin={() => handleTogglePin(item)}
+      onTogglePin={selectMode ? undefined : () => handleTogglePin(item)}
+      selected={selectedIds.has(item.id)}
+      selectMode={selectMode}
     />
-  ), [handleTogglePause, handleTogglePin, startUndoDelete]);
+  ), [handleTogglePause, handleTogglePin, selectMode, selectedIds, startUndoDelete, toggleSelect]);
 
   const extraFiltersCount = dueDateRange ? 1 : 0;
   const hasFilters = activeFilters.length > 0 || Boolean(searchText.trim()) || extraFiltersCount > 0;
@@ -248,32 +315,34 @@ function SubscriptionsScreen() {
       topInset={insets.top}
       header={
         <ScreenHeader
-          title="Suscripciones"
-          onBack={handleBack}
+          title={selectMode ? `${selectedIds.size} seleccionada${selectedIds.size === 1 ? "" : "s"}` : "Suscripciones"}
+          onBack={selectMode ? exitSelectMode : handleBack}
           rightAction={
-            <HeaderActionGroup
-              actions={[
-                {
-                  key: "export",
-                  icon: Download,
-                  onPress: () => exportCSV(filteredSubscriptions),
-                  disabled: filteredSubscriptions.length === 0,
-                  accessibilityLabel: "Exportar suscripciones en CSV",
-                },
-                {
-                  key: "filters",
-                  icon: SlidersHorizontal,
-                  label: extraFiltersCount > 0 ? `Filtros (${extraFiltersCount})` : "Filtros",
-                  active: extraFiltersCount > 0,
-                  onPress: () => setFilterSheetOpen(true),
-                  accessibilityLabel: "Abrir filtros avanzados de suscripciones",
-                },
-              ]}
-            />
+            selectMode ? null : (
+              <HeaderActionGroup
+                actions={[
+                  {
+                    key: "export",
+                    icon: Download,
+                    onPress: () => exportCSV(filteredSubscriptions),
+                    disabled: filteredSubscriptions.length === 0,
+                    accessibilityLabel: "Exportar suscripciones en CSV",
+                  },
+                  {
+                    key: "filters",
+                    icon: SlidersHorizontal,
+                    label: extraFiltersCount > 0 ? `Filtros (${extraFiltersCount})` : "Filtros",
+                    active: extraFiltersCount > 0,
+                    onPress: () => setFilterSheetOpen(true),
+                    accessibilityLabel: "Abrir filtros avanzados de suscripciones",
+                  },
+                ]}
+              />
+            )
           }
         />
       }
-      toolbar={
+      toolbar={selectMode ? null : (
         <FilterToolbar
           options={SUBSCRIPTION_FILTERS}
           selectedValues={activeFilters}
@@ -285,16 +354,53 @@ function SubscriptionsScreen() {
           onSearchChange={setSearchText}
           searchPlaceholder="Buscar suscripciones..."
         />
-      }
-      activeFilters={<ActiveFilterBar items={activeFilterItems} onClear={clearFilters} />}
-      context={subscriptions.length > 0 ? <ResourceContextNote>{contextNote}</ResourceContextNote> : null}
+      )}
+      activeFilters={selectMode ? null : <ActiveFilterBar items={activeFilterItems} onClear={clearFilters} />}
+      context={!selectMode && subscriptions.length > 0 ? <ResourceContextNote>{contextNote}</ResourceContextNote> : null}
       summary={
-        filteredSubscriptions.length > 0 ? (
+        !selectMode && filteredSubscriptions.length > 0 ? (
           <SubscriptionSummaryBar
             monthlyTotal={summary.monthlyTotal}
             activeCount={summary.activeCount}
             pausedCount={summary.pausedCount}
             currencyCode={baseCurrencyCode}
+          />
+        ) : null
+      }
+      bulkActions={
+        selectMode && selectedIds.size > 0 ? (
+          <BulkActionBar
+            selectedCount={selectedIds.size}
+            onClear={exitSelectMode}
+            actions={[
+              {
+                key: "select-all",
+                label: `Sel. todas (${filteredSubscriptions.length})`,
+                icon: CheckSquare,
+                onPress: () => setSelectedIds(new Set(filteredSubscriptions.map((s) => s.id))),
+              },
+              {
+                key: "csv",
+                label: "CSV",
+                icon: Download,
+                tone: "primary",
+                onPress: () => exportCSV(selectedSubscriptions),
+              },
+              {
+                key: "pause",
+                label: `Pausar (${selectedIds.size})`,
+                icon: Pause,
+                tone: "neutral",
+                onPress: () => void handleBulkPause(),
+              },
+              {
+                key: "delete",
+                label: `Eliminar (${selectedIds.size})`,
+                icon: Trash2,
+                tone: "danger",
+                onPress: handleBulkDelete,
+              },
+            ]}
           />
         ) : null
       }
@@ -324,7 +430,7 @@ function SubscriptionsScreen() {
           onRefresh={onRefresh}
         />
       }
-      fab={<FAB onPress={() => setCreateFormVisible(true)} bottom={insets.bottom + 16} />}
+      fab={!selectMode ? <FAB onPress={() => setCreateFormVisible(true)} bottom={insets.bottom + 16} /> : null}
       overlays={
         <>
           <SubscriptionFilterSheet
