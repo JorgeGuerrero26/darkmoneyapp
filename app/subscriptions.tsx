@@ -72,7 +72,7 @@ function SubscriptionsScreen() {
   const [customDueDateFrom, setCustomDueDateFrom] = useState("");
   const [customDueDateTo, setCustomDueDateTo] = useState("");
   const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<number>>(new Set());
-  const [pendingDeleteLabels, setPendingDeleteLabels] = useState<Record<number, string>>({});
+  const pendingDeleteLabels = useRef<Map<number, string>>(new Map());
   const deleteTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
 
   const subscriptions = useMemo(
@@ -141,6 +141,8 @@ function SubscriptionsScreen() {
 
   useEffect(() => () => {
     deleteTimers.current.forEach(clearTimeout);
+    deleteTimers.current.clear();
+    pendingDeleteLabels.current.clear();
   }, []);
 
   const onRefresh = useCallback(() => {
@@ -155,7 +157,7 @@ function SubscriptionsScreen() {
 
   const startUndoDelete = useCallback((subscription: SubscriptionSummary) => {
     setPendingDeleteIds((prev) => new Set(prev).add(subscription.id));
-    setPendingDeleteLabels((prev) => ({ ...prev, [subscription.id]: subscription.name }));
+    pendingDeleteLabels.current.set(subscription.id, subscription.name);
     const timer = setTimeout(() => {
       deleteMutation.mutate(subscription.id, {
         onError: (error) => showToast(error.message, "error"),
@@ -165,6 +167,7 @@ function SubscriptionsScreen() {
         next.delete(subscription.id);
         return next;
       });
+      pendingDeleteLabels.current.delete(subscription.id);
       deleteTimers.current.delete(subscription.id);
     }, 5000);
     deleteTimers.current.set(subscription.id, timer);
@@ -174,6 +177,7 @@ function SubscriptionsScreen() {
     const timer = deleteTimers.current.get(id);
     if (timer) clearTimeout(timer);
     deleteTimers.current.delete(id);
+    pendingDeleteLabels.current.delete(id);
     setPendingDeleteIds((prev) => {
       const next = new Set(prev);
       next.delete(id);
@@ -334,9 +338,15 @@ function SubscriptionsScreen() {
           />
           <UndoBanner
             visible={pendingDeleteIds.size > 0}
-            message={pendingDeleteIds.size === 1
-              ? `Suscripción "${Object.values(pendingDeleteLabels).at(-1) ?? ""}" eliminada`
-              : `${pendingDeleteIds.size} suscripciones eliminadas`}
+            message={(() => {
+              if (pendingDeleteIds.size === 0) return "";
+              if (pendingDeleteIds.size === 1) {
+                const [onlyId] = pendingDeleteIds;
+                const label = pendingDeleteLabels.current.get(onlyId) ?? "";
+                return label ? `Suscripción "${label}" eliminada` : "Suscripción eliminada";
+              }
+              return `${pendingDeleteIds.size} suscripciones eliminadas`;
+            })()}
             onUndo={() => pendingDeleteIds.forEach((id) => undoDelete(id))}
             durationMs={5000}
             bottomOffset={insets.bottom + 80}
