@@ -3,10 +3,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../../lib/supabase";
 import { STALE } from "../../lib/query-client";
 import { toNum, type NumericLike } from "./_shared";
+import { markSubscriptionPaid } from "../../features/subscriptions/lib/markSubscriptionPaid";
 import type {
   RecurringIncomeFrequency,
   RecurringIncomeStatus,
   RecurringIncomeOccurrenceSummary,
+  SubscriptionSummary,
 } from "../../types/domain";
 import type { WorkspaceSnapshot } from "./workspace-data";
 
@@ -380,6 +382,32 @@ export function useToggleSubscriptionPinMutation(workspaceId: number | null) {
       for (const [key, value] of (context?.previousEntries ?? [])) {
         queryClient.setQueryData(key, value);
       }
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+    },
+  });
+}
+
+type MarkPaidArgs = {
+  subscription: SubscriptionSummary;
+  paidDate: string;
+  amount: number;
+  accountId: number;
+};
+
+export function useMarkSubscriptionPaidMutation(workspaceId: number | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (args: MarkPaidArgs) => {
+      if (!workspaceId) throw new Error("Workspace no disponible.");
+      return await markSubscriptionPaid({
+        subscription: args.subscription,
+        workspaceId,
+        paidDate: args.paidDate,
+        amount: args.amount,
+        accountId: args.accountId,
+      });
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });

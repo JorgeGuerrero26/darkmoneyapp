@@ -16,12 +16,14 @@ import { SubscriptionAnalyticsModal } from "../../components/domain/Subscription
 import { SubscriptionDetailHeader } from "../../features/subscriptions/components/SubscriptionDetailHeader";
 import { SubscriptionDetailQuickStats } from "../../features/subscriptions/components/SubscriptionDetailQuickStats";
 import { SubscriptionDetailMovements } from "../../features/subscriptions/components/SubscriptionDetailMovements";
+import { MarkSubscriptionPaidSheet } from "../../features/subscriptions/components/MarkSubscriptionPaidSheet";
 import { useOriginBackNavigation } from "../../hooks/useOriginBackNavigation";
 import { useAuth } from "../../lib/auth-context";
 import { useWorkspace } from "../../lib/workspace-context";
 import { useWorkspaceSnapshotQuery } from "../../services/queries/workspace-data";
 import {
   useDeleteSubscriptionMutation,
+  useMarkSubscriptionPaidMutation,
   useToggleSubscriptionPinMutation,
   useUpdateSubscriptionMutation,
 } from "../../services/queries/subscriptions-recurring-income";
@@ -48,11 +50,13 @@ function SubscriptionDetailScreen() {
   const [editFormVisible, setEditFormVisible] = useState(false);
   const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
+  const [markPaidVisible, setMarkPaidVisible] = useState(false);
 
   const { data: snapshot, isLoading } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const updateMutation = useUpdateSubscriptionMutation(activeWorkspaceId);
   const deleteMutation = useDeleteSubscriptionMutation(activeWorkspaceId);
   const togglePinMutation = useToggleSubscriptionPinMutation(activeWorkspaceId);
+  const markPaidMutation = useMarkSubscriptionPaidMutation(activeWorkspaceId);
 
   const subscriptionId = parseSubscriptionId(id);
   const subscription: SubscriptionSummary | null = useMemo(() => {
@@ -96,6 +100,25 @@ function SubscriptionDetailScreen() {
   }, [subscription, deleteMutation, handleBack, showToast]);
 
   const isPaused = subscription?.status === "paused";
+
+  const handleMarkPaid = useCallback(
+    async (args: { paidDate: string; amount: number; accountId: number }) => {
+      if (!subscription) return;
+      try {
+        const { nextDueDate } = await markPaidMutation.mutateAsync({
+          subscription,
+          paidDate: args.paidDate,
+          amount: args.amount,
+          accountId: args.accountId,
+        });
+        setMarkPaidVisible(false);
+        showToast(`Pago registrado · Próximo cobro: ${nextDueDate}`, "success");
+      } catch (err: unknown) {
+        showToast(err instanceof Error ? err.message : "No se pudo registrar el pago", "error");
+      }
+    },
+    [markPaidMutation, showToast, subscription],
+  );
 
   return (
     <ResourceModuleTemplate
@@ -166,9 +189,7 @@ function SubscriptionDetailScreen() {
                   <QuickActionButton
                     icon={CheckCircle2}
                     label="Marcar pagada"
-                    onPress={() => {
-                      showToast("Próximamente", "info");
-                    }}
+                    onPress={() => setMarkPaidVisible(true)}
                   />
                 ) : null}
                 <QuickActionButton
@@ -240,6 +261,14 @@ function SubscriptionDetailScreen() {
             destructive
             onCancel={() => setDeleteConfirmVisible(false)}
             onConfirm={() => void handleDelete()}
+          />
+          <MarkSubscriptionPaidSheet
+            visible={markPaidVisible}
+            subscription={subscription}
+            accounts={snapshot?.accounts ?? []}
+            isPending={markPaidMutation.isPending}
+            onClose={() => setMarkPaidVisible(false)}
+            onConfirm={(args) => void handleMarkPaid(args)}
           />
         </>
       }
