@@ -307,6 +307,13 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
+const INSIGHT_DOT_SIZE = 7;
+const BAR_COLUMN_WIDTH = 74;
+const BAR_TRACK_WIDTH = 32;
+const BAR_TRACK_HEIGHT = 128;
+const BAR_LABEL_FONT_SIZE = 10;
+const BAR_AMOUNT_FONT_SIZE = 9;
+
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
@@ -387,7 +394,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: SURFACE.cardBorder,
     padding: SPACING.md,
-    gap: 4,
+    gap: SPACING.xs,
   },
   metricLabel: {
     fontSize: FONT_SIZE.xs,
@@ -414,11 +421,11 @@ const styles = StyleSheet.create({
     gap: SPACING.sm,
   },
   insightDot: {
-    width: 7,
-    height: 7,
+    width: INSIGHT_DOT_SIZE,
+    height: INSIGHT_DOT_SIZE,
     borderRadius: RADIUS.full,
     backgroundColor: COLORS.primary,
-    marginTop: 6,
+    marginTop: SPACING.xs + 2,
   },
   insightText: {
     flex: 1,
@@ -433,10 +440,10 @@ const styles = StyleSheet.create({
     gap: SPACING.sm,
     paddingVertical: SPACING.xs,
   },
-  barCol: { width: 74, alignItems: "center" },
+  barCol: { width: BAR_COLUMN_WIDTH, alignItems: "center" },
   barTrack: {
-    width: 32,
-    height: 128,
+    width: BAR_TRACK_WIDTH,
+    height: BAR_TRACK_HEIGHT,
     borderRadius: RADIUS.sm,
     backgroundColor: SURFACE.card,
     borderWidth: 1,
@@ -451,14 +458,14 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: RADIUS.sm,
   },
   barLabel: {
-    marginTop: 6,
-    fontSize: 10,
+    marginTop: SPACING.xs + 2,
+    fontSize: BAR_LABEL_FONT_SIZE,
     color: COLORS.storm,
     fontFamily: FONT_FAMILY.bodyMedium,
   },
   barAmount: {
-    marginTop: 2,
-    fontSize: 9,
+    marginTop: SPACING.xs / 2,
+    fontSize: BAR_AMOUNT_FONT_SIZE,
     color: COLORS.ink,
     fontFamily: FONT_FAMILY.bodyMedium,
     textAlign: "center",
@@ -470,7 +477,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: SURFACE.cardBorder,
     padding: SPACING.md,
-    gap: 4,
+    gap: SPACING.xs,
   },
   breakdownTitle: {
     fontSize: FONT_SIZE.xs,
@@ -495,7 +502,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: SURFACE.cardBorder,
     padding: SPACING.md,
-    gap: 4,
+    gap: SPACING.xs,
   },
   latestAmount: {
     fontSize: FONT_SIZE.lg,

@@ -90,7 +90,7 @@ export function SubscriptionCard({
 const styles = StyleSheet.create({
   trailing: {
     alignItems: "flex-end",
-    gap: 2,
+    gap: SPACING.xs / 2,
   },
   amount: {
     fontSize: FONT_SIZE.md,

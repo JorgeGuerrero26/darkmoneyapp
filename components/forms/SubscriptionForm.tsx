@@ -784,7 +784,7 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   inputError: { borderColor: COLORS.danger },
-  fieldError: { fontSize: FONT_SIZE.xs, color: COLORS.danger, marginTop: 4 },
+  fieldError: { fontSize: FONT_SIZE.xs, color: COLORS.danger, marginTop: SPACING.xs },
   pillRow: { flexDirection: "row", gap: SPACING.sm },
   pillWrap: { flexDirection: "row", flexWrap: "wrap", gap: SPACING.sm },
   systemCard: {
@@ -829,7 +829,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: SURFACE.cardBorder,
   },
-  switchInfo: { flex: 1, gap: 2, marginRight: SPACING.md },
+  switchInfo: { flex: 1, gap: SPACING.xs / 2, marginRight: SPACING.md },
   switchLabel: { fontSize: FONT_SIZE.sm, fontFamily: FONT_FAMILY.bodyMedium, color: COLORS.ink },
   switchDesc: { fontSize: FONT_SIZE.xs, color: COLORS.storm },
   submitBtn: { marginTop: SPACING.sm },
