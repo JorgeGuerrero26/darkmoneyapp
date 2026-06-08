@@ -36,6 +36,7 @@ import {
   subscriptionFilterLabel,
   type ActiveSubscriptionFilter,
 } from "../features/subscriptions/lib/subscriptionFilters";
+import { buildSubscriptionsContextNote } from "../features/subscriptions/lib/buildSubscriptionsContextNote";
 import { useAuth } from "../lib/auth-context";
 import { useWorkspace } from "../lib/workspace-context";
 import { buildSubscriptionsCsv } from "../lib/subscriptions-csv";
@@ -220,11 +221,11 @@ function SubscriptionsScreen() {
 
   const extraFiltersCount = dueDateRange ? 1 : 0;
   const hasFilters = activeFilters.length > 0 || Boolean(searchText.trim()) || extraFiltersCount > 0;
-  const contextNote = filteredSubscriptions.length === subscriptions.length
-    ? "Suscripciones agrupadas por estado y calculadas como costo mensual equivalente."
-    : `Mostrando ${filteredSubscriptions.length} de ${subscriptions.length} suscripciones${
-        dueDateRange ? ` con próximo pago ${dueDateRange.label.toLowerCase()}` : ""
-      }.`;
+  const contextNote = buildSubscriptionsContextNote({
+    visibleCount: filteredSubscriptions.length,
+    totalCount: subscriptions.length,
+    dueDateRangeLabel: dueDateRange?.label ?? null,
+  });
 
   return (
     <ResourceModuleTemplate
