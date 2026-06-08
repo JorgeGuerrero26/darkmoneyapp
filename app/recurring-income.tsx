@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SectionListRenderItem } from "react-native";
 import { CheckSquare, Download, Pause, SlidersHorizontal, Trash2, TrendingUp } from "lucide-react-native";
 import { useQueryClient } from "@tanstack/react-query";
+import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { format } from "date-fns";
 
@@ -72,6 +73,7 @@ function parseMoneyInput(value: string) {
 function RecurringIncomeScreen() {
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
+  const router = useRouter();
   const { handleBack } = useOriginBackNavigation();
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
@@ -84,7 +86,6 @@ function RecurringIncomeScreen() {
   const confirmArrivalMutation = useConfirmRecurringIncomeArrivalMutation(activeWorkspaceId);
 
   const [createFormVisible, setCreateFormVisible] = useState(false);
-  const [editTarget, setEditTarget] = useState<RecurringIncomeSummary | null>(null);
   const [analyticsTarget, setAnalyticsTarget] = useState<RecurringIncomeSummary | null>(null);
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [searchText, setSearchText] = useState("");
@@ -469,7 +470,7 @@ function RecurringIncomeScreen() {
           toggleSelect(item.id);
           return;
         }
-        setEditTarget(item);
+        router.push(`/recurring-income/${item.id}?from=recurring-income`);
       }}
       onLongPress={() => {
         if (!selectMode) setSelectMode(true);
@@ -656,12 +657,6 @@ function RecurringIncomeScreen() {
             visible={createFormVisible}
             onClose={() => setCreateFormVisible(false)}
             onSuccess={() => setCreateFormVisible(false)}
-          />
-          <RecurringIncomeForm
-            visible={Boolean(editTarget)}
-            onClose={() => setEditTarget(null)}
-            onSuccess={() => setEditTarget(null)}
-            editRecurringIncome={editTarget ?? undefined}
           />
           <RecurringIncomeAnalyticsModal
             visible={Boolean(analyticsTarget)}
