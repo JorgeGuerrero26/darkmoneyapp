@@ -38,6 +38,7 @@ import {
   type RecurringIncomeAdvancedFilters,
   type RecurringIncomeFilter,
 } from "../features/recurring-income/lib/recurringIncomeFilters";
+import { buildRecurringIncomeContextNote } from "../features/recurring-income/lib/buildRecurringIncomeContextNote";
 import { useAuth } from "../lib/auth-context";
 import { useWorkspace } from "../lib/workspace-context";
 import { buildRecurringIncomeCsv } from "../lib/recurring-income-csv";
@@ -217,9 +218,10 @@ function RecurringIncomeScreen() {
     upcomingOnly,
   ].filter(Boolean).length;
   const hasFilters = activeFilterItems.length > 0;
-  const contextNote = filteredRecurringIncome.length === recurringIncome.length
-    ? "Ingresos fijos agrupados por estado y calculados como ingreso mensual equivalente."
-    : `Mostrando ${filteredRecurringIncome.length} de ${recurringIncome.length} ingresos fijos.`;
+  const contextNote = buildRecurringIncomeContextNote({
+    visibleCount: filteredRecurringIncome.length,
+    totalCount: recurringIncome.length,
+  });
 
   useEffect(() => () => {
     deleteTimers.current.forEach(clearTimeout);
