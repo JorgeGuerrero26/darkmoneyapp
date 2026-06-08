@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SectionListRenderItem } from "react-native";
 import { CheckSquare, Download, Pause, SlidersHorizontal, Trash2 } from "lucide-react-native";
 import { useQueryClient } from "@tanstack/react-query";
+import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "../components/ui/ErrorBoundary";
@@ -57,6 +58,7 @@ import type { SubscriptionSummary } from "../types/domain";
 function SubscriptionsScreen() {
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
+  const router = useRouter();
   const { handleBack } = useOriginBackNavigation();
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
@@ -68,7 +70,6 @@ function SubscriptionsScreen() {
   const togglePinMutation = useToggleSubscriptionPinMutation(activeWorkspaceId);
 
   const [createFormVisible, setCreateFormVisible] = useState(false);
-  const [editSubscription, setEditSubscription] = useState<SubscriptionSummary | null>(null);
   const [analyticsTarget, setAnalyticsTarget] = useState<SubscriptionSummary | null>(null);
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [searchText, setSearchText] = useState("");
@@ -287,7 +288,7 @@ function SubscriptionsScreen() {
           toggleSelect(item.id);
           return;
         }
-        setEditSubscription(item);
+        router.push(`/subscription/${item.id}?from=subscriptions`);
       }}
       onLongPress={() => {
         if (!selectMode) setSelectMode(true);
@@ -447,12 +448,6 @@ function SubscriptionsScreen() {
             visible={createFormVisible}
             onClose={() => setCreateFormVisible(false)}
             onSuccess={() => setCreateFormVisible(false)}
-          />
-          <SubscriptionForm
-            visible={Boolean(editSubscription)}
-            onClose={() => setEditSubscription(null)}
-            onSuccess={() => setEditSubscription(null)}
-            editSubscription={editSubscription ?? undefined}
           />
           <UndoBanner
             visible={pendingDeleteIds.size > 0}
