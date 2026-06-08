@@ -106,7 +106,7 @@ export function RecurringIncomeCard({
 const styles = StyleSheet.create({
   trailing: {
     alignItems: "flex-end",
-    gap: 2,
+    gap: SPACING.xs / 2,
   },
   amount: {
     fontSize: FONT_SIZE.md,
@@ -131,7 +131,7 @@ const styles = StyleSheet.create({
     flexShrink: 0,
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    gap: SPACING.xs,
   },
   monthly: {
     fontSize: FONT_SIZE.xs,

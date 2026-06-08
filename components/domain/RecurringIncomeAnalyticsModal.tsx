@@ -496,6 +496,29 @@ function MetricCard({
   );
 }
 
+// Dimensiones específicas de visualización (icons, chart bars, timeline rails)
+// que no encajan en SPACING/FONT_SIZE tokens. Constantes locales descriptivas.
+const HANDLE_WIDTH = 42;
+const HANDLE_HEIGHT = 4;
+const CLOSE_BTN_SIZE = 34;
+const HERO_CHART_MIN_WIDTH = 102;
+const METRIC_ICON_SIZE = 28;
+const METRIC_ICON_RADIUS = 10;
+const CHART_COL_WIDTH = 68;
+const BAR_TRACK_WIDTH = 30;
+const BAR_TRACK_HEIGHT = 120;
+const BAR_LABEL_FONT_SIZE = 10;
+const BAR_AMOUNT_FONT_SIZE = 9;
+const METRIC_LABEL_FONT_SIZE = 10;
+const TIMELINE_RAIL_WIDTH = 24;
+const TIMELINE_RAIL_MIN_HEIGHT = 88;
+const TIMELINE_DOT_SIZE = 18;
+const TIMELINE_DOT_INNER_SIZE = 7;
+const TIMELINE_LINE_TOP = 18;
+const TIMELINE_LINE_WIDTH = 2;
+const PILL_DATE_FONT_SIZE = 10;
+const PILL_IMPACT_FONT_SIZE = 10;
+
 const styles = StyleSheet.create({
   overlay: {
     ...StyleSheet.absoluteFillObject,
@@ -514,8 +537,8 @@ const styles = StyleSheet.create({
   },
   handle: {
     alignSelf: "center",
-    width: 42,
-    height: 4,
+    width: HANDLE_WIDTH,
+    height: HANDLE_HEIGHT,
     borderRadius: RADIUS.full,
     backgroundColor: "rgba(255,255,255,0.18)",
     marginTop: SPACING.sm,
@@ -532,7 +555,7 @@ const styles = StyleSheet.create({
   },
   headerText: {
     flex: 1,
-    gap: 4,
+    gap: SPACING.xs,
   },
   title: {
     fontFamily: FONT_FAMILY.heading,
@@ -545,8 +568,8 @@ const styles = StyleSheet.create({
     color: COLORS.storm,
   },
   closeBtn: {
-    width: 34,
-    height: 34,
+    width: CLOSE_BTN_SIZE,
+    height: CLOSE_BTN_SIZE,
     borderRadius: RADIUS.full,
     backgroundColor: "rgba(255,255,255,0.06)",
     alignItems: "center",
@@ -572,10 +595,10 @@ const styles = StyleSheet.create({
   },
   heroInfo: {
     flex: 1,
-    gap: 4,
+    gap: SPACING.xs,
   },
   heroChart: {
-    minWidth: 102,
+    minWidth: HERO_CHART_MIN_WIDTH,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -634,20 +657,20 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: SURFACE.cardBorder,
     padding: SPACING.md,
-    gap: 5,
+    gap: SPACING.xs + 1,
   },
   metricIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 10,
+    width: METRIC_ICON_SIZE,
+    height: METRIC_ICON_SIZE,
+    borderRadius: METRIC_ICON_RADIUS,
     backgroundColor: "rgba(255,255,255,0.05)",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 2,
+    marginBottom: SPACING.xs / 2,
   },
   metricLabel: {
     fontFamily: FONT_FAMILY.bodySemibold,
-    fontSize: 10,
+    fontSize: METRIC_LABEL_FONT_SIZE,
     color: COLORS.storm,
     textTransform: "uppercase",
     letterSpacing: 0.4,
@@ -684,13 +707,13 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.xs,
   },
   chartCol: {
-    width: 68,
+    width: CHART_COL_WIDTH,
     alignItems: "center",
-    gap: 6,
+    gap: SPACING.xs + 2,
   },
   barTrack: {
-    width: 30,
-    height: 120,
+    width: BAR_TRACK_WIDTH,
+    height: BAR_TRACK_HEIGHT,
     borderRadius: RADIUS.md,
     backgroundColor: SURFACE.card,
     borderWidth: 1,
@@ -713,7 +736,7 @@ const styles = StyleSheet.create({
   },
   barLabel: {
     fontFamily: FONT_FAMILY.bodyMedium,
-    fontSize: 10,
+    fontSize: BAR_LABEL_FONT_SIZE,
     color: COLORS.storm,
     textAlign: "center",
   },
@@ -723,7 +746,7 @@ const styles = StyleSheet.create({
   },
   barAmount: {
     fontFamily: FONT_FAMILY.bodyMedium,
-    fontSize: 9,
+    fontSize: BAR_AMOUNT_FONT_SIZE,
     color: COLORS.ink,
     textAlign: "center",
   },
@@ -733,7 +756,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: SURFACE.cardBorder,
     padding: SPACING.md,
-    gap: 3,
+    gap: SPACING.xs / 2 + 1,
   },
   selectionTitle: {
     fontFamily: FONT_FAMILY.bodySemibold,
@@ -768,11 +791,11 @@ const styles = StyleSheet.create({
   },
   pillRow: {
     flexDirection: "row",
-    gap: 6,
+    gap: SPACING.xs + 2,
   },
   pill: {
     paddingHorizontal: SPACING.sm + 2,
-    paddingVertical: 6,
+    paddingVertical: SPACING.xs + 2,
     borderRadius: RADIUS.full,
     backgroundColor: SURFACE.card,
     borderWidth: 1,
@@ -797,7 +820,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: SURFACE.cardBorder,
     padding: SPACING.md,
-    gap: 6,
+    gap: SPACING.xs + 2,
   },
   emptyTitle: {
     fontFamily: FONT_FAMILY.bodySemibold,
@@ -827,30 +850,30 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.xs,
   },
   timelineRail: {
-    width: 24,
+    width: TIMELINE_RAIL_WIDTH,
     alignItems: "center",
     position: "relative",
-    minHeight: 88,
+    minHeight: TIMELINE_RAIL_MIN_HEIGHT,
   },
   timelineLine: {
     position: "absolute",
-    top: 18,
+    top: TIMELINE_LINE_TOP,
     bottom: -SPACING.md,
-    width: 2,
+    width: TIMELINE_LINE_WIDTH,
     borderRadius: RADIUS.full,
   },
   timelineDot: {
-    width: 18,
-    height: 18,
+    width: TIMELINE_DOT_SIZE,
+    height: TIMELINE_DOT_SIZE,
     borderRadius: RADIUS.full,
     borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 2,
+    marginTop: SPACING.xs / 2,
   },
   timelineDotInner: {
-    width: 7,
-    height: 7,
+    width: TIMELINE_DOT_INNER_SIZE,
+    height: TIMELINE_DOT_INNER_SIZE,
     borderRadius: RADIUS.full,
   },
   timelineContent: {
@@ -880,24 +903,24 @@ const styles = StyleSheet.create({
   },
   timelineDatePill: {
     paddingHorizontal: SPACING.sm,
-    paddingVertical: 4,
+    paddingVertical: SPACING.xs,
     borderRadius: RADIUS.full,
     backgroundColor: "rgba(255,255,255,0.05)",
   },
   timelineDatePillText: {
     fontFamily: FONT_FAMILY.bodySemibold,
-    fontSize: 10,
+    fontSize: PILL_DATE_FONT_SIZE,
     color: COLORS.storm,
   },
   timelineImpactPill: {
     paddingHorizontal: SPACING.sm,
-    paddingVertical: 4,
+    paddingVertical: SPACING.xs,
     borderRadius: RADIUS.full,
     borderWidth: 1,
   },
   timelineImpactText: {
     fontFamily: FONT_FAMILY.bodySemibold,
-    fontSize: 10,
+    fontSize: PILL_IMPACT_FONT_SIZE,
   },
   timelineType: {
     fontFamily: FONT_FAMILY.bodyMedium,
@@ -917,7 +940,7 @@ const styles = StyleSheet.create({
   timelineAction: {
     alignSelf: "flex-start",
     paddingHorizontal: SPACING.sm + 2,
-    paddingVertical: 7,
+    paddingVertical: SPACING.xs + 3,
     borderRadius: RADIUS.full,
     borderWidth: 1,
     borderColor: COLORS.primary + "55",
