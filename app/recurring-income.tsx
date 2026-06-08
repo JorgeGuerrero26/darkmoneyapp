@@ -45,10 +45,13 @@ import { buildRecurringIncomeCsv } from "../lib/recurring-income-csv";
 import { shareCsvAsFile } from "../lib/share-csv-file";
 import {
   useConfirmRecurringIncomeArrivalMutation,
-  useDeleteRecurringIncomeMutation,
-  useUpdateRecurringIncomeMutation,
   useWorkspaceSnapshotQuery,
 } from "../services/queries/workspace-data";
+import {
+  useDeleteRecurringIncomeMutation,
+  useToggleRecurringIncomePinMutation,
+  useUpdateRecurringIncomeMutation,
+} from "../services/queries/subscriptions-recurring-income";
 import { useToast } from "../hooks/useToast";
 import { useOriginBackNavigation } from "../hooks/useOriginBackNavigation";
 import type { RecurringIncomeFrequency, RecurringIncomeSummary } from "../types/domain";
@@ -75,6 +78,7 @@ function RecurringIncomeScreen() {
 
   const { data: snapshot, isLoading } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const updateMutation = useUpdateRecurringIncomeMutation(activeWorkspaceId);
+  const togglePinMutation = useToggleRecurringIncomePinMutation(activeWorkspaceId);
   const deleteMutation = useDeleteRecurringIncomeMutation(activeWorkspaceId);
   const confirmArrivalMutation = useConfirmRecurringIncomeArrivalMutation(activeWorkspaceId);
 
@@ -370,6 +374,13 @@ function RecurringIncomeScreen() {
     showToast,
   ]);
 
+  const handleTogglePin = useCallback((item: RecurringIncomeSummary) => {
+    togglePinMutation.mutate(
+      { id: item.id, isPinned: !item.isPinned },
+      { onError: (err) => showToast(err.message, "error") },
+    );
+  }, [showToast, togglePinMutation]);
+
   const handleToggleStatus = useCallback((item: RecurringIncomeSummary) => {
     const nextStatus = item.status === "active" ? "paused" : "active";
     updateMutation.mutate(
@@ -398,13 +409,14 @@ function RecurringIncomeScreen() {
     <RecurringIncomeSwipeRow
       item={item}
       monthlyAmount={getMonthlyRecurringIncomeAmount(item)}
-      onEdit={() => setEditTarget(item)}
+      onPress={() => setEditTarget(item)}
       onDelete={() => startUndoDelete(item)}
       onConfirmArrival={() => openConfirmArrival(item)}
       onToggleStatus={() => handleToggleStatus(item)}
       onAnalytics={() => setAnalyticsTarget(item)}
+      onTogglePin={() => handleTogglePin(item)}
     />
-  ), [handleToggleStatus, openConfirmArrival, startUndoDelete]);
+  ), [handleTogglePin, handleToggleStatus, openConfirmArrival, startUndoDelete]);
 
   return (
     <ResourceModuleTemplate

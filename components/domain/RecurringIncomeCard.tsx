@@ -1,5 +1,5 @@
 import { StyleSheet, Text, View } from "react-native";
-import { BarChart3, CalendarClock, Pause, Play, TrendingUp } from "lucide-react-native";
+import { BarChart3, CalendarClock, Pause, Pin, PinOff, Play, TrendingUp } from "lucide-react-native";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
@@ -19,6 +19,9 @@ type Props = {
   onPress: () => void;
   onAnalytics: () => void;
   onToggleStatus: () => void;
+  onLongPress?: () => void;
+  onTogglePin?: () => void;
+  selected?: boolean;
 };
 
 const STATUS_LABEL = {
@@ -45,6 +48,9 @@ export function RecurringIncomeCard({
   onPress,
   onAnalytics,
   onToggleStatus,
+  onLongPress,
+  onTogglePin,
+  selected = false,
 }: Props) {
   const statusColor = getStatusColor(item.status);
   const canToggleStatus = item.status === "active" || item.status === "paused";
@@ -54,9 +60,18 @@ export function RecurringIncomeCard({
       title={item.name}
       subtitle={item.payer?.trim() ? item.payer : "Sin pagador"}
       archived={item.status === "cancelled"}
+      selected={selected}
       onPress={onPress}
+      onLongPress={onLongPress}
       leading={<ResourceCardIcon icon={TrendingUp} color={statusColor} />}
       actions={[
+        ...(onTogglePin ? [{
+          key: "pin",
+          icon: item.isPinned ? PinOff : Pin,
+          onPress: onTogglePin,
+          color: item.isPinned ? COLORS.primary : COLORS.storm,
+          accessibilityLabel: item.isPinned ? "Desfijar ingreso fijo" : "Fijar ingreso fijo",
+        }] : []),
         ...(canToggleStatus ? [{
           key: "toggle-status",
           icon: item.status === "active" ? Pause : Play,

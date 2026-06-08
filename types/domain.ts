@@ -489,6 +489,7 @@ export type RecurringIncomeSummary = {
   remindDaysBefore: number;
   description?: string | null;
   notes?: string | null;
+  isPinned: boolean;
 };
 
 export type RecurringIncomeOccurrenceSummary = {

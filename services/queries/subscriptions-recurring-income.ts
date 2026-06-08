@@ -414,3 +414,38 @@ export function useMarkSubscriptionPaidMutation(workspaceId: number | null) {
     },
   });
 }
+
+export function useToggleRecurringIncomePinMutation(workspaceId: number | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, isPinned }: { id: number; isPinned: boolean }) => {
+      if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
+      const { error } = await supabase
+        .from("recurring_income")
+        .update({ is_pinned: isPinned })
+        .eq("id", id)
+        .eq("workspace_id", workspaceId);
+      if (error) throw new Error(error.message ?? "Error de base de datos");
+    },
+    onMutate: async ({ id, isPinned }) => {
+      await queryClient.cancelQueries({ queryKey: ["workspace-snapshot"] });
+      const previousEntries = queryClient.getQueriesData<WorkspaceSnapshot>({ queryKey: ["workspace-snapshot"] });
+      queryClient.setQueriesData<WorkspaceSnapshot>({ queryKey: ["workspace-snapshot"] }, (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          recurringIncome: old.recurringIncome.map((item) => (item.id === id ? { ...item, isPinned } : item)),
+        };
+      });
+      return { previousEntries };
+    },
+    onError: (_err, _vars, context) => {
+      for (const [key, value] of (context?.previousEntries ?? [])) {
+        queryClient.setQueryData(key, value);
+      }
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+    },
+  });
+}

@@ -505,6 +505,7 @@ type RecurringIncomeRow = {
   remind_days_before: number;
   description: string | null;
   notes: string | null;
+  is_pinned?: boolean | null;
 };
 
 type ExchangeRateRow = {
@@ -813,7 +814,7 @@ async function fetchWorkspaceSnapshot(
       .order("next_due_date", { ascending: true }),
     supabase
       .from("recurring_income")
-      .select("id, workspace_id, name, payer_party_id, account_id, category_id, currency_code, amount, frequency, interval_count, day_of_month, day_of_week, start_date, next_expected_date, end_date, status, remind_days_before, description, notes")
+      .select("id, workspace_id, name, payer_party_id, account_id, category_id, currency_code, amount, frequency, interval_count, day_of_month, day_of_week, start_date, next_expected_date, end_date, status, remind_days_before, description, notes, is_pinned")
       .eq("workspace_id", activeWorkspaceId)
       .order("next_expected_date", { ascending: true }),
     supabase
@@ -3113,6 +3114,7 @@ function mapRecurringIncome(
     remindDaysBefore: row.remind_days_before,
     description: row.description,
     notes: row.notes,
+    isPinned: row.is_pinned ?? false,
   };
 }
 

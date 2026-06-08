@@ -8,22 +8,44 @@ import type { RecurringIncomeSummary } from "../../../types/domain";
 type Props = {
   item: RecurringIncomeSummary;
   monthlyAmount: number;
-  onEdit: () => void;
+  onPress: () => void;
   onDelete: () => void;
   onConfirmArrival: () => void;
   onToggleStatus: () => void;
   onAnalytics: () => void;
+  onLongPress?: () => void;
+  onTogglePin?: () => void;
+  selected?: boolean;
+  selectMode?: boolean;
 };
 
 export function RecurringIncomeSwipeRow({
   item,
   monthlyAmount,
-  onEdit,
+  onPress,
   onDelete,
   onConfirmArrival,
   onToggleStatus,
   onAnalytics,
+  onLongPress,
+  onTogglePin,
+  selected = false,
+  selectMode = false,
 }: Props) {
+  if (selectMode) {
+    return (
+      <RecurringIncomeCard
+        item={item}
+        monthlyAmount={monthlyAmount}
+        onPress={onPress}
+        onLongPress={onLongPress}
+        onAnalytics={onAnalytics}
+        onToggleStatus={onToggleStatus}
+        selected={selected}
+      />
+    );
+  }
+
   return (
     <SwipeActionRow
       revealWidth={96}
@@ -53,10 +75,12 @@ export function RecurringIncomeSwipeRow({
               close();
               return;
             }
-            onEdit();
+            onPress();
           }}
+          onLongPress={onLongPress}
           onAnalytics={onAnalytics}
           onToggleStatus={onToggleStatus}
+          onTogglePin={onTogglePin}
         />
       )}
     </SwipeActionRow>

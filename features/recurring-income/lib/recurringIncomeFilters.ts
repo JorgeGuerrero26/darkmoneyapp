@@ -4,7 +4,7 @@ import type {
   RecurringIncomeSummary,
 } from "../../../types/domain";
 
-export type RecurringIncomeFilter = "all" | RecurringIncomeStatus | RecurringIncomeFrequency;
+export type RecurringIncomeFilter = "all" | "pinned" | RecurringIncomeStatus | RecurringIncomeFrequency;
 export type ActiveRecurringIncomeFilter = Exclude<RecurringIncomeFilter, "all">;
 
 export type RecurringIncomeAdvancedFilters = {
@@ -16,6 +16,7 @@ export type RecurringIncomeAdvancedFilters = {
 
 export const RECURRING_INCOME_FILTERS: Array<{ label: string; value: RecurringIncomeFilter }> = [
   { label: "Todos", value: "all" },
+  { label: "Fijados", value: "pinned" },
   { label: "Activos", value: "active" },
   { label: "Pausados", value: "paused" },
   { label: "Cancelados", value: "cancelled" },
@@ -56,6 +57,7 @@ export function filterRecurringIncome(
   advancedFilters: RecurringIncomeAdvancedFilters,
 ) {
   const query = searchText.trim().toLowerCase();
+  const pinnedOnly = filters.includes("pinned");
   const statusFilters = filters.filter((filter): filter is RecurringIncomeStatus =>
     STATUS_VALUES.has(filter as RecurringIncomeStatus),
   );
@@ -65,6 +67,7 @@ export function filterRecurringIncome(
 
   return items
     .filter((item) => {
+      if (pinnedOnly && !item.isPinned) return false;
       if (statusFilters.length > 0 && !statusFilters.includes(item.status)) return false;
       if (frequencyFilters.length > 0 && !frequencyFilters.includes(item.frequency)) return false;
       if (advancedFilters.payerId != null && item.payerPartyId !== advancedFilters.payerId) return false;
