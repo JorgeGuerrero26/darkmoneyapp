@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SectionListRenderItem } from "react-native";
-import { Download, SlidersHorizontal, TrendingUp } from "lucide-react-native";
+import { CheckSquare, Download, Pause, SlidersHorizontal, Trash2, TrendingUp } from "lucide-react-native";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { format } from "date-fns";
@@ -13,6 +13,7 @@ import { FilterToolbar, type FilterToolbarOption } from "../components/ui/Filter
 import { ActiveFilterBar, type ActiveFilterItem } from "../components/ui/ActiveFilterBar";
 import { ResourceContextNote } from "../components/ui/ResourceContextNote";
 import { ResourceModuleTemplate } from "../components/ui/ResourceModuleTemplate";
+import { BulkActionBar } from "../components/ui/BulkActionBar";
 import { ResourceSectionList } from "../components/ui/ResourceSectionList";
 import { SkeletonCard } from "../components/ui/Skeleton";
 import { FAB } from "../components/ui/FAB";
@@ -96,6 +97,30 @@ function RecurringIncomeScreen() {
   const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<number>>(new Set());
   const pendingDeleteLabels = useRef<Map<number, string>>(new Map());
   const deleteTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+
+  // Bulk selection
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+
+  const toggleSelect = useCallback((id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const exitSelectMode = useCallback(() => {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+  }, []);
+
+  useEffect(() => {
+    if (selectMode && selectedIds.size === 0) {
+      setSelectMode(false);
+    }
+  }, [selectMode, selectedIds.size]);
 
   const [arrivalTarget, setArrivalTarget] = useState<RecurringIncomeSummary | null>(null);
   const [arrivalDate, setArrivalDate] = useState(format(new Date(), "yyyy-MM-dd"));
@@ -392,6 +417,36 @@ function RecurringIncomeScreen() {
     );
   }, [showToast, updateMutation]);
 
+  const selectedItems = useMemo(
+    () => filteredRecurringIncome.filter((item) => selectedIds.has(item.id)),
+    [filteredRecurringIncome, selectedIds],
+  );
+
+  const handleBulkPause = useCallback(async () => {
+    let pausedCount = 0;
+    for (const item of selectedItems) {
+      if (item.status !== "active") continue;
+      try {
+        await updateMutation.mutateAsync({ id: item.id, input: { status: "paused" } });
+        pausedCount += 1;
+      } catch (err: unknown) {
+        showToast(err instanceof Error ? err.message : "Error al pausar", "error");
+      }
+    }
+    exitSelectMode();
+    if (pausedCount > 0) {
+      showToast(
+        pausedCount === 1 ? "1 ingreso fijo pausado" : `${pausedCount} ingresos fijos pausados`,
+        "success",
+      );
+    }
+  }, [exitSelectMode, selectedItems, showToast, updateMutation]);
+
+  const handleBulkDelete = useCallback(() => {
+    selectedItems.forEach(startUndoDelete);
+    exitSelectMode();
+  }, [exitSelectMode, selectedItems, startUndoDelete]);
+
   const exportCSV = useCallback(async (rows: RecurringIncomeSummary[]) => {
     if (rows.length === 0) {
       showToast("No hay filas para exportar", "warning");
@@ -409,46 +464,60 @@ function RecurringIncomeScreen() {
     <RecurringIncomeSwipeRow
       item={item}
       monthlyAmount={getMonthlyRecurringIncomeAmount(item)}
-      onPress={() => setEditTarget(item)}
+      onPress={() => {
+        if (selectMode) {
+          toggleSelect(item.id);
+          return;
+        }
+        setEditTarget(item);
+      }}
+      onLongPress={() => {
+        if (!selectMode) setSelectMode(true);
+        toggleSelect(item.id);
+      }}
       onDelete={() => startUndoDelete(item)}
       onConfirmArrival={() => openConfirmArrival(item)}
       onToggleStatus={() => handleToggleStatus(item)}
       onAnalytics={() => setAnalyticsTarget(item)}
-      onTogglePin={() => handleTogglePin(item)}
+      onTogglePin={selectMode ? undefined : () => handleTogglePin(item)}
+      selected={selectedIds.has(item.id)}
+      selectMode={selectMode}
     />
-  ), [handleTogglePin, handleToggleStatus, openConfirmArrival, startUndoDelete]);
+  ), [handleTogglePin, handleToggleStatus, openConfirmArrival, selectMode, selectedIds, startUndoDelete, toggleSelect]);
 
   return (
     <ResourceModuleTemplate
       topInset={insets.top}
       header={
         <ScreenHeader
-          title="Ingresos fijos"
-          onBack={handleBack}
+          title={selectMode ? `${selectedIds.size} seleccionado${selectedIds.size === 1 ? "" : "s"}` : "Ingresos fijos"}
+          onBack={selectMode ? exitSelectMode : handleBack}
           rightAction={
-            <HeaderActionGroup
-              actions={[
-                {
-                  key: "export",
-                  icon: Download,
-                  onPress: () => exportCSV(filteredRecurringIncome),
-                  disabled: filteredRecurringIncome.length === 0,
-                  accessibilityLabel: "Exportar ingresos fijos en CSV",
-                },
-                {
-                  key: "filters",
-                  icon: SlidersHorizontal,
-                  label: extraFiltersCount > 0 ? `Filtros (${extraFiltersCount})` : "Filtros",
-                  active: extraFiltersCount > 0,
-                  onPress: () => setFilterSheetOpen(true),
-                  accessibilityLabel: "Abrir filtros avanzados de ingresos fijos",
-                },
-              ]}
-            />
+            selectMode ? null : (
+              <HeaderActionGroup
+                actions={[
+                  {
+                    key: "export",
+                    icon: Download,
+                    onPress: () => exportCSV(filteredRecurringIncome),
+                    disabled: filteredRecurringIncome.length === 0,
+                    accessibilityLabel: "Exportar ingresos fijos en CSV",
+                  },
+                  {
+                    key: "filters",
+                    icon: SlidersHorizontal,
+                    label: extraFiltersCount > 0 ? `Filtros (${extraFiltersCount})` : "Filtros",
+                    active: extraFiltersCount > 0,
+                    onPress: () => setFilterSheetOpen(true),
+                    accessibilityLabel: "Abrir filtros avanzados de ingresos fijos",
+                  },
+                ]}
+              />
+            )
           }
         />
       }
-      toolbar={
+      toolbar={selectMode ? null : (
         <FilterToolbar
           options={QUICK_FILTERS}
           selectedValues={activeFilters}
@@ -460,17 +529,54 @@ function RecurringIncomeScreen() {
           onSearchChange={setSearchText}
           searchPlaceholder="Buscar ingresos fijos..."
         />
-      }
-      activeFilters={<ActiveFilterBar items={activeFilterItems} onClear={clearFilters} />}
-      context={recurringIncome.length > 0 ? <ResourceContextNote>{contextNote}</ResourceContextNote> : null}
+      )}
+      activeFilters={selectMode ? null : <ActiveFilterBar items={activeFilterItems} onClear={clearFilters} />}
+      context={!selectMode && recurringIncome.length > 0 ? <ResourceContextNote>{contextNote}</ResourceContextNote> : null}
       summary={
-        filteredRecurringIncome.length > 0 ? (
+        !selectMode && filteredRecurringIncome.length > 0 ? (
           <RecurringIncomeSummaryBar
             monthlyTotal={summary.monthlyTotal}
             activeCount={summary.activeCount}
             upcomingCount={summary.upcomingCount}
             pausedCount={summary.pausedCount}
             currencyCode={baseCurrencyCode}
+          />
+        ) : null
+      }
+      bulkActions={
+        selectMode && selectedIds.size > 0 ? (
+          <BulkActionBar
+            selectedCount={selectedIds.size}
+            onClear={exitSelectMode}
+            actions={[
+              {
+                key: "select-all",
+                label: `Sel. todos (${filteredRecurringIncome.length})`,
+                icon: CheckSquare,
+                onPress: () => setSelectedIds(new Set(filteredRecurringIncome.map((item) => item.id))),
+              },
+              {
+                key: "csv",
+                label: "CSV",
+                icon: Download,
+                tone: "primary",
+                onPress: () => exportCSV(selectedItems),
+              },
+              {
+                key: "pause",
+                label: `Pausar (${selectedIds.size})`,
+                icon: Pause,
+                tone: "neutral",
+                onPress: () => void handleBulkPause(),
+              },
+              {
+                key: "delete",
+                label: `Eliminar (${selectedIds.size})`,
+                icon: Trash2,
+                tone: "danger",
+                onPress: handleBulkDelete,
+              },
+            ]}
           />
         ) : null
       }
@@ -502,7 +608,7 @@ function RecurringIncomeScreen() {
           onRefresh={onRefresh}
         />
       }
-      fab={<FAB onPress={() => setCreateFormVisible(true)} bottom={insets.bottom + 16} />}
+      fab={!selectMode ? <FAB onPress={() => setCreateFormVisible(true)} bottom={insets.bottom + 16} /> : null}
       overlays={
         <>
           <RecurringIncomeFilterSheet
