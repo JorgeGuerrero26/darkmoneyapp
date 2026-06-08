@@ -90,7 +90,7 @@ function RecurringIncomeScreen() {
   const [categoryFilter, setCategoryFilter] = useState<number | null>(null);
   const [upcomingOnly, setUpcomingOnly] = useState(false);
   const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<number>>(new Set());
-  const [pendingDeleteLabels, setPendingDeleteLabels] = useState<Record<number, string>>({});
+  const pendingDeleteLabels = useRef<Map<number, string>>(new Map());
   const deleteTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
 
   const [arrivalTarget, setArrivalTarget] = useState<RecurringIncomeSummary | null>(null);
@@ -225,6 +225,8 @@ function RecurringIncomeScreen() {
 
   useEffect(() => () => {
     deleteTimers.current.forEach(clearTimeout);
+    deleteTimers.current.clear();
+    pendingDeleteLabels.current.clear();
   }, []);
 
   const onRefresh = useCallback(() => {
@@ -251,7 +253,7 @@ function RecurringIncomeScreen() {
 
   const startUndoDelete = useCallback((item: RecurringIncomeSummary) => {
     setPendingDeleteIds((prev) => new Set(prev).add(item.id));
-    setPendingDeleteLabels((prev) => ({ ...prev, [item.id]: item.name }));
+    pendingDeleteLabels.current.set(item.id, item.name);
     const timer = setTimeout(() => {
       deleteMutation.mutate(item.id, {
         onError: (error) => showToast(error.message, "error"),
@@ -261,6 +263,7 @@ function RecurringIncomeScreen() {
         next.delete(item.id);
         return next;
       });
+      pendingDeleteLabels.current.delete(item.id);
       deleteTimers.current.delete(item.id);
     }, 5000);
     deleteTimers.current.set(item.id, timer);
@@ -270,6 +273,7 @@ function RecurringIncomeScreen() {
     const timer = deleteTimers.current.get(id);
     if (timer) clearTimeout(timer);
     deleteTimers.current.delete(id);
+    pendingDeleteLabels.current.delete(id);
     setPendingDeleteIds((prev) => {
       const next = new Set(prev);
       next.delete(id);
@@ -550,9 +554,15 @@ function RecurringIncomeScreen() {
           />
           <UndoBanner
             visible={pendingDeleteIds.size > 0}
-            message={pendingDeleteIds.size === 1
-              ? `"${Object.values(pendingDeleteLabels).at(-1) ?? ""}" eliminado`
-              : `${pendingDeleteIds.size} ingresos fijos eliminados`}
+            message={(() => {
+              if (pendingDeleteIds.size === 0) return "";
+              if (pendingDeleteIds.size === 1) {
+                const [onlyId] = pendingDeleteIds;
+                const label = pendingDeleteLabels.current.get(onlyId) ?? "";
+                return label ? `Ingreso fijo "${label}" eliminado` : "Ingreso fijo eliminado";
+              }
+              return `${pendingDeleteIds.size} ingresos fijos eliminados`;
+            })()}
             onUndo={() => pendingDeleteIds.forEach((id) => undoDelete(id))}
             durationMs={5000}
             bottomOffset={insets.bottom + 80}
