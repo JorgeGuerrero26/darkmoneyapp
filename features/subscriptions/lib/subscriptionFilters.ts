@@ -1,10 +1,11 @@
 import type { SubscriptionFrequency, SubscriptionStatus, SubscriptionSummary } from "../../../types/domain";
 
-export type SubscriptionFilter = "all" | SubscriptionStatus | SubscriptionFrequency;
+export type SubscriptionFilter = "all" | "pinned" | SubscriptionStatus | SubscriptionFrequency;
 export type ActiveSubscriptionFilter = Exclude<SubscriptionFilter, "all">;
 
 export const SUBSCRIPTION_FILTERS: Array<{ label: string; value: SubscriptionFilter }> = [
   { label: "Todas", value: "all" },
+  { label: "Fijadas", value: "pinned" },
   { label: "Activas", value: "active" },
   { label: "Pausadas", value: "paused" },
   { label: "Canceladas", value: "cancelled" },
@@ -36,12 +37,14 @@ export function filterSubscriptions(
   searchText: string,
 ) {
   const query = searchText.trim().toLowerCase();
+  const pinnedOnly = filters.includes("pinned");
   const statusFilters = filters.filter((filter): filter is SubscriptionStatus => STATUS_VALUES.has(filter as SubscriptionStatus));
   const frequencyFilters = filters.filter((filter): filter is SubscriptionFrequency =>
     FREQUENCY_VALUES.has(filter as SubscriptionFrequency),
   );
 
   return subscriptions.filter((subscription) => {
+    if (pinnedOnly && !subscription.isPinned) return false;
     if (statusFilters.length > 0 && !statusFilters.includes(subscription.status)) return false;
     if (frequencyFilters.length > 0 && !frequencyFilters.includes(subscription.frequency)) return false;
 

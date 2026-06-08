@@ -42,10 +42,13 @@ import { useWorkspace } from "../lib/workspace-context";
 import { buildSubscriptionsCsv } from "../lib/subscriptions-csv";
 import { shareCsvAsFile } from "../lib/share-csv-file";
 import {
-  useDeleteSubscriptionMutation,
-  useUpdateSubscriptionMutation,
   useWorkspaceSnapshotQuery,
 } from "../services/queries/workspace-data";
+import {
+  useDeleteSubscriptionMutation,
+  useToggleSubscriptionPinMutation,
+  useUpdateSubscriptionMutation,
+} from "../services/queries/subscriptions-recurring-income";
 import { useToast } from "../hooks/useToast";
 import { useOriginBackNavigation } from "../hooks/useOriginBackNavigation";
 import type { SubscriptionSummary } from "../types/domain";
@@ -61,6 +64,7 @@ function SubscriptionsScreen() {
   const { data: snapshot, isLoading } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const updateMutation = useUpdateSubscriptionMutation(activeWorkspaceId);
   const deleteMutation = useDeleteSubscriptionMutation(activeWorkspaceId);
+  const togglePinMutation = useToggleSubscriptionPinMutation(activeWorkspaceId);
 
   const [createFormVisible, setCreateFormVisible] = useState(false);
   const [editSubscription, setEditSubscription] = useState<SubscriptionSummary | null>(null);
@@ -185,6 +189,13 @@ function SubscriptionsScreen() {
     });
   }, []);
 
+  const handleTogglePin = useCallback((subscription: SubscriptionSummary) => {
+    togglePinMutation.mutate(
+      { id: subscription.id, isPinned: !subscription.isPinned },
+      { onError: (err) => showToast(err.message, "error") },
+    );
+  }, [showToast, togglePinMutation]);
+
   const handleTogglePause = useCallback((subscription: SubscriptionSummary) => {
     const newStatus = subscription.status === "active" ? "paused" : "active";
     updateMutation.mutate(
@@ -216,12 +227,13 @@ function SubscriptionsScreen() {
     <SubscriptionSwipeRow
       subscription={item}
       monthlyAmount={getMonthlySubscriptionAmount(item)}
-      onEdit={() => setEditSubscription(item)}
+      onPress={() => setEditSubscription(item)}
       onDelete={() => startUndoDelete(item)}
       onTogglePause={() => handleTogglePause(item)}
       onAnalytics={() => setAnalyticsTarget(item)}
+      onTogglePin={() => handleTogglePin(item)}
     />
-  ), [handleTogglePause, startUndoDelete]);
+  ), [handleTogglePause, handleTogglePin, startUndoDelete]);
 
   const extraFiltersCount = dueDateRange ? 1 : 0;
   const hasFilters = activeFilters.length > 0 || Boolean(searchText.trim()) || extraFiltersCount > 0;

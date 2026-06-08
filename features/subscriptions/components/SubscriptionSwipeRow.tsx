@@ -8,22 +8,43 @@ import type { SubscriptionSummary } from "../../../types/domain";
 type Props = {
   subscription: SubscriptionSummary;
   monthlyAmount: number;
-  onEdit: () => void;
+  onPress: () => void;
   onDelete: () => void;
   onTogglePause: () => void;
   onAnalytics: () => void;
+  onLongPress?: () => void;
+  onTogglePin?: () => void;
+  selected?: boolean;
+  selectMode?: boolean;
 };
 
 export function SubscriptionSwipeRow({
   subscription,
   monthlyAmount,
-  onEdit,
+  onPress,
   onDelete,
   onTogglePause,
   onAnalytics,
+  onLongPress,
+  onTogglePin,
+  selected = false,
+  selectMode = false,
 }: Props) {
   const canPause = subscription.status === "active" || subscription.status === "paused";
   const pauseIsActive = subscription.status === "paused";
+
+  if (selectMode) {
+    return (
+      <SubscriptionCard
+        subscription={subscription}
+        monthlyAmount={monthlyAmount}
+        onPress={onPress}
+        onLongPress={onLongPress}
+        onAnalytics={onAnalytics}
+        selected={selected}
+      />
+    );
+  }
 
   return (
     <SwipeActionRow
@@ -54,9 +75,11 @@ export function SubscriptionSwipeRow({
               close();
               return;
             }
-            onEdit();
+            onPress();
           }}
+          onLongPress={onLongPress}
           onAnalytics={onAnalytics}
+          onTogglePin={onTogglePin}
         />
       )}
     </SwipeActionRow>

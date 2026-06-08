@@ -482,6 +482,7 @@ type SubscriptionRow = {
   auto_create_movement: boolean;
   description: string | null;
   notes: string | null;
+  is_pinned?: boolean | null;
 };
 
 type RecurringIncomeRow = {
@@ -605,6 +606,7 @@ function mapSubscription(
     autoCreateMovement: row.auto_create_movement,
     description: row.description,
     notes: row.notes,
+    isPinned: row.is_pinned ?? false,
   };
 }
 
@@ -806,7 +808,7 @@ async function fetchWorkspaceSnapshot(
       .eq("workspace_id", activeWorkspaceId),
     supabase
       .from("subscriptions")
-      .select("id, workspace_id, name, vendor_party_id, account_id, category_id, currency_code, amount, frequency, interval_count, day_of_month, day_of_week, start_date, next_due_date, end_date, status, remind_days_before, auto_create_movement, description, notes")
+      .select("id, workspace_id, name, vendor_party_id, account_id, category_id, currency_code, amount, frequency, interval_count, day_of_month, day_of_week, start_date, next_due_date, end_date, status, remind_days_before, auto_create_movement, description, notes, is_pinned")
       .eq("workspace_id", activeWorkspaceId)
       .order("next_due_date", { ascending: true }),
     supabase

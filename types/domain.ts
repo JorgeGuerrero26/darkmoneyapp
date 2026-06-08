@@ -461,6 +461,7 @@ export type SubscriptionSummary = {
   autoCreateMovement: boolean;
   description?: string | null;
   notes?: string | null;
+  isPinned: boolean;
 };
 
 export type RecurringIncomeSummary = {
