@@ -71,7 +71,7 @@ function CategoriesScreen() {
   const [kindFilter, setKindFilter] = useState<CategoryFilter>("all");
   const [showInactive, setShowInactive] = useState(false);
   const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<number>>(new Set());
-  const [pendingDeleteLabels, setPendingDeleteLabels] = useState<Record<number, string>>({});
+  const pendingDeleteLabels = useRef<Map<number, string>>(new Map());
   const deleteTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
 
   const categories = useMemo(
@@ -126,6 +126,8 @@ function CategoriesScreen() {
 
   useEffect(() => () => {
     deleteTimers.current.forEach(clearTimeout);
+    deleteTimers.current.clear();
+    pendingDeleteLabels.current.clear();
   }, []);
 
   const onRefresh = useCallback(() => {
@@ -141,7 +143,7 @@ function CategoriesScreen() {
 
   const startUndoDelete = useCallback((category: CategoryOverview) => {
     setPendingDeleteIds((prev) => new Set(prev).add(category.id));
-    setPendingDeleteLabels((prev) => ({ ...prev, [category.id]: category.name }));
+    pendingDeleteLabels.current.set(category.id, category.name);
     const timer = setTimeout(() => {
       deleteMutation.mutate(category.id, {
         onError: (error) => showToast(error.message, "error"),
@@ -151,6 +153,7 @@ function CategoriesScreen() {
         next.delete(category.id);
         return next;
       });
+      pendingDeleteLabels.current.delete(category.id);
       deleteTimers.current.delete(category.id);
     }, 5000);
     deleteTimers.current.set(category.id, timer);
@@ -160,6 +163,7 @@ function CategoriesScreen() {
     const timer = deleteTimers.current.get(id);
     if (timer) clearTimeout(timer);
     deleteTimers.current.delete(id);
+    pendingDeleteLabels.current.delete(id);
     setPendingDeleteIds((prev) => {
       const next = new Set(prev);
       next.delete(id);
@@ -311,9 +315,15 @@ function CategoriesScreen() {
           />
           <UndoBanner
             visible={pendingDeleteIds.size > 0}
-            message={pendingDeleteIds.size === 1
-              ? `Categoría "${Object.values(pendingDeleteLabels).at(-1) ?? ""}" eliminada`
-              : `${pendingDeleteIds.size} categorías eliminadas`}
+            message={(() => {
+              if (pendingDeleteIds.size === 0) return "";
+              if (pendingDeleteIds.size === 1) {
+                const [onlyId] = pendingDeleteIds;
+                const label = pendingDeleteLabels.current.get(onlyId) ?? "";
+                return label ? `Categoría "${label}" eliminada` : "Categoría eliminada";
+              }
+              return `${pendingDeleteIds.size} categorías eliminadas`;
+            })()}
             onUndo={() => pendingDeleteIds.forEach((id) => undoDelete(id))}
             durationMs={5000}
             bottomOffset={insets.bottom + 80}
