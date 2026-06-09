@@ -9,7 +9,9 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.text.Editable
 import android.text.InputType
+import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -416,7 +418,20 @@ object QuickMovementOverlay {
       orientation = LinearLayout.VERTICAL
       setPadding(0, dp(6), 0, 0)
     }
+    // Agrega un row de sugerencia dándole separación del anterior (espacio entre chip local
+    // y chip IA / loading / terminal). Evita que se vean pegados.
+    fun addSuggestionRow(view: View) {
+      val lp = LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT,
+        ViewGroup.LayoutParams.WRAP_CONTENT,
+      )
+      if (suggestionWrap.childCount > 0) lp.topMargin = dp(8)
+      suggestionWrap.addView(view, lp)
+    }
     var currentSuggestionRow: View? = null
+    // ¿El chip de sugerencia actual proviene de la IA? Si es así, el recálculo local al editar
+    // la descripción NO lo pisa (la IA manda). Solo se actualiza el chip cuando es local.
+    var currentSuggestionIsAi = aiSuggestedIdx != null
     // Row de carga IA. Transparencia: si hay local mostrada pero la IA sigue corriendo, lo
     // mostramos debajo (antes corría invisible). Si no hay local, hace de skeleton.
     var loadingRow: View? = null
@@ -427,13 +442,13 @@ object QuickMovementOverlay {
         currentSuggestionRow = categorySuggestionRow(context, sugCat.label, detail) {
           categorySelectRef.selectIndex(initialIdx)
         }
-        suggestionWrap.addView(currentSuggestionRow)
+        addSuggestionRow(currentSuggestionRow!!)
       }
     }
     // Afordancia "IA analizando" SIEMPRE que la IA pueda llegar (haya o no sugerencia local).
     if (aiPending && selectedType != "transfer") {
       loadingRow = aiLoadingRow(context)
-      suggestionWrap.addView(loadingRow)
+      addSuggestionRow(loadingRow!!)
     } else if (!aiPending && aiSuggestedIdx == null && selectedType != "transfer") {
       // La IA YA resolvió antes de abrir el overlay y NO produjo una sugerencia mejor que la
       // local. Sin esto, el usuario no veía NADA de IA (solo la local) — el caso opaco reportado.
@@ -449,7 +464,7 @@ object QuickMovementOverlay {
       } else {
         aiInfoRow(context, "IA sin sugerencia", "No encontró una categoría con suficiente confianza.")
       }
-      suggestionWrap.addView(terminal)
+      addSuggestionRow(terminal)
     }
     if (suggestionWrap.childCount > 0) {
       root.addView(suggestionWrap)
@@ -493,6 +508,7 @@ object QuickMovementOverlay {
               animatedSwapSuggestionRow(suggestionWrap, replaced, newRow)
               if (replaced === loadingRow) loadingRow = null
               currentSuggestionRow = newRow
+              currentSuggestionIsAi = true
             } else {
               removeLoadingRow()
               // Estado terminal explícito (transparencia), distinguiendo confirmó / no disponible / sin sugerencia.
@@ -505,7 +521,7 @@ object QuickMovementOverlay {
                   aiInfoRow(context, "IA sin sugerencia", "No encontró una categoría con suficiente confianza.")
                 else -> null
               }
-              if (terminal != null) suggestionWrap.addView(terminal)
+              if (terminal != null) addSuggestionRow(terminal)
               detachSuggestionWrapIfEmpty()
             }
             return
@@ -514,7 +530,7 @@ object QuickMovementOverlay {
             // Presupuesto agotado sin respuesta. Quitar carga; si no había local, "IA no disponible".
             removeLoadingRow()
             if (currentSuggestionRow == null) {
-              suggestionWrap.addView(
+              addSuggestionRow(
                 aiInfoRow(context, "IA no disponible", "La sugerencia de categoría tardó demasiado."),
               )
             }
@@ -604,6 +620,49 @@ object QuickMovementOverlay {
     )
     descriptionInput.input.minLines = 2
     root.addView(descriptionInput.container)
+
+    // #3: al editar la descripción, recalcular la sugerencia LOCAL en vivo (con debounce).
+    // La IA NO se recalcula (requeriría llamar a DeepSeek desde el overlay); si el chip actual
+    // es de IA, no se pisa. Solo aplica a expense/income (en transfer no hay categoría).
+    val suggestionDebounce = Handler(Looper.getMainLooper())
+    var suggestionRunnable: Runnable? = null
+    descriptionInput.input.addTextChangedListener(object : TextWatcher {
+      override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+      override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+      override fun afterTextChanged(s: Editable?) {
+        if (selectedType == "transfer" || currentSuggestionIsAi) return
+        suggestionRunnable?.let { suggestionDebounce.removeCallbacks(it) }
+        val newText = s?.toString().orEmpty()
+        val r = Runnable {
+          val localIdx = suggestCategoryForOverlay(newText, runtimeContext, categories, ::categoryVisibleForSelectedType)
+          // Quitar el chip local previo (si quedaba) antes de re-evaluar.
+          currentSuggestionRow?.let { suggestionWrap.removeView(it) }
+          currentSuggestionRow = null
+          if (localIdx != null && localIdx > 0) {
+            val sugCat = categories.getOrNull(localIdx)
+            if (sugCat != null) {
+              val row = categorySuggestionRow(context, sugCat.label, "patrón de tus movimientos") {
+                categorySelectRef.selectIndex(localIdx)
+              }
+              currentSuggestionRow = row
+              // Insertar arriba del wrap para que quede sobre el loading/terminal de IA.
+              suggestionWrap.addView(row, 0)
+              // Asegurar que el wrap esté visible y montado (preserva su posición original).
+              if (suggestionWrap.parent == null) {
+                root.addView(suggestionWrap)
+                expenseIncomeOnlyViews.add(suggestionWrap)
+              }
+              suggestionWrap.visibility = View.VISIBLE
+            }
+          } else if (suggestionWrap.childCount == 0) {
+            // Sin sugerencia local y wrap vacío: ocultar sin desmontar (preserva posición).
+            suggestionWrap.visibility = View.GONE
+          }
+        }
+        suggestionRunnable = r
+        suggestionDebounce.postDelayed(r, 500L)
+      }
+    })
 
     refreshSegments()
 
@@ -1357,6 +1416,13 @@ object QuickMovementOverlay {
     }.start()
   }
 
+  /** Desvanece una vista y la quita de su contenedor (feedback al aplicar una sugerencia). */
+  private fun fadeOutAndRemove(view: View) {
+    view.animate().alpha(0f).setDuration(180L).withEndAction {
+      (view.parent as? ViewGroup)?.removeView(view)
+    }.start()
+  }
+
   private fun categorySuggestionRow(
     context: Context,
     categoryName: String,
@@ -1396,7 +1462,12 @@ object QuickMovementOverlay {
       background = roundedBg(0xFF6BE4C5.toInt(), dp(20))
       isClickable = true
       isFocusable = true
-      setOnClickListener { onApply() }
+      setOnClickListener {
+        onApply()
+        // Feedback de confirmación: tras aplicar, el chip se desvanece (la categoría queda
+        // resaltada arriba como confirmación). Evita que el usuario crea que falta aplicar.
+        fadeOutAndRemove(row)
+      }
     }
     row.addView(textCol, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
     row.addView(applyBtn, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
