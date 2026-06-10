@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../lib/auth-context";
 import { useWorkspace } from "../lib/workspace-context";
 import { notificationDetection } from "../lib/notification-detection-native";
+import { notificationDetectionHeadlessTask } from "../lib/notification-detection-headless";
 import { findRegisteredNativeSuggestionIds } from "../services/queries/notification-detection";
 
 // Evita reconciliar en ráfaga si el usuario alterna foreground/background rápido.
@@ -51,6 +52,24 @@ export function useNotificationDetectionForegroundReconcile() {
 
         // B) Reconciliar sugerencias nativas `pending` contra movimientos ya registrados.
         if (!notificationDetection.isAvailable()) return;
+
+        // C) Reprocesar registros headless que fallaron por red/timeout con la app cerrada.
+        // El dispatch re-encola primero (sube attempts y empuja el backoff): si el task vuelve
+        // a fallar la entrada ya quedó programada, y si termina (éxito, duplicado o estado que
+        // requiere al usuario) el propio flujo la limpia con clearSaveRetry. La idempotencia
+        // por client_dedupe_key hace seguro reintentar aunque el insert anterior sí llegó.
+        const dueRetries = await notificationDetection.getDueSaveRetries();
+        for (const entry of dueRetries) {
+          try {
+            const retryPayload = JSON.parse(entry.payloadJson) as Parameters<typeof notificationDetectionHeadlessTask>[0];
+            notificationDetection.enqueueSaveRetry(entry.suggestionId, entry.payloadJson);
+            await notificationDetectionHeadlessTask(retryPayload);
+          } catch {
+            // payload corrupto: descartar la entrada para no reintentar basura.
+            notificationDetection.clearSaveRetry(entry.suggestionId);
+          }
+        }
+
         const suggestions = await notificationDetection.getSuggestions();
         const pendingIds = suggestions
           .filter((suggestion) => suggestion.status === "pending")

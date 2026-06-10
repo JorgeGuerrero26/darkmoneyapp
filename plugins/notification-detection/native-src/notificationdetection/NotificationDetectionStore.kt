@@ -22,6 +22,9 @@ object NotificationDetectionStore {
   private const val KEY_LAST_SAVE_ERROR = "last_save_error_json"
   private const val KEY_PENDING_CANCEL_KEYS = "pending_cancel_keys_v1"
   private const val MAX_PENDING_CANCEL_KEYS = 50
+  private const val KEY_PENDING_SAVE_RETRIES = "pending_save_retries_v1"
+  private const val MAX_SAVE_RETRY_ENTRIES = 20
+  private const val MAX_SAVE_RETRY_ATTEMPTS = 5
 
   // Pruning configuration.
   private const val MAX_SUGGESTIONS = 200
@@ -653,6 +656,92 @@ object NotificationDetectionStore {
       if (ts >= since) return true
     }
     return false
+  }
+
+  // ─── Cola de reintentos de guardado headless ─────────────────────────────────
+  // Cuando el insert en Supabase falla por red/timeout con la app cerrada, el payload del
+  // registro se encola aquí y la app lo reprocesa al volver a foreground con backoff
+  // exponencial (1, 2, 4, 8, 16 min). Sin esto el movimiento simplemente se perdía
+  // (auditoría, hallazgo N3). El client_dedupe_key del insert hace seguro re-intentar.
+
+  private fun readSaveRetriesArray(context: Context): JSONArray {
+    val raw = prefs(context).getString(KEY_PENDING_SAVE_RETRIES, null) ?: return JSONArray()
+    return try {
+      JSONArray(raw)
+    } catch (_: Exception) {
+      JSONArray()
+    }
+  }
+
+  private fun writeSaveRetries(context: Context, entries: JSONArray) {
+    prefs(context).edit().putString(KEY_PENDING_SAVE_RETRIES, entries.toString()).apply()
+  }
+
+  @Synchronized
+  fun enqueueSaveRetry(context: Context, suggestionId: String, payloadJson: String) {
+    if (suggestionId.isBlank() || payloadJson.isBlank()) return
+    val existing = readSaveRetriesArray(context)
+    val out = JSONArray()
+    var attempts = 0
+    for (index in 0 until existing.length()) {
+      val entry = existing.optJSONObject(index) ?: continue
+      if (entry.optString("suggestionId") == suggestionId) {
+        attempts = entry.optInt("attempts", 0)
+        continue
+      }
+      out.put(entry)
+    }
+    attempts += 1
+    if (attempts > MAX_SAVE_RETRY_ATTEMPTS) {
+      // Agotado: dejar un marcador nunca-vencido (payload vacío) en vez de eliminar la
+      // entrada. Si se eliminara, el siguiente fallo del mismo suggestionId empezaría de
+      // cero (attempts=1) y el ciclo de reintentos sería infinito. La sugerencia sigue
+      // pending y el usuario puede registrarla manualmente; clearSaveRetry limpia el
+      // marcador cuando el flujo termina.
+      out.put(
+        JSONObject()
+          .put("suggestionId", suggestionId)
+          .put("payloadJson", "")
+          .put("attempts", attempts)
+          .put("nextAttemptAtMs", Long.MAX_VALUE),
+      )
+      writeSaveRetries(context, out)
+      return
+    }
+    val backoffMs = (1L shl (attempts - 1)) * 60_000L
+    out.put(
+      JSONObject()
+        .put("suggestionId", suggestionId)
+        .put("payloadJson", payloadJson)
+        .put("attempts", attempts)
+        .put("nextAttemptAtMs", System.currentTimeMillis() + backoffMs),
+    )
+    while (out.length() > MAX_SAVE_RETRY_ENTRIES) out.remove(0)
+    writeSaveRetries(context, out)
+  }
+
+  /** Entradas listas para reintentar (nextAttemptAtMs <= now), como JSON string. */
+  fun getDueSaveRetries(context: Context, now: Long): String {
+    val entries = readSaveRetriesArray(context)
+    val due = JSONArray()
+    for (index in 0 until entries.length()) {
+      val entry = entries.optJSONObject(index) ?: continue
+      if (entry.optLong("nextAttemptAtMs", 0L) <= now) due.put(entry)
+    }
+    return due.toString()
+  }
+
+  @Synchronized
+  fun clearSaveRetry(context: Context, suggestionId: String) {
+    if (suggestionId.isBlank()) return
+    val existing = readSaveRetriesArray(context)
+    val out = JSONArray()
+    for (index in 0 until existing.length()) {
+      val entry = existing.optJSONObject(index) ?: continue
+      if (entry.optString("suggestionId") == suggestionId) continue
+      out.put(entry)
+    }
+    writeSaveRetries(context, out)
   }
 
   private fun sha256(value: String): String {

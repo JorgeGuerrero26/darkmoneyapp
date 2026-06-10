@@ -186,6 +186,21 @@ class NotificationDetectionModule(
   }
 
   @ReactMethod
+  fun enqueueSaveRetry(suggestionId: String, payloadJson: String) {
+    NotificationDetectionStore.enqueueSaveRetry(reactContext, suggestionId, payloadJson)
+  }
+
+  @ReactMethod
+  fun getDueSaveRetries(promise: Promise) {
+    promise.resolve(NotificationDetectionStore.getDueSaveRetries(reactContext, System.currentTimeMillis()))
+  }
+
+  @ReactMethod
+  fun clearSaveRetry(suggestionId: String) {
+    NotificationDetectionStore.clearSaveRetry(reactContext, suggestionId)
+  }
+
+  @ReactMethod
   fun setSuggestionAiCategoryRecommendation(suggestionId: String, recommendationJson: String) {
     NotificationDetectionStore.setAiCategoryRecommendation(reactContext, suggestionId, recommendationJson)
   }

@@ -77,8 +77,34 @@ const nativeDetection = NativeModules.NotificationDetection as
       requestCancelBankNotification?: (suggestionId: string) => void;
       tryClaimSuggestionRegistration?: (suggestionId: string) => Promise<boolean>;
       releaseSuggestionRegistrationClaim?: (suggestionId: string) => void;
+      enqueueSaveRetry?: (suggestionId: string, payloadJson: string) => void;
+      clearSaveRetry?: (suggestionId: string) => void;
     }
   | undefined;
+
+/**
+ * Encola el payload para reintentar el registro al volver la app a foreground (backoff
+ * exponencial en el store nativo). Sin esto, un fallo de red con la app cerrada perdía
+ * el movimiento. El client_dedupe_key del insert hace seguro reintentar.
+ */
+function enqueueRegistrationRetry(payload: HeadlessPayload) {
+  if (!payload.suggestionId) return;
+  try {
+    nativeDetection?.enqueueSaveRetry?.(payload.suggestionId, JSON.stringify(payload));
+  } catch {
+    // Best-effort: si el bridge no está, el flujo actual de notificación de error sigue aplicando.
+  }
+}
+
+/** Saca la sugerencia de la cola de reintentos (éxito o estado terminal que requiere al usuario). */
+function clearRegistrationRetry(payload: HeadlessPayload) {
+  if (!payload.suggestionId) return;
+  try {
+    nativeDetection?.clearSaveRetry?.(payload.suggestionId);
+  } catch {
+    // Best-effort.
+  }
+}
 
 function parseAmountLabel(amountLabel?: string | null): number | null {
   if (!amountLabel) return null;
@@ -266,6 +292,7 @@ export async function notificationDetectionHeadlessTask(payload: HeadlessPayload
     });
     nativeDetection?.setLastSaveError?.(payload.suggestionId, message);
     nativeDetection?.showSuggestionNotification?.(payload.suggestionId);
+    enqueueRegistrationRetry(payload);
     // Liberamos el claim ante fallo permanente para permitir un retry posterior desde la app.
     nativeDetection?.releaseSuggestionRegistrationClaim?.(payload.suggestionId);
   }
@@ -316,6 +343,7 @@ async function runRegistrationFlow(payload: HeadlessPayload) {
   if (!suggestion || suggestion.status === "registered" || suggestion.movementId) {
     nativeDetection?.markSuggestionRegistered?.(payload.suggestionId, payload.notificationId ?? 0);
     nativeDetection?.requestCancelBankNotification?.(payload.suggestionId);
+    clearRegistrationRetry(payload);
     return;
   }
 
@@ -395,6 +423,7 @@ async function runRegistrationFlow(payload: HeadlessPayload) {
       });
       nativeDetection?.setLastSaveError?.(payload.suggestionId, transferError?.message ?? "No se pudo guardar la transferencia");
       nativeDetection?.showSuggestionNotification?.(payload.suggestionId);
+      enqueueRegistrationRetry(payload);
       return;
     }
     const transferVerified = await verifyMovementExists(transferMovement.id);
@@ -405,6 +434,7 @@ async function runRegistrationFlow(payload: HeadlessPayload) {
       });
       nativeDetection?.setLastSaveError?.(payload.suggestionId, "No se pudo confirmar la transferencia en el servidor");
       nativeDetection?.showSuggestionNotification?.(payload.suggestionId);
+      enqueueRegistrationRetry(payload);
       return;
     }
     await supabase
@@ -439,6 +469,7 @@ async function runRegistrationFlow(payload: HeadlessPayload) {
     });
     nativeDetection?.markSuggestionRegistered?.(payload.suggestionId, payload.notificationId ?? 0);
     nativeDetection?.requestCancelBankNotification?.(payload.suggestionId);
+    clearRegistrationRetry(payload);
     return;
   }
 
@@ -642,6 +673,7 @@ async function runRegistrationFlow(payload: HeadlessPayload) {
       .eq("kind", "detected_movement_suggestion");
     nativeDetection?.markSuggestionRegistered?.(payload.suggestionId, payload.notificationId ?? 0);
     nativeDetection?.requestCancelBankNotification?.(payload.suggestionId);
+    clearRegistrationRetry(payload);
     return;
   }
 
@@ -704,6 +736,7 @@ async function runRegistrationFlow(payload: HeadlessPayload) {
     });
     nativeDetection?.setLastSaveError?.(payload.suggestionId, movementError?.message ?? "No se pudo guardar el movimiento");
     nativeDetection?.showSuggestionNotification?.(payload.suggestionId);
+    enqueueRegistrationRetry(payload);
     return;
   }
   const verified = await verifyMovementExists(movement.id);
@@ -714,6 +747,7 @@ async function runRegistrationFlow(payload: HeadlessPayload) {
     });
     nativeDetection?.setLastSaveError?.(payload.suggestionId, "No se pudo confirmar el movimiento en el servidor");
     nativeDetection?.showSuggestionNotification?.(payload.suggestionId);
+    enqueueRegistrationRetry(payload);
     return;
   }
 
@@ -776,4 +810,5 @@ async function runRegistrationFlow(payload: HeadlessPayload) {
   });
   nativeDetection?.markSuggestionRegistered?.(payload.suggestionId, payload.notificationId ?? 0);
   nativeDetection?.requestCancelBankNotification?.(payload.suggestionId);
+  clearRegistrationRetry(payload);
 }

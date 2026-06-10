@@ -28,6 +28,16 @@ type NativeNotificationDetection = {
   getLastSaveError?(): Promise<string | null>;
   clearLastSaveError?(): void;
   requestCancelBankNotification?(suggestionId: string): void;
+  enqueueSaveRetry?(suggestionId: string, payloadJson: string): void;
+  getDueSaveRetries?(): Promise<string>;
+  clearSaveRetry?(suggestionId: string): void;
+};
+
+export type PendingSaveRetry = {
+  suggestionId: string;
+  payloadJson: string;
+  attempts: number;
+  nextAttemptAtMs: number;
 };
 
 export type DetectionLastSaveError = {
@@ -163,5 +173,28 @@ export const notificationDetection = {
   },
   requestCancelBankNotification(suggestionId: string) {
     nativeModule?.requestCancelBankNotification?.(suggestionId);
+  },
+  /** Reintentos de guardado headless pendientes cuyo backoff ya venció. */
+  async getDueSaveRetries(): Promise<PendingSaveRetry[]> {
+    if (!nativeModule?.getDueSaveRetries) return [];
+    try {
+      const raw = await nativeModule.getDueSaveRetries();
+      const parsed = JSON.parse(raw) as unknown;
+      if (!Array.isArray(parsed)) return [];
+      return parsed.filter(
+        (entry): entry is PendingSaveRetry =>
+          Boolean(entry) &&
+          typeof (entry as PendingSaveRetry).suggestionId === "string" &&
+          typeof (entry as PendingSaveRetry).payloadJson === "string",
+      );
+    } catch {
+      return [];
+    }
+  },
+  enqueueSaveRetry(suggestionId: string, payloadJson: string) {
+    nativeModule?.enqueueSaveRetry?.(suggestionId, payloadJson);
+  },
+  clearSaveRetry(suggestionId: string) {
+    nativeModule?.clearSaveRetry?.(suggestionId);
   },
 };
