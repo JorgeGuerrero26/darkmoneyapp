@@ -504,10 +504,31 @@ object NotificationDetectionStore {
     for (index in 0 until suggestions.length()) {
       val s = suggestions.optJSONObject(index) ?: continue
       if (s.optString("status") == "pending"
-          && s.optString("amountLabel") == amountLabel
+          && amountLabelsMatch(s.optString("amountLabel"), amountLabel)
           && s.optLong("createdAt", 0L) >= since) return true
     }
     return false
+  }
+
+  /**
+   * Cada fuente formatea el MISMO monto distinto: el email de BCP produce "S/ 67.00", la push de
+   * Yape "S/ 67.0" (y otras "S/ 67"). Comparar amountLabel por igualdad de strings deja pasar el
+   * dedupe cross-app y la misma compra dispara dos sugerencias. Se compara moneda + valor numérico.
+   */
+  private fun canonicalAmountKey(label: String): String {
+    val trimmed = label.trim()
+    if (trimmed.isEmpty()) return ""
+    val digitIndex = trimmed.indexOfFirst { it.isDigit() }
+    if (digitIndex < 0) return trimmed.uppercase()
+    val currency = trimmed.substring(0, digitIndex).trim().uppercase()
+    val numeric = trimmed.substring(digitIndex).replace("\u00A0", "").replace(" ", "")
+    val value = numeric.toDoubleOrNull() ?: return trimmed.uppercase()
+    return "$currency|${String.format(java.util.Locale.US, "%.2f", value)}"
+  }
+
+  private fun amountLabelsMatch(a: String, b: String): Boolean {
+    if (a.isBlank() || b.isBlank()) return false
+    return canonicalAmountKey(a) == canonicalAmountKey(b)
   }
 
   /**
@@ -534,7 +555,7 @@ object NotificationDetectionStore {
       val s = suggestions.optJSONObject(index) ?: continue
       if (s.optString("status") != "registered") continue
       if (s.optString("discardFingerprint") != fingerprint) continue
-      if (s.optString("amountLabel") != amountLabel) continue
+      if (!amountLabelsMatch(s.optString("amountLabel"), amountLabel)) continue
       // updatedAt se setea al marcar registered; createdAt como respaldo.
       val ts = s.optLong("updatedAt", s.optLong("createdAt", 0L))
       if (ts >= since) return true
