@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SectionListRenderItem } from "react-native";
-import { RefreshCw, SlidersHorizontal } from "lucide-react-native";
+import { CheckSquare, RefreshCw, SlidersHorizontal, Trash2 } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "../components/ui/ErrorBoundary";
@@ -32,9 +32,11 @@ import {
   useDeleteExchangeRateMutation,
   useExchangeRatesQuery,
   useSyncExchangeRatePairMutation,
+  useToggleExchangeRatePinMutation,
   useUpdateExchangeRateMutation,
   type ExchangeRateRecord,
 } from "../services/queries/workspace-data";
+import { BulkActionBar } from "../components/ui/BulkActionBar";
 import { ExchangeRateForm } from "../components/forms/ExchangeRateForm";
 import { SUPPORTED_CURRENCY_CODES } from "../constants/currencies";
 import { useToast } from "../hooks/useToast";
@@ -54,14 +56,39 @@ function ExchangeRatesScreen() {
   const [currencyFilter, setCurrencyFilter] = useState<CurrencyFilter>("all");
   const [advancedFilter, setAdvancedFilter] = useState<ExchangeRateAdvancedFilter>("all");
   const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<number>>(new Set());
-  const [pendingDeleteLabels, setPendingDeleteLabels] = useState<Record<number, string>>({});
+  const pendingDeleteLabels = useRef<Map<number, string>>(new Map());
   const deleteTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+
+  // Bulk selection
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
   const { data: rates = [], isLoading, refetch } = useExchangeRatesQuery();
   const createRate = useCreateExchangeRateMutation();
   const updateRate = useUpdateExchangeRateMutation();
   const deleteRate = useDeleteExchangeRateMutation();
   const syncRatePair = useSyncExchangeRatePairMutation();
+  const togglePin = useToggleExchangeRatePinMutation();
+
+  const toggleSelect = useCallback((id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const exitSelectMode = useCallback(() => {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+  }, []);
+
+  useEffect(() => {
+    if (selectMode && selectedIds.size === 0) {
+      setSelectMode(false);
+    }
+  }, [selectMode, selectedIds.size]);
 
   const activeRates = useMemo(
     () => rates.filter((rate) => !pendingDeleteIds.has(rate.id)),
@@ -120,6 +147,8 @@ function ExchangeRatesScreen() {
 
   useEffect(() => () => {
     deleteTimers.current.forEach(clearTimeout);
+    deleteTimers.current.clear();
+    pendingDeleteLabels.current.clear();
   }, []);
 
   function openNew() {
@@ -146,7 +175,7 @@ function ExchangeRatesScreen() {
   const startUndoDelete = useCallback((item: ExchangeRateRecord) => {
     const label = `${item.fromCurrencyCode} → ${item.toCurrencyCode}`;
     setPendingDeleteIds((prev) => new Set(prev).add(item.id));
-    setPendingDeleteLabels((prev) => ({ ...prev, [item.id]: label }));
+    pendingDeleteLabels.current.set(item.id, label);
     const timer = setTimeout(() => {
       deleteRate.mutate(item.id, {
         onError: (error: Error) => showToast(error.message, "error"),
@@ -156,6 +185,7 @@ function ExchangeRatesScreen() {
         next.delete(item.id);
         return next;
       });
+      pendingDeleteLabels.current.delete(item.id);
       deleteTimers.current.delete(item.id);
     }, 5000);
     deleteTimers.current.set(item.id, timer);
@@ -165,12 +195,52 @@ function ExchangeRatesScreen() {
     const timer = deleteTimers.current.get(id);
     if (timer) clearTimeout(timer);
     deleteTimers.current.delete(id);
+    pendingDeleteLabels.current.delete(id);
     setPendingDeleteIds((prev) => {
       const next = new Set(prev);
       next.delete(id);
       return next;
     });
   }, []);
+
+  const handleTogglePin = useCallback((item: ExchangeRateRecord) => {
+    togglePin.mutate(
+      { id: item.id, isPinned: !item.isPinned },
+      { onError: (err: Error) => showToast(err.message, "error") },
+    );
+  }, [showToast, togglePin]);
+
+  const selectedRates = useMemo(
+    () => filteredRates.filter((item) => selectedIds.has(item.id)),
+    [filteredRates, selectedIds],
+  );
+
+  const handleBulkResync = useCallback(async () => {
+    let count = 0;
+    for (const item of selectedRates) {
+      try {
+        await syncRatePair.mutateAsync({
+          fromCurrencyCode: item.fromCurrencyCode,
+          toCurrencyCode: item.toCurrencyCode,
+        });
+        count += 1;
+      } catch (err: unknown) {
+        showToast(err instanceof Error ? err.message : "No se pudo sincronizar uno", "error");
+      }
+    }
+    exitSelectMode();
+    if (count > 0) {
+      showToast(
+        count === 1 ? "1 par resincronizado" : `${count} pares resincronizados`,
+        "success",
+      );
+    }
+  }, [exitSelectMode, selectedRates, showToast, syncRatePair]);
+
+  const handleBulkDelete = useCallback(() => {
+    selectedRates.forEach(startUndoDelete);
+    exitSelectMode();
+  }, [exitSelectMode, selectedRates, startUndoDelete]);
 
   const handleSave = useCallback(async (from: string, to: string, rate: number, notes: string) => {
     try {
@@ -225,39 +295,54 @@ function ExchangeRatesScreen() {
   const renderRate: SectionListRenderItem<ExchangeRateRecord, ExchangeRateListSection> = useCallback(({ item }) => (
     <ExchangeRateSwipeRow
       rate={item}
-      onEdit={() => openEdit(item)}
+      onPress={() => {
+        if (selectMode) {
+          toggleSelect(item.id);
+          return;
+        }
+        openEdit(item);
+      }}
+      onLongPress={() => {
+        if (!selectMode) setSelectMode(true);
+        toggleSelect(item.id);
+      }}
       onDelete={() => startUndoDelete(item)}
+      onTogglePin={selectMode ? undefined : () => handleTogglePin(item)}
+      selected={selectedIds.has(item.id)}
+      selectMode={selectMode}
     />
-  ), [startUndoDelete]);
+  ), [handleTogglePin, selectMode, selectedIds, startUndoDelete, toggleSelect]);
 
   return (
     <ResourceModuleTemplate
       topInset={insets.top}
       header={
         <ScreenHeader
-          title="Tipos de cambio"
-          onBack={handleBack}
+          title={selectMode ? `${selectedIds.size} seleccionado${selectedIds.size === 1 ? "" : "s"}` : "Tipos de cambio"}
+          onBack={selectMode ? exitSelectMode : handleBack}
           rightAction={
-            <HeaderActionGroup
-              actions={[{
-                key: "refresh",
-                icon: RefreshCw,
-                onPress: () => void handleRefreshRates(),
-                disabled: syncRatePair.isPending,
-                accessibilityLabel: "Actualizar tipos de cambio",
-              }, {
-                key: "filters",
-                icon: SlidersHorizontal,
-                label: extraFiltersCount > 0 ? `Filtros (${extraFiltersCount})` : "Filtros",
-                active: extraFiltersCount > 0,
-                onPress: () => setFilterSheetOpen(true),
-                accessibilityLabel: "Abrir filtros avanzados de tipos de cambio",
-              }]}
-            />
+            selectMode ? null : (
+              <HeaderActionGroup
+                actions={[{
+                  key: "refresh",
+                  icon: RefreshCw,
+                  onPress: () => void handleRefreshRates(),
+                  disabled: syncRatePair.isPending,
+                  accessibilityLabel: "Actualizar tipos de cambio",
+                }, {
+                  key: "filters",
+                  icon: SlidersHorizontal,
+                  label: extraFiltersCount > 0 ? `Filtros (${extraFiltersCount})` : "Filtros",
+                  active: extraFiltersCount > 0,
+                  onPress: () => setFilterSheetOpen(true),
+                  accessibilityLabel: "Abrir filtros avanzados de tipos de cambio",
+                }]}
+              />
+            )
           }
         />
       }
-      toolbar={
+      toolbar={selectMode ? null : (
         <FilterToolbar
           options={filterOptions}
           value={currencyFilter}
@@ -266,12 +351,42 @@ function ExchangeRatesScreen() {
           onSearchChange={setSearchText}
           searchPlaceholder="Buscar moneda, tasa o nota..."
         />
-      }
-      activeFilters={<ActiveFilterBar items={activeFilterItems} onClear={clearFilters} />}
-      context={activeRates.length > 0 ? <ResourceContextNote>{contextNote}</ResourceContextNote> : null}
+      )}
+      activeFilters={selectMode ? null : <ActiveFilterBar items={activeFilterItems} onClear={clearFilters} />}
+      context={!selectMode && activeRates.length > 0 ? <ResourceContextNote>{contextNote}</ResourceContextNote> : null}
       summary={
-        activeRates.length > 0 ? (
+        !selectMode && activeRates.length > 0 ? (
           <ExchangeRatesSummaryBar pairCount={pairCount} currencyCount={currencyOptions.length} />
+        ) : null
+      }
+      bulkActions={
+        selectMode && selectedIds.size > 0 ? (
+          <BulkActionBar
+            selectedCount={selectedIds.size}
+            onClear={exitSelectMode}
+            actions={[
+              {
+                key: "select-all",
+                label: `Sel. todos (${filteredRates.length})`,
+                icon: CheckSquare,
+                onPress: () => setSelectedIds(new Set(filteredRates.map((item) => item.id))),
+              },
+              {
+                key: "resync",
+                label: `Resincronizar (${selectedIds.size})`,
+                icon: RefreshCw,
+                tone: "primary",
+                onPress: () => void handleBulkResync(),
+              },
+              {
+                key: "delete",
+                label: `Eliminar (${selectedIds.size})`,
+                icon: Trash2,
+                tone: "danger",
+                onPress: handleBulkDelete,
+              },
+            ]}
+          />
         ) : null
       }
       list={
@@ -302,7 +417,7 @@ function ExchangeRatesScreen() {
           onRefresh={() => void handleRefreshRates()}
         />
       }
-      fab={<FAB onPress={openNew} bottom={insets.bottom + 16} />}
+      fab={!selectMode ? <FAB onPress={openNew} bottom={insets.bottom + 16} /> : null}
       overlays={
         <>
           <ExchangeRateFilterSheet
@@ -331,9 +446,15 @@ function ExchangeRatesScreen() {
           </BottomSheet>
           <UndoBanner
             visible={pendingDeleteIds.size > 0}
-            message={pendingDeleteIds.size === 1
-              ? `Tipo de cambio "${Object.values(pendingDeleteLabels).at(-1) ?? ""}" eliminado`
-              : `${pendingDeleteIds.size} tipos de cambio eliminados`}
+            message={(() => {
+              if (pendingDeleteIds.size === 0) return "";
+              if (pendingDeleteIds.size === 1) {
+                const [onlyId] = pendingDeleteIds;
+                const label = pendingDeleteLabels.current.get(onlyId) ?? "";
+                return label ? `Tipo de cambio "${label}" eliminado` : "Tipo de cambio eliminado";
+              }
+              return `${pendingDeleteIds.size} tipos de cambio eliminados`;
+            })()}
             onUndo={() => pendingDeleteIds.forEach((id) => undoDelete(id))}
             durationMs={5000}
             bottomOffset={insets.bottom + 80}

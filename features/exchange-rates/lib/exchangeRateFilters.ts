@@ -2,10 +2,11 @@ import type { ResourceSection } from "../../../components/ui/ResourceSectionList
 import type { ExchangeRateRecord } from "../../../services/queries/workspace-data";
 
 export type ExchangeRateListSection = ResourceSection<ExchangeRateRecord, string>;
-export type ExchangeRateAdvancedFilter = "all" | "manual" | "synced" | "updated_today" | "stale";
+export type ExchangeRateAdvancedFilter = "all" | "pinned" | "manual" | "synced" | "updated_today" | "stale";
 
 export const EXCHANGE_RATE_ADVANCED_FILTERS: Array<{ label: string; value: ExchangeRateAdvancedFilter }> = [
   { label: "Todos", value: "all" },
+  { label: "Fijados", value: "pinned" },
   { label: "Manuales", value: "manual" },
   { label: "Sincronizados", value: "synced" },
   { label: "Actualizados hoy", value: "updated_today" },
@@ -35,6 +36,7 @@ export function filterExchangeRates(
     const from = rate.fromCurrencyCode.toUpperCase();
     const to = rate.toCurrencyCode.toUpperCase();
     if (currencyFilter !== "all" && from !== currencyFilter && to !== currencyFilter) return false;
+    if (advancedFilter === "pinned" && !rate.isPinned) return false;
     if (advancedFilter === "manual" && rate.source !== "manual") return false;
     if (advancedFilter === "synced" && rate.source === "manual") return false;
     if (advancedFilter === "updated_today" && !isExchangeRateSameLocalDay(rate.effectiveAt, today)) return false;
@@ -53,20 +55,34 @@ export function filterExchangeRates(
 }
 
 export function buildExchangeRateSections(rates: ExchangeRateRecord[]): ExchangeRateListSection[] {
-  const grouped = new Map<string, ExchangeRateRecord[]>();
+  const pinned = rates.filter((rate) => rate.isPinned);
+  const rest = rates.filter((rate) => !rate.isPinned);
 
-  for (const rate of rates) {
+  const grouped = new Map<string, ExchangeRateRecord[]>();
+  for (const rate of rest) {
     const key = `${rate.fromCurrencyCode}:${rate.toCurrencyCode}`;
     grouped.set(key, [...(grouped.get(key) ?? []), rate]);
   }
 
-  const hideHeader = grouped.size <= 1;
-  return Array.from(grouped.entries()).map(([key, data]) => ({
+  const hasPinned = pinned.length > 0;
+  const hideHeader = !hasPinned && grouped.size <= 1;
+
+  const restSections: ExchangeRateListSection[] = Array.from(grouped.entries()).map(([key, data]) => ({
     key,
     label: key.replace(":", " → "),
     data,
     headerVariant: hideHeader ? "hidden" : "default",
   }));
+
+  return [
+    ...(hasPinned ? [{
+      key: "__pinned__",
+      label: `Fijados (${pinned.length})`,
+      data: pinned,
+      headerVariant: "default" as const,
+    }] : []),
+    ...restSections,
+  ];
 }
 
 export function getExchangeRatePairCount(rates: ExchangeRateRecord[]) {

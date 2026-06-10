@@ -1,5 +1,5 @@
 import { StyleSheet, Text, View } from "react-native";
-import { ArrowRight, RefreshCw } from "lucide-react-native";
+import { ArrowRight, Pin, PinOff, RefreshCw } from "lucide-react-native";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
@@ -15,6 +15,9 @@ import type { ExchangeRateRecord } from "../../services/queries/workspace-data";
 type Props = {
   rate: ExchangeRateRecord;
   onPress: () => void;
+  onLongPress?: () => void;
+  onTogglePin?: () => void;
+  selected?: boolean;
 };
 
 function formatEffectiveAt(value: string) {
@@ -23,15 +26,24 @@ function formatEffectiveAt(value: string) {
   return format(date, "d MMM yyyy, HH:mm", { locale: es });
 }
 
-export function ExchangeRateCard({ rate, onPress }: Props) {
+export function ExchangeRateCard({ rate, onPress, onLongPress, onTogglePin, selected = false }: Props) {
   const title = `${rate.fromCurrencyCode} → ${rate.toCurrencyCode}`;
 
   return (
     <ResourceCard
       title={title}
       subtitle={formatEffectiveAt(rate.effectiveAt)}
+      selected={selected}
       onPress={onPress}
+      onLongPress={onLongPress}
       leading={<ResourceCardIcon icon={RefreshCw} color={COLORS.pine} />}
+      actions={onTogglePin ? [{
+        key: "pin",
+        icon: rate.isPinned ? PinOff : Pin,
+        onPress: onTogglePin,
+        color: rate.isPinned ? COLORS.primary : COLORS.storm,
+        accessibilityLabel: rate.isPinned ? "Desfijar par" : "Fijar par",
+      }] : []}
       meta={
         <>
           <ResourceCardBadge label={rate.source === "manual" ? "Manual" : "Sincronizado"} color={rate.source === "manual" ? COLORS.gold : COLORS.primary} />
@@ -56,7 +68,7 @@ export function ExchangeRateCard({ rate, onPress }: Props) {
 const styles = StyleSheet.create({
   trailing: {
     alignItems: "flex-end",
-    gap: 2,
+    gap: SPACING.xs / 2,
   },
   rateLine: {
     flexDirection: "row",

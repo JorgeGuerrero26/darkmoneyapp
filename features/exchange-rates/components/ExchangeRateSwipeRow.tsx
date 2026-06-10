@@ -7,11 +7,34 @@ import type { ExchangeRateRecord } from "../../../services/queries/workspace-dat
 
 type Props = {
   rate: ExchangeRateRecord;
-  onEdit: () => void;
+  onPress: () => void;
   onDelete: () => void;
+  onLongPress?: () => void;
+  onTogglePin?: () => void;
+  selected?: boolean;
+  selectMode?: boolean;
 };
 
-export function ExchangeRateSwipeRow({ rate, onEdit, onDelete }: Props) {
+export function ExchangeRateSwipeRow({
+  rate,
+  onPress,
+  onDelete,
+  onLongPress,
+  onTogglePin,
+  selected = false,
+  selectMode = false,
+}: Props) {
+  if (selectMode) {
+    return (
+      <ExchangeRateCard
+        rate={rate}
+        onPress={onPress}
+        onLongPress={onLongPress}
+        selected={selected}
+      />
+    );
+  }
+
   return (
     <SwipeActionRow
       revealWidth={92}
@@ -33,8 +56,10 @@ export function ExchangeRateSwipeRow({ rate, onEdit, onDelete }: Props) {
               close();
               return;
             }
-            onEdit();
+            onPress();
           }}
+          onLongPress={onLongPress}
+          onTogglePin={onTogglePin}
         />
       )}
     </SwipeActionRow>

@@ -19,6 +19,7 @@ export type ExchangeRateRecord = {
   effectiveAt: string;
   source: string | null;
   notes: string | null;
+  isPinned: boolean;
 };
 
 export function useExchangeRatesQuery() {
@@ -28,7 +29,7 @@ export function useExchangeRatesQuery() {
       if (!supabase) throw new Error("Supabase no configurado");
       const { data, error } = await supabase
         .from("exchange_rates")
-        .select("id, from_currency_code, to_currency_code, rate, effective_at, source, notes")
+        .select("id, from_currency_code, to_currency_code, rate, effective_at, source, notes, is_pinned")
         .order("effective_at", { ascending: false });
       if (error) throw new Error(error.message);
       return (data ?? []).map((row: any) => ({
@@ -39,6 +40,7 @@ export function useExchangeRatesQuery() {
         effectiveAt: row.effective_at as string,
         source: row.source as string | null,
         notes: row.notes as string | null,
+        isPinned: (row.is_pinned ?? false) as boolean,
       })) as ExchangeRateRecord[];
     },
   });
@@ -200,6 +202,23 @@ export function useDeleteExchangeRateMutation() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["exchange-rates"] });
       void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+    },
+  });
+}
+
+export function useToggleExchangeRatePinMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, isPinned }: { id: number; isPinned: boolean }) => {
+      if (!supabase) throw new Error("Supabase no configurado");
+      const { error } = await supabase
+        .from("exchange_rates")
+        .update({ is_pinned: isPinned })
+        .eq("id", id);
+      if (error) throw new Error(error.message);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["exchange-rates"] });
     },
   });
 }

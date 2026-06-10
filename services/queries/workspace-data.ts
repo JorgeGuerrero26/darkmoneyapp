@@ -3066,6 +3066,7 @@ export {
   useUpdateExchangeRateMutation,
   useSyncExchangeRatePairMutation,
   useDeleteExchangeRateMutation,
+  useToggleExchangeRatePinMutation,
 } from "./exchange-rates";
 
 // ─── Obligation Payment Requests ──────────────────────────────────────────────
