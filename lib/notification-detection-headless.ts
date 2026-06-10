@@ -114,7 +114,33 @@ function movementInsertPayload(workspaceId: number, input: MovementFormInput) {
     obligation_id: input.obligationId ?? null,
     subscription_id: input.subscriptionId ?? null,
     metadata: input.metadata ?? {},
+    client_dedupe_key: input.dedupeKey ?? null,
   };
+}
+
+/**
+ * Tras un 23505 del unique parcial (workspace_id, client_dedupe_key), recupera el
+ * movimiento ya insertado por esta misma sugerencia (otro intento headless o la vía
+ * React con la app abierta). Devuelve su id o null.
+ */
+async function findMovementByDedupeKey(workspaceId: number, dedupeKey: string): Promise<number | null> {
+  if (!supabase) return null;
+  try {
+    const { data } = await withTimeout(
+      supabase
+        .from("movements")
+        .select("id")
+        .eq("workspace_id", workspaceId)
+        .eq("client_dedupe_key", dedupeKey)
+        .maybeSingle(),
+      HEADLESS_QUERY_TIMEOUT_MS,
+      "movements.byDedupeKey",
+    );
+    const id = Number((data as { id?: unknown } | null)?.id ?? 0);
+    return id > 0 ? id : null;
+  } catch {
+    return null;
+  }
 }
 
 function jsonValueOrNull(value: unknown): JsonValue | null {
@@ -337,8 +363,9 @@ async function runRegistrationFlow(payload: HeadlessPayload) {
         financialAppKey: suggestion.financialAppKey,
         confidence: suggestion.confidence,
       },
+      dedupeKey: `suggestion:${suggestion.id}`,
     });
-    const { data: transferMovement, error: transferError } = await withRetry(
+    let { data: transferMovement, error: transferError } = await withRetry(
       () =>
         supabase!
           .from("movements")
@@ -352,6 +379,15 @@ async function runRegistrationFlow(payload: HeadlessPayload) {
         onAttemptFailed: reportFailedAttempt("movements.insert (transfer)", payload.suggestionId),
       },
     );
+    // 23505 = esta sugerencia ya insertó su movimiento (retry o carrera con la vía React):
+    // continuar el flujo de marcado con el movimiento existente.
+    if (transferError && (transferError as { code?: string }).code === "23505") {
+      const existingId = await findMovementByDedupeKey(workspaceId, `suggestion:${suggestion.id}`);
+      if (existingId) {
+        transferMovement = { id: existingId } as typeof transferMovement;
+        transferError = null;
+      }
+    }
     if (transferError || !transferMovement?.id) {
       logError("notification-detection-headless", "Transfer insert failed after retries", {
         suggestionId: payload.suggestionId,
@@ -622,8 +658,9 @@ async function runRegistrationFlow(payload: HeadlessPayload) {
         budgetAi: jsonValueOrNull(nativeSuggestion.budgetImpact),
         recurring_income_id: recurringIncomeId,
       },
+    dedupeKey: `suggestion:${suggestion.id}`,
   });
-  const { data: movement, error: movementError } = await withRetry(
+  let { data: movement, error: movementError } = await withRetry(
     () =>
       supabase!
         .from("movements")
@@ -637,6 +674,15 @@ async function runRegistrationFlow(payload: HeadlessPayload) {
       onAttemptFailed: reportFailedAttempt("movements.insert", payload.suggestionId),
     },
   );
+  // 23505 = esta sugerencia ya insertó su movimiento (retry o carrera con la vía React):
+  // continuar el flujo de marcado con el movimiento existente.
+  if (movementError && (movementError as { code?: string }).code === "23505") {
+    const existingId = await findMovementByDedupeKey(workspaceId, `suggestion:${suggestion.id}`);
+    if (existingId) {
+      movement = { id: existingId } as typeof movement;
+      movementError = null;
+    }
+  }
   if (movementError || !movement?.id) {
     logError("notification-detection-headless", "Movement insert failed after retries", {
       suggestionId: payload.suggestionId,

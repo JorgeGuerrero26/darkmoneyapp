@@ -718,6 +718,9 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
             financialAppKey: suggestion.financialAppKey,
             confidence: suggestion.confidence,
           },
+          // Misma clave que usa el headless para esta sugerencia: si ambas vías corren
+          // (app abierta + overlay), la segunda recibe el movimiento ya creado.
+          dedupeKey: `suggestion:${suggestion.id}`,
         }));
         await markSuggestion.mutateAsync({ suggestionId: suggestion.id, status: "registered", movementId: created.id });
         if (profile?.id && activeWorkspaceId) {
@@ -800,6 +803,9 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
           riskAi: movementRisk?.source === "deepseek" ? movementRisk : null,
           budgetAi: budgetImpact?.source === "deepseek" ? budgetImpact : null,
         },
+        // Misma clave que usa el headless para esta sugerencia: si ambas vías corren
+        // (app abierta + overlay), la segunda recibe el movimiento ya creado.
+        dedupeKey: `suggestion:${suggestion.id}`,
       }));
       await markSuggestion.mutateAsync({ suggestionId: suggestion.id, status: "registered", movementId: created.id });
       if (profile?.id && activeWorkspaceId) {
