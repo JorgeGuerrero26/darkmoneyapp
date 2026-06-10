@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SectionListRenderItem } from "react-native";
-import { Download, SlidersHorizontal } from "lucide-react-native";
+import { CheckSquare, Download, Power, SlidersHorizontal, Trash2 } from "lucide-react-native";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "../components/ui/ErrorBoundary";
 import { UndoBanner } from "../components/ui/UndoBanner";
+import { BulkActionBar } from "../components/ui/BulkActionBar";
 import { ScreenHeader } from "../components/layout/ScreenHeader";
 import { HeaderActionGroup } from "../components/ui/HeaderActionGroup";
 import { FilterToolbar } from "../components/ui/FilterToolbar";
@@ -76,6 +77,30 @@ function CategoriesScreen() {
   const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<number>>(new Set());
   const pendingDeleteLabels = useRef<Map<number, string>>(new Map());
   const deleteTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+
+  // Bulk selection
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+
+  const toggleSelect = useCallback((id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const exitSelectMode = useCallback(() => {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+  }, []);
+
+  useEffect(() => {
+    if (selectMode && selectedIds.size === 0) {
+      setSelectMode(false);
+    }
+  }, [selectMode, selectedIds.size]);
 
   const categories = useMemo(
     () => overviewList.filter((category) => !pendingDeleteIds.has(category.id)),
@@ -195,18 +220,58 @@ function CategoriesScreen() {
     );
   }, [showToast, toggleMutation]);
 
-  const exportCSV = useCallback(async () => {
-    if (filteredCategories.length === 0) {
+  const exportCSV = useCallback(async (rows: CategoryOverview[]) => {
+    if (rows.length === 0) {
       showToast("No hay filas para exportar", "warning");
       return;
     }
     try {
-      const csv = buildCategoriesCsv(filteredCategories);
+      const csv = buildCategoriesCsv(rows);
       await shareCsvAsFile(csv, `categorias-${activeWorkspace?.name?.replace(/\s+/g, "_") ?? "workspace"}.csv`);
     } catch (error: unknown) {
       showToast(error instanceof Error ? error.message : "Error al exportar", "error");
     }
-  }, [activeWorkspace?.name, filteredCategories, showToast]);
+  }, [activeWorkspace?.name, showToast]);
+
+  const selectedItems = useMemo(
+    () => filteredCategories.filter((item) => selectedIds.has(item.id)),
+    [filteredCategories, selectedIds],
+  );
+
+  const handleBulkToggleActive = useCallback(async () => {
+    let toggledCount = 0;
+    for (const item of selectedItems) {
+      if (item.isSystem) continue;
+      try {
+        await toggleMutation.mutateAsync({ id: item.id, isActive: !item.isActive });
+        toggledCount += 1;
+      } catch (err: unknown) {
+        showToast(err instanceof Error ? err.message : "Error al cambiar estado", "error");
+      }
+    }
+    exitSelectMode();
+    if (toggledCount > 0) {
+      showToast(
+        toggledCount === 1
+          ? "1 categoría actualizada"
+          : `${toggledCount} categorías actualizadas`,
+        "success",
+      );
+    }
+  }, [exitSelectMode, selectedItems, showToast, toggleMutation]);
+
+  const handleBulkDelete = useCallback(() => {
+    const deletable = selectedItems.filter((item) => categoryCanDelete(item, overviewList));
+    const skipped = selectedItems.length - deletable.length;
+    deletable.forEach(startUndoDelete);
+    exitSelectMode();
+    if (skipped > 0) {
+      showToast(
+        `${skipped} con relaciones no se pueden eliminar`,
+        "warning",
+      );
+    }
+  }, [exitSelectMode, overviewList, selectedItems, showToast, startUndoDelete]);
 
   const renderCategory: SectionListRenderItem<CategoryOverview, CategoryListSection> = useCallback(({ item }) => {
     const color = item.color ?? KIND_COLORS[item.kind] ?? COLORS.primary;
@@ -220,46 +285,61 @@ function CategoriesScreen() {
         kindLabel={kindLabel}
         canDelete={canDelete}
         toggleDisabled={toggleMutation.isPending}
-        onPress={() => (item.isSystem ? setAnalyticsTarget(item) : setEditCategory(item))}
+        onPress={() => {
+          if (selectMode) {
+            toggleSelect(item.id);
+            return;
+          }
+          if (item.isSystem) setAnalyticsTarget(item);
+          else setEditCategory(item);
+        }}
+        onLongPress={() => {
+          if (!selectMode) setSelectMode(true);
+          toggleSelect(item.id);
+        }}
         onToggle={() => handleToggleActive(item)}
         onAnalytics={() => setAnalyticsTarget(item)}
         onDelete={() => startUndoDelete(item)}
-        onTogglePin={() => handleTogglePin(item)}
+        onTogglePin={selectMode ? undefined : () => handleTogglePin(item)}
+        selected={selectedIds.has(item.id)}
+        selectMode={selectMode}
       />
     );
-  }, [handleToggleActive, handleTogglePin, overviewList, startUndoDelete, toggleMutation.isPending]);
+  }, [handleToggleActive, handleTogglePin, overviewList, selectMode, selectedIds, startUndoDelete, toggleMutation.isPending, toggleSelect]);
 
   return (
     <ResourceModuleTemplate
       topInset={insets.top}
       header={
         <ScreenHeader
-          title="Categorías"
-          onBack={handleBack}
+          title={selectMode ? `${selectedIds.size} seleccionada${selectedIds.size === 1 ? "" : "s"}` : "Categorías"}
+          onBack={selectMode ? exitSelectMode : handleBack}
           rightAction={
-            <HeaderActionGroup
-              actions={[
-                {
-                  key: "export",
-                  icon: Download,
-                  onPress: () => void exportCSV(),
-                  disabled: filteredCategories.length === 0,
-                  accessibilityLabel: "Descargar categorías en CSV",
-                },
-                {
-                  key: "filters",
-                  icon: SlidersHorizontal,
-                  label: extraFiltersCount > 0 ? `Filtros (${extraFiltersCount})` : "Filtros",
-                  active: extraFiltersCount > 0,
-                  onPress: () => setFilterSheetOpen(true),
-                  accessibilityLabel: "Abrir filtros avanzados de categorías",
-                },
-              ]}
-            />
+            selectMode ? null : (
+              <HeaderActionGroup
+                actions={[
+                  {
+                    key: "export",
+                    icon: Download,
+                    onPress: () => void exportCSV(filteredCategories),
+                    disabled: filteredCategories.length === 0,
+                    accessibilityLabel: "Descargar categorías en CSV",
+                  },
+                  {
+                    key: "filters",
+                    icon: SlidersHorizontal,
+                    label: extraFiltersCount > 0 ? `Filtros (${extraFiltersCount})` : "Filtros",
+                    active: extraFiltersCount > 0,
+                    onPress: () => setFilterSheetOpen(true),
+                    accessibilityLabel: "Abrir filtros avanzados de categorías",
+                  },
+                ]}
+              />
+            )
           }
         />
       }
-      toolbar={
+      toolbar={selectMode ? null : (
         <FilterToolbar
           options={CATEGORY_FILTERS}
           value={kindFilter}
@@ -268,15 +348,52 @@ function CategoriesScreen() {
           onSearchChange={setSearchText}
           searchPlaceholder="Buscar categorías..."
         />
-      }
-      activeFilters={<ActiveFilterBar items={activeFilterItems} onClear={clearFilters} />}
-      context={categories.length > 0 ? <ResourceContextNote>{contextNote}</ResourceContextNote> : null}
+      )}
+      activeFilters={selectMode ? null : <ActiveFilterBar items={activeFilterItems} onClear={clearFilters} />}
+      context={!selectMode && categories.length > 0 ? <ResourceContextNote>{contextNote}</ResourceContextNote> : null}
       summary={
-        filteredCategories.length > 0 ? (
+        !selectMode && filteredCategories.length > 0 ? (
           <CategorySummaryBar
             totalCount={summary.totalCount}
             activeCount={summary.activeCount}
             systemCount={summary.systemCount}
+          />
+        ) : null
+      }
+      bulkActions={
+        selectMode && selectedIds.size > 0 ? (
+          <BulkActionBar
+            selectedCount={selectedIds.size}
+            onClear={exitSelectMode}
+            actions={[
+              {
+                key: "select-all",
+                label: `Sel. todas (${filteredCategories.length})`,
+                icon: CheckSquare,
+                onPress: () => setSelectedIds(new Set(filteredCategories.map((item) => item.id))),
+              },
+              {
+                key: "csv",
+                label: "CSV",
+                icon: Download,
+                tone: "primary",
+                onPress: () => void exportCSV(selectedItems),
+              },
+              {
+                key: "toggle",
+                label: `Activar/Desactivar (${selectedIds.size})`,
+                icon: Power,
+                tone: "neutral",
+                onPress: () => void handleBulkToggleActive(),
+              },
+              {
+                key: "delete",
+                label: `Eliminar (${selectedIds.size})`,
+                icon: Trash2,
+                tone: "danger",
+                onPress: handleBulkDelete,
+              },
+            ]}
           />
         ) : null
       }
@@ -306,7 +423,7 @@ function CategoriesScreen() {
           onRefresh={onRefresh}
         />
       }
-      fab={<FAB onPress={() => setCreateFormVisible(true)} bottom={insets.bottom + 16} />}
+      fab={!selectMode ? <FAB onPress={() => setCreateFormVisible(true)} bottom={insets.bottom + 16} /> : null}
       overlays={
         <>
           <CategoryFilterSheet
