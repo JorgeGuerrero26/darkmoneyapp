@@ -497,6 +497,27 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
     setLinkedRecurringIncomeId(null);
   }, [activeAccounts, settings, suggestion, visible, frequentTransferPair]);
 
+  /**
+   * Cambio de tipo con limpieza de campos contextuales: sin esto, valores del tipo anterior
+   * (contraparte de un gasto, monto destino/FX de una transferencia) quedaban "fantasma" y
+   * se registraban sin estar visibles en pantalla (auditoría, hallazgo R2).
+   */
+  function switchMovementType(next: "expense" | "income" | "transfer") {
+    if (next === movementType) return;
+    setMovementType(next);
+    setCategoryId(null);
+    setCategoryFeedbackIntent(null);
+    if (next === "transfer") {
+      // Las transferencias no usan contraparte.
+      setCounterpartyId(null);
+      // Default para multi-moneda: el monto detectado (mismo criterio que el efecto inicial).
+      if (!destinationAmount.trim()) setDestinationAmount(amount);
+    } else {
+      setDestinationAmount("");
+      setTransferFxRate("");
+    }
+  }
+
   function selectCategoryManually(id: number | null) {
     setCategoryId(id);
     if (id == null) {
@@ -663,18 +684,27 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
   async function submit(force = false) {
     if (!suggestion || !activeWorkspaceId) return;
     // Anti-doble-tap: si ya hay un submit en vuelo, ignorar. Bloquea al instante (síncrono),
-    // evitando los registros duplicados/triplicados por taps rápidos.
+    // evitando los registros duplicados/triplicados por taps rápidos. El try/finally garantiza
+    // que TODA salida (validación, diálogo de duplicado, error de red) libera el guard — antes
+    // había 6 resets dispersos y una ruta nueva podía dejarlo trabado.
     if (submittingRef.current) return;
     submittingRef.current = true;
+    try {
+      await submitInner(force);
+    } finally {
+      submittingRef.current = false;
+    }
+  }
+
+  async function submitInner(force: boolean) {
+    if (!suggestion || !activeWorkspaceId) return;
     const parsedAmount = (parsePositiveAmountInput(amount) ?? NaN);
     if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
       showToast("Ingresa un monto válido", "error");
-      submittingRef.current = false;
       return;
     }
     if (!accountId) {
       showToast("Selecciona una cuenta", "error");
-      submittingRef.current = false;
       return;
     }
 
@@ -683,7 +713,6 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
     if (movementType === "transfer") {
       if (!destinationAccountId || destinationAccountId === accountId) {
         showToast("Selecciona cuentas de origen y destino distintas", "error");
-        submittingRef.current = false;
         return;
       }
       let destAmt = parsedAmount;
@@ -693,7 +722,6 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
         fx = parsePositiveAmountInput(transferFxRate, { kind: "rate" }) ?? NaN;
         if (!Number.isFinite(destAmt) || destAmt <= 0 || !Number.isFinite(fx) || fx <= 0) {
           showToast("Ingresa monto destino y tipo de cambio válidos", "error");
-          submittingRef.current = false;
           return;
         }
       }
@@ -741,8 +769,6 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
         onClose();
       } catch (error) {
         showToast(error instanceof Error ? error.message : "No se pudo guardar la transferencia", "error");
-      } finally {
-        submittingRef.current = false;
       }
       return;
     }
@@ -759,9 +785,8 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
           description,
         });
         if (duplicate) {
-          // Liberar el guard: el usuario decidirá en el diálogo. "Registrar de todas formas"
-          // llama submit(true), que debe poder re-entrar.
-          submittingRef.current = false;
+          // El guard se libera en el finally de submit() al retornar: el usuario decide en el
+          // diálogo y "Registrar de todas formas" re-entra vía submit(true).
           Alert.alert(
             movementRisk?.title ?? "Puede que este movimiento ya exista",
             movementRisk?.explanation ?? "Encontramos un movimiento con la misma fecha, cuenta, monto y descripción.",
@@ -874,8 +899,6 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
       onClose();
     } catch (error) {
       showToast(error instanceof Error ? error.message : "No se pudo guardar el movimiento", "error");
-    } finally {
-      submittingRef.current = false;
     }
   }
 
@@ -934,9 +957,9 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
         </View>
 
         <View style={styles.segment}>
-          <SegmentButton label="Gasto" active={movementType === "expense"} activeColor={COLORS.expense} onPress={() => { setMovementType("expense"); setCategoryId(null); }} />
-          <SegmentButton label="Ingreso" active={movementType === "income"} activeColor={COLORS.income} onPress={() => { setMovementType("income"); setCategoryId(null); }} />
-          <SegmentButton label="Transferencia" active={movementType === "transfer"} activeColor={COLORS.transfer} onPress={() => { setMovementType("transfer"); setCategoryId(null); }} />
+          <SegmentButton label="Gasto" active={movementType === "expense"} activeColor={COLORS.expense} onPress={() => switchMovementType("expense")} />
+          <SegmentButton label="Ingreso" active={movementType === "income"} activeColor={COLORS.income} onPress={() => switchMovementType("income")} />
+          <SegmentButton label="Transferencia" active={movementType === "transfer"} activeColor={COLORS.transfer} onPress={() => switchMovementType("transfer")} />
         </View>
 
         {isTransfer ? (
