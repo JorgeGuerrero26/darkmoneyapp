@@ -909,11 +909,15 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
     : "Movimiento detectado";
 
 
-  if (suggestion?.status === "registered") {
+  if (suggestion?.status === "registered" || suggestion?.status === "duplicate") {
     return (
       <BottomSheet visible={visible} onClose={onClose} title="Movimiento detectado" snapHeight={0.52}>
         <View style={styles.resolvedContainer}>
-          <Text style={styles.resolvedTitle}>Este movimiento ya fue registrado</Text>
+          <Text style={styles.resolvedTitle}>
+            {suggestion.status === "duplicate"
+              ? "Ya existía un movimiento igual"
+              : "Este movimiento ya fue registrado"}
+          </Text>
           <Text style={styles.resolvedMeta}>{displayAppLabel} · {suggestion.currencyCode === "PEN" ? "S/" : "USD"} {suggestion.amount.toFixed(2)}</Text>
           <View style={styles.actions}>
             {suggestion.movementId ? (

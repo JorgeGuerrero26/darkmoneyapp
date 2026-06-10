@@ -627,7 +627,21 @@ async function runRegistrationFlow(payload: HeadlessPayload) {
     description,
   }).catch(() => null);
   if (duplicate) {
-    nativeDetection?.showSuggestionNotification?.(payload.suggestionId);
+    // Cerrar la sugerencia como 'duplicate' vinculada al movimiento existente. Antes solo se
+    // re-mostraba la notificación y la sugerencia quedaba pending → reintento infinito en cada
+    // re-disparo (hallazgo N4 de la auditoría).
+    await supabase
+      .from("notification_detected_movement_suggestions")
+      .update({ status: "duplicate", movement_id: duplicate.id, updated_at: new Date().toISOString() })
+      .eq("id", suggestion.id);
+    await supabase
+      .from("notifications")
+      .update({ status: "read", read_at: new Date().toISOString() })
+      .eq("related_entity_type", "detected_movement_suggestion")
+      .eq("related_entity_id", suggestion.id)
+      .eq("kind", "detected_movement_suggestion");
+    nativeDetection?.markSuggestionRegistered?.(payload.suggestionId, payload.notificationId ?? 0);
+    nativeDetection?.requestCancelBankNotification?.(payload.suggestionId);
     return;
   }
 

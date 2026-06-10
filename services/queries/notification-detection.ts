@@ -11,7 +11,7 @@ import {
 import type { MovementFormInput } from "./workspace-data";
 import type { JsonValue, MovementRecord, MovementType } from "../../types/domain";
 
-export type DetectedMovementStatus = "pending" | "registered" | "discarded";
+export type DetectedMovementStatus = "pending" | "registered" | "discarded" | "duplicate";
 export type DetectedMovementConfidence = "high" | "medium" | "low";
 
 export type NotificationDetectionAppSetting = {
