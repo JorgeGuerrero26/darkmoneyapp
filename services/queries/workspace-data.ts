@@ -2159,13 +2159,24 @@ export function useCreateMovementMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: MovementFormInput) => createMovement(workspaceId!, input),
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       // Invalidación INMEDIATA (no diferida por InteractionManager): tras guardar un movimiento,
       // la lista y los saldos deben reflejarlo al instante. runBackgroundQueryRefresh difería el
       // refetch hasta terminar interacciones/animaciones, dejando la UI desactualizada hasta un
       // pull-to-refresh manual. Disparamos el refetch ya y sin bloquear el cierre del sheet.
       void queryClient.invalidateQueries({ queryKey: ["movements"] });
       void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+      // Registro originado en una detección de notificación: refrescar también la campana y la
+      // sugerencia. Cubre la ventana entre crear el movimiento y marcar la sugerencia (si el
+      // mark falla, la notificación no queda "pendiente" stale en pantalla).
+      const metadata = variables.metadata as { source?: unknown; suggestionId?: unknown } | null | undefined;
+      if (typeof metadata?.source === "string" && metadata.source.startsWith("notification_detection")) {
+        void queryClient.invalidateQueries({ queryKey: ["notifications"] });
+        const suggestionId = Number(metadata.suggestionId);
+        if (Number.isFinite(suggestionId) && suggestionId > 0) {
+          void queryClient.invalidateQueries({ queryKey: ["detected-movement-suggestion", suggestionId] });
+        }
+      }
     },
   });
 }
