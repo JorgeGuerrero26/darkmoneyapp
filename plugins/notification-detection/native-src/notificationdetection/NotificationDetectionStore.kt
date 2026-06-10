@@ -1,6 +1,10 @@
 package com.darkmoney.app.notificationdetection
 
 import android.content.Context
+import android.content.SharedPreferences
+import android.util.Log
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import org.json.JSONArray
 import org.json.JSONObject
 import java.security.MessageDigest
@@ -8,6 +12,7 @@ import java.text.Normalizer
 
 object NotificationDetectionStore {
   private const val PREFS = "darkmoney_notification_detection"
+  private const val SECURE_PREFS = "darkmoney_notification_detection_secure"
   private const val KEY_ENABLED = "enabled"
   private const val KEY_ALLOWED_PACKAGES = "allowed_packages"
   private const val KEY_SUGGESTIONS = "suggestions_json"
@@ -33,20 +38,107 @@ object NotificationDetectionStore {
     "com.google.android.apps.walletnfcrel",
   )
 
+  // Auditoría 2026-06-10 (hallazgo S4): montos, bancos, cuentas y runtime context vivían en
+  // SharedPreferences plano. Ahora EncryptedSharedPreferences (Keystore) con migración one-shot
+  // del archivo legacy y fallback al plano si el Keystore falla: el listener de notificaciones
+  // no puede morir por un error de cifrado (disponibilidad > confidencialidad).
+  @Volatile
+  private var cachedPrefs: SharedPreferences? = null
+
+  private fun prefs(context: Context): SharedPreferences {
+    cachedPrefs?.let { return it }
+    synchronized(this) {
+      cachedPrefs?.let { return it }
+      val created = createPrefs(context.applicationContext)
+      cachedPrefs = created
+      return created
+    }
+  }
+
+  private fun createPrefs(context: Context): SharedPreferences {
+    return try {
+      val secure = createEncryptedPrefs(context)
+      migrateLegacyPrefs(context, secure)
+      secure
+    } catch (first: Exception) {
+      Log.w("DarkMoneyND", "EncryptedSharedPreferences init failed, resetting secure file: ${first.message}")
+      try {
+        // Keystore corrupto (p. ej. restore de backup en otro dispositivo): el archivo
+        // cifrado ya no se puede descifrar — descartarlo y recrear.
+        context.deleteSharedPreferences(SECURE_PREFS)
+        val secure = createEncryptedPrefs(context)
+        migrateLegacyPrefs(context, secure)
+        secure
+      } catch (second: Exception) {
+        Log.w("DarkMoneyND", "EncryptedSharedPreferences unavailable, using plain prefs: ${second.message}")
+        legacyPlainPrefs(context)
+      }
+    }
+  }
+
+  private fun legacyPlainPrefs(context: Context): SharedPreferences =
+    context.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
+
+  // Tracker del cleanup one-shot por versión (NotificationDetectionModule). Debe vivir en el
+  // MISMO archivo que el resto del store: si quedara en el prefs plano, la migración que limpia
+  // el legacy lo borraría en cada arranque y el cleanup (que purga huellas de descarte del
+  // usuario) se re-dispararía en cada apertura.
+  fun getLastNotifCleanupKey(context: Context): String {
+    return prefs(context).getString("last_notif_cleanup_key", "") ?: ""
+  }
+
+  fun setLastNotifCleanupKey(context: Context, value: String) {
+    prefs(context).edit().putString("last_notif_cleanup_key", value).apply()
+  }
+
+  private fun createEncryptedPrefs(context: Context): SharedPreferences {
+    val masterKey = MasterKey.Builder(context)
+      .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+      .build()
+    return EncryptedSharedPreferences.create(
+      context,
+      SECURE_PREFS,
+      masterKey,
+      EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+      EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+    )
+  }
+
+  /** Copia las entradas del archivo plano legacy al cifrado (una sola vez) y limpia el legacy. */
+  private fun migrateLegacyPrefs(context: Context, secure: SharedPreferences) {
+    val legacy = legacyPlainPrefs(context)
+    val entries = legacy.all
+    if (entries.isEmpty()) return
+    val editor = secure.edit()
+    for ((key, value) in entries) {
+      if (secure.contains(key)) continue
+      when (value) {
+        is Boolean -> editor.putBoolean(key, value)
+        is String -> editor.putString(key, value)
+        is Int -> editor.putInt(key, value)
+        is Long -> editor.putLong(key, value)
+        is Float -> editor.putFloat(key, value)
+        is Set<*> -> editor.putStringSet(key, value.filterIsInstance<String>().toSet())
+      }
+    }
+    editor.apply()
+    legacy.edit().clear().apply()
+  }
+
   fun isEnabled(context: Context): Boolean {
-    return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    return prefs(context)
       .getBoolean(KEY_ENABLED, false)
   }
 
   fun setEnabled(context: Context, enabled: Boolean) {
-    context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    prefs(context)
       .edit()
       .putBoolean(KEY_ENABLED, enabled)
       .apply()
   }
 
   fun getAllowedPackages(context: Context): Set<String> {
-    return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    return prefs(context)
       .getStringSet(KEY_ALLOWED_PACKAGES, defaultAllowedPackages)
       ?.filter { it.isNotBlank() }
       ?.map { it.trim() }
@@ -55,7 +147,7 @@ object NotificationDetectionStore {
   }
 
   fun setAllowedPackages(context: Context, packages: Set<String>) {
-    context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    prefs(context)
       .edit()
       .putStringSet(KEY_ALLOWED_PACKAGES, packages.filter { it.isNotBlank() }.map { it.trim() }.toSet())
       .apply()
@@ -278,14 +370,14 @@ object NotificationDetectionStore {
   }
 
   fun setRuntimeContext(context: Context, contextJson: String) {
-    context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    prefs(context)
       .edit()
       .putString(KEY_RUNTIME_CONTEXT, contextJson)
       .apply()
   }
 
   fun getRuntimeContext(context: Context): JSONObject {
-    val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    val raw = prefs(context)
       .getString(KEY_RUNTIME_CONTEXT, "{}")
     return try {
       JSONObject(raw ?: "{}")
@@ -300,14 +392,14 @@ object NotificationDetectionStore {
       put("message", message)
       put("ts", System.currentTimeMillis())
     }
-    context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    prefs(context)
       .edit()
       .putString(KEY_LAST_SAVE_ERROR, payload.toString())
       .apply()
   }
 
   fun getLastSaveError(context: Context): JSONObject? {
-    val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    val raw = prefs(context)
       .getString(KEY_LAST_SAVE_ERROR, null) ?: return null
     return try {
       JSONObject(raw)
@@ -317,7 +409,7 @@ object NotificationDetectionStore {
   }
 
   fun clearLastSaveError(context: Context) {
-    context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    prefs(context)
       .edit()
       .remove(KEY_LAST_SAVE_ERROR)
       .apply()
@@ -326,7 +418,7 @@ object NotificationDetectionStore {
   @Synchronized
   fun addPendingCancellationKey(context: Context, key: String) {
     if (key.isBlank()) return
-    val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    val prefs = prefs(context)
     val existing = prefs.getStringSet(KEY_PENDING_CANCEL_KEYS, emptySet()) ?: emptySet()
     if (existing.contains(key)) return
     val combined = existing.toMutableSet()
@@ -340,7 +432,7 @@ object NotificationDetectionStore {
 
   @Synchronized
   fun takePendingCancellationKeys(context: Context): Set<String> {
-    val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    val prefs = prefs(context)
     val existing = prefs.getStringSet(KEY_PENDING_CANCEL_KEYS, emptySet()) ?: emptySet()
     if (existing.isEmpty()) return emptySet()
     prefs.edit().remove(KEY_PENDING_CANCEL_KEYS).apply()
@@ -358,7 +450,7 @@ object NotificationDetectionStore {
   }
 
   private fun readSuggestionsArray(context: Context): JSONArray {
-    val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    val raw = prefs(context)
       .getString(KEY_SUGGESTIONS, "[]")
     return try {
       JSONArray(raw)
@@ -369,7 +461,7 @@ object NotificationDetectionStore {
 
   private fun writeSuggestionsArray(context: Context, suggestions: JSONArray) {
     val pruned = pruneSuggestionsArray(suggestions)
-    context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    prefs(context)
       .edit()
       .putString(KEY_SUGGESTIONS, pruned.toString())
       .apply()
@@ -419,7 +511,7 @@ object NotificationDetectionStore {
   }
 
   fun addDiscardFingerprint(context: Context, fingerprint: String) {
-    val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    val prefs = prefs(context)
     val now = System.currentTimeMillis()
     val entries = readDiscardFingerprints(context).toMutableList()
     // Remove any existing entry with the same fingerprint so we can bump its timestamp.
@@ -457,7 +549,7 @@ object NotificationDetectionStore {
    * que bloqueaban futuras transacciones de la misma plantilla bancaria.
    */
   fun clearDiscardFingerprints(context: Context) {
-    val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    val prefs = prefs(context)
     prefs.edit()
       .remove(KEY_DISCARD_FINGERPRINTS_V2)
       .remove(KEY_DISCARD_FINGERPRINTS)
@@ -469,7 +561,7 @@ object NotificationDetectionStore {
    * Migration assigns timestamp 0 to legacy entries so they age out naturally.
    */
   private fun readDiscardFingerprints(context: Context): List<JSONObject> {
-    val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    val prefs = prefs(context)
     val v2Raw = prefs.getString(KEY_DISCARD_FINGERPRINTS_V2, null)
     if (v2Raw != null) {
       return try {

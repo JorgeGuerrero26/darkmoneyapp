@@ -106,11 +106,13 @@ class NotificationDetectionModule(
   }
 
   private fun cancelStaleMovementNotificationsOnVersionChange(cleanupKey: String) {
-    val prefs = reactContext.getSharedPreferences("darkmoney_notification_detection", android.content.Context.MODE_PRIVATE)
-    val storedCleanupKey = prefs.getString("last_notif_cleanup_key", "")
+    // Va por el store (archivo cifrado): si viviera en el prefs plano, la migración a
+    // EncryptedSharedPreferences lo borraría en cada arranque y este cleanup one-shot
+    // se re-dispararía siempre, purgando huellas de descarte legítimas del usuario.
+    val storedCleanupKey = NotificationDetectionStore.getLastNotifCleanupKey(reactContext)
     android.util.Log.d("DarkMoneyND", "cancelStale: stored=$storedCleanupKey current=$cleanupKey")
     if (storedCleanupKey == cleanupKey) return
-    prefs.edit().putString("last_notif_cleanup_key", cleanupKey).apply()
+    NotificationDetectionStore.setLastNotifCleanupKey(reactContext, cleanupKey)
     val manager = reactContext.getSystemService(android.app.NotificationManager::class.java)
     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
       val active = manager.activeNotifications

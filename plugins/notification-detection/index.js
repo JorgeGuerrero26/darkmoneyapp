@@ -3,6 +3,7 @@ const path = require("path");
 const {
   AndroidConfig,
   withAndroidManifest,
+  withAppBuildGradle,
   withDangerousMod,
   withMainApplication,
 } = require("@expo/config-plugins");
@@ -140,6 +141,23 @@ function withNotificationDetectionSources(config) {
   }]);
 }
 
+// EncryptedSharedPreferences (NotificationDetectionStore) requiere androidx security-crypto.
+const SECURITY_CRYPTO_DEPENDENCY = 'implementation("androidx.security:security-crypto:1.1.0-alpha06")';
+
+function withNotificationDetectionGradleDeps(config) {
+  return withAppBuildGradle(config, (config) => {
+    let contents = config.modResults.contents;
+    if (!contents.includes("androidx.security:security-crypto")) {
+      contents = contents.replace(
+        /dependencies \{/,
+        `dependencies {\n    ${SECURITY_CRYPTO_DEPENDENCY}`,
+      );
+      config.modResults.contents = contents;
+    }
+    return config;
+  });
+}
+
 function withNotificationDetectionPackage(config) {
   return withMainApplication(config, (config) => {
     let contents = config.modResults.contents;
@@ -163,6 +181,7 @@ function withNotificationDetectionPackage(config) {
 module.exports = function withNotificationDetection(config) {
   config = withNotificationDetectionManifest(config);
   config = withNotificationDetectionSources(config);
+  config = withNotificationDetectionGradleDeps(config);
   config = withNotificationDetectionPackage(config);
   return config;
 };
