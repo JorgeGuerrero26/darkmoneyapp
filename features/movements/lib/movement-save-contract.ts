@@ -18,6 +18,7 @@ type BuildMovementInput = {
   obligationId?: number | null;
   subscriptionId?: number | null;
   metadata?: JsonValue | null;
+  dedupeKey?: string | null;
 };
 
 function validAmount(value: number) {
@@ -56,6 +57,7 @@ export function buildMovementCreateInput(input: BuildMovementInput): MovementFor
     obligationId: input.obligationId ?? null,
     subscriptionId: isTransfer ? null : input.subscriptionId ?? null,
     metadata: input.metadata ?? {},
+    dedupeKey: input.dedupeKey ?? null,
   };
 }
 

@@ -2075,12 +2075,16 @@ export function usePersistLearningFeedbackMutation(
 import type { MovementFormInput } from "../../features/movements/lib/movement-input-types";
 export type { MovementFormInput };
 
+const MOVEMENT_RECORD_COLUMNS =
+  "id, workspace_id, movement_type, status, occurred_at, description, notes, source_account_id, source_amount, destination_account_id, destination_amount, fx_rate, category_id, counterparty_id, obligation_id, subscription_id, metadata";
+
 export async function createMovement(
   workspaceId: number,
   input: MovementFormInput,
 ): Promise<MovementRecord> {
   if (!supabase) throw new Error("Supabase no está configurado.");
 
+  const dedupeKey = input.dedupeKey ?? null;
   const payload: Record<string, unknown> = {
     workspace_id: workspaceId,
     movement_type: input.movementType,
@@ -2098,15 +2102,31 @@ export async function createMovement(
     obligation_id: input.obligationId ?? null,
     subscription_id: input.subscriptionId ?? null,
     metadata: input.metadata ?? {},
+    client_dedupe_key: dedupeKey,
   };
 
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from("movements")
     .insert(payload)
-    .select(
-      "id, workspace_id, movement_type, status, occurred_at, description, notes, source_account_id, source_amount, destination_account_id, destination_amount, fx_rate, category_id, counterparty_id, obligation_id, subscription_id, metadata",
-    )
+    .select(MOVEMENT_RECORD_COLUMNS)
     .single();
+
+  // Idempotencia: si este intento ya insertó antes (doble submit, retry tras timeout,
+  // carrera overlay-headless vs React con la misma sugerencia), el unique parcial por
+  // (workspace_id, client_dedupe_key) responde 23505. Se devuelve la fila existente
+  // como éxito en lugar de propagar el error.
+  if (error && dedupeKey && (error as { code?: string }).code === "23505") {
+    const existing = await supabase
+      .from("movements")
+      .select(MOVEMENT_RECORD_COLUMNS)
+      .eq("workspace_id", workspaceId)
+      .eq("client_dedupe_key", dedupeKey)
+      .maybeSingle();
+    if (existing.data) {
+      data = existing.data;
+      error = null;
+    }
+  }
 
   if (error) throw new Error(formatSupabaseError(error) || "Error al guardar el movimiento");
   const row = data as any;

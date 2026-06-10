@@ -55,6 +55,7 @@ import { type Attachment } from "../domain/AttachmentPicker";
 import { buildCategorySuggestionCandidates } from "../../services/analytics/category-suggestions";
 import { normalizeAnalyticsText } from "../../services/analytics/movement-features";
 import { sortByName } from "../../lib/sort-locale";
+import { newClientDedupeKey } from "../../lib/idempotency";
 import { COLORS, SPACING, SURFACE } from "../../constants/theme";
 import type { MovementType, MovementStatus, MovementRecord, ExchangeRateSummary } from "../../types/domain";
 import { useMovementCreationController } from "../../features/movements/hooks/useMovementCreationController";
@@ -328,6 +329,11 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   // Anti-doble-tap síncrono: evita crear el movimiento 2-3 veces si el usuario toca Guardar
   // rápido antes de que el botón refleje el estado loading.
   const submittingRef = useRef(false);
+  // Clave de idempotencia por sesión de submit: se genera en el primer intento de guardar,
+  // se reutiliza en reintentos del MISMO intento (error de red → volver a tocar Guardar)
+  // y se descarta tras el éxito. Si el insert llegó al servidor pero la respuesta se perdió,
+  // el retry devuelve el movimiento existente en lugar de duplicarlo.
+  const submitDedupeKeyRef = useRef<string | null>(null);
 
   const attachmentSignature = useMemo(() => {
     const persisted = attachments
@@ -754,6 +760,9 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     if (isClosingAfterSubmit) return;
     attachmentsHydratedRef.current = null;
     initialAttachmentSignatureRef.current = "::ready";
+    // Sesión nueva del formulario = intento de registro nuevo: si quedó una clave de un
+    // intento fallido anterior, no debe deduplicar contra este movimiento distinto.
+    submitDedupeKeyRef.current = null;
     if (editMovement) {
       const occurredDate = editMovement.occurredAt
         ? isoToDateStr(editMovement.occurredAt)
@@ -1405,6 +1414,9 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
           void queryClient.invalidateQueries({ queryKey: ["entity-attachments", activeWorkspaceId, "obligation-event", linkedEventId] });
         }
       } else {
+        if (!submitDedupeKeyRef.current) {
+          submitDedupeKeyRef.current = newClientDedupeKey("form");
+        }
         const payload = buildMovementCreateInput({
           ...movementContract,
           metadata: {
@@ -1412,8 +1424,10 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
             riskAi: movementRisk?.source === "deepseek" ? movementRisk : null,
             budgetAi: budgetImpact?.source === "deepseek" ? budgetImpact : null,
           },
+          dedupeKey: submitDedupeKeyRef.current,
         });
         const created = await createMovement.mutateAsync(payload);
+        submitDedupeKeyRef.current = null;
         setSavedMovementId(created.id);
         persistCategoryLearning(created.id, autoDesc);
         // Los comprobantes se sincronizan después de cerrar el formulario para no bloquear la UI.

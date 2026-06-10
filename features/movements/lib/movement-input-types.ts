@@ -23,6 +23,13 @@ export type MovementFormInput = {
   obligationId?: number | null;
   subscriptionId?: number | null;
   metadata?: JsonValue | null;
+  /**
+   * Clave de idempotencia por intento de registro (unique parcial en BD por workspace).
+   * Un retry o doble submit con la misma clave devuelve el movimiento ya creado en vez
+   * de duplicar. Vías de notificación usan "suggestion:<id>"; el form una clave por
+   * sesión de submit.
+   */
+  dedupeKey?: string | null;
 };
 
 /**
