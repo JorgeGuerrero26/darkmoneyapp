@@ -135,6 +135,11 @@ export function useNotificationDetectionRuntimeSync() {
 
   useEffect(() => {
     if (!profile?.id || !activeWorkspaceId || !notificationDetection.isAvailable()) return;
+    // No empujar contexto al nativo mientras snapshot/settings siguen cargando: un sync temprano
+    // con accounts/categorías vacíos PISA el runtime context bueno ya persistido (overlay queda
+    // "Sin cuenta asignada" y la IA sin categorías), y settings vacíos transitorios apagarían la
+    // detección (setDetectionEnabled(false)) si la app muere antes del segundo sync.
+    if (!snapshot || !settingsQuery.data) return;
     const activeAccounts = (snapshot?.accounts ?? []).filter((account) => !account.isArchived);
     const workspaceBaseCurrencyCode = normalizeCurrencyCode(activeWorkspace?.baseCurrencyCode, "PEN");
     const exchangeRates = (snapshot?.exchangeRates ?? [])
