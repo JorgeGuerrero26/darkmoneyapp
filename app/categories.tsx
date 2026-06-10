@@ -40,6 +40,7 @@ import {
   useToggleCategoryMutation,
   useWorkspaceSnapshotQuery,
 } from "../services/queries/workspace-data";
+import { useToggleCategoryPinMutation } from "../services/queries/categories-counterparties";
 import { COLORS } from "../constants/theme";
 import { useToast } from "../hooks/useToast";
 import { useOriginBackNavigation } from "../hooks/useOriginBackNavigation";
@@ -63,6 +64,7 @@ function CategoriesScreen() {
   const { data: overviewList = [], isLoading } = useCategoriesOverviewQuery(profile, activeWorkspaceId);
   const toggleMutation = useToggleCategoryMutation(activeWorkspaceId);
   const deleteMutation = useDeleteCategoryMutation(activeWorkspaceId);
+  const togglePinMutation = useToggleCategoryPinMutation(activeWorkspaceId);
 
   const [createFormVisible, setCreateFormVisible] = useState(false);
   const [editCategory, setEditCategory] = useState<CategoryOverview | null>(null);
@@ -174,6 +176,13 @@ function CategoriesScreen() {
     });
   }, []);
 
+  const handleTogglePin = useCallback((category: CategoryOverview) => {
+    togglePinMutation.mutate(
+      { id: category.id, isPinned: !category.isPinned },
+      { onError: (err) => showToast(err.message, "error") },
+    );
+  }, [showToast, togglePinMutation]);
+
   const handleToggleActive = useCallback((category: CategoryOverview) => {
     if (category.isSystem) return;
     const isActive = !category.isActive;
@@ -215,9 +224,10 @@ function CategoriesScreen() {
         onToggle={() => handleToggleActive(item)}
         onAnalytics={() => setAnalyticsTarget(item)}
         onDelete={() => startUndoDelete(item)}
+        onTogglePin={() => handleTogglePin(item)}
       />
     );
-  }, [handleToggleActive, overviewList, startUndoDelete, toggleMutation.isPending]);
+  }, [handleToggleActive, handleTogglePin, overviewList, startUndoDelete, toggleMutation.isPending]);
 
   return (
     <ResourceModuleTemplate

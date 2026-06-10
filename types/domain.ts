@@ -207,6 +207,7 @@ export type CategorySummary = {
   icon?: string | null;
   sortOrder?: number;
   isSystem?: boolean;
+  isPinned?: boolean;
 };
 
 /** Movimientos publicados con categoría (analíticas desde snapshot). */

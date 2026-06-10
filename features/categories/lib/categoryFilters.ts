@@ -1,11 +1,12 @@
 import type { ResourceSection } from "../../../components/ui/ResourceSectionList";
 import type { CategoryKind, CategoryOverview } from "../../../types/domain";
 
-export type CategoryFilter = "all" | CategoryKind;
-export type CategoryListSection = ResourceSection<CategoryOverview, "custom" | "system">;
+export type CategoryFilter = "all" | "pinned" | CategoryKind;
+export type CategoryListSection = ResourceSection<CategoryOverview, "pinned" | "custom" | "system">;
 
 export const CATEGORY_FILTERS: Array<{ label: string; value: CategoryFilter }> = [
   { label: "Todas", value: "all" },
+  { label: "Fijadas", value: "pinned" },
   { label: "Gastos", value: "expense" },
   { label: "Ingresos", value: "income" },
   { label: "Mixtas", value: "both" },
@@ -30,9 +31,11 @@ export function filterCategories(
   showInactive: boolean,
 ) {
   const query = searchText.trim().toLowerCase();
+  const pinnedOnly = kindFilter === "pinned";
 
   return categories.filter((category) => {
-    if (kindFilter !== "all" && category.kind !== kindFilter) return false;
+    if (pinnedOnly && !category.isPinned) return false;
+    if (kindFilter !== "all" && kindFilter !== "pinned" && category.kind !== kindFilter) return false;
     if (!showInactive && !category.isActive) return false;
 
     if (!query) return true;
@@ -44,16 +47,26 @@ export function filterCategories(
 }
 
 export function buildCategorySections(categories: CategoryOverview[]): CategoryListSection[] {
-  const custom = categories.filter((category) => !category.isSystem);
-  const system = categories.filter((category) => category.isSystem);
+  const pinned = categories.filter((category) => category.isPinned);
+  const rest = categories.filter((category) => !category.isPinned);
+  const custom = rest.filter((category) => !category.isSystem);
+  const system = rest.filter((category) => category.isSystem);
+  const hasPinned = pinned.length > 0;
   const visibleGroups = [custom, system].filter((group) => group.length > 0).length;
+  const sectionsBeforeOk = hasPinned;
 
   return [
+    ...(hasPinned ? [{
+      key: "pinned" as const,
+      label: `Fijadas (${pinned.length})`,
+      data: pinned,
+      headerVariant: "default" as const,
+    }] : []),
     ...(custom.length > 0 ? [{
       key: "custom" as const,
       label: `Personalizadas (${custom.length})`,
       data: custom,
-      headerVariant: visibleGroups === 1 ? "hidden" as const : "default" as const,
+      headerVariant: sectionsBeforeOk || visibleGroups > 1 ? "default" as const : "hidden" as const,
     }] : []),
     ...(system.length > 0 ? [{
       key: "system" as const,

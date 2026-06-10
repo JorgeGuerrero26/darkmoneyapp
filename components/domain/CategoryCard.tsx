@@ -1,5 +1,5 @@
 import { StyleSheet, Text, View } from "react-native";
-import { BarChart3 } from "lucide-react-native";
+import { BarChart3, Pin, PinOff } from "lucide-react-native";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
@@ -18,6 +18,9 @@ type Props = {
   kindLabel: string;
   onPress: () => void;
   onAnalytics: () => void;
+  onLongPress?: () => void;
+  onTogglePin?: () => void;
+  selected?: boolean;
 };
 
 function formatIsoLocal(iso: string | null | undefined): string {
@@ -33,6 +36,9 @@ export function CategoryCard({
   kindLabel,
   onPress,
   onAnalytics,
+  onLongPress,
+  onTogglePin,
+  selected = false,
 }: Props) {
   return (
     <ResourceCard
@@ -40,19 +46,30 @@ export function CategoryCard({
       subtitle={category.parentName ? `${kindLabel} · ${category.parentName}` : kindLabel}
       archived={!category.isActive}
       disabled={false}
+      selected={selected}
       onPress={onPress}
+      onLongPress={onLongPress}
       leading={
         <View style={[styles.iconWrap, { backgroundColor: color + "18" }]}>
           <View style={[styles.colorDot, { backgroundColor: color }]} />
           {category.icon ? <CategoryGlyph icon={category.icon} color={color} size={20} /> : null}
         </View>
       }
-      actions={[{
-        key: "analytics",
-        icon: BarChart3,
-        onPress: onAnalytics,
-        accessibilityLabel: "Ver análisis de la categoría",
-      }]}
+      actions={[
+        ...(onTogglePin ? [{
+          key: "pin",
+          icon: category.isPinned ? PinOff : Pin,
+          onPress: onTogglePin,
+          color: category.isPinned ? COLORS.primary : COLORS.storm,
+          accessibilityLabel: category.isPinned ? "Desfijar categoría" : "Fijar categoría",
+        }] : []),
+        {
+          key: "analytics",
+          icon: BarChart3,
+          onPress: onAnalytics,
+          accessibilityLabel: "Ver análisis de la categoría",
+        },
+      ]}
       meta={
         <>
           <ResourceCardBadge label={kindLabel} color={color} />

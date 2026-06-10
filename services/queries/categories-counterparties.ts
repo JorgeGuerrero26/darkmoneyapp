@@ -304,3 +304,24 @@ export function useDeleteCounterpartyMutation(workspaceId: number | null) {
     },
   });
 }
+
+export function useToggleCategoryPinMutation(workspaceId: number | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, isPinned }: { id: number; isPinned: boolean }) => {
+      if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
+      const { data: authData, error: authErr } = await supabase.auth.getUser();
+      if (authErr) throw new Error(authErr.message ?? "No se pudo verificar la sesión");
+      const uid = authData.user?.id ?? null;
+      const { error } = await supabase
+        .from("categories")
+        .update({ is_pinned: isPinned, updated_by_user_id: uid })
+        .eq("id", id)
+        .eq("workspace_id", workspaceId);
+      if (error) throw new Error(error.message ?? "Error de base de datos");
+    },
+    onSuccess: () => {
+      invalidateCategoryRelatedQueries(queryClient, workspaceId);
+    },
+  });
+}

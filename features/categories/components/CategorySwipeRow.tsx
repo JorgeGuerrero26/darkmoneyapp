@@ -15,6 +15,10 @@ type Props = {
   onToggle: () => void;
   onAnalytics: () => void;
   onDelete: () => void;
+  onLongPress?: () => void;
+  onTogglePin?: () => void;
+  selected?: boolean;
+  selectMode?: boolean;
 };
 
 export function CategorySwipeRow({
@@ -27,8 +31,26 @@ export function CategorySwipeRow({
   onToggle,
   onAnalytics,
   onDelete,
+  onLongPress,
+  onTogglePin,
+  selected = false,
+  selectMode = false,
 }: Props) {
   const canToggle = !category.isSystem && !toggleDisabled;
+
+  if (selectMode) {
+    return (
+      <CategoryCard
+        category={category}
+        color={color}
+        kindLabel={kindLabel}
+        onPress={onPress}
+        onLongPress={onLongPress}
+        onAnalytics={onAnalytics}
+        selected={selected}
+      />
+    );
+  }
 
   return (
     <SwipeActionRow
@@ -62,7 +84,9 @@ export function CategorySwipeRow({
             }
             onPress();
           }}
+          onLongPress={onLongPress}
           onAnalytics={onAnalytics}
+          onTogglePin={onTogglePin}
         />
       )}
     </SwipeActionRow>

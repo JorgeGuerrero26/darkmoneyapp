@@ -783,7 +783,7 @@ async function fetchWorkspaceSnapshot(
       .eq("workspace_id", activeWorkspaceId),
     supabase
       .from("categories")
-      .select("id, workspace_id, name, kind, parent_id, color, icon, sort_order, is_system, is_active, created_at, updated_at")
+      .select("id, workspace_id, name, kind, parent_id, color, icon, sort_order, is_system, is_active, is_pinned, created_at, updated_at")
       .eq("workspace_id", activeWorkspaceId)
       .order("sort_order", { ascending: true })
       .order("name", { ascending: true }),
@@ -895,6 +895,7 @@ async function fetchWorkspaceSnapshot(
     sort_order: number;
     is_system: boolean;
     is_active: boolean;
+    is_pinned?: boolean | null;
     created_at: string;
     updated_at: string;
   }[];
@@ -913,6 +914,7 @@ async function fetchWorkspaceSnapshot(
     icon: row.icon,
     sortOrder: row.sort_order ?? 0,
     isSystem: row.is_system ?? false,
+    isPinned: row.is_pinned ?? false,
   }));
 
   const counterpartyMap = new Map<number, string>();
@@ -1105,7 +1107,7 @@ async function fetchCategoriesOverview(workspaceId: number): Promise<CategoryOve
   const [catRes, movRes, subRes] = await Promise.all([
     supabase
       .from("categories")
-      .select("id, workspace_id, name, kind, parent_id, color, icon, sort_order, is_system, is_active, created_at, updated_at")
+      .select("id, workspace_id, name, kind, parent_id, color, icon, sort_order, is_system, is_active, is_pinned, created_at, updated_at")
       .eq("workspace_id", workspaceId)
       .order("sort_order", { ascending: true })
       .order("name", { ascending: true }),
@@ -1134,6 +1136,7 @@ async function fetchCategoriesOverview(workspaceId: number): Promise<CategoryOve
     sort_order: number;
     is_system: boolean;
     is_active: boolean;
+    is_pinned?: boolean | null;
     created_at: string;
     updated_at: string;
   }[];
@@ -1183,6 +1186,7 @@ async function fetchCategoriesOverview(workspaceId: number): Promise<CategoryOve
       icon: row.icon,
       sortOrder: row.sort_order ?? 0,
       isSystem: row.is_system ?? false,
+      isPinned: row.is_pinned ?? false,
       movementCount: mc,
       subscriptionCount: sc,
       lastActivityAt,
