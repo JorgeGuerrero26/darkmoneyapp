@@ -29,6 +29,7 @@ import {
   type CategoryFilter,
   type CategoryListSection,
 } from "../features/categories/lib/categoryFilters";
+import { buildCategoriesContextNote } from "../features/categories/lib/buildCategoriesContextNote";
 import { useAuth } from "../lib/auth-context";
 import { useWorkspace } from "../lib/workspace-context";
 import { buildCategoriesCsv } from "../lib/categories-csv";
@@ -120,9 +121,11 @@ function CategoriesScreen() {
 
   const extraFiltersCount = showInactive ? 1 : 0;
   const hasFilters = kindFilter !== "all" || showInactive || Boolean(searchText.trim());
-  const contextNote = hasFilters
-    ? `Mostrando ${filteredCategories.length} de ${categories.length} categorías.`
-    : "Toca una categoría para editarla. Desliza para activar, desactivar o eliminar cuando aplique.";
+  const contextNote = buildCategoriesContextNote({
+    visibleCount: filteredCategories.length,
+    totalCount: categories.length,
+    hasFilters,
+  });
 
   useEffect(() => () => {
     deleteTimers.current.forEach(clearTimeout);
