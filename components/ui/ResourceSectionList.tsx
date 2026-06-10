@@ -139,7 +139,16 @@ export function ResourceSectionList<T, S extends ResourceSection<T> = ResourceSe
       SectionSeparatorComponent={() => <View style={{ height: sectionSeparatorHeight }} />}
       refreshControl={
         onRefresh ? (
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            // iOS usa tintColor; Android usa colors[] + progressBackgroundColor. Sin esto, en
+            // Android el spinner salía con color por defecto (poco visible en tema oscuro), por lo
+            // que el arrastre no daba feedback. Ahora el indicador es visible en todos los módulos.
+            tintColor={COLORS.primary}
+            colors={[COLORS.primary]}
+            progressBackgroundColor={SURFACE.deepNavy}
+          />
         ) : undefined
       }
       removeClippedSubviews={!stickyHeaders}

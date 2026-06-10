@@ -2140,10 +2140,12 @@ export function useCreateMovementMutation(workspaceId: number | null) {
   return useMutation({
     mutationFn: (input: MovementFormInput) => createMovement(workspaceId!, input),
     onSuccess: () => {
-      runBackgroundQueryRefresh(queryClient, [
-        ["workspace-snapshot"],
-        ["movements"],
-      ]);
+      // Invalidación INMEDIATA (no diferida por InteractionManager): tras guardar un movimiento,
+      // la lista y los saldos deben reflejarlo al instante. runBackgroundQueryRefresh difería el
+      // refetch hasta terminar interacciones/animaciones, dejando la UI desactualizada hasta un
+      // pull-to-refresh manual. Disparamos el refetch ya y sin bloquear el cierre del sheet.
+      void queryClient.invalidateQueries({ queryKey: ["movements"] });
+      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
     },
   });
 }

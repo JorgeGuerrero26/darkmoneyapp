@@ -675,7 +675,13 @@ function DashboardScreen() {
           scrollSaveTimer.current = setTimeout(() => setDashboardScrollY(y), 200);
         }}
         refreshControl={
-          <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor={COLORS.pine} />
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={onRefresh}
+            tintColor={COLORS.pine}
+            colors={[COLORS.pine]}
+            progressBackgroundColor={SURFACE.deepNavy}
+          />
         }
       >
         {/* 1. Mode toggle */}

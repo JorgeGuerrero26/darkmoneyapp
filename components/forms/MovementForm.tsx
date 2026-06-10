@@ -325,6 +325,9 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   const [linkedRecurringIncomeId, setLinkedRecurringIncomeId] = useState<number | null>(null);
   const attachmentsHydratedRef = useRef<string | null>(null);
   const initialAttachmentSignatureRef = useRef("::ready");
+  // Anti-doble-tap síncrono: evita crear el movimiento 2-3 veces si el usuario toca Guardar
+  // rápido antes de que el botón refleje el estado loading.
+  const submittingRef = useRef(false);
 
   const attachmentSignature = useMemo(() => {
     const persisted = attachments
@@ -1329,6 +1332,9 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
       descriptionRef.current?.focus();
       return;
     }
+    // Anti-doble-tap: ignorar si ya hay un guardado en vuelo (evita movimientos duplicados).
+    if (submittingRef.current) return;
+    submittingRef.current = true;
 
     try {
       setIsClosingAfterSubmit(true);
@@ -1445,6 +1451,8 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
       setIsClosingAfterSubmit(false);
       haptics.error();
       setSubmitError(humanizeError(err));
+    } finally {
+      submittingRef.current = false;
     }
   }
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useRouter } from "expo-router";
 
@@ -166,6 +166,10 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
   const [date, setDate] = useState("");
   const [checkingDuplicate, setCheckingDuplicate] = useState(false);
   const [isDiscarding, setIsDiscarding] = useState(false);
+  // Guard anti-doble-tap SÍNCRONO: el botón se deshabilita con loading, pero hay una ventana
+  // entre el primer tap y el re-render donde un segundo tap (o doble-tap rápido) dispara otro
+  // submit → movimiento duplicado/triplicado. Este ref bloquea al instante, sin esperar render.
+  const submittingRef = useRef(false);
   const [categoryFeedbackIntent, setCategoryFeedbackIntent] = useState<CategoryFeedbackIntent | null>(null);
   const [linkedSubscriptionId, setLinkedSubscriptionId] = useState<number | null>(null);
   const [linkedRecurringIncomeId, setLinkedRecurringIncomeId] = useState<number | null>(null);
@@ -451,6 +455,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
 
   useEffect(() => {
     if (!suggestion || !visible) return;
+    submittingRef.current = false; // reset del guard al (re)abrir el sheet
     const defaultAccountId = settings.find(
       (setting) => setting.financialAppKey === suggestion.financialAppKey && setting.enabled,
     )?.defaultAccountId;
@@ -656,13 +661,19 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
 
   async function submit(force = false) {
     if (!suggestion || !activeWorkspaceId) return;
+    // Anti-doble-tap: si ya hay un submit en vuelo, ignorar. Bloquea al instante (síncrono),
+    // evitando los registros duplicados/triplicados por taps rápidos.
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     const parsedAmount = Number(amount.replace(",", "."));
     if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
       showToast("Ingresa un monto válido", "error");
+      submittingRef.current = false;
       return;
     }
     if (!accountId) {
       showToast("Selecciona una cuenta", "error");
+      submittingRef.current = false;
       return;
     }
 
@@ -671,6 +682,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
     if (movementType === "transfer") {
       if (!destinationAccountId || destinationAccountId === accountId) {
         showToast("Selecciona cuentas de origen y destino distintas", "error");
+        submittingRef.current = false;
         return;
       }
       let destAmt = parsedAmount;
@@ -680,6 +692,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
         fx = Number(transferFxRate.replace(",", "."));
         if (!Number.isFinite(destAmt) || destAmt <= 0 || !Number.isFinite(fx) || fx <= 0) {
           showToast("Ingresa monto destino y tipo de cambio válidos", "error");
+          submittingRef.current = false;
           return;
         }
       }
@@ -724,6 +737,8 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
         onClose();
       } catch (error) {
         showToast(error instanceof Error ? error.message : "No se pudo guardar la transferencia", "error");
+      } finally {
+        submittingRef.current = false;
       }
       return;
     }
@@ -740,6 +755,9 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
           description,
         });
         if (duplicate) {
+          // Liberar el guard: el usuario decidirá en el diálogo. "Registrar de todas formas"
+          // llama submit(true), que debe poder re-entrar.
+          submittingRef.current = false;
           Alert.alert(
             movementRisk?.title ?? "Puede que este movimiento ya exista",
             movementRisk?.explanation ?? "Encontramos un movimiento con la misma fecha, cuenta, monto y descripción.",
@@ -849,6 +867,8 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
       onClose();
     } catch (error) {
       showToast(error instanceof Error ? error.message : "No se pudo guardar el movimiento", "error");
+    } finally {
+      submittingRef.current = false;
     }
   }
 
