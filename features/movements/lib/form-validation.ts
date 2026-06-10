@@ -1,4 +1,5 @@
 import type { MovementStatus, MovementType } from "../../../types/domain";
+import { parseAmountInput } from "../../../lib/amount-parsing";
 
 /**
  * Esquema de validación explícito para MovementForm.
@@ -54,10 +55,8 @@ export type MovementFormValidation = {
 };
 
 function parseAmount(value: string): number {
-  if (!value) return NaN;
-  const normalized = value.replace(",", ".");
-  const n = Number(normalized);
-  return Number.isFinite(n) ? n : NaN;
+  // Heurística centralizada (separadores de miles, formato US/EU); ver lib/amount-parsing.
+  return parseAmountInput(value) ?? NaN;
 }
 
 function isAfter(targetYmd: string, todayYmd: string): boolean {

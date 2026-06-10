@@ -56,6 +56,7 @@ import { buildCategorySuggestionCandidates } from "../../services/analytics/cate
 import { normalizeAnalyticsText } from "../../services/analytics/movement-features";
 import { sortByName } from "../../lib/sort-locale";
 import { newClientDedupeKey } from "../../lib/idempotency";
+import { parsePositiveAmountInput } from "../../lib/amount-parsing";
 import { COLORS, SPACING, SURFACE } from "../../constants/theme";
 import type { MovementType, MovementStatus, MovementRecord, ExchangeRateSummary } from "../../types/domain";
 import { useMovementCreationController } from "../../features/movements/hooks/useMovementCreationController";
@@ -202,8 +203,8 @@ function formatExchangeRateLabel(fromCurrencyCode: string, toCurrencyCode: strin
 }
 
 function parseDecimalInput(value: string) {
-  const parsed = Number(value.replace(",", "."));
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  // Solo se usa para el tipo de cambio manual: "3,672" es decimal, no miles.
+  return parsePositiveAmountInput(value, { kind: "rate" });
 }
 
 function findTransferExchangeRate(

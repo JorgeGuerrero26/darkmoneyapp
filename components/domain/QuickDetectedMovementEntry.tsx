@@ -60,6 +60,7 @@ import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING, SURFACE } from 
 import type { CategorySummary, CounterpartySummary } from "../../types/domain";
 import { useMovementCreationController } from "../../features/movements/hooks/useMovementCreationController";
 import { buildMovementCreateInput } from "../../features/movements/lib/movement-save-contract";
+import { parsePositiveAmountInput } from "../../lib/amount-parsing";
 
 function textSimilarity(left: string, right: string): number {
   const leftTokens = new Set(normalizeAnalyticsText(left).split(" ").filter((t) => t.length >= 3));
@@ -239,7 +240,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
     [date, suggestion?.occurredAt],
   );
   const currentRiskMovement = useMemo<MovementRiskItem | null>(() => {
-    const parsedAmount = Number(amount.replace(",", ".")) || suggestion?.amount || 0;
+    const parsedAmount = (parsePositiveAmountInput(amount) ?? NaN) || suggestion?.amount || 0;
     if (!parsedAmount || !description.trim()) return null;
     const category = categoryId == null ? null : categories.find((item) => item.id === categoryId) ?? null;
     const counterparty = counterpartyId == null ? null : counterparties.find((item) => item.id === counterpartyId) ?? null;
@@ -312,7 +313,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
       workspaceId: activeWorkspaceId,
       surface: "notification_form" as const,
       movementType: aiMovementType,
-      amount: Number(amount.replace(",", ".")) || suggestion?.amount || null,
+      amount: (parsePositiveAmountInput(amount) ?? NaN) || suggestion?.amount || null,
       currencyCode: suggestion?.currencyCode ?? "PEN",
       description: description.trim(),
       occurredAt: occurredAtISO,
@@ -381,7 +382,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
     rawDescription: description,
     appLabel: suggestion?.appLabel ?? null,
     financialAppKey: suggestion?.financialAppKey ?? null,
-    amount: Number(amount.replace(",", ".")) || suggestion?.amount || null,
+    amount: (parsePositiveAmountInput(amount) ?? NaN) || suggestion?.amount || null,
     currencyCode: suggestion?.currencyCode ?? "PEN",
     proAccessEnabled: entitlementQuery.data?.proAccessEnabled,
   });
@@ -395,7 +396,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
     surface: "notification_form",
     description: descriptionCleanup?.cleanedDescription ?? description,
     movementType: aiMovementType,
-    amount: Number(amount.replace(",", ".")) || suggestion?.amount || null,
+    amount: (parsePositiveAmountInput(amount) ?? NaN) || suggestion?.amount || null,
     currencyCode: suggestion?.currencyCode ?? "PEN",
     counterparties,
     proAccessEnabled: entitlementQuery.data?.proAccessEnabled,
@@ -410,7 +411,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
     surface: "notification_form",
     description: descriptionCleanup?.cleanedDescription ?? description,
     movementType: aiMovementType,
-    amount: Number(amount.replace(",", ".")) || suggestion?.amount || null,
+    amount: (parsePositiveAmountInput(amount) ?? NaN) || suggestion?.amount || null,
     currencyCode: suggestion?.currencyCode ?? "PEN",
     occurredAt: occurredAtISO,
     category: selectedRecurringCategory,
@@ -433,12 +434,12 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
     enabled: Boolean(visible && movementType === "expense" && categoryId != null),
     workspaceId: activeWorkspaceId,
     surface: "notification_form",
-    movement: Number(amount.replace(",", ".")) > 0
+    movement: (parsePositiveAmountInput(amount) ?? NaN) > 0
       ? {
         movementType: "expense",
         occurredAt: occurredAtISO,
         description: descriptionCleanup?.cleanedDescription ?? description,
-        amount: Number(amount.replace(",", ".")) || suggestion?.amount || 0,
+        amount: (parsePositiveAmountInput(amount) ?? NaN) || suggestion?.amount || 0,
         currencyCode: selectedBudgetAccount?.currencyCode ?? suggestion?.currencyCode ?? "PEN",
         categoryId,
         categoryName: selectedRecurringCategory?.name ?? null,
@@ -572,7 +573,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
 
   async function applyRecurringSuggestion(suggestionState: MovementRecurringSuggestionResult) {
     if (!suggestionState.name || !suggestionState.frequency) return;
-    const parsedAmount = Number(amount.replace(",", ".")) || suggestion?.amount || 0;
+    const parsedAmount = (parsePositiveAmountInput(amount) ?? NaN) || suggestion?.amount || 0;
     if (!parsedAmount) return;
     const fields = recurringFrequencyToSubscriptionFields(suggestionState.frequency);
     const ymd = date || localDate(suggestion?.occurredAt);
@@ -665,7 +666,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
     // evitando los registros duplicados/triplicados por taps rápidos.
     if (submittingRef.current) return;
     submittingRef.current = true;
-    const parsedAmount = Number(amount.replace(",", "."));
+    const parsedAmount = (parsePositiveAmountInput(amount) ?? NaN);
     if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
       showToast("Ingresa un monto válido", "error");
       submittingRef.current = false;
@@ -688,8 +689,8 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
       let destAmt = parsedAmount;
       let fx: number | null = null;
       if (transferCurrenciesDiffer) {
-        destAmt = Number(destinationAmount.replace(",", "."));
-        fx = Number(transferFxRate.replace(",", "."));
+        destAmt = parsePositiveAmountInput(destinationAmount) ?? NaN;
+        fx = parsePositiveAmountInput(transferFxRate, { kind: "rate" }) ?? NaN;
         if (!Number.isFinite(destAmt) || destAmt <= 0 || !Number.isFinite(fx) || fx <= 0) {
           showToast("Ingresa monto destino y tipo de cambio válidos", "error");
           submittingRef.current = false;
