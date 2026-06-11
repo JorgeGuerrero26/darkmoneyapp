@@ -2,7 +2,7 @@ import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import { BottomSheet } from "../../../components/ui/BottomSheet";
 import { PillSelector, type PillSelectorOption } from "../../../components/ui/PillSelector";
-import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING } from "../../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../../constants/theme";
 import type {
   AccountSummary,
   CategorySummary,
@@ -184,19 +184,19 @@ const styles = StyleSheet.create({
   },
   toggleRow: {
     minHeight: 58,
-    borderRadius: 18,
+    borderRadius: RADIUS.md,
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.1)",
-    backgroundColor: "rgba(255,255,255,0.04)",
+    borderColor: GLASS.separator,
+    backgroundColor: GLASS.input,
     flexDirection: "row",
     alignItems: "center",
     gap: SPACING.md,
   },
   toggleRowActive: {
-    borderColor: COLORS.pine + "55",
-    backgroundColor: COLORS.pine + "18",
+    borderColor: GLASS.cardActiveBorder,
+    backgroundColor: GLASS.cardActive,
   },
   toggleCopy: {
     flex: 1,
@@ -228,17 +228,17 @@ const styles = StyleSheet.create({
   clearBtn: {
     flex: 1,
     minHeight: 46,
-    borderRadius: 18,
+    borderRadius: RADIUS.md,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
-    backgroundColor: "rgba(255,255,255,0.05)",
+    borderColor: GLASS.sheetBorder,
+    backgroundColor: GLASS.input,
   },
   applyBtn: {
     flex: 1,
     minHeight: 46,
-    borderRadius: 18,
+    borderRadius: RADIUS.md,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: COLORS.primary,

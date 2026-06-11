@@ -1,7 +1,7 @@
 import { StyleSheet, Switch, Text, TouchableOpacity, View } from "react-native";
 
 import { BottomSheet } from "../../../components/ui/BottomSheet";
-import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../../constants/theme";
+import { COLORS, EXTENDED_PALETTE, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../../constants/theme";
 
 type Props = {
   visible: boolean;
@@ -29,7 +29,7 @@ export function CategoryFilterSheet({
             value={showInactive}
             onValueChange={onShowInactiveChange}
             trackColor={{ false: COLORS.border, true: COLORS.primary }}
-            thumbColor="#FFFFFF"
+            thumbColor={EXTENDED_PALETTE.white}
           />
         </View>
 
@@ -80,7 +80,7 @@ const styles = StyleSheet.create({
   applyBtn: {
     marginTop: SPACING.sm,
     minHeight: 46,
-    borderRadius: 18,
+    borderRadius: RADIUS.md,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: COLORS.primary,

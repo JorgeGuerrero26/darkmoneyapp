@@ -3,7 +3,7 @@ import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { BottomSheet } from "../../../components/ui/BottomSheet";
 import { DatePickerInput } from "../../../components/ui/DatePickerInput";
 import { PillSelector } from "../../../components/ui/PillSelector";
-import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING } from "../../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING } from "../../../constants/theme";
 import { parseDisplayDate, todayPeru } from "../../../lib/date";
 import {
   SUBSCRIPTION_DUE_DATE_FILTERS,
@@ -111,7 +111,7 @@ const styles = StyleSheet.create({
   applyBtn: {
     marginTop: SPACING.sm,
     minHeight: 46,
-    borderRadius: 18,
+    borderRadius: RADIUS.md,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: COLORS.primary,
