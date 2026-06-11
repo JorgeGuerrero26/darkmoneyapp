@@ -487,8 +487,9 @@ object QuickMovementOverlay {
     // no disponible). El usuario siempre termina viendo en qué quedó la IA.
     if (aiPending && selectedType != "transfer") {
       val pollHandler = Handler(Looper.getMainLooper())
-      // Presupuesto reducido: ~5s (la IA ya pre-corrió al detectar, normalmente está lista al abrir).
-      val pollSchedule = longArrayOf(500L, 700L, 900L, 1200L, 1700L)
+      // Presupuesto ~10s (la IA pre-corre al detectar y suele estar lista al abrir; los últimos
+      // intentos cubren redes lentas sin dejar el spinner infinito).
+      val pollSchedule = longArrayOf(500L, 700L, 900L, 1200L, 1700L, 2200L, 2800L)
       var attempts = 0
       val pollRunnable = object : Runnable {
         override fun run() {
@@ -527,11 +528,13 @@ object QuickMovementOverlay {
             return
           }
           if (attempts >= pollSchedule.size) {
-            // Presupuesto agotado sin respuesta. Quitar carga; si no había local, "IA no disponible".
+            // Presupuesto agotado sin respuesta. La IA SIGUE corriendo en background (headless
+            // enrichment) — decir "no disponible" era mentirle al usuario (hallazgo N9); la
+            // sugerencia aparecerá en el registro desde la app si termina después.
             removeLoadingRow()
             if (currentSuggestionRow == null) {
               addSuggestionRow(
-                aiInfoRow(context, "IA no disponible", "La sugerencia de categoría tardó demasiado."),
+                aiInfoRow(context, "IA tomando más tiempo", "Sigue analizando en segundo plano; puedes guardar sin esperar."),
               )
             }
             detachSuggestionWrapIfEmpty()

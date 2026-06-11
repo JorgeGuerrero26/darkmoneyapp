@@ -512,6 +512,8 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
     return " ${noAccents.replace(Regex("""[\s\u00A0]+"""), " ")} "
   }
 
+  private val appLabelCache = HashMap<String, String>()
+
   private fun humanAppLabel(packageName: String): String {
     return when (packageName) {
       "com.bcp.innovacxion.yapeapp" -> "Yape"
@@ -534,11 +536,15 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
       "pe.com.interbank.tunki" -> "Tunki"
       "com.google.android.apps.walletnfcrel" -> "Google Wallet"
       GMAIL_PACKAGE -> "Correos bancarios"
-      else -> try {
-        val appInfo = packageManager.getApplicationInfo(packageName, 0)
-        packageManager.getApplicationLabel(appInfo).toString()
-      } catch (_: Exception) {
-        packageName
+      // PackageManager puede tardar (corre en el hilo del listener → riesgo de ANR si está
+      // congestionado). Se consulta UNA vez por paquete y se cachea en memoria.
+      else -> appLabelCache.getOrPut(packageName) {
+        try {
+          val appInfo = packageManager.getApplicationInfo(packageName, 0)
+          packageManager.getApplicationLabel(appInfo).toString()
+        } catch (_: Exception) {
+          packageName
+        }
       }
     }
   }

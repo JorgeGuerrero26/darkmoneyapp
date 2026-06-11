@@ -286,12 +286,23 @@ class NotificationDetectionModule(
   @ReactMethod
   fun showSuggestionNotification(suggestionId: String) {
     val suggestion = NotificationDetectionStore.getSuggestion(reactContext, suggestionId) ?: return
+    // Si el guardado headless falló para ESTA sugerencia, la notificación debe decirlo:
+    // antes se re-mostraba "Movimiento detectado" y el usuario creía que se había guardado
+    // (auditoría, hallazgo N8). El registro rápido sirve como reintento manual; la cola
+    // nativa reintenta sola al volver la app a foreground.
+    val lastError = NotificationDetectionStore.getLastSaveError(reactContext)
+    val saveErrorMessage = if (lastError?.optString("suggestionId") == suggestionId) {
+      lastError.optString("message").takeIf { it.isNotBlank() }
+    } else {
+      null
+    }
     showDetectedMovementNotification(
       suggestionId = suggestion.optString("id"),
       notificationId = suggestion.optInt("notificationId", suggestion.optString("id").hashCode() and 0x7fffffff),
       appName = suggestion.optString("appName", suggestion.optString("packageName")),
       amount = suggestion.optString("amountLabel"),
       description = suggestion.optString("text").ifBlank { suggestion.optString("title") },
+      saveErrorMessage = saveErrorMessage,
     )
   }
 
@@ -325,6 +336,7 @@ class NotificationDetectionModule(
     appName: String,
     amount: String,
     description: String,
+    saveErrorMessage: String? = null,
   ) {
     val manager = reactContext.getSystemService(NotificationManager::class.java)
     val channelId = "movement_detection"
@@ -377,18 +389,25 @@ class NotificationDetectionModule(
       PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
 
-    val body = listOf(appName, amount, description.take(56))
+    val baseBody = listOf(appName, amount, description.take(56))
       .filter { it.isNotBlank() }
       .joinToString(" · ")
+    val title = if (saveErrorMessage != null) "No se pudo guardar el movimiento" else "Movimiento detectado"
+    val body = if (saveErrorMessage != null) {
+      "$baseBody · Se reintentará al abrir la app. ($saveErrorMessage)"
+    } else {
+      baseBody
+    }
+    val quickActionLabel = if (saveErrorMessage != null) "Reintentar ahora" else "Registro rápido"
 
     val notification = Notification.Builder(reactContext, channelId)
       .setSmallIcon(R.mipmap.ic_launcher)
-      .setContentTitle("Movimiento detectado")
+      .setContentTitle(title)
       .setContentText(body)
       .setStyle(Notification.BigTextStyle().bigText(body))
       .setContentIntent(openAppPendingIntent)
       .setAutoCancel(true)
-      .addAction(Notification.Action.Builder(0, "Registro rápido", quickPendingIntent).build())
+      .addAction(Notification.Action.Builder(0, quickActionLabel, quickPendingIntent).build())
       .addAction(Notification.Action.Builder(0, "Ignorar", ignorePendingIntent).build())
       .addAction(Notification.Action.Builder(0, "No mostrar más", discardPendingIntent).build())
       .build()
