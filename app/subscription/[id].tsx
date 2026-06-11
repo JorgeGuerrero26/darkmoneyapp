@@ -41,7 +41,7 @@ function SubscriptionDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
   const { handleBack } = useOriginBackNavigation({
-    originRoutes: { dashboard: "/(app)/dashboard", subscriptions: "/subscriptions" },
+    originRoutes: { dashboard: "/(app)/dashboard", subscriptions: "/(app)/subscriptions" },
   });
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();

@@ -49,7 +49,7 @@ function RecurringIncomeDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
   const { handleBack } = useOriginBackNavigation({
-    originRoutes: { dashboard: "/(app)/dashboard", "recurring-income": "/recurring-income" },
+    originRoutes: { dashboard: "/(app)/dashboard", "recurring-income": "/(app)/recurring-income" },
   });
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
