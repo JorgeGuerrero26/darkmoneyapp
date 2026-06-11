@@ -139,6 +139,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
   const [categoryId, setCategoryId] = useState<number | null>(null);
   const [counterpartyId, setCounterpartyId] = useState<number | null>(null);
   const [description, setDescription] = useState("");
+  const [notes, setNotes] = useState("");
   const [cleanupAppliedText, setCleanupAppliedText] = useState<string | null>(null);
   const [date, setDate] = useState("");
   const [checkingDuplicate, setCheckingDuplicate] = useState(false);
@@ -446,6 +447,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
     );
     setAmount(String(suggestion.amount));
     setDescription(suggestion.description);
+    setNotes("");
     setDate(localDate(suggestion.occurredAt));
     setCategoryId(null);
     setCounterpartyId(null);
@@ -707,7 +709,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
           status: "posted",
           occurredAt,
           description: description.trim() || suggestion.description,
-          notes: null,
+          notes: notes.trim() || null,
           sourceAccountId: accountId,
           sourceAmount: parsedAmount,
           destinationAccountId,
@@ -784,7 +786,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
         status: "posted",
         occurredAt,
         description: description.trim() || suggestion.description,
-        notes: null,
+        notes: notes.trim() || null,
         sourceAccountId: accountId,
         sourceAmount: parsedAmount,
         destinationAccountId: accountId,
@@ -932,11 +934,18 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
 
         <View style={styles.amountCard}>
           <Text style={styles.amountCardLabel}>Monto detectado</Text>
-          <TextInput value={amount} onChangeText={setAmount} keyboardType="decimal-pad" style={styles.amountInput} placeholderTextColor={COLORS.textMuted} />
+          <TextInput
+            value={amount}
+            onChangeText={setAmount}
+            keyboardType="decimal-pad"
+            style={styles.amountInput}
+            placeholderTextColor={COLORS.textMuted}
+            accessibilityLabel="Monto del movimiento"
+          />
           <Text style={styles.amountMeta}>{suggestion?.currencyCode ?? "PEN"} · {suggestion?.confidence === "high" ? "alta" : suggestion?.confidence === "medium" ? "media" : "baja"} confianza</Text>
         </View>
 
-        <View style={styles.segment}>
+        <View style={styles.segment} accessibilityRole="radiogroup" accessibilityLabel="Tipo de movimiento">
           <SegmentButton label="Gasto" active={movementType === "expense"} activeColor={COLORS.expense} onPress={() => switchMovementType("expense")} />
           <SegmentButton label="Ingreso" active={movementType === "income"} activeColor={COLORS.income} onPress={() => switchMovementType("income")} />
           <SegmentButton label="Transferencia" active={movementType === "transfer"} activeColor={COLORS.transfer} onPress={() => switchMovementType("transfer")} />
@@ -972,6 +981,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
                   keyboardType="decimal-pad"
                   style={styles.input}
                   placeholderTextColor={COLORS.textMuted}
+                  accessibilityLabel="Monto en la cuenta destino"
                 />
                 <Text style={styles.selectRowLabel}>Tipo de cambio</Text>
                 <TextInput
@@ -981,6 +991,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
                   style={styles.input}
                   placeholder="0.00"
                   placeholderTextColor={COLORS.textMuted}
+                  accessibilityLabel="Tipo de cambio de la transferencia"
                 />
               </>
             ) : null}
@@ -1022,6 +1033,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
           }}
           style={styles.input}
           multiline
+          accessibilityLabel="Descripción del movimiento"
         />
         {!isTransfer && (
         <>
@@ -1052,12 +1064,26 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
         </>
         )}
 
+        <Text style={styles.selectRowLabel}>Notas (opcional)</Text>
+        <TextInput
+          value={notes}
+          onChangeText={setNotes}
+          style={styles.input}
+          multiline
+          placeholder="Detalle adicional del movimiento"
+          placeholderTextColor={COLORS.textMuted}
+          accessibilityLabel="Notas del movimiento"
+        />
+
         <DatePickerInput label="Fecha" value={date} onChange={setDate} variant="formRow" />
 
+        {checkingDuplicate ? (
+          <Text style={styles.checkingDuplicateNote}>Verificando posibles duplicados…</Text>
+        ) : null}
         <View style={styles.actions}>
           <Button label="Descartar" variant="danger" onPress={() => void discard()} loading={isDiscarding} />
           <Button
-            label="Guardar"
+            label={checkingDuplicate ? "Verificando…" : "Guardar"}
             onPress={() => void submit(false)}
             loading={createMovement.isPending || createCounterparty.isPending || createSubscription.isPending || createRecurringIncome.isPending || (markSuggestion.isPending && !isDiscarding) || checkingDuplicate}
           />
@@ -1072,6 +1098,9 @@ function SegmentButton({ label, active, activeColor, onPress }: { label: string;
     <TouchableOpacity
       style={[styles.segmentButton, active && { backgroundColor: activeColor }]}
       onPress={onPress}
+      accessibilityRole="radio"
+      accessibilityLabel={label}
+      accessibilityState={{ selected: active }}
     >
       <Text style={[styles.segmentText, active && styles.segmentTextActive]}>{label}</Text>
     </TouchableOpacity>
@@ -1191,7 +1220,7 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.sm,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
+    borderColor: SURFACE.subtleBorder,
     backgroundColor: SURFACE.card,
     gap: 2,
     minWidth: 100,
@@ -1200,12 +1229,13 @@ const styles = StyleSheet.create({
   accountChipName: { fontSize: FONT_SIZE.sm, fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.text },
   accountChipSub: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted },
   emptyChips: { fontSize: FONT_SIZE.sm, color: COLORS.textMuted },
+  checkingDuplicateNote: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted, textAlign: "center" },
   categoryChip: {
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.xs + 3,
     borderRadius: RADIUS.full,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.11)",
+    borderColor: SURFACE.softBorder,
     backgroundColor: SURFACE.card,
   },
   categoryChipActive: {
