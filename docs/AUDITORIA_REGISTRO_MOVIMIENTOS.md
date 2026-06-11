@@ -79,7 +79,7 @@ como backlog al final de este documento.
 - **Plantillas de movimientos frecuentes** ("Guardar como plantilla").
 - **Split de montos** entre varias contrapartes.
 - **Sugerencia de monto por historial** ("tu promedio en Mercado es S/ 85").
-- **Onboarding de exclusión de batería** (Samsung mata el listener; `requestRebind` ayuda pero la garantía es "Sin restricciones").
+- ~~Onboarding de exclusión de batería~~ — YA EXISTÍA: `PermissionRow` "Sin restricción de batería" en `app/(app)/notification-detection.tsx` + paso en `notification-onboarding.tsx`.
 - **IA en vivo en el overlay** al editar descripción (hoy solo recalcula la sugerencia local).
 - **`frequentTransferPair` refrescado desde headless** (hoy depende de abrir la app).
 - **Telemetría de fallos de registro** (`recordDetectionEvent` con causa: timeout, RLS, red).
