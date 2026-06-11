@@ -66,6 +66,7 @@ import {
   movementTextSimilarity,
   patternMovementAmount,
 } from "../../features/movements/lib/pattern-heuristics";
+import { CategoryPicker } from "../../features/movements/components/form/MovementChipPickers";
 import { LOCAL_CATEGORY_AI_CONFIDENCE_THRESHOLD } from "../../lib/movement-ai-orchestrator";
 
 // Heurísticas compartidas con MovementForm y el runtime sync (features/movements/lib).
@@ -1007,7 +1008,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
 
         {!isTransfer && (
         <>
-        <CategoryChipPicker
+        <CategoryPicker
           label="Categoría (opcional)"
           categories={categories}
           selectedId={categoryId}
@@ -1134,38 +1135,6 @@ function AccountChipPicker({ label, accounts, selectedId, onSelect }: {
   );
 }
 
-function CategoryChipPicker({ label, categories, selectedId, onSelect }: {
-  label: string;
-  categories: CategorySummary[];
-  selectedId: number | null;
-  onSelect: (id: number | null) => void;
-}) {
-  return (
-    <View style={styles.pickerWrap}>
-      <Text style={styles.pickerLabel}>{label}</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
-        <TouchableOpacity
-          style={[styles.categoryChip, selectedId === null && styles.categoryChipActive]}
-          onPress={() => onSelect(null)}
-          activeOpacity={0.75}
-        >
-          <Text style={[styles.categoryChipText, selectedId === null && styles.categoryChipTextActive]}>Sin categoría</Text>
-        </TouchableOpacity>
-        {categories.map((cat) => (
-          <TouchableOpacity
-            key={cat.id}
-            style={[styles.categoryChip, selectedId === cat.id && styles.categoryChipActive]}
-            onPress={() => onSelect(cat.id)}
-            activeOpacity={0.75}
-          >
-            <Text style={[styles.categoryChipText, selectedId === cat.id && styles.categoryChipTextActive]}>{cat.name}</Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   content: { gap: SPACING.md, paddingBottom: SPACING.xl },
   appRow: {
@@ -1230,20 +1199,6 @@ const styles = StyleSheet.create({
   accountChipSub: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted },
   emptyChips: { fontSize: FONT_SIZE.sm, color: COLORS.textMuted },
   checkingDuplicateNote: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted, textAlign: "center" },
-  categoryChip: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs + 3,
-    borderRadius: RADIUS.full,
-    borderWidth: 1,
-    borderColor: SURFACE.softBorder,
-    backgroundColor: SURFACE.card,
-  },
-  categoryChipActive: {
-    backgroundColor: COLORS.primary + "28",
-    borderColor: COLORS.primary + "99",
-  },
-  categoryChipText: { fontSize: FONT_SIZE.sm, color: COLORS.textMuted },
-  categoryChipTextActive: { color: COLORS.primary, fontFamily: FONT_FAMILY.bodySemibold },
   selectRowLabel: { color: COLORS.textMuted, fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.xs },
   input: {
     minHeight: 74,

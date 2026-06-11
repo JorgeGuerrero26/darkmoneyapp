@@ -1,5 +1,5 @@
-import { memo } from "react";
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { memo, useState } from "react";
+import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 
 import {
   COLORS,
@@ -54,22 +54,44 @@ type CategoryProps = {
   onSelect: (id: number | null) => void;
 };
 
+// Con muchas categorías el scroll horizontal no escala; sobre este umbral aparece el buscador.
+const CATEGORY_SEARCH_THRESHOLD = 12;
+
 export const CategoryPicker = memo(function CategoryPicker({
   label,
   categories,
   selectedId,
   onSelect,
 }: CategoryProps) {
+  const [query, setQuery] = useState("");
+  const showSearch = categories.length > CATEGORY_SEARCH_THRESHOLD;
+  const normalizedQuery = query.trim().toLowerCase();
+  const visibleCategories = showSearch && normalizedQuery
+    ? categories.filter(
+        // La seleccionada queda siempre visible para poder deseleccionarla aunque no matchee.
+        (cat) => cat.id === selectedId || cat.name.toLowerCase().includes(normalizedQuery),
+      )
+    : categories;
   return (
     <View style={styles.pickerWrap} accessibilityLabel={label}>
       <Text style={styles.sectionLabel}>{label}</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
+      {showSearch ? (
+        <TextInput
+          value={query}
+          onChangeText={setQuery}
+          placeholder="Buscar categoría…"
+          placeholderTextColor={COLORS.storm}
+          style={styles.searchInput}
+          accessibilityLabel="Buscar categoría"
+        />
+      ) : null}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row} keyboardShouldPersistTaps="handled">
         <Chip
           label="Sin categoría"
           active={selectedId === null}
           onPress={() => onSelect(null)}
         />
-        {categories.map((cat) => (
+        {visibleCategories.map((cat) => (
           <Chip
             key={cat.id}
             label={cat.name}
@@ -77,6 +99,9 @@ export const CategoryPicker = memo(function CategoryPicker({
             onPress={() => onSelect(cat.id)}
           />
         ))}
+        {showSearch && normalizedQuery && visibleCategories.length === 0 ? (
+          <Text style={styles.emptyResult}>Sin coincidencias</Text>
+        ) : null}
       </ScrollView>
     </View>
   );
@@ -126,4 +151,15 @@ const styles = StyleSheet.create({
   },
   chipText: { fontSize: FONT_SIZE.sm, color: COLORS.storm },
   chipTextActive: { color: COLORS.pine, fontFamily: FONT_FAMILY.bodySemibold },
+  searchInput: {
+    borderWidth: 1,
+    borderColor: SURFACE.softBorder,
+    backgroundColor: SURFACE.card,
+    borderRadius: RADIUS.md,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs + 2,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.text,
+  },
+  emptyResult: { fontSize: FONT_SIZE.sm, color: COLORS.storm, alignSelf: "center" },
 });
