@@ -2,8 +2,8 @@ import { Trash2 } from "lucide-react-native";
 
 import { ExchangeRateCard } from "../../../components/domain/ExchangeRateCard";
 import { SwipeActionRow } from "../../../components/ui/SwipeActionRow";
-import { COLORS, RADIUS } from "../../../constants/theme";
-import type { ExchangeRateRecord } from "../../../services/queries/workspace-data";
+import { COLORS, GLASS, RADIUS } from "../../../constants/theme";
+import type { ExchangeRateRecord } from "../../../services/queries/exchange-rates";
 
 type Props = {
   rate: ExchangeRateRecord;
@@ -44,7 +44,7 @@ export function ExchangeRateSwipeRow({
         icon: Trash2,
         onPress: onDelete,
         color: COLORS.danger,
-        backgroundColor: COLORS.danger + "28",
+        backgroundColor: GLASS.dangerBg,
         haptic: "warning",
       }}
     >

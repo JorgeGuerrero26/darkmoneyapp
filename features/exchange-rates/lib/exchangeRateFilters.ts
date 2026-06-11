@@ -1,5 +1,5 @@
 import type { ResourceSection } from "../../../components/ui/ResourceSectionList";
-import type { ExchangeRateRecord } from "../../../services/queries/workspace-data";
+import type { ExchangeRateRecord } from "../../../services/queries/exchange-rates";
 
 export type ExchangeRateListSection = ResourceSection<ExchangeRateRecord, string>;
 export type ExchangeRateAdvancedFilter = "all" | "pinned" | "manual" | "synced" | "updated_today" | "stale";

@@ -10,7 +10,7 @@ import {
   ResourceCardMetaText,
 } from "../ui/ResourceCard";
 import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING } from "../../constants/theme";
-import type { ExchangeRateRecord } from "../../services/queries/workspace-data";
+import type { ExchangeRateRecord } from "../../services/queries/exchange-rates";
 
 type Props = {
   rate: ExchangeRateRecord;

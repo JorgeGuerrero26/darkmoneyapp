@@ -2,7 +2,7 @@ import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import { BottomSheet } from "../../../components/ui/BottomSheet";
 import { PillSelector } from "../../../components/ui/PillSelector";
-import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING } from "../../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING } from "../../../constants/theme";
 import {
   EXCHANGE_RATE_ADVANCED_FILTERS,
   type ExchangeRateAdvancedFilter,
@@ -67,7 +67,7 @@ const styles = StyleSheet.create({
   applyBtn: {
     marginTop: SPACING.sm,
     minHeight: 46,
-    borderRadius: 18,
+    borderRadius: RADIUS.md,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: COLORS.primary,

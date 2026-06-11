@@ -27,6 +27,7 @@ import {
   type ExchangeRateAdvancedFilter,
   type ExchangeRateListSection,
 } from "../features/exchange-rates/lib/exchangeRateFilters";
+import { buildExchangeRatesContextNote } from "../features/exchange-rates/lib/buildExchangeRatesContextNote";
 import {
   useCreateExchangeRateMutation,
   useDeleteExchangeRateMutation,
@@ -35,7 +36,7 @@ import {
   useToggleExchangeRatePinMutation,
   useUpdateExchangeRateMutation,
   type ExchangeRateRecord,
-} from "../services/queries/workspace-data";
+} from "../services/queries/exchange-rates";
 import { BulkActionBar } from "../components/ui/BulkActionBar";
 import { ExchangeRateForm } from "../components/forms/ExchangeRateForm";
 import { SUPPORTED_CURRENCY_CODES } from "../constants/currencies";
@@ -141,9 +142,11 @@ function ExchangeRatesScreen() {
 
   const extraFiltersCount = advancedFilter !== "all" ? 1 : 0;
   const hasFilters = currencyFilter !== "all" || advancedFilter !== "all" || Boolean(searchText.trim());
-  const contextNote = hasFilters
-    ? `Mostrando ${filteredRates.length} de ${activeRates.length} tipos de cambio.`
-    : "Define cuántas unidades de la moneda destino equivalen a 1 unidad de la moneda origen.";
+  const contextNote = buildExchangeRatesContextNote({
+    visibleCount: filteredRates.length,
+    totalCount: activeRates.length,
+    hasFilters,
+  });
 
   useEffect(() => () => {
     deleteTimers.current.forEach(clearTimeout);
