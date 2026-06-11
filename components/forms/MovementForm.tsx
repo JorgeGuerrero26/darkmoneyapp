@@ -57,6 +57,12 @@ import { normalizeAnalyticsText } from "../../services/analytics/movement-featur
 import { sortByName } from "../../lib/sort-locale";
 import { newClientDedupeKey } from "../../lib/idempotency";
 import { parsePositiveAmountInput } from "../../lib/amount-parsing";
+import {
+  learnedConfidence as movementFormLearnedConfidence,
+  movementTextSimilarity as movementFormTextSimilarity,
+  patternMovementAmount,
+} from "../../features/movements/lib/pattern-heuristics";
+import { LOCAL_CATEGORY_AI_CONFIDENCE_THRESHOLD } from "../../lib/movement-ai-orchestrator";
 import { COLORS, SPACING, SURFACE } from "../../constants/theme";
 import type { MovementType, MovementStatus, MovementRecord, ExchangeRateSummary } from "../../types/domain";
 import { useMovementCreationController } from "../../features/movements/hooks/useMovementCreationController";
@@ -134,20 +140,11 @@ type CategoryFeedbackIntent = {
   source?: "deepseek" | "local";
 };
 
-const LOCAL_CATEGORY_AI_CONFIDENCE_THRESHOLD = 0.6;
-
 function readMovementLinkedEventId(metadata: unknown): number | null {
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
   const raw = metadata as Record<string, unknown>;
   const eventId = Number(raw.obligation_event_id ?? 0);
   return Number.isFinite(eventId) && eventId > 0 ? eventId : null;
-}
-
-function patternMovementAmount(movement: Pick<PatternMovement, "movement_type" | "source_amount" | "destination_amount">) {
-  const source = Math.abs(Number(movement.source_amount ?? 0));
-  const destination = Math.abs(Number(movement.destination_amount ?? 0));
-  if (movement.movement_type === "income" || movement.movement_type === "refund") return destination || source;
-  return source || destination;
 }
 
 function isSuggestionCashflow(movement: MovementSuggestionLike) {
@@ -162,27 +159,6 @@ function isSuggestionCashflow(movement: MovementSuggestionLike) {
 
 function suggestionActsAsIncome(movement: MovementSuggestionLike) {
   return movement.movementType === "income" || movement.movementType === "refund";
-}
-
-function movementFormTextSimilarity(left: string, right: string) {
-  const leftTokens = new Set(normalizeAnalyticsText(left).split(" ").filter((token) => token.length >= 3));
-  const rightTokens = new Set(normalizeAnalyticsText(right).split(" ").filter((token) => token.length >= 3));
-  const allTokens = new Set([...leftTokens, ...rightTokens]);
-  if (allTokens.size === 0) return 0;
-  let overlap = 0;
-  for (const token of allTokens) {
-    if (leftTokens.has(token) && rightTokens.has(token)) overlap += 1;
-  }
-  return overlap / allTokens.size;
-}
-
-function movementFormLearnedConfidence(currentText: string, learnedText: string, similarity: number) {
-  const currentTokens = normalizeAnalyticsText(currentText).split(" ").filter((token) => token.length >= 3);
-  const learnedTokens = normalizeAnalyticsText(learnedText).split(" ").filter((token) => token.length >= 3);
-  const exact = normalizeAnalyticsText(currentText) === normalizeAnalyticsText(learnedText);
-  if (exact) return Math.min(0.9, currentTokens.length <= 1 ? 0.68 : 0.76 + Math.min(currentTokens.length, 4) * 0.03);
-  if (currentTokens.length <= 1 || learnedTokens.length <= 1) return Math.min(0.58, 0.42 + similarity * 0.18);
-  return Math.min(0.86, 0.38 + similarity * 0.48);
 }
 
 function formatTransferAmount(value: number) {

@@ -61,38 +61,14 @@ import type { CategorySummary, CounterpartySummary } from "../../types/domain";
 import { useMovementCreationController } from "../../features/movements/hooks/useMovementCreationController";
 import { buildMovementCreateInput } from "../../features/movements/lib/movement-save-contract";
 import { parsePositiveAmountInput } from "../../lib/amount-parsing";
+import {
+  learnedConfidence,
+  movementTextSimilarity,
+  patternMovementAmount,
+} from "../../features/movements/lib/pattern-heuristics";
+import { LOCAL_CATEGORY_AI_CONFIDENCE_THRESHOLD } from "../../lib/movement-ai-orchestrator";
 
-function textSimilarity(left: string, right: string): number {
-  const leftTokens = new Set(normalizeAnalyticsText(left).split(" ").filter((t) => t.length >= 3));
-  const rightTokens = new Set(normalizeAnalyticsText(right).split(" ").filter((t) => t.length >= 3));
-  const all = new Set([...leftTokens, ...rightTokens]);
-  if (all.size === 0) return 0;
-  let overlap = 0;
-  for (const t of all) if (leftTokens.has(t) && rightTokens.has(t)) overlap++;
-  return overlap / all.size;
-}
-
-const LOCAL_CATEGORY_AI_CONFIDENCE_THRESHOLD = 0.6;
-
-function learnedConfidence(currentText: string, learnedText: string, similarity: number) {
-  const currentTokens = normalizeAnalyticsText(currentText).split(" ").filter((token) => token.length >= 3);
-  const learnedTokens = normalizeAnalyticsText(learnedText).split(" ").filter((token) => token.length >= 3);
-  const exact = normalizeAnalyticsText(currentText) === normalizeAnalyticsText(learnedText);
-  if (exact) return Math.min(0.9, currentTokens.length <= 1 ? 0.68 : 0.76 + Math.min(currentTokens.length, 4) * 0.03);
-  if (currentTokens.length <= 1 || learnedTokens.length <= 1) return Math.min(0.58, 0.42 + similarity * 0.18);
-  return Math.min(0.86, 0.38 + similarity * 0.48);
-}
-
-function patternMovementAmount(movement: {
-  movement_type: string;
-  source_amount: number | null;
-  destination_amount: number | null;
-}) {
-  const source = Math.abs(Number(movement.source_amount ?? 0));
-  const destination = Math.abs(Number(movement.destination_amount ?? 0));
-  if (movement.movement_type === "income" || movement.movement_type === "refund") return destination || source;
-  return source || destination;
-}
+// Heurísticas compartidas con MovementForm y el runtime sync (features/movements/lib).
 
 type Props = {
   visible: boolean;
@@ -271,7 +247,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
     const normalized = normalizeAnalyticsText(description);
     if (normalized && accepted.length > 0) {
       const best = accepted
-        .map((fb) => ({ fb, sim: textSimilarity(normalized, fb.normalizedDescription ?? "") }))
+        .map((fb) => ({ fb, sim: movementTextSimilarity(normalized, fb.normalizedDescription ?? "") }))
         .filter((item) => item.sim >= 0.58)
         .sort((a, b) => b.sim - a.sim || new Date(b.fb.createdAt).getTime() - new Date(a.fb.createdAt).getTime())[0];
       if (best?.fb.acceptedCategoryId) {

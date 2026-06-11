@@ -15,6 +15,7 @@ import { analyzeMovementBudgetImpactLocally } from "../lib/movement-budget-impac
 import { buildPatternMaps, scoreCategoryFromDescription, type PatternMaps } from "../lib/movement-patterns";
 import { filterCategoriesForMovementType, orchestrateCategoryAiRecommendation } from "../lib/movement-ai-orchestrator";
 import { normalizeCurrencyCode, sortAccountsForDetectedCurrency } from "../features/movements/lib/movement-creation-rules";
+import { patternMovementAmount } from "../features/movements/lib/pattern-heuristics";
 import { useMovementPatternsQuery } from "../services/queries/movement-patterns";
 import {
   requestMovementDescriptionCleanup,
@@ -65,17 +66,6 @@ function buildAccountCurrencyPreferences(
 }
 
 const AI_NOTIFICATION_DISCARD_THRESHOLD = 0.65;
-
-function patternMovementAmount(movement: {
-  movement_type: string;
-  source_amount: number | null;
-  destination_amount: number | null;
-}) {
-  const source = Math.abs(Number(movement.source_amount ?? 0));
-  const destination = Math.abs(Number(movement.destination_amount ?? 0));
-  if (movement.movement_type === "income" || movement.movement_type === "refund") return destination || source;
-  return source || destination;
-}
 
 const PROCESSED_SUGGESTIONS_TTL_MS = 24 * 60 * 60 * 1000;
 const PROCESSED_SUGGESTIONS_FLUSH_DEBOUNCE_MS = 800;
