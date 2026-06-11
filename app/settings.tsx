@@ -3,13 +3,11 @@ import { useEffect, useState } from "react";
 import { ErrorBoundary } from "../components/ui/ErrorBoundary";
 import {
   ActivityIndicator,
-  Animated,
   Image,
   KeyboardAvoidingView,
   Linking,
   Modal,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
   Switch,
@@ -34,11 +32,12 @@ import {
   useCreateWorkspaceInvitationMutation,
   useNotificationPreferencesQuery,
   useUpdateNotificationPreferencesMutation,
-  useSyncExchangeRatePairMutation,
   type WorkspaceInvitationInput,
 } from "../services/queries/workspace-data";
+import { useSyncExchangeRatePairMutation } from "../services/queries/exchange-rates";
 import { Input } from "../components/ui/Input";
 import { Button } from "../components/ui/Button";
+import { BottomSheet } from "../components/ui/BottomSheet";
 import { Card } from "../components/ui/Card";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { CurrencySelector } from "../components/ui/CurrencySelector";
@@ -46,11 +45,10 @@ import { ResourceContextNote } from "../components/ui/ResourceContextNote";
 import { ResourceModuleTemplate } from "../components/ui/ResourceModuleTemplate";
 import { ScreenHeader } from "../components/layout/ScreenHeader";
 import { useToast } from "../hooks/useToast";
-import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../constants/theme";
+import { COLORS, EXTENDED_PALETTE, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../constants/theme";
 import { DEFAULT_EXCHANGE_CURRENCY, normalizeSupportedCurrencyCode } from "../constants/currencies";
 import type { WorkspaceRole } from "../types/domain";
 import { SafeBlurView } from "../components/ui/SafeBlurView";
-import { useDismissibleSheet } from "../components/ui/useDismissibleSheet";
 import { useOriginBackNavigation } from "../hooks/useOriginBackNavigation";
 import { registerForPushNotifications, savePushTokenToSupabase } from "../hooks/usePushNotifications";
 
@@ -158,10 +156,6 @@ function SettingsScreen() {
 
   // ── Workspace invite sheet ────────────────────────────────────────────────
   const [inviteSheetOpen, setInviteSheetOpen] = useState(false);
-  const inviteSheetDismiss = useDismissibleSheet({
-    visible: inviteSheetOpen,
-    onClose: () => setInviteSheetOpen(false),
-  });
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<Exclude<WorkspaceRole, "owner">>("member");
   const [inviteNote, setInviteNote] = useState("");
@@ -199,10 +193,6 @@ function SettingsScreen() {
 
   // ── Create workspace sheet ────────────────────────────────────────────────
   const [createWsSheetOpen, setCreateWsSheetOpen] = useState(false);
-  const createSheetDismiss = useDismissibleSheet({
-    visible: createWsSheetOpen,
-    onClose: () => setCreateWsSheetOpen(false),
-  });
   const [newWsName, setNewWsName] = useState("");
   const [newWsCurrency, setNewWsCurrency] = useState(normalizeSupportedCurrencyCode(profile?.baseCurrencyCode));
   const createWsMutation = useCreateSharedWorkspaceMutation();
@@ -393,8 +383,8 @@ function SettingsScreen() {
               )}
               <View style={styles.avatarOverlay}>
                 {isUploadingAvatar
-                  ? <ActivityIndicator size="small" color="#FFF" />
-                  : <Pencil size={20} color="#FFF" strokeWidth={2} />}
+                  ? <ActivityIndicator size="small" color={EXTENDED_PALETTE.white} />
+                  : <Pencil size={20} color={EXTENDED_PALETTE.white} strokeWidth={2} />}
               </View>
             </TouchableOpacity>
             {profile?.avatarUrl ? (
@@ -461,7 +451,7 @@ function SettingsScreen() {
                   value={biometricActive}
                   onValueChange={(v) => void handleBiometricToggle(v)}
                   trackColor={{ false: COLORS.border, true: COLORS.primary }}
-                  thumbColor="#FFFFFF"
+                  thumbColor={EXTENDED_PALETTE.white}
                 />
               </View>
             </Card>
@@ -526,7 +516,7 @@ function SettingsScreen() {
                 onValueChange={(v) => void handleDailyDigestToggle(v)}
                 disabled={updateNotificationPreferencesMutation.isPending || notificationPreferencesQuery.isLoading}
                 trackColor={{ false: COLORS.border, true: COLORS.primary }}
-                thumbColor="#FFFFFF"
+                thumbColor={EXTENDED_PALETTE.white}
               />
             </View>
           </Card>
@@ -601,97 +591,89 @@ function SettingsScreen() {
       />
 
       {/* ── Invite member sheet ───────────────────────────────────────── */}
-      <Modal visible={inviteSheetOpen} transparent animationType="fade" onRequestClose={() => setInviteSheetOpen(false)}>
-        <Animated.View style={[styles.overlay, inviteSheetDismiss.backdropStyle]}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setInviteSheetOpen(false)} />
-          <Animated.View
-            style={[styles.sheet, { paddingBottom: insets.bottom + SPACING.lg }, inviteSheetDismiss.sheetStyle]}
-            onStartShouldSetResponder={() => true}
-            {...inviteSheetDismiss.panHandlers}
-          >
-            <Text style={styles.sheetTitle}>Invitar miembro</Text>
-            <Text style={styles.sheetSubtitle}>Workspace: {activeWorkspace?.name}</Text>
+      <BottomSheet
+        visible={inviteSheetOpen}
+        onClose={() => setInviteSheetOpen(false)}
+        title="Invitar miembro"
+        snapHeight={0.72}
+        backdropColor={SURFACE.scrim}
+      >
+        <Text style={styles.sheetSubtitle}>Workspace: {activeWorkspace?.name}</Text>
 
-            <Input
-              label="Email *"
-              value={inviteEmail}
-              onChangeText={setInviteEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              placeholder="correo@ejemplo.com"
-            />
+        <Input
+          label="Email *"
+          value={inviteEmail}
+          onChangeText={setInviteEmail}
+          keyboardType="email-address"
+          autoCapitalize="none"
+          placeholder="correo@ejemplo.com"
+        />
 
-            <View style={styles.roleSection}>
-              <Text style={styles.fieldLabel}>Rol</Text>
-              <View style={styles.roleRow}>
-                {ROLE_OPTIONS.map((opt) => (
-                  <TouchableOpacity
-                    key={opt.value}
-                    style={[styles.rolePill, inviteRole === opt.value && styles.rolePillActive]}
-                    onPress={() => setInviteRole(opt.value)}
-                  >
-                    <Text style={[styles.rolePillText, inviteRole === opt.value && styles.rolePillTextActive]}>
-                      {opt.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
+        <View style={styles.roleSection}>
+          <Text style={styles.fieldLabel}>Rol</Text>
+          <View style={styles.roleRow}>
+            {ROLE_OPTIONS.map((opt) => (
+              <TouchableOpacity
+                key={opt.value}
+                style={[styles.rolePill, inviteRole === opt.value && styles.rolePillActive]}
+                onPress={() => setInviteRole(opt.value)}
+              >
+                <Text style={[styles.rolePillText, inviteRole === opt.value && styles.rolePillTextActive]}>
+                  {opt.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
 
-            <Input
-              label="Mensaje (opcional)"
-              value={inviteNote}
-              onChangeText={setInviteNote}
-              placeholder="Hola, te invito a..."
-              multiline
-              numberOfLines={2}
-            />
+        <Input
+          label="Mensaje (opcional)"
+          value={inviteNote}
+          onChangeText={setInviteNote}
+          placeholder="Hola, te invito a..."
+          multiline
+          numberOfLines={2}
+        />
 
-            <Button
-              label="Enviar invitación"
-              onPress={handleSendInvite}
-              loading={inviteMutation.isPending}
-              style={styles.sheetBtn}
-            />
-          </Animated.View>
-        </Animated.View>
-      </Modal>
+        <Button
+          label="Enviar invitación"
+          onPress={handleSendInvite}
+          loading={inviteMutation.isPending}
+          style={styles.sheetBtn}
+        />
+      </BottomSheet>
 
       {/* ── Create workspace sheet ────────────────────────────────────── */}
-      <Modal visible={createWsSheetOpen} transparent animationType="fade" onRequestClose={() => setCreateWsSheetOpen(false)}>
-        <Animated.View style={[styles.overlay, createSheetDismiss.backdropStyle]}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setCreateWsSheetOpen(false)} />
-          <Animated.View
-            style={[styles.sheet, { paddingBottom: insets.bottom + SPACING.lg }, createSheetDismiss.sheetStyle]}
-            onStartShouldSetResponder={() => true}
-            {...createSheetDismiss.panHandlers}
-          >
-            <Text style={styles.sheetTitle}>Nuevo workspace</Text>
-            <Text style={styles.sheetSubtitle}>Se creará un workspace compartido</Text>
+      <BottomSheet
+        visible={createWsSheetOpen}
+        onClose={() => setCreateWsSheetOpen(false)}
+        title="Nuevo workspace"
+        snapHeight={0.62}
+        backdropColor={SURFACE.scrim}
+      >
+        <Text style={styles.sheetSubtitle}>Se creará un workspace compartido</Text>
 
-            <Input
-              label="Nombre *"
-              value={newWsName}
-              onChangeText={setNewWsName}
-              placeholder="Ej. Empresa ABC"
-              autoCapitalize="words"
-            />
-            <CurrencySelector
-              label="Moneda base"
-              value={newWsCurrency}
-              onChange={setNewWsCurrency}
-              hint={`El tipo de cambio contra ${DEFAULT_EXCHANGE_CURRENCY} se guardara automaticamente.`}
-            />
+        <Input
+          label="Nombre *"
+          value={newWsName}
+          onChangeText={setNewWsName}
+          placeholder="Ej. Empresa ABC"
+          autoCapitalize="words"
+        />
+        <CurrencySelector
+          label="Moneda base"
+          value={newWsCurrency}
+          onChange={setNewWsCurrency}
+          hint={`El tipo de cambio contra ${DEFAULT_EXCHANGE_CURRENCY} se guardara automaticamente.`}
+        />
 
-            <Button
-              label="Crear workspace"
-              onPress={handleCreateWorkspace}
-              loading={createWsMutation.isPending}
-              style={styles.sheetBtn}
-            />
-          </Animated.View>
-        </Animated.View>
-      </Modal>
+        <Button
+          label="Crear workspace"
+          onPress={handleCreateWorkspace}
+          loading={createWsMutation.isPending}
+          style={styles.sheetBtn}
+        />
+      </BottomSheet>
       </>
       }
     />
@@ -700,7 +682,6 @@ function SettingsScreen() {
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  screen: { flex: 1, backgroundColor: COLORS.bg },
   content: { padding: SPACING.lg, gap: SPACING.lg, paddingBottom: SPACING.xxxl },
   sectionTitle: {
     fontSize: FONT_SIZE.sm,
@@ -733,7 +714,7 @@ const styles = StyleSheet.create({
   },
   avatarOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.38)",
+    backgroundColor: SURFACE.imageScrim,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -744,7 +725,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: SPACING.md,
   },
-  avatarText: { fontSize: FONT_SIZE.xxl, fontFamily: FONT_FAMILY.heading, color: "#FFF" },
+  avatarText: { fontSize: FONT_SIZE.xxl, fontFamily: FONT_FAMILY.heading, color: EXTENDED_PALETTE.white },
   form: { gap: SPACING.md },
   disabledInput: { opacity: 0.5 },
   saveButton: { marginTop: SPACING.lg },
@@ -756,7 +737,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: SURFACE.separator,
   },
-  wsRowActive: { backgroundColor: COLORS.primary + "11", marginHorizontal: -SPACING.md, paddingHorizontal: SPACING.md, borderRadius: RADIUS.sm },
+  wsRowActive: { backgroundColor: SURFACE.cardActive, marginHorizontal: -SPACING.md, paddingHorizontal: SPACING.md, borderRadius: RADIUS.sm },
   wsInfo: { gap: 2 },
   wsName: { fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.bodyMedium, color: COLORS.ink },
   wsKind: { fontSize: FONT_SIZE.xs, color: COLORS.storm },
@@ -792,7 +773,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.md,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: COLORS.primary + "1A",
+    backgroundColor: SURFACE.cardActive,
   },
   settingsNavCopy: { flex: 1, gap: 2 },
   pushStatusBox: {
@@ -826,8 +807,8 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.xs + 2,
     borderRadius: RADIUS.full,
     borderWidth: 1,
-    borderColor: COLORS.primary + "55",
-    backgroundColor: COLORS.primary + "14",
+    borderColor: SURFACE.cardActiveBorder,
+    backgroundColor: SURFACE.cardActive,
   },
   pushReconnectText: {
     fontSize: FONT_SIZE.xs,
@@ -847,16 +828,6 @@ const styles = StyleSheet.create({
     fontFamily: FONT_FAMILY.bodySemibold,
     color: COLORS.storm,
   },
-  // Sheet styles
-  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
-  sheet: {
-    backgroundColor: COLORS.mist,
-    borderTopLeftRadius: RADIUS.xl,
-    borderTopRightRadius: RADIUS.xl,
-    padding: SPACING.lg,
-    gap: SPACING.md,
-  },
-  sheetTitle: { fontSize: FONT_SIZE.lg, fontFamily: FONT_FAMILY.heading, color: COLORS.ink, textAlign: "center" },
   sheetSubtitle: { fontSize: FONT_SIZE.sm, color: COLORS.storm, textAlign: "center", marginTop: -SPACING.sm },
   sheetBtn: { marginTop: SPACING.sm },
   fieldLabel: {
@@ -878,11 +849,11 @@ const styles = StyleSheet.create({
   },
   rolePillActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
   rolePillText: { fontSize: FONT_SIZE.xs, color: COLORS.storm, fontFamily: FONT_FAMILY.bodyMedium },
-  rolePillTextActive: { color: "#FFF" },
+  rolePillTextActive: { color: COLORS.textInverse },
   // Sign out modal
   soOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.7)",
+    backgroundColor: SURFACE.scrimStrong,
     alignItems: "center",
     justifyContent: "center",
     padding: SPACING.xl,
@@ -903,7 +874,7 @@ const styles = StyleSheet.create({
   bioSetupInput: { width: "100%", alignSelf: "stretch" },
   bioCard: {
     width: "100%",
-    backgroundColor: "rgba(9,13,18,0.96)",
+    backgroundColor: SURFACE.deepNavy,
     borderRadius: RADIUS.xl,
     paddingHorizontal: SPACING.xl,
     paddingVertical: SPACING.xxxl,
@@ -935,7 +906,7 @@ const styles = StyleSheet.create({
     width: 68,
     height: 68,
     borderRadius: 34,
-    backgroundColor: "rgba(107,228,197,0.08)",
+    backgroundColor: SURFACE.cardActive,
     alignItems: "center",
     justifyContent: "center",
   },

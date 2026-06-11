@@ -223,6 +223,10 @@ export const SURFACE = {
   track:             "rgba(255,255,255,0.07)",   // progress bar base, chart fills
   /// Pressable feedback (cards, rows, list items en estado pressed)
   pressed:           "rgba(255,255,255,0.07)",
+  /// Dimming layers for media overlays and modal backdrops
+  imageScrim:        "rgba(0,0,0,0.38)",
+  scrim:             "rgba(0,0,0,0.45)",
+  scrimStrong:       "rgba(0,0,0,0.70)",
   /// Subtle divider/border (≤ inputBorder; for step indicators, chip dividers)
   subtleBorder:      "rgba(255,255,255,0.12)",
   /// Subtle panel backgrounds (panels, chip lists)
