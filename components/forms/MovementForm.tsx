@@ -14,6 +14,7 @@ import { todayPeru, dateStrToISO, isoToDateStr } from "../../lib/date";
 import {
   useWorkspaceSnapshotQuery,
   useCreateMovementMutation,
+  useDeleteMovementMutation,
   useUpdateMovementMutation,
   useCreateCategoryMutation,
   useCreateCounterpartyMutation,
@@ -234,7 +235,7 @@ function getInitialForm(defaultType: MovementType): FormState {
 export function MovementForm({ visible, onClose, onSuccess, defaultType = "expense", initialAccountId, editMovement }: Props) {
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
-  const { showToast } = useToast();
+  const { showToast, showRichToast } = useToast();
   const haptics = useHaptics();
   const queryClient = useQueryClient();
 
@@ -247,6 +248,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
 
   const { data: snapshot } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const createMovement = useCreateMovementMutation(activeWorkspaceId);
+  const deleteMovement = useDeleteMovementMutation(activeWorkspaceId);
   const updateMovement = useUpdateMovementMutation(activeWorkspaceId);
   const createCategory = useCreateCategoryMutation(activeWorkspaceId);
   const createCounterparty = useCreateCounterpartyMutation(activeWorkspaceId);
@@ -1408,7 +1410,13 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         setSavedMovementId(created.id);
         persistCategoryLearning(created.id, autoDesc);
         // Los comprobantes se sincronizan después de cerrar el formulario para no bloquear la UI.
-        showToast("Movimiento guardado", "success");
+        // Deshacer elimina el movimiento recién creado (la dedupe key se libera con la fila).
+        showRichToast({
+          type: "success",
+          title: "Movimiento guardado",
+          subtitle: "Toca deshacer si fue un error",
+          onUndo: () => deleteMovement.mutate(created.id),
+        });
         setLastMovementAccountId(form.sourceAccountId);
         if (attachments.length > 0 && activeWorkspaceId) {
           backgroundAttachmentSync = () => {

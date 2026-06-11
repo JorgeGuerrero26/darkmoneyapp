@@ -32,6 +32,7 @@ import {
   useCreateCategoryMutation,
   useCreateCounterpartyMutation,
   useCreateMovementMutation,
+  useDeleteMovementMutation,
   useCreateRecurringIncomeMutation,
   useCreateSubscriptionMutation,
   useDashboardAnalyticsQuery,
@@ -107,7 +108,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
   const router = useRouter();
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
-  const { showToast } = useToast();
+  const { showToast, showRichToast } = useToast();
   const suggestionQuery = useDetectedMovementSuggestionQuery(suggestionId);
   const suggestion = suggestionQuery.data;
   const { data: snapshot } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
@@ -115,6 +116,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
   const settings = settingsQuery.data ?? [];
   const frequentTransferPair = useFrequentTransferPairQuery(activeWorkspaceId).data ?? null;
   const createMovement = useCreateMovementMutation(activeWorkspaceId);
+  const deleteMovement = useDeleteMovementMutation(activeWorkspaceId);
   const createCategory = useCreateCategoryMutation(activeWorkspaceId);
   const createCounterparty = useCreateCounterpartyMutation(activeWorkspaceId);
   const createSubscription = useCreateSubscriptionMutation(activeWorkspaceId);
@@ -744,7 +746,12 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
           });
         }
         if (notificationId) markNotificationRead.mutate(notificationId);
-        showToast("Transferencia guardada", "success");
+        showRichToast({
+          type: "transfer",
+          title: "Transferencia guardada",
+          subtitle: "Toca deshacer si fue un error",
+          onUndo: () => undoRegistration(created.id),
+        });
         onClose();
       } catch (error) {
         showToast(error instanceof Error ? error.message : "No se pudo guardar la transferencia", "error");
@@ -874,11 +881,32 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
         });
       }
       if (notificationId) markNotificationRead.mutate(notificationId);
-      showToast("Movimiento guardado", "success");
+      showRichToast({
+        type: "success",
+        title: "Movimiento guardado",
+        subtitle: "Toca deshacer si fue un error",
+        onUndo: () => undoRegistration(created.id),
+      });
       onClose();
     } catch (error) {
       showToast(error instanceof Error ? error.message : "No se pudo guardar el movimiento", "error");
     }
+  }
+
+  /**
+   * Deshacer un registro recién guardado: elimina el movimiento (la dedupe key se libera
+   * con la fila) y devuelve la sugerencia a `pending` para poder registrarla de nuevo.
+   */
+  function undoRegistration(movementId: number) {
+    if (!suggestion) return;
+    deleteMovement.mutate(movementId, {
+      onSuccess: () => {
+        markSuggestion.mutate({ suggestionId: suggestion.id, status: "pending", movementId: null });
+      },
+      onError: (error) => {
+        showToast(error instanceof Error ? error.message : "No se pudo deshacer", "error");
+      },
+    });
   }
 
   const displayAppLabel = suggestion
