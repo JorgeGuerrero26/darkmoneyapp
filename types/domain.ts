@@ -274,6 +274,7 @@ export type CounterpartySummary = {
   name: string;
   type: CounterpartyType;
   isArchived: boolean;
+  isPinned?: boolean;
   /** Presente cuando viene del snapshot / detalle */
   phone?: string | null;
   email?: string | null;
@@ -283,6 +284,7 @@ export type CounterpartySummary = {
 
 export type CounterpartyOverview = CounterpartySummary & {
   workspaceId: number;
+  isPinned: boolean;
   roles: CounterpartyRoleType[];
   receivableCount: number;
   receivablePrincipalTotal: number;

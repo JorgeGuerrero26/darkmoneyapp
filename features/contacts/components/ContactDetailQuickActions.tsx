@@ -5,6 +5,8 @@ import {
   Mail,
   MessageCircle,
   Pencil,
+  Pin,
+  PinOff,
   Phone,
 } from "lucide-react-native";
 
@@ -16,6 +18,7 @@ type Props = {
   onEdit: () => void;
   onArchive: () => void;
   onRestore: () => void;
+  onTogglePin: () => void;
 };
 
 function sanitizePhone(raw: string) {
@@ -27,6 +30,7 @@ export function ContactDetailQuickActions({
   onEdit,
   onArchive,
   onRestore,
+  onTogglePin,
 }: Props) {
   const phone = contact.phone?.trim() ?? "";
   const email = contact.email?.trim() ?? "";
@@ -66,6 +70,13 @@ export function ContactDetailQuickActions({
       icon: Pencil,
       color: COLORS.primary,
       onPress: onEdit,
+    },
+    {
+      key: "pin",
+      label: contact.isPinned ? "Desfijar" : "Fijar",
+      icon: contact.isPinned ? PinOff : Pin,
+      color: contact.isPinned ? COLORS.primary : COLORS.storm,
+      onPress: onTogglePin,
     },
     contact.isArchived
       ? {

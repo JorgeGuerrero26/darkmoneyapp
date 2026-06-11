@@ -1,10 +1,12 @@
 import { Building2, Circle, Landmark, Store, User, Wrench } from "lucide-react-native";
 import type { CounterpartyType } from "../../../types/domain";
 
-export type ContactTypeFilter = CounterpartyType | "all";
+export type ActiveContactFilter = CounterpartyType | "pinned";
+export type ContactTypeFilter = ActiveContactFilter | "all";
 
 export const TYPE_FILTERS: { label: string; value: ContactTypeFilter }[] = [
   { label: "Todos", value: "all" },
+  { label: "Fijados", value: "pinned" },
   { label: "Personas", value: "person" },
   { label: "Empresas", value: "company" },
   { label: "Comercios", value: "merchant" },

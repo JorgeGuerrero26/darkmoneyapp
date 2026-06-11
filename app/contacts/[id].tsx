@@ -3,6 +3,7 @@ import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
+import { Pin, PinOff } from "lucide-react-native";
 
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { useOriginBackNavigation } from "../../hooks/useOriginBackNavigation";
@@ -10,14 +11,17 @@ import { useAuth } from "../../lib/auth-context";
 import { humanizeError } from "../../lib/errors";
 import { useWorkspace } from "../../lib/workspace-context";
 import {
+  useToggleCounterpartyPinMutation,
   useUpdateCounterpartyMutation,
   useWorkspaceSnapshotQuery,
 } from "../../services/queries/workspace-data";
 import { useToast } from "../../hooks/useToast";
 import type { CounterpartyOverview } from "../../types/domain";
 import { Card } from "../../components/ui/Card";
+import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTemplate";
 import { SkeletonCard, SkeletonList } from "../../components/ui/Skeleton";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
+import { HeaderActionGroup } from "../../components/ui/HeaderActionGroup";
 import { ContactForm } from "../../components/forms/ContactForm";
 import { COLORS, FONT_FAMILY, FONT_SIZE, FONT_WEIGHT, SPACING } from "../../constants/theme";
 
@@ -47,6 +51,7 @@ function ContactDetailScreen() {
 
   const { data: snapshot, isLoading } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const archiveMutation = useUpdateCounterpartyMutation(activeWorkspaceId);
+  const togglePinMutation = useToggleCounterpartyPinMutation(activeWorkspaceId);
 
   const contactId = parseContactId(id);
   const contact: CounterpartyOverview | null = useMemo(() => {
@@ -91,83 +96,109 @@ function ContactDetailScreen() {
     );
   }
 
+  function handleTogglePin() {
+    if (!contact) return;
+    togglePinMutation.mutate(
+      { id: contact.id, isPinned: !contact.isPinned },
+      { onError: (err) => showToast(humanizeError(err), "error") },
+    );
+  }
+
   return (
-    <View style={[styles.screen, { paddingTop: insets.top }]}>
-      <ScreenHeader
-        title={contact?.name ?? "Contacto"}
-        subtitle={activeWorkspace?.name}
-        onBack={handleBack}
-      />
-
-      {isLoading ? (
-        <SkeletonList>
-          <SkeletonCard />
-          <SkeletonCard />
-          <SkeletonCard />
-        </SkeletonList>
-      ) : !contact ? (
-        <View style={styles.center}>
-          <Text style={styles.errorTitle}>Contacto no encontrado</Text>
-          <Text style={styles.errorBody}>
-            {contactId == null
-              ? "El identificador del contacto no es válido."
-              : "Es posible que el contacto haya sido eliminado."}
-          </Text>
-        </View>
-      ) : (
-        <ScrollView contentContainerStyle={styles.content}>
-          <ContactDetailHeader contact={contact} lastActivityAt={analytics?.lastActivityAt ?? null} />
-
-          <ContactDetailQuickActions
-            contact={contact}
-            onEdit={() => setEditFormVisible(true)}
-            onArchive={handleArchive}
-            onRestore={handleRestore}
-          />
-
-          {analytics ? (
-            <ContactDetailRelationCard
-              contact={contact}
-              analytics={analytics}
-              baseCurrency={baseCurrency}
-            />
-          ) : null}
-
-          <Card>
-            <Text style={styles.sectionTitle}>Datos de contacto</Text>
-            <ContactDataList contact={contact} onEdit={() => setEditFormVisible(true)} hasNoData={noContactData} />
-          </Card>
-
-          {analytics ? (
-            <ContactDetailFinancials
-              contact={contact}
-              analytics={analytics}
-              baseCurrency={baseCurrency}
-            />
-          ) : null}
-
-          {analytics ? (
-            <ContactDetailProgrammed analytics={analytics} baseCurrency={baseCurrency} />
-          ) : null}
-
-          {contact.notes ? (
-            <Card>
-              <Text style={styles.sectionTitle}>Notas</Text>
-              <Text style={styles.notes}>{contact.notes}</Text>
-            </Card>
-          ) : null}
-        </ScrollView>
-      )}
-
-      {contact ? (
-        <ContactForm
-          visible={editFormVisible}
-          onClose={() => setEditFormVisible(false)}
-          onSuccess={() => setEditFormVisible(false)}
-          editContact={contact}
+    <ResourceModuleTemplate
+      topInset={insets.top}
+      header={
+        <ScreenHeader
+          title={contact?.name ?? "Contacto"}
+          subtitle={activeWorkspace?.name}
+          onBack={handleBack}
+          rightAction={
+            contact ? (
+              <HeaderActionGroup
+                actions={[{
+                  key: "pin",
+                  icon: contact.isPinned ? PinOff : Pin,
+                  onPress: handleTogglePin,
+                  accessibilityLabel: contact.isPinned ? "Desfijar contacto" : "Fijar contacto",
+                }]}
+              />
+            ) : null
+          }
         />
-      ) : null}
-    </View>
+      }
+      list={
+        isLoading ? (
+          <SkeletonList>
+            <SkeletonCard />
+            <SkeletonCard />
+            <SkeletonCard />
+          </SkeletonList>
+        ) : !contact ? (
+          <View style={styles.center}>
+            <Text style={styles.errorTitle}>Contacto no encontrado</Text>
+            <Text style={styles.errorBody}>
+              {contactId == null
+                ? "El identificador del contacto no es válido."
+                : "Es posible que el contacto haya sido eliminado."}
+            </Text>
+          </View>
+        ) : (
+          <ScrollView contentContainerStyle={styles.content}>
+            <ContactDetailHeader contact={contact} lastActivityAt={analytics?.lastActivityAt ?? null} />
+
+            <ContactDetailQuickActions
+              contact={contact}
+              onEdit={() => setEditFormVisible(true)}
+              onArchive={handleArchive}
+              onRestore={handleRestore}
+              onTogglePin={handleTogglePin}
+            />
+
+            {analytics ? (
+              <ContactDetailRelationCard
+                contact={contact}
+                analytics={analytics}
+                baseCurrency={baseCurrency}
+              />
+            ) : null}
+
+            <Card>
+              <Text style={styles.sectionTitle}>Datos de contacto</Text>
+              <ContactDataList contact={contact} onEdit={() => setEditFormVisible(true)} hasNoData={noContactData} />
+            </Card>
+
+            {analytics ? (
+              <ContactDetailFinancials
+                contact={contact}
+                analytics={analytics}
+                baseCurrency={baseCurrency}
+              />
+            ) : null}
+
+            {analytics ? (
+              <ContactDetailProgrammed analytics={analytics} baseCurrency={baseCurrency} />
+            ) : null}
+
+            {contact.notes ? (
+              <Card>
+                <Text style={styles.sectionTitle}>Notas</Text>
+                <Text style={styles.notes}>{contact.notes}</Text>
+              </Card>
+            ) : null}
+          </ScrollView>
+        )
+      }
+      overlays={
+        contact ? (
+          <ContactForm
+            visible={editFormVisible}
+            onClose={() => setEditFormVisible(false)}
+            onSuccess={() => setEditFormVisible(false)}
+            editContact={contact}
+          />
+        ) : null
+      }
+    />
   );
 }
 
@@ -214,7 +245,6 @@ function ContactDataList({
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: COLORS.bg },
   content: { padding: SPACING.lg, gap: SPACING.md, paddingBottom: SPACING.xl },
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: SPACING.lg, gap: SPACING.sm },
   errorTitle: { color: COLORS.text, fontSize: FONT_SIZE.md, fontWeight: FONT_WEIGHT.semibold },

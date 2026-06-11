@@ -1,5 +1,5 @@
 import { StyleSheet, Text, View } from "react-native";
-import { Archive, ArchiveRestore, Trash2 } from "lucide-react-native";
+import { Archive, ArchiveRestore, Pin, PinOff, Trash2 } from "lucide-react-native";
 
 import {
   ResourceCard,
@@ -28,6 +28,7 @@ type Props = {
   onArchive: () => void;
   onDelete: () => void;
   onRestore: () => void;
+  onTogglePin?: () => void;
   onLongPress?: () => void;
   selected?: boolean;
   selectMode?: boolean;
@@ -38,12 +39,14 @@ function ContactCardContent({
   metrics,
   onPress,
   onLongPress,
+  onTogglePin,
   selected,
 }: {
   contact: CounterpartyOverview;
   metrics?: ContactMetrics;
   onPress: () => void;
   onLongPress?: () => void;
+  onTogglePin?: () => void;
   selected?: boolean;
 }) {
   const ContactIcon = TYPE_ICON[contact.type];
@@ -63,6 +66,15 @@ function ContactCardContent({
       onLongPress={onLongPress}
       selected={selected}
       leading={<ResourceCardIcon icon={ContactIcon} color={COLORS.primary} />}
+      actions={[
+        ...(onTogglePin ? [{
+          key: "pin",
+          icon: contact.isPinned ? PinOff : Pin,
+          onPress: onTogglePin,
+          color: contact.isPinned ? COLORS.primary : COLORS.storm,
+          accessibilityLabel: contact.isPinned ? "Desfijar contacto" : "Fijar contacto",
+        }] : []),
+      ]}
       meta={
         <>
           <ResourceCardBadge label={typeLabel} color={COLORS.primary} />
@@ -92,6 +104,7 @@ export function ContactCard({
   onArchive,
   onDelete,
   onRestore,
+  onTogglePin,
   onLongPress,
   selected = false,
   selectMode = false,
@@ -103,6 +116,7 @@ export function ContactCard({
         metrics={metrics}
         onPress={onPress}
         onLongPress={onLongPress}
+        onTogglePin={onTogglePin}
         selected={selected}
       />
     );
@@ -147,6 +161,7 @@ export function ContactCard({
             onPress();
           }}
           onLongPress={onLongPress}
+          onTogglePin={onTogglePin}
         />
       )}
     </SwipeActionRow>

@@ -29,14 +29,16 @@ import { useWorkspace } from "../../lib/workspace-context";
 import {
   useWorkspaceSnapshotQuery,
   useDeleteCounterpartyMutation,
+  useToggleCounterpartyPinMutation,
   useUpdateCounterpartyMutation,
 } from "../../services/queries/workspace-data";
 import { useToast } from "../../hooks/useToast";
 import { useOriginBackNavigation } from "../../hooks/useOriginBackNavigation";
 import { COLORS } from "../../constants/theme";
-import type { CounterpartyOverview, CounterpartyType } from "../../types/domain";
+import type { CounterpartyOverview } from "../../types/domain";
 import {
   TYPE_FILTERS,
+  type ActiveContactFilter,
   type ContactTypeFilter,
 } from "../../features/contacts/lib/contactsLabels";
 import { buildContactCSV } from "../../features/contacts/lib/contactsCsv";
@@ -44,7 +46,7 @@ import { applyContactFilter } from "../../features/contacts/lib/contactsFilter";
 import { buildContactMetricsById } from "../../features/contacts/lib/contactMetrics";
 import { buildContactsContextNote } from "../../features/contacts/lib/contactsContextNote";
 
-type ContactListSection = ResourceSection<CounterpartyOverview, "active" | "archived">;
+type ContactListSection = ResourceSection<CounterpartyOverview, "pinned" | "active" | "archived">;
 
 function ContactsScreen() {
   const insets = useSafeAreaInsets();
@@ -57,11 +59,12 @@ function ContactsScreen() {
   const { data: snapshot, isLoading } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const archiveMutation = useUpdateCounterpartyMutation(activeWorkspaceId);
   const deleteMutation = useDeleteCounterpartyMutation(activeWorkspaceId);
+  const togglePinMutation = useToggleCounterpartyPinMutation(activeWorkspaceId);
 
   const [createFormVisible, setCreateFormVisible] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<CounterpartyOverview | null>(null);
   const [searchText, setSearchText] = useState("");
-  const [typeFilters, setTypeFilters] = useState<CounterpartyType[]>([]);
+  const [contactFilters, setContactFilters] = useState<ActiveContactFilter[]>([]);
   const [showArchived, setShowArchived] = useState(false);
 
   // Bulk selection
@@ -150,20 +153,35 @@ function ContactsScreen() {
   const filteredContacts = useMemo(() => {
     const filtered = applyContactFilter(counterparties, {
       search: searchText,
-      typeFilters,
+      filters: contactFilters,
       showArchived,
     });
     if (pendingDeleteIds.size === 0) return filtered;
     return filtered.filter((contact) => !pendingDeleteIds.has(contact.id));
-  }, [counterparties, pendingDeleteIds, searchText, showArchived, typeFilters]);
+  }, [contactFilters, counterparties, pendingDeleteIds, searchText, showArchived]);
 
+  const pinnedContacts = filteredContacts.filter((contact) => contact.isPinned && !contact.isArchived);
   const activeContacts = filteredContacts.filter((contact) => !contact.isArchived);
+  const unpinnedActiveContacts = filteredContacts.filter((contact) => !contact.isArchived && !contact.isPinned);
   const archivedContacts = filteredContacts.filter((contact) => contact.isArchived);
 
   const contactSections = useMemo<ContactListSection[]>(() => {
     const sections: ContactListSection[] = [];
-    if (activeContacts.length > 0) {
-      sections.push({ key: "active", label: "Activos", data: activeContacts, headerVariant: "hidden" });
+    if (pinnedContacts.length > 0) {
+      sections.push({
+        key: "pinned",
+        label: `Fijados (${pinnedContacts.length})`,
+        data: pinnedContacts,
+        headerVariant: "default",
+      });
+    }
+    if (unpinnedActiveContacts.length > 0) {
+      sections.push({
+        key: "active",
+        label: "Activos",
+        data: unpinnedActiveContacts,
+        headerVariant: pinnedContacts.length > 0 ? "default" : "hidden",
+      });
     }
     if (archivedContacts.length > 0) {
       sections.push({
@@ -175,13 +193,13 @@ function ContactsScreen() {
       });
     }
     return sections;
-  }, [activeContacts, archivedContacts]);
+  }, [archivedContacts, pinnedContacts, unpinnedActiveContacts]);
 
   const activeFilterItems = useMemo<ActiveFilterItem[]>(() => {
-    const items: ActiveFilterItem[] = typeFilters.map((type) => ({
-      key: `type-${type}`,
-      label: TYPE_FILTERS.find((filter) => filter.value === type)?.label ?? "Tipo",
-      onRemove: () => setTypeFilters((current) => current.filter((value) => value !== type)),
+    const items: ActiveFilterItem[] = contactFilters.map((filterValue) => ({
+      key: `filter-${filterValue}`,
+      label: TYPE_FILTERS.find((filter) => filter.value === filterValue)?.label ?? "Filtro",
+      onRemove: () => setContactFilters((current) => current.filter((value) => value !== filterValue)),
     }));
 
     if (showArchived) {
@@ -201,7 +219,7 @@ function ContactsScreen() {
     }
 
     return items;
-  }, [searchText, showArchived, typeFilters]);
+  }, [contactFilters, searchText, showArchived]);
 
   const summary = useMemo(() => {
     const linkedContacts = filteredContacts.filter((contact) => {
@@ -225,7 +243,7 @@ function ContactsScreen() {
     };
   }, [activeContacts.length, contactMetricsById, filteredContacts]);
 
-  const hasFilters = typeFilters.length > 0 || showArchived || Boolean(searchText.trim());
+  const hasFilters = contactFilters.length > 0 || showArchived || Boolean(searchText.trim());
 
   const hiddenArchivedCount = useMemo(
     () => (showArchived ? 0 : counterparties.filter((contact) => contact.isArchived).length),
@@ -269,6 +287,13 @@ function ContactsScreen() {
     );
   }, [archiveMutation, showToast]);
 
+  const handleTogglePin = useCallback((contact: CounterpartyOverview) => {
+    togglePinMutation.mutate(
+      { id: contact.id, isPinned: !contact.isPinned },
+      { onError: (error) => showToast(error.message, "error") },
+    );
+  }, [showToast, togglePinMutation]);
+
   const handleDelete = useCallback((contact: CounterpartyOverview) => {
     if (!canDeleteContact(contact)) {
       showToast("Este contacto tiene movimientos o créditos/deudas asociados. Archívalo en su lugar.", "warning");
@@ -282,7 +307,7 @@ function ContactsScreen() {
   }, [queryClient]);
 
   function clearContactFilters() {
-    setTypeFilters([]);
+    setContactFilters([]);
     setShowArchived(false);
     setSearchText("");
   }
@@ -361,11 +386,12 @@ function ContactsScreen() {
       onArchive={() => handleArchive(item.id)}
       onDelete={() => handleDelete(item)}
       onRestore={() => handleRestore(item.id)}
+      onTogglePin={selectMode ? undefined : () => handleTogglePin(item)}
       canDelete={canDeleteContact(item)}
       selected={selectedIds.has(item.id)}
       selectMode={selectMode}
     />
-  ), [canDeleteContact, contactMetricsById, handleArchive, handleDelete, handleRestore, router, selectMode, selectedIds, toggleSelect]);
+  ), [canDeleteContact, contactMetricsById, handleArchive, handleDelete, handleRestore, handleTogglePin, router, selectMode, selectedIds, toggleSelect]);
 
   return (
     <ResourceModuleTemplate
@@ -391,9 +417,9 @@ function ContactsScreen() {
       toolbar={selectMode ? null : (
         <FilterToolbar
           options={TYPE_FILTERS}
-          selectedValues={typeFilters}
+          selectedValues={contactFilters}
           onSelectedValuesChange={(values) => {
-            setTypeFilters(values.filter((value): value is CounterpartyType => value !== "all"));
+            setContactFilters(values.filter((value): value is ActiveContactFilter => value !== "all"));
           }}
           allValue={"all" satisfies ContactTypeFilter}
           searchValue={searchText}

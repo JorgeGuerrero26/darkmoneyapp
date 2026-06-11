@@ -617,6 +617,7 @@ type CounterpartyDbRow = {
   name: string;
   type: CounterpartySummary["type"];
   is_archived: boolean;
+  is_pinned?: boolean | null;
   phone: string | null;
   email: string | null;
   document_number: string | null;
@@ -630,6 +631,7 @@ function mapCounterpartyFromRow(row: CounterpartyDbRow): CounterpartyOverview {
     name: row.name,
     type: row.type,
     isArchived: row.is_archived,
+    isPinned: row.is_pinned ?? false,
     workspaceId: row.workspace_id,
     phone: row.phone ?? null,
     email: row.email ?? null,
@@ -794,9 +796,10 @@ async function fetchWorkspaceSnapshot(
       .eq("is_active", true),
     supabase
       .from("counterparties")
-      .select("id, workspace_id, name, type, is_archived, phone, email, document_number, notes")
+      .select("id, workspace_id, name, type, is_archived, is_pinned, phone, email, document_number, notes")
       .eq("workspace_id", activeWorkspaceId)
       .order("is_archived", { ascending: true })
+      .order("is_pinned", { ascending: false })
       .order("name", { ascending: true }),
     supabase
       .from("v_obligation_summary")
@@ -2603,6 +2606,7 @@ export {
   type CounterpartyFormInput,
   useCreateCounterpartyMutation,
   useUpdateCounterpartyMutation,
+  useToggleCounterpartyPinMutation,
   useDeleteCounterpartyMutation,
 } from "./categories-counterparties";
 
