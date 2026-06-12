@@ -23,8 +23,15 @@ const RECONCILE_DEBOUNCE_MS = 5_000;
  *     pero cuyo movimiento YA existe en la base, y cancela su notificación bancaria vieja, para
  *     que no vuelva a dispararse "movimiento detectado" al reabrir.
  *
- * Costo acotado: el refresco invalida queries ya montadas (barato) y el lookup B solo corre
- * sobre el set chico de sugerencias `pending` (normalmente 0–2), con una sola lectura batched.
+ *  D) Re-escanea la bandeja de notificaciones (+ rebind del listener). Samsung mata el
+ *     NotificationListenerService con la app cerrada y el requestRebind de onListenerDisconnected
+ *     es best-effort: una notificación bancaria que llegó con el listener muerto queda en la
+ *     bandeja sin procesar PARA SIEMPRE si nadie re-escanea. Antes solo la pantalla "Detección
+ *     automática" lo hacía; ahora abrir la app basta para rescatarla.
+ *
+ * Costo acotado: el refresco invalida queries ya montadas (barato), el lookup B solo corre
+ * sobre el set chico de sugerencias `pending` (normalmente 0–2) con una sola lectura batched,
+ * y el re-escaneo D dedupea con los gates existentes del listener.
  */
 export function useNotificationDetectionForegroundReconcile() {
   const { profile } = useAuth();
@@ -50,8 +57,13 @@ export function useNotificationDetectionForegroundReconcile() {
         void queryClient.invalidateQueries({ queryKey: ["movements"] });
         void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
 
-        // B) Reconciliar sugerencias nativas `pending` contra movimientos ya registrados.
         if (!notificationDetection.isAvailable()) return;
+
+        // D) Re-escanear la bandeja + rebind del listener. Rescata notificaciones bancarias que
+        // llegaron con el listener muerto (Samsung lo mata con la app cerrada) y que de otro modo
+        // jamás se procesarían. Los gates del listener dedupean lo ya visto; la sugerencia nueva
+        // llega al módulo porque la invalidación de workspace-snapshot re-dispara el sync.
+        notificationDetection.requestActiveNotificationScan();
 
         // C) Reprocesar registros headless que fallaron por red/timeout con la app cerrada.
         // El dispatch re-encola primero (sube attempts y empuja el backoff): si el task vuelve
@@ -70,6 +82,7 @@ export function useNotificationDetectionForegroundReconcile() {
           }
         }
 
+        // B) Reconciliar sugerencias nativas `pending` contra movimientos ya registrados.
         const suggestions = await notificationDetection.getSuggestions();
         const pendingIds = suggestions
           .filter((suggestion) => suggestion.status === "pending")
