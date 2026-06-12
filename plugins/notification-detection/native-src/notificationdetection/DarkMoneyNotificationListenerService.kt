@@ -99,22 +99,52 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
       .filter { it.isNotBlank() }
       .joinToString(" · ")
 
-    if (sourcePackage == GMAIL_PACKAGE && !isFinancialGmailNotification(combined)) return
-    if (isPromotionalNotification(combined)) return
+    // Observabilidad: cada descarte de un paquete PERMITIDO deja su motivo en logcat (Log.w
+    // porque Log.d se filtra en release en Samsung). Diagnóstico: adb logcat -d | grep DarkMoneyND
+    fun drop(reason: String) {
+      android.util.Log.w("DarkMoneyND", "drop[$reason] pkg=$sourcePackage")
+    }
+
+    if (sourcePackage == GMAIL_PACKAGE && !isFinancialGmailNotification(combined)) {
+      drop("gmail-gate")
+      return
+    }
+    if (isPromotionalNotification(combined)) {
+      drop("promotional")
+      return
+    }
     val discardFingerprint = NotificationDetectionStore.computeDiscardFingerprint(sourcePackage, combined)
-    if (NotificationDetectionStore.isDiscardedFingerprint(applicationContext, discardFingerprint)) return
-    val amount = extractAmount(combined) ?: return
+    if (NotificationDetectionStore.isDiscardedFingerprint(applicationContext, discardFingerprint)) {
+      drop("discard-fingerprint")
+      return
+    }
+    val amount = extractAmount(combined) ?: run {
+      drop("no-amount")
+      return
+    }
     // Si ESTA MISMA transacción (huella + mismo monto) ya se registró hace poco, no re-disparar.
     // Cubre registrar con la app cerrada y reabrir con la notif. bancaria aún en bandeja. La huella
     // sola NO basta (ignora el monto), por eso exigimos amount + ventana corta: así una compra
     // nueva del mismo banco con otro monto sí se detecta.
-    if (NotificationDetectionStore.hasRecentRegisteredSuggestion(applicationContext, discardFingerprint, amount, withinMs = 30 * 60_000L)) return
-    // Cross-app dedup: cualquier fuente (banco, Gmail, Google Wallet, Samsung Pay) se salta si ya
-    // existe una pending suggestion del mismo monto en los últimos 5 min. Política: el primero
-    // llegado gana. Cubre BCP push + BCP email + Wallet/SPay para una misma transacción.
-    if (NotificationDetectionStore.hasPendingSuggestionForAmount(context, amount, withinMs = 5 * 60_000L)) return
+    if (NotificationDetectionStore.hasRecentRegisteredSuggestion(applicationContext, discardFingerprint, amount, withinMs = 30 * 60_000L)) {
+      drop("registered-recent")
+      return
+    }
+    // Cross-source dedup: otra FUENTE (banco vs Gmail vs Google Wallet vs Samsung Pay) se salta
+    // si ya existe una pending suggestion del mismo monto en los últimos 5 min. Política: el
+    // primero llegado gana. Cubre BCP push + BCP email + Wallet/SPay para una misma transacción.
+    // Mismo paquete NO se suprime: dos compras reales del mismo monto y misma fuente en <5 min
+    // (p. ej. vending machine) son transacciones distintas; los re-fires del mismo contenido ya
+    // los dedupea suggestionId vía upsertSuggestion.
+    if (NotificationDetectionStore.hasPendingSuggestionForAmount(context, sourcePackage, amount, withinMs = 5 * 60_000L)) {
+      drop("pending-amount-dedupe")
+      return
+    }
     val detection = inferMovementDetection(combined)
-    if (detection.confidence == "low") return
+    if (detection.confidence == "low") {
+      drop("low-confidence")
+      return
+    }
     val appName = readAppName(sourcePackage, combined)
     val financialAppKey = financialAppKeyFor(sourcePackage)
     val suggestionDescription = buildSuggestionDescription(sourcePackage, title, text, bigText, subText, combined, detection.movementType)
@@ -128,7 +158,11 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
     // 1. Cross-source detections of the same transaction (Yape push + Yape email)
     //    collapse into one tile (manager.notify with same ID replaces).
     // 2. Gmail re-fires (different content → different suggestionId) also collapse.
-    val notificationId = notificationIdFor("${appName}:${amount}:${System.currentTimeMillis() / 600_000}")
+    // Si la sugerencia YA existe (re-escaneo de bandeja), reusar su tile id: un re-proceso en
+    // otro bucket de 10 min debe REEMPLAZAR la misma tile, no crear una duplicada.
+    val existingSuggestion = NotificationDetectionStore.getSuggestion(context, suggestionId)
+    val notificationId = existingSuggestion?.optInt("notificationId", 0)?.takeIf { it > 0 }
+      ?: notificationIdFor("${appName}:${amount}:${System.currentTimeMillis() / 600_000}")
 
     val suggestion = JSONObject()
       .put("id", suggestionId)
@@ -155,7 +189,13 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
       // toque "Registro rápido". Cuando abra el overlay, la categoría IA ya estará lista en
       // SharedPreferences. Requiere workspaceId del runtimeContext — si no lo hay (sesión vacía),
       // se salta y el overlay caerá al local-only.
-      if (detection.movementType != "transfer") {
+      // En re-escaneos NO re-disparar si ya hay una recomendación terminal (resuelta, unavailable
+      // o local_confirmed): evita re-llamar a DeepSeek en cada apertura de la app. Solo se
+      // reintenta si quedó "pending" (enrichment interrumpido) o nunca corrió.
+      val existingRecommendation = existingSuggestion?.optJSONObject("aiCategoryRecommendation")
+      val needsEnrichment = existingRecommendation == null ||
+        existingRecommendation.optString("status") == "pending"
+      if (detection.movementType != "transfer" && needsEnrichment) {
         val runtimeContext = NotificationDetectionStore.getRuntimeContext(context)
         val workspaceId = runtimeContext.optInt("workspaceId", 0).takeIf { it > 0 }
         if (workspaceId != null) {

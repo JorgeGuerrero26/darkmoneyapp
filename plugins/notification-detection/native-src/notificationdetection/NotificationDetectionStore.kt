@@ -164,6 +164,18 @@ object NotificationDetectionStore {
     return sha256("$packageName|$notificationKey|$amountLabel|${text.take(180)}").take(24)
   }
 
+  /** Campos pegajosos: un re-proceso de la misma notificación (re-escaneo de bandeja) no debe
+   *  perder lo que ya se computó/asignó sobre la sugerencia existente. */
+  private val UPSERT_STICKY_KEYS = arrayOf(
+    "aiCategoryRecommendation",
+    "descriptionCleanup",
+    "counterpartyRecommendation",
+    "recurringRecommendation",
+    "riskExplanation",
+    "budgetImpact",
+    "registrationClaimedAt",
+  )
+
   fun upsertSuggestion(context: Context, suggestion: JSONObject): Boolean {
     val suggestions = readSuggestionsArray(context)
     val id = suggestion.optString("id")
@@ -176,6 +188,14 @@ object NotificationDetectionStore {
         val status = current.optString("status", "pending")
         wasPending = status == "pending"
         suggestion.put("status", status)
+        // Tile id y fecha de creación originales: el re-escaneo calcula un notificationId con
+        // bucket de 10 min nuevo; sin preservar el viejo, la tile previa queda huérfana y se
+        // duplica. createdAt debe seguir reflejando la primera detección.
+        if (current.has("notificationId")) suggestion.put("notificationId", current.get("notificationId"))
+        if (current.has("createdAt")) suggestion.put("createdAt", current.get("createdAt"))
+        for (key in UPSERT_STICKY_KEYS) {
+          if (!suggestion.has(key) && current.has(key)) suggestion.put(key, current.get(key))
+        }
         suggestions.put(index, suggestion)
         replaced = true
         break
@@ -593,11 +613,20 @@ object NotificationDetectionStore {
     return migrated
   }
 
-  fun hasPendingSuggestionForAmount(context: Context, amountLabel: String, withinMs: Long): Boolean {
+  /**
+   * ¿Hay una sugerencia pending del mismo monto, reciente y de OTRA fuente (paquete distinto)?
+   * Dedupe cross-source: la misma transacción llega por varias vías (BCP push + BCP email +
+   * Wallet/SPay) y solo la primera debe ganar. Se EXCLUYE el mismo paquete a propósito: dos
+   * notificaciones de la misma fuente con el mismo monto en <5 min son casi siempre dos compras
+   * reales distintas (vending machine); el re-fire del mismo contenido ya lo dedupea el
+   * suggestionId determinístico en upsertSuggestion.
+   */
+  fun hasPendingSuggestionForAmount(context: Context, sourcePackage: String, amountLabel: String, withinMs: Long): Boolean {
     val since = System.currentTimeMillis() - withinMs
     val suggestions = readSuggestionsArray(context)
     for (index in 0 until suggestions.length()) {
       val s = suggestions.optJSONObject(index) ?: continue
+      if (s.optString("packageName") == sourcePackage) continue
       if (s.optString("status") == "pending"
           && amountLabelsMatch(s.optString("amountLabel"), amountLabel)
           && s.optLong("createdAt", 0L) >= since) return true
