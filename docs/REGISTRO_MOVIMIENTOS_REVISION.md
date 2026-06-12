@@ -113,6 +113,11 @@ Cambios en `plugins/notification-detection/native-src/**/*.kt` requieren, según
 - (2026-06-12) **Re-escaneo de bandeja al abrir/foreground**: `requestActiveNotificationScan()` en el
   reconcile. Caso real: correo BCP llegó con el listener muerto (Samsung) y quedaba en bandeja sin
   procesar para siempre — abrir la app no lo rescataba, solo la pantalla "Detección automática".
+  La tile "movimiento detectado" solo se dispara para sugerencias NUEVAS: un re-escaneo de una
+  sugerencia ya rastreada solo refresca el store (`drop[already-tracked]`). Sin esto, cerrar el
+  overlay de registro rápido (app vuelve a foreground → re-escaneo) re-disparaba la tile mientras
+  el guardado headless seguía en vuelo (sugerencia aún `pending`, notif bancaria aún sin cancelar).
+  El caso listener-muerto sigue cubierto: el rebind limpia pendientes y las re-crea como nuevas.
 - (2026-06-12) **Re-upsert estable**: `upsertSuggestion` preserva `notificationId`, `createdAt` y los
   campos de IA pre-computados al re-procesar la misma sugerencia (re-escaneos ya no duplican tiles ni
   borran el enriquecimiento); el listener no re-dispara DeepSeek si ya hay recomendación terminal.

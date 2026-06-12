@@ -182,7 +182,17 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
       .put("notificationId", notificationId)
       .put("discardFingerprint", discardFingerprint)
 
-    val shouldNotify = NotificationDetectionStore.upsertSuggestion(context, suggestion)
+    NotificationDetectionStore.upsertSuggestion(context, suggestion)
+    // Notificar SOLO sugerencias nuevas. Un re-proceso de una sugerencia ya rastreada (p. ej.
+    // re-escaneo de bandeja al volver la app a foreground) NO debe re-disparar la tile: si el
+    // registro headless está en vuelo (la sugerencia sigue "pending" y la notif bancaria aún no
+    // se canceló), re-notificar hace reaparecer "movimiento detectado" durante el guardado.
+    // El caso "listener muerto" sigue cubierto: el rebind (onListenerConnected) limpia las
+    // pendientes y las re-crea desde la bandeja como NUEVAS → la tile se re-dispara ahí.
+    val shouldNotify = existingSuggestion == null
+    if (!shouldNotify) {
+      drop("already-tracked")
+    }
     if (shouldNotify) {
       showDetectedMovementNotification(suggestionId, notificationId, appName, amount, detection.movementType, suggestionDescription)
       // Pre-cómputo IA: dispara el headless task de enrichment ya, sin esperar a que el usuario
