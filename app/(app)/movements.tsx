@@ -270,8 +270,10 @@ function MovementsScreen() {
     data,
     isLoading,
     isFetchingNextPage,
+    isRefetching,
     hasNextPage,
     fetchNextPage,
+    refetch,
   } = usePaginatedMovements(activeWorkspaceId, filters, profile?.id);
 
   const allMovements = useMemo(() => {
@@ -339,7 +341,8 @@ function MovementsScreen() {
     let incomeCount = 0;
     let expenseCount = 0;
     const baseUpper = baseCurrency.toUpperCase();
-    const baseToActiveRate = resolveRate(exchangeRateMap, baseUpper, activeCurrency);
+    // Resumen legacy fuera del contrato de paridad: si no hay tasa, muestra en base (1:1).
+    const baseToActiveRate = resolveRate(exchangeRateMap, baseUpper, activeCurrency, baseUpper) ?? 1;
     for (const m of allMovements) {
       if (m.movementType === "income") {
         const amount = m.destinationAmountInBaseCurrency ?? m.destinationAmount ?? 0;
@@ -445,10 +448,16 @@ function MovementsScreen() {
     }
     scopedQuickFiltersRef.current = { categoryScope: null, categoryId: null, status: null, type: null, dateRange: false, search: false, movementIds: false, quickLabel: false };
   }, []);
-  const onRefresh = useCallback(() => {
+  const onRefresh = useCallback(async () => {
     refreshTriggeredRef.current = true;
-    void queryClient.invalidateQueries({ queryKey: ["movements"] });
-  }, [queryClient]);
+    // refetch() devuelve promesa: el RefreshControl mantiene el spinner hasta que llegan los
+    // datos. invalidateQueries sin await dejaba el spinner irse antes de que el refetch resuelva
+    // (parecía "no pasa nada"). También refresca los saldos del snapshot.
+    await Promise.all([
+      refetch(),
+      queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] }),
+    ]);
+  }, [refetch, queryClient]);
 
   useFocusEffect(
     useCallback(() => {
@@ -886,7 +895,7 @@ function MovementsScreen() {
             keyExtractor={(item) => String(item.id)}
             renderItem={renderItem}
             stickyHeaders
-            refreshing={isLoading && !isFetchingNextPage}
+            refreshing={isRefetching && !isFetchingNextPage}
             onRefresh={onRefresh}
             onEndReached={() => {
               if (hasNextPage && !isFetchingNextPage) void fetchNextPage();

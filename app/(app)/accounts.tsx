@@ -83,7 +83,7 @@ function AccountsScreen() {
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
   const { showToast } = useToast();
 
-  const { data: snapshot, isLoading, dataUpdatedAt } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
+  const { data: snapshot, isLoading, isRefetching, refetch, dataUpdatedAt } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   useAccountsRealtimeSync({ workspaceId: activeWorkspaceId });
   const archiveAccount = useArchiveAccountMutation(activeWorkspaceId);
   const syncExchangeRatePair = useSyncExchangeRatePairMutation();
@@ -369,9 +369,10 @@ function AccountsScreen() {
     };
   }, [hasActiveFilter, searchText, showArchived, totalAccountsCount, totalArchivedCount]);
 
-  const onRefresh = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
-  }, [queryClient]);
+  const onRefresh = useCallback(async () => {
+    // refetch() devuelve promesa → el spinner se mantiene hasta que llegan los saldos nuevos.
+    await refetch();
+  }, [refetch]);
 
 
   const handleArchive = useCallback(async (account: AccountSummary) => {
@@ -610,7 +611,7 @@ function AccountsScreen() {
               ),
             }}
             empty={emptyConfig}
-            refreshing={isLoading}
+            refreshing={isRefetching}
             onRefresh={onRefresh}
             contentContainerStyle={localStyles.listContent}
           />

@@ -85,6 +85,8 @@ function BudgetsScreen() {
   const {
     data: snapshot,
     isLoading: snapshotLoading,
+    isRefetching: snapshotRefetching,
+    refetch: refetchSnapshot,
     dataUpdatedAt,
   } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
 
@@ -182,10 +184,12 @@ function BudgetsScreen() {
     return items;
   }, [activeFilters, searchText]);
 
-  const onRefresh = useCallback(() => {
+  const onRefresh = useCallback(async () => {
     refreshTriggeredRef.current = true;
-    void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
-  }, [queryClient]);
+    // refetch() mantiene el spinner hasta resolver. El scope de movimientos de presupuestos
+    // depende de dataUpdatedAt del snapshot, así que se re-encadena al refetchear el snapshot.
+    await refetchSnapshot();
+  }, [refetchSnapshot]);
 
   useEffect(() => {
     if (!snapshotLoading && !movementsLoading && refreshTriggeredRef.current) {
@@ -470,7 +474,7 @@ function BudgetsScreen() {
               action: { label: "Limpiar filtros", onPress: clearFilters },
             }
           }
-          refreshing={snapshotLoading || movementsLoading}
+          refreshing={snapshotRefetching || movementsLoading}
           onRefresh={onRefresh}
         />
       }

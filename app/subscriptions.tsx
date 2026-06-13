@@ -64,7 +64,7 @@ function SubscriptionsScreen() {
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
   const { showToast } = useToast();
 
-  const { data: snapshot, isLoading } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
+  const { data: snapshot, isLoading, isRefetching, refetch } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const updateMutation = useUpdateSubscriptionMutation(activeWorkspaceId);
   const deleteMutation = useDeleteSubscriptionMutation(activeWorkspaceId);
   const togglePinMutation = useToggleSubscriptionPinMutation(activeWorkspaceId);
@@ -175,9 +175,9 @@ function SubscriptionsScreen() {
     pendingDeleteLabels.current.clear();
   }, []);
 
-  const onRefresh = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
-  }, [queryClient]);
+  const onRefresh = useCallback(async () => {
+    await refetch();
+  }, [refetch]);
 
   const clearFilters = useCallback(() => {
     setActiveFilters([]);
@@ -427,7 +427,7 @@ function SubscriptionsScreen() {
               : "Lleva el control de Netflix, Spotify y todo lo que pagas cada mes.",
             action: !hasFilters ? { label: "Agregar suscripción", onPress: () => setCreateFormVisible(true) } : undefined,
           }}
-          refreshing={isLoading}
+          refreshing={isRefetching}
           onRefresh={onRefresh}
         />
       }
