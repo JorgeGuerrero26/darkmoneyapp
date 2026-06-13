@@ -4,7 +4,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -12,6 +11,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
+import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTemplate";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { AttachmentPreviewModal } from "../../components/domain/AttachmentPreviewModal";
 import { MovementForm } from "../../components/forms/MovementForm";
@@ -346,18 +346,17 @@ function MovementDetailScreen() {
     : null;
 
   return (
-    <View style={[styles.screen, { paddingTop: insets.top }]}>
-      <ScreenHeader
-        title="Movimiento"
-        subtitle={activeWorkspace?.name}
-        rightAction={
-          <TouchableOpacity onPress={handleBack} accessibilityLabel="Volver">
-            <Text style={styles.back}>Volver</Text>
-          </TouchableOpacity>
-        }
-      />
-
-      {isLoading ? (
+    <ResourceModuleTemplate
+      topInset={insets.top}
+      header={
+        <ScreenHeader
+          title="Movimiento"
+          subtitle={activeWorkspace?.name}
+          onBack={handleBack}
+        />
+      }
+      list={
+        isLoading ? (
         <View style={styles.center}>
           <ActivityIndicator color={COLORS.primary} />
         </View>
@@ -438,8 +437,9 @@ function MovementDetailScreen() {
           ) : null}
         </>
       )}
-
-      {movement ? (
+      overlays={
+        <>
+          {movement ? (
         <MovementForm
           visible={editFormVisible}
           onClose={() => setEditFormVisible(false)}
@@ -507,16 +507,16 @@ function MovementDetailScreen() {
           void handleDeleteSelectedAttachments();
         }}
       />
-    </View>
+        </>
+      }
+    />
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: COLORS.bg },
   content: { padding: SPACING.lg, gap: SPACING.md },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   errorText: { color: COLORS.storm, fontSize: FONT_SIZE.md },
-  back: { fontSize: FONT_SIZE.sm, color: COLORS.primary },
   metaId: {
     fontSize: FONT_SIZE.xs,
     color: COLORS.textDisabled,
