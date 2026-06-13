@@ -1,12 +1,13 @@
-import { Archive, ArchiveRestore, ArrowLeftRight } from "lucide-react-native";
+import { Archive, ArchiveRestore, ArrowLeftRight, Pencil, Plus } from "lucide-react-native";
 import { FAB } from "../../components/ui/FAB";
+import { DetailQuickActions } from "../../components/ui/DetailQuickActions";
+import { HeaderActionGroup } from "../../components/ui/HeaderActionGroup";
 import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTemplate";
 import { ResourceSectionList } from "../../components/ui/ResourceSectionList";
 import { useCallback, useMemo, useState } from "react";
 import {
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -35,7 +36,7 @@ import { findInstitution } from "../../lib/account-institutions";
 import { parseDisplayDate } from "../../lib/date";
 import { InstitutionAvatar } from "../../features/accounts/components/InstitutionAvatar";
 import { useAccountsRealtimeSync } from "../../features/accounts/hooks/useAccountsRealtimeSync";
-import { COLORS, FONT_FAMILY, FONT_SIZE, FONT_WEIGHT, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_SIZE, FONT_WEIGHT, RADIUS, SPACING } from "../../constants/theme";
 import { formatDistanceToNow } from "date-fns";
 import { es } from "date-fns/locale";
 import { buildRateMap, hasConversionRate, resolveConversion } from "../../lib/exchange-rate-map";
@@ -210,23 +211,24 @@ function AccountDetailScreen() {
           onBack={handleBack}
           rightAction={
             account ? (
-              <View style={styles.headerActions}>
-                <TouchableOpacity
-                  style={[styles.actionBtn, account.isArchived ? styles.actionBtnRestore : styles.actionBtnArchive]}
-                  onPress={() => setArchiveConfirmVisible(true)}
-                >
-                  {account.isArchived
-                    ? <ArchiveRestore size={13} color={COLORS.pine} strokeWidth={2} />
-                    : <Archive size={13} color={COLORS.ember} strokeWidth={2} />
-                  }
-                  <Text style={[styles.actionBtnText, account.isArchived ? styles.actionBtnTextRestore : styles.actionBtnTextArchive]}>
-                    {account.isArchived ? "Restaurar" : "Archivar"}
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.editBtn} onPress={() => setEditFormVisible(true)}>
-                  <Text style={styles.editBtnText}>Editar</Text>
-                </TouchableOpacity>
-              </View>
+              <HeaderActionGroup
+                actions={[
+                  {
+                    key: account.isArchived ? "restore" : "archive",
+                    icon: account.isArchived ? ArchiveRestore : Archive,
+                    inactiveColor: account.isArchived ? COLORS.pine : COLORS.ember,
+                    onPress: () => setArchiveConfirmVisible(true),
+                    accessibilityLabel: account.isArchived ? "Restaurar cuenta" : "Archivar cuenta",
+                  },
+                  {
+                    key: "edit",
+                    icon: Pencil,
+                    inactiveColor: COLORS.primary,
+                    onPress: () => setEditFormVisible(true),
+                    accessibilityLabel: "Editar cuenta",
+                  },
+                ]}
+              />
             ) : null
           }
         />
@@ -277,21 +279,50 @@ function AccountDetailScreen() {
             {!account.includeInNetWorth ? (
               <Text style={styles.notInNetWorthNote}>No incluida en patrimonio neto</Text>
             ) : null}
-            {!account.isArchived ? (
-              <TouchableOpacity
-                style={styles.transferCta}
-                onPress={() => {
-                  setMovementFormType("transfer");
-                  setMovementFormVisible(true);
-                }}
-                accessibilityRole="button"
-                accessibilityLabel="Transferir desde esta cuenta"
-              >
-                <ArrowLeftRight size={14} color={COLORS.pine} strokeWidth={2} />
-                <Text style={styles.transferCtaText}>Transferir desde esta cuenta</Text>
-              </TouchableOpacity>
-            ) : null}
           </View>
+          <DetailQuickActions
+            style={styles.quickActions}
+            actions={[
+              ...(!account.isArchived
+                ? [
+                    {
+                      key: "transfer",
+                      label: "Transferir",
+                      icon: ArrowLeftRight,
+                      color: COLORS.pine,
+                      onPress: () => {
+                        setMovementFormType("transfer");
+                        setMovementFormVisible(true);
+                      },
+                    },
+                    {
+                      key: "expense",
+                      label: "Nuevo gasto",
+                      icon: Plus,
+                      color: COLORS.primary,
+                      onPress: () => {
+                        setMovementFormType("expense");
+                        setMovementFormVisible(true);
+                      },
+                    },
+                  ]
+                : []),
+              {
+                key: "edit",
+                label: "Editar",
+                icon: Pencil,
+                color: COLORS.primary,
+                onPress: () => setEditFormVisible(true),
+              },
+              {
+                key: account.isArchived ? "restore" : "archive",
+                label: account.isArchived ? "Restaurar" : "Archivar",
+                icon: account.isArchived ? ArchiveRestore : Archive,
+                color: account.isArchived ? COLORS.pine : COLORS.ember,
+                onPress: () => setArchiveConfirmVisible(true),
+              },
+            ]}
+          />
           <BalanceEvolutionChart
             accountId={account.id}
             currentBalance={account.currentBalance}
@@ -389,35 +420,6 @@ function AccountDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  headerActions: { flexDirection: "row", alignItems: "center", gap: SPACING.sm },
-  actionBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 4,
-    borderRadius: RADIUS.full,
-    borderWidth: 1,
-  },
-  actionBtnArchive: {
-    borderColor: COLORS.ember + "99",
-    backgroundColor: COLORS.ember + "15",
-  },
-  actionBtnRestore: {
-    borderColor: COLORS.pine + "99",
-    backgroundColor: COLORS.pine + "15",
-  },
-  actionBtnText: { fontSize: FONT_SIZE.xs, fontFamily: FONT_FAMILY.bodyMedium },
-  actionBtnTextArchive: { color: COLORS.ember },
-  actionBtnTextRestore: { color: COLORS.pine },
-  editBtn: {
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 4,
-    borderRadius: RADIUS.full,
-    borderWidth: 1,
-    borderColor: COLORS.primary,
-  },
-  editBtnText: { fontSize: FONT_SIZE.xs, color: COLORS.primary, fontWeight: FONT_WEIGHT.medium },
   summaryCard: {
     backgroundColor: COLORS.bgCard,
     borderBottomWidth: 1,
@@ -445,24 +447,9 @@ const styles = StyleSheet.create({
   positive: { color: COLORS.text },
   negative: { color: COLORS.danger },
   notInNetWorthNote: { fontSize: FONT_SIZE.xs, color: COLORS.textDisabled },
-  transferCta: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: SPACING.xs,
-    marginTop: SPACING.xs,
-    paddingVertical: SPACING.sm,
-    paddingHorizontal: SPACING.md,
-    borderRadius: RADIUS.full,
-    borderWidth: 1,
-    borderColor: COLORS.pine + "55",
-    backgroundColor: COLORS.pine + "12",
-    alignSelf: "flex-start",
-  },
-  transferCtaText: {
-    fontFamily: FONT_FAMILY.bodyMedium,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.pine,
+  quickActions: {
+    marginHorizontal: SPACING.lg,
+    marginTop: SPACING.md,
   },
 });
 
