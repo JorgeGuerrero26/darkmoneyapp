@@ -1337,6 +1337,51 @@ export function useDashboardMovementsQuery(
   });
 }
 
+/**
+ * Movimientos del año seleccionado + año anterior (24 meses) para los widgets de
+ * historial anual y comparación estacional del dashboard avanzado. La query base
+ * de 90 días no alcanza para estas métricas.
+ */
+export function useDashboardYearMovementsQuery(
+  workspaceId: number | null,
+  year: number,
+  userScopeKey?: string | null,
+) {
+  return useQuery({
+    queryKey: ["dashboard-year-movements", userScopeKey ?? null, workspaceId, year],
+    queryFn: async (): Promise<DashboardMovementRow[]> => {
+      if (!supabase || !workspaceId) return [];
+      const from = `${year - 1}-01-01T00:00:00.000Z`;
+      const to = `${year + 1}-01-01T00:00:00.000Z`;
+      const { data, error } = await supabase
+        .from("movements")
+        .select("id, movement_type, status, occurred_at, source_amount, destination_amount, source_account_id, destination_account_id, category_id, counterparty_id, description")
+        .eq("workspace_id", workspaceId)
+        .gte("occurred_at", from)
+        .lt("occurred_at", to)
+        .order("occurred_at", { ascending: false })
+        .order("id", { ascending: false });
+      if (error) throw new Error(error.message ?? "Error al cargar historial anual");
+      return (data ?? []).map((row: any): DashboardMovementRow => ({
+        id: row.id,
+        movementType: row.movement_type,
+        status: row.status,
+        occurredAt: row.occurred_at,
+        sourceAmount: toNum(row.source_amount),
+        destinationAmount: toNum(row.destination_amount),
+        sourceAccountId: row.source_account_id ?? null,
+        destinationAccountId: row.destination_account_id ?? null,
+        categoryId: row.category_id ?? null,
+        counterpartyId: row.counterparty_id ?? null,
+        description: typeof row.description === "string" ? row.description : "",
+      }));
+    },
+    enabled: Boolean(workspaceId) && Number.isFinite(year),
+    staleTime: STALE.long,
+    retry: 1,
+  });
+}
+
 export function useDashboardAnalyticsQuery(
   workspaceId: number | null,
   userScopeKey?: string | null,
@@ -2265,11 +2310,12 @@ export function useUpdateMovementMutation(workspaceId: number | null) {
       }
     },
     onSuccess: (_data, { id }) => {
-      runBackgroundQueryRefresh(queryClient, [
-        ["workspace-snapshot"],
-        ["movements"],
-        ["movement", id],
-      ]);
+      // Invalidación inmediata (no diferida por InteractionManager): la lista y los saldos deben
+      // reflejar la edición al instante, igual que en create. El onMutate optimista ya pintó el
+      // detalle, así que esto reconcilia lista/snapshot sin parpadeo.
+      void queryClient.invalidateQueries({ queryKey: ["movements"] });
+      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+      void queryClient.invalidateQueries({ queryKey: ["movement", id] });
     },
   });
 }
@@ -2301,11 +2347,9 @@ export function useVoidMovementMutation(workspaceId: number | null) {
       }
     },
     onSuccess: (_data, id) => {
-      runBackgroundQueryRefresh(queryClient, [
-        ["workspace-snapshot"],
-        ["movements"],
-        ["movement", id],
-      ]);
+      void queryClient.invalidateQueries({ queryKey: ["movements"] });
+      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+      void queryClient.invalidateQueries({ queryKey: ["movement", id] });
     },
   });
 }
@@ -2348,7 +2392,8 @@ export function useDeleteMovementMutation(workspaceId: number | null) {
       }
     },
     onSuccess: () => {
-      runBackgroundQueryRefresh(queryClient, [["workspace-snapshot"], ["movements"]]);
+      void queryClient.invalidateQueries({ queryKey: ["movements"] });
+      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
     },
   });
 }
