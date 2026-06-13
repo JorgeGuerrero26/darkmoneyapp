@@ -9,7 +9,9 @@ import {
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
+import { Ban, Copy, Pencil } from "lucide-react-native";
 
+import { DetailQuickActions } from "../../components/ui/DetailQuickActions";
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTemplate";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
@@ -44,7 +46,6 @@ import {
   MovementTransferBlock,
 } from "../../features/movements/components/detail/MovementAccountBlocks";
 import { MovementLinkedOriginCard } from "../../features/movements/components/detail/MovementLinkedOriginCard";
-import { MovementBottomActionBar } from "../../features/movements/components/detail/MovementBottomActionBar";
 import { LinkObligationModal } from "../../features/movements/components/detail/LinkObligationModal";
 import {
   VoidMovementConfirm,
@@ -357,16 +358,15 @@ function MovementDetailScreen() {
       }
       list={
         isLoading ? (
-        <View style={styles.center}>
-          <ActivityIndicator color={COLORS.primary} />
-        </View>
-      ) : error || !movement ? (
-        <View style={styles.center}>
-          <Text style={styles.errorText}>No se encontró el movimiento</Text>
-        </View>
-      ) : (
-        <>
-          <ScrollView contentContainerStyle={[styles.content, { paddingBottom: isVoided ? SPACING.xl : 100 }]}>
+          <View style={styles.center}>
+            <ActivityIndicator color={COLORS.primary} />
+          </View>
+        ) : error || !movement ? (
+          <View style={styles.center}>
+            <Text style={styles.errorText}>No se encontró el movimiento</Text>
+          </View>
+        ) : (
+          <ScrollView contentContainerStyle={styles.content}>
             <MovementDetailHero
               movement={movement}
               isTransfer={Boolean(isTransfer)}
@@ -375,6 +375,37 @@ function MovementDetailScreen() {
               baseCurrencyCode={baseCurrency}
               onPressEdit={() => setEditFormVisible(true)}
             />
+
+            {!isVoided ? (
+              <DetailQuickActions
+                actions={[
+                  {
+                    key: "edit",
+                    label: "Editar",
+                    icon: Pencil,
+                    color: COLORS.primary,
+                    onPress: () => setEditFormVisible(true),
+                    accessibilityLabel: "Editar movimiento",
+                  },
+                  {
+                    key: "duplicate",
+                    label: "Duplicar",
+                    icon: Copy,
+                    color: COLORS.storm,
+                    onPress: () => setDuplicateFormVisible(true),
+                    accessibilityLabel: "Duplicar movimiento",
+                  },
+                  {
+                    key: "void",
+                    label: "Anular",
+                    icon: Ban,
+                    color: COLORS.danger,
+                    onPress: () => setVoidConfirmVisible(true),
+                    accessibilityLabel: "Anular movimiento",
+                  },
+                ]}
+              />
+            ) : null}
 
             <MovementDetailFields movement={movement} />
 
@@ -426,87 +457,77 @@ function MovementDetailScreen() {
 
             <Text style={styles.metaId}>ID: {movement.id}</Text>
           </ScrollView>
-
-          {!isVoided ? (
-            <MovementBottomActionBar
-              bottomInset={insets.bottom}
-              onEdit={() => setEditFormVisible(true)}
-              onDuplicate={() => setDuplicateFormVisible(true)}
-              onVoid={() => setVoidConfirmVisible(true)}
-            />
-          ) : null}
-        </>
-      )}
+        )}
       overlays={
         <>
           {movement ? (
-        <MovementForm
-          visible={editFormVisible}
-          onClose={() => setEditFormVisible(false)}
-          onSuccess={() => {
-            setEditFormVisible(false);
-            void queryClient.invalidateQueries({ queryKey: ["movement", movement.id] });
-            void queryClient.invalidateQueries({ queryKey: ["movement-attachments", movement.workspaceId, movement.id] });
-            void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
-          }}
-          editMovement={movement}
-        />
-      ) : null}
-      {movement ? (
-        <MovementForm
-          visible={duplicateFormVisible}
-          onClose={() => setDuplicateFormVisible(false)}
-          onSuccess={() => {
-            setDuplicateFormVisible(false);
-            void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
-          }}
-          defaultType={movement.movementType as any}
-          initialAccountId={movement.sourceAccountId ?? movement.destinationAccountId ?? undefined}
-        />
-      ) : null}
+            <MovementForm
+              visible={editFormVisible}
+              onClose={() => setEditFormVisible(false)}
+              onSuccess={() => {
+                setEditFormVisible(false);
+                void queryClient.invalidateQueries({ queryKey: ["movement", movement.id] });
+                void queryClient.invalidateQueries({ queryKey: ["movement-attachments", movement.workspaceId, movement.id] });
+                void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+              }}
+              editMovement={movement}
+            />
+          ) : null}
+          {movement ? (
+            <MovementForm
+              visible={duplicateFormVisible}
+              onClose={() => setDuplicateFormVisible(false)}
+              onSuccess={() => {
+                setDuplicateFormVisible(false);
+                void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+              }}
+              defaultType={movement.movementType as any}
+              initialAccountId={movement.sourceAccountId ?? movement.destinationAccountId ?? undefined}
+            />
+          ) : null}
 
-      <LinkObligationModal
-        visible={linkModalVisible}
-        isIncome={movement ? movementActsAsIncome(movement) : false}
-        obligations={compatibleObligations}
-        bottomInset={insets.bottom}
-        onClose={() => setLinkModalVisible(false)}
-        onPick={handleLink}
-      />
+          <LinkObligationModal
+            visible={linkModalVisible}
+            isIncome={movement ? movementActsAsIncome(movement) : false}
+            obligations={compatibleObligations}
+            bottomInset={insets.bottom}
+            onClose={() => setLinkModalVisible(false)}
+            onPick={handleLink}
+          />
 
-      <AttachmentPreviewModal
-        visible={Boolean(previewAttachment)}
-        attachments={movementAttachments}
-        initialPath={previewAttachment?.filePath ?? null}
-        onClose={() => setPreviewAttachment(null)}
-        onDeleteAttachment={handleDeleteAttachment}
-        deletingAttachmentPath={deletingAttachmentPath}
-        insets={insets}
-        title="Comprobantes del movimiento"
-      />
+          <AttachmentPreviewModal
+            visible={Boolean(previewAttachment)}
+            attachments={movementAttachments}
+            initialPath={previewAttachment?.filePath ?? null}
+            onClose={() => setPreviewAttachment(null)}
+            onDeleteAttachment={handleDeleteAttachment}
+            deletingAttachmentPath={deletingAttachmentPath}
+            insets={insets}
+            title="Comprobantes del movimiento"
+          />
 
-      <VoidMovementConfirm
-        visible={voidConfirmVisible}
-        impacts={voidAccountImpacts}
-        onCancel={() => setVoidConfirmVisible(false)}
-        onConfirm={confirmVoid}
-      />
+          <VoidMovementConfirm
+            visible={voidConfirmVisible}
+            impacts={voidAccountImpacts}
+            onCancel={() => setVoidConfirmVisible(false)}
+            onConfirm={confirmVoid}
+          />
 
-      <ConfirmDialog
-        visible={deleteSelectedVisible}
-        title="Eliminar comprobantes"
-        body={
-          selectedAttachmentPaths.length === 1
-            ? "Este comprobante se eliminará del movimiento."
-            : `Se eliminarán ${selectedAttachmentPaths.length} comprobantes del movimiento.`
-        }
-        confirmLabel="Eliminar"
-        cancelLabel="Cancelar"
-        onCancel={() => setDeleteSelectedVisible(false)}
-        onConfirm={() => {
-          void handleDeleteSelectedAttachments();
-        }}
-      />
+          <ConfirmDialog
+            visible={deleteSelectedVisible}
+            title="Eliminar comprobantes"
+            body={
+              selectedAttachmentPaths.length === 1
+                ? "Este comprobante se eliminará del movimiento."
+                : `Se eliminarán ${selectedAttachmentPaths.length} comprobantes del movimiento.`
+            }
+            confirmLabel="Eliminar"
+            cancelLabel="Cancelar"
+            onCancel={() => setDeleteSelectedVisible(false)}
+            onConfirm={() => {
+              void handleDeleteSelectedAttachments();
+            }}
+          />
         </>
       }
     />
