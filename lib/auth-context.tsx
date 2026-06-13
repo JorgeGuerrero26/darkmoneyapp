@@ -226,6 +226,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
       setSession(nextSession);
       setUser(nextSession?.user ?? null);
+      // Propagar el JWT al socket realtime: postgres_changes con RLS solo entrega eventos si el
+      // socket está autenticado con el token del usuario. Sin esto, las suscripciones se conectan
+      // pero nunca reciben cambios (la app no se actualizaba en vivo). Cubre login, refresh de
+      // token y restauración de sesión porque syncSession es el punto central; null al cerrar sesión.
+      void supabase?.realtime.setAuth(nextSession?.access_token ?? null);
 
       if (!nextSession?.user) {
         setProfile(null);
