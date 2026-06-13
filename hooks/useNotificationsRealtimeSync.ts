@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../lib/supabase";
+import { logWarn } from "../lib/error-logger";
 
 export function useNotificationsRealtimeSync(userId: string | null) {
   const queryClient = useQueryClient();
@@ -20,7 +21,11 @@ export function useNotificationsRealtimeSync(userId: string | null) {
           void queryClient.invalidateQueries({ queryKey: ["notifications", userId] });
         },
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+          logWarn("realtime", `notifications channel ${status}`, { userId });
+        }
+      });
     return () => {
       void supabase!.removeChannel(channel);
     };

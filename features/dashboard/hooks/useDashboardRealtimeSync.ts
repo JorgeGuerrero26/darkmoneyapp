@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { supabase } from "../../../lib/supabase";
+import { logWarn } from "../../../lib/error-logger";
 
 type Input = {
   workspaceId: number | null;
@@ -66,7 +67,11 @@ export function useDashboardRealtimeSync({ workspaceId }: Input) {
           void queryClient.invalidateQueries({ queryKey: ["shared-obligations"] });
         },
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+          logWarn("realtime", `dashboard channel ${status}`, { workspaceId });
+        }
+      });
 
     return () => {
       void supabase!.removeChannel(channel);

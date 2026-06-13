@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { supabase } from "../../../lib/supabase";
+import { logWarn } from "../../../lib/error-logger";
 
 type Input = {
   workspaceId: number | null;
@@ -59,7 +60,11 @@ export function useAccountsRealtimeSync({ workspaceId }: Input) {
           void queryClient.invalidateQueries({ queryKey: ["movements"] });
         },
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+          logWarn("realtime", `accounts channel ${status}`, { workspaceId });
+        }
+      });
 
     return () => {
       void supabase!.removeChannel(channel);
