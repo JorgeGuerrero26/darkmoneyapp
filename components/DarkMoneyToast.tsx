@@ -219,7 +219,7 @@ export function DarkMoneyToast({ config, onHide }: ToastProps) {
 
   const titleLength = config?.title.length ?? 0
   const subtitleLength = config?.subtitle?.length ?? 0
-  const hasExpandableText = titleLength > 36 || subtitleLength > 42
+  const hasExpandableText = titleLength > 28 || subtitleLength > 28
   const toastHeight = expanded ? TOAST_EXPANDED_H : TOAST_H
   const titleLines = expanded ? 5 : 1
   const subtitleLines = expanded ? 3 : 1

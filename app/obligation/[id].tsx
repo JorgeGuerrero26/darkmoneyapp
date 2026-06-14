@@ -148,7 +148,7 @@ function ObligationDetailScreen() {
   const { profile, session } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
 
-  const { showToast } = useToast();
+  const { showToast, showRichToast } = useToast();
   const [editFormVisible, setEditFormVisible] = useState(false);
   const [paymentFormVisible, setPaymentFormVisible] = useState(false);
   const [paymentRequestFormVisible, setPaymentRequestFormVisible] = useState(false);
@@ -712,21 +712,23 @@ function ObligationDetailScreen() {
 
   async function handleShare() {
     if (!shareEmail.trim() || !obligation || !activeWorkspaceId || isSharedViewer) return;
-    await toastedMutate({
-      mutate: shareMutation.mutateAsync,
-      input: {
+    try {
+      const result = await shareMutation.mutateAsync({
         workspaceId: activeWorkspaceId,
         obligationId: obligation.id,
         invitedEmail: shareEmail.trim().toLowerCase(),
-      },
-      showToast,
-      successMessage: (result) =>
-        result.emailSent ? `Invitacion enviada a ${result.invitedEmail}` : "Invitacion creada",
-      onSuccess: () => {
-        setShareSheetOpen(false);
-        setShareEmail("");
-      },
-    });
+      });
+      setShareSheetOpen(false);
+      setShareEmail("");
+      showRichToast({
+        type: "success",
+        title: result.emailSent ? "Invitación enviada" : "Invitación creada",
+        subtitle: result.invitedEmail,
+        duration: 5000,
+      });
+    } catch (err) {
+      showToast(humanizeError(err), "error");
+    }
   }
 
   async function handleUnlinkViewerShare() {
