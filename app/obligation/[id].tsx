@@ -281,7 +281,13 @@ function ObligationDetailScreen() {
   const eventsForDetail = useMemo(() => {
     if (!obligation) return [] as ObligationEventSummary[];
     const local = obligation.events ?? [];
-    const source = isSharedViewer ? remoteEvents ?? local : local;
+    // Shared viewers receive history through list-shared-obligations; RLS can make
+    // the direct obligation_events query return [] even when events exist.
+    const source = isSharedViewer
+      ? remoteEvents && remoteEvents.length > 0
+        ? remoteEvents
+        : local
+      : local;
     return sortObligationEventsNewestFirst(source);
   }, [obligation, isSharedViewer, remoteEvents]);
 
