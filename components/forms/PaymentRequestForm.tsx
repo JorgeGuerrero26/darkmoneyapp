@@ -10,7 +10,11 @@ import { useToast } from "../../hooks/useToast";
 import { useHaptics } from "../../hooks/useHaptics";
 import { useWorkspaceSnapshotQuery } from "../../services/queries/workspace-data";
 import { useCreatePaymentRequestMutation } from "../../services/queries/obligations";
-import { obligationViewerActsAsCollector } from "../../lib/obligation-viewer-labels";
+import {
+  obligationViewerActsAsCollector,
+  obligationViewerPaymentRequestNoun,
+  obligationViewerPaymentRequestTitle,
+} from "../../lib/obligation-viewer-labels";
 import type { SharedObligationSummary } from "../../types/domain";
 import { BottomSheet } from "../ui/BottomSheet";
 import { Button } from "../ui/Button";
@@ -47,10 +51,10 @@ export function PaymentRequestForm({ visible, onClose, onSuccess, obligation }: 
   const [submitError, setSubmitError] = useState("");
 
   const actsAsCollector = obligationViewerActsAsCollector(obligation.direction, true);
-  const verb = actsAsCollector ? "cobro" : "pago";
+  const verb = obligationViewerPaymentRequestNoun(obligation.direction);
   const verbPast = actsAsCollector ? "cobrado" : "pagado";
   const accountLabel = actsAsCollector ? "Cuenta donde recibirás el cobro" : "Cuenta desde donde pagarás";
-  const title = actsAsCollector ? "Solicitar cobro" : "Solicitar pago";
+  const title = obligationViewerPaymentRequestTitle(obligation.direction);
   const ownerName = obligation.share.ownerDisplayName?.trim() || "el propietario";
 
   function reset() {
@@ -101,7 +105,7 @@ export function PaymentRequestForm({ visible, onClose, onSuccess, obligation }: 
         ownerUserId: obligation.share.ownerUserId,
         obligationTitle: obligation.title,
       });
-      showToast(`Solicitud de ${verb} enviada a ${ownerName}`, "success");
+      showToast(`Solicitud de registro de ${verb} enviada a ${ownerName}`, "success");
       haptics.success();
       reset();
       onSuccess?.();
@@ -228,7 +232,7 @@ export function PaymentRequestForm({ visible, onClose, onSuccess, obligation }: 
       </View>
 
       <Button
-        label={`Enviar solicitud de ${verb}`}
+        label={`Enviar solicitud de registro de ${verb}`}
         onPress={handleSubmit}
         loading={createRequest.isPending}
       />

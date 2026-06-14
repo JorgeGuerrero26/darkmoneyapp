@@ -6,7 +6,10 @@ import {
   type TextStyle,
 } from "react-native";
 
-import { obligationViewerActsAsCollector } from "../../../../lib/obligation-viewer-labels";
+import {
+  obligationViewerActsAsCollector,
+  obligationViewerPaymentRequestTitle,
+} from "../../../../lib/obligation-viewer-labels";
 import type {
   ObligationSummary,
   SharedObligationSummary,
@@ -38,9 +41,7 @@ export function RegisterPaymentButton({
     return (
       <TouchableOpacity style={styles.payBtn} onPress={onPressViewerRequest}>
         <Text style={styles.payBtnText}>
-          {obligationViewerActsAsCollector(obligation.direction, true)
-            ? "Solicitar cobro"
-            : "Solicitar pago"}
+          {obligationViewerPaymentRequestTitle(obligation.direction)}
         </Text>
       </TouchableOpacity>
     );

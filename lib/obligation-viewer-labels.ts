@@ -94,6 +94,19 @@ export function obligationRegisterMoneyActionTitle(
   return obligationViewerActsAsCollector(direction, isSharedViewer) ? "Registrar cobro" : "Registrar pago";
 }
 
+export function obligationViewerPaymentRequestNoun(
+  direction: ObligationDirection,
+): "cobro" | "pago" {
+  return obligationViewerActsAsCollector(direction, true) ? "cobro" : "pago";
+}
+
+export function obligationViewerPaymentRequestTitle(
+  direction: ObligationDirection,
+): "Solicitar registro de cobro" | "Solicitar registro de pago" {
+  const noun = obligationViewerPaymentRequestNoun(direction);
+  return noun === "cobro" ? "Solicitar registro de cobro" : "Solicitar registro de pago";
+}
+
 export function obligationEventCashDeltaSign(
   eventType: string,
   direction: ObligationDirection,
