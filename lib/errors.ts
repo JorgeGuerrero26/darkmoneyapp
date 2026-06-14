@@ -96,7 +96,7 @@ export function humanizeError(err: unknown): string {
   if (msg.includes("Storage") || lowerMsg.includes("upload") || lowerMsg.includes("bucket")) {
     return "Error al subir el archivo. Intenta de nuevo";
   }
-  if (lowerMsg.includes("timeout") || lowerMsg.includes("aborted")) {
+  if (lowerMsg.includes("timeout") || lowerMsg.includes("aborted") || lowerMsg.includes("tiempo de espera")) {
     return "La solicitud tardó demasiado. Intenta de nuevo";
   }
 

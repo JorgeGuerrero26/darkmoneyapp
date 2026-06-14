@@ -121,6 +121,7 @@ function buildFallbackProfile(user: User): AppProfile {
 }
 
 const AUTH_BOOT_TIMEOUT_MS = 5_000;
+const AUTH_ACTION_TIMEOUT_MS = 12_000;
 
 function withTimeout<T>(promise: Promise<T>, ms = AUTH_BOOT_TIMEOUT_MS): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -319,7 +320,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       // contra el servidor antes de borrar la sesión local. Si la sesión sigue viva, ignoramos
       // el evento; si efectivamente está nula, recién hacemos syncSession(null).
       if (event === "SIGNED_OUT" && !signingOutRef.current && supabase) {
-        void supabase.auth.getSession().then(({ data }) => {
+        void withTimeout(supabase.auth.getSession(), 5_000).then(({ data }) => {
           if (data.session) {
             logInfo("auth", "ignored spurious SIGNED_OUT (session still valid server-side)");
             return;
@@ -352,7 +353,10 @@ export function AuthProvider({ children }: PropsWithChildren) {
     if (!hasResolvedInitialSession.current) {
       authBeforeInitialGetSessionRef.current = true;
     }
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await withTimeout(
+      supabase.auth.signInWithPassword({ email, password }),
+      AUTH_ACTION_TIMEOUT_MS,
+    );
     if (error) throw error;
     setSession(data.session);
     setUser(data.user);
@@ -373,15 +377,18 @@ export function AuthProvider({ children }: PropsWithChildren) {
       authBeforeInitialGetSessionRef.current = true;
     }
 
-    const { data, error } = await supabase.auth.signUp({
-      email: input.email,
-      password: input.password,
-      options: {
-        // Deep link para confirmar email desde móvil
-        emailRedirectTo: "darkmoney://login",
-        data: { full_name: input.fullName },
-      },
-    });
+    const { data, error } = await withTimeout(
+      supabase.auth.signUp({
+        email: input.email,
+        password: input.password,
+        options: {
+          // Deep link para confirmar email desde móvil
+          emailRedirectTo: "darkmoney://login",
+          data: { full_name: input.fullName },
+        },
+      }),
+      AUTH_ACTION_TIMEOUT_MS,
+    );
 
     if (error) throw error;
 
@@ -436,15 +443,21 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
   async function resetPassword(email: string) {
     if (!supabase) throw new Error("Supabase no está configurado.");
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: "darkmoney://reset-password",
-    });
+    const { error } = await withTimeout(
+      supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: "darkmoney://reset-password",
+      }),
+      AUTH_ACTION_TIMEOUT_MS,
+    );
     if (error) throw error;
   }
 
   async function updatePassword(password: string) {
     if (!supabase) throw new Error("Supabase no está configurado.");
-    const { data, error } = await supabase.auth.updateUser({ password });
+    const { data, error } = await withTimeout(
+      supabase.auth.updateUser({ password }),
+      AUTH_ACTION_TIMEOUT_MS,
+    );
     if (error) throw error;
     if (data.user) setUser(data.user);
   }
