@@ -73,6 +73,11 @@ export const dashboardSimpleStyles = StyleSheet.create({
     fontSize: FONT_SIZE.xs,
     color: COLORS.storm,
   },
+  macroMetricPeriod: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.fog,
+  },
   macroMetricValue: {
     fontFamily: FONT_FAMILY.heading,
     fontSize: FONT_SIZE.xl,
