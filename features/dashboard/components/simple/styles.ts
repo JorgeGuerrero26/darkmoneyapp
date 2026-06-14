@@ -34,6 +34,11 @@ export const dashboardSimpleStyles = StyleSheet.create({
     justifyContent: "space-between",
     gap: SPACING.md,
   },
+  macroHeaderRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.xs,
+  },
   macroEyebrow: {
     fontFamily: FONT_FAMILY.bodySemibold,
     fontSize: FONT_SIZE.xs,
@@ -94,6 +99,55 @@ export const dashboardSimpleStyles = StyleSheet.create({
     fontSize: FONT_SIZE.xs,
     color: COLORS.storm,
     lineHeight: 17,
+  },
+  simpleStartCard: {
+    gap: SPACING.lg,
+    backgroundColor: SURFACE.subtle,
+  },
+  simpleStartHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: SPACING.md,
+  },
+  simpleStartIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.primary + "18",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: COLORS.primary + "30",
+  },
+  simpleStartCopy: {
+    flex: 1,
+    gap: 4,
+  },
+  simpleStartTitle: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.md,
+    color: COLORS.ink,
+  },
+  simpleStartBody: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.storm,
+    lineHeight: 21,
+  },
+  simpleStartAction: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.xs,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.primary,
+  },
+  simpleStartActionText: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.textInverse,
   },
 
   // Mode toggle

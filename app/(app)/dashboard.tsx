@@ -184,12 +184,10 @@ import {
 // --- Sub-components -----------------------------------------------------------
 
 import { SectionTitle } from "../../features/dashboard/components/simple/SectionTitle";
-import { FlowRow } from "../../features/dashboard/components/simple/FlowKpiRow";
 import { MacroContextCard } from "../../features/dashboard/components/simple/MacroContextCard";
 import { ModeToggle } from "../../features/dashboard/components/simple/ModeToggle";
 import { HeroCard } from "../../features/dashboard/components/simple/HeroCard";
 import { MiniBarChart } from "../../features/dashboard/components/simple/MiniBarChart";
-import { ChronologyStrip } from "../../features/dashboard/components/simple/ChronologyStrip";
 import { AccountsScroll } from "../../features/dashboard/components/simple/AccountsScroll";
 import { UpcomingSection } from "../../features/dashboard/components/simple/UpcomingSection";
 import { UrgentAlertsCard } from "../../features/dashboard/components/simple/UrgentAlertsCard";
@@ -201,6 +199,7 @@ import { SavingsTrendCard } from "../../features/dashboard/components/simple/Sav
 import { ReviewInbox } from "../../features/dashboard/components/simple/ReviewInbox";
 import { FutureFlowPreview } from "../../features/dashboard/components/simple/FutureFlowPreview";
 import { ProjectionFormulaBreakdown } from "../../features/dashboard/components/simple/ProjectionFormulaBreakdown";
+import { GettingStartedCard } from "../../features/dashboard/components/simple/GettingStartedCard";
 import {
   buildFutureFlowWindows,
   buildReviewInboxSnapshot,
@@ -602,6 +601,10 @@ function DashboardScreen() {
   }, [snapshot, baseCurrency, activeCurrency, exchangeRateMap]);
 
   const stats = useDashboardStats(movements, period, conversionCtx);
+  const hasAnyMovement = movements.length > 0;
+  const hasPeriodActivity = stats.chartDays.some(
+    (day) => day.income > 0 || day.expense > 0 || day.transferTotal > 0,
+  );
 
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -695,113 +698,88 @@ function DashboardScreen() {
 
         {!isAdvanced ? (
           <>
-        {/* 1b. Urgent alerts */}
-        <DashboardSectionBoundary sectionLabel="Alertas urgentes">
-          <UrgentAlertsCard
-            obligations={obligationsMerged}
-            budgets={correctedDashboardBudgets}
-            subscriptions={snapshot?.subscriptions ?? []}
-            router={router}
-          />
-        </DashboardSectionBoundary>
+            <DashboardSectionBoundary sectionLabel="Balance">
+              <HeroCard
+                netWorth={netWorth}
+                income={stats.income}
+                expense={stats.expense}
+                currency={activeCurrency}
+                period={period}
+                setPeriod={setPeriod}
+                currencyOptions={currencyOptions}
+                onCurrencyChange={handleCurrencyChange}
+              />
+            </DashboardSectionBoundary>
 
-        {/* 2. Hero balance + Macro context */}
-        <DashboardSectionBoundary sectionLabel="Balance y contexto">
-          <HeroCard
-            netWorth={netWorth}
-            income={stats.income}
-            expense={stats.expense}
-            currency={activeCurrency}
-            period={period}
-            setPeriod={setPeriod}
-            currencyOptions={currencyOptions}
-            onCurrencyChange={handleCurrencyChange}
-          />
-          <MacroContextCard />
-        </DashboardSectionBoundary>
+            {!hasAnyMovement ? (
+              <DashboardSectionBoundary sectionLabel="Primer movimiento">
+                <GettingStartedCard
+                  hasAccounts={activeAccounts.length > 0}
+                  onCreateMovement={() => setFormVisible(true)}
+                  onOpenAccounts={() => router.push("/accounts" as never)}
+                />
+              </DashboardSectionBoundary>
+            ) : null}
 
-        {/* 3-4. Flow KPI + charts */}
-        <DashboardSectionBoundary sectionLabel="Flujo y cronología">
-          <FlowRow
-            income={stats.income}
-            expense={stats.expense}
-            net={stats.net}
-            currency={activeCurrency}
-            prevIncome={stats.prevIncome}
-            prevExpense={stats.prevExpense}
-          />
-          <MiniBarChart
-            data={stats.chartDays}
-            onSelectDay={(d) => setDaySheet({ dayStart: d.dayStart, dayEnd: d.dayEnd, mode: "all" })}
-          />
-          <ChronologyStrip
-            title="Cronología de gastos"
-            hint="Últimos 7 días · toca un día para ver cada gasto de esa fecha"
-            mode="expense"
-            data={stats.chartDays}
-            barColor={COLORS.expense}
-            currency={activeCurrency}
-            getValue={(d) => d.expense}
-            onSelectDay={(d, mode) => setDaySheet({ dayStart: d.dayStart, dayEnd: d.dayEnd, mode })}
-          />
-          <ChronologyStrip
-            title="Cronología de ingresos"
-            hint="Últimos 7 días · toca un día para ver cada ingreso"
-            mode="income"
-            data={stats.chartDays}
-            barColor={COLORS.income}
-            currency={activeCurrency}
-            getValue={(d) => d.income}
-            onSelectDay={(d, mode) => setDaySheet({ dayStart: d.dayStart, dayEnd: d.dayEnd, mode })}
-          />
-          <ChronologyStrip
-            title="Cronología de transferencias"
-            hint="Últimos 7 días · toca un día para ver transferencias entre cuentas"
-            mode="transfer"
-            data={stats.chartDays}
-            barColor={COLORS.secondary}
-            currency={activeCurrency}
-            getValue={(d) => d.transferTotal}
-            onSelectDay={(d, mode) => setDaySheet({ dayStart: d.dayStart, dayEnd: d.dayEnd, mode })}
-          />
-        </DashboardSectionBoundary>
+            <DashboardSectionBoundary sectionLabel="Alertas urgentes">
+              <UrgentAlertsCard
+                obligations={obligationsMerged}
+                budgets={correctedDashboardBudgets}
+                subscriptions={snapshot?.subscriptions ?? []}
+                router={router}
+              />
+            </DashboardSectionBoundary>
 
-        {/* 5-5b. Accounts */}
-        <DashboardSectionBoundary sectionLabel="Cuentas">
-          <AccountsScroll
-            accounts={activeAccounts}
-            onPress={(id) => router.push(`/account/${id}?from=dashboard`)}
-          />
-          <AccountsBreakdown
-            accounts={snapshot?.accounts ?? []}
-            displayCurrency={activeCurrency}
-            baseCurrency={baseCurrency}
-            exchangeRateMap={exchangeRateMap}
-          />
-        </DashboardSectionBoundary>
+            {hasPeriodActivity ? (
+              <DashboardSectionBoundary sectionLabel="Flujo reciente">
+                <MiniBarChart
+                  data={stats.chartDays}
+                  onSelectDay={(d) => setDaySheet({ dayStart: d.dayStart, dayEnd: d.dayEnd, mode: "all" })}
+                />
+              </DashboardSectionBoundary>
+            ) : null}
 
-        {/* 6-8. Obligations + Upcoming + Budgets */}
-        <DashboardSectionBoundary sectionLabel="Obligaciones y presupuestos">
-          <LeadersRow obligations={obligationsMerged} router={router} />
-          <UpcomingSection
-            obligations={obligationsMerged}
-            subscriptions={snapshot?.subscriptions ?? []}
-            recurringIncome={snapshot?.recurringIncome ?? []}
-            router={router}
-          />
-          <BudgetsSection budgets={correctedDashboardBudgets} router={router} />
-        </DashboardSectionBoundary>
+            <DashboardSectionBoundary sectionLabel="Cuentas">
+              <AccountsScroll
+                accounts={activeAccounts}
+                onPress={(id) => router.push(`/account/${id}?from=dashboard`)}
+              />
+              <AccountsBreakdown
+                accounts={snapshot?.accounts ?? []}
+                displayCurrency={activeCurrency}
+                baseCurrency={baseCurrency}
+                exchangeRateMap={exchangeRateMap}
+              />
+            </DashboardSectionBoundary>
 
-        {/* 9-10. Categories + Savings */}
-        <DashboardSectionBoundary sectionLabel="Categorías y ahorro">
-          <CategoryComparison
-            catTotals={stats.catTotals}
-            prevCatTotals={stats.prevCatTotals}
-            categories={snapshot?.categories ?? []}
-            currency={activeCurrency}
-          />
-          <SavingsTrendCard monthlyPulse={stats.monthlyPulse} currency={activeCurrency} />
-        </DashboardSectionBoundary>
+            <DashboardSectionBoundary sectionLabel="Agenda y presupuestos">
+              <LeadersRow obligations={obligationsMerged} router={router} />
+              <UpcomingSection
+                obligations={obligationsMerged}
+                subscriptions={snapshot?.subscriptions ?? []}
+                recurringIncome={snapshot?.recurringIncome ?? []}
+                router={router}
+              />
+              <BudgetsSection budgets={correctedDashboardBudgets} router={router} />
+            </DashboardSectionBoundary>
+
+            {hasAnyMovement ? (
+              <DashboardSectionBoundary sectionLabel="Categorías y ahorro">
+                <CategoryComparison
+                  catTotals={stats.catTotals}
+                  prevCatTotals={stats.prevCatTotals}
+                  categories={snapshot?.categories ?? []}
+                  currency={activeCurrency}
+                />
+                <SavingsTrendCard monthlyPulse={stats.monthlyPulse} currency={activeCurrency} />
+              </DashboardSectionBoundary>
+            ) : null}
+
+            {hasAnyMovement ? (
+              <DashboardSectionBoundary sectionLabel="Contexto macro">
+                <MacroContextCard />
+              </DashboardSectionBoundary>
+            ) : null}
           </>
         ) : null}
 
