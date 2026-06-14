@@ -51,11 +51,17 @@ const THEME: Record<ToastType, {
 
 const TOAST_W = 320
 const TOAST_H = 64
+const TOAST_EXPANDED_H = 128
+const EXPANDED_TOAST_DURATION_MS = 8000
 const RADIUS  = 18
-const PERIM   =
-  2 * (TOAST_W - 2 * RADIUS) +
-  2 * (TOAST_H - 2 * RADIUS) +
-  2 * Math.PI * RADIUS
+
+function roundedRectPerimeter(width: number, height: number, radius: number) {
+  return (
+    2 * (width - 2 * radius) +
+    2 * (height - 2 * radius) +
+    2 * Math.PI * radius
+  )
+}
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 
@@ -112,22 +118,31 @@ function ToastIcon({ type, color }: { type: ToastType; color: string }) {
 
 const AnimatedRect = Animated.createAnimatedComponent(Rect)
 
-function BorderProgress({ progress, color }: { progress: Animated.Value; color: string }) {
+function BorderProgress({
+  progress,
+  color,
+  height,
+}: {
+  progress: Animated.Value
+  color: string
+  height: number
+}) {
+  const perimeter = roundedRectPerimeter(TOAST_W, height, RADIUS)
   const dashOffset = progress.interpolate({
     inputRange:  [0, 1],
-    outputRange: [0, PERIM],
+    outputRange: [0, perimeter],
   })
 
   return (
     <Svg
       width={TOAST_W}
-      height={TOAST_H}
+      height={height}
       style={StyleSheet.absoluteFill}
       pointerEvents="none"
     >
       <Rect
         x={1} y={1}
-        width={TOAST_W - 2} height={TOAST_H - 2}
+        width={TOAST_W - 2} height={height - 2}
         rx={RADIUS - 1}
         fill="none"
         stroke={color}
@@ -136,13 +151,13 @@ function BorderProgress({ progress, color }: { progress: Animated.Value; color: 
       />
       <AnimatedRect
         x={1} y={1}
-        width={TOAST_W - 2} height={TOAST_H - 2}
+        width={TOAST_W - 2} height={height - 2}
         rx={RADIUS - 1}
         fill="none"
         stroke={color}
         strokeWidth={1.5}
         strokeLinecap="round"
-        strokeDasharray={PERIM}
+        strokeDasharray={perimeter}
         strokeDashoffset={dashOffset}
       />
     </Svg>
@@ -165,6 +180,7 @@ export function DarkMoneyToast({ config, onHide }: ToastProps) {
   const progress      = useRef(new Animated.Value(0)).current
   const timerRef      = useRef<ReturnType<typeof setTimeout> | null>(null)
   const dismissingRef = useRef(false)
+  const [expanded, setExpanded] = useState(false)
 
   const runHide = useCallback(() => {
     if (dismissingRef.current) return
@@ -201,10 +217,42 @@ export function DarkMoneyToast({ config, onHide }: ToastProps) {
     runHide()
   }, [config, runHide])
 
+  const titleLength = config?.title.length ?? 0
+  const subtitleLength = config?.subtitle?.length ?? 0
+  const hasExpandableText = titleLength > 36 || subtitleLength > 42
+  const toastHeight = expanded ? TOAST_EXPANDED_H : TOAST_H
+  const titleLines = expanded ? 5 : 1
+  const subtitleLines = expanded ? 3 : 1
+
+  const restartAutoHide = useCallback((duration: number) => {
+    if (timerRef.current) clearTimeout(timerRef.current)
+    progress.stopAnimation(() => {
+      progress.setValue(0)
+      Animated.timing(progress, {
+        toValue: 1,
+        duration,
+        useNativeDriver: false,
+      }).start()
+    })
+    timerRef.current = setTimeout(runHide, duration)
+  }, [progress, runHide])
+
+  const toggleExpanded = useCallback(() => {
+    if (!hasExpandableText) return
+    setExpanded((current) => {
+      const next = !current
+      const baseDuration = config?.duration ?? 3500
+      restartAutoHide(next ? Math.max(baseDuration, EXPANDED_TOAST_DURATION_MS) : baseDuration)
+      return next
+    })
+  }, [config?.duration, hasExpandableText, restartAutoHide])
+
+
   useEffect(() => {
     if (!config) return
 
     dismissingRef.current = false
+    setExpanded(false)
     opacity.setValue(0)
     translateY.setValue(20)
     scale.setValue(0.96)
@@ -242,28 +290,43 @@ export function DarkMoneyToast({ config, onHide }: ToastProps) {
         styles.toast,
         {
           backgroundColor: theme.bg,
+          height: toastHeight,
           bottom: insets.bottom + 24,
           opacity,
           transform: [{ translateY: Animated.add(translateY, dragY) }, { scale }],
         },
+        expanded && styles.toastExpanded,
       ]}
     >
-      <BorderProgress progress={progress} color={theme.accent} />
+      <BorderProgress progress={progress} color={theme.accent} height={toastHeight} />
 
-      <View style={[styles.iconBox, { backgroundColor: theme.iconBg }]}>
-        <ToastIcon type={config.type} color={theme.accent} />
-      </View>
+      <Pressable
+        onPress={toggleExpanded}
+        disabled={!hasExpandableText}
+        accessibilityRole={hasExpandableText ? "button" : undefined}
+        accessibilityLabel={config.title}
+        accessibilityHint={hasExpandableText ? "Toca para alternar el mensaje completo" : undefined}
+        style={({ pressed }) => [
+          styles.messageArea,
+          expanded && styles.messageAreaExpanded,
+          pressed && hasExpandableText && styles.messageAreaPressed,
+        ]}
+      >
+        <View style={[styles.iconBox, expanded && styles.iconBoxExpanded, { backgroundColor: theme.iconBg }]}>
+          <ToastIcon type={config.type} color={theme.accent} />
+        </View>
 
-      <View style={styles.body}>
-        <Text style={[styles.title, { color: theme.accent }]} numberOfLines={1}>
-          {config.title}
-        </Text>
-        {config.subtitle ? (
-          <Text style={[styles.subtitle, { color: theme.subtitleColor }]} numberOfLines={1}>
-            {config.subtitle}
+        <View style={styles.body}>
+          <Text style={[styles.title, { color: theme.accent }]} numberOfLines={titleLines}>
+            {config.title}
           </Text>
-        ) : null}
-      </View>
+          {config.subtitle ? (
+            <Text style={[styles.subtitle, { color: theme.subtitleColor }]} numberOfLines={subtitleLines}>
+              {config.subtitle}
+            </Text>
+          ) : null}
+        </View>
+      </Pressable>
 
       {config.onUndo ? (
         <Pressable
@@ -321,7 +384,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     alignSelf: 'center',
     width: TOAST_W,
-    height: TOAST_H,
     borderRadius: RADIUS,
     flexDirection: 'row',
     alignItems: 'center',
@@ -331,6 +393,25 @@ const styles = StyleSheet.create({
     zIndex: 9999,
     elevation: 20,
   },
+  toastExpanded: {
+    alignItems: 'flex-start',
+    paddingTop: 12,
+    paddingBottom: 12,
+  },
+  messageArea: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderRadius: 12,
+  },
+  messageAreaExpanded: {
+    alignItems: 'flex-start',
+  },
+  messageAreaPressed: {
+    opacity: 0.82,
+  },
   iconBox: {
     width: 36,
     height: 36,
@@ -338,6 +419,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
+  },
+  iconBoxExpanded: {
+    marginTop: 2,
   },
   body:     { flex: 1 },
   title:    { fontSize: 12, fontWeight: '700', letterSpacing: 0.1 },
