@@ -145,6 +145,21 @@ export function buildAndroidIntentWorkspaceInviteUrl(token: string, fallbackUrl:
   return `intent:///workspace-invite/${encodeURIComponent(token)}#Intent;scheme=${scheme};package=${packageName}${fallbackPart};end`;
 }
 
+const INVITE_EMAIL_TIMEOUT_MS = 8_000;
+
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, {
+      ...init,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 function defaultInviteHeroImageUrl(): string {
   const supabaseUrl = Deno.env.get("SUPABASE_URL")?.trim().replace(/\/+$/, "");
   if (supabaseUrl) return `${supabaseUrl}/functions/v1/invite-banner`;
@@ -295,20 +310,24 @@ export async function maybeSendInviteEmail(input: {
   `;
 
   try {
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
+    const res = await fetchWithTimeout(
+      "https://api.resend.com/emails",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          from,
+          to: input.to,
+          subject: `${owner} te compartio un registro desde DarkMoney movil`,
+          text,
+          html,
+        }),
       },
-      body: JSON.stringify({
-        from,
-        to: input.to,
-        subject: `${owner} te compartio un registro desde DarkMoney movil`,
-        text,
-        html,
-      }),
-    });
+      INVITE_EMAIL_TIMEOUT_MS,
+    );
     return res.ok;
   } catch {
     return false;
@@ -462,20 +481,24 @@ export async function maybeSendWorkspaceInviteEmail(input: {
   `;
 
   try {
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
+    const res = await fetchWithTimeout(
+      "https://api.resend.com/emails",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          from,
+          to: input.to,
+          subject: `${sender} te invito a un workspace de DarkMoney`,
+          text,
+          html,
+        }),
       },
-      body: JSON.stringify({
-        from,
-        to: input.to,
-        subject: `${sender} te invito a un workspace de DarkMoney`,
-        text,
-        html,
-      }),
-    });
+      INVITE_EMAIL_TIMEOUT_MS,
+    );
     return res.ok;
   } catch {
     return false;

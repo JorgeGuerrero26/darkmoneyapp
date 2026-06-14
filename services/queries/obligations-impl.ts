@@ -18,6 +18,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { UNIVERSAL_LINK_HOST } from "../../constants/config";
 import { supabase } from "../../lib/supabase";
 import { STALE } from "../../lib/query-client";
+import { TimeoutError, withTimeout } from "../../lib/promise-utils";
 import { dateStrToISO, filterDateFrom, filterDateTo } from "../../lib/date";
 import {
   mirrorObligationEventAttachmentsToMovement,
@@ -63,6 +64,10 @@ import {
 } from "./workspace-data";
 
 type NumericLike = number | string | null;
+
+const OBLIGATION_SHARE_AUTH_TIMEOUT_MS = 5_000;
+const OBLIGATION_SHARE_EDGE_TIMEOUT_MS = 18_000;
+const OBLIGATION_SHARED_LIST_TIMEOUT_MS = 12_000;
 
 // ─── Helpers compartidos con shared-obligations (4.2-d) ──────────────────────
 
@@ -268,20 +273,24 @@ export function useCreateObligationShareInviteMutation(workspaceId?: number | nu
   const appUrl = buildHostedAppUrl();
   return useMutation({
     mutationFn: async (input: ObligationShareInviteInput) => {
-      const response = await invokeEdgeFunction<{
-        ok: boolean; error?: string;
-        shareId?: number; shareUrl?: string;
-        emailSent?: boolean; invitedEmail?: string; invitedDisplayName?: string;
-        status?: string;
-      }>(
+      const response = await withTimeout(
+        invokeEdgeFunction<{
+          ok: boolean; error?: string;
+          shareId?: number; shareUrl?: string;
+          emailSent?: boolean; invitedEmail?: string; invitedDisplayName?: string;
+          status?: string;
+        }>(
+          "create-obligation-share-invite",
+          {
+            workspaceId: input.workspaceId,
+            obligationId: input.obligationId,
+            invitedEmail: input.invitedEmail,
+            message: input.message ?? null,
+            appUrl,
+          },
+        ),
+        OBLIGATION_SHARE_EDGE_TIMEOUT_MS,
         "create-obligation-share-invite",
-        {
-          workspaceId: input.workspaceId,
-          obligationId: input.obligationId,
-          invitedEmail: input.invitedEmail,
-          message: input.message ?? null,
-          appUrl,
-        },
       );
       if (!response.ok || !response.shareId || !response.invitedEmail) {
         throw new Error(response.error ?? "No se pudo compartir la obligación.");
@@ -485,7 +494,11 @@ function parseSharedObligationItem(item: unknown): SharedObligationSummary | nul
 
 async function fetchSharedObligations(): Promise<SharedObligationSummary[]> {
   if (!supabase) return [];
-  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  const { data: sessionData, error: sessionError } = await withTimeout(
+    supabase.auth.getSession(),
+    OBLIGATION_SHARE_AUTH_TIMEOUT_MS,
+    "shared-obligations.getSession",
+  );
   if (sessionError) {
     throw new Error(sessionError.message ?? "No se pudo validar tu sesión.");
   }
@@ -493,7 +506,11 @@ async function fetchSharedObligations(): Promise<SharedObligationSummary[]> {
     return [];
   }
 
-  const response = (await invokeEdgeFunction<Record<string, unknown>>("list-shared-obligations", {})) ?? {};
+  const response = (await withTimeout(
+    invokeEdgeFunction<Record<string, unknown>>("list-shared-obligations", {}),
+    OBLIGATION_SHARED_LIST_TIMEOUT_MS,
+    "list-shared-obligations",
+  )) ?? {};
 
   if (response.ok === false) {
     throw new Error(String(response.error ?? "No se pudieron cargar las obligaciones compartidas."));
@@ -518,7 +535,7 @@ export function useSharedObligationsQuery(userId: string | null | undefined) {
     queryKey: ["shared-obligations", userId ?? null],
     enabled: Boolean(supabase && userId),
     staleTime: STALE.medium,
-    retry: 1,
+    retry: (failureCount, error) => !(error instanceof TimeoutError) && failureCount < 1,
     queryFn: fetchSharedObligations,
   });
 }
