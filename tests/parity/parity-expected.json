@@ -79,14 +79,14 @@
     "categorizedRate": 1
   },
   "health": {
-    "score": 81,
+    "score": 88,
     "tone": "success",
     "savingsRate": 0.753202,
-    "coverageMonths": 5.714286,
+    "coverageMonths": 48.571429,
     "debtToIncomeRatio": 0.723138,
     "indicatorScores": [
       100,
-      75,
+      100,
       75,
       75
     ]

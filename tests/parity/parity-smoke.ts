@@ -34,6 +34,7 @@ type Fixture = {
   exchangeRates: Array<{ fromCurrencyCode: string; toCurrencyCode: string; rate: number; effectiveAt: string }>;
   accounts: Array<{
     id: number;
+    type: string;
     currencyCode: string;
     currentBalance: number;
     currentBalanceInBaseCurrency?: number | null;
@@ -44,7 +45,7 @@ type Fixture = {
   obligations: Parameters<typeof buildFutureFlowWindows>[0];
   subscriptions: Parameters<typeof buildFutureFlowWindows>[1];
   recurringIncome: Parameters<typeof buildFutureFlowWindows>[2];
-  healthInputs: { liquidMoney: number; averageMonthlyExpense: number; totalPayable: number };
+  healthInputs: { averageMonthlyExpense: number; totalPayable: number };
 };
 
 const DIR = join(process.cwd(), "tests", "parity");
@@ -162,10 +163,27 @@ function readiness() {
   return { readinessScore, historyDays, usefulCount: useful.length, categorizedRate: round(categorizedRate) };
 }
 
-// Salud: usa el período "month" (mismo en web y móvil) + inputs explícitos del fixture.
+// Salud: liquidMoney se DERIVA de las cuentas (regla cash/bank/savings, no archivadas)
+// para que el smoke pruebe la misma regla que el call-site real, no un valor fijo.
+const liquidAccountTypes = new Set(["cash", "bank", "savings"]);
+const liquidMoney = fixture.accounts
+  .filter((a) => liquidAccountTypes.has(a.type) && !a.isArchived)
+  .reduce((sum, a) => {
+    const raw = a.currentBalanceInBaseCurrency ?? a.currentBalance;
+    return sum +
+      (convertParityAmount({
+        amount: raw,
+        currencyCode: fixture.baseCurrency,
+        baseCurrencyCode: fixture.baseCurrency,
+        targetCurrencyCode: fixture.displayCurrency,
+        exchangeRateMap,
+      }) ?? 0);
+  }, 0);
+
+// Salud: usa el período "month" (mismo en web y móvil).
 const monthTotals = periodTotals("month");
 const health = buildHealthScore({
-  liquidMoney: fixture.healthInputs.liquidMoney,
+  liquidMoney,
   averageMonthlyExpense: fixture.healthInputs.averageMonthlyExpense,
   periodIncome: monthTotals.income,
   periodNet: monthTotals.net,

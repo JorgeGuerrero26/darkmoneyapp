@@ -3,20 +3,20 @@
   "now": "2026-06-15T14:30:00.000Z",
   "baseCurrency": "PEN",
   "displayCurrency": "USD",
-  "healthInputs": { "liquidMoney": 2000, "averageMonthlyExpense": 350, "totalPayable": 933.33 },
+  "healthInputs": { "averageMonthlyExpense": 350, "totalPayable": 933.33 },
   "exchangeRates": [
     { "fromCurrencyCode": "USD", "toCurrencyCode": "PEN", "rate": 3.75, "effectiveAt": "2026-06-01T00:00:00.000Z" },
     { "fromCurrencyCode": "PEN", "toCurrencyCode": "EUR", "rate": 0.25, "effectiveAt": "2026-06-01T00:00:00.000Z" },
     { "fromCurrencyCode": "GBP", "toCurrencyCode": "PEN", "rate": 4.7, "effectiveAt": "2026-06-01T00:00:00.000Z" }
   ],
   "accounts": [
-    { "id": 1, "currencyCode": "PEN", "currentBalance": 8000, "currentBalanceInBaseCurrency": 8000, "isArchived": false, "includeInNetWorth": true },
-    { "id": 2, "currencyCode": "USD", "currentBalance": 1000, "currentBalanceInBaseCurrency": 3750, "isArchived": false, "includeInNetWorth": true },
-    { "id": 3, "currencyCode": "EUR", "currentBalance": 500, "currentBalanceInBaseCurrency": 2000, "isArchived": false, "includeInNetWorth": true },
-    { "id": 4, "currencyCode": "GBP", "currentBalance": 200, "currentBalanceInBaseCurrency": 940, "isArchived": false, "includeInNetWorth": true },
-    { "id": 5, "currencyCode": "CHF", "currentBalance": 300, "currentBalanceInBaseCurrency": 1100, "isArchived": false, "includeInNetWorth": true },
-    { "id": 6, "currencyCode": "PEN", "currentBalance": 50000, "currentBalanceInBaseCurrency": 50000, "isArchived": false, "includeInNetWorth": false },
-    { "id": 7, "currencyCode": "PEN", "currentBalance": 9999, "currentBalanceInBaseCurrency": 9999, "isArchived": true, "includeInNetWorth": true }
+    { "id": 1, "type": "bank", "currencyCode": "PEN", "currentBalance": 8000, "currentBalanceInBaseCurrency": 8000, "isArchived": false, "includeInNetWorth": true },
+    { "id": 2, "type": "cash", "currencyCode": "USD", "currentBalance": 1000, "currentBalanceInBaseCurrency": 3750, "isArchived": false, "includeInNetWorth": true },
+    { "id": 3, "type": "savings", "currencyCode": "EUR", "currentBalance": 500, "currentBalanceInBaseCurrency": 2000, "isArchived": false, "includeInNetWorth": true },
+    { "id": 4, "type": "investment", "currencyCode": "GBP", "currentBalance": 200, "currentBalanceInBaseCurrency": 940, "isArchived": false, "includeInNetWorth": true },
+    { "id": 5, "type": "credit", "currencyCode": "CHF", "currentBalance": 300, "currentBalanceInBaseCurrency": 1100, "isArchived": false, "includeInNetWorth": true },
+    { "id": 6, "type": "bank", "currencyCode": "PEN", "currentBalance": 50000, "currentBalanceInBaseCurrency": 50000, "isArchived": false, "includeInNetWorth": false },
+    { "id": 7, "type": "savings", "currencyCode": "PEN", "currentBalance": 9999, "currentBalanceInBaseCurrency": 9999, "isArchived": true, "includeInNetWorth": true }
   ],
   "movements": [
     { "id": 101, "movementType": "income", "status": "posted", "occurredAt": "2026-06-02T10:00:00.000Z", "sourceAmount": null, "destinationAmount": 4000, "sourceAccountId": null, "destinationAccountId": 1, "categoryId": 10, "counterpartyId": 1, "description": "Sueldo junio" },
