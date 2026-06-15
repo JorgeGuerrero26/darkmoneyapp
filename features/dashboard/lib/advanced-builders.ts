@@ -139,8 +139,9 @@ export function buildMonthProjectionModel(
   }>,
   currentVisibleBalance: number,
   ctx: ConversionCtx,
+  now: Date = new Date(),
 ): DashboardProjectionModel {
-  const today = new Date();
+  const today = now;
   const monthStart = startOfMonth(today);
   const monthEnd = endOfMonth(today);
   const remainingDays = Math.max(0, differenceInDays(monthEnd, today));
@@ -152,6 +153,8 @@ export function buildMonthProjectionModel(
     ctx.displayCurrency,
     ctx.exchangeRateMap,
     currentVisibleBalance,
+    ctx.baseCurrency,
+    now,
   );
   const monthWindow = futureWindows[2];
 

@@ -30,8 +30,9 @@ export function buildReviewInboxSnapshot(
     startDate?: string | null;
     status: string;
   }>,
+  now: Date = new Date(),
 ): DashboardReviewInbox {
-  const today = new Date();
+  const today = now;
   const uncategorizedCount = movements.filter(
     (movement) =>
       movement.status === "posted" && isCategorizedCashflow(movement) && movement.categoryId == null,
@@ -100,6 +101,8 @@ export type FutureFlowWindow = {
   scheduledCount: number;
   receivableCount: number;
   payableCount: number;
+  /** Ítems cuyo monto no pudo convertirse a la moneda activa (sumaron 0). */
+  unconvertedCount: number;
 };
 
 export function convertDashboardCurrency(
@@ -107,8 +110,9 @@ export function convertDashboardCurrency(
   fromCurrency: string,
   displayCurrency: string,
   exchangeRateMap: Map<string, number>,
-) {
-  return convertAmt(amount, fromCurrency, displayCurrency, exchangeRateMap);
+  baseCurrency: string,
+): number | null {
+  return convertAmt(amount, fromCurrency, displayCurrency, exchangeRateMap, baseCurrency);
 }
 
 export function buildFutureFlowWindows(
@@ -135,8 +139,10 @@ export function buildFutureFlowWindows(
   displayCurrency: string,
   exchangeRateMap: Map<string, number>,
   currentVisibleBalance: number,
+  baseCurrency: string = displayCurrency,
+  now: Date = new Date(),
 ): FutureFlowWindow[] {
-  const today = new Date();
+  const today = now;
 
   function obligationDueAmount(obligation: { pendingAmount: number; installmentAmount?: number | null }) {
     if (obligation.installmentAmount && obligation.installmentAmount > 0) {
@@ -152,6 +158,7 @@ export function buildFutureFlowWindows(
     let receivableCount = 0;
     let payableCount = 0;
     let scheduledCount = 0;
+    let unconvertedCount = 0;
 
     for (const obligation of obligations) {
       if (!obligation.dueDate || obligation.pendingAmount <= 0.009 || obligation.status === "paid") continue;
@@ -162,14 +169,16 @@ export function buildFutureFlowWindows(
         obligation.currencyCode,
         displayCurrency,
         exchangeRateMap,
+        baseCurrency,
       );
+      if (convertedAmount === null) unconvertedCount += 1;
       scheduledCount += 1;
       if (obligation.direction === "receivable") {
         receivableCount += 1;
-        expectedInflow += convertedAmount;
+        expectedInflow += convertedAmount ?? 0;
       } else {
         payableCount += 1;
-        expectedOutflow += convertedAmount;
+        expectedOutflow += convertedAmount ?? 0;
       }
     }
 
@@ -178,12 +187,15 @@ export function buildFutureFlowWindows(
       const dueDate = parseDisplayDate(subscription.nextDueDate);
       if (dueDate < today || dueDate > horizon) continue;
       scheduledCount += 1;
-      expectedOutflow += convertDashboardCurrency(
+      const convertedAmount = convertDashboardCurrency(
         subscription.amount,
         subscription.currencyCode,
         displayCurrency,
         exchangeRateMap,
+        baseCurrency,
       );
+      if (convertedAmount === null) unconvertedCount += 1;
+      expectedOutflow += convertedAmount ?? 0;
     }
 
     for (const income of recurringIncome) {
@@ -191,12 +203,15 @@ export function buildFutureFlowWindows(
       const expectedDate = parseDisplayDate(income.nextExpectedDate);
       if (expectedDate < today || expectedDate > horizon) continue;
       scheduledCount += 1;
-      expectedInflow += convertDashboardCurrency(
+      const convertedAmount = convertDashboardCurrency(
         income.amount,
         income.currencyCode,
         displayCurrency,
         exchangeRateMap,
+        baseCurrency,
       );
+      if (convertedAmount === null) unconvertedCount += 1;
+      expectedInflow += convertedAmount ?? 0;
     }
 
     return {
@@ -207,6 +222,7 @@ export function buildFutureFlowWindows(
       payableCount,
       receivableCount,
       scheduledCount,
+      unconvertedCount,
     };
   });
 }

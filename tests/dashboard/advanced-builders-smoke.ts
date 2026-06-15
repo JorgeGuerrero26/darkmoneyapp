@@ -49,6 +49,7 @@ function ctx(): ConversionCtx {
     accountCurrencyMap: new Map<number, string>(),
     exchangeRateMap: new Map<string, number>(),
     displayCurrency: "PEN",
+    baseCurrency: "PEN",
   };
 }
 

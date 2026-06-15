@@ -33,7 +33,7 @@ export function AccountsBreakdown({
 
   const withBalances = eligible.map((a) => {
     const raw = a.currentBalanceInBaseCurrency ?? a.currentBalance;
-    const converted = Math.max(convertAmt(raw, baseCurrency, displayCurrency, exchangeRateMap), 0);
+    const converted = Math.max(convertAmt(raw, baseCurrency, displayCurrency, exchangeRateMap, baseCurrency) ?? 0, 0);
     return { ...a, converted };
   });
 

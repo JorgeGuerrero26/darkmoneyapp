@@ -20,6 +20,7 @@ type FutureFlowPreviewProps = {
   subscriptions: Array<{ amount: number; currencyCode: string; nextDueDate: string; status: string }>;
   recurringIncome: Array<{ amount: number; currencyCode: string; nextExpectedDate: string; status: string }>;
   displayCurrency: string;
+  baseCurrency: string;
   exchangeRateMap: Map<string, number>;
   currentVisibleBalance: number;
 };
@@ -29,6 +30,7 @@ export function FutureFlowPreview({
   subscriptions,
   recurringIncome,
   displayCurrency,
+  baseCurrency,
   exchangeRateMap,
   currentVisibleBalance,
 }: FutureFlowPreviewProps) {
@@ -41,8 +43,9 @@ export function FutureFlowPreview({
         displayCurrency,
         exchangeRateMap,
         currentVisibleBalance,
+        baseCurrency,
       ),
-    [currentVisibleBalance, displayCurrency, exchangeRateMap, obligations, recurringIncome, subscriptions],
+    [baseCurrency, currentVisibleBalance, displayCurrency, exchangeRateMap, obligations, recurringIncome, subscriptions],
   );
 
   return (

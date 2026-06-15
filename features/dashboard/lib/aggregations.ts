@@ -1,5 +1,6 @@
 import { differenceInDays, startOfDay, startOfMonth, startOfWeek, subDays, subMonths } from "date-fns";
 
+import { convertParityAmount, resolveParityRate } from "../../../lib/currency-conversion";
 import {
   movementActsAsExpense,
   movementActsAsIncome,
@@ -114,13 +115,18 @@ export function buildExchangeRateMap(rates: ExchangeRateSummary[]): Map<string, 
   return map;
 }
 
-export function resolveRate(map: Map<string, number>, from: string, to: string): number {
-  if (from === to) return 1;
-  const direct = map.get(`${from}:${to}`);
-  if (direct) return direct;
-  const inverse = map.get(`${to}:${from}`);
-  if (inverse) return 1 / inverse;
-  return 1;
+/**
+ * Tasa from→to con el algoritmo estándar de paridad (directa → inversa →
+ * puente vía moneda base → null). Devuelve null cuando no hay tasa: el caller
+ * decide cómo manejarlo (sumar 0 + contar como no convertido), nunca 1 a ciegas.
+ */
+export function resolveRate(
+  map: Map<string, number>,
+  from: string,
+  to: string,
+  baseCurrency: string,
+): number | null {
+  return resolveParityRate(map, from, to, baseCurrency);
 }
 
 export function convertAmt(
@@ -128,28 +134,34 @@ export function convertAmt(
   fromCurrency: string | null | undefined,
   toCurrency: string,
   map: Map<string, number>,
-): number {
-  if (!fromCurrency) return amount;
-  return amount * resolveRate(map, fromCurrency.toUpperCase(), toCurrency.toUpperCase());
+  baseCurrency: string,
+): number | null {
+  return convertParityAmount({
+    amount,
+    currencyCode: fromCurrency,
+    baseCurrencyCode: baseCurrency,
+    targetCurrencyCode: toCurrency,
+    exchangeRateMap: map,
+  });
 }
 
 export function incomeAmt(m: DashboardMovementRow, ctx: ConversionCtx): number {
   const raw = movementDisplayAmount(m);
   const accountId = movementDisplayAccountId(m);
   const currency = accountId ? ctx.accountCurrencyMap.get(accountId) : undefined;
-  return convertAmt(raw, currency, ctx.displayCurrency, ctx.exchangeRateMap);
+  return convertAmt(raw, currency, ctx.displayCurrency, ctx.exchangeRateMap, ctx.baseCurrency) ?? 0;
 }
 
 export function expenseAmt(m: DashboardMovementRow, ctx: ConversionCtx): number {
   const raw = movementDisplayAmount(m);
   const accountId = movementDisplayAccountId(m);
   const currency = accountId ? ctx.accountCurrencyMap.get(accountId) : undefined;
-  return convertAmt(raw, currency, ctx.displayCurrency, ctx.exchangeRateMap);
+  return convertAmt(raw, currency, ctx.displayCurrency, ctx.exchangeRateMap, ctx.baseCurrency) ?? 0;
 }
 
 export function transferAmt(m: DashboardMovementRow, ctx: ConversionCtx): number {
   const raw = movementDisplayAmount(m);
   const accountId = movementDisplayAccountId(m);
   const currency = accountId ? ctx.accountCurrencyMap.get(accountId) : undefined;
-  return convertAmt(raw, currency, ctx.displayCurrency, ctx.exchangeRateMap);
+  return convertAmt(raw, currency, ctx.displayCurrency, ctx.exchangeRateMap, ctx.baseCurrency) ?? 0;
 }

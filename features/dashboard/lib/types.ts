@@ -4,6 +4,8 @@ export type ConversionCtx = {
   accountCurrencyMap: Map<number, string>;
   exchangeRateMap: Map<string, number>;
   displayCurrency: string;
+  /** Moneda base del workspace: habilita el puente de conversión vía base. */
+  baseCurrency: string;
 };
 
 export type DashboardChartDay = {

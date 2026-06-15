@@ -82,6 +82,7 @@ function ctxOf(displayCurrency = "PEN"): ConversionCtx {
     accountCurrencyMap: new Map<number, string>(),
     exchangeRateMap: new Map<string, number>(),
     displayCurrency,
+    baseCurrency: "PEN",
   };
 }
 

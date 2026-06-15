@@ -41,6 +41,7 @@ type ProCommandCenterProps = {
   }>;
   recurringIncome: Array<{ id: number; name: string; amount: number; currencyCode: string; nextExpectedDate: string; status: string }>;
   displayCurrency: string;
+  baseCurrency: string;
   exchangeRateMap: Map<string, number>;
   currentVisibleBalance: number;
   router: ReturnType<typeof useRouter>;
@@ -53,6 +54,7 @@ export function ProCommandCenter({
   subscriptions,
   recurringIncome,
   displayCurrency,
+  baseCurrency,
   exchangeRateMap,
   currentVisibleBalance,
   router,
@@ -60,20 +62,20 @@ export function ProCommandCenter({
 }: ProCommandCenterProps) {
   const review = useMemo(() => buildReviewInboxSnapshot(movements, subscriptions, obligations), [movements, obligations, subscriptions]);
   const windows = useMemo(
-    () => buildFutureFlowWindows(obligations, subscriptions, recurringIncome, displayCurrency, exchangeRateMap, currentVisibleBalance),
-    [currentVisibleBalance, displayCurrency, exchangeRateMap, obligations, recurringIncome, subscriptions],
+    () => buildFutureFlowWindows(obligations, subscriptions, recurringIncome, displayCurrency, exchangeRateMap, currentVisibleBalance, baseCurrency),
+    [baseCurrency, currentVisibleBalance, displayCurrency, exchangeRateMap, obligations, recurringIncome, subscriptions],
   );
   const monthToDate = useMemo(() => {
     const now = new Date();
     const start = startOfMonth(now);
     const income = movements
       .filter((movement) => inRange(movement, start, now) && isIncome(movement))
-      .reduce((sum, movement) => sum + incomeAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency }), 0);
+      .reduce((sum, movement) => sum + incomeAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency, baseCurrency }), 0);
     const expense = movements
       .filter((movement) => inRange(movement, start, now) && isExpense(movement))
-      .reduce((sum, movement) => sum + expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency }), 0);
+      .reduce((sum, movement) => sum + expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency, baseCurrency }), 0);
     return { net: income - expense, daysElapsed: Math.max(1, differenceInDays(now, start) + 1) };
-  }, [accountCurrencyMap, displayCurrency, exchangeRateMap, movements]);
+  }, [accountCurrencyMap, baseCurrency, displayCurrency, exchangeRateMap, movements]);
   const monthRecurringIncomeProjection = useMemo(() => {
     const now = new Date();
     const monthEnd = endOfMonth(now);
@@ -82,9 +84,9 @@ export function ProCommandCenter({
       .reduce((sum, income) => {
         const expectedDate = parseDisplayDate(income.nextExpectedDate);
         if (expectedDate < now || expectedDate > monthEnd) return sum;
-        return sum + convertDashboardCurrency(income.amount, income.currencyCode, displayCurrency, exchangeRateMap);
+        return sum + (convertDashboardCurrency(income.amount, income.currencyCode, displayCurrency, exchangeRateMap, baseCurrency) ?? 0);
       }, 0);
-  }, [displayCurrency, exchangeRateMap, recurringIncome]);
+  }, [baseCurrency, displayCurrency, exchangeRateMap, recurringIncome]);
   const daysInMonth = differenceInDays(endOfMonth(new Date()), startOfMonth(new Date())) + 1;
   const monthEndEstimate =
     currentVisibleBalance +

@@ -560,8 +560,7 @@ function DashboardScreen() {
     for (const s of snapshot?.subscriptions ?? []) all.add(s.currencyCode.toUpperCase());
     return Array.from(all).filter((c) =>
       c === baseCurrency.toUpperCase() ||
-      resolveRate(exchangeRateMap, baseCurrency.toUpperCase(), c) !== 1 ||
-      c === baseCurrency.toUpperCase(),
+      resolveRate(exchangeRateMap, baseCurrency.toUpperCase(), c, baseCurrency) !== null,
     );
   }, [baseCurrency, exchangeRateMap, snapshot, obligationsMerged]);
 
@@ -585,8 +584,8 @@ function DashboardScreen() {
 
   // Conversion context passed to all amount functions
   const conversionCtx = useMemo<ConversionCtx>(
-    () => ({ accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }),
-    [accountCurrencyMap, exchangeRateMap, activeCurrency],
+    () => ({ accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency }),
+    [accountCurrencyMap, exchangeRateMap, activeCurrency, baseCurrency],
   );
 
   // Net worth: sum balances converted to display currency
@@ -596,7 +595,7 @@ function DashboardScreen() {
       .filter((a) => a.includeInNetWorth && !a.isArchived)
       .reduce((sum, a) => {
         const amt = a.currentBalanceInBaseCurrency ?? a.currentBalance;
-        return sum + convertAmt(amt, baseCurrency, activeCurrency, exchangeRateMap);
+        return sum + (convertAmt(amt, baseCurrency, activeCurrency, exchangeRateMap, baseCurrency) ?? 0);
       }, 0);
   }, [snapshot, baseCurrency, activeCurrency, exchangeRateMap]);
 

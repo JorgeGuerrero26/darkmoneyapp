@@ -80,33 +80,40 @@ function multiCurrencyCtx(displayCurrency = "USD"): ConversionCtx {
       ["USD:PEN", 3.7],
     ]),
     displayCurrency,
+    baseCurrency: "PEN",
   };
 }
 
 function runConvertAmtSameCurrency() {
   const map = new Map<string, number>([["PEN:USD", 0.27]]);
-  const result = convertAmt(100, "USD", "USD", map);
+  const result = convertAmt(100, "USD", "USD", map, "PEN");
   assert(result === 100, `mismo currency: esperado 100, recibido ${result}`);
 }
 
 function runConvertAmtDirectRate() {
   const map = new Map<string, number>([["PEN:USD", 0.27]]);
-  const result = convertAmt(100, "PEN", "USD", map);
-  assert(approxEqual(result, 27), `100 PEN → USD esperado 27, recibido ${result}`);
+  const result = convertAmt(100, "PEN", "USD", map, "PEN");
+  assert(approxEqual(result ?? Number.NaN, 27), `100 PEN → USD esperado 27, recibido ${result}`);
 }
 
 function runConvertAmtInverseRate() {
   // Solo existe PEN/USD, pero queremos convertir USD→PEN (inversa)
   const map = new Map<string, number>([["PEN:USD", 0.27]]);
-  const result = convertAmt(100, "USD", "PEN", map);
+  const result = convertAmt(100, "USD", "PEN", map, "PEN");
   // Debe usar 1/0.27 ≈ 3.7037
-  assert(approxEqual(result, 100 / 0.27, 0.1), `100 USD → PEN esperado ~370, recibido ${result}`);
+  assert(approxEqual(result ?? Number.NaN, 100 / 0.27, 0.1), `100 USD → PEN esperado ~370, recibido ${result}`);
 }
 
 function runConvertAmtMissingFromCurrency() {
   const map = new Map<string, number>();
-  const result = convertAmt(100, null, "USD", map);
+  const result = convertAmt(100, null, "USD", map, "USD");
   assert(result === 100, "currency null debe retornar el monto sin convertir");
+}
+
+function runConvertAmtMissingRateReturnsNull() {
+  const map = new Map<string, number>();
+  const result = convertAmt(100, "JPY", "USD", map, "USD");
+  assert(result === null, "sin tasa posible debe retornar null, nunca 1:1 silencioso");
 }
 
 function runPeriodTotalsMultiCurrency() {
@@ -175,11 +182,12 @@ function runCategoryTotalsMultiCurrency() {
 
 function runMissingRateFallback() {
   // Una cuenta con currency desconocido (CLP) y display=USD pero sin tasa CLP/USD.
-  // El comportamiento esperado: retornar el monto sin convertir (no NaN, no crash).
+  // Contrato nuevo: el monto NO convertible suma 0 (nunca 1:1 silencioso).
   const ctx: ConversionCtx = {
     accountCurrencyMap: new Map<number, string>([[1, "CLP"]]),
     exchangeRateMap: new Map<string, number>([["PEN:USD", 0.27]]),
     displayCurrency: "USD",
+    baseCurrency: "PEN",
   };
   const movements: Movement[] = [expense(1, 1000, "2026-05-10T10:00:00Z", 1)];
   const index = buildMovementsIndex(movements as never);
@@ -190,6 +198,7 @@ function runMissingRateFallback() {
     ctx,
   );
   assert(Number.isFinite(totals.expense), `expense debe ser finito, recibido ${totals.expense}`);
+  assert(totals.expense === 0, `sin tasa CLP→USD el gasto debe sumar 0, recibido ${totals.expense}`);
 }
 
 function main() {
@@ -198,6 +207,7 @@ function main() {
     ["convertAmt tasa directa", runConvertAmtDirectRate],
     ["convertAmt tasa inversa", runConvertAmtInverseRate],
     ["convertAmt currency null", runConvertAmtMissingFromCurrency],
+    ["convertAmt sin tasa → null", runConvertAmtMissingRateReturnsNull],
     ["periodTotals multi-currency display USD", runPeriodTotalsMultiCurrency],
     ["periodTotals switch display currency", runPeriodTotalsSwitchDisplayCurrency],
     ["categoryTotals multi-currency", runCategoryTotalsMultiCurrency],

@@ -176,13 +176,19 @@ function runExchangeRateAndConvert() {
   ];
   const map = buildExchangeRateMap(rates as never);
   assert(map.size === 2, "map debe tener 2 rates");
-  assert(resolveRate(map, "USD", "PEN") === 3.75, "USD→PEN directo");
-  assert(approx(resolveRate(map, "PEN", "USD"), 1 / 3.75), "PEN→USD via inversa");
-  assert(resolveRate(map, "PEN", "PEN") === 1, "misma moneda → 1");
-  assert(resolveRate(map, "JPY", "PEN") === 1, "rate no encontrada → 1 (fallback)");
+  assert(resolveRate(map, "USD", "PEN", "PEN") === 3.75, "USD→PEN directo");
+  assert(approx(resolveRate(map, "PEN", "USD", "PEN") ?? Number.NaN, 1 / 3.75), "PEN→USD via inversa");
+  assert(resolveRate(map, "PEN", "PEN", "PEN") === 1, "misma moneda → 1");
+  assert(resolveRate(map, "JPY", "PEN", "PEN") === null, "rate no encontrada → null (sin fallback 1)");
+  // Puente vía base: EUR→USD no existe directo, pero EUR→PEN y USD→PEN sí (PEN = base).
+  assert(
+    approx(resolveRate(map, "EUR", "USD", "PEN") ?? Number.NaN, 4.1 * (1 / 3.75)),
+    "EUR→USD vía puente por moneda base",
+  );
 
-  assert(convertAmt(100, "USD", "PEN", map) === 375, "convert 100 USD → 375 PEN");
-  assert(convertAmt(100, null, "PEN", map) === 100, "fromCurrency null → mantener monto");
+  assert(convertAmt(100, "USD", "PEN", map, "PEN") === 375, "convert 100 USD → 375 PEN");
+  assert(convertAmt(100, null, "PEN", map, "PEN") === 100, "fromCurrency null → mantener monto");
+  assert(convertAmt(100, "JPY", "PEN", map, "PEN") === null, "sin tasa → null");
 }
 
 function runIncomeExpenseTransferAmt() {
@@ -190,6 +196,7 @@ function runIncomeExpenseTransferAmt() {
     accountCurrencyMap: new Map<number, string>([[1, "PEN"], [2, "USD"]]),
     exchangeRateMap: buildExchangeRateMap([{ fromCurrencyCode: "USD", toCurrencyCode: "PEN", rate: 3.75 }] as never),
     displayCurrency: "PEN",
+    baseCurrency: "PEN",
   };
   const m = income(1, 100, "2026-05-01");
   assert(incomeAmt(m as never, ctx) === 100, "income en cuenta PEN → 100 PEN");

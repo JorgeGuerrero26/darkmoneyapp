@@ -51,8 +51,9 @@ function expense(id: number, amount: number, occurredAt: string, categoryId: num
 
 function runConvertDashboardCurrency() {
   const map = buildExchangeRateMap([{ fromCurrencyCode: "USD", toCurrencyCode: "PEN", rate: 3.75 }] as never);
-  assert(convertDashboardCurrency(100, "USD", "PEN", map) === 375, "USD→PEN 100→375");
-  assert(convertDashboardCurrency(100, "PEN", "PEN", map) === 100, "misma moneda no convierte");
+  assert(convertDashboardCurrency(100, "USD", "PEN", map, "PEN") === 375, "USD→PEN 100→375");
+  assert(convertDashboardCurrency(100, "PEN", "PEN", map, "PEN") === 100, "misma moneda no convierte");
+  assert(convertDashboardCurrency(100, "JPY", "PEN", map, "PEN") === null, "sin tasa → null");
 }
 
 function runReviewInboxEmpty() {
