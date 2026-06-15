@@ -17,7 +17,7 @@
     "test:parity": "tsc -p tsconfig.parity-tests.json && node .tmp/parity-tests/tests/parity/parity-smoke.js"
   },
   "dependencies": {
-    "@darkmoney/shared": "file:../DarkMoneyShared",
+    "@darkmoney/shared": "github:JorgeGuerrero26/darkmoneyshare",
     "@expo-google-fonts/manrope": "^0.4.2",
     "@expo-google-fonts/outfit": "^0.4.3",
     "@react-native-async-storage/async-storage": "2.2.0",
