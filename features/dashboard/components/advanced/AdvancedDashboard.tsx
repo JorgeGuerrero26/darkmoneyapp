@@ -1357,12 +1357,25 @@ export function AdvancedDashboard({
   );
 
   // Inputs unificados de salud financiera (mismo contrato que web vía buildHealthScore).
-  // liquidMoney: el móvil no clasifica cuentas por tipo aquí, así que usa el balance
-  // visible como "dinero disponible". averageMonthlyExpense: promedio de gasto de los
-  // 6 meses de monthlyPulse (estable). periodIncome/periodNet: mes a la fecha (mismo
-  // período que la web). totalPayable/overdueCount: obligaciones payable activas.
+  // liquidMoney: solo dinero líquido (cash/bank/savings) no archivado, convertido a la
+  // moneda activa — paridad con la web (liquidAccountTypes). averageMonthlyExpense:
+  // promedio de gasto de los 6 meses de monthlyPulse (estable). periodIncome/periodNet:
+  // mes a la fecha (mismo período que la web). totalPayable/overdueCount: payable activas.
   const healthInputs = useMemo(() => {
     const now = new Date();
+    const liquidAccountTypes = new Set(["cash", "bank", "savings"]);
+    type LiquidAccount = {
+      type: string;
+      isArchived: boolean;
+      currentBalance: number;
+      currentBalanceInBaseCurrency?: number | null;
+    };
+    const liquidMoney = ((snapshot?.accounts ?? []) as LiquidAccount[])
+      .filter((a) => liquidAccountTypes.has(a.type) && !a.isArchived)
+      .reduce((sum: number, a: LiquidAccount) => {
+        const raw = a.currentBalanceInBaseCurrency ?? a.currentBalance;
+        return sum + (convertDashboardCurrency(raw, baseCurrency, activeCurrency, exchangeRateMap, baseCurrency) ?? 0);
+      }, 0);
     const expenses = advancedStats.monthlyPulse.map((m) => m.expense);
     const averageMonthlyExpense =
       expenses.length > 0 ? expenses.reduce((s, v) => s + v, 0) / expenses.length : 0;
@@ -1374,14 +1387,14 @@ export function AdvancedDashboard({
       if (o.dueDate && new Date(o.dueDate) < now) overdueCount += 1;
     }
     return {
-      liquidMoney: currentVisibleBalance,
+      liquidMoney,
       averageMonthlyExpense,
       periodIncome: monthToDate.income,
       periodNet: monthToDate.income - monthToDate.expense,
       totalPayable,
       overdueCount,
     };
-  }, [advancedStats.monthlyPulse, currentVisibleBalance, monthToDate.expense, monthToDate.income, obligationsForHealth]);
+  }, [activeCurrency, advancedStats.monthlyPulse, baseCurrency, exchangeRateMap, monthToDate.expense, monthToDate.income, obligationsForHealth, snapshot?.accounts]);
 
   // SubscriptionsSummary suma mensualidades: convertir monto y reflejar la moneda activa.
   const subscriptionsForSummary = useMemo(
