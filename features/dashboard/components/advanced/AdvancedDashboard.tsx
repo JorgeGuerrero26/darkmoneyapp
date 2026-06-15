@@ -61,6 +61,7 @@ import { clusterHistoryMonths } from "../../../../services/analytics/month-clust
 import { detectHistoryChangePoint } from "../../../../services/analytics/history-change-points";
 import { findProbableDuplicateGroups } from "../../../../services/analytics/duplicate-detection";
 import {
+  useDashboardYearMovementsQuery,
   usePersistDashboardAnalyticsMutation,
   usePersistLearningFeedbackMutation,
   useUpdateMovementMutation,
@@ -206,9 +207,11 @@ export function AdvancedDashboard({
     accountCurrencyMap,
     exchangeRateMap,
     displayCurrency: activeCurrency,
+    baseCurrency,
   });
   const historyYears = useMemo(() => {
-    const years = new Set<number>([new Date().getFullYear()]);
+    // El historial anual tiene su propia query (24 meses); ofrecer siempre el año previo.
+    const years = new Set<number>([new Date().getFullYear(), new Date().getFullYear() - 1]);
     for (const movement of movements) {
       const year = new Date(movement.occurredAt).getFullYear();
       if (Number.isFinite(year)) years.add(year);
@@ -216,6 +219,10 @@ export function AdvancedDashboard({
     return Array.from(years).sort((a, b) => b - a);
   }, [movements]);
   const [selectedHistoryYear, setSelectedHistoryYear] = useState(new Date().getFullYear());
+  // La query base del dashboard trae solo 90 días; el historial anual, los factores
+  // y la comparación estacional necesitan el año completo + año anterior.
+  const yearMovementsQuery = useDashboardYearMovementsQuery(workspaceId, selectedHistoryYear);
+  const historyMovements = yearMovementsQuery.data ?? movements;
   const [selectedAnnualMonth, setSelectedAnnualMonth] = useState<AnnualHistoryMonth | null>(null);
   useEffect(() => {
     if (!historyYears.includes(selectedHistoryYear) && historyYears.length > 0) {
@@ -231,9 +238,9 @@ export function AdvancedDashboard({
       const monthEnd = endOfMonth(monthDate);
       const cappedEnd = selectedHistoryYear === now.getFullYear() && monthIndex === now.getMonth() ? now : monthEnd;
       const isFuture = monthStart > now;
-      const monthMovements = isFuture ? [] : movements.filter((movement) => inRange(movement, monthStart, cappedEnd));
-      const income = monthMovements.filter(isIncome).reduce((sum, movement) => sum + incomeAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }), 0);
-      const expense = monthMovements.filter(isExpense).reduce((sum, movement) => sum + expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }), 0);
+      const monthMovements = isFuture ? [] : historyMovements.filter((movement) => inRange(movement, monthStart, cappedEnd));
+      const income = monthMovements.filter(isIncome).reduce((sum, movement) => sum + incomeAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency }), 0);
+      const expense = monthMovements.filter(isExpense).reduce((sum, movement) => sum + expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency }), 0);
       const net = income - expense;
       if (!isFuture) cumulativeNet += net;
       return {
@@ -247,7 +254,7 @@ export function AdvancedDashboard({
         isFuture,
       };
     });
-  }, [accountCurrencyMap, activeCurrency, exchangeRateMap, movements, selectedHistoryYear]);
+  }, [accountCurrencyMap, activeCurrency, baseCurrency, exchangeRateMap, historyMovements, selectedHistoryYear]);
   const historyChangePoint = useMemo(
     () => detectHistoryChangePoint(annualHistory),
     [annualHistory],
@@ -258,16 +265,16 @@ export function AdvancedDashboard({
   );
   const review = useMemo(() => buildReviewInboxSnapshot(movements, subscriptions, obligations), [movements, obligations, subscriptions]);
   const windows = useMemo(
-    () => buildFutureFlowWindows(obligations, subscriptions, recurringIncome, activeCurrency, exchangeRateMap, currentVisibleBalance),
-    [activeCurrency, currentVisibleBalance, exchangeRateMap, obligations, recurringIncome, subscriptions],
+    () => buildFutureFlowWindows(obligations, subscriptions, recurringIncome, activeCurrency, exchangeRateMap, currentVisibleBalance, baseCurrency),
+    [activeCurrency, baseCurrency, currentVisibleBalance, exchangeRateMap, obligations, recurringIncome, subscriptions],
   );
   const weekWindow = windows[0];
 
   const monthToDate = useMemo(() => {
     const now = new Date();
     const start = startOfMonth(now);
-    const income = movements.filter((movement) => inRange(movement, start, now) && isIncome(movement)).reduce((sum, movement) => sum + incomeAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }), 0);
-    const expense = movements.filter((movement) => inRange(movement, start, now) && isExpense(movement)).reduce((sum, movement) => sum + expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }), 0);
+    const income = movements.filter((movement) => inRange(movement, start, now) && isIncome(movement)).reduce((sum, movement) => sum + incomeAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency }), 0);
+    const expense = movements.filter((movement) => inRange(movement, start, now) && isExpense(movement)).reduce((sum, movement) => sum + expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency }), 0);
     return { income, expense, net: income - expense, daysElapsed: Math.max(1, differenceInDays(now, start) + 1) };
   }, [accountCurrencyMap, activeCurrency, exchangeRateMap, movements]);
 
@@ -279,9 +286,9 @@ export function AdvancedDashboard({
       .reduce((sum, income) => {
         const expectedDate = parseDisplayDate(income.nextExpectedDate);
         if (expectedDate < now || expectedDate > monthEnd) return sum;
-        return sum + convertDashboardCurrency(income.amount, income.currencyCode, activeCurrency, exchangeRateMap);
+        return sum + (convertDashboardCurrency(income.amount, income.currencyCode, activeCurrency, exchangeRateMap, baseCurrency) ?? 0);
       }, 0);
-  }, [activeCurrency, exchangeRateMap, recurringIncome]);
+  }, [activeCurrency, baseCurrency, exchangeRateMap, recurringIncome]);
 
   // A3: Cash Cushion — días de caja libre al ritmo actual
   const cashCushion = useMemo(() => {
@@ -289,7 +296,7 @@ export function AdvancedDashboard({
     const thirtyDaysAgo = subDays(now, 29);
     const totalExpenses30d = movements
       .filter((m) => isExpense(m) && inRange(m, thirtyDaysAgo, now))
-      .reduce((sum, m) => sum + expenseAmt(m, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }), 0);
+      .reduce((sum, m) => sum + expenseAmt(m, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency }), 0);
     const dailyBurn = totalExpenses30d / 30;
     const days = Math.round(currentVisibleBalance / Math.max(dailyBurn, 1));
     const adjustedDailyBurn = dailyBurn + (windows[2]?.expectedOutflow ?? 0) / 30;
@@ -306,7 +313,7 @@ export function AdvancedDashboard({
     for (const m of movements.filter(isExpense)) {
       const weeksAgo = Math.floor(differenceInDays(now, new Date(m.occurredAt)) / 7);
       if (weeksAgo >= 0 && weeksAgo < 12) {
-        weekBuckets[11 - weeksAgo] += expenseAmt(m, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency });
+        weekBuckets[11 - weeksAgo] += expenseAmt(m, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency });
       }
     }
     const alpha = 0.35;
@@ -343,7 +350,7 @@ export function AdvancedDashboard({
 
   const historyFactorAnalysis = useMemo(() => {
     const now = new Date();
-    const ctx = { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency };
+    const ctx = { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency };
     const months = Array.from({ length: 12 }, (_, monthIndex) => {
       const monthDate = new Date(selectedHistoryYear, monthIndex, 1);
       const monthStart = startOfMonth(monthDate);
@@ -352,7 +359,7 @@ export function AdvancedDashboard({
       const isFuture = monthStart > now;
       const totals = new Map<number | null, number>();
       if (!isFuture) {
-        for (const movement of movements.filter((item) => isExpense(item) && inRange(item, monthStart, cappedEnd))) {
+        for (const movement of historyMovements.filter((item) => isExpense(item) && inRange(item, monthStart, cappedEnd))) {
           const key = movement.categoryId ?? null;
           totals.set(key, (totals.get(key) ?? 0) + expenseAmt(movement, ctx));
         }
@@ -370,17 +377,17 @@ export function AdvancedDashboard({
       };
     });
     return buildHistoryFactorAnalysis({ months });
-  }, [accountCurrencyMap, activeCurrency, categoryMap, exchangeRateMap, movements, selectedHistoryYear]);
+  }, [accountCurrencyMap, activeCurrency, baseCurrency, categoryMap, exchangeRateMap, historyMovements, selectedHistoryYear]);
 
   const historyReadiness = useMemo(() => {
     const observedMonths = annualHistory.filter((month) => !month.isFuture && (month.income > 0.009 || month.expense > 0.009)).length;
     const yearStart = startOfDay(new Date(selectedHistoryYear, 0, 1));
     const yearEnd = endOfDay(new Date(selectedHistoryYear, 11, 31));
-    const yearMovements = movements.filter((movement) => movement.status === "posted" && inRange(movement, yearStart, yearEnd));
+    const yearMovements = historyMovements.filter((movement) => movement.status === "posted" && inRange(movement, yearStart, yearEnd));
     const expenseCategoryIds = new Set(
       yearMovements
         .filter(isExpense)
-        .filter((movement) => expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }) > 0.009)
+        .filter((movement) => expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency }) > 0.009)
         .map((movement) => movement.categoryId ?? null),
     );
     return {
@@ -389,14 +396,14 @@ export function AdvancedDashboard({
       expenseCategoryCount: expenseCategoryIds.size,
       allReady: observedMonths >= 6 && expenseCategoryIds.size >= 2 && yearMovements.length >= 8,
     };
-  }, [accountCurrencyMap, activeCurrency, annualHistory, exchangeRateMap, movements, selectedHistoryYear]);
+  }, [accountCurrencyMap, activeCurrency, annualHistory, baseCurrency, exchangeRateMap, historyMovements, selectedHistoryYear]);
 
   const selectedAnnualMonthDetail = useMemo(() => {
     if (!selectedAnnualMonth) return null;
     const from = startOfDay(parseDisplayDate(selectedAnnualMonth.dateFrom));
     const to = endOfDay(parseDisplayDate(selectedAnnualMonth.dateTo));
-    const monthMovements = movements.filter((movement) => inRange(movement, from, to));
-    const ctx = { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency };
+    const monthMovements = historyMovements.filter((movement) => inRange(movement, from, to));
+    const ctx = { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency };
     const categoryTotals = new Map<number | null, number>();
 
     for (const movement of monthMovements.filter(isExpense)) {
@@ -445,7 +452,7 @@ export function AdvancedDashboard({
       savingsRate,
       prevMonth,
     };
-  }, [accountCurrencyMap, accountMap, activeCurrency, annualHistory, categoryMap, exchangeRateMap, movements, selectedAnnualMonth]);
+  }, [accountCurrencyMap, accountMap, activeCurrency, annualHistory, baseCurrency, categoryMap, exchangeRateMap, historyMovements, selectedAnnualMonth]);
 
   const monthlySavingsRate = useMemo(() => {
     const now = new Date();
@@ -454,8 +461,8 @@ export function AdvancedDashboard({
       const mStart = startOfMonth(mDate);
       const mEnd = i === 5 ? now : endOfMonth(mDate);
       const mMvs = movements.filter((m) => inRange(m, mStart, mEnd));
-      const inc = mMvs.filter(isIncome).reduce((s, m) => s + incomeAmt(m, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }), 0);
-      const exp = mMvs.filter(isExpense).reduce((s, m) => s + expenseAmt(m, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }), 0);
+      const inc = mMvs.filter(isIncome).reduce((s, m) => s + incomeAmt(m, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency }), 0);
+      const exp = mMvs.filter(isExpense).reduce((s, m) => s + expenseAmt(m, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency }), 0);
       const rate = inc > 0 ? ((inc - exp) / inc) * 100 : null;
       return { label: format(mDate, "MMM", { locale: es }), income: inc, expense: exp, rate };
     });
@@ -531,9 +538,9 @@ export function AdvancedDashboard({
     const curEnd = now;
     const prevYearStart = startOfMonth(subMonths(now, 12));
     const prevYearEnd = endOfMonth(subMonths(now, 12));
-    const ctx = { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency };
-    const curMvs = movements.filter((m) => inRange(m, curStart, curEnd));
-    const prevMvs = movements.filter((m) => inRange(m, prevYearStart, prevYearEnd));
+    const ctx = { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency };
+    const curMvs = historyMovements.filter((m) => inRange(m, curStart, curEnd));
+    const prevMvs = historyMovements.filter((m) => inRange(m, prevYearStart, prevYearEnd));
     const curIncome = curMvs.filter(isIncome).reduce((s, m) => s + incomeAmt(m, ctx), 0);
     const curExpense = curMvs.filter(isExpense).reduce((s, m) => s + expenseAmt(m, ctx), 0);
     const prevIncome = prevMvs.filter(isIncome).reduce((s, m) => s + incomeAmt(m, ctx), 0);
@@ -547,7 +554,7 @@ export function AdvancedDashboard({
       : `-> similar al año pasado`;
     const expenseColor = expenseDelta == null ? COLORS.storm : expenseDelta > 10 ? COLORS.expense : expenseDelta < -10 ? COLORS.income : COLORS.storm;
     return { hasHistory, curIncome, curExpense, prevIncome, prevExpense, expenseDelta, incomeDelta, expenseLabel, expenseColor };
-  }, [accountCurrencyMap, activeCurrency, exchangeRateMap, movements]);
+  }, [accountCurrencyMap, activeCurrency, baseCurrency, exchangeRateMap, historyMovements]);
 
   // U1: review de la semana anterior para mostrar delta en Executive Summary
   const priorWeekReview = useMemo(() => {
@@ -573,7 +580,7 @@ export function AdvancedDashboard({
   const anomalySignals = useMemo(
     () => buildAnomalyFindings(
       movements,
-      { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency },
+      { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency },
       categoryMap,
       accountMap,
     ),
@@ -582,7 +589,7 @@ export function AdvancedDashboard({
 
   const repeatedPatterns = useMemo(() => {
     const now = new Date();
-    const ctx = { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency };
+    const ctx = { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency };
     return buildPatternClusters<DashboardMovementRow>({
       movements,
       isCashflow: isCategorizedCashflow,
@@ -605,7 +612,7 @@ export function AdvancedDashboard({
     const currentStart = subDays(now, 13);
     const previousStart = subDays(now, 27);
     const previousEnd = subDays(now, 14);
-    const ctx = { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency };
+    const ctx = { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency };
     const currentTotals = new Map<number | null, number>();
     const previousTotals = new Map<number | null, number>();
     const currentMovementIds = new Map<number | null, number[]>();
@@ -665,8 +672,8 @@ export function AdvancedDashboard({
         }
         if (!signal.suggestedCategoryId || !signal.suggestedCategoryConfidence) return null;
         const amount = movementActsAsIncome(movement)
-          ? incomeAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency })
-          : expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency });
+          ? incomeAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency })
+          : expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency });
         return {
           movementId: movement.id,
           description: movement.description.trim() || "Movimiento sin descripción",
@@ -693,7 +700,7 @@ export function AdvancedDashboard({
       movements,
       analytics?.learningFeedback ?? [],
       categoryMap,
-      { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency },
+      { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency },
     )
   ), [accountCurrencyMap, activeCurrency, analytics?.learningFeedback, categoryMap, exchangeRateMap, movements]);
 
@@ -838,10 +845,10 @@ export function AdvancedDashboard({
   const openFlowVariableMovementsPreview = useCallback(() => {
     const income = currentMonthVariableMovements
       .filter((movement) => movementActsAsIncome(movement))
-      .reduce((sum, movement) => sum + incomeAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }), 0);
+      .reduce((sum, movement) => sum + incomeAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency }), 0);
     const expense = currentMonthVariableMovements
       .filter((movement) => movementActsAsExpense(movement))
-      .reduce((sum, movement) => sum + expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }), 0);
+      .reduce((sum, movement) => sum + expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency }), 0);
     openMovementPreview({
       title: "Ritmo variable del mes",
       subtitle: `${currentMonthVariableMovements.length} movimiento${currentMonthVariableMovements.length === 1 ? "" : "s"} variable${currentMonthVariableMovements.length === 1 ? "" : "s"} ya registrado${currentMonthVariableMovements.length === 1 ? "" : "s"} este mes. Entran ${formatCurrency(income, activeCurrency)} y salen ${formatCurrency(expense, activeCurrency)}.`,
@@ -903,7 +910,7 @@ export function AdvancedDashboard({
         (categoryId == null ? movement.categoryId == null : movement.categoryId === categoryId)
       ),
     );
-    const total = categoryMovements.reduce((sum, movement) => sum + expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }), 0);
+    const total = categoryMovements.reduce((sum, movement) => sum + expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency }), 0);
     openMovementPreview({
       title: categoryName,
       subtitle: `${categoryMovements.length} gasto${categoryMovements.length === 1 ? "" : "s"} del mes suman ${formatCurrency(total, activeCurrency)} en esta categoría.`,
@@ -946,10 +953,10 @@ export function AdvancedDashboard({
       }),
     );
     const total = nodeMovements.reduce((sum, movement) => {
-      if (isTransfer(movement)) return sum + transferAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency });
+      if (isTransfer(movement)) return sum + transferAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency });
       return sum + (movementActsAsIncome(movement)
-        ? incomeAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency })
-        : expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }));
+        ? incomeAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency })
+        : expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency }));
     }, 0);
 
     const kindLabel =
@@ -1032,10 +1039,10 @@ export function AdvancedDashboard({
     );
     const income = rangeMovements
       .filter((movement) => movementActsAsIncome(movement))
-      .reduce((sum, movement) => sum + incomeAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }), 0);
+      .reduce((sum, movement) => sum + incomeAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency }), 0);
     const expense = rangeMovements
       .filter((movement) => movementActsAsExpense(movement))
-      .reduce((sum, movement) => sum + expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }), 0);
+      .reduce((sum, movement) => sum + expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency }), 0);
     const rangeLabel = `${format(from, "d MMM", { locale: es })} - ${format(to, "d MMM yyyy", { locale: es })}`;
     const defaultTitle = kind === "income"
       ? "Ingresos del periodo"
@@ -1253,6 +1260,7 @@ export function AdvancedDashboard({
       accountCurrencyMap,
       exchangeRateMap,
       displayCurrency: activeCurrency,
+      baseCurrency,
     });
     const seen = new Set<number>();
     return [...learningFeedbackCategorySuggestions, ...persistedCategorySuggestions, ...generated]
@@ -1284,6 +1292,7 @@ export function AdvancedDashboard({
         accountCurrencyMap,
         exchangeRateMap,
         displayCurrency: activeCurrency,
+        baseCurrency,
       },
     );
   }, [
@@ -1307,7 +1316,8 @@ export function AdvancedDashboard({
           id: obligation.id,
           title: obligation.title,
           direction: obligation.direction,
-          amount: convertDashboardCurrency(rawAmount, obligation.currencyCode, activeCurrency, exchangeRateMap),
+          amount:
+            convertDashboardCurrency(rawAmount, obligation.currencyCode, activeCurrency, exchangeRateMap, baseCurrency) ?? 0,
           dueDate: obligation.dueDate,
           status: obligation.status,
           counterparty: obligation.counterparty,
@@ -1328,14 +1338,77 @@ export function AdvancedDashboard({
     weekWindow.expectedOutflow,
   ]);
 
+  // Paridad de moneda: HealthScore suma pendingAmount, así que se convierte ANTES
+  // de pasarlo (montos no convertibles cuentan como 0, nunca 1:1 silencioso).
+  const obligationsForHealth = useMemo(
+    () =>
+      obligations.map((obligation) => ({
+        ...obligation,
+        pendingAmount:
+          convertDashboardCurrency(
+            obligation.pendingAmount,
+            obligation.currencyCode,
+            activeCurrency,
+            exchangeRateMap,
+            baseCurrency,
+          ) ?? 0,
+      })),
+    [activeCurrency, baseCurrency, exchangeRateMap, obligations],
+  );
+
+  // Inputs unificados de salud financiera (mismo contrato que web vía buildHealthScore).
+  // liquidMoney: el móvil no clasifica cuentas por tipo aquí, así que usa el balance
+  // visible como "dinero disponible". averageMonthlyExpense: promedio de gasto de los
+  // 6 meses de monthlyPulse (estable). periodIncome/periodNet: mes a la fecha (mismo
+  // período que la web). totalPayable/overdueCount: obligaciones payable activas.
+  const healthInputs = useMemo(() => {
+    const now = new Date();
+    const expenses = advancedStats.monthlyPulse.map((m) => m.expense);
+    const averageMonthlyExpense =
+      expenses.length > 0 ? expenses.reduce((s, v) => s + v, 0) / expenses.length : 0;
+    let totalPayable = 0;
+    let overdueCount = 0;
+    for (const o of obligationsForHealth) {
+      if (o.direction !== "payable" || o.status !== "active") continue;
+      totalPayable += o.pendingAmount;
+      if (o.dueDate && new Date(o.dueDate) < now) overdueCount += 1;
+    }
+    return {
+      liquidMoney: currentVisibleBalance,
+      averageMonthlyExpense,
+      periodIncome: monthToDate.income,
+      periodNet: monthToDate.income - monthToDate.expense,
+      totalPayable,
+      overdueCount,
+    };
+  }, [advancedStats.monthlyPulse, currentVisibleBalance, monthToDate.expense, monthToDate.income, obligationsForHealth]);
+
+  // SubscriptionsSummary suma mensualidades: convertir monto y reflejar la moneda activa.
+  const subscriptionsForSummary = useMemo(
+    () =>
+      subscriptions.map((subscription) => ({
+        ...subscription,
+        amount:
+          convertDashboardCurrency(
+            subscription.amount,
+            subscription.currencyCode,
+            activeCurrency,
+            exchangeRateMap,
+            baseCurrency,
+          ) ?? 0,
+        currencyCode: activeCurrency,
+      })),
+    [activeCurrency, baseCurrency, exchangeRateMap, subscriptions],
+  );
+
   const financialGraphRank = useMemo(() => (
     buildFinancialGraphRank<DashboardMovementRow>({
       movements: movements.filter((movement) => movement.status === "posted"),
       getAmount: (movement) => {
-        if (isTransfer(movement)) return transferAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency });
+        if (isTransfer(movement)) return transferAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency });
         return movementActsAsIncome(movement)
-          ? incomeAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency })
-          : expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency });
+          ? incomeAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency })
+          : expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency });
       },
       getAccountIds: (movement) => [movement.sourceAccountId, movement.destinationAccountId],
       getCategoryId: (movement) => isCategorizedCashflow(movement) ? movement.categoryId ?? null : null,
@@ -1481,7 +1554,7 @@ export function AdvancedDashboard({
     for (const movement of movements.filter(isExpense)) {
       const day = getDay(new Date(movement.occurredAt));
       const normalized = day === 0 ? 6 : day - 1;
-      totals[normalized] += expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency });
+      totals[normalized] += expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency });
     }
     const totalSpent = totals.reduce((sum, value) => sum + value, 0);
     if (totalSpent <= 0) return null;
@@ -1512,10 +1585,11 @@ export function AdvancedDashboard({
       .map((account) => ({
         id: account.id,
         name: account.name,
-        amount: convertDashboardCurrency(account.currentBalance, account.currencyCode, activeCurrency, exchangeRateMap),
+        amount:
+          convertDashboardCurrency(account.currentBalance, account.currencyCode, activeCurrency, exchangeRateMap, baseCurrency) ?? 0,
       }))
       .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
-  ), [activeAccounts, activeCurrency, exchangeRateMap]);
+  ), [activeAccounts, activeCurrency, baseCurrency, exchangeRateMap]);
   const visibleAccountSummary = useMemo(() => {
     if (visibleAccountBreakdown.length === 0) return "No hay cuentas visibles incluidas en esta lectura.";
     const preview = visibleAccountBreakdown
@@ -2623,12 +2697,12 @@ export function AdvancedDashboard({
     if (!movementPreview) return null;
     const total = movementPreview.movements.reduce((sum, movement) => {
       if (movementActsAsIncome(movement)) {
-        return sum + incomeAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency });
+        return sum + incomeAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency });
       }
       if (movementActsAsExpense(movement)) {
-        return sum + expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency });
+        return sum + expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency });
       }
-      return sum + transferAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency });
+      return sum + transferAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency });
     }, 0);
     const pending = movementPreview.movements.filter((movement) => movement.status === "pending" || movement.status === "planned").length;
     const uncategorized = movementPreview.movements.filter((movement) => isCategorizedCashflow(movement) && movement.categoryId == null).length;
@@ -3438,10 +3512,10 @@ export function AdvancedDashboard({
                   const incomeLike = movementActsAsIncome(movement);
                   const expenseLike = movementActsAsExpense(movement);
                   const amount = incomeLike
-                    ? incomeAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency })
+                    ? incomeAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency })
                     : expenseLike
-                      ? expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency })
-                      : transferAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency });
+                      ? expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency })
+                      : transferAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency });
                   const accountId = movementDisplayAccountId(movement);
                   const accountName = accountId ? accountMap.get(accountId) ?? "Cuenta" : "Sin cuenta";
                   const categoryName = movement.categoryId != null ? categoryMap.get(movement.categoryId) ?? "Categoría" : "Sin categoría";
@@ -4010,7 +4084,7 @@ export function AdvancedDashboard({
       <View style={{ height: SPACING.sm }} />
       <WeeklyPattern
         movements={movements}
-        ctx={{ accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }}
+        ctx={{ accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency }}
         onOpenDay={openWeeklyDayPreview}
       />
 
@@ -4107,7 +4181,7 @@ export function AdvancedDashboard({
       <View style={{ height: SPACING.sm }} />
       <AnomalyWatch
         movements={movements}
-        ctx={{ accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }}
+        ctx={{ accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency }}
         categoryMap={categoryMap}
         accountMap={accountMap}
         onExplainPress={() => setAdvancedDetail("review")}
@@ -4332,6 +4406,7 @@ export function AdvancedDashboard({
         subscriptions={subscriptions}
         recurringIncome={recurringIncome}
         displayCurrency={activeCurrency}
+        baseCurrency={baseCurrency}
         exchangeRateMap={exchangeRateMap}
         currentVisibleBalance={currentVisibleBalance}
       />
@@ -4350,21 +4425,22 @@ export function AdvancedDashboard({
       </Card>
       <View style={{ height: SPACING.sm }} />
       <HealthScore
-        netWorth={currentVisibleBalance}
-        income={monthToDate.income}
-        expense={monthToDate.expense}
-        obligations={obligations}
-        netWorthThreeMonthExpense={currentVisibleBalance / Math.max(monthToDate.expense, 1)}
+        liquidMoney={healthInputs.liquidMoney}
+        averageMonthlyExpense={healthInputs.averageMonthlyExpense}
+        periodIncome={healthInputs.periodIncome}
+        periodNet={healthInputs.periodNet}
+        totalPayable={healthInputs.totalPayable}
+        overdueCount={healthInputs.overdueCount}
       />
       <View style={{ height: SPACING.sm }} />
-      <SubscriptionsSummary subscriptions={subscriptions} currency={activeCurrency} />
+      <SubscriptionsSummary subscriptions={subscriptionsForSummary} currency={activeCurrency} />
       <View style={{ height: SPACING.sm }} />
       <ObligationWatch obligations={obligations} router={router} />
       <View style={{ height: SPACING.sm }} />
       <TransferSnapshot
         movements={movements}
         accounts={activeAccounts}
-        ctx={{ accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency }}
+        ctx={{ accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency }}
         onOpenRoute={openTransferRoutePreview}
       />
 

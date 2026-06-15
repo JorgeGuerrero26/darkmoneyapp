@@ -1,0 +1,62 @@
+{
+  "_comment": "Fixture de paridad Web (DarkMoney) <-> Movil (DarkMoneyApp). Copia canonica en DarkMoneyApp/tests/parity/. La copia en DarkMoney/tests/parity/ debe ser identica. now = 2026-06-15 (mes a mitad). base=PEN, display=USD.",
+  "now": "2026-06-15T14:30:00.000Z",
+  "baseCurrency": "PEN",
+  "displayCurrency": "USD",
+  "healthInputs": { "liquidMoney": 2000, "averageMonthlyExpense": 350, "totalPayable": 933.33 },
+  "exchangeRates": [
+    { "fromCurrencyCode": "USD", "toCurrencyCode": "PEN", "rate": 3.75, "effectiveAt": "2026-06-01T00:00:00.000Z" },
+    { "fromCurrencyCode": "PEN", "toCurrencyCode": "EUR", "rate": 0.25, "effectiveAt": "2026-06-01T00:00:00.000Z" },
+    { "fromCurrencyCode": "GBP", "toCurrencyCode": "PEN", "rate": 4.7, "effectiveAt": "2026-06-01T00:00:00.000Z" }
+  ],
+  "accounts": [
+    { "id": 1, "currencyCode": "PEN", "currentBalance": 8000, "currentBalanceInBaseCurrency": 8000, "isArchived": false, "includeInNetWorth": true },
+    { "id": 2, "currencyCode": "USD", "currentBalance": 1000, "currentBalanceInBaseCurrency": 3750, "isArchived": false, "includeInNetWorth": true },
+    { "id": 3, "currencyCode": "EUR", "currentBalance": 500, "currentBalanceInBaseCurrency": 2000, "isArchived": false, "includeInNetWorth": true },
+    { "id": 4, "currencyCode": "GBP", "currentBalance": 200, "currentBalanceInBaseCurrency": 940, "isArchived": false, "includeInNetWorth": true },
+    { "id": 5, "currencyCode": "CHF", "currentBalance": 300, "currentBalanceInBaseCurrency": 1100, "isArchived": false, "includeInNetWorth": true },
+    { "id": 6, "currencyCode": "PEN", "currentBalance": 50000, "currentBalanceInBaseCurrency": 50000, "isArchived": false, "includeInNetWorth": false },
+    { "id": 7, "currencyCode": "PEN", "currentBalance": 9999, "currentBalanceInBaseCurrency": 9999, "isArchived": true, "includeInNetWorth": true }
+  ],
+  "movements": [
+    { "id": 101, "movementType": "income", "status": "posted", "occurredAt": "2026-06-02T10:00:00.000Z", "sourceAmount": null, "destinationAmount": 4000, "sourceAccountId": null, "destinationAccountId": 1, "categoryId": 10, "counterpartyId": 1, "description": "Sueldo junio" },
+    { "id": 102, "movementType": "expense", "status": "posted", "occurredAt": "2026-06-03T12:00:00.000Z", "sourceAmount": 200, "destinationAmount": null, "sourceAccountId": 1, "destinationAccountId": null, "categoryId": 20, "counterpartyId": 2, "description": "Mercado central" },
+    { "id": 103, "movementType": "expense", "status": "posted", "occurredAt": "2026-06-05T18:00:00.000Z", "sourceAmount": 50, "destinationAmount": null, "sourceAccountId": 2, "destinationAccountId": null, "categoryId": 20, "counterpartyId": 2, "description": "Compras USD" },
+    { "id": 104, "movementType": "transfer", "status": "posted", "occurredAt": "2026-06-06T09:00:00.000Z", "sourceAmount": 300, "destinationAmount": 80, "sourceAccountId": 1, "destinationAccountId": 2, "categoryId": null, "counterpartyId": null, "description": "Transferencia interna" },
+    { "id": 105, "movementType": "refund", "status": "posted", "occurredAt": "2026-06-07T11:00:00.000Z", "sourceAmount": null, "destinationAmount": 150, "sourceAccountId": null, "destinationAccountId": 1, "categoryId": 10, "counterpartyId": 3, "description": "Reembolso tienda" },
+    { "id": 106, "movementType": "subscription_payment", "status": "posted", "occurredAt": "2026-06-08T08:00:00.000Z", "sourceAmount": 40, "destinationAmount": null, "sourceAccountId": 1, "destinationAccountId": null, "categoryId": 21, "counterpartyId": 4, "description": "Streaming" },
+    { "id": 107, "movementType": "obligation_payment", "status": "posted", "occurredAt": "2026-06-09T08:00:00.000Z", "sourceAmount": 500, "destinationAmount": 0, "sourceAccountId": 1, "destinationAccountId": null, "categoryId": 22, "counterpartyId": 5, "description": "Pago prestamo (sale)" },
+    { "id": 108, "movementType": "obligation_payment", "status": "posted", "occurredAt": "2026-06-10T08:00:00.000Z", "sourceAmount": 0, "destinationAmount": 600, "sourceAccountId": null, "destinationAccountId": 1, "categoryId": 22, "counterpartyId": 5, "description": "Cobro deuda (entra)" },
+    { "id": 109, "movementType": "adjustment", "status": "posted", "occurredAt": "2026-06-11T08:00:00.000Z", "sourceAmount": 30, "destinationAmount": 90, "sourceAccountId": 1, "destinationAccountId": 1, "categoryId": null, "counterpartyId": null, "description": "Ajuste positivo" },
+    { "id": 110, "movementType": "obligation_opening", "status": "posted", "occurredAt": "2026-06-04T08:00:00.000Z", "sourceAmount": 5000, "destinationAmount": null, "sourceAccountId": 1, "destinationAccountId": null, "categoryId": null, "counterpartyId": 5, "description": "Apertura prestamo (excluida)" },
+    { "id": 111, "movementType": "expense", "status": "pending", "occurredAt": "2026-06-12T08:00:00.000Z", "sourceAmount": 99, "destinationAmount": null, "sourceAccountId": 1, "destinationAccountId": null, "categoryId": null, "counterpartyId": null, "description": "Gasto pendiente sin categoria" },
+    { "id": 112, "movementType": "expense", "status": "planned", "occurredAt": "2026-06-20T08:00:00.000Z", "sourceAmount": 70, "destinationAmount": null, "sourceAccountId": 1, "destinationAccountId": null, "categoryId": 20, "counterpartyId": null, "description": "Gasto planeado" },
+    { "id": 113, "movementType": "expense", "status": "posted", "occurredAt": "2026-06-13T19:30:00.000Z", "sourceAmount": 120, "destinationAmount": null, "sourceAccountId": 1, "destinationAccountId": null, "categoryId": 20, "counterpartyId": 2, "description": "Cena restaurante" },
+    { "id": 114, "movementType": "expense", "status": "posted", "occurredAt": "2026-06-13T20:00:00.000Z", "sourceAmount": 122, "destinationAmount": null, "sourceAccountId": 1, "destinationAccountId": null, "categoryId": 20, "counterpartyId": 2, "description": "Cena restaurante" },
+    { "id": 115, "movementType": "expense", "status": "posted", "occurredAt": "2026-05-28T10:00:00.000Z", "sourceAmount": 300, "destinationAmount": null, "sourceAccountId": 1, "destinationAccountId": null, "categoryId": 20, "counterpartyId": 2, "description": "Gasto mes anterior" },
+    { "id": 116, "movementType": "income", "status": "posted", "occurredAt": "2026-05-20T10:00:00.000Z", "sourceAmount": null, "destinationAmount": 3500, "sourceAccountId": null, "destinationAccountId": 1, "categoryId": 10, "counterpartyId": 1, "description": "Sueldo mayo" },
+    { "id": 117, "movementType": "expense", "status": "posted", "occurredAt": "2026-04-15T10:00:00.000Z", "sourceAmount": 180, "destinationAmount": null, "sourceAccountId": 1, "destinationAccountId": null, "categoryId": 23, "counterpartyId": 2, "description": "Gasto hace 2 meses" },
+    { "id": 118, "movementType": "expense", "status": "posted", "occurredAt": "2026-06-01T07:00:00.000Z", "sourceAmount": 25, "destinationAmount": null, "sourceAccountId": 1, "destinationAccountId": null, "categoryId": 21, "counterpartyId": 4, "description": "Cafe lunes" },
+    { "id": 119, "movementType": "expense", "status": "posted", "occurredAt": "2026-05-25T07:00:00.000Z", "sourceAmount": 28, "destinationAmount": null, "sourceAccountId": 1, "destinationAccountId": null, "categoryId": 21, "counterpartyId": 4, "description": "Cafe lunes" }
+  ],
+  "obligations": [
+    { "direction": "payable", "pendingAmount": 2000, "installmentAmount": 300, "installmentCount": 8, "currencyCode": "PEN", "dueDate": "2026-06-18", "lastPaymentDate": "2026-06-09", "startDate": "2026-01-01", "status": "active" },
+    { "direction": "receivable", "pendingAmount": 800, "installmentAmount": null, "installmentCount": null, "currencyCode": "USD", "dueDate": "2026-06-20", "lastPaymentDate": null, "startDate": "2026-05-01", "status": "active" },
+    { "direction": "payable", "pendingAmount": 1000, "installmentAmount": null, "installmentCount": null, "currencyCode": "PEN", "dueDate": "2026-06-10", "lastPaymentDate": null, "startDate": "2026-02-01", "status": "active" },
+    { "direction": "payable", "pendingAmount": 500, "installmentAmount": null, "installmentCount": null, "currencyCode": "PEN", "dueDate": null, "lastPaymentDate": null, "startDate": "2026-06-01", "status": "active" },
+    { "direction": "payable", "pendingAmount": 400, "installmentAmount": null, "installmentCount": null, "currencyCode": "PEN", "dueDate": "2026-07-01", "lastPaymentDate": "2026-01-01", "startDate": "2025-12-01", "status": "active" },
+    { "direction": "payable", "pendingAmount": 1200, "installmentAmount": 200, "installmentCount": 6, "currencyCode": "PEN", "dueDate": "2026-06-19", "lastPaymentDate": "2026-06-01", "startDate": "2026-01-01", "status": "paid" },
+    { "direction": "payable", "pendingAmount": 0.005, "installmentAmount": null, "installmentCount": null, "currencyCode": "PEN", "dueDate": "2026-06-17", "lastPaymentDate": "2026-06-01", "startDate": "2026-01-01", "status": "active" }
+  ],
+  "subscriptions": [
+    { "amount": 40, "currencyCode": "PEN", "nextDueDate": "2026-06-22", "status": "active", "accountId": 1, "frequency": "monthly", "intervalCount": 1 },
+    { "amount": 9.99, "currencyCode": "USD", "nextDueDate": "2026-06-28", "status": "active", "accountId": 2, "frequency": "monthly", "intervalCount": 1 },
+    { "amount": 99, "currencyCode": "PEN", "nextDueDate": "2026-06-25", "status": "paused", "accountId": 1, "frequency": "yearly", "intervalCount": 1 },
+    { "amount": 15, "currencyCode": "PEN", "nextDueDate": "2026-06-05", "status": "active", "accountId": null, "frequency": "monthly", "intervalCount": 1 }
+  ],
+  "recurringIncome": [
+    { "amount": 4000, "currencyCode": "PEN", "nextExpectedDate": "2026-07-02", "status": "active" },
+    { "amount": 200, "currencyCode": "USD", "nextExpectedDate": "2026-06-30", "status": "active" },
+    { "amount": 500, "currencyCode": "PEN", "nextExpectedDate": "2026-06-26", "status": "paused" }
+  ]
+}

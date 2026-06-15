@@ -10,125 +10,59 @@ import { COLORS, SPACING } from "../../../../constants/theme";
 import type { DashboardMovementRow } from "../../../../services/queries/workspace-data";
 import type { PaymentOptimizationRecommendation } from "../../../../services/analytics/payment-optimization";
 import { isCategorizedCashflow } from "../../lib/aggregations";
+import { buildHealthScore } from "../../lib/health";
 import { SectionTitle } from "../simple/SectionTitle";
 import { dashboardSimpleStyles as subStyles } from "../simple/styles";
 
 export function HealthScore({
-  netWorth,
-  income,
-  expense,
-  obligations,
-  netWorthThreeMonthExpense,
+  liquidMoney,
+  averageMonthlyExpense,
+  periodIncome,
+  periodNet,
+  totalPayable,
+  overdueCount,
 }: {
-  netWorth: number;
-  income: number;
-  expense: number;
-  obligations: { direction: string; pendingAmount: number; dueDate: string | null; status: string }[];
-  netWorthThreeMonthExpense: number;
+  liquidMoney: number;
+  averageMonthlyExpense: number;
+  periodIncome: number;
+  periodNet: number;
+  totalPayable: number;
+  overdueCount: number;
 }) {
-  void netWorthThreeMonthExpense;
-  const now = new Date();
-  const totalPayable = obligations.filter((o) => o.direction === "payable" && o.status === "active").reduce((s, o) => s + o.pendingAmount, 0);
-  const overdueCount = obligations.filter(
-    (o) => o.direction === "payable" && o.status === "active" && o.dueDate && new Date(o.dueDate) < now,
-  ).length;
-
-  const savingsRate = income > 0 ? (income - expense) / income : 0;
-  const coverageMonths = expense > 0 ? netWorth / expense : 12;
-  const debtToIncome = income > 0 ? totalPayable / income : 0;
-
-  function scoreFor(value: number, thresholds: [number, number, number]): number {
-    if (value >= thresholds[0]) return 100;
-    if (value >= thresholds[1]) return 75;
-    if (value >= thresholds[2]) return 50;
-    return 25;
-  }
-
-  const s1 = scoreFor(savingsRate, [0.2, 0.1, 0]);
-  const s2 = scoreFor(coverageMonths, [6, 3, 1]);
-  const s3 = scoreFor(1 - Math.min(debtToIncome, 1.5) / 1.5, [0.8, 0.5, 0.2]);
-  const s4 = overdueCount === 0 ? 100 : overdueCount === 1 ? 75 : overdueCount === 2 ? 50 : 25;
-  const score = Math.round((s1 + s2 + s3 + s4) / 4);
-
+  // Score unificado web/móvil (features/dashboard/lib/health.ts, espejo del paquete).
+  const health = buildHealthScore({
+    liquidMoney,
+    averageMonthlyExpense,
+    periodIncome,
+    periodNet,
+    totalPayable,
+    overdueCount,
+  });
+  const score = health.score;
   const scoreColor = score >= 80 ? COLORS.income : score >= 60 ? COLORS.warning : COLORS.expense;
-
-  const indicators = [
-    {
-      label: "Tasa de ahorro",
-      value: s1,
-      desc: `${(savingsRate * 100).toFixed(1)}% del ingreso`,
-      interpret:
-        s1 >= 75
-          ? "Buen margen — ahorras más del 20% del ingreso."
-          : s1 >= 50
-            ? "Ahorro por debajo del 10% — margen ajustado."
-            : savingsRate < 0
-              ? "Gastos superan los ingresos este mes."
-              : "Ahorrando poco — sin margen para imprevistos.",
-    },
-    {
-      label: "Meses de cobertura",
-      value: s2,
-      desc: `${coverageMonths.toFixed(1)} meses`,
-      interpret:
-        s2 >= 75
-          ? "Cobertura sólida — más de 6 meses de reserva."
-          : s2 >= 50
-            ? "Cobertura suficiente, pero ajustada (3–6 meses)."
-            : "Menos de 3 meses de reserva — zona de precaución.",
-    },
-    {
-      label: "Relación deuda/ingreso",
-      value: s3,
-      desc: `${(debtToIncome * 100).toFixed(1)}%`,
-      interpret:
-        s3 >= 75
-          ? "Deuda manejable respecto al ingreso mensual."
-          : s3 >= 50
-            ? "Obligaciones moderadas — monitorear de cerca."
-            : "Obligaciones elevadas vs ingresos — prioriza resolver.",
-    },
-    {
-      label: "Obligaciones al día",
-      value: s4,
-      desc: overdueCount === 0 ? "Sin vencidas" : `${overdueCount} vencidas`,
-      interpret:
-        overdueCount === 0
-          ? "Todo al día — sin compromisos vencidos."
-          : overdueCount === 1
-            ? "Hay 1 obligación vencida — actúa pronto."
-            : `${overdueCount} obligaciones vencidas — requieren atención urgente.`,
-    },
-  ];
 
   return (
     <Card>
       <View style={subStyles.healthHeader}>
         <View style={{ gap: 2 }}>
           <SectionTitle>Salud financiera</SectionTitle>
-          <Text style={subStyles.healthScoreInterpret}>
-            {score >= 80
-              ? "Finanzas en buen estado — sin señales de alerta."
-              : score >= 60
-                ? "Estado aceptable — hay áreas que mejorar."
-                : "Varias señales de alerta — revisa los indicadores en rojo."}
-          </Text>
+          <Text style={subStyles.healthScoreInterpret}>{health.headline}</Text>
         </View>
         <View style={[subStyles.healthScore, { borderColor: scoreColor + "55" }]}>
           <Text style={[subStyles.healthScoreNum, { color: scoreColor }]}>{score}</Text>
           <Text style={subStyles.healthScoreOf}>/100</Text>
         </View>
       </View>
-      {indicators.map((ind) => (
-        <View key={ind.label} style={subStyles.healthRow}>
+      {health.indicators.map((ind) => (
+        <View key={ind.key} style={subStyles.healthRow}>
           <View style={subStyles.healthLabelRow}>
             <Text style={subStyles.healthLabel}>{ind.label}</Text>
-            <Text style={subStyles.healthDesc}>{ind.desc}</Text>
+            <Text style={subStyles.healthDesc}>{ind.valueLabel}</Text>
           </View>
           <View style={subStyles.healthTrack}>
-            <View style={[subStyles.healthFill, { width: `${ind.value}%`, backgroundColor: ind.value >= 75 ? COLORS.income : ind.value >= 50 ? COLORS.warning : COLORS.expense }]} />
+            <View style={[subStyles.healthFill, { width: `${ind.score}%`, backgroundColor: ind.score >= 75 ? COLORS.income : ind.score >= 50 ? COLORS.warning : COLORS.expense }]} />
           </View>
-          <Text style={[subStyles.healthInterpret, { color: ind.value >= 75 ? COLORS.income : ind.value >= 50 ? COLORS.gold : COLORS.expense }]}>
+          <Text style={[subStyles.healthInterpret, { color: ind.score >= 75 ? COLORS.income : ind.score >= 50 ? COLORS.gold : COLORS.expense }]}>
             {ind.interpret}
           </Text>
         </View>

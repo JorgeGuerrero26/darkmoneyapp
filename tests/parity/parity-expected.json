@@ -1,0 +1,94 @@
+{
+  "netWorth": 4210.666667,
+  "periods": {
+    "today": {
+      "income": 0,
+      "expense": 0,
+      "net": 0
+    },
+    "week": {
+      "income": 0,
+      "expense": 0,
+      "net": 0
+    },
+    "month": {
+      "income": 1290.666667,
+      "expense": 318.533333,
+      "net": 972.133333
+    },
+    "last_30": {
+      "income": 2224,
+      "expense": 406,
+      "net": 1818
+    }
+  },
+  "futureWindows": [
+    {
+      "days": 7,
+      "expectedInflow": 800,
+      "expectedOutflow": 90.666667,
+      "estimatedBalance": 4920,
+      "scheduledCount": 3,
+      "receivableCount": 1,
+      "payableCount": 1,
+      "unconvertedCount": 0
+    },
+    {
+      "days": 15,
+      "expectedInflow": 1000,
+      "expectedOutflow": 100.656667,
+      "estimatedBalance": 5110.01,
+      "scheduledCount": 5,
+      "receivableCount": 1,
+      "payableCount": 1,
+      "unconvertedCount": 0
+    },
+    {
+      "days": 30,
+      "expectedInflow": 2066.666667,
+      "expectedOutflow": 207.323333,
+      "estimatedBalance": 6070.01,
+      "scheduledCount": 7,
+      "receivableCount": 1,
+      "payableCount": 2,
+      "unconvertedCount": 0
+    }
+  ],
+  "monthProjection": {
+    "expectedBalance": 7002.143333,
+    "committedInflow": 2066.666667,
+    "committedOutflow": 207.323333,
+    "variableIncomeProjection": 1106.666667,
+    "variableExpenseProjection": 174.533333,
+    "remainingDays": 15
+  },
+  "reviewInbox": {
+    "uncategorizedCount": 0,
+    "pendingMovementsCount": 1,
+    "duplicateExpenseGroups": 1,
+    "subscriptionsAttentionCount": 1,
+    "obligationsWithoutPlanCount": 1,
+    "staleObligationsCount": 2,
+    "overdueObligationsCount": 1,
+    "totalIssues": 7
+  },
+  "readiness": {
+    "readinessScore": 53,
+    "historyDays": 61,
+    "usefulCount": 16,
+    "categorizedRate": 1
+  },
+  "health": {
+    "score": 81,
+    "tone": "success",
+    "savingsRate": 0.753202,
+    "coverageMonths": 5.714286,
+    "debtToIncomeRatio": 0.723138,
+    "indicatorScores": [
+      100,
+      75,
+      75,
+      75
+    ]
+  }
+}

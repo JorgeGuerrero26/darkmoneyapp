@@ -1,0 +1,27 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "Node16",
+    "moduleResolution": "Node16",
+    "target": "ES2020",
+    "outDir": ".tmp/parity-tests",
+    "rootDir": ".",
+    "noEmit": false,
+    "resolveJsonModule": true,
+    "types": ["node"]
+  },
+  "include": [
+    "features/dashboard/lib/aggregations.ts",
+    "features/dashboard/lib/advanced-builders.ts",
+    "features/dashboard/lib/advanced-types.ts",
+    "features/dashboard/lib/dashboard-builders.ts",
+    "features/dashboard/lib/dashboard-row.ts",
+    "features/dashboard/lib/types.ts",
+    "lib/currency-conversion.ts",
+    "lib/movement-amounts.ts",
+    "lib/date.ts",
+    "services/analytics/**/*.ts",
+    "tests/parity/**/*.ts"
+  ],
+  "exclude": []
+}
