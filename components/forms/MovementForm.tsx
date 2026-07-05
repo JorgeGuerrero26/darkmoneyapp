@@ -4,10 +4,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { StyleSheet, View } from "react-native";
 
 import { useUiStore } from "../../store/ui-store";
-import {
-  mirrorMovementAttachmentsToObligationEvent,
-  promoteDraftAttachmentsToEntity,
-} from "../../lib/entity-attachments";
 import { useWorkspace } from "../../lib/workspace-context";
 import { humanizeError } from "../../lib/errors";
 import { todayPeru, dateStrToISO, isoToDateStr } from "../../lib/date";
@@ -69,6 +65,7 @@ import { useMovementCreationController } from "../../features/movements/hooks/us
 import { useTransferFxController } from "../../features/movements/hooks/useTransferFxController";
 import { useBalanceImpactPreview } from "../../features/movements/hooks/useBalanceImpactPreview";
 import { useMovementFormSuggestions } from "../../features/movements/hooks/useMovementFormSuggestions";
+import { useMovementAttachmentSync } from "../../features/movements/hooks/useMovementAttachmentSync";
 import { buildMovementCreateInput, buildMovementUpdateInput } from "../../features/movements/lib/movement-save-contract";
 import { useFrequentTransferPairQuery } from "../../services/queries/notification-detection";
 import {
@@ -93,6 +90,7 @@ import {
   suggestionActsAsIncome,
   type CategoryFeedbackIntent,
   type CategorySuggestionState,
+  isMovementFormDirty,
   type MovementFormState as FormState,
   type MovementFormStep as Step,
   type MovementSuggestionLike,
@@ -117,8 +115,6 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   const {
     lastMovementAccountId,
     setLastMovementAccountId,
-    showActivityNotice,
-    dismissActivityNotice,
   } = useUiStore();
 
   const { data: snapshot } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
@@ -217,6 +213,8 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     sourceAmount: form.sourceAmount,
     destinationAmount: form.destinationAmount,
   });
+  // Sync en background de comprobantes tras guardar (fase 5 del refactor R7).
+  const attachmentSync = useMovementAttachmentSync(activeWorkspaceId);
   // Tipo de cambio de transferencias multi-moneda (fase 2 del refactor R7).
   const fx = useTransferFxController({
     visible,
@@ -858,34 +856,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         });
         persistCategoryLearning(editMovement.id, autoDesc);
         if (activeWorkspaceId && linkedEventId && hasAttachmentChanges) {
-          backgroundAttachmentSync = () => {
-            const noticeId = showActivityNotice(
-              "Sincronizando comprobantes",
-              "Puedes seguir usando la app mientras actualizamos el evento vinculado.",
-            );
-            void mirrorMovementAttachmentsToObligationEvent({
-              workspaceId: activeWorkspaceId,
-              movementId: editMovement.id,
-              eventId: linkedEventId,
-            })
-              .then(() => {
-                void Promise.all([
-                  queryClient.invalidateQueries({
-                    queryKey: ["movement-attachments", activeWorkspaceId, editMovement.id],
-                  }),
-                  queryClient.invalidateQueries({
-                    queryKey: ["entity-attachments", activeWorkspaceId, "obligation-event", linkedEventId],
-                  }),
-                  queryClient.invalidateQueries({
-                    queryKey: ["entity-attachment-counts", activeWorkspaceId, "obligation-event"],
-                  }),
-                ]);
-              })
-              .catch((attachmentError) => {
-                showToast(humanizeError(attachmentError), "error");
-              })
-              .finally(() => dismissActivityNotice(noticeId));
-          };
+          backgroundAttachmentSync = () => attachmentSync.mirrorToObligationEvent(editMovement.id, linkedEventId);
         }
         showToast("Movimiento actualizado", "warning");
         if (linkedEventId && activeWorkspaceId) {
@@ -919,27 +890,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         });
         setLastMovementAccountId(form.sourceAccountId);
         if (attachments.length > 0 && activeWorkspaceId) {
-          backgroundAttachmentSync = () => {
-            const noticeId = showActivityNotice(
-              "Sincronizando comprobantes",
-              "Puedes seguir usando la app mientras terminamos de copiar las imágenes.",
-            );
-            void promoteDraftAttachmentsToEntity({
-              attachments,
-              workspaceId: activeWorkspaceId,
-              entityType: "movement",
-              entityId: created.id,
-            })
-              .then(() => {
-                void queryClient.invalidateQueries({
-                  queryKey: ["movement-attachments", activeWorkspaceId, created.id],
-                });
-              })
-              .catch((attachmentError) => {
-                showToast(humanizeError(attachmentError), "error");
-              })
-              .finally(() => dismissActivityNotice(noticeId));
-          };
+          backgroundAttachmentSync = () => attachmentSync.syncDraftAttachments(created.id, attachments);
         }
       }
       haptics.success();
@@ -956,29 +907,13 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   }
 
   function handleClose() {
-    let isDirty: boolean;
-    if (isEditing && editMovement) {
-      const origOccurredAt = editMovement.occurredAt ? isoToDateStr(editMovement.occurredAt) : todayPeru();
-      isDirty =
-        form.description !== (editMovement.description ?? "") ||
-        form.sourceAccountId !== (editMovement.sourceAccountId ?? null) ||
-        form.destinationAccountId !== (editMovement.destinationAccountId ?? null) ||
-        form.sourceAmount !== (editMovement.sourceAmount ? String(editMovement.sourceAmount) : "") ||
-        form.destinationAmount !== (editMovement.destinationAmount ? String(editMovement.destinationAmount) : "") ||
-        form.status !== editMovement.status ||
-        form.categoryId !== (editMovement.categoryId ?? null) ||
-        form.counterpartyId !== (editMovement.counterpartyId ?? null) ||
-        form.notes !== (editMovement.notes ?? "") ||
-        form.occurredAt !== origOccurredAt ||
-        attachmentSignature !== initialAttachmentSignatureRef.current;
-    } else {
-      isDirty = Boolean(
-        form.description ||
-        form.sourceAmount ||
-        form.destinationAmount ||
-        attachments.length > 0,
-      );
-    }
+    const isDirty = isMovementFormDirty({
+      form,
+      editMovement: isEditing ? editMovement : undefined,
+      attachmentsCount: attachments.length,
+      attachmentSignature,
+      initialAttachmentSignature: initialAttachmentSignatureRef.current,
+    });
 
     if (isDirty) {
       setDiscardVisible(true);

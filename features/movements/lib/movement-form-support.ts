@@ -1,7 +1,8 @@
-import { todayPeru } from "../../../lib/date";
+import { isoToDateStr, todayPeru } from "../../../lib/date";
 import { parsePositiveAmountInput } from "../../../lib/amount-parsing";
 import type {
   ExchangeRateSummary,
+  MovementRecord,
   MovementStatus,
   MovementType,
 } from "../../../types/domain";
@@ -140,6 +141,42 @@ export function findTransferExchangeRate(
     effectiveAt: best.effectiveAt,
     label: formatExchangeRateLabel(from, to, resolvedRate),
   };
+}
+
+/**
+ * ¿El usuario cambió algo respecto al estado inicial? Gobierna el diálogo
+ * "descartar cambios" al cerrar el formulario.
+ */
+export function isMovementFormDirty(params: {
+  form: MovementFormState;
+  editMovement: MovementRecord | undefined;
+  attachmentsCount: number;
+  attachmentSignature: string;
+  initialAttachmentSignature: string;
+}): boolean {
+  const { form, editMovement, attachmentsCount, attachmentSignature, initialAttachmentSignature } = params;
+  if (editMovement) {
+    const origOccurredAt = editMovement.occurredAt ? isoToDateStr(editMovement.occurredAt) : todayPeru();
+    return (
+      form.description !== (editMovement.description ?? "") ||
+      form.sourceAccountId !== (editMovement.sourceAccountId ?? null) ||
+      form.destinationAccountId !== (editMovement.destinationAccountId ?? null) ||
+      form.sourceAmount !== (editMovement.sourceAmount ? String(editMovement.sourceAmount) : "") ||
+      form.destinationAmount !== (editMovement.destinationAmount ? String(editMovement.destinationAmount) : "") ||
+      form.status !== editMovement.status ||
+      form.categoryId !== (editMovement.categoryId ?? null) ||
+      form.counterpartyId !== (editMovement.counterpartyId ?? null) ||
+      form.notes !== (editMovement.notes ?? "") ||
+      form.occurredAt !== origOccurredAt ||
+      attachmentSignature !== initialAttachmentSignature
+    );
+  }
+  return Boolean(
+    form.description ||
+    form.sourceAmount ||
+    form.destinationAmount ||
+    attachmentsCount > 0,
+  );
 }
 
 export function getInitialMovementForm(defaultType: MovementType): MovementFormState {
