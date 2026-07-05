@@ -109,7 +109,12 @@ function buildCSV(movements: MovementRecord[]): string {
 function MovementsScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { pendingSaves: pendingDetectionSaves, lastError: lastDetectionSaveError } = useDetectionBackgroundSaves();
+  const {
+    pendingSaves: pendingDetectionSaves,
+    lastError: lastDetectionSaveError,
+    retryNow: retryDetectionSavesNow,
+    isRetrying: isRetryingDetectionSaves,
+  } = useDetectionBackgroundSaves();
   const params = useLocalSearchParams<{
     quickFilter?: string | string[];
     quickScope?: string | string[];
@@ -853,6 +858,8 @@ function MovementsScreen() {
               <DetectionBackgroundSavesNotice
                 pendingSaves={pendingDetectionSaves}
                 lastErrorMessage={lastDetectionSaveError?.message ?? null}
+                onRetryNow={() => void retryDetectionSavesNow()}
+                isRetrying={isRetryingDetectionSaves}
               />
               <ResourceContextNote>{activeDateRangeNotice}</ResourceContextNote>
             </View>

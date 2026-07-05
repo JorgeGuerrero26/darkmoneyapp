@@ -8,6 +8,8 @@ import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../
 type Props = {
   pendingSaves: DetectionBackgroundSave[];
   lastErrorMessage?: string | null;
+  onRetryNow?: () => void;
+  isRetrying?: boolean;
 };
 
 /**
@@ -17,7 +19,7 @@ type Props = {
  * Sin esto el usuario no veía nada en la lista, asumía que el registro se perdió
  * y lo volvía a crear a mano → riesgo de duplicado cuando el reintento entraba.
  */
-export function DetectionBackgroundSavesNotice({ pendingSaves, lastErrorMessage }: Props) {
+export function DetectionBackgroundSavesNotice({ pendingSaves, lastErrorMessage, onRetryNow, isRetrying }: Props) {
   const router = useRouter();
   if (pendingSaves.length === 0) return null;
 
@@ -39,6 +41,18 @@ export function DetectionBackgroundSavesNotice({ pendingSaves, lastErrorMessage 
               {describeEntries(sending)}
               {"El envío falló por conexión y se reintenta automáticamente. No lo registres de nuevo a mano."}
             </Text>
+            {onRetryNow ? (
+              <TouchableOpacity
+                style={styles.retryButton}
+                onPress={onRetryNow}
+                disabled={Boolean(isRetrying)}
+                accessibilityLabel="Reintentar el envío ahora"
+              >
+                <Text style={styles.retryButtonText}>
+                  {isRetrying ? "Reintentando…" : "Reintentar ahora"}
+                </Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
         </View>
       ) : null}
@@ -103,5 +117,19 @@ const styles = StyleSheet.create({
     fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.xs,
     lineHeight: 16,
+  },
+  retryButton: {
+    alignSelf: "flex-start",
+    marginTop: SPACING.xs,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+  },
+  retryButtonText: {
+    color: COLORS.primary,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
   },
 });

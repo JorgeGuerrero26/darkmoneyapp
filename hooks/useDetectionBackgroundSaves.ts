@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
+import { useQueryClient } from "@tanstack/react-query";
 
 import {
   notificationDetection,
   type DetectionLastSaveError,
 } from "../lib/notification-detection-native";
+import { notificationDetectionHeadlessTask } from "../lib/notification-detection-headless";
 
 export type DetectionBackgroundSave = {
   suggestionId: string;
@@ -34,9 +36,12 @@ function parsePayloadField(payloadJson: string, key: "amount" | "description"): 
  * en lugar de dejarlo pensar que el registro se perdió (y que lo duplique a mano).
  */
 export function useDetectionBackgroundSaves() {
+  const queryClient = useQueryClient();
   const [pendingSaves, setPendingSaves] = useState<DetectionBackgroundSave[]>([]);
   const [lastError, setLastError] = useState<DetectionLastSaveError | null>(null);
+  const [isRetrying, setIsRetrying] = useState(false);
   const mountedRef = useRef(true);
+  const retryingRef = useRef(false);
 
   const refresh = useCallback(async () => {
     if (!notificationDetection.isAvailable()) return;
@@ -71,5 +76,39 @@ export function useDetectionBackgroundSaves() {
     };
   }, [refresh]);
 
-  return { pendingSaves, lastError, refresh };
+  /**
+   * Fuerza el reintento inmediato de TODA la cola (sin esperar el backoff). Para el botón
+   * "Reintentar ahora" del banner: el usuario recuperó red y no quiere esperar 1-16 min.
+   * El client_dedupe_key hace idempotente re-ejecutar aunque un insert previo sí llegó,
+   * y el claim nativo evita pisarse con un reintento del reconcile en paralelo.
+   */
+  const retryNow = useCallback(async () => {
+    if (retryingRef.current || !notificationDetection.isAvailable()) return;
+    retryingRef.current = true;
+    setIsRetrying(true);
+    try {
+      const entries = await notificationDetection.getAllSaveRetries();
+      for (const entry of entries) {
+        if (!entry.payloadJson) continue; // marcador de reintentos agotados: requiere al usuario
+        try {
+          const payload = JSON.parse(entry.payloadJson) as Parameters<typeof notificationDetectionHeadlessTask>[0];
+          // Re-encolar primero (sube attempts y empuja el backoff): si vuelve a fallar la
+          // entrada ya quedó programada; si termina, el propio flujo la limpia.
+          notificationDetection.enqueueSaveRetry(entry.suggestionId, entry.payloadJson);
+          await notificationDetectionHeadlessTask(payload);
+        } catch {
+          notificationDetection.clearSaveRetry(entry.suggestionId);
+        }
+      }
+      void queryClient.invalidateQueries({ queryKey: ["movements"] });
+      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+      void queryClient.invalidateQueries({ queryKey: ["notifications"] });
+      await refresh();
+    } finally {
+      retryingRef.current = false;
+      if (mountedRef.current) setIsRetrying(false);
+    }
+  }, [queryClient, refresh]);
+
+  return { pendingSaves, lastError, refresh, retryNow, isRetrying };
 }
