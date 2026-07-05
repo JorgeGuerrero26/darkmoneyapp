@@ -5,6 +5,7 @@ import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING } from "../../constants/theme";
 import { useAuth } from "../../lib/auth-context";
 import { setPendingDetectedSuggestionNativeId } from "../../lib/pending-detected-suggestion";
+import { withTimeout } from "../../lib/promise-utils";
 import { useWorkspace } from "../../lib/workspace-context";
 import { findDetectedSuggestionIdByNativeId } from "../../services/queries/notification-detection";
 
@@ -66,7 +67,14 @@ export default function DetectedSuggestionRedirect() {
       };
     }
 
-    void findDetectedSuggestionIdByNativeId(activeWorkspaceId, decodeURIComponent(id))
+    // Timeout corto: en cold start la red puede tardar en despertar y esta query
+    // sin límite dejaba al usuario mirando el loader. Peor caso: aterriza en
+    // /notifications sin el form abierto, pero aterriza.
+    void withTimeout(
+      findDetectedSuggestionIdByNativeId(activeWorkspaceId, decodeURIComponent(id)),
+      8_000,
+      "detected-suggestion.resolve",
+    )
       .catch(() => null)
       .then((suggestionId) => goToNotifications(suggestionId));
 

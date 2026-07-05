@@ -207,6 +207,17 @@ function NotificationsScreen() {
 
   const emptyConfig = useMemo(() => {
     const resetFilters = () => { setActiveFilter("all"); setShowUnreadOnly(false); };
+    // Fetch inicial fallido (cold start con la red despertando): sin esto se mostraba
+    // "Sin notificaciones", que se lee como que no hay nada — el usuario no sabía que
+    // debía reintentar y la pantalla parecía nunca cargar.
+    if (notificationsQuery.isError && notificationList.length === 0 && pendingInvites.length === 0) {
+      return {
+        variant: "no-results" as const,
+        title: "No se pudieron cargar las notificaciones",
+        description: "Hubo un problema de conexión al cargar. Reintenta en unos segundos.",
+        action: { label: "Reintentar", onPress: () => void refetch() },
+      };
+    }
     if (notificationList.length === 0 && pendingInvites.length === 0) {
       return {
         icon: Bell,
@@ -246,7 +257,7 @@ function NotificationsScreen() {
       description: "No hay notificaciones que coincidan con el filtro activo.",
       action: { label: "Quitar filtros", onPress: resetFilters },
     };
-  }, [notificationList.length, pendingInvites.length, showUnreadOnly, unreadCount, activeFilter]);
+  }, [notificationList.length, notificationsQuery.isError, pendingInvites.length, refetch, showUnreadOnly, unreadCount, activeFilter]);
 
   const contextNote = selectionMode
     ? "Elige qué hacer con la selección."
