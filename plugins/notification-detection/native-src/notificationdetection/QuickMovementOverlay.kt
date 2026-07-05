@@ -37,6 +37,10 @@ object QuickMovementOverlay {
   private var panelView: View? = null
   private var windowManager: WindowManager? = null
   private var isDismissing = false
+  // Token de generación contra el leak N11: el addView va diferido 350 ms; si en esa
+  // ventana hubo dismiss() + show() nuevo, el addView viejo veía windowManager != null
+  // (el del show nuevo) y agregaba su vista, que quedaba huérfana en el WindowManager.
+  private var showGeneration = 0
 
   fun show(context: Context, suggestionId: String, notificationId: Int) {
     dismiss()
@@ -105,10 +109,13 @@ object QuickMovementOverlay {
 
     windowManager = manager
     isDismissing = false
+    showGeneration += 1
+    val generation = showGeneration
     // Delay so the notification shade has time to close before the overlay appears.
-    // Check windowManager is still set (not cleared by a dismiss() call during the delay).
+    // Check windowManager is still set (not cleared by a dismiss() call during the delay)
+    // AND that no dismiss()+show() newer superseded this one (generation token).
     Handler(Looper.getMainLooper()).postDelayed({
-      if (windowManager == null) return@postDelayed
+      if (windowManager == null || generation != showGeneration) return@postDelayed
       try {
         manager.addView(view, params)
         overlayView = view
@@ -119,6 +126,7 @@ object QuickMovementOverlay {
   }
 
   fun dismiss() {
+    showGeneration += 1 // invalida cualquier addView diferido aún en cola
     val manager = windowManager
     windowManager = null
     val view = overlayView ?: return
