@@ -67,6 +67,7 @@ import { COLORS, SPACING, SURFACE } from "../../constants/theme";
 import type { MovementType, MovementStatus, MovementRecord, ExchangeRateSummary } from "../../types/domain";
 import { useMovementCreationController } from "../../features/movements/hooks/useMovementCreationController";
 import { useTransferFxController } from "../../features/movements/hooks/useTransferFxController";
+import { useBalanceImpactPreview } from "../../features/movements/hooks/useBalanceImpactPreview";
 import { buildMovementCreateInput, buildMovementUpdateInput } from "../../features/movements/lib/movement-save-contract";
 import { useFrequentTransferPairQuery } from "../../services/queries/notification-detection";
 import {
@@ -889,57 +890,25 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     });
   }
 
-  // --- Balance impact preview ---
-  const originalSourceAccount = accounts.find((a) => a.id === (editMovement?.sourceAccountId ?? null)) ?? null;
-  const originalDestinationAccount = accounts.find((a) => a.id === (editMovement?.destinationAccountId ?? null)) ?? null;
-
-
-  // When editing a posted movement, currentBalance already reflects the original movement.
-  // We must reverse it first, then apply the new amount to get the correct projection.
-  const editOriginalSourceAmt =
-    isEditing && editMovement?.status === "posted" ? (editMovement.sourceAmount ?? 0) : 0;
-  const editOriginalDestAmt =
-    isEditing && editMovement?.status === "posted" ? (editMovement.destinationAmount ?? 0) : 0;
-
-  const projectedSourceBalance = useMemo(() => {
-    if (!sourceAccount || sourceAmountNum <= 0) return null;
-    if (form.movementType === "income") {
-      return sourceAccount.currentBalance + sourceAmountNum;
-    }
-    // expense / transfer source:
-    // if we kept the same account, reverse original amount and apply the new one;
-    // if we changed account, only apply the new outgoing amount here.
-    if (isEditing && originalSourceAccount && originalSourceAccount.id === sourceAccount.id) {
-      return (sourceAccount.currentBalance + editOriginalSourceAmt) - sourceAmountNum;
-    }
-    return sourceAccount.currentBalance - sourceAmountNum;
-  }, [sourceAccount, sourceAmountNum, form.movementType, editOriginalSourceAmt, isEditing, originalSourceAccount]);
-
-  const projectedDestBalance = useMemo(() => {
-    if (!destinationAccount) return null;
-    const effectiveNewAmt =
-      form.movementType === "transfer" && !transferCurrenciesDiffer
-        ? sourceAmountNum
-        : destinationAmountNum;
-    if (effectiveNewAmt <= 0) return null;
-    // destination:
-    // if we kept the same account, reverse original amount and apply the new one;
-    // if we changed account, only apply the new incoming amount here.
-    if (isEditing && originalDestinationAccount && originalDestinationAccount.id === destinationAccount.id) {
-      return (destinationAccount.currentBalance - editOriginalDestAmt) + effectiveNewAmt;
-    }
-    return destinationAccount.currentBalance + effectiveNewAmt;
-  }, [destinationAccount, destinationAmountNum, sourceAmountNum, form.movementType, transferCurrenciesDiffer, editOriginalDestAmt, isEditing, originalDestinationAccount]);
-  const revertedOriginalSourceBalance = useMemo(() => {
-    if (!isEditing || !originalSourceAccount || editOriginalSourceAmt <= 0) return null;
-    if (originalSourceAccount.id === sourceAccount?.id) return null;
-    return originalSourceAccount.currentBalance + editOriginalSourceAmt;
-  }, [isEditing, originalSourceAccount, editOriginalSourceAmt, sourceAccount?.id]);
-  const revertedOriginalDestBalance = useMemo(() => {
-    if (!isEditing || !originalDestinationAccount || editOriginalDestAmt <= 0) return null;
-    if (originalDestinationAccount.id === destinationAccount?.id) return null;
-    return originalDestinationAccount.currentBalance - editOriginalDestAmt;
-  }, [isEditing, originalDestinationAccount, editOriginalDestAmt, destinationAccount?.id]);
+  // Proyecciones de saldo del preview (fase 3 del refactor R7).
+  const {
+    originalSourceAccount,
+    originalDestinationAccount,
+    projectedSourceBalance,
+    projectedDestBalance,
+    revertedOriginalSourceBalance,
+    revertedOriginalDestBalance,
+  } = useBalanceImpactPreview({
+    accounts,
+    editMovement,
+    isEditing,
+    movementType: form.movementType,
+    sourceAccount,
+    destinationAccount,
+    sourceAmountNum,
+    destinationAmountNum,
+    transferCurrenciesDiffer,
+  });
   const hasAttachmentChanges = attachmentSignature !== initialAttachmentSignatureRef.current;
 
   // Live warnings (overdraft, fecha futura) — barato, pura, sin re-render extra.
