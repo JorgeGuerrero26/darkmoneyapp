@@ -77,6 +77,26 @@ import { StepTypeAndStatus } from "../../features/movements/components/form/step
 import { StepAccountsAndAmounts } from "../../features/movements/components/form/steps/StepAccountsAndAmounts";
 import { StepDetails } from "../../features/movements/components/form/steps/StepDetails";
 
+// Tipos y helpers puros extraídos a features/movements/lib/movement-form-support.ts
+// (fase 1 del refactor R7). Alias locales para no tocar los ~100 usos internos.
+import {
+  findTransferExchangeRate,
+  formatExchangeRateInput,
+  formatExchangeRateLabel,
+  formatTransferAmount,
+  getInitialMovementForm as getInitialForm,
+  isSuggestionCashflow,
+  parseDecimalInput,
+  readMovementLinkedEventId,
+  suggestionActsAsIncome,
+  type CategoryFeedbackIntent,
+  type CategorySuggestionState,
+  type MovementFormState as FormState,
+  type MovementFormStep as Step,
+  type MovementSuggestionLike,
+  type TransferFxState,
+} from "../../features/movements/lib/movement-form-support";
+
 type Props = {
   visible: boolean;
   onClose: () => void;
@@ -85,152 +105,6 @@ type Props = {
   initialAccountId?: number;
   editMovement?: MovementRecord;
 };
-
-type Step = 1 | 2 | 3;
-
-type FormState = {
-  movementType: MovementType;
-  status: MovementStatus;
-  sourceAccountId: number | null;
-  destinationAccountId: number | null;
-  sourceAmount: string;
-  destinationAmount: string;
-  description: string;
-  categoryId: number | null;
-  counterpartyId: number | null;
-  occurredAt: string;
-  notes: string;
-};
-
-type MovementSuggestionLike = {
-  id: number;
-  movementType: string;
-  status: string;
-  occurredAt: string;
-  sourceAccountId: number | null;
-  destinationAccountId: number | null;
-  categoryId: number | null;
-  counterpartyId: number | null;
-  description: string;
-  amount: number;
-};
-
-type CategorySuggestionState = {
-  categoryId: number | null;
-  categoryName: string;
-  newCategoryName?: string | null;
-  confidence: number;
-  reasons: string[];
-  source?: "deepseek" | "local";
-};
-
-type TransferFxState = {
-  rate: number;
-  effectiveAt: string | null;
-  label: string;
-  source: "api" | "local" | "manual";
-  provider?: string;
-};
-
-type CategoryFeedbackIntent = {
-  kind: "accepted_category_suggestion" | "manual_category_change";
-  categoryId: number;
-  categoryName?: string | null;
-  confidence?: number | null;
-  reasons?: string[];
-  source?: "deepseek" | "local";
-};
-
-function readMovementLinkedEventId(metadata: unknown): number | null {
-  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
-  const raw = metadata as Record<string, unknown>;
-  const eventId = Number(raw.obligation_event_id ?? 0);
-  return Number.isFinite(eventId) && eventId > 0 ? eventId : null;
-}
-
-function isSuggestionCashflow(movement: MovementSuggestionLike) {
-  return (
-    movement.movementType === "income" ||
-    movement.movementType === "refund" ||
-    movement.movementType === "expense" ||
-    movement.movementType === "subscription_payment" ||
-    movement.movementType === "obligation_payment"
-  );
-}
-
-function suggestionActsAsIncome(movement: MovementSuggestionLike) {
-  return movement.movementType === "income" || movement.movementType === "refund";
-}
-
-function formatTransferAmount(value: number) {
-  if (!Number.isFinite(value)) return "";
-  return String(Math.round(value * 100) / 100);
-}
-
-function formatExchangeRateInput(value: number) {
-  if (!Number.isFinite(value) || value <= 0) return "";
-  return String(Math.round(value * 1_000_000) / 1_000_000);
-}
-
-function formatExchangeRateLabel(fromCurrencyCode: string, toCurrencyCode: string, rate: number) {
-  const from = fromCurrencyCode.trim().toUpperCase();
-  const to = toCurrencyCode.trim().toUpperCase();
-  if (!from || !to || !Number.isFinite(rate) || rate <= 0) return "";
-  return `1 ${from} = ${rate.toLocaleString("es-PE", { maximumFractionDigits: 6 })} ${to}`;
-}
-
-function parseDecimalInput(value: string) {
-  // Solo se usa para el tipo de cambio manual: "3,672" es decimal, no miles.
-  return parsePositiveAmountInput(value, { kind: "rate" });
-}
-
-function findTransferExchangeRate(
-  exchangeRates: ExchangeRateSummary[],
-  fromCurrencyCode: string,
-  toCurrencyCode: string,
-) {
-  const from = fromCurrencyCode.trim().toUpperCase();
-  const to = toCurrencyCode.trim().toUpperCase();
-  if (!from || !to || from === to) return null;
-
-  const candidates = exchangeRates
-    .filter((rate) => {
-      const rateFrom = rate.fromCurrencyCode.trim().toUpperCase();
-      const rateTo = rate.toCurrencyCode.trim().toUpperCase();
-      return (
-        rate.rate > 0 &&
-        ((rateFrom === from && rateTo === to) || (rateFrom === to && rateTo === from))
-      );
-    })
-    .sort((left, right) => new Date(right.effectiveAt).getTime() - new Date(left.effectiveAt).getTime());
-
-  const best = candidates[0];
-  if (!best) return null;
-  const direct = best.fromCurrencyCode.trim().toUpperCase() === from;
-  const resolvedRate = direct ? best.rate : 1 / best.rate;
-  if (!Number.isFinite(resolvedRate) || resolvedRate <= 0) return null;
-  return {
-    rate: resolvedRate,
-    effectiveAt: best.effectiveAt,
-    label: formatExchangeRateLabel(from, to, resolvedRate),
-  };
-}
-
-function getInitialForm(defaultType: MovementType): FormState {
-  return {
-    movementType: defaultType,
-    status: "posted",
-    sourceAccountId: null,
-    destinationAccountId: null,
-    sourceAmount: "",
-    destinationAmount: "",
-    description: "",
-    categoryId: null,
-    counterpartyId: null,
-    occurredAt: todayPeru(),
-    notes: "",
-  };
-}
 
 export function MovementForm({ visible, onClose, onSuccess, defaultType = "expense", initialAccountId, editMovement }: Props) {
   const { profile } = useAuth();
