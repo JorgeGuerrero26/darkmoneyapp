@@ -21,7 +21,7 @@ como backlog al final de este documento.
 | S4 | Datos financieros (montos, bancos, descripciones, cuentas, runtime context) en SharedPreferences sin cifrar (`NotificationDetectionStore.kt`). Legibles con root o backup sin cifrar. | ALTA | P0 en curso |
 | S5 | Texto de notificaciones de terceros como vector de inyección: `cleanFinancialEmailMerchant` no valida que la salida sea un nombre plausible. Riesgo bajo en RN (no renderiza HTML) pero el merchant llega crudo a la BD. | MEDIA | Backlog |
 | S6 | `setLastSaveError` guarda mensajes de error que pueden contener payloads de Supabase con detalles del usuario. Sanitizar antes de persistir. | BAJA | Backlog |
-| S7 | Verificar `exported=false` en receivers internos del manifest (NotificationDetectionActionReceiver). | BAJA | Backlog |
+| S7 | Verificar `exported=false` en receivers internos del manifest (NotificationDetectionActionReceiver). | BAJA | ✅ Verificado (2026-07-05): BootCompletedReceiver y NotificationDetectionActionReceiver con exported="false". |
 | OK | DeepSeek API key solo en edge function (`Deno.env`), JWT validado con `authenticatedUser()`; service role nunca en cliente. | — | Correcto |
 
 ## 2. Integridad de datos
