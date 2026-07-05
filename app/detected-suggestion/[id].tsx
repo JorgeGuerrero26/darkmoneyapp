@@ -4,6 +4,7 @@ import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
 import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING } from "../../constants/theme";
 import { useAuth } from "../../lib/auth-context";
+import { setPendingDetectedSuggestionNativeId } from "../../lib/pending-detected-suggestion";
 import { useWorkspace } from "../../lib/workspace-context";
 import { findDetectedSuggestionIdByNativeId } from "../../services/queries/notification-detection";
 
@@ -26,8 +27,13 @@ export default function DetectedSuggestionRedirect() {
 
   useEffect(() => {
     if (navigatedRef.current) return;
-    // Sin sesión: NavigationGuard redirige a login; no navegamos desde aquí.
-    if (authLoading || !session) return;
+    if (authLoading) return;
+    if (!session) {
+      // Sin sesión: NavigationGuard redirige a login. Encolar el nativeId para
+      // retomar la sugerencia tras el login (mismo patrón que las invitaciones).
+      if (id) void setPendingDetectedSuggestionNativeId(decodeURIComponent(id));
+      return;
+    }
 
     let cancelled = false;
 

@@ -49,6 +49,10 @@ import {
   setPendingWorkspaceInviteToken,
 } from "../lib/pending-workspace-invite";
 import {
+  clearPendingDetectedSuggestionNativeId,
+  getPendingDetectedSuggestionNativeId,
+} from "../lib/pending-detected-suggestion";
+import {
   parseWorkspaceInviteTokenFromPath,
   parseWorkspaceInviteTokenFromUrl,
   workspaceInviteHref,
@@ -887,11 +891,13 @@ function NavigationGuard() {
     }
   }, [isLoading, session, profile, router, preferredAuthEntry]);
 
-  // Tras login + onboarding: abrir invitación pendiente (misma URL que el correo / web)
+  // Tras login + onboarding: abrir invitación o sugerencia detectada pendiente
+  // (misma URL que el correo / web o que el deep link de la notificación nativa)
   useEffect(() => {
     if (isLoading || !session || !profile?.baseCurrencyCode) return;
     if (pathname.includes("/share/obligations/")) return;
     if (pathname.includes("/workspace-invite/")) return;
+    if (pathname.includes("/detected-suggestion/")) return;
 
     let cancelled = false;
     void (async () => {
@@ -905,15 +911,29 @@ function NavigationGuard() {
       }
 
       const obligationToken = await getPendingObligationInviteToken();
-      if (!obligationToken || cancelled) return;
-      await clearPendingObligationInviteToken();
+      if (obligationToken && !cancelled) {
+        await clearPendingObligationInviteToken();
+        if (!cancelled) {
+          router.replace(obligationShareHref(obligationToken));
+          return;
+        }
+      }
+
+      // Sugerencia detectada abierta sin sesión: re-entrar por la pantalla puente,
+      // que ya sabe esperar workspace y resolver el id de la sugerencia.
+      const pendingNativeId = await getPendingDetectedSuggestionNativeId();
+      if (!pendingNativeId || cancelled) return;
+      // Aún en (auth): el replace a dashboard del guard podría pisar el push (carrera).
+      // No limpiar el pendiente; el cambio de pathname re-dispara este efecto ya en (app).
+      if (segments[0] === "(auth)") return;
+      await clearPendingDetectedSuggestionNativeId();
       if (cancelled) return;
-      router.replace(obligationShareHref(obligationToken));
+      router.push(`/detected-suggestion/${encodeURIComponent(pendingNativeId)}`);
     })();
     return () => {
       cancelled = true;
     };
-  }, [isLoading, session?.user?.id, profile?.baseCurrencyCode, pathname, router]);
+  }, [isLoading, session?.user?.id, profile?.baseCurrencyCode, pathname, router, segments]);
 
   return (
     <ThemeProvider value={AppTheme}>
