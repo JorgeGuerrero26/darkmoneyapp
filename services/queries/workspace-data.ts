@@ -2206,6 +2206,10 @@ export async function createMovement(
 export function useCreateMovementMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    // Key global: permite a la lista de movimientos mostrar "Guardando movimiento…"
+    // (useIsMutating) mientras un create sigue en vuelo, incluso si el usuario ya
+    // cerró el formulario — antes no había señal y lo registraba de nuevo a mano.
+    mutationKey: ["create-movement"],
     mutationFn: (input: MovementFormInput) => createMovement(workspaceId!, input),
     onSuccess: (_data, variables) => {
       // Invalidación INMEDIATA (no diferida por InteractionManager): tras guardar un movimiento,

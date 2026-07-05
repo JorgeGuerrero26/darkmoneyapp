@@ -8,7 +8,7 @@ import {
   type SectionListRenderItem,
 } from "react-native";
 import { useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
-import { useQueryClient } from "@tanstack/react-query";
+import { useIsMutating, useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { startOfMonth, endOfMonth, subMonths, format } from "date-fns";
 
@@ -19,6 +19,7 @@ import { usePaginatedMovements } from "../../services/queries/movements";
 import { useMovementAttachmentCountsQuery } from "../../services/queries/attachments";
 import { MovementDeleteImpact } from "../../components/domain/MovementDeleteImpact";
 import { DetectionBackgroundSavesNotice } from "../../components/domain/DetectionBackgroundSavesNotice";
+import { MovementSavingNotice } from "../../components/domain/MovementSavingNotice";
 import { useDetectionBackgroundSaves } from "../../hooks/useDetectionBackgroundSaves";
 import { SwipeableMovementRow } from "../../components/domain/SwipeableMovementRow";
 import { BulkActionBar } from "../../components/ui/BulkActionBar";
@@ -115,6 +116,7 @@ function MovementsScreen() {
     retryNow: retryDetectionSavesNow,
     isRetrying: isRetryingDetectionSaves,
   } = useDetectionBackgroundSaves();
+  const savingMovementsCount = useIsMutating({ mutationKey: ["create-movement"] });
   const params = useLocalSearchParams<{
     quickFilter?: string | string[];
     quickScope?: string | string[];
@@ -855,6 +857,7 @@ function MovementsScreen() {
         context={
           !selectMode ? (
             <View style={{ gap: SPACING.sm }}>
+              <MovementSavingNotice savingCount={savingMovementsCount} />
               <DetectionBackgroundSavesNotice
                 pendingSaves={pendingDetectionSaves}
                 lastErrorMessage={lastDetectionSaveError?.message ?? null}
