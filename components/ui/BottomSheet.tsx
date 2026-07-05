@@ -1,7 +1,8 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Animated,
   Dimensions,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   PanResponder,
@@ -46,6 +47,22 @@ export function BottomSheet({
   const translateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
   const isSwiping = useRef(false);
+  // Android: el Modal con statusBarTranslucent NO respeta adjustResize, así que el
+  // KeyboardAvoidingView no empuja nada y el teclado tapaba los inputs del sheet.
+  // Medimos el teclado a mano y levantamos el sheet esa altura.
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  useEffect(() => {
+    if (Platform.OS !== "android") return;
+    const showSub = Keyboard.addListener("keyboardDidShow", (event) => {
+      setKeyboardHeight(event.endCoordinates?.height ?? 0);
+    });
+    const hideSub = Keyboard.addListener("keyboardDidHide", () => setKeyboardHeight(0));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   useEffect(() => {
     if (visible) {
@@ -139,17 +156,21 @@ export function BottomSheet({
         />
       </Animated.View>
 
-      {/* Sheet — wrapped in KAV so content pushes up when keyboard appears */}
+      {/* Sheet — iOS usa KAV (padding); Android usa keyboardHeight medido a mano */}
       <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={styles.keyboardContainer}
       >
       <Animated.View
         style={[
           styles.sheet,
           {
-            maxHeight: SCREEN_HEIGHT * snapHeight,
-            paddingBottom: insets.bottom + SPACING.lg,
+            maxHeight: Math.min(
+              SCREEN_HEIGHT * snapHeight,
+              SCREEN_HEIGHT - keyboardHeight - insets.top - SPACING.lg,
+            ),
+            bottom: keyboardHeight,
+            paddingBottom: keyboardHeight > 0 ? SPACING.md : insets.bottom + SPACING.lg,
             transform: [{ translateY }],
           },
         ]}

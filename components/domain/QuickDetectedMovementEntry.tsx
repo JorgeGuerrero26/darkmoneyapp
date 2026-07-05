@@ -952,7 +952,8 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
 
   return (
     <BottomSheet visible={visible} onClose={onClose} title="Registrar movimiento" snapHeight={0.88}>
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      {/* BottomSheet ya provee el ScrollView; anidar otro rompía el scroll y el teclado. */}
+      <View style={styles.content}>
         <AiQuotaWarningBanner usage={aiUsageQuery.data} />
         <View style={styles.appRow}>
           <View style={styles.logoWrap}>
@@ -1117,7 +1118,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
             loading={createMovement.isPending || createCounterparty.isPending || createSubscription.isPending || createRecurringIncome.isPending || (markSuggestion.isPending && !isDiscarding) || checkingDuplicate}
           />
         </View>
-      </ScrollView>
+      </View>
     </BottomSheet>
   );
 }
