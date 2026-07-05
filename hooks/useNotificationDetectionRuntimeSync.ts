@@ -84,6 +84,21 @@ export function useNotificationDetectionRuntimeSync() {
   const processedSuggestionIdsRef = useRef(new Map<string, number>());
   const [processedHydrated, setProcessedHydrated] = useState(false);
   const flushTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Serializa el procesamiento de sugerencias: el efecto depende de ~15 valores (snapshot,
+  // patrones, historiales) y cada cambio lo re-disparaba CANCELANDO la corrida en vuelo a
+  // mitad de la cadena de IA — la sugerencia ya estaba marcada como procesada, así que el
+  // enriquecimiento se perdía para siempre. Ahora: una corrida a la vez; si las deps cambian
+  // mientras corre, se agenda UNA re-corrida al terminar (con closures frescos vía syncTick).
+  const syncRunningRef = useRef(false);
+  const syncRerunRef = useRef(false);
+  const [syncTick, setSyncTick] = useState(0);
+  const unmountedRef = useRef(false);
+  useEffect(() => {
+    unmountedRef.current = false;
+    return () => {
+      unmountedRef.current = true;
+    };
+  }, []);
   const { data: snapshot } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const entitlementQuery = useUserEntitlementQuery(profile?.id ?? null, profile?.email ?? null);
   const settingsQuery = useNotificationDetectionSettingsQuery(profile?.id, activeWorkspaceId);
@@ -266,11 +281,15 @@ export function useNotificationDetectionRuntimeSync() {
     // Espera a que la hidratacion del set persistido termine; evita reprocesar
     // sugerencias ya vistas en sesiones previas (dentro de 24h).
     if (!processedHydrated) return;
-    let cancelled = false;
+    if (syncRunningRef.current) {
+      // Ya hay una corrida en vuelo: no cancelarla ni superponer otra; re-correr al terminar.
+      syncRerunRef.current = true;
+      return;
+    }
     async function syncLocalSuggestions() {
       const suggestions = await notificationDetection.getSuggestions();
       for (const suggestion of suggestions) {
-        if (cancelled || suggestion.status !== "pending") continue;
+        if (unmountedRef.current || suggestion.status !== "pending") continue;
         if (processedSuggestionIdsRef.current.has(suggestion.id)) continue;
         processedSuggestionIdsRef.current.set(suggestion.id, Date.now());
         scheduleProcessedFlush();
@@ -653,7 +672,7 @@ export function useNotificationDetectionRuntimeSync() {
         const existingAiCategory = suggestion.aiCategoryRecommendation as { type?: unknown; status?: unknown } | undefined;
         const hasRealAiCategory =
           existingAiCategory?.type === "existing_category" || existingAiCategory?.type === "new_category";
-        if (cancelled || !entitlementQuery.data?.proAccessEnabled || hasRealAiCategory) continue;
+        if (unmountedRef.current || !entitlementQuery.data?.proAccessEnabled || hasRealAiCategory) continue;
         const movementType = suggestion.movementType === "income" ? "income" : "expense";
         const categories = filterCategoriesForMovementType(snapshot?.categories ?? [], movementType);
         if (!description || categories.length === 0) continue;
@@ -678,7 +697,7 @@ export function useNotificationDetectionRuntimeSync() {
           patternMaps,
           canCallAi: true,
         });
-        if (cancelled) continue;
+        if (unmountedRef.current) continue;
         if (result.status === "ai_resolved" && result.recommendation) {
           notificationDetection.setSuggestionAiCategoryRecommendation(suggestion.id, result.recommendation);
           void recordDetectionEvent({
@@ -718,15 +737,23 @@ export function useNotificationDetectionRuntimeSync() {
           });
         }
       }
-      if (!cancelled) {
+      if (!unmountedRef.current) {
         void queryClient.invalidateQueries({ queryKey: ["notifications"] });
       }
     }
-    void syncLocalSuggestions();
-    return () => {
-      cancelled = true;
-    };
+    syncRunningRef.current = true;
+    void syncLocalSuggestions()
+      .catch(() => null)
+      .finally(() => {
+        syncRunningRef.current = false;
+        if (syncRerunRef.current && !unmountedRef.current) {
+          syncRerunRef.current = false;
+          // Bump del tick: re-dispara el efecto con closures FRESCOS (snapshot/patrones al día).
+          setSyncTick((tick) => tick + 1);
+        }
+      });
   }, [
+    syncTick,
     activeWorkspaceId,
     activeWorkspace?.baseCurrencyCode,
     entitlementQuery.data?.proAccessEnabled,
