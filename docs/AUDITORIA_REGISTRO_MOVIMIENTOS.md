@@ -58,13 +58,13 @@ como backlog al final de este documento.
 
 | # | Hallazgo | Severidad | Estado |
 |---|----------|-----------|--------|
-| R1 | `submit()` de QuickDetectedMovementEntry libera el guard anti-doble-tap en 6 returns dispersos; una ruta de error nueva podría dejarlo trabado o abierto. try/finally. | ALTA | P1 en curso |
-| R2 | Al cambiar movementType no se resetean `counterpartyId`/`destinationAmount`/`transferFxRate` → valores fantasma de un tipo anterior. | MEDIA | P1 en curso |
+| R1 | `submit()` de QuickDetectedMovementEntry libera el guard anti-doble-tap en 6 returns dispersos; una ruta de error nueva podría dejarlo trabado o abierto. try/finally. | ALTA | ✅ Resuelto (verificado 2026-07-05: submit() con try/finally único). |
+| R2 | Al cambiar movementType no se resetean `counterpartyId`/`destinationAmount`/`transferFxRate` → valores fantasma de un tipo anterior. | MEDIA | ✅ Resuelto (verificado 2026-07-05: switchMovementType limpia campos contextuales). |
 | R3 | Validaciones inline en QuickEntry en vez de `validateMovementForm` compartido (MovementForm sí lo usa) → criterios divergentes entre vías. | MEDIA | P1 en curso |
-| R4 | Parsing de montos `Number(x.replace(",", "."))` sin locale, duplicado en varios archivos. | MEDIA | P1 en curso |
-| R5 | `useCreateMovementMutation` no invalida `["notifications"]` ni la sugerencia cuando el registro viene de una detección → notificación queda "pendiente" visualmente. | MEDIA | P1 en curso |
-| R6 | Utilidades duplicadas línea a línea entre MovementForm y QuickEntry (`patternMovementAmount`, `textSimilarity`, `learnedConfidence`). | MEDIA | Backlog (P2) |
-| R7 | MovementForm: 1730 líneas, 60+ useState, pasos como ternarios anidados, props drilling de 25-30 props por step. Dividir en hooks/subcomponentes. | MEDIA | Backlog |
+| R4 | Parsing de montos `Number(x.replace(",", "."))` sin locale, duplicado en varios archivos. | MEDIA | ✅ Resuelto (verificado 2026-07-05: ambas vías usan `parsePositiveAmountInput` de lib/amount-parsing). |
+| R5 | `useCreateMovementMutation` no invalida `["notifications"]` ni la sugerencia cuando el registro viene de una detección → notificación queda "pendiente" visualmente. | MEDIA | ✅ Resuelto (verificado 2026-07-05: onSuccess invalida notifications + detected-movement-suggestion). |
+| R6 | Utilidades duplicadas línea a línea entre MovementForm y QuickEntry (`patternMovementAmount`, `textSimilarity`, `learnedConfidence`). | MEDIA | ✅ Resuelto (2026-07-05): heurísticas en features/movements/lib/pattern-heuristics + núcleo de derivación compartido en category-suggestion-derivation.ts. |
+| R7 | MovementForm: 1730 líneas, 60+ useState, pasos como ternarios anidados, props drilling de 25-30 props por step. Dividir en hooks/subcomponentes. | MEDIA | ✅ Fases 1-5 (2026-07-05): 1729→1160 líneas; support lib + useTransferFxController + useBalanceImpactPreview + useMovementFormSuggestions + useMovementAttachmentSync. |
 | R8 | Effect de descripción con debounce puede ejecutar callback stale (sin requestId). | MEDIA | Backlog |
 | R9 | Sync de FX en transfer sin cancelación de requests anteriores (responses fuera de orden). | BAJA | Backlog |
 | R10 | rgba hardcodeados en QuickEntry (líneas ~1184, ~1198) en vez de tokens SURFACE. | BAJA | ✅ Resuelto (verificado 2026-07-04: sin rgba/hex inline en QuickEntry). |
