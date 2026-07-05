@@ -62,12 +62,12 @@ import type { CategorySummary, CounterpartySummary } from "../../types/domain";
 import { useMovementCreationController } from "../../features/movements/hooks/useMovementCreationController";
 import { buildMovementCreateInput } from "../../features/movements/lib/movement-save-contract";
 import { parsePositiveAmountInput } from "../../lib/amount-parsing";
-import {
-  learnedConfidence,
-  movementTextSimilarity,
-  patternMovementAmount,
-} from "../../features/movements/lib/pattern-heuristics";
+import { patternMovementAmount } from "../../features/movements/lib/pattern-heuristics";
 import { CategoryPicker } from "../../features/movements/components/form/MovementChipPickers";
+import {
+  deriveLearnedCategoryMatch,
+  mapAiCategoryRecommendation,
+} from "../../features/movements/lib/category-suggestion-derivation";
 import { LOCAL_CATEGORY_AI_CONFIDENCE_THRESHOLD } from "../../lib/movement-ai-orchestrator";
 
 // Heurísticas compartidas con MovementForm y el runtime sync (features/movements/lib).
@@ -243,29 +243,21 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
   const localCategorySuggestion = useMemo<CategorySuggestionState | null>(() => {
     if (categoryId !== null || !description.trim()) return null;
 
-    // Learned: text similarity against accepted feedback (same as MovementForm)
-    const accepted = (dashboardAnalytics?.learningFeedback ?? []).filter(
-      (fb) => fb.acceptedCategoryId != null &&
-        (fb.feedbackKind === "accepted_category_suggestion" || fb.feedbackKind === "manual_category_change"),
-    );
-    const normalized = normalizeAnalyticsText(description);
-    if (normalized && accepted.length > 0) {
-      const best = accepted
-        .map((fb) => ({ fb, sim: movementTextSimilarity(normalized, fb.normalizedDescription ?? "") }))
-        .filter((item) => item.sim >= 0.58)
-        .sort((a, b) => b.sim - a.sim || new Date(b.fb.createdAt).getTime() - new Date(a.fb.createdAt).getTime())[0];
-      if (best?.fb.acceptedCategoryId) {
-        const cat = categories.find((c) => c.id === best.fb.acceptedCategoryId);
-        const confidence = learnedConfidence(normalized, best.fb.normalizedDescription ?? "", best.sim);
-        if (cat && confidence >= LOCAL_CATEGORY_AI_CONFIDENCE_THRESHOLD) return {
-          categoryId: cat.id,
-          categoryName: cat.name,
-          confidence,
-          detail: `${Math.round(confidence * 100)}% · aprendido de tus correcciones`,
-          reasons: ["aprendido de tus correcciones"],
-          source: "local",
-        };
-      }
+    // Learned: núcleo compartido con MovementForm (R6 cerrado).
+    const learned = deriveLearnedCategoryMatch({
+      description,
+      learningFeedback: dashboardAnalytics?.learningFeedback,
+      categories,
+    });
+    if (learned) {
+      return {
+        categoryId: learned.categoryId,
+        categoryName: learned.categoryName,
+        confidence: learned.confidence,
+        detail: `${Math.round(learned.confidence * 100)}% · aprendido de tus correcciones`,
+        reasons: ["aprendido de tus correcciones"],
+        source: "local",
+      };
     }
 
     // Pattern-based: word frequency against recent movements
@@ -329,30 +321,13 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
     proAccessEnabled: entitlementQuery.data?.proAccessEnabled,
   });
   const aiCategorySuggestion = useMemo<CategorySuggestionState | null>(() => {
-    if (!aiCategoryRecommendation) return null;
-    const detail = `Mejor sugerencia · ${Math.round(aiCategoryRecommendation.confidence * 100)}% · ${aiCategoryRecommendation.reasons.join(" · ")}`;
-    if (aiCategoryRecommendation.type === "existing_category" && aiCategoryRecommendation.categoryId) {
-      return {
-        categoryId: aiCategoryRecommendation.categoryId,
-        categoryName: aiCategoryRecommendation.categoryName ?? "Categoría sugerida",
-        confidence: aiCategoryRecommendation.confidence,
-        detail,
-        reasons: aiCategoryRecommendation.reasons,
-        source: "deepseek",
-      };
-    }
-    if (aiCategoryRecommendation.type === "new_category" && aiCategoryRecommendation.newCategoryName) {
-      return {
-        categoryId: null,
-        categoryName: `Crear categoría "${aiCategoryRecommendation.newCategoryName}"`,
-        newCategoryName: aiCategoryRecommendation.newCategoryName,
-        confidence: aiCategoryRecommendation.confidence,
-        detail,
-        reasons: aiCategoryRecommendation.reasons,
-        source: "deepseek",
-      };
-    }
-    return null;
+    const base = mapAiCategoryRecommendation(aiCategoryRecommendation);
+    if (!base) return null;
+    return {
+      ...base,
+      detail: `Mejor sugerencia · ${Math.round(base.confidence * 100)}% · ${base.reasons.join(" · ")}`,
+      source: "deepseek",
+    };
   }, [aiCategoryRecommendation]);
   const categorySuggestion = aiCategorySuggestion ?? localCategorySuggestion;
   const { cleanup: descriptionCleanup, isLoading: descriptionCleanupLoading } = useMovementDescriptionCleanup({

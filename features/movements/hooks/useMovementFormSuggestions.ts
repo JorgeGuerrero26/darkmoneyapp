@@ -1,7 +1,6 @@
 import { useMemo } from "react";
 
 import { buildCategorySuggestionCandidates } from "../../../services/analytics/category-suggestions";
-import { normalizeAnalyticsText } from "../../../services/analytics/movement-features";
 import type { PatternMovement } from "../../../services/queries/movement-patterns";
 import { suggestAccountFromCounterparty, type PatternMaps } from "../../../lib/movement-patterns";
 import { LOCAL_CATEGORY_AI_CONFIDENCE_THRESHOLD } from "../../../lib/movement-ai-orchestrator";
@@ -14,11 +13,11 @@ import type {
   CounterpartySummary,
   MovementType,
 } from "../../../types/domain";
+import { patternMovementAmount } from "../lib/pattern-heuristics";
 import {
-  learnedConfidence,
-  movementTextSimilarity,
-  patternMovementAmount,
-} from "../lib/pattern-heuristics";
+  deriveLearnedCategoryMatch,
+  mapAiCategoryRecommendation,
+} from "../lib/category-suggestion-derivation";
 import {
   isSuggestionCashflow,
   suggestionActsAsIncome,
@@ -133,31 +132,18 @@ export function useMovementFormSuggestions({
   }, [editMovementId, patternMovements]);
 
   const learnedCategorySuggestion = useMemo<CategorySuggestionState | null>(() => {
-    if (!currentSuggestionMovement || categoryId != null || !currentSuggestionMovement.description.trim()) return null;
-    const accepted = learningFeedback?.filter((feedback) =>
-      feedback.acceptedCategoryId != null &&
-      (feedback.feedbackKind === "accepted_category_suggestion" || feedback.feedbackKind === "manual_category_change")
-    ) ?? [];
-    const normalized = normalizeAnalyticsText(currentSuggestionMovement.description);
-    if (!normalized || accepted.length === 0) return null;
-    const best = accepted
-      .map((feedback) => {
-        const learnedText = feedback.normalizedDescription ?? "";
-        const similarity = learnedText === normalized ? 1 : movementTextSimilarity(normalized, learnedText);
-        return { feedback, similarity };
-      })
-      .filter((item) => item.similarity >= 0.58)
-      .sort((a, b) => b.similarity - a.similarity || new Date(b.feedback.createdAt).getTime() - new Date(a.feedback.createdAt).getTime())[0];
-    if (!best?.feedback.acceptedCategoryId) return null;
-    const category = categoriesForPicker.find((item) => item.id === best.feedback.acceptedCategoryId);
-    if (!category) return null;
-    const confidence = learnedConfidence(normalized, best.feedback.normalizedDescription ?? "", best.similarity);
-    if (confidence < LOCAL_CATEGORY_AI_CONFIDENCE_THRESHOLD) return null;
+    if (!currentSuggestionMovement || categoryId != null) return null;
+    const match = deriveLearnedCategoryMatch({
+      description: currentSuggestionMovement.description,
+      learningFeedback,
+      categories: categoriesForPicker,
+    });
+    if (!match) return null;
     return {
-      categoryId: category.id,
-      categoryName: category.name,
-      confidence,
-      reasons: ["aprendido de una corrección tuya", best.similarity >= 0.92 ? "texto casi igual" : "texto parecido"],
+      categoryId: match.categoryId,
+      categoryName: match.categoryName,
+      confidence: match.confidence,
+      reasons: ["aprendido de una corrección tuya", match.similarity >= 0.92 ? "texto casi igual" : "texto parecido"],
     };
   }, [categoriesForPicker, currentSuggestionMovement, learningFeedback, categoryId]);
 
@@ -242,27 +228,8 @@ export function useMovementFormSuggestions({
   });
 
   const aiCategorySuggestion = useMemo<CategorySuggestionState | null>(() => {
-    if (!aiCategoryRecommendation) return null;
-    if (aiCategoryRecommendation.type === "existing_category" && aiCategoryRecommendation.categoryId) {
-      return {
-        categoryId: aiCategoryRecommendation.categoryId,
-        categoryName: aiCategoryRecommendation.categoryName ?? "Categoría sugerida",
-        confidence: aiCategoryRecommendation.confidence,
-        reasons: aiCategoryRecommendation.reasons,
-        source: "deepseek",
-      };
-    }
-    if (aiCategoryRecommendation.type === "new_category" && aiCategoryRecommendation.newCategoryName) {
-      return {
-        categoryId: null,
-        categoryName: `Crear categoría "${aiCategoryRecommendation.newCategoryName}"`,
-        newCategoryName: aiCategoryRecommendation.newCategoryName,
-        confidence: aiCategoryRecommendation.confidence,
-        reasons: aiCategoryRecommendation.reasons,
-        source: "deepseek",
-      };
-    }
-    return null;
+    const base = mapAiCategoryRecommendation(aiCategoryRecommendation);
+    return base ? { ...base, source: "deepseek" } : null;
   }, [aiCategoryRecommendation]);
 
   const bestCategorySuggestion = aiCategorySuggestion ?? localCategorySuggestion;
