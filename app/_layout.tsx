@@ -73,6 +73,10 @@ import { clearLastTabRoute, getLastTabRoute } from "../hooks/useTabPersistence";
 
 const Notifications = getNotificationsModule();
 
+// Solo las queries necesarias para PINTAR el dashboard bloquean el overlay de arranque.
+// Las de colaboración (shared-obligations, obligation-shares, payment-request-counts)
+// se quitaron: list-shared-obligations tarda/timeoutea 12 s en dispositivos reales y
+// mantenía al usuario mirando "Cargando workspace" ~25 s en cada arranque.
 const INITIAL_WORKSPACE_BOOTSTRAP_QUERY_KEYS = new Set([
   "user-workspaces",
   "workspace-snapshot",
@@ -80,10 +84,7 @@ const INITIAL_WORKSPACE_BOOTSTRAP_QUERY_KEYS = new Set([
   "dashboard-analytics",
   "budget-scope-movements",
   "movements",
-  "shared-obligations",
   "notifications",
-  "obligation-shares",
-  "obligation-payment-request-counts",
   "user-entitlement",
 ]);
 
