@@ -773,12 +773,31 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
         if (duplicate) {
           // El guard se libera en el finally de submit() al retornar: el usuario decide en el
           // diálogo y "Registrar de todas formas" re-entra vía submit(true).
+          // Copy concreto (qué coincidió) en vez del genérico: el usuario necesita saber POR QUÉ
+          // parece duplicado para decidir, y poder ver el existente (auditoría, hallazgo R12).
+          const duplicateAmount = duplicate.sourceAmount ?? duplicate.destinationAmount;
+          const duplicateDate = new Date(duplicate.occurredAt).toLocaleDateString("es-PE", {
+            day: "2-digit",
+            month: "short",
+          });
+          const duplicateDetail = [
+            duplicate.description ? `"${duplicate.description}"` : "un movimiento igual",
+            `el ${duplicateDate}`,
+            duplicateAmount != null ? `por ${duplicateAmount.toFixed(2)}` : null,
+          ].filter(Boolean).join(" ");
           Alert.alert(
-            movementRisk?.title ?? "Puede que este movimiento ya exista",
-            movementRisk?.explanation ?? "Encontramos un movimiento con la misma fecha, cuenta, monto y descripción.",
+            "Puede que este movimiento ya exista",
+            `Ya registraste ${duplicateDetail} en la misma cuenta. Si es el mismo, no lo registres de nuevo.`,
             [
-              { text: "Revisar", style: "cancel" },
+              {
+                text: "Ver el existente",
+                onPress: () => {
+                  onClose();
+                  router.push(`/movement/${duplicate.id}` as never);
+                },
+              },
               { text: "Registrar de todas formas", onPress: () => void submit(true) },
+              { text: "Cancelar", style: "cancel" },
             ],
           );
           return;
@@ -1153,6 +1172,9 @@ function AccountChipPicker({ label, accounts, selectedId, onSelect }: {
             style={[styles.accountChip, selectedId === acc.id && { borderColor: acc.color, backgroundColor: acc.color + "22" }]}
             onPress={() => onSelect(acc.id)}
             activeOpacity={0.75}
+            accessibilityRole="button"
+            accessibilityLabel={`Cuenta ${acc.name} (${acc.currencyCode})`}
+            accessibilityState={{ selected: selectedId === acc.id }}
           >
             <Text style={[styles.accountChipName, selectedId === acc.id && { color: acc.color }]}>{acc.name}</Text>
             <Text style={styles.accountChipSub}>{acc.currencyCode}</Text>

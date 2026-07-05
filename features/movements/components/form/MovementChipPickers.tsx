@@ -57,6 +57,15 @@ type CategoryProps = {
 // Con muchas categorías el scroll horizontal no escala; sobre este umbral aparece el buscador.
 const CATEGORY_SEARCH_THRESHOLD = 12;
 
+// Búsqueda insensible a tildes: "credito" debe encontrar "Crédito".
+function normalizeSearchText(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
 export const CategoryPicker = memo(function CategoryPicker({
   label,
   categories,
@@ -65,11 +74,11 @@ export const CategoryPicker = memo(function CategoryPicker({
 }: CategoryProps) {
   const [query, setQuery] = useState("");
   const showSearch = categories.length > CATEGORY_SEARCH_THRESHOLD;
-  const normalizedQuery = query.trim().toLowerCase();
+  const normalizedQuery = normalizeSearchText(query);
   const visibleCategories = showSearch && normalizedQuery
     ? categories.filter(
         // La seleccionada queda siempre visible para poder deseleccionarla aunque no matchee.
-        (cat) => cat.id === selectedId || cat.name.toLowerCase().includes(normalizedQuery),
+        (cat) => cat.id === selectedId || normalizeSearchText(cat.name).includes(normalizedQuery),
       )
     : categories;
   return (
