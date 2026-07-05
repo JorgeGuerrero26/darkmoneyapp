@@ -27,7 +27,6 @@ import {
   useUserWorkspacesQuery,
 } from "../services/queries/workspace-data";
 import { useSharedObligationsQuery } from "../services/queries/obligations";
-import { findDetectedSuggestionIdByNativeId } from "../services/queries/notification-detection";
 import { OfflineBanner } from "../components/layout/OfflineBanner";
 import { ActivityNoticeContainer } from "../components/ui/ActivityNotice";
 import { ToastProvider } from "../components/DarkMoneyToast";
@@ -310,7 +309,7 @@ function NotificationSetup() {
     workspaceCoreLoading,
   ]);
 
-  const showWorkspaceBootstrapOverlay =
+  const showWorkspaceBootstrapOverlayRaw =
     isCheckingSession ||
     (
       hasSignedInSession &&
@@ -319,6 +318,22 @@ function NotificationSetup() {
         !initialWorkspaceQueriesSettled
       )
     );
+
+  // Válvula de escape: el overlay bloquea TODO el touch (pointerEvents="auto"). Si una
+  // query se cuelga (red lenta/caída) el usuario quedaba encerrado sin poder tocar nada
+  // y debía forzar el cierre desde el sistema. Tras el timeout se libera la UI y las
+  // queries siguen cargando en segundo plano.
+  const BOOTSTRAP_OVERLAY_MAX_MS = 15_000;
+  const [bootstrapOverlayTimedOut, setBootstrapOverlayTimedOut] = useState(false);
+  useEffect(() => {
+    if (!showWorkspaceBootstrapOverlayRaw) {
+      setBootstrapOverlayTimedOut(false);
+      return;
+    }
+    const timer = setTimeout(() => setBootstrapOverlayTimedOut(true), BOOTSTRAP_OVERLAY_MAX_MS);
+    return () => clearTimeout(timer);
+  }, [showWorkspaceBootstrapOverlayRaw]);
+  const showWorkspaceBootstrapOverlay = showWorkspaceBootstrapOverlayRaw && !bootstrapOverlayTimedOut;
 
   const bootstrapTitle = isCheckingSession ? "Verificando sesión" : "Cargando workspace";
   const bootstrapBody = isCheckingSession
@@ -717,7 +732,6 @@ function NavigationGuard() {
   const segments = useSegments();
   const pathname = usePathname();
   const router = useRouter();
-  const { activeWorkspaceId } = useWorkspace();
   const [preferredAuthEntry, setPreferredAuthEntry] = useState<"/(auth)/login" | "/(auth)/welcome" | null>(null);
   const onObligationInviteFromPush = useCallback(
     (token: string) => {
@@ -822,31 +836,11 @@ function NavigationGuard() {
       });
   }, [session]);
 
-  // Deep-link nativo de detección: darkmoney://detected-suggestion/<nativeId>
-  // Abre la app y aterriza en el form in-app de esa sugerencia.
-  const openDetectedSuggestion = useCallback(
-    async (url: string | null) => {
-      if (!url) return;
-      const match = url.match(/detected-suggestion\/([^/?#]+)/);
-      if (!match) return;
-      const nativeId = decodeURIComponent(match[1]);
-      if (!activeWorkspaceId) {
-        router.push("/notifications");
-        return;
-      }
-      const id = await findDetectedSuggestionIdByNativeId(activeWorkspaceId, nativeId).catch(() => null);
-      router.push(id ? `/notifications?suggestionId=${id}` : "/notifications");
-    },
-    [activeWorkspaceId, router],
-  );
-
-  useEffect(() => {
-    void Linking.getInitialURL()
-      .then((url) => void openDetectedSuggestion(url))
-      .catch(() => {});
-    const sub = Linking.addEventListener("url", ({ url }) => void openDetectedSuggestion(url));
-    return () => sub.remove();
-  }, [openDetectedSuggestion]);
+  // Deep-link nativo de detección: darkmoney://detected-suggestion/<nativeId>.
+  // Lo maneja EXCLUSIVAMENTE la ruta app/detected-suggestion/[id].tsx (expo-router
+  // enruta el scheme solo). Antes existía aquí un segundo handler con getInitialURL
+  // que re-navegaba a /notifications en cada cambio de workspace y ANTES de que la
+  // sesión cargara → pantalla de notificaciones vacía + stack roto al retroceder.
 
   useEffect(() => {
     if (isLoading) return;
