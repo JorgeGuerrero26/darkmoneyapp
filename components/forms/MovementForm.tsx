@@ -68,6 +68,7 @@ import type { MovementType, MovementStatus, MovementRecord, ExchangeRateSummary 
 import { useMovementCreationController } from "../../features/movements/hooks/useMovementCreationController";
 import { useTransferFxController } from "../../features/movements/hooks/useTransferFxController";
 import { useBalanceImpactPreview } from "../../features/movements/hooks/useBalanceImpactPreview";
+import { useMovementFormSuggestions } from "../../features/movements/hooks/useMovementFormSuggestions";
 import { buildMovementCreateInput, buildMovementUpdateInput } from "../../features/movements/lib/movement-save-contract";
 import { useFrequentTransferPairQuery } from "../../services/queries/notification-detection";
 import {
@@ -325,242 +326,40 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     proAccessEnabled: entitlementQuery.data?.proAccessEnabled,
   });
 
-  const currentSuggestionMovement = useMemo<MovementSuggestionLike | null>(() => {
-    const amount = form.movementType === "income" ? destinationAmountNum : sourceAmountNum;
-    if (form.movementType === "transfer") return null;
-    return {
-      id: editMovement?.id ? -editMovement.id : -1,
-      movementType: form.movementType,
-      status: "posted",
-      occurredAt: occurredAtISO,
-      sourceAccountId: form.movementType === "income" ? null : form.sourceAccountId,
-      destinationAccountId: form.movementType === "income" ? form.destinationAccountId : null,
-      categoryId: form.categoryId,
-      counterpartyId: form.counterpartyId,
-      description: form.description.trim(),
-      amount,
-    };
-  }, [
-    destinationAmountNum,
-    editMovement?.id,
-    form.categoryId,
-    form.counterpartyId,
-    form.description,
-    form.destinationAccountId,
-    form.movementType,
-    occurredAtISO,
-    form.sourceAccountId,
-    sourceAmountNum,
-  ]);
-
-  const suggestionHistory = useMemo<MovementSuggestionLike[]>(() => {
-    return (patternMovements ?? [])
-      .filter((movement) => movement.id !== editMovement?.id)
-      .map((movement) => ({
-        id: movement.id,
-        movementType: movement.movement_type,
-        status: movement.status,
-        occurredAt: movement.occurred_at,
-        sourceAccountId: movement.source_account_id ?? null,
-        destinationAccountId: movement.destination_account_id ?? null,
-        categoryId: movement.category_id ?? null,
-        counterpartyId: movement.counterparty_id ?? null,
-        description: movement.description ?? "",
-        amount: patternMovementAmount(movement),
-      }));
-  }, [editMovement?.id, patternMovements]);
-
-  const learnedCategorySuggestion = useMemo<CategorySuggestionState | null>(() => {
-    if (!currentSuggestionMovement || form.categoryId != null || !currentSuggestionMovement.description.trim()) return null;
-    const accepted = dashboardAnalytics?.learningFeedback.filter((feedback) =>
-      feedback.acceptedCategoryId != null &&
-      (feedback.feedbackKind === "accepted_category_suggestion" || feedback.feedbackKind === "manual_category_change")
-    ) ?? [];
-    const normalized = normalizeAnalyticsText(currentSuggestionMovement.description);
-    if (!normalized || accepted.length === 0) return null;
-    const best = accepted
-      .map((feedback) => {
-        const learnedText = feedback.normalizedDescription ?? "";
-        const similarity = learnedText === normalized ? 1 : movementFormTextSimilarity(normalized, learnedText);
-        return { feedback, similarity };
-      })
-      .filter((item) => item.similarity >= 0.58)
-      .sort((a, b) => b.similarity - a.similarity || new Date(b.feedback.createdAt).getTime() - new Date(a.feedback.createdAt).getTime())[0];
-    if (!best?.feedback.acceptedCategoryId) return null;
-    const category = categoriesForPicker.find((item) => item.id === best.feedback.acceptedCategoryId);
-    if (!category) return null;
-    const confidence = movementFormLearnedConfidence(normalized, best.feedback.normalizedDescription ?? "", best.similarity);
-    if (confidence < LOCAL_CATEGORY_AI_CONFIDENCE_THRESHOLD) return null;
-    return {
-      categoryId: category.id,
-      categoryName: category.name,
-      confidence,
-      reasons: ["aprendido de una corrección tuya", best.similarity >= 0.92 ? "texto casi igual" : "texto parecido"],
-    };
-  }, [categoriesForPicker, currentSuggestionMovement, dashboardAnalytics?.learningFeedback, form.categoryId]);
-
-  const algorithmicCategorySuggestion = useMemo<CategorySuggestionState | null>(() => {
-    if (!currentSuggestionMovement || form.categoryId != null || !currentSuggestionMovement.description.trim()) return null;
-    const suggestions = buildCategorySuggestionCandidates<MovementSuggestionLike>({
-      movements: [
-        ...suggestionHistory.filter((movement) => movement.categoryId != null),
-        { ...currentSuggestionMovement, categoryId: null },
-      ],
-      categories: categoriesForPicker,
-      isCashflow: isSuggestionCashflow,
-      isIncomeLike: suggestionActsAsIncome,
-      getAmount: (movement) => movement.amount,
-      limit: 1,
-      targetLimit: 1,
-    });
-    const suggestion = suggestions.find((item) => item.movementId === currentSuggestionMovement.id);
-    if (!suggestion) return null;
-    return {
-      categoryId: suggestion.suggestedCategoryId,
-      categoryName: suggestion.suggestedCategoryName,
-      confidence: suggestion.confidence,
-      reasons: suggestion.reasons,
-    };
-  }, [categoriesForPicker, currentSuggestionMovement, form.categoryId, suggestionHistory]);
-
-  const localCategorySuggestion = learnedCategorySuggestion ?? algorithmicCategorySuggestion;
-  const aiCategoryInput = useMemo(() => {
-    if (!activeWorkspaceId || !currentSuggestionMovement || form.categoryId !== null) return null;
-    if (form.movementType === "transfer") return null;
-    const description = currentSuggestionMovement.description.trim();
-    if (description.length < 3 || categoriesForPicker.length === 0) return null;
-    return {
-      workspaceId: activeWorkspaceId,
-      surface: "movement_form" as const,
-      movementType: form.movementType === "income" ? "income" as const : "expense" as const,
-      amount: currentSuggestionMovement.amount > 0 ? currentSuggestionMovement.amount : null,
-      currencyCode: baseCurrency,
-      description,
-      occurredAt: currentSuggestionMovement.occurredAt,
-      categories: categoriesForPicker.map((category) => ({
-        id: category.id,
-        name: category.name,
-        kind: category.kind,
-      })),
-      localSuggestion: localCategorySuggestion
-        ? {
-          categoryId: localCategorySuggestion.categoryId,
-          categoryName: localCategorySuggestion.categoryName,
-          confidence: localCategorySuggestion.confidence,
-          reasons: localCategorySuggestion.reasons,
-        }
-        : null,
-    };
-  }, [
-    activeWorkspaceId,
-    baseCurrency,
-    categoriesForPicker,
-    currentSuggestionMovement,
-    form.categoryId,
-    form.movementType,
-    localCategorySuggestion,
-  ]);
-  const shouldRequestAiCategorySuggestion = Boolean(
-    visible &&
-      entitlementQuery.data?.proAccessEnabled &&
-      aiCategoryInput &&
-      (!localCategorySuggestion || localCategorySuggestion.confidence < LOCAL_CATEGORY_AI_CONFIDENCE_THRESHOLD),
-  );
+  // Sugerencias de categoría (aprendida/algorítmica/IA), riesgo y cuenta sugerida
+  // (fase 4 del refactor R7).
   const {
-    recommendation: aiCategoryRecommendation,
-    isLoading: aiCategorySuggestionLoading,
-    aiAttempted: aiCategorySuggestionAttempted,
-    outcome: aiCategorySuggestionOutcome,
-  } = useMovementCategoryAiSuggestion({
-    enabled: shouldRequestAiCategorySuggestion,
-    input: aiCategoryInput,
+    localCategorySuggestion,
+    aiCategorySuggestionLoading,
+    aiCategorySuggestionAttempted,
+    aiCategorySuggestionOutcome,
+    bestCategorySuggestion,
+    movementRisk,
+    movementRiskLoading,
+    accountSuggestionId,
+  } = useMovementFormSuggestions({
+    visible,
+    movementType: form.movementType,
+    categoryId: form.categoryId,
+    counterpartyId: form.counterpartyId,
+    description: form.description,
+    sourceAccountId: form.sourceAccountId,
+    destinationAccountId: form.destinationAccountId,
+    occurredAtISO,
+    sourceAmountNum,
+    destinationAmountNum,
+    editMovementId: editMovement?.id,
+    patternMovements,
+    patternMaps,
+    learningFeedback: dashboardAnalytics?.learningFeedback,
+    categoriesForPicker,
+    categories,
+    counterparties,
+    accounts,
+    baseCurrency,
+    activeWorkspaceId,
     proAccessEnabled: entitlementQuery.data?.proAccessEnabled,
   });
-  const aiCategorySuggestion = useMemo<CategorySuggestionState | null>(() => {
-    if (!aiCategoryRecommendation) return null;
-    if (aiCategoryRecommendation.type === "existing_category" && aiCategoryRecommendation.categoryId) {
-      return {
-        categoryId: aiCategoryRecommendation.categoryId,
-        categoryName: aiCategoryRecommendation.categoryName ?? "Categoría sugerida",
-        confidence: aiCategoryRecommendation.confidence,
-        reasons: aiCategoryRecommendation.reasons,
-        source: "deepseek",
-      };
-    }
-    if (aiCategoryRecommendation.type === "new_category" && aiCategoryRecommendation.newCategoryName) {
-      return {
-        categoryId: null,
-        categoryName: `Crear categoría "${aiCategoryRecommendation.newCategoryName}"`,
-        newCategoryName: aiCategoryRecommendation.newCategoryName,
-        confidence: aiCategoryRecommendation.confidence,
-        reasons: aiCategoryRecommendation.reasons,
-        source: "deepseek",
-      };
-    }
-    return null;
-  }, [aiCategoryRecommendation]);
-  const bestCategorySuggestion = aiCategorySuggestion ?? localCategorySuggestion;
-
-  const currentRiskMovement = useMemo<MovementRiskItem | null>(() => {
-    if (!currentSuggestionMovement) return null;
-    const category = categories.find((item) => item.id === currentSuggestionMovement.categoryId) ?? null;
-    const counterparty = counterparties.find((item) => item.id === currentSuggestionMovement.counterpartyId) ?? null;
-    const account = accounts.find((item) =>
-      item.id === (currentSuggestionMovement.destinationAccountId ?? currentSuggestionMovement.sourceAccountId),
-    ) ?? null;
-    return {
-      id: currentSuggestionMovement.id,
-      movementType: currentSuggestionMovement.movementType,
-      occurredAt: currentSuggestionMovement.occurredAt,
-      description: currentSuggestionMovement.description,
-      amount: currentSuggestionMovement.amount,
-      categoryId: currentSuggestionMovement.categoryId,
-      categoryName: category?.name ?? null,
-      counterpartyId: currentSuggestionMovement.counterpartyId,
-      counterpartyName: counterparty?.name ?? null,
-      accountId: currentSuggestionMovement.destinationAccountId ?? currentSuggestionMovement.sourceAccountId,
-      accountName: account?.name ?? null,
-    };
-  }, [accounts, categories, counterparties, currentSuggestionMovement]);
-  const riskHistory = useMemo<MovementRiskItem[]>(() => {
-    return suggestionHistory.map((movement) => {
-      const category = categories.find((item) => item.id === movement.categoryId) ?? null;
-      const counterparty = counterparties.find((item) => item.id === movement.counterpartyId) ?? null;
-      const accountId = movement.destinationAccountId ?? movement.sourceAccountId;
-      const account = accounts.find((item) => item.id === accountId) ?? null;
-      return {
-        id: movement.id,
-        movementType: movement.movementType,
-        occurredAt: movement.occurredAt,
-        description: movement.description,
-        amount: movement.amount,
-        categoryId: movement.categoryId,
-        categoryName: category?.name ?? null,
-        counterpartyId: movement.counterpartyId,
-        counterpartyName: counterparty?.name ?? null,
-        accountId,
-        accountName: account?.name ?? null,
-      };
-    });
-  }, [accounts, categories, counterparties, suggestionHistory]);
-  const { risk: movementRisk, isLoading: movementRiskLoading } = useMovementRiskExplanation({
-    enabled: Boolean(visible && form.movementType !== "transfer"),
-    workspaceId: activeWorkspaceId,
-    surface: "movement_form",
-    current: currentRiskMovement,
-    history: riskHistory,
-    proAccessEnabled: entitlementQuery.data?.proAccessEnabled,
-  });
-
-  const accountSuggestionId = useMemo(() => {
-    if (!patternMaps || form.counterpartyId == null || form.movementType === "transfer") return null;
-    const suggested = suggestAccountFromCounterparty(form.counterpartyId, patternMaps);
-    if (suggested == null) return null;
-    if (form.movementType === "income") {
-      return suggested !== form.destinationAccountId ? suggested : null;
-    }
-    return suggested !== form.sourceAccountId ? suggested : null;
-  }, [form.counterpartyId, form.destinationAccountId, form.movementType, form.sourceAccountId, patternMaps]);
 
   // -- Suggestion effects ----------------------------------------------------
 
