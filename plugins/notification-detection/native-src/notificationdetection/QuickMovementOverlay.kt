@@ -731,7 +731,36 @@ object QuickMovementOverlay {
         if (notificationId > 0) {
           context.getSystemService(NotificationManager::class.java)?.cancel(notificationId)
         }
-        Handler(Looper.getMainLooper()).postDelayed({ animatedDismiss() }, 900)
+        // N8: no cerrar a ciegas a los 900 ms — el usuario creía que se guardó aunque el
+        // headless fallara después. Sondear el veredicto real: status "registered"/"duplicate"
+        // en el store (éxito) o lastSaveError de ESTE intento (fallo). Sin veredicto en ~12 s,
+        // avisar que sigue en segundo plano y cerrar.
+        val handler = Handler(Looper.getMainLooper())
+        val pollStartedAt = System.currentTimeMillis()
+        lateinit var pollOutcome: Runnable
+        fun finishWith(label: String, closeDelayMs: Long) {
+          saveSpinner.visibility = View.GONE
+          (saveSpinner.layoutParams as LinearLayout.LayoutParams).rightMargin = dp(0)
+          saveLabel.text = label
+          handler.postDelayed({ animatedDismiss() }, closeDelayMs)
+        }
+        pollOutcome = Runnable {
+          if (overlayView == null || isDismissing) return@Runnable
+          val status = NotificationDetectionStore.getSuggestion(context, suggestionId)
+            ?.optString("status", "pending") ?: "pending"
+          val saveError = NotificationDetectionStore.getLastSaveError(context)
+          val failedThisAttempt = saveError != null &&
+            saveError.optString("suggestionId") == suggestionId &&
+            saveError.optLong("ts", 0L) >= pollStartedAt
+          when {
+            status == "registered" || status == "duplicate" -> finishWith("✓ Guardado", 700L)
+            failedThisAttempt -> finishWith("No se pudo guardar · se reintentará", 1600L)
+            System.currentTimeMillis() - pollStartedAt > 12_000L ->
+              finishWith("Se sigue guardando en segundo plano", 1600L)
+            else -> handler.postDelayed(pollOutcome, 600L)
+          }
+        }
+        handler.postDelayed(pollOutcome, 700L)
       }
     }
 
