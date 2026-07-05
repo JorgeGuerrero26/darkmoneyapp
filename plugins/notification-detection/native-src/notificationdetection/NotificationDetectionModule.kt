@@ -196,6 +196,11 @@ class NotificationDetectionModule(
   }
 
   @ReactMethod
+  fun getAllSaveRetries(promise: Promise) {
+    promise.resolve(NotificationDetectionStore.getAllSaveRetries(reactContext))
+  }
+
+  @ReactMethod
   fun clearSaveRetry(suggestionId: String) {
     NotificationDetectionStore.clearSaveRetry(reactContext, suggestionId)
   }

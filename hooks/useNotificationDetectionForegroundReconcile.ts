@@ -81,6 +81,12 @@ export function useNotificationDetectionForegroundReconcile() {
             notificationDetection.clearSaveRetry(entry.suggestionId);
           }
         }
+        if (dueRetries.length > 0) {
+          // Un reintento pudo insertar el movimiento recién ahora: refrescar la lista
+          // y los saldos DESPUÉS de procesar la cola (la invalidación A corrió antes).
+          void queryClient.invalidateQueries({ queryKey: ["movements"] });
+          void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+        }
 
         // B) Reconciliar sugerencias nativas `pending` contra movimientos ya registrados.
         const suggestions = await notificationDetection.getSuggestions();

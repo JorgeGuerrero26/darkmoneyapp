@@ -749,6 +749,13 @@ object NotificationDetectionStore {
     writeSaveRetries(context, out)
   }
 
+  /**
+   * TODAS las entradas de la cola de reintentos (vencidas o no), como JSON string.
+   * La UI de movimientos las usa para mostrar al usuario qué registros detectados
+   * siguen enviándose en segundo plano y cuáles agotaron sus reintentos.
+   */
+  fun getAllSaveRetries(context: Context): String = readSaveRetriesArray(context).toString()
+
   /** Entradas listas para reintentar (nextAttemptAtMs <= now), como JSON string. */
   fun getDueSaveRetries(context: Context, now: Long): String {
     val entries = readSaveRetriesArray(context)

@@ -30,6 +30,7 @@ type NativeNotificationDetection = {
   requestCancelBankNotification?(suggestionId: string): void;
   enqueueSaveRetry?(suggestionId: string, payloadJson: string): void;
   getDueSaveRetries?(): Promise<string>;
+  getAllSaveRetries?(): Promise<string>;
   clearSaveRetry?(suggestionId: string): void;
 };
 
@@ -173,6 +174,28 @@ export const notificationDetection = {
   },
   requestCancelBankNotification(suggestionId: string) {
     nativeModule?.requestCancelBankNotification?.(suggestionId);
+  },
+  /**
+   * TODA la cola de reintentos de guardado headless (vencidos o no). Para mostrar al
+   * usuario qué registros detectados siguen enviándose en segundo plano. Si el APK
+   * instalado aún no expone getAllSaveRetries, cae a getDueSaveRetries (solo vencidos).
+   */
+  async getAllSaveRetries(): Promise<PendingSaveRetry[]> {
+    const reader = nativeModule?.getAllSaveRetries ?? nativeModule?.getDueSaveRetries;
+    if (!reader) return [];
+    try {
+      const raw = await reader.call(nativeModule);
+      const parsed = JSON.parse(raw) as unknown;
+      if (!Array.isArray(parsed)) return [];
+      return parsed.filter(
+        (entry): entry is PendingSaveRetry =>
+          Boolean(entry) &&
+          typeof (entry as PendingSaveRetry).suggestionId === "string" &&
+          typeof (entry as PendingSaveRetry).payloadJson === "string",
+      );
+    } catch {
+      return [];
+    }
   },
   /** Reintentos de guardado headless pendientes cuyo backoff ya venció. */
   async getDueSaveRetries(): Promise<PendingSaveRetry[]> {

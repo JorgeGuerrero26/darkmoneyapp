@@ -18,6 +18,8 @@ import { useWorkspaceSnapshotQuery } from "../../services/queries/workspace-data
 import { usePaginatedMovements } from "../../services/queries/movements";
 import { useMovementAttachmentCountsQuery } from "../../services/queries/attachments";
 import { MovementDeleteImpact } from "../../components/domain/MovementDeleteImpact";
+import { DetectionBackgroundSavesNotice } from "../../components/domain/DetectionBackgroundSavesNotice";
+import { useDetectionBackgroundSaves } from "../../hooks/useDetectionBackgroundSaves";
 import { SwipeableMovementRow } from "../../components/domain/SwipeableMovementRow";
 import { BulkActionBar } from "../../components/ui/BulkActionBar";
 import { FilterToolbar } from "../../components/ui/FilterToolbar";
@@ -47,6 +49,7 @@ type FilterStatus = MovementStatus | "all";
 import { groupMovementsByDate, type MovementListSection } from "../../features/movements/lib/group-by-date";
 import { useMovementsRealtimeSync } from "../../features/movements/hooks/useMovementsRealtimeSync";
 import { buildExchangeRateMap, resolveRate } from "../../features/dashboard/lib/aggregations";
+import { SPACING } from "../../constants/theme";
 
 const MOVEMENTS_CURRENCY_KEY = "darkmoney.movements.displayCurrency";
 
@@ -106,6 +109,7 @@ function buildCSV(movements: MovementRecord[]): string {
 function MovementsScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { pendingSaves: pendingDetectionSaves, lastError: lastDetectionSaveError } = useDetectionBackgroundSaves();
   const params = useLocalSearchParams<{
     quickFilter?: string | string[];
     quickScope?: string | string[];
@@ -845,7 +849,13 @@ function MovementsScreen() {
         }
         context={
           !selectMode ? (
-            <ResourceContextNote>{activeDateRangeNotice}</ResourceContextNote>
+            <View style={{ gap: SPACING.sm }}>
+              <DetectionBackgroundSavesNotice
+                pendingSaves={pendingDetectionSaves}
+                lastErrorMessage={lastDetectionSaveError?.message ?? null}
+              />
+              <ResourceContextNote>{activeDateRangeNotice}</ResourceContextNote>
+            </View>
           ) : null
         }
         summary={
