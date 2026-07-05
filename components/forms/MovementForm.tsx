@@ -22,7 +22,6 @@ import {
   useDashboardAnalyticsQuery,
   usePersistLearningFeedbackMutation,
   useCreateSubscriptionMutation,
-  useSyncExchangeRatePairMutation,
   useUserEntitlementQuery,
 } from "../../services/queries/workspace-data";
 import { useMovementAttachmentsQuery } from "../../services/queries/movements";
@@ -67,6 +66,7 @@ import { LOCAL_CATEGORY_AI_CONFIDENCE_THRESHOLD } from "../../lib/movement-ai-or
 import { COLORS, SPACING, SURFACE } from "../../constants/theme";
 import type { MovementType, MovementStatus, MovementRecord, ExchangeRateSummary } from "../../types/domain";
 import { useMovementCreationController } from "../../features/movements/hooks/useMovementCreationController";
+import { useTransferFxController } from "../../features/movements/hooks/useTransferFxController";
 import { buildMovementCreateInput, buildMovementUpdateInput } from "../../features/movements/lib/movement-save-contract";
 import { useFrequentTransferPairQuery } from "../../services/queries/notification-detection";
 import {
@@ -94,7 +94,6 @@ import {
   type MovementFormState as FormState,
   type MovementFormStep as Step,
   type MovementSuggestionLike,
-  type TransferFxState,
 } from "../../features/movements/lib/movement-form-support";
 
 type Props = {
@@ -128,7 +127,6 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   const createCounterparty = useCreateCounterpartyMutation(activeWorkspaceId);
   const createSubscription = useCreateSubscriptionMutation(activeWorkspaceId);
   const createRecurringIncome = useCreateRecurringIncomeMutation(activeWorkspaceId);
-  const syncExchangeRatePair = useSyncExchangeRatePairMutation();
   const { data: dashboardAnalytics } = useDashboardAnalyticsQuery(activeWorkspaceId, profile?.id);
   const entitlementQuery = useUserEntitlementQuery(profile?.id ?? null, profile?.email ?? null);
   const persistLearningFeedback = usePersistLearningFeedbackMutation(activeWorkspaceId, profile?.id);
@@ -170,11 +168,6 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [savedMovementId, setSavedMovementId] = useState<number | undefined>(editMovement?.id);
   const [categoryFeedbackIntent, setCategoryFeedbackIntent] = useState<CategoryFeedbackIntent | null>(null);
-  const [transferDestinationEdited, setTransferDestinationEdited] = useState(false);
-  const [transferRateInput, setTransferRateInput] = useState("");
-  const [transferRateEdited, setTransferRateEdited] = useState(false);
-  const [transferLiveRate, setTransferLiveRate] = useState<TransferFxState | null>(null);
-  const [transferRateError, setTransferRateError] = useState<string | null>(null);
   const [linkedSubscriptionId, setLinkedSubscriptionId] = useState<number | null>(editMovement?.subscriptionId ?? null);
   const [linkedRecurringIncomeId, setLinkedRecurringIncomeId] = useState<number | null>(null);
   const attachmentsHydratedRef = useRef<string | null>(null);
@@ -221,6 +214,19 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     destinationAccountId: form.destinationAccountId,
     sourceAmount: form.sourceAmount,
     destinationAmount: form.destinationAmount,
+  });
+  // Tipo de cambio de transferencias multi-moneda (fase 2 del refactor R7).
+  const fx = useTransferFxController({
+    visible,
+    movementType: form.movementType,
+    transferCurrenciesDiffer,
+    sourceAccount,
+    destinationAccount,
+    exchangeRates,
+    sourceAmountNum,
+    destinationAmountNum,
+    destinationAmount: form.destinationAmount,
+    onAutoDestinationAmount: (value: string) => patch({ destinationAmount: value }),
   });
   const counterpartiesSorted = useMemo(() => sortByName(counterparties), [counterparties]);
   const selectedRecurringCategory = form.categoryId != null
@@ -659,11 +665,8 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     setCategoryFeedbackIntent(null);
     setLinkedSubscriptionId(editMovement?.subscriptionId ?? null);
     setLinkedRecurringIncomeId(null);
-    setTransferDestinationEdited(Boolean(editMovement?.destinationAmount));
-    setTransferRateInput("");
-    setTransferRateEdited(false);
-    setTransferLiveRate(null);
-    setTransferRateError(null);
+    fx.resetFxState(Boolean(editMovement?.destinationAmount));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, editMovement, defaultType, initialAccountId, isClosingAfterSubmit]);
 
   // El par frecuente puede llegar después de abrir el form (query async). Si el form está
@@ -890,151 +893,6 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   const originalSourceAccount = accounts.find((a) => a.id === (editMovement?.sourceAccountId ?? null)) ?? null;
   const originalDestinationAccount = accounts.find((a) => a.id === (editMovement?.destinationAccountId ?? null)) ?? null;
 
-  const transferFxSuggestion = useMemo(() => {
-    if (!transferCurrenciesDiffer || !sourceAccount || !destinationAccount) return null;
-    const local = findTransferExchangeRate(
-      exchangeRates,
-      sourceAccount.currencyCode,
-      destinationAccount.currencyCode,
-    );
-    return local
-      ? { ...local, source: "local" as const, provider: undefined }
-      : null;
-  }, [destinationAccount, exchangeRates, sourceAccount, transferCurrenciesDiffer]);
-
-  const transferPairKey = useMemo(() => {
-    if (!transferCurrenciesDiffer || !sourceAccount || !destinationAccount) return null;
-    return `${sourceAccount.currencyCode.toUpperCase()}:${destinationAccount.currencyCode.toUpperCase()}`;
-  }, [destinationAccount, sourceAccount, transferCurrenciesDiffer]);
-
-  useEffect(() => {
-    if (!visible || !transferPairKey || !sourceAccount || !destinationAccount) {
-      setTransferLiveRate(null);
-      setTransferRateError(null);
-      return;
-    }
-
-    let cancelled = false;
-    const fromCurrencyCode = sourceAccount.currencyCode.toUpperCase();
-    const toCurrencyCode = destinationAccount.currencyCode.toUpperCase();
-    setTransferRateError(null);
-    setTransferLiveRate(null);
-    setTransferRateEdited(false);
-    setTransferRateInput("");
-
-    void syncExchangeRatePair.mutateAsync({ fromCurrencyCode, toCurrencyCode })
-      .then((result) => {
-        if (cancelled) return;
-        setTransferLiveRate({
-          rate: result.rate,
-          effectiveAt: result.effectiveAt,
-          source: "api",
-          provider: result.provider,
-          label: formatExchangeRateLabel(fromCurrencyCode, toCurrencyCode, result.rate),
-        });
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        setTransferRateError(error instanceof Error ? error.message : "No se pudo actualizar el tipo de cambio");
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [transferPairKey, visible]);
-
-  const transferBaseFxSuggestion = transferLiveRate ?? transferFxSuggestion;
-  const transferManualRate = parseDecimalInput(transferRateInput);
-  const effectiveTransferFxSuggestion = useMemo<TransferFxState | null>(() => {
-    if (!transferCurrenciesDiffer || !sourceAccount || !destinationAccount) return null;
-    const from = sourceAccount.currencyCode.toUpperCase();
-    const to = destinationAccount.currencyCode.toUpperCase();
-    if (transferRateEdited) {
-      if (!transferManualRate) return null;
-      return {
-        rate: transferManualRate,
-        effectiveAt: null,
-        source: "manual",
-        label: formatExchangeRateLabel(from, to, transferManualRate),
-      };
-    }
-    return transferBaseFxSuggestion ?? null;
-  }, [
-    destinationAccount,
-    sourceAccount,
-    transferBaseFxSuggestion,
-    transferCurrenciesDiffer,
-    transferManualRate,
-    transferRateEdited,
-  ]);
-
-  useEffect(() => {
-    if (!transferCurrenciesDiffer) {
-      if (transferRateInput) setTransferRateInput("");
-      setTransferRateEdited(false);
-      setTransferLiveRate(null);
-      setTransferRateError(null);
-      return;
-    }
-    if (transferRateEdited || !transferBaseFxSuggestion) return;
-    const nextRate = formatExchangeRateInput(transferBaseFxSuggestion.rate);
-    if (nextRate && nextRate !== transferRateInput) {
-      setTransferRateInput(nextRate);
-    }
-  }, [transferBaseFxSuggestion, transferCurrenciesDiffer, transferRateEdited, transferRateInput]);
-
-  useEffect(() => {
-    if (form.movementType !== "transfer" || !transferCurrenciesDiffer || !transferDestinationEdited) return;
-    if (sourceAmountNum <= 0 || destinationAmountNum <= 0) return;
-
-    const nextRate = formatExchangeRateInput(destinationAmountNum / sourceAmountNum);
-    if (!nextRate) return;
-    if (!transferRateEdited) setTransferRateEdited(true);
-    if (nextRate !== transferRateInput) {
-      setTransferRateInput(nextRate);
-    }
-  }, [
-    destinationAmountNum,
-    form.movementType,
-    sourceAmountNum,
-    transferCurrenciesDiffer,
-    transferDestinationEdited,
-    transferRateEdited,
-    transferRateInput,
-  ]);
-
-  useEffect(() => {
-    if (form.movementType !== "transfer" || !transferCurrenciesDiffer || transferDestinationEdited) return;
-    if (sourceAmountNum <= 0) {
-      if (form.destinationAmount) patch({ destinationAmount: "" });
-      return;
-    }
-    if (!effectiveTransferFxSuggestion) {
-      if (form.destinationAmount) patch({ destinationAmount: "" });
-      return;
-    }
-    const nextDestinationAmount = formatTransferAmount(sourceAmountNum * effectiveTransferFxSuggestion.rate);
-    if (nextDestinationAmount && nextDestinationAmount !== form.destinationAmount) {
-      patch({ destinationAmount: nextDestinationAmount });
-    }
-  }, [
-    form.destinationAmount,
-    form.movementType,
-    sourceAmountNum,
-    transferCurrenciesDiffer,
-    transferDestinationEdited,
-    effectiveTransferFxSuggestion,
-  ]);
-
-  const transferInverseFxLabel = useMemo(() => {
-    if (!sourceAccount || !destinationAccount || !effectiveTransferFxSuggestion) return "";
-    return formatExchangeRateLabel(
-      destinationAccount.currencyCode,
-      sourceAccount.currencyCode,
-      1 / effectiveTransferFxSuggestion.rate,
-    );
-  }, [destinationAccount, effectiveTransferFxSuggestion, sourceAccount]);
 
   // When editing a posted movement, currentBalance already reflects the original movement.
   // We must reverse it first, then apply the new amount to get the correct projection.
@@ -1099,7 +957,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
       {
         sourceCurrencyCode: sourceAccount?.currencyCode ?? null,
         destinationCurrencyCode: destinationAccount?.currencyCode ?? null,
-        hasTransferFxAvailable: Boolean(transferManualRate || transferBaseFxSuggestion),
+        hasTransferFxAvailable: Boolean(fx.transferManualRate || fx.transferBaseFxSuggestion),
         sourceAccountBalance: sourceAccount?.currentBalance ?? null,
         todayYmd: todayPeru(),
       },
@@ -1109,8 +967,8 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     form,
     sourceAccount,
     destinationAccount,
-    transferManualRate,
-    transferBaseFxSuggestion,
+    fx.transferManualRate,
+    fx.transferBaseFxSuggestion,
   ]);
 
   // --- Validation per step ---
@@ -1132,7 +990,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
       {
         sourceCurrencyCode: sourceAccount?.currencyCode ?? null,
         destinationCurrencyCode: destinationAccount?.currencyCode ?? null,
-        hasTransferFxAvailable: Boolean(transferManualRate || transferBaseFxSuggestion),
+        hasTransferFxAvailable: Boolean(fx.transferManualRate || fx.transferBaseFxSuggestion),
         sourceAccountBalance: sourceAccount?.currentBalance ?? null,
         todayYmd: todayPeru(),
       },
@@ -1399,7 +1257,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
           movementType={form.movementType}
           status={form.status}
           onChangeType={(type) => {
-            setTransferDestinationEdited(false);
+            fx.setTransferDestinationEdited(false);
             patch({ movementType: type });
             if (type === "transfer") applyTransferDefaultsIfEmpty();
           }}
@@ -1418,7 +1276,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
           onChangeSourceAmount={(v) => patch({ sourceAmount: v })}
           onChangeDestinationAmount={(v) => patch({ destinationAmount: v })}
           onChangeTransferDestinationAmount={(v) => {
-            setTransferDestinationEdited(true);
+            fx.setTransferDestinationEdited(true);
             patch({ destinationAmount: v });
           }}
           sourceAccountId={form.sourceAccountId}
@@ -1428,26 +1286,22 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
           sourceAccount={sourceAccount}
           destinationAccount={destinationAccount}
           onChangeSourceAccount={(id) => {
-            if (form.movementType === "transfer") setTransferDestinationEdited(false);
+            if (form.movementType === "transfer") fx.setTransferDestinationEdited(false);
             patch({ sourceAccountId: id });
           }}
           onChangeDestinationAccount={(id) => {
-            if (form.movementType === "transfer") setTransferDestinationEdited(false);
+            if (form.movementType === "transfer") fx.setTransferDestinationEdited(false);
             patch({ destinationAccountId: id });
           }}
           transferCurrenciesDiffer={transferCurrenciesDiffer}
-          transferRateInput={transferRateInput}
-          onChangeTransferRate={(value) => {
-            setTransferRateEdited(true);
-            setTransferDestinationEdited(false);
-            setTransferRateInput(value);
-          }}
-          effectiveTransferFxSuggestion={effectiveTransferFxSuggestion}
-          transferBaseFxSuggestion={transferBaseFxSuggestion}
-          transferInverseFxLabel={transferInverseFxLabel}
-          transferDestinationEdited={transferDestinationEdited}
-          syncExchangeRateIsPending={syncExchangeRatePair.isPending}
-          transferRateError={Boolean(transferRateError)}
+          transferRateInput={fx.transferRateInput}
+          onChangeTransferRate={fx.onChangeTransferRate}
+          effectiveTransferFxSuggestion={fx.effectiveTransferFxSuggestion}
+          transferBaseFxSuggestion={fx.transferBaseFxSuggestion}
+          transferInverseFxLabel={fx.transferInverseFxLabel}
+          transferDestinationEdited={fx.transferDestinationEdited}
+          syncExchangeRateIsPending={fx.syncExchangeRateIsPending}
+          transferRateError={Boolean(fx.transferRateError)}
           projectedSourceBalance={projectedSourceBalance}
           revertedOriginalSourceBalance={revertedOriginalSourceBalance}
           projectedDestBalance={projectedDestBalance}
