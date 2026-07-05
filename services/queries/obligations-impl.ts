@@ -65,9 +65,13 @@ import {
 
 type NumericLike = number | string | null;
 
-const OBLIGATION_SHARE_AUTH_TIMEOUT_MS = 5_000;
 const OBLIGATION_SHARE_EDGE_TIMEOUT_MS = 18_000;
-const OBLIGATION_SHARED_LIST_TIMEOUT_MS = 12_000;
+// Diagnóstico 2026-07-05 (dispositivo real): la BD responde en ~120 ms y la edge
+// function en 0.7-1.7 s incluso fría. Los timeouts venían del CLIENTE en arranque
+// frío: todas las queries iniciales compiten por el lock de auth de supabase-js
+// (getSession/refresh serializados). 20 s da margen para salir de esa contención;
+// la query ya no bloquea el bootstrap, así que esperar no retiene al usuario.
+const OBLIGATION_SHARED_LIST_TIMEOUT_MS = 20_000;
 
 // ─── Helpers compartidos con shared-obligations (4.2-d) ──────────────────────
 
@@ -494,17 +498,9 @@ function parseSharedObligationItem(item: unknown): SharedObligationSummary | nul
 
 async function fetchSharedObligations(): Promise<SharedObligationSummary[]> {
   if (!supabase) return [];
-  const { data: sessionData, error: sessionError } = await withTimeout(
-    supabase.auth.getSession(),
-    OBLIGATION_SHARE_AUTH_TIMEOUT_MS,
-    "shared-obligations.getSession",
-  );
-  if (sessionError) {
-    throw new Error(sessionError.message ?? "No se pudo validar tu sesión.");
-  }
-  if (!sessionData.session?.user?.id) {
-    return [];
-  }
+  // Sin getSession propio: invokeEdgeFunction ya resuelve/refresca la sesión.
+  // Duplicarlo sumaba UNA adquisición extra del lock de auth en el arranque frío,
+  // justo cuando todas las queries iniciales compiten por él (ver constante arriba).
 
   const response = (await withTimeout(
     invokeEdgeFunction<Record<string, unknown>>("list-shared-obligations", {}),
