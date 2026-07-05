@@ -67,14 +67,14 @@ como backlog al final de este documento.
 | R7 | MovementForm: 1730 líneas, 60+ useState, pasos como ternarios anidados, props drilling de 25-30 props por step. Dividir en hooks/subcomponentes. | MEDIA | Backlog |
 | R8 | Effect de descripción con debounce puede ejecutar callback stale (sin requestId). | MEDIA | Backlog |
 | R9 | Sync de FX en transfer sin cancelación de requests anteriores (responses fuera de orden). | BAJA | Backlog |
-| R10 | rgba hardcodeados en QuickEntry (líneas ~1184, ~1198) en vez de tokens SURFACE. | BAJA | Backlog (P2) |
-| R11 | Accesibilidad: inputs sin `accessibilityLabel`, chips sin `accessibilityRole`. | MEDIA | Backlog |
-| R12 | Sin feedback inline durante el check de duplicado; copy del Alert no explica por qué puede ser duplicado. | MEDIA | Backlog |
+| R10 | rgba hardcodeados en QuickEntry (líneas ~1184, ~1198) en vez de tokens SURFACE. | BAJA | ✅ Resuelto (verificado 2026-07-04: sin rgba/hex inline en QuickEntry). |
+| R11 | Accesibilidad: inputs sin `accessibilityLabel`, chips sin `accessibilityRole`. | MEDIA | Parcial (2026-07-04): QuickEntry cubierto (inputs, segmentos, chips de cuenta y categoría); revisar otros módulos. |
+| R12 | Sin feedback inline durante el check de duplicado; copy del Alert no explica por qué puede ser duplicado. | MEDIA | ✅ Resuelto (2026-07-04): nota inline "Verificando…" + Alert con descripción/fecha/monto del existente y botón "Ver el existente". |
 
 ## 5. Backlog de funcionalidades (P3 — ideas de producto)
 
 - **Undo / edición rápida post-registro**: toast "Movimiento guardado" con acción "Deshacer" (30 s) o "Editar".
-- **Búsqueda en el picker de categorías** (con 50+ categorías el scroll no escala).
+- ~~Búsqueda en el picker de categorías~~ — HECHO (umbral 12 + insensible a tildes desde 2026-07-04).
 - **Notas en el registro rápido** (paridad con MovementForm).
 - **Plantillas de movimientos frecuentes** ("Guardar como plantilla").
 - **Split de montos** entre varias contrapartes.
