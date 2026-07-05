@@ -115,6 +115,7 @@ function MovementsScreen() {
     lastError: lastDetectionSaveError,
     retryNow: retryDetectionSavesNow,
     isRetrying: isRetryingDetectionSaves,
+    discardSave: discardDetectionSave,
   } = useDetectionBackgroundSaves();
   const savingMovementsCount = useIsMutating({ mutationKey: ["create-movement"] });
   const params = useLocalSearchParams<{
@@ -863,6 +864,7 @@ function MovementsScreen() {
                 lastErrorMessage={lastDetectionSaveError?.message ?? null}
                 onRetryNow={() => void retryDetectionSavesNow()}
                 isRetrying={isRetryingDetectionSaves}
+                onDiscard={(suggestionId) => void discardDetectionSave(suggestionId)}
               />
               <ResourceContextNote>{activeDateRangeNotice}</ResourceContextNote>
             </View>

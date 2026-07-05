@@ -45,13 +45,25 @@ export function useDetectionBackgroundSaves() {
 
   const refresh = useCallback(async () => {
     if (!notificationDetection.isAvailable()) return;
-    const [entries, error] = await Promise.all([
+    const [entries, error, suggestions] = await Promise.all([
       notificationDetection.getAllSaveRetries(),
       notificationDetection.getLastSaveError(),
+      notificationDetection.getSuggestions(),
     ]);
+    // Reconciliar la cola contra el estado real de la sugerencia: si ya no existe en el
+    // store (TTL/limpieza) o dejó de estar pending (registrada/descartada por otra vía),
+    // la entrada es basura y se limpia. Sin esto, una entrada "agotada" quedaba PARA
+    // SIEMPRE y el banner era imposible de sacar.
+    const statusById = new Map(suggestions.map((item) => [item.id, item.status]));
+    const alive = entries.filter((entry) => {
+      const status = statusById.get(entry.suggestionId);
+      if (status === "pending") return true;
+      notificationDetection.clearSaveRetry(entry.suggestionId);
+      return false;
+    });
     if (!mountedRef.current) return;
     setPendingSaves(
-      entries.map((entry) => ({
+      alive.map((entry) => ({
         suggestionId: entry.suggestionId,
         attempts: entry.attempts,
         exhausted: !entry.payloadJson,
@@ -61,6 +73,17 @@ export function useDetectionBackgroundSaves() {
     );
     setLastError(error && Date.now() - error.ts < 24 * 60 * 60 * 1000 ? error : null);
   }, []);
+
+  /**
+   * Descarta un registro agotado: saca la entrada de la cola Y descarta la sugerencia
+   * nativa para que no se re-detecte. Es la salida manual del banner cuando el usuario
+   * ya no quiere completar ese registro (p. ej. borró la notificación de la campana).
+   */
+  const discardSave = useCallback(async (suggestionId: string) => {
+    notificationDetection.clearSaveRetry(suggestionId);
+    notificationDetection.discardSuggestion(suggestionId);
+    await refresh();
+  }, [refresh]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -110,5 +133,5 @@ export function useDetectionBackgroundSaves() {
     }
   }, [queryClient, refresh]);
 
-  return { pendingSaves, lastError, refresh, retryNow, isRetrying };
+  return { pendingSaves, lastError, refresh, retryNow, isRetrying, discardSave };
 }

@@ -10,6 +10,7 @@ type Props = {
   lastErrorMessage?: string | null;
   onRetryNow?: () => void;
   isRetrying?: boolean;
+  onDiscard?: (suggestionId: string) => void;
 };
 
 /**
@@ -19,7 +20,7 @@ type Props = {
  * Sin esto el usuario no veía nada en la lista, asumía que el registro se perdió
  * y lo volvía a crear a mano → riesgo de duplicado cuando el reintento entraba.
  */
-export function DetectionBackgroundSavesNotice({ pendingSaves, lastErrorMessage, onRetryNow, isRetrying }: Props) {
+export function DetectionBackgroundSavesNotice({ pendingSaves, lastErrorMessage, onRetryNow, isRetrying, onDiscard }: Props) {
   const router = useRouter();
   if (pendingSaves.length === 0) return null;
 
@@ -56,26 +57,38 @@ export function DetectionBackgroundSavesNotice({ pendingSaves, lastErrorMessage,
           </View>
         </View>
       ) : null}
-      {exhausted.length > 0 ? (
-        <TouchableOpacity
-          style={styles.row}
-          onPress={() => router.push("/notifications")}
-          accessibilityLabel="Ver movimientos detectados que no se pudieron registrar"
-        >
+      {exhausted.map((entry) => (
+        <View key={entry.suggestionId} style={styles.row}>
           <AlertTriangle size={16} color={COLORS.warning} />
           <View style={styles.textWrap}>
-            <Text style={styles.title}>
-              {exhausted.length === 1
-                ? "1 movimiento detectado no se pudo registrar"
-                : `${exhausted.length} movimientos detectados no se pudieron registrar`}
-            </Text>
+            <Text style={styles.title}>Un movimiento detectado no se pudo registrar</Text>
             <Text style={styles.body}>
               {lastErrorMessage ? `${lastErrorMessage}. ` : ""}
-              Se agotaron los reintentos automáticos. Toca para completarlo desde Notificaciones.
+              Se agotaron los reintentos automáticos. Complétalo o descártalo.
             </Text>
+            <View style={styles.actionsRow}>
+              <TouchableOpacity
+                style={styles.retryButton}
+                // La pantalla puente resuelve la sugerencia y abre su formulario directo,
+                // aunque la notificación de la campana ya haya sido eliminada.
+                onPress={() => router.push(`/detected-suggestion/${encodeURIComponent(entry.suggestionId)}` as never)}
+                accessibilityLabel="Completar el registro del movimiento detectado"
+              >
+                <Text style={styles.retryButtonText}>Completar registro</Text>
+              </TouchableOpacity>
+              {onDiscard ? (
+                <TouchableOpacity
+                  style={styles.discardButton}
+                  onPress={() => onDiscard(entry.suggestionId)}
+                  accessibilityLabel="Descartar el movimiento detectado pendiente"
+                >
+                  <Text style={styles.discardButtonText}>Descartar</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
           </View>
-        </TouchableOpacity>
-      ) : null}
+        </View>
+      ))}
     </View>
   );
 }
@@ -117,6 +130,24 @@ const styles = StyleSheet.create({
     fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.xs,
     lineHeight: 16,
+  },
+  actionsRow: {
+    flexDirection: "row",
+    gap: SPACING.sm,
+  },
+  discardButton: {
+    alignSelf: "flex-start",
+    marginTop: SPACING.xs,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  discardButtonText: {
+    color: COLORS.textMuted,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
   },
   retryButton: {
     alignSelf: "flex-start",
