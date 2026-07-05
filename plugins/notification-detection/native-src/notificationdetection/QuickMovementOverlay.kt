@@ -69,9 +69,12 @@ object QuickMovementOverlay {
       WindowManager.LayoutParams.TYPE_PHONE
     }
     // Sin FLAG_LAYOUT_IN_SCREEN: con él la ventana ocupa la pantalla completa e ignora
-    // los insets, así que adjustResize no achica nada y el teclado tapaba el campo de
-    // descripción. Con ADJUST_RESIZE la ventana se encoge al abrir el teclado y el panel
-    // centrado sube solo.
+    // los insets, así que el teclado tapaba el campo de descripción.
+    // UN solo mecanismo de compensación por versión (usar ambos a la vez encogía el
+    // panel dos veces y quedaba aplastado):
+    //  - API 30+: ADJUST_NOTHING + listener de WindowInsets (fiable en One UI); el
+    //    padding inferior = alto del teclado + margen de respiro.
+    //  - API <30: ADJUST_RESIZE clásico (los insets de IME no llegan a overlays ahí).
     val params = WindowManager.LayoutParams(
       WindowManager.LayoutParams.MATCH_PARENT,
       WindowManager.LayoutParams.MATCH_PARENT,
@@ -81,18 +84,21 @@ object QuickMovementOverlay {
     ).apply {
       gravity = Gravity.CENTER
       windowAnimations = 0
-      @Suppress("DEPRECATION")
-      softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+      softInputMode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
+      } else {
+        @Suppress("DEPRECATION")
+        WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+      }
     }
 
-    // Refuerzo para ROMs (Samsung/One UI) que ignoran adjustResize en overlays: en
-    // API 30+ el inset del IME llega por WindowInsets; lo aplicamos como padding
-    // inferior del backdrop para que el panel centrado suba la altura del teclado.
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+      val density = appContext.resources.displayMetrics.density
+      val breathingRoom = (12 * density).toInt()
       view.setOnApplyWindowInsetsListener { target, insets ->
         val imeInset = insets.getInsets(android.view.WindowInsets.Type.ime()).bottom
         android.util.Log.d("DarkMoneyND", "overlay ime inset=$imeInset")
-        target.setPadding(0, 0, 0, imeInset)
+        target.setPadding(0, 0, 0, if (imeInset > 0) imeInset + breathingRoom else 0)
         insets
       }
     }
