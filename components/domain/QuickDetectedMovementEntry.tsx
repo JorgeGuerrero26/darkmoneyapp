@@ -62,6 +62,8 @@ import type { CategorySummary, CounterpartySummary } from "../../types/domain";
 import { useMovementCreationController } from "../../features/movements/hooks/useMovementCreationController";
 import { buildMovementCreateInput } from "../../features/movements/lib/movement-save-contract";
 import { parsePositiveAmountInput } from "../../lib/amount-parsing";
+import { todayPeru } from "../../lib/date";
+import { validateMovementForm } from "../../features/movements/lib/form-validation";
 import { patternMovementAmount } from "../../features/movements/lib/pattern-heuristics";
 import { CategoryPicker } from "../../features/movements/components/form/MovementChipPickers";
 import {
@@ -655,29 +657,53 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
   async function submitInner(force: boolean) {
     if (!suggestion || !activeWorkspaceId) return;
     const parsedAmount = (parsePositiveAmountInput(amount) ?? NaN);
-    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
-      showToast("Ingresa un monto válido", "error");
-      return;
-    }
-    if (!accountId) {
-      showToast("Selecciona una cuenta", "error");
+
+    // Validación compartida con MovementForm (cierra R3: criterios divergentes).
+    // Mapeo al esquema del validador: QuickEntry usa UNA cuenta/monto para gasto e
+    // ingreso, y el validador espera el ingreso en destino.
+    const manualFx = parsePositiveAmountInput(transferFxRate, { kind: "rate" });
+    const validation = validateMovementForm(
+      {
+        movementType,
+        status: "posted",
+        sourceAccountId: movementType === "income" ? null : accountId,
+        destinationAccountId: movementType === "income"
+          ? accountId
+          : movementType === "transfer" ? destinationAccountId : null,
+        sourceAmount: movementType === "income" ? "" : amount,
+        destinationAmount: movementType === "income"
+          ? amount
+          : movementType === "transfer" && transferCurrenciesDiffer ? destinationAmount : "",
+        occurredAt: date,
+      },
+      {
+        sourceCurrencyCode: transferSourceAccount?.currencyCode ?? null,
+        destinationCurrencyCode: movementType === "transfer" ? transferDestAccount?.currencyCode ?? null : null,
+        hasTransferFxAvailable: Boolean(manualFx),
+        // Overdraft es warning y QuickEntry no tiene UI de warnings: se omite.
+        sourceAccountBalance: null,
+        todayYmd: todayPeru(),
+      },
+    );
+    if (!validation.valid) {
+      const firstError = Object.values(validation.errors)[0];
+      showToast(firstError ?? "Revisa los datos del movimiento", "error");
       return;
     }
 
     const occurredAt = new Date(`${date}T12:00:00`).toISOString();
 
     if (movementType === "transfer") {
-      if (!destinationAccountId || destinationAccountId === accountId) {
-        showToast("Selecciona cuentas de origen y destino distintas", "error");
-        return;
-      }
+      if (!destinationAccountId) return; // ya validado; guard para TypeScript
       let destAmt = parsedAmount;
       let fx: number | null = null;
       if (transferCurrenciesDiffer) {
         destAmt = parsePositiveAmountInput(destinationAmount) ?? NaN;
-        fx = parsePositiveAmountInput(transferFxRate, { kind: "rate" }) ?? NaN;
-        if (!Number.isFinite(destAmt) || destAmt <= 0 || !Number.isFinite(fx) || fx <= 0) {
-          showToast("Ingresa monto destino y tipo de cambio válidos", "error");
+        // El validador compartido no cubre la tasa manual (en MovementForm viene del
+        // resolver); QuickEntry la exige explícita cuando las monedas difieren.
+        fx = manualFx ?? NaN;
+        if (!Number.isFinite(fx) || fx <= 0) {
+          showToast("Ingresa un tipo de cambio válido", "error");
           return;
         }
       }
