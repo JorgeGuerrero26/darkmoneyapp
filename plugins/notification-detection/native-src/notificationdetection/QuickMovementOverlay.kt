@@ -68,15 +68,33 @@ object QuickMovementOverlay {
       @Suppress("DEPRECATION")
       WindowManager.LayoutParams.TYPE_PHONE
     }
+    // Sin FLAG_LAYOUT_IN_SCREEN: con él la ventana ocupa la pantalla completa e ignora
+    // los insets, así que adjustResize no achica nada y el teclado tapaba el campo de
+    // descripción. Con ADJUST_RESIZE la ventana se encoge al abrir el teclado y el panel
+    // centrado sube solo.
     val params = WindowManager.LayoutParams(
       WindowManager.LayoutParams.MATCH_PARENT,
       WindowManager.LayoutParams.MATCH_PARENT,
       type,
-      WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+      0,
       PixelFormat.TRANSLUCENT,
     ).apply {
       gravity = Gravity.CENTER
       windowAnimations = 0
+      @Suppress("DEPRECATION")
+      softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+    }
+
+    // Refuerzo para ROMs (Samsung/One UI) que ignoran adjustResize en overlays: en
+    // API 30+ el inset del IME llega por WindowInsets; lo aplicamos como padding
+    // inferior del backdrop para que el panel centrado suba la altura del teclado.
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+      view.setOnApplyWindowInsetsListener { target, insets ->
+        val imeInset = insets.getInsets(android.view.WindowInsets.Type.ime()).bottom
+        android.util.Log.d("DarkMoneyND", "overlay ime inset=$imeInset")
+        target.setPadding(0, 0, 0, imeInset)
+        insets
+      }
     }
 
     windowManager = manager
