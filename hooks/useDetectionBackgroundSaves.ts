@@ -81,7 +81,10 @@ export function useDetectionBackgroundSaves() {
    */
   const discardSave = useCallback(async (suggestionId: string) => {
     notificationDetection.clearSaveRetry(suggestionId);
-    notificationDetection.discardSuggestion(suggestionId);
+    // ignoreSuggestion (puntual), NUNCA discardSuggestion: este último guarda un
+    // discardFingerprint sin monto que bloquea TODA detección futura del mismo patrón
+    // de notificación bancaria (bug reportado: "ya no me llega la notificación").
+    notificationDetection.ignoreSuggestion(suggestionId);
     await refresh();
   }, [refresh]);
 

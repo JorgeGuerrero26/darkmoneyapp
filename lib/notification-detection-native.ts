@@ -12,6 +12,7 @@ type NativeNotificationDetection = {
   setAllowedPackages(packages: string[]): void;
   getSuggestions(): Promise<NotificationDetectionSuggestion[]>;
   discardSuggestion(suggestionId: string): void;
+  ignoreSuggestion?(suggestionId: string): void;
   markSuggestionRegistered(suggestionId: string, notificationId: number): void;
   setSuggestionAiCategoryRecommendation?(suggestionId: string, recommendationJson: string): void;
   setSuggestionDescriptionCleanup?(suggestionId: string, cleanupJson: string): void;
@@ -116,6 +117,14 @@ export const notificationDetection = {
   },
   discardSuggestion(suggestionId: string) {
     nativeModule?.discardSuggestion(suggestionId);
+  },
+  /**
+   * Descarte puntual SIN discardFingerprint: no bloquea futuras detecciones del mismo
+   * patrón (el fingerprint ignora montos — usar discardSuggestion solo para "no mostrar
+   * más"). En APKs viejos sin el método, NO cae a discardSuggestion a propósito.
+   */
+  ignoreSuggestion(suggestionId: string) {
+    nativeModule?.ignoreSuggestion?.(suggestionId);
   },
   markSuggestionRegistered(suggestionId: string, notificationId?: number) {
     nativeModule?.markSuggestionRegistered(suggestionId, notificationId ?? 0);

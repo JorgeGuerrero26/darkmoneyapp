@@ -146,6 +146,23 @@ class NotificationDetectionModule(
     promise.resolve(NotificationDetectionSerializer.toWritableArray(NotificationDetectionStore.getSuggestions(reactContext)))
   }
 
+  /**
+   * Descarte PUNTUAL: marca la sugerencia como descartada SIN guardar discardFingerprint.
+   * El fingerprint ignora los montos, así que discardSuggestion() bloquea TODAS las
+   * futuras notificaciones de la misma plantilla (gotcha conocido — mata la detección).
+   * Usar esta variante para "descartar este registro" (banner de movimientos, skips
+   * puntuales); reservar discardSuggestion() para "no mostrar más este patrón".
+   */
+  @ReactMethod
+  fun ignoreSuggestion(suggestionId: String) {
+    val suggestion = NotificationDetectionStore.getSuggestion(reactContext, suggestionId)
+    NotificationDetectionStore.markStatus(reactContext, suggestionId, "discarded")
+    val notificationId = suggestion?.optInt("notificationId", 0) ?: 0
+    if (notificationId > 0) {
+      reactContext.getSystemService(NotificationManager::class.java).cancel(notificationId)
+    }
+  }
+
   @ReactMethod
   fun discardSuggestion(suggestionId: String) {
     val suggestion = NotificationDetectionStore.getSuggestion(reactContext, suggestionId)
