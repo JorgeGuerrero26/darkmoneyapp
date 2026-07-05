@@ -101,6 +101,16 @@ function withNotificationDetectionSources(config) {
       fs.copyFileSync(path.join(sourceRoot, file), path.join(targetRoot, file));
     }
 
+    // Tests JUnit de la lógica pura (AmountParsing, etc.) → src/test del app module.
+    const testSourceRoot = path.join(__dirname, "native-src", "test");
+    if (fs.existsSync(testSourceRoot)) {
+      const testTargetRoot = path.join(projectRoot, "android", "app", "src", "test", "java", "com", "darkmoney", "app", "notificationdetection");
+      fs.mkdirSync(testTargetRoot, { recursive: true });
+      for (const file of fs.readdirSync(testSourceRoot)) {
+        fs.copyFileSync(path.join(testSourceRoot, file), path.join(testTargetRoot, file));
+      }
+    }
+
     const drawableRoot = path.join(projectRoot, "android", "app", "src", "main", "res", "drawable");
     fs.mkdirSync(drawableRoot, { recursive: true });
     for (const file of fs.readdirSync(path.join(__dirname, "drawable"))) {
@@ -143,6 +153,8 @@ function withNotificationDetectionSources(config) {
 
 // EncryptedSharedPreferences (NotificationDetectionStore) requiere androidx security-crypto.
 const SECURITY_CRYPTO_DEPENDENCY = 'implementation("androidx.security:security-crypto:1.1.0-alpha06")';
+// JUnit para los tests unitarios de la lógica pura del plugin (AmountParsing).
+const JUNIT_DEPENDENCY = 'testImplementation("junit:junit:4.13.2")';
 
 function withNotificationDetectionGradleDeps(config) {
   return withAppBuildGradle(config, (config) => {
@@ -152,8 +164,14 @@ function withNotificationDetectionGradleDeps(config) {
         /dependencies \{/,
         `dependencies {\n    ${SECURITY_CRYPTO_DEPENDENCY}`,
       );
-      config.modResults.contents = contents;
     }
+    if (!contents.includes("junit:junit")) {
+      contents = contents.replace(
+        /dependencies \{/,
+        `dependencies {\n    ${JUNIT_DEPENDENCY}`,
+      );
+    }
+    config.modResults.contents = contents;
     return config;
   });
 }
