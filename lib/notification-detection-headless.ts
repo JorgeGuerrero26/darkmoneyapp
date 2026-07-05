@@ -308,8 +308,25 @@ async function runRegistrationFlow(payload: HeadlessPayload) {
   // el movimiento no se guarda y la sugerencia queda pending (re-disparo al reabrir). RLS valida
   // el token igual en el insert, así que el userId de la sesión local es suficiente.
   const sessionResult = await withTimeout(supabase.auth.getSession(), HEADLESS_QUERY_TIMEOUT_MS, "auth.getSession");
-  const userId = sessionResult.data.session?.user?.id;
+  const session = sessionResult.data.session;
+  const userId = session?.user?.id;
   if (!userId) return;
+
+  // Token vencido o por vencer (app cerrada >1h): el insert fallaría SIEMPRE contra RLS y la
+  // cola de reintentos reintentaría algo imposible (hallazgo N5). Refrescar explícito con
+  // timeout; si el refresh falla, lanzar para que el catch externo notifique + encole el retry
+  // (el reintento sí puede funcionar más tarde, p. ej. al abrir la app con red).
+  const expiresAtMs = (session?.expires_at ?? 0) * 1000;
+  if (expiresAtMs > 0 && expiresAtMs - Date.now() < 60_000) {
+    const refreshed = await withTimeout(
+      supabase.auth.refreshSession(),
+      HEADLESS_QUERY_TIMEOUT_MS,
+      "auth.refreshSession",
+    ).catch(() => null);
+    if (!refreshed?.data.session?.user?.id) {
+      throw new Error("Sesión expirada. Abre DarkMoney para renovarla y completar el registro.");
+    }
+  }
 
   const nativeSuggestions = await nativeDetection?.getSuggestions?.();
   const nativeSuggestion = nativeSuggestions?.find((item) => item.id === payload.suggestionId);
