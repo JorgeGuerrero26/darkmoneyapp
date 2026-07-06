@@ -1,4 +1,5 @@
-import { QueryClientProvider, useIsFetching, useQueryClient } from "@tanstack/react-query";
+import { useIsFetching, useQueryClient } from "@tanstack/react-query";
+import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import * as Linking from "expo-linking";
 import { Stack, usePathname, useRouter, useSegments } from "expo-router";
 import { useFonts } from "expo-font";
@@ -17,7 +18,7 @@ import {
 
 import { COLORS } from "../constants/theme";
 import { AuthProvider, useAuth } from "../lib/auth-context";
-import { queryClient } from "../lib/query-client";
+import { queryClient, queryPersistOptions } from "../lib/query-client";
 import { supabase } from "../lib/supabase";
 import { WorkspaceProvider, useWorkspace } from "../lib/workspace-context";
 import { DisplayCurrencyProvider } from "../features/accounts/lib/display-currency-context";
@@ -228,7 +229,11 @@ function NotificationSetup() {
   const initialWorkspaceQueryFetches = useIsFetching({
     predicate: (query) => {
       const rootKey = query.queryKey[0];
-      return typeof rootKey === "string" && INITIAL_WORKSPACE_BOOTSTRAP_QUERY_KEYS.has(rootKey);
+      if (typeof rootKey !== "string" || !INITIAL_WORKSPACE_BOOTSTRAP_QUERY_KEYS.has(rootKey)) return false;
+      // Con caché persistido, una query hidratada refetchea en background PERO ya
+      // tiene datos para pintar: no debe retener el overlay. Solo cuentan las que
+      // están descargando por primera vez (sin datos aún).
+      return query.state.data === undefined;
     },
   });
 
@@ -966,7 +971,7 @@ export default function RootLayout() {
       <View style={styles.overlay} />
       <SafeAreaProvider>
         <FontLoader>
-          <QueryClientProvider client={queryClient}>
+          <PersistQueryClientProvider client={queryClient} persistOptions={queryPersistOptions}>
             <AuthProvider>
               <WorkspaceProvider>
                 <DisplayCurrencyProvider>
@@ -984,7 +989,7 @@ export default function RootLayout() {
                 </DisplayCurrencyProvider>
               </WorkspaceProvider>
             </AuthProvider>
-          </QueryClientProvider>
+          </PersistQueryClientProvider>
         </FontLoader>
       </SafeAreaProvider>
     </ImageBackground>

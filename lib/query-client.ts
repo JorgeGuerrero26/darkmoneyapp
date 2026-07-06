@@ -1,4 +1,7 @@
 import { MutationCache, QueryCache, QueryClient, onlineManager } from "@tanstack/react-query";
+import { createAsyncStoragePersister } from "@tanstack/query-async-storage-persister";
+import type { PersistQueryClientOptions } from "@tanstack/react-query-persist-client";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import NetInfo from "@react-native-community/netinfo";
 
 import { logError, logWarn } from "./error-logger";
@@ -28,11 +31,55 @@ onlineManager.setEventListener((setOnline) => {
   };
 });
 
+const PERSIST_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Raíces de queryKey que se persisten a disco para arranque instantáneo
+ * (hidratación desde AsyncStorage + revalidación en background). Whitelist a
+ * propósito: nada de IA, entitlements ni detección — solo lo que pinta las
+ * pantallas principales.
+ */
+const PERSISTED_QUERY_ROOTS = new Set([
+  "user-workspaces",
+  "workspace-snapshot",
+  "dashboard-movements",
+  "dashboard-analytics",
+  "movements",
+  "notifications",
+]);
+
+const asyncStoragePersister = createAsyncStoragePersister({
+  storage: AsyncStorage,
+  key: "darkmoney/query-cache/v1",
+  throttleTime: 2_000,
+});
+
+/**
+ * Opciones para PersistQueryClientProvider (app/_layout.tsx). El buster invalida
+ * el caché persistido cuando cambia el shape de los datos: bumpear al tocar
+ * mappers/selects de las queries whitelisteadas.
+ */
+export const queryPersistOptions: Omit<PersistQueryClientOptions, "queryClient"> = {
+  persister: asyncStoragePersister,
+  maxAge: PERSIST_MAX_AGE_MS,
+  buster: "2026-07-05-v1",
+  dehydrateOptions: {
+    shouldDehydrateQuery: (query) => {
+      if (query.state.status !== "success") return false;
+      const rootKey = query.queryKey[0];
+      return typeof rootKey === "string" && PERSISTED_QUERY_ROOTS.has(rootKey);
+    },
+  },
+};
+
 /** Instancia única: permite limpiar caché al cambiar de usuario (p. ej. desde auth). */
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 120_000,
+      // gcTime >= maxAge del persister: si React Query recolecta la query en memoria,
+      // el persister re-escribe el storage SIN ella y el próximo arranque la pierde.
+      gcTime: PERSIST_MAX_AGE_MS,
       retry: 1,
       refetchOnWindowFocus: false,
       placeholderData: (previousData: unknown) => previousData,
