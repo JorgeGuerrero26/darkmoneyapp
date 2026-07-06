@@ -201,6 +201,8 @@ function MovementsScreen() {
 
   // ── FAB / formulario (igual que en el dashboard) ───────────────────────────
   const [formVisible, setFormVisible] = useState(false);
+  // "Repetir movimiento": fuente para prellenar el form como creación nueva con fecha de hoy.
+  const [duplicateSource, setDuplicateSource] = useState<MovementRecord | null>(null);
   const [formDefaultType, setFormDefaultType] = useState<MovementType>("expense");
   const [quickAddSheetVisible, setQuickAddSheetVisible] = useState(false);
 
@@ -791,6 +793,16 @@ function MovementsScreen() {
         }
       }}
       onDelete={() => confirmDelete(item)}
+      onDuplicate={
+        // Solo tipos que el formulario puede crear; los pagos de obligación/suscripción
+        // nacen de sus propios flujos.
+        item.movementType === "expense" || item.movementType === "income" || item.movementType === "transfer"
+          ? () => {
+              setDuplicateSource(item);
+              setFormVisible(true);
+            }
+          : undefined
+      }
     />
   ), [baseCurrency, movementAttachmentCounts, selectedIds, selectMode, toggleSelect, confirmDelete, router]);
 
@@ -988,8 +1000,12 @@ function MovementsScreen() {
 
             <MovementForm
               visible={formVisible}
-              onClose={() => setFormVisible(false)}
+              onClose={() => {
+                setFormVisible(false);
+                setDuplicateSource(null);
+              }}
               defaultType={formDefaultType}
+              duplicateMovement={duplicateSource}
             />
 
             <QuickAddSheet

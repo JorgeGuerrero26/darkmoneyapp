@@ -103,9 +103,11 @@ type Props = {
   defaultType?: MovementType;
   initialAccountId?: number;
   editMovement?: MovementRecord;
+  /** "Repetir movimiento": prellena todo desde un movimiento existente pero CREA uno nuevo con fecha de hoy. */
+  duplicateMovement?: MovementRecord | null;
 };
 
-export function MovementForm({ visible, onClose, onSuccess, defaultType = "expense", initialAccountId, editMovement }: Props) {
+export function MovementForm({ visible, onClose, onSuccess, defaultType = "expense", initialAccountId, editMovement, duplicateMovement }: Props) {
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
   const { showToast, showRichToast } = useToast();
@@ -438,6 +440,23 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         notes: editMovement.notes ?? "",
       });
       setStep(2); // Edit opens on amount/account first
+    } else if (duplicateMovement) {
+      // Repetir movimiento: mismo contenido, fecha de HOY, siempre como creación nueva
+      // (posted). El usuario aterriza en el paso de monto para confirmar/ajustar.
+      setForm({
+        movementType: duplicateMovement.movementType,
+        status: "posted",
+        sourceAccountId: duplicateMovement.sourceAccountId ?? null,
+        destinationAccountId: duplicateMovement.destinationAccountId ?? null,
+        sourceAmount: duplicateMovement.sourceAmount ? String(duplicateMovement.sourceAmount) : "",
+        destinationAmount: duplicateMovement.destinationAmount ? String(duplicateMovement.destinationAmount) : "",
+        description: duplicateMovement.description ?? "",
+        categoryId: duplicateMovement.categoryId ?? null,
+        counterpartyId: duplicateMovement.counterpartyId ?? null,
+        occurredAt: todayPeru(),
+        notes: duplicateMovement.notes ?? "",
+      });
+      setStep(2);
     } else {
       setStep(1);
       const initial = getInitialForm(defaultType);
@@ -463,9 +482,9 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     setCategoryFeedbackIntent(null);
     setLinkedSubscriptionId(editMovement?.subscriptionId ?? null);
     setLinkedRecurringIncomeId(null);
-    fx.resetFxState(Boolean(editMovement?.destinationAmount));
+    fx.resetFxState(Boolean((editMovement ?? duplicateMovement)?.destinationAmount));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, editMovement, defaultType, initialAccountId, isClosingAfterSubmit]);
+  }, [visible, editMovement, duplicateMovement, defaultType, initialAccountId, isClosingAfterSubmit]);
 
   // El par frecuente puede llegar después de abrir el form (query async). Si el form está
   // en transferencia NUEVA sin cuentas elegidas, prellénalo cuando los datos estén listos.
