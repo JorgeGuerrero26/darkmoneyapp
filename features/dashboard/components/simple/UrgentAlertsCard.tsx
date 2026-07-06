@@ -15,7 +15,15 @@ type UrgentAlertsCardProps = {
     status: string;
     currencyCode: string;
   }>;
-  budgets: Array<{ id: number; name: string; isOverLimit: boolean; isNearLimit: boolean; usedPercent: number }>;
+  budgets: Array<{
+    id: number;
+    name: string;
+    isOverLimit: boolean;
+    isNearLimit: boolean;
+    usedPercent: number;
+    /** Alcance (categoría/cuenta/global): desambigua presupuestos con el mismo nombre. */
+    scopeLabel?: string;
+  }>;
   subscriptions: Array<{ id: number; name: string; nextDueDate: string; status: string }>;
   router: ReturnType<typeof useRouter>;
 };
@@ -45,10 +53,13 @@ export function UrgentAlertsCard({ obligations, budgets, subscriptions, router }
   for (const b of budgets) {
     if (items.length >= 3) break;
     if (!b.isOverLimit && !b.isNearLimit) continue;
+    // Con dos presupuestos del mismo nombre (distinto alcance), dos alertas idénticas
+    // no dicen cuál es cuál: el alcance va en el título cuando existe y aporta.
+    const scope = b.scopeLabel?.trim();
     items.push({
       key: `bg-${b.id}`,
       icon: <AlertCircle size={14} color={b.isOverLimit ? COLORS.expense : COLORS.warning} />,
-      label: b.name,
+      label: scope && scope.toLowerCase() !== b.name.trim().toLowerCase() ? `${b.name} · ${scope}` : b.name,
       sub: b.isOverLimit
         ? `Límite superado · ${Math.round(b.usedPercent)}% usado`
         : `Cerca del límite · ${Math.round(b.usedPercent)}% usado`,

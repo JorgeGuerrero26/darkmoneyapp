@@ -24,17 +24,38 @@ export const CounterpartyPicker = memo(function CounterpartyPicker({
   selectedId,
   onSelect,
 }: CounterpartyProps) {
+  const [query, setQuery] = useState("");
   if (counterparties.length === 0) return null;
+  // Mismo umbral y buscador insensible a tildes que CategoryPicker: con 20+
+  // contrapartes el scroll horizontal no escala.
+  const showSearch = counterparties.length > CATEGORY_SEARCH_THRESHOLD;
+  const normalizedQuery = normalizeSearchText(query);
+  const visibleCounterparties = showSearch && normalizedQuery
+    ? counterparties.filter(
+        // La seleccionada queda siempre visible para poder deseleccionarla aunque no matchee.
+        (cp) => cp.id === selectedId || normalizeSearchText(cp.name).includes(normalizedQuery),
+      )
+    : counterparties;
   return (
     <View style={styles.pickerWrap} accessibilityLabel={label}>
       <Text style={styles.sectionLabel}>{label}</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
+      {showSearch ? (
+        <TextInput
+          value={query}
+          onChangeText={setQuery}
+          placeholder="Buscar contraparte…"
+          placeholderTextColor={COLORS.storm}
+          style={styles.searchInput}
+          accessibilityLabel="Buscar contraparte"
+        />
+      ) : null}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row} keyboardShouldPersistTaps="handled">
         <Chip
           label="Ninguna"
           active={selectedId === null}
           onPress={() => onSelect(null)}
         />
-        {counterparties.map((cp) => (
+        {visibleCounterparties.map((cp) => (
           <Chip
             key={cp.id}
             label={cp.name}
@@ -42,6 +63,9 @@ export const CounterpartyPicker = memo(function CounterpartyPicker({
             onPress={() => onSelect(cp.id)}
           />
         ))}
+        {showSearch && normalizedQuery && visibleCounterparties.length === 0 ? (
+          <Text style={styles.emptyResult}>Sin coincidencias</Text>
+        ) : null}
       </ScrollView>
     </View>
   );

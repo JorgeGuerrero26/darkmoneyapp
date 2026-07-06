@@ -17,6 +17,7 @@ import {
 import { useAuth } from "../../lib/auth-context";
 import { useWorkspace } from "../../lib/workspace-context";
 import { useToast } from "../../hooks/useToast";
+import { useHaptics } from "../../hooks/useHaptics";
 import {
   findPossibleDuplicateMovement,
   recordSuggestionAction,
@@ -111,6 +112,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
   const { showToast, showRichToast } = useToast();
+  const haptics = useHaptics();
   const suggestionQuery = useDetectedMovementSuggestionQuery(suggestionId);
   const suggestion = suggestionQuery.data;
   const { data: snapshot } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
@@ -686,6 +688,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
       },
     );
     if (!validation.valid) {
+      haptics.error();
       const firstError = Object.values(validation.errors)[0];
       showToast(firstError ?? "Revisa los datos del movimiento", "error");
       return;
@@ -747,6 +750,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
           });
         }
         if (notificationId) markNotificationRead.mutate(notificationId);
+        haptics.success();
         showRichToast({
           type: "transfer",
           title: "Transferencia guardada",
@@ -755,6 +759,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
         });
         onClose();
       } catch (error) {
+        haptics.error();
         showToast(error instanceof Error ? error.message : "No se pudo guardar la transferencia", "error");
       }
       return;
@@ -901,6 +906,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
         });
       }
       if (notificationId) markNotificationRead.mutate(notificationId);
+      haptics.success();
       showRichToast({
         type: "success",
         title: "Movimiento guardado",
@@ -909,6 +915,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
       });
       onClose();
     } catch (error) {
+      haptics.error();
       showToast(error instanceof Error ? error.message : "No se pudo guardar el movimiento", "error");
     }
   }
