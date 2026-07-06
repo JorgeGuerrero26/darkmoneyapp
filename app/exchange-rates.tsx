@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SectionListRenderItem } from "react-native";
-import { CheckSquare, RefreshCw, SlidersHorizontal, Trash2 } from "lucide-react-native";
+import { CheckSquare, Download, RefreshCw, SlidersHorizontal, Trash2 } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "../components/ui/ErrorBoundary";
@@ -28,6 +28,11 @@ import {
   type ExchangeRateListSection,
 } from "../features/exchange-rates/lib/exchangeRateFilters";
 import { buildExchangeRatesContextNote } from "../features/exchange-rates/lib/buildExchangeRatesContextNote";
+import { getUsdReferenceRate } from "../features/exchange-rates/lib/usdReferenceRate";
+import { buildExchangeRatesCsv } from "../lib/exchange-rates-csv";
+import { shareCsvAsFile } from "../lib/share-csv-file";
+import { useAuth } from "../lib/auth-context";
+import { useWorkspace } from "../lib/workspace-context";
 import {
   useCreateExchangeRateMutation,
   useDeleteExchangeRateMutation,
@@ -49,6 +54,9 @@ function ExchangeRatesScreen() {
   const insets = useSafeAreaInsets();
   const { handleBack } = useOriginBackNavigation();
   const { showToast } = useToast();
+  const { profile } = useAuth();
+  const { activeWorkspace } = useWorkspace();
+  const baseCurrencyCode = (activeWorkspace?.baseCurrencyCode ?? profile?.baseCurrencyCode ?? "PEN").toUpperCase();
 
   const [showForm, setShowForm] = useState(false);
   const [editItem, setEditItem] = useState<ExchangeRateRecord | null>(null);
@@ -113,6 +121,24 @@ function ExchangeRatesScreen() {
   );
   const sections = useMemo(() => buildExchangeRateSections(filteredRates), [filteredRates]);
   const pairCount = useMemo(() => getExchangeRatePairCount(activeRates), [activeRates]);
+  // Regla del proyecto: USD como referencia por defecto para comparaciones.
+  const usdReference = useMemo(
+    () => getUsdReferenceRate(activeRates, baseCurrencyCode),
+    [activeRates, baseCurrencyCode],
+  );
+
+  const exportCSV = useCallback(async (ratesToExport: ExchangeRateRecord[]) => {
+    if (ratesToExport.length === 0) {
+      showToast("No hay filas para exportar", "warning");
+      return;
+    }
+    try {
+      const csv = buildExchangeRatesCsv(ratesToExport);
+      await shareCsvAsFile(csv, `tipos-de-cambio-${activeWorkspace?.name?.replace(/\s+/g, "_") ?? "workspace"}.csv`);
+    } catch (error: unknown) {
+      showToast(error instanceof Error ? error.message : "Error al exportar", "error");
+    }
+  }, [activeWorkspace?.name, showToast]);
 
   const activeFilterItems = useMemo<ActiveFilterItem[]>(() => {
     const items: ActiveFilterItem[] = [];
@@ -333,6 +359,11 @@ function ExchangeRatesScreen() {
                   disabled: syncRatePair.isPending,
                   accessibilityLabel: "Actualizar tipos de cambio",
                 }, {
+                  key: "export",
+                  icon: Download,
+                  onPress: () => void exportCSV(filteredRates),
+                  accessibilityLabel: "Exportar tipos de cambio en CSV",
+                }, {
                   key: "filters",
                   icon: SlidersHorizontal,
                   label: extraFiltersCount > 0 ? `Filtros (${extraFiltersCount})` : "Filtros",
@@ -359,7 +390,7 @@ function ExchangeRatesScreen() {
       context={!selectMode && activeRates.length > 0 ? <ResourceContextNote>{contextNote}</ResourceContextNote> : null}
       summary={
         !selectMode && activeRates.length > 0 ? (
-          <ExchangeRatesSummaryBar pairCount={pairCount} currencyCount={currencyOptions.length} />
+          <ExchangeRatesSummaryBar pairCount={pairCount} currencyCount={currencyOptions.length} usdReference={usdReference} />
         ) : null
       }
       bulkActions={
@@ -373,6 +404,13 @@ function ExchangeRatesScreen() {
                 label: `Sel. todos (${filteredRates.length})`,
                 icon: CheckSquare,
                 onPress: () => setSelectedIds(new Set(filteredRates.map((item) => item.id))),
+              },
+              {
+                key: "csv",
+                label: "CSV",
+                icon: Download,
+                tone: "primary",
+                onPress: () => void exportCSV(selectedRates),
               },
               {
                 key: "resync",
