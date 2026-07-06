@@ -74,18 +74,16 @@ import { clearLastTabRoute, getLastTabRoute } from "../hooks/useTabPersistence";
 const Notifications = getNotificationsModule();
 
 // Solo las queries necesarias para PINTAR el dashboard bloquean el overlay de arranque.
-// Las de colaboración (shared-obligations, obligation-shares, payment-request-counts)
-// se quitaron: list-shared-obligations tarda/timeoutea 12 s en dispositivos reales y
-// mantenía al usuario mirando "Cargando workspace" ~25 s en cada arranque.
+// Historial del recorte: primero salieron las de colaboración (shared-obligations y
+// afines timeouteaban 12 s → ~25 s de "Cargando workspace"); luego movements (la lista
+// completa la carga su propia tab), budget-scope-movements, notifications (la campana
+// puede llegar 1 s tarde) y user-entitlement (solo gatea features de IA). Cada query
+// extra aquí compite además por el lock de auth de supabase-js y alarga el arranque.
 const INITIAL_WORKSPACE_BOOTSTRAP_QUERY_KEYS = new Set([
   "user-workspaces",
   "workspace-snapshot",
   "dashboard-movements",
   "dashboard-analytics",
-  "budget-scope-movements",
-  "movements",
-  "notifications",
-  "user-entitlement",
 ]);
 
 SplashScreen.preventAutoHideAsync();
@@ -119,8 +117,10 @@ function readMovementMetadataNumber(payload: unknown, key: string): number | nul
  * Tiempo mínimo (ms) durante el cual el splash queda visible antes de empezar
  * el fade-out, incluso si `isLoading` resolvió antes. Evita el "flash" de la
  * pantalla cuando la sesión ya está cacheada y getSession() retorna instantáneo.
+ * 600 ms basta para que el fade-in del logo no se corte; 1200 regalaba medio
+ * segundo de espera en CADA arranque.
  */
-const SPLASH_MIN_VISIBLE_MS = 1200;
+const SPLASH_MIN_VISIBLE_MS = 600;
 
 function AppSplash() {
   const { isLoading } = useAuth();
