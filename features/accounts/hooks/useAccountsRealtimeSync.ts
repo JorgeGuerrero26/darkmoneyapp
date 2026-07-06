@@ -1,8 +1,7 @@
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
-import { supabase } from "../../../lib/supabase";
-import { logWarn } from "../../../lib/error-logger";
+import { subscribeRealtimeChannel } from "../../../lib/realtime-channel";
 
 type Input = {
   workspaceId: number | null;
@@ -19,55 +18,36 @@ type Input = {
  *  - `movements` changes mutate `currentBalance` for the involved accounts,
  *    so the list net-worth and per-card balance must refresh.
  *
- * Use a channel name unique to this module (`accounts:ws-X`) so it doesn't
- * collide with the dashboard or movements module channels — Supabase allows
- * multiple channels per subscription as long as the names differ.
- *
- * Cleanly unsubscribes on unmount or when `workspaceId` changes.
+ * La resiliencia (re-suscripción con backoff, logs deduplicados) vive en
+ * subscribeRealtimeChannel. Cleanly unsubscribes on unmount / workspace change.
  */
 export function useAccountsRealtimeSync({ workspaceId }: Input) {
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    if (!supabase || !workspaceId) return;
-
-    const channel = supabase
-      .channel(`accounts:ws-${workspaceId}`)
-      .on(
-        "postgres_changes",
+    if (!workspaceId) return;
+    return subscribeRealtimeChannel({
+      source: "accounts",
+      channelName: `accounts:ws-${workspaceId}`,
+      bindings: [
         {
-          event: "*",
-          schema: "public",
           table: "accounts",
           filter: `workspace_id=eq.${workspaceId}`,
+          onChange: () => {
+            void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+          },
         },
-        () => {
-          void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
-        },
-      )
-      .on(
-        "postgres_changes",
         {
-          event: "*",
-          schema: "public",
           table: "movements",
           filter: `workspace_id=eq.${workspaceId}`,
+          onChange: () => {
+            // Movements change the per-account balance and the net-worth aggregate.
+            void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+            // Account detail also paginates movements directly.
+            void queryClient.invalidateQueries({ queryKey: ["movements"] });
+          },
         },
-        () => {
-          // Movements change the per-account balance and the net-worth aggregate.
-          void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
-          // Account detail also paginates movements directly.
-          void queryClient.invalidateQueries({ queryKey: ["movements"] });
-        },
-      )
-      .subscribe((status) => {
-        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
-          logWarn("realtime", `accounts channel ${status}`, { workspaceId });
-        }
-      });
-
-    return () => {
-      void supabase!.removeChannel(channel);
-    };
+      ],
+    });
   }, [workspaceId, queryClient]);
 }

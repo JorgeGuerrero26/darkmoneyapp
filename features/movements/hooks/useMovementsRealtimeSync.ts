@@ -1,8 +1,7 @@
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
-import { supabase } from "../../../lib/supabase";
-import { logWarn } from "../../../lib/error-logger";
+import { subscribeRealtimeChannel } from "../../../lib/realtime-channel";
 
 type Input = {
   workspaceId: number | null;
@@ -23,38 +22,28 @@ type Input = {
  * autónomo). Usan canales distintos (`movements:ws-X` vs `dashboard:ws-X`)
  * para evitar conflictos de suscripción.
  *
- * Se desuscribe al desmontar o cambiar workspaceId.
+ * La resiliencia (re-suscripción con backoff, logs deduplicados) vive en
+ * subscribeRealtimeChannel. Se desuscribe al desmontar o cambiar workspaceId.
  */
 export function useMovementsRealtimeSync({ workspaceId }: Input) {
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    if (!supabase || !workspaceId) return;
-
-    const channel = supabase
-      .channel(`movements:ws-${workspaceId}`)
-      .on(
-        "postgres_changes",
+    if (!workspaceId) return;
+    return subscribeRealtimeChannel({
+      source: "movements",
+      channelName: `movements:ws-${workspaceId}`,
+      bindings: [
         {
-          event: "*",
-          schema: "public",
           table: "movements",
           filter: `workspace_id=eq.${workspaceId}`,
+          onChange: () => {
+            void queryClient.invalidateQueries({ queryKey: ["movements"] });
+            // El detalle individual puede haber cambiado también.
+            void queryClient.invalidateQueries({ queryKey: ["movement"] });
+          },
         },
-        () => {
-          void queryClient.invalidateQueries({ queryKey: ["movements"] });
-          // El detalle individual puede haber cambiado también.
-          void queryClient.invalidateQueries({ queryKey: ["movement"] });
-        },
-      )
-      .subscribe((status) => {
-        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
-          logWarn("realtime", `movements channel ${status}`, { workspaceId });
-        }
-      });
-
-    return () => {
-      void supabase!.removeChannel(channel);
-    };
+      ],
+    });
   }, [workspaceId, queryClient]);
 }

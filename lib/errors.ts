@@ -66,7 +66,9 @@ export function humanizeError(err: unknown): string {
     return "El monto ingresado es demasiado grande";
   }
   if (msg.includes("42501") || lowerMsg.includes("permission denied") || lowerMsg.includes("row-level security")) {
-    return "No tienes permisos para realizar esta acción";
+    // En producción (app_error_logs) este error aparece cuando el token expiró justo
+    // al escribir (app recién resucitada, refresh en vuelo): el reintento funciona.
+    return "Tu sesión se estaba renovando al guardar. Inténtalo de nuevo.";
   }
 
   if (msg.includes("Invalid login credentials") || lowerMsg.includes("invalid_credentials")) {

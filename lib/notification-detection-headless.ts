@@ -307,7 +307,18 @@ async function runRegistrationFlow(payload: HeadlessPayload) {
   // servidor y en el contexto headless (app cerrada) se cuelga frecuentemente → timeout 10s →
   // el movimiento no se guarda y la sugerencia queda pending (re-disparo al reabrir). RLS valida
   // el token igual en el insert, así que el userId de la sesión local es suficiente.
-  const sessionResult = await withTimeout(supabase.auth.getSession(), HEADLESS_QUERY_TIMEOUT_MS, "auth.getSession");
+  // Con retry: en cold start el lock de auth de supabase-js puede retener getSession()
+  // más de 10 s (app_error_logs 2026-07-06: fallos permanentes por este timeout); el
+  // segundo intento entra cuando el lock se libera.
+  const sessionResult = await withRetry(
+    () => supabase!.auth.getSession(),
+    {
+      label: "auth.getSession",
+      retries: HEADLESS_RETRIES,
+      timeoutMs: HEADLESS_QUERY_TIMEOUT_MS,
+      onAttemptFailed: reportFailedAttempt("auth.getSession", payload.suggestionId),
+    },
+  );
   const session = sessionResult.data.session;
   const userId = session?.user?.id;
   if (!userId) return;
