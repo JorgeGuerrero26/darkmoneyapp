@@ -28,21 +28,21 @@ const SLIDES: Slide[] = [
     eyebrow: "Control financiero",
     title: "Tu dinero en un solo lugar.",
     body: "Organiza cuentas, gastos e ingresos con una vista clara antes de decidir.",
-    image: require("../../assets/images/welcome-slider-1.png"),
+    image: require("../../assets/images/welcome-slider-1.jpg"),
   },
   {
     key: "shared",
     eyebrow: "Creditos y deudas",
     title: "Comparte creditos y deudas.",
     body: "Invita, valida y mantén claridad.",
-    image: require("../../assets/images/welcome-slider-2.png"),
+    image: require("../../assets/images/welcome-slider-2.jpg"),
   },
   {
     key: "context",
     eyebrow: "Contexto inteligente",
     title: "Anticipa lo que viene.",
     body: "Lee el mes con alertas, recordatorios y senales accionables.",
-    image: require("../../assets/images/welcome-slider-3.png"),
+    image: require("../../assets/images/welcome-slider-3.jpg"),
   },
 ];
 

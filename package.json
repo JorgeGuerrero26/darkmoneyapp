@@ -32,6 +32,7 @@
     "expo": "^54.0.33",
     "expo-asset": "~12.0.12",
     "expo-blur": "~15.0.8",
+    "expo-build-properties": "^57.0.3",
     "expo-camera": "~17.0.10",
     "expo-constants": "~18.0.13",
     "expo-file-system": "~19.0.21",
@@ -64,6 +65,7 @@
     "@types/react": "~19.1.10",
     "@typescript-eslint/eslint-plugin": "^8.57.1",
     "@typescript-eslint/parser": "^8.57.1",
+    "babel-plugin-transform-remove-console": "^6.9.4",
     "eslint": "^10.0.3",
     "eslint-plugin-react-hooks": "^7.0.1",
     "typescript": "~5.9.2"

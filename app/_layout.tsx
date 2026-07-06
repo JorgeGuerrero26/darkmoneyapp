@@ -963,7 +963,7 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
     <ImageBackground
-      source={require("../assets/images/background-darkmoney.png")}
+      source={require("../assets/images/background-darkmoney.jpg")}
       style={styles.background}
       resizeMode="cover"
       blurRadius={0}
