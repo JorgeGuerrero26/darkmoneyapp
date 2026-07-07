@@ -191,6 +191,7 @@ import { MiniBarChart } from "../../features/dashboard/components/simple/MiniBar
 import { AccountsScroll } from "../../features/dashboard/components/simple/AccountsScroll";
 import { UpcomingSection } from "../../features/dashboard/components/simple/UpcomingSection";
 import { UrgentAlertsCard } from "../../features/dashboard/components/simple/UrgentAlertsCard";
+import { useDismissedDashboardAlerts } from "../../hooks/useDismissedDashboardAlerts";
 import { BudgetsSection } from "../../features/dashboard/components/simple/BudgetsSection";
 import { LeadersRow } from "../../features/dashboard/components/simple/LeadersRow";
 import { CategoryComparison } from "../../features/dashboard/components/simple/CategoryComparison";
@@ -347,6 +348,7 @@ function DashboardScreen() {
   const queryClient = useQueryClient();
   const { profile, session, signOut } = useAuth();
   const { activeWorkspaceId, activeWorkspace, setWorkspaces } = useWorkspace();
+  const dismissedAlerts = useDismissedDashboardAlerts(activeWorkspaceId);
 
   useDashboardRealtimeSync({ workspaceId: activeWorkspaceId });
 
@@ -726,6 +728,8 @@ function DashboardScreen() {
                 budgets={correctedDashboardBudgets}
                 subscriptions={snapshot?.subscriptions ?? []}
                 router={router}
+                isDismissed={dismissedAlerts.isDismissed}
+                onDismiss={dismissedAlerts.dismiss}
               />
             </DashboardSectionBoundary>
 
