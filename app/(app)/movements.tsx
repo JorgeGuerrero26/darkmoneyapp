@@ -31,7 +31,8 @@ import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTempla
 import { ResourceSectionList } from "../../components/ui/ResourceSectionList";
 import { SkeletonList, SkeletonMovementRow } from "../../components/ui/Skeleton";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
-import { MovementForm } from "../../components/forms/MovementForm";
+import { MovementForm, type MovementDuplicateSource } from "../../components/forms/MovementForm";
+import { useDeleteMovementTemplateMutation, useMovementTemplatesQuery } from "../../services/queries/movement-templates";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { FAB } from "../../components/ui/FAB";
 import { useDeleteMovementMutation } from "../../services/queries/workspace-data";
@@ -202,7 +203,9 @@ function MovementsScreen() {
   // ── FAB / formulario (igual que en el dashboard) ───────────────────────────
   const [formVisible, setFormVisible] = useState(false);
   // "Repetir movimiento": fuente para prellenar el form como creación nueva con fecha de hoy.
-  const [duplicateSource, setDuplicateSource] = useState<MovementRecord | null>(null);
+  const [duplicateSource, setDuplicateSource] = useState<MovementDuplicateSource | null>(null);
+  const movementTemplates = useMovementTemplatesQuery(activeWorkspaceId).data ?? [];
+  const deleteTemplate = useDeleteMovementTemplateMutation();
   const [formDefaultType, setFormDefaultType] = useState<MovementType>("expense");
   const [quickAddSheetVisible, setQuickAddSheetVisible] = useState(false);
 
@@ -1014,6 +1017,26 @@ function MovementsScreen() {
               onSelect={(type) => {
                 setFormDefaultType(type);
                 setFormVisible(true);
+              }}
+              templates={movementTemplates}
+              onSelectTemplate={(template) => {
+                setDuplicateSource({
+                  movementType: template.movementType,
+                  sourceAccountId: template.sourceAccountId,
+                  destinationAccountId: template.destinationAccountId,
+                  sourceAmount: template.sourceAmount,
+                  destinationAmount: template.destinationAmount,
+                  description: template.description,
+                  categoryId: template.categoryId,
+                  counterpartyId: template.counterpartyId,
+                  notes: template.notes,
+                });
+                setFormVisible(true);
+              }}
+              onDeleteTemplate={(template) => {
+                deleteTemplate.mutate(template.id, {
+                  onError: (err) => showToast(err instanceof Error ? err.message : "No se pudo eliminar", "error"),
+                });
               }}
             />
 

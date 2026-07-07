@@ -104,9 +104,23 @@ type Props = {
   defaultType?: MovementType;
   initialAccountId?: number;
   editMovement?: MovementRecord;
-  /** "Repetir movimiento": prellena todo desde un movimiento existente pero CREA uno nuevo con fecha de hoy. */
-  duplicateMovement?: MovementRecord | null;
+  /** "Repetir movimiento" / plantillas: prellena todo pero CREA uno nuevo con fecha de hoy. */
+  duplicateMovement?: MovementDuplicateSource | null;
 };
+
+/** Subset de MovementRecord suficiente para prellenar; las plantillas también lo cumplen. */
+export type MovementDuplicateSource = Pick<
+  MovementRecord,
+  | "movementType"
+  | "sourceAccountId"
+  | "destinationAccountId"
+  | "sourceAmount"
+  | "destinationAmount"
+  | "description"
+  | "categoryId"
+  | "counterpartyId"
+  | "notes"
+>;
 
 export function MovementForm({ visible, onClose, onSuccess, defaultType = "expense", initialAccountId, editMovement, duplicateMovement }: Props) {
   const { profile } = useAuth();

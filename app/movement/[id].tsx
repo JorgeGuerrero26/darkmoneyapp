@@ -33,6 +33,9 @@ import { useAuth } from "../../lib/auth-context";
 import { isoToDateStr } from "../../lib/date";
 import { movementActsAsExpense, movementActsAsIncome } from "../../lib/movement-display";
 import { useToast } from "../../hooks/useToast";
+import { useCreateMovementTemplateMutation } from "../../services/queries/movement-templates";
+import { HeaderActionGroup } from "../../components/ui/HeaderActionGroup";
+import { BookmarkPlus } from "lucide-react-native";
 import { useOriginBackNavigation } from "../../hooks/useOriginBackNavigation";
 import { removeAttachmentFile } from "../../lib/entity-attachments";
 import { COLORS, FONT_SIZE, SPACING } from "../../constants/theme";
@@ -99,6 +102,32 @@ function MovementDetailScreen() {
   const autoOpenedEditMovementIdRef = useRef<number | null>(null);
 
   const { data: movement, isLoading, error } = useMovementQuery(id ? parseInt(id) : null);
+  const createTemplate = useCreateMovementTemplateMutation(activeWorkspaceId, profile?.id);
+  const canTemplate =
+    movement?.movementType === "expense" ||
+    movement?.movementType === "income" ||
+    movement?.movementType === "transfer";
+  function saveAsTemplate() {
+    if (!movement || createTemplate.isPending) return;
+    createTemplate.mutate(
+      {
+        name: (movement.description ?? "").trim() || "Plantilla sin nombre",
+        movementType: movement.movementType,
+        sourceAccountId: movement.sourceAccountId ?? null,
+        destinationAccountId: movement.destinationAccountId ?? null,
+        sourceAmount: movement.sourceAmount ?? null,
+        destinationAmount: movement.destinationAmount ?? null,
+        categoryId: movement.categoryId ?? null,
+        counterpartyId: movement.counterpartyId ?? null,
+        description: movement.description ?? "",
+        notes: movement.notes ?? null,
+      },
+      {
+        onSuccess: () => showToast("Plantilla guardada. Úsala desde el botón + (mantener presionado).", "success"),
+        onError: (err) => showToast(err instanceof Error ? err.message : "No se pudo guardar la plantilla", "error"),
+      },
+    );
+  }
   const {
     data: movementAttachments = [],
     isLoading: attachmentsLoading,
@@ -354,6 +383,19 @@ function MovementDetailScreen() {
           title="Movimiento"
           subtitle={activeWorkspace?.name}
           onBack={handleBack}
+          rightAction={
+            canTemplate ? (
+              <HeaderActionGroup
+                actions={[{
+                  key: "template",
+                  icon: BookmarkPlus,
+                  onPress: saveAsTemplate,
+                  disabled: createTemplate.isPending,
+                  accessibilityLabel: "Guardar como plantilla",
+                }]}
+              />
+            ) : null
+          }
         />
       }
       list={

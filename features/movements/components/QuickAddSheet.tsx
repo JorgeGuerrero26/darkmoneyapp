@@ -1,15 +1,20 @@
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { ArrowDownCircle, ArrowLeftRight, ArrowUpCircle } from "lucide-react-native";
 
 import { BottomSheet } from "../../../components/ui/BottomSheet";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../../constants/theme";
 import { MOVEMENT_LABELS } from "../lib/labels";
 import type { MovementType } from "../../../types/domain";
+import type { MovementTemplate } from "../../../services/queries/movement-templates";
 
 type Props = {
   visible: boolean;
   onClose: () => void;
   onSelect: (type: MovementType) => void;
+  /** Plantillas del workspace: tap = abrir el form prellenado; long-press = eliminar. */
+  templates?: MovementTemplate[];
+  onSelectTemplate?: (template: MovementTemplate) => void;
+  onDeleteTemplate?: (template: MovementTemplate) => void;
 };
 
 const OPTIONS: { type: MovementType; label: string; Icon: typeof ArrowDownCircle; color: string }[] = [
@@ -22,7 +27,7 @@ const OPTIONS: { type: MovementType; label: string; Icon: typeof ArrowDownCircle
  * Sheet de quick-add disparado por long-press del FAB.
  * Reduce 3-4 taps por entrada manual cuando el usuario sabe el tipo desde el inicio.
  */
-export function QuickAddSheet({ visible, onClose, onSelect }: Props) {
+export function QuickAddSheet({ visible, onClose, onSelect, templates, onSelectTemplate, onDeleteTemplate }: Props) {
   return (
     <BottomSheet visible={visible} onClose={onClose} title={MOVEMENT_LABELS.list.quickAdd.title} snapHeight={0.4}>
       <View style={styles.content}>
@@ -44,12 +49,86 @@ export function QuickAddSheet({ visible, onClose, onSelect }: Props) {
             <Text style={[styles.label, { color: opt.color }]}>{opt.label}</Text>
           </TouchableOpacity>
         ))}
+        {templates && templates.length > 0 && onSelectTemplate ? (
+          <>
+            <Text style={styles.templatesLabel}>Plantillas</Text>
+            {templates.map((template) => (
+              <TouchableOpacity
+                key={template.id}
+                style={styles.templateRow}
+                activeOpacity={0.76}
+                onPress={() => {
+                  onSelectTemplate(template);
+                  onClose();
+                }}
+                onLongPress={
+                  onDeleteTemplate
+                    ? () => {
+                        Alert.alert(
+                          "Eliminar plantilla",
+                          `¿Eliminar la plantilla "${template.name}"?`,
+                          [
+                            { text: "Cancelar", style: "cancel" },
+                            { text: "Eliminar", style: "destructive", onPress: () => onDeleteTemplate(template) },
+                          ],
+                        );
+                      }
+                    : undefined
+                }
+                accessibilityRole="button"
+                accessibilityLabel={`Usar plantilla ${template.name}`}
+              >
+                <View style={styles.templateTextWrap}>
+                  <Text style={styles.templateName} numberOfLines={1}>{template.name}</Text>
+                  <Text style={styles.templateMeta} numberOfLines={1}>
+                    {MOVEMENT_LABELS.list.quickAdd[template.movementType as "expense" | "income" | "transfer"] ?? template.movementType}
+                    {template.sourceAmount != null ? ` · ${template.sourceAmount.toLocaleString("es-PE", { maximumFractionDigits: 2 })}` : ""}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+            <Text style={styles.templatesHint}>Mantén presionada una plantilla para eliminarla.</Text>
+          </>
+        ) : null}
       </View>
     </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
+  templatesLabel: {
+    color: COLORS.textMuted,
+    fontFamily: FONT_FAMILY.bodyMedium,
+    fontSize: FONT_SIZE.xs,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginTop: SPACING.md,
+  },
+  templateRow: {
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: SURFACE.subtleBorder,
+    backgroundColor: SURFACE.card,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+  },
+  templateTextWrap: { gap: 2 },
+  templateName: {
+    color: COLORS.text,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.sm,
+  },
+  templateMeta: {
+    color: COLORS.textMuted,
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+  },
+  templatesHint: {
+    color: COLORS.textMuted,
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    textAlign: "center",
+  },
   content: {
     gap: SPACING.sm,
     paddingTop: SPACING.xs,
