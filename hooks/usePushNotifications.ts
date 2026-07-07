@@ -38,12 +38,12 @@ export type PushRegistrationResult =
   | { ok: false; reason: PushRegistrationReason; detail?: string };
 
 export async function registerForPushNotifications(): Promise<PushRegistrationResult> {
-  console.log("[PushNotifications] isDevice:", Constants.isDevice, "executionEnv:", Constants.executionEnvironment);
-  if (!Constants.isDevice) {
-    console.warn("[PushNotifications] Not a real device, skipping.");
-    return { ok: false, reason: "not_device" };
-  }
+  console.log("[PushNotifications] executionEnv:", Constants.executionEnvironment);
 
+  // Nota: no usar Constants.isDevice — fue removido en expo-constants (SDK 54) y
+  // devuelve undefined, lo que hacía que el registro se saltara siempre creyendo
+  // que corría en emulador. El caso Expo Go se cubre abajo; el emulador real
+  // cae de forma segura en el try/catch de getExpoPushTokenAsync.
   const isExpoGo = Constants.executionEnvironment === "storeClient";
   if (isExpoGo) {
     console.warn("[PushNotifications] Expo Go detected, skipping.");
