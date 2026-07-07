@@ -14,7 +14,8 @@
     "test:dashboard": "tsc -p tsconfig.dashboard-tests.json && node .tmp/dashboard-tests/tests/dashboard/selectors-smoke.js && node .tmp/dashboard-tests/tests/dashboard/aggregations-smoke.js && node .tmp/dashboard-tests/tests/dashboard/dashboard-builders-smoke.js && node .tmp/dashboard-tests/tests/dashboard/advanced-builders-smoke.js && node .tmp/dashboard-tests/tests/dashboard/multi-currency-smoke.js && node .tmp/dashboard-tests/tests/dashboard/entitlement-smoke.js",
     "test:movements": "tsc -p tsconfig.movements-tests.json && node .tmp/movements-tests/tests/movements/save-contract-smoke.js && node .tmp/movements-tests/tests/movements/creation-rules-smoke.js && node .tmp/movements-tests/tests/movements/group-by-date-smoke.js && node .tmp/movements-tests/tests/movements/form-validation-smoke.js && node .tmp/movements-tests/tests/movements/filters-smoke.js && node .tmp/movements-tests/tests/movements/amount-parsing-smoke.js",
     "test:accounts": "tsc -p tsconfig.accounts-tests.json && node .tmp/accounts-tests/tests/accounts/exchange-rate-map-smoke.js && node .tmp/accounts-tests/tests/accounts/badges-smoke.js && node .tmp/accounts-tests/tests/accounts/filters-smoke.js && node .tmp/accounts-tests/tests/accounts/net-worth-smoke.js && node .tmp/accounts-tests/tests/accounts/csv-smoke.js && node .tmp/accounts-tests/tests/accounts/balance-evolution-smoke.js && node .tmp/accounts-tests/tests/accounts/composition-smoke.js",
-    "test:parity": "tsc -p tsconfig.parity-tests.json && node .tmp/parity-tests/tests/parity/parity-smoke.js"
+    "test:parity": "tsc -p tsconfig.parity-tests.json && node .tmp/parity-tests/tests/parity/parity-smoke.js",
+    "test": "jest"
   },
   "dependencies": {
     "@darkmoney/shared": "github:JorgeGuerrero26/darkmoneyshare",
@@ -62,12 +63,24 @@
   },
   "devDependencies": {
     "@babel/core": "^7.24.0",
+    "@types/jest": "^30.0.0",
     "@types/react": "~19.1.10",
     "@typescript-eslint/eslint-plugin": "^8.57.1",
     "@typescript-eslint/parser": "^8.57.1",
     "babel-plugin-transform-remove-console": "^6.9.4",
     "eslint": "^10.0.3",
     "eslint-plugin-react-hooks": "^7.0.1",
+    "jest": "~29.7.0",
+    "jest-expo": "~54.0.0",
     "typescript": "~5.9.2"
+  },
+  "jest": {
+    "preset": "jest-expo",
+    "testMatch": [
+      "**/__tests__/**/*.test.ts"
+    ],
+    "transformIgnorePatterns": [
+      "node_modules/(?!((jest-)?react-native|@react-native(-community)?|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@sentry/react-native|native-base|react-native-svg|@supabase/.*|@tanstack/.*))"
+    ]
   }
 }
