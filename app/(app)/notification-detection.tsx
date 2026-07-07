@@ -273,6 +273,30 @@ export default function NotificationDetectionScreen() {
           </Card>
         )}
 
+        {IS_XIAOMI ? (
+          <Card style={styles.card}>
+            <Text style={styles.title}>Ajuste extra en Xiaomi/Redmi/POCO</Text>
+            <Text style={styles.text}>
+              MIUI apaga el detector aunque los permisos estén activos. Para que las
+              notificaciones se detecten siempre:
+              {"\n"}1. Activa <Text style={styles.bold}>Inicio automático</Text> para DarkMoney (botón abajo).
+              {"\n"}2. En Batería, pon DarkMoney en <Text style={styles.bold}>Sin restricciones</Text>.
+              {"\n"}3. En Recientes, mantén presionada la tarjeta de DarkMoney y tócale el candado 🔒.
+            </Text>
+            <TouchableOpacity
+              style={styles.bannerCta}
+              onPress={() => {
+                void Linking.sendIntent("miui.intent.action.OP_AUTO_START").catch(() => Linking.openSettings());
+              }}
+              activeOpacity={0.84}
+              accessibilityRole="button"
+              accessibilityLabel="Abrir el ajuste de inicio automático de MIUI"
+            >
+              <Text style={styles.bannerCtaText}>Abrir Inicio automático</Text>
+            </TouchableOpacity>
+          </Card>
+        ) : null}
+
         <Card style={styles.card}>
           <View style={styles.switchHeader}>
             <View style={styles.copy}>
@@ -358,6 +382,14 @@ export default function NotificationDetectionScreen() {
   );
 }
 
+// MIUI (Xiaomi/Redmi/POCO) mata el NotificationListenerService sin el permiso de
+// "Inicio automático" — el rebind no alcanza. Guía dedicada solo en esos equipos.
+const IS_XIAOMI = (() => {
+  const constants = Platform.constants as { Manufacturer?: string; Brand?: string } | undefined;
+  const value = `${constants?.Manufacturer ?? ""} ${constants?.Brand ?? ""}`.toLowerCase();
+  return value.includes("xiaomi") || value.includes("redmi") || value.includes("poco");
+})();
+
 function PermissionRow({
   icon, label, enabled, onActivate, activateLabel,
 }: {
@@ -416,6 +448,10 @@ const styles = StyleSheet.create({
   permissionValue: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.xs },
   activateButton: { alignSelf: "flex-start" },
   activateLabel: { color: COLORS.primary, fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.xs },
+  bold: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    color: COLORS.text,
+  },
   bannerCta: {
     alignSelf: "flex-start",
     marginTop: SPACING.xs,

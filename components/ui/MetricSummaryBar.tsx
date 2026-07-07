@@ -151,19 +151,24 @@ const styles = StyleSheet.create({
     height: 16,
     backgroundColor: SURFACE.cardBorder,
   },
+  // lineHeight explicito: sin el, las fuentes custom con fontScale grande (MIUI)
+  // dibujan glifos mas altos que la caja de linea y el texto sale cortado.
   value: {
     fontFamily: FONT_FAMILY.bodySemibold,
     fontSize: FONT_SIZE.xs,
+    lineHeight: FONT_SIZE.xs + 6,
     color: COLORS.ink,
   },
   valueStrong: {
     fontFamily: FONT_FAMILY.heading,
     fontSize: FONT_SIZE.sm,
+    lineHeight: FONT_SIZE.sm + 6,
     color: COLORS.ink,
   },
   label: {
     fontFamily: FONT_FAMILY.body,
     fontSize: 10,
+    lineHeight: 15,
     color: COLORS.textDisabled,
     flexShrink: 1,
     minWidth: 0,

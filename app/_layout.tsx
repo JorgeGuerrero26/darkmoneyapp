@@ -5,7 +5,7 @@ import { Stack, usePathname, useRouter, useSegments } from "expo-router";
 import { useFonts } from "expo-font";
 import * as SplashScreen from "expo-splash-screen";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Animated, Easing, Image, ImageBackground, Platform, StyleSheet, Text, View } from "react-native";
+import { Animated, Easing, Image, ImageBackground, Platform, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { DarkTheme, ThemeProvider } from "@react-navigation/native";
@@ -86,6 +86,20 @@ const INITIAL_WORKSPACE_BOOTSTRAP_QUERY_KEYS = new Set([
   "dashboard-movements",
   "dashboard-analytics",
 ]);
+
+// Tope de escala de fuente del sistema: con fuentes custom (Outfit/Manrope) y la
+// fuente "Grande/Enorme" de MIUI/One UI, los glifos crecen mas que su caja y las
+// filas densas (summary bars, chips) se cortan. 1.2 respeta accesibilidad
+// razonable sin romper el layout. Aplica a TODA la app.
+type TextWithDefaults = typeof Text & { defaultProps?: { maxFontSizeMultiplier?: number } };
+(Text as TextWithDefaults).defaultProps = {
+  ...((Text as TextWithDefaults).defaultProps ?? {}),
+  maxFontSizeMultiplier: 1.2,
+};
+(TextInput as TextWithDefaults).defaultProps = {
+  ...((TextInput as TextWithDefaults).defaultProps ?? {}),
+  maxFontSizeMultiplier: 1.2,
+};
 
 SplashScreen.preventAutoHideAsync();
 
