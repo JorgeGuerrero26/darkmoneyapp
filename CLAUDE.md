@@ -27,6 +27,19 @@ Ejecutar npm run lint solo si el entorno tiene configuración ESLint válida.
 
 Si lint falla por configuración ausente o por ESLint flat config faltante, reportarlo sin bloquear el cambio.
 
+**OTA updates (EAS Update, canal `preview`)**: los cambios SOLO JS/assets ya no requieren
+rebuild del APK. Publicar con:
+
+```bash
+npx eas-cli update --channel preview --message "descripcion del cambio"
+```
+
+El teléfono lo descarga al abrir la app y lo aplica en el siguiente arranque (2 aperturas).
+Reglas: (1) cambios nativos (Kotlin, permisos, deps nativas) SÍ requieren APK y deben bumpear
+`version` en app.json (runtimeVersion policy appVersion — corta la compatibilidad de updates
+viejos); (2) si el update cambia el shape de datos persistidos, bumpear también el `buster`
+del caché en lib/query-client.ts.
+
 Para builds release del APK Android (cualquier cambio en `plugins/notification-detection/native-src/**/*.kt` o `android/app/src/**`), seguir `docs/BUILD_APK.md`. Reglas no negociables: sincronizar `plugins/` → `android/app/src/main/java/`, limpiar caches, build con `-P` quoteado en PowerShell, y verificar que los strings nuevos aparecen en el DEX antes de declarar el APK listo. `BUILD SUCCESSFUL` no garantiza que el cambio entró.
 
 ## Git workflow
