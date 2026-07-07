@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import { AccountPicker } from "../../../../../components/domain/AccountPicker";
 import { BalanceImpactPreview } from "../../../../../components/domain/BalanceImpactPreview";
@@ -15,6 +15,32 @@ import {
   SURFACE,
 } from "../../../../../constants/theme";
 import type { AccountSummary, MovementType } from "../../../../../types/domain";
+
+function FrequentAmountChips({ amounts, currencyCode, onPick }: {
+  amounts: number[];
+  currencyCode: string;
+  onPick: (amount: number) => void;
+}) {
+  if (amounts.length === 0) return null;
+  return (
+    <View style={styles.frequentRow}>
+      <Text style={styles.frequentLabel}>Frecuentes:</Text>
+      {amounts.map((amount) => (
+        <TouchableOpacity
+          key={amount}
+          style={styles.frequentChip}
+          onPress={() => onPick(amount)}
+          accessibilityRole="button"
+          accessibilityLabel={`Usar monto frecuente ${amount} ${currencyCode}`}
+        >
+          <Text style={styles.frequentChipText}>
+            {amount.toLocaleString("es-PE", { minimumFractionDigits: amount % 1 === 0 ? 0 : 2, maximumFractionDigits: 2 })}
+          </Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+}
 
 function formatShortDate(value: string) {
   const date = new Date(value);
@@ -81,6 +107,10 @@ type Props = {
   originalSourceAccount: AccountSummary | null;
   originalDestinationAccount: AccountSummary | null;
 
+  // Montos frecuentes (2+ usos) para el tipo+cuenta: chips de un tap bajo el input.
+  frequentAmounts?: number[];
+  onPickFrequentAmount?: (amount: number) => void;
+
   // Defaults / shared
   baseCurrencyCode: string;
   errors: FormErrors;
@@ -123,6 +153,8 @@ export const StepAccountsAndAmounts = memo(function StepAccountsAndAmounts({
   originalSourceAccount,
   originalDestinationAccount,
   baseCurrencyCode,
+  frequentAmounts,
+  onPickFrequentAmount,
   errors,
   warnings,
   onBack,
@@ -143,6 +175,13 @@ export const StepAccountsAndAmounts = memo(function StepAccountsAndAmounts({
             currencyCode={sourceAccount?.currencyCode ?? baseCurrencyCode}
             error={errors.sourceAmount}
           />
+          {frequentAmounts && onPickFrequentAmount ? (
+            <FrequentAmountChips
+              amounts={frequentAmounts}
+              currencyCode={sourceAccount?.currencyCode ?? baseCurrencyCode}
+              onPick={onPickFrequentAmount}
+            />
+          ) : null}
           {warnings.sourceAmount ? (
             <Text
               style={styles.warningHint}
@@ -173,13 +212,22 @@ export const StepAccountsAndAmounts = memo(function StepAccountsAndAmounts({
             error={errors.destinationAccountId}
           />
           {isIncome ? (
-            <CurrencyInput
-              label="Monto"
-              value={destinationAmount}
-              onChangeText={onChangeDestinationAmount}
-              currencyCode={destinationAccount?.currencyCode ?? baseCurrencyCode}
-              error={errors.destinationAmount}
-            />
+            <>
+              <CurrencyInput
+                label="Monto"
+                value={destinationAmount}
+                onChangeText={onChangeDestinationAmount}
+                currencyCode={destinationAccount?.currencyCode ?? baseCurrencyCode}
+                error={errors.destinationAmount}
+              />
+              {frequentAmounts && onPickFrequentAmount ? (
+                <FrequentAmountChips
+                  amounts={frequentAmounts}
+                  currencyCode={destinationAccount?.currencyCode ?? baseCurrencyCode}
+                  onPick={onPickFrequentAmount}
+                />
+              ) : null}
+            </>
           ) : null}
           {isTransfer && transferCurrenciesDiffer ? (
             <CurrencyInput
@@ -282,6 +330,31 @@ export const StepAccountsAndAmounts = memo(function StepAccountsAndAmounts({
 });
 
 const styles = StyleSheet.create({
+  frequentRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: SPACING.sm,
+    marginTop: -SPACING.xs,
+  },
+  frequentLabel: {
+    color: COLORS.textMuted,
+    fontFamily: FONT_FAMILY.bodyMedium,
+    fontSize: FONT_SIZE.xs,
+  },
+  frequentChip: {
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    borderColor: SURFACE.softBorder,
+    backgroundColor: SURFACE.card,
+  },
+  frequentChipText: {
+    color: COLORS.text,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.sm,
+  },
   section: { gap: SPACING.md },
   warningHint: {
     color: COLORS.warning,

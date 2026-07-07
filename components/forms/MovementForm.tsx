@@ -64,6 +64,7 @@ import type { MovementType, MovementStatus, MovementRecord, ExchangeRateSummary 
 import { useMovementCreationController } from "../../features/movements/hooks/useMovementCreationController";
 import { useTransferFxController } from "../../features/movements/hooks/useTransferFxController";
 import { useBalanceImpactPreview } from "../../features/movements/hooks/useBalanceImpactPreview";
+import { getFrequentAmounts } from "../../features/movements/lib/frequent-amounts";
 import { useMovementFormSuggestions } from "../../features/movements/hooks/useMovementFormSuggestions";
 import { useMovementAttachmentSync } from "../../features/movements/hooks/useMovementAttachmentSync";
 import { buildMovementCreateInput, buildMovementUpdateInput } from "../../features/movements/lib/movement-save-contract";
@@ -706,6 +707,16 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     });
   }
 
+  // Montos frecuentes (2+ usos) para el tipo+cuenta elegidos: chips de un tap en el paso 2.
+  const frequentAmounts = useMemo(
+    () => getFrequentAmounts({
+      movements: patternMovements,
+      movementType: form.movementType,
+      accountId: form.movementType === "income" ? form.destinationAccountId : form.sourceAccountId,
+    }),
+    [patternMovements, form.movementType, form.destinationAccountId, form.sourceAccountId],
+  );
+
   // Proyecciones de saldo del preview (fase 3 del refactor R7).
   const {
     originalSourceAccount,
@@ -1028,6 +1039,12 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
           revertedOriginalSourceBalance={revertedOriginalSourceBalance}
           projectedDestBalance={projectedDestBalance}
           revertedOriginalDestBalance={revertedOriginalDestBalance}
+          frequentAmounts={frequentAmounts}
+          onPickFrequentAmount={(amount) => {
+            const value = String(amount);
+            if (form.movementType === "income") patch({ destinationAmount: value });
+            else patch({ sourceAmount: value });
+          }}
           originalSourceAccount={originalSourceAccount}
           originalDestinationAccount={originalDestinationAccount}
           baseCurrencyCode={baseCurrency}
