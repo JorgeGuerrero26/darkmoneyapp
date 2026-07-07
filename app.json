@@ -18,6 +18,7 @@
         "backgroundColor": "#05070B"
       },
       "package": "com.darkmoney.app",
+      "googleServicesFile": "./app/google-services.json",
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.POST_NOTIFICATIONS",
