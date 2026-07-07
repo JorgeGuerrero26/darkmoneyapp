@@ -84,6 +84,17 @@
       "eas": {
         "projectId": "1290814f-9ea0-4f55-9973-3a3c32178cc5"
       }
-    }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/1290814f-9ea0-4f55-9973-3a3c32178cc5",
+      "requestHeaders": {
+        "expo-channel-name": "preview"
+      },
+      "checkAutomatically": "ON_LOAD"
+    },
+    "owner": "adriangmori"
   }
 }
