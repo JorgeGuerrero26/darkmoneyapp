@@ -47,10 +47,20 @@ export function MetricSummaryBar({ items, trailingLabel, actions = [] }: Props) 
           const itemContent = (
             <View style={[styles.item, hasHelp && styles.itemWithHelp]}>
               {Icon ? <Icon size={11} color={item.color ?? COLORS.storm} strokeWidth={2.5} /> : null}
-              <Text style={[item.strong ? styles.valueStrong : styles.value, item.color ? { color: item.color } : null]}>
+              <Text
+                style={[item.strong ? styles.valueStrong : styles.value, item.color ? { color: item.color } : null]}
+                numberOfLines={1}
+                maxFontSizeMultiplier={1.1}
+              >
                 {item.value}
               </Text>
-              <Text style={styles.label} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
+              <Text
+                style={styles.label}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.75}
+                maxFontSizeMultiplier={1.1}
+              >
                 {item.compactLabel ?? item.label}
               </Text>
             </View>
@@ -117,6 +127,7 @@ const styles = StyleSheet.create({
   root: {
     flexDirection: "row",
     alignItems: "center",
+    minHeight: 40,
     paddingHorizontal: SPACING.lg,
     paddingVertical: SPACING.xs + 2,
     backgroundColor: SURFACE.separator,
