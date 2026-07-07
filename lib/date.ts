@@ -33,6 +33,35 @@ export function dateStrToISO(dateStr: string): string {
   return new Date(Date.UTC(y, m - 1, d, h + 5, min, s, ms)).toISOString();
 }
 
+/** "HH:mm" de AHORA en hora de Perú. */
+export function nowTimePeru(): string {
+  return new Date(Date.now() - PERU_OFFSET_MS).toISOString().slice(11, 16);
+}
+
+/** "HH:mm" (hora Perú) de un timestamp almacenado en DB. */
+export function isoToTimeStr(isoString: string): string {
+  if (YMD_ONLY_RE.test(isoString)) return "12:00";
+  const parsed = new Date(isoString).getTime();
+  if (!Number.isFinite(parsed)) return "12:00";
+  return new Date(parsed - PERU_OFFSET_MS).toISOString().slice(11, 16);
+}
+
+/**
+ * Combina "YYYY-MM-DD" + "HH:mm" (ambos en hora Perú) a timestamp ISO UTC para
+ * guardar en DB. Si la hora es inválida/vacía, cae a dateStrToISO (hora actual),
+ * preservando el comportamiento previo.
+ */
+export function dateTimeStrToISO(dateStr: string, timeStr: string): string {
+  const match = /^(\d{2}):(\d{2})$/.exec(timeStr?.trim() ?? "");
+  if (!match) return dateStrToISO(dateStr);
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (hours > 23 || minutes > 59) return dateStrToISO(dateStr);
+  const utcMs = Date.parse(`${dateStr}T00:00:00.000Z`) + (hours * 60 + minutes) * 60_000 + PERU_OFFSET_MS;
+  if (!Number.isFinite(utcMs)) return dateStrToISO(dateStr);
+  return new Date(utcMs).toISOString();
+}
+
 /**
  * Extrae "YYYY-MM-DD" en hora Perú desde un timestamp UTC almacenado en DB.
  * Resta 5 h para convertir UTC → hora Perú antes de leer la fecha.

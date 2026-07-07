@@ -6,6 +6,7 @@ import { AccountPicker } from "./AccountPicker";
 import { BottomSheet } from "../ui/BottomSheet";
 import { Button } from "../ui/Button";
 import { DatePickerInput } from "../ui/DatePickerInput";
+import { TimePickerInput } from "../ui/TimePickerInput";
 import { CategorySuggestionBlock } from "./QuickDetectedMovementSuggestionBlock";
 import {
   BudgetBlock,
@@ -63,7 +64,7 @@ import type { CategorySummary, CounterpartySummary } from "../../types/domain";
 import { useMovementCreationController } from "../../features/movements/hooks/useMovementCreationController";
 import { buildMovementCreateInput } from "../../features/movements/lib/movement-save-contract";
 import { parsePositiveAmountInput } from "../../lib/amount-parsing";
-import { todayPeru } from "../../lib/date";
+import { dateTimeStrToISO, isoToTimeStr, nowTimePeru, todayPeru } from "../../lib/date";
 import { validateMovementForm } from "../../features/movements/lib/form-validation";
 import { patternMovementAmount } from "../../features/movements/lib/pattern-heuristics";
 import { CategoryPicker } from "../../features/movements/components/form/MovementChipPickers";
@@ -149,6 +150,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
   const [notes, setNotes] = useState("");
   const [cleanupAppliedText, setCleanupAppliedText] = useState<string | null>(null);
   const [date, setDate] = useState("");
+  const [time, setTime] = useState("");
   const [checkingDuplicate, setCheckingDuplicate] = useState(false);
   const [isDiscarding, setIsDiscarding] = useState(false);
   // Guard anti-doble-tap SÍNCRONO: el botón se deshabilita con loading, pero hay una ventana
@@ -220,8 +222,8 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
   }, [patternMovements, snapshot?.accounts, snapshot?.categories, snapshot?.counterparties]);
   // Memoize to avoid new Date().toISOString() producing a new string each render.
   const occurredAtISO = useMemo(
-    () => date ? new Date(`${date}T12:00:00`).toISOString() : suggestion?.occurredAt ?? new Date().toISOString(),
-    [date, suggestion?.occurredAt],
+    () => date ? dateTimeStrToISO(date, time) : suggestion?.occurredAt ?? new Date().toISOString(),
+    [date, time, suggestion?.occurredAt],
   );
   const currentRiskMovement = useMemo<MovementRiskItem | null>(() => {
     const parsedAmount = (parsePositiveAmountInput(amount) ?? NaN) || suggestion?.amount || 0;
@@ -431,6 +433,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
     setDescription(suggestion.description);
     setNotes("");
     setDate(localDate(suggestion.occurredAt));
+    setTime(suggestion.occurredAt ? isoToTimeStr(suggestion.occurredAt) : nowTimePeru());
     setCategoryId(null);
     setCounterpartyId(null);
     // Transferencias: prellenar origen→destino con el par más usado (mismo default que el
@@ -694,7 +697,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
       return;
     }
 
-    const occurredAt = new Date(`${date}T12:00:00`).toISOString();
+    const occurredAt = dateTimeStrToISO(date, time);
 
     if (movementType === "transfer") {
       if (!destinationAccountId) return; // ya validado; guard para TypeScript
@@ -1132,7 +1135,14 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
           accessibilityLabel="Notas del movimiento"
         />
 
-        <DatePickerInput label="Fecha" value={date} onChange={setDate} variant="formRow" />
+        <View style={styles.dateTimeRow}>
+          <View style={styles.dateTimeDate}>
+            <DatePickerInput label="Fecha" value={date} onChange={setDate} variant="formRow" />
+          </View>
+          <View style={styles.dateTimeTime}>
+            <TimePickerInput label="Hora" value={time} onChange={setTime} variant="formRow" />
+          </View>
+        </View>
 
         {checkingDuplicate ? (
           <Text style={styles.checkingDuplicateNote}>Verificando posibles duplicados…</Text>
@@ -1195,6 +1205,13 @@ function AccountChipPicker({ label, accounts, selectedId, onSelect }: {
 }
 
 const styles = StyleSheet.create({
+  dateTimeRow: {
+    flexDirection: "row",
+    gap: SPACING.sm,
+    alignItems: "flex-end",
+  },
+  dateTimeDate: { flex: 1.4, minWidth: 0 },
+  dateTimeTime: { flex: 1, minWidth: 0 },
   content: { gap: SPACING.md, paddingBottom: SPACING.xl },
   appRow: {
     flexDirection: "row",

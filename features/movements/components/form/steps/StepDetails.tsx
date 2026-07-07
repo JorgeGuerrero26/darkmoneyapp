@@ -5,6 +5,7 @@ import { AlertCircle } from "lucide-react-native";
 import { AttachmentPicker, type Attachment } from "../../../../../components/domain/AttachmentPicker";
 import { Button } from "../../../../../components/ui/Button";
 import { DatePickerInput } from "../../../../../components/ui/DatePickerInput";
+import { TimePickerInput } from "../../../../../components/ui/TimePickerInput";
 import { Input } from "../../../../../components/ui/Input";
 import { SmartSuggestion } from "../../../../../components/ui/SmartSuggestion";
 import {
@@ -104,6 +105,9 @@ type Props = {
 
   // Date
   occurredAt: string;
+  /** "HH:mm" hora Perú del movimiento. */
+  occurredTime: string;
+  onChangeOccurredTime: (value: string) => void;
   onChangeOccurredAt: (value: string) => void;
   warnings: FormWarnings;
 
@@ -165,6 +169,8 @@ export const StepDetails = memo(function StepDetails({
   onPickSuggestedAccount,
   occurredAt,
   onChangeOccurredAt,
+  occurredTime,
+  onChangeOccurredTime,
   warnings,
   attachments,
   onChangeAttachments,
@@ -250,11 +256,22 @@ export const StepDetails = memo(function StepDetails({
         />
       ) : null}
 
-      <DatePickerInput
-        label="Fecha"
-        value={occurredAt}
-        onChange={onChangeOccurredAt}
-      />
+      <View style={styles.dateTimeRow}>
+        <View style={styles.dateTimeDate}>
+          <DatePickerInput
+            label="Fecha"
+            value={occurredAt}
+            onChange={onChangeOccurredAt}
+          />
+        </View>
+        <View style={styles.dateTimeTime}>
+          <TimePickerInput
+            label="Hora"
+            value={occurredTime}
+            onChange={onChangeOccurredTime}
+          />
+        </View>
+      </View>
       {warnings.occurredAt ? (
         <Text
           style={styles.warningHint}
@@ -310,6 +327,13 @@ export const StepDetails = memo(function StepDetails({
 });
 
 const styles = StyleSheet.create({
+  dateTimeRow: {
+    flexDirection: "row",
+    gap: SPACING.sm,
+    alignItems: "flex-end",
+  },
+  dateTimeDate: { flex: 1.4, minWidth: 0 },
+  dateTimeTime: { flex: 1, minWidth: 0 },
   section: { gap: SPACING.md },
   warningHint: {
     color: COLORS.warning,

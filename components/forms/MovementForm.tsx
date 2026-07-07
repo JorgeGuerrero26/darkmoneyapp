@@ -6,7 +6,7 @@ import { StyleSheet, View } from "react-native";
 import { useUiStore } from "../../store/ui-store";
 import { useWorkspace } from "../../lib/workspace-context";
 import { humanizeError } from "../../lib/errors";
-import { todayPeru, dateStrToISO, isoToDateStr } from "../../lib/date";
+import { todayPeru, dateStrToISO, dateTimeStrToISO, isoToDateStr, isoToTimeStr, nowTimePeru } from "../../lib/date";
 import {
   useWorkspaceSnapshotQuery,
   useCreateMovementMutation,
@@ -274,7 +274,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   const descriptionCleanupAmount = form.movementType === "income" ? destinationAmountNum : sourceAmountNum;
   // Memoize to avoid dateStrToISO (which includes current ms) from producing a
   // new string on every render and invalidating AI hook stable keys.
-  const occurredAtISO = useMemo(() => dateStrToISO(form.occurredAt), [form.occurredAt]);
+  const occurredAtISO = useMemo(() => dateTimeStrToISO(form.occurredAt, form.occurredTime), [form.occurredAt, form.occurredTime]);
   const { cleanup: descriptionCleanup, isLoading: descriptionCleanupLoading } = useMovementDescriptionCleanup({
     enabled: Boolean(visible && form.movementType !== "transfer" && form.description !== cleanupAppliedText),
     workspaceId: activeWorkspaceId,
@@ -455,6 +455,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         categoryId: editMovement.categoryId ?? null,
         counterpartyId: null,
         occurredAt: occurredDate,
+        occurredTime: editMovement.occurredAt ? isoToTimeStr(editMovement.occurredAt) : nowTimePeru(),
         notes: editMovement.notes ?? "",
       });
       setStep(2); // Edit opens on amount/account first
@@ -472,6 +473,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         categoryId: duplicateMovement.categoryId ?? null,
         counterpartyId: duplicateMovement.counterpartyId ?? null,
         occurredAt: todayPeru(),
+        occurredTime: nowTimePeru(),
         notes: duplicateMovement.notes ?? "",
       });
       setStep(2);
@@ -889,7 +891,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
       const movementContract = {
         movementType: form.movementType,
         status: form.status,
-        occurredAt: dateStrToISO(form.occurredAt),
+        occurredAt: dateTimeStrToISO(form.occurredAt, form.occurredTime),
         description: autoDesc,
         notes: form.notes.trim() || null,
         sourceAccountId: form.sourceAccountId,
@@ -1217,6 +1219,8 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
             }}
             occurredAt={form.occurredAt}
             onChangeOccurredAt={(v) => patch({ occurredAt: v })}
+            occurredTime={form.occurredTime}
+            onChangeOccurredTime={(v) => patch({ occurredTime: v })}
             warnings={warnings}
             attachments={attachments}
             onChangeAttachments={setAttachments}

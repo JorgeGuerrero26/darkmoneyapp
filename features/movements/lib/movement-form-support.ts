@@ -1,4 +1,4 @@
-import { isoToDateStr, todayPeru } from "../../../lib/date";
+import { isoToDateStr, nowTimePeru, todayPeru } from "../../../lib/date";
 import { parsePositiveAmountInput } from "../../../lib/amount-parsing";
 import type {
   ExchangeRateSummary,
@@ -26,6 +26,8 @@ export type MovementFormState = {
   categoryId: number | null;
   counterpartyId: number | null;
   occurredAt: string;
+  /** "HH:mm" en hora Perú; se combina con occurredAt al guardar. */
+  occurredTime: string;
   notes: string;
 };
 
@@ -191,6 +193,7 @@ export function getInitialMovementForm(defaultType: MovementType): MovementFormS
     categoryId: null,
     counterpartyId: null,
     occurredAt: todayPeru(),
+    occurredTime: nowTimePeru(),
     notes: "",
   };
 }
