@@ -245,6 +245,14 @@ export default function NotificationDetectionScreen() {
               }}
               activateLabel="Abrir ajustes"
             />
+            {!notificationAccess ? (
+              <Text style={styles.restrictedHint}>
+                ¿Te sale "Configuración restringida"? Es la protección de Android 13+ para
+                apps instaladas fuera de una tienda. Ve a Ajustes → Aplicaciones → DarkMoney →
+                menú ⋮ (arriba a la derecha) → <Text style={styles.bold}>Permitir configuración
+                restringida</Text>, y vuelve a intentar activar el acceso.
+              </Text>
+            ) : null}
             <PermissionRow
               icon={<Bell size={17} color={COLORS.secondary} />}
               label="Notificaciones de DarkMoney"
@@ -448,6 +456,15 @@ const styles = StyleSheet.create({
   permissionValue: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.xs },
   activateButton: { alignSelf: "flex-start" },
   activateLabel: { color: COLORS.primary, fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.xs },
+  restrictedHint: {
+    color: COLORS.textMuted,
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    lineHeight: 17,
+    backgroundColor: SURFACE.card,
+    borderRadius: RADIUS.sm,
+    padding: SPACING.sm,
+  },
   bold: {
     fontFamily: FONT_FAMILY.bodySemibold,
     color: COLORS.text,
