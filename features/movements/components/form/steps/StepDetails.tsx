@@ -29,6 +29,8 @@ import {
   type CategorySuggestionState,
 } from "../MovementFormBlocks";
 import { CategoryPicker, CounterpartyPicker } from "../MovementChipPickers";
+import { SplitAmountEditor } from "../SplitAmountEditor";
+import type { SplitLine } from "../../../lib/split-movement";
 import type { MovementRiskExplanation } from "../../../../../lib/movement-risk-analysis";
 import type { MovementBudgetImpact } from "../../../../../lib/movement-budget-impact";
 import type { DescriptionCleanupResult } from "../../../../../lib/movement-description-cleanup";
@@ -67,6 +69,11 @@ type Props = {
   categoriesForPicker: CategorySummary[];
   categoryId: number | null;
   onSelectCategory: (id: number | null) => void;
+  // Split de montos (solo gasto en creación): null = apagado.
+  splitLines?: SplitLine[] | null;
+  onChangeSplitLines?: (lines: SplitLine[] | null) => void;
+  splitTotalAmount?: number;
+  splitCurrencyCode?: string;
   aiCategorySuggestionLoading: boolean;
   aiCategorySuggestionAttempted: boolean;
   aiCategorySuggestionErrored?: boolean;
@@ -131,6 +138,10 @@ export const StepDetails = memo(function StepDetails({
   categoriesForPicker,
   categoryId,
   onSelectCategory,
+  splitLines,
+  onChangeSplitLines,
+  splitTotalAmount,
+  splitCurrencyCode,
   aiCategorySuggestionLoading,
   aiCategorySuggestionAttempted,
   aiCategorySuggestionErrored,
@@ -185,12 +196,23 @@ export const StepDetails = memo(function StepDetails({
         onApply={onApplyDescriptionCleanup}
       />
 
-      <CategoryPicker
-        label="Categoría (opcional)"
-        categories={categoriesForPicker}
-        selectedId={categoryId}
-        onSelect={onSelectCategory}
-      />
+      {splitLines == null ? (
+        <CategoryPicker
+          label="Categoría (opcional)"
+          categories={categoriesForPicker}
+          selectedId={categoryId}
+          onSelect={onSelectCategory}
+        />
+      ) : null}
+      {onChangeSplitLines ? (
+        <SplitAmountEditor
+          lines={splitLines ?? null}
+          onChangeLines={onChangeSplitLines}
+          categories={categoriesForPicker}
+          totalAmount={splitTotalAmount ?? 0}
+          currencyCode={splitCurrencyCode ?? ""}
+        />
+      ) : null}
       <CategoryAiBlock
         loading={aiCategorySuggestionLoading}
         attempted={aiCategorySuggestionAttempted}

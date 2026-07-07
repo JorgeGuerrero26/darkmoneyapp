@@ -65,6 +65,7 @@ import { useMovementCreationController } from "../../features/movements/hooks/us
 import { useTransferFxController } from "../../features/movements/hooks/useTransferFxController";
 import { useBalanceImpactPreview } from "../../features/movements/hooks/useBalanceImpactPreview";
 import { getFrequentAmounts } from "../../features/movements/lib/frequent-amounts";
+import { splitLineDescription, validateSplit, type SplitLine } from "../../features/movements/lib/split-movement";
 import { useMovementFormSuggestions } from "../../features/movements/hooks/useMovementFormSuggestions";
 import { useMovementAttachmentSync } from "../../features/movements/hooks/useMovementAttachmentSync";
 import { buildMovementCreateInput, buildMovementUpdateInput } from "../../features/movements/lib/movement-save-contract";
@@ -185,6 +186,8 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   const [categoryFeedbackIntent, setCategoryFeedbackIntent] = useState<CategoryFeedbackIntent | null>(null);
   const [linkedSubscriptionId, setLinkedSubscriptionId] = useState<number | null>(editMovement?.subscriptionId ?? null);
   const [linkedRecurringIncomeId, setLinkedRecurringIncomeId] = useState<number | null>(null);
+  // Split de montos: null = apagado; activo solo para gasto en creación.
+  const [splitLines, setSplitLines] = useState<SplitLine[] | null>(null);
   const attachmentsHydratedRef = useRef<string | null>(null);
   const initialAttachmentSignatureRef = useRef("::ready");
   // Anti-doble-tap síncrono: evita crear el movimiento 2-3 veces si el usuario toca Guardar
@@ -497,6 +500,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     setCategoryFeedbackIntent(null);
     setLinkedSubscriptionId(editMovement?.subscriptionId ?? null);
     setLinkedRecurringIncomeId(null);
+    setSplitLines(null);
     fx.resetFxState(Boolean((editMovement ?? duplicateMovement)?.destinationAmount));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, editMovement, duplicateMovement, defaultType, initialAccountId, isClosingAfterSubmit]);
@@ -721,6 +725,11 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     });
   }
 
+  // El split solo aplica a gastos: cambiar de tipo lo apaga.
+  useEffect(() => {
+    if (form.movementType !== "expense" && splitLines) setSplitLines(null);
+  }, [form.movementType, splitLines]);
+
   // Montos frecuentes (2+ usos) para el tipo+cuenta elegidos: chips de un tap en el paso 2.
   const frequentAmounts = useMemo(
     () => getFrequentAmounts({
@@ -910,6 +919,55 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
       } else {
         if (!submitDedupeKeyRef.current) {
           submitDedupeKeyRef.current = newClientDedupeKey("form");
+        }
+        if (splitLines && form.movementType === "expense") {
+          // Split: un movimiento por línea, enlazados por metadata.split_group.
+          // Idempotencia por línea: `${base}:split-N` — un retry tras fallo parcial
+          // recupera las líneas ya insertadas en vez de duplicarlas.
+          const splitValidation = validateSplit(splitLines, sourceAmountNum);
+          if (!splitValidation.valid) {
+            setIsClosingAfterSubmit(false);
+            haptics.error();
+            setSubmitError(splitValidation.error ?? "Revisa la división de montos");
+            return;
+          }
+          const splitGroup = submitDedupeKeyRef.current;
+          let firstCreatedId: number | undefined;
+          for (let index = 0; index < splitLines.length; index++) {
+            const line = splitLines[index];
+            const lineAmount = parsePositiveAmountInput(line.amount)!;
+            const linePayload = buildMovementCreateInput({
+              ...movementContract,
+              sourceAmount: lineAmount,
+              description: splitLineDescription(autoDesc, index, splitLines.length),
+              categoryId: line.categoryId,
+              metadata: {
+                split_group: splitGroup,
+                split_index: index + 1,
+                split_total: splitLines.length,
+              },
+              dedupeKey: `${splitGroup}:split-${index + 1}`,
+            });
+            const created = await createMovement.mutateAsync(linePayload);
+            if (firstCreatedId == null) firstCreatedId = created.id;
+          }
+          submitDedupeKeyRef.current = null;
+          setSavedMovementId(firstCreatedId);
+          showRichToast({
+            type: "success",
+            title: `Gasto dividido en ${splitLines.length} movimientos`,
+            subtitle: autoDesc,
+          });
+          setLastMovementAccountId(form.sourceAccountId);
+          if (attachments.length > 0 && activeWorkspaceId && firstCreatedId != null) {
+            const attachTo = firstCreatedId;
+            backgroundAttachmentSync = () => attachmentSync.syncDraftAttachments(attachTo, attachments);
+          }
+          haptics.success();
+          onSuccess?.();
+          onClose();
+          backgroundAttachmentSync?.();
+          return;
         }
         const payload = buildMovementCreateInput({
           ...movementContract,
@@ -1106,6 +1164,10 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         );
         return (
           <StepDetails
+            splitLines={isEditing ? null : splitLines}
+            onChangeSplitLines={!isEditing && form.movementType === "expense" ? setSplitLines : undefined}
+            splitTotalAmount={sourceAmountNum}
+            splitCurrencyCode={sourceAccount?.currencyCode ?? baseCurrency}
             isEditing={isEditing}
             descriptionRef={descriptionRef}
             notesRef={notesRef}
