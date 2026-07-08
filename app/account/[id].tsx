@@ -452,7 +452,6 @@ const styles = StyleSheet.create({
   negative: { color: COLORS.danger },
   notInNetWorthNote: { fontSize: FONT_SIZE.xs, color: COLORS.textDisabled },
   quickActions: {
-    marginHorizontal: SPACING.lg,
     marginTop: SPACING.md,
   },
 });
