@@ -22,6 +22,7 @@ import { SubscriptionForm } from "../components/forms/SubscriptionForm";
 import { SubscriptionFilterSheet } from "../features/subscriptions/components/SubscriptionFilterSheet";
 import { SubscriptionSummaryBar } from "../features/subscriptions/components/SubscriptionSummaryBar";
 import { SubscriptionSwipeRow } from "../features/subscriptions/components/SubscriptionSwipeRow";
+import { MarkSubscriptionPaidSheet } from "../features/subscriptions/components/MarkSubscriptionPaidSheet";
 import {
   buildSubscriptionSections,
   type SubscriptionListSection,
@@ -48,6 +49,7 @@ import {
 } from "../services/queries/workspace-data";
 import {
   useDeleteSubscriptionMutation,
+  useMarkSubscriptionPaidMutation,
   useToggleSubscriptionPinMutation,
   useUpdateSubscriptionMutation,
 } from "../services/queries/subscriptions-recurring-income";
@@ -68,9 +70,11 @@ function SubscriptionsScreen() {
   const updateMutation = useUpdateSubscriptionMutation(activeWorkspaceId);
   const deleteMutation = useDeleteSubscriptionMutation(activeWorkspaceId);
   const togglePinMutation = useToggleSubscriptionPinMutation(activeWorkspaceId);
+  const markPaidMutation = useMarkSubscriptionPaidMutation(activeWorkspaceId);
 
   const [createFormVisible, setCreateFormVisible] = useState(false);
   const [analyticsTarget, setAnalyticsTarget] = useState<SubscriptionSummary | null>(null);
+  const [markPaidTarget, setMarkPaidTarget] = useState<SubscriptionSummary | null>(null);
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [searchText, setSearchText] = useState("");
   const [activeFilters, setActiveFilters] = useState<ActiveSubscriptionFilter[]>([]);
@@ -236,6 +240,25 @@ function SubscriptionsScreen() {
     );
   }, [showToast, updateMutation]);
 
+  const handleMarkPaid = useCallback(
+    async (args: { paidDate: string; amount: number; accountId: number }) => {
+      if (!markPaidTarget) return;
+      try {
+        const { nextDueDate } = await markPaidMutation.mutateAsync({
+          subscription: markPaidTarget,
+          paidDate: args.paidDate,
+          amount: args.amount,
+          accountId: args.accountId,
+        });
+        setMarkPaidTarget(null);
+        showToast(`Pago registrado · Próximo cobro: ${nextDueDate}`, "success");
+      } catch (error: unknown) {
+        showToast(error instanceof Error ? error.message : "No se pudo registrar el pago", "error");
+      }
+    },
+    [markPaidMutation, markPaidTarget, showToast],
+  );
+
   const selectedSubscriptions = useMemo(
     () => filteredSubscriptions.filter((s) => selectedIds.has(s.id)),
     [filteredSubscriptions, selectedIds],
@@ -296,12 +319,13 @@ function SubscriptionsScreen() {
       }}
       onDelete={() => startUndoDelete(item)}
       onTogglePause={() => handleTogglePause(item)}
+      onPay={() => setMarkPaidTarget(item)}
       onAnalytics={() => setAnalyticsTarget(item)}
       onTogglePin={selectMode ? undefined : () => handleTogglePin(item)}
       selected={selectedIds.has(item.id)}
       selectMode={selectMode}
     />
-  ), [handleTogglePause, handleTogglePin, selectMode, selectedIds, startUndoDelete, toggleSelect]);
+  ), [handleTogglePause, handleTogglePin, router, selectMode, selectedIds, startUndoDelete, toggleSelect]);
 
   const extraFiltersCount = dueDateRange ? 1 : 0;
   const hasFilters = activeFilters.length > 0 || Boolean(searchText.trim()) || extraFiltersCount > 0;
@@ -470,6 +494,14 @@ function SubscriptionsScreen() {
             subscription={analyticsTarget}
             movements={postedMovements}
             baseCurrencyCode={baseCurrencyCode}
+          />
+          <MarkSubscriptionPaidSheet
+            visible={Boolean(markPaidTarget)}
+            subscription={markPaidTarget}
+            accounts={snapshot?.accounts ?? []}
+            isPending={markPaidMutation.isPending}
+            onClose={() => setMarkPaidTarget(null)}
+            onConfirm={(args) => void handleMarkPaid(args)}
           />
         </>
       }
