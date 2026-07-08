@@ -14,6 +14,60 @@ function payloadString(payload: NotificationPayload, key: string): string | null
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+const MONTH_NAMES_ES = [
+  "enero", "febrero", "marzo", "abril", "mayo", "junio",
+  "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+];
+
+function ymd(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+/** Rango del mes actual + nombre del mes en español. */
+function currentMonthRange(): { from: string; to: string; monthLabel: string } {
+  const now = new Date();
+  const from = new Date(now.getFullYear(), now.getMonth(), 1);
+  const to = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  return { from: ymd(from), to: ymd(to), monthLabel: MONTH_NAMES_ES[now.getMonth()] };
+}
+
+/** Rango de los últimos 7 días. */
+function lastWeekRange(): { from: string; to: string } {
+  const now = new Date();
+  const from = new Date(now);
+  from.setDate(now.getDate() - 7);
+  return { from: ymd(from), to: ymd(now) };
+}
+
+/**
+ * Deep link a Movimientos pre-filtrado. `quickScope` activa el bloque de filtros
+ * rápidos y `quickToken` (único por tap) fuerza el re-trigger; `quickLabel` se
+ * muestra en la ActiveFilterBar como el "porqué" de la notificación.
+ */
+function movementsQuickLink(opts: {
+  label: string;
+  type?: string;
+  categoryId?: number | null;
+  dateFrom?: string;
+  dateTo?: string;
+}) {
+  const params: Record<string, string> = {
+    quickScope: "notification",
+    quickToken: String(Date.now()),
+    quickLabel: opts.label,
+  };
+  if (opts.type) params.quickType = opts.type;
+  if (opts.categoryId && opts.categoryId > 0) params.quickCategoryId = String(opts.categoryId);
+  if (opts.dateFrom && opts.dateTo) {
+    params.quickDateFrom = opts.dateFrom;
+    params.quickDateTo = opts.dateTo;
+  }
+  return { pathname: "/(app)/movements", params };
+}
+
 export function resolveNotificationNavigationTarget(input: {
   kind: string;
   relatedEntityType?: string | null;
@@ -114,15 +168,41 @@ export function resolveNotificationNavigationTarget(input: {
       return id ? `/subscription/${id}` : "/subscriptions";
     case "recurring_income_reminder":
       return "/recurring-income";
-    case "savings_rate_low":
-    case "subscription_cost_heavy":
-    case "no_movements_week":
-    case "no_income_month":
-    case "high_expense_month":
-    case "category_spending_spike":
-    case "expense_income_imbalance":
+    case "high_expense_month": {
+      const { from, to, monthLabel } = currentMonthRange();
+      return movementsQuickLink({ label: `Gastos elevados de ${monthLabel}`, type: "expense", dateFrom: from, dateTo: to });
+    }
+    case "category_spending_spike": {
+      const { from, to } = currentMonthRange();
+      const catName = payloadString(payload, "categoryName");
+      return movementsQuickLink({
+        label: catName ? `Gasto alto: ${catName}` : "Gasto elevado en categoría",
+        type: "expense",
+        categoryId: relatedEntityType === "category" ? id : null,
+        dateFrom: from,
+        dateTo: to,
+      });
+    }
+    case "no_income_month": {
+      const { from, to } = currentMonthRange();
+      return movementsQuickLink({ label: "Sin ingresos este mes", type: "income", dateFrom: from, dateTo: to });
+    }
+    case "expense_income_imbalance": {
+      const { from, to } = currentMonthRange();
+      return movementsQuickLink({ label: "Gastos vs ingresos del mes", dateFrom: from, dateTo: to });
+    }
+    case "savings_rate_low": {
+      const { from, to } = currentMonthRange();
+      return movementsQuickLink({ label: "Ahorro bajo este mes", dateFrom: from, dateTo: to });
+    }
+    case "no_movements_week": {
+      const { from, to } = lastWeekRange();
+      return movementsQuickLink({ label: "Sin movimientos (última semana)", dateFrom: from, dateTo: to });
+    }
     case "net_worth_negative":
-      return "/(app)/dashboard";
+      return "/(app)/accounts";
+    case "subscription_cost_heavy":
+      return "/subscriptions";
     default:
       return "/notifications";
   }
