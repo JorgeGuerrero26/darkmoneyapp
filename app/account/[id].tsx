@@ -235,7 +235,6 @@ function AccountDetailScreen() {
       }
       summary={
         account ? (
-          <>
           <View style={styles.summaryCard}>
             <View style={styles.summaryRow}>
               <View style={[styles.iconContainer, { backgroundColor: account.color + "33" }]}>
@@ -280,56 +279,6 @@ function AccountDetailScreen() {
               <Text style={styles.notInNetWorthNote}>No incluida en patrimonio neto</Text>
             ) : null}
           </View>
-          <DetailQuickActions
-            style={styles.quickActions}
-            actions={[
-              ...(!account.isArchived
-                ? [
-                    {
-                      key: "transfer",
-                      label: "Transferir",
-                      icon: ArrowLeftRight,
-                      color: COLORS.pine,
-                      onPress: () => {
-                        setMovementFormType("transfer");
-                        setMovementFormVisible(true);
-                      },
-                    },
-                    {
-                      key: "expense",
-                      label: "Nuevo gasto",
-                      icon: Plus,
-                      color: COLORS.primary,
-                      onPress: () => {
-                        setMovementFormType("expense");
-                        setMovementFormVisible(true);
-                      },
-                    },
-                  ]
-                : []),
-              {
-                key: "edit",
-                label: "Editar",
-                icon: Pencil,
-                color: COLORS.primary,
-                onPress: () => setEditFormVisible(true),
-              },
-              {
-                key: account.isArchived ? "restore" : "archive",
-                label: account.isArchived ? "Restaurar" : "Archivar",
-                icon: account.isArchived ? ArchiveRestore : Archive,
-                color: account.isArchived ? COLORS.pine : COLORS.ember,
-                onPress: () => setArchiveConfirmVisible(true),
-              },
-            ]}
-          />
-          <BalanceEvolutionChart
-            accountId={account.id}
-            currentBalance={account.currentBalance}
-            currencyCode={account.currencyCode}
-            movements={movements}
-          />
-          </>
         ) : (
           <SkeletonAccountSummary />
         )
@@ -339,6 +288,61 @@ function AccountDetailScreen() {
           sections={[{ key: "movements", label: "Movimientos", data: movements, headerVariant: "hidden" }]}
           keyExtractor={(item) => String(item.id)}
           renderItem={renderMovementItem}
+          listHeaderComponent={
+            account ? (
+              <>
+                <DetailQuickActions
+                  style={styles.quickActions}
+                  actions={[
+                    ...(!account.isArchived
+                      ? [
+                          {
+                            key: "transfer",
+                            label: "Transferir",
+                            icon: ArrowLeftRight,
+                            color: COLORS.pine,
+                            onPress: () => {
+                              setMovementFormType("transfer");
+                              setMovementFormVisible(true);
+                            },
+                          },
+                          {
+                            key: "expense",
+                            label: "Nuevo gasto",
+                            icon: Plus,
+                            color: COLORS.primary,
+                            onPress: () => {
+                              setMovementFormType("expense");
+                              setMovementFormVisible(true);
+                            },
+                          },
+                        ]
+                      : []),
+                    {
+                      key: "edit",
+                      label: "Editar",
+                      icon: Pencil,
+                      color: COLORS.primary,
+                      onPress: () => setEditFormVisible(true),
+                    },
+                    {
+                      key: account.isArchived ? "restore" : "archive",
+                      label: account.isArchived ? "Restaurar" : "Archivar",
+                      icon: account.isArchived ? ArchiveRestore : Archive,
+                      color: account.isArchived ? COLORS.pine : COLORS.ember,
+                      onPress: () => setArchiveConfirmVisible(true),
+                    },
+                  ]}
+                />
+                <BalanceEvolutionChart
+                  accountId={account.id}
+                  currentBalance={account.currentBalance}
+                  currencyCode={account.currencyCode}
+                  movements={movements}
+                />
+              </>
+            ) : null
+          }
           refreshing={isLoading && !isFetchingNextPage}
           onRefresh={onRefresh}
           onEndReached={() => {
