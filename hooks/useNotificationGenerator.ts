@@ -51,6 +51,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
+import { InteractionManager } from "react-native";
 import { supabase } from "../lib/supabase";
 import { queryClient } from "../lib/query-client";
 import { getNotificationPriority } from "../lib/notification-priority";
@@ -832,11 +833,19 @@ export function useNotificationGenerator(
     ].join("|");
 
     if (fingerprint === lastSnapshotRef.current) return;
-    lastSnapshotRef.current = fingerprint;
 
-    void generateNotifications(userId, snapshot).catch((err) => {
-      console.warn("[NotificationGenerator] error:", err);
-      lastSnapshotRef.current = null; // allow retry on next change
+    // Diferir el análisis (recorre todo el snapshot en el hilo JS) hasta después
+    // de las interacciones en curso: al abrir la app competía con el primer
+    // render y frenaba el arranque. La huella se marca DENTRO de la tarea (al
+    // ejecutar de verdad): si el efecto re-corre y cancela una tarea pendiente,
+    // la huella sin marcar hace que se reprograme en vez de perderse.
+    const task = InteractionManager.runAfterInteractions(() => {
+      lastSnapshotRef.current = fingerprint;
+      void generateNotifications(userId, snapshot).catch((err) => {
+        console.warn("[NotificationGenerator] error:", err);
+        lastSnapshotRef.current = null; // allow retry on next change
+      });
     });
+    return () => task.cancel();
   }, [userId, snapshot, generationDayKey]);
 }
