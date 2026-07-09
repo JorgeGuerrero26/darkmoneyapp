@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { ArrowRight, Pin, PinOff, RefreshCw } from "lucide-react-native";
 import { format } from "date-fns";
@@ -26,7 +27,7 @@ function formatEffectiveAt(value: string) {
   return format(date, "d MMM yyyy, HH:mm", { locale: es });
 }
 
-export function ExchangeRateCard({ rate, onPress, onLongPress, onTogglePin, selected = false }: Props) {
+function ExchangeRateCardBase({ rate, onPress, onLongPress, onTogglePin, selected = false }: Props) {
   const title = `${rate.fromCurrencyCode} → ${rate.toCurrencyCode}`;
 
   return (
@@ -86,3 +87,6 @@ const styles = StyleSheet.create({
     fontFamily: FONT_FAMILY.heading,
   },
 });
+
+/** Memoizado: los cards se renderizan en listas largas; evita re-renders cuando las props son estables. */
+export const ExchangeRateCard = memo(ExchangeRateCardBase);

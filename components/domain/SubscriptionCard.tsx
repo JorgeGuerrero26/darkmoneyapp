@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { BarChart3, CalendarClock, Pin, PinOff } from "lucide-react-native";
 import { format } from "date-fns";
@@ -41,7 +42,7 @@ function formatYmdLocal(ymd: string) {
   return format(new Date(p[0], p[1] - 1, p[2]), "d MMM", { locale: es });
 }
 
-export function SubscriptionCard({
+function SubscriptionCardBase({
   subscription,
   monthlyAmount,
   onPress,
@@ -135,3 +136,6 @@ const styles = StyleSheet.create({
     fontFamily: FONT_FAMILY.body,
   },
 });
+
+/** Memoizado: los cards se renderizan en listas largas; evita re-renders cuando las props son estables. */
+export const SubscriptionCard = memo(SubscriptionCardBase);

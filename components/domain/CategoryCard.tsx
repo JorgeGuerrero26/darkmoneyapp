@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { BarChart3, Pin, PinOff } from "lucide-react-native";
 import { format } from "date-fns";
@@ -30,7 +31,7 @@ function formatIsoLocal(iso: string | null | undefined): string {
   return format(date, "d MMM yyyy", { locale: es });
 }
 
-export function CategoryCard({
+function CategoryCardBase({
   category,
   color,
   kindLabel,
@@ -117,3 +118,6 @@ const styles = StyleSheet.create({
     color: COLORS.textDisabled,
   },
 });
+
+/** Memoizado: los cards se renderizan en listas largas; evita re-renders cuando las props son estables. */
+export const CategoryCard = memo(CategoryCardBase);

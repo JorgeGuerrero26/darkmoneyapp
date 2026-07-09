@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { Archive, ArchiveRestore, Pin, PinOff, Trash2 } from "lucide-react-native";
 
@@ -96,7 +97,7 @@ function ContactCardContent({
   );
 }
 
-export function ContactCard({
+function ContactCardBase({
   contact,
   metrics,
   canDelete,
@@ -181,3 +182,6 @@ const styles = StyleSheet.create({
     color: COLORS.storm,
   },
 });
+
+/** Memoizado: los cards se renderizan en listas largas; evita re-renders cuando las props son estables. */
+export const ContactCard = memo(ContactCardBase);

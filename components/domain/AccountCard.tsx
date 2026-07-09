@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { Archive, ArchiveRestore, BarChart2 } from "lucide-react-native";
 
@@ -99,7 +100,7 @@ function AccountCardContent({
   );
 }
 
-export function AccountCard({
+function AccountCardBase({
   account,
   baseCurrencyCode,
   onPress,
@@ -198,3 +199,6 @@ const styles = StyleSheet.create({
   badgeTextMuted: { color: COLORS.storm },
   badgeTextInfo: { color: COLORS.ember },
 });
+
+/** Memoizado: los cards se renderizan en listas largas; evita re-renders cuando las props son estables. */
+export const AccountCard = memo(AccountCardBase);

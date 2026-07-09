@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { AlertTriangle, BarChart2, Pin, PinOff, Target, Zap } from "lucide-react-native";
 
@@ -22,7 +23,7 @@ type Props = {
   onTogglePin?: () => void;
 };
 
-export function BudgetCard({ budget, selected, onPress, onLongPress, onAnalytics, onQuickEdit, onTogglePin }: Props) {
+function BudgetCardBase({ budget, selected, onPress, onLongPress, onAnalytics, onQuickEdit, onTogglePin }: Props) {
   const statusColor = budget.isOverLimit
     ? COLORS.rosewood
     : budget.isNearLimit
@@ -160,3 +161,6 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.xs,
   },
 });
+
+/** Memoizado: los cards se renderizan en listas largas; evita re-renders cuando las props son estables. */
+export const BudgetCard = memo(BudgetCardBase);
