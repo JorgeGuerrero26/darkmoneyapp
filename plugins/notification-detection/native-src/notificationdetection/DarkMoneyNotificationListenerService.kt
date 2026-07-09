@@ -133,10 +133,13 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
     // Cross-source dedup: otra FUENTE (banco vs Gmail vs Google Wallet vs Samsung Pay) se salta
     // si ya existe una pending suggestion del mismo monto en los últimos 5 min. Política: el
     // primero llegado gana. Cubre BCP push + BCP email + Wallet/SPay para una misma transacción.
-    // Mismo paquete NO se suprime: dos compras reales del mismo monto y misma fuente en <5 min
-    // (p. ej. vending machine) son transacciones distintas; los re-fires del mismo contenido ya
-    // los dedupea suggestionId vía upsertSuggestion.
-    if (NotificationDetectionStore.hasPendingSuggestionForAmount(context, sourcePackage, amount, withinMs = 5 * 60_000L)) {
+    // Mismo paquete NO se suprime para apps de banco/wallet: dos compras reales del mismo monto y
+    // misma fuente en <5 min (p. ej. vending machine) son transacciones distintas.
+    // EXCEPCIÓN email (Gmail): re-dispara el MISMO correo con distinta notificationKey → distinto
+    // suggestionId → antes colaba una 2da sugerencia. Un correo de banco = una transacción, así
+    // que para email SÍ dedupeamos mismo-paquete por monto+ventana.
+    val isEmailSource = sourcePackage == GMAIL_PACKAGE
+    if (NotificationDetectionStore.hasPendingSuggestionForAmount(context, sourcePackage, amount, withinMs = 5 * 60_000L, includeSamePackage = isEmailSource)) {
       drop("pending-amount-dedupe")
       return
     }

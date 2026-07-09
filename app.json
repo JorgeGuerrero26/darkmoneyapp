@@ -2,7 +2,7 @@
   "expo": {
     "name": "DarkMoney",
     "slug": "darkmoney",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "scheme": "darkmoney",
     "orientation": "portrait",
     "icon": "./assets/images/logo-sin-fondo.png",
@@ -18,6 +18,7 @@
         "backgroundColor": "#05070B"
       },
       "package": "com.darkmoney.app",
+      "versionCode": 2,
       "googleServicesFile": "./app/google-services.json",
       "permissions": [
         "android.permission.CAMERA",

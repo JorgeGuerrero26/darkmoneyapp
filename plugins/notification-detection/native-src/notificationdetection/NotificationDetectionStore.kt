@@ -621,12 +621,22 @@ object NotificationDetectionStore {
    * reales distintas (vending machine); el re-fire del mismo contenido ya lo dedupea el
    * suggestionId determinístico en upsertSuggestion.
    */
-  fun hasPendingSuggestionForAmount(context: Context, sourcePackage: String, amountLabel: String, withinMs: Long): Boolean {
+  fun hasPendingSuggestionForAmount(
+    context: Context,
+    sourcePackage: String,
+    amountLabel: String,
+    withinMs: Long,
+    includeSamePackage: Boolean = false,
+  ): Boolean {
     val since = System.currentTimeMillis() - withinMs
     val suggestions = readSuggestionsArray(context)
     for (index in 0 until suggestions.length()) {
       val s = suggestions.optJSONObject(index) ?: continue
-      if (s.optString("packageName") == sourcePackage) continue
+      // Por defecto se ignora el MISMO paquete (dos compras reales del mismo monto y misma app en
+      // <5 min son distintas: p. ej. vending machine con push del banco). Con includeSamePackage
+      // = true (fuentes de email) SÍ se dedupea: Gmail re-dispara el MISMO correo con distinta
+      // key, no son dos transacciones.
+      if (!includeSamePackage && s.optString("packageName") == sourcePackage) continue
       if (s.optString("status") == "pending"
           && amountLabelsMatch(s.optString("amountLabel"), amountLabel)
           && s.optLong("createdAt", 0L) >= since) return true
