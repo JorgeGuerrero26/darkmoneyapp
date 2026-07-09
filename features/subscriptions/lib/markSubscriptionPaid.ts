@@ -26,7 +26,7 @@ export async function markSubscriptionPaid({
   paidDate,
   amount,
   accountId,
-}: Args): Promise<{ nextDueDate: string }> {
+}: Args): Promise<{ nextDueDate: string; movementId: number | null; occurredAt: string }> {
   if (!supabase) throw new Error("Supabase no disponible.");
 
   // Step 1: advance next_due_date. Si esto falla, abortamos sin crear movement.
@@ -47,11 +47,12 @@ export async function markSubscriptionPaid({
   // Step 2: insert movement. Si falla, el next_due_date ya quedó avanzado.
   // El usuario puede registrar el movement manualmente desde el dashboard;
   // la suscripción ya muestra el siguiente período como esperado.
-  const { error: insertError } = await supabase.from("movements").insert({
+  const occurredAt = dateStrToISO(paidDate);
+  const { data: inserted, error: insertError } = await supabase.from("movements").insert({
     workspace_id: workspaceId,
     movement_type: "subscription_payment",
     status: "posted",
-    occurred_at: dateStrToISO(paidDate),
+    occurred_at: occurredAt,
     description: subscription.name,
     notes: subscription.notes ?? "Pago registrado manualmente.",
     source_account_id: accountId,
@@ -67,12 +68,12 @@ export async function markSubscriptionPaid({
       manual_subscription_payment: true,
       paid_for_due_date: subscription.nextDueDate,
     },
-  });
+  }).select("id").single();
   if (insertError) {
     throw new Error(
       `Fecha avanzada a ${nextDueDate}, pero el movimiento no se pudo crear: ${insertError.message ?? "error desconocido"}. Regístralo manualmente desde el dashboard.`,
     );
   }
 
-  return { nextDueDate };
+  return { nextDueDate, movementId: (inserted as { id: number } | null)?.id ?? null, occurredAt };
 }

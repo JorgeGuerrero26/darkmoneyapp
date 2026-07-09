@@ -5,6 +5,7 @@ import type { WorkspaceInvitationStatus } from "../../types/domain";
 import { UNIVERSAL_LINK_HOST } from "../../constants/config";
 import { supabase, supabaseAnonKey, supabaseUrl } from "../../lib/supabase";
 import { STALE } from "../../lib/query-client";
+import { patchSnapshotWithCreatedMovement } from "./snapshot-cache";
 import { INTERACTIVE_AI_TIMEOUT_MS, isInteractiveAiEdgeFunction } from "../../lib/ai-request-utils";
 import { dateStrToISO, filterDateFrom, filterDateTo } from "../../lib/date";
 import {
@@ -2201,82 +2202,6 @@ export async function createMovement(
     subscriptionId: row.subscription_id,
     metadata: row.metadata,
   };
-}
-
-/**
- * Parche quirúrgico del snapshot tras crear un movimiento: refleja el saldo de
- * las cuentas afectadas y los movimientos recientes al instante (el server ya
- * confirmó el insert), sin esperar el refetch completo del snapshot (~15
- * queries). Las invalidaciones siguen corriendo detrás y corrigen cualquier
- * deriva (moneda base convertida, presupuestos, etc.).
- */
-function patchSnapshotWithCreatedMovement(
-  queryClient: ReturnType<typeof useQueryClient>,
-  workspaceId: number,
-  movement: {
-    id: number;
-    status: string;
-    categoryId?: number | null;
-    subscriptionId?: number | null;
-    occurredAt: string;
-    sourceAccountId?: number | null;
-    sourceAmount?: number | null;
-    destinationAccountId?: number | null;
-    destinationAmount?: number | null;
-  },
-) {
-  // Saldos y analíticas solo cuentan movimientos posted.
-  if (movement.status !== "posted") return;
-  queryClient.setQueriesData<WorkspaceSnapshot | undefined>(
-    { queryKey: ["workspace-snapshot", workspaceId] },
-    (old) => {
-      if (!old) return old;
-      const baseCurrency = old.workspaces.find((w) => w.id === workspaceId)?.baseCurrencyCode;
-      const accounts = old.accounts.map((acc) => {
-        let delta = 0;
-        if (acc.id === movement.sourceAccountId && movement.sourceAmount != null) delta -= movement.sourceAmount;
-        if (acc.id === movement.destinationAccountId && movement.destinationAmount != null) delta += movement.destinationAmount;
-        if (delta === 0) return acc;
-        return {
-          ...acc,
-          currentBalance: acc.currentBalance + delta,
-          // En moneda base solo si la cuenta ya está en base (sin conversión);
-          // si requiere tasa, se deja al refetch en vuelo.
-          currentBalanceInBaseCurrency:
-            acc.currentBalanceInBaseCurrency != null && acc.currencyCode === baseCurrency
-              ? acc.currentBalanceInBaseCurrency + delta
-              : acc.currentBalanceInBaseCurrency,
-        };
-      });
-      const categoryPostedMovements =
-        movement.categoryId != null
-          ? [
-              {
-                id: movement.id,
-                categoryId: movement.categoryId,
-                occurredAt: movement.occurredAt,
-                sourceAmount: movement.sourceAmount ?? null,
-                destinationAmount: movement.destinationAmount ?? null,
-              },
-              ...old.categoryPostedMovements,
-            ]
-          : old.categoryPostedMovements;
-      const subscriptionPostedMovements =
-        movement.subscriptionId != null
-          ? [
-              {
-                id: movement.id,
-                subscriptionId: movement.subscriptionId,
-                occurredAt: movement.occurredAt,
-                sourceAmount: movement.sourceAmount ?? null,
-                destinationAmount: movement.destinationAmount ?? null,
-              },
-              ...old.subscriptionPostedMovements,
-            ]
-          : old.subscriptionPostedMovements;
-      return { ...old, accounts, categoryPostedMovements, subscriptionPostedMovements };
-    },
-  );
 }
 
 export function useCreateMovementMutation(workspaceId: number | null) {

@@ -4,6 +4,7 @@ import { supabase } from "../../lib/supabase";
 import { STALE } from "../../lib/query-client";
 import { toNum, type NumericLike } from "./_shared";
 import { markSubscriptionPaid } from "../../features/subscriptions/lib/markSubscriptionPaid";
+import { patchSnapshotSubscriptionNextDue, patchSnapshotWithCreatedMovement } from "./snapshot-cache";
 import type {
   RecurringIncomeFrequency,
   RecurringIncomeStatus,
@@ -409,7 +410,24 @@ export function useMarkSubscriptionPaidMutation(workspaceId: number | null) {
         accountId: args.accountId,
       });
     },
-    onSuccess: () => {
+    onSuccess: (result, variables) => {
+      // Parche quirúrgico primero: saldo de la cuenta, historial de la
+      // suscripción y próximo cobro cambian en este frame; el refetch de abajo
+      // confirma/corrige en segundo plano.
+      if (workspaceId) {
+        if (result.movementId != null) {
+          patchSnapshotWithCreatedMovement(queryClient, workspaceId, {
+            id: result.movementId,
+            status: "posted",
+            categoryId: variables.subscription.categoryId ?? null,
+            subscriptionId: variables.subscription.id,
+            occurredAt: result.occurredAt,
+            sourceAccountId: variables.accountId,
+            sourceAmount: variables.amount,
+          });
+        }
+        patchSnapshotSubscriptionNextDue(queryClient, workspaceId, variables.subscription.id, result.nextDueDate);
+      }
       void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
     },
   });
