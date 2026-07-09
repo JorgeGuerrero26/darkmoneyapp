@@ -742,6 +742,94 @@ export function useUserEntitlementQuery(userId?: string | null, email?: string |
   });
 }
 
+// ─── Mapeadores puros por dominio ─────────────────────────────────────────────
+// Extraídos del fetch monolítico para poder refrescar dominios individuales
+// (refreshSnapshotDomains) reutilizando exactamente el mismo mapeo.
+
+function buildAccountSummaries(
+  accountRows: any[],
+  balanceRows: AccountBalanceRow[],
+): AccountSummary[] {
+  const balanceMap = new Map<number, AccountBalanceRow>();
+  for (const row of balanceRows) balanceMap.set(row.account_id, row);
+  return accountRows.map((row: any) => {
+    const balance = balanceMap.get(row.id);
+    return {
+      id: row.id,
+      workspaceId: row.workspace_id,
+      name: row.name,
+      type: row.type,
+      currencyCode: row.currency_code,
+      openingBalance: toNum(row.opening_balance),
+      currentBalance: toNum(balance?.current_balance ?? null),
+      currentBalanceInBaseCurrency: toNum(balance?.current_balance ?? null),
+      includeInNetWorth: row.include_in_net_worth,
+      lastActivity: row.updated_at,
+      color: row.color ?? "#6366F1",
+      icon: row.icon ?? "wallet",
+      isArchived: row.is_archived,
+      institutionCode: row.institution_code ?? null,
+    };
+  });
+}
+
+function applyBaseCurrencyToAccounts(
+  accounts: AccountSummary[],
+  baseCurrency: string,
+  exchangeRates: ExchangeRateSummary[],
+): void {
+  const rateMap = new Map<string, number>();
+  for (const r of exchangeRates) {
+    const key = `${r.fromCurrencyCode.toUpperCase()}:${r.toCurrencyCode.toUpperCase()}`;
+    if (!rateMap.has(key) && r.rate > 0) rateMap.set(key, r.rate);
+  }
+  const resolveRate = (from: string, to: string): number => {
+    if (from === to) return 1;
+    const direct = rateMap.get(`${from}:${to}`);
+    if (direct) return direct;
+    const inverse = rateMap.get(`${to}:${from}`);
+    if (inverse) return 1 / inverse;
+    return 1;
+  };
+  for (const acc of accounts) {
+    const from = acc.currencyCode.toUpperCase();
+    if (from === baseCurrency) continue;
+    acc.currentBalanceInBaseCurrency = acc.currentBalance * resolveRate(from, baseCurrency);
+  }
+}
+
+function buildPostedAnalyticsMovements<K extends "categoryId" | "subscriptionId">(
+  rows: any[],
+  outKey: K,
+  rowKey: "category_id" | "subscription_id",
+  accountCurrencyMap: Map<number, string>,
+  baseCurrency: string,
+  exchangeRates: ExchangeRateSummary[],
+): Array<
+  { id: number; occurredAt: string; sourceAmount: number | null; destinationAmount: number | null; amountCurrencyCode: string; amountInBaseCurrency: number } & Record<K, number>
+> {
+  return rows.map((row: any) => {
+    const sourceAmount = row.source_amount != null ? toNum(row.source_amount) : null;
+    const destinationAmount = row.destination_amount != null ? toNum(row.destination_amount) : null;
+    const amount = movementAmountForSubscriptionAnalytics({ sourceAmount, destinationAmount });
+    const amountCurrencyCode =
+      sourceAmount != null && sourceAmount !== 0
+        ? accountCurrencyMap.get(row.source_account_id as number) ?? baseCurrency
+        : destinationAmount != null && destinationAmount !== 0
+          ? accountCurrencyMap.get(row.destination_account_id as number) ?? baseCurrency
+          : baseCurrency;
+    return {
+      id: row.id as number,
+      [outKey]: row[rowKey] as number,
+      occurredAt: row.occurred_at as string,
+      sourceAmount,
+      destinationAmount,
+      amountCurrencyCode,
+      amountInBaseCurrency: convertAmountToWorkspaceBase(amount, amountCurrencyCode, baseCurrency, exchangeRates),
+    } as { id: number; occurredAt: string; sourceAmount: number | null; destinationAmount: number | null; amountCurrencyCode: string; amountInBaseCurrency: number } & Record<K, number>;
+  });
+}
+
 async function fetchWorkspaceSnapshot(
   userId: string,
   activeWorkspaceId: number,
@@ -882,12 +970,6 @@ async function fetchWorkspaceSnapshot(
       return mapWorkspace(w, member);
     });
 
-  // Build lookup maps
-  const balanceMap = new Map<number, AccountBalanceRow>();
-  for (const row of (accountBalancesResult.data ?? []) as AccountBalanceRow[]) {
-    balanceMap.set(row.account_id, row);
-  }
-
   const categoryRowsRaw = (categoriesResult.data ?? []) as {
     id: number;
     workspace_id: number;
@@ -928,25 +1010,10 @@ async function fetchWorkspaceSnapshot(
     return mapped;
   });
 
-  const accounts: AccountSummary[] = (accountsResult.data ?? []).map((row: any) => {
-    const balance = balanceMap.get(row.id);
-    return {
-      id: row.id,
-      workspaceId: row.workspace_id,
-      name: row.name,
-      type: row.type,
-      currencyCode: row.currency_code,
-      openingBalance: toNum(row.opening_balance),
-      currentBalance: toNum(balance?.current_balance ?? null),
-      currentBalanceInBaseCurrency: toNum(balance?.current_balance ?? null),
-      includeInNetWorth: row.include_in_net_worth,
-      lastActivity: row.updated_at,
-      color: row.color ?? "#6366F1",
-      icon: row.icon ?? "wallet",
-      isArchived: row.is_archived,
-      institutionCode: row.institution_code ?? null,
-    };
-  });
+  const accounts: AccountSummary[] = buildAccountSummaries(
+    (accountsResult.data ?? []) as any[],
+    (accountBalancesResult.data ?? []) as AccountBalanceRow[],
+  );
 
   const accountMap = new Map<number, string>();
   for (const acc of accounts) accountMap.set(acc.id, acc.name);
@@ -992,71 +1059,29 @@ async function fetchWorkspaceSnapshot(
   const activeWsRow = workspaceRows.find((w) => w.id === activeWorkspaceId);
   const baseCurrency = (activeWsRow?.base_currency_code ?? "PEN").toUpperCase();
 
-  // Build exchange rate map and apply currency conversion to account balances
-  const _rateMap = new Map<string, number>();
-  for (const r of exchangeRates) {
-    const key = `${r.fromCurrencyCode.toUpperCase()}:${r.toCurrencyCode.toUpperCase()}`;
-    if (!_rateMap.has(key) && r.rate > 0) _rateMap.set(key, r.rate);
-  }
-  function _resolveRate(from: string, to: string): number {
-    if (from === to) return 1;
-    const direct = _rateMap.get(`${from}:${to}`);
-    if (direct) return direct;
-    const inverse = _rateMap.get(`${to}:${from}`);
-    if (inverse) return 1 / inverse;
-    return 1;
-  }
-  for (const acc of accounts) {
-    const from = acc.currencyCode.toUpperCase();
-    if (from === baseCurrency) continue;
-    acc.currentBalanceInBaseCurrency = acc.currentBalance * _resolveRate(from, baseCurrency);
-  }
+  applyBaseCurrencyToAccounts(accounts, baseCurrency, exchangeRates);
 
   const subscriptionPostedMovements: SubscriptionPostedMovement[] = subscriptionMovementsResult.error
     ? []
-    : (subscriptionMovementsResult.data ?? []).map((row: any) => {
-        const sourceAmount = row.source_amount != null ? toNum(row.source_amount) : null;
-        const destinationAmount = row.destination_amount != null ? toNum(row.destination_amount) : null;
-        const amount = movementAmountForSubscriptionAnalytics({ sourceAmount, destinationAmount });
-        const amountCurrencyCode =
-          sourceAmount != null && sourceAmount !== 0
-            ? accountCurrencyMap.get(row.source_account_id as number) ?? baseCurrency
-            : destinationAmount != null && destinationAmount !== 0
-              ? accountCurrencyMap.get(row.destination_account_id as number) ?? baseCurrency
-              : baseCurrency;
-        return {
-          id: row.id as number,
-          subscriptionId: row.subscription_id as number,
-          occurredAt: row.occurred_at as string,
-          sourceAmount,
-          destinationAmount,
-          amountCurrencyCode,
-          amountInBaseCurrency: convertAmountToWorkspaceBase(amount, amountCurrencyCode, baseCurrency, exchangeRates),
-        };
-      });
+    : buildPostedAnalyticsMovements(
+        (subscriptionMovementsResult.data ?? []) as any[],
+        "subscriptionId",
+        "subscription_id",
+        accountCurrencyMap,
+        baseCurrency,
+        exchangeRates,
+      );
 
   const categoryPostedMovements: CategoryPostedMovement[] = categoryMovementsResult.error
     ? []
-    : (categoryMovementsResult.data ?? []).map((row: any) => {
-        const sourceAmount = row.source_amount != null ? toNum(row.source_amount) : null;
-        const destinationAmount = row.destination_amount != null ? toNum(row.destination_amount) : null;
-        const amount = movementAmountForSubscriptionAnalytics({ sourceAmount, destinationAmount });
-        const amountCurrencyCode =
-          sourceAmount != null && sourceAmount !== 0
-            ? accountCurrencyMap.get(row.source_account_id as number) ?? baseCurrency
-            : destinationAmount != null && destinationAmount !== 0
-              ? accountCurrencyMap.get(row.destination_account_id as number) ?? baseCurrency
-              : baseCurrency;
-        return {
-          id: row.id as number,
-          categoryId: row.category_id as number,
-          occurredAt: row.occurred_at as string,
-          sourceAmount,
-          destinationAmount,
-          amountCurrencyCode,
-          amountInBaseCurrency: convertAmountToWorkspaceBase(amount, amountCurrencyCode, baseCurrency, exchangeRates),
-        };
-      });
+    : buildPostedAnalyticsMovements(
+        (categoryMovementsResult.data ?? []) as any[],
+        "categoryId",
+        "category_id",
+        accountCurrencyMap,
+        baseCurrency,
+        exchangeRates,
+      );
 
   const subscriptions: SubscriptionSummary[] = (subscriptionsResult.data ?? []).map(
     (row: any) =>
@@ -1251,6 +1276,115 @@ export function useWorkspaceSnapshotQuery(
     retry: 3,
     retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 10_000),
   });
+}
+
+// ─── Refetch selectivo por dominio (Fase 3 del plan de fluidez) ──────────────
+
+export type SnapshotRefreshDomain = "accounts" | "budgets" | "categoryMovements";
+
+/**
+ * Refresca SOLO los dominios afectados por una mutación caliente (2-4 queries)
+ * y mergea al cache del snapshot, en vez de invalidarlo completo (~16 queries).
+ * La re-sincronización total sigue garantizada por staleTime (STALE.short): el
+ * siguiente mount/focus de cualquier consumidor refetchea el snapshot entero.
+ * Ante cualquier problema (sin cache, error de red/tabla) cae al comportamiento
+ * previo: invalidación completa.
+ */
+export async function refreshSnapshotDomains(
+  queryClient: QueryClient,
+  workspaceId: number,
+  domains: SnapshotRefreshDomain[],
+): Promise<void> {
+  try {
+    if (!supabase) throw new Error("supabase no disponible");
+    const entries = queryClient.getQueriesData<WorkspaceSnapshot>({
+      queryKey: ["workspace-snapshot", workspaceId],
+    });
+    const current = entries.find(([, data]) => data)?.[1];
+    if (!current) throw new Error("snapshot no cacheado");
+    const baseCurrency = (
+      current.workspaces.find((w) => w.id === workspaceId)?.baseCurrencyCode ?? "PEN"
+    ).toUpperCase();
+
+    const wantsAccounts = domains.includes("accounts");
+    const wantsBudgets = domains.includes("budgets");
+    const wantsCatMovs = domains.includes("categoryMovements");
+    const twoYearsAgo = new Date();
+    twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
+    const twoYearsAgoIso = twoYearsAgo.toISOString().slice(0, 10);
+
+    const [accountsRes, balancesRes, budgetsRes, catMovsRes] = await Promise.all([
+      wantsAccounts
+        ? supabase
+            .from("accounts")
+            .select("id, workspace_id, name, type, currency_code, opening_balance, include_in_net_worth, color, icon, is_archived, sort_order, institution_code, created_at, updated_at")
+            .eq("workspace_id", workspaceId)
+            .order("sort_order", { ascending: true })
+        : Promise.resolve(null),
+      wantsAccounts
+        ? supabase
+            .from("v_account_balances")
+            .select("account_id, workspace_id, current_balance")
+            .eq("workspace_id", workspaceId)
+        : Promise.resolve(null),
+      wantsBudgets
+        ? supabase
+            .from("v_budget_progress")
+            .select("id, workspace_id, created_by_user_id, updated_by_user_id, name, period_start, period_end, currency_code, category_id, category_name, account_id, account_name, scope_kind, scope_label, limit_amount, spent_amount, remaining_amount, used_percent, alert_percent, movement_count, rollover_enabled, notes, is_active, is_near_limit, is_over_limit, created_at, updated_at")
+            .eq("workspace_id", workspaceId)
+            .eq("is_active", true)
+        : Promise.resolve(null),
+      wantsCatMovs
+        ? supabase
+            .from("movements")
+            .select("id, category_id, status, occurred_at, source_amount, destination_amount, source_account_id, destination_account_id")
+            .eq("workspace_id", workspaceId)
+            .not("category_id", "is", null)
+            .eq("status", "posted")
+            .gte("occurred_at", twoYearsAgoIso)
+            .order("occurred_at", { ascending: false })
+            .limit(1000)
+        : Promise.resolve(null),
+    ]);
+
+    const patch: Partial<WorkspaceSnapshot> = {};
+    if (accountsRes && balancesRes) {
+      if (accountsRes.error) throw accountsRes.error;
+      if (balancesRes.error) throw balancesRes.error;
+      const accounts = buildAccountSummaries(
+        (accountsRes.data ?? []) as any[],
+        (balancesRes.data ?? []) as AccountBalanceRow[],
+      );
+      applyBaseCurrencyToAccounts(accounts, baseCurrency, current.exchangeRates);
+      patch.accounts = accounts;
+    }
+    if (budgetsRes) {
+      if (budgetsRes.error) throw budgetsRes.error;
+      patch.budgets = (budgetsRes.data ?? []).map((row: any) => mapBudget(row as BudgetProgressRow));
+    }
+    if (catMovsRes) {
+      if (catMovsRes.error) throw catMovsRes.error;
+      const accountsForCurrency = patch.accounts ?? current.accounts;
+      const accountCurrencyMap = new Map<number, string>();
+      for (const acc of accountsForCurrency) accountCurrencyMap.set(acc.id, acc.currencyCode.toUpperCase());
+      patch.categoryPostedMovements = buildPostedAnalyticsMovements(
+        (catMovsRes.data ?? []) as any[],
+        "categoryId",
+        "category_id",
+        accountCurrencyMap,
+        baseCurrency,
+        current.exchangeRates,
+      );
+    }
+
+    queryClient.setQueriesData<WorkspaceSnapshot>(
+      { queryKey: ["workspace-snapshot", workspaceId] },
+      (old) => (old ? { ...old, ...patch } : old),
+    );
+  } catch {
+    // Fallback: comportamiento previo (refetch completo del snapshot).
+    void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+  }
 }
 
 // ─── Dashboard movements query ────────────────────────────────────────────────
@@ -2221,7 +2355,14 @@ export function useCreateMovementMutation(workspaceId: number | null) {
       // refetch hasta terminar interacciones/animaciones, dejando la UI desactualizada hasta un
       // pull-to-refresh manual. Disparamos el refetch ya y sin bloquear el cierre del sheet.
       void queryClient.invalidateQueries({ queryKey: ["movements"] });
-      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+      // Fase 3: refetch selectivo — solo los dominios que un movimiento afecta
+      // (saldos exactos, presupuestos, analíticas de categoría) en vez del
+      // snapshot completo. staleTime cubre la re-sincronización total perezosa.
+      if (workspaceId) {
+        void refreshSnapshotDomains(queryClient, workspaceId, ["accounts", "budgets", "categoryMovements"]);
+      } else {
+        void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+      }
       // Registro originado en una detección de notificación: refrescar también la campana y la
       // sugerencia. Cubre la ventana entre crear el movimiento y marcar la sugerencia (si el
       // mark falla, la notificación no queda "pendiente" stale en pantalla).

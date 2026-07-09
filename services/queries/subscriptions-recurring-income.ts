@@ -427,8 +427,20 @@ export function useMarkSubscriptionPaidMutation(workspaceId: number | null) {
           });
         }
         patchSnapshotSubscriptionNextDue(queryClient, workspaceId, variables.subscription.id, result.nextDueDate);
+        // Fase 3: refetch selectivo de los dominios afectados (saldos exactos y
+        // presupuestos) en vez del snapshot completo. Import dinámico: este
+        // módulo es re-exportado por workspace-data y un import estático de
+        // valor crearía un ciclo en la inicialización.
+        void import("./workspace-data")
+          .then(({ refreshSnapshotDomains }) =>
+            refreshSnapshotDomains(queryClient, workspaceId, ["accounts", "budgets"]),
+          )
+          .catch(() => {
+            void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+          });
+      } else {
+        void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
       }
-      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
     },
   });
 }
