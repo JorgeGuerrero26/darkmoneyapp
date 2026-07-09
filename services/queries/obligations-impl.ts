@@ -20,6 +20,7 @@ import { supabase } from "../../lib/supabase";
 import { STALE } from "../../lib/query-client";
 import { TimeoutError, withTimeout } from "../../lib/promise-utils";
 import { dateStrToISO, filterDateFrom, filterDateTo } from "../../lib/date";
+import { patchSnapshotObligationPayment, patchSnapshotWithCreatedMovement } from "./snapshot-cache";
 import {
   mirrorObligationEventAttachmentsToMovement,
   type AttachmentLike,
@@ -2325,6 +2326,21 @@ export function useCreateObligationPaymentMutation(workspaceId: number | null) {
       };
     },
     onSuccess: (data, variables) => {
+      // Parche quirúrgico primero: saldo de cuenta y pendiente de la obligación
+      // cambian en este frame; el refresh de abajo confirma/corrige detrás.
+      const isReceivable = variables.direction === "receivable";
+      if (data.movementId && variables.accountId) {
+        patchSnapshotWithCreatedMovement(queryClient, data.workspaceId, {
+          id: data.movementId,
+          status: "posted",
+          occurredAt: dateStrToISO(variables.paymentDate),
+          sourceAccountId: isReceivable ? null : variables.accountId,
+          sourceAmount: isReceivable ? null : variables.amount,
+          destinationAccountId: isReceivable ? variables.accountId : null,
+          destinationAmount: isReceivable ? variables.amount : null,
+        });
+      }
+      patchSnapshotObligationPayment(queryClient, data.workspaceId, variables.obligationId, variables.amount);
       const queryKeys: Array<readonly unknown[]> = [
         ["workspace-snapshot"],
         ["movements"],

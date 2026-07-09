@@ -81,6 +81,44 @@ export function patchSnapshotWithCreatedMovement(
   );
 }
 
+/**
+ * Refleja un pago de obligación en el cache: baja pendingAmount y recalcula el
+ * progreso. Interés/estado exacto los corrige el refetch en vuelo.
+ */
+export function patchSnapshotObligationPayment(
+  queryClient: QueryClient,
+  workspaceId: number,
+  obligationId: number,
+  amount: number,
+) {
+  queryClient.setQueriesData<WorkspaceSnapshot | undefined>(
+    { queryKey: ["workspace-snapshot", workspaceId] },
+    (old) => {
+      if (!old) return old;
+      const baseCurrency = old.workspaces.find((w) => w.id === workspaceId)?.baseCurrencyCode;
+      return {
+        ...old,
+        obligations: old.obligations.map((ob) => {
+          if (ob.id !== obligationId) return ob;
+          const pendingAmount = Math.max(0, ob.pendingAmount - amount);
+          return {
+            ...ob,
+            pendingAmount,
+            pendingAmountInBaseCurrency:
+              ob.pendingAmountInBaseCurrency != null && ob.currencyCode === baseCurrency
+                ? Math.max(0, ob.pendingAmountInBaseCurrency - amount)
+                : ob.pendingAmountInBaseCurrency,
+            progressPercent:
+              ob.principalAmount > 0
+                ? Math.min(100, Math.round(((ob.principalAmount - pendingAmount) / ob.principalAmount) * 100))
+                : ob.progressPercent,
+          };
+        }),
+      };
+    },
+  );
+}
+
 /** Avanza next_due_date de una suscripción en el cache (tras pago confirmado). */
 export function patchSnapshotSubscriptionNextDue(
   queryClient: QueryClient,
