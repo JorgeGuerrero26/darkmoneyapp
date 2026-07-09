@@ -279,8 +279,12 @@ export async function syncNativeDetectedSuggestion(input: {
     notificationKey: input.nativeSuggestion.notificationKey ?? null,
   });
 
-  // Dedupe cruzado: la misma compra puede llegar por 2 fuentes (Billetera Google + correo del banco).
-  // Si existe una sugerencia pendiente reciente con mismo monto+moneda y comercio solapado, se suprime la 2da.
+  // Dedupe cruzado: la misma compra puede llegar por 2 fuentes (Billetera Google + correo del banco)
+  // o por re-fires de Gmail (mismo correo, distinta notificationKey → distinto dedupe_key). Si existe
+  // una sugerencia reciente con mismo monto+moneda y comercio solapado, se suprime la 2da.
+  // Incluye estados "registered"/"duplicate": el caso real es que la 1ra ya se registró (el usuario
+  // tocó "Registro rápido") ANTES de que la 2da llegara — si solo mirásemos "pending" la 2da colaría
+  // como notificación duplicada y no reconocería que el movimiento ya existe.
   const dedupeWindowStart = new Date(Date.now() - 10 * 60 * 1000).toISOString();
   const { data: recentRows } = await supabase
     .from("notification_detected_movement_suggestions")
@@ -288,7 +292,7 @@ export async function syncNativeDetectedSuggestion(input: {
     .eq("workspace_id", input.workspaceId)
     .eq("currency_code", parsedAmount.currencyCode)
     .eq("amount", parsedAmount.amount)
-    .eq("status", "pending")
+    .in("status", ["pending", "registered", "duplicate"])
     .gte("created_at", dedupeWindowStart)
     .limit(20);
   const newNorm = normalizeDescription(description);
