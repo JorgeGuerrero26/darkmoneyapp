@@ -770,8 +770,10 @@ function NavigationGuard() {
     [router],
   );
   const onDailyDigestTap = useCallback(() => {
-    const target = resolveNotificationNavigationTarget({ kind: "daily_digest" });
-    router.push(target as never);
+    // El digest resume alertas informativas: abrir la bandeja donde viven,
+    // no el dashboard (resolveNotificationNavigationTarget se mantiene para
+    // el tap del card dentro de la propia bandeja).
+    router.push("/notifications");
   }, [router]);
 
   const onSubscriptionReminderTap = useCallback(
