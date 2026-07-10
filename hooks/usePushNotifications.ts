@@ -173,17 +173,10 @@ export function usePushNotifications(userId?: string, handlers?: PushNotificatio
   onRecurringTapRef.current = handlers?.onRecurringIncomeReminderTap;
   onGenericTapRef.current = handlers?.onGenericNotificationTap;
 
-  const handleResponse = useCallback((response: ExpoNotificationResponse) => {
-    // Reject stale responses that Expo may re-emit when a listener is
-    // registered (e.g. after background→foreground if component remounted).
-    // notification.date is seconds since epoch on iOS, ms on Android — normalise.
-    const rawDate = response.notification.date ?? 0;
-    const notifDateMs = rawDate > 1e10 ? rawDate : rawDate * 1000;
-    if (notifDateMs > 0 && notifDateMs < _responseListenerRegisteredAt - 500) {
-      void Notifications?.clearLastNotificationResponseAsync?.().catch(() => {});
-      return;
-    }
-
+  // Dispatch sin el filtro de staleness: se usa directo para la respuesta
+  // inicial de cold start (su notification.date siempre es anterior al
+  // registro del listener porque la app se lanzó con el tap).
+  const dispatchResponse = useCallback((response: ExpoNotificationResponse) => {
     const identifier = String(response.notification.request.identifier ?? "");
     const actionIdentifier = String(response.actionIdentifier ?? "");
     const data = response.notification.request.content.data as Record<string, unknown> | undefined;
@@ -220,6 +213,22 @@ export function usePushNotifications(userId?: string, handlers?: PushNotificatio
     }
   }, []);
 
+  const handleResponse = useCallback(
+    (response: ExpoNotificationResponse) => {
+      // Reject stale responses that Expo may re-emit when a listener is
+      // registered (e.g. after background→foreground if component remounted).
+      // notification.date is seconds since epoch on iOS, ms on Android — normalise.
+      const rawDate = response.notification.date ?? 0;
+      const notifDateMs = rawDate > 1e10 ? rawDate : rawDate * 1000;
+      if (notifDateMs > 0 && notifDateMs < _responseListenerRegisteredAt - 500) {
+        void Notifications?.clearLastNotificationResponseAsync?.().catch(() => {});
+        return;
+      }
+      dispatchResponse(response);
+    },
+    [dispatchResponse],
+  );
+
   useEffect(() => {
     if (!userId || !Notifications) return;
     let cancelled = false;
@@ -240,13 +249,21 @@ export function usePushNotifications(userId?: string, handlers?: PushNotificatio
       // Badge / invalidación en foreground si hiciera falta
     });
 
-    // Clear BEFORE registering the response listener to avoid Expo re-firing the
-    // last stored response (which would navigate the user on every app open).
+    // Capturar la respuesta que pudo haber lanzado la app (cold start por tap
+    // en notificación) ANTES de limpiar; limpiar antes de registrar el listener
+    // evita que Expo re-dispare la última respuesta en cada apertura, pero sin
+    // la captura previa el tap de cold start se perdía y la app abría en el
+    // dashboard sin navegar.
     void (async () => {
+      const initialResponse = await Notifications.getLastNotificationResponseAsync?.().catch(() => null);
       await Notifications.clearLastNotificationResponseAsync?.().catch(() => {});
       if (cancelled) return;
       _responseListenerRegisteredAt = Date.now();
       responseListener.current = Notifications.addNotificationResponseReceivedListener(handleResponse);
+      // Sin filtro de staleness: la fecha de entrega de la notificación es
+      // siempre anterior al registro del listener en cold start. La dedupe por
+      // identifier|action|localReminderKey sigue aplicando.
+      if (initialResponse) dispatchResponse(initialResponse);
     })();
 
     return () => {
@@ -254,7 +271,7 @@ export function usePushNotifications(userId?: string, handlers?: PushNotificatio
       notificationListener.current?.remove();
       responseListener.current?.remove();
     };
-  }, [userId, handleResponse]);
+  }, [userId, handleResponse, dispatchResponse]);
 }
 
 // ── Schedule local reminders for upcoming subscriptions ──────────────────────
