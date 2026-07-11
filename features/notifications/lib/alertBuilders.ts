@@ -91,3 +91,32 @@ export function buildDuplicateChargeAlerts(
   }
   return rows;
 }
+
+export function buildExpectedIncomeMissedAlerts(
+  incomes: RecurringIncomeSummary[],
+  movements: CategoryPostedMovement[],
+  categoryKinds: Map<number, string>,
+  now: Date,
+): AlertRow[] {
+  const rows: AlertRow[] = [];
+  for (const income of incomes) {
+    if (income.status !== "active" || !income.nextExpectedDate) continue;
+    const [y, mo, d] = income.nextExpectedDate.split("-").map(Number);
+    const expected = new Date(y, mo - 1, d);
+    const daysLate = Math.floor((now.getTime() - expected.getTime()) / 86_400_000);
+    if (daysLate < 2) continue;
+    const hayIngresoPosterior = movements.some(
+      (m) => categoryKinds.get(m.categoryId) === "income" && new Date(m.occurredAt) >= expected,
+    );
+    if (hayIngresoPosterior) continue;
+    rows.push({
+      kind: "expected_income_missed",
+      title: "¿Ya te pagaron?",
+      body: `"${income.name}" se esperaba el ${income.nextExpectedDate} y no hay ingresos registrados desde entonces.`,
+      related_entity_type: "recurring_income",
+      related_entity_id: income.id,
+      payload: { recurringIncomeId: income.id, expectedDate: income.nextExpectedDate, daysLate },
+    });
+  }
+  return rows;
+}

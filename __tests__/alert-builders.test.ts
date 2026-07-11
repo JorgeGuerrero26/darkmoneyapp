@@ -1,4 +1,8 @@
-import { buildDuplicateChargeAlerts, buildSubscriptionPriceIncreaseAlerts } from "../features/notifications/lib/alertBuilders";
+import {
+  buildDuplicateChargeAlerts,
+  buildExpectedIncomeMissedAlerts,
+  buildSubscriptionPriceIncreaseAlerts,
+} from "../features/notifications/lib/alertBuilders";
 
 const sub = (over = {}) => ({ id: 5, name: "Netflix", currencyCode: "PEN", status: "active", ...over }) as any;
 const pago = (id: number, occurredAt: string, sourceAmount: number) =>
@@ -6,6 +10,8 @@ const pago = (id: number, occurredAt: string, sourceAmount: number) =>
 const mv = (id: number, occurredAt: string, categoryId: number, sourceAmount: number | null) =>
   ({ id, categoryId, occurredAt, sourceAmount, destinationAmount: null }) as any;
 const catKinds = new Map([[10, "expense"], [20, "income"]]);
+const ingreso = (over = {}) =>
+  ({ id: 3, name: "Sueldo", status: "active", nextExpectedDate: "2026-07-05", currencyCode: "PEN", amount: 3000, ...over }) as any;
 
 describe("buildSubscriptionPriceIncreaseAlerts", () => {
   it("alerta cuando el ultimo pago sube >=5% vs el anterior", () => {
@@ -54,5 +60,27 @@ describe("buildDuplicateChargeAlerts", () => {
       catKinds, now,
     );
     expect(rows).toHaveLength(1);
+  });
+});
+
+describe("buildExpectedIncomeMissedAlerts", () => {
+  const now = new Date("2026-07-10T12:00:00Z");
+  it("alerta cuando la fecha esperada paso hace >=2 dias sin ingreso posterior", () => {
+    const rows = buildExpectedIncomeMissedAlerts([ingreso()], [], catKinds, now);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].kind).toBe("expected_income_missed");
+    expect(rows[0].related_entity_id).toBe(3);
+  });
+  it("no alerta si hay un ingreso registrado despues de la fecha esperada", () => {
+    const rows = buildExpectedIncomeMissedAlerts(
+      [ingreso()],
+      [mv(9, "2026-07-06T09:00:00Z", 20, null)],
+      catKinds, now,
+    );
+    expect(rows).toHaveLength(0);
+  });
+  it("no alerta si aun no pasan 2 dias, o el ingreso esta pausado", () => {
+    expect(buildExpectedIncomeMissedAlerts([ingreso({ nextExpectedDate: "2026-07-09" })], [], catKinds, now)).toHaveLength(0);
+    expect(buildExpectedIncomeMissedAlerts([ingreso({ status: "paused" })], [], catKinds, now)).toHaveLength(0);
   });
 });
