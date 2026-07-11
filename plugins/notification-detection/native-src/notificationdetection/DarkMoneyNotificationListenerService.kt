@@ -639,9 +639,17 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
     )
 
     // Tap en el cuerpo: abre la app (deep-link) al movimiento detectado. No es trampoline.
+    // CLEAR_TOP + SINGLE_TOP: sin ellos, Samsung/One UI puede apilar una SEGUNDA
+    // MainActivity (pese a launchMode singleTask) cuando el intent trae una data
+    // URI distinta a la del task existente. Dos ventanas vivas rompen el foco del
+    // teclado (inputs que pierden lo escrito) y la medición de altura de los sheets.
     val openAppIntent = Intent(Intent.ACTION_VIEW, Uri.parse("darkmoney://detected-suggestion/$suggestionId"))
       .setComponent(ComponentName(this, "com.darkmoney.app.MainActivity"))
-      .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      .addFlags(
+        Intent.FLAG_ACTIVITY_NEW_TASK or
+          Intent.FLAG_ACTIVITY_CLEAR_TOP or
+          Intent.FLAG_ACTIVITY_SINGLE_TOP,
+      )
     val openAppPendingIntent = PendingIntent.getActivity(
       this,
       notificationId + 2,
