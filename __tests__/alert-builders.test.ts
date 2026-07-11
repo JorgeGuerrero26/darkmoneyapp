@@ -1,6 +1,7 @@
 import {
   buildDuplicateChargeAlerts,
   buildExpectedIncomeMissedAlerts,
+  buildMonthlyRecapAlert,
   buildSubscriptionPriceIncreaseAlerts,
 } from "../features/notifications/lib/alertBuilders";
 
@@ -82,5 +83,24 @@ describe("buildExpectedIncomeMissedAlerts", () => {
   it("no alerta si aun no pasan 2 dias, o el ingreso esta pausado", () => {
     expect(buildExpectedIncomeMissedAlerts([ingreso({ nextExpectedDate: "2026-07-09" })], [], catKinds, now)).toHaveLength(0);
     expect(buildExpectedIncomeMissedAlerts([ingreso({ status: "paused" })], [], catKinds, now)).toHaveLength(0);
+  });
+});
+
+describe("buildMonthlyRecapAlert", () => {
+  it("emite el recap los primeros 7 dias del mes con comparativa", () => {
+    const row = buildMonthlyRecapAlert(
+      { lastMonthExpenses: 1200, lastMonthIncome: 3000, prevMonthExpenses: 1500, topCategoryName: "Comida" },
+      new Date("2026-07-03T12:00:00Z"),
+    );
+    expect(row).not.toBeNull();
+    expect(row!.kind).toBe("monthly_recap");
+    expect(row!.related_entity_id).toBe(202606);
+    expect(row!.payload.monthFrom).toBe("2026-06-01");
+    expect(row!.payload.monthTo).toBe("2026-06-30");
+    expect(row!.body).toContain("20%"); // 1200 vs 1500 = -20%
+  });
+  it("no emite despues del dia 7 ni sin datos del mes cerrado", () => {
+    expect(buildMonthlyRecapAlert({ lastMonthExpenses: 1, lastMonthIncome: 1, prevMonthExpenses: 0, topCategoryName: null }, new Date("2026-07-08T12:00:00Z"))).toBeNull();
+    expect(buildMonthlyRecapAlert({ lastMonthExpenses: 0, lastMonthIncome: 0, prevMonthExpenses: 0, topCategoryName: null }, new Date("2026-07-03T12:00:00Z"))).toBeNull();
   });
 });

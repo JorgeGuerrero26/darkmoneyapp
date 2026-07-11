@@ -120,3 +120,36 @@ export function buildExpectedIncomeMissedAlerts(
   }
   return rows;
 }
+
+const MESES_ES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+const pad2 = (n: number) => String(n).padStart(2, "0");
+
+export function buildMonthlyRecapAlert(
+  input: { lastMonthExpenses: number; lastMonthIncome: number; prevMonthExpenses: number; topCategoryName: string | null },
+  now: Date,
+): AlertRow | null {
+  if (now.getDate() > 7) return null;
+  if (input.lastMonthExpenses <= 0 && input.lastMonthIncome <= 0) return null;
+
+  const cierre = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const monthLabel = MESES_ES[cierre.getMonth()];
+  const monthFrom = `${cierre.getFullYear()}-${pad2(cierre.getMonth() + 1)}-01`;
+  const lastDay = new Date(cierre.getFullYear(), cierre.getMonth() + 1, 0).getDate();
+  const monthTo = `${cierre.getFullYear()}-${pad2(cierre.getMonth() + 1)}-${pad2(lastDay)}`;
+
+  let comparativa = "";
+  if (input.prevMonthExpenses > 0) {
+    const delta = Math.round(((input.lastMonthExpenses - input.prevMonthExpenses) / input.prevMonthExpenses) * 100);
+    comparativa = delta <= 0 ? ` Gastaste ${Math.abs(delta)}% menos que el mes anterior.` : ` Gastaste ${delta}% más que el mes anterior.`;
+  }
+  const top = input.topCategoryName ? ` Tu mayor gasto fue en ${input.topCategoryName}.` : "";
+
+  return {
+    kind: "monthly_recap",
+    title: `Resumen de ${monthLabel}`,
+    body: `Cerraste ${monthLabel} con ${fmt(input.lastMonthExpenses)} en gastos y ${fmt(input.lastMonthIncome)} en ingresos.${comparativa}${top}`,
+    related_entity_type: "monthly_recap",
+    related_entity_id: cierre.getFullYear() * 100 + (cierre.getMonth() + 1),
+    payload: { monthFrom, monthTo, monthLabel },
+  };
+}
