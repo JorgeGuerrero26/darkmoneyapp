@@ -4,6 +4,7 @@ import {
   Bell,
   Calendar,
   Clock,
+  Copy,
   CreditCard,
   Mail,
   Percent,
@@ -97,6 +98,22 @@ export function getNotificationKindMeta(kind: string): NotificationKindMeta {
       return { icon: Calendar, color: COLORS.ember };
     case "no_movements_week":
       return { icon: Bell, color: COLORS.storm };
+    case "subscription_price_increase":
+      return { icon: TrendingUp, color: COLORS.warning };
+    case "possible_duplicate_charge":
+      return { icon: Copy, color: COLORS.danger };
+    case "detected_suggestions_pending":
+      return { icon: Bell, color: COLORS.primary };
+    case "expected_income_missed":
+      return { icon: Clock, color: COLORS.warning };
+    case "monthly_recap":
+      return { icon: BarChart2, color: COLORS.primary };
+    case "obligation_milestone":
+      return { icon: TrendingUp, color: COLORS.success };
+    case "cash_runway_alert":
+      return { icon: AlertTriangle, color: COLORS.danger };
+    case "commitments_vs_balance":
+      return { icon: Scale, color: COLORS.danger };
     default:
       return { icon: Bell, color: COLORS.storm };
   }
