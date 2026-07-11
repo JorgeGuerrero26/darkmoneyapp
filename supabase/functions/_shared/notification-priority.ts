@@ -9,6 +9,11 @@ const CRITICAL_KINDS = new Set([
   "obligation_overdue",
   "multiple_obligations_overdue",
   "subscription_overdue",
+  // cash_runway_alert es "important" para la UI (lib/notification-priority.ts),
+  // pero server-side debe bypassear el límite diario de push (bypassDailyLimit
+  // en send-push-notifications/index.ts se decide por CRITICAL_KINDS). Divergencia
+  // intencional entre ambos archivos — ver Task 12 del plan 2026-07-10-new-notifications.
+  "cash_runway_alert",
 ]);
 
 const IMPORTANT_KINDS = new Set([
@@ -32,7 +37,6 @@ const IMPORTANT_KINDS = new Set([
   "obligation_event_deleted",
   "detected_movement_suggestion",
   "possible_duplicate_charge",
-  "cash_runway_alert",
   "commitments_vs_balance",
 ]);
 

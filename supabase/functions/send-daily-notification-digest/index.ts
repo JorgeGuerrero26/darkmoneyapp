@@ -192,6 +192,158 @@ async function ensureDailyInformationalMinimum(
   };
 }
 
+type PredictiveInput = {
+  supabase: ReturnType<typeof createClient>;
+  userId: string;
+  todayKey: string; // YYYY-MM-DD en Lima
+};
+
+/**
+ * Calcula y upsertea (si aplica) las 2 alertas predictivas del día para un usuario:
+ *   - cash_runway_alert: el saldo líquido proyectado se agota antes de fin de mes.
+ *   - commitments_vs_balance: compromisos (obligaciones + suscripciones) del resto
+ *     del mes superan el saldo disponible.
+ * Idempotente por día (related_entity_id = YYYYMMDD) vía upsert + ignoreDuplicates.
+ */
+async function insertPredictiveAlerts({ supabase, userId, todayKey }: PredictiveInput): Promise<void> {
+  const entityId = Number(todayKey.replace(/-/g, ""));
+
+  // 1) Workspace por defecto del usuario (fallback: el primero no archivado)
+  const { data: workspaces } = await supabase
+    .from("v_user_workspaces")
+    .select("workspace_id, is_default_workspace, base_currency_code, is_archived")
+    .eq("user_id", userId);
+  if (!workspaces?.length) return;
+  const workspace =
+    workspaces.find((w) => w.is_default_workspace) ??
+    workspaces.find((w) => !w.is_archived);
+  if (!workspace) return;
+  const workspaceId = workspace.workspace_id;
+  const base = workspace.base_currency_code;
+  if (!base) return;
+
+  // 2) Saldos del workspace (todas las cuentas, para mapear account_id → currency_code)
+  const { data: accountBalances } = await supabase
+    .from("v_account_balances")
+    .select("account_id, type, currency_code, current_balance")
+    .eq("workspace_id", workspaceId);
+  if (!accountBalances?.length) return;
+  const currencyByAccount = new Map(accountBalances.map((a) => [a.account_id, a.currency_code]));
+
+  // Excluir cuentas archivadas (v_account_balances no trae ese flag)
+  const { data: accountsMeta } = await supabase
+    .from("accounts")
+    .select("id, is_archived")
+    .eq("workspace_id", workspaceId);
+  const archivedIds = new Set((accountsMeta ?? []).filter((a) => a.is_archived).map((a) => a.id));
+
+  const liquid = accountBalances.filter(
+    (a) => !archivedIds.has(a.account_id) && ["bank", "cash", "savings"].includes(a.type),
+  );
+  if (!liquid.length) return;
+
+  // 3) Tasas persistidas → todo a la moneda base del workspace
+  const { data: rates } = await supabase
+    .from("v_latest_exchange_rates")
+    .select("from_currency_code, to_currency_code, rate");
+  const toBase = (amount: number, currency: string): number | null => {
+    if (currency === base) return amount;
+    const direct = (rates ?? []).find((r) => r.from_currency_code === currency && r.to_currency_code === base);
+    if (direct) return amount * Number(direct.rate);
+    const inverse = (rates ?? []).find((r) => r.from_currency_code === base && r.to_currency_code === currency);
+    if (inverse && Number(inverse.rate) !== 0) return amount / Number(inverse.rate);
+    return null; // sin tasa: excluir, no asumir 1:1
+  };
+
+  let disponible = 0;
+  for (const a of liquid) {
+    const v = toBase(Number(a.current_balance), a.currency_code);
+    if (v !== null) disponible += v;
+  }
+
+  // 4) Gasto promedio diario del mes en curso
+  const monthStart = `${todayKey.slice(0, 7)}-01`;
+  const { data: mvts } = await supabase
+    .from("movements")
+    .select("movement_type, status, occurred_at, source_amount, source_account_id")
+    .eq("workspace_id", workspaceId)
+    .eq("movement_type", "expense")
+    .eq("status", "posted")
+    .gte("occurred_at", monthStart);
+  const dayOfMonth = Number(todayKey.slice(8, 10));
+  let gastoMes = 0;
+  for (const m of mvts ?? []) {
+    const currency = currencyByAccount.get(m.source_account_id);
+    if (!currency) continue;
+    const v = toBase(Number(m.source_amount ?? 0), currency);
+    if (v !== null) gastoMes += v;
+  }
+  const gastoDiario = dayOfMonth > 0 ? gastoMes / dayOfMonth : 0;
+
+  // 5) cash_runway_alert: saldo proyectado llega a 0 antes de fin de mes
+  const lastDay = new Date(Number(todayKey.slice(0, 4)), Number(todayKey.slice(5, 7)), 0).getDate();
+  const diasRestantes = lastDay - dayOfMonth;
+  if (gastoDiario > 0) {
+    const diasDeCaja = disponible / gastoDiario;
+    if (diasDeCaja < diasRestantes) {
+      const fechaCero = new Date(Date.now() + diasDeCaja * 86_400_000).toISOString().slice(0, 10);
+      const { error } = await supabase.from("notifications").upsert([{
+        user_id: userId, channel: "in_app", status: "pending",
+        kind: "cash_runway_alert",
+        title: "Tu saldo no llega a fin de mes",
+        body: `A tu ritmo de gasto actual, tu saldo disponible se agota alrededor del ${fechaCero}.`,
+        scheduled_for: new Date().toISOString(),
+        related_entity_type: "cash_runway", related_entity_id: entityId,
+        payload: { projectedZeroDate: fechaCero, available: disponible, dailySpend: gastoDiario, bypass_daily_limit: true },
+      }], { onConflict: "user_id,related_entity_type,related_entity_id,kind", ignoreDuplicates: true });
+      if (error) {
+        console.warn("[Digest] cash_runway_alert upsert failed:", userId, error.message);
+      }
+    }
+  }
+
+  // 6) commitments_vs_balance: compromisos del resto del mes vs disponible
+  const monthEnd = `${todayKey.slice(0, 7)}-${String(lastDay).padStart(2, "0")}`;
+  const { data: obligations } = await supabase
+    .from("v_obligation_summary")
+    .select("pending_amount, currency_code, due_date, status, direction")
+    .eq("workspace_id", workspaceId)
+    .eq("status", "active")
+    .eq("direction", "payable")
+    .gte("due_date", todayKey)
+    .lte("due_date", monthEnd);
+  const { data: subs } = await supabase
+    .from("subscriptions")
+    .select("amount, currency_code, next_due_date, status")
+    .eq("workspace_id", workspaceId)
+    .eq("status", "active")
+    .gte("next_due_date", todayKey)
+    .lte("next_due_date", monthEnd);
+  let compromisos = 0;
+  for (const o of obligations ?? []) {
+    const v = toBase(Number(o.pending_amount ?? 0), o.currency_code);
+    if (v !== null) compromisos += v;
+  }
+  for (const s of subs ?? []) {
+    const v = toBase(Number(s.amount ?? 0), s.currency_code);
+    if (v !== null) compromisos += v;
+  }
+  if (compromisos > disponible) {
+    const { error } = await supabase.from("notifications").upsert([{
+      user_id: userId, channel: "in_app", status: "pending",
+      kind: "commitments_vs_balance",
+      title: "Compromisos superan tu saldo",
+      body: `Entre hoy y fin de mes vencen ${compromisos.toFixed(2)} ${base} en obligaciones y suscripciones, y tu saldo disponible es ${disponible.toFixed(2)} ${base}.`,
+      scheduled_for: new Date().toISOString(),
+      related_entity_type: "commitments_check", related_entity_id: entityId,
+      payload: { committed: compromisos, available: disponible, gap: compromisos - disponible },
+    }], { onConflict: "user_id,related_entity_type,related_entity_id,kind", ignoreDuplicates: true });
+    if (error) {
+      console.warn("[Digest] commitments_vs_balance upsert failed:", userId, error.message);
+    }
+  }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST" && req.method !== "GET") {
     return new Response("Method not allowed", { status: 405 });
@@ -221,7 +373,7 @@ Deno.serve(async (req: Request) => {
 
   const { data: prefs, error: prefsError } = await supabase
     .from("notification_preferences")
-    .select("user_id, push_token, daily_digest_enabled")
+    .select("user_id, push_token, daily_digest_enabled, predictive_alerts_enabled")
     .eq("is_active", true)
     .not("push_token", "is", null);
   if (prefsError) {
@@ -234,6 +386,15 @@ Deno.serve(async (req: Request) => {
     const userId = String(pref.user_id ?? "");
     const pushToken = typeof pref.push_token === "string" ? pref.push_token : "";
     const dailyDigestEnabled = pref.daily_digest_enabled !== false;
+
+    if (userId && pref.predictive_alerts_enabled !== false) {
+      try {
+        await insertPredictiveAlerts({ supabase, userId, todayKey: digestDate });
+      } catch (e) {
+        console.warn("[Digest] predictive alerts failed:", userId, e instanceof Error ? e.message : e);
+      }
+    }
+
     if (!dailyDigestEnabled) {
       results.push({ userId, ok: true, skipped: "digest_disabled" });
       continue;
