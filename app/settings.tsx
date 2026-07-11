@@ -347,7 +347,10 @@ function SettingsScreen() {
 
   async function handleDailyDigestToggle(nextValue: boolean) {
     try {
-      await updateNotificationPreferencesMutation.mutateAsync({ dailyDigestEnabled: nextValue });
+      await updateNotificationPreferencesMutation.mutateAsync({
+        dailyDigestEnabled: nextValue,
+        predictiveAlertsEnabled,
+      });
       showToast(
         nextValue ? "Digest diario activado" : "Digest diario desactivado",
         "success",
