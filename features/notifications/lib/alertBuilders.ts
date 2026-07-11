@@ -55,3 +55,39 @@ export function buildSubscriptionPriceIncreaseAlerts(
   }
   return rows;
 }
+
+const dayKey = (iso: string) => iso.slice(0, 10);
+
+export function buildDuplicateChargeAlerts(
+  movements: CategoryPostedMovement[],
+  categoryKinds: Map<number, string>,
+  now: Date,
+): AlertRow[] {
+  const weekAgo = new Date(now.getTime() - 7 * 86_400_000);
+  const grupos = new Map<string, CategoryPostedMovement[]>();
+  for (const m of movements) {
+    if (categoryKinds.get(m.categoryId) !== "expense") continue;
+    if (m.sourceAmount === null || m.sourceAmount <= 0) continue;
+    if (new Date(m.occurredAt) < weekAgo) continue;
+    const key = `${dayKey(m.occurredAt)}|${m.categoryId}|${m.sourceAmount}`;
+    const arr = grupos.get(key) ?? [];
+    arr.push(m);
+    grupos.set(key, arr);
+  }
+
+  const rows: AlertRow[] = [];
+  for (const [key, grupo] of grupos) {
+    if (grupo.length < 2) continue;
+    const [day, , amount] = key.split("|");
+    const minId = Math.min(...grupo.map((m) => m.id));
+    rows.push({
+      kind: "possible_duplicate_charge",
+      title: "Posible cobro duplicado",
+      body: `Registraste ${grupo.length} gastos idénticos de ${fmt(Number(amount))} el ${day}. Revisa si es un doble cobro.`,
+      related_entity_type: "movement",
+      related_entity_id: minId,
+      payload: { day, amountLabel: fmt(Number(amount)), movementIds: grupo.map((m) => m.id) },
+    });
+  }
+  return rows;
+}
