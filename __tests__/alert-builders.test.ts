@@ -1,4 +1,5 @@
 import {
+  buildDetectedSuggestionsPendingAlert,
   buildDuplicateChargeAlerts,
   buildExpectedIncomeMissedAlerts,
   buildMonthlyRecapAlert,
@@ -125,5 +126,21 @@ describe("buildObligationMilestoneAlerts", () => {
   it("sin hito bajo 25% y sin obligaciones inactivas", () => {
     expect(buildObligationMilestoneAlerts([ob({ progressPercent: 10 })])).toHaveLength(0);
     expect(buildObligationMilestoneAlerts([ob({ status: "settled" })])).toHaveLength(0);
+  });
+});
+
+describe("buildDetectedSuggestionsPendingAlert", () => {
+  const now = new Date("2026-07-10T12:00:00Z");
+  it("emite con >=3 pendientes y la mas vieja de hace mas de 24h", () => {
+    const row = buildDetectedSuggestionsPendingAlert(4, "2026-07-08T10:00:00Z", 1, now);
+    expect(row).not.toBeNull();
+    expect(row!.kind).toBe("detected_suggestions_pending");
+    expect(row!.related_entity_id).toBe(1);
+    expect(row!.body).toContain("4");
+  });
+  it("null con menos de 3, o si la mas vieja es reciente", () => {
+    expect(buildDetectedSuggestionsPendingAlert(2, "2026-07-08T10:00:00Z", 1, now)).toBeNull();
+    expect(buildDetectedSuggestionsPendingAlert(5, "2026-07-10T04:00:00Z", 1, now)).toBeNull();
+    expect(buildDetectedSuggestionsPendingAlert(5, null, 1, now)).toBeNull();
   });
 });

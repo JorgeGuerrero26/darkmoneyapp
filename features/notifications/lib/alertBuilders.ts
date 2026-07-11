@@ -176,3 +176,21 @@ export function buildObligationMilestoneAlerts(obligations: ObligationSummary[])
   }
   return rows;
 }
+
+export function buildDetectedSuggestionsPendingAlert(
+  pendingCount: number,
+  oldestPendingAt: string | null,
+  workspaceId: number,
+  now: Date,
+): AlertRow | null {
+  if (pendingCount < 3 || !oldestPendingAt) return null;
+  if (now.getTime() - new Date(oldestPendingAt).getTime() < 24 * 3_600_000) return null;
+  return {
+    kind: "detected_suggestions_pending",
+    title: "Movimientos detectados sin revisar",
+    body: `Tienes ${pendingCount} movimientos detectados esperando tu confirmación desde hace más de un día.`,
+    related_entity_type: "workspace",
+    related_entity_id: workspaceId,
+    payload: { pendingCount, oldestPendingAt },
+  };
+}
