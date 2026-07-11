@@ -301,6 +301,7 @@ function SettingsScreen() {
     activeWorkspace?.kind === "shared" &&
     (activeWorkspace?.role === "owner" || activeWorkspace?.role === "admin");
   const dailyDigestEnabled = notificationPreferencesQuery.data?.dailyDigestEnabled !== false;
+  const predictiveAlertsEnabled = notificationPreferencesQuery.data?.predictiveAlertsEnabled !== false;
   const pushEnabled = notificationPreferencesQuery.data?.pushEnabled === true;
   const pushToken = notificationPreferencesQuery.data?.pushToken ?? null;
   const pushPlatform = notificationPreferencesQuery.data?.platform ?? null;
@@ -349,6 +350,21 @@ function SettingsScreen() {
       await updateNotificationPreferencesMutation.mutateAsync({ dailyDigestEnabled: nextValue });
       showToast(
         nextValue ? "Digest diario activado" : "Digest diario desactivado",
+        "success",
+      );
+    } catch (err: unknown) {
+      showToast(humanizeError(err), "error");
+    }
+  }
+
+  async function handlePredictiveAlertsToggle(nextValue: boolean) {
+    try {
+      await updateNotificationPreferencesMutation.mutateAsync({
+        dailyDigestEnabled,
+        predictiveAlertsEnabled: nextValue,
+      });
+      showToast(
+        nextValue ? "Alertas predictivas activadas" : "Alertas predictivas desactivadas",
         "success",
       );
     } catch (err: unknown) {
@@ -514,6 +530,21 @@ function SettingsScreen() {
               <Switch
                 value={dailyDigestEnabled}
                 onValueChange={(v) => void handleDailyDigestToggle(v)}
+                disabled={updateNotificationPreferencesMutation.isPending || notificationPreferencesQuery.isLoading}
+                trackColor={{ false: COLORS.border, true: COLORS.primary }}
+                thumbColor={EXTENDED_PALETTE.white}
+              />
+            </View>
+            <View style={styles.switchRow}>
+              <View style={styles.switchInfo}>
+                <Text style={styles.switchLabel}>Alertas predictivas</Text>
+                <Text style={styles.switchDesc}>
+                  Aviso cuando tu saldo proyectado no cubre el mes o tus compromisos.
+                </Text>
+              </View>
+              <Switch
+                value={predictiveAlertsEnabled}
+                onValueChange={(v) => void handlePredictiveAlertsToggle(v)}
                 disabled={updateNotificationPreferencesMutation.isPending || notificationPreferencesQuery.isLoading}
                 trackColor={{ false: COLORS.border, true: COLORS.primary }}
                 thumbColor={EXTENDED_PALETTE.white}

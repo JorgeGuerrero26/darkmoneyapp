@@ -85,6 +85,7 @@ export type NotificationPreferenceSummary = {
   userId: string;
   pushEnabled: boolean;
   dailyDigestEnabled: boolean;
+  predictiveAlertsEnabled: boolean;
   pushToken: string | null;
   platform: string | null;
 };
@@ -100,6 +101,7 @@ export function useNotificationPreferencesQuery(userId: string | null | undefine
           userId: userId ?? "",
           pushEnabled: false,
           dailyDigestEnabled: true,
+          predictiveAlertsEnabled: true,
           pushToken: null,
           platform: null,
         };
@@ -107,7 +109,7 @@ export function useNotificationPreferencesQuery(userId: string | null | undefine
 
       const { data, error } = await supabase
         .from("notification_preferences")
-        .select("user_id, is_active, daily_digest_enabled, push_token, platform")
+        .select("user_id, is_active, daily_digest_enabled, predictive_alerts_enabled, push_token, platform")
         .eq("user_id", userId)
         .maybeSingle();
 
@@ -117,6 +119,7 @@ export function useNotificationPreferencesQuery(userId: string | null | undefine
         userId,
         pushEnabled: data?.is_active === true,
         dailyDigestEnabled: data?.daily_digest_enabled !== false,
+        predictiveAlertsEnabled: data?.predictive_alerts_enabled !== false,
         pushToken: typeof data?.push_token === "string" ? data.push_token : null,
         platform: typeof data?.platform === "string" ? data.platform : null,
       };
@@ -127,7 +130,7 @@ export function useNotificationPreferencesQuery(userId: string | null | undefine
 export function useUpdateNotificationPreferencesMutation(userId: string | null | undefined) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (input: { dailyDigestEnabled: boolean }) => {
+    mutationFn: async (input: { dailyDigestEnabled: boolean; predictiveAlertsEnabled?: boolean }) => {
       if (!supabase || !userId) throw new Error("Usuario no disponible.");
 
       const { data: existing, error: existingError } = await supabase
@@ -145,6 +148,7 @@ export function useUpdateNotificationPreferencesMutation(userId: string | null |
           .from("notification_preferences")
           .update({
             daily_digest_enabled: input.dailyDigestEnabled,
+            predictive_alerts_enabled: input.predictiveAlertsEnabled,
           })
           .eq("user_id", userId)
         : supabase
@@ -154,6 +158,7 @@ export function useUpdateNotificationPreferencesMutation(userId: string | null |
             platform: Platform.OS,
             is_active: false,
             daily_digest_enabled: input.dailyDigestEnabled,
+            predictive_alerts_enabled: input.predictiveAlertsEnabled,
           });
 
       const { error } = await operation;
