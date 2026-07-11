@@ -2,6 +2,7 @@ import {
   buildDuplicateChargeAlerts,
   buildExpectedIncomeMissedAlerts,
   buildMonthlyRecapAlert,
+  buildObligationMilestoneAlerts,
   buildSubscriptionPriceIncreaseAlerts,
 } from "../features/notifications/lib/alertBuilders";
 
@@ -102,5 +103,27 @@ describe("buildMonthlyRecapAlert", () => {
   it("no emite despues del dia 7 ni sin datos del mes cerrado", () => {
     expect(buildMonthlyRecapAlert({ lastMonthExpenses: 1, lastMonthIncome: 1, prevMonthExpenses: 0, topCategoryName: null }, new Date("2026-07-08T12:00:00Z"))).toBeNull();
     expect(buildMonthlyRecapAlert({ lastMonthExpenses: 0, lastMonthIncome: 0, prevMonthExpenses: 0, topCategoryName: null }, new Date("2026-07-03T12:00:00Z"))).toBeNull();
+  });
+});
+
+const ob = (over = {}) =>
+  ({ id: 8, title: "Préstamo auto", status: "active", progressPercent: 55, pendingAmount: 4500, currencyCode: "PEN", ...over }) as any;
+
+describe("buildObligationMilestoneAlerts", () => {
+  it("emite el hito mas alto cruzado (55% -> hito 50)", () => {
+    const rows = buildObligationMilestoneAlerts([ob()]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].related_entity_id).toBe(8 * 1000 + 50);
+    expect(rows[0].payload.milestone).toBe(50);
+    expect(rows[0].payload.obligationId).toBe(8);
+  });
+  it("100% pagado usa mensaje de cierre", () => {
+    const rows = buildObligationMilestoneAlerts([ob({ progressPercent: 100 })]);
+    expect(rows[0].payload.milestone).toBe(100);
+    expect(rows[0].title).toContain("completa");
+  });
+  it("sin hito bajo 25% y sin obligaciones inactivas", () => {
+    expect(buildObligationMilestoneAlerts([ob({ progressPercent: 10 })])).toHaveLength(0);
+    expect(buildObligationMilestoneAlerts([ob({ status: "settled" })])).toHaveLength(0);
   });
 });

@@ -153,3 +153,26 @@ export function buildMonthlyRecapAlert(
     payload: { monthFrom, monthTo, monthLabel },
   };
 }
+
+const MILESTONES = [100, 75, 50, 25];
+
+export function buildObligationMilestoneAlerts(obligations: ObligationSummary[]): AlertRow[] {
+  const rows: AlertRow[] = [];
+  for (const o of obligations) {
+    if (o.status !== "active") continue;
+    const milestone = MILESTONES.find((m) => o.progressPercent >= m);
+    if (!milestone) continue;
+    const esCierre = milestone === 100;
+    rows.push({
+      kind: "obligation_milestone",
+      title: esCierre ? "¡Obligación completa!" : `Hito de pago: ${milestone}%`,
+      body: esCierre
+        ? `Terminaste de pagar "${o.title}". Una deuda menos.`
+        : `Ya pagaste el ${milestone}% de "${o.title}". Saldo pendiente: ${fmt(o.pendingAmount)} ${o.currencyCode}.`,
+      related_entity_type: "obligation_milestone",
+      related_entity_id: o.id * 1000 + milestone,
+      payload: { obligationId: o.id, milestone, progressPercent: o.progressPercent },
+    });
+  }
+  return rows;
+}
