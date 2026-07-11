@@ -33,6 +33,9 @@ const IMPORTANT_KINDS = new Set([
   "obligation_event_updated",
   "obligation_event_deleted",
   "detected_movement_suggestion",
+  "possible_duplicate_charge",
+  "cash_runway_alert",
+  "commitments_vs_balance",
 ]);
 
 export function getNotificationPriority(kind: string): NotificationPriority {
