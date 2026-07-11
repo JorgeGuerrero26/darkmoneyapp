@@ -57,6 +57,15 @@ import { queryClient } from "../lib/query-client";
 import { getNotificationPriority } from "../lib/notification-priority";
 import { calendarDaysFromTodayLocal } from "../lib/subscription-helpers";
 import type { WorkspaceSnapshot } from "../services/queries/workspace-data";
+import {
+  buildDetectedSuggestionsPendingAlert,
+  buildDuplicateChargeAlerts,
+  buildExpectedIncomeMissedAlerts,
+  buildMonthlyRecapAlert,
+  buildObligationMilestoneAlerts,
+  buildSubscriptionPriceIncreaseAlerts,
+  type AlertRow,
+} from "../features/notifications/lib/alertBuilders";
 
 type NotificationRow = {
   user_id: string;
@@ -96,6 +105,14 @@ function endOfLastMonth(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), 0, 23, 59, 59, 999);
 }
 
+function startOfPrevMonth(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth() - 2, 1);
+}
+
+function endOfPrevMonth(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth() - 1, 0, 23, 59, 59, 999);
+}
+
 function daysBetween(a: Date, b: Date): number {
   return Math.floor((b.getTime() - a.getTime()) / 86_400_000);
 }
@@ -129,6 +146,14 @@ const ALL_KINDS = [
   "subscription_cost_heavy",
   "upcoming_annual_subscription",
   "no_movements_week",
+  // Kinds nuevos (spec 2026-07-10) — los 2 predictivos server-side NO van aquí
+  // (los genera el cron y este cleanup los borraría).
+  "subscription_price_increase",
+  "possible_duplicate_charge",
+  "detected_suggestions_pending",
+  "expected_income_missed",
+  "monthly_recap",
+  "obligation_milestone",
 ];
 
 const DAILY_INFORMATIONAL_MINIMUM = 3;
@@ -166,6 +191,10 @@ function dailyBaselineEntityId(dayKey: string, index: number): number {
 
 function countLabel(count: number, singular: string, plural: string): string {
   return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function toNotificationRow(userId: string, nowIso: string, alert: AlertRow): NotificationRow {
+  return { user_id: userId, channel: "in_app", status: "pending", scheduled_for: nowIso, ...alert };
 }
 
 function appendDailyBaselineNotifications(input: {
@@ -283,11 +312,14 @@ async function generateNotifications(
   const thisMonthStart = startOfMonth(now);
   const lastMonthStart = startOfLastMonth(now);
   const lastMonthEnd = endOfLastMonth(now);
+  const prevMonthStart = startOfPrevMonth(now);
+  const prevMonthEnd = endOfPrevMonth(now);
 
   let thisMonthExpenses = 0;
   let thisMonthIncome = 0;
   let lastMonthExpenses = 0;
   let lastMonthIncome = 0;
+  let prevMonthExpenses = 0;
 
   // Per-category monthly totals (for spike detection)
   const thisMonthByCat = new Map<number, number>();
@@ -314,6 +346,20 @@ async function generateNotifications(
       } else if (kind === "income") {
         lastMonthIncome += m.destinationAmount ?? 0;
       }
+    } else if (d >= prevMonthStart && d <= prevMonthEnd) {
+      if (kind === "expense") {
+        prevMonthExpenses += m.sourceAmount ?? 0;
+      }
+    }
+  }
+
+  // Categoría con mayor gasto del mes cerrado (para el recap mensual)
+  let lastMonthTopCategory: string | null = null;
+  let lastMonthTopAmount = 0;
+  for (const [catId, amt] of lastMonthByCat) {
+    if (amt > lastMonthTopAmount) {
+      lastMonthTopAmount = amt;
+      lastMonthTopCategory = categoryNameMap.get(catId) ?? null;
     }
   }
 
@@ -747,6 +793,39 @@ async function generateNotifications(
       payload: { daysSinceLastMovement: 7 },
     });
   }
+
+  // ── Kinds nuevos (spec 2026-07-10) ────────────────────────────────────────
+  const nuevos: AlertRow[] = [
+    ...buildSubscriptionPriceIncreaseAlerts(snapshot.subscriptions, snapshot.subscriptionPostedMovements),
+    ...buildDuplicateChargeAlerts(snapshot.categoryPostedMovements, categoryKindMap, now),
+    ...buildExpectedIncomeMissedAlerts(snapshot.recurringIncome, snapshot.categoryPostedMovements, categoryKindMap, now),
+    ...buildObligationMilestoneAlerts(snapshot.obligations),
+  ];
+  const recap = buildMonthlyRecapAlert(
+    { lastMonthExpenses, lastMonthIncome, prevMonthExpenses, topCategoryName: lastMonthTopCategory },
+    now,
+  );
+  if (recap) nuevos.push(recap);
+
+  // Sugerencias detectadas pendientes (query directa; fallo silencioso)
+  try {
+    const { data: pendientes } = await supabase
+      .from("notification_detected_movement_suggestions")
+      .select("created_at")
+      .eq("user_id", userId)
+      .eq("status", "pending")
+      .order("created_at", { ascending: true })
+      .limit(50);
+    const pendingAlert = buildDetectedSuggestionsPendingAlert(
+      pendientes?.length ?? 0,
+      pendientes?.[0]?.created_at ?? null,
+      workspaceId,
+      now,
+    );
+    if (pendingAlert) nuevos.push(pendingAlert);
+  } catch { /* sin bloqueo del resto */ }
+
+  rows.push(...nuevos.map((alert) => toNotificationRow(userId, nowIso, alert)));
 
   appendDailyBaselineNotifications({
     rows,
