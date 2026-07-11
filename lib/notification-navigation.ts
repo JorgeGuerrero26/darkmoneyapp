@@ -203,6 +203,36 @@ export function resolveNotificationNavigationTarget(input: {
       return "/(app)/accounts";
     case "subscription_cost_heavy":
       return "/subscriptions";
+    case "subscription_price_increase":
+      return id ? `/subscription/${id}` : "/subscriptions";
+    case "possible_duplicate_charge": {
+      const day = payloadString(payload, "day");
+      const amountLabel = payloadString(payload, "amountLabel");
+      return movementsQuickLink({
+        label: amountLabel ? `Posible cobro duplicado: ${amountLabel}` : "Posible cobro duplicado",
+        type: "expense",
+        dateFrom: day ?? undefined,
+        dateTo: day ?? undefined,
+      });
+    }
+    case "detected_suggestions_pending":
+      return "/notifications";
+    case "expected_income_missed":
+      return "/recurring-income";
+    case "monthly_recap": {
+      const from = payloadString(payload, "monthFrom");
+      const to = payloadString(payload, "monthTo");
+      const monthLabel = payloadString(payload, "monthLabel");
+      return from && to
+        ? movementsQuickLink({ label: `Resumen de ${monthLabel ?? "el mes"}`, dateFrom: from, dateTo: to })
+        : "/(app)/movements";
+    }
+    case "obligation_milestone":
+      return obligationIdFromPayload ? `/obligation/${obligationIdFromPayload}` : "/(app)/obligations";
+    case "cash_runway_alert":
+      return "/(app)/accounts";
+    case "commitments_vs_balance":
+      return "/(app)/obligations";
     default:
       return "/notifications";
   }
