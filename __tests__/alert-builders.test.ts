@@ -1,10 +1,14 @@
 import {
+  buildBudgetLimitAlerts,
+  buildBudgetPeriodEndingAlerts,
   buildDetectedSuggestionsPendingAlert,
   buildDuplicateChargeAlerts,
   buildExpectedIncomeMissedAlerts,
   buildMonthlyRecapAlert,
   buildObligationMilestoneAlerts,
+  buildSubscriptionOverdueAlerts,
   buildSubscriptionPriceIncreaseAlerts,
+  buildSubscriptionReminderAlerts,
 } from "../features/notifications/lib/alertBuilders";
 
 const sub = (over = {}) => ({ id: 5, name: "Netflix", currencyCode: "PEN", status: "active", ...over }) as any;
@@ -142,5 +146,98 @@ describe("buildDetectedSuggestionsPendingAlert", () => {
     expect(buildDetectedSuggestionsPendingAlert(2, "2026-07-08T10:00:00Z", 1, now)).toBeNull();
     expect(buildDetectedSuggestionsPendingAlert(5, "2026-07-10T04:00:00Z", 1, now)).toBeNull();
     expect(buildDetectedSuggestionsPendingAlert(5, null, 1, now)).toBeNull();
+  });
+});
+
+// ─── Builders legacy (migrados de useNotificationGenerator) ─────────────────
+
+const budget = (over = {}) =>
+  ({ id: 30, name: "Comida", isActive: true, usedPercent: 40, alertPercent: 80, limitAmount: 800, periodEnd: "2026-07-31", workspaceId: 1, ...over }) as any;
+
+const daysFromFixed = (todayYmd: string) => (ymd: string) => {
+  const [ty, tm, td] = todayYmd.split("-").map(Number);
+  const [y, m, d] = ymd.split("-").map(Number);
+  return Math.round((Date.UTC(y, m - 1, d) - Date.UTC(ty, tm - 1, td)) / 86_400_000);
+};
+
+describe("buildBudgetLimitAlerts", () => {
+  it("alerta 'excedido' al llegar a 100% usado", () => {
+    const rows = buildBudgetLimitAlerts([budget({ usedPercent: 112.4 })]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].kind).toBe("budget_alert");
+    expect(rows[0].title).toBe("Presupuesto excedido");
+    expect(rows[0].body).toContain("112%");
+    expect(rows[0].related_entity_id).toBe(30);
+    expect(rows[0].payload.limitAmount).toBe(800);
+  });
+  it("alerta 'cerca del limite' al cruzar alertPercent sin llegar a 100", () => {
+    const rows = buildBudgetLimitAlerts([budget({ usedPercent: 85 })]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].title).toBe("Presupuesto cerca del límite");
+    expect(rows[0].body).toContain("85%");
+    expect(rows[0].body).toContain("80%");
+  });
+  it("no alerta bajo alertPercent, con alertPercent 0, o presupuesto inactivo", () => {
+    expect(buildBudgetLimitAlerts([budget({ usedPercent: 79 })])).toHaveLength(0);
+    expect(buildBudgetLimitAlerts([budget({ usedPercent: 90, alertPercent: 0 })])).toHaveLength(0);
+    expect(buildBudgetLimitAlerts([budget({ usedPercent: 120, isActive: false })])).toHaveLength(0);
+  });
+});
+
+describe("buildBudgetPeriodEndingAlerts", () => {
+  const days = daysFromFixed("2026-07-10");
+  it("alerta cuando cierra en <=3 dias con mas de 50% usado", () => {
+    const rows = buildBudgetPeriodEndingAlerts([budget({ periodEnd: "2026-07-12", usedPercent: 60 })], days);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].kind).toBe("budget_period_ending");
+    expect(rows[0].payload.daysLeft).toBe(2);
+    expect(rows[0].body).toContain("en 2 días");
+  });
+  it("'cierra hoy' cuando quedan 0 dias", () => {
+    const rows = buildBudgetPeriodEndingAlerts([budget({ periodEnd: "2026-07-10", usedPercent: 51 })], days);
+    expect(rows[0].body).toContain("cierra hoy");
+  });
+  it("no alerta a 4 dias, con 50% exacto usado, o periodo ya cerrado", () => {
+    expect(buildBudgetPeriodEndingAlerts([budget({ periodEnd: "2026-07-14", usedPercent: 90 })], days)).toHaveLength(0);
+    expect(buildBudgetPeriodEndingAlerts([budget({ periodEnd: "2026-07-12", usedPercent: 50 })], days)).toHaveLength(0);
+    expect(buildBudgetPeriodEndingAlerts([budget({ periodEnd: "2026-07-09", usedPercent: 90 })], days)).toHaveLength(0);
+  });
+});
+
+describe("buildSubscriptionReminderAlerts", () => {
+  const days = daysFromFixed("2026-07-10");
+  it("alerta dentro de la ventana remindDaysBefore", () => {
+    const rows = buildSubscriptionReminderAlerts([sub({ nextDueDate: "2026-07-12", remindDaysBefore: 3 })], days);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].kind).toBe("subscription_reminder");
+    expect(rows[0].body).toContain("vence en 2 días");
+    expect(rows[0].related_entity_id).toBe(5);
+  });
+  it("'vence hoy' y 'vencio hace 1 dia' siguen dentro de la ventana", () => {
+    expect(buildSubscriptionReminderAlerts([sub({ nextDueDate: "2026-07-10", remindDaysBefore: 3 })], days)[0].body).toContain("vence hoy");
+    expect(buildSubscriptionReminderAlerts([sub({ nextDueDate: "2026-07-09", remindDaysBefore: 3 })], days)[0].body).toContain("venció hace 1 día");
+  });
+  it("ventana minima de 1 dia aunque remindDaysBefore sea 0", () => {
+    expect(buildSubscriptionReminderAlerts([sub({ nextDueDate: "2026-07-11", remindDaysBefore: 0 })], days)).toHaveLength(1);
+  });
+  it("no alerta fuera de ventana, vencida hace 2+ dias, o inactiva", () => {
+    expect(buildSubscriptionReminderAlerts([sub({ nextDueDate: "2026-07-15", remindDaysBefore: 3 })], days)).toHaveLength(0);
+    expect(buildSubscriptionReminderAlerts([sub({ nextDueDate: "2026-07-08", remindDaysBefore: 3 })], days)).toHaveLength(0);
+    expect(buildSubscriptionReminderAlerts([sub({ status: "paused", nextDueDate: "2026-07-11", remindDaysBefore: 3 })], days)).toHaveLength(0);
+  });
+});
+
+describe("buildSubscriptionOverdueAlerts", () => {
+  const days = daysFromFixed("2026-07-10");
+  it("alerta cuando vencio hace 2+ dias", () => {
+    const rows = buildSubscriptionOverdueAlerts([sub({ nextDueDate: "2026-07-07" })], days);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].kind).toBe("subscription_overdue");
+    expect(rows[0].body).toContain("hace 3 días");
+    expect(rows[0].payload.diffDays).toBe(-3);
+  });
+  it("no alerta vencida hace 1 dia (la cubre el reminder) ni inactiva", () => {
+    expect(buildSubscriptionOverdueAlerts([sub({ nextDueDate: "2026-07-09" })], days)).toHaveLength(0);
+    expect(buildSubscriptionOverdueAlerts([sub({ status: "canceled", nextDueDate: "2026-07-01" })], days)).toHaveLength(0);
   });
 });

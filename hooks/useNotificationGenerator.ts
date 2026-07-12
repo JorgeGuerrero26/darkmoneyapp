@@ -58,12 +58,16 @@ import { getNotificationPriority } from "../lib/notification-priority";
 import { calendarDaysFromTodayLocal } from "../lib/subscription-helpers";
 import type { WorkspaceSnapshot } from "../services/queries/workspace-data";
 import {
+  buildBudgetLimitAlerts,
+  buildBudgetPeriodEndingAlerts,
   buildDetectedSuggestionsPendingAlert,
   buildDuplicateChargeAlerts,
   buildExpectedIncomeMissedAlerts,
   buildMonthlyRecapAlert,
   buildObligationMilestoneAlerts,
+  buildSubscriptionOverdueAlerts,
   buildSubscriptionPriceIncreaseAlerts,
+  buildSubscriptionReminderAlerts,
   type AlertRow,
 } from "../features/notifications/lib/alertBuilders";
 
@@ -297,6 +301,11 @@ async function generateNotifications(
   const todayKey = usageDateInLima(now);
   const rows: NotificationRow[] = [];
 
+  const pushAlerts = (alerts: AlertRow[] | AlertRow | null) => {
+    const list = Array.isArray(alerts) ? alerts : alerts ? [alerts] : [];
+    for (const alert of list) rows.push(toNotificationRow(userId, nowIso, alert));
+  };
+
   // Workspace ID (used for workspace-level alerts)
   const workspaceId =
     snapshot.accounts.find((a) => a.workspaceId)?.workspaceId ??
@@ -364,93 +373,16 @@ async function generateNotifications(
   }
 
   // ── 1. Budget alerts ──────────────────────────────────────────────────────
-  for (const budget of snapshot.budgets) {
-    if (!budget.isActive) continue;
-
-    const isOverLimit = budget.usedPercent >= 100;
-    const isNearLimit =
-      !isOverLimit && budget.alertPercent > 0 && budget.usedPercent >= budget.alertPercent;
-
-    if (isOverLimit) {
-      rows.push({
-        user_id: userId, channel: "in_app", status: "pending",
-        kind: "budget_alert",
-        title: "Presupuesto excedido",
-        body: `"${budget.name}" superó su límite (${Math.round(budget.usedPercent)}% usado).`,
-        scheduled_for: nowIso,
-        related_entity_type: "budget", related_entity_id: budget.id,
-        payload: { usedPercent: budget.usedPercent, limitAmount: budget.limitAmount },
-      });
-    } else if (isNearLimit) {
-      rows.push({
-        user_id: userId, channel: "in_app", status: "pending",
-        kind: "budget_alert",
-        title: "Presupuesto cerca del límite",
-        body: `"${budget.name}" va al ${Math.round(budget.usedPercent)}% de su límite (alerta: ${Math.round(budget.alertPercent)}%).`,
-        scheduled_for: nowIso,
-        related_entity_type: "budget", related_entity_id: budget.id,
-        payload: { usedPercent: budget.usedPercent, limitAmount: budget.limitAmount },
-      });
-    }
-  }
+  pushAlerts(buildBudgetLimitAlerts(snapshot.budgets));
 
   // ── 2. Budget period ending soon ─────────────────────────────────────────
-  for (const budget of snapshot.budgets) {
-    if (!budget.isActive) continue;
-    const daysLeft = calendarDaysFromTodayLocal(budget.periodEnd);
-    if (daysLeft >= 0 && daysLeft <= 3 && budget.usedPercent > 50) {
-      rows.push({
-        user_id: userId, channel: "in_app", status: "pending",
-        kind: "budget_period_ending",
-        title: "Período de presupuesto cerrando",
-        body: `"${budget.name}" cierra ${daysLeft === 0 ? "hoy" : `en ${daysLeft} día${daysLeft !== 1 ? "s" : ""}`} y lleva ${Math.round(budget.usedPercent)}% ejecutado.`,
-        scheduled_for: nowIso,
-        related_entity_type: "budget", related_entity_id: budget.id,
-        payload: { daysLeft, usedPercent: budget.usedPercent },
-      });
-    }
-  }
+  pushAlerts(buildBudgetPeriodEndingAlerts(snapshot.budgets, calendarDaysFromTodayLocal));
 
   // ── 3. Subscription reminders ─────────────────────────────────────────────
-  for (const sub of snapshot.subscriptions) {
-    if (sub.status !== "active") continue;
-    const diffDays = calendarDaysFromTodayLocal(sub.nextDueDate);
-    const window = Math.max(1, sub.remindDaysBefore);
-    if (diffDays > window || diffDays < -1) continue;
-
-    const dueLabel =
-      diffDays < 0
-        ? `venció hace ${Math.abs(diffDays)} día${Math.abs(diffDays) !== 1 ? "s" : ""}`
-        : diffDays === 0 ? "vence hoy"
-        : `vence en ${diffDays} día${diffDays !== 1 ? "s" : ""}`;
-
-    rows.push({
-      user_id: userId, channel: "in_app", status: "pending",
-      kind: "subscription_reminder",
-      title: "Suscripción próxima a vencer",
-      body: `"${sub.name}" ${dueLabel}.`,
-      scheduled_for: nowIso,
-      related_entity_type: "subscription", related_entity_id: sub.id,
-      payload: { nextDueDate: sub.nextDueDate, diffDays },
-    });
-  }
+  pushAlerts(buildSubscriptionReminderAlerts(snapshot.subscriptions, calendarDaysFromTodayLocal));
 
   // ── 4. Subscription overdue ───────────────────────────────────────────────
-  for (const sub of snapshot.subscriptions) {
-    if (sub.status !== "active") continue;
-    const diffDays = calendarDaysFromTodayLocal(sub.nextDueDate);
-    if (diffDays < -1) {
-      rows.push({
-        user_id: userId, channel: "in_app", status: "pending",
-        kind: "subscription_overdue",
-        title: "Suscripción vencida sin registrar",
-        body: `"${sub.name}" venció hace ${Math.abs(diffDays)} días y aún no tiene movimiento registrado.`,
-        scheduled_for: nowIso,
-        related_entity_type: "subscription", related_entity_id: sub.id,
-        payload: { nextDueDate: sub.nextDueDate, diffDays },
-      });
-    }
-  }
+  pushAlerts(buildSubscriptionOverdueAlerts(snapshot.subscriptions, calendarDaysFromTodayLocal));
 
   // ── 5. Multiple subscriptions due this week ───────────────────────────────
   const subsDueThisWeek = snapshot.subscriptions.filter((s) => {

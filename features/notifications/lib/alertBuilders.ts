@@ -4,6 +4,7 @@
  * scheduled_for y aplica idempotencia + cleanup por vigencia.
  */
 import type {
+  BudgetOverview,
   CategoryPostedMovement,
   ObligationSummary,
   RecurringIncomeSummary,
@@ -193,4 +194,116 @@ export function buildDetectedSuggestionsPendingAlert(
     related_entity_id: workspaceId,
     payload: { pendingCount, oldestPendingAt },
   };
+}
+
+// ─── Builders legacy (migrados de useNotificationGenerator) ─────────────────
+// Comportamiento idéntico al hook original: mismos kinds, títulos, bodies,
+// entity ids, payloads y umbrales. `daysFromToday` se inyecta (el hook pasa
+// calendarDaysFromTodayLocal) para mantener los builders puros y testeables.
+
+export type DaysFromToday = (ymd: string) => number;
+
+export function buildBudgetLimitAlerts(budgets: BudgetOverview[]): AlertRow[] {
+  const rows: AlertRow[] = [];
+  for (const budget of budgets) {
+    if (!budget.isActive) continue;
+
+    const isOverLimit = budget.usedPercent >= 100;
+    const isNearLimit =
+      !isOverLimit && budget.alertPercent > 0 && budget.usedPercent >= budget.alertPercent;
+
+    if (isOverLimit) {
+      rows.push({
+        kind: "budget_alert",
+        title: "Presupuesto excedido",
+        body: `"${budget.name}" superó su límite (${Math.round(budget.usedPercent)}% usado).`,
+        related_entity_type: "budget",
+        related_entity_id: budget.id,
+        payload: { usedPercent: budget.usedPercent, limitAmount: budget.limitAmount },
+      });
+    } else if (isNearLimit) {
+      rows.push({
+        kind: "budget_alert",
+        title: "Presupuesto cerca del límite",
+        body: `"${budget.name}" va al ${Math.round(budget.usedPercent)}% de su límite (alerta: ${Math.round(budget.alertPercent)}%).`,
+        related_entity_type: "budget",
+        related_entity_id: budget.id,
+        payload: { usedPercent: budget.usedPercent, limitAmount: budget.limitAmount },
+      });
+    }
+  }
+  return rows;
+}
+
+export function buildBudgetPeriodEndingAlerts(
+  budgets: BudgetOverview[],
+  daysFromToday: DaysFromToday,
+): AlertRow[] {
+  const rows: AlertRow[] = [];
+  for (const budget of budgets) {
+    if (!budget.isActive) continue;
+    const daysLeft = daysFromToday(budget.periodEnd);
+    if (daysLeft >= 0 && daysLeft <= 3 && budget.usedPercent > 50) {
+      rows.push({
+        kind: "budget_period_ending",
+        title: "Período de presupuesto cerrando",
+        body: `"${budget.name}" cierra ${daysLeft === 0 ? "hoy" : `en ${daysLeft} día${daysLeft !== 1 ? "s" : ""}`} y lleva ${Math.round(budget.usedPercent)}% ejecutado.`,
+        related_entity_type: "budget",
+        related_entity_id: budget.id,
+        payload: { daysLeft, usedPercent: budget.usedPercent },
+      });
+    }
+  }
+  return rows;
+}
+
+export function buildSubscriptionReminderAlerts(
+  subscriptions: SubscriptionSummary[],
+  daysFromToday: DaysFromToday,
+): AlertRow[] {
+  const rows: AlertRow[] = [];
+  for (const sub of subscriptions) {
+    if (sub.status !== "active") continue;
+    const diffDays = daysFromToday(sub.nextDueDate);
+    const window = Math.max(1, sub.remindDaysBefore);
+    if (diffDays > window || diffDays < -1) continue;
+
+    const dueLabel =
+      diffDays < 0
+        ? `venció hace ${Math.abs(diffDays)} día${Math.abs(diffDays) !== 1 ? "s" : ""}`
+        : diffDays === 0 ? "vence hoy"
+        : `vence en ${diffDays} día${diffDays !== 1 ? "s" : ""}`;
+
+    rows.push({
+      kind: "subscription_reminder",
+      title: "Suscripción próxima a vencer",
+      body: `"${sub.name}" ${dueLabel}.`,
+      related_entity_type: "subscription",
+      related_entity_id: sub.id,
+      payload: { nextDueDate: sub.nextDueDate, diffDays },
+    });
+  }
+  return rows;
+}
+
+export function buildSubscriptionOverdueAlerts(
+  subscriptions: SubscriptionSummary[],
+  daysFromToday: DaysFromToday,
+): AlertRow[] {
+  const rows: AlertRow[] = [];
+  for (const sub of subscriptions) {
+    if (sub.status !== "active") continue;
+    const diffDays = daysFromToday(sub.nextDueDate);
+    if (diffDays < -1) {
+      rows.push({
+        kind: "subscription_overdue",
+        title: "Suscripción vencida sin registrar",
+        body: `"${sub.name}" venció hace ${Math.abs(diffDays)} días y aún no tiene movimiento registrado.`,
+        related_entity_type: "subscription",
+        related_entity_id: sub.id,
+        payload: { nextDueDate: sub.nextDueDate, diffDays },
+      });
+    }
+  }
+  return rows;
 }
