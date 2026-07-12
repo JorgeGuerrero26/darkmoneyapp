@@ -1,12 +1,16 @@
 import {
+  buildAccountDormantAlerts,
   buildBudgetLimitAlerts,
   buildBudgetPeriodEndingAlerts,
   buildDetectedSuggestionsPendingAlert,
   buildDuplicateChargeAlerts,
   buildExpectedIncomeMissedAlerts,
+  buildHighInterestObligationAlerts,
+  buildLowBalanceAlerts,
   buildMonthlyRecapAlert,
   buildMultipleObligationsOverdueAlert,
   buildMultipleSubscriptionsDueAlert,
+  buildNegativeBalanceAlerts,
   buildObligationDueAlerts,
   buildObligationMilestoneAlerts,
   buildObligationNoPaymentAlerts,
@@ -334,5 +338,76 @@ describe("buildObligationNoPaymentAlerts", () => {
     expect(buildObligationNoPaymentAlerts([cuota({ installmentAmount: null, lastPaymentDate: null })], now)).toHaveLength(0);
     expect(buildObligationNoPaymentAlerts([cuota({ pendingAmount: 0, lastPaymentDate: null })], now)).toHaveLength(0);
     expect(buildObligationNoPaymentAlerts([cuota({ startDate: "2026-07-01", lastPaymentDate: null })], now)).toHaveLength(0);
+  });
+});
+
+const cuenta = (over = {}) =>
+  ({ id: 12, name: "BCP Soles", type: "bank", currencyCode: "PEN", openingBalance: 1000, currentBalance: 500, isArchived: false, includeInNetWorth: true, lastActivity: "2026-07-01T10:00:00Z", workspaceId: 1, ...over }) as any;
+
+describe("buildHighInterestObligationAlerts", () => {
+  it("alerta con tasa >=10% y saldo pendiente", () => {
+    const rows = buildHighInterestObligationAlerts([ob({ interestRate: 45 })]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].kind).toBe("high_interest_obligation");
+    expect(rows[0].body).toContain("45%");
+    expect(rows[0].payload.interestRate).toBe(45);
+  });
+  it("no alerta con tasa 9.9, sin tasa, saldo 0, o inactiva", () => {
+    expect(buildHighInterestObligationAlerts([ob({ interestRate: 9.9 })])).toHaveLength(0);
+    expect(buildHighInterestObligationAlerts([ob({ interestRate: null })])).toHaveLength(0);
+    expect(buildHighInterestObligationAlerts([ob({ interestRate: 20, pendingAmount: 0 })])).toHaveLength(0);
+    expect(buildHighInterestObligationAlerts([ob({ interestRate: 20, status: "settled" })])).toHaveLength(0);
+  });
+});
+
+describe("buildLowBalanceAlerts", () => {
+  it("alerta bajo el umbral (10% de apertura, minimo 50)", () => {
+    const rows = buildLowBalanceAlerts([cuenta({ currentBalance: 80 })]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].kind).toBe("low_balance");
+    expect(rows[0].payload.threshold).toBe(100); // 10% de 1000
+    expect(rows[0].body).toContain("80.00");
+  });
+  it("umbral minimo de 50 cuando la apertura es chica", () => {
+    expect(buildLowBalanceAlerts([cuenta({ openingBalance: 100, currentBalance: 30 })])).toHaveLength(1);
+    expect(buildLowBalanceAlerts([cuenta({ openingBalance: 100, currentBalance: 60 })])).toHaveLength(0);
+  });
+  it("no alerta sobre umbral, saldo <=0, apertura <=0, tipo credito, o archivada", () => {
+    expect(buildLowBalanceAlerts([cuenta({ currentBalance: 150 })])).toHaveLength(0);
+    expect(buildLowBalanceAlerts([cuenta({ currentBalance: 0 })])).toHaveLength(0);
+    expect(buildLowBalanceAlerts([cuenta({ currentBalance: -20 })])).toHaveLength(0);
+    expect(buildLowBalanceAlerts([cuenta({ openingBalance: 0, currentBalance: 10 })])).toHaveLength(0);
+    expect(buildLowBalanceAlerts([cuenta({ type: "credit_card", currentBalance: 10 })])).toHaveLength(0);
+    expect(buildLowBalanceAlerts([cuenta({ isArchived: true, currentBalance: 10 })])).toHaveLength(0);
+  });
+});
+
+describe("buildNegativeBalanceAlerts", () => {
+  it("alerta con saldo negativo en cuenta no-credito", () => {
+    const rows = buildNegativeBalanceAlerts([cuenta({ currentBalance: -120.5 })]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].kind).toBe("negative_balance");
+    expect(rows[0].body).toContain("-120.50");
+  });
+  it("no alerta con saldo >=0, tipo credito, o archivada", () => {
+    expect(buildNegativeBalanceAlerts([cuenta({ currentBalance: 0 })])).toHaveLength(0);
+    expect(buildNegativeBalanceAlerts([cuenta({ type: "credit_card", currentBalance: -50 })])).toHaveLength(0);
+    expect(buildNegativeBalanceAlerts([cuenta({ isArchived: true, currentBalance: -50 })])).toHaveLength(0);
+  });
+});
+
+describe("buildAccountDormantAlerts", () => {
+  const now = new Date("2026-07-10T12:00:00Z");
+  it("alerta con 60+ dias sin actividad y saldo distinto de 0 (aplica a cualquier tipo)", () => {
+    const rows = buildAccountDormantAlerts([cuenta({ lastActivity: "2026-05-01T12:00:00Z" })], now);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].kind).toBe("account_dormant");
+    expect(rows[0].payload.daysSince).toBe(70);
+  });
+  it("no alerta con 59 dias, saldo 0, sin lastActivity, o archivada", () => {
+    expect(buildAccountDormantAlerts([cuenta({ lastActivity: "2026-05-12T12:00:00Z" })], now)).toHaveLength(0);
+    expect(buildAccountDormantAlerts([cuenta({ currentBalance: 0, lastActivity: "2026-01-01T12:00:00Z" })], now)).toHaveLength(0);
+    expect(buildAccountDormantAlerts([cuenta({ lastActivity: "" })], now)).toHaveLength(0);
+    expect(buildAccountDormantAlerts([cuenta({ isArchived: true, lastActivity: "2026-01-01T12:00:00Z" })], now)).toHaveLength(0);
   });
 });

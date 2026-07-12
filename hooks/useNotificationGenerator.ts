@@ -58,14 +58,18 @@ import { getNotificationPriority } from "../lib/notification-priority";
 import { calendarDaysFromTodayLocal } from "../lib/subscription-helpers";
 import type { WorkspaceSnapshot } from "../services/queries/workspace-data";
 import {
+  buildAccountDormantAlerts,
   buildBudgetLimitAlerts,
   buildBudgetPeriodEndingAlerts,
   buildDetectedSuggestionsPendingAlert,
   buildDuplicateChargeAlerts,
   buildExpectedIncomeMissedAlerts,
+  buildHighInterestObligationAlerts,
+  buildLowBalanceAlerts,
   buildMonthlyRecapAlert,
   buildMultipleObligationsOverdueAlert,
   buildMultipleSubscriptionsDueAlert,
+  buildNegativeBalanceAlerts,
   buildObligationDueAlerts,
   buildObligationMilestoneAlerts,
   buildObligationNoPaymentAlerts,
@@ -119,10 +123,6 @@ function startOfPrevMonth(d: Date): Date {
 
 function endOfPrevMonth(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth() - 1, 0, 23, 59, 59, 999);
-}
-
-function daysBetween(a: Date, b: Date): number {
-  return Math.floor((b.getTime() - a.getTime()) / 86_400_000);
 }
 
 // ─── Stale cleanup ────────────────────────────────────────────────────────────
@@ -401,81 +401,16 @@ async function generateNotifications(
   pushAlerts(buildObligationNoPaymentAlerts(snapshot.obligations, now));
 
   // ── 9. High-interest obligation ───────────────────────────────────────────
-  for (const ob of snapshot.obligations) {
-    if (ob.status !== "active") continue;
-    if (!ob.interestRate || ob.interestRate < 10) continue;
-    if (ob.pendingAmount <= 0) continue;
-
-    rows.push({
-      user_id: userId, channel: "in_app", status: "pending",
-      kind: "high_interest_obligation",
-      title: "Obligación con tasa alta",
-      body: `"${ob.title}" tiene tasa del ${ob.interestRate}% con ${ob.pendingAmount} ${ob.currencyCode} pendiente. Considera priorizar este pago.`,
-      scheduled_for: nowIso,
-      related_entity_type: "obligation", related_entity_id: ob.id,
-      payload: { interestRate: ob.interestRate, pendingAmount: ob.pendingAmount },
-    });
-  }
+  pushAlerts(buildHighInterestObligationAlerts(snapshot.obligations));
 
   // ── 10. Low balance ───────────────────────────────────────────────────────
-  const nonLoanTypes = new Set(["bank", "cash", "savings", "investment", "other"]);
-  for (const acc of snapshot.accounts) {
-    if (acc.isArchived) continue;
-    if (!nonLoanTypes.has(acc.type)) continue;
-    if (acc.currentBalance <= 0) continue; // covered by negative_balance
-
-    // Threshold: 10% of opening balance, minimum 50 units of currency
-    const threshold = Math.max(50, Math.abs(acc.openingBalance) * 0.10);
-    if (acc.currentBalance < threshold && acc.openingBalance > 0) {
-      rows.push({
-        user_id: userId, channel: "in_app", status: "pending",
-        kind: "low_balance",
-        title: "Saldo bajo en cuenta",
-        body: `"${acc.name}" tiene solo ${acc.currentBalance.toFixed(2)} ${acc.currencyCode} disponibles.`,
-        scheduled_for: nowIso,
-        related_entity_type: "account", related_entity_id: acc.id,
-        payload: { currentBalance: acc.currentBalance, threshold },
-      });
-    }
-  }
+  pushAlerts(buildLowBalanceAlerts(snapshot.accounts));
 
   // ── 11. Negative balance ──────────────────────────────────────────────────
-  for (const acc of snapshot.accounts) {
-    if (acc.isArchived) continue;
-    if (!nonLoanTypes.has(acc.type)) continue;
-    if (acc.currentBalance >= 0) continue;
-
-    rows.push({
-      user_id: userId, channel: "in_app", status: "pending",
-      kind: "negative_balance",
-      title: "Saldo negativo en cuenta",
-      body: `"${acc.name}" tiene saldo negativo: ${acc.currentBalance.toFixed(2)} ${acc.currencyCode}.`,
-      scheduled_for: nowIso,
-      related_entity_type: "account", related_entity_id: acc.id,
-      payload: { currentBalance: acc.currentBalance },
-    });
-  }
+  pushAlerts(buildNegativeBalanceAlerts(snapshot.accounts));
 
   // ── 12. Account dormant ───────────────────────────────────────────────────
-  for (const acc of snapshot.accounts) {
-    if (acc.isArchived) continue;
-    if (acc.currentBalance === 0) continue;
-    if (!acc.lastActivity) continue;
-
-    const lastAct = new Date(acc.lastActivity);
-    const daysSince = daysBetween(lastAct, now);
-    if (daysSince >= 60) {
-      rows.push({
-        user_id: userId, channel: "in_app", status: "pending",
-        kind: "account_dormant",
-        title: "Cuenta sin actividad",
-        body: `"${acc.name}" lleva ${daysSince} días sin movimientos y tiene saldo de ${acc.currentBalance.toFixed(2)} ${acc.currencyCode}.`,
-        scheduled_for: nowIso,
-        related_entity_type: "account", related_entity_id: acc.id,
-        payload: { daysSince, currentBalance: acc.currentBalance },
-      });
-    }
-  }
+  pushAlerts(buildAccountDormantAlerts(snapshot.accounts, now));
 
   // ── 13. No income this month (after day 15) ───────────────────────────────
   if (now.getDate() >= 15 && thisMonthIncome === 0) {

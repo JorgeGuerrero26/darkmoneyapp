@@ -4,6 +4,7 @@
  * scheduled_for y aplica idempotencia + cleanup por vigencia.
  */
 import type {
+  AccountSummary,
   BudgetOverview,
   CategoryPostedMovement,
   ObligationSummary,
@@ -413,6 +414,93 @@ export function buildObligationNoPaymentAlerts(
         related_entity_type: "obligation",
         related_entity_id: ob.id,
         payload: { daysSincePayment, pendingAmount: ob.pendingAmount },
+      });
+    }
+  }
+  return rows;
+}
+
+// Cuentas que representan dinero propio (excluye préstamos/tarjetas).
+const NON_LOAN_ACCOUNT_TYPES = new Set(["bank", "cash", "savings", "investment", "other"]);
+
+export function buildHighInterestObligationAlerts(obligations: ObligationSummary[]): AlertRow[] {
+  const rows: AlertRow[] = [];
+  for (const ob of obligations) {
+    if (ob.status !== "active") continue;
+    if (!ob.interestRate || ob.interestRate < 10) continue;
+    if (ob.pendingAmount <= 0) continue;
+
+    rows.push({
+      kind: "high_interest_obligation",
+      title: "Obligación con tasa alta",
+      body: `"${ob.title}" tiene tasa del ${ob.interestRate}% con ${ob.pendingAmount} ${ob.currencyCode} pendiente. Considera priorizar este pago.`,
+      related_entity_type: "obligation",
+      related_entity_id: ob.id,
+      payload: { interestRate: ob.interestRate, pendingAmount: ob.pendingAmount },
+    });
+  }
+  return rows;
+}
+
+export function buildLowBalanceAlerts(accounts: AccountSummary[]): AlertRow[] {
+  const rows: AlertRow[] = [];
+  for (const acc of accounts) {
+    if (acc.isArchived) continue;
+    if (!NON_LOAN_ACCOUNT_TYPES.has(acc.type)) continue;
+    if (acc.currentBalance <= 0) continue; // covered by negative_balance
+
+    // Threshold: 10% of opening balance, minimum 50 units of currency
+    const threshold = Math.max(50, Math.abs(acc.openingBalance) * 0.10);
+    if (acc.currentBalance < threshold && acc.openingBalance > 0) {
+      rows.push({
+        kind: "low_balance",
+        title: "Saldo bajo en cuenta",
+        body: `"${acc.name}" tiene solo ${acc.currentBalance.toFixed(2)} ${acc.currencyCode} disponibles.`,
+        related_entity_type: "account",
+        related_entity_id: acc.id,
+        payload: { currentBalance: acc.currentBalance, threshold },
+      });
+    }
+  }
+  return rows;
+}
+
+export function buildNegativeBalanceAlerts(accounts: AccountSummary[]): AlertRow[] {
+  const rows: AlertRow[] = [];
+  for (const acc of accounts) {
+    if (acc.isArchived) continue;
+    if (!NON_LOAN_ACCOUNT_TYPES.has(acc.type)) continue;
+    if (acc.currentBalance >= 0) continue;
+
+    rows.push({
+      kind: "negative_balance",
+      title: "Saldo negativo en cuenta",
+      body: `"${acc.name}" tiene saldo negativo: ${acc.currentBalance.toFixed(2)} ${acc.currencyCode}.`,
+      related_entity_type: "account",
+      related_entity_id: acc.id,
+      payload: { currentBalance: acc.currentBalance },
+    });
+  }
+  return rows;
+}
+
+export function buildAccountDormantAlerts(accounts: AccountSummary[], now: Date): AlertRow[] {
+  const rows: AlertRow[] = [];
+  for (const acc of accounts) {
+    if (acc.isArchived) continue;
+    if (acc.currentBalance === 0) continue;
+    if (!acc.lastActivity) continue;
+
+    const lastAct = new Date(acc.lastActivity);
+    const daysSince = daysBetween(lastAct, now);
+    if (daysSince >= 60) {
+      rows.push({
+        kind: "account_dormant",
+        title: "Cuenta sin actividad",
+        body: `"${acc.name}" lleva ${daysSince} días sin movimientos y tiene saldo de ${acc.currentBalance.toFixed(2)} ${acc.currencyCode}.`,
+        related_entity_type: "account",
+        related_entity_id: acc.id,
+        payload: { daysSince, currentBalance: acc.currentBalance },
       });
     }
   }
