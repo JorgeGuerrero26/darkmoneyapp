@@ -3,6 +3,7 @@ import {
   buildBudgetLimitAlerts,
   buildBudgetPeriodEndingAlerts,
   buildCategorySpendingSpikeAlerts,
+  buildDailyBaselineAlerts,
   buildDetectedSuggestionsPendingAlert,
   buildDuplicateChargeAlerts,
   buildExpectedIncomeMissedAlerts,
@@ -629,5 +630,54 @@ describe("buildNoMovementsWeekAlert", () => {
   it("null si hay movimientos recientes o si tampoco hubo actividad previa", () => {
     expect(buildNoMovementsWeekAlert([mv(1, "2026-07-08T10:00:00Z", 10, 50)], 7, now)).toBeNull();
     expect(buildNoMovementsWeekAlert([], 7, now)).toBeNull();
+  });
+});
+
+describe("buildDailyBaselineAlerts", () => {
+  const base = {
+    budgets: [budget()],
+    subscriptions: [sub()],
+    obligations: [ob()],
+    accounts: [cuenta()],
+    movementCount: 12,
+    todayKey: "2026-07-10",
+    workspaceId: 7,
+    thisMonthIncome: 2000,
+    thisMonthExpenses: 500,
+  };
+  it("completa hasta 3 informativas cuando no hay ninguna", () => {
+    const rows = buildDailyBaselineAlerts({ ...base, existingKinds: [] });
+    expect(rows.map((r) => r.kind)).toEqual([
+      "daily_workspace_summary",
+      "daily_cashflow_check",
+      "daily_budget_review",
+    ]);
+    expect(rows[0].related_entity_id).toBe(202607101); // Number("20260710")*10 + 1
+    expect(rows[1].related_entity_id).toBe(202607102);
+    expect(rows[1].body).toContain("25%"); // 500/2000
+  });
+  it("agrega solo las que faltan; important y critical no cuentan", () => {
+    // low_balance = important, negative_balance = critical: no cuentan como informativas
+    const rows = buildDailyBaselineAlerts({
+      ...base,
+      existingKinds: ["monthly_recap", "account_dormant", "low_balance", "negative_balance"],
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].kind).toBe("daily_workspace_summary");
+  });
+  it("no agrega nada con 3 informativas", () => {
+    expect(
+      buildDailyBaselineAlerts({ ...base, existingKinds: ["monthly_recap", "account_dormant", "no_movements_week"] }),
+    ).toHaveLength(0);
+  });
+  it("cuerpos alternos sin ingresos y sin presupuestos activos", () => {
+    const rows = buildDailyBaselineAlerts({
+      ...base,
+      thisMonthIncome: 0,
+      budgets: [budget({ isActive: false })],
+      existingKinds: [],
+    });
+    expect(rows[1].body).toContain("Todavía no hay ingresos");
+    expect(rows[2].body).toContain("Aún no tienes presupuestos");
   });
 });

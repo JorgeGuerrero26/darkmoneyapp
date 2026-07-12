@@ -12,6 +12,7 @@ import type {
   SubscriptionPostedMovement,
   SubscriptionSummary,
 } from "../../../types/domain";
+import { getNotificationPriority } from "../../../lib/notification-priority";
 
 export type AlertRow = {
   kind: string;
@@ -790,4 +791,92 @@ export function buildNoMovementsWeekAlert(
     related_entity_id: workspaceId,
     payload: { daysSinceLastMovement: 7 },
   };
+}
+
+// ─── Baseline diario: completa hasta 3 informativas por día ─────────────────
+
+const DAILY_INFORMATIONAL_MINIMUM = 3;
+
+const dailyBaselineEntityId = (dayKey: string, index: number): number =>
+  Number(dayKey.replace(/-/g, "")) * 10 + index + 1;
+
+const countLabel = (count: number, singular: string, plural: string): string =>
+  `${count} ${count === 1 ? singular : plural}`;
+
+export function buildDailyBaselineAlerts(input: {
+  existingKinds: string[];
+  budgets: BudgetOverview[];
+  subscriptions: SubscriptionSummary[];
+  obligations: ObligationSummary[];
+  accounts: AccountSummary[];
+  movementCount: number;
+  todayKey: string;
+  workspaceId: number;
+  thisMonthIncome: number;
+  thisMonthExpenses: number;
+}): AlertRow[] {
+  const informationalCount = input.existingKinds.filter(
+    (kind) => getNotificationPriority(kind) === "informational",
+  ).length;
+  const missingCount = DAILY_INFORMATIONAL_MINIMUM - informationalCount;
+  if (missingCount <= 0) return [];
+
+  const activeBudgetCount = input.budgets.filter((budget) => budget.isActive).length;
+  const activeSubscriptionCount = input.subscriptions.filter((sub) => sub.status === "active").length;
+  const activeObligationCount = input.obligations.filter((obligation) => obligation.status === "active").length;
+  const openAccountCount = input.accounts.filter((account) => !account.isArchived).length;
+  const expenseIncomeRatio = input.thisMonthIncome > 0
+    ? Math.round((input.thisMonthExpenses / input.thisMonthIncome) * 100)
+    : null;
+
+  const baselineRows: AlertRow[] = [
+    {
+      kind: "daily_workspace_summary",
+      title: "Resumen financiero del día",
+      body: `Tu workspace tiene ${countLabel(openAccountCount, "cuenta activa", "cuentas activas")}, ${countLabel(activeBudgetCount, "presupuesto", "presupuestos")} y ${countLabel(input.movementCount, "movimiento registrado", "movimientos registrados")}.`,
+      related_entity_type: "daily_digest",
+      related_entity_id: dailyBaselineEntityId(input.todayKey, 0),
+      payload: {
+        workspaceId: input.workspaceId,
+        todayKey: input.todayKey,
+        accountCount: openAccountCount,
+        budgetCount: activeBudgetCount,
+        movementCount: input.movementCount,
+      },
+    },
+    {
+      kind: "daily_cashflow_check",
+      title: "Chequeo de flujo",
+      body: expenseIncomeRatio === null
+        ? "Todavía no hay ingresos suficientes este mes para calcular tu margen. Mantén tus movimientos al día."
+        : `Este mes tus gastos representan el ${expenseIncomeRatio}% de tus ingresos registrados.`,
+      related_entity_type: "daily_digest",
+      related_entity_id: dailyBaselineEntityId(input.todayKey, 1),
+      payload: {
+        workspaceId: input.workspaceId,
+        todayKey: input.todayKey,
+        income: input.thisMonthIncome,
+        expenses: input.thisMonthExpenses,
+        expenseIncomeRatio,
+      },
+    },
+    {
+      kind: "daily_budget_review",
+      title: "Revisión diaria",
+      body: activeBudgetCount > 0
+        ? `Tienes ${countLabel(activeBudgetCount, "presupuesto", "presupuestos")}, ${countLabel(activeSubscriptionCount, "suscripción", "suscripciones")} y ${countLabel(activeObligationCount, "obligación activa", "obligaciones activas")} para revisar.`
+        : "Aún no tienes presupuestos activos. Crea uno para recibir alertas más precisas sobre tus gastos.",
+      related_entity_type: "daily_digest",
+      related_entity_id: dailyBaselineEntityId(input.todayKey, 2),
+      payload: {
+        workspaceId: input.workspaceId,
+        todayKey: input.todayKey,
+        budgetCount: activeBudgetCount,
+        subscriptionCount: activeSubscriptionCount,
+        obligationCount: activeObligationCount,
+      },
+    },
+  ];
+
+  return baselineRows.slice(0, missingCount);
 }

@@ -6,55 +6,16 @@
  * y el usuario tiene sesión activa. Es idempotente: consulta existentes y usa
  * el índice único de notifications para evitar duplicados.
  *
- * Tipos de alerta generados:
- *
- *  DIARIAS
- *  - daily_workspace_summary : resumen mínimo diario del workspace
- *  - daily_cashflow_check    : chequeo mínimo diario de flujo
- *  - daily_budget_review     : revisión mínima diaria de presupuestos
- *
- *  PRESUPUESTOS
- *  - budget_alert           : presupuesto >= alertPercent% o sobre el límite
- *  - budget_period_ending   : período cierra en ≤ 3 días con gasto > 50%
- *
- *  SUSCRIPCIONES
- *  - subscription_reminder  : suscripción activa dentro de ventana de aviso
- *  - subscription_overdue   : suscripción vencida (nextDueDate < hoy)
- *  - multiple_subscriptions_due : 3+ suscripciones vencen en ≤ 7 días
- *
- *  OBLIGACIONES
- *  - obligation_due         : obligación activa vence en ≤ 7 días
- *  - obligation_overdue     : obligación vencida
- *  - obligation_no_payment  : obligación activa con cuotas y sin pago en 45+ días
- *  - multiple_obligations_overdue : 2+ obligaciones vencidas simultáneamente
- *  - high_interest_obligation : obligación activa con tasa ≥ 10% y saldo > 0
- *
- *  CUENTAS
- *  - low_balance            : saldo bajo umbral mínimo en cuenta bank/cash/savings
- *  - negative_balance       : saldo negativo en cuenta que no es préstamo/tarjeta
- *  - account_dormant        : cuenta sin actividad en 60+ días con saldo > 0
- *
- *  GASTOS E INGRESOS
- *  - no_income_month        : sin ingresos registrados este mes (después del día 15)
- *  - high_expense_month     : gastos del mes > mes anterior en 30%+
- *  - category_spending_spike: una categoría subió 50%+ vs mes anterior
- *  - expense_income_imbalance: gastos > 85% de los ingresos este mes
- *
- *  PATRIMONIO
- *  - net_worth_negative     : patrimonio neto total negativo
- *
- *  ANÁLISIS AVANZADO
- *  - savings_rate_low           : tasa de ahorro < 10% tras el día 20
- *  - subscription_cost_heavy    : costo mensual de suscripciones > 30% del ingreso
- *  - upcoming_annual_subscription : suscripción anual vence en 14-30 días
- *  - no_movements_week          : sin movimientos 7 días consecutivos (con actividad previa)
+ * Las reglas de detección viven como builders puros (testeados) en
+ * `features/notifications/lib/alertBuilders.ts`; este hook solo orquesta:
+ * fingerprint del snapshot, ejecución diferida, idempotencia (existingSet +
+ * upsert ignoreDuplicates) y cleanup por vigencia (ALL_KINDS).
  */
 
 import { useEffect, useRef, useState } from "react";
 import { InteractionManager } from "react-native";
 import { supabase } from "../lib/supabase";
 import { queryClient } from "../lib/query-client";
-import { getNotificationPriority } from "../lib/notification-priority";
 import { calendarDaysFromTodayLocal } from "../lib/subscription-helpers";
 import type { WorkspaceSnapshot } from "../services/queries/workspace-data";
 import {
@@ -62,6 +23,7 @@ import {
   buildBudgetLimitAlerts,
   buildBudgetPeriodEndingAlerts,
   buildCategorySpendingSpikeAlerts,
+  buildDailyBaselineAlerts,
   buildDetectedSuggestionsPendingAlert,
   buildDuplicateChargeAlerts,
   buildExpectedIncomeMissedAlerts,
@@ -154,8 +116,6 @@ const ALL_KINDS = [
   "obligation_milestone",
 ];
 
-const DAILY_INFORMATIONAL_MINIMUM = 3;
-
 async function cleanupStaleNotifications(
   userId: string,
   activeRows: NotificationRow[],
@@ -183,105 +143,8 @@ async function cleanupStaleNotifications(
 
 // ─── Generator ────────────────────────────────────────────────────────────────
 
-function dailyBaselineEntityId(dayKey: string, index: number): number {
-  return Number(dayKey.replace(/-/g, "")) * 10 + index + 1;
-}
-
-function countLabel(count: number, singular: string, plural: string): string {
-  return `${count} ${count === 1 ? singular : plural}`;
-}
-
 function toNotificationRow(userId: string, nowIso: string, alert: AlertRow): NotificationRow {
   return { user_id: userId, channel: "in_app", status: "pending", scheduled_for: nowIso, ...alert };
-}
-
-function appendDailyBaselineNotifications(input: {
-  rows: NotificationRow[];
-  userId: string;
-  snapshot: WorkspaceSnapshot;
-  nowIso: string;
-  todayKey: string;
-  workspaceId: number;
-  thisMonthIncome: number;
-  thisMonthExpenses: number;
-}) {
-  const informationalCount = input.rows.filter(
-    (row) => getNotificationPriority(row.kind) === "informational",
-  ).length;
-  const missingCount = DAILY_INFORMATIONAL_MINIMUM - informationalCount;
-  if (missingCount <= 0) return;
-
-  const activeBudgetCount = input.snapshot.budgets.filter((budget) => budget.isActive).length;
-  const activeSubscriptionCount = input.snapshot.subscriptions.filter((sub) => sub.status === "active").length;
-  const activeObligationCount = input.snapshot.obligations.filter((obligation) => obligation.status === "active").length;
-  const openAccountCount = input.snapshot.accounts.filter((account) => !account.isArchived).length;
-  const movementCount = input.snapshot.categoryPostedMovements.length;
-  const expenseIncomeRatio = input.thisMonthIncome > 0
-    ? Math.round((input.thisMonthExpenses / input.thisMonthIncome) * 100)
-    : null;
-
-  const baselineRows: NotificationRow[] = [
-    {
-      user_id: input.userId,
-      channel: "in_app",
-      status: "pending",
-      kind: "daily_workspace_summary",
-      title: "Resumen financiero del día",
-      body: `Tu workspace tiene ${countLabel(openAccountCount, "cuenta activa", "cuentas activas")}, ${countLabel(activeBudgetCount, "presupuesto", "presupuestos")} y ${countLabel(movementCount, "movimiento registrado", "movimientos registrados")}.`,
-      scheduled_for: input.nowIso,
-      related_entity_type: "daily_digest",
-      related_entity_id: dailyBaselineEntityId(input.todayKey, 0),
-      payload: {
-        workspaceId: input.workspaceId,
-        todayKey: input.todayKey,
-        accountCount: openAccountCount,
-        budgetCount: activeBudgetCount,
-        movementCount,
-      },
-    },
-    {
-      user_id: input.userId,
-      channel: "in_app",
-      status: "pending",
-      kind: "daily_cashflow_check",
-      title: "Chequeo de flujo",
-      body: expenseIncomeRatio === null
-        ? "Todavía no hay ingresos suficientes este mes para calcular tu margen. Mantén tus movimientos al día."
-        : `Este mes tus gastos representan el ${expenseIncomeRatio}% de tus ingresos registrados.`,
-      scheduled_for: input.nowIso,
-      related_entity_type: "daily_digest",
-      related_entity_id: dailyBaselineEntityId(input.todayKey, 1),
-      payload: {
-        workspaceId: input.workspaceId,
-        todayKey: input.todayKey,
-        income: input.thisMonthIncome,
-        expenses: input.thisMonthExpenses,
-        expenseIncomeRatio,
-      },
-    },
-    {
-      user_id: input.userId,
-      channel: "in_app",
-      status: "pending",
-      kind: "daily_budget_review",
-      title: "Revisión diaria",
-      body: activeBudgetCount > 0
-        ? `Tienes ${countLabel(activeBudgetCount, "presupuesto", "presupuestos")}, ${countLabel(activeSubscriptionCount, "suscripción", "suscripciones")} y ${countLabel(activeObligationCount, "obligación activa", "obligaciones activas")} para revisar.`
-        : "Aún no tienes presupuestos activos. Crea uno para recibir alertas más precisas sobre tus gastos.",
-      scheduled_for: input.nowIso,
-      related_entity_type: "daily_digest",
-      related_entity_id: dailyBaselineEntityId(input.todayKey, 2),
-      payload: {
-        workspaceId: input.workspaceId,
-        todayKey: input.todayKey,
-        budgetCount: activeBudgetCount,
-        subscriptionCount: activeSubscriptionCount,
-        obligationCount: activeObligationCount,
-      },
-    },
-  ];
-
-  input.rows.push(...baselineRows.slice(0, missingCount));
 }
 
 async function generateNotifications(
@@ -424,16 +287,20 @@ async function generateNotifications(
 
   rows.push(...nuevos.map((alert) => toNotificationRow(userId, nowIso, alert)));
 
-  appendDailyBaselineNotifications({
-    rows,
-    userId,
-    snapshot,
-    nowIso,
-    todayKey,
-    workspaceId,
-    thisMonthIncome,
-    thisMonthExpenses,
-  });
+  pushAlerts(
+    buildDailyBaselineAlerts({
+      existingKinds: rows.map((row) => row.kind),
+      budgets: snapshot.budgets,
+      subscriptions: snapshot.subscriptions,
+      obligations: snapshot.obligations,
+      accounts: snapshot.accounts,
+      movementCount: snapshot.categoryPostedMovements.length,
+      todayKey,
+      workspaceId,
+      thisMonthIncome,
+      thisMonthExpenses,
+    }),
+  );
 
   // ── Insert only new notifications (idempotent without DB constraint) ──────
   if (!rows.length) {
