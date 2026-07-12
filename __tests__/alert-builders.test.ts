@@ -5,18 +5,21 @@ import {
   buildDetectedSuggestionsPendingAlert,
   buildDuplicateChargeAlerts,
   buildExpectedIncomeMissedAlerts,
+  buildHighExpenseMonthAlert,
   buildHighInterestObligationAlerts,
   buildLowBalanceAlerts,
   buildMonthlyRecapAlert,
   buildMultipleObligationsOverdueAlert,
   buildMultipleSubscriptionsDueAlert,
   buildNegativeBalanceAlerts,
+  buildNoIncomeMonthAlert,
   buildObligationDueAlerts,
   buildObligationMilestoneAlerts,
   buildObligationNoPaymentAlerts,
   buildSubscriptionOverdueAlerts,
   buildSubscriptionPriceIncreaseAlerts,
   buildSubscriptionReminderAlerts,
+  computeMonthlyMovementAggregates,
 } from "../features/notifications/lib/alertBuilders";
 
 const sub = (over = {}) => ({ id: 5, name: "Netflix", currencyCode: "PEN", status: "active", ...over }) as any;
@@ -409,5 +412,72 @@ describe("buildAccountDormantAlerts", () => {
     expect(buildAccountDormantAlerts([cuenta({ currentBalance: 0, lastActivity: "2026-01-01T12:00:00Z" })], now)).toHaveLength(0);
     expect(buildAccountDormantAlerts([cuenta({ lastActivity: "" })], now)).toHaveLength(0);
     expect(buildAccountDormantAlerts([cuenta({ isArchived: true, lastActivity: "2026-01-01T12:00:00Z" })], now)).toHaveLength(0);
+  });
+});
+
+const mvIn = (id: number, occurredAt: string, categoryId: number, destinationAmount: number) =>
+  ({ id, categoryId, occurredAt, sourceAmount: null, destinationAmount }) as any;
+
+describe("computeMonthlyMovementAggregates", () => {
+  const now = new Date("2026-07-10T12:00:00Z");
+  const kinds = new Map([[10, "expense"], [11, "expense"], [20, "income"], [30, "transfer"]]);
+  const nombres = new Map([[10, "Comida"], [11, "Transporte"], [20, "Sueldo"]]);
+  it("separa este mes, mes pasado y mes anterior, ignorando transferencias", () => {
+    const agg = computeMonthlyMovementAggregates(
+      [
+        mv(1, "2026-07-02T10:00:00Z", 10, 100),
+        mvIn(2, "2026-07-05T10:00:00Z", 20, 3000),
+        mv(3, "2026-06-15T10:00:00Z", 10, 400),
+        mv(4, "2026-06-20T10:00:00Z", 11, 150),
+        mvIn(5, "2026-06-28T10:00:00Z", 20, 2800),
+        mv(6, "2026-05-10T10:00:00Z", 10, 900),
+        mv(7, "2026-07-03T10:00:00Z", 30, 999), // transfer: fuera
+        mv(8, "2026-07-04T10:00:00Z", 99, 777), // categoria desconocida: fuera
+      ],
+      kinds, nombres, now,
+    );
+    expect(agg.thisMonthExpenses).toBe(100);
+    expect(agg.thisMonthIncome).toBe(3000);
+    expect(agg.lastMonthExpenses).toBe(550);
+    expect(agg.lastMonthIncome).toBe(2800);
+    expect(agg.prevMonthExpenses).toBe(900);
+    expect(agg.thisMonthByCategory.get(10)).toBe(100);
+    expect(agg.lastMonthByCategory.get(11)).toBe(150);
+    expect(agg.lastMonthTopCategoryName).toBe("Comida"); // 400 > 150
+  });
+  it("sin movimientos devuelve todo en cero y sin top category", () => {
+    const agg = computeMonthlyMovementAggregates([], kinds, nombres, now);
+    expect(agg.thisMonthExpenses).toBe(0);
+    expect(agg.lastMonthIncome).toBe(0);
+    expect(agg.lastMonthTopCategoryName).toBeNull();
+  });
+});
+
+describe("buildNoIncomeMonthAlert", () => {
+  it("alerta desde el dia 15 sin ingresos en el mes", () => {
+    const row = buildNoIncomeMonthAlert(0, 7, new Date("2026-07-15T12:00:00Z"));
+    expect(row).not.toBeNull();
+    expect(row!.kind).toBe("no_income_month");
+    expect(row!.related_entity_id).toBe(7);
+    expect(row!.payload.dayOfMonth).toBe(15);
+  });
+  it("null antes del dia 15 o si hay ingresos", () => {
+    expect(buildNoIncomeMonthAlert(0, 7, new Date("2026-07-14T12:00:00Z"))).toBeNull();
+    expect(buildNoIncomeMonthAlert(100, 7, new Date("2026-07-20T12:00:00Z"))).toBeNull();
+  });
+});
+
+describe("buildHighExpenseMonthAlert", () => {
+  const now = new Date("2026-07-10T12:00:00Z");
+  it("alerta cuando el gasto supera al mes pasado en mas de 30% (desde el dia 7)", () => {
+    const row = buildHighExpenseMonthAlert({ thisMonthExpenses: 1400, lastMonthExpenses: 1000 }, 7, now);
+    expect(row).not.toBeNull();
+    expect(row!.kind).toBe("high_expense_month");
+    expect(row!.body).toContain("40%");
+  });
+  it("null con subida de exactamente 30%, antes del dia 7, o sin base del mes pasado", () => {
+    expect(buildHighExpenseMonthAlert({ thisMonthExpenses: 1300, lastMonthExpenses: 1000 }, 7, now)).toBeNull();
+    expect(buildHighExpenseMonthAlert({ thisMonthExpenses: 2000, lastMonthExpenses: 1000 }, 7, new Date("2026-07-06T12:00:00Z"))).toBeNull();
+    expect(buildHighExpenseMonthAlert({ thisMonthExpenses: 2000, lastMonthExpenses: 0 }, 7, now)).toBeNull();
   });
 });

@@ -506,3 +506,127 @@ export function buildAccountDormantAlerts(accounts: AccountSummary[], now: Date)
   }
   return rows;
 }
+
+// ─── Agregados mensuales (una pasada sobre los movimientos del snapshot) ────
+
+const startOfMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1);
+const startOfLastMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth() - 1, 1);
+const endOfLastMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 0, 23, 59, 59, 999);
+const startOfPrevMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth() - 2, 1);
+const endOfPrevMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth() - 1, 0, 23, 59, 59, 999);
+
+export type MonthlyMovementAggregates = {
+  thisMonthExpenses: number;
+  thisMonthIncome: number;
+  lastMonthExpenses: number;
+  lastMonthIncome: number;
+  prevMonthExpenses: number;
+  thisMonthByCategory: Map<number, number>;
+  lastMonthByCategory: Map<number, number>;
+  lastMonthTopCategoryName: string | null;
+};
+
+export function computeMonthlyMovementAggregates(
+  movements: CategoryPostedMovement[],
+  categoryKinds: Map<number, string>,
+  categoryNames: Map<number, string>,
+  now: Date,
+): MonthlyMovementAggregates {
+  const thisMonthStart = startOfMonth(now);
+  const lastMonthStart = startOfLastMonth(now);
+  const lastMonthEnd = endOfLastMonth(now);
+  const prevMonthStart = startOfPrevMonth(now);
+  const prevMonthEnd = endOfPrevMonth(now);
+
+  let thisMonthExpenses = 0;
+  let thisMonthIncome = 0;
+  let lastMonthExpenses = 0;
+  let lastMonthIncome = 0;
+  let prevMonthExpenses = 0;
+
+  const thisMonthByCategory = new Map<number, number>();
+  const lastMonthByCategory = new Map<number, number>();
+
+  for (const m of movements) {
+    const d = new Date(m.occurredAt);
+    const kind = categoryKinds.get(m.categoryId);
+    if (!kind || kind === "transfer") continue;
+
+    if (d >= thisMonthStart) {
+      if (kind === "expense") {
+        const amt = m.sourceAmount ?? 0;
+        thisMonthExpenses += amt;
+        thisMonthByCategory.set(m.categoryId, (thisMonthByCategory.get(m.categoryId) ?? 0) + amt);
+      } else if (kind === "income") {
+        thisMonthIncome += m.destinationAmount ?? 0;
+      }
+    } else if (d >= lastMonthStart && d <= lastMonthEnd) {
+      if (kind === "expense") {
+        const amt = m.sourceAmount ?? 0;
+        lastMonthExpenses += amt;
+        lastMonthByCategory.set(m.categoryId, (lastMonthByCategory.get(m.categoryId) ?? 0) + amt);
+      } else if (kind === "income") {
+        lastMonthIncome += m.destinationAmount ?? 0;
+      }
+    } else if (d >= prevMonthStart && d <= prevMonthEnd) {
+      if (kind === "expense") {
+        prevMonthExpenses += m.sourceAmount ?? 0;
+      }
+    }
+  }
+
+  let lastMonthTopCategoryName: string | null = null;
+  let lastMonthTopAmount = 0;
+  for (const [catId, amt] of lastMonthByCategory) {
+    if (amt > lastMonthTopAmount) {
+      lastMonthTopAmount = amt;
+      lastMonthTopCategoryName = categoryNames.get(catId) ?? null;
+    }
+  }
+
+  return {
+    thisMonthExpenses,
+    thisMonthIncome,
+    lastMonthExpenses,
+    lastMonthIncome,
+    prevMonthExpenses,
+    thisMonthByCategory,
+    lastMonthByCategory,
+    lastMonthTopCategoryName,
+  };
+}
+
+export function buildNoIncomeMonthAlert(
+  thisMonthIncome: number,
+  workspaceId: number,
+  now: Date,
+): AlertRow | null {
+  if (now.getDate() < 15 || thisMonthIncome !== 0) return null;
+  return {
+    kind: "no_income_month",
+    title: "Sin ingresos registrados este mes",
+    body: "No se ha registrado ningún ingreso en lo que va del mes. Recuerda mantener tus movimientos actualizados.",
+    related_entity_type: "workspace",
+    related_entity_id: workspaceId,
+    payload: { dayOfMonth: now.getDate() },
+  };
+}
+
+export function buildHighExpenseMonthAlert(
+  input: { thisMonthExpenses: number; lastMonthExpenses: number },
+  workspaceId: number,
+  now: Date,
+): AlertRow | null {
+  if (input.lastMonthExpenses <= 0 || input.thisMonthExpenses <= 0) return null;
+  const ratio = input.thisMonthExpenses / input.lastMonthExpenses;
+  if (ratio <= 1.3 || now.getDate() < 7) return null;
+  const pct = Math.round((ratio - 1) * 100);
+  return {
+    kind: "high_expense_month",
+    title: "Gastos elevados este mes",
+    body: `Tus gastos este mes ya superan los del mes pasado en un ${pct}%.`,
+    related_entity_type: "workspace",
+    related_entity_id: workspaceId,
+    payload: { thisMonth: input.thisMonthExpenses, lastMonth: input.lastMonthExpenses, ratio },
+  };
+}

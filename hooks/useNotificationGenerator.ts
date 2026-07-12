@@ -64,18 +64,21 @@ import {
   buildDetectedSuggestionsPendingAlert,
   buildDuplicateChargeAlerts,
   buildExpectedIncomeMissedAlerts,
+  buildHighExpenseMonthAlert,
   buildHighInterestObligationAlerts,
   buildLowBalanceAlerts,
   buildMonthlyRecapAlert,
   buildMultipleObligationsOverdueAlert,
   buildMultipleSubscriptionsDueAlert,
   buildNegativeBalanceAlerts,
+  buildNoIncomeMonthAlert,
   buildObligationDueAlerts,
   buildObligationMilestoneAlerts,
   buildObligationNoPaymentAlerts,
   buildSubscriptionOverdueAlerts,
   buildSubscriptionPriceIncreaseAlerts,
   buildSubscriptionReminderAlerts,
+  computeMonthlyMovementAggregates,
   type AlertRow,
 } from "../features/notifications/lib/alertBuilders";
 
@@ -103,26 +106,6 @@ function usageDateInLima(date = new Date()): string {
     month: "2-digit",
     day: "2-digit",
   }).format(date);
-}
-
-function startOfMonth(d: Date): Date {
-  return new Date(d.getFullYear(), d.getMonth(), 1);
-}
-
-function startOfLastMonth(d: Date): Date {
-  return new Date(d.getFullYear(), d.getMonth() - 1, 1);
-}
-
-function endOfLastMonth(d: Date): Date {
-  return new Date(d.getFullYear(), d.getMonth(), 0, 23, 59, 59, 999);
-}
-
-function startOfPrevMonth(d: Date): Date {
-  return new Date(d.getFullYear(), d.getMonth() - 2, 1);
-}
-
-function endOfPrevMonth(d: Date): Date {
-  return new Date(d.getFullYear(), d.getMonth() - 1, 0, 23, 59, 59, 999);
 }
 
 // ─── Stale cleanup ────────────────────────────────────────────────────────────
@@ -321,60 +304,22 @@ async function generateNotifications(
   const categoryNameMap = new Map<number, string>();
   for (const c of snapshot.categories) categoryNameMap.set(c.id, c.name);
 
-  // ── Monthly movement aggregates ──────────────────────────────────────────
-  const thisMonthStart = startOfMonth(now);
-  const lastMonthStart = startOfLastMonth(now);
-  const lastMonthEnd = endOfLastMonth(now);
-  const prevMonthStart = startOfPrevMonth(now);
-  const prevMonthEnd = endOfPrevMonth(now);
-
-  let thisMonthExpenses = 0;
-  let thisMonthIncome = 0;
-  let lastMonthExpenses = 0;
-  let lastMonthIncome = 0;
-  let prevMonthExpenses = 0;
-
-  // Per-category monthly totals (for spike detection)
-  const thisMonthByCat = new Map<number, number>();
-  const lastMonthByCat = new Map<number, number>();
-
-  for (const m of snapshot.categoryPostedMovements) {
-    const d = new Date(m.occurredAt);
-    const kind = categoryKindMap.get(m.categoryId);
-    if (!kind || kind === "transfer") continue;
-
-    if (d >= thisMonthStart) {
-      if (kind === "expense") {
-        const amt = m.sourceAmount ?? 0;
-        thisMonthExpenses += amt;
-        thisMonthByCat.set(m.categoryId, (thisMonthByCat.get(m.categoryId) ?? 0) + amt);
-      } else if (kind === "income") {
-        thisMonthIncome += m.destinationAmount ?? 0;
-      }
-    } else if (d >= lastMonthStart && d <= lastMonthEnd) {
-      if (kind === "expense") {
-        const amt = m.sourceAmount ?? 0;
-        lastMonthExpenses += amt;
-        lastMonthByCat.set(m.categoryId, (lastMonthByCat.get(m.categoryId) ?? 0) + amt);
-      } else if (kind === "income") {
-        lastMonthIncome += m.destinationAmount ?? 0;
-      }
-    } else if (d >= prevMonthStart && d <= prevMonthEnd) {
-      if (kind === "expense") {
-        prevMonthExpenses += m.sourceAmount ?? 0;
-      }
-    }
-  }
-
-  // Categoría con mayor gasto del mes cerrado (para el recap mensual)
-  let lastMonthTopCategory: string | null = null;
-  let lastMonthTopAmount = 0;
-  for (const [catId, amt] of lastMonthByCat) {
-    if (amt > lastMonthTopAmount) {
-      lastMonthTopAmount = amt;
-      lastMonthTopCategory = categoryNameMap.get(catId) ?? null;
-    }
-  }
+  // ── Monthly movement aggregates (builder puro) ───────────────────────────
+  const {
+    thisMonthExpenses,
+    thisMonthIncome,
+    lastMonthExpenses,
+    lastMonthIncome,
+    prevMonthExpenses,
+    thisMonthByCategory: thisMonthByCat,
+    lastMonthByCategory: lastMonthByCat,
+    lastMonthTopCategoryName: lastMonthTopCategory,
+  } = computeMonthlyMovementAggregates(
+    snapshot.categoryPostedMovements,
+    categoryKindMap,
+    categoryNameMap,
+    now,
+  );
 
   // ── 1. Budget alerts ──────────────────────────────────────────────────────
   pushAlerts(buildBudgetLimitAlerts(snapshot.budgets));
@@ -413,35 +358,10 @@ async function generateNotifications(
   pushAlerts(buildAccountDormantAlerts(snapshot.accounts, now));
 
   // ── 13. No income this month (after day 15) ───────────────────────────────
-  if (now.getDate() >= 15 && thisMonthIncome === 0) {
-    rows.push({
-      user_id: userId, channel: "in_app", status: "pending",
-      kind: "no_income_month",
-      title: "Sin ingresos registrados este mes",
-      body: "No se ha registrado ningún ingreso en lo que va del mes. Recuerda mantener tus movimientos actualizados.",
-      scheduled_for: nowIso,
-      related_entity_type: "workspace", related_entity_id: workspaceId,
-      payload: { dayOfMonth: now.getDate() },
-    });
-  }
+  pushAlerts(buildNoIncomeMonthAlert(thisMonthIncome, workspaceId, now));
 
   // ── 14. High expense month (30%+ vs last month) ───────────────────────────
-  if (lastMonthExpenses > 0 && thisMonthExpenses > 0) {
-    const ratio = thisMonthExpenses / lastMonthExpenses;
-    // Only alert if we're at least 7 days into the month (enough data)
-    if (ratio > 1.3 && now.getDate() >= 7) {
-      const pct = Math.round((ratio - 1) * 100);
-      rows.push({
-        user_id: userId, channel: "in_app", status: "pending",
-        kind: "high_expense_month",
-        title: "Gastos elevados este mes",
-        body: `Tus gastos este mes ya superan los del mes pasado en un ${pct}%.`,
-        scheduled_for: nowIso,
-        related_entity_type: "workspace", related_entity_id: workspaceId,
-        payload: { thisMonth: thisMonthExpenses, lastMonth: lastMonthExpenses, ratio },
-      });
-    }
-  }
+  pushAlerts(buildHighExpenseMonthAlert({ thisMonthExpenses, lastMonthExpenses }, workspaceId, now));
 
   // ── 15. Category spending spike (50%+ vs last month) ──────────────────────
   for (const [catId, thisAmt] of thisMonthByCat) {
