@@ -16,12 +16,16 @@ import {
   buildNegativeBalanceAlerts,
   buildNetWorthNegativeAlert,
   buildNoIncomeMonthAlert,
+  buildNoMovementsWeekAlert,
   buildObligationDueAlerts,
   buildObligationMilestoneAlerts,
   buildObligationNoPaymentAlerts,
+  buildSavingsRateLowAlert,
+  buildSubscriptionCostHeavyAlert,
   buildSubscriptionOverdueAlerts,
   buildSubscriptionPriceIncreaseAlerts,
   buildSubscriptionReminderAlerts,
+  buildUpcomingAnnualSubscriptionAlerts,
   computeMonthlyMovementAggregates,
 } from "../features/notifications/lib/alertBuilders";
 
@@ -549,5 +553,81 @@ describe("buildNetWorthNegativeAlert", () => {
         1,
       ),
     ).toBeNull();
+  });
+});
+
+describe("buildSavingsRateLowAlert", () => {
+  const now = new Date("2026-07-20T12:00:00Z");
+  it("alerta con tasa de ahorro bajo 10% desde el dia 20", () => {
+    const row = buildSavingsRateLowAlert({ thisMonthIncome: 1000, thisMonthExpenses: 950 }, 7, now);
+    expect(row).not.toBeNull();
+    expect(row!.kind).toBe("savings_rate_low");
+    expect(row!.body).toContain("5%");
+  });
+  it("null con tasa de exactamente 10%, tasa negativa, o antes del dia 20", () => {
+    expect(buildSavingsRateLowAlert({ thisMonthIncome: 1000, thisMonthExpenses: 900 }, 7, now)).toBeNull();
+    expect(buildSavingsRateLowAlert({ thisMonthIncome: 1000, thisMonthExpenses: 1100 }, 7, now)).toBeNull();
+    expect(buildSavingsRateLowAlert({ thisMonthIncome: 1000, thisMonthExpenses: 950 }, 7, new Date("2026-07-19T12:00:00Z"))).toBeNull();
+  });
+});
+
+describe("buildSubscriptionCostHeavyAlert", () => {
+  it("alerta cuando el costo mensualizado supera 30% del ingreso del mes pasado", () => {
+    const row = buildSubscriptionCostHeavyAlert([sub({ amount: 350, frequency: "monthly" })], 1000, 7);
+    expect(row).not.toBeNull();
+    expect(row!.kind).toBe("subscription_cost_heavy");
+    expect(row!.body).toContain("35%");
+    expect(row!.payload.subCount).toBe(1);
+  });
+  it("mensualiza anuales, trimestrales, semanales y diarias", () => {
+    const row = buildSubscriptionCostHeavyAlert(
+      [
+        sub({ id: 1, amount: 1200, frequency: "yearly" }),   // 100/mes
+        sub({ id: 2, amount: 300, frequency: "quarterly" }), // 100/mes
+        sub({ id: 3, amount: 23.1, frequency: "weekly" }),   // ~100/mes (x4.33)
+        sub({ id: 4, amount: 2, frequency: "daily" }),       // 60/mes (x30)
+      ],
+      1000, 7,
+    );
+    expect(row).not.toBeNull();
+    expect(row!.payload.monthlySubCost as number).toBeCloseTo(360, 0);
+  });
+  it("null con 30% exacto, sin subs activas, o sin ingreso del mes pasado", () => {
+    expect(buildSubscriptionCostHeavyAlert([sub({ amount: 300, frequency: "monthly" })], 1000, 7)).toBeNull();
+    expect(buildSubscriptionCostHeavyAlert([sub({ status: "paused", amount: 900, frequency: "monthly" })], 1000, 7)).toBeNull();
+    expect(buildSubscriptionCostHeavyAlert([sub({ amount: 900, frequency: "monthly" })], 0, 7)).toBeNull();
+  });
+});
+
+describe("buildUpcomingAnnualSubscriptionAlerts", () => {
+  const days = daysFromFixed("2026-07-10");
+  it("alerta para renovacion anual entre 14 y 30 dias", () => {
+    const rows = buildUpcomingAnnualSubscriptionAlerts(
+      [sub({ frequency: "yearly", nextDueDate: "2026-07-30", amount: 120 })], days,
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].kind).toBe("upcoming_annual_subscription");
+    expect(rows[0].payload.diffDays).toBe(20);
+    expect(rows[0].body).toContain("120"); // monto; la fecha localizada no se fija (depende del ICU)
+  });
+  it("no alerta a 13 o 31 dias, ni para frecuencia mensual", () => {
+    expect(buildUpcomingAnnualSubscriptionAlerts([sub({ frequency: "yearly", nextDueDate: "2026-07-23" })], days)).toHaveLength(0);
+    expect(buildUpcomingAnnualSubscriptionAlerts([sub({ frequency: "yearly", nextDueDate: "2026-08-10" })], days)).toHaveLength(0);
+    expect(buildUpcomingAnnualSubscriptionAlerts([sub({ frequency: "monthly", nextDueDate: "2026-07-30" })], days)).toHaveLength(0);
+  });
+});
+
+describe("buildNoMovementsWeekAlert", () => {
+  const now = new Date("2026-07-10T12:00:00Z");
+  it("alerta sin movimientos en 7 dias pero con actividad la semana previa", () => {
+    const row = buildNoMovementsWeekAlert([mv(1, "2026-06-30T10:00:00Z", 10, 50)], 7, now);
+    expect(row).not.toBeNull();
+    expect(row!.kind).toBe("no_movements_week");
+    expect(row!.related_entity_id).toBe(7);
+    expect(row!.payload.daysSinceLastMovement).toBe(7);
+  });
+  it("null si hay movimientos recientes o si tampoco hubo actividad previa", () => {
+    expect(buildNoMovementsWeekAlert([mv(1, "2026-07-08T10:00:00Z", 10, 50)], 7, now)).toBeNull();
+    expect(buildNoMovementsWeekAlert([], 7, now)).toBeNull();
   });
 });

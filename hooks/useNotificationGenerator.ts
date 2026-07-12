@@ -75,12 +75,16 @@ import {
   buildNegativeBalanceAlerts,
   buildNetWorthNegativeAlert,
   buildNoIncomeMonthAlert,
+  buildNoMovementsWeekAlert,
   buildObligationDueAlerts,
   buildObligationMilestoneAlerts,
   buildObligationNoPaymentAlerts,
+  buildSavingsRateLowAlert,
+  buildSubscriptionCostHeavyAlert,
   buildSubscriptionOverdueAlerts,
   buildSubscriptionPriceIncreaseAlerts,
   buildSubscriptionReminderAlerts,
+  buildUpcomingAnnualSubscriptionAlerts,
   computeMonthlyMovementAggregates,
   type AlertRow,
 } from "../features/notifications/lib/alertBuilders";
@@ -376,90 +380,16 @@ async function generateNotifications(
   pushAlerts(buildNetWorthNegativeAlert(snapshot.accounts, workspaceId));
 
   // ── 18. Savings rate low (after day 20) ──────────────────────────────────
-  if (now.getDate() >= 20 && thisMonthIncome > 0 && thisMonthExpenses > 0) {
-    const savingsRate = (thisMonthIncome - thisMonthExpenses) / thisMonthIncome;
-    if (savingsRate >= 0 && savingsRate < 0.10) {
-      const pct = Math.round(savingsRate * 100);
-      rows.push({
-        user_id: userId, channel: "in_app", status: "pending",
-        kind: "savings_rate_low",
-        title: "Tasa de ahorro muy baja",
-        body: `Solo estás ahorrando el ${pct}% de tus ingresos este mes. Intenta reducir gastos variables para mejorar tu margen.`,
-        scheduled_for: nowIso,
-        related_entity_type: "workspace", related_entity_id: workspaceId,
-        payload: { savingsRate, income: thisMonthIncome, expenses: thisMonthExpenses },
-      });
-    }
-  }
+  pushAlerts(buildSavingsRateLowAlert({ thisMonthIncome, thisMonthExpenses }, workspaceId, now));
 
   // ── 19. Subscriptions cost heavy (> 30% of last month income) ────────────
-  if (lastMonthIncome > 0) {
-    const activeSubs = snapshot.subscriptions.filter((s) => s.status === "active");
-    const monthlySubCost = activeSubs.reduce((sum, s) => {
-      const monthly =
-        s.frequency === "yearly" ? s.amount / 12
-        : s.frequency === "quarterly" ? s.amount / 3
-        : s.frequency === "weekly" ? s.amount * 4.33
-        : s.frequency === "daily" ? s.amount * 30
-        : s.amount;
-      return sum + monthly;
-    }, 0);
-    const ratio = monthlySubCost / lastMonthIncome;
-    if (ratio > 0.30 && activeSubs.length > 0) {
-      const pct = Math.round(ratio * 100);
-      rows.push({
-        user_id: userId, channel: "in_app", status: "pending",
-        kind: "subscription_cost_heavy",
-        title: "Suscripciones consumen mucho de tus ingresos",
-        body: `Tus suscripciones activas equivalen al ${pct}% de tus ingresos del mes pasado. Revisa cuáles realmente usas.`,
-        scheduled_for: nowIso,
-        related_entity_type: "workspace", related_entity_id: workspaceId,
-        payload: { monthlySubCost, ratio, subCount: activeSubs.length },
-      });
-    }
-  }
+  pushAlerts(buildSubscriptionCostHeavyAlert(snapshot.subscriptions, lastMonthIncome, workspaceId));
 
   // ── 20. Upcoming annual subscription (14–30 days away) ───────────────────
-  for (const sub of snapshot.subscriptions) {
-    if (sub.status !== "active") continue;
-    if (sub.frequency !== "yearly") continue;
-    const diffDays = calendarDaysFromTodayLocal(sub.nextDueDate);
-    if (diffDays >= 14 && diffDays <= 30) {
-      const parts = sub.nextDueDate.split("-").map(Number);
-      const dueDate = parts.length === 3 ? new Date(parts[0], parts[1] - 1, parts[2]) : new Date(sub.nextDueDate);
-      rows.push({
-        user_id: userId, channel: "in_app", status: "pending",
-        kind: "upcoming_annual_subscription",
-        title: "Renovación anual próxima",
-        body: `"${sub.name}" se renueva en ${diffDays} días (${dueDate.toLocaleDateString("es", { day: "numeric", month: "long" })}). Monto: ${sub.amount} ${sub.currencyCode}.`,
-        scheduled_for: nowIso,
-        related_entity_type: "subscription", related_entity_id: sub.id,
-        payload: { diffDays, amount: sub.amount, nextDueDate: sub.nextDueDate },
-      });
-    }
-  }
+  pushAlerts(buildUpcomingAnnualSubscriptionAlerts(snapshot.subscriptions, calendarDaysFromTodayLocal));
 
   // ── 21. No movements in last 7 days (but had activity in prior 7 days) ────
-  const sevenDaysAgo = new Date(now.getTime() - 7 * 86_400_000);
-  const fourteenDaysAgo = new Date(now.getTime() - 14 * 86_400_000);
-  const veryRecentMvts = snapshot.categoryPostedMovements.filter(
-    (m) => new Date(m.occurredAt) >= sevenDaysAgo,
-  );
-  const priorWeekMvts = snapshot.categoryPostedMovements.filter((m) => {
-    const d = new Date(m.occurredAt);
-    return d >= fourteenDaysAgo && d < sevenDaysAgo;
-  });
-  if (veryRecentMvts.length === 0 && priorWeekMvts.length > 0) {
-    rows.push({
-      user_id: userId, channel: "in_app", status: "pending",
-      kind: "no_movements_week",
-      title: "Sin movimientos esta semana",
-      body: "No has registrado movimientos en los últimos 7 días. ¿Olvidaste registrar tus gastos e ingresos?",
-      scheduled_for: nowIso,
-      related_entity_type: "workspace", related_entity_id: workspaceId,
-      payload: { daysSinceLastMovement: 7 },
-    });
-  }
+  pushAlerts(buildNoMovementsWeekAlert(snapshot.categoryPostedMovements, workspaceId, now));
 
   // ── Kinds nuevos (spec 2026-07-10) ────────────────────────────────────────
   const nuevos: AlertRow[] = [

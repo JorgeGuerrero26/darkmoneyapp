@@ -695,3 +695,99 @@ export function buildNetWorthNegativeAlert(
     payload: { netWorth },
   };
 }
+
+export function buildSavingsRateLowAlert(
+  input: { thisMonthIncome: number; thisMonthExpenses: number },
+  workspaceId: number,
+  now: Date,
+): AlertRow | null {
+  if (now.getDate() < 20 || input.thisMonthIncome <= 0 || input.thisMonthExpenses <= 0) return null;
+  const savingsRate = (input.thisMonthIncome - input.thisMonthExpenses) / input.thisMonthIncome;
+  if (savingsRate < 0 || savingsRate >= 0.10) return null;
+  const pct = Math.round(savingsRate * 100);
+  return {
+    kind: "savings_rate_low",
+    title: "Tasa de ahorro muy baja",
+    body: `Solo estás ahorrando el ${pct}% de tus ingresos este mes. Intenta reducir gastos variables para mejorar tu margen.`,
+    related_entity_type: "workspace",
+    related_entity_id: workspaceId,
+    payload: { savingsRate, income: input.thisMonthIncome, expenses: input.thisMonthExpenses },
+  };
+}
+
+export function buildSubscriptionCostHeavyAlert(
+  subscriptions: SubscriptionSummary[],
+  lastMonthIncome: number,
+  workspaceId: number,
+): AlertRow | null {
+  if (lastMonthIncome <= 0) return null;
+  const activeSubs = subscriptions.filter((s) => s.status === "active");
+  const monthlySubCost = activeSubs.reduce((sum, s) => {
+    const monthly =
+      s.frequency === "yearly" ? s.amount / 12
+      : s.frequency === "quarterly" ? s.amount / 3
+      : s.frequency === "weekly" ? s.amount * 4.33
+      : s.frequency === "daily" ? s.amount * 30
+      : s.amount;
+    return sum + monthly;
+  }, 0);
+  const ratio = monthlySubCost / lastMonthIncome;
+  if (ratio <= 0.30 || activeSubs.length === 0) return null;
+  const pct = Math.round(ratio * 100);
+  return {
+    kind: "subscription_cost_heavy",
+    title: "Suscripciones consumen mucho de tus ingresos",
+    body: `Tus suscripciones activas equivalen al ${pct}% de tus ingresos del mes pasado. Revisa cuáles realmente usas.`,
+    related_entity_type: "workspace",
+    related_entity_id: workspaceId,
+    payload: { monthlySubCost, ratio, subCount: activeSubs.length },
+  };
+}
+
+export function buildUpcomingAnnualSubscriptionAlerts(
+  subscriptions: SubscriptionSummary[],
+  daysFromToday: DaysFromToday,
+): AlertRow[] {
+  const rows: AlertRow[] = [];
+  for (const sub of subscriptions) {
+    if (sub.status !== "active") continue;
+    if (sub.frequency !== "yearly") continue;
+    const diffDays = daysFromToday(sub.nextDueDate);
+    if (diffDays >= 14 && diffDays <= 30) {
+      const parts = sub.nextDueDate.split("-").map(Number);
+      const dueDate = parts.length === 3 ? new Date(parts[0], parts[1] - 1, parts[2]) : new Date(sub.nextDueDate);
+      rows.push({
+        kind: "upcoming_annual_subscription",
+        title: "Renovación anual próxima",
+        body: `"${sub.name}" se renueva en ${diffDays} días (${dueDate.toLocaleDateString("es", { day: "numeric", month: "long" })}). Monto: ${sub.amount} ${sub.currencyCode}.`,
+        related_entity_type: "subscription",
+        related_entity_id: sub.id,
+        payload: { diffDays, amount: sub.amount, nextDueDate: sub.nextDueDate },
+      });
+    }
+  }
+  return rows;
+}
+
+export function buildNoMovementsWeekAlert(
+  movements: CategoryPostedMovement[],
+  workspaceId: number,
+  now: Date,
+): AlertRow | null {
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 86_400_000);
+  const fourteenDaysAgo = new Date(now.getTime() - 14 * 86_400_000);
+  const veryRecentMvts = movements.filter((m) => new Date(m.occurredAt) >= sevenDaysAgo);
+  const priorWeekMvts = movements.filter((m) => {
+    const d = new Date(m.occurredAt);
+    return d >= fourteenDaysAgo && d < sevenDaysAgo;
+  });
+  if (veryRecentMvts.length !== 0 || priorWeekMvts.length === 0) return null;
+  return {
+    kind: "no_movements_week",
+    title: "Sin movimientos esta semana",
+    body: "No has registrado movimientos en los últimos 7 días. ¿Olvidaste registrar tus gastos e ingresos?",
+    related_entity_type: "workspace",
+    related_entity_id: workspaceId,
+    payload: { daysSinceLastMovement: 7 },
+  };
+}
