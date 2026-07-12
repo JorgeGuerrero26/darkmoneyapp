@@ -302,7 +302,9 @@ async function insertPredictiveAlerts({ supabase, userId, todayKey }: Predictive
         body: `A tu ritmo de gasto actual, tu saldo disponible se agota alrededor del ${fechaCero}.`,
         scheduled_for: new Date().toISOString(),
         related_entity_type: "cash_runway", related_entity_id: entityId,
-        payload: { projectedZeroDate: fechaCero, available: disponible, dailySpend: gastoDiario, bypass_daily_limit: true },
+        // El bypass del límite diario de push NO se lee del payload: lo deriva
+        // send-push-notifications de la prioridad critical del kind (_shared/notification-priority.ts).
+        payload: { projectedZeroDate: fechaCero, available: disponible, dailySpend: gastoDiario },
       }], { onConflict: "user_id,related_entity_type,related_entity_id,kind", ignoreDuplicates: true });
       if (error) {
         console.warn("[Digest] cash_runway_alert upsert failed:", userId, error.message);
