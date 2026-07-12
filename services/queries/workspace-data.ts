@@ -4,7 +4,7 @@ import type { WorkspaceInvitationStatus } from "../../types/domain";
 
 import { UNIVERSAL_LINK_HOST } from "../../constants/config";
 import { supabase, supabaseAnonKey, supabaseUrl } from "../../lib/supabase";
-import { STALE } from "../../lib/query-client";
+import { STALE, queryClient } from "../../lib/query-client";
 import { patchSnapshotWithCreatedMovement } from "./snapshot-cache";
 import { INTERACTIVE_AI_TIMEOUT_MS, isInteractiveAiEdgeFunction } from "../../lib/ai-request-utils";
 import { dateStrToISO, filterDateFrom, filterDateTo } from "../../lib/date";
@@ -2313,6 +2313,10 @@ export async function createMovement(
   }
 
   if (error) throw new Error(formatSupabaseError(error) || "Error al guardar el movimiento");
+  // Todas las vías que crean movimientos (formulario, pagos de obligación,
+  // apertura, confirmación de ingreso recurrente, registro desde sugerencia)
+  // pasan por aquí: la huella de dedupe nativo se registra una sola vez.
+  recordManualMovementFingerprint(workspaceId, input);
   const row = data as any;
   return {
     id: row.id,
@@ -2341,18 +2345,24 @@ export async function createMovement(
 
 /**
  * Escribe la huella (monto en formato del extractor nativo) de un movimiento
- * creado a mano para que el listener de detección suprima el aviso tardío del
- * banco/correo de esa misma compra. Best-effort: sin cuenta/moneda soportada
- * o en APKs sin el método nativo, simplemente no hace nada.
+ * creado en la app para que el listener de detección suprima el aviso tardío
+ * del banco/correo de esa misma operación (ventana 2h en Kotlin). Cubre gasto,
+ * ingreso, transferencia y pagos de obligación/suscripción: toma el primer
+ * monto disponible (source, si no destination). Best-effort: sin cuenta/moneda
+ * soportada o en APKs sin el método nativo, no hace nada. Usa el queryClient
+ * singleton para resolver la moneda desde el snapshot cacheado (sin query extra).
  */
-function recordManualMovementFingerprint(
-  queryClient: QueryClient,
+export function recordManualMovementFingerprint(
   workspaceId: number | null,
-  input: MovementFormInput,
+  input: Pick<
+    MovementFormInput,
+    "sourceAmount" | "destinationAmount" | "sourceAccountId" | "destinationAccountId"
+  >,
 ) {
-  const amount = input.movementType === "income" ? input.destinationAmount : input.sourceAmount;
+  const useSource = input.sourceAmount != null && input.sourceAmount > 0;
+  const amount = useSource ? input.sourceAmount : input.destinationAmount;
   if (!amount || amount <= 0) return;
-  const accountId = input.movementType === "income" ? input.destinationAccountId : input.sourceAccountId;
+  const accountId = useSource ? input.sourceAccountId : input.destinationAccountId;
   const snapshot = workspaceId
     ? queryClient.getQueryData<WorkspaceSnapshot>(["workspace-snapshot", workspaceId])
     : undefined;
@@ -2376,9 +2386,6 @@ export function useCreateMovementMutation(workspaceId: number | null) {
       // Primero el parche quirúrgico del cache: saldo y listas cambian en este
       // frame; el refetch de abajo confirma/corrige en segundo plano.
       if (workspaceId) patchSnapshotWithCreatedMovement(queryClient, workspaceId, _data);
-      // Huella para el dedupe nativo: si el banco/correo avisa tarde de esta misma
-      // compra, el listener Kotlin la suprime (ventana 2h, solo mismo monto).
-      recordManualMovementFingerprint(queryClient, workspaceId, variables);
       // Invalidación INMEDIATA (no diferida por InteractionManager): tras guardar un movimiento,
       // la lista y los saldos deben reflejarlo al instante. runBackgroundQueryRefresh difería el
       // refetch hasta terminar interacciones/animaciones, dejando la UI desactualizada hasta un

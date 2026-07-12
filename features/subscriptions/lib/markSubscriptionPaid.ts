@@ -1,6 +1,7 @@
 import { dateStrToISO } from "../../../lib/date";
 import { supabase } from "../../../lib/supabase";
 import { computeNextRecurringDate } from "../../../lib/subscription-helpers";
+import { recordManualMovementFingerprint } from "../../../services/queries/workspace-data";
 import type { SubscriptionSummary } from "../../../types/domain";
 
 type Args = {
@@ -74,6 +75,15 @@ export async function markSubscriptionPaid({
       `Fecha avanzada a ${nextDueDate}, pero el movimiento no se pudo crear: ${insertError.message ?? "error desconocido"}. Regístralo manualmente desde el dashboard.`,
     );
   }
+
+  // Único flujo que inserta movimientos sin pasar por createMovement: registrar
+  // la huella de dedupe nativo aquí (suprime el aviso del banco de este cobro).
+  recordManualMovementFingerprint(workspaceId, {
+    sourceAmount: amount,
+    destinationAmount: null,
+    sourceAccountId: accountId,
+    destinationAccountId: null,
+  });
 
   return { nextDueDate, movementId: (inserted as { id: number } | null)?.id ?? null, occurredAt };
 }
