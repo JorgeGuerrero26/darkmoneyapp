@@ -4,6 +4,11 @@
 **Estado:** aprobado por el usuario (diseño + 3 ajustes)
 **Enfoque:** híbrido — 6 kinds client-side en el generador existente, 2 predictivas server-side en el cron del digest diario.
 
+> **Desviaciones aplicadas en la implementación (2026-07-11):**
+> 1. `possible_duplicate_charge` compara mismo día + monto + **categoría** (no descripción: el snapshot no la trae y agregar una query extra era YAGNI).
+> 2. `obligation_milestone` usa `related_entity_id = obligationId * 1000 + milestone` (no `obligation.id` a secas): así el cruce 25→50 crea fila nueva y el cleanup retira el hito anterior automáticamente. La navegación lee `payload.obligationId`.
+> 3. `cash_runway_alert` se clasifica `critical` SOLO en la copia Deno (`_shared/notification-priority.ts`) porque el webhook deriva el bypass del límite diario de push de esa prioridad; en el cliente sigue `important` para la UI de bandeja. Divergencia intencional y comentada inline.
+
 ## Contexto
 
 DarkMoney ya genera ~25 kinds de alertas client-side en `hooks/useNotificationGenerator.ts`
