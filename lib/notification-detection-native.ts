@@ -14,6 +14,8 @@ type NativeNotificationDetection = {
   discardSuggestion(suggestionId: string): void;
   ignoreSuggestion?(suggestionId: string): void;
   markSuggestionRegistered(suggestionId: string, notificationId: number): void;
+  /** Opcional: solo existe en APKs con el dedupe de registros manuales (2026-07-11). */
+  recordManualMovementRegistered?(amountLabel: string): Promise<boolean>;
   setSuggestionAiCategoryRecommendation?(suggestionId: string, recommendationJson: string): void;
   setSuggestionDescriptionCleanup?(suggestionId: string, cleanupJson: string): void;
   setSuggestionCounterpartyRecommendation?(suggestionId: string, recommendationJson: string): void;
@@ -82,6 +84,15 @@ export const notificationDetection = {
   async isNotificationAccessEnabled() {
     if (!nativeModule) return false;
     return nativeModule.isNotificationAccessEnabled();
+  },
+  /** Fire-and-forget; método ausente en APKs viejos (el OTA corre sobre ambos). */
+  async recordManualMovementRegistered(amountLabel: string) {
+    if (!nativeModule?.recordManualMovementRegistered) return;
+    try {
+      await nativeModule.recordManualMovementRegistered(amountLabel);
+    } catch {
+      // sin bloqueo: el dedupe nativo es best-effort
+    }
   },
   openNotificationAccessSettings() {
     nativeModule?.openNotificationAccessSettings();

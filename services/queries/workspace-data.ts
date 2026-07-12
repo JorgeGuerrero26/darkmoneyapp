@@ -8,6 +8,7 @@ import { STALE } from "../../lib/query-client";
 import { patchSnapshotWithCreatedMovement } from "./snapshot-cache";
 import { INTERACTIVE_AI_TIMEOUT_MS, isInteractiveAiEdgeFunction } from "../../lib/ai-request-utils";
 import { dateStrToISO, filterDateFrom, filterDateTo } from "../../lib/date";
+import { notificationDetection } from "../../lib/notification-detection-native";
 import {
   mirrorObligationEventAttachmentsToMovement,
   type AttachmentLike,
@@ -2338,6 +2339,31 @@ export async function createMovement(
   };
 }
 
+/**
+ * Escribe la huella (monto en formato del extractor nativo) de un movimiento
+ * creado a mano para que el listener de detección suprima el aviso tardío del
+ * banco/correo de esa misma compra. Best-effort: sin cuenta/moneda soportada
+ * o en APKs sin el método nativo, simplemente no hace nada.
+ */
+function recordManualMovementFingerprint(
+  queryClient: QueryClient,
+  workspaceId: number | null,
+  input: MovementFormInput,
+) {
+  const amount = input.movementType === "income" ? input.destinationAmount : input.sourceAmount;
+  if (!amount || amount <= 0) return;
+  const accountId = input.movementType === "income" ? input.destinationAccountId : input.sourceAccountId;
+  const snapshot = workspaceId
+    ? queryClient.getQueryData<WorkspaceSnapshot>(["workspace-snapshot", workspaceId])
+    : undefined;
+  const currency = snapshot?.accounts.find((account) => account.id === accountId)?.currencyCode ?? "PEN";
+  // El extractor nativo solo emite "S/ x.xx" y "USD x.xx" (canonicalAmountKey compara
+  // moneda+valor): otras monedas no se detectan, así que no hay nada que suprimir.
+  const prefix = currency === "PEN" ? "S/" : currency === "USD" ? "USD" : null;
+  if (!prefix) return;
+  void notificationDetection.recordManualMovementRegistered(`${prefix} ${amount.toFixed(2)}`);
+}
+
 export function useCreateMovementMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   return useMutation({
@@ -2350,6 +2376,9 @@ export function useCreateMovementMutation(workspaceId: number | null) {
       // Primero el parche quirúrgico del cache: saldo y listas cambian en este
       // frame; el refetch de abajo confirma/corrige en segundo plano.
       if (workspaceId) patchSnapshotWithCreatedMovement(queryClient, workspaceId, _data);
+      // Huella para el dedupe nativo: si el banco/correo avisa tarde de esta misma
+      // compra, el listener Kotlin la suprime (ventana 2h, solo mismo monto).
+      recordManualMovementFingerprint(queryClient, workspaceId, variables);
       // Invalidación INMEDIATA (no diferida por InteractionManager): tras guardar un movimiento,
       // la lista y los saldos deben reflejarlo al instante. runBackgroundQueryRefresh difería el
       // refetch hasta terminar interacciones/animaciones, dejando la UI desactualizada hasta un

@@ -25,6 +25,8 @@ object NotificationDetectionStore {
   private const val KEY_PENDING_SAVE_RETRIES = "pending_save_retries_v1"
   private const val MAX_SAVE_RETRY_ENTRIES = 20
   private const val MAX_SAVE_RETRY_ATTEMPTS = 5
+  private const val KEY_MANUAL_AMOUNTS = "manual_registered_amounts_v1"
+  private const val MAX_MANUAL_AMOUNT_AGE_MS = 3L * 60 * 60 * 1000 // 3h (> ventana de consulta 2h)
 
   // Pruning configuration.
   private const val MAX_SUGGESTIONS = 200
@@ -663,6 +665,45 @@ object NotificationDetectionStore {
   private fun amountLabelsMatch(a: String, b: String): Boolean {
     if (a.isBlank() || b.isBlank()) return false
     return canonicalAmountKey(a) == canonicalAmountKey(b)
+  }
+
+  /**
+   * Huellas de movimientos registrados A MANO en la app (RN llama al registrar).
+   * El listener las consulta para NO re-sugerir el aviso tardío del banco/correo
+   * de una compra que el usuario ya registró manualmente. Solo monto + timestamp:
+   * la ventana corta (2h en el listener) evita comerse compras nuevas.
+   */
+  fun recordManualRegisteredAmount(context: Context, amountLabel: String, atMs: Long = System.currentTimeMillis()) {
+    if (amountLabel.isBlank()) return
+    val current = try {
+      JSONArray(prefs(context).getString(KEY_MANUAL_AMOUNTS, "[]") ?: "[]")
+    } catch (_: Exception) {
+      JSONArray()
+    }
+    val kept = JSONArray()
+    val cutoff = atMs - MAX_MANUAL_AMOUNT_AGE_MS
+    for (index in 0 until current.length()) {
+      val entry = current.optJSONObject(index) ?: continue
+      if (entry.optLong("at") >= cutoff) kept.put(entry)
+    }
+    kept.put(JSONObject().put("amountLabel", amountLabel).put("at", atMs))
+    prefs(context).edit().putString(KEY_MANUAL_AMOUNTS, kept.toString()).apply()
+  }
+
+  fun hasManualRegisteredAmount(context: Context, amountLabel: String, withinMs: Long): Boolean {
+    val since = System.currentTimeMillis() - withinMs
+    val current = try {
+      JSONArray(prefs(context).getString(KEY_MANUAL_AMOUNTS, "[]") ?: "[]")
+    } catch (_: Exception) {
+      return false
+    }
+    for (index in 0 until current.length()) {
+      val entry = current.optJSONObject(index) ?: continue
+      if (entry.optLong("at") >= since && amountLabelsMatch(entry.optString("amountLabel"), amountLabel)) {
+        return true
+      }
+    }
+    return false
   }
 
   /**
