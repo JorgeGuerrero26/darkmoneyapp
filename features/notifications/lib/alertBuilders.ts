@@ -630,3 +630,68 @@ export function buildHighExpenseMonthAlert(
     payload: { thisMonth: input.thisMonthExpenses, lastMonth: input.lastMonthExpenses, ratio },
   };
 }
+
+export function buildCategorySpendingSpikeAlerts(
+  thisMonthByCategory: Map<number, number>,
+  lastMonthByCategory: Map<number, number>,
+  categoryNames: Map<number, string>,
+): AlertRow[] {
+  const rows: AlertRow[] = [];
+  for (const [catId, thisAmt] of thisMonthByCategory) {
+    const lastAmt = lastMonthByCategory.get(catId) ?? 0;
+    if (lastAmt <= 0) continue; // need baseline
+    const ratio = thisAmt / lastAmt;
+    // Only alert on meaningful amounts and significant spikes
+    if (ratio > 1.5 && thisAmt > 50) {
+      const catName = categoryNames.get(catId) ?? "Categoría";
+      const pct = Math.round((ratio - 1) * 100);
+      rows.push({
+        kind: "category_spending_spike",
+        title: `Gasto elevado en "${catName}"`,
+        body: `Has gastado ${pct}% más en "${catName}" este mes comparado con el mes pasado.`,
+        related_entity_type: "category",
+        related_entity_id: catId,
+        payload: { thisMonth: thisAmt, lastMonth: lastAmt, ratio, categoryName: catName },
+      });
+    }
+  }
+  return rows;
+}
+
+export function buildExpenseIncomeImbalanceAlert(
+  input: { thisMonthExpenses: number; thisMonthIncome: number },
+  workspaceId: number,
+  now: Date,
+): AlertRow | null {
+  if (input.thisMonthIncome <= 0 || input.thisMonthExpenses <= 0) return null;
+  const ratio = input.thisMonthExpenses / input.thisMonthIncome;
+  if (ratio <= 0.85 || now.getDate() < 10) return null;
+  const pct = Math.round(ratio * 100);
+  return {
+    kind: "expense_income_imbalance",
+    title: "Gastos cerca del total de ingresos",
+    body: `Este mes tus gastos representan el ${pct}% de tus ingresos. Queda poco margen de ahorro.`,
+    related_entity_type: "workspace",
+    related_entity_id: workspaceId,
+    payload: { expenses: input.thisMonthExpenses, income: input.thisMonthIncome, ratio },
+  };
+}
+
+export function buildNetWorthNegativeAlert(
+  accounts: AccountSummary[],
+  workspaceId: number,
+): AlertRow | null {
+  const netWorth = accounts
+    .filter((a) => !a.isArchived && a.includeInNetWorth)
+    .reduce((sum, a) => sum + (a.currentBalanceInBaseCurrency ?? a.currentBalance), 0);
+
+  if (netWorth >= 0) return null;
+  return {
+    kind: "net_worth_negative",
+    title: "Patrimonio neto negativo",
+    body: `Tu patrimonio neto total es negativo (${netWorth.toFixed(2)}). Tus deudas superan tus activos.`,
+    related_entity_type: "workspace",
+    related_entity_id: workspaceId,
+    payload: { netWorth },
+  };
+}

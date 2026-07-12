@@ -2,9 +2,11 @@ import {
   buildAccountDormantAlerts,
   buildBudgetLimitAlerts,
   buildBudgetPeriodEndingAlerts,
+  buildCategorySpendingSpikeAlerts,
   buildDetectedSuggestionsPendingAlert,
   buildDuplicateChargeAlerts,
   buildExpectedIncomeMissedAlerts,
+  buildExpenseIncomeImbalanceAlert,
   buildHighExpenseMonthAlert,
   buildHighInterestObligationAlerts,
   buildLowBalanceAlerts,
@@ -12,6 +14,7 @@ import {
   buildMultipleObligationsOverdueAlert,
   buildMultipleSubscriptionsDueAlert,
   buildNegativeBalanceAlerts,
+  buildNetWorthNegativeAlert,
   buildNoIncomeMonthAlert,
   buildObligationDueAlerts,
   buildObligationMilestoneAlerts,
@@ -479,5 +482,72 @@ describe("buildHighExpenseMonthAlert", () => {
     expect(buildHighExpenseMonthAlert({ thisMonthExpenses: 1300, lastMonthExpenses: 1000 }, 7, now)).toBeNull();
     expect(buildHighExpenseMonthAlert({ thisMonthExpenses: 2000, lastMonthExpenses: 1000 }, 7, new Date("2026-07-06T12:00:00Z"))).toBeNull();
     expect(buildHighExpenseMonthAlert({ thisMonthExpenses: 2000, lastMonthExpenses: 0 }, 7, now)).toBeNull();
+  });
+});
+
+describe("buildCategorySpendingSpikeAlerts", () => {
+  it("alerta cuando una categoria sube mas de 50% con gasto > 50", () => {
+    const rows = buildCategorySpendingSpikeAlerts(
+      new Map([[10, 160]]), new Map([[10, 100]]), new Map([[10, "Comida"]]),
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].kind).toBe("category_spending_spike");
+    expect(rows[0].related_entity_id).toBe(10);
+    expect(rows[0].title).toBe('Gasto elevado en "Comida"');
+    expect(rows[0].body).toContain("60% más");
+    expect(rows[0].payload.categoryName).toBe("Comida");
+  });
+  it("no alerta con subida de exactamente 50%, monto <=50, o sin base del mes pasado", () => {
+    expect(buildCategorySpendingSpikeAlerts(new Map([[10, 150]]), new Map([[10, 100]]), new Map())).toHaveLength(0);
+    expect(buildCategorySpendingSpikeAlerts(new Map([[10, 45]]), new Map([[10, 20]]), new Map())).toHaveLength(0);
+    expect(buildCategorySpendingSpikeAlerts(new Map([[10, 300]]), new Map(), new Map())).toHaveLength(0);
+  });
+});
+
+describe("buildExpenseIncomeImbalanceAlert", () => {
+  const now = new Date("2026-07-10T12:00:00Z");
+  it("alerta cuando los gastos superan 85% de los ingresos (desde el dia 10)", () => {
+    const row = buildExpenseIncomeImbalanceAlert({ thisMonthExpenses: 900, thisMonthIncome: 1000 }, 7, now);
+    expect(row).not.toBeNull();
+    expect(row!.kind).toBe("expense_income_imbalance");
+    expect(row!.body).toContain("90%");
+  });
+  it("null con 85% exacto, antes del dia 10, o sin ingresos", () => {
+    expect(buildExpenseIncomeImbalanceAlert({ thisMonthExpenses: 850, thisMonthIncome: 1000 }, 7, now)).toBeNull();
+    expect(buildExpenseIncomeImbalanceAlert({ thisMonthExpenses: 900, thisMonthIncome: 1000 }, 7, new Date("2026-07-09T12:00:00Z"))).toBeNull();
+    expect(buildExpenseIncomeImbalanceAlert({ thisMonthExpenses: 900, thisMonthIncome: 0 }, 7, now)).toBeNull();
+  });
+});
+
+describe("buildNetWorthNegativeAlert", () => {
+  it("alerta cuando la suma en moneda base es negativa (incluye prestamos)", () => {
+    const row = buildNetWorthNegativeAlert(
+      [
+        cuenta({ currentBalance: 500, currentBalanceInBaseCurrency: 500 }),
+        cuenta({ id: 13, type: "loan", currentBalance: -3000, currentBalanceInBaseCurrency: -800 }),
+      ],
+      1,
+    );
+    expect(row).not.toBeNull();
+    expect(row!.kind).toBe("net_worth_negative");
+    expect(row!.payload.netWorth).toBe(-300);
+    expect(row!.body).toContain("-300.00");
+  });
+  it("usa currentBalance como fallback sin valor en moneda base", () => {
+    const row = buildNetWorthNegativeAlert([cuenta({ currentBalance: -100, currentBalanceInBaseCurrency: null })], 1);
+    expect(row!.payload.netWorth).toBe(-100);
+  });
+  it("null con patrimonio >=0; ignora archivadas y excluidas del net worth", () => {
+    expect(buildNetWorthNegativeAlert([cuenta({ currentBalanceInBaseCurrency: 100 })], 1)).toBeNull();
+    expect(
+      buildNetWorthNegativeAlert(
+        [
+          cuenta({ currentBalanceInBaseCurrency: 100 }),
+          cuenta({ id: 14, isArchived: true, currentBalanceInBaseCurrency: -900 }),
+          cuenta({ id: 15, includeInNetWorth: false, currentBalanceInBaseCurrency: -900 }),
+        ],
+        1,
+      ),
+    ).toBeNull();
   });
 });

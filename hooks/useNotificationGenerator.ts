@@ -61,9 +61,11 @@ import {
   buildAccountDormantAlerts,
   buildBudgetLimitAlerts,
   buildBudgetPeriodEndingAlerts,
+  buildCategorySpendingSpikeAlerts,
   buildDetectedSuggestionsPendingAlert,
   buildDuplicateChargeAlerts,
   buildExpectedIncomeMissedAlerts,
+  buildExpenseIncomeImbalanceAlert,
   buildHighExpenseMonthAlert,
   buildHighInterestObligationAlerts,
   buildLowBalanceAlerts,
@@ -71,6 +73,7 @@ import {
   buildMultipleObligationsOverdueAlert,
   buildMultipleSubscriptionsDueAlert,
   buildNegativeBalanceAlerts,
+  buildNetWorthNegativeAlert,
   buildNoIncomeMonthAlert,
   buildObligationDueAlerts,
   buildObligationMilestoneAlerts,
@@ -364,59 +367,13 @@ async function generateNotifications(
   pushAlerts(buildHighExpenseMonthAlert({ thisMonthExpenses, lastMonthExpenses }, workspaceId, now));
 
   // ── 15. Category spending spike (50%+ vs last month) ──────────────────────
-  for (const [catId, thisAmt] of thisMonthByCat) {
-    const lastAmt = lastMonthByCat.get(catId) ?? 0;
-    if (lastAmt <= 0) continue; // need baseline
-    const ratio = thisAmt / lastAmt;
-    // Only alert on meaningful amounts and significant spikes
-    if (ratio > 1.5 && thisAmt > 50) {
-      const catName = categoryNameMap.get(catId) ?? "Categoría";
-      const pct = Math.round((ratio - 1) * 100);
-      rows.push({
-        user_id: userId, channel: "in_app", status: "pending",
-        kind: "category_spending_spike",
-        title: `Gasto elevado en "${catName}"`,
-        body: `Has gastado ${pct}% más en "${catName}" este mes comparado con el mes pasado.`,
-        scheduled_for: nowIso,
-        related_entity_type: "category", related_entity_id: catId,
-        payload: { thisMonth: thisAmt, lastMonth: lastAmt, ratio, categoryName: catName },
-      });
-    }
-  }
+  pushAlerts(buildCategorySpendingSpikeAlerts(thisMonthByCat, lastMonthByCat, categoryNameMap));
 
   // ── 16. Expense/income imbalance ──────────────────────────────────────────
-  if (thisMonthIncome > 0 && thisMonthExpenses > 0) {
-    const ratio = thisMonthExpenses / thisMonthIncome;
-    if (ratio > 0.85 && now.getDate() >= 10) {
-      const pct = Math.round(ratio * 100);
-      rows.push({
-        user_id: userId, channel: "in_app", status: "pending",
-        kind: "expense_income_imbalance",
-        title: "Gastos cerca del total de ingresos",
-        body: `Este mes tus gastos representan el ${pct}% de tus ingresos. Queda poco margen de ahorro.`,
-        scheduled_for: nowIso,
-        related_entity_type: "workspace", related_entity_id: workspaceId,
-        payload: { expenses: thisMonthExpenses, income: thisMonthIncome, ratio },
-      });
-    }
-  }
+  pushAlerts(buildExpenseIncomeImbalanceAlert({ thisMonthExpenses, thisMonthIncome }, workspaceId, now));
 
   // ── 17. Net worth negative ────────────────────────────────────────────────
-  const netWorth = snapshot.accounts
-    .filter((a) => !a.isArchived && a.includeInNetWorth)
-    .reduce((sum, a) => sum + (a.currentBalanceInBaseCurrency ?? a.currentBalance), 0);
-
-  if (netWorth < 0) {
-    rows.push({
-      user_id: userId, channel: "in_app", status: "pending",
-      kind: "net_worth_negative",
-      title: "Patrimonio neto negativo",
-      body: `Tu patrimonio neto total es negativo (${netWorth.toFixed(2)}). Tus deudas superan tus activos.`,
-      scheduled_for: nowIso,
-      related_entity_type: "workspace", related_entity_id: workspaceId,
-      payload: { netWorth },
-    });
-  }
+  pushAlerts(buildNetWorthNegativeAlert(snapshot.accounts, workspaceId));
 
   // ── 18. Savings rate low (after day 20) ──────────────────────────────────
   if (now.getDate() >= 20 && thisMonthIncome > 0 && thisMonthExpenses > 0) {
