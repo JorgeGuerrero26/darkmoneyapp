@@ -497,6 +497,37 @@ Deno.serve(async (req: Request) => {
         aiDigestInserted = true;
       }
     }
+
+    // Fallback SIEMPRE: si el digest IA no se insertó (falla o deshabilitado), el push
+    // quedaba "huérfano" — el tap llevaba a la bandeja pero el resumen no existía como
+    // fila y el usuario no encontraba nada. Insertar la versión resumida clásica.
+    if (!aiDigestInserted) {
+      const { error: fallbackError } = await supabase
+        .from("notifications")
+        .upsert({
+          user_id: userId,
+          channel: "in_app",
+          status: "pending",
+          kind: "daily_digest",
+          title: pushTitle,
+          body: pushBodyText,
+          scheduled_for: new Date().toISOString(),
+          related_entity_type: "daily_digest",
+          related_entity_id: Number(digestDate.replace(/-/g, "")),
+          payload: {
+            todayKey: digestDate,
+            generatedBy: "daily_digest_fallback",
+            count: todaysInformational.length,
+            topKinds: kinds.slice(0, 5),
+          },
+        }, {
+          onConflict: "user_id,related_entity_type,related_entity_id,kind",
+          ignoreDuplicates: true,
+        });
+      if (fallbackError) {
+        console.warn("[Digest] fallback digest row upsert failed:", userId, fallbackError.message);
+      }
+    }
     const pushBody = {
       to: pushToken,
       title: pushTitle,
