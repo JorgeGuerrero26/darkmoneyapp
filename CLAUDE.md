@@ -42,6 +42,17 @@ del caché en lib/query-client.ts.
 
 Para builds release del APK Android (cualquier cambio en `plugins/notification-detection/native-src/**/*.kt` o `android/app/src/**`), seguir `docs/BUILD_APK.md`. Reglas no negociables: sincronizar `plugins/` → `android/app/src/main/java/`, limpiar caches, build con `-P` quoteado en PowerShell, y verificar que los strings nuevos aparecen en el DEX antes de declarar el APK listo. `BUILD SUCCESSFUL` no garantiza que el cambio entró.
 
+**APK instalable = EAS build** (la app instalada está firmada con el keystore cloud de EAS;
+un build local de gradle NO puede actualizarla). Lanzar SIEMPRE con:
+
+```bash
+npm run build:android
+```
+
+que corre el preflight `scripts/preflight-native-version.mjs`: si hay cambios nativos
+posteriores al último bump de `version`/`versionCode` en app.json, bloquea el build
+(incidente 2026-07-11: tres binarios distintos etiquetados 1.0.1).
+
 ## Git workflow
 
 - **Un commit por unidad lógica**, no un commit global con todo. Cada commit cuenta una sola historia: un fix, un refactor, un feature, un cambio de UX. Permite `git bisect`, revert quirúrgico y sirve de checkpoint durante refactors largos.
@@ -56,6 +67,10 @@ Para builds release del APK Android (cualquier cambio en `plugins/notification-d
 ## Database migrations
 
 Toda migración nueva en `supabase/migrations/` DEBE quedar documentada en `DATABASE_DICTIONARY.md` antes de cerrar la tarea.
+
+> Nota: `DATABASE_DICTIONARY.md` está **gitignored a propósito** (doc local por máquina;
+> la copia principal vive en la máquina Windows). Si el archivo no existe en la máquina
+> actual, crearlo con la sección de la migración nueva — no forzar su tracking en git.
 
 - Tabla nueva: agregar sección `### nombre_tabla` con descripción, tabla de campos (Campo / Tipo / Nulo / Descripción) e índices/uniques relevantes.
 - Tipo enumerado nuevo: documentar bajo `## 4. Tipos enumerados`.

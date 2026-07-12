@@ -15,7 +15,8 @@
     "test:movements": "tsc -p tsconfig.movements-tests.json && node .tmp/movements-tests/tests/movements/save-contract-smoke.js && node .tmp/movements-tests/tests/movements/creation-rules-smoke.js && node .tmp/movements-tests/tests/movements/group-by-date-smoke.js && node .tmp/movements-tests/tests/movements/form-validation-smoke.js && node .tmp/movements-tests/tests/movements/filters-smoke.js && node .tmp/movements-tests/tests/movements/amount-parsing-smoke.js",
     "test:accounts": "tsc -p tsconfig.accounts-tests.json && node .tmp/accounts-tests/tests/accounts/exchange-rate-map-smoke.js && node .tmp/accounts-tests/tests/accounts/badges-smoke.js && node .tmp/accounts-tests/tests/accounts/filters-smoke.js && node .tmp/accounts-tests/tests/accounts/net-worth-smoke.js && node .tmp/accounts-tests/tests/accounts/csv-smoke.js && node .tmp/accounts-tests/tests/accounts/balance-evolution-smoke.js && node .tmp/accounts-tests/tests/accounts/composition-smoke.js",
     "test:parity": "tsc -p tsconfig.parity-tests.json && node .tmp/parity-tests/tests/parity/parity-smoke.js",
-    "test": "jest"
+    "test": "jest",
+    "build:android": "node scripts/preflight-native-version.mjs && eas build --platform android --profile preview"
   },
   "dependencies": {
     "@darkmoney/shared": "github:JorgeGuerrero26/darkmoneyshare",
