@@ -470,7 +470,7 @@ function RecurringIncomeScreen() {
           toggleSelect(item.id);
           return;
         }
-        router.push(`/recurring-income/${item.id}?from=recurring-income`);
+        router.push({ pathname: "/recurring-income/[id]", params: { id: String(item.id), from: "recurring-income" } });
       }}
       onLongPress={() => {
         if (!selectMode) setSelectMode(true);

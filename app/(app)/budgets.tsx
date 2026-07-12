@@ -326,7 +326,7 @@ function BudgetsScreen() {
           toggleSelect(budget.id);
           return;
         }
-        router.push(`/budget/${budget.id}?from=budgets`);
+        router.push({ pathname: "/budget/[id]", params: { id: String(budget.id), from: "budgets" } });
       }}
       onLongPress={() => {
         if (!selectMode) setSelectMode(true);

@@ -950,7 +950,7 @@ function NavigationGuard() {
       if (segments[0] === "(auth)") return;
       await clearPendingDetectedSuggestionNativeId();
       if (cancelled) return;
-      router.push(`/detected-suggestion/${encodeURIComponent(pendingNativeId)}`);
+      router.push({ pathname: "/detected-suggestion/[id]", params: { id: pendingNativeId } });
     })();
     return () => {
       cancelled = true;
