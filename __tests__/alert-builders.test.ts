@@ -5,7 +5,11 @@ import {
   buildDuplicateChargeAlerts,
   buildExpectedIncomeMissedAlerts,
   buildMonthlyRecapAlert,
+  buildMultipleObligationsOverdueAlert,
+  buildMultipleSubscriptionsDueAlert,
+  buildObligationDueAlerts,
   buildObligationMilestoneAlerts,
+  buildObligationNoPaymentAlerts,
   buildSubscriptionOverdueAlerts,
   buildSubscriptionPriceIncreaseAlerts,
   buildSubscriptionReminderAlerts,
@@ -239,5 +243,96 @@ describe("buildSubscriptionOverdueAlerts", () => {
   it("no alerta vencida hace 1 dia (la cubre el reminder) ni inactiva", () => {
     expect(buildSubscriptionOverdueAlerts([sub({ nextDueDate: "2026-07-09" })], days)).toHaveLength(0);
     expect(buildSubscriptionOverdueAlerts([sub({ status: "canceled", nextDueDate: "2026-07-01" })], days)).toHaveLength(0);
+  });
+});
+
+describe("buildMultipleSubscriptionsDueAlert", () => {
+  const days = daysFromFixed("2026-07-10");
+  const tres = [
+    sub({ id: 1, name: "Netflix", nextDueDate: "2026-07-11", amount: 44.9 }),
+    sub({ id: 2, name: "Spotify", nextDueDate: "2026-07-14", amount: 22.9 }),
+    sub({ id: 3, name: "iCloud", nextDueDate: "2026-07-17", amount: 3.9 }),
+  ];
+  it("alerta con 3+ suscripciones activas venciendo en <=7 dias", () => {
+    const row = buildMultipleSubscriptionsDueAlert(tres, 1, days);
+    expect(row).not.toBeNull();
+    expect(row!.kind).toBe("multiple_subscriptions_due");
+    expect(row!.related_entity_id).toBe(1); // workspaceId
+    expect(row!.payload.count).toBe(3);
+    expect(row!.payload.totalAmount).toBeCloseTo(71.7);
+    expect(row!.body).toContain("Netflix, Spotify, iCloud");
+  });
+  it("null con solo 2 en ventana o si una cae fuera de los 7 dias", () => {
+    expect(buildMultipleSubscriptionsDueAlert(tres.slice(0, 2), 1, days)).toBeNull();
+    expect(buildMultipleSubscriptionsDueAlert([tres[0], tres[1], sub({ id: 3, nextDueDate: "2026-07-20" })], 1, days)).toBeNull();
+  });
+});
+
+describe("buildObligationDueAlerts", () => {
+  const days = daysFromFixed("2026-07-10");
+  it("emite obligation_overdue con dias vencidos y saldo", () => {
+    const rows = buildObligationDueAlerts([ob({ dueDate: "2026-07-05" })], days);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].kind).toBe("obligation_overdue");
+    expect(rows[0].title).toBe("Obligación vencida");
+    expect(rows[0].body).toContain("hace 5 días");
+    expect(rows[0].body).toContain("4500");
+    expect(rows[0].payload.diffDays).toBe(-5);
+  });
+  it("emite obligation_due dentro de 7 dias, con titulo especial si es hoy", () => {
+    const rows = buildObligationDueAlerts([ob({ dueDate: "2026-07-15" })], days);
+    expect(rows[0].kind).toBe("obligation_due");
+    expect(rows[0].title).toBe("Obligación próxima a vencer");
+    expect(rows[0].body).toContain("vence en 5 días");
+    const hoy = buildObligationDueAlerts([ob({ dueDate: "2026-07-10" })], days);
+    expect(hoy[0].title).toBe("Obligación vence hoy");
+  });
+  it("no alerta a 8 dias, sin dueDate, o inactiva", () => {
+    expect(buildObligationDueAlerts([ob({ dueDate: "2026-07-18" })], days)).toHaveLength(0);
+    expect(buildObligationDueAlerts([ob({ dueDate: null })], days)).toHaveLength(0);
+    expect(buildObligationDueAlerts([ob({ status: "settled", dueDate: "2026-07-05" })], days)).toHaveLength(0);
+  });
+});
+
+describe("buildMultipleObligationsOverdueAlert", () => {
+  const days = daysFromFixed("2026-07-10");
+  it("alerta con 2+ obligaciones vencidas", () => {
+    const row = buildMultipleObligationsOverdueAlert(
+      [ob({ id: 1, title: "Préstamo", dueDate: "2026-07-01" }), ob({ id: 2, title: "Tarjeta", dueDate: "2026-07-05" })],
+      9, days,
+    );
+    expect(row).not.toBeNull();
+    expect(row!.kind).toBe("multiple_obligations_overdue");
+    expect(row!.related_entity_id).toBe(9);
+    expect(row!.payload.count).toBe(2);
+    expect(row!.body).toContain("Préstamo, Tarjeta");
+  });
+  it("null con solo 1 vencida, y las no vencidas no cuentan", () => {
+    expect(buildMultipleObligationsOverdueAlert([ob({ dueDate: "2026-07-01" })], 9, days)).toBeNull();
+    expect(buildMultipleObligationsOverdueAlert([ob({ id: 1, dueDate: "2026-07-01" }), ob({ id: 2, dueDate: "2026-07-15" })], 9, days)).toBeNull();
+  });
+});
+
+describe("buildObligationNoPaymentAlerts", () => {
+  const now = new Date("2026-07-10T12:00:00Z");
+  const cuota = (over = {}) => ob({ installmentAmount: 500, startDate: "2026-01-10", ...over });
+  it("alerta sin pagos en 45+ dias", () => {
+    const rows = buildObligationNoPaymentAlerts([cuota({ lastPaymentDate: "2026-05-01T12:00:00Z" })], now);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].kind).toBe("obligation_no_payment");
+    expect(rows[0].payload.daysSincePayment).toBe(70);
+    expect(rows[0].body).toContain("Sin pagos en 70 días");
+  });
+  it("'sin pagos registrados aun' cuando nunca hubo pago (999 dias)", () => {
+    const rows = buildObligationNoPaymentAlerts([cuota({ lastPaymentDate: null })], now);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].body).toContain("Sin pagos registrados");
+    expect(rows[0].payload.daysSincePayment).toBe(999);
+  });
+  it("no alerta con pago hace 44 dias, sin cuotas, saldo 0, u obligacion de menos de 15 dias", () => {
+    expect(buildObligationNoPaymentAlerts([cuota({ lastPaymentDate: "2026-05-27T12:00:00Z" })], now)).toHaveLength(0);
+    expect(buildObligationNoPaymentAlerts([cuota({ installmentAmount: null, lastPaymentDate: null })], now)).toHaveLength(0);
+    expect(buildObligationNoPaymentAlerts([cuota({ pendingAmount: 0, lastPaymentDate: null })], now)).toHaveLength(0);
+    expect(buildObligationNoPaymentAlerts([cuota({ startDate: "2026-07-01", lastPaymentDate: null })], now)).toHaveLength(0);
   });
 });

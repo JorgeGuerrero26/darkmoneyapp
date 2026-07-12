@@ -64,7 +64,11 @@ import {
   buildDuplicateChargeAlerts,
   buildExpectedIncomeMissedAlerts,
   buildMonthlyRecapAlert,
+  buildMultipleObligationsOverdueAlert,
+  buildMultipleSubscriptionsDueAlert,
+  buildObligationDueAlerts,
   buildObligationMilestoneAlerts,
+  buildObligationNoPaymentAlerts,
   buildSubscriptionOverdueAlerts,
   buildSubscriptionPriceIncreaseAlerts,
   buildSubscriptionReminderAlerts,
@@ -385,97 +389,16 @@ async function generateNotifications(
   pushAlerts(buildSubscriptionOverdueAlerts(snapshot.subscriptions, calendarDaysFromTodayLocal));
 
   // ── 5. Multiple subscriptions due this week ───────────────────────────────
-  const subsDueThisWeek = snapshot.subscriptions.filter((s) => {
-    if (s.status !== "active") return false;
-    const d = calendarDaysFromTodayLocal(s.nextDueDate);
-    return d >= 0 && d <= 7;
-  });
-  if (subsDueThisWeek.length >= 3) {
-    const totalAmt = subsDueThisWeek.reduce((acc, s) => acc + s.amount, 0);
-    rows.push({
-      user_id: userId, channel: "in_app", status: "pending",
-      kind: "multiple_subscriptions_due",
-      title: "Varias suscripciones vencen esta semana",
-      body: `${subsDueThisWeek.length} suscripciones vencen en los próximos 7 días: ${subsDueThisWeek.map((s) => s.name).join(", ")}.`,
-      scheduled_for: nowIso,
-      related_entity_type: "workspace", related_entity_id: workspaceId,
-      payload: { count: subsDueThisWeek.length, totalAmount: totalAmt },
-    });
-  }
+  pushAlerts(buildMultipleSubscriptionsDueAlert(snapshot.subscriptions, workspaceId, calendarDaysFromTodayLocal));
 
   // ── 6. Obligation due & overdue ───────────────────────────────────────────
-  for (const ob of snapshot.obligations) {
-    if (ob.status !== "active") continue;
-    if (!ob.dueDate) continue;
-    const diffDays = calendarDaysFromTodayLocal(ob.dueDate);
-
-    if (diffDays < 0) {
-      rows.push({
-        user_id: userId, channel: "in_app", status: "pending",
-        kind: "obligation_overdue",
-        title: "Obligación vencida",
-        body: `"${ob.title}" venció hace ${Math.abs(diffDays)} día${Math.abs(diffDays) !== 1 ? "s" : ""}. Saldo pendiente: ${ob.pendingAmount} ${ob.currencyCode}.`,
-        scheduled_for: nowIso,
-        related_entity_type: "obligation", related_entity_id: ob.id,
-        payload: { dueDate: ob.dueDate, diffDays, pendingAmount: ob.pendingAmount },
-      });
-    } else if (diffDays <= 7) {
-      rows.push({
-        user_id: userId, channel: "in_app", status: "pending",
-        kind: "obligation_due",
-        title: diffDays === 0 ? "Obligación vence hoy" : "Obligación próxima a vencer",
-        body: `"${ob.title}" ${diffDays === 0 ? "vence hoy" : `vence en ${diffDays} día${diffDays !== 1 ? "s" : ""}`}. Saldo: ${ob.pendingAmount} ${ob.currencyCode}.`,
-        scheduled_for: nowIso,
-        related_entity_type: "obligation", related_entity_id: ob.id,
-        payload: { dueDate: ob.dueDate, diffDays, pendingAmount: ob.pendingAmount },
-      });
-    }
-  }
+  pushAlerts(buildObligationDueAlerts(snapshot.obligations, calendarDaysFromTodayLocal));
 
   // ── 7. Multiple obligations overdue ──────────────────────────────────────
-  const overdueObligations = snapshot.obligations.filter((o) => {
-    if (o.status !== "active" || !o.dueDate) return false;
-    return calendarDaysFromTodayLocal(o.dueDate) < 0;
-  });
-  if (overdueObligations.length >= 2) {
-    rows.push({
-      user_id: userId, channel: "in_app", status: "pending",
-      kind: "multiple_obligations_overdue",
-      title: "Varias obligaciones vencidas",
-      body: `Tienes ${overdueObligations.length} obligaciones vencidas: ${overdueObligations.map((o) => o.title).join(", ")}.`,
-      scheduled_for: nowIso,
-      related_entity_type: "workspace", related_entity_id: workspaceId,
-      payload: { count: overdueObligations.length },
-    });
-  }
+  pushAlerts(buildMultipleObligationsOverdueAlert(snapshot.obligations, workspaceId, calendarDaysFromTodayLocal));
 
   // ── 8. Obligation with no recent payment ──────────────────────────────────
-  for (const ob of snapshot.obligations) {
-    if (ob.status !== "active") continue;
-    if (!ob.installmentAmount || ob.installmentAmount <= 0) continue;
-    if (ob.pendingAmount <= 0) continue;
-
-    const lastPay = ob.lastPaymentDate ? new Date(ob.lastPaymentDate) : null;
-    const daysSincePayment = lastPay ? daysBetween(lastPay, now) : 999;
-    const startDate = new Date(ob.startDate);
-    const daysSinceStart = daysBetween(startDate, now);
-
-    // Alert if: no payment in 45+ days (and obligation is at least 15 days old)
-    if (daysSincePayment >= 45 && daysSinceStart >= 15) {
-      const msg = lastPay
-        ? `Sin pagos en ${daysSincePayment} días.`
-        : "Sin pagos registrados aún.";
-      rows.push({
-        user_id: userId, channel: "in_app", status: "pending",
-        kind: "obligation_no_payment",
-        title: "Obligación sin pagos recientes",
-        body: `"${ob.title}" tiene saldo pendiente de ${ob.pendingAmount} ${ob.currencyCode}. ${msg}`,
-        scheduled_for: nowIso,
-        related_entity_type: "obligation", related_entity_id: ob.id,
-        payload: { daysSincePayment, pendingAmount: ob.pendingAmount },
-      });
-    }
-  }
+  pushAlerts(buildObligationNoPaymentAlerts(snapshot.obligations, now));
 
   // ── 9. High-interest obligation ───────────────────────────────────────────
   for (const ob of snapshot.obligations) {

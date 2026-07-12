@@ -307,3 +307,114 @@ export function buildSubscriptionOverdueAlerts(
   }
   return rows;
 }
+
+const daysBetween = (a: Date, b: Date): number =>
+  Math.floor((b.getTime() - a.getTime()) / 86_400_000);
+
+export function buildMultipleSubscriptionsDueAlert(
+  subscriptions: SubscriptionSummary[],
+  workspaceId: number,
+  daysFromToday: DaysFromToday,
+): AlertRow | null {
+  const subsDueThisWeek = subscriptions.filter((s) => {
+    if (s.status !== "active") return false;
+    const d = daysFromToday(s.nextDueDate);
+    return d >= 0 && d <= 7;
+  });
+  if (subsDueThisWeek.length < 3) return null;
+  const totalAmt = subsDueThisWeek.reduce((acc, s) => acc + s.amount, 0);
+  return {
+    kind: "multiple_subscriptions_due",
+    title: "Varias suscripciones vencen esta semana",
+    body: `${subsDueThisWeek.length} suscripciones vencen en los próximos 7 días: ${subsDueThisWeek.map((s) => s.name).join(", ")}.`,
+    related_entity_type: "workspace",
+    related_entity_id: workspaceId,
+    payload: { count: subsDueThisWeek.length, totalAmount: totalAmt },
+  };
+}
+
+export function buildObligationDueAlerts(
+  obligations: ObligationSummary[],
+  daysFromToday: DaysFromToday,
+): AlertRow[] {
+  const rows: AlertRow[] = [];
+  for (const ob of obligations) {
+    if (ob.status !== "active") continue;
+    if (!ob.dueDate) continue;
+    const diffDays = daysFromToday(ob.dueDate);
+
+    if (diffDays < 0) {
+      rows.push({
+        kind: "obligation_overdue",
+        title: "Obligación vencida",
+        body: `"${ob.title}" venció hace ${Math.abs(diffDays)} día${Math.abs(diffDays) !== 1 ? "s" : ""}. Saldo pendiente: ${ob.pendingAmount} ${ob.currencyCode}.`,
+        related_entity_type: "obligation",
+        related_entity_id: ob.id,
+        payload: { dueDate: ob.dueDate, diffDays, pendingAmount: ob.pendingAmount },
+      });
+    } else if (diffDays <= 7) {
+      rows.push({
+        kind: "obligation_due",
+        title: diffDays === 0 ? "Obligación vence hoy" : "Obligación próxima a vencer",
+        body: `"${ob.title}" ${diffDays === 0 ? "vence hoy" : `vence en ${diffDays} día${diffDays !== 1 ? "s" : ""}`}. Saldo: ${ob.pendingAmount} ${ob.currencyCode}.`,
+        related_entity_type: "obligation",
+        related_entity_id: ob.id,
+        payload: { dueDate: ob.dueDate, diffDays, pendingAmount: ob.pendingAmount },
+      });
+    }
+  }
+  return rows;
+}
+
+export function buildMultipleObligationsOverdueAlert(
+  obligations: ObligationSummary[],
+  workspaceId: number,
+  daysFromToday: DaysFromToday,
+): AlertRow | null {
+  const overdueObligations = obligations.filter((o) => {
+    if (o.status !== "active" || !o.dueDate) return false;
+    return daysFromToday(o.dueDate) < 0;
+  });
+  if (overdueObligations.length < 2) return null;
+  return {
+    kind: "multiple_obligations_overdue",
+    title: "Varias obligaciones vencidas",
+    body: `Tienes ${overdueObligations.length} obligaciones vencidas: ${overdueObligations.map((o) => o.title).join(", ")}.`,
+    related_entity_type: "workspace",
+    related_entity_id: workspaceId,
+    payload: { count: overdueObligations.length },
+  };
+}
+
+export function buildObligationNoPaymentAlerts(
+  obligations: ObligationSummary[],
+  now: Date,
+): AlertRow[] {
+  const rows: AlertRow[] = [];
+  for (const ob of obligations) {
+    if (ob.status !== "active") continue;
+    if (!ob.installmentAmount || ob.installmentAmount <= 0) continue;
+    if (ob.pendingAmount <= 0) continue;
+
+    const lastPay = ob.lastPaymentDate ? new Date(ob.lastPaymentDate) : null;
+    const daysSincePayment = lastPay ? daysBetween(lastPay, now) : 999;
+    const startDate = new Date(ob.startDate);
+    const daysSinceStart = daysBetween(startDate, now);
+
+    // Alert if: no payment in 45+ days (and obligation is at least 15 days old)
+    if (daysSincePayment >= 45 && daysSinceStart >= 15) {
+      const msg = lastPay
+        ? `Sin pagos en ${daysSincePayment} días.`
+        : "Sin pagos registrados aún.";
+      rows.push({
+        kind: "obligation_no_payment",
+        title: "Obligación sin pagos recientes",
+        body: `"${ob.title}" tiene saldo pendiente de ${ob.pendingAmount} ${ob.currencyCode}. ${msg}`,
+        related_entity_type: "obligation",
+        related_entity_id: ob.id,
+        payload: { daysSincePayment, pendingAmount: ob.pendingAmount },
+      });
+    }
+  }
+  return rows;
+}
