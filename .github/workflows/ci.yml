@@ -20,8 +20,26 @@ jobs:
       - name: Instalar dependencias
         run: npm ci
 
+      # npm run typecheck regenera .expo/types/router.d.ts (scripts/generate-route-types.mjs)
+      # antes de tsc: las rutas tipadas de expo-router se validan también en CI.
       - name: Typecheck
         run: npm run typecheck
 
       - name: Tests
         run: npm test -- --ci
+
+  edge-functions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      # Solo las funciones con cliente tipado (Database generic). Las legacy se
+      # suman a esta lista cuando se les haga el mismo tratamiento.
+      - name: Deno check edge functions
+        run: |
+          deno check supabase/functions/send-daily-notification-digest/index.ts
+          deno check supabase/functions/send-push-notifications/index.ts

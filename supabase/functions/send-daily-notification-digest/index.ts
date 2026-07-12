@@ -4,6 +4,7 @@
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import type { Database } from "../_shared/database-types.ts";
 import { isInformationalNotificationKind } from "../_shared/notification-priority.ts";
 import { generateDailyAiDigest } from "../_shared/daily-ai-digest.ts";
 
@@ -87,8 +88,8 @@ function buildDailyBaselineRows(userId: string, digestDate: string, nowIso: stri
   return [
     {
       user_id: userId,
-      channel: "in_app",
-      status: "pending",
+      channel: "in_app" as const,
+      status: "pending" as const,
       kind: "daily_workspace_summary",
       title: "Resumen financiero del día",
       body: "Tienes tu resumen diario listo para revisar cómo va tu workspace.",
@@ -99,8 +100,8 @@ function buildDailyBaselineRows(userId: string, digestDate: string, nowIso: stri
     },
     {
       user_id: userId,
-      channel: "in_app",
-      status: "pending",
+      channel: "in_app" as const,
+      status: "pending" as const,
       kind: "daily_cashflow_check",
       title: "Chequeo de flujo",
       body: "Revisa ingresos y gastos registrados para mantener claro tu margen del mes.",
@@ -111,8 +112,8 @@ function buildDailyBaselineRows(userId: string, digestDate: string, nowIso: stri
     },
     {
       user_id: userId,
-      channel: "in_app",
-      status: "pending",
+      channel: "in_app" as const,
+      status: "pending" as const,
       kind: "daily_budget_review",
       title: "Revisión diaria",
       body: "Haz una revisión rápida de presupuestos, obligaciones y suscripciones activas.",
@@ -140,7 +141,7 @@ function filterTodaysInformational(
 }
 
 async function ensureDailyInformationalMinimum(
-  supabase: ReturnType<typeof createClient>,
+  supabase: ReturnType<typeof createClient<Database>>,
   userId: string,
   digestDate: string,
   notifications: DigestNotificationRow[],
@@ -193,7 +194,7 @@ async function ensureDailyInformationalMinimum(
 }
 
 type PredictiveInput = {
-  supabase: ReturnType<typeof createClient>;
+  supabase: ReturnType<typeof createClient<Database>>;
   userId: string;
   todayKey: string; // YYYY-MM-DD en Lima
 };
@@ -220,7 +221,8 @@ async function insertPredictiveAlerts({ supabase, userId, todayKey }: Predictive
   if (!workspace) return;
   const workspaceId = workspace.workspace_id;
   const base = workspace.base_currency_code;
-  if (!base) return;
+  // Columnas nullable en la vista: sin workspace o sin moneda base no hay cálculo posible.
+  if (workspaceId == null || !base) return;
 
   // 2) Saldos del workspace (todas las cuentas, para mapear account_id → currency_code)
   const { data: accountBalances } = await supabase
@@ -238,7 +240,12 @@ async function insertPredictiveAlerts({ supabase, userId, todayKey }: Predictive
   const archivedIds = new Set((accountsMeta ?? []).filter((a) => a.is_archived).map((a) => a.id));
 
   const liquid = accountBalances.filter(
-    (a) => !archivedIds.has(a.account_id) && ["bank", "cash", "savings"].includes(a.type),
+    (a) =>
+      a.account_id != null &&
+      a.type != null &&
+      a.currency_code != null &&
+      !archivedIds.has(a.account_id) &&
+      ["bank", "cash", "savings"].includes(a.type),
   );
   if (!liquid.length) return;
 
@@ -257,6 +264,7 @@ async function insertPredictiveAlerts({ supabase, userId, todayKey }: Predictive
 
   let disponible = 0;
   for (const a of liquid) {
+    if (!a.currency_code) continue;
     const v = toBase(Number(a.current_balance), a.currency_code);
     if (v !== null) disponible += v;
   }
@@ -321,10 +329,12 @@ async function insertPredictiveAlerts({ supabase, userId, todayKey }: Predictive
     .lte("next_due_date", monthEnd);
   let compromisos = 0;
   for (const o of obligations ?? []) {
+    if (!o.currency_code) continue;
     const v = toBase(Number(o.pending_amount ?? 0), o.currency_code);
     if (v !== null) compromisos += v;
   }
   for (const s of subs ?? []) {
+    if (!s.currency_code) continue;
     const v = toBase(Number(s.amount ?? 0), s.currency_code);
     if (v !== null) compromisos += v;
   }
@@ -365,7 +375,7 @@ Deno.serve(async (req: Request) => {
     return json({ ok: false, error: "Missing Supabase env vars" }, 500);
   }
 
-  const supabase = createClient(supabaseUrl, serviceRoleKey, {
+  const supabase = createClient<Database>(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
@@ -471,7 +481,7 @@ Deno.serve(async (req: Request) => {
         .from("notifications")
         .upsert({
           user_id: userId,
-          channel: "in_app",
+          channel: "in_app" as const,
           status: "pending",
           kind: "daily_ai_digest",
           title: aiDigestResult.digest.title,
@@ -506,7 +516,7 @@ Deno.serve(async (req: Request) => {
         .from("notifications")
         .upsert({
           user_id: userId,
-          channel: "in_app",
+          channel: "in_app" as const,
           status: "pending",
           kind: "daily_digest",
           title: pushTitle,
