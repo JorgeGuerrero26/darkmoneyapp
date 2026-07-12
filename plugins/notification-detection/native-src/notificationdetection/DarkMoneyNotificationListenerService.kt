@@ -109,7 +109,14 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
       drop("gmail-gate")
       return
     }
-    if (isPromotionalNotification(combined)) {
+    // Google Wallet: su notificación de pago es "<comercio> · PEN39.40 con <tarjeta> ••1234"
+    // y el NOMBRE de la tarjeta puede contener palabras promocionales ("Campaña imágenes del
+    // mundial" es un diseño de tarjeta BCP). El patrón monto + "••" es transaccional
+    // inequívoco: salta el filtro promocional y la inferencia de tipo solo para ese shape.
+    val isWalletTransaction = sourcePackage == WALLET_PACKAGE &&
+      combined.contains("••") &&
+      Regex("""(?i)(pen|s/|usd|\$)\s*[0-9]""").containsMatchIn(combined)
+    if (!isWalletTransaction && isPromotionalNotification(combined)) {
       drop("promotional")
       return
     }
@@ -130,6 +137,14 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
       drop("registered-recent")
       return
     }
+    // Movimiento registrado A MANO en la app con el mismo monto hace <2h: el aviso tardío
+    // del banco/correo de ESA compra no debe re-sugerir (RN escribe la huella al registrar).
+    // Ventana 2h: los correos BCP llegan con minutos de retraso; no cubre días distintos,
+    // así compras nuevas del mismo monto en otro momento sí se detectan.
+    if (NotificationDetectionStore.hasManualRegisteredAmount(applicationContext, amount, withinMs = 2 * 60 * 60_000L)) {
+      drop("manual-registered-dedupe")
+      return
+    }
     // Cross-source dedup: otra FUENTE (banco vs Gmail vs Google Wallet vs Samsung Pay) se salta
     // si ya existe una pending suggestion del mismo monto en los últimos 5 min. Política: el
     // primero llegado gana. Cubre BCP push + BCP email + Wallet/SPay para una misma transacción.
@@ -143,7 +158,13 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
       drop("pending-amount-dedupe")
       return
     }
-    val detection = inferMovementDetection(combined)
+    // El shape de pago de Wallet no trae verbos ("consumo", "pagaste"): la inferencia
+    // genérica lo marcaría low-confidence. Un pago de tarjeta vía Wallet es siempre gasto.
+    val detection = if (isWalletTransaction) {
+      DetectionResult("expense", "high")
+    } else {
+      inferMovementDetection(combined)
+    }
     if (detection.confidence == "low") {
       drop("low-confidence")
       return
@@ -718,6 +739,7 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
 
   companion object {
     private const val GMAIL_PACKAGE = "com.google.android.gm"
+private const val WALLET_PACKAGE = "com.google.android.apps.walletnfcrel"
     private val RELAY_PACKAGES = setOf(
       "com.google.android.apps.walletnfcrel", // Google Wallet mirrors bank card payments
       "com.samsung.android.spay",             // Samsung Pay mirrors bank card payments
