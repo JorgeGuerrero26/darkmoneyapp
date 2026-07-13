@@ -40,6 +40,7 @@ import {
 } from "lucide-react-native";
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Haptics from "expo-haptics";
 import { useAuth } from "../../lib/auth-context";
 import { useWorkspace, useWorkspaceListStore } from "../../lib/workspace-context";
 import {
@@ -707,7 +708,7 @@ function DashboardScreen() {
       <ScreenHeader
         title={`Hola, ${profile?.fullName?.split(" ")[0] ?? "usuario"}`}
         subtitle={`${workspaceDisplayName} · ${format(new Date(), "d MMM yyyy", { locale: es })}${lastUpdateLabel ? ` · ${lastUpdateLabel}` : ""}`}
-        rightAction={<DashboardHeaderRight onSignOut={handleSignOut} privacyMode={privacyMode} onTogglePrivacy={togglePrivacyMode} />}
+        rightAction={<DashboardHeaderRight onSignOut={handleSignOut} privacyMode={privacyMode} onTogglePrivacy={() => { void Haptics.selectionAsync(); togglePrivacyMode(); }} />}
         showPlanBadge
       />
 
