@@ -105,17 +105,23 @@ export function resolveNotificationNavigationTarget(input: {
       return withReason(kind, payload, "/(app)/budgets", { from: "notifications" });
     case "budget_alert":
     case "budget_period_ending":
-      return "/budgets?from=notifications";
+      return id != null && relatedEntityType === "budget"
+        ? withReason(kind, payload, "/budget/[id]", { id: String(id), from: "notifications" })
+        : withReason(kind, payload, "/(app)/budgets", { from: "notifications" });
     case "subscription_reminder":
     case "subscription_overdue":
-      return id ? `/subscription/${id}` : "/subscriptions";
+      return id
+        ? withReason(kind, payload, "/subscription/[id]", { id: String(id) })
+        : "/subscriptions";
     case "multiple_subscriptions_due":
       return "/subscriptions";
     case "obligation_due":
     case "obligation_overdue":
     case "obligation_no_payment":
     case "high_interest_obligation":
-      return obligationRouteId ? `/obligation/${obligationRouteId}` : "/(app)/obligations";
+      return obligationRouteId
+        ? withReason(kind, payload, "/obligation/[id]", { id: String(obligationRouteId) })
+        : "/(app)/obligations";
     case "multiple_obligations_overdue":
       return "/(app)/obligations";
     case "obligation_event_unlinked":
@@ -176,9 +182,14 @@ export function resolveNotificationNavigationTarget(input: {
     case "low_balance":
     case "negative_balance":
     case "account_dormant":
-      return id ? `/account/${id}` : "/(app)/accounts";
+      return id
+        ? withReason(kind, payload, "/account/[id]", { id: String(id) })
+        : "/(app)/accounts";
     case "upcoming_annual_subscription":
-      return id ? `/subscription/${id}` : "/subscriptions";
+    case "subscription_price_increase":
+      return id
+        ? withReason(kind, payload, "/subscription/[id]", { id: String(id) })
+        : "/subscriptions";
     case "recurring_income_reminder":
       return "/recurring-income";
     case "high_expense_month": {
@@ -216,8 +227,6 @@ export function resolveNotificationNavigationTarget(input: {
       return "/(app)/accounts";
     case "subscription_cost_heavy":
       return "/subscriptions";
-    case "subscription_price_increase":
-      return id ? `/subscription/${id}` : "/subscriptions";
     case "possible_duplicate_charge": {
       const day = payloadString(payload, "day");
       const amountLabel = payloadString(payload, "amountLabel");
@@ -241,7 +250,9 @@ export function resolveNotificationNavigationTarget(input: {
         : "/(app)/movements";
     }
     case "obligation_milestone":
-      return obligationIdFromPayload ? `/obligation/${obligationIdFromPayload}` : "/(app)/obligations";
+      return obligationIdFromPayload
+        ? withReason(kind, payload, "/obligation/[id]", { id: String(obligationIdFromPayload) })
+        : "/(app)/obligations";
     case "cash_runway_alert":
       return "/(app)/accounts";
     case "commitments_vs_balance":

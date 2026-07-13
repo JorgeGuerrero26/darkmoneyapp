@@ -2,9 +2,11 @@ import { resolveNotificationNavigationTarget } from "../lib/notification-navigat
 
 describe("navegacion de kinds nuevos", () => {
   test("price increase va al detalle de la suscripcion", () => {
-    expect(
-      resolveNotificationNavigationTarget({ kind: "subscription_price_increase", relatedEntityType: "subscription", relatedEntityId: 7 }),
-    ).toBe("/subscription/7");
+    const t = resolveNotificationNavigationTarget({
+      kind: "subscription_price_increase", relatedEntityType: "subscription", relatedEntityId: 7,
+    }) as { pathname: string; params: Record<string, string> };
+    expect(t.pathname).toBe("/subscription/[id]");
+    expect(t.params.id).toBe("7");
   });
   test("duplicate charge abre movimientos con quick-filter", () => {
     const t = resolveNotificationNavigationTarget({
@@ -30,9 +32,11 @@ describe("navegacion de kinds nuevos", () => {
     expect(t.params.quickDateFrom).toBe("2026-06-01");
   });
   test("milestone va al detalle de la obligacion (id del payload)", () => {
-    expect(
-      resolveNotificationNavigationTarget({ kind: "obligation_milestone", payload: { obligationId: 42 } }),
-    ).toBe("/obligation/42");
+    const t = resolveNotificationNavigationTarget({
+      kind: "obligation_milestone", payload: { obligationId: 42 },
+    }) as { pathname: string; params: Record<string, string> };
+    expect(t.pathname).toBe("/obligation/[id]");
+    expect(t.params.id).toBe("42");
   });
   test("predictivas van a cuentas y obligaciones", () => {
     expect(resolveNotificationNavigationTarget({ kind: "cash_runway_alert" })).toBe("/(app)/accounts");
@@ -64,5 +68,46 @@ describe("familia diaria", () => {
     expect(t.pathname).toBe("/(app)/budgets");
     expect(t.params.reason).toContain("Revisión diaria");
     expect(t.params.reasonToken).toBeTruthy();
+  });
+});
+
+describe("reason en destinos", () => {
+  test("budget_alert va al presupuesto puntual con nota", () => {
+    const t = resolveNotificationNavigationTarget({
+      kind: "budget_alert", relatedEntityType: "budget", relatedEntityId: 12, payload: { usedPercent: 92 },
+    }) as { pathname: string; params: Record<string, string> };
+    expect(t.pathname).toBe("/budget/[id]");
+    expect(t.params.id).toBe("12");
+    expect(t.params.from).toBe("notifications");
+    expect(t.params.reason).toContain("92%");
+  });
+  test("budget_alert sin id cae a la lista con nota", () => {
+    const t = resolveNotificationNavigationTarget({ kind: "budget_alert" }) as { pathname: string; params: Record<string, string> };
+    expect(t.pathname).toBe("/(app)/budgets");
+    expect(t.params.reason).toBeTruthy();
+  });
+  test("obligation_overdue lleva nota al detalle", () => {
+    const t = resolveNotificationNavigationTarget({
+      kind: "obligation_overdue", relatedEntityType: "obligation", relatedEntityId: 5,
+    }) as { pathname: string; params: Record<string, string> };
+    expect(t.pathname).toBe("/obligation/[id]");
+    expect(t.params.id).toBe("5");
+    expect(t.params.reason).toContain("vencida");
+  });
+  test("low_balance lleva nota al detalle de cuenta", () => {
+    const t = resolveNotificationNavigationTarget({
+      kind: "low_balance", relatedEntityType: "account", relatedEntityId: 3,
+    }) as { pathname: string; params: Record<string, string> };
+    expect(t.pathname).toBe("/account/[id]");
+    expect(t.params.id).toBe("3");
+    expect(t.params.reason).toBeTruthy();
+  });
+  test("subscription_reminder lleva nota al detalle", () => {
+    const t = resolveNotificationNavigationTarget({
+      kind: "subscription_reminder", relatedEntityType: "subscription", relatedEntityId: 7,
+    }) as { pathname: string; params: Record<string, string> };
+    expect(t.pathname).toBe("/subscription/[id]");
+    expect(t.params.id).toBe("7");
+    expect(t.params.reason).toBeTruthy();
   });
 });
