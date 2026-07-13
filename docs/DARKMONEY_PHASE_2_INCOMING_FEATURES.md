@@ -32,7 +32,8 @@ Todo lo siguiente YA EXISTE y las epicas deben asumirlo como base:
 
 - **Estandarizacion 100%**: los 10 modulos de recurso auditados y conformes
   (2026-07-05); auditoria de movimientos sin hallazgos altos/medios abiertos.
-- **Red de seguridad**: 35 tests TS (jest-expo) + 19 tests JUnit Kotlin + CI en
+- **Red de seguridad**: 126 tests TS (jest-expo, conteo 2026-07-12 tras migrar
+  las reglas de notificaciones a builders puros) + 19 tests JUnit Kotlin + CI en
   GitHub Actions (typecheck + tests en cada push). Toda feature nueva de Fase 2
   DEBE entrar con tests de su logica pura.
 - **OTA updates operativo** (EAS Update, canal `preview`): los cambios JS se

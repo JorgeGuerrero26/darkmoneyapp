@@ -1,5 +1,11 @@
 # Fase 4.2 — Pendientes de modularización de obligations
 
+> **✅ COMPLETADO (verificado 2026-07-12)**: todas las sub-fases f.1–f.4 ya están
+> ejecutadas. Estado real: `workspace-data.ts` ~3,400 líneas (objetivo era ~4,400),
+> `obligations-impl.ts` ~3,350 líneas, cero código muerto duplicado de los clusters
+> 4.2-c/d/e. Este documento se conserva solo como referencia histórica y por su
+> checklist de smoke tests de obligaciones (sección "Validación f.4").
+
 Continuación del plan de **Fase 4 parte 2** (corte físico del megafile
 `services/queries/workspace-data.ts`).
 
