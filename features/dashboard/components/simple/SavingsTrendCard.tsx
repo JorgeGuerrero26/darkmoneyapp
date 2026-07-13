@@ -4,6 +4,7 @@ import { Card } from "../../../../components/ui/Card";
 import { SparkLine } from "../../../../components/ui/SparkLine";
 import { formatCurrency } from "../../../../components/ui/AmountDisplay";
 import { COLORS } from "../../../../constants/theme";
+import { useUiStore } from "../../../../store/ui-store";
 import { SectionTitle } from "./SectionTitle";
 import { dashboardSimpleStyles as subStyles } from "./styles";
 
@@ -13,6 +14,7 @@ type SavingsTrendCardProps = {
 };
 
 export function SavingsTrendCard({ monthlyPulse, currency }: SavingsTrendCardProps) {
+  const privacyMode = useUiStore((state) => state.privacyMode);
   const netValues = monthlyPulse.map((m) => m.income - m.expense);
   if (netValues.every((v) => v === 0)) return null;
 
@@ -29,7 +31,7 @@ export function SavingsTrendCard({ monthlyPulse, currency }: SavingsTrendCardPro
         </Text>
       </View>
       <View style={subStyles.trendBody}>
-        <SparkLine values={netValues} width={156} height={64} positiveColor={COLORS.pine} negativeColor={COLORS.rosewood} />
+        <SparkLine values={netValues} width={156} height={64} positiveColor={COLORS.pine} negativeColor={COLORS.rosewood} masked={privacyMode} />
         <View style={subStyles.trendLegend}>
           {monthlyPulse.map((m, i) => {
             const net = m.income - m.expense;

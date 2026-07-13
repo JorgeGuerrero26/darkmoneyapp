@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { Animated, Easing, View } from "react-native";
+import { Animated, Easing, Text, View } from "react-native";
 import Svg, { Path } from "react-native-svg";
+
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SURFACE } from "../../constants/theme";
 
 export type RingSegment = {
   key: string;
@@ -14,6 +16,8 @@ type Props = {
   segments: RingSegment[];
   size?: number;
   thickness?: number;
+  /** Modo privacidad: reemplaza el SVG por un placeholder del mismo tamaño. */
+  masked?: boolean;
 };
 
 function buildArcs(
@@ -71,7 +75,7 @@ function buildArcs(
   return result;
 }
 
-export function RingChart({ segments, size = 120, thickness = 20 }: Props) {
+export function RingChart({ segments, size = 120, thickness = 20, masked = false }: Props) {
   const cx = size / 2;
   const cy = size / 2;
   const outerR = size / 2 - 2;
@@ -97,6 +101,14 @@ export function RingChart({ segments, size = 120, thickness = 20 }: Props) {
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [segKey]);
+
+  if (masked) {
+    return (
+      <View style={{ width: size, height: size, borderRadius: RADIUS.lg, borderWidth: 1, borderColor: SURFACE.separator, alignItems: "center", justifyContent: "center" }}>
+        <Text style={{ fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm }}>Oculto</Text>
+      </View>
+    );
+  }
 
   const arcs = buildArcs(segments, cx, cy, outerR, innerR, drawProgress);
 

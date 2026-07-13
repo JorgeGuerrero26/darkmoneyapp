@@ -1,5 +1,8 @@
 import { useMemo } from "react";
+import { Text, View } from "react-native";
 import Svg, { Polyline, Line as SvgLine, Circle as SvgCircle } from "react-native-svg";
+
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SURFACE } from "../../constants/theme";
 
 type Props = {
   values: number[];
@@ -7,6 +10,8 @@ type Props = {
   height: number;
   positiveColor?: string;
   negativeColor?: string;
+  /** Modo privacidad: reemplaza el SVG por un placeholder del mismo tamaño. */
+  masked?: boolean;
 };
 
 export function SparkLine({
@@ -15,6 +20,7 @@ export function SparkLine({
   height,
   positiveColor = "#10B981",
   negativeColor = "#EF4444",
+  masked = false,
 }: Props) {
   const result = useMemo(() => {
     if (values.length === 0) return null;
@@ -41,6 +47,14 @@ export function SparkLine({
 
     return { pointsStr, baseY, last, lineColor, showBaseline };
   }, [values, width, height, positiveColor, negativeColor]);
+
+  if (masked) {
+    return (
+      <View style={{ width, height, borderRadius: RADIUS.lg, borderWidth: 1, borderColor: SURFACE.separator, alignItems: "center", justifyContent: "center" }}>
+        <Text style={{ fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm }}>Oculto</Text>
+      </View>
+    );
+  }
 
   if (!result) return null;
 
