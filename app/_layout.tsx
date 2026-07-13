@@ -795,14 +795,24 @@ function NavigationGuard() {
 
   const onSubscriptionReminderTap = useCallback(
     (subscriptionId: number) => {
-      router.push(`/subscription/${subscriptionId}`);
+      const target = resolveNotificationNavigationTarget({
+        kind: "subscription_reminder",
+        relatedEntityType: "subscription",
+        relatedEntityId: subscriptionId,
+      });
+      router.push(target as never);
     },
     [router],
   );
 
   const onObligationReminderTap = useCallback(
     (obligationId: number) => {
-      router.push(`/obligation/${obligationId}`);
+      const target = resolveNotificationNavigationTarget({
+        kind: "obligation_due",
+        relatedEntityType: "obligation",
+        relatedEntityId: obligationId,
+      });
+      router.push(target as never);
     },
     [router],
   );
