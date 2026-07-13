@@ -27,6 +27,9 @@ type UiState = {
   lastMovementAccountId: number | null;
   dashboardMode: DashboardMode;
   dashboardScrollY: number;
+  /** Modo privacidad: enmascara montos y gráficos en toda la app (persistido). */
+  privacyMode: boolean;
+  togglePrivacyMode: () => void;
   /** Incrementing token — each new value triggers the SuccessGlow animation. */
   successGlowToken: number;
   showToast: (message: string, variant?: ToastVariant) => void;
@@ -51,6 +54,8 @@ export const useUiStore = create<UiState>()(
       lastMovementAccountId: null,
       dashboardMode: "simple",
       dashboardScrollY: 0,
+      privacyMode: false,
+      togglePrivacyMode: () => set((state) => ({ privacyMode: !state.privacyMode })),
       successGlowToken: 0,
 
       showToast: (message, variant = "success") =>
@@ -99,6 +104,7 @@ export const useUiStore = create<UiState>()(
         lastMovementAccountId: state.lastMovementAccountId,
         dashboardMode: state.dashboardMode,
         biometricEnabled: state.biometricEnabled,
+        privacyMode: state.privacyMode,
       }),
       /** Quita `lastMovementCategoryId` de almacenamientos antiguos (ya no se persiste). */
       merge: (persisted, current) => {
