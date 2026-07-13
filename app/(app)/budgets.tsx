@@ -42,6 +42,7 @@ import {
 import { shareCsvAsFile } from "../../lib/share-csv-file";
 import { useWorkspace } from "../../lib/workspace-context";
 import { useToast } from "../../hooks/useToast";
+import { useNotificationReason } from "../../hooks/useNotificationReason";
 import { useOriginBackNavigation } from "../../hooks/useOriginBackNavigation";
 import { useBudgetScopeMovementsQuery } from "../../services/queries/budget-analytics";
 import { useWorkspaceSnapshotQuery } from "../../services/queries/workspace-data";
@@ -65,6 +66,7 @@ function BudgetsScreen() {
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
   const { showToast } = useToast();
+  const { reason: notificationReason } = useNotificationReason();
 
   const [formVisible, setFormVisible] = useState(false);
   const [editBudget, setEditBudget] = useState<BudgetOverview | null>(null);
@@ -397,7 +399,7 @@ function BudgetsScreen() {
           <ActiveFilterBar items={activeFilterItems} onClear={clearFilters} />
         ) : null
       }
-      context={!selectMode ? <ResourceContextNote>{contextNote}</ResourceContextNote> : null}
+      context={!selectMode ? <ResourceContextNote>{notificationReason ?? contextNote}</ResourceContextNote> : null}
       summary={
         !selectMode && filteredBudgets.length > 0 ? (
           <BudgetSummaryBar

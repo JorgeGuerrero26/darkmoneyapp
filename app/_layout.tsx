@@ -788,10 +788,9 @@ function NavigationGuard() {
     [router],
   );
   const onDailyDigestTap = useCallback(() => {
-    // El digest resume alertas informativas: abrir la bandeja donde viven,
-    // no el dashboard (resolveNotificationNavigationTarget se mantiene para
-    // el tap del card dentro de la propia bandeja).
-    router.push("/notifications");
+    // Mismo destino que el tap del card en la bandeja: dashboard con el
+    // resumen del día abierto (resolver compartido).
+    router.push(resolveNotificationNavigationTarget({ kind: "daily_workspace_summary" }) as never);
   }, [router]);
 
   const onSubscriptionReminderTap = useCallback(
