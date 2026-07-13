@@ -94,7 +94,7 @@ The central hook should cover:
 
 ```ts
 BackHandler.addEventListener('hardwareBackPress', () => {
-  if (!from) return false;
+  if (!from || !navigation.isFocused()) return false;
   handleBack();
   return true;
 });
@@ -104,6 +104,7 @@ Rules:
 
 - Return `true` when the event is handled.
 - Return `false` when there is no origin and default behavior should continue.
+- **Only intercept when the screen is focused** (`navigation.isFocused()`): the listener is GLOBAL and visited tab screens stay mounted — without the focus check, a previously visited `from=more` screen hijacks the back gesture of the visible screen (bug 2026-07-13: obligation detail → gesture back → Más).
 - Clean up the listener on unmount or dependency change.
 - Do not rely only on `beforeRemove` for Android.
 
@@ -139,6 +140,8 @@ When creating a new module:
 
 Check for:
 
+- `BackHandler` interception without a `navigation.isFocused()` guard.
+- `router.replace` to the origin when a plain pop would land there — replace remounts the target and replays list animations/refetches (the hook decides via `resolveOriginBackAction` from `lib/origin-back-action.ts`).
 - `router.back()` direct usage.
 - `router.replace('/dashboard')` or equivalent hardcoded fallback.
 - Missing `from` param.
