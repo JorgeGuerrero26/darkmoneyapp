@@ -4,6 +4,7 @@ import { AlertTriangle, BarChart2, Pin, PinOff, Target, Zap } from "lucide-react
 
 import { formatCurrency } from "../ui/AmountDisplay";
 import { ProgressBar } from "../ui/ProgressBar";
+import { useUiStore } from "../../store/ui-store";
 import {
   ResourceCard,
   ResourceCardBadge,
@@ -24,6 +25,9 @@ type Props = {
 };
 
 function BudgetCardBase({ budget, selected, onPress, onLongPress, onAnalytics, onQuickEdit, onTogglePin }: Props) {
+  // Suscripción propia: invalida el memo cuando cambia el modo privacidad
+  // (los props no cambian al alternar, sin esto la fila mostraría el monto viejo).
+  useUiStore((state) => state.privacyMode);
   const statusColor = budget.isOverLimit
     ? COLORS.rosewood
     : budget.isNearLimit

@@ -8,6 +8,7 @@ import {
 } from "../ui/ResourceCard";
 import { SwipeActionRow } from "../ui/SwipeActionRow";
 import { formatCurrency } from "../ui/AmountDisplay";
+import { useUiStore } from "../../store/ui-store";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING } from "../../constants/theme";
 import { getAccountIcon } from "../../lib/account-icons";
 import { findInstitution } from "../../lib/account-institutions";
@@ -110,6 +111,9 @@ function AccountCardBase({
   onLongPress,
   selected,
 }: Props) {
+  // Suscripción propia: invalida el memo cuando cambia el modo privacidad
+  // (los props no cambian al alternar, sin esto la fila mostraría el monto viejo).
+  useUiStore((state) => state.privacyMode);
   const isSwipeable = Boolean(onArchive || onRestore);
   const rightAction = account.isArchived
     ? {
