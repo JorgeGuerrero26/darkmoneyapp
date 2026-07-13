@@ -112,9 +112,9 @@ export function resolveNotificationNavigationTarget(input: {
     case "subscription_overdue":
       return id
         ? withReason(kind, payload, "/subscription/[id]", { id: String(id) })
-        : "/subscriptions";
+        : withReason(kind, payload, "/subscriptions");
     case "multiple_subscriptions_due":
-      return "/subscriptions";
+      return withReason(kind, payload, "/subscriptions");
     case "obligation_due":
     case "obligation_overdue":
     case "obligation_no_payment":
@@ -123,7 +123,7 @@ export function resolveNotificationNavigationTarget(input: {
         ? withReason(kind, payload, "/obligation/[id]", { id: String(obligationRouteId) })
         : "/(app)/obligations";
     case "multiple_obligations_overdue":
-      return "/(app)/obligations";
+      return withReason(kind, payload, "/(app)/obligations");
     case "obligation_event_unlinked":
       return obligationRouteId
         ? {
@@ -191,7 +191,7 @@ export function resolveNotificationNavigationTarget(input: {
         ? withReason(kind, payload, "/subscription/[id]", { id: String(id) })
         : "/subscriptions";
     case "recurring_income_reminder":
-      return "/recurring-income";
+      return withReason(kind, payload, "/recurring-income");
     case "high_expense_month": {
       const { from, to, monthLabel } = currentMonthRange();
       return movementsQuickLink({ label: `Gastos elevados de ${monthLabel}`, type: "expense", dateFrom: from, dateTo: to });
@@ -224,9 +224,9 @@ export function resolveNotificationNavigationTarget(input: {
       return movementsQuickLink({ label: "Sin movimientos (última semana)", dateFrom: from, dateTo: to });
     }
     case "net_worth_negative":
-      return "/(app)/accounts";
+      return withReason(kind, payload, "/(app)/accounts");
     case "subscription_cost_heavy":
-      return "/subscriptions";
+      return withReason(kind, payload, "/subscriptions");
     case "possible_duplicate_charge": {
       const day = payloadString(payload, "day");
       const amountLabel = payloadString(payload, "amountLabel");
@@ -240,7 +240,7 @@ export function resolveNotificationNavigationTarget(input: {
     case "detected_suggestions_pending":
       return "/notifications";
     case "expected_income_missed":
-      return "/recurring-income";
+      return withReason(kind, payload, "/recurring-income");
     case "monthly_recap": {
       const from = payloadString(payload, "monthFrom");
       const to = payloadString(payload, "monthTo");
@@ -254,9 +254,9 @@ export function resolveNotificationNavigationTarget(input: {
         ? withReason(kind, payload, "/obligation/[id]", { id: String(obligationIdFromPayload) })
         : "/(app)/obligations";
     case "cash_runway_alert":
-      return "/(app)/accounts";
+      return withReason(kind, payload, "/(app)/accounts");
     case "commitments_vs_balance":
-      return "/(app)/obligations";
+      return withReason(kind, payload, "/(app)/obligations");
     default:
       return "/notifications";
   }

@@ -21,7 +21,8 @@ describe("navegacion de kinds nuevos", () => {
     expect(resolveNotificationNavigationTarget({ kind: "detected_suggestions_pending" })).toBe("/notifications");
   });
   test("income missed va a ingresos fijos", () => {
-    expect(resolveNotificationNavigationTarget({ kind: "expected_income_missed" })).toBe("/recurring-income");
+    const t = resolveNotificationNavigationTarget({ kind: "expected_income_missed" }) as { pathname: string };
+    expect(t.pathname).toBe("/recurring-income");
   });
   test("recap abre movimientos del mes cerrado", () => {
     const t = resolveNotificationNavigationTarget({
@@ -39,8 +40,10 @@ describe("navegacion de kinds nuevos", () => {
     expect(t.params.id).toBe("42");
   });
   test("predictivas van a cuentas y obligaciones", () => {
-    expect(resolveNotificationNavigationTarget({ kind: "cash_runway_alert" })).toBe("/(app)/accounts");
-    expect(resolveNotificationNavigationTarget({ kind: "commitments_vs_balance" })).toBe("/(app)/obligations");
+    const runway = resolveNotificationNavigationTarget({ kind: "cash_runway_alert" }) as { pathname: string };
+    const commitments = resolveNotificationNavigationTarget({ kind: "commitments_vs_balance" }) as { pathname: string };
+    expect(runway.pathname).toBe("/(app)/accounts");
+    expect(commitments.pathname).toBe("/(app)/obligations");
   });
 });
 
@@ -110,4 +113,25 @@ describe("reason en destinos", () => {
     expect(t.params.id).toBe("7");
     expect(t.params.reason).toBeTruthy();
   });
+});
+
+describe("listas debiles con nota", () => {
+  const cases: Array<[string, string]> = [
+    ["multiple_subscriptions_due", "/subscriptions"],
+    ["subscription_cost_heavy", "/subscriptions"],
+    ["multiple_obligations_overdue", "/(app)/obligations"],
+    ["commitments_vs_balance", "/(app)/obligations"],
+    ["net_worth_negative", "/(app)/accounts"],
+    ["cash_runway_alert", "/(app)/accounts"],
+    ["recurring_income_reminder", "/recurring-income"],
+    ["expected_income_missed", "/recurring-income"],
+  ];
+  for (const [kind, pathname] of cases) {
+    test(`${kind} mantiene destino y agrega nota`, () => {
+      const t = resolveNotificationNavigationTarget({ kind }) as { pathname: string; params: Record<string, string> };
+      expect(t.pathname).toBe(pathname);
+      expect(t.params.reason).toBeTruthy();
+      expect(t.params.reasonToken).toBeTruthy();
+    });
+  }
 });
