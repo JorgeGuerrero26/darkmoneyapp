@@ -16,3 +16,16 @@ export function resolveOriginBackAction(input: {
   if (input.canGoBack) return "pop";
   return input.hasOrigin ? "replace-origin" : "replace-default";
 }
+
+/**
+ * El listener de `hardwareBackPress` es GLOBAL y las tabs visitadas quedan
+ * montadas: sin chequeo de foco, una pantalla con `from` visitada antes (p. ej.
+ * Presupuestos desde Más) secuestra el gesto de back de la pantalla visible y
+ * la manda a su origen (bug: detalle de deuda → gesto back → Más).
+ */
+export function shouldInterceptHardwareBack(input: {
+  hasOrigin: boolean;
+  isFocused: boolean;
+}): boolean {
+  return input.hasOrigin && input.isFocused;
+}

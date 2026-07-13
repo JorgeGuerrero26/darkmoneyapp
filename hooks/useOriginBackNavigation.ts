@@ -3,7 +3,7 @@ import { BackHandler } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 
-import { resolveOriginBackAction } from "../lib/origin-back-action";
+import { resolveOriginBackAction, shouldInterceptHardwareBack } from "../lib/origin-back-action";
 
 type OriginBackNavigationOptions = {
   defaultRoute?: string;
@@ -65,7 +65,9 @@ export function useOriginBackNavigation({
     });
 
     const backHandler = BackHandler.addEventListener("hardwareBackPress", () => {
-      if (!from) return false;
+      if (!shouldInterceptHardwareBack({ hasOrigin: Boolean(from), isFocused: navigation.isFocused() })) {
+        return false;
+      }
       handleBack();
       return true;
     });
