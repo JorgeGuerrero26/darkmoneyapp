@@ -33,7 +33,7 @@
 
 Los 5 kinds informativos NO necesitan cambios (informational es el default del `getNotificationPriority`). Solo los 3 ⚡.
 
-- [ ] **Step 1: Test que falla**
+- [x] **Step 1: Test que falla**
 
 ```ts
 // __tests__/notification-priority.test.ts
@@ -59,9 +59,9 @@ describe("prioridad de kinds nuevos", () => {
 });
 ```
 
-- [ ] **Step 2: Correr y ver fallar** — `npx jest __tests__/notification-priority.test.ts` → FAIL (los 3 salen "informational").
+- [x] **Step 2: Correr y ver fallar** — `npx jest __tests__/notification-priority.test.ts` → FAIL (los 3 salen "informational").
 
-- [ ] **Step 3: Implementar** — en `lib/notification-priority.ts`, dentro de `IMPORTANT_KINDS`, después de `"detected_movement_suggestion",` agregar:
+- [x] **Step 3: Implementar** — en `lib/notification-priority.ts`, dentro de `IMPORTANT_KINDS`, después de `"detected_movement_suggestion",` agregar:
 
 ```ts
   "possible_duplicate_charge",
@@ -71,9 +71,9 @@ describe("prioridad de kinds nuevos", () => {
 
 Aplicar la MISMA edición en `supabase/functions/_shared/notification-priority.ts` (buscar el set equivalente; si el archivo difiere en estructura, agregar los 3 strings a su lista de important).
 
-- [ ] **Step 4: Ver pasar** — `npx jest __tests__/notification-priority.test.ts` → PASS. `npm run typecheck` → sin errores nuevos.
+- [x] **Step 4: Ver pasar** — `npx jest __tests__/notification-priority.test.ts` → PASS. `npm run typecheck` → sin errores nuevos.
 
-- [ ] **Step 5: Commit** — `git add lib/notification-priority.ts supabase/functions/_shared/notification-priority.ts __tests__/notification-priority.test.ts && git commit -m "feat(notifications): prioridades de los 8 kinds nuevos"`
+- [x] **Step 5: Commit** — `git add lib/notification-priority.ts supabase/functions/_shared/notification-priority.ts __tests__/notification-priority.test.ts && git commit -m "feat(notifications): prioridades de los 8 kinds nuevos"`
 
 ---
 
@@ -83,7 +83,7 @@ Aplicar la MISMA edición en `supabase/functions/_shared/notification-priority.t
 - Modify: `lib/notification-navigation.ts` (switch de `resolveNotificationNavigationTarget`)
 - Test: `__tests__/notification-navigation.test.ts` (crear)
 
-- [ ] **Step 1: Test que falla**
+- [x] **Step 1: Test que falla**
 
 ```ts
 // __tests__/notification-navigation.test.ts
@@ -130,9 +130,9 @@ describe("navegacion de kinds nuevos", () => {
 });
 ```
 
-- [ ] **Step 2: Correr y ver fallar** — `npx jest __tests__/notification-navigation.test.ts` → FAIL (caen al default `/notifications`).
+- [x] **Step 2: Correr y ver fallar** — `npx jest __tests__/notification-navigation.test.ts` → FAIL (caen al default `/notifications`).
 
-- [ ] **Step 3: Implementar** — en el `switch` de `lib/notification-navigation.ts`, antes del `default:`, agregar:
+- [x] **Step 3: Implementar** — en el `switch` de `lib/notification-navigation.ts`, antes del `default:`, agregar:
 
 ```ts
     case "subscription_price_increase":
@@ -169,9 +169,9 @@ describe("navegacion de kinds nuevos", () => {
 
 Nota: `movementsQuickLink` acepta `dateFrom/dateTo` solo si vienen ambos (ya es así en su firma actual).
 
-- [ ] **Step 4: Ver pasar** — `npx jest __tests__/notification-navigation.test.ts` → PASS. `npm run typecheck`.
+- [x] **Step 4: Ver pasar** — `npx jest __tests__/notification-navigation.test.ts` → PASS. `npm run typecheck`.
 
-- [ ] **Step 5: Commit** — `git add lib/notification-navigation.ts __tests__/notification-navigation.test.ts && git commit -m "feat(notifications): navegacion del tap para los 8 kinds nuevos"`
+- [x] **Step 5: Commit** — `git add lib/notification-navigation.ts __tests__/notification-navigation.test.ts && git commit -m "feat(notifications): navegacion del tap para los 8 kinds nuevos"`
 
 ---
 
@@ -180,7 +180,7 @@ Nota: `movementsQuickLink` acepta `dateFrom/dateTo` solo si vienen ambos (ya es 
 **Files:**
 - Modify: `features/notifications/lib/notificationPresentation.ts` (switch de icono/color, ~línea 28)
 
-- [ ] **Step 1: Implementar** — agregar al switch (usar íconos ya importados de lucide o sumar imports al bloque existente):
+- [x] **Step 1: Implementar** — agregar al switch (usar íconos ya importados de lucide o sumar imports al bloque existente):
 
 ```ts
     case "subscription_price_increase":
@@ -203,9 +203,9 @@ Nota: `movementsQuickLink` acepta `dateFrom/dateTo` solo si vienen ambos (ya es 
 
 Agregar a los imports de `lucide-react-native` los que falten: `Copy`, `AlertTriangle` (verificar cuáles ya están; `TrendingUp`, `Clock`, `Bell`, `BarChart2`, `Scale` ya existen según el switch actual). Si `COLORS.success` no existe en el theme, usar `COLORS.primary`.
 
-- [ ] **Step 2: Validar** — `npm run typecheck` → sin errores nuevos.
+- [x] **Step 2: Validar** — `npm run typecheck` → sin errores nuevos.
 
-- [ ] **Step 3: Commit** — `git add features/notifications/lib/notificationPresentation.ts && git commit -m "feat(notifications): iconos de los 8 kinds nuevos"`
+- [x] **Step 3: Commit** — `git add features/notifications/lib/notificationPresentation.ts && git commit -m "feat(notifications): iconos de los 8 kinds nuevos"`
 
 ---
 
@@ -215,7 +215,7 @@ Agregar a los imports de `lucide-react-native` los que falten: `Copy`, `AlertTri
 - Create: `features/notifications/lib/alertBuilders.ts`
 - Test: `__tests__/alert-builders.test.ts` (crear)
 
-- [ ] **Step 1: Test que falla**
+- [x] **Step 1: Test que falla**
 
 ```ts
 // __tests__/alert-builders.test.ts
@@ -250,9 +250,9 @@ describe("buildSubscriptionPriceIncreaseAlerts", () => {
 });
 ```
 
-- [ ] **Step 2: Correr y ver fallar** — `npx jest __tests__/alert-builders.test.ts` → FAIL (módulo no existe).
+- [x] **Step 2: Correr y ver fallar** — `npx jest __tests__/alert-builders.test.ts` → FAIL (módulo no existe).
 
-- [ ] **Step 3: Implementar**
+- [x] **Step 3: Implementar**
 
 ```ts
 // features/notifications/lib/alertBuilders.ts
@@ -315,9 +315,9 @@ export function buildSubscriptionPriceIncreaseAlerts(
 }
 ```
 
-- [ ] **Step 4: Ver pasar** — `npx jest __tests__/alert-builders.test.ts` → PASS. `npm run typecheck`.
+- [x] **Step 4: Ver pasar** — `npx jest __tests__/alert-builders.test.ts` → PASS. `npm run typecheck`.
 
-- [ ] **Step 5: Commit** — `git add features/notifications/lib/alertBuilders.ts __tests__/alert-builders.test.ts && git commit -m "feat(notifications): builder de subida de precio de suscripcion"`
+- [x] **Step 5: Commit** — `git add features/notifications/lib/alertBuilders.ts __tests__/alert-builders.test.ts && git commit -m "feat(notifications): builder de subida de precio de suscripcion"`
 
 ---
 
@@ -327,7 +327,7 @@ export function buildSubscriptionPriceIncreaseAlerts(
 - Modify: `features/notifications/lib/alertBuilders.ts`
 - Test: `__tests__/alert-builders.test.ts`
 
-- [ ] **Step 1: Test que falla** (agregar al mismo archivo de test)
+- [x] **Step 1: Test que falla** (agregar al mismo archivo de test)
 
 ```ts
 import { buildDuplicateChargeAlerts } from "../features/notifications/lib/alertBuilders";
@@ -363,9 +363,9 @@ describe("buildDuplicateChargeAlerts", () => {
 });
 ```
 
-- [ ] **Step 2: Ver fallar** — `npx jest __tests__/alert-builders.test.ts` → FAIL.
+- [x] **Step 2: Ver fallar** — `npx jest __tests__/alert-builders.test.ts` → FAIL.
 
-- [ ] **Step 3: Implementar** (agregar a `alertBuilders.ts`)
+- [x] **Step 3: Implementar** (agregar a `alertBuilders.ts`)
 
 ```ts
 const dayKey = (iso: string) => iso.slice(0, 10);
@@ -405,8 +405,8 @@ export function buildDuplicateChargeAlerts(
 }
 ```
 
-- [ ] **Step 4: Ver pasar** — jest + `npm run typecheck`.
-- [ ] **Step 5: Commit** — `git add -u __tests__ features && git commit -m "feat(notifications): builder de posible cobro duplicado"`
+- [x] **Step 4: Ver pasar** — jest + `npm run typecheck`.
+- [x] **Step 5: Commit** — `git add -u __tests__ features && git commit -m "feat(notifications): builder de posible cobro duplicado"`
 
 ---
 
@@ -414,7 +414,7 @@ export function buildDuplicateChargeAlerts(
 
 **Files:** mismos del Task 5.
 
-- [ ] **Step 1: Test que falla**
+- [x] **Step 1: Test que falla**
 
 ```ts
 import { buildExpectedIncomeMissedAlerts } from "../features/notifications/lib/alertBuilders";
@@ -447,9 +447,9 @@ describe("buildExpectedIncomeMissedAlerts", () => {
 
 Nota: `mv` y `catKinds` son los helpers del Task 5 (mismo archivo). Para el caso "hay ingreso": `destinationAmount` null está bien — cuenta cualquier movimiento de categoría kind `income` con `occurredAt` posterior.
 
-- [ ] **Step 2: Ver fallar.**
+- [x] **Step 2: Ver fallar.**
 
-- [ ] **Step 3: Implementar**
+- [x] **Step 3: Implementar**
 
 ```ts
 export function buildExpectedIncomeMissedAlerts(
@@ -482,7 +482,7 @@ export function buildExpectedIncomeMissedAlerts(
 }
 ```
 
-- [ ] **Step 4: Ver pasar** + typecheck. **Step 5: Commit** — `git add -u __tests__ features && git commit -m "feat(notifications): builder de ingreso esperado no registrado"`
+- [x] **Step 4: Ver pasar** + typecheck. **Step 5: Commit** — `git add -u __tests__ features && git commit -m "feat(notifications): builder de ingreso esperado no registrado"`
 
 ---
 
@@ -490,7 +490,7 @@ export function buildExpectedIncomeMissedAlerts(
 
 **Files:** mismos del Task 5.
 
-- [ ] **Step 1: Test que falla**
+- [x] **Step 1: Test que falla**
 
 ```ts
 import { buildMonthlyRecapAlert } from "../features/notifications/lib/alertBuilders";
@@ -515,9 +515,9 @@ describe("buildMonthlyRecapAlert", () => {
 });
 ```
 
-- [ ] **Step 2: Ver fallar.**
+- [x] **Step 2: Ver fallar.**
 
-- [ ] **Step 3: Implementar**
+- [x] **Step 3: Implementar**
 
 ```ts
 const MESES_ES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
@@ -556,7 +556,7 @@ export function buildMonthlyRecapAlert(
 
 Nota para el wiring (Task 10): `prevMonthExpenses` (mes antepasado) requiere un tercer bucket de agregación que HOY no existe en el hook — se calcula ahí recorriendo `categoryPostedMovements` con el rango `startOfMonth(now.getMonth()-2)` a `endOfMonth(now.getMonth()-2)`; si el snapshot no alcanza tan atrás, pasar `0` (la comparativa simplemente se omite).
 
-- [ ] **Step 4: Ver pasar** + typecheck. **Step 5: Commit** — `git add -u __tests__ features && git commit -m "feat(notifications): builder de recap mensual"`
+- [x] **Step 4: Ver pasar** + typecheck. **Step 5: Commit** — `git add -u __tests__ features && git commit -m "feat(notifications): builder de recap mensual"`
 
 ---
 
@@ -564,7 +564,7 @@ Nota para el wiring (Task 10): `prevMonthExpenses` (mes antepasado) requiere un 
 
 **Files:** mismos del Task 5.
 
-- [ ] **Step 1: Test que falla**
+- [x] **Step 1: Test que falla**
 
 ```ts
 import { buildObligationMilestoneAlerts } from "../features/notifications/lib/alertBuilders";
@@ -592,9 +592,9 @@ describe("buildObligationMilestoneAlerts", () => {
 });
 ```
 
-- [ ] **Step 2: Ver fallar.**
+- [x] **Step 2: Ver fallar.**
 
-- [ ] **Step 3: Implementar**
+- [x] **Step 3: Implementar**
 
 ```ts
 const MILESTONES = [100, 75, 50, 25];
@@ -621,7 +621,7 @@ export function buildObligationMilestoneAlerts(obligations: ObligationSummary[])
 }
 ```
 
-- [ ] **Step 4: Ver pasar** + typecheck. **Step 5: Commit** — `git add -u __tests__ features && git commit -m "feat(notifications): builder de hitos de obligacion"`
+- [x] **Step 4: Ver pasar** + typecheck. **Step 5: Commit** — `git add -u __tests__ features && git commit -m "feat(notifications): builder de hitos de obligacion"`
 
 ---
 
@@ -629,7 +629,7 @@ export function buildObligationMilestoneAlerts(obligations: ObligationSummary[])
 
 **Files:** mismos del Task 5. (La cuenta de pendientes la hace el hook con una query en Task 10; el builder es puro.)
 
-- [ ] **Step 1: Test que falla**
+- [x] **Step 1: Test que falla**
 
 ```ts
 import { buildDetectedSuggestionsPendingAlert } from "../features/notifications/lib/alertBuilders";
@@ -651,9 +651,9 @@ describe("buildDetectedSuggestionsPendingAlert", () => {
 });
 ```
 
-- [ ] **Step 2: Ver fallar.**
+- [x] **Step 2: Ver fallar.**
 
-- [ ] **Step 3: Implementar**
+- [x] **Step 3: Implementar**
 
 ```ts
 export function buildDetectedSuggestionsPendingAlert(
@@ -675,7 +675,7 @@ export function buildDetectedSuggestionsPendingAlert(
 }
 ```
 
-- [ ] **Step 4: Ver pasar** + typecheck. **Step 5: Commit** — `git add -u __tests__ features && git commit -m "feat(notifications): builder de sugerencias detectadas sin revisar"`
+- [x] **Step 4: Ver pasar** + typecheck. **Step 5: Commit** — `git add -u __tests__ features && git commit -m "feat(notifications): builder de sugerencias detectadas sin revisar"`
 
 ---
 
@@ -684,7 +684,7 @@ export function buildDetectedSuggestionsPendingAlert(
 **Files:**
 - Modify: `hooks/useNotificationGenerator.ts`
 
-- [ ] **Step 1: Registrar kinds** — agregar a `ALL_KINDS` (línea ~105, antes del cierre del array):
+- [x] **Step 1: Registrar kinds** — agregar a `ALL_KINDS` (línea ~105, antes del cierre del array):
 
 ```ts
   // Kinds nuevos (spec 2026-07-10) — los 2 predictivos server-side NO van aquí
@@ -697,7 +697,7 @@ export function buildDetectedSuggestionsPendingAlert(
   "obligation_milestone",
 ```
 
-- [ ] **Step 2: Importar builders** (junto a los imports existentes del hook):
+- [x] **Step 2: Importar builders** (junto a los imports existentes del hook):
 
 ```ts
 import {
@@ -711,7 +711,7 @@ import {
 } from "../features/notifications/lib/alertBuilders";
 ```
 
-- [ ] **Step 3: Helper de conversión** (cerca de `countLabel`, ~línea 167):
+- [x] **Step 3: Helper de conversión** (cerca de `countLabel`, ~línea 167):
 
 ```ts
 function toNotificationRow(userId: string, nowIso: string, alert: AlertRow): NotificationRow {
@@ -719,9 +719,9 @@ function toNotificationRow(userId: string, nowIso: string, alert: AlertRow): Not
 }
 ```
 
-- [ ] **Step 4: Agregación del mes antepasado** — dentro de `generateNotifications`, junto a los buckets `lastMonth*` existentes (~línea 287), agregar `prevMonthExpenses` con el mismo patrón de bucle (rango `new Date(now.getFullYear(), now.getMonth() - 2, 1)` hasta `new Date(now.getFullYear(), now.getMonth() - 1, 0, 23, 59, 59, 999)`), y un `lastMonthTopCategory` (nombre de la categoría con mayor total en `lastMonthByCat`, vía `categoryNameMap`).
+- [x] **Step 4: Agregación del mes antepasado** — dentro de `generateNotifications`, junto a los buckets `lastMonth*` existentes (~línea 287), agregar `prevMonthExpenses` con el mismo patrón de bucle (rango `new Date(now.getFullYear(), now.getMonth() - 2, 1)` hasta `new Date(now.getFullYear(), now.getMonth() - 1, 0, 23, 59, 59, 999)`), y un `lastMonthTopCategory` (nombre de la categoría con mayor total en `lastMonthByCat`, vía `categoryNameMap`).
 
-- [ ] **Step 5: Invocar builders** — inmediatamente ANTES de `appendDailyBaselineNotifications({...})` (~línea 751), para que las alertas nuevas cuenten contra el mínimo diario de informativas:
+- [x] **Step 5: Invocar builders** — inmediatamente ANTES de `appendDailyBaselineNotifications({...})` (~línea 751), para que las alertas nuevas cuenten contra el mínimo diario de informativas:
 
 ```ts
   // ── Kinds nuevos (spec 2026-07-10) ────────────────────────────────────────
@@ -762,9 +762,9 @@ Verificar el nombre real de la tabla de sugerencias con `grep -rn "detected_move
 
 **Advertencia idempotencia:** el `existingSet` del hook (~línea 780) filtra por `scheduled_for` = HOY, pero `ignoreDuplicates: true` en el upsert protege las filas de días anteriores — no tocar ese mecanismo.
 
-- [ ] **Step 6: Validar** — `npm run typecheck` limpio; `npx jest __tests__` → PASS todos.
+- [x] **Step 6: Validar** — `npm run typecheck` limpio; `npx jest __tests__` → PASS todos.
 
-- [ ] **Step 7: Commit** — `git add hooks/useNotificationGenerator.ts && git commit -m "feat(notifications): generar los 6 kinds nuevos client-side"`
+- [x] **Step 7: Commit** — `git add hooks/useNotificationGenerator.ts && git commit -m "feat(notifications): generar los 6 kinds nuevos client-side"`
 
 ---
 
@@ -776,7 +776,7 @@ Verificar el nombre real de la tabla de sugerencias con `grep -rn "detected_move
 - Modify: `services/queries/notifications.ts` (~líneas 110-160: select/map/upsert de preferences)
 - Modify: `app/settings.tsx` (~líneas 303, 349, 515: patrón del toggle del digest)
 
-- [ ] **Step 1: Migración** (mismo patrón que `202604270001_notification_preferences_digest_toggle.sql`):
+- [x] **Step 1: Migración** (mismo patrón que `202604270001_notification_preferences_digest_toggle.sql`):
 
 ```sql
 -- Toggle de alertas predictivas (cash_runway_alert, commitments_vs_balance).
@@ -793,7 +793,7 @@ alter column predictive_alerts_enabled set default true,
 alter column predictive_alerts_enabled set not null;
 ```
 
-- [ ] **Step 2: DATABASE_DICTIONARY.md** — crear con secciones mínimas y la columna nueva documentada:
+- [x] **Step 2: DATABASE_DICTIONARY.md** — crear con secciones mínimas y la columna nueva documentada:
 
 ```markdown
 # Diccionario de datos — DarkMoney
@@ -808,15 +808,15 @@ alter column predictive_alerts_enabled set not null;
 | predictive_alerts_enabled | boolean | no (default true) | Habilita las alertas predictivas del cron diario (`cash_runway_alert`, `commitments_vs_balance`). |
 ```
 
-- [ ] **Step 3: Query + mutación** — en `services/queries/notifications.ts`, siguiendo el patrón exacto de `daily_digest_enabled` en las líneas 110/119/147/156: agregar `predictive_alerts_enabled` al `.select(...)`, mapear `predictiveAlertsEnabled: data?.predictive_alerts_enabled !== false`, y agregarlo a los dos objetos del upsert de la mutación (`predictive_alerts_enabled: input.predictiveAlertsEnabled`). Extender los tipos de input/output donde el TS lo exija (el typecheck te guía).
+- [x] **Step 3: Query + mutación** — en `services/queries/notifications.ts`, siguiendo el patrón exacto de `daily_digest_enabled` en las líneas 110/119/147/156: agregar `predictive_alerts_enabled` al `.select(...)`, mapear `predictiveAlertsEnabled: data?.predictive_alerts_enabled !== false`, y agregarlo a los dos objetos del upsert de la mutación (`predictive_alerts_enabled: input.predictiveAlertsEnabled`). Extender los tipos de input/output donde el TS lo exija (el typecheck te guía).
 
-- [ ] **Step 4: Toggle en settings** — en `app/settings.tsx`, replicar el patrón del digest (state en ~303, mutación en ~349, `Switch` en ~515) con: label `Alertas predictivas`, descripción `Aviso cuando tu saldo proyectado no cubre el mes o tus compromisos.`, campo `predictiveAlertsEnabled`.
+- [x] **Step 4: Toggle en settings** — en `app/settings.tsx`, replicar el patrón del digest (state en ~303, mutación en ~349, `Switch` en ~515) con: label `Alertas predictivas`, descripción `Aviso cuando tu saldo proyectado no cubre el mes o tus compromisos.`, campo `predictiveAlertsEnabled`.
 
-- [ ] **Step 5: Validar** — `npm run typecheck`; abrir Ajustes en el emulador y ver el toggle (manual).
+- [x] **Step 5: Validar** — `npm run typecheck`; abrir Ajustes en el emulador y ver el toggle (manual).
 
-- [ ] **Step 6: Aplicar migración** — REQUIERE APROBACIÓN DEL USUARIO (BD real): `npx supabase db push` o SQL directo vía `DATABASE_URL`. No cerrar el task sin aplicarla y sin el diccionario commiteado.
+- [x] **Step 6: Aplicar migración** — REQUIERE APROBACIÓN DEL USUARIO (BD real): `npx supabase db push` o SQL directo vía `DATABASE_URL`. No cerrar el task sin aplicarla y sin el diccionario commiteado.
 
-- [ ] **Step 7: Commit** — `git add supabase/migrations/202607110001_notification_preferences_predictive_toggle.sql DATABASE_DICTIONARY.md services/queries/notifications.ts app/settings.tsx && git commit -m "feat(notifications): toggle de alertas predictivas + migracion"`
+- [x] **Step 7: Commit** — `git add supabase/migrations/202607110001_notification_preferences_predictive_toggle.sql DATABASE_DICTIONARY.md services/queries/notifications.ts app/settings.tsx && git commit -m "feat(notifications): toggle de alertas predictivas + migracion"`
 
 ---
 
@@ -825,7 +825,7 @@ alter column predictive_alerts_enabled set not null;
 **Files:**
 - Modify: `supabase/functions/send-daily-notification-digest/index.ts` (antes del armado del digest, dentro del loop por usuario; el fetch de prefs está en ~línea 222)
 
-- [ ] **Step 1: Implementar el cálculo** — agregar una función al final del archivo:
+- [x] **Step 1: Implementar el cálculo** — agregar una función al final del archivo:
 
 ```ts
 type PredictiveInput = {
@@ -943,7 +943,7 @@ async function insertPredictiveAlerts({ supabase, userId, todayKey }: Predictive
 
 **IMPORTANTE — verificar nombres de columnas contra el esquema real antes de escribir** (con `DATABASE_URL`): `accounts.owner_user_id` vs `workspace_id`+join, `movements.kind/source_amount/status`, `obligations.principal_current_amount/due_date`, `subscriptions.next_due_date`, `exchange_rates.from_currency/to_currency/rate`, `profiles.base_currency_code`. Ajustar el código a lo que exista — este bloque asume nombres razonables y DEBE validarse.
 
-- [ ] **Step 2: Invocar por usuario** — en el loop de usuarios del digest (después del fetch de prefs ~línea 222), respetando el toggle:
+- [x] **Step 2: Invocar por usuario** — en el loop de usuarios del digest (después del fetch de prefs ~línea 222), respetando el toggle:
 
 ```ts
     if (pref.predictive_alerts_enabled !== false) {
@@ -957,20 +957,20 @@ async function insertPredictiveAlerts({ supabase, userId, todayKey }: Predictive
 
 Agregar `predictive_alerts_enabled` al `.select(...)` del fetch de prefs (~línea 222).
 
-- [ ] **Step 3: Manejo del bypass del límite de push** — en `supabase/functions/send-push-notifications/index.ts`, el `bypassDailyLimit` existente se decide por... verificar con `grep -n "bypassDailyLimit" index.ts` cómo se activa hoy (~línea 151); si lee un flag del payload, `cash_runway_alert` ya lo trae en `payload.bypass_daily_limit`; si es por lista de kinds, agregar `cash_runway_alert` a esa lista.
+- [x] **Step 3: Manejo del bypass del límite de push** — en `supabase/functions/send-push-notifications/index.ts`, el `bypassDailyLimit` existente se decide por... verificar con `grep -n "bypassDailyLimit" index.ts` cómo se activa hoy (~línea 151); si lee un flag del payload, `cash_runway_alert` ya lo trae en `payload.bypass_daily_limit`; si es por lista de kinds, agregar `cash_runway_alert` a esa lista.
 
-- [ ] **Step 4: Validar localmente** — `npx supabase functions serve send-daily-notification-digest` no está configurado en este repo; validación = revisión de tipos con Deno check si está disponible (`deno check supabase/functions/send-daily-notification-digest/index.ts`) o revisión manual + deploy a staging.
+- [x] **Step 4: Validar localmente** — `npx supabase functions serve send-daily-notification-digest` no está configurado en este repo; validación = revisión de tipos con Deno check si está disponible (`deno check supabase/functions/send-daily-notification-digest/index.ts`) o revisión manual + deploy a staging.
 
-- [ ] **Step 5: Deploy** — REQUIERE APROBACIÓN DEL USUARIO: `npx supabase functions deploy send-daily-notification-digest` (y `send-push-notifications` si se tocó). Verificar el run siguiente del cron en el dashboard de Supabase.
+- [x] **Step 5: Deploy** — REQUIERE APROBACIÓN DEL USUARIO: `npx supabase functions deploy send-daily-notification-digest` (y `send-push-notifications` si se tocó). Verificar el run siguiente del cron en el dashboard de Supabase.
 
-- [ ] **Step 6: Commit** — `git add supabase/functions && git commit -m "feat(notifications): predictivas cash runway y compromisos vs saldo en el cron"`
+- [x] **Step 6: Commit** — `git add supabase/functions && git commit -m "feat(notifications): predictivas cash runway y compromisos vs saldo en el cron"`
 
 ---
 
 ### Task 13: Validación end-to-end + OTA
 
-- [ ] **Step 1:** `npm run typecheck` && `npx jest __tests__` && `git diff --check` — todo limpio.
-- [ ] **Step 2:** En emulador con cuenta real: sembrar datos que crucen un umbral fácil (p. ej. dos gastos idénticos hoy) → abrir la app → verificar fila en bandeja con ícono/título correctos → tap navega al destino.
-- [ ] **Step 3:** Verificar que el digest diario del día siguiente incluye los kinds informativos nuevos (bandeja + push del digest).
-- [ ] **Step 4:** Publicar OTA (REQUIERE APROBACIÓN): `npx eas-cli update --channel preview --message "feat: 8 notificaciones nuevas"`. Los cambios de este plan son solo JS + edge functions — sin APK nuevo.
-- [ ] **Step 5:** Actualizar `docs/superpowers/specs/2026-07-10-new-notifications-design.md` con la desviación del duplicate-charge (categoría en vez de descripción) y commitear.
+- [x] **Step 1:** `npm run typecheck` && `npx jest __tests__` && `git diff --check` — todo limpio.
+- [x] **Step 2:** En emulador con cuenta real: sembrar datos que crucen un umbral fácil (p. ej. dos gastos idénticos hoy) → abrir la app → verificar fila en bandeja con ícono/título correctos → tap navega al destino.
+- [x] **Step 3:** Verificar que el digest diario del día siguiente incluye los kinds informativos nuevos (bandeja + push del digest).
+- [x] **Step 4:** Publicar OTA (REQUIERE APROBACIÓN): `npx eas-cli update --channel preview --message "feat: 8 notificaciones nuevas"`. Los cambios de este plan son solo JS + edge functions — sin APK nuevo.
+- [x] **Step 5:** Actualizar `docs/superpowers/specs/2026-07-10-new-notifications-design.md` con la desviación del duplicate-charge (categoría en vez de descripción) y commitear.

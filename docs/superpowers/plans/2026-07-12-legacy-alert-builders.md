@@ -36,7 +36,7 @@ Migra las secciones 1–4 del hook: `budget_alert` (excedido / cerca del límite
 - Modify: `hooks/useNotificationGenerator.ts` (reemplazar secciones `// ── 1.` a `// ── 4.`, líneas 366–453 del archivo original)
 - Test: `__tests__/alert-builders.test.ts` (agregar al final)
 
-- [ ] **Step 1: Tests que fallan** — agregar al FINAL de `__tests__/alert-builders.test.ts`:
+- [x] **Step 1: Tests que fallan** — agregar al FINAL de `__tests__/alert-builders.test.ts`:
 
 ```ts
 // ─── Builders legacy (migrados de useNotificationGenerator) ─────────────────
@@ -150,9 +150,9 @@ import {
 } from "../features/notifications/lib/alertBuilders";
 ```
 
-- [ ] **Step 2: Correr y ver fallar** — `npx jest __tests__/alert-builders.test.ts` → FAIL (los builders no existen).
+- [x] **Step 2: Correr y ver fallar** — `npx jest __tests__/alert-builders.test.ts` → FAIL (los builders no existen).
 
-- [ ] **Step 3: Implementar builders** — agregar al FINAL de `features/notifications/lib/alertBuilders.ts`. Además, agregar `BudgetOverview` al import de tipos existente de `../../../types/domain`:
+- [x] **Step 3: Implementar builders** — agregar al FINAL de `features/notifications/lib/alertBuilders.ts`. Además, agregar `BudgetOverview` al import de tipos existente de `../../../types/domain`:
 
 ```ts
 // ─── Builders legacy (migrados de useNotificationGenerator) ─────────────────
@@ -268,7 +268,7 @@ export function buildSubscriptionOverdueAlerts(
 }
 ```
 
-- [ ] **Step 4: Wiring en el hook** — en `hooks/useNotificationGenerator.ts`:
+- [x] **Step 4: Wiring en el hook** — en `hooks/useNotificationGenerator.ts`:
 
 1. Agregar los 4 builders y el tipo `AlertRow` al import existente de `../features/notifications/lib/alertBuilders` (el `type AlertRow` ya está importado; agregar `buildBudgetLimitAlerts`, `buildBudgetPeriodEndingAlerts`, `buildSubscriptionReminderAlerts`, `buildSubscriptionOverdueAlerts`).
 2. Dentro de `generateNotifications`, justo después de `const rows: NotificationRow[] = [];`, agregar:
@@ -296,9 +296,9 @@ export function buildSubscriptionOverdueAlerts(
   pushAlerts(buildSubscriptionOverdueAlerts(snapshot.subscriptions, calendarDaysFromTodayLocal));
 ```
 
-- [ ] **Step 5: Validar** — `npx jest __tests__/alert-builders.test.ts` → PASS. `npm run typecheck` → sin errores.
+- [x] **Step 5: Validar** — `npx jest __tests__/alert-builders.test.ts` → PASS. `npm run typecheck` → sin errores.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add features/notifications/lib/alertBuilders.ts hooks/useNotificationGenerator.ts __tests__/alert-builders.test.ts
@@ -316,7 +316,7 @@ Migra las secciones 5–8: `multiple_subscriptions_due`, `obligation_due`/`oblig
 - Modify: `hooks/useNotificationGenerator.ts` (reemplazar secciones `// ── 5.` a `// ── 8.`, líneas 455–546 del archivo original)
 - Test: `__tests__/alert-builders.test.ts` (agregar al final)
 
-- [ ] **Step 1: Tests que fallan** — agregar al final del archivo de tests (y los 4 nombres nuevos al import):
+- [x] **Step 1: Tests que fallan** — agregar al final del archivo de tests (y los 4 nombres nuevos al import):
 
 ```ts
 describe("buildMultipleSubscriptionsDueAlert", () => {
@@ -411,9 +411,9 @@ describe("buildObligationNoPaymentAlerts", () => {
 });
 ```
 
-- [ ] **Step 2: Correr y ver fallar** — `npx jest __tests__/alert-builders.test.ts` → FAIL.
+- [x] **Step 2: Correr y ver fallar** — `npx jest __tests__/alert-builders.test.ts` → FAIL.
 
-- [ ] **Step 3: Implementar builders** — agregar al final de `alertBuilders.ts`:
+- [x] **Step 3: Implementar builders** — agregar al final de `alertBuilders.ts`:
 
 ```ts
 const daysBetween = (a: Date, b: Date): number =>
@@ -527,7 +527,7 @@ export function buildObligationNoPaymentAlerts(
 }
 ```
 
-- [ ] **Step 4: Wiring en el hook** — agregar los 4 builders al import y reemplazar los bloques `// ── 5.` a `// ── 8.` completos (incluyendo el `const subsDueThisWeek = ...` y `const overdueObligations = ...`) por:
+- [x] **Step 4: Wiring en el hook** — agregar los 4 builders al import y reemplazar los bloques `// ── 5.` a `// ── 8.` completos (incluyendo el `const subsDueThisWeek = ...` y `const overdueObligations = ...`) por:
 
 ```ts
   // ── 5. Multiple subscriptions due this week ───────────────────────────────
@@ -543,9 +543,9 @@ export function buildObligationNoPaymentAlerts(
   pushAlerts(buildObligationNoPaymentAlerts(snapshot.obligations, now));
 ```
 
-- [ ] **Step 5: Validar** — `npx jest __tests__/alert-builders.test.ts` → PASS. `npm run typecheck` → sin errores.
+- [x] **Step 5: Validar** — `npx jest __tests__/alert-builders.test.ts` → PASS. `npm run typecheck` → sin errores.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add features/notifications/lib/alertBuilders.ts hooks/useNotificationGenerator.ts __tests__/alert-builders.test.ts
@@ -563,7 +563,7 @@ Migra las secciones 9–12: `high_interest_obligation`, `low_balance`, `negative
 - Modify: `hooks/useNotificationGenerator.ts` (reemplazar secciones `// ── 9.` a `// ── 12.` y eliminar `daysBetween` del hook, ya sin usos)
 - Test: `__tests__/alert-builders.test.ts` (agregar al final)
 
-- [ ] **Step 1: Tests que fallan** — agregar al final (y los 4 nombres al import):
+- [x] **Step 1: Tests que fallan** — agregar al final (y los 4 nombres al import):
 
 ```ts
 const cuenta = (over = {}) =>
@@ -638,9 +638,9 @@ describe("buildAccountDormantAlerts", () => {
 });
 ```
 
-- [ ] **Step 2: Correr y ver fallar** — `npx jest __tests__/alert-builders.test.ts` → FAIL.
+- [x] **Step 2: Correr y ver fallar** — `npx jest __tests__/alert-builders.test.ts` → FAIL.
 
-- [ ] **Step 3: Implementar builders** — agregar al final de `alertBuilders.ts` (y `AccountSummary` al import de `types/domain`):
+- [x] **Step 3: Implementar builders** — agregar al final de `alertBuilders.ts` (y `AccountSummary` al import de `types/domain`):
 
 ```ts
 // Cuentas que representan dinero propio (excluye préstamos/tarjetas).
@@ -733,7 +733,7 @@ export function buildAccountDormantAlerts(accounts: AccountSummary[], now: Date)
 
 Nota: `account_dormant` NO filtra por tipo de cuenta — así está en el hook original; preservar.
 
-- [ ] **Step 4: Wiring en el hook** — agregar los 4 builders al import; reemplazar los bloques `// ── 9.` a `// ── 12.` completos (incluyendo `const nonLoanTypes = ...` de la sección 10) por:
+- [x] **Step 4: Wiring en el hook** — agregar los 4 builders al import; reemplazar los bloques `// ── 9.` a `// ── 12.` completos (incluyendo `const nonLoanTypes = ...` de la sección 10) por:
 
 ```ts
   // ── 9. High-interest obligation ───────────────────────────────────────────
@@ -751,9 +751,9 @@ Nota: `account_dormant` NO filtra por tipo de cuenta — así está en el hook o
 
 Además, eliminar la función `daysBetween` del hook (líneas 116–118 del archivo original) — su último uso inline desaparece con este lote.
 
-- [ ] **Step 5: Validar** — `npx jest __tests__/alert-builders.test.ts` → PASS. `npm run typecheck` → sin errores.
+- [x] **Step 5: Validar** — `npx jest __tests__/alert-builders.test.ts` → PASS. `npm run typecheck` → sin errores.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add features/notifications/lib/alertBuilders.ts hooks/useNotificationGenerator.ts __tests__/alert-builders.test.ts
@@ -771,7 +771,7 @@ Extrae el bloque de agregados mensuales (líneas 311–364 del hook original: to
 - Modify: `hooks/useNotificationGenerator.ts` (reemplazar bloque de agregados + secciones `// ── 13.` y `// ── 14.`; eliminar helpers de fecha `startOfMonth`, `startOfLastMonth`, `endOfLastMonth`, `startOfPrevMonth`, `endOfPrevMonth`)
 - Test: `__tests__/alert-builders.test.ts` (agregar al final)
 
-- [ ] **Step 1: Tests que fallan** — agregar al final (y `computeMonthlyMovementAggregates`, `buildNoIncomeMonthAlert`, `buildHighExpenseMonthAlert` al import):
+- [x] **Step 1: Tests que fallan** — agregar al final (y `computeMonthlyMovementAggregates`, `buildNoIncomeMonthAlert`, `buildHighExpenseMonthAlert` al import):
 
 ```ts
 const mvIn = (id: number, occurredAt: string, categoryId: number, destinationAmount: number) =>
@@ -842,9 +842,9 @@ describe("buildHighExpenseMonthAlert", () => {
 });
 ```
 
-- [ ] **Step 2: Correr y ver fallar** — `npx jest __tests__/alert-builders.test.ts` → FAIL.
+- [x] **Step 2: Correr y ver fallar** — `npx jest __tests__/alert-builders.test.ts` → FAIL.
 
-- [ ] **Step 3: Implementar** — agregar al final de `alertBuilders.ts`:
+- [x] **Step 3: Implementar** — agregar al final de `alertBuilders.ts`:
 
 ```ts
 // ─── Agregados mensuales (una pasada sobre los movimientos del snapshot) ────
@@ -972,7 +972,7 @@ export function buildHighExpenseMonthAlert(
 }
 ```
 
-- [ ] **Step 4: Wiring en el hook** —
+- [x] **Step 4: Wiring en el hook** —
 
 1. Agregar `computeMonthlyMovementAggregates`, `buildNoIncomeMonthAlert`, `buildHighExpenseMonthAlert` al import.
 2. Reemplazar TODO el bloque `// ── Monthly movement aggregates ──` (desde `const thisMonthStart = ...` hasta el cierre del `for` de top category, líneas 311–364 del archivo original) por un destructure que CONSERVA los nombres de variables que usan las secciones aún inline (15–19) y el recap:
@@ -1008,9 +1008,9 @@ export function buildHighExpenseMonthAlert(
 
 4. Eliminar del hook los helpers de fecha ya sin uso: `startOfMonth`, `startOfLastMonth`, `endOfLastMonth`, `startOfPrevMonth`, `endOfPrevMonth` (líneas 96–114 del archivo original). `usageDateInLima` SE QUEDA (lo usa `todayKey`/`existingSet`).
 
-- [ ] **Step 5: Validar** — `npx jest __tests__/alert-builders.test.ts` → PASS. `npm run typecheck` → sin errores.
+- [x] **Step 5: Validar** — `npx jest __tests__/alert-builders.test.ts` → PASS. `npm run typecheck` → sin errores.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add features/notifications/lib/alertBuilders.ts hooks/useNotificationGenerator.ts __tests__/alert-builders.test.ts
@@ -1028,7 +1028,7 @@ Migra las secciones 15–17: `category_spending_spike`, `expense_income_imbalanc
 - Modify: `hooks/useNotificationGenerator.ts` (reemplazar secciones `// ── 15.` a `// ── 17.`)
 - Test: `__tests__/alert-builders.test.ts` (agregar al final)
 
-- [ ] **Step 1: Tests que fallan** — agregar al final (y los 3 nombres al import):
+- [x] **Step 1: Tests que fallan** — agregar al final (y los 3 nombres al import):
 
 ```ts
 describe("buildCategorySpendingSpikeAlerts", () => {
@@ -1099,9 +1099,9 @@ describe("buildNetWorthNegativeAlert", () => {
 });
 ```
 
-- [ ] **Step 2: Correr y ver fallar** — `npx jest __tests__/alert-builders.test.ts` → FAIL.
+- [x] **Step 2: Correr y ver fallar** — `npx jest __tests__/alert-builders.test.ts` → FAIL.
 
-- [ ] **Step 3: Implementar builders** — agregar al final de `alertBuilders.ts`:
+- [x] **Step 3: Implementar builders** — agregar al final de `alertBuilders.ts`:
 
 ```ts
 export function buildCategorySpendingSpikeAlerts(
@@ -1170,7 +1170,7 @@ export function buildNetWorthNegativeAlert(
 }
 ```
 
-- [ ] **Step 4: Wiring en el hook** — agregar los 3 builders al import; reemplazar los bloques `// ── 15.` a `// ── 17.` completos (incluyendo el cálculo `const netWorth = ...`) por:
+- [x] **Step 4: Wiring en el hook** — agregar los 3 builders al import; reemplazar los bloques `// ── 15.` a `// ── 17.` completos (incluyendo el cálculo `const netWorth = ...`) por:
 
 ```ts
   // ── 15. Category spending spike (50%+ vs last month) ──────────────────────
@@ -1183,9 +1183,9 @@ export function buildNetWorthNegativeAlert(
   pushAlerts(buildNetWorthNegativeAlert(snapshot.accounts, workspaceId));
 ```
 
-- [ ] **Step 5: Validar** — `npx jest __tests__/alert-builders.test.ts` → PASS. `npm run typecheck` → sin errores.
+- [x] **Step 5: Validar** — `npx jest __tests__/alert-builders.test.ts` → PASS. `npm run typecheck` → sin errores.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add features/notifications/lib/alertBuilders.ts hooks/useNotificationGenerator.ts __tests__/alert-builders.test.ts
@@ -1203,7 +1203,7 @@ Migra las secciones 18–21: `savings_rate_low`, `subscription_cost_heavy`, `upc
 - Modify: `hooks/useNotificationGenerator.ts` (reemplazar secciones `// ── 18.` a `// ── 21.`)
 - Test: `__tests__/alert-builders.test.ts` (agregar al final)
 
-- [ ] **Step 1: Tests que fallan** — agregar al final (y los 4 nombres al import):
+- [x] **Step 1: Tests que fallan** — agregar al final (y los 4 nombres al import):
 
 ```ts
 describe("buildSavingsRateLowAlert", () => {
@@ -1283,9 +1283,9 @@ describe("buildNoMovementsWeekAlert", () => {
 });
 ```
 
-- [ ] **Step 2: Correr y ver fallar** — `npx jest __tests__/alert-builders.test.ts` → FAIL.
+- [x] **Step 2: Correr y ver fallar** — `npx jest __tests__/alert-builders.test.ts` → FAIL.
 
-- [ ] **Step 3: Implementar builders** — agregar al final de `alertBuilders.ts`:
+- [x] **Step 3: Implementar builders** — agregar al final de `alertBuilders.ts`:
 
 ```ts
 export function buildSavingsRateLowAlert(
@@ -1387,7 +1387,7 @@ export function buildNoMovementsWeekAlert(
 
 Nota: `buildNoMovementsWeekAlert` cuenta TODOS los `categoryPostedMovements` (incluye transferencias) — así está en el hook original; preservar.
 
-- [ ] **Step 4: Wiring en el hook** — agregar los 4 builders al import; reemplazar los bloques `// ── 18.` a `// ── 21.` completos (incluyendo `const sevenDaysAgo = ...` etc.) por:
+- [x] **Step 4: Wiring en el hook** — agregar los 4 builders al import; reemplazar los bloques `// ── 18.` a `// ── 21.` completos (incluyendo `const sevenDaysAgo = ...` etc.) por:
 
 ```ts
   // ── 18. Savings rate low (after day 20) ──────────────────────────────────
@@ -1403,9 +1403,9 @@ Nota: `buildNoMovementsWeekAlert` cuenta TODOS los `categoryPostedMovements` (in
   pushAlerts(buildNoMovementsWeekAlert(snapshot.categoryPostedMovements, workspaceId, now));
 ```
 
-- [ ] **Step 5: Validar** — `npx jest __tests__/alert-builders.test.ts` → PASS. `npm run typecheck` → sin errores.
+- [x] **Step 5: Validar** — `npx jest __tests__/alert-builders.test.ts` → PASS. `npm run typecheck` → sin errores.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add features/notifications/lib/alertBuilders.ts hooks/useNotificationGenerator.ts __tests__/alert-builders.test.ts
@@ -1423,7 +1423,7 @@ Extrae `appendDailyBaselineNotifications` (las 3 alertas diarias `daily_workspac
 - Modify: `hooks/useNotificationGenerator.ts` (reemplazar `appendDailyBaselineNotifications` + su llamada; eliminar helpers muertos; actualizar doc comment)
 - Test: `__tests__/alert-builders.test.ts` (agregar al final)
 
-- [ ] **Step 1: Tests que fallan** — agregar al final (y `buildDailyBaselineAlerts` al import):
+- [x] **Step 1: Tests que fallan** — agregar al final (y `buildDailyBaselineAlerts` al import):
 
 ```ts
 describe("buildDailyBaselineAlerts", () => {
@@ -1476,9 +1476,9 @@ describe("buildDailyBaselineAlerts", () => {
 });
 ```
 
-- [ ] **Step 2: Correr y ver fallar** — `npx jest __tests__/alert-builders.test.ts` → FAIL.
+- [x] **Step 2: Correr y ver fallar** — `npx jest __tests__/alert-builders.test.ts` → FAIL.
 
-- [ ] **Step 3: Implementar builder** — en `alertBuilders.ts`, agregar el import (arriba, junto al import de tipos):
+- [x] **Step 3: Implementar builder** — en `alertBuilders.ts`, agregar el import (arriba, junto al import de tipos):
 
 ```ts
 import { getNotificationPriority } from "../../../lib/notification-priority";
@@ -1576,7 +1576,7 @@ export function buildDailyBaselineAlerts(input: {
 }
 ```
 
-- [ ] **Step 4: Wiring y limpieza en el hook** —
+- [x] **Step 4: Wiring y limpieza en el hook** —
 
 1. Agregar `buildDailyBaselineAlerts` al import de alertBuilders.
 2. Reemplazar la llamada `appendDailyBaselineNotifications({ ... })` por:
@@ -1619,9 +1619,9 @@ export function buildDailyBaselineAlerts(input: {
 
 5. Verificar que NO queden helpers muertos: `usageDateInLima`, `ALL_KINDS`, `cleanupStaleNotifications`, `toNotificationRow`, `pushAlerts` y el hook en sí SE QUEDAN.
 
-- [ ] **Step 5: Validar (suite completa)** — `npx jest` → TODOS los tests PASS. `npm run typecheck` → sin errores. `git diff --check` → limpio.
+- [x] **Step 5: Validar (suite completa)** — `npx jest` → TODOS los tests PASS. `npm run typecheck` → sin errores. `git diff --check` → limpio.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add features/notifications/lib/alertBuilders.ts hooks/useNotificationGenerator.ts __tests__/alert-builders.test.ts
@@ -1632,9 +1632,9 @@ git commit -m "refactor(notifications): lote 7 - baseline diario puro y limpieza
 
 ## Verificación final (después del Task 7)
 
-- [ ] `npx jest` → suite completa verde.
-- [ ] `npm run typecheck` → sin errores.
-- [ ] `git diff --check` → limpio.
-- [ ] Confirmar cobertura: los 20 kinds legacy + 3 diarios tienen builder y tests: `budget_alert`, `budget_period_ending`, `subscription_reminder`, `subscription_overdue`, `multiple_subscriptions_due`, `obligation_due`, `obligation_overdue`, `obligation_no_payment`, `multiple_obligations_overdue`, `high_interest_obligation`, `low_balance`, `negative_balance`, `account_dormant`, `no_income_month`, `high_expense_month`, `category_spending_spike`, `expense_income_imbalance`, `net_worth_negative`, `savings_rate_low`, `subscription_cost_heavy`, `upcoming_annual_subscription`, `no_movements_week`, `daily_workspace_summary`/`daily_cashflow_check`/`daily_budget_review` (baseline).
-- [ ] Confirmar que el hook NO perdió: fingerprint, `InteractionManager`, `existingSet`, upsert `ignoreDuplicates`, `cleanupStaleNotifications`, `ALL_KINDS`, query de suggestions pendientes, sección "Kinds nuevos".
-- [ ] **NO publicar OTA** — preguntar al usuario primero.
+- [x] `npx jest` → suite completa verde.
+- [x] `npm run typecheck` → sin errores.
+- [x] `git diff --check` → limpio.
+- [x] Confirmar cobertura: los 20 kinds legacy + 3 diarios tienen builder y tests: `budget_alert`, `budget_period_ending`, `subscription_reminder`, `subscription_overdue`, `multiple_subscriptions_due`, `obligation_due`, `obligation_overdue`, `obligation_no_payment`, `multiple_obligations_overdue`, `high_interest_obligation`, `low_balance`, `negative_balance`, `account_dormant`, `no_income_month`, `high_expense_month`, `category_spending_spike`, `expense_income_imbalance`, `net_worth_negative`, `savings_rate_low`, `subscription_cost_heavy`, `upcoming_annual_subscription`, `no_movements_week`, `daily_workspace_summary`/`daily_cashflow_check`/`daily_budget_review` (baseline).
+- [x] Confirmar que el hook NO perdió: fingerprint, `InteractionManager`, `existingSet`, upsert `ignoreDuplicates`, `cleanupStaleNotifications`, `ALL_KINDS`, query de suggestions pendientes, sección "Kinds nuevos".
+- [x] **NO publicar OTA** — preguntar al usuario primero.
