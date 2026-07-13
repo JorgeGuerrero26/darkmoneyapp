@@ -65,7 +65,7 @@ import { useMovementCreationController } from "../../features/movements/hooks/us
 import { useTransferFxController } from "../../features/movements/hooks/useTransferFxController";
 import { useBalanceImpactPreview } from "../../features/movements/hooks/useBalanceImpactPreview";
 import { getFrequentAmounts } from "../../features/movements/lib/frequent-amounts";
-import { splitLineDescription, validateSplit, type SplitLine } from "../../features/movements/lib/split-movement";
+import { hasSplitGroup, splitLineDescription, splitLineMetadata, validateSplit, type SplitLine } from "../../features/movements/lib/split-movement";
 import { useMovementFormSuggestions } from "../../features/movements/hooks/useMovementFormSuggestions";
 import { useMovementAttachmentSync } from "../../features/movements/hooks/useMovementAttachmentSync";
 import { buildMovementCreateInput, buildMovementUpdateInput } from "../../features/movements/lib/movement-save-contract";
@@ -905,6 +905,51 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         subscriptionId: linkedSubscriptionId,
       };
       if (isEditing && editMovement) {
+        if (splitLines && form.movementType === "expense" && linkedEventId == null && !hasSplitGroup(editMovement.metadata)) {
+          // Conversión simple→split: el movimiento original se vuelve la línea 1
+          // (conserva id, adjuntos y dedupe); las demás líneas se crean como hermanas.
+          const splitValidation = validateSplit(splitLines, sourceAmountNum);
+          if (!splitValidation.valid) {
+            setIsClosingAfterSubmit(false);
+            haptics.error();
+            setSubmitError(splitValidation.error ?? "Revisa la división de montos");
+            return;
+          }
+          const splitGroup = newClientDedupeKey("split-edit");
+          const firstLine = splitLines[0];
+          await updateMovement.mutateAsync({
+            id: editMovement.id,
+            input: {
+              ...buildMovementUpdateInput({
+                ...movementContract,
+                sourceAmount: parsePositiveAmountInput(firstLine.amount)!,
+                description: splitLineDescription(autoDesc, 0, splitLines.length),
+                categoryId: firstLine.categoryId,
+              }),
+              metadata: splitLineMetadata(editMovement.metadata, splitGroup, 0, splitLines.length),
+            },
+          });
+          for (let index = 1; index < splitLines.length; index++) {
+            const line = splitLines[index];
+            await createMovement.mutateAsync(buildMovementCreateInput({
+              ...movementContract,
+              sourceAmount: parsePositiveAmountInput(line.amount)!,
+              description: splitLineDescription(autoDesc, index, splitLines.length),
+              categoryId: line.categoryId,
+              metadata: splitLineMetadata(null, splitGroup, index, splitLines.length),
+              dedupeKey: `${splitGroup}:split-${index + 1}`,
+            }));
+          }
+          showRichToast({
+            type: "success",
+            title: `Gasto dividido en ${splitLines.length} movimientos`,
+            subtitle: autoDesc,
+          });
+          haptics.success();
+          onSuccess?.();
+          onClose();
+          return;
+        }
         await updateMovement.mutateAsync({
           id: editMovement.id,
           input: buildMovementUpdateInput(movementContract),
@@ -1164,10 +1209,13 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
             }
             : null
         );
+        const splitUiEnabled = isEditing
+          ? form.movementType === "expense" && linkedEventId == null && !hasSplitGroup(editMovement?.metadata)
+          : true; // creación: comportamiento actual sin cambios
         return (
           <StepDetails
-            splitLines={isEditing ? null : splitLines}
-            onChangeSplitLines={!isEditing && form.movementType === "expense" ? setSplitLines : undefined}
+            splitLines={splitUiEnabled ? splitLines : null}
+            onChangeSplitLines={splitUiEnabled && form.movementType === "expense" ? setSplitLines : undefined}
             splitTotalAmount={sourceAmountNum}
             splitCurrencyCode={sourceAccount?.currencyCode ?? baseCurrency}
             isEditing={isEditing}

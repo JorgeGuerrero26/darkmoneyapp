@@ -2460,6 +2460,7 @@ export function useUpdateMovementMutation(workspaceId: number | null) {
       if (input.fxRate !== undefined) payload.fx_rate = input.fxRate;
       if (input.sourceAccountId !== undefined) payload.source_account_id = input.sourceAccountId;
       if (input.destinationAccountId !== undefined) payload.destination_account_id = input.destinationAccountId;
+      if (input.metadata !== undefined) payload.metadata = input.metadata;
       const { error } = await supabase
         .from("movements")
         .update(payload)

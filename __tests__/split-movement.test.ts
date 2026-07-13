@@ -1,4 +1,9 @@
-import { splitLineDescription, validateSplit } from "../features/movements/lib/split-movement";
+import {
+  hasSplitGroup,
+  splitLineDescription,
+  splitLineMetadata,
+  validateSplit,
+} from "../features/movements/lib/split-movement";
 
 const line = (categoryId: number | null, amount: string) => ({ categoryId, amount });
 
@@ -40,5 +45,30 @@ describe("splitLineDescription", () => {
   test("agrega el índice legible", () => {
     expect(splitLineDescription("Supermercado", 0, 2)).toBe("Supermercado (1/2)");
     expect(splitLineDescription("  ", 1, 3)).toBe("Gasto dividido (2/3)");
+  });
+});
+
+describe("hasSplitGroup", () => {
+  it("true solo cuando metadata trae split_group", () => {
+    expect(hasSplitGroup({ split_group: "abc" })).toBe(true);
+    expect(hasSplitGroup({ source: "notification_detection" })).toBe(false);
+    expect(hasSplitGroup(null)).toBe(false);
+    expect(hasSplitGroup(undefined)).toBe(false);
+    expect(hasSplitGroup("x")).toBe(false);
+    expect(hasSplitGroup([1, 2])).toBe(false);
+  });
+});
+
+describe("splitLineMetadata", () => {
+  it("mergea metadata existente con los campos de split (1-indexed)", () => {
+    expect(splitLineMetadata({ source: "detection" }, "g1", 0, 3)).toEqual({
+      source: "detection",
+      split_group: "g1",
+      split_index: 1,
+      split_total: 3,
+    });
+  });
+  it("metadata no-objeto se ignora", () => {
+    expect(splitLineMetadata(null, "g1", 2, 3)).toEqual({ split_group: "g1", split_index: 3, split_total: 3 });
   });
 });

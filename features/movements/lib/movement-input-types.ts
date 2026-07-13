@@ -48,4 +48,5 @@ export type MovementUpdateInput = {
   fxRate?: number | null;
   sourceAccountId?: number | null;
   destinationAccountId?: number | null;
+  metadata?: JsonValue | null;
 };
