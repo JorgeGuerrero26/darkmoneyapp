@@ -32,7 +32,12 @@ import { ResourceSectionList } from "../../components/ui/ResourceSectionList";
 import { SkeletonList, SkeletonMovementRow } from "../../components/ui/Skeleton";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { MovementForm, type MovementDuplicateSource } from "../../components/forms/MovementForm";
-import { useDeleteMovementTemplateMutation, useMovementTemplatesQuery } from "../../services/queries/movement-templates";
+import {
+  useDeleteMovementTemplateMutation,
+  useMovementTemplatesQuery,
+  useRenameMovementTemplateMutation,
+  type MovementTemplate,
+} from "../../services/queries/movement-templates";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { FAB } from "../../components/ui/FAB";
 import { useDeleteMovementMutation } from "../../services/queries/workspace-data";
@@ -44,6 +49,7 @@ import { sortByName } from "../../lib/sort-locale";
 import { MovementFilterSheet } from "../../features/movements/components/MovementFilterSheet";
 import { MovementSummaryBar } from "../../features/movements/components/MovementSummaryBar";
 import { QuickAddSheet } from "../../features/movements/components/QuickAddSheet";
+import { RenameTemplateSheet } from "../../features/movements/components/RenameTemplateSheet";
 import type { MovementRecord, MovementType, MovementStatus } from "../../types/domain";
 
 type FilterType = MovementType | "all";
@@ -206,6 +212,8 @@ function MovementsScreen() {
   const [duplicateSource, setDuplicateSource] = useState<MovementDuplicateSource | null>(null);
   const movementTemplates = useMovementTemplatesQuery(activeWorkspaceId).data ?? [];
   const deleteTemplate = useDeleteMovementTemplateMutation();
+  const renameTemplate = useRenameMovementTemplateMutation();
+  const [renameTemplateTarget, setRenameTemplateTarget] = useState<MovementTemplate | null>(null);
   const [formDefaultType, setFormDefaultType] = useState<MovementType>("expense");
   const [quickAddSheetVisible, setQuickAddSheetVisible] = useState(false);
 
@@ -1037,6 +1045,23 @@ function MovementsScreen() {
                 deleteTemplate.mutate(template.id, {
                   onError: (err) => showToast(err instanceof Error ? err.message : "No se pudo eliminar", "error"),
                 });
+              }}
+              onRenameTemplate={(template) => setRenameTemplateTarget(template)}
+            />
+
+            <RenameTemplateSheet
+              template={renameTemplateTarget}
+              isPending={renameTemplate.isPending}
+              onClose={() => setRenameTemplateTarget(null)}
+              onConfirm={(name) => {
+                if (!renameTemplateTarget) return;
+                renameTemplate.mutate(
+                  { templateId: renameTemplateTarget.id, name },
+                  {
+                    onSuccess: () => { setRenameTemplateTarget(null); showToast("Plantilla renombrada", "success"); },
+                    onError: (err) => showToast(err instanceof Error ? err.message : "No se pudo renombrar", "error"),
+                  },
+                );
               }}
             />
 

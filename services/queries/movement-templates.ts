@@ -88,6 +88,20 @@ export function useCreateMovementTemplateMutation(workspaceId: number | null, us
   });
 }
 
+export function useRenameMovementTemplateMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ templateId, name }: { templateId: number; name: string }) => {
+      if (!supabase) throw new Error("Supabase no está configurado.");
+      const { error } = await supabase.from("movement_templates").update({ name }).eq("id", templateId);
+      if (error) throw new Error(error.message ?? "No se pudo renombrar la plantilla");
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["movement-templates"] });
+    },
+  });
+}
+
 export function useDeleteMovementTemplateMutation() {
   const queryClient = useQueryClient();
   return useMutation({
