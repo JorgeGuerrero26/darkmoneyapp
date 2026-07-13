@@ -3,6 +3,8 @@ import { BackHandler } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 
+import { resolveOriginBackAction } from "../lib/origin-back-action";
+
 type OriginBackNavigationOptions = {
   defaultRoute?: string;
   originRoutes?: Record<string, string>;
@@ -30,14 +32,20 @@ export function useOriginBackNavigation({
     if (navigatingRef.current) return;
     navigatingRef.current = true;
 
-    if (from) {
-      router.replace(fallbackRoute as any);
+    const action = resolveOriginBackAction({
+      hasOrigin: Boolean(from),
+      canGoBack: navigation.canGoBack(),
+    });
+
+    if (action === "pop") {
+      router.back();
       setTimeout(() => { navigatingRef.current = false; }, 300);
       return;
     }
 
-    if (navigation.canGoBack()) {
-      router.back();
+    if (action === "replace-origin") {
+      router.replace(fallbackRoute as any);
+      setTimeout(() => { navigatingRef.current = false; }, 300);
       return;
     }
 
