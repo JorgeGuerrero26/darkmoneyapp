@@ -63,7 +63,7 @@ import {
   mergeWorkspaceAndSharedObligations,
 } from "../../services/queries/obligations";
 import { useBudgetScopeMovementsQuery } from "../../services/queries/budget-analytics";
-import type { BudgetOverview, ExchangeRateSummary } from "../../types/domain";
+import type { BudgetOverview, ExchangeRateSummary, SubscriptionSummary } from "../../types/domain";
 import { useUiStore } from "../../store/ui-store";
 import { Card } from "../../components/ui/Card";
 import { Button } from "../../components/ui/Button";
@@ -94,6 +94,10 @@ import { RingChart, type RingSegment } from "../../components/ui/RingChart";
 import { SparkLine } from "../../components/ui/SparkLine";
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { useToast } from "../../hooks/useToast";
+import { MarkSubscriptionPaidSheet } from "../../features/subscriptions/components/MarkSubscriptionPaidSheet";
+import { RecurringIncomeArrivalSheet } from "../../features/recurring-income/components/RecurringIncomeArrivalSheet";
+import { useArrivalSheetController } from "../../features/recurring-income/lib/useArrivalSheetController";
+import { useMarkSubscriptionPaidMutation } from "../../services/queries/subscriptions-recurring-income";
 import { buildCategorySuggestionCandidates } from "../../services/analytics/category-suggestions";
 import { detectMovementAnomalies } from "../../services/analytics/anomaly-detection";
 import { simulateMonthEndCashflow } from "../../services/analytics/cashflow-forecast";
@@ -351,6 +355,30 @@ function DashboardScreen() {
   const dismissedAlerts = useDismissedDashboardAlerts(activeWorkspaceId);
 
   useDashboardRealtimeSync({ workspaceId: activeWorkspaceId });
+
+  const { showToast } = useToast();
+  const markPaidMutation = useMarkSubscriptionPaidMutation(activeWorkspaceId);
+  const [dashboardPayTarget, setDashboardPayTarget] = useState<SubscriptionSummary | null>(null);
+  const arrival = useArrivalSheetController(activeWorkspaceId);
+
+  const handleDashboardMarkPaid = useCallback(
+    async (args: { paidDate: string; amount: number; accountId: number }) => {
+      if (!dashboardPayTarget) return;
+      try {
+        const { nextDueDate } = await markPaidMutation.mutateAsync({
+          subscription: dashboardPayTarget,
+          paidDate: args.paidDate,
+          amount: args.amount,
+          accountId: args.accountId,
+        });
+        setDashboardPayTarget(null);
+        showToast(`Pago registrado · Próximo cobro: ${nextDueDate}`, "success");
+      } catch (error: unknown) {
+        showToast(error instanceof Error ? error.message : "No se pudo registrar el pago", "error");
+      }
+    },
+    [dashboardPayTarget, markPaidMutation, showToast],
+  );
 
   const [signOutVisible, setSignOutVisible] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
@@ -762,6 +790,14 @@ function DashboardScreen() {
                 subscriptions={snapshot?.subscriptions ?? []}
                 recurringIncome={snapshot?.recurringIncome ?? []}
                 router={router}
+                onPaySubscription={(id) => {
+                  const sub = (snapshot?.subscriptions ?? []).find((s) => s.id === id);
+                  if (sub) setDashboardPayTarget(sub);
+                }}
+                onConfirmIncome={(id) => {
+                  const item = (snapshot?.recurringIncome ?? []).find((r) => r.id === id);
+                  if (item) arrival.open(item);
+                }}
               />
               <BudgetsSection budgets={correctedDashboardBudgets} router={router} />
             </DashboardSectionBoundary>
@@ -851,6 +887,18 @@ function DashboardScreen() {
           }}
         />
       ) : null}
+      <MarkSubscriptionPaidSheet
+        visible={Boolean(dashboardPayTarget)}
+        subscription={dashboardPayTarget}
+        accounts={snapshot?.accounts ?? []}
+        isPending={markPaidMutation.isPending}
+        onClose={() => setDashboardPayTarget(null)}
+        onConfirm={(args) => void handleDashboardMarkPaid(args)}
+      />
+      <RecurringIncomeArrivalSheet
+        {...arrival.sheetProps}
+        accounts={activeAccounts}
+      />
       <ConfirmDialog
         visible={signOutVisible}
         title="Cerrar sesión"

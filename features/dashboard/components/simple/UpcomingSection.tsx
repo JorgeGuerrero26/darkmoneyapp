@@ -2,6 +2,7 @@ import { Text, TouchableOpacity, View } from "react-native";
 import type { useRouter } from "expo-router";
 import { addDays, differenceInDays, format } from "date-fns";
 import { es } from "date-fns/locale";
+import { CheckCircle2 } from "lucide-react-native";
 
 import { Card } from "../../../../components/ui/Card";
 import { formatCurrency } from "../../../../components/ui/AmountDisplay";
@@ -22,9 +23,11 @@ type UpcomingSectionProps = {
   subscriptions: { id: number; name: string; nextDueDate: string; amount: number; currencyCode: string }[];
   recurringIncome: { id: number; name: string; nextExpectedDate: string; amount: number; currencyCode: string }[];
   router: ReturnType<typeof useRouter>;
+  onPaySubscription?: (id: number) => void;
+  onConfirmIncome?: (id: number) => void;
 };
 
-export function UpcomingSection({ obligations, subscriptions, recurringIncome, router }: UpcomingSectionProps) {
+export function UpcomingSection({ obligations, subscriptions, recurringIncome, router, onPaySubscription, onConfirmIncome }: UpcomingSectionProps) {
   const now = new Date();
   const limit = addDays(now, UPCOMING_DAYS);
 
@@ -38,6 +41,8 @@ export function UpcomingSection({ obligations, subscriptions, recurringIncome, r
     flow: "in" | "out";
     badge: string;
     onPress: () => void;
+    quickAction?: () => void;
+    quickActionLabel?: string;
   };
   const items: UpcomingItem[] = [];
 
@@ -71,6 +76,8 @@ export function UpcomingSection({ obligations, subscriptions, recurringIncome, r
         flow: "out",
         badge: "Suscripción",
         onPress: () => router.push(`/subscription/${sub.id}`),
+        quickAction: onPaySubscription ? () => onPaySubscription(sub.id) : undefined,
+        quickActionLabel: `Pagar ${sub.name}`,
       });
     }
   }
@@ -87,6 +94,8 @@ export function UpcomingSection({ obligations, subscriptions, recurringIncome, r
         flow: "in",
         badge: "Ingreso",
         onPress: () => router.push("/recurring-income"),
+        quickAction: onConfirmIncome ? () => onConfirmIncome(income.id) : undefined,
+        quickActionLabel: `Confirmar llegada de ${income.name}`,
       });
     }
   }
@@ -162,6 +171,17 @@ export function UpcomingSection({ obligations, subscriptions, recurringIncome, r
                   {formatCurrency(item.amount, item.currency)}
                 </Text>
               </View>
+              {item.quickAction ? (
+                <TouchableOpacity
+                  style={subStyles.upcomingQuickAction}
+                  onPress={item.quickAction}
+                  hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
+                  accessibilityRole="button"
+                  accessibilityLabel={item.quickActionLabel}
+                >
+                  <CheckCircle2 size={20} color={item.flow === "in" ? COLORS.income : COLORS.gold} />
+                </TouchableOpacity>
+              ) : null}
             </View>
             <View style={subStyles.upcomingMetaRow}>
               <Text style={subStyles.upcomingDate}>{format(item.date, "d MMM", { locale: es })}</Text>
