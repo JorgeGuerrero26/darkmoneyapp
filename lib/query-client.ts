@@ -3,6 +3,7 @@ import { createAsyncStoragePersister } from "@tanstack/query-async-storage-persi
 import type { PersistQueryClientOptions } from "@tanstack/react-query-persist-client";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import NetInfo from "@react-native-community/netinfo";
+import { AppState } from "react-native";
 
 import { logError, logWarn } from "./error-logger";
 
@@ -24,11 +25,24 @@ export const STALE = {
 // Evita reintentos en vano que gastan bateria y spinner infinito al estar offline.
 onlineManager.setEventListener((setOnline) => {
   const unsubscribe = NetInfo.addEventListener((state) => {
-    setOnline(Boolean(state.isConnected));
+    // isConnected null = "aún no se sabe" (habitual al despertar de Doze / cold start).
+    // Tratarlo como offline pausaba TODAS las queries hasta el próximo evento de red,
+    // que puede no llegar nunca (incidente 2026-07-13: app vacía tras 1 día en background).
+    setOnline(state.isConnected ?? true);
   });
   return () => {
     unsubscribe();
   };
+});
+
+// Al volver a foreground NetInfo puede arrastrar estado stale de antes del background
+// (Doze corta la red y no siempre re-emite al despertar). Reevaluar y empujar el
+// resultado reanuda las queries que quedaron pausadas como "offline".
+AppState.addEventListener("change", (status) => {
+  if (status !== "active") return;
+  void NetInfo.refresh().then((state) => {
+    onlineManager.setOnline(state.isConnected ?? true);
+  });
 });
 
 const PERSIST_MAX_AGE_MS = 24 * 60 * 60 * 1000;
