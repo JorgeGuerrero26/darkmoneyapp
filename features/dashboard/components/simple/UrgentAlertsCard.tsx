@@ -70,7 +70,7 @@ export function UrgentAlertsCard({ obligations, budgets, subscriptions, router, 
       sub: b.isOverLimit
         ? `Límite superado · ${Math.round(b.usedPercent)}% usado`
         : `Cerca del límite · ${Math.round(b.usedPercent)}% usado`,
-      route: "/(app)/budgets",
+      route: `/budget/${b.id}?from=dashboard`,
       tone: b.isOverLimit ? COLORS.expense : COLORS.warning,
     });
   }
