@@ -6,6 +6,7 @@ import {
   Modal,
   Pressable,
   ScrollView,
+  StyleSheet,
   Text,
   TouchableOpacity,
   View,
@@ -40,7 +41,8 @@ import {
 import { BottomSheet } from "../../../../components/ui/BottomSheet";
 import { Card } from "../../../../components/ui/Card";
 import { formatCurrency } from "../../../../components/ui/AmountDisplay";
-import { COLORS, SPACING } from "../../../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING } from "../../../../constants/theme";
+import { useUiStore } from "../../../../store/ui-store";
 import {
   movementActsAsExpense,
   movementActsAsIncome,
@@ -203,6 +205,7 @@ export function AdvancedDashboard({
   onRequestPrecisionFocus?: () => void;
   onScrollToTop?: () => void;
 }) {
+  const privacyMode = useUiStore((state) => state.privacyMode);
   const advancedStats = useDashboardStats(movements, "month", {
     accountCurrencyMap,
     exchangeRateMap,
@@ -3053,6 +3056,18 @@ export function AdvancedDashboard({
     }
   }, [dashboardAiPatternsLimitReached, dashboardAiPatternsMutation, dashboardAiPatternsPayload, dashboardAiTone, dashboardAiUsageDate, showToast, workspaceId]);
 
+  if (privacyMode) {
+    return (
+      <Card>
+        <Text style={advancedPrivacyStyles.title}>Oculto por privacidad</Text>
+        <Text style={advancedPrivacyStyles.body}>
+          El análisis avanzado muestra tus cifras completas. Desactiva el modo
+          privado con el ojo del header para verlo.
+        </Text>
+      </Card>
+    );
+  }
+
   return (
     <>
       <DashboardTabBar
@@ -5421,4 +5436,18 @@ export function AdvancedDashboard({
     </>
   );
 }
+
+const advancedPrivacyStyles = StyleSheet.create({
+  title: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.md,
+    color: COLORS.ink,
+  },
+  body: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.storm,
+    marginTop: SPACING.xs,
+  },
+});
 

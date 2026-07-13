@@ -33,7 +33,7 @@ La vía de render de montos tiene un cuello perfecto:
    - Tabs/listas: dashboard, movements, accounts, obligations, subscriptions, recurring-income, budgets, more (si muestra totales).
    - Detalles: movement, account, obligation, subscription, budget, recurring-income.
    - **Audit `React.memo`**: el plan enumera (grep) los componentes memoizados que muestran montos; a cada uno se le pasa `privacyMode` como prop (o se suscribe él mismo) para invalidar su memo. Sin esto, muestran el valor viejo hasta otro re-render — es el riesgo principal del enfoque.
-6. **Gráficos** (revelan magnitudes): `MiniBarChart`, `RingChart`, `SparkLine` y las secciones del dashboard avanzado con cifras/curvas. Con `privacyMode` activo renderizan un placeholder plano de su mismo tamaño con texto "Oculto por privacidad" (tokens del theme, sin nueva paleta). El dashboard avanzado lo aplica por sección (sus builders puros no se tocan).
+6. **Gráficos** (revelan magnitudes): `MiniBarChart`, `RingChart`, `SparkLine` y las secciones del dashboard avanzado con cifras/curvas. Con `privacyMode` activo renderizan un placeholder plano de su mismo tamaño con texto "Oculto por privacidad" (tokens del theme, sin nueva paleta). El dashboard avanzado reemplaza todo su contenido analítico por una card de privacidad (es íntegramente cifras) (sus builders puros no se tocan).
 
 ## Criterios de aceptación
 
