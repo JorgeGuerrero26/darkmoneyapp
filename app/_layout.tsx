@@ -1,4 +1,4 @@
-import { useIsFetching, useQueryClient } from "@tanstack/react-query";
+import { onlineManager, useIsFetching, useQueryClient } from "@tanstack/react-query";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import * as Linking from "expo-linking";
 import { Stack, usePathname, useRouter, useSegments } from "expo-router";
@@ -18,6 +18,7 @@ import {
 
 import { COLORS } from "../constants/theme";
 import { AuthProvider, useAuth } from "../lib/auth-context";
+import { logWarn } from "../lib/error-logger";
 import { queryClient, queryPersistOptions } from "../lib/query-client";
 import { supabase } from "../lib/supabase";
 import { WorkspaceProvider, useWorkspace } from "../lib/workspace-context";
@@ -354,9 +355,26 @@ function NotificationSetup() {
       setBootstrapOverlayTimedOut(false);
       return;
     }
-    const timer = setTimeout(() => setBootstrapOverlayTimedOut(true), BOOTSTRAP_OVERLAY_MAX_MS);
+    const timer = setTimeout(() => {
+      // La válvula se dispara cuando el arranque quedó atascado: dejar registrado el
+      // estado de las queries de bootstrap y del onlineManager para poder diagnosticar
+      // el trigger (¿pausadas por red? ¿error? ¿lentitud?) — incidente 2026-07-13.
+      const queryStates = [...INITIAL_WORKSPACE_BOOTSTRAP_QUERY_KEYS].map((root) => {
+        const states = queryClient
+          .getQueryCache()
+          .findAll({ queryKey: [root] })
+          .map((query) => `${query.state.status}/${query.state.fetchStatus}`)
+          .join(",");
+        return `${root}=${states || "missing"}`;
+      });
+      logWarn("bootstrap", "overlay timeout: liberando UI con queries sin resolver", {
+        online: onlineManager.isOnline(),
+        queries: queryStates.join(" "),
+      });
+      setBootstrapOverlayTimedOut(true);
+    }, BOOTSTRAP_OVERLAY_MAX_MS);
     return () => clearTimeout(timer);
-  }, [showWorkspaceBootstrapOverlayRaw]);
+  }, [queryClient, showWorkspaceBootstrapOverlayRaw]);
   const showWorkspaceBootstrapOverlay = showWorkspaceBootstrapOverlayRaw && !bootstrapOverlayTimedOut;
 
   const bootstrapTitle = isCheckingSession ? "Verificando sesión" : "Cargando workspace";
