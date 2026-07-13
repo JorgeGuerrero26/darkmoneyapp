@@ -28,11 +28,13 @@ import { FilterToolbar } from "../../components/ui/FilterToolbar";
 import { ActiveFilterBar, type ActiveFilterItem } from "../../components/ui/ActiveFilterBar";
 import { HeaderActionGroup } from "../../components/ui/HeaderActionGroup";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
+import { ResourceContextNote } from "../../components/ui/ResourceContextNote";
 import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTemplate";
 import { ResourceSectionList, type ResourceSection } from "../../components/ui/ResourceSectionList";
 import { AccountForm } from "../../components/forms/AccountForm";
 import { AccountNetWorthSummary } from "../../features/accounts/components/AccountNetWorthSummary";
 import { useToast } from "../../hooks/useToast";
+import { useNotificationReason } from "../../hooks/useNotificationReason";
 import { humanizeError } from "../../lib/errors";
 import { shareCsvAsFile } from "../../lib/share-csv-file";
 import { DEFAULT_EXCHANGE_CURRENCY } from "../../constants/currencies";
@@ -82,6 +84,7 @@ function AccountsScreen() {
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
   const { showToast } = useToast();
+  const { reason: notificationReason } = useNotificationReason();
 
   const { data: snapshot, isLoading, isRefetching, refetch, dataUpdatedAt } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   useAccountsRealtimeSync({ workspaceId: activeWorkspaceId });
@@ -564,6 +567,7 @@ function AccountsScreen() {
             <ActiveFilterBar items={activeFilterItems} onClear={clearAccountFilters} />
           ) : null
         }
+        context={!selectMode && notificationReason ? <ResourceContextNote>{notificationReason}</ResourceContextNote> : null}
         summary={summaryHeader}
         bulkActions={
           selectMode && selectedIds.size > 0 ? (

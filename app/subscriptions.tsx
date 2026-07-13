@@ -54,6 +54,7 @@ import {
   useUpdateSubscriptionMutation,
 } from "../services/queries/subscriptions-recurring-income";
 import { useToast } from "../hooks/useToast";
+import { useNotificationReason } from "../hooks/useNotificationReason";
 import { useOriginBackNavigation } from "../hooks/useOriginBackNavigation";
 import type { SubscriptionSummary } from "../types/domain";
 
@@ -65,6 +66,7 @@ function SubscriptionsScreen() {
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
   const { showToast } = useToast();
+  const { reason: notificationReason } = useNotificationReason();
 
   const { data: snapshot, isLoading, isRefetching, refetch } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const updateMutation = useUpdateSubscriptionMutation(activeWorkspaceId);
@@ -381,7 +383,11 @@ function SubscriptionsScreen() {
         />
       )}
       activeFilters={selectMode ? null : <ActiveFilterBar items={activeFilterItems} onClear={clearFilters} />}
-      context={!selectMode && subscriptions.length > 0 ? <ResourceContextNote>{contextNote}</ResourceContextNote> : null}
+      context={
+        !selectMode && (notificationReason || subscriptions.length > 0) ? (
+          <ResourceContextNote>{notificationReason ?? contextNote}</ResourceContextNote>
+        ) : null
+      }
       summary={
         !selectMode && filteredSubscriptions.length > 0 ? (
           <SubscriptionSummaryBar

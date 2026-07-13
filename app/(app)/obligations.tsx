@@ -26,6 +26,7 @@ import {
 } from "../../services/queries/obligations";
 import { PaymentRequestForm } from "../../components/forms/PaymentRequestForm";
 import { useToast } from "../../hooks/useToast";
+import { useNotificationReason } from "../../hooks/useNotificationReason";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { ObligationAnalyticsModal } from "../../components/domain/ObligationAnalyticsModal";
 import { AttachmentPreviewModal } from "../../components/domain/AttachmentPreviewModal";
@@ -87,6 +88,7 @@ function ObligationsScreen() {
   const { profile, session } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
   const { showToast } = useToast();
+  const { reason: notificationReason } = useNotificationReason();
   const deleteMutation = useDeleteObligationMutation(activeWorkspaceId);
   const archiveMutation = useArchiveObligationMutation(activeWorkspaceId);
 
@@ -590,7 +592,7 @@ function ObligationsScreen() {
             <ActiveFilterBar items={activeFilterItems} onClear={clearObligationFilters} />
           ) : null
         }
-        context={!selectMode ? <ResourceContextNote>{contextNote}</ResourceContextNote> : null}
+        context={!selectMode ? <ResourceContextNote>{notificationReason ?? contextNote}</ResourceContextNote> : null}
         summary={
           !selectMode && obligationSections.some((section) => section.data.length > 0) ? (
             <ObligationSummaryBar

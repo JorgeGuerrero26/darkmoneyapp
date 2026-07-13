@@ -49,6 +49,7 @@ import {
   useUpdateRecurringIncomeMutation,
 } from "../services/queries/subscriptions-recurring-income";
 import { useToast } from "../hooks/useToast";
+import { useNotificationReason } from "../hooks/useNotificationReason";
 import { useOriginBackNavigation } from "../hooks/useOriginBackNavigation";
 import type { RecurringIncomeFrequency, RecurringIncomeSummary } from "../types/domain";
 
@@ -67,6 +68,7 @@ function RecurringIncomeScreen() {
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
   const { showToast } = useToast();
+  const { reason: notificationReason } = useNotificationReason();
 
   const { data: snapshot, isLoading } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const updateMutation = useUpdateRecurringIncomeMutation(activeWorkspaceId);
@@ -419,7 +421,11 @@ function RecurringIncomeScreen() {
         />
       )}
       activeFilters={selectMode ? null : <ActiveFilterBar items={activeFilterItems} onClear={clearFilters} />}
-      context={!selectMode && recurringIncome.length > 0 ? <ResourceContextNote>{contextNote}</ResourceContextNote> : null}
+      context={
+        !selectMode && (notificationReason || recurringIncome.length > 0) ? (
+          <ResourceContextNote>{notificationReason ?? contextNote}</ResourceContextNote>
+        ) : null
+      }
       summary={
         !selectMode && filteredRecurringIncome.length > 0 ? (
           <RecurringIncomeSummaryBar
