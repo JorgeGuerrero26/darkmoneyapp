@@ -946,7 +946,9 @@ function MovementsScreen() {
               if (hasNextPage && !isFetchingNextPage) void fetchNextPage();
             }}
             loading={{
-              isLoading,
+              // data undefined con isLoading false = query pausada (offline) o en error:
+              // mostrar skeleton, no el vacío "Sin movimientos" falso (incidente 2026-07-13).
+              isLoading: isLoading || data === undefined,
               fetchingMore: isFetchingNextPage,
               endReached: !hasNextPage,
               skeleton: (

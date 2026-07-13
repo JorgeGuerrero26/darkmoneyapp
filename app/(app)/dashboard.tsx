@@ -668,7 +668,10 @@ function DashboardScreen() {
   const isCheckingAdvancedAccess = isAdvanced && !hasAdvancedDashboardGift && dashboardEntitlement.isLoading;
   const shouldShowAdvancedProGate = isAdvanced && !isCheckingAdvancedAccess && !hasAdvancedDashboardAccess;
 
-  if (snapLoading) {
+  // snapLoading (isPending && isFetching) es false cuando la query quedó pausada
+  // (NetInfo reportó offline) o en error, aunque data siga undefined: sin el guard
+  // extra se renderizaba el estado "tablero limpio" falso (incidente 2026-07-13).
+  if (snapLoading || (Boolean(activeWorkspaceId) && !snapshot)) {
     return (
       <View style={[styles.screen, { paddingTop: insets.top }]}>
         <ScreenHeader
