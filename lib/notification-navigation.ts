@@ -1,3 +1,4 @@
+import { buildNotificationReason } from "../features/notifications/lib/reason-labels";
 import { obligationShareHref } from "./obligation-share-link";
 import { workspaceInviteHref } from "./workspace-invite-link";
 
@@ -68,6 +69,13 @@ function movementsQuickLink(opts: {
   return { pathname: "/(app)/movements", params };
 }
 
+/** Adjunta la nota del porqué (M2) a una ruta destino. Token único por tap. */
+function withReason(kind: string, payload: NotificationPayload, pathname: string, params: Record<string, string> = {}) {
+  const reason = buildNotificationReason(kind, payload ?? null);
+  if (!reason) return Object.keys(params).length > 0 ? { pathname, params } : pathname;
+  return { pathname, params: { ...params, reason, reasonToken: String(Date.now()) } };
+}
+
 export function resolveNotificationNavigationTarget(input: {
   kind: string;
   relatedEntityType?: string | null;
@@ -87,9 +95,14 @@ export function resolveNotificationNavigationTarget(input: {
     case "daily_digest":
     case "daily_ai_digest":
     case "daily_workspace_summary":
-    case "daily_cashflow_check":
+      // M1: dashboard con el sheet del día abierto (token retrigger, como quickToken).
+      return { pathname: "/(app)/dashboard", params: { daySheet: "today", daySheetToken: String(Date.now()) } };
+    case "daily_cashflow_check": {
+      const { from, to } = currentMonthRange();
+      return movementsQuickLink({ label: "Chequeo de flujo del mes", dateFrom: from, dateTo: to });
+    }
     case "daily_budget_review":
-      return "/(app)/dashboard";
+      return withReason(kind, payload, "/(app)/budgets", { from: "notifications" });
     case "budget_alert":
     case "budget_period_ending":
       return "/budgets?from=notifications";

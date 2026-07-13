@@ -39,3 +39,30 @@ describe("navegacion de kinds nuevos", () => {
     expect(resolveNotificationNavigationTarget({ kind: "commitments_vs_balance" })).toBe("/(app)/obligations");
   });
 });
+
+describe("familia diaria", () => {
+  test("resumen del dia abre dashboard con sheet del dia", () => {
+    const t = resolveNotificationNavigationTarget({ kind: "daily_workspace_summary" }) as { pathname: string; params: Record<string, string> };
+    expect(t.pathname).toBe("/(app)/dashboard");
+    expect(t.params.daySheet).toBe("today");
+    expect(t.params.daySheetToken).toBeTruthy();
+  });
+  test("daily_digest y daily_ai_digest igual que el resumen", () => {
+    for (const kind of ["daily_digest", "daily_ai_digest"]) {
+      const t = resolveNotificationNavigationTarget({ kind }) as { pathname: string };
+      expect(t.pathname).toBe("/(app)/dashboard");
+    }
+  });
+  test("chequeo de flujo abre movimientos del mes con etiqueta", () => {
+    const t = resolveNotificationNavigationTarget({ kind: "daily_cashflow_check" }) as { pathname: string; params: Record<string, string> };
+    expect(t.pathname).toBe("/(app)/movements");
+    expect(t.params.quickLabel).toBe("Chequeo de flujo del mes");
+    expect(t.params.quickDateFrom).toBeTruthy();
+  });
+  test("revision diaria abre presupuestos con nota", () => {
+    const t = resolveNotificationNavigationTarget({ kind: "daily_budget_review" }) as { pathname: string; params: Record<string, string> };
+    expect(t.pathname).toBe("/(app)/budgets");
+    expect(t.params.reason).toContain("Revisión diaria");
+    expect(t.params.reasonToken).toBeTruthy();
+  });
+});
