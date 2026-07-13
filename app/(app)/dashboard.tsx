@@ -35,7 +35,7 @@ import {
 import { es } from "date-fns/locale";
 import {
   AlertTriangle, AlertCircle, Clock, Tag, ArrowRight, Bell, Banknote,
-  Brain, Lock, Sparkles, Target, TrendingUp, X,
+  Brain, Lock, Sparkles, Target, TrendingUp, X, Eye, EyeOff,
   type LucideIcon,
 } from "lucide-react-native";
 
@@ -391,7 +391,7 @@ function DashboardScreen() {
     setSigningOut(true);
     await signOut().finally(() => setSigningOut(false));
   }
-  const { dashboardMode, setDashboardMode, dashboardScrollY, setDashboardScrollY } = useUiStore();
+  const { dashboardMode, setDashboardMode, dashboardScrollY, setDashboardScrollY, privacyMode, togglePrivacyMode } = useUiStore();
   const scrollRef = useRef<import("react-native").ScrollView>(null);
   const scrollSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const advancedSectionY = useRef(0);
@@ -707,7 +707,7 @@ function DashboardScreen() {
       <ScreenHeader
         title={`Hola, ${profile?.fullName?.split(" ")[0] ?? "usuario"}`}
         subtitle={`${workspaceDisplayName} · ${format(new Date(), "d MMM yyyy", { locale: es })}${lastUpdateLabel ? ` · ${lastUpdateLabel}` : ""}`}
-        rightAction={<DashboardHeaderRight onSignOut={handleSignOut} />}
+        rightAction={<DashboardHeaderRight onSignOut={handleSignOut} privacyMode={privacyMode} onTogglePrivacy={togglePrivacyMode} />}
         showPlanBadge
       />
 
@@ -944,7 +944,15 @@ const styles = StyleSheet.create({
 
 // --- Dashboard header right actions -------------------------------------------
 
-function DashboardHeaderRight({ onSignOut }: { onSignOut: () => void }) {
+function DashboardHeaderRight({
+  onSignOut,
+  privacyMode,
+  onTogglePrivacy,
+}: {
+  onSignOut: () => void;
+  privacyMode: boolean;
+  onTogglePrivacy: () => void;
+}) {
   const { profile } = useAuth();
   const { workspaces } = useWorkspaceListStore();
   const router = useRouter();
@@ -954,6 +962,17 @@ function DashboardHeaderRight({ onSignOut }: { onSignOut: () => void }) {
   return (
     <View style={hdrStyles.row}>
       {workspaces.length > 1 && <WorkspaceSelector />}
+      <TouchableOpacity
+        style={hdrStyles.iconBtn}
+        onPress={onTogglePrivacy}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        accessibilityRole="button"
+        accessibilityLabel={privacyMode ? "Mostrar montos" : "Ocultar montos"}
+      >
+        {privacyMode
+          ? <EyeOff size={19} color={COLORS.storm} strokeWidth={2} />
+          : <Eye size={19} color={COLORS.storm} strokeWidth={2} />}
+      </TouchableOpacity>
       <TouchableOpacity
         style={hdrStyles.iconBtn}
         onPress={() => router.push("/notifications")}
