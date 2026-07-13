@@ -8,6 +8,7 @@ import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { Card } from "../../components/ui/Card";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { HeaderActionGroup } from "../../components/ui/HeaderActionGroup";
+import { NotificationReasonBanner } from "../../components/ui/NotificationReasonBanner";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTemplate";
 import { SkeletonCard, SkeletonList } from "../../components/ui/Skeleton";
@@ -18,6 +19,7 @@ import { SubscriptionDetailQuickStats } from "../../features/subscriptions/compo
 import { SubscriptionDetailMovements } from "../../features/subscriptions/components/SubscriptionDetailMovements";
 import { MarkSubscriptionPaidSheet } from "../../features/subscriptions/components/MarkSubscriptionPaidSheet";
 import { useOriginBackNavigation } from "../../hooks/useOriginBackNavigation";
+import { useNotificationReason } from "../../hooks/useNotificationReason";
 import { useAuth } from "../../lib/auth-context";
 import { useWorkspace } from "../../lib/workspace-context";
 import { useWorkspaceSnapshotQuery } from "../../services/queries/workspace-data";
@@ -41,8 +43,13 @@ function SubscriptionDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
   const { handleBack } = useOriginBackNavigation({
-    originRoutes: { dashboard: "/(app)/dashboard", subscriptions: "/(app)/subscriptions" },
+    originRoutes: {
+      dashboard: "/(app)/dashboard",
+      subscriptions: "/(app)/subscriptions",
+      notifications: "/notifications",
+    },
   });
+  const { reason: notificationReason, dismiss: dismissNotificationReason } = useNotificationReason();
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
   const { showToast } = useToast();
@@ -124,43 +131,46 @@ function SubscriptionDetailScreen() {
     <ResourceModuleTemplate
       topInset={insets.top}
       header={
-        <ScreenHeader
-          title={subscription?.name ?? "Suscripción"}
-          subtitle={activeWorkspace?.name}
-          onBack={handleBack}
-          rightAction={
-            subscription ? (
-              <HeaderActionGroup
-                actions={[
-                  {
-                    key: "pin",
-                    icon: subscription.isPinned ? PinOff : Pin,
-                    onPress: handleTogglePin,
-                    accessibilityLabel: subscription.isPinned ? "Desfijar" : "Fijar",
-                  },
-                  {
-                    key: "analytics",
-                    icon: BarChart3,
-                    onPress: () => setAnalyticsOpen(true),
-                    accessibilityLabel: "Ver analítica",
-                  },
-                  {
-                    key: "edit",
-                    icon: Pencil,
-                    onPress: () => setEditFormVisible(true),
-                    accessibilityLabel: "Editar suscripción",
-                  },
-                  {
-                    key: "delete",
-                    icon: Trash2,
-                    onPress: () => setDeleteConfirmVisible(true),
-                    accessibilityLabel: "Eliminar suscripción",
-                  },
-                ]}
-              />
-            ) : null
-          }
-        />
+        <>
+          <ScreenHeader
+            title={subscription?.name ?? "Suscripción"}
+            subtitle={activeWorkspace?.name}
+            onBack={handleBack}
+            rightAction={
+              subscription ? (
+                <HeaderActionGroup
+                  actions={[
+                    {
+                      key: "pin",
+                      icon: subscription.isPinned ? PinOff : Pin,
+                      onPress: handleTogglePin,
+                      accessibilityLabel: subscription.isPinned ? "Desfijar" : "Fijar",
+                    },
+                    {
+                      key: "analytics",
+                      icon: BarChart3,
+                      onPress: () => setAnalyticsOpen(true),
+                      accessibilityLabel: "Ver analítica",
+                    },
+                    {
+                      key: "edit",
+                      icon: Pencil,
+                      onPress: () => setEditFormVisible(true),
+                      accessibilityLabel: "Editar suscripción",
+                    },
+                    {
+                      key: "delete",
+                      icon: Trash2,
+                      onPress: () => setDeleteConfirmVisible(true),
+                      accessibilityLabel: "Eliminar suscripción",
+                    },
+                  ]}
+                />
+              ) : null
+            }
+          />
+          <NotificationReasonBanner reason={notificationReason} onDismiss={dismissNotificationReason} />
+        </>
       }
       list={
         isLoading ? (

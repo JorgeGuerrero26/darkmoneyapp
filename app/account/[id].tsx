@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useOriginBackNavigation } from "../../hooks/useOriginBackNavigation";
+import { useNotificationReason } from "../../hooks/useNotificationReason";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -26,6 +27,7 @@ import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { SkeletonAccountSummary } from "../../components/ui/Skeleton";
 import { BalanceEvolutionChart } from "../../features/accounts/components/BalanceEvolutionChart";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
+import { NotificationReasonBanner } from "../../components/ui/NotificationReasonBanner";
 import { AccountForm } from "../../components/forms/AccountForm";
 import { MovementForm } from "../../components/forms/MovementForm";
 import { formatCurrency } from "../../components/ui/AmountDisplay";
@@ -60,8 +62,10 @@ function AccountDetailScreen() {
     originRoutes: {
       accounts: "/(app)/accounts",
       dashboard: "/(app)/dashboard",
+      notifications: "/notifications",
     },
   });
+  const { reason: notificationReason, dismiss: dismissNotificationReason } = useNotificationReason();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -205,33 +209,36 @@ function AccountDetailScreen() {
     <ResourceModuleTemplate
       topInset={insets.top}
       header={
-        <ScreenHeader
-          title={account?.name ?? "Cuenta"}
-          subtitle={headerSubtitle}
-          onBack={handleBack}
-          rightAction={
-            account ? (
-              <HeaderActionGroup
-                actions={[
-                  {
-                    key: account.isArchived ? "restore" : "archive",
-                    icon: account.isArchived ? ArchiveRestore : Archive,
-                    inactiveColor: account.isArchived ? COLORS.pine : COLORS.ember,
-                    onPress: () => setArchiveConfirmVisible(true),
-                    accessibilityLabel: account.isArchived ? "Restaurar cuenta" : "Archivar cuenta",
-                  },
-                  {
-                    key: "edit",
-                    icon: Pencil,
-                    inactiveColor: COLORS.primary,
-                    onPress: () => setEditFormVisible(true),
-                    accessibilityLabel: "Editar cuenta",
-                  },
-                ]}
-              />
-            ) : null
-          }
-        />
+        <>
+          <ScreenHeader
+            title={account?.name ?? "Cuenta"}
+            subtitle={headerSubtitle}
+            onBack={handleBack}
+            rightAction={
+              account ? (
+                <HeaderActionGroup
+                  actions={[
+                    {
+                      key: account.isArchived ? "restore" : "archive",
+                      icon: account.isArchived ? ArchiveRestore : Archive,
+                      inactiveColor: account.isArchived ? COLORS.pine : COLORS.ember,
+                      onPress: () => setArchiveConfirmVisible(true),
+                      accessibilityLabel: account.isArchived ? "Restaurar cuenta" : "Archivar cuenta",
+                    },
+                    {
+                      key: "edit",
+                      icon: Pencil,
+                      inactiveColor: COLORS.primary,
+                      onPress: () => setEditFormVisible(true),
+                      accessibilityLabel: "Editar cuenta",
+                    },
+                  ]}
+                />
+              ) : null
+            }
+          />
+          <NotificationReasonBanner reason={notificationReason} onDismiss={dismissNotificationReason} />
+        </>
       }
       summary={
         account ? (

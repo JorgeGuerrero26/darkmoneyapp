@@ -71,6 +71,8 @@ import {
   type PendingOwnerEditRequest,
 } from "../../lib/obligation-event-payloads";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
+import { NotificationReasonBanner } from "../../components/ui/NotificationReasonBanner";
+import { useNotificationReason } from "../../hooks/useNotificationReason";
 import { ObligationForm } from "../../components/forms/ObligationForm";
 import { PaymentForm } from "../../components/forms/PaymentForm";
 import { PaymentRequestForm } from "../../components/forms/PaymentRequestForm";
@@ -142,6 +144,7 @@ function ObligationDetailScreen() {
     eventId?: string | string[];
   }>();
   const { handleBack } = useOriginBackNavigation();
+  const { reason: notificationReason, dismiss: dismissNotificationReason } = useNotificationReason();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -1022,6 +1025,7 @@ function ObligationDetailScreen() {
           />
         }
       />
+      <NotificationReasonBanner reason={notificationReason} onDismiss={dismissNotificationReason} />
 
       {pageLoading ? (
         <View style={styles.center}><ActivityIndicator color={COLORS.primary} /></View>
