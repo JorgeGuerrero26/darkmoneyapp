@@ -13,6 +13,7 @@ import { useAuth } from "../../lib/auth-context";
 import { humanizeError } from "../../lib/errors";
 import { parseDisplayDate } from "../../lib/date";
 import { useWorkspace } from "../../lib/workspace-context";
+import { useUiStore } from "../../store/ui-store";
 import { buildShareByObligationId } from "../../lib/obligation-labels";
 import { buildRateMap } from "../../lib/exchange-rate-map";
 import { pendingAmountInBaseCurrency } from "../../lib/obligation-pending-base";
@@ -82,6 +83,9 @@ const UNDO_DELETE_MS = 5000;
 // ─── Screen ──────────────────────────────────────────────────────────────────
 
 function ObligationsScreen() {
+  // Fuerza el re-render de la pantalla al alternar modo privacidad (la máscara
+  // vive en formatCurrency, que lee el store imperativamente).
+  useUiStore((state) => state.privacyMode);
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const queryClient = useQueryClient();

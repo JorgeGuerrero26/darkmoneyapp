@@ -42,6 +42,7 @@ import {
 import { buildSubscriptionsContextNote } from "../features/subscriptions/lib/buildSubscriptionsContextNote";
 import { useAuth } from "../lib/auth-context";
 import { useWorkspace } from "../lib/workspace-context";
+import { useUiStore } from "../store/ui-store";
 import { buildSubscriptionsCsv } from "../lib/subscriptions-csv";
 import { shareCsvAsFile } from "../lib/share-csv-file";
 import {
@@ -59,6 +60,9 @@ import { useOriginBackNavigation } from "../hooks/useOriginBackNavigation";
 import type { SubscriptionSummary } from "../types/domain";
 
 function SubscriptionsScreen() {
+  // Fuerza el re-render de la pantalla al alternar modo privacidad (la máscara
+  // vive en formatCurrency, que lee el store imperativamente).
+  useUiStore((state) => state.privacyMode);
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
   const router = useRouter();

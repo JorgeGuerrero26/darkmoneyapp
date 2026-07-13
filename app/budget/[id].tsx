@@ -24,6 +24,7 @@ import { useNotificationReason } from "../../hooks/useNotificationReason";
 import { useToast } from "../../hooks/useToast";
 import { useAuth } from "../../lib/auth-context";
 import { useWorkspace } from "../../lib/workspace-context";
+import { useUiStore } from "../../store/ui-store";
 import { useWorkspaceSnapshotQuery } from "../../services/queries/workspace-data";
 import {
   useDeleteBudgetMutation,
@@ -45,6 +46,9 @@ function parseBudgetId(raw: string | undefined): number | null {
 }
 
 function BudgetDetailScreen() {
+  // Fuerza el re-render de la pantalla al alternar modo privacidad (la máscara
+  // vive en formatCurrency, que lee el store imperativamente).
+  useUiStore((state) => state.privacyMode);
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();

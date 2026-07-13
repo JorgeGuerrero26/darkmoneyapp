@@ -18,6 +18,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { useAuth } from "../../lib/auth-context";
+import { useUiStore } from "../../store/ui-store";
 import { removeAttachmentFile } from "../../lib/entity-attachments";
 import { useWorkspace } from "../../lib/workspace-context";
 import { humanizeError } from "../../lib/errors";
@@ -132,6 +133,9 @@ function toParamNumber(value: string | string[] | undefined): number | null {
 }
 
 function ObligationDetailScreen() {
+  // Fuerza el re-render de la pantalla al alternar modo privacidad (la máscara
+  // vive en formatCurrency, que lee el store imperativamente).
+  useUiStore((state) => state.privacyMode);
   const {
     id,
     paymentRequestId: paymentRequestIdParam,

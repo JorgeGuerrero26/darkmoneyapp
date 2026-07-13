@@ -41,6 +41,7 @@ import {
 } from "../../lib/budget-metrics";
 import { shareCsvAsFile } from "../../lib/share-csv-file";
 import { useWorkspace } from "../../lib/workspace-context";
+import { useUiStore } from "../../store/ui-store";
 import { useToast } from "../../hooks/useToast";
 import { useNotificationReason } from "../../hooks/useNotificationReason";
 import { useOriginBackNavigation } from "../../hooks/useOriginBackNavigation";
@@ -54,6 +55,9 @@ import {
 import type { BudgetOverview } from "../../types/domain";
 
 function BudgetsScreen() {
+  // Fuerza el re-render de la pantalla al alternar modo privacidad (la máscara
+  // vive en formatCurrency, que lee el store imperativamente).
+  useUiStore((state) => state.privacyMode);
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
   const router = useRouter();

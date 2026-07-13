@@ -14,6 +14,7 @@ import { startOfMonth, endOfMonth, subMonths, format } from "date-fns";
 
 import { useAuth } from "../../lib/auth-context";
 import { useWorkspace } from "../../lib/workspace-context";
+import { useUiStore } from "../../store/ui-store";
 import { useWorkspaceSnapshotQuery } from "../../services/queries/workspace-data";
 import { usePaginatedMovements } from "../../services/queries/movements";
 import { useMovementAttachmentCountsQuery } from "../../services/queries/attachments";
@@ -115,6 +116,9 @@ function buildCSV(movements: MovementRecord[]): string {
 }
 
 function MovementsScreen() {
+  // Fuerza el re-render de la pantalla al alternar modo privacidad (la máscara
+  // vive en formatCurrency, que lee el store imperativamente).
+  useUiStore((state) => state.privacyMode);
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const {

@@ -30,6 +30,7 @@ import {
 import { useLinkMovementToObligationMutation } from "../../services/queries/obligations";
 import { useWorkspace } from "../../lib/workspace-context";
 import { useAuth } from "../../lib/auth-context";
+import { useUiStore } from "../../store/ui-store";
 import { isoToDateStr } from "../../lib/date";
 import { movementActsAsExpense, movementActsAsIncome } from "../../lib/movement-display";
 import { useToast } from "../../hooks/useToast";
@@ -72,6 +73,9 @@ const LINKABLE_TYPES = new Set([
 ]);
 
 function MovementDetailScreen() {
+  // Fuerza el re-render de la pantalla al alternar modo privacidad (la máscara
+  // vive en formatCurrency, que lee el store imperativamente).
+  useUiStore((state) => state.privacyMode);
   const { id, edit } = useLocalSearchParams<{ id: string; from?: string; edit?: string }>();
   const { handleBack } = useOriginBackNavigation({
     originRoutes: {

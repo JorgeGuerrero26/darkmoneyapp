@@ -18,6 +18,7 @@ import { useQueryClient } from "@tanstack/react-query";
 
 import { useAuth } from "../../lib/auth-context";
 import { useWorkspace } from "../../lib/workspace-context";
+import { useUiStore } from "../../store/ui-store";
 import { useWorkspaceSnapshotQuery, useArchiveAccountMutation, useDeleteMovementMutation } from "../../services/queries/workspace-data";
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { usePaginatedMovements } from "../../services/queries/movements";
@@ -57,6 +58,9 @@ const ACCOUNT_TYPE_LABEL: Record<string, string> = {
 
 
 function AccountDetailScreen() {
+  // Fuerza el re-render de la pantalla al alternar modo privacidad (la máscara
+  // vive en formatCurrency, que lee el store imperativamente).
+  useUiStore((state) => state.privacyMode);
   const { id } = useLocalSearchParams<{ id: string; from?: string }>();
   const { handleBack } = useOriginBackNavigation({
     originRoutes: {

@@ -13,6 +13,7 @@ import { format } from "date-fns";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth } from "../../lib/auth-context";
 import { useWorkspace } from "../../lib/workspace-context";
+import { useUiStore } from "../../store/ui-store";
 import {
   useWorkspaceSnapshotQuery,
   useArchiveAccountMutation,
@@ -78,6 +79,9 @@ const ACCOUNTS_GROUPING_KEY = "darkmoney.accounts.groupByType";
 const ACCOUNTS_COMPOSITION_EXPANDED_KEY = "darkmoney.accounts.compositionExpanded";
 
 function AccountsScreen() {
+  // Fuerza el re-render de la pantalla al alternar modo privacidad (la máscara
+  // vive en formatCurrency, que lee el store imperativamente).
+  useUiStore((state) => state.privacyMode);
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const queryClient = useQueryClient();
