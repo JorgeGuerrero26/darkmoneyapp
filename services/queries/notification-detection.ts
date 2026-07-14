@@ -532,6 +532,7 @@ export const AI_NOTIFICATION_FEATURE_LIMITS: Record<string, number> = {
   "movement-counterparty-ai-suggestion": 100,
   "movement-description-ai-cleanup": 100,
   "movement-risk-ai-explanation": 100,
+  "movement-duplicate-ai-check": 50,
 };
 
 export type AiFeatureUsageToday = {
