@@ -21,6 +21,8 @@ import { useToast } from "../../hooks/useToast";
 import { useHaptics } from "../../hooks/useHaptics";
 import {
   findPossibleDuplicateMovement,
+  countSameDayDetectionSignals,
+  confirmDuplicateWithAi,
   recordSuggestionAction,
   useAiUsageTodayQuery,
   useNotificationDetectionSettingsQuery,
@@ -788,36 +790,76 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
           description,
         });
         if (duplicate) {
-          // El guard se libera en el finally de submit() al retornar: el usuario decide en el
-          // diálogo y "Registrar de todas formas" re-entra vía submit(true).
-          // Copy concreto (qué coincidió) en vez del genérico: el usuario necesita saber POR QUÉ
-          // parece duplicado para decidir, y poder ver el existente (auditoría, hallazgo R12).
-          const duplicateAmount = duplicate.sourceAmount ?? duplicate.destinationAmount;
-          const duplicateDate = new Date(duplicate.occurredAt).toLocaleDateString("es-PE", {
-            day: "2-digit",
-            month: "short",
-          });
-          const duplicateDetail = [
-            duplicate.description ? `"${duplicate.description}"` : "un movimiento igual",
-            `el ${duplicateDate}`,
-            duplicateAmount != null ? `por ${duplicateAmount.toFixed(2)}` : null,
-          ].filter(Boolean).join(" ");
-          Alert.alert(
-            "Puede que este movimiento ya exista",
-            `Ya registraste ${duplicateDetail} en la misma cuenta. Si es el mismo, no lo registres de nuevo.`,
-            [
-              {
-                text: "Ver el existente",
-                onPress: () => {
-                  onClose();
-                  router.push(`/movement/${duplicate.id}` as never);
-                },
+          // Pro: la IA revisa el candidato antes de mostrar el Alert. "distinct" registra sin
+          // fricción (no re-entra submit() para evitar el guard anti-doble-tap, que lo dejaría en
+          // no-op); "duplicate" con motivo lo añade al Alert; "unknown"/no-Pro deja el Alert igual.
+          let duplicateAiReason: string | null = null;
+          let confirmedDistinct = false;
+          if (entitlementQuery.data?.proAccessEnabled) {
+            const counts = await countSameDayDetectionSignals({
+              workspaceId: activeWorkspaceId,
+              amount: parsedAmount,
+              movementType,
+              occurredAt,
+              accountId,
+            }).catch(() => ({ sameDaySuggestions: 0, sameDayRegisteredFromSuggestions: 0, sameDayMatchingMovements: 1 }));
+            const aiResult = await confirmDuplicateWithAi({
+              workspaceId: activeWorkspaceId,
+              suggestion: {
+                description: description.trim() || suggestion.description,
+                amountLabel: String(parsedAmount),
+                occurredAt,
+                sourceApp: suggestion.financialAppKey,
+                rawText: suggestion.description ?? null,
               },
-              { text: "Registrar de todas formas", onPress: () => void submit(true) },
-              { text: "Cancelar", style: "cancel" },
-            ],
-          );
-          return;
+              candidateMovement: {
+                id: duplicate.id,
+                description: duplicate.description ?? null,
+                occurredAt: duplicate.occurredAt,
+                amount: parsedAmount,
+              },
+              counts,
+            });
+            if (aiResult.verdict === "distinct") {
+              confirmedDistinct = true;
+            } else if (aiResult.verdict === "duplicate" && aiResult.reason) {
+              duplicateAiReason = aiResult.reason;
+            }
+          }
+          if (confirmedDistinct) {
+            // La IA confirma que es otro movimiento: no return, sigue el flujo normal de registro.
+          } else {
+            // El guard se libera en el finally de submit() al retornar: el usuario decide en el
+            // diálogo y "Registrar de todas formas" re-entra vía submit(true).
+            // Copy concreto (qué coincidió) en vez del genérico: el usuario necesita saber POR QUÉ
+            // parece duplicado para decidir, y poder ver el existente (auditoría, hallazgo R12).
+            const duplicateAmount = duplicate.sourceAmount ?? duplicate.destinationAmount;
+            const duplicateDate = new Date(duplicate.occurredAt).toLocaleDateString("es-PE", {
+              day: "2-digit",
+              month: "short",
+            });
+            const duplicateDetail = [
+              duplicate.description ? `"${duplicate.description}"` : "un movimiento igual",
+              `el ${duplicateDate}`,
+              duplicateAmount != null ? `por ${duplicateAmount.toFixed(2)}` : null,
+            ].filter(Boolean).join(" ");
+            Alert.alert(
+              "Puede que este movimiento ya exista",
+              `Ya registraste ${duplicateDetail} en la misma cuenta. Si es el mismo, no lo registres de nuevo.${duplicateAiReason ? `\n\nIA: ${duplicateAiReason}` : ""}`,
+              [
+                {
+                  text: "Ver el existente",
+                  onPress: () => {
+                    onClose();
+                    router.push(`/movement/${duplicate.id}` as never);
+                  },
+                },
+                { text: "Registrar de todas formas", onPress: () => void submit(true) },
+                { text: "Cancelar", style: "cancel" },
+              ],
+            );
+            return;
+          }
         }
       } finally {
         setCheckingDuplicate(false);
