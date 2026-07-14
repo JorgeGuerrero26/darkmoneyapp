@@ -212,7 +212,7 @@ Hay dos mecanismos de limpieza:
 
 ### Notification ID estable
 
-Usar `notificationIdFor("${sourcePackage}:${amount}:${System.currentTimeMillis() / 600_000}")` para evitar duplicados cuando Gmail dispara `onNotificationPosted` múltiples veces con diferente contenido.
+Usar `notificationIdFor("${appName}:${amount}:${System.currentTimeMillis() / 600_000}:${counterpartyToken}")` para evitar duplicados cuando Gmail dispara `onNotificationPosted` múltiples veces con diferente contenido. `counterpartyToken` (`extractCounterpartyToken`, regex conservador sobre "X te envió/yapeó/pagó/transfirió") separa tiles cuando 2 transacciones simultáneas del mismo monto vienen de remitentes distintos; sin match queda vacío y preserva el colapso previo.
 
 ## Skills
 

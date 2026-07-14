@@ -178,15 +178,21 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
       combined,
       amount,
     )
-    // Use financialApp+amount+10min-bucket as notification ID so that:
+    // Use financialApp+amount+10min-bucket+counterpartyToken as notification ID so that:
     // 1. Cross-source detections of the same transaction (Yape push + Yape email)
     //    collapse into one tile (manager.notify with same ID replaces).
     // 2. Gmail re-fires (different content → different suggestionId) also collapse.
+    // 3. counterpartyToken separa tiles cuando 2 transacciones simultáneas del mismo monto
+    //    vienen de remitentes distintos (p. ej. 2 yapes de S/50 de personas distintas en el
+    //    mismo bucket de 10 min): antes colapsaban en una sola tile y se perdía una. Si el
+    //    extractor no matchea (no es un "X te envió/yapeó/..."), el token queda vacío y el
+    //    id es idéntico al anterior: el colapso de los casos 1 y 2 sigue intacto.
     // Si la sugerencia YA existe (re-escaneo de bandeja), reusar su tile id: un re-proceso en
     // otro bucket de 10 min debe REEMPLAZAR la misma tile, no crear una duplicada.
     val existingSuggestion = NotificationDetectionStore.getSuggestion(context, suggestionId)
+    val counterpartyToken = extractCounterpartyToken(combined)
     val notificationId = existingSuggestion?.optInt("notificationId", 0)?.takeIf { it > 0 }
-      ?: notificationIdFor("${appName}:${amount}:${System.currentTimeMillis() / 600_000}")
+      ?: notificationIdFor("${appName}:${amount}:${System.currentTimeMillis() / 600_000}:${counterpartyToken}")
 
     val suggestion = JSONObject()
       .put("id", suggestionId)
@@ -451,6 +457,17 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
       ?.trim()
       ?.take(240)
       ?: "Movimiento detectado"
+  }
+
+  /** Token del remitente para diferenciar tiles de transacciones distintas con el mismo
+   *  monto en la misma ventana. Conservador: sin match → vacío (colapso actual intacto,
+   *  necesario para re-fires de Gmail y push+email del mismo evento). */
+  private fun extractCounterpartyToken(combined: String): String {
+    val match = Regex(
+      "([\\p{L}][\\p{L} .*]{1,30}?)\\s+te\\s+(envió|yapeó|pagó|transfirió)",
+      RegexOption.IGNORE_CASE,
+    ).find(combined) ?: return ""
+    return match.groupValues[1].trim().lowercase().replace(Regex("[^a-záéíóúñ ]"), "").take(24)
   }
 
   private fun extractFinancialEmailMerchant(value: String): String? {
