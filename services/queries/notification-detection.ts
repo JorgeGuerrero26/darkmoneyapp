@@ -12,7 +12,7 @@ import type { MovementFormInput } from "./workspace-data";
 import type { JsonValue, MovementRecord, MovementType } from "../../types/domain";
 import { parseDuplicateVerdict, type DuplicateAiResult } from "../../features/notifications/lib/duplicate-verdict";
 
-export type DetectedMovementStatus = "pending" | "registered" | "discarded" | "duplicate";
+export type DetectedMovementStatus = "pending" | "registered" | "discarded" | "duplicate" | "needs_review";
 export type DetectedMovementConfidence = "high" | "medium" | "low";
 
 export type NotificationDetectionAppSetting = {

@@ -273,7 +273,8 @@ async function generateNotifications(
       .from("notification_detected_movement_suggestions")
       .select("created_at")
       .eq("user_id", userId)
-      .eq("status", "pending")
+      // needs_review también exige acción del usuario (posible duplicado sin veredicto IA).
+      .in("status", ["pending", "needs_review"])
       .order("created_at", { ascending: true })
       .limit(50);
     const pendingAlert = buildDetectedSuggestionsPendingAlert(
