@@ -53,6 +53,14 @@ describe("familia diaria", () => {
     expect(t.pathname).toBe("/(app)/dashboard");
     expect(t.params.daySheet).toBe("today");
     expect(t.params.daySheetToken).toBeTruthy();
+    expect(t.params.daySheetDate).toBeUndefined();
+  });
+  test("resumen con todayKey abre el dia del digest, no el del tap", () => {
+    const t = resolveNotificationNavigationTarget({
+      kind: "daily_workspace_summary",
+      payload: { todayKey: "2026-07-13" },
+    }) as { pathname: string; params: Record<string, string> };
+    expect(t.params.daySheetDate).toBe("2026-07-13");
   });
   test("daily_digest y daily_ai_digest igual que el resumen", () => {
     for (const kind of ["daily_digest", "daily_ai_digest"]) {

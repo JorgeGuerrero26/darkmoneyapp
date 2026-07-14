@@ -434,16 +434,19 @@ function DashboardScreen() {
   } | null>(null);
   // Tap del "Resumen financiero del día": el resolver llega con daySheet=today +
   // token único. Se consume una vez por token (los params persisten en la pantalla).
-  const digestParams = useLocalSearchParams<{ daySheet?: string | string[]; daySheetToken?: string | string[] }>();
+  const digestParams = useLocalSearchParams<{ daySheet?: string | string[]; daySheetToken?: string | string[]; daySheetDate?: string | string[] }>();
   const daySheetTokenConsumedRef = useRef<string | null>(null);
   useEffect(() => {
     const token = Array.isArray(digestParams.daySheetToken) ? digestParams.daySheetToken[0] : digestParams.daySheetToken;
     const mode = Array.isArray(digestParams.daySheet) ? digestParams.daySheet[0] : digestParams.daySheet;
     if (!token || mode !== "today" || daySheetTokenConsumedRef.current === token) return;
     daySheetTokenConsumedRef.current = token;
-    const now = new Date();
-    setDaySheet({ dayStart: startOfDay(now), dayEnd: endOfDay(now), mode: "all" });
-  }, [digestParams.daySheet, digestParams.daySheetToken]);
+    // daySheetDate = día del digest (todayKey): un tap al día siguiente abre el día
+    // del resumen, no "hoy". parseDisplayDate evita el off-by-one UTC de new Date(ymd).
+    const dateParam = Array.isArray(digestParams.daySheetDate) ? digestParams.daySheetDate[0] : digestParams.daySheetDate;
+    const base = dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? parseDisplayDate(dateParam) : new Date();
+    setDaySheet({ dayStart: startOfDay(base), dayEnd: endOfDay(base), mode: "all" });
+  }, [digestParams.daySheet, digestParams.daySheetDate, digestParams.daySheetToken]);
   const [displayCurrency, setDisplayCurrency] = useState<string | null>(null);
   const currencyLoadedRef = useRef(false);
 

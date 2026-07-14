@@ -94,9 +94,15 @@ export function resolveNotificationNavigationTarget(input: {
   switch (kind) {
     case "daily_digest":
     case "daily_ai_digest":
-    case "daily_workspace_summary":
+    case "daily_workspace_summary": {
       // M1: dashboard con el sheet del día abierto (token retrigger, como quickToken).
-      return { pathname: "/(app)/dashboard", params: { daySheet: "today", daySheetToken: String(Date.now()) } };
+      // El digest trae SU fecha (todayKey): tocarlo al día siguiente debe abrir el día
+      // del resumen, no el día del tap.
+      const digestDay = payloadString(payload, "todayKey");
+      const params: Record<string, string> = { daySheet: "today", daySheetToken: String(Date.now()) };
+      if (digestDay) params.daySheetDate = digestDay;
+      return { pathname: "/(app)/dashboard", params };
+    }
     case "daily_cashflow_check": {
       const { from, to } = currentMonthRange();
       return movementsQuickLink({ label: "Chequeo de flujo del mes", dateFrom: from, dateTo: to });
