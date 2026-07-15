@@ -6,6 +6,7 @@ import { StyleSheet, View } from "react-native";
 import { useUiStore } from "../../store/ui-store";
 import { useWorkspace } from "../../lib/workspace-context";
 import { humanizeError } from "../../lib/errors";
+import { isAuthLikeError } from "../../lib/auth-error";
 import { todayPeru, dateStrToISO, dateTimeStrToISO, isoToDateStr, isoToTimeStr, nowTimePeru } from "../../lib/date";
 import {
   useWorkspaceSnapshotQuery,
@@ -1049,7 +1050,14 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     } catch (err: unknown) {
       setIsClosingAfterSubmit(false);
       haptics.error();
-      setSubmitError(humanizeError(err));
+      const message = err instanceof Error ? err.message : String(err);
+      // Sesión/token stale (RLS 42501, JWT): el MutationCache ya dispara la
+      // recuperación; avisar que reintente en vez de un error críptico de RLS.
+      setSubmitError(
+        isAuthLikeError(message)
+          ? "Tu sesión se actualizó. Vuelve a tocar Guardar."
+          : humanizeError(err),
+      );
     } finally {
       submittingRef.current = false;
     }

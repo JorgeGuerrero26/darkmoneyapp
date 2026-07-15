@@ -6,6 +6,8 @@ import NetInfo from "@react-native-community/netinfo";
 import { AppState } from "react-native";
 
 import { logError, logWarn } from "./error-logger";
+import { supabase } from "./supabase";
+import { isAuthLikeError } from "./auth-error";
 
 /**
  * Tiers estandarizados de staleTime para React Query.
@@ -43,7 +45,40 @@ AppState.addEventListener("change", (status) => {
   void NetInfo.refresh().then((state) => {
     onlineManager.setOnline(state.isConnected ?? true);
   });
+  // App vuelve a foreground: si el token se puso stale mientras estuvo en
+  // background, recuperar sesión y refetchear antes de que el usuario toque nada.
+  void recoverSession();
 });
+
+let recovering = false;
+let lastRecoveryAt = 0;
+const RECOVERY_COOLDOWN_MS = 30_000;
+
+/**
+ * Recupera una sesión Supabase degradada (token stale tras horas en foreground o
+ * red inestable) y refetchea las queries activas. Coalesce + cooldown para no
+ * tormentear en fallos persistentes; `force` lo salta (reintento manual). Incidente
+ * 2026-07-15: app 17 h abierta → escrituras 42501 y lecturas "Network request
+ * failed" hasta matar la app; ahora se recupera sola sin reinicio.
+ */
+export async function recoverSession(opts?: { force?: boolean }): Promise<void> {
+  if (recovering) return;
+  const now = Date.now();
+  if (!opts?.force && now - lastRecoveryAt < RECOVERY_COOLDOWN_MS) return;
+  recovering = true;
+  lastRecoveryAt = now;
+  try {
+    if (supabase) {
+      const { data } = await supabase.auth.getSession();
+      if (data.session) await supabase.auth.refreshSession();
+    }
+    await queryClient.invalidateQueries();
+  } catch (error) {
+    logWarn("session-recovery", error instanceof Error ? error.message : String(error));
+  } finally {
+    recovering = false;
+  }
+}
 
 const PERSIST_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
@@ -101,16 +136,16 @@ export const queryClient = new QueryClient({
   },
   queryCache: new QueryCache({
     onError: (error, query) => {
-      logWarn("query", error instanceof Error ? error.message : String(error), {
-        queryKey: query.queryKey,
-      });
+      const message = error instanceof Error ? error.message : String(error);
+      logWarn("query", message, { queryKey: query.queryKey });
+      if (isAuthLikeError(message)) void recoverSession();
     },
   }),
   mutationCache: new MutationCache({
     onError: (error, _vars, _ctx, mutation) => {
-      logError("mutation", error instanceof Error ? error.message : String(error), {
-        mutationKey: mutation.options.mutationKey,
-      });
+      const message = error instanceof Error ? error.message : String(error);
+      logError("mutation", message, { mutationKey: mutation.options.mutationKey });
+      if (isAuthLikeError(message)) void recoverSession();
     },
   }),
 });

@@ -43,6 +43,7 @@ import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { FAB } from "../../components/ui/FAB";
 import { useDeleteMovementMutation } from "../../services/queries/workspace-data";
 import { useToast } from "../../hooks/useToast";
+import { recoverSession } from "../../lib/query-client";
 import { isoToDateStr } from "../../lib/date";
 import { buildDateRangeNotice } from "../../lib/date-range-notice";
 import { shareCsvAsFile } from "../../lib/share-csv-file";
@@ -298,12 +299,15 @@ function MovementsScreen() {
   const {
     data,
     isLoading,
+    isError,
     isFetchingNextPage,
     isRefetching,
     hasNextPage,
     fetchNextPage,
     refetch,
   } = usePaginatedMovements(activeWorkspaceId, filters, profile?.id);
+
+  const loadFailed = data === undefined && isError;
 
   const allMovements = useMemo(() => {
     const base = (data?.pages.flatMap((p) => p.data) ?? []).filter((m) => !pendingDeleteIds.has(m.id));
@@ -950,9 +954,10 @@ function MovementsScreen() {
               if (hasNextPage && !isFetchingNextPage) void fetchNextPage();
             }}
             loading={{
-              // data undefined con isLoading false = query pausada (offline) o en error:
-              // mostrar skeleton, no el vacío "Sin movimientos" falso (incidente 2026-07-13).
-              isLoading: isLoading || data === undefined,
+              // data undefined SIN error = query pausada (offline) o cargando: skeleton,
+              // no el vacío "Sin movimientos" falso (incidente 2026-07-13). Con error sí
+              // resolvemos a estado de error con reintentar (incidente 2026-07-15).
+              isLoading: isLoading || (data === undefined && !isError),
               fetchingMore: isFetchingNextPage,
               endReached: !hasNextPage,
               skeleton: (
@@ -961,14 +966,26 @@ function MovementsScreen() {
                 </SkeletonList>
               ),
             }}
-            empty={{
-              variant: hasFilters ? "no-results" : "empty",
-              title: hasFilters ? "Sin resultados" : "Sin movimientos",
-              description: hasFilters
-                ? "Prueba cambiando los filtros aplicados."
-                : "Registra tu primer movimiento con el botón +",
-              action: !hasFilters ? { label: "Nuevo movimiento", onPress: () => setFormVisible(true) } : undefined,
-            }}
+            empty={
+              loadFailed
+                ? {
+                    variant: "no-results",
+                    title: "No se pudieron cargar los movimientos",
+                    description: "Revisa tu conexión e inténtalo de nuevo.",
+                    action: {
+                      label: "Reintentar",
+                      onPress: () => { void recoverSession({ force: true }); void refetch(); },
+                    },
+                  }
+                : {
+                    variant: hasFilters ? "no-results" : "empty",
+                    title: hasFilters ? "Sin resultados" : "Sin movimientos",
+                    description: hasFilters
+                      ? "Prueba cambiando los filtros aplicados."
+                      : "Registra tu primer movimiento con el botón +",
+                    action: !hasFilters ? { label: "Nuevo movimiento", onPress: () => setFormVisible(true) } : undefined,
+                  }
+            }
           />
         }
         fab={
