@@ -16,6 +16,7 @@ import {
   View,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
+import Constants from "expo-constants";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as LocalAuthentication from "expo-local-authentication";
@@ -557,6 +558,10 @@ function SettingsScreen() {
 
           {/* Sign out */}
           <Button label="Cerrar sesión" variant="danger" size="lg" onPress={handleSignOut} />
+
+          {Constants.expoConfig?.version ? (
+            <Text style={styles.versionText}>Versión {Constants.expoConfig.version}</Text>
+          ) : null}
         </ScrollView>
       </KeyboardAvoidingView>
       }
@@ -717,6 +722,12 @@ function SettingsScreen() {
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   content: { padding: SPACING.lg, gap: SPACING.lg, paddingBottom: SPACING.xxxl },
+  versionText: {
+    fontSize: FONT_SIZE.xs,
+    fontFamily: FONT_FAMILY.body,
+    color: COLORS.storm,
+    textAlign: "center",
+  },
   sectionTitle: {
     fontSize: FONT_SIZE.sm,
     fontFamily: FONT_FAMILY.bodySemibold,
