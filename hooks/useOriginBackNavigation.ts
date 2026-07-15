@@ -16,6 +16,17 @@ function readParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
 }
 
+// En un bottom-tab navigator no existe pop al origen: el fallback debe apuntar
+// al tab que abrió la pantalla. Estos son los tabs raíz; `originRoutes` explícito
+// (para orígenes que no son tab, p. ej. una lista abierta desde otro módulo) gana.
+const MAIN_TAB_ORIGIN_ROUTES: Record<string, string> = {
+  more: "/(app)/more",
+  dashboard: "/(app)/dashboard",
+  movements: "/(app)/movements",
+  accounts: "/(app)/accounts",
+  obligations: "/(app)/obligations",
+};
+
 export function useOriginBackNavigation({
   defaultRoute = "/(app)/more",
   originRoutes = {},
@@ -25,7 +36,9 @@ export function useOriginBackNavigation({
   const navigation = useNavigation();
   const params = useLocalSearchParams<{ from?: string | string[] }>();
   const from = readParam(params.from);
-  const fallbackRoute = from ? originRoutes[from] ?? defaultRoute : defaultRoute;
+  const fallbackRoute = from
+    ? originRoutes[from] ?? MAIN_TAB_ORIGIN_ROUTES[from] ?? defaultRoute
+    : defaultRoute;
   const navigatingRef = useRef(false);
 
   const handleBack = useCallback(() => {
@@ -35,6 +48,7 @@ export function useOriginBackNavigation({
     const action = resolveOriginBackAction({
       hasOrigin: Boolean(from),
       canGoBack: navigation.canGoBack(),
+      navigatorType: navigation.getState()?.type,
     });
 
     if (action === "pop") {

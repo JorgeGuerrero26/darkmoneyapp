@@ -12,7 +12,12 @@ export type OriginBackAction = "pop" | "replace-origin" | "replace-default";
 export function resolveOriginBackAction(input: {
   hasOrigin: boolean;
   canGoBack: boolean;
+  navigatorType?: string;
 }): OriginBackAction {
+  // En un bottom-tab navigator `canGoBack()` es true pero `goBack()` salta al
+  // firstRoute (dashboard), no al tab que abrió esta pantalla (Más, dashboard…).
+  // Con origen declarado hay que volver a él con replace, no con pop.
+  if (input.navigatorType === "tab" && input.hasOrigin) return "replace-origin";
   if (input.canGoBack) return "pop";
   return input.hasOrigin ? "replace-origin" : "replace-default";
 }
