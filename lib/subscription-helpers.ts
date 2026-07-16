@@ -1,4 +1,5 @@
-import { addDays, addMonths, addWeeks, addYears } from "date-fns";
+import { addDays, addMonths, addWeeks, addYears, format } from "date-fns";
+import { es } from "date-fns/locale";
 import type { ExchangeRateSummary, SubscriptionFrequency } from "../types/domain";
 
 /** Convierte un monto a la moneda base del workspace usando tasas del snapshot. */
@@ -151,4 +152,29 @@ export function computeNextRecurringDate(
       break;
   }
   return toLocalYmd(next);
+}
+
+/**
+ * Rueda una fecha de cobro vencida hasta la primera ocurrencia >= hoy según la
+ * cadencia registrada. Si ya es >= hoy, se devuelve intacta. Uso: reactivar una
+ * suscripción pausada/cancelada cuya next_due_date quedó en el pasado.
+ */
+/** "2026-08-12" → "12 ago 2026" (para toasts y avisos). */
+export function formatSubscriptionYmd(ymd: string): string {
+  const parsed = parseLocalYmd(ymd);
+  return Number.isNaN(parsed.getTime()) ? ymd : format(parsed, "d MMM yyyy", { locale: es });
+}
+
+export function rollDueDateForward(
+  currentYmd: string,
+  frequency: SubscriptionFrequency,
+  intervalCount: number,
+  todayYmd: string,
+): string {
+  let next = currentYmd;
+  // Tope defensivo: ~11 años de cadencia diaria; evita loop infinito ante datos corruptos.
+  for (let i = 0; next < todayYmd && i < 4000; i++) {
+    next = computeNextRecurringDate(next, frequency, intervalCount);
+  }
+  return next;
 }

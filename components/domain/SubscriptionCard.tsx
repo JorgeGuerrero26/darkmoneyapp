@@ -12,6 +12,7 @@ import {
   ResourceCardMetaText,
 } from "../ui/ResourceCard";
 import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING } from "../../constants/theme";
+import { todayPeru } from "../../lib/date";
 import type { SubscriptionSummary } from "../../types/domain";
 
 type Props = {
@@ -93,9 +94,15 @@ function SubscriptionCardBase({
       }
       footer={
         <View style={styles.footer}>
-          <ResourceCardMetaText>
-            Próximo: {formatYmdLocal(subscription.nextDueDate)}
-          </ResourceCardMetaText>
+          {subscription.status === "cancelled" ? (
+            <ResourceCardMetaText>Sin cobros programados</ResourceCardMetaText>
+          ) : subscription.status === "active" && subscription.nextDueDate < todayPeru() ? (
+            <Text style={styles.overdue}>Venció el {formatYmdLocal(subscription.nextDueDate)} — marca el pago</Text>
+          ) : (
+            <ResourceCardMetaText>
+              Próximo: {formatYmdLocal(subscription.nextDueDate)}
+            </ResourceCardMetaText>
+          )}
           <Text style={styles.monthly}>
             ~{formatCurrency(monthlyAmount, subscription.currencyCode)}/mes
           </Text>
@@ -134,6 +141,12 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.xs,
     color: COLORS.storm,
     fontFamily: FONT_FAMILY.body,
+  },
+  overdue: {
+    flexShrink: 1,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.rosewood,
+    fontFamily: FONT_FAMILY.bodySemibold,
   },
 });
 

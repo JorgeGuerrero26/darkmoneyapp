@@ -41,6 +41,8 @@ import {
 } from "../features/subscriptions/lib/subscriptionFilters";
 import { buildSubscriptionsContextNote } from "../features/subscriptions/lib/buildSubscriptionsContextNote";
 import { useAuth } from "../lib/auth-context";
+import { todayPeru } from "../lib/date";
+import { formatSubscriptionYmd, rollDueDateForward } from "../lib/subscription-helpers";
 import { useWorkspace } from "../lib/workspace-context";
 import { useUiStore } from "../store/ui-store";
 import { buildSubscriptionsCsv } from "../lib/subscriptions-csv";
@@ -234,11 +236,18 @@ function SubscriptionsScreen() {
 
   const handleTogglePause = useCallback((subscription: SubscriptionSummary) => {
     const newStatus = subscription.status === "active" ? "paused" : "active";
+    // Al reactivar, la fecha stale del pasado se rueda a la primera ocurrencia >= hoy
+    // según la cadencia registrada (spec 2026-07-16-suscripciones).
+    const nextDueDate = newStatus === "active"
+      ? rollDueDateForward(subscription.nextDueDate, subscription.frequency, subscription.intervalCount, todayPeru())
+      : undefined;
     updateMutation.mutate(
-      { id: subscription.id, input: { status: newStatus } },
+      { id: subscription.id, input: { status: newStatus, ...(nextDueDate ? { nextDueDate } : {}) } },
       {
         onSuccess: () => showToast(
-          newStatus === "paused" ? "Suscripción pausada" : "Suscripción reactivada",
+          newStatus === "paused"
+            ? "Suscripción pausada"
+            : `Reactivada. Próximo pago: ${formatSubscriptionYmd(nextDueDate ?? subscription.nextDueDate)}`,
           "success",
         ),
         onError: (error) => showToast(error.message, "error"),

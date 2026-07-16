@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { BarChart3, CheckCircle2, Pause, Pencil, Pin, PinOff, Play, Trash2 } from "lucide-react-native";
+import { Ban, BarChart3, CheckCircle2, Pause, Pencil, Pin, PinOff, Play, Trash2 } from "lucide-react-native";
 
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { Card } from "../../components/ui/Card";
@@ -21,6 +21,8 @@ import { MarkSubscriptionPaidSheet } from "../../features/subscriptions/componen
 import { useOriginBackNavigation } from "../../hooks/useOriginBackNavigation";
 import { useNotificationReason } from "../../hooks/useNotificationReason";
 import { useAuth } from "../../lib/auth-context";
+import { todayPeru } from "../../lib/date";
+import { formatSubscriptionYmd, rollDueDateForward } from "../../lib/subscription-helpers";
 import { useWorkspace } from "../../lib/workspace-context";
 import { useUiStore } from "../../store/ui-store";
 import { useWorkspaceSnapshotQuery } from "../../services/queries/workspace-data";
@@ -60,6 +62,7 @@ function SubscriptionDetailScreen() {
 
   const [editFormVisible, setEditFormVisible] = useState(false);
   const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
+  const [cancelConfirmVisible, setCancelConfirmVisible] = useState(false);
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
   const [markPaidVisible, setMarkPaidVisible] = useState(false);
 
@@ -81,10 +84,32 @@ function SubscriptionDetailScreen() {
   const handleTogglePause = useCallback(() => {
     if (!subscription) return;
     const newStatus = subscription.status === "active" ? "paused" : "active";
+    // Al reactivar (desde pausada o cancelada), rodar la fecha vencida a la
+    // primera ocurrencia >= hoy según la cadencia registrada.
+    const nextDueDate = newStatus === "active"
+      ? rollDueDateForward(subscription.nextDueDate, subscription.frequency, subscription.intervalCount, todayPeru())
+      : undefined;
     updateMutation.mutate(
-      { id: subscription.id, input: { status: newStatus } },
+      { id: subscription.id, input: { status: newStatus, ...(nextDueDate ? { nextDueDate } : {}) } },
       {
-        onSuccess: () => showToast(newStatus === "paused" ? "Pausada" : "Reactivada", "success"),
+        onSuccess: () => showToast(
+          newStatus === "paused"
+            ? "Pausada"
+            : `Reactivada. Próximo pago: ${formatSubscriptionYmd(nextDueDate ?? subscription.nextDueDate)}`,
+          "success",
+        ),
+        onError: (e) => showToast(e.message, "error"),
+      },
+    );
+  }, [subscription, updateMutation, showToast]);
+
+  const handleCancelSubscription = useCallback(() => {
+    if (!subscription) return;
+    setCancelConfirmVisible(false);
+    updateMutation.mutate(
+      { id: subscription.id, input: { status: "cancelled" } },
+      {
+        onSuccess: () => showToast("Suscripción cancelada. Su historial se conserva.", "success"),
         onError: (e) => showToast(e.message, "error"),
       },
     );
@@ -110,7 +135,8 @@ function SubscriptionDetailScreen() {
     }
   }, [subscription, deleteMutation, handleBack, showToast]);
 
-  const isPaused = subscription?.status === "paused";
+  // Pausadas y canceladas comparten el botón "Reactivar" (con recálculo de fecha).
+  const canReactivate = subscription != null && subscription.status !== "active";
 
   const handleMarkPaid = useCallback(
     async (args: { paidDate: string; amount: number; accountId: number }) => {
@@ -207,10 +233,17 @@ function SubscriptionDetailScreen() {
                   />
                 ) : null}
                 <QuickActionButton
-                  icon={isPaused ? Play : Pause}
-                  label={isPaused ? "Reactivar" : "Pausar"}
+                  icon={canReactivate ? Play : Pause}
+                  label={canReactivate ? "Reactivar" : "Pausar"}
                   onPress={handleTogglePause}
                 />
+                {subscription.status !== "cancelled" ? (
+                  <QuickActionButton
+                    icon={Ban}
+                    label="Cancelar"
+                    onPress={() => setCancelConfirmVisible(true)}
+                  />
+                ) : null}
                 <QuickActionButton
                   icon={BarChart3}
                   label="Análisis"
@@ -261,6 +294,19 @@ function SubscriptionDetailScreen() {
             subscription={subscription}
             movements={postedMovements}
             baseCurrencyCode={baseCurrencyCode}
+          />
+          <ConfirmDialog
+            visible={cancelConfirmVisible && Boolean(subscription)}
+            title="¿Cancelar suscripción?"
+            body={
+              subscription
+                ? `"${subscription.name}" pasará a Canceladas y dejará de generar cobros. Su historial de pagos se conserva y podrás reactivarla cuando quieras.`
+                : undefined
+            }
+            confirmLabel="Sí, cancelar"
+            cancelLabel="Volver"
+            onCancel={() => setCancelConfirmVisible(false)}
+            onConfirm={handleCancelSubscription}
           />
           <ConfirmDialog
             visible={deleteConfirmVisible && Boolean(subscription)}
