@@ -1,6 +1,7 @@
 import {
   buildAccountDormantAlerts,
   buildBudgetLimitAlerts,
+  buildBudgetPeriodEndedAlerts,
   buildBudgetPeriodEndingAlerts,
   buildCategorySpendingSpikeAlerts,
   buildDailyBaselineAlerts,
@@ -220,6 +221,34 @@ describe("buildBudgetPeriodEndingAlerts", () => {
     expect(buildBudgetPeriodEndingAlerts([budget({ periodEnd: "2026-07-14", usedPercent: 90 })], days)).toHaveLength(0);
     expect(buildBudgetPeriodEndingAlerts([budget({ periodEnd: "2026-07-12", usedPercent: 50 })], days)).toHaveLength(0);
     expect(buildBudgetPeriodEndingAlerts([budget({ periodEnd: "2026-07-09", usedPercent: 90 })], days)).toHaveLength(0);
+  });
+});
+
+describe("buildBudgetPeriodEndedAlerts", () => {
+  const days = daysFromFixed("2026-07-10");
+  const fmt = (amount: number, code: string) => `${code} ${amount}`;
+  const ended = (over = {}) =>
+    budget({ periodStart: "2026-06-09", periodEnd: "2026-07-09", spentAmount: 680, usedPercent: 85, currencyCode: "PEN", ...over });
+
+  it("alerta con cifras finales cuando cerro 1 dia atras", () => {
+    const rows = buildBudgetPeriodEndedAlerts([ended()], days, fmt);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].kind).toBe("budget_period_ended");
+    expect(rows[0].title).toBe("Presupuesto finalizado");
+    expect(rows[0].body).toContain("PEN 680");
+    expect(rows[0].body).toContain("PEN 800");
+    expect(rows[0].body).toContain("85%");
+    expect(rows[0].related_entity_id).toBe(30);
+    expect(rows[0].payload.periodEnd).toBe("2026-07-09");
+  });
+  it("ventana: cierre de hace 3 dias si, de hace 4 no, cierre hoy no", () => {
+    expect(buildBudgetPeriodEndedAlerts([ended({ periodEnd: "2026-07-07" })], days, fmt)).toHaveLength(1);
+    expect(buildBudgetPeriodEndedAlerts([ended({ periodEnd: "2026-07-06" })], days, fmt)).toHaveLength(0);
+    expect(buildBudgetPeriodEndedAlerts([ended({ periodEnd: "2026-07-10" })], days, fmt)).toHaveLength(0);
+  });
+  it("ignora presupuestos inactivos y vigentes", () => {
+    expect(buildBudgetPeriodEndedAlerts([ended({ isActive: false })], days, fmt)).toHaveLength(0);
+    expect(buildBudgetPeriodEndedAlerts([ended({ periodEnd: "2026-07-31" })], days, fmt)).toHaveLength(0);
   });
 });
 

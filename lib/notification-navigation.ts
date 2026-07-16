@@ -114,6 +114,12 @@ export function resolveNotificationNavigationTarget(input: {
       return id != null && relatedEntityType === "budget"
         ? withReason(kind, payload, "/budget/[id]", { id: String(id), from: "notifications" })
         : withReason(kind, payload, "/(app)/budgets", { from: "notifications" });
+    case "budget_period_ended":
+      // Accionable: abre el módulo con el form de crear prellenado como
+      // duplicado del siguiente período (no crea nada hasta confirmar).
+      return id != null && relatedEntityType === "budget"
+        ? withReason(kind, payload, "/(app)/budgets", { duplicateFrom: String(id), from: "notifications" })
+        : withReason(kind, payload, "/(app)/budgets", { from: "notifications" });
     case "subscription_reminder":
     case "subscription_overdue":
       return id

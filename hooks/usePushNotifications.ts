@@ -335,6 +335,69 @@ export async function scheduleSubscriptionReminders(
   }
 }
 
+// ── Schedule local reminder when a budget period ends ────────────────────────
+
+/**
+ * Aviso local al día siguiente del cierre de cada presupuesto (09:00), para
+ * crear el siguiente período desde la notificación. Catch-up: cierres de hace
+ * ≤3 días sin aviso programado (app cerrada ese día) disparan en 1 minuto,
+ * con el mismo throttle que el resto de recordatorios locales.
+ */
+export async function scheduleBudgetEndedReminders(
+  budgets: Array<{ id: number; name: string; periodEnd: string }>,
+) {
+  if (!Notifications) return;
+  const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+  const scheduledKeys = new Set(
+    scheduled
+      .map((notif) => String(notif.content.data?.localReminderKey ?? ""))
+      .filter(Boolean),
+  );
+
+  const now = new Date();
+
+  for (const budget of budgets) {
+    const daysToEnd = calendarDaysFromTodayLocal(budget.periodEnd);
+    if (daysToEnd < -3) continue;
+
+    const parts = budget.periodEnd.split("-").map(Number);
+    const endDate =
+      parts.length === 3 && !parts.some((n) => Number.isNaN(n))
+        ? new Date(parts[0], parts[1] - 1, parts[2])
+        : new Date(budget.periodEnd);
+
+    const fireDate = new Date(endDate);
+    fireDate.setDate(fireDate.getDate() + 1);
+    fireDate.setHours(9, 0, 0, 0);
+    const isImmediateCatchUp = fireDate <= now;
+    const triggerDate = fireDate > now ? fireDate : new Date(now.getTime() + 60_000);
+    const reminderKey = `budget_period_ended:${budget.id}:${budget.periodEnd}`;
+
+    if (scheduledKeys.has(reminderKey)) continue;
+    if (isImmediateCatchUp && await shouldThrottleImmediateLocalReminder("budget_period_ended", budget.id, budget.periodEnd)) {
+      continue;
+    }
+
+    const identifier = await Notifications.scheduleNotificationAsync({
+      content: {
+        title: "Presupuesto finalizado",
+        body: `"${budget.name}" terminó su período. Toca para crear el siguiente.`,
+        data: {
+          kind: "budget_period_ended",
+          relatedEntityType: "budget",
+          relatedEntityId: budget.id,
+          localReminderKey: reminderKey,
+        },
+      },
+      trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: triggerDate },
+    });
+    await setStoredLocalReminderId("budget_period_ended", budget.id, budget.periodEnd, identifier);
+    if (isImmediateCatchUp) {
+      await rememberImmediateLocalReminder("budget_period_ended", budget.id, budget.periodEnd);
+    }
+  }
+}
+
 // ── Schedule local reminders for upcoming/overdue obligations ─────────────────
 
 /**

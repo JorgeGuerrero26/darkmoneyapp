@@ -65,6 +65,7 @@ import {
   scheduleSubscriptionReminders,
   scheduleObligationReminders,
   scheduleRecurringIncomeReminders,
+  scheduleBudgetEndedReminders,
 } from "../hooks/usePushNotifications";
 import { useAutoSubscriptionMovements } from "../hooks/useAutoSubscriptionMovements";
 import { useNotificationGenerator } from "../hooks/useNotificationGenerator";
@@ -476,6 +477,17 @@ function NotificationSetup() {
       console.warn("[NotificationSetup] obligation reminders failed:", error);
     });
   }, [snapshot?.obligations]);
+
+  useEffect(() => {
+    if (!snapshot?.budgets) return;
+    void scheduleBudgetEndedReminders(
+      snapshot.budgets
+        .filter((b) => b.isActive)
+        .map((b) => ({ id: b.id, name: b.name, periodEnd: b.periodEnd })),
+    ).catch((error) => {
+      console.warn("[NotificationSetup] budget ended reminders failed:", error);
+    });
+  }, [snapshot?.budgets]);
 
   useEffect(() => {
     if (!snapshot?.recurringIncome) return;

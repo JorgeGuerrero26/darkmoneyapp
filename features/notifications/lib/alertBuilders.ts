@@ -259,6 +259,40 @@ export function buildBudgetPeriodEndingAlerts(
   return rows;
 }
 
+/**
+ * Presupuesto cuyo período YA cerró (1 a 3 días atrás): aviso accionable para
+ * crear el siguiente período. La ventana corta evita notificar vencidos antiguos
+ * al estrenar la feature; el unique (user, entidad, kind) del upsert evita
+ * duplicados entre días dentro de la ventana.
+ */
+export function buildBudgetPeriodEndedAlerts(
+  budgets: BudgetOverview[],
+  daysFromToday: DaysFromToday,
+  formatAmount: (amount: number, currencyCode: string) => string,
+): AlertRow[] {
+  const rows: AlertRow[] = [];
+  for (const budget of budgets) {
+    if (!budget.isActive) continue;
+    const daysSinceEnd = -daysFromToday(budget.periodEnd);
+    if (daysSinceEnd < 1 || daysSinceEnd > 3) continue;
+    rows.push({
+      kind: "budget_period_ended",
+      title: "Presupuesto finalizado",
+      body: `"${budget.name}" terminó: gastaste ${formatAmount(budget.spentAmount, budget.currencyCode)} de ${formatAmount(budget.limitAmount, budget.currencyCode)} (${Math.round(budget.usedPercent)}%). Toca para crear el siguiente período.`,
+      related_entity_type: "budget",
+      related_entity_id: budget.id,
+      payload: {
+        usedPercent: budget.usedPercent,
+        spentAmount: budget.spentAmount,
+        limitAmount: budget.limitAmount,
+        periodStart: budget.periodStart,
+        periodEnd: budget.periodEnd,
+      },
+    });
+  }
+  return rows;
+}
+
 export function buildSubscriptionReminderAlerts(
   subscriptions: SubscriptionSummary[],
   daysFromToday: DaysFromToday,

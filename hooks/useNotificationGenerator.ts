@@ -17,10 +17,12 @@ import { InteractionManager } from "react-native";
 import { supabase } from "../lib/supabase";
 import { queryClient } from "../lib/query-client";
 import { calendarDaysFromTodayLocal } from "../lib/subscription-helpers";
+import { formatCurrency } from "../lib/format-currency";
 import type { WorkspaceSnapshot } from "../services/queries/workspace-data";
 import {
   buildAccountDormantAlerts,
   buildBudgetLimitAlerts,
+  buildBudgetPeriodEndedAlerts,
   buildBudgetPeriodEndingAlerts,
   buildCategorySpendingSpikeAlerts,
   buildDailyBaselineAlerts,
@@ -85,6 +87,7 @@ const ALL_KINDS = [
   "daily_budget_review",
   "budget_alert",
   "budget_period_ending",
+  "budget_period_ended",
   "subscription_reminder",
   "subscription_overdue",
   "multiple_subscriptions_due",
@@ -196,6 +199,9 @@ async function generateNotifications(
 
   // ── 2. Budget period ending soon ─────────────────────────────────────────
   pushAlerts(buildBudgetPeriodEndingAlerts(snapshot.budgets, calendarDaysFromTodayLocal));
+
+  // ── 2b. Budget period ended (accionable: crear siguiente período) ────────
+  pushAlerts(buildBudgetPeriodEndedAlerts(snapshot.budgets, calendarDaysFromTodayLocal, formatCurrency));
 
   // ── 3. Subscription reminders ─────────────────────────────────────────────
   pushAlerts(buildSubscriptionReminderAlerts(snapshot.subscriptions, calendarDaysFromTodayLocal));

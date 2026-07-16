@@ -5,7 +5,7 @@ import * as Haptics from "expo-haptics";
 import { CheckSquare, Copy, Download, Target, Trash2, X } from "lucide-react-native";
 import { format } from "date-fns";
 import { useQueryClient } from "@tanstack/react-query";
-import { useRouter, useFocusEffect } from "expo-router";
+import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { BudgetAnalyticsModal } from "../../components/domain/BudgetAnalyticsModal";
@@ -32,9 +32,11 @@ import {
   type ActiveBudgetFilter,
 } from "../../features/budgets/lib/budgetFilters";
 import { buildBudgetCSV } from "../../features/budgets/lib/budgetsCsv";
+import { nextPeriodFor } from "../../features/budgets/lib/duplicateBudgetToNextPeriod";
 import { buildRateMap, convertAmount } from "../../features/budgets/lib/budgetCurrency";
 import { buildBudgetsContextNote } from "../../features/budgets/lib/buildBudgetsContextNote";
 import { useAuth } from "../../lib/auth-context";
+import { todayPeru } from "../../lib/date";
 import {
   applyBudgetComputedMetrics,
   buildBudgetMetricsMap,
@@ -74,6 +76,7 @@ function BudgetsScreen() {
 
   const [formVisible, setFormVisible] = useState(false);
   const [editBudget, setEditBudget] = useState<BudgetOverview | null>(null);
+  const [duplicateBudget, setDuplicateBudget] = useState<BudgetOverview | null>(null);
   const [analyticsBudgetId, setAnalyticsBudgetId] = useState<number | null>(null);
   const [quickEditBudget, setQuickEditBudget] = useState<BudgetOverview | null>(null);
   const [searchText, setSearchText] = useState("");
@@ -136,10 +139,24 @@ function BudgetsScreen() {
     );
   }, [activeBudgets, budgetMovementsError, metricsMap]);
 
+  const todayYmd = todayPeru();
   const filteredBudgets = useMemo(
-    () => filterBudgets(correctedBudgets, activeFilters, searchText),
-    [activeFilters, correctedBudgets, searchText],
+    () => filterBudgets(correctedBudgets, activeFilters, searchText, todayYmd),
+    [activeFilters, correctedBudgets, searchText, todayYmd],
   );
+
+  // Tap en la notificación "presupuesto finalizado": abre el form de crear
+  // prellenado con el siguiente período del presupuesto vencido.
+  const { duplicateFrom } = useLocalSearchParams<{ duplicateFrom?: string }>();
+  useEffect(() => {
+    if (!duplicateFrom) return;
+    // Cold start desde push: esperar a que el snapshot cargue antes de consumir el param.
+    if (!snapshot) return;
+    router.setParams({ duplicateFrom: undefined });
+    const source = snapshot.budgets.find((budget) => budget.id === Number(duplicateFrom));
+    if (!source) return;
+    setDuplicateBudget({ ...source, ...nextPeriodFor(source.periodStart, source.periodEnd) });
+  }, [duplicateFrom, snapshot, router]);
 
   const budgetSections = useMemo(() => buildBudgetSections(filteredBudgets), [filteredBudgets]);
   const rateMap = useMemo(() => buildRateMap(snapshot?.exchangeRates ?? []), [snapshot?.exchangeRates]);
@@ -501,6 +518,12 @@ function BudgetsScreen() {
             onClose={() => setEditBudget(null)}
             onSuccess={() => setEditBudget(null)}
             editBudget={editBudget ?? undefined}
+          />
+          <BudgetForm
+            visible={Boolean(duplicateBudget)}
+            onClose={() => setDuplicateBudget(null)}
+            onSuccess={() => setDuplicateBudget(null)}
+            duplicateBudget={duplicateBudget ?? undefined}
           />
           <BudgetAnalyticsModal
             visible={Boolean(analyticsBudget)}
