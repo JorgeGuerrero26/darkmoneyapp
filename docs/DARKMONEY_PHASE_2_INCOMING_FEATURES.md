@@ -213,6 +213,16 @@ no de construirlas desde cero.
 6. **Reusar el sistema estandar**: nuevos modulos deben usar
    `ResourceModuleTemplate`, filtros tipados, `ActiveFilterBar`,
    `MetricSummaryBar`, `ResourceSectionList`, `FAB` y `useOriginBackNavigation`.
+7. **Logica compartible vive en `@darkmoney/shared`**: toda logica de dominio
+   pura que web y movil puedan necesitar (agregaciones del read model
+   historico, contratos de herramientas IA, modelo de evidencia, tipos y
+   builders de insights, calculos financieros) se implementa en el paquete
+   `@darkmoney/shared` (repo `JorgeGuerrero26/darkmoneyshare`), no en el
+   codigo RN. El movil la consume via wrappers finos de re-export, como ya
+   se hace con `@darkmoney/shared/health` (health score del dashboard, via
+   `features/dashboard/lib/health.ts`) y `@darkmoney/shared/currency`
+   (conversion de paridad, via `lib/currency-conversion.ts`). Solo queda en
+   la app lo especifico de plataforma: UI, navegacion, storage, queries.
 
 ## Fase 2.0 - Fundaciones Antes De Nuevas Features
 
