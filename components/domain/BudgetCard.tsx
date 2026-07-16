@@ -1,6 +1,8 @@
 import { memo } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { AlertTriangle, BarChart2, Pin, PinOff, Target, Zap } from "lucide-react-native";
+import { format } from "date-fns";
+import { es } from "date-fns/locale";
 
 import { formatCurrency } from "../ui/AmountDisplay";
 import { ProgressBar } from "../ui/ProgressBar";
@@ -12,7 +14,14 @@ import {
   ResourceCardMetaText,
 } from "../ui/ResourceCard";
 import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING } from "../../constants/theme";
+import { parseDisplayDate } from "../../lib/date";
 import type { BudgetOverview } from "../../types/domain";
+
+function formatPeriodRange(periodStart: string, periodEnd: string): string {
+  const start = format(parseDisplayDate(periodStart), "d MMM", { locale: es });
+  const end = format(parseDisplayDate(periodEnd), "d MMM", { locale: es });
+  return `${start} – ${end}`;
+}
 
 type Props = {
   budget: BudgetOverview;
@@ -91,6 +100,7 @@ function BudgetCardBase({ budget, selected, onPress, onLongPress, onAnalytics, o
       meta={
         <>
           <ResourceCardBadge label={statusLabel} color={statusColor} />
+          <ResourceCardBadge label={formatPeriodRange(budget.periodStart, budget.periodEnd)} color={COLORS.storm} />
           <ResourceCardBadge label={`${budget.movementCount} mov`} color={COLORS.storm} />
           {budget.rolloverEnabled ? <ResourceCardBadge label="Rollover" color={COLORS.primary} /> : null}
         </>
