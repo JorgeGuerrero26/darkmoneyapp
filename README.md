@@ -82,6 +82,8 @@ Variables de entorno: copiar `.env.example` a `.env` (`EXPO_PUBLIC_SUPABASE_URL`
 
 ## Documentación
 
+Índice completo con estado de cada doc en [`docs/README.md`](docs/README.md).
+
 | Doc | Contenido |
 |---|---|
 | [`docs/APP_DESIGN_AND_CODE_PATTERNS.md`](docs/APP_DESIGN_AND_CODE_PATTERNS.md) | Patrones de diseño y código |

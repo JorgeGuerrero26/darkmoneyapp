@@ -1,5 +1,8 @@
 # Auditoria del modulo Creditos y Deudas
 
+> ⚠️ **Documento histórico (2026-05-04).** Auditoría point-in-time; el código actual
+> puede diferir.
+
 Fecha: 2026-05-04
 
 ## Alcance

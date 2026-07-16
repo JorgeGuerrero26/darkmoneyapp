@@ -1,10 +1,13 @@
 # Auditoría del registro de movimientos (proceso CORE)
 
+> ⚠️ **Documento histórico (2026-06-10).** Auditoría point-in-time; el código actual
+> puede diferir. Verificar contra el código antes de actuar sobre cualquier hallazgo.
+
 > Auditoría senior (2026-06-10) de las 4 vías de registro: MovementForm (vías 1/2),
 > QuickDetectedMovementEntry (vía 3) y overlay Kotlin nativo + headless (vía 4).
 > Tres frentes: vías React, pipeline nativo Android, y capa de datos/seguridad.
 > Los hallazgos críticos fueron verificados manualmente contra el código.
-> Complementa `docs/REGISTRO_MOVIMIENTOS_REVISION.md` (arquitectura y cambios previos).
+> Complementa `docs/archive/REGISTRO_MOVIMIENTOS_REVISION.md` (arquitectura y cambios previos).
 
 **Estado:** los ítems P0/P1 tienen plan de implementación aprobado. Los P2/P3 quedan
 como backlog al final de este documento.

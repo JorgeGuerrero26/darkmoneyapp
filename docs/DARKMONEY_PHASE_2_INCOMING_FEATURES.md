@@ -825,6 +825,6 @@ La meta declarada es publicar en Play Store. Implicancias para Fase 2:
 - `supabase/migrations/*ai*`
 - `supabase/migrations/*notification*`
 - `supabase/migrations/202606100002_movements_client_dedupe_key.sql`
-- `docs/AUDITORIA_REGISTRO_MOVIMIENTOS.md`
+- `docs/archive/AUDITORIA_REGISTRO_MOVIMIENTOS.md`
 - `docs/APP_DESIGN_AND_CODE_PATTERNS.md`
-- `docs/OBLIGATIONS_MODULE_AUDIT.md`
+- `docs/archive/OBLIGATIONS_MODULE_AUDIT.md`

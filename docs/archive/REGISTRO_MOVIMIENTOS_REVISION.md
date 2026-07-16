@@ -1,5 +1,8 @@
 # Registro de movimientos — Documento de revisión técnica
 
+> ⚠️ **Documento histórico (2026-06).** Escrito para una revisión puntual; el código
+> actual puede diferir.
+
 > Contexto para revisión por otro programador. Cubre las **4 vías** para registrar un
 > movimiento, con foco en el **registro rápido desde notificaciones Android** (vía nativa),
 > que es la más compleja. Incluye los cambios recientes, mejoras futuras y riesgos.

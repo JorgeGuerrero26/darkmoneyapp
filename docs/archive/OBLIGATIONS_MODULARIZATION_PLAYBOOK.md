@@ -1,5 +1,9 @@
 # Playbook de modularizacion: Creditos y Deudas
 
+> ⚠️ **Documento histórico.** La modularización que guiaba este playbook se completó
+> (fase 4.2-f, 2026-07: `services/queries/obligations-impl.ts`). Se conserva como
+> referencia del método para futuros refactors de módulos grandes.
+
 Este documento define como refactorizar el modulo sin cambiar comportamiento. Debe usarse como manual operativo para programadores.
 
 ## Estructura objetivo
