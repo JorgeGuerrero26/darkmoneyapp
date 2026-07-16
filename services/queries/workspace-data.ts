@@ -881,7 +881,7 @@ async function fetchWorkspaceSnapshot(
       .order("name", { ascending: true }),
     supabase
       .from("v_budget_progress")
-      .select("id, workspace_id, created_by_user_id, updated_by_user_id, name, period_start, period_end, currency_code, category_id, category_name, account_id, account_name, scope_kind, scope_label, limit_amount, spent_amount, remaining_amount, used_percent, alert_percent, movement_count, rollover_enabled, notes, is_active, is_near_limit, is_over_limit, created_at, updated_at")
+      .select("id, workspace_id, created_by_user_id, updated_by_user_id, name, period_start, period_end, currency_code, category_id, category_name, account_id, account_name, scope_kind, scope_label, limit_amount, spent_amount, remaining_amount, used_percent, alert_percent, movement_count, rollover_enabled, notes, is_active, is_near_limit, is_over_limit, is_pinned, created_at, updated_at")
       .eq("workspace_id", activeWorkspaceId)
       .eq("is_active", true),
     supabase
@@ -1331,7 +1331,7 @@ export async function refreshSnapshotDomains(
       wantsBudgets
         ? supabase
             .from("v_budget_progress")
-            .select("id, workspace_id, created_by_user_id, updated_by_user_id, name, period_start, period_end, currency_code, category_id, category_name, account_id, account_name, scope_kind, scope_label, limit_amount, spent_amount, remaining_amount, used_percent, alert_percent, movement_count, rollover_enabled, notes, is_active, is_near_limit, is_over_limit, created_at, updated_at")
+            .select("id, workspace_id, created_by_user_id, updated_by_user_id, name, period_start, period_end, currency_code, category_id, category_name, account_id, account_name, scope_kind, scope_label, limit_amount, spent_amount, remaining_amount, used_percent, alert_percent, movement_count, rollover_enabled, notes, is_active, is_near_limit, is_over_limit, is_pinned, created_at, updated_at")
             .eq("workspace_id", workspaceId)
             .eq("is_active", true)
         : Promise.resolve(null),
