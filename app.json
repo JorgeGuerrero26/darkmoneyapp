@@ -73,7 +73,7 @@
           "android": {
             "enableMinifyInReleaseBuilds": true,
             "enableShrinkResourcesInReleaseBuilds": true,
-            "extraProguardRules": "-keep class com.darkmoney.app.notificationdetection.** { *; }"
+            "extraProguardRules": "-keep class com.darkmoney.app.notificationdetection.** { *; }\n-keepclassmembers class * implements java.io.Serializable { static final long serialVersionUID; private static final java.io.ObjectStreamField[] serialPersistentFields; private void writeObject(java.io.ObjectOutputStream); private void readObject(java.io.ObjectInputStream); java.lang.Object writeReplace(); java.lang.Object readResolve(); }"
           }
         }
       ]
