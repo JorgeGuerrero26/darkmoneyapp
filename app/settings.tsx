@@ -83,6 +83,11 @@ function SettingsScreen() {
   const [isSaving, setIsSaving] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
 
+  // ── Notificaciones push ──────────────────────────────────────────────────
+  // El sistema tiene bloqueados los permisos de notificación para la app:
+  // muestra la ayuda contextual con acceso directo a los ajustes.
+  const [pushPermissionBlocked, setPushPermissionBlocked] = useState(false);
+
   // ── Biometrics ───────────────────────────────────────────────────────────
   const SECURE_EMAIL_KEY = "darkmoney_bio_email";
   const SECURE_PASS_KEY = "darkmoney_bio_password";
@@ -308,37 +313,45 @@ function SettingsScreen() {
   const pushPlatform = notificationPreferencesQuery.data?.platform ?? null;
   const biometricActive = biometricEnabled && bioCredsStored;
 
-  async function handlePushReconnect() {
+  async function handlePushToggle(nextValue: boolean) {
     if (!profile?.id) return;
+
+    if (!nextValue) {
+      try {
+        await updateNotificationPreferencesMutation.mutateAsync({
+          dailyDigestEnabled,
+          predictiveAlertsEnabled,
+          pushEnabled: false,
+        });
+        setPushPermissionBlocked(false);
+        showToast("Avisos desactivados en este teléfono", "success");
+      } catch (err: unknown) {
+        showToast(humanizeError(err), "error");
+      }
+      return;
+    }
+
     try {
       const result = await registerForPushNotifications();
       if (result.ok) {
         await savePushTokenToSupabase(profile.id, result.token);
         await queryClient.invalidateQueries({ queryKey: ["notification-preferences", profile.id] });
-        showToast("Notificaciones push activadas en este dispositivo", "success");
+        setPushPermissionBlocked(false);
+        showToast("Listo: los avisos llegarán a este teléfono", "success");
         return;
       }
       switch (result.reason) {
         case "permissions_denied":
-          showToast(
-            "Permisos denegados. Abre los ajustes del sistema para concederlos.",
-            "warning",
-          );
-          break;
-        case "expo_go":
-          showToast(
-            "Las notificaciones push no funcionan en Expo Go. Necesitas la app instalada desde Play Store.",
-            "warning",
-          );
-          break;
-        case "not_device":
-          showToast("Las notificaciones push no están disponibles en simuladores.", "warning");
-          break;
-        case "module_unavailable":
-          showToast("El módulo de notificaciones no está disponible en este build.", "warning");
+          // El teléfono tiene bloqueadas las notificaciones para la app: mostrar
+          // la ayuda contextual con acceso directo a los ajustes del sistema.
+          setPushPermissionBlocked(true);
           break;
         case "network_error":
-          showToast("No pudimos contactar al servidor de Expo. Revisa tu conexión y reintenta.", "warning");
+          showToast("Sin conexión. Revisa tu internet e inténtalo de nuevo.", "warning");
+          break;
+        default:
+          // expo_go / not_device / module_unavailable: entornos de desarrollo.
+          showToast("Los avisos no están disponibles en este entorno.", "warning");
           break;
       }
     } catch (err: unknown) {
@@ -493,35 +506,39 @@ function SettingsScreen() {
               </View>
               <ChevronRight size={16} color={COLORS.storm} />
             </TouchableOpacity>
-            <View style={styles.pushStatusBox}>
-              <Text style={styles.pushStatusTitle}>Notificaciones push</Text>
-              <Text style={styles.pushStatusDesc}>
-                {pushEnabled && pushToken
-                  ? `Activo en este dispositivo (${pushPlatform ?? Platform.OS}). Recibirás alertas y recordatorios.`
-                  : "No configurado en este dispositivo. Si denegaste los permisos, ábrelos en los ajustes del sistema y luego pulsa reintentar."}
-              </Text>
-              <View style={styles.pushButtonRow}>
+            <View style={styles.switchRow}>
+              <View style={styles.switchInfo}>
+                <Text style={styles.switchLabel}>Notificaciones push</Text>
+                <Text style={styles.switchDesc}>
+                  {pushEnabled && pushToken
+                    ? `Activo en este dispositivo (${pushPlatform ?? Platform.OS}). Recibirás alertas y recordatorios.`
+                    : "Actívalas para recibir alertas y recordatorios en este teléfono."}
+                </Text>
+              </View>
+              <Switch
+                value={pushEnabled && Boolean(pushToken)}
+                onValueChange={(v) => void handlePushToggle(v)}
+                disabled={updateNotificationPreferencesMutation.isPending || notificationPreferencesQuery.isLoading}
+                trackColor={{ false: COLORS.border, true: COLORS.primary }}
+                thumbColor={EXTENDED_PALETTE.white}
+              />
+            </View>
+            {pushPermissionBlocked ? (
+              <View style={styles.pushStatusBox}>
+                <Text style={styles.pushStatusTitle}>Permisos bloqueados en el sistema</Text>
+                <Text style={styles.pushStatusDesc}>
+                  El teléfono tiene bloqueadas las notificaciones para DarkMoney. Ábrelas en los
+                  ajustes del sistema y vuelve a activar el interruptor.
+                </Text>
                 <TouchableOpacity
-                  style={styles.pushReconnectBtn}
-                  onPress={() => void handlePushReconnect()}
-                  disabled={notificationPreferencesQuery.isLoading}
+                  style={styles.pushSecondaryBtn}
+                  onPress={() => void Linking.openSettings()}
                   activeOpacity={0.84}
                 >
-                  <Text style={styles.pushReconnectText}>
-                    {pushEnabled && pushToken ? "Reintentar activación" : "Activar push"}
-                  </Text>
+                  <Text style={styles.pushSecondaryText}>Abrir ajustes del sistema</Text>
                 </TouchableOpacity>
-                {!(pushEnabled && pushToken) ? (
-                  <TouchableOpacity
-                    style={styles.pushSecondaryBtn}
-                    onPress={() => void Linking.openSettings()}
-                    activeOpacity={0.84}
-                  >
-                    <Text style={styles.pushSecondaryText}>Abrir ajustes del sistema</Text>
-                  </TouchableOpacity>
-                ) : null}
               </View>
-            </View>
+            ) : null}
             <View style={styles.switchRow}>
               <View style={styles.switchInfo}>
                 <Text style={styles.switchLabel}>Resumen diario informativo</Text>
@@ -841,26 +858,9 @@ const styles = StyleSheet.create({
     color: COLORS.storm,
     lineHeight: 18,
   },
-  pushButtonRow: {
-    marginTop: SPACING.xs,
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: SPACING.xs,
-  },
-  pushReconnectBtn: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs + 2,
-    borderRadius: RADIUS.full,
-    borderWidth: 1,
-    borderColor: SURFACE.cardActiveBorder,
-    backgroundColor: SURFACE.cardActive,
-  },
-  pushReconnectText: {
-    fontSize: FONT_SIZE.xs,
-    fontFamily: FONT_FAMILY.bodySemibold,
-    color: COLORS.primary,
-  },
   pushSecondaryBtn: {
+    alignSelf: "flex-start",
+    marginTop: SPACING.xs,
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.xs + 2,
     borderRadius: RADIUS.full,

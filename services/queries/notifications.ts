@@ -130,7 +130,7 @@ export function useNotificationPreferencesQuery(userId: string | null | undefine
 export function useUpdateNotificationPreferencesMutation(userId: string | null | undefined) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (input: { dailyDigestEnabled: boolean; predictiveAlertsEnabled?: boolean }) => {
+    mutationFn: async (input: { dailyDigestEnabled: boolean; predictiveAlertsEnabled?: boolean; pushEnabled?: boolean }) => {
       if (!supabase || !userId) throw new Error("Usuario no disponible.");
 
       const { data: existing, error: existingError } = await supabase
@@ -149,6 +149,7 @@ export function useUpdateNotificationPreferencesMutation(userId: string | null |
           .update({
             daily_digest_enabled: input.dailyDigestEnabled,
             predictive_alerts_enabled: input.predictiveAlertsEnabled,
+            ...(input.pushEnabled !== undefined ? { is_active: input.pushEnabled } : {}),
           })
           .eq("user_id", userId)
         : supabase
@@ -156,7 +157,7 @@ export function useUpdateNotificationPreferencesMutation(userId: string | null |
           .insert({
             user_id: userId,
             platform: Platform.OS,
-            is_active: false,
+            is_active: input.pushEnabled ?? false,
             daily_digest_enabled: input.dailyDigestEnabled,
             predictive_alerts_enabled: input.predictiveAlertsEnabled,
           });
