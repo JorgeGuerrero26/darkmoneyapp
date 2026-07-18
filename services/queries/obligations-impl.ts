@@ -18,7 +18,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { UNIVERSAL_LINK_HOST } from "../../constants/config";
 import { supabase } from "../../lib/supabase";
 import { STALE } from "../../lib/query-client";
-import { TimeoutError, withTimeout } from "../../lib/promise-utils";
+import { withTimeout } from "../../lib/promise-utils";
 import { dateStrToISO, filterDateFrom, filterDateTo } from "../../lib/date";
 import { patchSnapshotObligationPayment, patchSnapshotWithCreatedMovement } from "./snapshot-cache";
 import {
@@ -532,7 +532,13 @@ export function useSharedObligationsQuery(userId: string | null | undefined) {
     queryKey: ["shared-obligations", userId ?? null],
     enabled: Boolean(supabase && userId),
     staleTime: STALE.medium,
-    retry: (failureCount, error) => !(error instanceof TimeoutError) && failureCount < 1,
+    // Reintentar también los TimeoutError (diagnóstico 2026-07-17: la edge responde
+    // en 0.5-3 s incluso fría y la BD en 8 ms; el timeout de 20 s viene del cliente —
+    // lock de auth en arranque frío o socket muerto tras cambio de red). Para cuando
+    // vence, la contención ya pasó y el reintento entra en segundos; sin él la
+    // sección quedaba vacía hasta el próximo refetch (5 min) y el warn crónico
+    // "Timeout (20000ms) at list-shared-obligations" quedaba en app_error_logs.
+    retry: (failureCount) => failureCount < 1,
     queryFn: fetchSharedObligations,
   });
 }
