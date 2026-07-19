@@ -141,7 +141,9 @@ function AssistantScreen() {
       />
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        // Mismo patrón que login: con edge-to-edge Android ya no redimensiona
+        // la ventana solo, sin esto el teclado tapa el input.
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
         <FlatList
           data={items}
