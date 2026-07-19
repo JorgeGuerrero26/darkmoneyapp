@@ -150,6 +150,19 @@ Usar componentes compartidos:
 - No hardcodear PEN/USD ni tasas manuales.
 - Usar tipos de cambio persistio sincronizados.
 
+## PDF reports (estándar)
+
+Todo reporte PDF nuevo sigue el estándar del reporte de obligaciones
+(`features/obligations/lib/obligationReport.ts`, referencia canónica):
+
+- Builder puro RN-free en `features/<modulo>/lib/` que devuelve `{ html, folio, fileName, message }`, con test unitario de la ruta de dinero.
+- HTML → PDF con `expo-print` vía `lib/share-pdf-file.ts` (no duplicar el helper).
+- Estructura visual: encabezado con título + wordmark "DarkMoney" y regla de acento; fila meta (moneda · generado · folio); tarjetas de partes; "Resumen ejecutivo" en tabla con fila destacada del monto clave y barra de progreso; tabla principal con columnas numéricas tabulares (Cargo en rojo, Abono en verde, Saldo en negrita, filas cebra); "Condiciones" en grid; footer con sello "Generado con DarkMoney · fecha · Folio".
+- Paleta clara de impresión (no el tema dark): ink #15202B, muted #5B6B7B, acento #0E8C6D, débito #B23A52, líneas #D9E0E7, fondo suave #F2F6F5. Secciones h2 en mayúsculas con letter-spacing.
+- Folio determinista `DM-<id>-<YYYYMMDD>-<HHmm>`; fileName `Reporte_<titulo>_<folio>.pdf`; SIEMPRE escapar datos del usuario en el HTML.
+- Compartir: sheet con mensaje editable + "Copiar mensaje" (expo-clipboard) + "Compartir PDF" — 2 pasos porque Android descarta el texto al adjuntar archivo a WhatsApp.
+- Al segundo reporte que exista, extraer la plantilla/paleta común a `features/reports/lib/` (no antes).
+
 ## Navigation
 
 - Si un módulo se abre desde Más, la ruta debe usar ?from=more.
