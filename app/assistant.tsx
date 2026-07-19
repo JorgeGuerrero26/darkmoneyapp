@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   FlatList,
   KeyboardAvoidingView,
-  Platform,
   StyleSheet,
   Text,
   TextInput,
@@ -12,7 +11,7 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Send } from "lucide-react-native";
+import { Send, Sparkles } from "lucide-react-native";
 
 import { ErrorBoundary } from "../components/ui/ErrorBoundary";
 import { ScreenHeader } from "../components/layout/ScreenHeader";
@@ -35,7 +34,14 @@ type ChatItem = {
 };
 
 const WELCOME =
-  "Hola, soy tu asistente. Pregúntame por tus movimientos: “¿cuánto me costó el mouse que compré hace meses?”, “¿cuánto gasté en comida el mes pasado?” o “¿gasté más que el mes anterior?”.";
+  "Hola, soy tu asistente. Pregúntame lo que quieras sobre tus movimientos — o toca una sugerencia para empezar:";
+
+const SUGGESTIONS = [
+  "¿Cuánto gasté este mes?",
+  "¿Cuál fue mi mayor gasto del mes?",
+  "¿Cuánto gasté en comida el mes pasado?",
+  "¿Gasté más que el mes anterior?",
+];
 
 function AssistantScreen() {
   const router = useRouter();
@@ -109,35 +115,46 @@ function AssistantScreen() {
   );
 
   const renderItem = useCallback(
-    ({ item }: { item: ChatItem }) => (
-      <View
-        style={[
-          styles.bubble,
-          item.role === "user" ? styles.bubbleUser : styles.bubbleAssistant,
-          item.error ? styles.bubbleError : null,
-        ]}
-      >
-        <Text style={styles.bubbleText}>
-          {parseBoldSegments(item.content).map((segment, index) => (
-            <Text key={index} style={segment.bold ? styles.bubbleTextBold : undefined}>
-              {segment.text}
-            </Text>
+    ({ item }: { item: ChatItem }) => {
+      const bubble = (
+        <View
+          style={[
+            styles.bubble,
+            item.role === "user" ? styles.bubbleUser : styles.bubbleAssistant,
+            item.error ? styles.bubbleError : null,
+          ]}
+        >
+          <Text style={styles.bubbleText}>
+            {parseBoldSegments(item.content).map((segment, index) => (
+              <Text key={index} style={segment.bold ? styles.bubbleTextBold : undefined}>
+                {segment.text}
+              </Text>
+            ))}
+          </Text>
+          {item.evidence?.map((evidence) => (
+            <TouchableOpacity
+              key={`${item.id}-${evidence.label}`}
+              style={styles.evidenceChip}
+              onPress={() => openEvidence(evidence)}
+              accessibilityLabel={`Ver ${evidence.movementIds.length} movimientos de evidencia`}
+            >
+              <Text style={styles.evidenceChipText}>
+                {evidence.label} · ver {evidence.movementIds.length}
+              </Text>
+            </TouchableOpacity>
           ))}
-        </Text>
-        {item.evidence?.map((evidence) => (
-          <TouchableOpacity
-            key={`${item.id}-${evidence.label}`}
-            style={styles.evidenceChip}
-            onPress={() => openEvidence(evidence)}
-            accessibilityLabel={`Ver ${evidence.movementIds.length} movimientos de evidencia`}
-          >
-            <Text style={styles.evidenceChipText}>
-              {evidence.label} · ver {evidence.movementIds.length}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-    ),
+        </View>
+      );
+      if (item.role === "user") return bubble;
+      return (
+        <View style={styles.assistantRow}>
+          <View style={styles.avatar}>
+            <Sparkles size={13} color={COLORS.primary} strokeWidth={2.2} />
+          </View>
+          {bubble}
+        </View>
+      );
+    },
     [openEvidence],
   );
 
@@ -150,9 +167,10 @@ function AssistantScreen() {
       />
       <KeyboardAvoidingView
         style={styles.flex}
-        // Mismo patrón que login: con edge-to-edge Android ya no redimensiona
-        // la ventana solo, sin esto el teclado tapa el input.
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        // "padding" en ambos: con edge-to-edge el teclado superpone la ventana y
+        // el padding se restaura limpio al cerrarse ("height" dejaba un hueco
+        // muerto bajo el input al ocultar el teclado).
+        behavior="padding"
       >
         <FlatList
           data={items}
@@ -160,12 +178,33 @@ function AssistantScreen() {
           renderItem={renderItem}
           contentContainerStyle={styles.listContent}
           ListFooterComponent={
-            isThinking ? (
-              <View style={[styles.bubble, styles.bubbleAssistant, styles.thinkingRow]}>
-                <ActivityIndicator size="small" color={COLORS.primary} />
-                <Text style={styles.thinkingText}>Buscando en tus movimientos…</Text>
-              </View>
-            ) : null
+            <>
+              {items.length === 1 && !isThinking ? (
+                <View style={styles.suggestions}>
+                  {SUGGESTIONS.map((suggestion) => (
+                    <TouchableOpacity
+                      key={suggestion}
+                      style={styles.suggestionChip}
+                      onPress={() => void send(suggestion)}
+                      accessibilityLabel={`Preguntar: ${suggestion}`}
+                    >
+                      <Text style={styles.suggestionChipText}>{suggestion}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              ) : null}
+              {isThinking ? (
+                <View style={styles.assistantRow}>
+                  <View style={styles.avatar}>
+                    <Sparkles size={13} color={COLORS.primary} strokeWidth={2.2} />
+                  </View>
+                  <View style={[styles.bubble, styles.bubbleAssistant, styles.thinkingRow]}>
+                    <ActivityIndicator size="small" color={COLORS.primary} />
+                    <Text style={styles.thinkingText}>Buscando en tus movimientos…</Text>
+                  </View>
+                </View>
+              ) : null}
+            </>
           }
         />
         <View style={[styles.inputRow, { paddingBottom: insets.bottom + SPACING.sm }]}>
@@ -213,11 +252,50 @@ const styles = StyleSheet.create({
     alignSelf: "flex-end",
     backgroundColor: SURFACE.cardActive,
     borderColor: SURFACE.cardActiveBorder,
+    borderBottomRightRadius: 6,
   },
   bubbleAssistant: {
     alignSelf: "flex-start",
+    flexShrink: 1,
     backgroundColor: SURFACE.card,
     borderColor: SURFACE.cardBorder,
+    borderTopLeftRadius: 6,
+  },
+  assistantRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: SPACING.xs,
+    maxWidth: "94%",
+  },
+  avatar: {
+    width: 26,
+    height: 26,
+    borderRadius: RADIUS.full,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: SURFACE.cardActive,
+    borderWidth: 1,
+    borderColor: SURFACE.cardActiveBorder,
+    marginTop: 2,
+  },
+  suggestions: {
+    gap: SPACING.xs,
+    marginTop: SPACING.xs,
+    marginLeft: 26 + SPACING.xs,
+  },
+  suggestionChip: {
+    alignSelf: "flex-start",
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs + 2,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    borderColor: SURFACE.cardActiveBorder,
+    backgroundColor: SURFACE.cardActive,
+  },
+  suggestionChipText: {
+    color: COLORS.primary,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
   },
   bubbleError: {
     borderColor: COLORS.danger,
