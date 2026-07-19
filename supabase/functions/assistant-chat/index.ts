@@ -54,7 +54,10 @@ function usageDateInLima(date = new Date()): string {
 async function callDeepSeek(messages: ChatMessage[]) {
   const apiKey = Deno.env.get("DEEPSEEK_API_KEY")?.trim();
   if (!apiKey) throw new Error("Falta DEEPSEEK_API_KEY.");
-  const model = Deno.env.get("DEEPSEEK_MODEL")?.trim() || "deepseek-v4-flash";
+  // NO heredar DEEPSEEK_MODEL: el digest usa deepseek-v4-flash, que ignora
+  // function calling (bug 2026-07-19: respondía el preámbulo sin ejecutar
+  // tools). El asistente exige un modelo con tools.
+  const model = Deno.env.get("ASSISTANT_DEEPSEEK_MODEL")?.trim() || "deepseek-chat";
   const response = await fetch("https://api.deepseek.com/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
