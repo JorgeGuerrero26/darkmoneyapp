@@ -499,8 +499,10 @@ Nuevo:
 - Snapshot de reporte con filtros, periodo, moneda y fecha de generacion.
 - Programacion opcional de reporte mensual.
 
-Sub-feature priorizada: **Reporte de transparencia de credito/deuda** (brainstorm
-2026-07-19, decisiones ya tomadas con el usuario — implementar tal cual):
+Sub-feature priorizada: **Reporte de transparencia de credito/deuda** —
+**IMPLEMENTADA 2026-07-19** (commit acb1abd, APK 1.0.5): builder puro en
+`features/obligations/lib/obligationReport.ts`, sheet en el detalle, helper
+`lib/share-pdf-file.ts`. Quedan como referencia las decisiones del brainstorm:
 
 - Problema: los companeros con quienes se comparte un credito/deuda no revisan
   la app; el owner necesita empujarles un estado de cuenta confiable.
