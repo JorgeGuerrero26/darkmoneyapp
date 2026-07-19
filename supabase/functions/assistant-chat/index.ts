@@ -22,6 +22,7 @@ import {
   clampSearchParams,
   clampSummarizeParams,
   escapeIlike,
+  normalizeName,
   type AssistantEvidence,
 } from "./logic.ts";
 
@@ -121,13 +122,20 @@ async function matchingIds(
   workspaceId: number,
   text: string,
 ): Promise<number[]> {
+  // Matching en JS con tildes normalizadas: ilike no ignora acentos y el usuario
+  // escribe "tecnologia" para la categoría "Tecnología". Listas por workspace
+  // son chicas (≤300), traerlas es barato.
   const { data } = await client
     .from(table)
-    .select("id")
+    .select("id, name")
     .eq("workspace_id", workspaceId)
-    .ilike("name", `%${escapeIlike(text)}%`)
-    .limit(20);
-  return (data ?? []).map((row) => Number(row.id)).filter((id) => Number.isFinite(id));
+    .limit(300);
+  const needle = normalizeName(text);
+  if (!needle) return [];
+  return (data ?? [])
+    .filter((row) => normalizeName(String(row.name ?? "")).includes(needle))
+    .map((row) => Number(row.id))
+    .filter((id) => Number.isFinite(id));
 }
 
 async function runSearchMovements(

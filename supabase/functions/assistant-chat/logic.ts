@@ -50,6 +50,18 @@ export function escapeIlike(text: string): string {
   return text.replace(/[\\%_]/g, (match) => `\\${match}`);
 }
 
+/**
+ * Para matching de nombres (categorías/contrapartes) insensible a tildes y
+ * mayúsculas: ilike de Postgres NO ignora tildes ("tecnologia" ≠ "Tecnología").
+ */
+export function normalizeName(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
 export function clampSearchParams(raw: Record<string, unknown>): SearchMovementsParams {
   const text = typeof raw.text === "string" ? raw.text.trim().slice(0, 80) : "";
   const limitRaw = typeof raw.limit === "number" ? raw.limit : Number(raw.limit);
@@ -101,7 +113,7 @@ export const ASSISTANT_TOOLS = [
       parameters: {
         type: "object",
         properties: {
-          text: { type: "string", description: "Texto a buscar (producto, tienda, persona). Omitir si no aplica." },
+          text: { type: "string", description: "Texto a buscar (producto, tienda, persona). Omitir si no aplica. La búsqueda distingue tildes: si no hay resultados, reintenta con/sin tildes." },
           minAmount: { type: "number" },
           maxAmount: { type: "number" },
           dateFrom: { type: "string", description: "YYYY-MM-DD" },

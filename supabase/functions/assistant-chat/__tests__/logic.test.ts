@@ -3,6 +3,7 @@ import {
   clampSearchParams,
   clampSummarizeParams,
   escapeIlike,
+  normalizeName,
 } from "../logic";
 
 describe("clampSearchParams", () => {
@@ -33,6 +34,15 @@ describe("clampSummarizeParams", () => {
 describe("escapeIlike", () => {
   it("escapa comodines para que el texto sea literal", () => {
     expect(escapeIlike("100% _raro_ \\x")).toBe("100\\% \\_raro\\_ \\\\x");
+  });
+});
+
+describe("normalizeName", () => {
+  it("ignora tildes y mayúsculas para matchear categorías", () => {
+    expect(normalizeName("Tecnología")).toBe("tecnologia");
+    expect(normalizeName("  ALIMENTACIÓN ")).toBe("alimentacion");
+    // ambos lados se normalizan igual, así "nono" matchea "Ñoño"
+    expect(normalizeName("Ñoño")).toBe("nono");
   });
 });
 
