@@ -164,6 +164,7 @@ function AssistantScreen() {
         title="Asistente"
         subtitle={remainingToday != null ? `${remainingToday} preguntas restantes hoy` : "Consulta tus movimientos"}
         onBack={handleBack}
+        withSafeArea
       />
       <KeyboardAvoidingView
         style={styles.flex}
