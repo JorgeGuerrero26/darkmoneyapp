@@ -23,6 +23,7 @@ import {
   type AssistantChatMessage,
   type AssistantEvidence,
 } from "../services/queries/assistant";
+import { parseBoldSegments } from "../lib/assistant-text";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../constants/theme";
 
 type ChatItem = {
@@ -116,7 +117,13 @@ function AssistantScreen() {
           item.error ? styles.bubbleError : null,
         ]}
       >
-        <Text style={styles.bubbleText}>{item.content}</Text>
+        <Text style={styles.bubbleText}>
+          {parseBoldSegments(item.content).map((segment, index) => (
+            <Text key={index} style={segment.bold ? styles.bubbleTextBold : undefined}>
+              {segment.text}
+            </Text>
+          ))}
+        </Text>
         {item.evidence?.map((evidence) => (
           <TouchableOpacity
             key={`${item.id}-${evidence.label}`}
@@ -220,6 +227,9 @@ const styles = StyleSheet.create({
     fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.sm,
     lineHeight: 20,
+  },
+  bubbleTextBold: {
+    fontFamily: FONT_FAMILY.bodySemibold,
   },
   evidenceChip: {
     alignSelf: "flex-start",

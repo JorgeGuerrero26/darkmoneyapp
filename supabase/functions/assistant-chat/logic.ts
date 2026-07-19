@@ -154,7 +154,7 @@ export function buildSystemPrompt(nowLimaIso: string): string {
     "Si la búsqueda no devuelve nada, dilo claro y sugiere reformular (otra palabra, otro rango de fechas).",
     "Los montos están en la moneda indicada en cada resultado; no conviertas monedas por tu cuenta.",
     "No hables de modelos, IA, proveedores ni limitaciones técnicas.",
-    "Responde en TEXTO PLANO: prohibido Markdown (nada de **, __, #, ---, tablas ni emojis de adorno). Para enumerar usa guiones simples '- '.",
+    "Formato: texto plano con UNA excepción — marca montos y totales importantes con **negritas**. Prohibido lo demás del Markdown (#, ---, __, tablas, emojis de adorno). Para enumerar usa guiones simples '- '.",
     "Máximo ~120 palabras por respuesta.",
   ].join("\n");
 }
