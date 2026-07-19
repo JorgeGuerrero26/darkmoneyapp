@@ -98,8 +98,10 @@ function AssistantScreen() {
 
   const openEvidence = useCallback(
     (evidence: AssistantEvidence) => {
+      // quickScope activa el bloque de quick-filters en Movimientos y quickToken
+      // (único por tap) fuerza el re-trigger — mismo contrato que las notificaciones.
       router.push(
-        `/(app)/movements?quickMovementIds=${evidence.movementIds.join(",")}&quickLabel=${encodeURIComponent(evidence.label)}` as never,
+        `/(app)/movements?quickScope=assistant&quickToken=${Date.now()}&quickMovementIds=${evidence.movementIds.join(",")}&quickLabel=${encodeURIComponent(evidence.label)}` as never,
       );
     },
     [router],
@@ -123,7 +125,7 @@ function AssistantScreen() {
             accessibilityLabel={`Ver ${evidence.movementIds.length} movimientos de evidencia`}
           >
             <Text style={styles.evidenceChipText}>
-              Ver {evidence.movementIds.length} movimiento{evidence.movementIds.length === 1 ? "" : "s"}
+              {evidence.label} · ver {evidence.movementIds.length}
             </Text>
           </TouchableOpacity>
         ))}

@@ -322,7 +322,7 @@ Deno.serve(async (req) => {
           } else if (name === "summarize_movements") {
             output = await runSummarizeMovements(rls, workspaceId, args);
             const item = buildEvidence(
-              `Movimientos ${String(args.dateFrom ?? "")} a ${String(args.dateTo ?? "")}`,
+              `Período ${String(args.dateFrom ?? "")} – ${String(args.dateTo ?? "")}`,
               output.movementIds,
             );
             if (item) evidence.push(item);
