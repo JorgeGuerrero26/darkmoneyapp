@@ -3,7 +3,7 @@ import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useState } from "react";
 import {
-  Bell, Users, BarChart3, RefreshCw, Tag, Settings, ArrowLeftRight, ChevronRight, TrendingUp, type LucideIcon,
+  Bell, Users, BarChart3, RefreshCw, Sparkles, Tag, Settings, ArrowLeftRight, ChevronRight, TrendingUp, type LucideIcon,
 } from "lucide-react-native";
 
 import { useAuth } from "../../lib/auth-context";
@@ -41,6 +41,12 @@ export default function MoreScreen() {
   const unreadCount = (notifications ?? []).filter((n) => n.status !== "read").length;
 
   const menuItems: MenuItem[] = [
+    {
+      Icon: Sparkles,
+      title: "Asistente",
+      subtitle: "Pregunta por tus movimientos en lenguaje natural",
+      route: "/assistant?from=more",
+    },
     {
       Icon: Bell,
       title: "Notificaciones",

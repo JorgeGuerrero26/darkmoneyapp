@@ -979,6 +979,15 @@ function DashboardHeaderRight({
       </TouchableOpacity>
       <TouchableOpacity
         style={hdrStyles.iconBtn}
+        onPress={() => router.push("/assistant?from=dashboard")}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        accessibilityRole="button"
+        accessibilityLabel="Abrir asistente"
+      >
+        <Sparkles size={19} color={COLORS.storm} strokeWidth={2} />
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={hdrStyles.iconBtn}
         onPress={() => router.push("/notifications")}
         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
       >

@@ -1,5 +1,7 @@
 export const INTERACTIVE_AI_TIMEOUT_MS = 6_500;
 export const AI_LOADING_MIN_VISIBLE_MS = 900;
+/** El chat corre un loop de herramientas (hasta 4 llamadas al modelo + queries). */
+export const ASSISTANT_CHAT_TIMEOUT_MS = 45_000;
 
 export function isInteractiveAiEdgeFunction(name: string): boolean {
   return [
