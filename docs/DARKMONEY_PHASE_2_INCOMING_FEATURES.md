@@ -499,6 +499,37 @@ Nuevo:
 - Snapshot de reporte con filtros, periodo, moneda y fecha de generacion.
 - Programacion opcional de reporte mensual.
 
+Sub-feature priorizada: **Reporte de transparencia de credito/deuda** (brainstorm
+2026-07-19, decisiones ya tomadas con el usuario — implementar tal cual):
+
+- Problema: los companeros con quienes se comparte un credito/deuda no revisan
+  la app; el owner necesita empujarles un estado de cuenta confiable.
+- Formato: **PDF** via `expo-print` (plantilla HTML+CSS con tokens de marca).
+  OJO: dependencia nativa nueva -> requiere APK con bump de version; los ajustes
+  de plantilla posteriores viajan por OTA.
+- Alcance: **solo el owner**, en TODAS sus obligaciones (compartidas o no; sirve
+  tambien como constancia personal). Punto de entrada: detalle de la obligacion
+  (ObligationDetailHeaderActions).
+- Contenido del PDF: encabezado formal (titulo, partes, moneda, fecha, folio
+  unico), resumen ejecutivo (monto original, aumentos, pagado, intereses y
+  comisiones, saldo pendiente, % progreso), **tabla cronologica de eventos con
+  saldo corrido** (la clave de transparencia: cada evento muestra como quedo el
+  saldo), condiciones (cuotas, tasa, vencimiento, estado) y pie con sello
+  "Generado con DarkMoney - fecha/hora - folio".
+- Flujo de compartir: al generar se abre un sheet "Reporte listo" con el mensaje
+  predeterminado EDITABLE + boton "Copiar mensaje" + boton "Compartir PDF"
+  (reusar patron de `lib/share-csv-file.ts` con expo-sharing). Restriccion
+  tecnica validada: Android descarta el EXTRA_TEXT al compartir un archivo a
+  WhatsApp, por eso el mensaje va por portapapeles en 2 pasos.
+- Mensaje predeterminado (tono profesional, con resumen numerico):
+  "Hola [nombre], te comparto el estado de cuenta actualizado de nuestro
+  [credito/deuda] '[titulo]': saldo pendiente [moneda] [monto] al [fecha].
+  Lo genero desde mi app de finanzas para que tengas total transparencia del
+  detalle y el historico. Cualquier duda me dices."
+- Ideas para despues (NO en v1): envio automatico mensual, historial de reportes
+  generados como constancia, QR en el PDF que invite a aceptar el share y ver
+  el credito en vivo.
+
 No hacer:
 
 - No duplicar builders CSV por modulo sin necesidad.
