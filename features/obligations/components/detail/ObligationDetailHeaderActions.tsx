@@ -24,6 +24,7 @@ type Props = {
   isSharedViewer: boolean;
   pendingRequestCount: number;
   onPressShare: () => void;
+  onPressReport: () => void;
   onPressUnlink: () => void;
 };
 
@@ -33,6 +34,7 @@ export function ObligationDetailHeaderActions({
   isSharedViewer,
   pendingRequestCount,
   onPressShare,
+  onPressReport,
   onPressUnlink,
 }: Props) {
   return (
@@ -46,6 +48,9 @@ export function ObligationDetailHeaderActions({
               </View>
             </View>
           ) : null}
+          <TouchableOpacity style={styles.shareBtn} onPress={onPressReport}>
+            <Text style={styles.shareBtnText}>Reporte</Text>
+          </TouchableOpacity>
           <TouchableOpacity style={styles.shareBtn} onPress={onPressShare}>
             <Text style={styles.shareBtnText}>Compartir</Text>
           </TouchableOpacity>

@@ -108,6 +108,13 @@ import { ViewerActivityTabs } from "../../features/obligations/components/detail
 import { RegisterPaymentButton } from "../../features/obligations/components/detail/RegisterPaymentButton";
 import { RejectRequestSheet } from "../../features/obligations/components/detail/RejectRequestSheet";
 import { ShareInviteBottomSheet } from "../../features/obligations/components/detail/ShareInviteBottomSheet";
+import { ObligationReportSheet } from "../../features/obligations/components/detail/ObligationReportSheet";
+import {
+  buildObligationReport,
+  type ObligationReportResult,
+} from "../../features/obligations/lib/obligationReport";
+import { sharePdfFromHtml } from "../../lib/share-pdf-file";
+import * as Clipboard from "expo-clipboard";
 import {
   buildObligationEventActions,
   buildObligationEventNotices,
@@ -181,6 +188,10 @@ function ObligationDetailScreen() {
   const [detailViewportHeight, setDetailViewportHeight] = useState(0);
   const [viewerDetailTab, setViewerDetailTab] = useState<"history" | "requests">("history");
   const [unlinkShareConfirmVisible, setUnlinkShareConfirmVisible] = useState(false);
+  const [reportSheetOpen, setReportSheetOpen] = useState(false);
+  const [reportResult, setReportResult] = useState<ObligationReportResult | null>(null);
+  const [reportMessage, setReportMessage] = useState("");
+  const [isSharingReport, setIsSharingReport] = useState(false);
   const detailScrollRef = useRef<ScrollView | null>(null);
   const historySectionYRef = useRef<number | null>(null);
   const eventRowLayoutsRef = useRef<Map<number, { y: number; height: number }>>(new Map());
@@ -744,6 +755,35 @@ function ObligationDetailScreen() {
     }
   }
 
+  function handleOpenReport() {
+    if (!obligation || isSharedViewer) return;
+    const result = buildObligationReport({
+      obligation,
+      events: eventsForDetail,
+      ownerName: profile?.fullName ?? null,
+    });
+    setReportResult(result);
+    setReportMessage(result.message);
+    setReportSheetOpen(true);
+  }
+
+  async function handleCopyReportMessage() {
+    await Clipboard.setStringAsync(reportMessage);
+    showToast("Mensaje copiado — pégalo en WhatsApp", "success");
+  }
+
+  async function handleShareReportPdf() {
+    if (!reportResult) return;
+    setIsSharingReport(true);
+    try {
+      await sharePdfFromHtml(reportResult.html, reportResult.fileName, "Compartir reporte");
+    } catch (err) {
+      showToast(humanizeError(err), "error");
+    } finally {
+      setIsSharingReport(false);
+    }
+  }
+
   async function handleUnlinkViewerShare() {
     if (!obligation || !isSharedViewer || !("share" in obligation)) return;
     await toastedMutate({
@@ -1025,6 +1065,7 @@ function ObligationDetailScreen() {
             isSharedViewer={isSharedViewer}
             pendingRequestCount={pendingRequests.length}
             onPressShare={() => { setShareEmail(""); setShareSheetOpen(true); }}
+            onPressReport={handleOpenReport}
             onPressUnlink={() => setUnlinkShareConfirmVisible(true)}
           />
         }
@@ -1476,6 +1517,18 @@ function ObligationDetailScreen() {
         onChangeEmail={setShareEmail}
         onSubmit={handleShare}
         onClose={() => setShareSheetOpen(false)}
+      />
+
+      <ObligationReportSheet
+        styles={styles}
+        visible={reportSheetOpen}
+        folio={reportResult?.folio ?? ""}
+        message={reportMessage}
+        isSharing={isSharingReport}
+        onChangeMessage={setReportMessage}
+        onCopyMessage={() => void handleCopyReportMessage()}
+        onSharePdf={() => void handleShareReportPdf()}
+        onClose={() => setReportSheetOpen(false)}
       />
     </View>
   );
