@@ -1,10 +1,20 @@
 import {
   buildEvidence,
+  clampFact,
   clampSearchParams,
   clampSummarizeParams,
   escapeIlike,
   normalizeName,
 } from "../logic";
+
+describe("clampFact", () => {
+  it("normaliza espacios y exige 3-300 chars", () => {
+    expect(clampFact("  mi primo   paga la mitad \n de Amazon ")).toBe("mi primo paga la mitad de Amazon");
+    expect(clampFact("ab")).toBeNull();
+    expect(clampFact("x".repeat(301))).toBeNull();
+    expect(clampFact(42)).toBeNull();
+  });
+});
 
 describe("clampSearchParams", () => {
   it("clampa limit a 1-40 y valida fechas/montos/tipo", () => {
