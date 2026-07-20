@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -9,7 +9,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Send, Sparkles } from "lucide-react-native";
 
@@ -46,6 +46,7 @@ const SUGGESTIONS = [
 function AssistantScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const params = useLocalSearchParams<{ ask?: string | string[]; askToken?: string | string[] }>();
   const { handleBack } = useOriginBackNavigation({ defaultRoute: "/(app)/dashboard" });
   const { activeWorkspaceId } = useWorkspace();
 
@@ -102,6 +103,18 @@ function AssistantScreen() {
     },
     [activeWorkspaceId, isThinking, items],
   );
+
+  // Insight proactivo: la notificación abre el chat con ?ask= y se auto-envía
+  // una sola vez (askToken único por tap evita re-disparos por re-render).
+  const autoAskTokenRef = useRef<string | null>(null);
+  useEffect(() => {
+    const ask = Array.isArray(params.ask) ? params.ask[0] : params.ask;
+    const token = Array.isArray(params.askToken) ? params.askToken[0] : params.askToken;
+    const key = token ?? ask ?? null;
+    if (!ask || !activeWorkspaceId || autoAskTokenRef.current === key) return;
+    autoAskTokenRef.current = key;
+    void send(ask);
+  }, [params.ask, params.askToken, activeWorkspaceId, send]);
 
   const openEvidence = useCallback(
     (evidence: AssistantEvidence) => {

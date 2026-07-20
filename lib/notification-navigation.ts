@@ -269,6 +269,17 @@ export function resolveNotificationNavigationTarget(input: {
       return withReason(kind, payload, "/(app)/accounts");
     case "commitments_vs_balance":
       return withReason(kind, payload, "/(app)/obligations");
+    case "assistant_insight": {
+      // Insight proactivo: abre el chat y auto-envía la pregunta que lo motivó.
+      const ask = payloadString(payload, "assistantPrompt");
+      return {
+        pathname: "/assistant",
+        params: {
+          from: "notifications",
+          ...(ask ? { ask, askToken: String(Date.now()) } : {}),
+        },
+      };
+    }
     default:
       return "/notifications";
   }
