@@ -2,8 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
-  KeyboardAvoidingView,
-  Platform,
+  Keyboard,
   StyleSheet,
   Text,
   TextInput,
@@ -57,6 +56,19 @@ function AssistantScreen() {
   const [input, setInput] = useState("");
   const [isThinking, setIsThinking] = useState(false);
   const [remainingToday, setRemainingToday] = useState<number | null>(null);
+  // Control manual del teclado: KeyboardAvoidingView (height/padding) deja huecos
+  // negros con edge-to-edge en Android. Medimos la altura del teclado y la
+  // aplicamos como padding solo mientras está abierto → 0 al cerrar, sin gap.
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  useEffect(() => {
+    const show = Keyboard.addListener("keyboardDidShow", (e) => setKeyboardHeight(e.endCoordinates.height));
+    const hide = Keyboard.addListener("keyboardDidHide", () => setKeyboardHeight(0));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+  const keyboardOpen = keyboardHeight > 0;
   const idRef = useRef(0);
 
   const send = useCallback(
@@ -180,12 +192,7 @@ function AssistantScreen() {
         onBack={handleBack}
         withSafeArea
       />
-      <KeyboardAvoidingView
-        style={styles.flex}
-        // iOS "padding"; Android "height": en edge-to-edge, "padding" dejaba un
-        // hueco negro bajo el input al cerrar el teclado en conversaciones largas.
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-      >
+      <View style={styles.flex}>
         <FlatList
           data={items}
           keyExtractor={(item) => item.id}
@@ -221,7 +228,14 @@ function AssistantScreen() {
             </>
           }
         />
-        <View style={[styles.inputRow, { paddingBottom: insets.bottom + SPACING.sm }]}>
+        <View
+          style={[
+            styles.inputRow,
+            // Teclado abierto: pegado sobre el teclado (su altura ya cubre el nav bar).
+            // Cerrado: respeta el safe-area inferior. Sin KAV → sin hueco negro.
+            { paddingBottom: (keyboardOpen ? 0 : insets.bottom) + SPACING.sm, marginBottom: keyboardHeight },
+          ]}
+        >
           <TextInput
             style={styles.input}
             value={input}
@@ -242,7 +256,7 @@ function AssistantScreen() {
             <Send size={18} color={COLORS.void} />
           </TouchableOpacity>
         </View>
-      </KeyboardAvoidingView>
+      </View>
     </View>
   );
 }
