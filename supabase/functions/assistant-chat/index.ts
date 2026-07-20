@@ -28,7 +28,8 @@ import {
 
 const DAILY_LIMIT = 30;
 const FEATURE_KEY = "assistant_chat";
-const MAX_TOOL_ROUNDS = 3;
+// 4 rondas: los análisis compra/venta suelen necesitar búsqueda + contexto extra.
+const MAX_TOOL_ROUNDS = 4;
 const MAX_HISTORY = 8;
 
 type ChatMessage = {
@@ -68,7 +69,7 @@ async function callDeepSeek(messages: ChatMessage[]) {
       tools: ASSISTANT_TOOLS,
       tool_choice: "auto",
       temperature: 0.2,
-      max_tokens: 600,
+      max_tokens: 800,
     }),
     signal: AbortSignal.timeout(25_000),
   });
@@ -88,6 +89,7 @@ type CompactMovement = {
   amount: number;
   currency: string;
   description: string | null;
+  notes: string | null;
   category: string | null;
   counterparty: string | null;
 };
@@ -104,6 +106,8 @@ function compactRow(row: any): CompactMovement {
     amount,
     currency: String(currency),
     description: row.description ?? null,
+    // Las notas suelen llevar el detalle que permite correlacionar compra/venta.
+    notes: row.notes ? String(row.notes).slice(0, 80) : null,
     category: row.category?.name ?? null,
     counterparty: row.counterparty?.name ?? null,
   };
