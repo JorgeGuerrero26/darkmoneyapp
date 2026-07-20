@@ -481,7 +481,7 @@ async function buildWorkspaceContext(
     const [accounts, categories, counterparties, facts] = await Promise.all([
       client
         .from("v_account_balances")
-        .select("name, currency_code, current_balance")
+        .select("name, type, currency_code, current_balance")
         .eq("workspace_id", workspaceId)
         .limit(15),
       client.from("categories").select("name").eq("workspace_id", workspaceId).limit(60),
@@ -493,8 +493,13 @@ async function buildWorkspaceContext(
         .order("created_at", { ascending: true })
         .limit(60),
     ]);
+    // Marcar liquidez: bank/cash/savings son gastables; investment/loan/other NO.
+    const LIQUID = new Set(["bank", "cash", "savings"]);
     const accountsLine = (accounts.data ?? [])
-      .map((row) => `${row.name} (${row.currency_code} ${Number(row.current_balance ?? 0).toFixed(2)})`)
+      .map((row) => {
+        const liquid = LIQUID.has(String(row.type ?? "")) ? "disponible" : `${row.type} — NO disponible para gastar`;
+        return `${row.name} (${row.currency_code} ${Number(row.current_balance ?? 0).toFixed(2)}, ${liquid})`;
+      })
       .join(", ");
     const categoriesLine = (categories.data ?? []).map((row) => row.name).join(", ");
     const counterpartiesLine = (counterparties.data ?? []).map((row) => row.name).join(", ");
