@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   FlatList,
   KeyboardAvoidingView,
+  Platform,
   StyleSheet,
   Text,
   TextInput,
@@ -181,10 +182,9 @@ function AssistantScreen() {
       />
       <KeyboardAvoidingView
         style={styles.flex}
-        // "padding" en ambos: con edge-to-edge el teclado superpone la ventana y
-        // el padding se restaura limpio al cerrarse ("height" dejaba un hueco
-        // muerto bajo el input al ocultar el teclado).
-        behavior="padding"
+        // iOS "padding"; Android "height": en edge-to-edge, "padding" dejaba un
+        // hueco negro bajo el input al cerrar el teclado en conversaciones largas.
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
         <FlatList
           data={items}
