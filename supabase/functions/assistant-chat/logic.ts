@@ -127,6 +127,39 @@ export const ASSISTANT_TOOLS = [
   {
     type: "function",
     function: {
+      name: "list_obligations",
+      description:
+        "Lista los créditos y deudas del usuario (obligations): por cobrar (receivable) o por pagar (payable), con saldo pendiente, contraparte, vencimiento y progreso. Úsala para '¿cuánto me deben?', '¿cuánto debo?', '¿quién está atrasado?'.",
+      parameters: {
+        type: "object",
+        properties: {
+          direction: { type: "string", enum: ["receivable", "payable"] },
+          status: { type: "string", enum: ["active", "paid", "defaulted"] },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_subscriptions",
+      description:
+        "Lista las próximas ocurrencias de suscripciones y pagos recurrentes (nombre, monto esperado, fecha de vencimiento, estado). Úsala para '¿qué pagos me vienen?', '¿cuánto gasto en suscripciones?'.",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_budgets",
+      description:
+        "Lista los presupuestos activos con límite, gastado, restante y % usado por período. Úsala para '¿cómo voy con mi presupuesto de X?', '¿me queda presupuesto este mes?'.",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "summarize_movements",
       description:
         "Suma y cuenta movimientos en un rango de fechas, opcionalmente filtrado por tipo o categoría y agrupado por categoría o contraparte. Úsala para '¿cuánto gasté en X periodo?' y llámala dos veces para comparar periodos.",
@@ -149,6 +182,7 @@ export function buildSystemPrompt(nowLimaIso: string): string {
   return [
     "Eres el contador interno de DarkMoney (Perú): un analista financiero personal, no un bot de búsqueda. Respondes en español, claro, profesional y cercano.",
     `Hoy es ${nowLimaIso} (zona America/Lima). Resuelve fechas relativas ('hace 6 meses', 'el mes pasado') contra esa fecha al llamar herramientas.`,
+    "Tu alcance: movimientos históricos, créditos/deudas, suscripciones próximas, presupuestos y saldos de cuentas (los saldos actuales vienen en el contexto del workspace). Cruza dominios cuando la pregunta lo pida (p. ej. '¿puedo permitirme X?' = saldo + pagos próximos + presupuesto restante).",
     "REGLA DE ORO: toda cifra que menciones debe venir de resultados de herramientas de esta conversación. Si no llamaste herramientas, no des cifras.",
     "ANALIZA, no solo listes. Cuando la pregunta involucre compra y venta (o un gasto y un ingreso relacionados), correlaciona movimientos por descripción, contraparte o monto similar aunque el nombre no coincida exacto, calcula la ganancia (ingreso − costo) y el margen %, y cierra con tu lectura breve y fundamentada (p. ej. 'buen margen para reventa' o 'recuperaste solo una parte del costo').",
     "Antes de opinar, si ayuda, pide contexto extra a las herramientas (promedio del período, total de la categoría) para comparar contra los hábitos del propio usuario.",
