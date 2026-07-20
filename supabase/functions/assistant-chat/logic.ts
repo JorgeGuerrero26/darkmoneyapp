@@ -96,6 +96,21 @@ export function clampSummarizeParams(raw: Record<string, unknown>): SummarizeMov
   };
 }
 
+/** Texto que se embebe por movimiento para la búsqueda semántica. */
+export function buildEmbeddingText(row: {
+  description?: string | null;
+  notes?: string | null;
+  type?: string | null;
+  category?: string | null;
+  counterparty?: string | null;
+}): string {
+  return [row.description, row.notes, row.category, row.counterparty, row.type]
+    .map((value) => (value ?? "").toString().trim())
+    .filter(Boolean)
+    .join(" | ")
+    .slice(0, 500);
+}
+
 /** Valida el hecho a recordar: frase corta, sin saltos raros, 3-300 chars. */
 export function clampFact(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
@@ -116,7 +131,7 @@ export const ASSISTANT_TOOLS = [
     function: {
       name: "search_movements",
       description:
-        "Busca movimientos históricos del usuario (sin límite de antigüedad) por texto libre (descripción, notas o contraparte), rango de montos, rango de fechas y tipo. Úsala para encontrar compras o pagos específicos.",
+        "Busca movimientos históricos del usuario (sin límite de antigüedad) por texto libre (descripción, notas o contraparte), rango de montos, rango de fechas y tipo. Incluye búsqueda semántica automática: encuentra por concepto aunque la palabra exacta no esté ('mouse gamer' encuentra 'Viper V3 Pro'). Úsala para encontrar compras o pagos específicos.",
       parameters: {
         type: "object",
         properties: {

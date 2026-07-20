@@ -7,6 +7,16 @@ import {
   normalizeName,
 } from "../logic";
 
+describe("buildEmbeddingText", () => {
+  it("compone descripcion|notas|categoria|contraparte|tipo y capea a 500", () => {
+    const { buildEmbeddingText } = require("../logic");
+    expect(
+      buildEmbeddingText({ description: "Viper V3 Pro", notes: null, type: "expense", category: "Tecnología", counterparty: "Amazon" }),
+    ).toBe("Viper V3 Pro | Tecnología | Amazon | expense");
+    expect(buildEmbeddingText({ description: "x".repeat(600) }).length).toBe(500);
+  });
+});
+
 describe("clampFact", () => {
   it("normaliza espacios y exige 3-300 chars", () => {
     expect(clampFact("  mi primo   paga la mitad \n de Amazon ")).toBe("mi primo paga la mitad de Amazon");

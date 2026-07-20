@@ -17,6 +17,7 @@ import {
 } from "../_shared/obligation-share-utils.ts";
 import {
   ASSISTANT_TOOLS,
+  buildEmbeddingText,
   buildEvidence,
   buildSystemPrompt,
   clampFact,
@@ -145,6 +146,7 @@ async function matchingIds(
 
 async function runSearchMovements(
   client: ReturnType<typeof userClient>,
+  admin: ReturnType<typeof serviceClient>,
   workspaceId: number,
   rawArgs: Record<string, unknown>,
 ): Promise<{ result: Record<string, unknown>; movementIds: number[] }> {
@@ -173,8 +175,49 @@ async function runSearchMovements(
   const { data, error } = await query;
   if (error) throw error;
   const rows = (data ?? []).map(compactRow);
+
+  // Híbrido: si la keyword encontró poco y hay texto, sumar búsqueda semántica.
+  // Es una mejora best-effort: si Gemini/pgvector fallan, la keyword ya respondió.
+  let semanticUsed = false;
+  if (params.text && rows.length < 3) {
+    try {
+      await ensureWorkspaceEmbeddings(admin, workspaceId);
+      const [queryEmbedding] = await embedTexts([params.text], "RETRIEVAL_QUERY");
+      const { data: matches } = await client.rpc("match_movements", {
+        ws_id: workspaceId,
+        query_embedding: JSON.stringify(queryEmbedding),
+        match_count: 12,
+      });
+      const knownIds = new Set(rows.map((row) => row.id));
+      const semanticIds = (matches ?? [])
+        .map((match: { movement_id: number }) => Number(match.movement_id))
+        .filter((id: number) => Number.isFinite(id) && !knownIds.has(id));
+      if (semanticIds.length > 0) {
+        const { data: semanticRows } = await client
+          .from("movements")
+          .select(MOVEMENT_SELECT)
+          .eq("workspace_id", workspaceId)
+          .in("id", semanticIds);
+        const byId = new Map((semanticRows ?? []).map((row) => [Number(row.id), compactRow(row)]));
+        for (const id of semanticIds) {
+          const row = byId.get(id);
+          if (row) rows.push(row);
+        }
+        semanticUsed = true;
+      }
+    } catch (semanticError) {
+      console.warn("[assistant-chat] semantic fallback failed", semanticError);
+    }
+  }
+
   return {
-    result: { count: rows.length, movements: rows },
+    result: {
+      count: rows.length,
+      movements: rows,
+      ...(semanticUsed
+        ? { note: "Incluye resultados por similitud semántica (pueden no contener la palabra exacta buscada)." }
+        : {}),
+    },
     movementIds: rows.map((row) => row.id),
   };
 }
@@ -298,6 +341,88 @@ async function runListBudgets(
     .limit(20);
   if (error) throw error;
   return { count: (data ?? []).length, budgets: data ?? [] };
+}
+
+// ─── Búsqueda semántica (Gemini embeddings + pgvector, indexado lazy) ────────
+
+async function embedTexts(texts: string[], taskType: "RETRIEVAL_DOCUMENT" | "RETRIEVAL_QUERY"): Promise<number[][]> {
+  const apiKey = Deno.env.get("GEMINI_API_KEY")?.trim();
+  if (!apiKey) throw new Error("Falta GEMINI_API_KEY para la búsqueda semántica.");
+  const model = Deno.env.get("GEMINI_EMBEDDING_MODEL")?.trim() || "gemini-embedding-001";
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:batchEmbedContents?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        requests: texts.map((text) => ({
+          model: `models/${model}`,
+          content: { parts: [{ text }] },
+          taskType,
+          outputDimensionality: 768,
+        })),
+      }),
+      signal: AbortSignal.timeout(15_000),
+    },
+  );
+  if (!response.ok) throw new Error(`Gemini embeddings respondió ${response.status}`);
+  const json = await response.json();
+  const embeddings = (json?.embeddings ?? []).map((item: { values?: number[] }) => item?.values ?? []);
+  if (embeddings.length !== texts.length) throw new Error("Gemini devolvió embeddings incompletos.");
+  return embeddings;
+}
+
+async function sha256Hex(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * Indexado lazy: embebe los movimientos del workspace que no tienen embedding
+ * (o cuyo texto cambió), en un lote por llamada. Sin cron a esta escala.
+ */
+async function ensureWorkspaceEmbeddings(
+  admin: ReturnType<typeof serviceClient>,
+  workspaceId: number,
+): Promise<void> {
+  const { data: rows, error } = await admin
+    .from("movements")
+    .select(
+      "id, description, notes, movement_type, category:categories(name), counterparty:counterparties(name), movement_embeddings(source_hash)",
+    )
+    .eq("workspace_id", workspaceId)
+    .order("id", { ascending: false })
+    .limit(500);
+  if (error) throw error;
+
+  const pending: Array<{ id: number; text: string; hash: string }> = [];
+  for (const row of rows ?? []) {
+    const text = buildEmbeddingText({
+      description: row.description,
+      notes: row.notes,
+      type: row.movement_type,
+      category: (row.category as { name?: string } | null)?.name ?? null,
+      counterparty: (row.counterparty as { name?: string } | null)?.name ?? null,
+    });
+    if (!text) continue;
+    const hash = await sha256Hex(text);
+    const existing = (row.movement_embeddings as Array<{ source_hash?: string }> | { source_hash?: string } | null);
+    const existingHash = Array.isArray(existing) ? existing[0]?.source_hash : existing?.source_hash;
+    if (existingHash !== hash) pending.push({ id: Number(row.id), text, hash });
+    if (pending.length >= 100) break;
+  }
+  if (pending.length === 0) return;
+
+  const embeddings = await embedTexts(pending.map((item) => item.text), "RETRIEVAL_DOCUMENT");
+  const { error: upsertError } = await admin.from("movement_embeddings").upsert(
+    pending.map((item, index) => ({
+      movement_id: item.id,
+      workspace_id: workspaceId,
+      embedding: JSON.stringify(embeddings[index]),
+      source_hash: item.hash,
+    })),
+  );
+  if (upsertError) throw upsertError;
 }
 
 const MAX_FACTS_PER_WORKSPACE = 100;
@@ -473,7 +598,7 @@ Deno.serve(async (req) => {
         let output: { result: Record<string, unknown>; movementIds: number[] };
         try {
           if (name === "search_movements") {
-            output = await runSearchMovements(rls, workspaceId, args);
+            output = await runSearchMovements(rls, admin, workspaceId, args);
             const label = typeof args.text === "string" && args.text.trim()
               ? `Resultados: ${args.text.trim()}`
               : "Movimientos encontrados";
