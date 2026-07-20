@@ -64,10 +64,15 @@ summarize dos veces)
 - Auth con el patrón de obligation-share-utils (`authenticatedUser`); las
   queries usan un cliente con el JWT del usuario → RLS decide el acceso, y
   se verifica pertenencia al workspaceId pedido.
-- System prompt (es-PE): rol asistente financiero de DarkMoney; responde corto
-  y conversacional; SOLO cifras provenientes de resultados de herramientas;
-  fechas relativas resueltas con la fecha actual de Lima; si no hay resultados,
-  decirlo y sugerir reformular; nunca mencionar modelos/proveedores.
+- System prompt (es-PE): rol **contador interno** (ampliado 2026-07-19 a pedido
+  del usuario — "no un bot, un contador inteligente"): además de responder
+  corto con SOLO cifras de herramientas, ANALIZA — correlaciona compra/venta
+  por descripción, contraparte o monto similar, calcula ganancia y margen %,
+  compara contra los hábitos del usuario pidiendo contexto extra a las tools,
+  opina fundamentado y es honesto cuando la correlación es dudosa. Negritas
+  solo en montos/ganancias/márgenes; hasta ~200 palabras en análisis; 4 rondas
+  de tools; las filas incluyen `notes` (ahí vive el detalle correlacionable).
+  Este rol se hereda al registro por chat (v2).
 - Fechas relativas ("hace 6 meses") las resuelve el MODELO al armar los
   parámetros; el server valida formato YYYY-MM-DD y rangos sanos.
 - Evidencia: la función acumula los ids de los resultados usados en la última
