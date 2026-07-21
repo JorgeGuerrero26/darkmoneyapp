@@ -15,14 +15,29 @@ import { Send, Sparkles } from "lucide-react-native";
 
 import { ErrorBoundary } from "../components/ui/ErrorBoundary";
 import { ScreenHeader } from "../components/layout/ScreenHeader";
+import { MovementForm, type MovementDuplicateSource } from "../components/forms/MovementForm";
+import { AssistantDraftCard } from "../features/assistant/components/AssistantDraftCard";
+import { draftToMovementInput, draftDedupeKey, type ResolvedIds } from "../features/assistant/lib/draft-to-input";
 import { useOriginBackNavigation } from "../hooks/useOriginBackNavigation";
+import { useToast } from "../hooks/useToast";
+import { useAuth } from "../lib/auth-context";
 import { useWorkspace } from "../lib/workspace-context";
 import {
   askAssistant,
   type AssistantChatMessage,
+  type AssistantDraft,
   type AssistantEvidence,
 } from "../services/queries/assistant";
+import {
+  useCreateMovementMutation,
+  useWorkspaceSnapshotQuery,
+  type WorkspaceSnapshot,
+} from "../services/queries/workspace-data";
+import { useMarkSubscriptionPaidMutation } from "../services/queries/subscriptions-recurring-income";
+import { useCreateObligationPaymentMutation } from "../services/queries/obligations-impl";
 import { parseBoldSegments } from "../lib/assistant-text";
+import { humanizeError } from "../lib/errors";
+import { formatCurrency } from "../lib/format-currency";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../constants/theme";
 
 type ChatItem = {
@@ -31,7 +46,24 @@ type ChatItem = {
   content: string;
   evidence?: AssistantEvidence[];
   error?: boolean;
+  draft?: AssistantDraft;
+  draftStatus?: "pending" | "saved" | "discarded";
+  savedMovementId?: number;
 };
+
+function normalize(value: string): string {
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+}
+
+function findByName<T extends { name?: string | null }>(items: T[], name: string | null): T | undefined {
+  if (!name) return undefined;
+  const n = normalize(name);
+  return items.find((item) => item.name && normalize(item.name).includes(n));
+}
+
+function todayYmd(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Lima" }).format(new Date());
+}
 
 const WELCOME =
   "Hola, soy tu asistente. Pregúntame lo que quieras sobre tus movimientos — o toca una sugerencia para empezar:";
@@ -56,6 +88,14 @@ function AssistantScreen() {
   const [input, setInput] = useState("");
   const [isThinking, setIsThinking] = useState(false);
   const [remainingToday, setRemainingToday] = useState<number | null>(null);
+  const { profile } = useAuth();
+  const { showToast } = useToast();
+  const { data: snapshot } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
+  const createMovement = useCreateMovementMutation(activeWorkspaceId);
+  const markSubPaid = useMarkSubscriptionPaidMutation(activeWorkspaceId);
+  const payObligation = useCreateObligationPaymentMutation(activeWorkspaceId);
+  const [savingDraftId, setSavingDraftId] = useState<string | null>(null);
+  const [editDuplicate, setEditDuplicate] = useState<MovementDuplicateSource | null>(null);
   // Control manual del teclado: KeyboardAvoidingView (height/padding) deja huecos
   // negros con edge-to-edge en Android. Medimos la altura del teclado y la
   // aplicamos como padding solo mientras está abierto → 0 al cerrar, sin gap.
@@ -94,6 +134,7 @@ function AssistantScreen() {
             role: "assistant",
             content: response.reply,
             evidence: response.evidence,
+            ...(response.draft ? { draft: response.draft, draftStatus: "pending" as const } : {}),
           },
         ]);
         setRemainingToday(response.remainingToday);
@@ -140,8 +181,141 @@ function AssistantScreen() {
     [router],
   );
 
-  const renderItem = useCallback(
-    ({ item }: { item: ChatItem }) => {
+  function resolveDraftIds(draft: AssistantDraft, snap: WorkspaceSnapshot): ResolvedIds {
+    const account = findByName(snap.accounts, draft.accountName);
+    const destination = findByName(snap.accounts, draft.destinationAccountName);
+    const category = findByName(snap.categories, draft.categoryName);
+    const counterparty = findByName(snap.counterparties, draft.counterpartyName);
+    return {
+      sourceAccountId: account?.id ?? null,
+      destinationAccountId: destination?.id ?? null,
+      categoryId: category?.id ?? null,
+      counterpartyId: counterparty?.id ?? null,
+      todayIso: new Date().toISOString(),
+    };
+  }
+
+  function setDraftStatus(itemId: string, draftStatus: ChatItem["draftStatus"], savedMovementId?: number) {
+    setItems((current) =>
+      current.map((it) => (it.id === itemId ? { ...it, draftStatus, savedMovementId } : it)),
+    );
+  }
+
+  async function saveDraft(item: ChatItem) {
+    const draft = item.draft;
+    if (!draft || !snapshot || !activeWorkspaceId) return;
+    const ids = resolveDraftIds(draft, snapshot);
+    setSavingDraftId(item.id);
+    try {
+      if (draft.operation === "pay_subscription") {
+        const sub = snapshot.subscriptions.find((s) => s.id === draft.subscriptionId);
+        if (!sub) throw new Error("No encontré la suscripción.");
+        const accountId = ids.sourceAccountId ?? sub.accountId ?? snapshot.accounts[0]?.id;
+        if (!accountId) throw new Error("No hay cuenta para el pago.");
+        const res = await markSubPaid.mutateAsync({ subscription: sub, paidDate: todayYmd(), amount: draft.amount, accountId });
+        setDraftStatus(item.id, "saved", res.movementId ?? undefined);
+      } else if (draft.operation === "pay_debt") {
+        if (!draft.obligationId) throw new Error("No encontré la deuda.");
+        const obligation = snapshot.obligations.find((o) => o.id === draft.obligationId);
+        await payObligation.mutateAsync({
+          obligationId: draft.obligationId,
+          amount: draft.amount,
+          paymentDate: todayYmd(),
+          accountId: ids.sourceAccountId,
+          createMovement: true,
+          direction: obligation?.direction,
+        });
+        setDraftStatus(item.id, "saved");
+      } else {
+        const created = await createMovement.mutateAsync(draftToMovementInput(draft, ids));
+        setDraftStatus(item.id, "saved", created.id);
+      }
+      showToast("Movimiento guardado ✓", "success");
+    } catch (error) {
+      showToast(humanizeError(error), "error");
+    } finally {
+      setSavingDraftId(null);
+    }
+  }
+
+  function editDraft(item: ChatItem) {
+    const draft = item.draft;
+    if (!draft || !snapshot) return;
+    const ids = resolveDraftIds(draft, snapshot);
+    // Editar reusa el MovementForm en modo "duplicar" (prellena y crea nuevo).
+    // Solo para gasto/ingreso/transferencia; los pagos se guardan/cancelan directo.
+    setEditDuplicate({
+      movementType: draft.operation === "income" ? "income" : draft.operation === "transfer" ? "transfer" : "expense",
+      sourceAccountId: draft.operation === "income" ? null : ids.sourceAccountId,
+      destinationAccountId: draft.operation === "income" ? ids.sourceAccountId : ids.destinationAccountId ?? null,
+      sourceAmount: draft.operation === "income" ? null : draft.amount,
+      destinationAmount: draft.operation === "income" ? draft.amount : draft.operation === "transfer" ? draft.amount : null,
+      description: draft.description ?? "",
+      categoryId: ids.categoryId,
+      counterpartyId: ids.counterpartyId,
+      notes: null,
+    });
+    setDraftStatus(item.id, "discarded");
+  }
+
+  function draftCardProps(item: ChatItem) {
+    const draft = item.draft!;
+    const money = formatCurrency(draft.amount, draft.currency);
+    const sign = draft.operation === "income" ? "+" : draft.operation === "transfer" ? "" : "−";
+    const titleByOp: Record<AssistantDraft["operation"], string> = {
+      expense: "Registrar gasto",
+      income: "Registrar ingreso",
+      transfer: "Transferencia",
+      pay_subscription: "Pago de suscripción",
+      pay_debt: "Abono a deuda",
+    };
+    const lines: { label: string; value: string }[] = [];
+    if (draft.operation === "transfer") {
+      if (draft.accountName) lines.push({ label: "De", value: draft.accountName });
+      if (draft.destinationAccountName) lines.push({ label: "A", value: draft.destinationAccountName });
+    } else if (draft.operation === "pay_subscription") {
+      if (draft.subscriptionName) lines.push({ label: "Suscripción", value: draft.subscriptionName });
+      if (draft.accountName) lines.push({ label: "Cuenta", value: draft.accountName });
+    } else if (draft.operation === "pay_debt") {
+      if (draft.obligationCounterparty) lines.push({ label: "Deuda", value: draft.obligationCounterparty });
+      if (draft.accountName) lines.push({ label: "Cuenta", value: draft.accountName });
+    } else {
+      if (draft.accountName) lines.push({ label: "Cuenta", value: draft.accountName });
+      if (draft.categoryName) lines.push({ label: "Categoría", value: draft.categoryName });
+    }
+    if (draft.description) lines.push({ label: "Detalle", value: draft.description });
+    lines.push({ label: "Fecha", value: draft.occurredAt ?? "hoy" });
+    const canEdit = draft.operation === "expense" || draft.operation === "income" || draft.operation === "transfer";
+    return { title: titleByOp[draft.operation], amountLabel: `${sign} ${money}`.trim(), lines, canEdit };
+  }
+
+  const renderItem = ({ item }: { item: ChatItem }) => {
+    {
+      if (item.draft) {
+        const { title, amountLabel, lines, canEdit } = draftCardProps(item);
+        return (
+          <View style={styles.assistantRow}>
+            <View style={styles.avatar}>
+              <Sparkles size={13} color={COLORS.primary} strokeWidth={2.2} />
+            </View>
+            <AssistantDraftCard
+              title={title}
+              amountLabel={amountLabel}
+              lines={lines}
+              status={item.draftStatus ?? "pending"}
+              isSaving={savingDraftId === item.id}
+              onSave={() => void saveDraft(item)}
+              onEdit={canEdit ? () => editDraft(item) : () => showToast("Este pago se guarda o se cancela directamente.", "info")}
+              onCancel={() => setDraftStatus(item.id, "discarded")}
+              onViewMovement={
+                item.savedMovementId
+                  ? () => router.push(`/movement/${item.savedMovementId}?from=assistant` as never)
+                  : undefined
+              }
+            />
+          </View>
+        );
+      }
       const bubble = (
         <View
           style={[
@@ -180,9 +354,8 @@ function AssistantScreen() {
           {bubble}
         </View>
       );
-    },
-    [openEvidence],
-  );
+    }
+  };
 
   return (
     <View style={styles.screen}>
@@ -257,6 +430,13 @@ function AssistantScreen() {
           </TouchableOpacity>
         </View>
       </View>
+
+      <MovementForm
+        visible={editDuplicate != null}
+        onClose={() => setEditDuplicate(null)}
+        onSuccess={() => showToast("Movimiento guardado ✓", "success")}
+        duplicateMovement={editDuplicate}
+      />
     </View>
   );
 }
