@@ -11,7 +11,8 @@ import {
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Send, Sparkles } from "lucide-react-native";
+import { Mic, Send, Sparkles } from "lucide-react-native";
+import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from "expo-speech-recognition";
 
 import { ErrorBoundary } from "../components/ui/ErrorBoundary";
 import { ScreenHeader } from "../components/layout/ScreenHeader";
@@ -110,6 +111,38 @@ function AssistantScreen() {
   }, []);
   const keyboardOpen = keyboardHeight > 0;
   const idRef = useRef(0);
+
+  // Voz: dictado on-device (expo-speech-recognition). El transcript va al input;
+  // el resto del flujo (draft → tarjeta) es idéntico al de escribir.
+  const [isListening, setIsListening] = useState(false);
+  useSpeechRecognitionEvent("result", (e) => {
+    const transcript = e.results?.[0]?.transcript;
+    if (transcript) setInput(transcript);
+  });
+  useSpeechRecognitionEvent("end", () => setIsListening(false));
+  useSpeechRecognitionEvent("error", () => setIsListening(false));
+
+  const startDictation = useCallback(async () => {
+    try {
+      const perm = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+      if (!perm.granted) {
+        showToast("Sin permiso de micrófono. Puedes usar el micrófono del teclado.", "warning");
+        return;
+      }
+      setIsListening(true);
+      ExpoSpeechRecognitionModule.start({ lang: "es-PE", interimResults: true });
+    } catch {
+      setIsListening(false);
+    }
+  }, [showToast]);
+
+  const stopDictation = useCallback(() => {
+    try {
+      ExpoSpeechRecognitionModule.stop();
+    } catch {
+      /* noop */
+    }
+  }, []);
 
   const send = useCallback(
     async (text: string) => {
@@ -421,6 +454,15 @@ function AssistantScreen() {
             accessibilityLabel="Escribe tu pregunta"
           />
           <TouchableOpacity
+            style={[styles.micBtn, isListening ? styles.micBtnActive : null]}
+            onPressIn={() => void startDictation()}
+            onPressOut={stopDictation}
+            disabled={isThinking}
+            accessibilityLabel="Mantén presionado para dictar"
+          >
+            <Mic size={18} color={isListening ? COLORS.void : COLORS.primary} />
+          </TouchableOpacity>
+          <TouchableOpacity
             style={[styles.sendBtn, (!input.trim() || isThinking) ? styles.sendBtnDisabled : null]}
             onPress={() => void send(input)}
             disabled={!input.trim() || isThinking}
@@ -563,6 +605,19 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.lg,
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
+  },
+  micBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: RADIUS.full,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    backgroundColor: "transparent",
+  },
+  micBtnActive: {
+    backgroundColor: COLORS.primary,
   },
   sendBtn: {
     width: 40,
