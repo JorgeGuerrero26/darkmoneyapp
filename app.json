@@ -68,6 +68,14 @@
       "expo-local-authentication",
       "expo-secure-store",
       [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "DarkMoney usa el micrófono para registrar movimientos por voz.",
+          "speechRecognitionPermission": "DarkMoney usa reconocimiento de voz para entender lo que dictas.",
+          "androidSpeechServicePackages": ["com.google.android.googlequicksearchbox"]
+        }
+      ],
+      [
         "expo-build-properties",
         {
           "android": {
