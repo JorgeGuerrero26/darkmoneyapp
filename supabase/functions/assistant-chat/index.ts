@@ -24,6 +24,7 @@ import {
   clampSearchParams,
   clampSummarizeParams,
   escapeIlike,
+  normalizeDraft,
   normalizeName,
   type AssistantEvidence,
 } from "./logic.ts";
@@ -577,6 +578,7 @@ Deno.serve(async (req) => {
     const toolsUsed: string[] = [];
     let reply = "";
     let modelUsed = "";
+    let pendingDraft: ReturnType<typeof normalizeDraft> = null;
 
     for (let round = 0; round <= MAX_TOOL_ROUNDS; round += 1) {
       const { message: aiMessage, model } = await callDeepSeek(messages);
@@ -626,6 +628,16 @@ Deno.serve(async (req) => {
             output = { result: await runRememberFact(rls, workspaceId, user.id, args), movementIds: [] };
           } else if (name === "forget_fact") {
             output = { result: await runForgetFact(rls, workspaceId, args), movementIds: [] };
+          } else if (name === "draft_movement") {
+            // Solo PROPONE: no toca la BD. El cliente confirma y guarda.
+            const draft = normalizeDraft(args);
+            pendingDraft = draft;
+            output = {
+              result: draft
+                ? { ok: true, draft, note: "Borrador propuesto. La app pedirá confirmación; NO está registrado." }
+                : { ok: false, error: "No pude armar el movimiento; pide al usuario el dato faltante." },
+              movementIds: [],
+            };
           } else {
             output = { result: { error: `Herramienta desconocida: ${name}` }, movementIds: [] };
           }
@@ -664,6 +676,7 @@ Deno.serve(async (req) => {
       ok: true,
       reply,
       evidence,
+      draft: pendingDraft,
       remainingToday: Math.max(0, DAILY_LIMIT - (usedToday ?? 0) - 1),
     });
   } catch (error) {

@@ -182,6 +182,33 @@ export const ASSISTANT_TOOLS = [
   {
     type: "function",
     function: {
+      name: "draft_movement",
+      description:
+        "PROPONE (no registra) un movimiento a partir de lo que el usuario dijo. Úsala cuando el usuario quiere anotar un gasto/ingreso/transferencia o pagar una suscripción o deuda. Resuelve nombres de cuenta/categoría/suscripción/deuda contra el CONTEXTO DEL WORKSPACE. Si falta un dato obligatorio o hay ambigüedad (varias suscripciones/deudas coinciden), NO llames esta tool: pregunta al usuario en texto con las opciones concretas.",
+      parameters: {
+        type: "object",
+        properties: {
+          operation: { type: "string", enum: ["expense", "income", "transfer", "pay_subscription", "pay_debt"] },
+          amount: { type: "number" },
+          currency: { type: "string", description: "PEN por defecto" },
+          accountName: { type: "string", description: "Cuenta origen exacta del contexto" },
+          destinationAccountName: { type: "string", description: "Solo transfer: cuenta destino" },
+          categoryName: { type: "string" },
+          counterpartyName: { type: "string" },
+          subscriptionId: { type: "number", description: "Id de la suscripción del contexto (pay_subscription)" },
+          subscriptionName: { type: "string" },
+          obligationId: { type: "number", description: "Id de la deuda del contexto (pay_debt)" },
+          obligationCounterparty: { type: "string" },
+          occurredAt: { type: "string", description: "YYYY-MM-DD; omitir si es hoy" },
+          description: { type: "string" },
+        },
+        required: ["operation", "amount"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "remember_fact",
       description:
         "Guarda en tu memoria permanente un hecho corto y autocontenido que el usuario te pidió recordar explícitamente ('recuerda que...', 'para que sepas...'). NO guardes datos que ya están en los movimientos ni cifras que cambian.",
@@ -245,7 +272,82 @@ export function buildSystemPrompt(nowLimaIso: string): string {
     "Si la búsqueda no devuelve nada, dilo claro y sugiere reformular (otra palabra, otro rango de fechas).",
     "Los montos están en la moneda indicada en cada resultado; no conviertas monedas por tu cuenta.",
     "No hables de modelos, IA, proveedores ni limitaciones técnicas.",
+    "REGISTRO: cuando el usuario quiera anotar/registrar/pagar algo, llama draft_movement con lo que entiendas. NUNCA registras tú: la app muestra una tarjeta y el usuario confirma. Resuelve cuenta/categoría/suscripción/deuda contra el CONTEXTO DEL WORKSPACE por nombre.",
+    "Si para registrar falta la cuenta, o hay varias suscripciones/deudas/contrapartes que coinciden, NO llames draft_movement: pregunta en texto ofreciendo las opciones concretas del contexto.",
+    "'pagué Netflix' → pay_subscription con su id; 'pagué 80 a Juan' → pay_debt con el id de la deuda de Juan; nunca lo conviertas en gasto suelto si existe la entidad.",
     "Formato: texto plano con UNA excepción — marca montos, ganancias y márgenes con **negritas**. Prohibido lo demás del Markdown (#, ---, __, tablas, emojis de adorno). Para enumerar usa guiones simples '- '.",
     "Sé conciso por defecto (~120 palabras). Cuando entregues un análisis con cálculos, puedes extenderte hasta ~200.",
   ].join("\n");
+}
+
+export type DraftOperation = "expense" | "income" | "transfer" | "pay_subscription" | "pay_debt";
+
+export type MovementDraft = {
+  operation: DraftOperation;
+  amount: number;
+  currency: string;
+  accountName: string | null;
+  destinationAccountName: string | null;
+  categoryName: string | null;
+  counterpartyName: string | null;
+  subscriptionId: number | null;
+  subscriptionName: string | null;
+  obligationId: number | null;
+  obligationCounterparty: string | null;
+  occurredAt: string | null; // YYYY-MM-DD; null = hoy (lo resuelve el cliente)
+  description: string | null;
+  missing: string[];
+};
+
+const DRAFT_OPS = new Set<DraftOperation>([
+  "expense",
+  "income",
+  "transfer",
+  "pay_subscription",
+  "pay_debt",
+]);
+
+/**
+ * Normaliza y valida el borrador que el modelo propone vía la tool draft_movement.
+ * NO inserta nada: solo produce un draft tipado y marca los campos obligatorios
+ * que faltan (`missing`) para que el cliente pida el dato o muestre la tarjeta.
+ */
+export function normalizeDraft(raw: Record<string, unknown>): MovementDraft | null {
+  const operation = raw.operation as DraftOperation;
+  if (!DRAFT_OPS.has(operation)) return null;
+  const amount = typeof raw.amount === "number" ? raw.amount : Number(raw.amount);
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+
+  const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
+  const num = (v: unknown) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : null);
+
+  const draft: MovementDraft = {
+    operation,
+    amount,
+    currency: str(raw.currency) ?? "PEN",
+    accountName: str(raw.accountName),
+    destinationAccountName: str(raw.destinationAccountName),
+    categoryName: str(raw.categoryName),
+    counterpartyName: str(raw.counterpartyName),
+    subscriptionId: num(raw.subscriptionId),
+    subscriptionName: str(raw.subscriptionName),
+    obligationId: num(raw.obligationId),
+    obligationCounterparty: str(raw.obligationCounterparty),
+    occurredAt: /^\d{4}-\d{2}-\d{2}$/.test(String(raw.occurredAt ?? "")) ? String(raw.occurredAt) : null,
+    description: str(raw.description),
+    missing: [],
+  };
+
+  const missing: string[] = [];
+  if (operation === "pay_subscription") {
+    if (!draft.subscriptionId) missing.push("subscription");
+  } else if (operation === "pay_debt") {
+    if (!draft.obligationId) missing.push("obligation");
+    if (!draft.accountName) missing.push("account");
+  } else {
+    if (!draft.accountName) missing.push("account");
+    if (operation === "transfer" && !draft.destinationAccountName) missing.push("destinationAccount");
+  }
+  draft.missing = missing;
+  return draft;
 }

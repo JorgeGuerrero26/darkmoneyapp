@@ -4,8 +4,42 @@ import {
   clampSearchParams,
   clampSummarizeParams,
   escapeIlike,
+  normalizeDraft,
   normalizeName,
 } from "../logic";
+
+describe("normalizeDraft", () => {
+  it("acepta un gasto completo y lista faltantes vacíos", () => {
+    const d = normalizeDraft({
+      operation: "expense", amount: 5, currency: "PEN",
+      accountName: "Cuenta Principal", categoryName: "Transporte", description: "Taxi",
+    });
+    expect(d).not.toBeNull();
+    expect(d!.operation).toBe("expense");
+    expect(d!.amount).toBe(5);
+    expect(d!.missing).toEqual([]);
+  });
+
+  it("marca 'account' faltante en gasto sin cuenta", () => {
+    const d = normalizeDraft({ operation: "expense", amount: 5, currency: "PEN" });
+    expect(d!.missing).toContain("account");
+  });
+
+  it("transfer exige ambas cuentas", () => {
+    const d = normalizeDraft({ operation: "transfer", amount: 200, currency: "PEN", accountName: "BCP" });
+    expect(d!.missing).toContain("destinationAccount");
+  });
+
+  it("pay_subscription sin id marca subscription faltante", () => {
+    const d = normalizeDraft({ operation: "pay_subscription", amount: 44.9 });
+    expect(d!.missing).toContain("subscription");
+  });
+
+  it("rechaza operación desconocida o monto no positivo", () => {
+    expect(normalizeDraft({ operation: "hack", amount: 5 })).toBeNull();
+    expect(normalizeDraft({ operation: "expense", amount: 0, currency: "PEN" })).toBeNull();
+  });
+});
 
 describe("buildEmbeddingText", () => {
   it("compone descripcion|notas|categoria|contraparte|tipo y capea a 500", () => {
