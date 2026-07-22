@@ -300,7 +300,7 @@ async function runListObligations(
 ): Promise<Record<string, unknown>> {
   let query = client
     .from("v_obligation_summary")
-    .select("title, direction, status, counterparty, currency_code, pending_amount, due_date, progress_percent, payment_count")
+    .select("title, direction, status, counterparty_id, currency_code, pending_amount, due_date, progress_percent, payment_count")
     .eq("workspace_id", workspaceId)
     .order("pending_amount", { ascending: false })
     .limit(30);
@@ -312,7 +312,14 @@ async function runListObligations(
   }
   const { data, error } = await query;
   if (error) throw error;
-  return { count: (data ?? []).length, obligations: data ?? [] };
+  // La vista solo trae counterparty_id; resolver el nombre con un mapa.
+  const { data: cps } = await client.from("counterparties").select("id, name").eq("workspace_id", workspaceId);
+  const nameById = new Map((cps ?? []).map((c) => [Number(c.id), String(c.name)]));
+  const obligations = (data ?? []).map((row) => {
+    const { counterparty_id, ...rest } = row as Record<string, unknown>;
+    return { ...rest, counterparty: nameById.get(Number(counterparty_id)) ?? null };
+  });
+  return { count: obligations.length, obligations };
 }
 
 async function runListSubscriptions(
