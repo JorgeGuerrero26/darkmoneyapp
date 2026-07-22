@@ -56,12 +56,45 @@ function usageDateInLima(date = new Date()): string {
   return date.toLocaleDateString("en-CA", { timeZone: "America/Lima" });
 }
 
-async function callDeepSeek(messages: ChatMessage[]) {
+/**
+ * Motor del asistente. Preferencia: Gemini vía su endpoint COMPATIBLE con OpenAI
+ * (mismo shape de tools/tool_calls → reusa todo el loop) por su mejor seguimiento
+ * de instrucciones y menor adulación que deepseek-chat. DeepSeek queda de
+ * respaldo. Modelo configurable por secret (ASSISTANT_GEMINI_MODEL, default
+ * gemini-2.5-flash; poner gemini-2.5-pro para probar Pro). Forzar DeepSeek con
+ * ASSISTANT_PROVIDER=deepseek.
+ */
+async function callModel(messages: ChatMessage[]) {
+  const geminiKey = Deno.env.get("GEMINI_API_KEY")?.trim();
+  const forceDeepseek = Deno.env.get("ASSISTANT_PROVIDER")?.trim() === "deepseek";
+
+  if (geminiKey && !forceDeepseek) {
+    const model = Deno.env.get("ASSISTANT_GEMINI_MODEL")?.trim() || "gemini-2.5-flash";
+    const response = await fetch(
+      "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${geminiKey}` },
+        body: JSON.stringify({
+          model,
+          messages,
+          tools: ASSISTANT_TOOLS,
+          tool_choice: "auto",
+          temperature: 0.2,
+          max_tokens: 900,
+        }),
+        signal: AbortSignal.timeout(30_000),
+      },
+    );
+    if (!response.ok) throw new Error(`Gemini respondió ${response.status}`);
+    const json = await response.json();
+    const message = json?.choices?.[0]?.message;
+    if (!message) throw new Error("Gemini no devolvió mensaje.");
+    return { message, model };
+  }
+
   const apiKey = Deno.env.get("DEEPSEEK_API_KEY")?.trim();
-  if (!apiKey) throw new Error("Falta DEEPSEEK_API_KEY.");
-  // NO heredar DEEPSEEK_MODEL: el digest usa deepseek-v4-flash, que ignora
-  // function calling (bug 2026-07-19: respondía el preámbulo sin ejecutar
-  // tools). El asistente exige un modelo con tools.
+  if (!apiKey) throw new Error("Falta GEMINI_API_KEY o DEEPSEEK_API_KEY.");
   const model = Deno.env.get("ASSISTANT_DEEPSEEK_MODEL")?.trim() || "deepseek-chat";
   const response = await fetch("https://api.deepseek.com/chat/completions", {
     method: "POST",
@@ -76,9 +109,7 @@ async function callDeepSeek(messages: ChatMessage[]) {
     }),
     signal: AbortSignal.timeout(25_000),
   });
-  if (!response.ok) {
-    throw new Error(`DeepSeek respondió ${response.status}`);
-  }
+  if (!response.ok) throw new Error(`DeepSeek respondió ${response.status}`);
   const json = await response.json();
   const message = json?.choices?.[0]?.message;
   if (!message) throw new Error("DeepSeek no devolvió mensaje.");
@@ -603,7 +634,7 @@ Deno.serve(async (req) => {
     let pendingDraft: ReturnType<typeof normalizeDraft> = null;
 
     for (let round = 0; round <= MAX_TOOL_ROUNDS; round += 1) {
-      const { message: aiMessage, model } = await callDeepSeek(messages);
+      const { message: aiMessage, model } = await callModel(messages);
       modelUsed = model;
       const toolCalls = Array.isArray(aiMessage.tool_calls) ? aiMessage.tool_calls : [];
 
