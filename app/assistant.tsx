@@ -66,6 +66,22 @@ function todayYmd(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Lima" }).format(new Date());
 }
 
+const LIQUID_TYPES = new Set(["bank", "cash", "savings"]);
+
+/** Cuenta por defecto cuando el modelo no especifica una: líquida y en la moneda
+ * del borrador si existe; si no, la primera cuenta activa. Evita guardar sin cuenta. */
+function pickDefaultAccount(
+  accounts: { id: number; name: string; currencyCode: string; type: string; isArchived: boolean }[],
+  currency: string,
+) {
+  const active = accounts.filter((a) => !a.isArchived);
+  return (
+    active.find((a) => a.currencyCode === currency && LIQUID_TYPES.has(a.type)) ??
+    active.find((a) => LIQUID_TYPES.has(a.type)) ??
+    active[0]
+  );
+}
+
 const WELCOME =
   "Hola, soy tu asistente. Pregúntame lo que quieras sobre tus movimientos — o toca una sugerencia para empezar:";
 
@@ -214,8 +230,12 @@ function AssistantScreen() {
     [router],
   );
 
+  function resolveDraftAccount(draft: AssistantDraft, snap: WorkspaceSnapshot) {
+    return findByName(snap.accounts, draft.accountName) ?? pickDefaultAccount(snap.accounts, draft.currency);
+  }
+
   function resolveDraftIds(draft: AssistantDraft, snap: WorkspaceSnapshot): ResolvedIds {
-    const account = findByName(snap.accounts, draft.accountName);
+    const account = resolveDraftAccount(draft, snap);
     const destination = findByName(snap.accounts, draft.destinationAccountName);
     const category = findByName(snap.categories, draft.categoryName);
     const counterparty = findByName(snap.counterparties, draft.counterpartyName);
@@ -302,18 +322,21 @@ function AssistantScreen() {
       pay_subscription: "Pago de suscripción",
       pay_debt: "Abono a deuda",
     };
+    const resolvedAccount = snapshot ? resolveDraftAccount(draft, snapshot) : undefined;
+    const accountName = resolvedAccount?.name ?? draft.accountName ?? "—";
     const lines: { label: string; value: string }[] = [];
     if (draft.operation === "transfer") {
-      if (draft.accountName) lines.push({ label: "De", value: draft.accountName });
-      if (draft.destinationAccountName) lines.push({ label: "A", value: draft.destinationAccountName });
+      lines.push({ label: "De", value: accountName });
+      const dest = snapshot ? findByName(snapshot.accounts, draft.destinationAccountName) : undefined;
+      lines.push({ label: "A", value: dest?.name ?? draft.destinationAccountName ?? "—" });
     } else if (draft.operation === "pay_subscription") {
       if (draft.subscriptionName) lines.push({ label: "Suscripción", value: draft.subscriptionName });
-      if (draft.accountName) lines.push({ label: "Cuenta", value: draft.accountName });
+      lines.push({ label: "Cuenta", value: accountName });
     } else if (draft.operation === "pay_debt") {
       if (draft.obligationCounterparty) lines.push({ label: "Deuda", value: draft.obligationCounterparty });
-      if (draft.accountName) lines.push({ label: "Cuenta", value: draft.accountName });
+      lines.push({ label: "Cuenta", value: accountName });
     } else {
-      if (draft.accountName) lines.push({ label: "Cuenta", value: draft.accountName });
+      lines.push({ label: "Cuenta", value: accountName });
       if (draft.categoryName) lines.push({ label: "Categoría", value: draft.categoryName });
     }
     if (draft.description) lines.push({ label: "Detalle", value: draft.description });
