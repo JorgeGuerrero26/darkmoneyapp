@@ -329,6 +329,21 @@ async function runListSubscriptions(
   return { count: (data ?? []).length, upcoming: data ?? [] };
 }
 
+async function runListRecurringIncome(
+  client: ReturnType<typeof userClient>,
+  workspaceId: number,
+): Promise<Record<string, unknown>> {
+  const { data, error } = await client
+    .from("recurring_income")
+    .select("name, amount, currency_code, frequency, next_expected_date, status")
+    .eq("workspace_id", workspaceId)
+    .eq("status", "active")
+    .order("next_expected_date", { ascending: true })
+    .limit(30);
+  if (error) throw error;
+  return { count: (data ?? []).length, recurringIncome: data ?? [] };
+}
+
 async function runListBudgets(
   client: ReturnType<typeof userClient>,
   workspaceId: number,
@@ -624,6 +639,8 @@ Deno.serve(async (req) => {
             output = { result: await runListSubscriptions(rls, workspaceId), movementIds: [] };
           } else if (name === "list_budgets") {
             output = { result: await runListBudgets(rls, workspaceId), movementIds: [] };
+          } else if (name === "list_recurring_income") {
+            output = { result: await runListRecurringIncome(rls, workspaceId), movementIds: [] };
           } else if (name === "remember_fact") {
             output = { result: await runRememberFact(rls, workspaceId, user.id, args), movementIds: [] };
           } else if (name === "forget_fact") {
