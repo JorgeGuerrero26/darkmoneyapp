@@ -21,6 +21,7 @@ import {
   buildEvidence,
   buildSystemPrompt,
   clampFact,
+  isDeepQuestion,
   clampSearchParams,
   clampSummarizeParams,
   escapeIlike,
@@ -56,6 +57,36 @@ function usageDateInLima(date = new Date()): string {
   return date.toLocaleDateString("en-CA", { timeZone: "America/Lima" });
 }
 
+/** Llama a Gemini vía su endpoint OpenAI-compat. withTools=false fuerza respuesta
+ * final de texto (para la síntesis profunda con Pro sobre datos ya reunidos). */
+async function callGemini(
+  apiKey: string,
+  model: string,
+  messages: ChatMessage[],
+  withTools: boolean,
+  timeoutMs: number,
+) {
+  const body: Record<string, unknown> = { model, messages, temperature: 0.2, max_tokens: 1100 };
+  if (withTools) {
+    body.tools = ASSISTANT_TOOLS;
+    body.tool_choice = "auto";
+  }
+  const response = await fetch(
+    "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(timeoutMs),
+    },
+  );
+  if (!response.ok) throw new Error(`Gemini respondió ${response.status}`);
+  const json = await response.json();
+  const message = json?.choices?.[0]?.message;
+  if (!message) throw new Error("Gemini no devolvió mensaje.");
+  return message;
+}
+
 /**
  * Motor del asistente. Preferencia: Gemini vía su endpoint COMPATIBLE con OpenAI
  * (mismo shape de tools/tool_calls → reusa todo el loop) por su mejor seguimiento
@@ -70,26 +101,7 @@ async function callModel(messages: ChatMessage[]) {
 
   if (geminiKey && !forceDeepseek) {
     const model = Deno.env.get("ASSISTANT_GEMINI_MODEL")?.trim() || "gemini-2.5-flash";
-    const response = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${geminiKey}` },
-        body: JSON.stringify({
-          model,
-          messages,
-          tools: ASSISTANT_TOOLS,
-          tool_choice: "auto",
-          temperature: 0.2,
-          max_tokens: 900,
-        }),
-        signal: AbortSignal.timeout(30_000),
-      },
-    );
-    if (!response.ok) throw new Error(`Gemini respondió ${response.status}`);
-    const json = await response.json();
-    const message = json?.choices?.[0]?.message;
-    if (!message) throw new Error("Gemini no devolvió mensaje.");
+    const message = await callGemini(geminiKey, model, messages, true, 30_000);
     return { message, model };
   }
 
@@ -707,6 +719,38 @@ Deno.serve(async (req) => {
           tool_call_id: call.id,
           content: JSON.stringify(output.result),
         });
+      }
+    }
+
+    // Enrutado de modelo: preguntas de análisis se re-sintetizan con un modelo
+    // más potente (Gemini Pro) sobre los datos que Flash ya reunió con las tools.
+    // Una sola llamada extra, sin tools → profundidad sin el timeout del loop.
+    const geminiKey = Deno.env.get("GEMINI_API_KEY")?.trim();
+    const escalationOff = Deno.env.get("ASSISTANT_DISABLE_ESCALATION")?.trim() === "1";
+    if (geminiKey && !escalationOff && isDeepQuestion(message) && reply && !pendingDraft) {
+      try {
+        const proModel = Deno.env.get("ASSISTANT_GEMINI_PRO_MODEL")?.trim() || "gemini-2.5-pro";
+        const synth = await callGemini(
+          geminiKey,
+          proModel,
+          [
+            ...messages,
+            {
+              role: "user",
+              content:
+                "Con los datos ya reunidos arriba, da la mejor respuesta final a mi pregunta con tu análisis experto: correlaciona, saca conclusiones y recomienda. Mismo formato (emojis de operación 💰➕➖🟰 en desgloses, **negritas** en cifras). No inventes cifras nuevas; usa solo las de arriba.",
+            },
+          ],
+          false,
+          40_000,
+        ).then((m) => (typeof m.content === "string" ? m.content.trim() : ""));
+        if (synth) {
+          reply = synth;
+          modelUsed = proModel;
+        }
+      } catch (escalationError) {
+        // Best-effort: si Pro falla o tarda, se queda la respuesta de Flash.
+        console.warn("[assistant-chat] escalation failed", escalationError);
       }
     }
 

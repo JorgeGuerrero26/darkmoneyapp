@@ -51,6 +51,24 @@ describe("buildEmbeddingText", () => {
   });
 });
 
+describe("isDeepQuestion", () => {
+  it("marca análisis/escenarios/comparaciones como profundas", () => {
+    const { isDeepQuestion } = require("../logic");
+    expect(isDeepQuestion("¿qué pasa si cancelo Netflix y Spotify?")).toBe(true);
+    expect(isDeepQuestion("compara mis gastos de junio y julio")).toBe(true);
+    expect(isDeepQuestion("¿me conviene pagar la deuda ahora?")).toBe(true);
+    expect(isDeepQuestion("¿por qué gasté más este mes?")).toBe(true);
+    expect(isDeepQuestion("analiza mis finanzas a fondo")).toBe(true);
+  });
+
+  it("consultas simples y registros NO son profundas", () => {
+    const { isDeepQuestion } = require("../logic");
+    expect(isDeepQuestion("cuánto gasté este mes")).toBe(false);
+    expect(isDeepQuestion("registra un gasto de 15 en taxi")).toBe(false);
+    expect(isDeepQuestion("cuál fue mi mayor gasto")).toBe(false);
+  });
+});
+
 describe("clampFact", () => {
   it("normaliza espacios y exige 3-300 chars", () => {
     expect(clampFact("  mi primo   paga la mitad \n de Amazon ")).toBe("mi primo paga la mitad de Amazon");

@@ -111,6 +111,45 @@ export function buildEmbeddingText(row: {
     .slice(0, 500);
 }
 
+/**
+ * ¿La pregunta amerita razonamiento profundo? Enrutado de modelo: las preguntas
+ * de análisis (comparaciones, escenarios "¿qué pasa si?", "por qué", optimización)
+ * se sintetizan con un modelo más potente; las consultas simples y los registros
+ * se quedan en el rápido. Heurística por texto normalizado (sin tilde, minúsculas).
+ */
+const DEEP_PATTERNS = [
+  "que pasa si",
+  "que pasaria",
+  "si cancelo",
+  "si dejo",
+  "si elimino",
+  "si reduzco",
+  "si recorto",
+  "compara",
+  "comparar",
+  "comparado",
+  "versus",
+  " vs ",
+  "conviene",
+  "analiza",
+  "a fondo",
+  "por que",
+  "porque",
+  "me alcanza",
+  "puedo permitirme",
+  "cuanto ahorraria",
+  "como puedo ahorrar",
+  "como ahorro",
+  "deberia recortar",
+  "optimiz",
+  "tiene sentido",
+];
+
+export function isDeepQuestion(text: string): boolean {
+  const t = text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  return DEEP_PATTERNS.some((p) => t.includes(p));
+}
+
 /** Valida el hecho a recordar: frase corta, sin saltos raros, 3-300 chars. */
 export function clampFact(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
