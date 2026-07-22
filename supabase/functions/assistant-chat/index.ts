@@ -57,6 +57,27 @@ function usageDateInLima(date = new Date()): string {
   return date.toLocaleDateString("en-CA", { timeZone: "America/Lima" });
 }
 
+/** Pro por tabla user_entitlements o por email en FALLBACK_PRO_EMAILS. */
+async function userIsPro(
+  admin: ReturnType<typeof serviceClient>,
+  userId: string,
+  email: string | null,
+): Promise<boolean> {
+  const fallbackEmails = (Deno.env.get("FALLBACK_PRO_EMAILS") ?? "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+  if (email && fallbackEmails.includes(email.trim().toLowerCase())) return true;
+  const { data } = await admin
+    .from("user_entitlements")
+    .select("plan_code, pro_access_enabled")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (!data) return false;
+  const row = data as Record<string, unknown>;
+  return row.pro_access_enabled === true || row.plan_code === "pro";
+}
+
 /** Llama a Gemini vía su endpoint OpenAI-compat. withTools=false fuerza respuesta
  * final de texto (para la síntesis profunda con Pro sobre datos ya reunidos). */
 async function callGemini(
@@ -601,6 +622,17 @@ Deno.serve(async (req) => {
     const admin = serviceClient();
     const user = await authenticatedUser(req, admin);
     const rls = userClient(req);
+
+    // Gate Pro (consistente con el resto de la IA de la app): el asistente cuesta
+    // API, así que solo usuarios Pro. Defensa en servidor aunque el cliente oculte
+    // la entrada. Fallback por email (FALLBACK_PRO_EMAILS) como el resto de funciones.
+    const isPro = await userIsPro(admin, user.id, user.email ?? null);
+    if (!isPro) {
+      return jsonResponse(
+        { ok: false, error: "El asistente es una función Pro. Activa DarkMoney Pro para usarlo.", proRequired: true },
+        403,
+      );
+    }
 
     // Cuota diaria por usuario.
     const usageDate = usageDateInLima();

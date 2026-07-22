@@ -51,6 +51,7 @@ import {
   usePersistLearningFeedbackMutation,
   useUpdateMovementMutation,
   useNotificationsQuery,
+  useUserEntitlementQuery,
   useDashboardAiFlowMutation,
   useDashboardAiHealthMutation,
   useDashboardAiHistoryMutation,
@@ -962,6 +963,8 @@ function DashboardHeaderRight({
   const router = useRouter();
   const { data: notifications = [] } = useNotificationsQuery(profile?.id ?? null);
   const unreadCount = (notifications as { readAt: string | null }[]).filter((n) => !n.readAt).length;
+  const { data: entitlement } = useUserEntitlementQuery(profile?.id ?? null, profile?.email ?? null);
+  const isPro = entitlement?.proAccessEnabled === true;
 
   return (
     <View style={hdrStyles.row}>
@@ -977,15 +980,17 @@ function DashboardHeaderRight({
           ? <EyeOff size={19} color={COLORS.storm} strokeWidth={2} />
           : <Eye size={19} color={COLORS.storm} strokeWidth={2} />}
       </TouchableOpacity>
-      <TouchableOpacity
-        style={hdrStyles.iconBtn}
-        onPress={() => router.push("/assistant?from=dashboard")}
-        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        accessibilityRole="button"
-        accessibilityLabel="Abrir asistente"
-      >
-        <Sparkles size={19} color={COLORS.storm} strokeWidth={2} />
-      </TouchableOpacity>
+      {isPro ? (
+        <TouchableOpacity
+          style={hdrStyles.iconBtn}
+          onPress={() => router.push("/assistant?from=dashboard")}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button"
+          accessibilityLabel="Abrir asistente"
+        >
+          <Sparkles size={19} color={COLORS.storm} strokeWidth={2} />
+        </TouchableOpacity>
+      ) : null}
       <TouchableOpacity
         style={hdrStyles.iconBtn}
         onPress={() => router.push("/notifications")}

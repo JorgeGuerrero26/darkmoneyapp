@@ -7,7 +7,7 @@ import {
 } from "lucide-react-native";
 
 import { useAuth } from "../../lib/auth-context";
-import { useNotificationsQuery } from "../../services/queries/workspace-data";
+import { useNotificationsQuery, useUserEntitlementQuery } from "../../services/queries/workspace-data";
 import { useHaptics } from "../../hooks/useHaptics";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { Button } from "../../components/ui/Button";
@@ -39,14 +39,19 @@ export default function MoreScreen() {
 
   const { data: notifications } = useNotificationsQuery(user?.id ?? null);
   const unreadCount = (notifications ?? []).filter((n) => n.status !== "read").length;
+  const { data: entitlement } = useUserEntitlementQuery(user?.id ?? null, user?.email ?? null);
+  const isPro = entitlement?.proAccessEnabled === true;
 
   const menuItems: MenuItem[] = [
-    {
-      Icon: Sparkles,
-      title: "Asistente",
-      subtitle: "Pregunta por tus movimientos en lenguaje natural",
-      route: "/assistant?from=more",
-    },
+    // El asistente es Pro (consistente con el resto de la IA). Solo visible para Pro.
+    ...(isPro
+      ? [{
+          Icon: Sparkles,
+          title: "Asistente",
+          subtitle: "Pregunta por tus movimientos en lenguaje natural",
+          route: "/assistant?from=more",
+        } as MenuItem]
+      : []),
     {
       Icon: Bell,
       title: "Notificaciones",
