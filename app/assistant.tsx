@@ -28,14 +28,22 @@ import {
   type AssistantChatMessage,
   type AssistantDraft,
   type AssistantEvidence,
+  type BudgetDraft,
+  type ObligationDraft,
+  type RecurringDraft,
 } from "../services/queries/assistant";
 import {
   useCreateMovementMutation,
   useWorkspaceSnapshotQuery,
   type WorkspaceSnapshot,
 } from "../services/queries/workspace-data";
-import { useMarkSubscriptionPaidMutation } from "../services/queries/subscriptions-recurring-income";
-import { useCreateObligationPaymentMutation } from "../services/queries/obligations-impl";
+import {
+  useMarkSubscriptionPaidMutation,
+  useCreateSubscriptionMutation,
+  useCreateRecurringIncomeMutation,
+} from "../services/queries/subscriptions-recurring-income";
+import { useCreateObligationPaymentMutation, useCreateObligationMutation } from "../services/queries/obligations-impl";
+import { useCreateBudgetMutation } from "../services/queries/budgets";
 import { parseBoldSegments } from "../lib/assistant-text";
 import { humanizeError } from "../lib/errors";
 import { formatCurrency } from "../lib/format-currency";
@@ -48,6 +56,9 @@ type ChatItem = {
   evidence?: AssistantEvidence[];
   error?: boolean;
   draft?: AssistantDraft;
+  budgetDraft?: BudgetDraft;
+  obligationDraft?: ObligationDraft;
+  recurringDraft?: RecurringDraft;
   draftStatus?: "pending" | "saved" | "discarded";
   savedMovementId?: number;
 };
@@ -111,6 +122,10 @@ function AssistantScreen() {
   const createMovement = useCreateMovementMutation(activeWorkspaceId);
   const markSubPaid = useMarkSubscriptionPaidMutation(activeWorkspaceId);
   const payObligation = useCreateObligationPaymentMutation(activeWorkspaceId);
+  const createBudget = useCreateBudgetMutation(activeWorkspaceId);
+  const createObligation = useCreateObligationMutation(activeWorkspaceId);
+  const createSubscription = useCreateSubscriptionMutation(activeWorkspaceId);
+  const createRecurringIncome = useCreateRecurringIncomeMutation(activeWorkspaceId);
   const [savingDraftId, setSavingDraftId] = useState<string | null>(null);
   const [editDuplicate, setEditDuplicate] = useState<MovementDuplicateSource | null>(null);
   // Control manual del teclado: KeyboardAvoidingView (height/padding) deja huecos
@@ -184,6 +199,9 @@ function AssistantScreen() {
             content: response.reply,
             evidence: response.evidence,
             ...(response.draft ? { draft: response.draft, draftStatus: "pending" as const } : {}),
+            ...(response.budgetDraft ? { budgetDraft: response.budgetDraft, draftStatus: "pending" as const } : {}),
+            ...(response.obligationDraft ? { obligationDraft: response.obligationDraft, draftStatus: "pending" as const } : {}),
+            ...(response.recurringDraft ? { recurringDraft: response.recurringDraft, draftStatus: "pending" as const } : {}),
           },
         ]);
         setRemainingToday(response.remainingToday);
@@ -291,6 +309,110 @@ function AssistantScreen() {
     }
   }
 
+  async function saveBudgetDraft(item: ChatItem) {
+    const budget = item.budgetDraft;
+    if (!budget || !snapshot || !activeWorkspaceId) return;
+    const category = findByName(snapshot.categories, budget.categoryName);
+    setSavingDraftId(item.id);
+    try {
+      await createBudget.mutateAsync({
+        name: budget.name,
+        periodStart: budget.periodStart,
+        periodEnd: budget.periodEnd,
+        limitAmount: budget.limitAmount,
+        alertPercent: budget.alertPercent,
+        currencyCode: budget.currency,
+        categoryId: category?.id ?? null,
+      });
+      setDraftStatus(item.id, "saved");
+      showToast("Presupuesto creado ✓", "success");
+    } catch (error) {
+      showToast(humanizeError(error), "error");
+    } finally {
+      setSavingDraftId(null);
+    }
+  }
+
+  async function saveObligationDraft(item: ChatItem) {
+    const ob = item.obligationDraft;
+    if (!ob || !snapshot || !activeWorkspaceId) return;
+    if (!profile?.id) {
+      showToast("No hay sesión para crear la deuda.", "error");
+      return;
+    }
+    const counterparty = findByName(snapshot.counterparties, ob.counterpartyName);
+    setSavingDraftId(item.id);
+    try {
+      await createObligation.mutateAsync({
+        userId: profile.id,
+        title: ob.title,
+        direction: ob.direction,
+        originType: "manual",
+        openingImpact: "none", // solo registra la deuda; no mueve dinero de cuentas
+        counterpartyId: counterparty?.id ?? null,
+        currencyCode: ob.currency,
+        principalAmount: ob.principalAmount,
+        startDate: ob.startDate,
+        dueDate: ob.dueDate,
+        description: ob.description,
+      });
+      setDraftStatus(item.id, "saved");
+      showToast(ob.direction === "receivable" ? "Crédito registrado ✓" : "Deuda registrada ✓", "success");
+    } catch (error) {
+      showToast(humanizeError(error), "error");
+    } finally {
+      setSavingDraftId(null);
+    }
+  }
+
+  async function saveRecurringDraft(item: ChatItem) {
+    const r = item.recurringDraft;
+    if (!r || !snapshot || !activeWorkspaceId) return;
+    const category = findByName(snapshot.categories, r.categoryName);
+    const account = findByName(snapshot.accounts, r.accountName);
+    setSavingDraftId(item.id);
+    try {
+      if (r.kind === "subscription") {
+        await createSubscription.mutateAsync({
+          name: r.name,
+          amount: r.amount,
+          currencyCode: r.currency,
+          frequency: r.frequency,
+          intervalCount: 1,
+          dayOfMonth: r.dayOfMonth,
+          startDate: todayYmd(),
+          nextDueDate: r.nextDate,
+          remindDaysBefore: 1,
+          autoCreateMovement: false, // no mueve dinero solo: el usuario paga/confirma cada mes
+          categoryId: category?.id ?? null,
+          accountId: account?.id ?? null,
+          description: r.description,
+        });
+      } else {
+        await createRecurringIncome.mutateAsync({
+          name: r.name,
+          amount: r.amount,
+          currencyCode: r.currency,
+          frequency: r.frequency,
+          intervalCount: 1,
+          dayOfMonth: r.dayOfMonth,
+          startDate: todayYmd(),
+          nextExpectedDate: r.nextDate,
+          remindDaysBefore: 1,
+          categoryId: category?.id ?? null,
+          accountId: account?.id ?? null,
+          description: r.description,
+        });
+      }
+      setDraftStatus(item.id, "saved");
+      showToast(r.kind === "subscription" ? "Suscripción creada ✓" : "Ingreso fijo creado ✓", "success");
+    } catch (error) {
+      showToast(humanizeError(error), "error");
+    } finally {
+      setSavingDraftId(null);
+    }
+  }
+
   function editDraft(item: ChatItem) {
     const draft = item.draft;
     if (!draft || !snapshot) return;
@@ -345,8 +467,112 @@ function AssistantScreen() {
     return { title: titleByOp[draft.operation], amountLabel: `${sign} ${money}`.trim(), lines, canEdit };
   }
 
+  function budgetCardProps(item: ChatItem) {
+    const b = item.budgetDraft!;
+    const money = formatCurrency(b.limitAmount, b.currency);
+    const lines: { label: string; value: string }[] = [
+      { label: "Categoría", value: b.categoryName ?? "General (todo el workspace)" },
+      { label: "Período", value: `${b.periodStart} → ${b.periodEnd}` },
+      { label: "Alerta", value: `${b.alertPercent}%` },
+    ];
+    return { title: "Crear presupuesto", amountLabel: `Límite ${money}`, lines };
+  }
+
+  function obligationCardProps(item: ChatItem) {
+    const o = item.obligationDraft!;
+    const money = formatCurrency(o.principalAmount, o.currency);
+    const lines: { label: string; value: string }[] = [
+      { label: "Tipo", value: o.direction === "receivable" ? "Te deben (crédito)" : "Tú debes (deuda)" },
+      { label: "Contraparte", value: o.counterpartyName ?? "—" },
+    ];
+    if (o.dueDate) lines.push({ label: "Vence", value: o.dueDate });
+    if (o.description) lines.push({ label: "Detalle", value: o.description });
+    return {
+      title: o.direction === "receivable" ? "Registrar crédito" : "Registrar deuda",
+      amountLabel: money,
+      lines,
+    };
+  }
+
+  function recurringCardProps(item: ChatItem) {
+    const r = item.recurringDraft!;
+    const money = formatCurrency(r.amount, r.currency);
+    const freqLabel = r.frequency === "weekly" ? "Semanal" : r.frequency === "yearly" ? "Anual" : "Mensual";
+    const lines: { label: string; value: string }[] = [
+      { label: "Frecuencia", value: freqLabel },
+      { label: "Próximo", value: r.nextDate },
+    ];
+    if (r.categoryName) lines.push({ label: "Categoría", value: r.categoryName });
+    if (r.accountName) lines.push({ label: "Cuenta", value: r.accountName });
+    return {
+      title: r.kind === "subscription" ? `Nueva suscripción · ${r.name}` : `Nuevo ingreso fijo · ${r.name}`,
+      amountLabel: money,
+      lines,
+    };
+  }
+
   const renderItem = ({ item }: { item: ChatItem }) => {
     {
+      if (item.recurringDraft) {
+        const { title, amountLabel, lines } = recurringCardProps(item);
+        return (
+          <View style={styles.assistantRow}>
+            <View style={styles.avatar}>
+              <Sparkles size={13} color={COLORS.primary} strokeWidth={2.2} />
+            </View>
+            <AssistantDraftCard
+              title={title}
+              amountLabel={amountLabel}
+              lines={lines}
+              status={item.draftStatus ?? "pending"}
+              isSaving={savingDraftId === item.id}
+              onSave={() => void saveRecurringDraft(item)}
+              onEdit={() => showToast("Se crea o se cancela; ajústalo luego en Suscripciones / Ingresos fijos.", "info")}
+              onCancel={() => setDraftStatus(item.id, "discarded")}
+            />
+          </View>
+        );
+      }
+      if (item.obligationDraft) {
+        const { title, amountLabel, lines } = obligationCardProps(item);
+        return (
+          <View style={styles.assistantRow}>
+            <View style={styles.avatar}>
+              <Sparkles size={13} color={COLORS.primary} strokeWidth={2.2} />
+            </View>
+            <AssistantDraftCard
+              title={title}
+              amountLabel={amountLabel}
+              lines={lines}
+              status={item.draftStatus ?? "pending"}
+              isSaving={savingDraftId === item.id}
+              onSave={() => void saveObligationDraft(item)}
+              onEdit={() => showToast("La deuda se crea o se cancela; ajústala luego en Créditos y deudas.", "info")}
+              onCancel={() => setDraftStatus(item.id, "discarded")}
+            />
+          </View>
+        );
+      }
+      if (item.budgetDraft) {
+        const { title, amountLabel, lines } = budgetCardProps(item);
+        return (
+          <View style={styles.assistantRow}>
+            <View style={styles.avatar}>
+              <Sparkles size={13} color={COLORS.primary} strokeWidth={2.2} />
+            </View>
+            <AssistantDraftCard
+              title={title}
+              amountLabel={amountLabel}
+              lines={lines}
+              status={item.draftStatus ?? "pending"}
+              isSaving={savingDraftId === item.id}
+              onSave={() => void saveBudgetDraft(item)}
+              onEdit={() => showToast("El presupuesto se crea o se cancela; ajústalo luego en Presupuestos.", "info")}
+              onCancel={() => setDraftStatus(item.id, "discarded")}
+            />
+          </View>
+        );
+      }
       if (item.draft) {
         const { title, amountLabel, lines, canEdit } = draftCardProps(item);
         return (

@@ -24,8 +24,15 @@ import {
   isDeepQuestion,
   clampSearchParams,
   clampSummarizeParams,
+  clampComparePeriodsParams,
+  buildPeriodComparison,
+  clampAnalyzeTradeParams,
+  buildTradeAnalysis,
   escapeIlike,
   normalizeDraft,
+  normalizeBudgetDraft,
+  normalizeObligationDraft,
+  normalizeRecurringDraft,
   normalizeName,
   type AssistantEvidence,
 } from "./logic.ts";
@@ -357,6 +364,115 @@ async function runSummarizeMovements(
   };
 }
 
+async function runComparePeriods(
+  client: ReturnType<typeof userClient>,
+  workspaceId: number,
+  rawArgs: Record<string, unknown>,
+): Promise<{ result: Record<string, unknown>; movementIds: number[] }> {
+  const params = clampComparePeriodsParams(rawArgs);
+  if (!params) {
+    return {
+      result: { error: "currentFrom, currentTo, previousFrom y previousTo son obligatorios (YYYY-MM-DD)." },
+      movementIds: [],
+    };
+  }
+
+  let categoryIds: number[] | null = null;
+  if (params.categoryName) {
+    categoryIds = await matchingIds(client, "categories", workspaceId, params.categoryName);
+    if (categoryIds.length === 0) {
+      return { result: { note: `Sin categoría que coincida con "${params.categoryName}".` }, movementIds: [] };
+    }
+  }
+
+  const fetchPeriod = async (from: string, to: string) => {
+    let query = client
+      .from("movements")
+      .select(MOVEMENT_SELECT)
+      .eq("workspace_id", workspaceId)
+      .gte("occurred_at", from)
+      .lte("occurred_at", `${to}T23:59:59`)
+      // ponytail: agregación en JS sobre ≤1000 filas/período; a SQL/RPC si un workspace lo supera.
+      .limit(1000);
+    if (params.movementType) query = query.eq("movement_type", params.movementType);
+    if (categoryIds) query = query.in("category_id", categoryIds);
+    const { data, error } = await query;
+    if (error) throw error;
+    return (data ?? []).map(compactRow);
+  };
+
+  const [currentRows, previousRows] = await Promise.all([
+    fetchPeriod(params.currentFrom, params.currentTo),
+    fetchPeriod(params.previousFrom, params.previousTo),
+  ]);
+
+  const comparison = buildPeriodComparison(currentRows, previousRows, params.groupBy);
+  return {
+    result: {
+      current: { from: params.currentFrom, to: params.currentTo, count: currentRows.length },
+      previous: { from: params.previousFrom, to: params.previousTo, count: previousRows.length },
+      ...comparison,
+    },
+    movementIds: [...currentRows.map((r) => r.id), ...previousRows.map((r) => r.id)],
+  };
+}
+
+async function runAnalyzeTrade(
+  client: ReturnType<typeof userClient>,
+  workspaceId: number,
+  rawArgs: Record<string, unknown>,
+): Promise<{ result: Record<string, unknown>; movementIds: number[] }> {
+  const params = clampAnalyzeTradeParams(rawArgs);
+  if (!params) {
+    return { result: { error: "text es obligatorio (qué ítem/producto correlacionar)." }, movementIds: [] };
+  }
+
+  let query = client
+    .from("movements")
+    .select(MOVEMENT_SELECT)
+    .eq("workspace_id", workspaceId)
+    .order("occurred_at", { ascending: false })
+    // ponytail: keyword only, ≤200 filas; si compra y venta usan nombres muy distintos
+    // el modelo amplía `text` o usa search_movements. Semántico si hace falta después.
+    .limit(200);
+  if (params.dateFrom) query = query.gte("occurred_at", params.dateFrom);
+  if (params.dateTo) query = query.lte("occurred_at", `${params.dateTo}T23:59:59`);
+
+  const pattern = `*${escapeIlike(params.text).replace(/\s+/g, "*")}*`;
+  const orParts = [`description.ilike.${pattern}`, `notes.ilike.${pattern}`];
+  if (params.counterpartyName) {
+    // Contacto fijo: AND con el match de texto en descripción/notas.
+    const nameIds = await matchingIds(client, "counterparties", workspaceId, params.counterpartyName);
+    if (nameIds.length === 0) {
+      return { result: { note: `Sin contacto que coincida con "${params.counterpartyName}".` }, movementIds: [] };
+    }
+    query = query.in("counterparty_id", nameIds).or(orParts.join(","));
+  } else {
+    // Sin contacto: el texto también puede matchear el nombre de la contraparte.
+    const cpIds = await matchingIds(client, "counterparties", workspaceId, params.text);
+    if (cpIds.length > 0) orParts.push(`counterparty_id.in.(${cpIds.join(",")})`);
+    query = query.or(orParts.join(","));
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+  const rows = (data ?? []).map(compactRow);
+
+  const analysis = buildTradeAnalysis(rows);
+  const buys = rows.filter((r) => r.type === "expense").sort((a, b) => b.amount - a.amount).slice(0, 10);
+  const sells = rows.filter((r) => r.type === "income").sort((a, b) => b.amount - a.amount).slice(0, 10);
+  return {
+    result: {
+      text: params.text,
+      ...analysis,
+      buyMovements: buys,
+      sellMovements: sells,
+      ...(rows.length === 0 ? { note: "Sin movimientos que coincidan; prueba otro término o rango." } : {}),
+    },
+    movementIds: rows.map((r) => r.id),
+  };
+}
+
 async function runListObligations(
   client: ReturnType<typeof userClient>,
   workspaceId: number,
@@ -659,6 +775,8 @@ Deno.serve(async (req) => {
       : [];
 
     const nowLima = new Date().toLocaleString("es-PE", { timeZone: "America/Lima", dateStyle: "full" });
+    // en-CA da formato ISO (YYYY-MM-DD): base para resolver períodos de presupuesto en Lima.
+    const nowLimaYmd = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
     const workspaceContext = await buildWorkspaceContext(rls, workspaceId);
     const messages: ChatMessage[] = [
       {
@@ -676,6 +794,9 @@ Deno.serve(async (req) => {
     let reply = "";
     let modelUsed = "";
     let pendingDraft: ReturnType<typeof normalizeDraft> = null;
+    let pendingBudgetDraft: ReturnType<typeof normalizeBudgetDraft> = null;
+    let pendingObligationDraft: ReturnType<typeof normalizeObligationDraft> = null;
+    let pendingRecurringDraft: ReturnType<typeof normalizeRecurringDraft> = null;
 
     for (let round = 0; round <= MAX_TOOL_ROUNDS; round += 1) {
       const { message: aiMessage, model } = await callModel(messages);
@@ -715,6 +836,20 @@ Deno.serve(async (req) => {
               output.movementIds,
             );
             if (item) evidence.push(item);
+          } else if (name === "compare_periods") {
+            output = await runComparePeriods(rls, workspaceId, args);
+            const item = buildEvidence(
+              `Comparación ${String(args.previousFrom ?? "")}…${String(args.previousTo ?? "")} vs ${String(args.currentFrom ?? "")}…${String(args.currentTo ?? "")}`,
+              output.movementIds,
+            );
+            if (item) evidence.push(item);
+          } else if (name === "analyze_trade") {
+            output = await runAnalyzeTrade(rls, workspaceId, args);
+            const item = buildEvidence(
+              `Compra/venta: ${String(args.text ?? "")}`.trim(),
+              output.movementIds,
+            );
+            if (item) evidence.push(item);
           } else if (name === "list_obligations") {
             output = { result: await runListObligations(rls, workspaceId, args), movementIds: [] };
           } else if (name === "list_subscriptions") {
@@ -735,6 +870,36 @@ Deno.serve(async (req) => {
               result: draft
                 ? { ok: true, draft, note: "Borrador propuesto. La app pedirá confirmación; NO está registrado." }
                 : { ok: false, error: "No pude armar el movimiento; pide al usuario el dato faltante." },
+              movementIds: [],
+            };
+          } else if (name === "draft_budget") {
+            // Solo PROPONE: no toca la BD. El cliente confirma y crea el presupuesto.
+            const budgetDraft = normalizeBudgetDraft(args, nowLimaYmd);
+            pendingBudgetDraft = budgetDraft;
+            output = {
+              result: budgetDraft
+                ? { ok: true, budgetDraft, note: "Presupuesto propuesto. La app pedirá confirmación; NO está creado." }
+                : { ok: false, error: "Falta el monto del presupuesto; pídeselo al usuario." },
+              movementIds: [],
+            };
+          } else if (name === "draft_obligation") {
+            // Solo PROPONE: no toca la BD ni mueve dinero. El cliente confirma y crea la deuda.
+            const obligationDraft = normalizeObligationDraft(args, nowLimaYmd);
+            pendingObligationDraft = obligationDraft;
+            output = {
+              result: obligationDraft
+                ? { ok: true, obligationDraft, note: "Deuda/crédito propuesto. La app pedirá confirmación; NO está creado." }
+                : { ok: false, error: "Falta el monto o la dirección (te deben vs debes); pregúntaselo al usuario." },
+              movementIds: [],
+            };
+          } else if (name === "draft_recurring") {
+            // Solo PROPONE: no toca la BD. El cliente confirma y crea la suscripción/ingreso fijo.
+            const recurringDraft = normalizeRecurringDraft(args, nowLimaYmd);
+            pendingRecurringDraft = recurringDraft;
+            output = {
+              result: recurringDraft
+                ? { ok: true, recurringDraft, note: "Pago recurrente propuesto. La app pedirá confirmación; NO está creado." }
+                : { ok: false, error: "Falta el tipo, el nombre o el monto; pregúntaselo al usuario." },
               movementIds: [],
             };
           } else {
@@ -759,7 +924,7 @@ Deno.serve(async (req) => {
     // Una sola llamada extra, sin tools → profundidad sin el timeout del loop.
     const geminiKey = Deno.env.get("GEMINI_API_KEY")?.trim();
     const escalationOff = Deno.env.get("ASSISTANT_DISABLE_ESCALATION")?.trim() === "1";
-    if (geminiKey && !escalationOff && isDeepQuestion(message) && reply && !pendingDraft) {
+    if (geminiKey && !escalationOff && isDeepQuestion(message) && reply && !pendingDraft && !pendingBudgetDraft && !pendingObligationDraft && !pendingRecurringDraft) {
       try {
         const proModel = Deno.env.get("ASSISTANT_GEMINI_PRO_MODEL")?.trim() || "gemini-2.5-pro";
         const synth = await callGemini(
@@ -808,6 +973,9 @@ Deno.serve(async (req) => {
       reply,
       evidence,
       draft: pendingDraft,
+      budgetDraft: pendingBudgetDraft,
+      obligationDraft: pendingObligationDraft,
+      recurringDraft: pendingRecurringDraft,
       remainingToday: Math.max(0, DAILY_LIMIT - (usedToday ?? 0) - 1),
     });
   } catch (error) {
