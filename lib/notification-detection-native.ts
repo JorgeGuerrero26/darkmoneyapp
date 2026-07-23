@@ -192,8 +192,10 @@ export const notificationDetection = {
   clearLastSaveError() {
     nativeModule?.clearLastSaveError?.();
   },
-  requestCancelBankNotification(suggestionId: string) {
-    nativeModule?.requestCancelBankNotification?.(suggestionId);
+  requestCancelBankNotification(_suggestionId: string) {
+    // NO-OP por diseño: DarkMoney NUNCA descarta notificaciones de otras apps (Yape,
+    // banco, Gmail). Se conserva la firma para no romper a los callers; el módulo nativo
+    // también quedó neutralizado (cancelBankNotificationByKey es no-op).
   },
   /**
    * TODA la cola de reintentos de guardado headless (vencidos o no). Para mostrar al

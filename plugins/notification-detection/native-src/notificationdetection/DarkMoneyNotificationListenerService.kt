@@ -768,36 +768,19 @@ private const val WALLET_PACKAGE = "com.google.android.apps.walletnfcrel"
     }
 
     /**
-     * Cancela inmediatamente la notificacion bancaria asociada al sbn.key. Si el listener
-     * service no esta bound (app cerrada hace rato), encola la key en SharedPreferences
-     * para que el listener la consuma en onListenerConnected y onNotificationPosted.
+     * NO-OP por diseño: DarkMoney NUNCA descarta notificaciones de otras apps (Yape, banco,
+     * Gmail, etc.). Antes cancelaba la notificacion del sbn.key tras registrar, lo que hacia
+     * "desaparecer" avisos legitimos del usuario. La app solo cancela sus PROPIAS tiles
+     * ("movimiento detectado") via NotificationManager.cancel(id), nunca las ajenas.
      */
     fun cancelBankNotificationByKey(context: android.content.Context, key: String) {
-      if (key.isBlank()) return
-      val service = currentService?.get()
-      if (service != null) {
-        try {
-          service.cancelNotification(key)
-          android.util.Log.d("DarkMoneyND", "cancelBankNotificationByKey: cancelled inline key=$key")
-          return
-        } catch (e: Exception) {
-          android.util.Log.d("DarkMoneyND", "cancelBankNotificationByKey: inline cancel failed, queuing key=$key err=${e.message}")
-        }
-      }
-      NotificationDetectionStore.addPendingCancellationKey(context, key)
+      // Intencionalmente sin efecto. Ver comentario arriba.
     }
 
     fun consumePendingCancellations(service: DarkMoneyNotificationListenerService) {
-      val keys = NotificationDetectionStore.takePendingCancellationKeys(service.applicationContext)
-      if (keys.isEmpty()) return
-      for (key in keys) {
-        try {
-          service.cancelNotification(key)
-          android.util.Log.d("DarkMoneyND", "consumePendingCancellations: cancelled key=$key")
-        } catch (e: Exception) {
-          android.util.Log.d("DarkMoneyND", "consumePendingCancellations: failed key=$key err=${e.message}")
-        }
-      }
+      // Purga claves encoladas por versiones anteriores SIN cancelarlas: DarkMoney ya no
+      // descarta notificaciones de otras apps. Solo vacia la cola para no dejar basura.
+      NotificationDetectionStore.takePendingCancellationKeys(service.applicationContext)
     }
   }
 }
