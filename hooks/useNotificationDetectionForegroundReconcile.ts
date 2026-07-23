@@ -7,6 +7,7 @@ import { useWorkspace } from "../lib/workspace-context";
 import { notificationDetection } from "../lib/notification-detection-native";
 import { notificationDetectionHeadlessTask } from "../lib/notification-detection-headless";
 import { findRegisteredNativeSuggestionIds } from "../services/queries/notification-detection";
+import { recoverSession } from "../lib/query-client";
 
 // Evita reconciliar en ráfaga si el usuario alterna foreground/background rápido.
 const RECONCILE_DEBOUNCE_MS = 5_000;
@@ -65,23 +66,30 @@ export function useNotificationDetectionForegroundReconcile() {
         // llega al módulo porque la invalidación de workspace-snapshot re-dispara el sync.
         notificationDetection.requestActiveNotificationScan();
 
-        // C) Reprocesar registros headless que fallaron por red/timeout con la app cerrada.
-        // El dispatch re-encola primero (sube attempts y empuja el backoff): si el task vuelve
-        // a fallar la entrada ya quedó programada, y si termina (éxito, duplicado o estado que
-        // requiere al usuario) el propio flujo la limpia con clearSaveRetry. La idempotencia
-        // por client_dedupe_key hace seguro reintentar aunque el insert anterior sí llegó.
-        const dueRetries = await notificationDetection.getDueSaveRetries();
-        for (const entry of dueRetries) {
+        // C) Reprocesar registros headless que fallaron con la app cerrada. Al abrir la app
+        // reintentamos TODA la cola SIN esperar el backoff (1-16 min): si el usuario ya está
+        // aquí, guardarlo de una es justo lo que espera; el backoff solo aplica a reintentos
+        // sin interacción. ANTES de reintentar esperamos recoverSession() para que el token
+        // esté fresco — sin esto el insert caía por RLS/auth y solo funcionaba "Reintentar
+        // ahora". El re-encolar primero sube attempts/empuja el backoff (por si la red sigue
+        // caída); si el flujo termina lo limpia con clearSaveRetry. client_dedupe_key hace
+        // idempotente reintentar aunque el insert anterior sí llegó.
+        await recoverSession();
+        const pendingRetries = await notificationDetection.getAllSaveRetries();
+        let retried = 0;
+        for (const entry of pendingRetries) {
+          if (!entry.payloadJson) continue; // marcador de reintentos agotados: requiere al usuario
           try {
             const retryPayload = JSON.parse(entry.payloadJson) as Parameters<typeof notificationDetectionHeadlessTask>[0];
             notificationDetection.enqueueSaveRetry(entry.suggestionId, entry.payloadJson);
             await notificationDetectionHeadlessTask(retryPayload);
+            retried += 1;
           } catch {
             // payload corrupto: descartar la entrada para no reintentar basura.
             notificationDetection.clearSaveRetry(entry.suggestionId);
           }
         }
-        if (dueRetries.length > 0) {
+        if (retried > 0) {
           // Un reintento pudo insertar el movimiento recién ahora: refrescar la lista
           // y los saldos DESPUÉS de procesar la cola (la invalidación A corrió antes).
           void queryClient.invalidateQueries({ queryKey: ["movements"] });

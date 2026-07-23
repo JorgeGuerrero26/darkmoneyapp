@@ -50,7 +50,7 @@ AppState.addEventListener("change", (status) => {
   void recoverSession();
 });
 
-let recovering = false;
+let recoveringPromise: Promise<void> | null = null;
 let lastRecoveryAt = 0;
 const RECOVERY_COOLDOWN_MS = 30_000;
 
@@ -60,24 +60,31 @@ const RECOVERY_COOLDOWN_MS = 30_000;
  * tormentear en fallos persistentes; `force` lo salta (reintento manual). Incidente
  * 2026-07-15: app 17 h abierta → escrituras 42501 y lecturas "Network request
  * failed" hasta matar la app; ahora se recupera sola sin reinicio.
+ *
+ * Devuelve la promesa EN CURSO si ya se está recuperando, para que los callers (p. ej.
+ * el reconcile de detección) puedan ESPERAR el refresh real del token en vez de retornar
+ * al toque y reintentar el guardado con la sesión aún stale (carrera que hacía fallar el
+ * reintento automático al abrir la app y solo dejaba funcionar el botón manual).
  */
 export async function recoverSession(opts?: { force?: boolean }): Promise<void> {
-  if (recovering) return;
+  if (recoveringPromise) return recoveringPromise;
   const now = Date.now();
   if (!opts?.force && now - lastRecoveryAt < RECOVERY_COOLDOWN_MS) return;
-  recovering = true;
   lastRecoveryAt = now;
-  try {
-    if (supabase) {
-      const { data } = await supabase.auth.getSession();
-      if (data.session) await supabase.auth.refreshSession();
+  recoveringPromise = (async () => {
+    try {
+      if (supabase) {
+        const { data } = await supabase.auth.getSession();
+        if (data.session) await supabase.auth.refreshSession();
+      }
+      await queryClient.invalidateQueries();
+    } catch (error) {
+      logWarn("session-recovery", error instanceof Error ? error.message : String(error));
+    } finally {
+      recoveringPromise = null;
     }
-    await queryClient.invalidateQueries();
-  } catch (error) {
-    logWarn("session-recovery", error instanceof Error ? error.message : String(error));
-  } finally {
-    recovering = false;
-  }
+  })();
+  return recoveringPromise;
 }
 
 const PERSIST_MAX_AGE_MS = 24 * 60 * 60 * 1000;
