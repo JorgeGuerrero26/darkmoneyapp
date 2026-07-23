@@ -50,6 +50,7 @@ import { COLORS, EXTENDED_PALETTE, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURF
 import { DEFAULT_EXCHANGE_CURRENCY, normalizeSupportedCurrencyCode } from "../constants/currencies";
 import type { WorkspaceRole } from "../types/domain";
 import { SafeBlurView } from "../components/ui/SafeBlurView";
+import { CHANGELOG, CHANGELOG_OLDER } from "../constants/changelog";
 import { useOriginBackNavigation } from "../hooks/useOriginBackNavigation";
 import { registerForPushNotifications, savePushTokenToSupabase } from "../hooks/usePushNotifications";
 
@@ -65,6 +66,7 @@ function SettingsScreen() {
   // ── Sign out dialog (must be before useOriginBackNavigation) ────────────
   const [signOutVisible, setSignOutVisible] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [changelogVisible, setChangelogVisible] = useState(false);
 
   const { handleBack } = useOriginBackNavigation({ skipInterception: signingOut });
   const router = useRouter();
@@ -577,13 +579,59 @@ function SettingsScreen() {
           <Button label="Cerrar sesión" variant="danger" size="lg" onPress={handleSignOut} />
 
           {Constants.expoConfig?.version ? (
-            <Text style={styles.versionText}>Versión {Constants.expoConfig.version}</Text>
+            <TouchableOpacity
+              onPress={() => setChangelogVisible(true)}
+              accessibilityLabel="Ver novedades de cada versión"
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Text style={styles.versionText}>Versión {Constants.expoConfig.version} · Ver novedades</Text>
+            </TouchableOpacity>
           ) : null}
         </ScrollView>
       </KeyboardAvoidingView>
       }
       overlays={
       <>
+      {/* Changelog / novedades por versión */}
+      <Modal
+        visible={changelogVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setChangelogVisible(false)}
+      >
+        <View style={styles.soOverlay}>
+          <SafeBlurView intensity={30} tint="dark" style={StyleSheet.absoluteFillObject} />
+          <View style={styles.changelogCard}>
+            <Text style={styles.soTitle}>Novedades de DarkMoney</Text>
+            <Text style={styles.changelogSubtitle}>Lo que ha ido mejorando en cada versión</Text>
+            <ScrollView style={styles.changelogScroll} showsVerticalScrollIndicator={false}>
+              {CHANGELOG.map((entry) => (
+                <View key={entry.version} style={styles.changelogEntry}>
+                  <View style={styles.changelogVersionRow}>
+                    <Text style={styles.changelogVersion}>v{entry.version}</Text>
+                    <Text style={styles.changelogEntryTitle}>{entry.title}</Text>
+                  </View>
+                  {entry.changes.map((change, i) => (
+                    <View key={i} style={styles.changelogBulletRow}>
+                      <Text style={styles.changelogBulletDot}>•</Text>
+                      <Text style={styles.changelogBulletText}>{change}</Text>
+                    </View>
+                  ))}
+                </View>
+              ))}
+              <Text style={styles.changelogOlder}>{CHANGELOG_OLDER}</Text>
+            </ScrollView>
+            <Button
+              label="Cerrar"
+              variant="primary"
+              size="lg"
+              style={styles.bioFullBtn}
+              onPress={() => setChangelogVisible(false)}
+            />
+          </View>
+        </View>
+      </Modal>
+
       {/* Biometric setup — password prompt */}
       <Modal
         visible={bioSetupVisible}
@@ -907,6 +955,62 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.lg,
     fontFamily: FONT_FAMILY.heading,
     color: COLORS.ink,
+    textAlign: "center",
+  },
+  changelogCard: {
+    width: "100%",
+    maxHeight: "82%",
+    backgroundColor: SURFACE.deepNavy,
+    borderRadius: RADIUS.xl,
+    paddingHorizontal: SPACING.xl,
+    paddingVertical: SPACING.xl,
+    borderWidth: 1,
+    borderColor: SURFACE.cardBorder,
+    gap: SPACING.sm,
+  },
+  changelogSubtitle: {
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    textAlign: "center",
+    marginBottom: SPACING.xs,
+  },
+  changelogScroll: { alignSelf: "stretch" },
+  changelogEntry: {
+    paddingVertical: SPACING.sm,
+    borderTopWidth: 1,
+    borderTopColor: SURFACE.cardBorder,
+    gap: SPACING.xs,
+  },
+  changelogVersionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+    flexWrap: "wrap",
+  },
+  changelogVersion: {
+    fontSize: FONT_SIZE.xs,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    color: COLORS.void,
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 2,
+    borderRadius: RADIUS.full,
+    overflow: "hidden",
+  },
+  changelogEntryTitle: {
+    fontSize: FONT_SIZE.sm,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    color: COLORS.ink,
+    flexShrink: 1,
+  },
+  changelogBulletRow: { flexDirection: "row", gap: SPACING.xs, paddingRight: SPACING.sm },
+  changelogBulletDot: { color: COLORS.primary, fontSize: FONT_SIZE.sm, lineHeight: 20 },
+  changelogBulletText: { flex: 1, fontSize: FONT_SIZE.sm, color: COLORS.storm, lineHeight: 20 },
+  changelogOlder: {
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    fontStyle: "italic",
+    paddingVertical: SPACING.md,
     textAlign: "center",
   },
   soBody: {
