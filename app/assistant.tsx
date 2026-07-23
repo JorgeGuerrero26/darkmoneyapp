@@ -11,8 +11,10 @@ import {
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Mic, Send, Sparkles } from "lucide-react-native";
+import { Mic, Send, Sparkles, Volume2, VolumeX } from "lucide-react-native";
 import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from "expo-speech-recognition";
+import * as Speech from "expo-speech";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { ErrorBoundary } from "../components/ui/ErrorBoundary";
 import { ScreenHeader } from "../components/layout/ScreenHeader";
@@ -143,18 +145,65 @@ function AssistantScreen() {
   const keyboardOpen = keyboardHeight > 0;
   const idRef = useRef(0);
 
+  // Modo hablante: el asistente lee su respuesta en voz alta y, tras dictar, auto-envía.
+  const [speakMode, setSpeakMode] = useState(false);
+  const speakModeRef = useRef(false);
+  speakModeRef.current = speakMode;
+  const lastTranscriptRef = useRef("");
+  const sendRef = useRef<((t: string) => void) | null>(null);
+
+  useEffect(() => {
+    void AsyncStorage.getItem("assistant/speakMode").then((v) => {
+      if (v === "1") setSpeakMode(true);
+    });
+    return () => { Speech.stop(); };
+  }, []);
+
+  const toggleSpeakMode = useCallback(() => {
+    setSpeakMode((prev) => {
+      const next = !prev;
+      void AsyncStorage.setItem("assistant/speakMode", next ? "1" : "0");
+      if (!next) Speech.stop();
+      showToast(next ? "Modo hablante activado 🔊" : "Modo hablante desactivado", "info");
+      return next;
+    });
+  }, [showToast]);
+
+  // Limpia markdown/emojis para que la voz suene natural.
+  const speakReply = useCallback((text: string) => {
+    const clean = text
+      .replace(/\*\*/g, "")
+      .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}\u{FE0F}]/gu, "")
+      .replace(/\s{2,}/g, " ")
+      .trim();
+    if (!clean) return;
+    Speech.stop();
+    Speech.speak(clean, { language: "es-PE" });
+  }, []);
+
   // Voz: dictado on-device (expo-speech-recognition). El transcript va al input;
   // el resto del flujo (draft → tarjeta) es idéntico al de escribir.
   const [isListening, setIsListening] = useState(false);
   useSpeechRecognitionEvent("result", (e) => {
     const transcript = e.results?.[0]?.transcript;
-    if (transcript) setInput(transcript);
+    if (transcript) {
+      setInput(transcript);
+      lastTranscriptRef.current = transcript;
+    }
   });
-  useSpeechRecognitionEvent("end", () => setIsListening(false));
+  useSpeechRecognitionEvent("end", () => {
+    setIsListening(false);
+    // Modo hablante: al terminar de dictar, enviar solo (manos libres).
+    const t = lastTranscriptRef.current.trim();
+    lastTranscriptRef.current = "";
+    if (speakModeRef.current && t) sendRef.current?.(t);
+  });
   useSpeechRecognitionEvent("error", () => setIsListening(false));
 
   const startDictation = useCallback(async () => {
     try {
+      Speech.stop(); // no hablar encima de lo que el usuario va a dictar
+      lastTranscriptRef.current = "";
       const perm = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
       if (!perm.granted) {
         showToast("Sin permiso de micrófono. Puedes usar el micrófono del teclado.", "warning");
@@ -179,6 +228,7 @@ function AssistantScreen() {
     async (text: string) => {
       const message = text.trim();
       if (!message || isThinking || !activeWorkspaceId) return;
+      Speech.stop(); // corta cualquier respuesta hablada anterior al mandar una nueva
       idRef.current += 1;
       const userItem: ChatItem = { id: `u${idRef.current}`, role: "user", content: message };
       // Historial para el server: solo turnos reales previos (sin welcome ni errores).
@@ -205,6 +255,7 @@ function AssistantScreen() {
           },
         ]);
         setRemainingToday(response.remainingToday);
+        if (speakModeRef.current) speakReply(response.reply);
       } catch (error) {
         idRef.current += 1;
         setItems((current) => [
@@ -222,8 +273,9 @@ function AssistantScreen() {
         setIsThinking(false);
       }
     },
-    [activeWorkspaceId, isThinking, items],
+    [activeWorkspaceId, isThinking, items, speakReply],
   );
+  sendRef.current = send;
 
   // Insight proactivo: la notificación abre el chat con ?ask= y se auto-envía
   // una sola vez (askToken único por tap evita re-disparos por re-render).
@@ -646,6 +698,15 @@ function AssistantScreen() {
         subtitle={remainingToday != null ? `${remainingToday} preguntas restantes hoy` : "Consulta tus movimientos"}
         onBack={handleBack}
         withSafeArea
+        rightAction={
+          <TouchableOpacity
+            onPress={toggleSpeakMode}
+            accessibilityLabel={speakMode ? "Desactivar modo hablante" : "Activar modo hablante"}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            {speakMode ? <Volume2 size={20} color={COLORS.primary} /> : <VolumeX size={20} color={COLORS.storm} />}
+          </TouchableOpacity>
+        }
       />
       <View style={styles.flex}>
         <FlatList
