@@ -2088,6 +2088,8 @@ export async function resolveOwnerEditRequestNotification(
 
 export type ObligationFormInput = {
   userId: string;
+  /** Idempotencia: clave por intento de submit; un retry con la misma clave no duplica. */
+  clientDedupeKey?: string | null;
   title: string;
   direction: "receivable" | "payable";
   originType: "cash_loan" | "sale_financed" | "purchase_financed" | "manual";
@@ -2165,7 +2167,8 @@ export function useCreateObligationMutation(workspaceId: number | null) {
   return useMutation({
     mutationFn: async (input: ObligationFormInput) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
-      const { data, error } = await supabase
+      const dedupeKey = input.clientDedupeKey ?? null;
+      let { data, error } = await supabase
         .from("obligations")
         .insert({
           workspace_id: workspaceId,
@@ -2186,9 +2189,25 @@ export function useCreateObligationMutation(workspaceId: number | null) {
           description: input.description ?? null,
           notes: input.notes ?? null,
           status: "active",
+          client_dedupe_key: dedupeKey,
         })
         .select("id")
         .single();
+      // Idempotencia: si este intento ya insertó antes (retry tras respuesta perdida), el
+      // unique parcial (workspace_id, client_dedupe_key) responde 23505 → devolver la fila
+      // existente como éxito en vez de crear una duplicada.
+      if (error && dedupeKey && (error as { code?: string }).code === "23505") {
+        const existing = await supabase
+          .from("obligations")
+          .select("id")
+          .eq("workspace_id", workspaceId)
+          .eq("client_dedupe_key", dedupeKey)
+          .maybeSingle();
+        if (existing.data) {
+          data = existing.data;
+          error = null;
+        }
+      }
       if (error) throw new Error(error.message ?? "Error de base de datos");
       const created = data as { id: number };
 
@@ -2210,6 +2229,8 @@ export function useCreateObligationMutation(workspaceId: number | null) {
           destinationAccountId: isInflow ? input.openingAccountId : null,
           destinationAmount: isInflow ? input.principalAmount : null,
           obligationId: created.id,
+          // Apertura idempotente: un retry no duplica el movimiento de apertura.
+          dedupeKey: dedupeKey ? `${dedupeKey}:opening` : undefined,
         });
       }
 

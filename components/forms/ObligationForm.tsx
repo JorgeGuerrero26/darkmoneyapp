@@ -14,6 +14,7 @@ import { TrendingUp, TrendingDown, Share2, Eye, Mail, AlertCircle } from "lucide
 import { useWorkspace } from "../../lib/workspace-context";
 import { useAuth } from "../../lib/auth-context";
 import { humanizeError } from "../../lib/errors";
+import { newClientDedupeKey } from "../../lib/idempotency";
 import { useToast } from "../../hooks/useToast";
 import { useHaptics } from "../../hooks/useHaptics";
 import { useWorkspaceSnapshotQuery } from "../../services/queries/workspace-data";
@@ -137,6 +138,9 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
   // Guard anti-doble-tap: sin esto, tocar "Crear" varias veces (cuando la red tarda)
   // dispara múltiples mutateAsync y crea obligaciones duplicadas. Igual que MovementForm.
   const submittingRef = useRef(false);
+  // Idempotencia: clave por intento de submit. Persiste en reintentos (mismo intento) y
+  // se rota tras éxito o al reabrir el form. Un retry tras respuesta perdida NO duplica.
+  const submitDedupeKeyRef = useRef<string | null>(null);
   const { data: snapshot } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const { data: activeShare, isLoading: shareLoading } = useObligationActiveShareQuery(
     activeWorkspaceId,
@@ -201,6 +205,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
 
   useEffect(() => {
     if (!visible) return;
+    submitDedupeKeyRef.current = null; // nueva sesión de registro → clave fresca
     if (editObligation) {
       setTitle(editObligation.title);
       setDirection(editObligation.direction);
@@ -443,8 +448,10 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
         showToast(successMsg, "success");
       } else {
         const resolvedImpact = getAutoOpeningImpact(direction, originType, manualImpact);
+        if (!submitDedupeKeyRef.current) submitDedupeKeyRef.current = newClientDedupeKey("obligation");
         const created = await createMutation.mutateAsync({
           userId: profile?.id ?? "",
+          clientDedupeKey: submitDedupeKeyRef.current,
           title: title.trim(),
           direction,
           originType,
@@ -479,6 +486,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
           showToast("Obligación creada", "success");
         }
       }
+      submitDedupeKeyRef.current = null; // éxito → rotar la clave para el próximo registro
       haptics.success();
       onSuccess?.();
       onClose();
