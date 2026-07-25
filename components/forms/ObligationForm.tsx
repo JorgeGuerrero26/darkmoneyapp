@@ -134,6 +134,9 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
   const updateMutation = useUpdateObligationMutation(activeWorkspaceId);
   const shareMutation = useCreateObligationShareInviteMutation(activeWorkspaceId);
   const unlinkShareMutation = useUnlinkObligationShareMutation(activeWorkspaceId);
+  // Guard anti-doble-tap: sin esto, tocar "Crear" varias veces (cuando la red tarda)
+  // dispara múltiples mutateAsync y crea obligaciones duplicadas. Igual que MovementForm.
+  const submittingRef = useRef(false);
   const { data: snapshot } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const { data: activeShare, isLoading: shareLoading } = useObligationActiveShareQuery(
     activeWorkspaceId,
@@ -320,6 +323,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
   }
 
   async function handleSubmit() {
+    if (submittingRef.current) return; // ya hay un guardado en curso: ignora taps repetidos
     setTitleError("");
     setAmountError("");
     setOriginError("");
@@ -401,6 +405,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
       return;
     }
 
+    submittingRef.current = true;
     try {
       if (isEditing && editObligation) {
         await updateMutation.mutateAsync({
@@ -507,6 +512,8 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
         setSubmitError(friendly);
         scrollRef.current?.scrollTo({ y: 0, animated: true });
       }
+    } finally {
+      submittingRef.current = false;
     }
   }
 
