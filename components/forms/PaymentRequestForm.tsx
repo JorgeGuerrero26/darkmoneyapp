@@ -71,7 +71,10 @@ export function PaymentRequestForm({ visible, onClose, onSuccess, obligation }: 
     onClose();
   }
 
+  const submittingRef = useRef(false);
+
   async function handleSubmit() {
+    if (submittingRef.current) return; // guard anti-doble-tap: evita solicitudes duplicadas
     setSubmitError("");
     setAmountError("");
 
@@ -90,6 +93,7 @@ export function PaymentRequestForm({ visible, onClose, onSuccess, obligation }: 
       return;
     }
 
+    submittingRef.current = true;
     try {
       await createRequest.mutateAsync({
         obligationId: obligation.id,
@@ -114,6 +118,8 @@ export function PaymentRequestForm({ visible, onClose, onSuccess, obligation }: 
       haptics.error();
       setSubmitError(humanizeError(err));
       scrollRef.current?.scrollTo({ y: 0, animated: true });
+    } finally {
+      submittingRef.current = false;
     }
   }
 
