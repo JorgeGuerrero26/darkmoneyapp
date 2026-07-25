@@ -212,7 +212,10 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
     }
   }
 
+  const submittingRef = useRef(false);
+
   async function handleSubmit() {
+    if (submittingRef.current) return; // guard anti-doble-tap: evita duplicados
     setNameError("");
     setAmountError("");
     setSubmitError("");
@@ -312,6 +315,7 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
       notes: notes.trim() ? notes.trim() : null,
     };
 
+    submittingRef.current = true;
     try {
       if (isEditing && editSubscription) {
         await updateMutation.mutateAsync({
@@ -331,6 +335,8 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
     } catch (err: unknown) {
       haptics.error();
       setSubmitError(humanizeError(err));
+    } finally {
+      submittingRef.current = false;
     }
   }
 

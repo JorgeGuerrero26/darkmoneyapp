@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
 
 import { useWorkspace } from "../../lib/workspace-context";
@@ -129,7 +129,10 @@ export function CategoryForm({ visible, onClose, onSuccess, editCategory }: Prop
     else onClose();
   }
 
+  const submittingRef = useRef(false);
+
   async function handleSubmit() {
+    if (submittingRef.current) return; // guard anti-doble-tap: evita duplicados
     setNameError("");
     const trimmed = name.trim();
     if (!trimmed) {
@@ -162,6 +165,7 @@ export function CategoryForm({ visible, onClose, onSuccess, editCategory }: Prop
       return;
     }
 
+    submittingRef.current = true;
     try {
       if (isEditing && editCategory) {
         await updateMutation.mutateAsync({
@@ -195,6 +199,8 @@ export function CategoryForm({ visible, onClose, onSuccess, editCategory }: Prop
     } catch (err: unknown) {
       haptics.error();
       showToast(humanizeError(err), "error");
+    } finally {
+      submittingRef.current = false;
     }
   }
 

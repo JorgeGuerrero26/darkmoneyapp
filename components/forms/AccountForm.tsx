@@ -201,7 +201,10 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
     }
   }
 
+  const submittingRef = useRef(false);
+
   async function handleSubmit() {
+    if (submittingRef.current) return; // guard anti-doble-tap: evita duplicados
     setNameError("");
     if (!name.trim()) {
       haptics.error();
@@ -220,6 +223,7 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
       icon,
       institutionCode,
     };
+    submittingRef.current = true;
     try {
       if (editAccount) {
         await updateMutation.mutateAsync({ id: editAccount.id, input });
@@ -235,6 +239,8 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
     } catch (err: unknown) {
       haptics.error();
       showToast(humanizeError(err), "error");
+    } finally {
+      submittingRef.current = false;
     }
   }
 

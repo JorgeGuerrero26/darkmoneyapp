@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ScrollView,
   StyleSheet,
@@ -158,7 +158,10 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
     }
   }
 
+  const submittingRef = useRef(false);
+
   async function handleSubmit() {
+    if (submittingRef.current) return; // guard anti-doble-tap: evita duplicados
     setNameError("");
     setAmountError("");
     let valid = true;
@@ -188,6 +191,7 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
       notes: notes.trim() || null,
     };
 
+    submittingRef.current = true;
     try {
       if (isEditing && editBudget) {
         await updateMutation.mutateAsync({ id: editBudget.id, input });
@@ -203,6 +207,8 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
       haptics.error();
       const msg = err instanceof Error ? err.message : "Error desconocido";
       showToast(msg, "error");
+    } finally {
+      submittingRef.current = false;
     }
   }
 
