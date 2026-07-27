@@ -53,6 +53,13 @@ que corre el preflight `scripts/preflight-native-version.mjs`: si hay cambios na
 posteriores al último bump de `version`/`versionCode` en app.json, bloquea el build
 (incidente 2026-07-11: tres binarios distintos etiquetados 1.0.1).
 
+**iPhone**: el usuario tiene un build local firmado con su Apple ID gratis, que Apple
+caduca a los **7 días** ("la app ya no abre"). Para reinstalarlo seguir
+`docs/REINSTALL_IOS.md`: trae los datos del dispositivo, el Team correcto, los parches de
+`ios/` que un `expo prebuild` revierte, y la tabla de errores conocidos. Regla clave: NO
+usar `npx expo run:ios` (su instalador está roto) — compilar con `xcodebuild` e instalar
+con `devicectl`. Los cambios solo-JS llegan al iPhone por la misma OTA que a Android.
+
 ## Git workflow
 
 - **Un commit por unidad lógica**, no un commit global con todo. Cada commit cuenta una sola historia: un fix, un refactor, un feature, un cambio de UX. Permite `git bisect`, revert quirúrgico y sirve de checkpoint durante refactors largos.
