@@ -10,7 +10,8 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.darkmoney.app"
+      "bundleIdentifier": "com.darkmoney.app",
+      "icon": "./assets/images/logo-ios.png"
     },
     "android": {
       "adaptiveIcon": {
