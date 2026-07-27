@@ -3,6 +3,7 @@ import {
   Animated,
   Dimensions,
   Keyboard,
+  LayoutAnimation,
   Modal,
   PanResponder,
   Platform,
@@ -57,10 +58,26 @@ export function BottomSheet({
     // sube en sincronía. Android solo emite los *Did* de forma fiable.
     const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
     const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    // El sheet usa maxHeight: en los formularios cuyo contenido llena el sheet (p. ej.
+    // movimientos) recalcular maxHeight cambia el alto visible y sin animación se ve un
+    // "corte". LayoutAnimation con type "keyboard" copia la curva y duración reales del
+    // teclado de iOS, así el alto y el desplazamiento van juntos. Solo iOS: en Android
+    // LayoutAnimation es experimental y el comportamiento actual ya es correcto.
+    const animateWithKeyboard = (duration?: number) => {
+      if (Platform.OS !== "ios") return;
+      LayoutAnimation.configureNext({
+        duration: duration && duration > 0 ? duration : 250,
+        update: { type: "keyboard" },
+      });
+    };
     const showSub = Keyboard.addListener(showEvent, (event) => {
+      animateWithKeyboard(event.duration);
       setKeyboardHeight(event.endCoordinates?.height ?? 0);
     });
-    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
+    const hideSub = Keyboard.addListener(hideEvent, (event) => {
+      animateWithKeyboard(event?.duration);
+      setKeyboardHeight(0);
+    });
     return () => {
       showSub.remove();
       hideSub.remove();
