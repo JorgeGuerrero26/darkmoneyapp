@@ -20,6 +20,17 @@ export function isBlockingQuery(query: { state: { data: unknown } }): boolean {
   return query.state.data === undefined;
 }
 
+/**
+ * Cuántas queries bloqueadas hacen falta para hablar de "la red". Con una sola no: hay
+ * endpoints que se cuelgan solos —medido, `list-shared-obligations` acumuló 18 timeouts de
+ * 20 s en una semana mientras el ping a la BD era de 115 ms— y culpar a la red en ese caso es
+ * mentirle al usuario sobre algo que además no puede arreglar.
+ *
+ * Cuando el problema SÍ es de conexión cae toda la tanda a la vez: el incidente del 28-07 a
+ * las 06:42 abortó ~10 queries en dos segundos. Eso es lo que este umbral detecta.
+ */
+export const MIN_BLOCKED_FOR_NETWORK_WARNING = 2;
+
 export function OfflineBanner() {
   const { isConnected } = useNetworkStatus();
   const insets = useSafeAreaInsets();
@@ -32,9 +43,11 @@ export function OfflineBanner() {
    * refetch en segundo plano de datos ya visibles, así que bastaba una query de fondo para que
    * a los 8 s saliera "conexión lenta" con el dashboard entero ya cargado y 143 Mbps de fibra.
    * El ancho de banda nunca fue el problema: la señal medía lo que no debía.
+   *
+   * Y hacen falta al menos MIN_BLOCKED_FOR_NETWORK_WARNING: ver por qué ahí.
    */
   const blockingFetches = useIsFetching({ predicate: isBlockingQuery });
-  const isBlocked = blockingFetches > 0;
+  const isBlocked = blockingFetches >= MIN_BLOCKED_FOR_NETWORK_WARNING;
   const [isSlow, setIsSlow] = useState(false);
 
   useEffect(() => {

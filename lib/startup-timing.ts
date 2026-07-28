@@ -1,3 +1,4 @@
+import * as Updates from "expo-updates";
 import { logInfo } from "./error-logger";
 
 /**
@@ -23,5 +24,14 @@ export function markStartupReady(outcome: "ready" | "timeout", extra?: Record<st
   if (reported) return;
   reported = true;
   const ms = Date.now() - JS_START;
-  logInfo("startup", `app usable en ${ms}ms (${outcome})`, { ms, outcome, ...extra });
+  logInfo("startup", `app usable en ${ms}ms (${outcome})`, {
+    ms,
+    outcome,
+    // Qué bundle JS está corriendo de verdad. Sin esto, "¿ya te llegó la OTA?" solo se puede
+    // adivinar, y adivinarlo hace perder el tiempo depurando código que el teléfono no tiene.
+    // `updateId` es null cuando corre el bundle embebido en el APK/IPA.
+    updateId: Updates.updateId,
+    embedded: Updates.isEmbeddedLaunch,
+    ...extra,
+  });
 }
