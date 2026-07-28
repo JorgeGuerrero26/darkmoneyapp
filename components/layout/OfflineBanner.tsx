@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Animated, StyleSheet, Text, View } from "react-native";
-import { useIsFetching } from "@tanstack/react-query";
+import { useIsFetching, useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { CloudOff } from "lucide-react-native";
 import { useNetworkStatus } from "../../hooks/useNetworkStatus";
+import { logWarn } from "../../lib/error-logger";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING } from "../../constants/theme";
 import { SafeBlurView } from "../ui/SafeBlurView";
 
@@ -50,6 +51,8 @@ export function OfflineBanner() {
   const isBlocked = blockingFetches >= MIN_BLOCKED_FOR_NETWORK_WARNING;
   const [isSlow, setIsSlow] = useState(false);
 
+  const queryClient = useQueryClient();
+
   useEffect(() => {
     if (!isBlocked) {
       setIsSlow(false);
@@ -57,9 +60,27 @@ export function OfflineBanner() {
     }
     // Solo depende del booleano: así el temporizador no se reinicia cada vez que entra o sale
     // una query de la tanda.
-    const timer = setTimeout(() => setIsSlow(true), SLOW_AFTER_MS);
+    const timer = setTimeout(() => {
+      setIsSlow(true);
+      // Deja constancia de QUÉ lo disparó. Sin esto el aviso solo se puede depurar
+      // adivinando, y adivinar ya costó dos rondas: el usuario lo veía con 143 Mbps de fibra
+      // mientras las hipótesis se probaban a ciegas. Mismo patrón que el log de la válvula
+      // de bootstrap.
+      const culprits = queryClient
+        .getQueryCache()
+        .findAll()
+        .filter((query) => query.state.fetchStatus === "fetching" && isBlockingQuery(query))
+        .map((query) => {
+          const root = Array.isArray(query.queryKey) ? String(query.queryKey[0]) : String(query.queryKey);
+          return `${root}=${query.state.status}/${query.state.fetchStatus}`;
+        });
+      logWarn("slow-network-notice", `aviso mostrado con ${culprits.length} queries bloqueadas`, {
+        blocked: culprits.length,
+        queries: culprits.join(" "),
+      });
+    }, SLOW_AFTER_MS);
     return () => clearTimeout(timer);
-  }, [isBlocked]);
+  }, [isBlocked, queryClient]);
 
   const visible = !isConnected || isSlow;
   const anim = useRef(new Animated.Value(visible ? 1 : 0)).current;
