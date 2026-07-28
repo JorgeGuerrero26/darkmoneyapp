@@ -19,7 +19,12 @@ export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
  *   - realtime → usa websockets, no fetch
  * 30 s: holgado para subir comprobantes en redes lentas, pero corta el cuelgue.
  */
-const SUPABASE_FETCH_TIMEOUT_MS = 30_000;
+// 12 s: tras un cambio de red (WiFi↔datos) los sockets anteriores quedan muertos y la
+// petición se cuelga hasta agotar este plazo. Con 30 s la app se veía congelada ~15-30 s y,
+// con el reintento, hasta un minuto antes de fallar (incidente 2026-07-27). 12 s sigue
+// siendo holgado para una red lenta pero viva, y deja que el reintento salga por una
+// conexión nueva mucho antes.
+const SUPABASE_FETCH_TIMEOUT_MS = 12_000;
 
 function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const controller = new AbortController();

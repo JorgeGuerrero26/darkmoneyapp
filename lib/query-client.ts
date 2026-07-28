@@ -25,8 +25,23 @@ export const STALE = {
 // pausa queries pendientes y mutations (networkMode default "online" en v5).
 // Cuando vuelve la red, React Query reanuda automaticamente lo que estaba en cola.
 // Evita reintentos en vano que gastan bateria y spinner infinito al estar offline.
+// Identidad del transporte de red. Un salto WiFi↔datos (o de una WiFi a otra) deja los
+// sockets TCP anteriores MUERTOS, pero `isConnected` nunca deja de ser true, así que React
+// Query no se entera y las peticiones en vuelo se cuelgan hasta el timeout. Incidente
+// 2026-07-27: guardar tardaba ~15 s y luego "No se pudieron cargar los movimientos", con
+// AbortError simultáneo en todas las queries y CHANNEL_ERROR en realtime.
+let lastTransport: string | null = null;
+
 onlineManager.setEventListener((setOnline) => {
   const unsubscribe = NetInfo.addEventListener((state) => {
+    const transport = `${state.type}:${(state.details as { ipAddress?: string } | null)?.ipAddress ?? ""}`;
+    if (lastTransport !== null && transport !== lastTransport) {
+      // Cambió el transporte: refrescar sesión y refetchear para salir por conexiones nuevas
+      // en lugar de esperar a que cada petición muera por timeout. El cooldown de
+      // recoverSession evita tormentas si la red va y viene.
+      void recoverSession();
+    }
+    lastTransport = transport;
     // isConnected null = "aún no se sabe" (habitual al despertar de Doze / cold start).
     // Tratarlo como offline pausaba TODAS las queries hasta el próximo evento de red,
     // que puede no llegar nunca (incidente 2026-07-13: app vacía tras 1 día en background).
@@ -136,7 +151,11 @@ export const queryClient = new QueryClient({
       // gcTime >= maxAge del persister: si React Query recolecta la query en memoria,
       // el persister re-escribe el storage SIN ella y el próximo arranque la pierde.
       gcTime: PERSIST_MAX_AGE_MS,
-      retry: 1,
+      // 2 reintentos: el primero suele caer todavía en el socket muerto tras un cambio de
+      // red; el segundo ya sale por una conexión nueva. Con el timeout en 12 s el peor caso
+      // sigue siendo más corto que antes (30 s + 1 reintento). Las MUTATIONS no reintentan
+      // (default 0) a propósito: no todas son idempotentes y duplicarían registros.
+      retry: 2,
       refetchOnWindowFocus: false,
       placeholderData: (previousData: unknown) => previousData,
     },
