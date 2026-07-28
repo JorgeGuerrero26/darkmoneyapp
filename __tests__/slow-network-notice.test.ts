@@ -1,4 +1,6 @@
-import { MIN_BLOCKED_FOR_NETWORK_WARNING, isBlockingQuery } from "../components/layout/OfflineBanner";
+// Se importa el módulo puro, NO el componente: importar OfflineBanner arrastra error-logger →
+// supabase → AsyncStorage, que bajo jest es null y tumbaba la suite entera.
+import { MIN_BLOCKED_FOR_NETWORK_WARNING, isBlockingQuery } from "../lib/slow-network-signal";
 
 /**
  * El aviso de "red lenta" salía con el dashboard entero ya cargado y 143 Mbps de fibra, porque
