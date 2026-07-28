@@ -11,9 +11,12 @@ export type ChangelogEntry = {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     version: "1.0.8",
-    title: "El asistente te habla",
+    title: "El asistente te habla y tus pagos llegan por correo",
     changes: [
       "El asistente puede responderte en voz alta: activa el \"modo hablante\", háblale y te contesta hablando. Ideal para consultar tu plata sin mirar la pantalla. (Pro)",
+      "En iPhone ya puedes detectar tus pagos automáticamente: en Configuración generas una dirección privada, reenvías ahí los correos que te manda tu banco y DarkMoney te sugiere el movimiento listo para confirmar.",
+      "Si tocas \"Guardar\" dos veces por nervios, ya no se registra dos veces.",
+      "El aviso de \"conexión lenta\" ya no aparece cuando tu internet va bien.",
     ],
   },
   {

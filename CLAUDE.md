@@ -40,6 +40,12 @@ Reglas: (1) cambios nativos (Kotlin, permisos, deps nativas) SÍ requieren APK y
 viejos); (2) si el update cambia el shape de datos persistidos, bumpear también el `buster`
 del caché en lib/query-client.ts.
 
+**Changelog**: toda mejora que el usuario note va a `constants/changelog.ts`, en lenguaje que
+entienda alguien que nunca ha tocado un sistema. Las reglas de redacción, la tabla de
+traducción técnico→humano y la regla de qué versión usar (OTA suma a la entrada actual; solo
+un cambio nativo crea entrada nueva) están en `docs/CHANGELOG_STYLE.md`. No improvisar el
+estilo ni anunciar trabajo interno que nadie percibe.
+
 Para builds release del APK Android (cualquier cambio en `plugins/notification-detection/native-src/**/*.kt` o `android/app/src/**`), seguir `docs/BUILD_APK.md`. Reglas no negociables: sincronizar `plugins/` → `android/app/src/main/java/`, limpiar caches, build con `-P` quoteado en PowerShell, y verificar que los strings nuevos aparecen en el DEX antes de declarar el APK listo. `BUILD SUCCESSFUL` no garantiza que el cambio entró.
 
 **APK instalable = EAS build** (la app instalada está firmada con el keystore cloud de EAS;
