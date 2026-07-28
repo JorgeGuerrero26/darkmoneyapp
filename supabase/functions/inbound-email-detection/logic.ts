@@ -162,6 +162,32 @@ export function extractOperationNumber(text: string): string | null {
   return match?.[1] ?? null;
 }
 
+/**
+ * Clave de idempotencia. La tabla de sugerencias YA tiene el índice único
+ * (user_id, workspace_id, dedupe_key), así que un webhook reintentado —los proveedores
+ * reintentan siempre— choca contra el índice en vez de duplicar el movimiento.
+ *
+ * Se prefiere el número de operación del banco: el correo llega REENVIADO por un filtro de
+ * Gmail, y Gmail le pone un Message-ID nuevo en cada reenvío. Con el Message-ID solo, un
+ * reenvío manual del mismo recibo crearía una sugerencia duplicada.
+ */
+export function buildDedupeKey(source: {
+  operationNumber: string | null;
+  messageId: string | null;
+  content?: string;
+}): string {
+  if (source.operationNumber) return `email:op:${source.operationNumber}`;
+  if (source.messageId?.trim()) return `email:${source.messageId.trim()}`;
+  // Sin ninguno: hash estable del contenido. djb2, suficiente para deduplicar (no es
+  // seguridad) y evita depender de crypto para poder testearlo con jest.
+  let hash = 5381;
+  const content = source.content ?? "";
+  for (let i = 0; i < content.length; i++) {
+    hash = ((hash << 5) + hash + content.charCodeAt(i)) >>> 0;
+  }
+  return `email:sha:${hash.toString(36)}`;
+}
+
 export function parseReceiptEmail(email: ReceiptEmail): ParsedReceipt | null {
   const sender = KNOWN_SENDERS.find((entry) => entry.match.test(email.from.trim()));
   if (!sender) return null;

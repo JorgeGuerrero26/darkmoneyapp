@@ -1,4 +1,10 @@
-import { classifyMovement, extractAmount, parseReceiptEmail } from "../logic";
+import {
+  buildDedupeKey,
+  classifyMovement,
+  extractAmount,
+  extractOperationNumber,
+  parseReceiptEmail,
+} from "../logic";
 import { BCP_CONSUMO, BCP_TRANSFERENCIA, YAPE_ENVIADO } from "./fixtures/emails";
 
 describe("extractAmount", () => {
@@ -111,5 +117,44 @@ describe("parseReceiptEmail", () => {
       subject: "Estado de cuenta",
       text: "Tu estado de cuenta de S/ 1,000.00 ya está disponible.",
     })).toBeNull();
+  });
+});
+
+describe("extractOperationNumber", () => {
+  it("lee la forma larga de BCP y la abreviada de Yape", () => {
+    expect(extractOperationNumber(BCP_CONSUMO.text)).toBe("100001");
+    // Yape abrevia con la ordinal masculina: "Nº de operación".
+    expect(extractOperationNumber(YAPE_ENVIADO.text)).toBe("100003");
+  });
+
+  it("devuelve null si el correo no numera la operación", () => {
+    expect(extractOperationNumber("Pagaste S/ 30.00 en RENIEC")).toBeNull();
+  });
+});
+
+describe("buildDedupeKey", () => {
+  it("prefiere el número de operación del banco", () => {
+    expect(buildDedupeKey({ operationNumber: "761119", messageId: "<a@mail.gmail.com>" }))
+      .toBe("email:op:761119");
+  });
+
+  it("deduplica el mismo correo reenviado dos veces (Gmail cambia el Message-ID)", () => {
+    const primero = buildDedupeKey({ operationNumber: "761119", messageId: "<a@mail.gmail.com>" });
+    const reenvio = buildDedupeKey({ operationNumber: "761119", messageId: "<b@mail.gmail.com>" });
+    expect(primero).toBe(reenvio);
+  });
+
+  it("usa el Message-ID cuando el correo no trae número de operación", () => {
+    expect(buildDedupeKey({ operationNumber: null, messageId: "<abc123@mail.gmail.com>" }))
+      .toBe("email:<abc123@mail.gmail.com>");
+  });
+
+  it("cae a un hash del contenido si no hay ninguno de los dos", () => {
+    const a = buildDedupeKey({ operationNumber: null, messageId: null, content: "Pagaste S/ 30" });
+    const b = buildDedupeKey({ operationNumber: null, messageId: null, content: "Pagaste S/ 30" });
+    const c = buildDedupeKey({ operationNumber: null, messageId: null, content: "Pagaste S/ 31" });
+    expect(a).toBe(b); // mismo contenido -> misma clave (el reintento no duplica)
+    expect(a).not.toBe(c);
+    expect(a.startsWith("email:sha:")).toBe(true);
   });
 });
