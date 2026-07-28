@@ -40,10 +40,17 @@ Sin muestras reales el parser es adivinanza. Y los límites del plan gratis debe
 
 - [ ] **Step 1: Pedir al usuario 3 correos reales**
 
-Pedirle que reenvíe a sí mismo y copie el **texto plano** de:
-1. Un pago con Yape.
-2. Un consumo/compra con tarjeta BCP.
-3. Un ingreso (alguien le envió dinero).
+**BCP: ya capturado (2026-07-28).** Tres correos reales confirmaron y corrigieron el diseño:
+
+| Hallazgo | Efecto en el plan |
+|---|---|
+| Remitente real: `notificaciones@notificacionesbcp.com.pe` | El `KNOWN_SENDERS` original (`/@bcp\.com\.pe$/`) rechazaba **todos** los correos. Corregido en Task 5. |
+| "Realizaste una transferencia … entre mis cuentas" | No estaba en ningún verbo → se descartaba en silencio. Es `transfer`, no gasto. Corregido en Task 4. |
+| Cuerpo con campos tabulados: `Empresa\tCINEPLANET`, `Número de operación\t761119`, `Total del consumo\tS/ 52.50` | Parsear el campo estructurado en vez de la prosa (Task 5) y usar el número de operación como clave de dedupe (Task 6). |
+
+**Falta Yape.** Pedir el **texto plano** de:
+1. Un pago con Yape (verificar también el dominio real del remitente).
+2. Un ingreso (alguien le envió dinero).
 
 - [ ] **Step 2: Anonimizar y guardar como fixtures**
 
@@ -296,8 +303,19 @@ const HIGH_INCOME = [
 ];
 const MEDIUM_INCOME = ["abono", "deposito", "envio un pago", "pago por", "te depositaron"];
 
+/**
+ * Transferencia entre cuentas PROPIAS. Se evalúa ANTES que gasto: contarla como gasto
+ * bajaría el patrimonio del usuario por mover su propio dinero de un bolsillo a otro.
+ * Verificado con un correo real: "Realizaste una transferencia de S/ 110.00 desde tu Clasica"
+ * + campo "Operación realizada: Transferencia entre mis cuentas".
+ */
+const TRANSFER = ["transferencia entre mis cuentas", "realizaste una transferencia"];
+
 export function classifyMovement(text: string): Classification | null {
   const normalized = normalizeText(text);
+  if (TRANSFER.some((verb) => normalized.includes(verb))) {
+    return { movementType: "transfer", confidence: "high" };
+  }
   if (HIGH_EXPENSE.some((verb) => normalized.includes(verb))) {
     return { movementType: "expense", confidence: "high" };
   }
@@ -310,6 +328,14 @@ export function classifyMovement(text: string): Classification | null {
   return null;
 }
 ```
+
+> **Añadir al test del Step 1** (caso real que se descartaba en silencio):
+> ```ts
+> it("trata la transferencia entre cuentas propias como transfer, no como gasto", () => {
+>   expect(classifyMovement("Realizaste una transferencia de S/ 110.00 desde tu Clasica"))
+>     .toEqual({ movementType: "transfer", confidence: "high" });
+> });
+> ```
 
 - [ ] **Step 4: Correr y verificar que pasa**
 
@@ -414,10 +440,16 @@ export type ParsedReceipt = {
   confidence: "high" | "medium";
 };
 
-/** Remitentes aceptados. Cualquier otro se ignora aunque traiga un monto. */
+/**
+ * Remitentes aceptados. Cualquier otro se ignora aunque traiga un monto.
+ *
+ * OJO: el dominio real de BCP es `notificacionesbcp.com.pe`, NO `bcp.com.pe`. Verificado
+ * contra correos reales: con `/@bcp\.com\.pe$/` se descartaban TODOS los correos del banco.
+ * Confirmar el remitente de Yape con un correo real antes de darlo por bueno.
+ */
 const KNOWN_SENDERS: { match: RegExp; financialAppKey: string; appLabel: string }[] = [
-  { match: /@yape\.com\.pe$/i, financialAppKey: "yape_email", appLabel: "Yape" },
-  { match: /@bcp\.com\.pe$/i, financialAppKey: "bcp_email", appLabel: "BCP" },
+  { match: /@(notificaciones)?yape\.com\.pe$/i, financialAppKey: "yape_email", appLabel: "Yape" },
+  { match: /@notificacionesbcp\.com\.pe$/i, financialAppKey: "bcp_email", appLabel: "BCP" },
 ];
 
 /**
@@ -426,11 +458,40 @@ const KNOWN_SENDERS: { match: RegExp; financialAppKey: string; appLabel: string 
  */
 const DESCRIPTION_WINDOW = 400;
 
-function buildDescription(text: string, subject: string): string {
+/**
+ * Los correos de BCP traen el comercio en un campo estructurado ("Empresa\tCINEPLANET"), que
+ * es más fiable que rascar la prosa. Se intenta ese primero y se cae al texto libre.
+ *
+ * En una transferencia NO se busca comercio: no hay ninguno, y el extractor termina agarrando
+ * palabras sueltas del cuerpo. Misma regla que ya aplica el detector de Android.
+ */
+function buildDescription(
+  text: string,
+  subject: string,
+  movementType: ParsedReceipt["movementType"],
+  appLabel: string,
+): string {
+  if (movementType === "transfer") return `Transferencia ${appLabel}`;
+
+  const structured = /^\s*Empresa\s*[\t:]\s*(.+)$/im.exec(text);
   const window = text.slice(0, DESCRIPTION_WINDOW);
-  const merchant = /\ben\s+([A-Za-zÁÉÍÓÚÑáéíóúñ0-9 .*&-]{3,40})/.exec(window);
-  const raw = merchant?.[1]?.trim() ?? subject.trim();
-  return raw.replace(/\s{2,}/g, " ").slice(0, 80);
+  const prose = /\ben\s+([A-Za-zÁÉÍÓÚÑáéíóúñ0-9 .*&-]{3,40})/.exec(window);
+  const raw = structured?.[1] ?? prose?.[1] ?? subject;
+  return raw
+    .trim()
+    .replace(/\s{2,}/g, " ")
+    .replace(/[.,;]+$/, "") // "CINEPLANET." -> "CINEPLANET"
+    .slice(0, 80);
+}
+
+/**
+ * BCP numera cada operación ("Número de operación: 761119"). Es más estable que el Message-ID:
+ * si el mismo correo llega dos veces con IDs distintos (reenvío manual + filtro), esto lo
+ * deduplica igual.
+ */
+export function extractOperationNumber(text: string): string | null {
+  const match = /N[úu]mero de operaci[óo]n\s*[\t:]\s*([0-9]{4,})/i.exec(text);
+  return match?.[1] ?? null;
 }
 
 export function parseReceiptEmail(email: ReceiptEmail): ParsedReceipt | null {
@@ -448,7 +509,12 @@ export function parseReceiptEmail(email: ReceiptEmail): ParsedReceipt | null {
     movementType: classification.movementType,
     amount: parsedAmount.amount,
     currencyCode: parsedAmount.currencyCode,
-    description: buildDescription(email.text, email.subject),
+    description: buildDescription(
+      email.text,
+      email.subject,
+      classification.movementType,
+      sender.appLabel,
+    ),
     financialAppKey: sender.financialAppKey,
     appLabel: sender.appLabel,
     confidence: classification.confidence,
@@ -482,14 +548,26 @@ git commit -m "feat(inbound-email): parser de correos BCP y Yape"
 import { buildDedupeKey } from "../logic";
 
 describe("buildDedupeKey", () => {
-  it("usa el Message-ID, que es único por correo", () => {
-    expect(buildDedupeKey("<abc123@mail.gmail.com>")).toBe("email:<abc123@mail.gmail.com>");
+  it("prefiere el número de operación del banco", () => {
+    expect(buildDedupeKey({ operationNumber: "761119", messageId: "<a@mail.gmail.com>" }))
+      .toBe("email:op:761119");
   });
 
-  it("cae a un hash del contenido si el correo no trae Message-ID", () => {
-    const a = buildDedupeKey(null, "Pagaste S/ 30");
-    const b = buildDedupeKey(null, "Pagaste S/ 30");
-    const c = buildDedupeKey(null, "Pagaste S/ 31");
+  it("deduplica el mismo correo reenviado dos veces (Gmail cambia el Message-ID)", () => {
+    const primero = buildDedupeKey({ operationNumber: "761119", messageId: "<a@mail.gmail.com>" });
+    const reenvio = buildDedupeKey({ operationNumber: "761119", messageId: "<b@mail.gmail.com>" });
+    expect(primero).toBe(reenvio);
+  });
+
+  it("usa el Message-ID cuando el correo no trae número de operación", () => {
+    expect(buildDedupeKey({ operationNumber: null, messageId: "<abc123@mail.gmail.com>" }))
+      .toBe("email:<abc123@mail.gmail.com>");
+  });
+
+  it("cae a un hash del contenido si no hay ninguno de los dos", () => {
+    const a = buildDedupeKey({ operationNumber: null, messageId: null, content: "Pagaste S/ 30" });
+    const b = buildDedupeKey({ operationNumber: null, messageId: null, content: "Pagaste S/ 30" });
+    const c = buildDedupeKey({ operationNumber: null, messageId: null, content: "Pagaste S/ 31" });
     expect(a).toBe(b);      // mismo contenido -> misma clave (el reintento no duplica)
     expect(a).not.toBe(c);
     expect(a.startsWith("email:sha:")).toBe(true);
@@ -509,14 +587,24 @@ Expected: FAIL — `buildDedupeKey is not a function`.
  * Clave de idempotencia. La tabla de sugerencias YA tiene el índice único
  * (user_id, workspace_id, dedupe_key), así que un webhook reintentado —los proveedores
  * reintentan siempre— choca contra el índice en vez de duplicar el movimiento.
+ *
+ * Se prefiere el número de operación del banco: el correo llega REENVIADO por un filtro de
+ * Gmail, y Gmail le pone un Message-ID nuevo en cada reenvío. Con el Message-ID solo, un
+ * reenvío manual del mismo recibo crearía una sugerencia duplicada.
  */
-export function buildDedupeKey(messageId: string | null, fallbackContent = ""): string {
-  if (messageId && messageId.trim()) return `email:${messageId.trim()}`;
-  // Sin Message-ID: hash estable del contenido. djb2, suficiente para deduplicar
+export function buildDedupeKey(source: {
+  operationNumber: string | null;
+  messageId: string | null;
+  content?: string;
+}): string {
+  if (source.operationNumber) return `email:op:${source.operationNumber}`;
+  if (source.messageId?.trim()) return `email:${source.messageId.trim()}`;
+  // Sin ninguno: hash estable del contenido. djb2, suficiente para deduplicar
   // (no es seguridad) y evita depender de crypto para poder testearlo con jest.
   let hash = 5381;
-  for (let i = 0; i < fallbackContent.length; i++) {
-    hash = ((hash << 5) + hash + fallbackContent.charCodeAt(i)) >>> 0;
+  const content = source.content ?? "";
+  for (let i = 0; i < content.length; i++) {
+    hash = ((hash << 5) + hash + content.charCodeAt(i)) >>> 0;
   }
   return `email:sha:${hash.toString(36)}`;
 }
@@ -531,7 +619,7 @@ Expected: PASS.
 
 ```bash
 git add supabase/functions/inbound-email-detection/
-git commit -m "feat(inbound-email): clave de dedupe por Message-ID"
+git commit -m "feat(inbound-email): clave de dedupe por numero de operacion"
 ```
 
 ---
@@ -555,7 +643,7 @@ git commit -m "feat(inbound-email): clave de dedupe por Message-ID"
  * La autenticación real son la firma del webhook y el token del alias.
  */
 import { corsHeaders, jsonResponse, serviceClient } from "../_shared/obligation-share-utils.ts";
-import { buildDedupeKey, parseReceiptEmail } from "./logic.ts";
+import { buildDedupeKey, extractOperationNumber, parseReceiptEmail } from "./logic.ts";
 
 /** Ventanas de dedupe contra la detección de Android (mismas que usa el Kotlin). */
 const PENDING_WINDOW_MS = 10 * 60_000;
@@ -641,7 +729,11 @@ Deno.serve(async (req) => {
     description: parsed.description,
     occurred_at: new Date().toISOString(),
     confidence: parsed.confidence,
-    dedupe_key: buildDedupeKey(payload.messageId ?? null, payload.text ?? ""),
+    dedupe_key: buildDedupeKey({
+  operationNumber: extractOperationNumber(payload.text ?? ""),
+  messageId: payload.messageId ?? null,
+  content: payload.text ?? "",
+}),
     status: "pending",
     metadata: { source: "inbound_email" },
   });
