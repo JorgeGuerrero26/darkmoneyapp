@@ -175,7 +175,6 @@ export default function AppLayout() {
       <Tabs.Screen
         name="movements"
         options={{
-          lazy: false,
           tabBarIcon: ({ color, focused }) => (
             <TabIcon focused={focused} color={color} icon={<ArrowLeftRight size={22} color={color} />} />
           ),
@@ -184,7 +183,6 @@ export default function AppLayout() {
       <Tabs.Screen
         name="accounts"
         options={{
-          lazy: false,
           tabBarIcon: ({ color, focused }) => (
             <TabIcon focused={focused} color={color} icon={<WalletCards size={22} color={color} />} />
           ),
@@ -193,7 +191,6 @@ export default function AppLayout() {
       <Tabs.Screen
         name="obligations"
         options={{
-          lazy: false,
           tabBarIcon: ({ color, focused }) => (
             <TabIcon focused={focused} color={color} icon={<Scale size={22} color={color} />} />
           ),
@@ -202,7 +199,6 @@ export default function AppLayout() {
       <Tabs.Screen
         name="more"
         options={{
-          lazy: false,
           tabBarIcon: ({ color, focused }) => <MoreTabIcon color={color} focused={focused} />,
         }}
       />

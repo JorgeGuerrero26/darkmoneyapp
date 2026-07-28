@@ -1,15 +1,21 @@
 import { useEffect, useRef, useState } from "react";
 import { Animated, StyleSheet, Text } from "react-native";
 import { useIsFetching } from "@tanstack/react-query";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNetworkStatus } from "../../hooks/useNetworkStatus";
 import { COLORS, FONT_SIZE, SPACING, SURFACE } from "../../constants/theme";
 
 const BANNER_HEIGHT = 32;
-/** Segundos con peticiones en vuelo antes de admitir que la red va lenta. */
-const SLOW_AFTER_MS = 6000;
+/**
+ * Tiempo con peticiones en vuelo antes de admitir que la red va lenta. 8 s y no menos:
+ * un arranque en frío normal dispara varias queries a la vez y con 6 s el aviso salía
+ * casi siempre, convirtiéndose en ruido.
+ */
+const SLOW_AFTER_MS = 8000;
 
 export function OfflineBanner() {
   const { isConnected } = useNetworkStatus();
+  const insets = useSafeAreaInsets();
 
   // "Sin conexión" no cubre el caso real que sufre el usuario: hay red pero las peticiones
   // se arrastran (o los sockets murieron al cambiar de WiFi a datos). Si algo lleva
@@ -40,9 +46,11 @@ export function OfflineBanner() {
     }).start();
   }, [visible, anim]);
 
+  // El banner vive en el flujo, arriba del contenido, y arranca en el borde superior de la
+  // pantalla: sin el inset su texto quedaba DEBAJO de la barra de estado y se leía cortado.
   const height = anim.interpolate({
     inputRange: [0, 1],
-    outputRange: [0, BANNER_HEIGHT],
+    outputRange: [0, BANNER_HEIGHT + insets.top],
   });
 
   const opacity = anim.interpolate({
@@ -52,7 +60,11 @@ export function OfflineBanner() {
 
   return (
     <Animated.View
-      style={[styles.banner, !isConnected ? styles.offline : styles.slow, { height, opacity }]}
+      style={[
+        styles.banner,
+        !isConnected ? styles.offline : styles.slow,
+        { height, opacity, paddingTop: insets.top },
+      ]}
     >
       <Text style={[styles.text, isConnected && styles.slowText]} numberOfLines={1}>
         {!isConnected

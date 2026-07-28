@@ -101,8 +101,15 @@ export function useNotificationDetectionRuntimeSync() {
   }, []);
   const { data: snapshot } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const entitlementQuery = useUserEntitlementQuery(profile?.id ?? null, profile?.email ?? null);
-  const settingsQuery = useNotificationDetectionSettingsQuery(profile?.id, activeWorkspaceId);
-  const patternMovementsQuery = useMovementPatternsQuery(activeWorkspaceId);
+  // La detección de notificaciones solo existe en Android (iOS no permite leer notifs de
+  // otras apps). Sin este gate, iOS pedía los ajustes y los patrones de detección en CADA
+  // arranque para nada: 2 peticiones compitiendo en el camino crítico.
+  const detectionAvailable = notificationDetection.isAvailable();
+  const settingsQuery = useNotificationDetectionSettingsQuery(
+    detectionAvailable ? profile?.id : undefined,
+    detectionAvailable ? activeWorkspaceId : null,
+  );
+  const patternMovementsQuery = useMovementPatternsQuery(detectionAvailable ? activeWorkspaceId : null);
   const patternMaps = useMemo(() => buildPatternMaps(patternMovementsQuery.data ?? []), [patternMovementsQuery.data]);
   const recurringHistory = useMemo<MovementRecurringHistoryItem[]>(() => {
     return (patternMovementsQuery.data ?? []).map((movement) => ({
