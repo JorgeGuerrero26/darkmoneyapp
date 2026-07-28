@@ -164,8 +164,9 @@ Deno.serve(async (req) => {
     workspace_id: alias.workspace_id,
     financial_app_key: parsed.financialAppKey,
     // La columna es NOT NULL y viene del mundo Android (nombre del paquete de la app). Para
-    // correo no existe tal cosa; el origen queda marcado con este centinela.
-    package_name: "email.inbound",
+    // correo no existe tal cosa; el origen queda marcado con este centinela. Los dos puntos
+    // no son válidos en un package name de Android, así que no puede colisionar con una app.
+    package_name: "email:inbound",
     app_label: parsed.appLabel,
     movement_type: parsed.movementType,
     amount: parsed.amount,

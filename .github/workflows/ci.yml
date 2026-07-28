@@ -45,3 +45,4 @@ jobs:
           deno check supabase/functions/send-push-notifications/index.ts
           deno check supabase/functions/assistant-chat/index.ts
           deno check supabase/functions/proactive-insights/index.ts
+          deno check supabase/functions/inbound-email-detection/index.ts

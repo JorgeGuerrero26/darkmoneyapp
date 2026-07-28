@@ -7,7 +7,10 @@
 -- de correo del usuario.
 
 create table if not exists public.inbound_email_aliases (
-  token text primary key,
+  -- El token lo genera Postgres, NO el cliente: gen_random_uuid() es criptográficamente
+  -- aleatorio, mientras que Math.random() en Hermes es predecible y esto es un secreto.
+  -- 32 chars hex. Mismo criterio que los tokens de invitación, que se acuñan en el servidor.
+  token text primary key default replace(gen_random_uuid()::text, '-', ''),
   user_id uuid not null references auth.users(id) on delete cascade,
   workspace_id bigint not null references public.workspaces(id) on delete cascade,
   created_at timestamptz not null default now(),

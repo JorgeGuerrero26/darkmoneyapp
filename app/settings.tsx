@@ -21,6 +21,7 @@ import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as LocalAuthentication from "expo-local-authentication";
 import * as SecureStore from "expo-secure-store";
+import * as Clipboard from "expo-clipboard";
 import { ChevronRight, Fingerprint, Pencil, ShieldCheck } from "lucide-react-native";
 
 import { useAuth } from "../lib/auth-context";
@@ -36,6 +37,11 @@ import {
   type WorkspaceInvitationInput,
 } from "../services/queries/workspace-data";
 import { useSyncExchangeRatePairMutation } from "../services/queries/exchange-rates";
+import {
+  inboundEmailAddress,
+  useInboundEmailAliasQuery,
+  useRotateInboundEmailAliasMutation,
+} from "../services/queries/inbound-email-alias";
 import { Input } from "../components/ui/Input";
 import { Button } from "../components/ui/Button";
 import { BottomSheet } from "../components/ui/BottomSheet";
@@ -79,6 +85,28 @@ function SettingsScreen() {
   const notificationPreferencesQuery = useNotificationPreferencesQuery(profile?.id ?? null);
   const updateNotificationPreferencesMutation = useUpdateNotificationPreferencesMutation(profile?.id ?? null);
   const syncExchangeRatePair = useSyncExchangeRatePairMutation();
+
+  // ── Detección por correo ─────────────────────────────────────────────────
+  const inboundAliasQuery = useInboundEmailAliasQuery(profile?.id ?? null, activeWorkspaceId);
+  const rotateInboundAlias = useRotateInboundEmailAliasMutation(
+    profile?.id ?? null,
+    activeWorkspaceId,
+  );
+
+  const handleCopyInboundAddress = async () => {
+    if (!inboundAliasQuery.data) return;
+    await Clipboard.setStringAsync(inboundEmailAddress(inboundAliasQuery.data));
+    showToast("Dirección copiada", "success");
+  };
+
+  const handleRotateInboundAlias = async () => {
+    try {
+      await rotateInboundAlias.mutateAsync();
+      showToast("Dirección lista. Actualiza el filtro de Gmail.", "success");
+    } catch (err) {
+      showToast(humanizeError(err), "error");
+    }
+  };
 
   // ── Profile ──────────────────────────────────────────────────────────────
   const [fullName, setFullName] = useState(profile?.fullName ?? "");
@@ -583,6 +611,57 @@ function SettingsScreen() {
             </View>
           </Card>
 
+          {/* Detección por correo: en iOS no existe la detección de notificaciones de Android,
+              y el usuario necesita ver su dirección para crear el filtro en Gmail. */}
+          <Card>
+            <Text style={styles.sectionTitle}>Detectar pagos por correo</Text>
+            {inboundAliasQuery.data ? (
+              <>
+                <Text selectable style={styles.inboundAddress}>
+                  {inboundEmailAddress(inboundAliasQuery.data)}
+                </Text>
+                <Button
+                  label="Copiar dirección"
+                  variant="secondary"
+                  size="md"
+                  onPress={() => void handleCopyInboundAddress()}
+                />
+                {/* Los dominios van completos y son los reales: Yape usa yape.pe (NO
+                    yape.com.pe), y un filtro con el dominio equivocado no reenvía nada,
+                    en silencio. */}
+                <Text style={styles.inboundHelp}>
+                  En Gmail: Configuración › Filtros › Crear filtro con{"\n"}
+                  De: notificacionesbcp.com.pe OR yape.pe{"\n"}
+                  Acción: Reenviar a esta dirección{"\n"}
+                  Gmail te pedirá confirmar el reenvío una vez.
+                </Text>
+                <Button
+                  label="Generar una nueva"
+                  variant="ghost"
+                  size="md"
+                  loading={rotateInboundAlias.isPending}
+                  loadingLabel="Generando…"
+                  onPress={() => void handleRotateInboundAlias()}
+                />
+              </>
+            ) : (
+              <>
+                <Text style={styles.inboundHelp}>
+                  Genera una dirección privada y reenvía ahí los correos de tu banco. DarkMoney
+                  no accede al resto de tu correo, y nada se registra sin que tú lo confirmes.
+                </Text>
+                <Button
+                  label="Generar dirección"
+                  variant="primary"
+                  size="md"
+                  loading={rotateInboundAlias.isPending}
+                  loadingLabel="Generando…"
+                  onPress={() => void handleRotateInboundAlias()}
+                />
+              </>
+            )}
+          </Card>
+
           {/* Sign out */}
           <Button label="Cerrar sesión" variant="danger" size="lg" onPress={handleSignOut} />
 
@@ -800,6 +879,19 @@ const styles = StyleSheet.create({
     fontFamily: FONT_FAMILY.body,
     color: COLORS.storm,
     textAlign: "center",
+  },
+  inboundAddress: {
+    fontSize: FONT_SIZE.sm,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    color: COLORS.pine,
+    marginBottom: SPACING.sm,
+  },
+  inboundHelp: {
+    fontSize: FONT_SIZE.xs,
+    fontFamily: FONT_FAMILY.body,
+    color: COLORS.storm,
+    lineHeight: 18,
+    marginBottom: SPACING.sm,
   },
   sectionTitle: {
     fontSize: FONT_SIZE.sm,

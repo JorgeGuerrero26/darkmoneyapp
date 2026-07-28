@@ -46,6 +46,7 @@ import {
   useWorkspaceSnapshotQuery,
 } from "../../services/queries/workspace-data";
 import { useMovementPatternsQuery } from "../../services/queries/movement-patterns";
+import { EMAIL_SOURCE_PACKAGE } from "../../services/queries/inbound-email-alias";
 import { buildPatternMaps, scoreCategoryFromDescription } from "../../lib/movement-patterns";
 import { normalizeAnalyticsText } from "../../services/analytics/movement-features";
 import { useMovementCategoryAiSuggestion } from "../../hooks/useMovementCategoryAiSuggestion";
@@ -1042,11 +1043,19 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
     });
   }
 
-  const displayAppLabel = suggestion
+  const baseAppLabel = suggestion
     ? (getFinancialAppByKey(suggestion.financialAppKey)?.label
         ?? resolveFinancialAppByPackage(suggestion.packageName)?.label
         ?? suggestion.appLabel)
     : "Movimiento detectado";
+
+  // Las sugerencias por correo no vienen de una notificación de app. Decirlo evita que el
+  // usuario crea que la detección de Android dejó de funcionar en su iPhone (en iOS no existe,
+  // y el correo es justamente el sustituto).
+  const displayAppLabel =
+    suggestion?.packageName === EMAIL_SOURCE_PACKAGE
+      ? `${baseAppLabel} · por correo`
+      : baseAppLabel;
 
 
   if (suggestion?.status === "registered" || suggestion?.status === "duplicate") {
