@@ -754,6 +754,21 @@ git commit -m "feat(inbound-email): clave de dedupe por numero de operacion"
 
 ### Task 7: Edge function
 
+**Proveedor decidido (2026-07-28): SendGrid Inbound Parse.** POSTea el correo como
+`multipart/form-data` **con el cuerpo incluido**, en una sola petición; Deno lo lee con
+`req.formData()` nativo. Se descartó Resend porque su webhook no trae el cuerpo (ver Task 1
+Step 3) y habría hecho falta una segunda llamada autenticada con un secreto extra.
+
+Inbound Parse **no firma** sus POST, así que la autenticación queda en tres capas:
+
+1. `?s=<INBOUND_EMAIL_WEBHOOK_SECRET>` en la URL del webhook, comparado en **tiempo constante**.
+2. El token del alias en la dirección destino.
+3. El remitente original tiene que ser un banco conocido (lo valida el parser).
+
+Perder la firma no debilita el modelo de amenaza real: quien conozca el alias no ataca esta URL
+—le manda un correo al alias y el proveedor lo reenvía firmado igual—, así que contra eso
+protegen el token y la validación de remitente, presentes en ambas opciones.
+
 **Files:**
 - Create: `supabase/functions/inbound-email-detection/index.ts`
 
@@ -1168,15 +1183,25 @@ En el job `edge-functions`, agregar la línea:
           deno check supabase/functions/inbound-email-detection/index.ts
 ```
 
-- [ ] **Step 2: Configurar el proveedor (usuario)**
+- [ ] **Step 2: Configurar SendGrid Inbound Parse (usuario)**
 
-1. Crear la cuenta y añadir el dominio `darkmoney.company`.
-2. Registrar el webhook apuntando a la URL de la función con el secreto del Task 7.
+1. Crear la cuenta y verificar el dominio `darkmoney.company`.
+2. **Confirmar que Inbound Parse sigue incluido en el plan gratis** antes de tocar DNS.
+3. Generar un secreto largo y guardarlo como secreto de la función:
+   ```bash
+   # El valor NO se pega en el chat ni queda en el historial del shell.
+   npx supabase secrets set INBOUND_EMAIL_WEBHOOK_SECRET --project-ref cawrdzrcipgibcoefltr
+   ```
+4. En Inbound Parse, apuntar el webhook a:
+   `https://cawrdzrcipgibcoefltr.supabase.co/functions/v1/inbound-email-detection?s=<ese-secreto>`
+
+   El secreto viaja en la URL porque Inbound Parse no firma sus POST. Va en query string, no en
+   el path, y **no debe registrarse en logs**.
 
 - [ ] **Step 3: Añadir los MX en Vercel DNS (usuario)**
 
-Los que indique el proveedor. **No tocar** los registros A ni los TXT existentes: el sitio y los
-universal links dependen de ellos.
+`mx.sendgrid.net` con prioridad `10`. **No tocar** los registros A ni los TXT existentes: el
+sitio y los universal links dependen de ellos.
 
 - [ ] **Step 4: Crear el filtro en Gmail (usuario)**
 
