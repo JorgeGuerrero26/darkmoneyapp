@@ -37,6 +37,7 @@ Sin muestras reales el parser es adivinanza. Y los límites del plan gratis debe
 
 **Files:**
 - Create: `supabase/functions/inbound-email-detection/__tests__/fixtures/README.md`
+- Create: `supabase/functions/inbound-email-detection/__tests__/fixtures/emails.ts`
 
 - [ ] **Step 1: Pedir al usuario 3 correos reales**
 
@@ -48,24 +49,99 @@ Sin muestras reales el parser es adivinanza. Y los límites del plan gratis debe
 | "Realizaste una transferencia … entre mis cuentas" | No estaba en ningún verbo → se descartaba en silencio. Es `transfer`, no gasto. Corregido en Task 4. |
 | Cuerpo con campos tabulados: `Empresa\tCINEPLANET`, `Número de operación\t761119`, `Total del consumo\tS/ 52.50` | Parsear el campo estructurado en vez de la prosa (Task 5) y usar el número de operación como clave de dedupe (Task 6). |
 
-**Falta Yape.** Pedir el **texto plano** de:
-1. Un pago con Yape (verificar también el dominio real del remitente).
-2. Un ingreso (alguien le envió dinero).
+**Yape: ya capturado (2026-07-28).** Confirmó que el patrón supuesto también estaba mal:
 
-- [ ] **Step 2: Anonimizar y guardar como fixtures**
+| Hallazgo | Efecto en el plan |
+|---|---|
+| Remitente real: `notificaciones@yape.pe` | Se suponía `@yape.com.pe`. Rechazaba **todos** los correos de Yape. |
+| Yape abrevia `Nº de operación`; BCP escribe `Número de operación` | `extractOperationNumber` solo veía la forma larga → Yape se quedaba sin clave de dedupe estable. |
+| Yape no tiene campo `Empresa`; el dato bueno es `Nombre del Beneficiario` | La descripción salía vacía. La resolución pasa a ser una lista ordenada de campos tabulados. |
+| El aviso legal ("En nuestras comunicaciones…") arranca en el **carácter 418**, con la ventana en 400 | 18 caracteres de margen. Se corta en el marcador del aviso; la ventana queda como segundo cinturón. |
 
-Reemplazar nombres propios, números de tarjeta y correos por valores ficticios. **Conservar
-intactos** el formato del monto, los verbos y la estructura, que es lo que el parser lee.
+**Sigue faltando un ingreso** (alguien te envía dinero). Los cuatro correos capturados son de
+salida, así que la rama `income` del clasificador no está verificada contra nada real.
+
+- [ ] **Step 1b: Guardar los fixtures**
+
+Crear `supabase/functions/inbound-email-detection/__tests__/fixtures/emails.ts`. Se conserva
+la estructura exacta —tabulaciones, orden de campos, redacción— y se sustituyen nombres y
+números de operación por valores ficticios:
+
+```ts
+import type { ReceiptEmail } from "../../logic.ts";
+
+export const BCP_CONSUMO: ReceiptEmail = {
+  from: "notificaciones@notificacionesbcp.com.pe",
+  subject: "Constancia de consumo",
+  text: [
+    "Hola Nombre Ficticio,",
+    "Realizaste un consumo de S/ 52.50 con tu Tarjeta de Débito BCP en CINEPLANET.",
+    "Empresa\tCINEPLANET",
+    "Número de operación\t100001",
+  ].join("\n"),
+};
+
+export const BCP_TRANSFERENCIA: ReceiptEmail = {
+  from: "notificaciones@notificacionesbcp.com.pe",
+  subject: "Constancia de transferencia",
+  text: [
+    "Hola Nombre Ficticio,",
+    "Realizaste una transferencia de S/ 110.00 desde tu Clasica.",
+    "Operación realizada\tTransferencia entre mis cuentas",
+    "Número de operación\t100002",
+  ].join("\n"),
+};
+
+// El aviso legal del final NO se recorta: es justo lo que el extractor debe aprender a
+// ignorar, y su posición (carácter ~418) es la que dejaba solo 18 de margen.
+export const YAPE_ENVIADO: ReceiptEmail = {
+  from: "notificaciones@yape.pe",
+  subject: "Por tu seguridad, te notificaremos por cada yapeo que realices",
+  text: [
+    "¡Hola, Nombre F*!",
+    "",
+    "¡Acabas de yapear exitosamente!",
+    "",
+    "Monto de yapeo*",
+    "",
+    "S/\t180.00",
+    "Yapero\tNombre F*",
+    "Tu número de celular\tXXXXXXXXX000",
+    "Fecha y Hora de la operación\t27 julio 2026 - 08:29 p. m.",
+    "Celular del Beneficiario\tXXXXXXXXX111",
+    "Nombre del Beneficiario\tBeneficiario F*",
+    "Nº de operación\t100003",
+    "*Por tu seguridad, te notificaremos por cada",
+    "yapeo que realices.",
+    "",
+    "Banner promocional",
+    "Yape contáctanos",
+    "Juntos somos más seguros",
+    "En nuestras comunicaciones nunca incluiremos links a otras páginas, archivos adjuntos,",
+    "ni solicitaremos tus datos personales o información de tus cuentas.",
+    "Para cualquier consulta, no respondas a este correo.",
+    "Si no deseas recibir la confirmación de tus yapeos por correo, presiona el siguiente enlace:",
+  ].join("\n"),
+};
+```
+
+- [ ] **Step 2: Documentar la regla de anonimización**
 
 Crear `supabase/functions/inbound-email-detection/__tests__/fixtures/README.md`:
 
 ```markdown
 # Fixtures de correos
 
-Correos reales ANONIMIZADOS. Se conserva el formato del monto, los verbos y la estructura;
-se reemplazan nombres, números de tarjeta y correos.
+Correos reales ANONIMIZADOS. Se conserva **intacta** la estructura que el parser lee
+—tabulaciones, orden de los campos, redacción de los verbos, formato del monto, avisos
+legales del pie— y se reemplazan nombres, celulares, números de tarjeta, números de
+operación y correos por valores ficticios.
 
 NUNCA subir un correo sin anonimizar: traen datos financieros reales.
+
+Cada fixture agregado acá salió de un correo que rompió una suposición del parser. Si
+agregas un banco, captura primero el correo real: los dos remitentes que parecían obvios
+(`@bcp.com.pe`, `@yape.com.pe`) resultaron equivocados y descartaban el 100% del tráfico.
 ```
 
 - [ ] **Step 3: Verificar Resend Inbound**
@@ -77,7 +153,7 @@ Inbound Parse y ajustar solo el verificador de firma y la extracción de campos 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add supabase/functions/inbound-email-detection/__tests__/fixtures/README.md
+git add supabase/functions/inbound-email-detection/__tests__/fixtures/
 git commit -m "docs(inbound-email): fixtures de correos anonimizados"
 ```
 
@@ -361,61 +437,72 @@ git commit -m "feat(inbound-email): clasificacion ingreso/gasto portada de Andro
 
 Sustituir los cuerpos por los **fixtures reales anonimizados** del Task 1.
 
+Los cuatro primeros casos son **correos reales anonimizados** (fixtures del Task 1). Cada uno
+cubre un defecto que los patrones supuestos tenían antes de verlos.
+
 ```ts
 import { parseReceiptEmail } from "../logic";
+import { BCP_CONSUMO, BCP_TRANSFERENCIA, YAPE_ENVIADO } from "./fixtures/emails";
 
 describe("parseReceiptEmail", () => {
-  it("parsea un yapeo de salida", () => {
-    const result = parseReceiptEmail({
-      from: "no-reply@yape.com.pe",
-      subject: "Constancia de Yapeo",
-      text: "Yapeo exitoso\nMonto: S/ 25.00\nPara: Juan P.",
-    });
-    expect(result).toMatchObject({
+  it("parsea un yapeo de salida (correo real)", () => {
+    // El remitente real es @yape.pe, NO @yape.com.pe.
+    // La descripción sale de "Nombre del Beneficiario": Yape no trae campo "Empresa".
+    expect(parseReceiptEmail(YAPE_ENVIADO)).toMatchObject({
       movementType: "expense",
-      amount: 25,
+      amount: 180,
       currencyCode: "PEN",
+      description: "Beneficiario F*",
       financialAppKey: "yape_email",
     });
   });
 
-  it("parsea un consumo con tarjeta BCP", () => {
-    const result = parseReceiptEmail({
-      from: "notificaciones@bcp.com.pe",
-      subject: "Constancia de consumo",
-      text: "Realizaste un consumo con tu tarjeta por S/ 65.65 en ALIEXPRESS.",
-    });
-    expect(result).toMatchObject({
+  it("parsea un consumo con tarjeta BCP (correo real)", () => {
+    // El remitente real es @notificacionesbcp.com.pe, NO @bcp.com.pe.
+    // La descripción sale del campo tabulado "Empresa", sin el punto final.
+    expect(parseReceiptEmail(BCP_CONSUMO)).toMatchObject({
       movementType: "expense",
-      amount: 65.65,
+      amount: 52.5,
+      description: "CINEPLANET",
       financialAppKey: "bcp_email",
     });
   });
 
-  it("ignora remitentes desconocidos aunque traigan monto", () => {
+  it("trata la transferencia entre cuentas propias como transfer (correo real)", () => {
+    // Contarla como gasto bajaría el patrimonio por mover dinero de un bolsillo a otro.
+    expect(parseReceiptEmail(BCP_TRANSFERENCIA)).toMatchObject({
+      movementType: "transfer",
+      amount: 110,
+      description: "Transferencia BCP",
+    });
+  });
+
+  it("no deja que el aviso legal del pie se cuele como comercio", () => {
+    // En el correo real de Yape el aviso arranca en el carácter 418 y la ventana era 400:
+    // 18 de margen. Este caso lo empuja dentro de la ventana a propósito.
+    const result = parseReceiptEmail({
+      from: "notificaciones@yape.pe",
+      subject: "Constancia",
+      text: "Yapeo exitoso por S/ 30.00.\nEn nuestras comunicaciones nunca incluiremos links.",
+    });
+    expect(result?.description).not.toContain("comunicaciones");
+  });
+
+  it("ignora remitentes desconocidos aunque traigan monto y verbo", () => {
+    // Un dominio parecido no basta: es la defensa contra sugerencias inyectadas.
     expect(parseReceiptEmail({
-      from: "promos@tienda.com",
-      subject: "Oferta",
-      text: "Llévatelo por S/ 99.00",
+      from: "atacante@yape-falso.pe",
+      subject: "Constancia de Yapeo",
+      text: "¡Acabas de yapear exitosamente!\nS/\t9999.00",
     })).toBeNull();
   });
 
   it("ignora correos del banco sin verbo de operación", () => {
     expect(parseReceiptEmail({
-      from: "notificaciones@bcp.com.pe",
+      from: "notificaciones@notificacionesbcp.com.pe",
       subject: "Estado de cuenta",
       text: "Tu estado de cuenta de S/ 1,000.00 ya está disponible.",
     })).toBeNull();
-  });
-
-  it("no toma el disclaimer de BCP como comercio", () => {
-    const result = parseReceiptEmail({
-      from: "notificaciones@bcp.com.pe",
-      subject: "Constancia",
-      text: "Pagaste S/ 30.00 en RENIEC. Participa en sorteos o promociones exclusivas.",
-    });
-    expect(result?.description).toContain("RENIEC");
-    expect(result?.description).not.toContain("sorteos");
   });
 });
 ```
@@ -443,25 +530,48 @@ export type ParsedReceipt = {
 /**
  * Remitentes aceptados. Cualquier otro se ignora aunque traiga un monto.
  *
- * OJO: el dominio real de BCP es `notificacionesbcp.com.pe`, NO `bcp.com.pe`. Verificado
- * contra correos reales: con `/@bcp\.com\.pe$/` se descartaban TODOS los correos del banco.
- * Confirmar el remitente de Yape con un correo real antes de darlo por bueno.
+ * Los dos dominios están verificados contra correos reales y NINGUNO era el que parecía
+ * obvio: BCP usa `notificacionesbcp.com.pe` (no `bcp.com.pe`) y Yape usa `yape.pe`
+ * (no `yape.com.pe`). Con los dominios supuestos se descartaba el 100% de los correos.
+ * Antes de agregar otro banco, confirmar su remitente con un correo real.
  */
 const KNOWN_SENDERS: { match: RegExp; financialAppKey: string; appLabel: string }[] = [
-  { match: /@(notificaciones)?yape\.com\.pe$/i, financialAppKey: "yape_email", appLabel: "Yape" },
+  { match: /@(notificaciones)?yape\.pe$/i, financialAppKey: "yape_email", appLabel: "Yape" },
   { match: /@notificacionesbcp\.com\.pe$/i, financialAppKey: "bcp_email", appLabel: "BCP" },
 ];
 
 /**
- * El disclaimer de BCP ("participa en sorteos o promociones") contamina la descripción si se
- * lee el correo completo. Se corta la ventana igual que en Android.
+ * Los avisos legales del pie ("En nuestras comunicaciones…", "participa en sorteos o
+ * promociones") están llenos de "en …" que el extractor de prosa confunde con un comercio.
+ *
+ * Recortar a 400 caracteres NO basta, y hay evidencia: en el correo real de Yape el aviso
+ * empieza en el carácter 418. Dieciocho de margen. Una frase más en la plantilla del banco y
+ * la descripción del movimiento pasaría a ser "nuestras comunicaciones nunca incluiremos
+ * links". Por eso se corta en el marcador y la ventana queda solo como segundo cinturón.
  */
+const DISCLAIMER =
+  /\b(en nuestras comunicaciones|juntos somos m[áa]s seguros|por tu seguridad, te notificaremos|si no deseas recibir|para cualquier consulta|sorteos o promociones)/i;
 const DESCRIPTION_WINDOW = 400;
 
 /**
- * Los correos de BCP traen el comercio en un campo estructurado ("Empresa\tCINEPLANET"), que
- * es más fiable que rascar la prosa. Se intenta ese primero y se cae al texto libre.
- *
+ * Campos tabulados, en orden de preferencia. Son mucho más fiables que la prosa y cada banco
+ * usa el suyo: BCP pone el comercio en "Empresa", Yape pone la persona en "Nombre del
+ * Beneficiario". Agregar un banco nuevo suele ser agregar una línea acá.
+ */
+const STRUCTURED_DESCRIPTION = [
+  /^\s*Empresa\s*[\t:]\s*(.+)$/im,
+  /^\s*Nombre del Beneficiario\s*[\t:]\s*(.+)$/im,
+];
+
+function cleanDescription(raw: string): string {
+  return raw
+    .trim()
+    .replace(/\s{2,}/g, " ")
+    .replace(/[.,;]+$/, "") // "CINEPLANET." -> "CINEPLANET"
+    .slice(0, 80);
+}
+
+/**
  * En una transferencia NO se busca comercio: no hay ninguno, y el extractor termina agarrando
  * palabras sueltas del cuerpo. Misma regla que ya aplica el detector de Android.
  */
@@ -473,24 +583,24 @@ function buildDescription(
 ): string {
   if (movementType === "transfer") return `Transferencia ${appLabel}`;
 
-  const structured = /^\s*Empresa\s*[\t:]\s*(.+)$/im.exec(text);
-  const window = text.slice(0, DESCRIPTION_WINDOW);
-  const prose = /\ben\s+([A-Za-zÁÉÍÓÚÑáéíóúñ0-9 .*&-]{3,40})/.exec(window);
-  const raw = structured?.[1] ?? prose?.[1] ?? subject;
-  return raw
-    .trim()
-    .replace(/\s{2,}/g, " ")
-    .replace(/[.,;]+$/, "") // "CINEPLANET." -> "CINEPLANET"
-    .slice(0, 80);
+  for (const pattern of STRUCTURED_DESCRIPTION) {
+    const hit = pattern.exec(text)?.[1]?.trim();
+    if (hit) return cleanDescription(hit);
+  }
+
+  const cut = text.search(DISCLAIMER);
+  const body = (cut >= 0 ? text.slice(0, cut) : text).slice(0, DESCRIPTION_WINDOW);
+  const prose = /\ben\s+([A-Za-zÁÉÍÓÚÑáéíóúñ0-9 .*&-]{3,40})/.exec(body);
+  return cleanDescription(prose?.[1] ?? subject);
 }
 
 /**
- * BCP numera cada operación ("Número de operación: 761119"). Es más estable que el Message-ID:
- * si el mismo correo llega dos veces con IDs distintos (reenvío manual + filtro), esto lo
- * deduplica igual.
+ * Los dos bancos numeran cada operación, pero la escriben distinto: BCP pone "Número de
+ * operación" y Yape abrevia "Nº de operación". Es más estable que el Message-ID: si el mismo
+ * correo llega dos veces con IDs distintos (reenvío manual + filtro), esto lo deduplica igual.
  */
 export function extractOperationNumber(text: string): string | null {
-  const match = /N[úu]mero de operaci[óo]n\s*[\t:]\s*([0-9]{4,})/i.exec(text);
+  const match = /N(?:[úu]mero|[ºo°]|ro\.?)\s*de operaci[óo]n\s*[\t:]\s*([0-9]{4,})/i.exec(text);
   return match?.[1] ?? null;
 }
 
@@ -913,9 +1023,11 @@ En `app/settings.tsx`, dentro del `ScrollView` y junto a las demás `<Card>`:
           showToast("Dirección copiada", "success");
         }}
       />
+      {/* Los dominios van completos y son los reales: Yape usa yape.pe (NO yape.com.pe),
+          y un filtro con el dominio equivocado no reenvía nada, en silencio. */}
       <Text style={styles.inboundHelp}>
         En Gmail: Configuración › Filtros › Crear filtro con{"\n"}
-        De: bcp.com.pe OR yape.com.pe{"\n"}
+        De: notificacionesbcp.com.pe OR yape.pe{"\n"}
         Acción: Reenviar a esta dirección{"\n"}
         Gmail te pedirá confirmar el reenvío una vez.
       </Text>
@@ -1050,10 +1162,16 @@ universal links dependen de ellos.
 
 - [ ] **Step 4: Crear el filtro en Gmail (usuario)**
 
-Filtro: `de:(bcp.com.pe OR yape.com.pe)` → **Reenviar a** la dirección de la tarjeta de
-Configuración. Gmail envía un correo de verificación a esa dirección: como aún no hay buzón,
-usar la opción de reenvío que muestra el código en el propio Gmail, o autorizar desde el enlace
-que registre el proveedor.
+Filtro: `de:(notificacionesbcp.com.pe OR yape.pe)` → **Reenviar a** la dirección de la tarjeta
+de Configuración.
+
+Los dominios tienen que ser estos, verificados contra correos reales. `yape.com.pe` **no**
+matchea `yape.pe`, y el modo de fallo es el peor posible: el filtro se crea sin error, no
+reenvía nada nunca, y el resto del sistema parece sano mientras no llega ni una sugerencia.
+
+Gmail envía un correo de verificación a esa dirección: como aún no hay buzón, usar la opción de
+reenvío que muestra el código en el propio Gmail, o autorizar desde el enlace que registre el
+proveedor.
 
 - [ ] **Step 5: Verificación E2E**
 
