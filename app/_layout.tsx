@@ -19,6 +19,7 @@ import {
 import { COLORS } from "../constants/theme";
 import { AuthProvider, useAuth } from "../lib/auth-context";
 import { logWarn } from "../lib/error-logger";
+import { markStartupReady } from "../lib/startup-timing";
 import { queryClient, queryPersistOptions } from "../lib/query-client";
 import { supabase } from "../lib/supabase";
 import { WorkspaceProvider, useWorkspace } from "../lib/workspace-context";
@@ -345,6 +346,15 @@ function NotificationSetup() {
       )
     );
 
+  // Instrumentación: el cierre del overlay es el momento en que la app es usable (mientras
+  // está arriba no acepta toques). Se registra una sola vez por sesión para poder ver en
+  // app_error_logs si el arranque lo domina la red, el JS o el render — y optimizar con
+  // datos. Solo cuenta si hubo sesión: sin login no hay bootstrap que medir.
+  useEffect(() => {
+    if (showWorkspaceBootstrapOverlayRaw || !hasSignedInSession) return;
+    markStartupReady("ready", { online: onlineManager.isOnline() });
+  }, [showWorkspaceBootstrapOverlayRaw, hasSignedInSession]);
+
   // Válvula de escape: el overlay bloquea TODO el touch (pointerEvents="auto"). Si una
   // query se cuelga (red lenta/caída) el usuario quedaba encerrado sin poder tocar nada
   // y debía forzar el cierre desde el sistema. Tras el timeout se libera la UI y las
@@ -372,6 +382,9 @@ function NotificationSetup() {
         online: onlineManager.isOnline(),
         queries: queryStates.join(" "),
       });
+      // También cuenta como "usable" (la UI se libera), pero marcado como timeout para
+      // distinguir un arranque sano de uno rescatado por la válvula.
+      markStartupReady("timeout", { online: onlineManager.isOnline(), queries: queryStates.join(" ") });
       setBootstrapOverlayTimedOut(true);
     }, BOOTSTRAP_OVERLAY_MAX_MS);
     return () => clearTimeout(timer);
