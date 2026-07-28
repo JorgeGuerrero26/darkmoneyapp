@@ -47,6 +47,7 @@ import { useUiStore } from "../../store/ui-store";
 import { useToast } from "../../hooks/useToast";
 import { useNotificationReason } from "../../hooks/useNotificationReason";
 import { useOriginBackNavigation } from "../../hooks/useOriginBackNavigation";
+import { IOS_FLOATING_TAB_BAR_SPACE } from "../../constants/floating-tab-bar";
 import { useBudgetScopeMovementsQuery } from "../../services/queries/budget-analytics";
 import { useWorkspaceSnapshotQuery } from "../../services/queries/workspace-data";
 import {
@@ -503,7 +504,7 @@ function BudgetsScreen() {
       }
       fab={
         !selectMode ? (
-          <FAB onPress={() => { setEditBudget(null); setFormVisible(true); }} bottom={insets.bottom + 16} />
+          <FAB onPress={() => { setEditBudget(null); setFormVisible(true); }} bottom={insets.bottom + 16 + IOS_FLOATING_TAB_BAR_SPACE} />
         ) : null
       }
       overlays={

@@ -60,6 +60,7 @@ import { groupMovementsByDate, type MovementListSection } from "../../features/m
 import { useMovementsRealtimeSync } from "../../features/movements/hooks/useMovementsRealtimeSync";
 import { buildExchangeRateMap, resolveRate } from "../../features/dashboard/lib/aggregations";
 import { SPACING } from "../../constants/theme";
+import { IOS_FLOATING_TAB_BAR_SPACE } from "../../constants/floating-tab-bar";
 
 const MOVEMENTS_CURRENCY_KEY = "darkmoney.movements.displayCurrency";
 
@@ -996,7 +997,7 @@ function MovementsScreen() {
                 setFormVisible(true);
               }}
               onLongPress={() => setQuickAddSheetVisible(true)}
-              bottom={insets.bottom + 16}
+              bottom={insets.bottom + 16 + IOS_FLOATING_TAB_BAR_SPACE}
               accessibilityLabel="Nuevo movimiento"
               accessibilityHint="Mantén presionado para elegir tipo (gasto, ingreso o transferencia)"
             />

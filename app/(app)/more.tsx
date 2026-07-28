@@ -15,6 +15,7 @@ import { Card } from "../../components/ui/Card";
 import { Badge } from "../../components/ui/Badge";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING, SURFACE } from "../../constants/theme";
+import { IOS_FLOATING_TAB_BAR_SPACE } from "../../constants/floating-tab-bar";
 
 type MenuItem = {
   Icon: LucideIcon;
@@ -107,7 +108,14 @@ export default function MoreScreen() {
     <View style={[styles.screen, { paddingTop: insets.top }]}>
       <ScreenHeader title="Más" />
 
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView
+        contentContainerStyle={[
+          styles.content,
+          // La píldora flotante de iOS se dibuja sobre el contenido: hay que despejar el
+          // safe area + su franja, o el botón de cerrar sesión queda debajo del vidrio.
+          { paddingBottom: insets.bottom + IOS_FLOATING_TAB_BAR_SPACE + SPACING.lg },
+        ]}
+      >
         {menuItems.map((item) => (
           <Card
             key={item.route}

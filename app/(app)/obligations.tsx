@@ -49,6 +49,7 @@ import { ResourceContextNote } from "../../components/ui/ResourceContextNote";
 import { HeaderActionGroup } from "../../components/ui/HeaderActionGroup";
 import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTemplate";
 import { COLORS } from "../../constants/theme";
+import { IOS_FLOATING_TAB_BAR_SPACE } from "../../constants/floating-tab-bar";
 import { shareCsvAsFile } from "../../lib/share-csv-file";
 import { ObligationFilterBar } from "../../features/obligations/components/ObligationFilterBar";
 import { ObligationList } from "../../features/obligations/components/ObligationList";
@@ -657,7 +658,7 @@ function ObligationsScreen() {
             onCreateFirst={() => setCreateFormVisible(true)}
           />
         }
-        fab={!selectMode ? <FAB onPress={() => setCreateFormVisible(true)} bottom={insets.bottom + 16} /> : null}
+        fab={!selectMode ? <FAB onPress={() => setCreateFormVisible(true)} bottom={insets.bottom + 16 + IOS_FLOATING_TAB_BAR_SPACE} /> : null}
         overlays={
           <>
             <ObligationForm

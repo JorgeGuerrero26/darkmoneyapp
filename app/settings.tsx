@@ -47,6 +47,7 @@ import { ResourceModuleTemplate } from "../components/ui/ResourceModuleTemplate"
 import { ScreenHeader } from "../components/layout/ScreenHeader";
 import { useToast } from "../hooks/useToast";
 import { COLORS, EXTENDED_PALETTE, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../constants/theme";
+import { IOS_FLOATING_TAB_BAR_SPACE } from "../constants/floating-tab-bar";
 import { DEFAULT_EXCHANGE_CURRENCY, normalizeSupportedCurrencyCode } from "../constants/currencies";
 import type { WorkspaceRole } from "../types/domain";
 import { SafeBlurView } from "../components/ui/SafeBlurView";
@@ -398,7 +399,14 @@ function SettingsScreen() {
       context={<ResourceContextNote>Administra perfil, workspaces, seguridad y preferencias del dispositivo.</ResourceContextNote>}
       list={
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : "height"}>
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          contentContainerStyle={[
+            styles.content,
+            // Despeja el safe area + la franja de la píldora flotante de iOS.
+            { paddingBottom: insets.bottom + IOS_FLOATING_TAB_BAR_SPACE + SPACING.xxxl },
+          ]}
+          keyboardShouldPersistTaps="handled"
+        >
 
           {/* Profile */}
           <Card>

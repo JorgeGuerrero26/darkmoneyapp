@@ -77,6 +77,7 @@ import { MovementForm } from "../../components/forms/MovementForm";
 import { BottomSheet } from "../../components/ui/BottomSheet";
 import { WorkspaceSelector } from "../../components/layout/WorkspaceSelector";
 import { COLORS, ELEVATION, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
+import { IOS_FLOATING_TAB_BAR_SPACE } from "../../constants/floating-tab-bar";
 import { FAB } from "../../components/ui/FAB";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { DayMovementsSheet, type DaySheetMode } from "../../components/dashboard/DayMovementsSheet";
@@ -876,7 +877,7 @@ function DashboardScreen() {
         )}
       </ScrollView>
 
-      <FAB onPress={() => setFormVisible(true)} bottom={insets.bottom + 16} />
+      <FAB onPress={() => setFormVisible(true)} bottom={insets.bottom + 16 + IOS_FLOATING_TAB_BAR_SPACE} />
 
       <MovementForm
         visible={formVisible}
@@ -944,7 +945,8 @@ import { dashboardSimpleStyles as subStyles } from "../../features/dashboard/com
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: COLORS.canvas },
-  content: { padding: SPACING.lg, gap: SPACING.xl, paddingBottom: 100 },
+  // paddingBottom deja libre la franja de la barra flotante de iOS (0 en Android).
+  content: { padding: SPACING.lg, gap: SPACING.xl, paddingBottom: 100 + IOS_FLOATING_TAB_BAR_SPACE },
 });
 
 // --- Dashboard header right actions -------------------------------------------
