@@ -1045,9 +1045,13 @@ export default function RootLayout() {
                 <DisplayCurrencyProvider>
                 <ToastProvider>
                   <ErrorBoundary>
-                    <OfflineBanner />
                     <NotificationSetup />
                     <NavigationGuard />
+                    {/* Va DESPUÉS de NavigationGuard, que es quien monta el Stack: flota sobre
+                        el contenido, y los hermanos posteriores se pintan encima. Cuando estaba
+                        primero, la navegación lo tapaba. Antes de AppSplash y BiometricLock a
+                        propósito, para que esos sí lo cubran. */}
+                    <OfflineBanner />
                     <AppSplash />
                     <BiometricLock />
                     <SuccessGlow />

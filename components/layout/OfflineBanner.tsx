@@ -1,39 +1,52 @@
 import { useEffect, useRef, useState } from "react";
-import { Animated, StyleSheet, Text } from "react-native";
+import { ActivityIndicator, Animated, StyleSheet, Text, View } from "react-native";
 import { useIsFetching } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { CloudOff } from "lucide-react-native";
 import { useNetworkStatus } from "../../hooks/useNetworkStatus";
-import { COLORS, FONT_SIZE, SPACING, SURFACE } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING } from "../../constants/theme";
+import { SafeBlurView } from "../ui/SafeBlurView";
 
-const BANNER_HEIGHT = 32;
 /**
- * Tiempo con peticiones en vuelo antes de admitir que la red va lenta. 8 s y no menos:
- * un arranque en frío normal dispara varias queries a la vez y con 6 s el aviso salía
- * casi siempre, convirtiéndose en ruido.
+ * Tiempo esperando algo que el usuario SÍ está mirando antes de admitir que la red va lenta.
  */
 const SLOW_AFTER_MS = 8000;
+
+/**
+ * Una query "bloquea" al usuario solo si aún no tiene datos que mostrar. Una refetch en
+ * segundo plano de algo ya visible no bloquea nada y no debe disparar el aviso.
+ */
+export function isBlockingQuery(query: { state: { data: unknown } }): boolean {
+  return query.state.data === undefined;
+}
 
 export function OfflineBanner() {
   const { isConnected } = useNetworkStatus();
   const insets = useSafeAreaInsets();
 
-  // "Sin conexión" no cubre el caso real que sufre el usuario: hay red pero las peticiones
-  // se arrastran (o los sockets murieron al cambiar de WiFi a datos). Si algo lleva
-  // demasiado tiempo cargando, se avisa en vez de dejar spinners mudos.
-  const fetching = useIsFetching();
-  const isFetchingSomething = fetching > 0;
+  /**
+   * Solo cuentan las queries que están cargando y **todavía no tienen datos**: son las que le
+   * dejan un esqueleto en pantalla.
+   *
+   * Con `useIsFetching()` a secas el aviso era un falso positivo constante: cuenta también las
+   * refetch en segundo plano de datos ya visibles, así que bastaba una query de fondo para que
+   * a los 8 s saliera "conexión lenta" con el dashboard entero ya cargado y 143 Mbps de fibra.
+   * El ancho de banda nunca fue el problema: la señal medía lo que no debía.
+   */
+  const blockingFetches = useIsFetching({ predicate: isBlockingQuery });
+  const isBlocked = blockingFetches > 0;
   const [isSlow, setIsSlow] = useState(false);
 
   useEffect(() => {
-    if (!isFetchingSomething) {
+    if (!isBlocked) {
       setIsSlow(false);
       return;
     }
-    // Solo depende del booleano: así el temporizador no se reinicia cada vez que entra o
-    // sale una query de la tanda.
+    // Solo depende del booleano: así el temporizador no se reinicia cada vez que entra o sale
+    // una query de la tanda.
     const timer = setTimeout(() => setIsSlow(true), SLOW_AFTER_MS);
     return () => clearTimeout(timer);
-  }, [isFetchingSomething]);
+  }, [isBlocked]);
 
   const visible = !isConnected || isSlow;
   const anim = useRef(new Animated.Value(visible ? 1 : 0)).current;
@@ -41,55 +54,73 @@ export function OfflineBanner() {
   useEffect(() => {
     Animated.timing(anim, {
       toValue: visible ? 1 : 0,
-      duration: 280,
-      useNativeDriver: false,
+      duration: 260,
+      useNativeDriver: true,
     }).start();
   }, [visible, anim]);
 
-  // El banner vive en el flujo, arriba del contenido, y arranca en el borde superior de la
-  // pantalla: sin el inset su texto quedaba DEBAJO de la barra de estado y se leía cortado.
-  const height = anim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, BANNER_HEIGHT + insets.top],
-  });
-
-  const opacity = anim.interpolate({
-    inputRange: [0, 0.5, 1],
-    outputRange: [0, 0.7, 1],
-  });
+  // Flota sobre el contenido en vez de empujarlo: antes vivía en el flujo y su aparición
+  // desplazaba toda la pantalla hacia abajo, que es lo que lo hacía ver pegado con cinta.
+  const translateY = anim.interpolate({ inputRange: [0, 1], outputRange: [-16, 0] });
 
   return (
-    <Animated.View
-      style={[
-        styles.banner,
-        !isConnected ? styles.offline : styles.slow,
-        { height, opacity, paddingTop: insets.top },
-      ]}
+    <View
+      pointerEvents="none"
+      style={[styles.overlay, { top: insets.top + SPACING.sm }]}
     >
-      <Text style={[styles.text, isConnected && styles.slowText]} numberOfLines={1}>
-        {!isConnected
-          ? "Sin conexión — algunos datos pueden estar desactualizados"
-          : "Conexión lenta — seguimos intentando…"}
-      </Text>
-    </Animated.View>
+      <Animated.View style={[styles.pill, { opacity: anim, transform: [{ translateY }] }]}>
+        <SafeBlurView
+          intensity={26}
+          tint="dark"
+          fallbackColor="rgba(7,11,20,0.92)"
+          style={StyleSheet.absoluteFillObject}
+        />
+        <View style={styles.pillTint} />
+        {isConnected ? (
+          <ActivityIndicator size="small" color={COLORS.storm} />
+        ) : (
+          <CloudOff size={14} color={COLORS.warning} />
+        )}
+        <Text style={styles.text} numberOfLines={1}>
+          {isConnected ? "La red va lenta…" : "Sin conexión"}
+        </Text>
+      </Animated.View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  banner: {
-    paddingHorizontal: SPACING.lg,
+  overlay: {
+    position: "absolute",
+    left: 0,
+    right: 0,
     alignItems: "center",
-    justifyContent: "center",
+    zIndex: 130,
+  },
+  pill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.sm,
+    borderRadius: RADIUS.full,
     overflow: "hidden",
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: "rgba(7,11,20,0.92)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.26,
+    shadowRadius: 18,
+    elevation: 12,
   },
-  // Sin conexión es un problema; red lenta es solo información, por eso no usa el amarillo
-  // de alerta (si no, cada arranque en 3G parecería un error).
-  offline: { backgroundColor: COLORS.warning },
-  slow: { backgroundColor: SURFACE.card },
+  pillTint: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(5,7,11,0.26)",
+  },
   text: {
-    color: "#000000",
+    color: COLORS.ink,
+    fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.xs,
-    fontWeight: "600",
   },
-  slowText: { color: COLORS.storm },
 });
