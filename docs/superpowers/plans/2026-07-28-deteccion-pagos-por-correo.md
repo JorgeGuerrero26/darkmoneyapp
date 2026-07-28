@@ -144,11 +144,29 @@ agregas un banco, captura primero el correo real: los dos remitentes que parecí
 (`@bcp.com.pe`, `@yape.com.pe`) resultaron equivocados y descartaban el 100% del tráfico.
 ```
 
-- [ ] **Step 3: Verificar Resend Inbound**
+- [x] **Step 3: Verificar Resend Inbound** — hecho 2026-07-28, y encontró un supuesto roto
 
-Confirmar en la documentación vigente: que Inbound existe en el plan gratis, el límite mensual,
-el formato del payload y **cómo se firma** el webhook. Si no está disponible, usar SendGrid
-Inbound Parse y ajustar solo el verificador de firma y la extracción de campos del Task 7.
+| Pregunta | Respuesta verificada |
+|---|---|
+| ¿Inbound en el plan gratis? | Sí: el plan gratis dice "Sending & **receiving**". El tope de 100/día es de *envío*. |
+| Evento del webhook | `email.received` |
+| Firma | **Svix**: headers `svix-id`, `svix-timestamp`, `svix-signature`; HMAC-SHA256 sobre `{id}.{timestamp}.{body}` con el body **crudo**. |
+| ¿El webhook trae el cuerpo? | **NO.** Textual: "Webhooks do not include the email body, headers, or attachments, only their metadata". Solo `email_id`, `from`, `to[]`, `cc[]`, `subject`, `message_id`, `created_at`, `attachments[]`. |
+
+**Esto invalida el supuesto del spec** ("entrega el correo ya parseado como JSON"). El monto y
+el comercio viven en el cuerpo, así que con Resend hace falta una **segunda llamada
+autenticada** para traerlo, con un secreto nuevo (`RESEND_API_KEY`) y un modo de fallo extra.
+
+En contraste, **SendGrid Inbound Parse sí POSTea el cuerpo completo** (`text` y `html`) en una
+sola petición, pero en `multipart/form-data` y **sin firma** propia — la autenticación queda en
+el secreto de la URL más el token del alias.
+
+> **Decisión pendiente del usuario antes del Task 7.** No se puede resolver leyendo docs: define
+> en qué proveedor abre cuenta y qué MX agrega. No pude confirmar en la documentación pública el
+> path exacto del endpoint que devuelve el cuerpo de un correo recibido en Resend; hay que
+> verificarlo en el dashboard antes de escribir ese fetch. **No inventar el endpoint.**
+>
+> Los Tasks 2 a 6 son independientes del proveedor y se pueden hacer ya.
 
 - [ ] **Step 4: Commit**
 
