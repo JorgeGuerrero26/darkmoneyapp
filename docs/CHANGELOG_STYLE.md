@@ -67,6 +67,22 @@ Esto se equivoca fácil y tiene consecuencias:
 
 Ver la sección *OTA updates* de `CLAUDE.md`.
 
+### Pendiente: 1.0.9 en el próximo binario
+
+Decidido el 2026-07-28. La entrada de 1.0.8 acumula varias mejoras enviadas por OTA, y el
+número se quedó quieto a propósito: bumpearlo sin construir binarios dejaría sin updates al
+iPhone, al Android y al APK del compañero, los tres con runtime `1.0.8`.
+
+**En el próximo build nativo hay que hacer las tres cosas juntas:**
+
+1. `version: "1.0.9"` y `versionCode: 10` en `app.json`.
+2. Entrada nueva `1.0.9` en `constants/changelog.ts`, moviendo a ella lo que se anunció como
+   1.0.8 pero salió después del binario 1.0.8 (detección de pagos por correo, el arreglo del
+   doble toque en *Guardar*, el aviso de conexión lenta).
+3. Los builds: `npm run build:android` y, para iOS, `docs/REINSTALL_IOS.md`.
+
+Si se bumpea la versión sin el paso 3, los dispositivos quedan congelados.
+
 ## Antes de cerrar
 
 - [ ] Ninguna línea contiene una palabra de la lista de prohibido.
