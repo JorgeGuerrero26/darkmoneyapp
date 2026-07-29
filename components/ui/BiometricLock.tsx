@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState, StyleSheet, Text, View } from "react-native";
 import { Fingerprint } from "lucide-react-native";
 import * as LocalAuthentication from "expo-local-authentication";
@@ -6,7 +6,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { useUiStore } from "../../store/ui-store";
 import { useAuth } from "../../lib/auth-context";
-import { logInfo } from "../../lib/error-logger";
+import { logInfo, logWarn } from "../../lib/error-logger";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { Button } from "./Button";
 import { SafeBlurView } from "./SafeBlurView";
@@ -37,6 +37,9 @@ export function BiometricLock() {
   const initialCheckDone = useRef(false);
   const prevUserIdRef = useRef<string | null>(null);
   const postLoginGraceUntilRef = useRef(0);
+  const authenticationInFlightRef = useRef(false);
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
+  const [authenticationError, setAuthenticationError] = useState("");
 
   // Login/registro en esta apertura (no sesión restaurada al arrancar): gracia para diálogos del sistema
   useEffect(() => {
@@ -55,21 +58,47 @@ export function BiometricLock() {
   // ── Helpers ────────────────────────────────────────────────────────────────
 
   const authenticate = useCallback(async () => {
-    const hasHardware = await LocalAuthentication.hasHardwareAsync();
-    const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+    // La propia hoja de Face ID cambia AppState inactive → active. Sin este guard,
+    // un segundo intento cancela al anterior y ambos quedan en un bucle de system_cancel.
+    if (authenticationInFlightRef.current) return;
+    authenticationInFlightRef.current = true;
+    setIsAuthenticating(true);
+    setAuthenticationError("");
 
-    if (!hasHardware || !isEnrolled) {
-      setBiometricLocked(false);
-      return;
+    try {
+      const hasHardware = await LocalAuthentication.hasHardwareAsync();
+      const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+
+      if (!hasHardware || !isEnrolled) {
+        setBiometricLocked(false);
+        return;
+      }
+
+      const result = await LocalAuthentication.authenticateAsync({
+        promptMessage: "Confirma tu identidad para acceder",
+        fallbackLabel: "Usar contraseña",
+        disableDeviceFallback: false,
+      });
+
+      if (result.success) {
+        setBiometricLocked(false);
+        return;
+      }
+
+      logWarn("biometric_lock", "authentication rejected", { error: result.error });
+      setAuthenticationError(
+        result.error === "user_cancel"
+          ? "Autenticación cancelada. Toca Desbloquear para intentar de nuevo."
+          : "No pudimos confirmar tu identidad. Intenta de nuevo.",
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logWarn("biometric_lock", "authentication failed", { error: message });
+      setAuthenticationError("No pudimos abrir la verificación. Intenta de nuevo.");
+    } finally {
+      authenticationInFlightRef.current = false;
+      setIsAuthenticating(false);
     }
-
-    const result = await LocalAuthentication.authenticateAsync({
-      promptMessage: "Confirma tu identidad para acceder",
-      fallbackLabel: "Usar contraseña",
-      disableDeviceFallback: false,
-    });
-
-    if (result.success) setBiometricLocked(false);
   }, [setBiometricLocked]);
 
   const requireReauth = useCallback(async () => {
@@ -134,8 +163,8 @@ export function BiometricLock() {
         const { isBiometricLocked: locked } = useUiStore.getState();
 
         if (locked) {
-          // Ya está bloqueada → volver a pedir biometría
-          void authenticate();
+          // La hoja biométrica también provoca este `active`. Relanzarla aquí crea dos
+          // LAContext que iOS cancela entre sí. Si el usuario canceló, reintenta con el botón.
           return;
         }
 
@@ -179,12 +208,20 @@ export function BiometricLock() {
           </Text>
         </View>
 
+        {authenticationError ? (
+          <Text accessibilityLiveRegion="polite" style={styles.authenticationError}>
+            {authenticationError}
+          </Text>
+        ) : null}
+
         {/* Acción */}
         <Button
           label="Desbloquear"
           variant="primary"
           size="lg"
           style={styles.btn}
+          loading={isAuthenticating}
+          loadingLabel="Verificando…"
           onPress={() => void authenticate()}
         />
       </View>
@@ -254,6 +291,13 @@ const styles = StyleSheet.create({
     fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.sm,
     color: COLORS.storm,
+    textAlign: "center",
+    lineHeight: 20,
+  },
+  authenticationError: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.rosewood,
     textAlign: "center",
     lineHeight: 20,
   },
