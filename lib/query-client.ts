@@ -8,6 +8,7 @@ import { AppState } from "react-native";
 import { logError, logWarn } from "./error-logger";
 import { supabase } from "./supabase";
 import { isAuthLikeError } from "./auth-error";
+import { resolveNetworkTransport } from "./network-transport";
 
 /**
  * Tiers estandarizados de staleTime para React Query.
@@ -25,23 +26,23 @@ export const STALE = {
 // pausa queries pendientes y mutations (networkMode default "online" en v5).
 // Cuando vuelve la red, React Query reanuda automaticamente lo que estaba en cola.
 // Evita reintentos en vano que gastan bateria y spinner infinito al estar offline.
-// Identidad del transporte de red. Un salto WiFi↔datos (o de una WiFi a otra) deja los
-// sockets TCP anteriores MUERTOS, pero `isConnected` nunca deja de ser true, así que React
-// Query no se entera y las peticiones en vuelo se cuelgan hasta el timeout. Incidente
+// Identidad estable del transporte de red. Un salto WiFi↔datos deja los sockets TCP
+// anteriores MUERTOS, pero `isConnected` puede seguir true y React Query no se entera.
+// NetInfo también emite estados/IP transitorios al despertar; no son una red nueva. Incidente
 // 2026-07-27: guardar tardaba ~15 s y luego "No se pudieron cargar los movimientos", con
 // AbortError simultáneo en todas las queries y CHANNEL_ERROR en realtime.
 let lastTransport: string | null = null;
 
 onlineManager.setEventListener((setOnline) => {
   const unsubscribe = NetInfo.addEventListener((state) => {
-    const transport = `${state.type}:${(state.details as { ipAddress?: string } | null)?.ipAddress ?? ""}`;
-    if (lastTransport !== null && transport !== lastTransport) {
+    const transport = resolveNetworkTransport(lastTransport, state);
+    if (transport.changed) {
       // Cambió el transporte: refrescar sesión y refetchear para salir por conexiones nuevas
       // en lugar de esperar a que cada petición muera por timeout. El cooldown de
       // recoverSession evita tormentas si la red va y viene.
       void recoverSession();
     }
-    lastTransport = transport;
+    lastTransport = transport.current;
     // isConnected null = "aún no se sabe" (habitual al despertar de Doze / cold start).
     // Tratarlo como offline pausaba TODAS las queries hasta el próximo evento de red,
     // que puede no llegar nunca (incidente 2026-07-13: app vacía tras 1 día en background).
