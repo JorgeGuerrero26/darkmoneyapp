@@ -44,6 +44,7 @@ import * as Haptics from "expo-haptics";
 import { useAuth } from "../../lib/auth-context";
 import { useWorkspace, useWorkspaceListStore } from "../../lib/workspace-context";
 import {
+  useUserWorkspacesQuery,
   useWorkspaceSnapshotQuery,
   useDashboardMovementsQuery,
   useDashboardAnalyticsQuery,
@@ -71,6 +72,8 @@ import { Card } from "../../components/ui/Card";
 import { Button } from "../../components/ui/Button";
 import { ProgressBar } from "../../components/ui/ProgressBar";
 import { SkeletonCard, SkeletonList } from "../../components/ui/Skeleton";
+import { EmptyState } from "../../components/ui/EmptyState";
+import { isDashboardDataUnavailable } from "../../features/dashboard/lib/dashboardDataAvailability";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { formatCurrency } from "../../components/ui/AmountDisplay";
 import { MovementForm } from "../../components/forms/MovementForm";
@@ -355,6 +358,10 @@ function DashboardScreen() {
   const queryClient = useQueryClient();
   const { profile, session, signOut } = useAuth();
   const { activeWorkspaceId, activeWorkspace, setWorkspaces } = useWorkspace();
+  // `undefined` mientras no resuelve vs `[]` cuando de verdad no hay ninguno. El store de
+  // workspaces no distingue esos dos casos (arranca en []), y de esa confusión salía el falso
+  // "tablero limpio". React Query comparte la caché, así que esto no añade una petición.
+  const { data: knownWorkspaces } = useUserWorkspacesQuery(profile?.id ?? null);
   const dismissedAlerts = useDismissedDashboardAlerts(activeWorkspaceId);
 
   useDashboardRealtimeSync({ workspaceId: activeWorkspaceId });
@@ -703,6 +710,34 @@ function DashboardScreen() {
             <SkeletonCard />
             <SkeletonCard />
           </SkeletonList>
+        </ScrollView>
+      </View>
+    );
+  }
+
+  // Ver isDashboardDataUnavailable: distingue "no sé" de "sé que no hay". Un esqueleto infinito
+  // no sirve —la válvula de arranque existe justo para no congelar la app—, así que cuando los
+  // datos no llegaron se dice la verdad y se ofrece reintentar.
+  const dataUnavailable = isDashboardDataUnavailable({
+    knownWorkspaces,
+    activeWorkspaceId,
+    hasSnapshot: Boolean(snapshot),
+  });
+
+  if (dataUnavailable) {
+    return (
+      <View style={[styles.screen, { paddingTop: insets.top }]}>
+        <ScreenHeader
+          title={`Hola, ${profile?.fullName?.split(" ")[0] ?? "usuario"}`}
+          subtitle={format(new Date(), "d MMM yyyy", { locale: es })}
+          showPlanBadge
+        />
+        <ScrollView contentContainerStyle={styles.content}>
+          <EmptyState
+            title="No pudimos cargar tus datos"
+            description="Tu información está a salvo, solo no llegó a este teléfono. Revisa tu conexión y vuelve a intentar."
+            action={{ label: "Reintentar", onPress: onRefresh }}
+          />
         </ScrollView>
       </View>
     );
