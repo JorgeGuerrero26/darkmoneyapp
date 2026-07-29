@@ -224,7 +224,10 @@ export function AdvancedDashboard({
   const [selectedHistoryYear, setSelectedHistoryYear] = useState(new Date().getFullYear());
   // La query base del dashboard trae solo 90 días; el historial anual, los factores
   // y la comparación estacional necesitan el año completo + año anterior.
-  const yearMovementsQuery = useDashboardYearMovementsQuery(workspaceId, selectedHistoryYear);
+  // El userId va explícito porque forma parte de la queryKey: sin él la query se ejecutaba con
+  // la clave del `null` y al resolver la sesión arrancaba otra desde cero (ver el test de
+  // convención query-key-enabled-consistency).
+  const yearMovementsQuery = useDashboardYearMovementsQuery(workspaceId, selectedHistoryYear, userId);
   const historyMovements = yearMovementsQuery.data ?? movements;
   const [selectedAnnualMonth, setSelectedAnnualMonth] = useState<AnnualHistoryMonth | null>(null);
   useEffect(() => {

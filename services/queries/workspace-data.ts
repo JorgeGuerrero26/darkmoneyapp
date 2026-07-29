@@ -1441,7 +1441,10 @@ export type PersistLearningFeedbackInput = {
 
 export function useDashboardMovementsQuery(
   workspaceId: number | null,
-  userScopeKey?: string | null,
+  // Obligatorio a proposito, aunque acepte undefined: forma parte de la queryKey, asi que un
+  // llamador que lo omita hace que la query se ejecute bajo la clave del `null`. Que lo exija el
+  // compilador es mas fiable que recordarlo.
+  userScopeKey: string | null | undefined,
 ) {
   return useQuery({
     queryKey: ["dashboard-movements", userScopeKey ?? null, workspaceId],
@@ -1471,7 +1474,13 @@ export function useDashboardMovementsQuery(
         description: typeof row.description === "string" ? row.description : "",
       }));
     },
-    enabled: Boolean(workspaceId),
+    // `enabled` DEBE exigir userScopeKey porque forma parte de la queryKey. Sin esto había una
+    // ventana en el arranque —workspace ya restaurado de AsyncStorage, profile.id todavía
+    // undefined— en la que esto se ejecutaba con la clave ["...", null, wsId]: al llegar el id
+    // la clave cambiaba y arrancaba OTRA query desde cero, duplicando el trabajo en el peor
+    // momento, y la huérfana quedaba fetching sin datos reteniendo el overlay de arranque hasta
+    // su válvula de 15 s (6 casos en app_error_logs, siempre con estas dos queries en pending).
+    enabled: Boolean(workspaceId && userScopeKey),
     staleTime: STALE.short,
     retry: 1,
   });
@@ -1485,7 +1494,10 @@ export function useDashboardMovementsQuery(
 export function useDashboardYearMovementsQuery(
   workspaceId: number | null,
   year: number,
-  userScopeKey?: string | null,
+  // Obligatorio a proposito, aunque acepte undefined: forma parte de la queryKey, asi que un
+  // llamador que lo omita hace que la query se ejecute bajo la clave del `null`. Que lo exija el
+  // compilador es mas fiable que recordarlo.
+  userScopeKey: string | null | undefined,
 ) {
   return useQuery({
     queryKey: ["dashboard-year-movements", userScopeKey ?? null, workspaceId, year],
@@ -1516,7 +1528,10 @@ export function useDashboardYearMovementsQuery(
         description: typeof row.description === "string" ? row.description : "",
       }));
     },
-    enabled: Boolean(workspaceId) && Number.isFinite(year),
+    // userScopeKey va en la queryKey, así que enabled tiene que exigirlo: si no, se ejecuta con
+    // la clave del `null` y al llegar el id arranca otra query desde cero. Ver el test de
+    // convención query-key-enabled-consistency.
+    enabled: Boolean(workspaceId && userScopeKey) && Number.isFinite(year),
     staleTime: STALE.long,
     retry: 1,
   });
@@ -1524,7 +1539,10 @@ export function useDashboardYearMovementsQuery(
 
 export function useDashboardAnalyticsQuery(
   workspaceId: number | null,
-  userScopeKey?: string | null,
+  // Obligatorio a proposito, aunque acepte undefined: forma parte de la queryKey, asi que un
+  // llamador que lo omita hace que la query se ejecute bajo la clave del `null`. Que lo exija el
+  // compilador es mas fiable que recordarlo.
+  userScopeKey: string | null | undefined,
 ) {
   return useQuery({
     queryKey: ["dashboard-analytics", userScopeKey ?? null, workspaceId],
@@ -1677,7 +1695,13 @@ export function useDashboardAnalyticsQuery(
         available: !missingSignals || !missingFeedback || !missingSnapshot,
       };
     },
-    enabled: Boolean(workspaceId),
+    // `enabled` DEBE exigir userScopeKey porque forma parte de la queryKey. Sin esto había una
+    // ventana en el arranque —workspace ya restaurado de AsyncStorage, profile.id todavía
+    // undefined— en la que esto se ejecutaba con la clave ["...", null, wsId]: al llegar el id
+    // la clave cambiaba y arrancaba OTRA query desde cero, duplicando el trabajo en el peor
+    // momento, y la huérfana quedaba fetching sin datos reteniendo el overlay de arranque hasta
+    // su válvula de 15 s (6 casos en app_error_logs, siempre con estas dos queries en pending).
+    enabled: Boolean(workspaceId && userScopeKey),
     staleTime: STALE.short,
     retry: 1,
   });
