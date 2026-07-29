@@ -124,7 +124,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
   const { data: snapshot } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const settingsQuery = useNotificationDetectionSettingsQuery(profile?.id, activeWorkspaceId);
   const settings = settingsQuery.data ?? [];
-  const frequentTransferPair = useFrequentTransferPairQuery(activeWorkspaceId).data ?? null;
+  const frequentTransferPair = useFrequentTransferPairQuery(visible ? activeWorkspaceId : null).data ?? null;
   const createMovement = useCreateMovementMutation(activeWorkspaceId);
   const deleteMovement = useDeleteMovementMutation(activeWorkspaceId);
   const createCategory = useCreateCategoryMutation(activeWorkspaceId);
@@ -136,7 +136,8 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
   const entitlementQuery = useUserEntitlementQuery(profile?.id ?? null, profile?.email ?? null);
   const aiUsageQuery = useAiUsageTodayQuery(profile?.id ?? null);
   const persistLearningFeedback = usePersistLearningFeedbackMutation(activeWorkspaceId, profile?.id);
-  const { data: patternMovements } = useMovementPatternsQuery(activeWorkspaceId);
+  // Ver MovementForm: sin el gate en `visible` esto se pide con la hoja cerrada.
+  const { data: patternMovements } = useMovementPatternsQuery(visible ? activeWorkspaceId : null);
   const { data: dashboardAnalytics } = useDashboardAnalyticsQuery(activeWorkspaceId, profile?.id);
   const patternMaps = useMemo(
     () => (patternMovements ? buildPatternMaps(patternMovements) : null),

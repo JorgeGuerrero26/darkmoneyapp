@@ -156,7 +156,10 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   );
 
   // -- Smart suggestions -----------------------------------------------------
-  const { data: patternMovements } = useMovementPatternsQuery(activeWorkspaceId);
+  // Gated en `visible` como las demas queries de este archivo: el formulario vive montado
+  // dentro de una hoja cerrada, asi que sin el gate esto se pedia en cada arranque de la app
+  // para una pantalla que nadie abrio (medido: aparecia entre las queries que bloqueaban).
+  const { data: patternMovements } = useMovementPatternsQuery(visible ? activeWorkspaceId : null);
   const patternMaps = useMemo(
     () => (patternMovements ? buildPatternMaps(patternMovements) : null),
     [patternMovements],
@@ -211,7 +214,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
 
   const baseCurrency = activeWorkspace?.baseCurrencyCode ?? "PEN";
   const accounts = snapshot?.accounts ?? [];
-  const frequentTransferPair = useFrequentTransferPairQuery(activeWorkspaceId).data ?? null;
+  const frequentTransferPair = useFrequentTransferPairQuery(visible ? activeWorkspaceId : null).data ?? null;
   const categories = snapshot?.categories ?? [];
   const counterparties = snapshot?.counterparties ?? [];
   const exchangeRates = snapshot?.exchangeRates ?? [];

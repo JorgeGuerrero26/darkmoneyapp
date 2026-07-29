@@ -97,7 +97,8 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
   const updateMutation = useUpdateSubscriptionMutation(activeWorkspaceId);
   const { data: snapshot } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
 
-  const { data: patternMovements } = useMovementPatternsQuery(activeWorkspaceId);
+  // Ver MovementForm: sin el gate en `visible` esto se pide con la hoja cerrada.
+  const { data: patternMovements } = useMovementPatternsQuery(visible ? activeWorkspaceId : null);
   const patternMaps = useMemo(
     () => (patternMovements ? buildPatternMaps(patternMovements) : null),
     [patternMovements],
