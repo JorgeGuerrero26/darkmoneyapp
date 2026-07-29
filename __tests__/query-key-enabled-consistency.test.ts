@@ -13,24 +13,29 @@ import { join } from "node:path";
  *
  * Registrado 6 veces en app_error_logs, siempre con esas dos queries en pending.
  */
-const SOURCE = join(__dirname, "..", "services", "queries", "workspace-data.ts");
+const SOURCES = [
+  join(__dirname, "..", "services", "queries", "workspace-data.ts"),
+  join(__dirname, "..", "services", "queries", "movements.ts"),
+];
 
 describe("consistencia entre queryKey y enabled", () => {
-  const source = readFileSync(SOURCE, "utf8");
+  const sources = SOURCES.map((path) => readFileSync(path, "utf8"));
 
   it("ninguna query mete userScopeKey en la clave sin exigirlo en enabled", () => {
-    // Cada bloque useQuery({...}) del archivo, partido por su queryKey.
-    const blocks = source.split(/queryKey:\s*\[/).slice(1);
     const offenders: string[] = [];
 
-    for (const block of blocks) {
-      const keyLine = block.slice(0, block.indexOf("]"));
-      if (!keyLine.includes("userScopeKey")) continue;
+    for (const source of sources) {
+      // Cada bloque useQuery({...}) de cada archivo, partido por su queryKey.
+      const blocks = source.split(/queryKey:\s*\[/).slice(1);
+      for (const block of blocks) {
+        const keyLine = block.slice(0, block.indexOf("]"));
+        if (!keyLine.includes("userScopeKey")) continue;
 
-      const rootKey = keyLine.match(/^\s*"([^"]+)"/)?.[1] ?? "(desconocida)";
-      // El `enabled` de esta query: el primero que aparece antes de la siguiente queryKey.
-      const enabled = block.match(/enabled:\s*([^\n]+)/)?.[1] ?? "";
-      if (!enabled.includes("userScopeKey")) offenders.push(rootKey);
+        const rootKey = keyLine.match(/^\s*"([^"]+)"/)?.[1] ?? "(desconocida)";
+        // El `enabled` de esta query: el primero que aparece antes de la siguiente queryKey.
+        const enabled = block.match(/enabled:\s*([^\n]+)/)?.[1] ?? "";
+        if (!enabled.includes("userScopeKey")) offenders.push(rootKey);
+      }
     }
 
     expect(offenders).toEqual([]);

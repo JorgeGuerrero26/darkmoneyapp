@@ -1246,6 +1246,16 @@ export async function fetchUserWorkspaces(userId: string) {
     supabase.from("workspace_members").select("workspace_id, role, is_default_workspace, joined_at").eq("user_id", userId),
     supabase.from("workspaces").select("id, owner_user_id, name, kind, base_currency_code, description, is_archived"),
   ]);
+  if (membershipsResult.error) {
+    throw new Error(
+      formatSupabaseError(membershipsResult.error) || "No se pudieron cargar las membresías del usuario.",
+    );
+  }
+  if (workspacesResult.error) {
+    throw new Error(
+      formatSupabaseError(workspacesResult.error) || "No se pudieron cargar los workspaces del usuario.",
+    );
+  }
   const memberRows = (membershipsResult.data ?? []) as WorkspaceMemberRow[];
   const workspaceRows = (workspacesResult.data ?? []) as WorkspaceRow[];
   const memberIds = new Set(memberRows.map((m) => m.workspace_id));
