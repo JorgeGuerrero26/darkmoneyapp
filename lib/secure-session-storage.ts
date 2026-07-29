@@ -18,6 +18,25 @@ import * as SecureStore from "expo-secure-store";
 
 const CHUNK_SIZE = 1800;
 
+/**
+ * Coste acumulado de leer la sesión, para saber si el Keychain es el cuello del arranque.
+ *
+ * Cada `secureGet` son 1 + N accesos SECUENCIALES al Keychain (meta + un chunk por fragmento),
+ * y una sesión de Supabase de ~2500 chars son 2-3 chunks. Sin caché, cada relectura los paga
+ * otra vez, y todas van serializadas bajo el lock de auth de supabase-js. Ese es el sospechoso
+ * de que el arranque varíe entre 545 y 2255 ms con la misma red (medido 2026-07-29).
+ *
+ * Antes de meter un caché en memoria hay que saber si esto cuesta 20 ms o 1500: un caché
+ * obsoleto aquí significa usar un refresh token viejo y perder la sesión, y esta app ya se
+ * llevó ese golpe. Se mide primero.
+ */
+const readStats = { calls: 0, keychainReads: 0, totalMs: 0 };
+
+/** Coste de leer la sesión desde que arrancó el proceso. Lo publica el log de arranque. */
+export function sessionStorageReadStats(): { calls: number; keychainReads: number; totalMs: number } {
+  return { ...readStats };
+}
+
 /** SecureStore solo acepta [A-Za-z0-9._-]; las keys de supabase (sb-<ref>-auth-token) cumplen. */
 function sanitizeKey(key: string): string {
   return key.replace(/[^A-Za-z0-9._-]/g, "_");
@@ -32,17 +51,25 @@ function chunkKey(key: string, index: number): string {
 }
 
 async function secureGet(key: string): Promise<string | null> {
-  const metaRaw = await SecureStore.getItemAsync(metaKey(key));
-  if (!metaRaw) return null;
-  const chunkCount = Number(metaRaw);
-  if (!Number.isInteger(chunkCount) || chunkCount <= 0) return null;
-  const chunks: string[] = [];
-  for (let i = 0; i < chunkCount; i += 1) {
-    const part = await SecureStore.getItemAsync(chunkKey(key, i));
-    if (part == null) return null;
-    chunks.push(part);
+  const startedAt = Date.now();
+  readStats.calls += 1;
+  try {
+    const metaRaw = await SecureStore.getItemAsync(metaKey(key));
+    readStats.keychainReads += 1;
+    if (!metaRaw) return null;
+    const chunkCount = Number(metaRaw);
+    if (!Number.isInteger(chunkCount) || chunkCount <= 0) return null;
+    const chunks: string[] = [];
+    for (let i = 0; i < chunkCount; i += 1) {
+      const part = await SecureStore.getItemAsync(chunkKey(key, i));
+      readStats.keychainReads += 1;
+      if (part == null) return null;
+      chunks.push(part);
+    }
+    return chunks.join("");
+  } finally {
+    readStats.totalMs += Date.now() - startedAt;
   }
-  return chunks.join("");
 }
 
 async function secureSet(key: string, value: string): Promise<void> {

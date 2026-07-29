@@ -1,5 +1,6 @@
 import * as Updates from "expo-updates";
 import { logInfo } from "./error-logger";
+import { sessionStorageReadStats } from "./secure-session-storage";
 
 /**
  * Medición del arranque, para optimizar con datos y no con intuiciones.
@@ -50,6 +51,11 @@ export function markStartupReady(outcome: "ready" | "timeout", extra?: Record<st
     // obtiene ese tramo, que de otro modo solo se puede cronometrar desde fuera — y ahí el
     // coste de la propia herramienta (10 s de túnel en devicectl) contamina la medición.
     jsStartAt: JS_START,
+    // Coste de leer la sesión del Keychain: cada lectura son 1+N accesos secuenciales y van
+    // serializados bajo el lock de auth de supabase-js. Es el sospechoso de que el arranque
+    // varíe entre 545 y 2255 ms con la misma red. Se mide antes de tocarlo porque el arreglo
+    // obvio —cachear en memoria— arriesga usar un refresh token viejo y perder la sesión.
+    sessionReads: sessionStorageReadStats(),
     ...extra,
   });
 }
