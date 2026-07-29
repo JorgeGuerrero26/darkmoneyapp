@@ -1,4 +1,5 @@
 import { Tabs } from "expo-router";
+import { useAfterFirstPaint } from "../../hooks/useAfterFirstPaint";
 import { memo, useEffect, useRef } from "react";
 import { Animated, Platform, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -106,7 +107,13 @@ const HIDDEN_ROUTES = [
 function useMoreBadgeCount() {
   const { user, profile } = useAuth();
   const { data: notifications } = useNotificationsQuery(user?.id ?? null);
-  const { data: pendingInvites = [] } = usePendingObligationShareInvitesQuery(user?.id, profile?.email);
+  // Diferidas al primer pintado: es solo el contador del badge de "Más", no hace falta para
+  // dibujar nada. Salía en 3 de los 4 episodios que disparaban el aviso de red lenta.
+  const afterFirstPaint = useAfterFirstPaint();
+  const { data: pendingInvites = [] } = usePendingObligationShareInvitesQuery(
+    afterFirstPaint ? user?.id : null,
+    profile?.email,
+  );
   const unreadCount = (notifications ?? []).filter((n) => n.status !== "read").length;
   return unreadCount + pendingInvites.length;
 }

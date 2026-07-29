@@ -73,6 +73,7 @@ import { Button } from "../../components/ui/Button";
 import { ProgressBar } from "../../components/ui/ProgressBar";
 import { SkeletonCard, SkeletonList } from "../../components/ui/Skeleton";
 import { EmptyState } from "../../components/ui/EmptyState";
+import { useAfterFirstPaint } from "../../hooks/useAfterFirstPaint";
 import { isDashboardDataUnavailable } from "../../features/dashboard/lib/dashboardDataAvailability";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { formatCurrency } from "../../components/ui/AmountDisplay";
@@ -362,6 +363,7 @@ function DashboardScreen() {
   // workspaces no distingue esos dos casos (arranca en []), y de esa confusión salía el falso
   // "tablero limpio". React Query comparte la caché, así que esto no añade una petición.
   const { data: knownWorkspaces } = useUserWorkspacesQuery(profile?.id ?? null);
+  const afterFirstPaint = useAfterFirstPaint();
   const dismissedAlerts = useDismissedDashboardAlerts(activeWorkspaceId);
 
   useDashboardRealtimeSync({ workspaceId: activeWorkspaceId });
@@ -564,7 +566,14 @@ function DashboardScreen() {
   const {
     data: scopedBudgetMovements = [],
     error: dashboardBudgetMovementsError,
-  } = useBudgetScopeMovementsQuery(activeWorkspaceId, snapshotBudgets, dataUpdatedAt);
+    // Diferida al primer pintado: la analítica de presupuestos no hace falta para dibujar el
+    // dashboard, y en el arranque competía por los ~150 ms de cada viaje con lo que sí se
+    // necesita. Salía en 3 de los 4 episodios que disparaban el aviso de red lenta.
+  } = useBudgetScopeMovementsQuery(
+    afterFirstPaint ? activeWorkspaceId : null,
+    snapshotBudgets,
+    dataUpdatedAt,
+  );
 
   // Build exchange rate map from snapshot
   const exchangeRateMap = useMemo(
