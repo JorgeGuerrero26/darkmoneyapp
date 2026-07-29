@@ -3,8 +3,7 @@
  *
  * Fase 4.2-c: cluster de SHARES (active share, list shares, pending invites,
  * create invite, unlink).
- * Fase 4.2-d: cluster de SHARED-OBLIGATIONS (parsing remoto desde la edge
- * function list-shared-obligations).
+ * Fase 4.2-d: cluster de SHARED-OBLIGATIONS (parsing del RPC list_shared_obligations).
  * Fase 4.2-e: cluster de VIEWER LINKS + PAYMENT REQUESTS.
  *
  * Pendiente: 4.2-f (mutations CORE).
@@ -352,7 +351,7 @@ export function useUnlinkObligationShareMutation(workspaceId?: number | null) {
   });
 }
 
-// ─── Obligaciones compartidas contigo (edge list-shared-obligations) ─────────
+// ─── Obligaciones compartidas contigo (RPC list_shared_obligations) ──────────
 
 function obligationRowFromUnknown(o: Record<string, unknown>): ObligationSummaryRow | null {
   const id = Number(o.id);
@@ -499,26 +498,24 @@ function parseSharedObligationItem(item: unknown): SharedObligationSummary | nul
 
 async function fetchSharedObligations(): Promise<SharedObligationSummary[]> {
   if (!supabase) return [];
-  // Sin getSession propio: invokeEdgeFunction ya resuelve/refresca la sesión.
-  // Duplicarlo sumaba UNA adquisición extra del lock de auth en el arranque frío,
-  // justo cuando todas las queries iniciales compiten por él (ver constante arriba).
 
-  const response = (await withTimeout(
-    invokeEdgeFunction<Record<string, unknown>>("list-shared-obligations", {}),
+  // RPC en vez de la edge function `list-shared-obligations`: esta consulta era la más lenta
+  // del arranque porque pagaba el hop cliente→función, su arranque en frío y 3 consultas
+  // secuenciales dentro (shares → vista → eventos). Medido desde el teléfono, cada viaje a la
+  // BD cuesta ~150 ms y el trabajo real de Postgres es de 10-60 ms: lo que dominaba era el
+  // número de viajes, no su peso. El RPC devuelve lo mismo en uno (~160 ms medidos).
+  //
+  // La función es SECURITY DEFINER y no acepta parámetros: filtra por auth.uid() internamente,
+  // así que no hay forma de pedir los datos de otro usuario.
+  const { data, error } = await withTimeout(
+    supabase.rpc("list_shared_obligations"),
     OBLIGATION_SHARED_LIST_TIMEOUT_MS,
-    "list-shared-obligations",
-  )) ?? {};
+    "list_shared_obligations",
+  );
 
-  if (response.ok === false) {
-    throw new Error(String(response.error ?? "No se pudieron cargar las obligaciones compartidas."));
-  }
+  if (error) throw new Error(error.message);
 
-  const rawList =
-    (Array.isArray(response.items) ? response.items : null) ??
-    (Array.isArray(response.obligations) ? response.obligations : null) ??
-    (Array.isArray(response.data) ? response.data : null) ??
-    [];
-
+  const rawList = Array.isArray(data) ? data : [];
   const out: SharedObligationSummary[] = [];
   for (const item of rawList) {
     const parsed = parseSharedObligationItem(item);
@@ -532,12 +529,14 @@ export function useSharedObligationsQuery(userId: string | null | undefined) {
     queryKey: ["shared-obligations", userId ?? null],
     enabled: Boolean(supabase && userId),
     staleTime: STALE.medium,
-    // Reintentar también los TimeoutError (diagnóstico 2026-07-17: la edge responde
-    // en 0.5-3 s incluso fría y la BD en 8 ms; el timeout de 20 s viene del cliente —
-    // lock de auth en arranque frío o socket muerto tras cambio de red). Para cuando
-    // vence, la contención ya pasó y el reintento entra en segundos; sin él la
-    // sección quedaba vacía hasta el próximo refetch (5 min) y el warn crónico
-    // "Timeout (20000ms) at list-shared-obligations" quedaba en app_error_logs.
+    // Reintentar también los TimeoutError. Diagnóstico 2026-07-17: la BD responde en ms y el
+    // timeout de 20 s venía del CLIENTE — lock de auth en arranque frío o socket muerto tras
+    // cambio de red. Para cuando vence, la contención ya pasó y el reintento entra en segundos;
+    // sin él la sección quedaba vacía hasta el próximo refetch (5 min).
+    //
+    // El paso a RPC (2026-07-29) quita el hop a la edge function y 3 viajes secuenciales, pero
+    // NO ataca esa causa: si los 18 timeouts de 20 s medidos en una semana siguen apareciendo
+    // en app_error_logs, el culpable es el lock de auth, no esta consulta.
     retry: (failureCount) => failureCount < 1,
     queryFn: fetchSharedObligations,
   });

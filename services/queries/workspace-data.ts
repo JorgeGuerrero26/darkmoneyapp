@@ -3323,7 +3323,7 @@ export function useCreateWorkspaceInvitationMutation(workspaceId?: number | null
 // ─── Obligation active share (pending / accepted) ───────────────────────────────
 
 /** Todas las filas pending/accepted del workspace (p. ej. lista de tarjetas + badges). */
-// ─── Obligaciones compartidas contigo (edge list-shared-obligations) ─────────
+// ─── Obligaciones compartidas contigo (RPC list_shared_obligations) ──────────
 
 /** Normaliza fila share snake_case si la edge devolvió camelCase. */
 /** Combina obligaciones del workspace activo con las compartidas contigo (sin duplicar por id). */
