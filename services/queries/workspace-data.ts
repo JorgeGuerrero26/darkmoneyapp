@@ -2295,6 +2295,7 @@ export function usePersistLearningFeedbackMutation(
 // ─── Movement mutations ───────────────────────────────────────────────────────
 
 import type { MovementFormInput } from "../../features/movements/lib/movement-input-types";
+import { shouldConfirmIdempotentWrite } from "../../lib/idempotency";
 export type { MovementFormInput };
 
 const MOVEMENT_RECORD_COLUMNS =
@@ -2333,11 +2334,17 @@ export async function createMovement(
     .select(MOVEMENT_RECORD_COLUMNS)
     .single();
 
-  // Idempotencia: si este intento ya insertó antes (doble submit, retry tras timeout,
-  // carrera overlay-headless vs React con la misma sugerencia), el unique parcial por
-  // (workspace_id, client_dedupe_key) responde 23505. Se devuelve la fila existente
-  // como éxito en lugar de propagar el error.
-  if (error && dedupeKey && (error as { code?: string }).code === "23505") {
+  // Idempotencia: un 23505 confirma que este intento ya existía. Un timeout/error de
+  // transporte es ambiguo: el servidor pudo confirmar el POST y perderse solo la
+  // respuesta. En ambos casos consultamos la MISMA key antes de mostrar un fallo;
+  // nunca repetimos automáticamente writes sin key ni errores SQL/RLS/validación.
+  const shouldFindExisting = Boolean(
+    error && dedupeKey && (
+      (error as { code?: string }).code === "23505" ||
+      shouldConfirmIdempotentWrite(dedupeKey, error)
+    ),
+  );
+  if (error && dedupeKey && shouldFindExisting) {
     const existing = await supabase
       .from("movements")
       .select(MOVEMENT_RECORD_COLUMNS)
