@@ -6,6 +6,11 @@
  * Deploy:
  *   npx supabase functions deploy inbound-email-detection --no-verify-jwt --project-ref cawrdzrcipgibcoefltr
  *
+ * Required secrets:
+ *   SUPABASE_URL
+ *   SUPABASE_SERVICE_ROLE_KEY
+ *   INBOUND_EMAIL_WEBHOOK_SECRET   (va en la query string del webhook: ?s=<secreto>)
+ *
  * --no-verify-jwt es obligatorio: quien llama es SendGrid, no un usuario con sesión.
  *
  * Proveedor: **SendGrid Inbound Parse**, que POSTea el correo como multipart/form-data con el
