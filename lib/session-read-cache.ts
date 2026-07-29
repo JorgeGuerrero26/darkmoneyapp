@@ -46,13 +46,26 @@ export class SessionReadCache {
     const pending = this.inFlight.get(key);
     if (pending) return pending;
 
-    const promise = read()
+    let promise: Promise<string | null>;
+    promise = read()
       .then((value) => {
-        this.fresh.set(key, { value, at: this.now() });
-        return value;
+        // Una escritura o invalidación puede desacoplar esta lectura mientras sigue en vuelo.
+        // Solo la lectura que todavía está registrada puede publicar su resultado.
+        if (this.inFlight.get(key) === promise) {
+          this.fresh.set(key, { value, at: this.now() });
+          return value;
+        }
+
+        // Si mientras tanto hubo una escritura autoritativa (incluido logout = null), tampoco
+        // entregar el valor viejo al caller que inició esta lectura.
+        const authoritative = this.fresh.get(key);
+        return authoritative ? authoritative.value : value;
       })
       .finally(() => {
-        this.inFlight.delete(key);
+        // No borrar una lectura más nueva que empezó tras invalidar esta.
+        if (this.inFlight.get(key) === promise) {
+          this.inFlight.delete(key);
+        }
       });
 
     this.inFlight.set(key, promise);
@@ -61,11 +74,13 @@ export class SessionReadCache {
 
   /** Tras escribir en este proceso, el valor nuevo es autoritativo. */
   set(key: string, value: string | null): void {
+    this.inFlight.delete(key);
     this.fresh.set(key, { value, at: this.now() });
   }
 
   /** Ante cualquier duda (borrado, fallo de escritura), olvidar y volver a leer del Keychain. */
   invalidate(key: string): void {
+    this.inFlight.delete(key);
     this.fresh.delete(key);
   }
 }

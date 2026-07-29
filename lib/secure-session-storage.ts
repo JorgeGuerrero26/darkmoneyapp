@@ -143,15 +143,16 @@ export const secureSessionStorage = {
   },
 
   async removeItem(key: string): Promise<void> {
-    // Se invalida ANTES de borrar: si el borrado falla a medias, la siguiente lectura va al
-    // Keychain en vez de devolver una sesión que quizá ya no existe.
-    readCache.invalidate(key);
+    // El logout es autoritativo ANTES de cualquier I/O: una lectura vieja que termine mientras
+    // se borran los chunks no puede devolver ni volver a publicar la sesión anterior.
+    readCache.set(key, null);
     try {
       await secureRemove(key);
     } catch {
       // Borrar siempre la copia plana aunque el Keystore falle.
     }
     await AsyncStorage.removeItem(key);
+    // Renovar el TTL al terminar, porque el borrado del Keychain puede tardar.
     readCache.set(key, null);
   },
 };
