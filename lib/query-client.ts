@@ -60,9 +60,10 @@ AppState.addEventListener("change", (status) => {
   void NetInfo.refresh().then((state) => {
     onlineManager.setOnline(state.isConnected ?? true);
   });
-  // App vuelve a foreground: si el token se puso stale mientras estuvo en
-  // background, recuperar sesión y refetchear antes de que el usuario toque nada.
-  void recoverSession();
+  // La sesión ya se reconcilia en AuthProvider y supabase.ts reactiva su auto-refresh.
+  // No llamar recoverSession aquí: invalida todas las queries activas y, al volver de
+  // Safari/cámara, generaba decenas de requests simultáneas que saturaban una conexión
+  // HTTP/2 hasta hacer vencer incluso mutaciones nuevas a los 12 s.
 });
 
 let recoveringPromise: Promise<void> | null = null;

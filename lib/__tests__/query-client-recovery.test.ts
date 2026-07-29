@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { isAuthLikeError } from "../auth-error";
 
 describe("isAuthLikeError", () => {
@@ -14,5 +17,19 @@ describe("isAuthLikeError", () => {
     expect(isAuthLikeError("TypeError: Network request failed")).toBe(false);
     expect(isAuthLikeError("Timeout (20000ms) at list-shared-obligations")).toBe(false);
     expect(isAuthLikeError("")).toBe(false);
+  });
+});
+
+describe("recuperación al volver a foreground", () => {
+  it("refresca conectividad sin invalidar globalmente todas las queries", () => {
+    const source = readFileSync(join(__dirname, "..", "query-client.ts"), "utf8");
+    const listenerStart = source.indexOf('AppState.addEventListener("change"');
+    const listenerEnd = source.indexOf("let recoveringPromise", listenerStart);
+    const foregroundListener = source.slice(listenerStart, listenerEnd);
+
+    expect(listenerStart).toBeGreaterThanOrEqual(0);
+    expect(listenerEnd).toBeGreaterThan(listenerStart);
+    expect(foregroundListener).toContain("NetInfo.refresh()");
+    expect(foregroundListener).not.toContain("recoverSession(");
   });
 });
