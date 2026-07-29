@@ -16,6 +16,18 @@ const JS_START = Date.now();
 let reported = false;
 
 /**
+ * ¿Ya terminó el arranque? Durante el arranque en frío hay muchas queries sin datos por
+ * definición, y la app ya muestra su propia pantalla de carga: avisar ahí de "red lenta" es
+ * ruido, no información.
+ *
+ * Medido en el iPhone del usuario: arranques de 4022, 5175, 6488 y **8034** ms. El umbral del
+ * aviso era 8000, así que ese último lo cruzaba por 34 milésimas con la red perfectamente bien.
+ */
+export function isStartupComplete(): boolean {
+  return reported;
+}
+
+/**
  * Registra una sola vez el tiempo hasta que la app quedó usable.
  * - `ready`: el bootstrap resolvió normalmente.
  * - `timeout`: se disparó la válvula de escape y la UI se liberó con queries colgadas.

@@ -9,8 +9,10 @@ import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING } from "../../constants
 import {
   MIN_BLOCKED_FOR_NETWORK_WARNING,
   SLOW_AFTER_MS,
+  SLOW_CHECK_INTERVAL_MS,
   isBlockingQuery,
 } from "../../lib/slow-network-signal";
+import { isStartupComplete } from "../../lib/startup-timing";
 import { SafeBlurView } from "../ui/SafeBlurView";
 
 export function OfflineBanner() {
@@ -39,9 +41,21 @@ export function OfflineBanner() {
       setIsSlow(false);
       return;
     }
-    // Solo depende del booleano: así el temporizador no se reinicia cada vez que entra o sale
-    // una query de la tanda.
-    const timer = setTimeout(() => {
+    // Solo depende del booleano: así el reloj no se reinicia cada vez que entra o sale una
+    // query de la tanda.
+    const blockedSince = Date.now();
+    // Se reevalúa en vez de decidir una sola vez: durante el arranque en frío no se avisa, y
+    // con un setTimeout único un episodio que empieza durante el arranque no volvería a
+    // avisar nunca aunque siguiera atascado después.
+    const timer = setInterval(() => {
+      // Durante el arranque hay muchas queries sin datos por definición y la app ya muestra su
+      // propia pantalla de carga. Medido en el iPhone del usuario: arranques de hasta 8034 ms
+      // contra un umbral de 8000 — lo cruzaba por 34 milésimas con la red perfecta. Ese era el
+      // falso positivo que quedaba.
+      if (!isStartupComplete()) return;
+      if (Date.now() - blockedSince < SLOW_AFTER_MS) return;
+
+      clearInterval(timer);
       setIsSlow(true);
       // Deja constancia de QUÉ lo disparó. Sin esto el aviso solo se puede depurar
       // adivinando, y adivinar ya costó dos rondas: el usuario lo veía con 143 Mbps de fibra
@@ -59,8 +73,8 @@ export function OfflineBanner() {
         blocked: culprits.length,
         queries: culprits.join(" "),
       });
-    }, SLOW_AFTER_MS);
-    return () => clearTimeout(timer);
+    }, SLOW_CHECK_INTERVAL_MS);
+    return () => clearInterval(timer);
   }, [isBlocked, queryClient]);
 
   const visible = !isConnected || isSlow;

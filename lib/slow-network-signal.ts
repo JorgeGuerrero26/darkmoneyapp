@@ -31,3 +31,6 @@ export const MIN_BLOCKED_FOR_NETWORK_WARNING = 2;
 
 /** Tiempo esperando algo que el usuario SÍ está mirando antes de admitir que la red va lenta. */
 export const SLOW_AFTER_MS = 8000;
+
+/** Cada cuánto se reevalúa mientras hay queries bloqueadas. */
+export const SLOW_CHECK_INTERVAL_MS = 1000;
