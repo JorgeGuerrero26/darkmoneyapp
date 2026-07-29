@@ -499,9 +499,9 @@ function DashboardScreen() {
     if (snapshot?.workspaces?.length) setWorkspaces(snapshot.workspaces);
   }, [snapshot?.workspaces, setWorkspaces]);
 
-  // Prefetch queries for other tabs after workspace is ready
+  // Estas queries solo preparan otra tab: no deben competir con el primer dibujo del dashboard.
   useEffect(() => {
-    if (!supabase || !activeWorkspaceId) return;
+    if (!afterFirstPaint || !supabase || !activeWorkspaceId) return;
     void queryClient.prefetchQuery({
       queryKey: ["obligation-shares", activeWorkspaceId],
       staleTime: STALE.medium,
@@ -551,7 +551,7 @@ function DashboardScreen() {
         return counts;
       },
     });
-  }, [activeWorkspaceId, queryClient]);
+  }, [activeWorkspaceId, afterFirstPaint, queryClient]);
 
   const snapshotActiveWorkspace = useMemo(
     () => snapshot?.workspaces?.find((workspace) => workspace.id === activeWorkspaceId) ?? null,

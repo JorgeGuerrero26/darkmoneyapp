@@ -35,6 +35,7 @@ export function useMovementPatternsQuery(workspaceId: number | null) {
     queryKey: ["movement-patterns", workspaceId],
     queryFn: () => fetchMovementPatterns(workspaceId!),
     enabled: !!workspaceId,
+    meta: { uxBlocking: false },
     staleTime: STALE.medium,
     gcTime: 10 * 60 * 1000,
   });

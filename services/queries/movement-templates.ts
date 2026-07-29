@@ -38,10 +38,11 @@ function mapRow(row: Record<string, unknown>): MovementTemplate {
   };
 }
 
-export function useMovementTemplatesQuery(workspaceId: number | null) {
+export function useMovementTemplatesQuery(workspaceId: number | null, enabled = true) {
   return useQuery({
     queryKey: ["movement-templates", workspaceId],
-    enabled: Boolean(supabase && workspaceId),
+    enabled: Boolean(enabled && supabase && workspaceId),
+    meta: { uxBlocking: false },
     staleTime: STALE.medium,
     queryFn: async (): Promise<MovementTemplate[]> => {
       const { data, error } = await supabase!

@@ -173,7 +173,6 @@ export default function AppLayout() {
       <Tabs.Screen
         name="dashboard"
         options={{
-          lazy: false,
           tabBarIcon: ({ color, focused }) => (
             <TabIcon focused={focused} color={color} icon={<Home size={22} color={color} />} />
           ),

@@ -144,17 +144,19 @@ export function useObligationEventAttachmentCountsQuery(
 export function useMovementAttachmentCountsQuery(
   workspaceId?: number | null,
   movementIds?: number[] | null,
+  enabled = true,
 ) {
   const normalizedIds = (movementIds ?? []).filter((value) => Number.isFinite(value) && value > 0);
   return useQuery({
     // Mantener los ids en la key conserva el refresco al agregar una entidad;
     // cada cambio ahora cuesta un solo listado plano, no una llamada por fila.
     queryKey: ["entity-attachment-counts", workspaceId ?? null, "movement", normalizedIds.join(",")],
+    meta: { uxBlocking: false },
     queryFn: async (): Promise<EntityAttachmentCounts> => {
       if (!workspaceId || normalizedIds.length === 0) return {};
       return fetchEntityAttachmentCounts(workspaceId, "movement");
     },
-    enabled: Boolean(workspaceId && normalizedIds.length > 0),
+    enabled: Boolean(enabled && workspaceId && normalizedIds.length > 0),
     staleTime: STALE.short,
   });
 }

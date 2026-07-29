@@ -22,6 +22,7 @@ import { MovementDeleteImpact } from "../../components/domain/MovementDeleteImpa
 import { DetectionBackgroundSavesNotice } from "../../components/domain/DetectionBackgroundSavesNotice";
 import { MovementSavingNotice } from "../../components/domain/MovementSavingNotice";
 import { useDetectionBackgroundSaves } from "../../hooks/useDetectionBackgroundSaves";
+import { useAfterFirstPaint } from "../../hooks/useAfterFirstPaint";
 import { SwipeableMovementRow } from "../../components/domain/SwipeableMovementRow";
 import { BulkActionBar } from "../../components/ui/BulkActionBar";
 import { FilterToolbar } from "../../components/ui/FilterToolbar";
@@ -216,12 +217,12 @@ function MovementsScreen() {
   const [formVisible, setFormVisible] = useState(false);
   // "Repetir movimiento": fuente para prellenar el form como creación nueva con fecha de hoy.
   const [duplicateSource, setDuplicateSource] = useState<MovementDuplicateSource | null>(null);
-  const movementTemplates = useMovementTemplatesQuery(activeWorkspaceId).data ?? [];
+  const [quickAddSheetVisible, setQuickAddSheetVisible] = useState(false);
+  const movementTemplates = useMovementTemplatesQuery(activeWorkspaceId, quickAddSheetVisible).data ?? [];
   const deleteTemplate = useDeleteMovementTemplateMutation();
   const renameTemplate = useRenameMovementTemplateMutation();
   const [renameTemplateTarget, setRenameTemplateTarget] = useState<MovementTemplate | null>(null);
   const [formDefaultType, setFormDefaultType] = useState<MovementType>("expense");
-  const [quickAddSheetVisible, setQuickAddSheetVisible] = useState(false);
 
   // ── Search ────────────────────────────────────────────────────────────────
   const [searchText, setSearchText] = useState("");
@@ -330,7 +331,12 @@ function MovementsScreen() {
   }, [data, pendingDeleteIds, amountMin, amountMax]);
 
   const allMovementIds = useMemo(() => allMovements.map((m) => m.id), [allMovements]);
-  const { data: movementAttachmentCounts = {} } = useMovementAttachmentCountsQuery(activeWorkspaceId, allMovementIds);
+  const afterFirstPaint = useAfterFirstPaint();
+  const { data: movementAttachmentCounts = {} } = useMovementAttachmentCountsQuery(
+    activeWorkspaceId,
+    allMovementIds,
+    afterFirstPaint,
+  );
 
   const baseCurrency = activeWorkspace?.baseCurrencyCode ?? profile?.baseCurrencyCode ?? "PEN";
 

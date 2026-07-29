@@ -859,6 +859,7 @@ export function useFrequentTransferPairQuery(workspaceId?: number | null) {
   return useQuery({
     queryKey: ["frequent-transfer-pair", workspaceId ?? null],
     enabled: Boolean(supabase && workspaceId),
+    meta: { uxBlocking: false },
     staleTime: 5 * 60 * 1000,
     queryFn: () => getFrequentTransferPair(workspaceId ?? null),
   });

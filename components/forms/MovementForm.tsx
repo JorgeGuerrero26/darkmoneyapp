@@ -144,8 +144,16 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   const createCounterparty = useCreateCounterpartyMutation(activeWorkspaceId);
   const createSubscription = useCreateSubscriptionMutation(activeWorkspaceId);
   const createRecurringIncome = useCreateRecurringIncomeMutation(activeWorkspaceId);
-  const { data: dashboardAnalytics } = useDashboardAnalyticsQuery(activeWorkspaceId, profile?.id);
-  const entitlementQuery = useUserEntitlementQuery(profile?.id ?? null, profile?.email ?? null);
+  // El formulario permanece montado dentro de su sheet aun cuando esta cerrado. Mantener los
+  // hooks incondicionales, pero no cargar datos auxiliares hasta que el usuario lo abra.
+  const { data: dashboardAnalytics } = useDashboardAnalyticsQuery(
+    visible ? activeWorkspaceId : null,
+    visible ? profile?.id : null,
+  );
+  const entitlementQuery = useUserEntitlementQuery(
+    visible ? profile?.id ?? null : null,
+    visible ? profile?.email ?? null : null,
+  );
   const persistLearningFeedback = usePersistLearningFeedbackMutation(activeWorkspaceId, profile?.id);
   const {
     data: editMovementAttachments = [],
@@ -216,7 +224,9 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
 
   const baseCurrency = activeWorkspace?.baseCurrencyCode ?? "PEN";
   const accounts = snapshot?.accounts ?? [];
-  const frequentTransferPair = useFrequentTransferPairQuery(visible ? activeWorkspaceId : null).data ?? null;
+  const frequentTransferPair = useFrequentTransferPairQuery(
+    visible && form.movementType === "transfer" ? activeWorkspaceId : null,
+  ).data ?? null;
   const categories = snapshot?.categories ?? [];
   const counterparties = snapshot?.counterparties ?? [];
   const exchangeRates = snapshot?.exchangeRates ?? [];
