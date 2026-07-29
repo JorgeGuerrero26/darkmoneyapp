@@ -184,7 +184,9 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   const [warnings, setWarnings] = useState<MovementFormWarnings>({});
   const [submitError, setSubmitError] = useState("");
   const [cleanupAppliedText, setCleanupAppliedText] = useState<string | null>(null);
-  const [isClosingAfterSubmit, setIsClosingAfterSubmit] = useState(false);
+  // Debe ser un ref: volver a false tras un error no puede reactivar el efecto de
+  // inicialización y borrar el formulario, los adjuntos ni la clave de idempotencia.
+  const isClosingAfterSubmitRef = useRef(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [savedMovementId, setSavedMovementId] = useState<number | undefined>(editMovement?.id);
   const [categoryFeedbackIntent, setCategoryFeedbackIntent] = useState<CategoryFeedbackIntent | null>(null);
@@ -431,14 +433,14 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   // Reset on open / populate when editing
   useEffect(() => {
     if (!visible) {
-      setIsClosingAfterSubmit(false);
+      isClosingAfterSubmitRef.current = false;
       return;
     }
   }, [visible]);
 
   useEffect(() => {
     if (!visible) return;
-    if (isClosingAfterSubmit) return;
+    if (isClosingAfterSubmitRef.current) return;
     attachmentsHydratedRef.current = null;
     initialAttachmentSignatureRef.current = "::ready";
     // Sesión nueva del formulario = intento de registro nuevo: si quedó una clave de un
@@ -509,7 +511,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     setSplitLines(null);
     fx.resetFxState(Boolean((editMovement ?? duplicateMovement)?.destinationAmount));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, editMovement, duplicateMovement, defaultType, initialAccountId, isClosingAfterSubmit]);
+  }, [visible, editMovement, duplicateMovement, defaultType, initialAccountId]);
 
   // El par frecuente puede llegar después de abrir el form (query async). Si el form está
   // en transferencia NUEVA sin cuentas elegidas, prellénalo cuando los datos estén listos.
@@ -882,7 +884,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     submittingRef.current = true;
 
     try {
-      setIsClosingAfterSubmit(true);
+      isClosingAfterSubmitRef.current = true;
       const autoDesc = buildDescription();
       let backgroundAttachmentSync: (() => void) | null = null;
       const isTransfer = form.movementType === "transfer";
@@ -914,7 +916,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
           // (conserva id, adjuntos y dedupe); las demás líneas se crean como hermanas.
           const splitValidation = validateSplit(splitLines, sourceAmountNum);
           if (!splitValidation.valid) {
-            setIsClosingAfterSubmit(false);
+            isClosingAfterSubmitRef.current = false;
             haptics.error();
             setSubmitError(splitValidation.error ?? "Revisa la división de montos");
             return;
@@ -977,7 +979,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
           // recupera las líneas ya insertadas en vez de duplicarlas.
           const splitValidation = validateSplit(splitLines, sourceAmountNum);
           if (!splitValidation.valid) {
-            setIsClosingAfterSubmit(false);
+            isClosingAfterSubmitRef.current = false;
             haptics.error();
             setSubmitError(splitValidation.error ?? "Revisa la división de montos");
             return;
@@ -1051,7 +1053,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
       onClose();
       backgroundAttachmentSync?.();
     } catch (err: unknown) {
-      setIsClosingAfterSubmit(false);
+      isClosingAfterSubmitRef.current = false;
       haptics.error();
       const message = err instanceof Error ? err.message : String(err);
       // Sesión/token stale (RLS 42501, JWT): el MutationCache ya dispara la

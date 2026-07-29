@@ -45,3 +45,29 @@ describe("guard anti-doble-tap en formularios", () => {
     expect(source).toContain("submittingRef.current = false");
   });
 });
+
+describe("reintento de MovementForm", () => {
+  const source = readFileSync(join(FORMS_DIR, "MovementForm.tsx"), "utf8");
+
+  it("un fallo de submit no reactiva la inicialización ni descarta la dedupe key", () => {
+    expect(source).toContain("const isClosingAfterSubmitRef = useRef(false)");
+    expect(source).not.toContain("setIsClosingAfterSubmit");
+
+    const initialization = source.slice(
+      source.indexOf("// Reset on open / populate when editing"),
+      source.indexOf("// El par frecuente puede llegar después de abrir el form"),
+    );
+    expect(initialization).toContain("if (isClosingAfterSubmitRef.current) return");
+    expect(initialization).toContain("submitDedupeKeyRef.current = null");
+    expect(initialization).toContain(
+      "}, [visible, editMovement, duplicateMovement, defaultType, initialAccountId]);",
+    );
+
+    const submitFailure = source.slice(
+      source.indexOf("} catch (err: unknown)"),
+      source.indexOf("} finally {", source.indexOf("} catch (err: unknown)")),
+    );
+    expect(submitFailure).toContain("isClosingAfterSubmitRef.current = false");
+    expect(submitFailure).not.toContain("submitDedupeKeyRef.current = null");
+  });
+});
