@@ -14,8 +14,11 @@
  * lenta" con el dashboard entero cargado y 143 Mbps de fibra. El ancho de banda nunca fue el
  * problema: la señal medía lo que no debía.
  */
-export function isBlockingQuery(query: { state: { data: unknown } }): boolean {
-  return query.state.data === undefined;
+export function isBlockingQuery(query: {
+  state: { data: unknown };
+  meta?: Record<string, unknown>;
+}): boolean {
+  return query.state.data === undefined && query.meta?.uxBlocking !== false;
 }
 
 /**

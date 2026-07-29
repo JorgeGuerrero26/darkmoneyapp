@@ -52,7 +52,6 @@ import { payloadString } from "../../features/notifications/lib/notificationPres
 import { getNotificationsModule } from "../../lib/notifications-runtime";
 import { useToast } from "../../hooks/useToast";
 import { useOriginBackNavigation } from "../../hooks/useOriginBackNavigation";
-import { useNotificationsRealtimeSync } from "../../hooks/useNotificationsRealtimeSync";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING } from "../../constants/theme";
 
 const Notifications = getNotificationsModule();
@@ -82,7 +81,6 @@ function NotificationsScreen() {
   const [showUnreadOnly, setShowUnreadOnly] = useState(false);
   const [quickEntry, setQuickEntry] = useState<{ suggestionId: number; notificationId: number } | null>(null);
 
-  useNotificationsRealtimeSync(user?.id ?? null);
   const ignoreTapAfterLongPressRef = useRef(false);
   const { suggestionId: suggestionIdParam } = useLocalSearchParams<{ suggestionId?: string }>();
 

@@ -49,6 +49,7 @@ function rollbackNotifications(queryClient: QueryClient, userId: string | null, 
 export function useNotificationsQuery(userId: string | null) {
   return useQuery({
     queryKey: ["notifications", userId],
+    meta: { uxBlocking: false },
     queryFn: async () => {
       if (!supabase || !userId) return [];
       const { data, error } = await supabase
@@ -74,10 +75,11 @@ export function useNotificationsQuery(userId: string | null) {
     },
     enabled: Boolean(userId),
     staleTime: STALE.short,
-    refetchOnMount: "always",
     refetchOnReconnect: true,
     refetchOnWindowFocus: true,
-    refetchInterval: userId ? 10_000 : false,
+    // Realtime global es la vía principal. Este intervalo solo es una red de seguridad si el
+    // socket estuvo degradado; 10 s generaba hasta 360 lecturas por hora sin aportar frescura.
+    refetchInterval: userId ? 60_000 : false,
   });
 }
 

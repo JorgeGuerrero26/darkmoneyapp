@@ -70,6 +70,7 @@ import {
 } from "../hooks/usePushNotifications";
 import { useAutoSubscriptionMovements } from "../hooks/useAutoSubscriptionMovements";
 import { useNotificationGenerator } from "../hooks/useNotificationGenerator";
+import { useNotificationsRealtimeSync } from "../hooks/useNotificationsRealtimeSync";
 import { BiometricLock } from "../components/ui/BiometricLock";
 import { getNotificationsModule } from "../lib/notifications-runtime";
 import { hasSavedAuthOnDevice } from "../lib/device-auth-state";
@@ -77,17 +78,12 @@ import { clearLastTabRoute, getLastTabRoute } from "../hooks/useTabPersistence";
 
 const Notifications = getNotificationsModule();
 
-// Solo las queries necesarias para PINTAR el dashboard bloquean el overlay de arranque.
-// Historial del recorte: primero salieron las de colaboración (shared-obligations y
-// afines timeouteaban 12 s → ~25 s de "Cargando workspace"); luego movements (la lista
-// completa la carga su propia tab), budget-scope-movements, notifications (la campana
-// puede llegar 1 s tarde) y user-entitlement (solo gatea features de IA). Cada query
-// extra aquí compite además por el lock de auth de supabase-js y alarga el arranque.
+// Solo el núcleo que permite resolver el workspace bloquea el overlay global. Los datos
+// propios de Dashboard/Movimientos muestran sus skeletons dentro de la pantalla: esperar aquí
+// por analytics opcionales hacía que abrir Movimientos pagara consultas de otra tab.
 const INITIAL_WORKSPACE_BOOTSTRAP_QUERY_KEYS = new Set([
   "user-workspaces",
   "workspace-snapshot",
-  "dashboard-movements",
-  "dashboard-analytics",
 ]);
 
 // Tope de escala de fuente del sistema: con fuentes custom (Outfit/Manrope) y la
@@ -278,6 +274,9 @@ function NotificationSetup() {
   const { data: snapshot, isLoading: snapshotLoading } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const { data: notifications = [] } = useNotificationsQuery(profile?.id ?? null);
   const { data: sharedObligations = [] } = useSharedObligationsQuery(session?.user?.id ?? null);
+  // Un solo canal global mantiene campana, badge y lista al día. Antes Realtime vivía solo
+  // dentro de la pantalla Notificaciones y el resto de la app hacía polling cada 10 segundos.
+  useNotificationsRealtimeSync(profile?.id ?? null);
 
   const resolvedActiveWorkspace =
     activeWorkspace ??

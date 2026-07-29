@@ -111,7 +111,7 @@ export function OfflineBanner() {
           <CloudOff size={14} color={COLORS.warning} />
         )}
         <Text style={styles.text} numberOfLines={1}>
-          {isConnected ? "La red va lenta…" : "Sin conexión"}
+          {isConnected ? "Esto está tardando más de lo normal…" : "Sin conexión"}
         </Text>
       </Animated.View>
     </View>

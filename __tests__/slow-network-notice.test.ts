@@ -23,6 +23,15 @@ describe("isBlockingQuery", () => {
     expect(isBlockingQuery({ state: { data: 0 } })).toBe(false);
     expect(isBlockingQuery({ state: { data: null } })).toBe(false);
   });
+
+  it("NO bloquea consultas auxiliares marcadas como no críticas para la UX", () => {
+    expect(
+      isBlockingQuery({
+        state: { data: undefined },
+        meta: { uxBlocking: false },
+      }),
+    ).toBe(false);
+  });
 });
 
 describe("umbral para culpar a la red", () => {
