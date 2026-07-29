@@ -44,6 +44,12 @@ export function markStartupReady(outcome: "ready" | "timeout", extra?: Record<st
     // `updateId` es null cuando corre el bundle embebido en el APK/IPA.
     updateId: Updates.updateId,
     embedded: Updates.isEmbeddedLaunch,
+    // Reloj absoluto del instante en que este módulo se evaluó, o sea cuando el JS empezó a
+    // correr. `ms` mide desde aquí en adelante y deja ciego todo lo ANTERIOR: el arranque
+    // nativo y la carga del bundle. Restando este valor del momento en que se lanzó la app se
+    // obtiene ese tramo, que de otro modo solo se puede cronometrar desde fuera — y ahí el
+    // coste de la propia herramienta (10 s de túnel en devicectl) contamina la medición.
+    jsStartAt: JS_START,
     ...extra,
   });
 }
