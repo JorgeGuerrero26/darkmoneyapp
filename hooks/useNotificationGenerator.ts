@@ -18,6 +18,7 @@ import { supabase } from "../lib/supabase";
 import { queryClient } from "../lib/query-client";
 import { calendarDaysFromTodayLocal } from "../lib/subscription-helpers";
 import { formatCurrency } from "../lib/format-currency";
+import { findStaleGeneratedNotificationIds } from "../lib/notification-cleanup";
 import type { WorkspaceSnapshot } from "../services/queries/workspace-data";
 import {
   buildAccountDormantAlerts,
@@ -119,29 +120,34 @@ const ALL_KINDS = [
   "obligation_milestone",
 ];
 
+type ExistingNotificationRow = {
+  id: number;
+  related_entity_type: string | null;
+  related_entity_id: number | null;
+  kind: string | null;
+  scheduled_for: string;
+};
+
 async function cleanupStaleNotifications(
   userId: string,
   activeRows: NotificationRow[],
+  existingRows: ExistingNotificationRow[],
 ): Promise<void> {
   if (!supabase) return;
 
-  const keepIds: Record<string, Set<number>> = {};
-  for (const kind of ALL_KINDS) keepIds[kind] = new Set();
-  for (const row of activeRows) {
-    keepIds[row.kind]?.add(row.related_entity_id);
-  }
-
-  await Promise.all(
-    ALL_KINDS.map((kind) => {
-      const ids = Array.from(keepIds[kind]);
-      const q = supabase!
-        .from("notifications")
-        .delete()
-        .eq("user_id", userId)
-        .eq("kind", kind);
-      return ids.length ? q.not("related_entity_id", "in", `(${ids.join(",")})`) : q;
-    }),
+  const staleIds = findStaleGeneratedNotificationIds(
+    existingRows,
+    activeRows,
+    ALL_KINDS,
   );
+  if (!staleIds.length) return;
+
+  const { error } = await supabase
+    .from("notifications")
+    .delete()
+    .eq("user_id", userId)
+    .in("id", staleIds);
+  if (error) console.warn("[NotificationGenerator] cleanup error:", error.message);
 }
 
 // ─── Generator ────────────────────────────────────────────────────────────────
@@ -309,27 +315,26 @@ async function generateNotifications(
     }),
   );
 
-  // ── Insert only new notifications (idempotent without DB constraint) ──────
-  if (!rows.length) {
-    await cleanupStaleNotifications(userId, rows);
-    void queryClient.invalidateQueries({ queryKey: ["notifications", userId] });
-    return;
-  }
-
-  const { data: existing } = await supabase
+  // ── Single read for daily idempotency and stale cleanup ─────────────────────────
+  const { data: existing, error: existingError } = await supabase
     .from("notifications")
-    .select("related_entity_type, related_entity_id, kind, scheduled_for")
+    .select("id, related_entity_type, related_entity_id, kind, scheduled_for")
     .eq("user_id", userId)
     .in("kind", ALL_KINDS);
+  if (existingError) {
+    console.warn("[NotificationGenerator] existing notifications error:", existingError.message);
+  }
+
+  const existingRows = (existing ?? []) as ExistingNotificationRow[];
 
   const existingSet = new Set(
-    (existing ?? [])
-      .filter((row: any) => {
-        const scheduledFor = typeof row.scheduled_for === "string" ? row.scheduled_for : "";
+    existingRows
+      .filter((row) => {
+        const scheduledFor = row.scheduled_for;
         if (!scheduledFor) return false;
         return usageDateInLima(new Date(scheduledFor)) === todayKey;
       })
-      .map((row: any) => `${row.related_entity_type}:${row.related_entity_id}:${row.kind}:${todayKey}`),
+      .map((row) => `${row.related_entity_type}:${row.related_entity_id}:${row.kind}:${todayKey}`),
   );
 
   const newRows = rows.filter(
@@ -346,7 +351,7 @@ async function generateNotifications(
     if (error) console.warn("[NotificationGenerator] insert error:", error.message);
   }
 
-  await cleanupStaleNotifications(userId, rows);
+  await cleanupStaleNotifications(userId, rows, existingRows);
   void queryClient.invalidateQueries({ queryKey: ["notifications", userId] });
 }
 
