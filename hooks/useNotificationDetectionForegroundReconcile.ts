@@ -46,6 +46,11 @@ export function useNotificationDetectionForegroundReconcile() {
   ctxRef.current = { profileId: profile?.id ?? null, workspaceId: activeWorkspaceId ?? null };
 
   useEffect(() => {
+    // Esta reconciliación solo existe en Android. Antes el guard estaba después de
+    // invalidar movements + workspace-snapshot: cada foreground en iPhone lanzaba
+    // ~15 requests aunque el módulo nativo no existiera.
+    if (!notificationDetection.isAvailable()) return;
+
     async function reconcile() {
       const { profileId, workspaceId } = ctxRef.current;
       if (!profileId || !workspaceId) return;
@@ -57,8 +62,6 @@ export function useNotificationDetectionForegroundReconcile() {
         // A) Refrescar datos posiblemente desactualizados por inserts del task headless.
         void queryClient.invalidateQueries({ queryKey: ["movements"] });
         void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
-
-        if (!notificationDetection.isAvailable()) return;
 
         // D) Re-escanear la bandeja + rebind del listener. Rescata notificaciones bancarias que
         // llegaron con el listener muerto (Samsung lo mata con la app cerrada) y que de otro modo
