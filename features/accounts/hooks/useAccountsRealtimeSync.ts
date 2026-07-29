@@ -2,6 +2,11 @@ import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { subscribeRealtimeChannel } from "../../../lib/realtime-channel";
+import {
+  scheduleCoalescedTask,
+  scheduleQueryInvalidation,
+} from "../../../lib/query-refresh-coalescer";
+import { refreshSnapshotDomains } from "../../../services/queries/workspace-data";
 
 type Input = {
   workspaceId: number | null;
@@ -9,9 +14,8 @@ type Input = {
 
 /**
  * Subscribe the accounts module to realtime changes in the `accounts` and
- * `movements` tables for the active workspace. Whenever a row is inserted /
- * updated / deleted on either table, the workspace snapshot is invalidated so
- * the list and detail screens re-fetch transparently.
+ * `movements` tables for the active workspace. Duplicate events are coalesced;
+ * movement changes refresh only the snapshot domains that affect balances.
  *
  * Why both tables?
  *  - `accounts` changes obviously affect the list (rename, archive, balance).
@@ -34,7 +38,7 @@ export function useAccountsRealtimeSync({ workspaceId }: Input) {
           table: "accounts",
           filter: `workspace_id=eq.${workspaceId}`,
           onChange: () => {
-            void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+            scheduleQueryInvalidation(queryClient, ["workspace-snapshot"]);
           },
         },
         {
@@ -42,9 +46,17 @@ export function useAccountsRealtimeSync({ workspaceId }: Input) {
           filter: `workspace_id=eq.${workspaceId}`,
           onChange: () => {
             // Movements change the per-account balance and the net-worth aggregate.
-            void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+            scheduleCoalescedTask(
+              queryClient,
+              `movement-snapshot:${workspaceId}`,
+              () => refreshSnapshotDomains(
+                queryClient,
+                workspaceId,
+                ["accounts", "budgets", "categoryMovements", "subscriptionMovements"],
+              ),
+            );
             // Account detail also paginates movements directly.
-            void queryClient.invalidateQueries({ queryKey: ["movements"] });
+            scheduleQueryInvalidation(queryClient, ["movements"]);
           },
         },
       ],

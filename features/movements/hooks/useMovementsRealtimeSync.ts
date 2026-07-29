@@ -2,6 +2,11 @@ import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { subscribeRealtimeChannel } from "../../../lib/realtime-channel";
+import {
+  scheduleCoalescedTask,
+  scheduleQueryInvalidation,
+} from "../../../lib/query-refresh-coalescer";
+import { refreshSnapshotDomains } from "../../../services/queries/workspace-data";
 
 type Input = {
   workspaceId: number | null;
@@ -10,8 +15,8 @@ type Input = {
 /**
  * Suscribe la pantalla de movimientos a cambios realtime en la tabla
  * `movements`, filtrado por workspace en el servidor. Cuando llega un evento
- * (insert/update/delete) invalida la query infinita `["movements", ...]` para
- * que React Query re-fetche la página activa.
+ * (insert/update/delete) invalida lista/detalle y agrupa el refresco selectivo
+ * de saldos, presupuestos y analítica de categorías.
  *
  * Casos que cubre:
  * - El usuario registra un movimiento desde el overlay nativo Android.
@@ -38,9 +43,18 @@ export function useMovementsRealtimeSync({ workspaceId }: Input) {
           table: "movements",
           filter: `workspace_id=eq.${workspaceId}`,
           onChange: () => {
-            void queryClient.invalidateQueries({ queryKey: ["movements"] });
+            scheduleQueryInvalidation(queryClient, ["movements"]);
             // El detalle individual puede haber cambiado también.
-            void queryClient.invalidateQueries({ queryKey: ["movement"] });
+            scheduleQueryInvalidation(queryClient, ["movement"]);
+            scheduleCoalescedTask(
+              queryClient,
+              `movement-snapshot:${workspaceId}`,
+              () => refreshSnapshotDomains(
+                queryClient,
+                workspaceId,
+                ["accounts", "budgets", "categoryMovements", "subscriptionMovements"],
+              ),
+            );
           },
         },
       ],

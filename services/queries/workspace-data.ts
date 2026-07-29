@@ -13,6 +13,7 @@ import {
 } from "../../lib/ai-request-utils";
 import { dateStrToISO, filterDateFrom, filterDateTo } from "../../lib/date";
 import { notificationDetection } from "../../lib/notification-detection-native";
+import { scheduleCoalescedTask } from "../../lib/query-refresh-coalescer";
 import {
   mirrorObligationEventAttachmentsToMovement,
   type AttachmentLike,
@@ -689,6 +690,7 @@ export type WorkspaceSnapshot = {
 export function useUserEntitlementQuery(userId?: string | null, email?: string | null) {
   return useQuery({
     queryKey: ["user-entitlement", userId ?? null, email?.trim().toLowerCase() ?? null],
+    meta: { uxBlocking: false },
     enabled: Boolean(supabase && userId),
     staleTime: STALE.medium,
     placeholderData: (previousData) => previousData,
@@ -835,7 +837,7 @@ function buildPostedAnalyticsMovements<K extends "categoryId" | "subscriptionId"
   });
 }
 
-async function fetchWorkspaceSnapshot(
+export async function fetchWorkspaceSnapshot(
   userId: string,
   activeWorkspaceId: number,
 ): Promise<WorkspaceSnapshot> {
@@ -937,14 +939,26 @@ async function fetchWorkspaceSnapshot(
       .select("from_currency_code, to_currency_code, rate, effective_at"),
   ]);
 
-  if (accountsResult.error) {
-    throw new Error(accountsResult.error.message ?? "Error al cargar cuentas");
-  }
-  if (subscriptionsResult.error) {
-    throw new Error(subscriptionsResult.error.message ?? "Error al cargar suscripciones");
-  }
-  if (recurringIncomeResult.error) {
-    throw new Error(recurringIncomeResult.error.message ?? "Error al cargar ingresos fijos");
+  const coreResults = [
+    [membershipsResult, "membresías"],
+    [workspacesResult, "workspaces"],
+    [accountsResult, "cuentas"],
+    [accountBalancesResult, "saldos"],
+    [categoriesResult, "categorías"],
+    [budgetsResult, "presupuestos"],
+    [counterpartiesResult, "contrapartes"],
+    [obligationsResult, "obligaciones"],
+    [obligationTextMetaResult, "descripciones de obligaciones"],
+    [subscriptionsResult, "suscripciones"],
+    [recurringIncomeResult, "ingresos fijos"],
+    [exchangeRatesResult, "tipos de cambio"],
+  ] as const;
+  for (const [result, label] of coreResults) {
+    if (result.error) {
+      throw new Error(
+        formatSupabaseError(result.error) || `Error al cargar ${label}`,
+      );
+    }
   }
 
   // obligation_events no tiene workspace_id en el esquema: filtrar eventos por obligaciones del workspace
@@ -1066,6 +1080,7 @@ async function fetchWorkspaceSnapshot(
 
   applyBaseCurrencyToAccounts(accounts, baseCurrency, exchangeRates);
 
+  // Estos historiales solo enriquecen analítica; un fallo no debe bloquear los datos core.
   const subscriptionPostedMovements: SubscriptionPostedMovement[] = subscriptionMovementsResult.error
     ? []
     : buildPostedAnalyticsMovements(
@@ -1282,23 +1297,30 @@ export function useWorkspaceSnapshotQuery(
     queryKey: ["workspace-snapshot", activeWorkspaceId, profile?.id],
     queryFn: () => fetchWorkspaceSnapshot(profile!.id, activeWorkspaceId!),
     enabled: Boolean(profile?.id && activeWorkspaceId),
+    // No heredar placeholderData global: al cambiar de workspace nunca se deben pintar datos
+    // del anterior mientras carga la nueva key. Las refetch de la misma key ya conservan data.
+    placeholderData: undefined,
     // 30s: snapshot core (saldos, categorías, presupuestos). Al entrar a un módulo, si pasaron
-    // >30s refetch en background mostrando lo previo (placeholderData global). Realtime lo
+    // >30s refetch en background conservando el cache de esa misma key. Realtime lo
     // mantiene fresco con la app abierta; esto cubre el hueco al volver de background / otra
     // pantalla / otro dispositivo, sin polling.
     staleTime: STALE.short,
     refetchOnReconnect: true,
-    retry: 3,
+    retry: 1,
     retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 10_000),
   });
 }
 
 // ─── Refetch selectivo por dominio (Fase 3 del plan de fluidez) ──────────────
 
-export type SnapshotRefreshDomain = "accounts" | "budgets" | "categoryMovements";
+export type SnapshotRefreshDomain =
+  | "accounts"
+  | "budgets"
+  | "categoryMovements"
+  | "subscriptionMovements";
 
 /**
- * Refresca SOLO los dominios afectados por una mutación caliente (2-4 queries)
+ * Refresca SOLO los dominios afectados por una mutación caliente (2-5 queries)
  * y mergea al cache del snapshot, en vez de invalidarlo completo (~16 queries).
  * La re-sincronización total sigue garantizada por staleTime (STALE.short): el
  * siguiente mount/focus de cualquier consumidor refetchea el snapshot entero.
@@ -1324,11 +1346,12 @@ export async function refreshSnapshotDomains(
     const wantsAccounts = domains.includes("accounts");
     const wantsBudgets = domains.includes("budgets");
     const wantsCatMovs = domains.includes("categoryMovements");
+    const wantsSubMovs = domains.includes("subscriptionMovements");
     const twoYearsAgo = new Date();
     twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
     const twoYearsAgoIso = twoYearsAgo.toISOString().slice(0, 10);
 
-    const [accountsRes, balancesRes, budgetsRes, catMovsRes] = await Promise.all([
+    const [accountsRes, balancesRes, budgetsRes, catMovsRes, subMovsRes] = await Promise.all([
       wantsAccounts
         ? supabase
             .from("accounts")
@@ -1360,6 +1383,17 @@ export async function refreshSnapshotDomains(
             .order("occurred_at", { ascending: false })
             .limit(1000)
         : Promise.resolve(null),
+      wantsSubMovs
+        ? supabase
+            .from("movements")
+            .select("id, subscription_id, status, occurred_at, source_amount, destination_amount, source_account_id, destination_account_id")
+            .eq("workspace_id", workspaceId)
+            .not("subscription_id", "is", null)
+            .eq("status", "posted")
+            .gte("occurred_at", twoYearsAgoIso)
+            .order("occurred_at", { ascending: false })
+            .limit(1000)
+        : Promise.resolve(null),
     ]);
 
     const patch: Partial<WorkspaceSnapshot> = {};
@@ -1377,19 +1411,32 @@ export async function refreshSnapshotDomains(
       if (budgetsRes.error) throw budgetsRes.error;
       patch.budgets = (budgetsRes.data ?? []).map((row: any) => mapBudget(row as BudgetProgressRow));
     }
-    if (catMovsRes) {
-      if (catMovsRes.error) throw catMovsRes.error;
+    if (catMovsRes || subMovsRes) {
       const accountsForCurrency = patch.accounts ?? current.accounts;
       const accountCurrencyMap = new Map<number, string>();
       for (const acc of accountsForCurrency) accountCurrencyMap.set(acc.id, acc.currencyCode.toUpperCase());
-      patch.categoryPostedMovements = buildPostedAnalyticsMovements(
-        (catMovsRes.data ?? []) as any[],
-        "categoryId",
-        "category_id",
-        accountCurrencyMap,
-        baseCurrency,
-        current.exchangeRates,
-      );
+      if (catMovsRes) {
+        if (catMovsRes.error) throw catMovsRes.error;
+        patch.categoryPostedMovements = buildPostedAnalyticsMovements(
+          (catMovsRes.data ?? []) as any[],
+          "categoryId",
+          "category_id",
+          accountCurrencyMap,
+          baseCurrency,
+          current.exchangeRates,
+        );
+      }
+      if (subMovsRes) {
+        if (subMovsRes.error) throw subMovsRes.error;
+        patch.subscriptionPostedMovements = buildPostedAnalyticsMovements(
+          (subMovsRes.data ?? []) as any[],
+          "subscriptionId",
+          "subscription_id",
+          accountCurrencyMap,
+          baseCurrency,
+          current.exchangeRates,
+        );
+      }
     }
 
     queryClient.setQueriesData<WorkspaceSnapshot>(
@@ -1556,6 +1603,7 @@ export function useDashboardAnalyticsQuery(
 ) {
   return useQuery({
     queryKey: ["dashboard-analytics", userScopeKey ?? null, workspaceId],
+    meta: { uxBlocking: false },
     queryFn: async (): Promise<DashboardAnalyticsBundle> => {
       const fallback: DashboardAnalyticsBundle = {
         signals: [],
@@ -2440,7 +2488,15 @@ export function useCreateMovementMutation(workspaceId: number | null) {
       // (saldos exactos, presupuestos, analíticas de categoría) en vez del
       // snapshot completo. staleTime cubre la re-sincronización total perezosa.
       if (workspaceId) {
-        void refreshSnapshotDomains(queryClient, workspaceId, ["accounts", "budgets", "categoryMovements"]);
+        scheduleCoalescedTask(
+          queryClient,
+          `movement-snapshot:${workspaceId}`,
+          () => refreshSnapshotDomains(
+            queryClient,
+            workspaceId,
+            ["accounts", "budgets", "categoryMovements", "subscriptionMovements"],
+          ),
+        );
       } else {
         void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
       }
