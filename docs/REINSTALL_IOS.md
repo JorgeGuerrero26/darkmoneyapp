@@ -10,6 +10,67 @@ Historial: primera instalación 2026-07-27 (sesión donde se resolvió todo lo d
 
 ---
 
+## ⚠️ LEER PRIMERO — la Mac se formateó (2026-07-30)
+
+**Todo lo que sigue a partir del Paso 1 requiere una Mac y ya no aplica**, salvo que el
+usuario consiga otra. Xcode solo existe en macOS: sin Mac no se puede compilar ni firmar
+un build nuevo, y el Apple ID gratis solo emite perfiles desde Xcode.
+
+### Qué se dejó preparado antes de formatear
+
+Se exportó un **`.ipa` sin firmar** desde la Mac, en su último día:
+
+| Dato | Valor |
+|---|---|
+| Archivo | `DarkMoney-1.0.8.ipa` (16 MB) |
+| Generado | 2026-07-30, commit `f47940c` |
+| Versión / runtime | 1.0.8 — canal de updates `preview` |
+| Bundle JS | **embebido** (11 MB): arranca sin Metro ni Mac |
+| Firma | **ninguna** (a propósito: AltStore la pone) |
+
+> El usuario debía copiarlo fuera del Escritorio antes del formateo. **Si no aparece,
+> no se puede regenerar sin una Mac** — verificarlo antes de prometer nada.
+
+Comando con el que se generó (para repetirlo si algún día hay Mac):
+
+```bash
+xcodebuild -workspace ios/DarkMoney.xcworkspace -scheme DarkMoney -configuration Release \
+  -destination "generic/platform=iOS" -derivedDataPath /tmp/dm-ipa-build \
+  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
+# luego: Payload/DarkMoney.app → zip → .ipa
+```
+
+Release, no Debug: con Debug el bundle JS no queda embebido y la app necesitaría el
+servidor de desarrollo. Sin firmar y con `generic/platform=iOS` **no hace falta el iPhone
+conectado**, porque AltStore re-firma todo (incluidos los 3 frameworks embebidos).
+
+### Cómo se instala ahora (Windows, gratis)
+
+**AltStore** (o **SideStore**, que se renueva solo por wifi) firma el `.ipa` con el Apple ID
+gratis desde una PC Windows. Requiere **iTunes e iCloud de apple.com**, no las versiones de
+Microsoft Store. Instalar AltServer → AltStore en el iPhone → **+** → elegir el `.ipa` →
+en el iPhone, *Ajustes › General › VPN y gestión de dispositivos → Confiar*.
+
+Los datos se conservan: mismo bundle ID (`com.darkmoney.app`).
+
+### Qué sigue funcionando y qué no
+
+- ✅ **Los cambios solo-JS siguen llegando** por `eas update --channel preview`: el `.ipa`
+  quedó con runtime 1.0.8 y canal `preview`. No hace falta Mac para eso.
+- ❌ **Cambios nativos** (Kotlin, permisos, dependencias nativas, bump de `version`) ya no
+  llegan al iPhone: exigirían un `.ipa` nuevo → Mac o cuenta de pago.
+- ⚠️ Sigue caducando a los **7 días**; AltStore renueva con la PC en la misma red,
+  SideStore sin ella.
+
+### La salida definitiva
+
+**Apple Developer Program ($99/año)**: EAS compila iOS en la nube y se instala por
+TestFlight desde Windows, sin Mac nunca más y con 90 días de vigencia. Requiere agregar
+perfil `ios` a `eas.json` (hoy solo tiene Android). Ofrecido al usuario el 2026-07-30;
+no lo tomó en ese momento.
+
+---
+
 ## Regla #0: `BUILD SUCCEEDED` no significa instalada
 
 Son dos pasos separados y el segundo falla distinto:
