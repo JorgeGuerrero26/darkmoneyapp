@@ -21,7 +21,10 @@
       "Bash(sips -g pixelWidth -g pixelHeight /Users/clinaresb/Desktop/Proyectos/darkmoneyapp/assets/images/background-darkmoney.png)",
       "Bash(grep -E \"\\\\.\\(tsx|ts\\)$\")",
       "Bash(awk '/^function DashboardScreen/,/^function/ {print NR\": \"$0}' /Users/clinaresb/Desktop/Proyectos/darkmoneyapp/app/\\\\\\(app\\\\\\)/dashboard.tsx)",
-      "Bash(rtk git *)"
+      "Bash(rtk git *)",
+      "Bash(python3 -c \"import psycopg; print\\('psycopg ok'\\)\")",
+      "Bash(npm run *)",
+      "Bash(git -C /Users/clinaresb/Desktop/Proyectos/darkmoneyapp rev-parse --show-toplevel)"
     ]
   }
 }
