@@ -16,6 +16,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       "El asistente puede responderte en voz alta: activa el \"modo hablante\", háblale y te contesta hablando. Ideal para consultar tu plata sin mirar la pantalla. (Pro)",
       "En iPhone ya puedes detectar tus pagos automáticamente: en Configuración generas una dirección privada, reenvías ahí los correos que te manda tu banco y DarkMoney te sugiere el movimiento listo para confirmar.",
       "Si tocas \"Guardar\" dos veces por nervios, ya no se registra dos veces.",
+      "Registrar un movimiento apenas abres la app es más rápido: ya no tienes que esperar a que terminen de cargar tus créditos, deudas y presupuestos.",
       "El aviso de \"conexión lenta\" ya no aparece cuando tu internet va bien.",
     ],
   },

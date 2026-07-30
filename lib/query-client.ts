@@ -135,7 +135,10 @@ const asyncStoragePersister = createAsyncStoragePersister({
 export const queryPersistOptions: Omit<PersistQueryClientOptions, "queryClient"> = {
   persister: asyncStoragePersister,
   maxAge: PERSIST_MAX_AGE_MS,
-  buster: "2026-07-05-v1",
+  // Bump 2026-07-30: el snapshot ya no lleva budgets/obligations dentro (viven en
+  // una entrada aparte). Un caché viejo los traería embebidos y el generador de
+  // notificaciones los daría por cargados, emitiendo un ciclo con datos rancios.
+  buster: "2026-07-30-v1",
   dehydrateOptions: {
     shouldDehydrateQuery: (query) => {
       if (query.state.status !== "success") return false;
