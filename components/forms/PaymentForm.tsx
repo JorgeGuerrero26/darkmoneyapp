@@ -73,7 +73,7 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent
   const initialAttachmentSignatureRef = useRef("::ready");
   const latestObligation = useMemo(() => {
     if (!obligation) return null;
-    return snapshot?.obligations.find((item) => item.id === obligation.id) ?? obligation;
+    return snapshot?.obligations?.find((item) => item.id === obligation.id) ?? obligation;
   }, [snapshot?.obligations, obligation]);
 
   const today = todayPeru();

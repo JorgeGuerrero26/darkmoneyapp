@@ -339,7 +339,7 @@ function AssistantScreen() {
         setDraftStatus(item.id, "saved", res.movementId ?? undefined);
       } else if (draft.operation === "pay_debt") {
         if (!draft.obligationId) throw new Error("No encontré la deuda.");
-        const obligation = snapshot.obligations.find((o) => o.id === draft.obligationId);
+        const obligation = (snapshot.obligations ?? []).find((o) => o.id === draft.obligationId);
         await payObligation.mutateAsync({
           obligationId: draft.obligationId,
           amount: draft.amount,

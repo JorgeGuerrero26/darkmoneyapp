@@ -94,11 +94,15 @@ function BudgetsScreen() {
   const togglePinMutation = useTogglePinBudgetMutation(activeWorkspaceId);
   const {
     data: snapshot,
-    isLoading: snapshotLoading,
+    isLoading: coreLoading,
+    // Los presupuestos llegan en la query diferida: sin esto la lista pintaría
+    // "sin presupuestos" durante ese hueco en vez del skeleton.
+    deferredLoading,
     isRefetching: snapshotRefetching,
     refetch: refetchSnapshot,
     dataUpdatedAt,
   } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
+  const snapshotLoading = coreLoading || deferredLoading;
 
   const budgets = snapshot?.budgets ?? [];
   const baseCurrencyCode = activeWorkspace?.baseCurrencyCode ?? profile?.baseCurrencyCode ?? "PEN";
@@ -154,7 +158,7 @@ function BudgetsScreen() {
     // Cold start desde push: esperar a que el snapshot cargue antes de consumir el param.
     if (!snapshot) return;
     router.setParams({ duplicateFrom: undefined });
-    const source = snapshot.budgets.find((budget) => budget.id === Number(duplicateFrom));
+    const source = (snapshot.budgets ?? []).find((budget) => budget.id === Number(duplicateFrom));
     if (!source) return;
     setDuplicateBudget({ ...source, ...nextPeriodFor(source.periodStart, source.periodEnd) });
   }, [duplicateFrom, snapshot, router]);

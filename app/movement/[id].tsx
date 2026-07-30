@@ -373,7 +373,7 @@ function MovementDetailScreen() {
   }
 
   const linkedObligationTitle = movement?.obligationId
-    ? snapshot?.obligations.find((o) => o.id === movement.obligationId)?.title ?? null
+    ? snapshot?.obligations?.find((o) => o.id === movement.obligationId)?.title ?? null
     : null;
   const linkedSubscriptionName = movement?.subscriptionId
     ? snapshot?.subscriptions.find((s) => s.id === movement.subscriptionId)?.name ?? null

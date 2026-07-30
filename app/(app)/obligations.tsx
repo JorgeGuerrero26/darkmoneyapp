@@ -97,7 +97,15 @@ function ObligationsScreen() {
   const deleteMutation = useDeleteObligationMutation(activeWorkspaceId);
   const archiveMutation = useArchiveObligationMutation(activeWorkspaceId);
 
-  const { data: snapshot, isLoading, dataUpdatedAt } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
+  // Las obligaciones llegan en la query diferida: sin sumar `deferredLoading` la
+  // lista pintaría "sin obligaciones" durante ese hueco en vez del skeleton.
+  const {
+    data: snapshot,
+    isLoading: coreLoading,
+    deferredLoading,
+    dataUpdatedAt,
+  } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
+  const isLoading = coreLoading || deferredLoading;
   const { data: obligationShares = [] } = useObligationSharesQuery(activeWorkspaceId);
   const { data: sharedObligations = [], isLoading: sharedLoading, isFetching: sharedFetching } =
     useSharedObligationsQuery(session?.user?.id ?? null);

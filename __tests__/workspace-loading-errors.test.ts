@@ -9,6 +9,14 @@ jest.mock("@tanstack/react-query", () => ({
   useQueryClient: jest.fn(),
 }));
 
+// El hook se invoca como función suelta (sin render), así que useMemo/useCallback
+// no pueden pasar por el dispatcher real de React.
+jest.mock("react", () => ({
+  ...jest.requireActual("react"),
+  useMemo: (factory: () => unknown) => factory(),
+  useCallback: (fn: unknown) => fn,
+}));
+
 jest.mock("../lib/supabase", () => ({
   supabase: { from: (...args: unknown[]) => mockFrom(...args) },
   supabaseAnonKey: "test-anon-key",
@@ -30,6 +38,7 @@ jest.mock("../store/ui-store", () => ({
 
 import {
   fetchUserWorkspaces,
+  fetchWorkspaceDeferred,
   fetchWorkspaceSnapshot,
   refreshSnapshotDomains,
   useWorkspaceSnapshotQuery,
@@ -121,10 +130,7 @@ describe("fetchWorkspaceSnapshot", () => {
     "accounts",
     "v_account_balances",
     "categories",
-    "v_budget_progress",
     "counterparties",
-    "v_obligation_summary",
-    "obligations",
     "subscriptions",
     "recurring_income",
     "v_latest_exchange_rates",
@@ -156,11 +162,86 @@ describe("fetchWorkspaceSnapshot", () => {
       }),
     );
   });
+
+  it("ya no pide obligaciones ni presupuestos: eso vive en la query diferida", async () => {
+    arrangeSnapshotQueries();
+
+    await fetchWorkspaceSnapshot("user-1", 7);
+
+    const consultadas = mockFrom.mock.calls.map(([table]) => table);
+    expect(consultadas).not.toContain("v_budget_progress");
+    expect(consultadas).not.toContain("v_obligation_summary");
+    expect(consultadas).not.toContain("obligation_events");
+  });
+});
+
+describe("fetchWorkspaceDeferred", () => {
+  beforeEach(() => {
+    mockFrom.mockReset();
+  });
+
+  it.each([
+    "v_budget_progress",
+    "v_obligation_summary",
+    "obligations",
+  ])("rechaza la parte diferida cuando falla %s", async (table) => {
+    arrangeSnapshotQueries({
+      [table]: {
+        data: null,
+        error: { code: "57000", message: `${table} unavailable` },
+      },
+    });
+
+    await expect(fetchWorkspaceDeferred(7, new Map())).rejects.toThrow(
+      `57000 | ${table} unavailable`,
+    );
+  });
+
+  it("resuelve obligaciones y presupuestos vacíos sin tocar obligation_events", async () => {
+    arrangeSnapshotQueries();
+
+    await expect(fetchWorkspaceDeferred(7, new Map())).resolves.toEqual({
+      budgets: [],
+      obligations: [],
+    });
+    // Sin obligaciones no hay IDs que consultar: la 4ª consulta se salta.
+    expect(mockFrom.mock.calls.map(([table]) => table)).not.toContain("obligation_events");
+  });
 });
 
 describe("useWorkspaceSnapshotQuery", () => {
   beforeEach(() => {
     mockUseQuery.mockClear();
+    mockUseQuery.mockReturnValue({ data: undefined });
+  });
+
+  const perfil = {
+    id: "user-1",
+    email: "user@example.test",
+    fullName: "Test User",
+    initials: "TU",
+    baseCurrencyCode: "PEN",
+    timezone: "America/Lima",
+    avatarUrl: null,
+  };
+
+  it("no habilita la query diferida hasta que el núcleo tiene datos", () => {
+    useWorkspaceSnapshotQuery(perfil, 7);
+
+    const [coreOptions, deferredOptions] = mockUseQuery.mock.calls.map(([opts]) => opts as any);
+    expect(coreOptions.enabled).toBe(true);
+    // Sin snapshot núcleo en cache no hay mapa de contrapartes que pasarle.
+    expect(deferredOptions.enabled).toBe(false);
+    expect(deferredOptions.queryKey).toEqual(["workspace-snapshot", 7, "user-1", "deferred"]);
+  });
+
+  it("con deferred: false nunca habilita la parte diferida", () => {
+    mockUseQuery.mockReturnValue({ data: { accounts: [] } });
+
+    useWorkspaceSnapshotQuery(perfil, 7, { deferred: false });
+
+    const [, deferredOptions] = mockUseQuery.mock.calls.map(([opts]) => opts as any);
+    expect(deferredOptions.enabled).toBe(false);
   });
 
   it("hace como máximo dos intentos totales", () => {

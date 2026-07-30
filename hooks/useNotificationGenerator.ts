@@ -156,9 +156,19 @@ function toNotificationRow(userId: string, nowIso: string, alert: AlertRow): Not
   return { user_id: userId, channel: "in_app", status: "pending", scheduled_for: nowIso, ...alert };
 }
 
+/**
+ * El generador necesita el snapshot COMPLETO: obligaciones y presupuestos llegan
+ * diferidos, y correr sin ellos emitiría un ciclo de alertas incompleto.
+ * Exigirlo en el tipo evita que se cuele por descuido.
+ */
+type LoadedSnapshot = WorkspaceSnapshot & {
+  budgets: NonNullable<WorkspaceSnapshot["budgets"]>;
+  obligations: NonNullable<WorkspaceSnapshot["obligations"]>;
+};
+
 async function generateNotifications(
   userId: string,
-  snapshot: WorkspaceSnapshot,
+  snapshot: LoadedSnapshot,
 ): Promise<void> {
   if (!supabase) return;
 
@@ -377,12 +387,19 @@ export function useNotificationGenerator(
   useEffect(() => {
     if (!userId || !snapshot) return;
 
+    // Obligaciones y presupuestos llegan en la query diferida: hasta que estén,
+    // generar produciría un ciclo sin alertas de esos dominios. El efecto vuelve
+    // a correr solo cuando llegan (cambia `snapshot`).
+    const { budgets, obligations } = snapshot;
+    if (!budgets || !obligations) return;
+    const loadedSnapshot: LoadedSnapshot = { ...snapshot, budgets, obligations };
+
     // Fingerprint: recalculate when any relevant data changes
     const fingerprint = [
       generationDayKey,
-      snapshot.budgets.map((b) => `${b.id}:${b.usedPercent}`).join(","),
+      budgets.map((b) => `${b.id}:${b.usedPercent}`).join(","),
       snapshot.subscriptions.map((s) => `${s.id}:${s.nextDueDate}:${s.status}`).join(","),
-      snapshot.obligations.map((o) => `${o.id}:${o.pendingAmount}:${o.status}:${o.lastPaymentDate ?? ""}`).join(","),
+      obligations.map((o) => `${o.id}:${o.pendingAmount}:${o.status}:${o.lastPaymentDate ?? ""}`).join(","),
       snapshot.accounts.map((a) => `${a.id}:${Math.round(a.currentBalance)}`).join(","),
       `m:${snapshot.categoryPostedMovements.length}`,
     ].join("|");
@@ -396,7 +413,7 @@ export function useNotificationGenerator(
     // la huella sin marcar hace que se reprograme en vez de perderse.
     const task = InteractionManager.runAfterInteractions(() => {
       lastSnapshotRef.current = fingerprint;
-      void generateNotifications(userId, snapshot).catch((err) => {
+      void generateNotifications(userId, loadedSnapshot).catch((err) => {
         console.warn("[NotificationGenerator] error:", err);
         lastSnapshotRef.current = null; // allow retry on next change
       });

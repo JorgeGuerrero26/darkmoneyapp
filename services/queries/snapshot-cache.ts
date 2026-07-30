@@ -1,6 +1,18 @@
 import type { QueryClient } from "@tanstack/react-query";
 
-import type { WorkspaceSnapshot } from "./workspace-data";
+import type { WorkspaceDeferred, WorkspaceSnapshot } from "./workspace-data";
+
+/**
+ * Bajo el prefijo `["workspace-snapshot", wsId]` cuelgan dos entradas: el núcleo
+ * y la diferida (`{ budgets, obligations }`). Todo patch por prefijo debe
+ * discriminarlas antes de leer campos, o revienta sobre la que no le toca.
+ *
+ * Vive aquí y no en workspace-data para no crear un ciclo de imports en runtime:
+ * workspace-data ya importa de este módulo.
+ */
+export function isCoreSnapshot(data: unknown): data is WorkspaceSnapshot {
+  return typeof data === "object" && data !== null && "accounts" in data;
+}
 
 /**
  * Parches quirúrgicos del cache del snapshot: reflejan el efecto de una
@@ -29,10 +41,10 @@ export function patchSnapshotWithCreatedMovement(
 ) {
   // Saldos y analíticas solo cuentan movimientos posted.
   if (movement.status !== "posted") return;
-  queryClient.setQueriesData<WorkspaceSnapshot | undefined>(
+  queryClient.setQueriesData<unknown>(
     { queryKey: ["workspace-snapshot", workspaceId] },
-    (old) => {
-      if (!old) return old;
+    (old: unknown) => {
+      if (!isCoreSnapshot(old)) return old;
       const baseCurrency = old.workspaces.find((w) => w.id === workspaceId)?.baseCurrencyCode;
       const accounts = old.accounts.map((acc) => {
         let delta = 0;
@@ -91,14 +103,21 @@ export function patchSnapshotObligationPayment(
   obligationId: number,
   amount: number,
 ) {
-  queryClient.setQueriesData<WorkspaceSnapshot | undefined>(
+  // Las obligaciones viven en la entrada diferida; la moneda base, en el núcleo.
+  const core = queryClient
+    .getQueriesData({ queryKey: ["workspace-snapshot", workspaceId] })
+    .map(([, data]) => data)
+    .find(isCoreSnapshot);
+  const baseCurrency = core?.workspaces.find((w) => w.id === workspaceId)?.baseCurrencyCode;
+
+  queryClient.setQueriesData<unknown>(
     { queryKey: ["workspace-snapshot", workspaceId] },
-    (old) => {
-      if (!old) return old;
-      const baseCurrency = old.workspaces.find((w) => w.id === workspaceId)?.baseCurrencyCode;
+    (old: unknown) => {
+      if (!old || isCoreSnapshot(old)) return old;
+      const deferred = old as WorkspaceDeferred;
       return {
-        ...old,
-        obligations: old.obligations.map((ob) => {
+        ...deferred,
+        obligations: deferred.obligations.map((ob) => {
           if (ob.id !== obligationId) return ob;
           const pendingAmount = Math.max(0, ob.pendingAmount - amount);
           return {
@@ -126,10 +145,10 @@ export function patchSnapshotSubscriptionNextDue(
   subscriptionId: number,
   nextDueDate: string,
 ) {
-  queryClient.setQueriesData<WorkspaceSnapshot | undefined>(
+  queryClient.setQueriesData<unknown>(
     { queryKey: ["workspace-snapshot", workspaceId] },
-    (old) => {
-      if (!old) return old;
+    (old: unknown) => {
+      if (!isCoreSnapshot(old)) return old;
       return {
         ...old,
         subscriptions: old.subscriptions.map((sub) =>

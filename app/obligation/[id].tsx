@@ -224,7 +224,7 @@ function ObligationDetailScreen() {
   );
 
   const obligation: ObligationSummary | SharedObligationSummary | null = useMemo(() => {
-    const fromSnap = snapshot?.obligations.find((o) => o.id === obligationIdNum) ?? null;
+    const fromSnap = snapshot?.obligations?.find((o) => o.id === obligationIdNum) ?? null;
     if (fromSnap) return fromSnap;
     return sharedObligations.find((o) => o.id === obligationIdNum) ?? null;
   }, [snapshot, sharedObligations, obligationIdNum]);

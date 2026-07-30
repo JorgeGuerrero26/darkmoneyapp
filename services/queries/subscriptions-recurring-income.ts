@@ -4,7 +4,11 @@ import { supabase } from "../../lib/supabase";
 import { STALE } from "../../lib/query-client";
 import { toNum, type NumericLike } from "./_shared";
 import { markSubscriptionPaid } from "../../features/subscriptions/lib/markSubscriptionPaid";
-import { patchSnapshotSubscriptionNextDue, patchSnapshotWithCreatedMovement } from "./snapshot-cache";
+import {
+  isCoreSnapshot,
+  patchSnapshotSubscriptionNextDue,
+  patchSnapshotWithCreatedMovement,
+} from "./snapshot-cache";
 import type {
   RecurringIncomeFrequency,
   RecurringIncomeStatus,
@@ -163,9 +167,10 @@ export function useDeleteRecurringIncomeMutation(workspaceId: number | null) {
     },
     onMutate: async (id) => {
       await queryClient.cancelQueries({ queryKey: ["workspace-snapshot"] });
-      const previousEntries = queryClient.getQueriesData<WorkspaceSnapshot>({ queryKey: ["workspace-snapshot"] });
-      queryClient.setQueriesData<WorkspaceSnapshot>({ queryKey: ["workspace-snapshot"] }, (old) => {
-        if (!old) return old;
+      const previousEntries = queryClient.getQueriesData({ queryKey: ["workspace-snapshot"] });
+      // El prefijo también matchea la entrada diferida (sin `recurringIncome`).
+      queryClient.setQueriesData<unknown>({ queryKey: ["workspace-snapshot"] }, (old: unknown) => {
+        if (!isCoreSnapshot(old)) return old;
         return { ...old, recurringIncome: old.recurringIncome.filter((item) => item.id !== id) };
       });
       return { previousEntries };
@@ -337,9 +342,10 @@ export function useDeleteSubscriptionMutation(workspaceId: number | null) {
     },
     onMutate: async (id) => {
       await queryClient.cancelQueries({ queryKey: ["workspace-snapshot"] });
-      const previousEntries = queryClient.getQueriesData<WorkspaceSnapshot>({ queryKey: ["workspace-snapshot"] });
-      queryClient.setQueriesData<WorkspaceSnapshot>({ queryKey: ["workspace-snapshot"] }, (old) => {
-        if (!old) return old;
+      const previousEntries = queryClient.getQueriesData({ queryKey: ["workspace-snapshot"] });
+      // El prefijo también matchea la entrada diferida (sin `subscriptions`).
+      queryClient.setQueriesData<unknown>({ queryKey: ["workspace-snapshot"] }, (old: unknown) => {
+        if (!isCoreSnapshot(old)) return old;
         return { ...old, subscriptions: old.subscriptions.filter((s) => s.id !== id) };
       });
       return { previousEntries };

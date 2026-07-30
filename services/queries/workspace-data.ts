@@ -1,11 +1,12 @@
 ﻿import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { useCallback, useMemo } from "react";
 import { InteractionManager, Platform } from "react-native";
 import type { WorkspaceInvitationStatus } from "../../types/domain";
 
 import { UNIVERSAL_LINK_HOST } from "../../constants/config";
 import { supabase, supabaseAnonKey, supabaseUrl } from "../../lib/supabase";
 import { STALE, queryClient } from "../../lib/query-client";
-import { patchSnapshotWithCreatedMovement } from "./snapshot-cache";
+import { isCoreSnapshot, patchSnapshotWithCreatedMovement } from "./snapshot-cache";
 import {
   ASSISTANT_CHAT_TIMEOUT_MS,
   INTERACTIVE_AI_TIMEOUT_MS,
@@ -675,8 +676,13 @@ export type WorkspaceSnapshot = {
   accounts: AccountSummary[];
   /** Catálogo completo (activas e inactivas), orden sort_order + name. */
   categories: CategorySummary[];
-  budgets: BudgetOverview[];
-  obligations: ObligationSummary[];
+  /**
+   * Diferidos: llegan en una segunda query (ver `fetchWorkspaceDeferred`), no en el
+   * primer render. `undefined` = todavía cargando; `[]` = cargó y no hay nada.
+   */
+  budgets?: BudgetOverview[];
+  /** Diferido igual que `budgets`. */
+  obligations?: ObligationSummary[];
   subscriptions: SubscriptionSummary[];
   recurringIncome: RecurringIncomeSummary[];
   /** Movimientos posted con subscription_id (analíticas sin query extra). */
@@ -855,10 +861,7 @@ export async function fetchWorkspaceSnapshot(
     accountsResult,
     accountBalancesResult,
     categoriesResult,
-    budgetsResult,
     counterpartiesResult,
-    obligationsResult,
-    obligationTextMetaResult,
     subscriptionsResult,
     recurringIncomeResult,
     subscriptionMovementsResult,
@@ -886,26 +889,12 @@ export async function fetchWorkspaceSnapshot(
       .order("sort_order", { ascending: true })
       .order("name", { ascending: true }),
     supabase
-      .from("v_budget_progress")
-      .select("id, workspace_id, created_by_user_id, updated_by_user_id, name, period_start, period_end, currency_code, category_id, category_name, account_id, account_name, scope_kind, scope_label, limit_amount, spent_amount, remaining_amount, used_percent, alert_percent, movement_count, rollover_enabled, notes, is_active, is_near_limit, is_over_limit, is_pinned, created_at, updated_at")
-      .eq("workspace_id", activeWorkspaceId)
-      .eq("is_active", true),
-    supabase
       .from("counterparties")
       .select("id, workspace_id, name, type, is_archived, is_pinned, phone, email, document_number, notes")
       .eq("workspace_id", activeWorkspaceId)
       .order("is_archived", { ascending: true })
       .order("is_pinned", { ascending: false })
       .order("name", { ascending: true }),
-    supabase
-      .from("v_obligation_summary")
-      .select("*")
-      .eq("workspace_id", activeWorkspaceId),
-    // Descripción/notas desde la tabla base: v_obligation_summary a veces no incluye estas columnas.
-    supabase
-      .from("obligations")
-      .select("id, description, notes")
-      .eq("workspace_id", activeWorkspaceId),
     supabase
       .from("subscriptions")
       .select("id, workspace_id, name, vendor_party_id, account_id, category_id, currency_code, amount, frequency, interval_count, day_of_month, day_of_week, start_date, next_due_date, end_date, status, remind_days_before, auto_create_movement, description, notes, is_pinned")
@@ -945,10 +934,7 @@ export async function fetchWorkspaceSnapshot(
     [accountsResult, "cuentas"],
     [accountBalancesResult, "saldos"],
     [categoriesResult, "categorías"],
-    [budgetsResult, "presupuestos"],
     [counterpartiesResult, "contrapartes"],
-    [obligationsResult, "obligaciones"],
-    [obligationTextMetaResult, "descripciones de obligaciones"],
     [subscriptionsResult, "suscripciones"],
     [recurringIncomeResult, "ingresos fijos"],
     [exchangeRatesResult, "tipos de cambio"],
@@ -959,23 +945,6 @@ export async function fetchWorkspaceSnapshot(
         formatSupabaseError(result.error) || `Error al cargar ${label}`,
       );
     }
-  }
-
-  // obligation_events no tiene workspace_id en el esquema: filtrar eventos por obligaciones del workspace
-  const obligationRowsForEvents = (obligationsResult.data ?? []) as ObligationSummaryRow[];
-  const obligationIdsForEvents = obligationRowsForEvents.map((r) => r.id);
-  let obligationEventRows: ObligationEventRow[] = [];
-  if (obligationIdsForEvents.length > 0) {
-    const { data: evData, error: evError } = await supabase
-      .from("obligation_events")
-      .select(
-        "id, obligation_id, event_type, event_date, created_at, amount, installment_no, reason, description, notes, movement_id, created_by_user_id, metadata",
-      )
-      .in("obligation_id", obligationIdsForEvents)
-      .order("event_date", { ascending: false })
-      .order("id", { ascending: false });
-    if (evError) throw new Error(evError.message ?? "Error al cargar eventos de obligaciones");
-    obligationEventRows = (evData ?? []) as ObligationEventRow[];
   }
 
   // Build workspace list
@@ -1039,33 +1008,6 @@ export async function fetchWorkspaceSnapshot(
   const accountCurrencyMap = new Map<number, string>();
   for (const acc of accounts) accountCurrencyMap.set(acc.id, acc.currencyCode.toUpperCase());
 
-  const budgets: BudgetOverview[] = (budgetsResult.data ?? []).map((row: any) =>
-    mapBudget(row as BudgetProgressRow),
-  );
-
-  const obligationTextMetaById = new Map<
-    number,
-    { description: string | null; notes: string | null }
-  >();
-  for (const r of obligationTextMetaResult.data ?? []) {
-    const row = r as { id: number; description: string | null; notes: string | null };
-    obligationTextMetaById.set(row.id, {
-      description: row.description,
-      notes: row.notes,
-    });
-  }
-
-  const obligations: ObligationSummary[] = (obligationsResult.data ?? []).map((row: any) => {
-    const mapped = mapObligation(row as ObligationSummaryRow, obligationEventRows, counterpartyMap);
-    const meta = obligationTextMetaById.get(row.id as number);
-    if (!meta) return mapped;
-    return {
-      ...mapped,
-      description: meta.description ?? mapped.description ?? null,
-      notes: meta.notes ?? mapped.notes ?? null,
-    };
-  });
-
   const exchangeRates: ExchangeRateSummary[] = (exchangeRatesResult.data ?? []).map(
     (row: any) => ({
       fromCurrencyCode: (row as ExchangeRateRow).from_currency_code,
@@ -1128,12 +1070,12 @@ export async function fetchWorkspaceSnapshot(
       ),
   );
 
+  // budgets y obligations NO se piden aquí: viven en `fetchWorkspaceDeferred` y se mergean
+  // en `useWorkspaceSnapshotQuery`. Mantenerlos fuera del primer render es el punto del split.
   return {
     workspaces,
     accounts,
     categories,
-    budgets,
-    obligations,
     subscriptions,
     recurringIncome,
     subscriptionPostedMovements,
@@ -1141,6 +1083,99 @@ export async function fetchWorkspaceSnapshot(
     counterparties,
     exchangeRates,
   };
+}
+
+// ─── Parte diferida del snapshot (obligaciones + presupuestos) ────────────────
+
+/**
+ * Obligaciones y presupuestos: la mitad cara del snapshot (4 consultas, una de
+ * ellas encadenada) que antes bloqueaba el primer render y competía con el POST
+ * de un movimiento aunque el usuario nunca abriera esos módulos.
+ */
+export type WorkspaceDeferred = {
+  budgets: BudgetOverview[];
+  obligations: ObligationSummary[];
+};
+
+export async function fetchWorkspaceDeferred(
+  activeWorkspaceId: number,
+  counterpartyMap: Map<number, string>,
+): Promise<WorkspaceDeferred> {
+  if (!supabase) throw new Error("Supabase no está configurado.");
+
+  const [budgetsResult, obligationsResult, obligationTextMetaResult] = await Promise.all([
+    supabase
+      .from("v_budget_progress")
+      .select("id, workspace_id, created_by_user_id, updated_by_user_id, name, period_start, period_end, currency_code, category_id, category_name, account_id, account_name, scope_kind, scope_label, limit_amount, spent_amount, remaining_amount, used_percent, alert_percent, movement_count, rollover_enabled, notes, is_active, is_near_limit, is_over_limit, is_pinned, created_at, updated_at")
+      .eq("workspace_id", activeWorkspaceId)
+      .eq("is_active", true),
+    supabase
+      .from("v_obligation_summary")
+      .select("*")
+      .eq("workspace_id", activeWorkspaceId),
+    // Descripción/notas desde la tabla base: v_obligation_summary a veces no incluye estas columnas.
+    supabase
+      .from("obligations")
+      .select("id, description, notes")
+      .eq("workspace_id", activeWorkspaceId),
+  ]);
+
+  const deferredResults = [
+    [budgetsResult, "presupuestos"],
+    [obligationsResult, "obligaciones"],
+    [obligationTextMetaResult, "descripciones de obligaciones"],
+  ] as const;
+  for (const [result, label] of deferredResults) {
+    if (result.error) {
+      throw new Error(formatSupabaseError(result.error) || `Error al cargar ${label}`);
+    }
+  }
+
+  // obligation_events no tiene workspace_id en el esquema: filtrar eventos por obligaciones del workspace
+  const obligationRowsForEvents = (obligationsResult.data ?? []) as ObligationSummaryRow[];
+  const obligationIdsForEvents = obligationRowsForEvents.map((r) => r.id);
+  let obligationEventRows: ObligationEventRow[] = [];
+  if (obligationIdsForEvents.length > 0) {
+    const { data: evData, error: evError } = await supabase
+      .from("obligation_events")
+      .select(
+        "id, obligation_id, event_type, event_date, created_at, amount, installment_no, reason, description, notes, movement_id, created_by_user_id, metadata",
+      )
+      .in("obligation_id", obligationIdsForEvents)
+      .order("event_date", { ascending: false })
+      .order("id", { ascending: false });
+    if (evError) throw new Error(evError.message ?? "Error al cargar eventos de obligaciones");
+    obligationEventRows = (evData ?? []) as ObligationEventRow[];
+  }
+
+  const budgets: BudgetOverview[] = (budgetsResult.data ?? []).map((row: any) =>
+    mapBudget(row as BudgetProgressRow),
+  );
+
+  const obligationTextMetaById = new Map<
+    number,
+    { description: string | null; notes: string | null }
+  >();
+  for (const r of obligationTextMetaResult.data ?? []) {
+    const row = r as { id: number; description: string | null; notes: string | null };
+    obligationTextMetaById.set(row.id, {
+      description: row.description,
+      notes: row.notes,
+    });
+  }
+
+  const obligations: ObligationSummary[] = (obligationsResult.data ?? []).map((row: any) => {
+    const mapped = mapObligation(row as ObligationSummaryRow, obligationEventRows, counterpartyMap);
+    const meta = obligationTextMetaById.get(row.id as number);
+    if (!meta) return mapped;
+    return {
+      ...mapped,
+      description: meta.description ?? mapped.description ?? null,
+      notes: meta.notes ?? mapped.notes ?? null,
+    };
+  });
+
+  return { budgets, obligations };
 }
 
 function maxIsoDate(a: string | null | undefined, b: string | null | undefined): string | null {
@@ -1289,18 +1324,39 @@ export function useUserWorkspacesQuery(userId: string | null | undefined) {
   });
 }
 
+/**
+ * La parte diferida cuelga del MISMO prefijo que el núcleo a propósito: las ~40
+ * `invalidateQueries({ queryKey: ["workspace-snapshot"] })` repartidas por la app
+ * siguen invalidando ambas sin tocar una sola de esas líneas. El precio es que
+ * quien manipula el cache por prefijo hace match con las dos entradas y debe
+ * discriminarlas con `isCoreSnapshot`.
+ */
+export function workspaceDeferredQueryKey(
+  activeWorkspaceId: number | null,
+  profileId?: string | null,
+) {
+  return ["workspace-snapshot", activeWorkspaceId, profileId, "deferred"] as const;
+}
+
+export { isCoreSnapshot };
+
 export function useWorkspaceSnapshotQuery(
   profile: AppProfile | null,
   activeWorkspaceId: number | null,
+  options?: { deferred?: boolean },
 ) {
-  return useQuery({
+  // Por defecto se carga todo: solo las pantallas que no leen obligaciones ni
+  // presupuestos pasan `deferred: false`.
+  const deferredEnabled = options?.deferred ?? true;
+
+  const core = useQuery({
     queryKey: ["workspace-snapshot", activeWorkspaceId, profile?.id],
     queryFn: () => fetchWorkspaceSnapshot(profile!.id, activeWorkspaceId!),
     enabled: Boolean(profile?.id && activeWorkspaceId),
     // No heredar placeholderData global: al cambiar de workspace nunca se deben pintar datos
     // del anterior mientras carga la nueva key. Las refetch de la misma key ya conservan data.
     placeholderData: undefined,
-    // 30s: snapshot core (saldos, categorías, presupuestos). Al entrar a un módulo, si pasaron
+    // 30s: snapshot core (saldos, categorías). Al entrar a un módulo, si pasaron
     // >30s refetch en background conservando el cache de esa misma key. Realtime lo
     // mantiene fresco con la app abierta; esto cubre el hueco al volver de background / otra
     // pantalla / otro dispositivo, sin polling.
@@ -1309,6 +1365,58 @@ export function useWorkspaceSnapshotQuery(
     retry: 1,
     retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 10_000),
   });
+
+  const coreReady = Boolean(core.data);
+  const deferred = useQuery({
+    queryKey: workspaceDeferredQueryKey(activeWorkspaceId, profile?.id),
+    // Depende del núcleo para el mapa de contrapartes que `mapObligation` necesita;
+    // encadenarlo así es justo lo que saca estas 4 consultas del camino crítico.
+    queryFn: () => {
+      const cached = queryClient.getQueryData<WorkspaceSnapshot>([
+        "workspace-snapshot",
+        activeWorkspaceId,
+        profile?.id,
+      ]);
+      const counterpartyMap = new Map<number, string>();
+      for (const cp of cached?.counterparties ?? []) counterpartyMap.set(cp.id, cp.name);
+      return fetchWorkspaceDeferred(activeWorkspaceId!, counterpartyMap);
+    },
+    enabled: Boolean(profile?.id && activeWorkspaceId && deferredEnabled && coreReady),
+    placeholderData: undefined,
+    staleTime: STALE.short,
+    refetchOnReconnect: true,
+    retry: 1,
+    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 10_000),
+  });
+
+  const coreData = core.data;
+  const deferredData = deferred.data;
+  const data = useMemo<WorkspaceSnapshot | undefined>(() => {
+    if (!coreData) return undefined;
+    if (!deferredData) return coreData;
+    return { ...coreData, budgets: deferredData.budgets, obligations: deferredData.obligations };
+  }, [coreData, deferredData]);
+
+  const refetch = useCallback(async () => {
+    const [coreResult] = await Promise.all([
+      core.refetch(),
+      deferredEnabled ? deferred.refetch() : Promise.resolve(null),
+    ]);
+    return coreResult;
+  }, [core, deferred, deferredEnabled]);
+
+  return {
+    data,
+    isLoading: core.isLoading,
+    /** Obligaciones y presupuestos todavía en vuelo: gatear skeletons con esto. */
+    deferredLoading: deferredEnabled && !deferredData,
+    isFetching: core.isFetching || deferred.isFetching,
+    isRefetching: core.isRefetching || deferred.isRefetching,
+    isError: core.isError,
+    error: core.error,
+    dataUpdatedAt: core.dataUpdatedAt,
+    refetch,
+  };
 }
 
 // ─── Refetch selectivo por dominio (Fase 3 del plan de fluidez) ──────────────
@@ -1334,10 +1442,12 @@ export async function refreshSnapshotDomains(
 ): Promise<void> {
   try {
     if (!supabase) throw new Error("supabase no disponible");
-    const entries = queryClient.getQueriesData<WorkspaceSnapshot>({
+    // El prefijo también matchea la entrada diferida (obligaciones/presupuestos),
+    // que no tiene `workspaces` ni `accounts`: filtrarla o se toma por el núcleo.
+    const entries = queryClient.getQueriesData({
       queryKey: ["workspace-snapshot", workspaceId],
     });
-    const current = entries.find(([, data]) => data)?.[1];
+    const current = entries.map(([, data]) => data).find(isCoreSnapshot);
     if (!current) throw new Error("snapshot no cacheado");
     const baseCurrency = (
       current.workspaces.find((w) => w.id === workspaceId)?.baseCurrencyCode ?? "PEN"
@@ -1407,9 +1517,11 @@ export async function refreshSnapshotDomains(
       applyBaseCurrencyToAccounts(accounts, baseCurrency, current.exchangeRates);
       patch.accounts = accounts;
     }
+    // Los presupuestos viven en la entrada diferida, no en el núcleo.
+    let budgetsPatch: BudgetOverview[] | null = null;
     if (budgetsRes) {
       if (budgetsRes.error) throw budgetsRes.error;
-      patch.budgets = (budgetsRes.data ?? []).map((row: any) => mapBudget(row as BudgetProgressRow));
+      budgetsPatch = (budgetsRes.data ?? []).map((row: any) => mapBudget(row as BudgetProgressRow));
     }
     if (catMovsRes || subMovsRes) {
       const accountsForCurrency = patch.accounts ?? current.accounts;
@@ -1439,9 +1551,15 @@ export async function refreshSnapshotDomains(
       }
     }
 
-    queryClient.setQueriesData<WorkspaceSnapshot>(
+    // Una sola pasada sobre el prefijo: cada entrada recibe el patch que le toca.
+    queryClient.setQueriesData<unknown>(
       { queryKey: ["workspace-snapshot", workspaceId] },
-      (old) => (old ? { ...old, ...patch } : old),
+      (old: unknown) => {
+        if (!old) return old;
+        if (isCoreSnapshot(old)) return { ...old, ...patch };
+        if (budgetsPatch) return { ...(old as WorkspaceDeferred), budgets: budgetsPatch };
+        return old;
+      },
     );
   } catch {
     // Fallback: comportamiento previo (refetch completo del snapshot).
