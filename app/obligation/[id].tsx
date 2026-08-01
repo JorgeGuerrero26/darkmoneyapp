@@ -18,6 +18,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { useAuth } from "../../lib/auth-context";
+import { useUiStore } from "../../store/ui-store";
 import { removeAttachmentFile } from "../../lib/entity-attachments";
 import { useWorkspace } from "../../lib/workspace-context";
 import { humanizeError } from "../../lib/errors";
@@ -71,6 +72,8 @@ import {
   type PendingOwnerEditRequest,
 } from "../../lib/obligation-event-payloads";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
+import { NotificationReasonBanner } from "../../components/ui/NotificationReasonBanner";
+import { useNotificationReason } from "../../hooks/useNotificationReason";
 import { ObligationForm } from "../../components/forms/ObligationForm";
 import { PaymentForm } from "../../components/forms/PaymentForm";
 import { PaymentRequestForm } from "../../components/forms/PaymentRequestForm";
@@ -105,6 +108,13 @@ import { ViewerActivityTabs } from "../../features/obligations/components/detail
 import { RegisterPaymentButton } from "../../features/obligations/components/detail/RegisterPaymentButton";
 import { RejectRequestSheet } from "../../features/obligations/components/detail/RejectRequestSheet";
 import { ShareInviteBottomSheet } from "../../features/obligations/components/detail/ShareInviteBottomSheet";
+import { ObligationReportSheet } from "../../features/obligations/components/detail/ObligationReportSheet";
+import {
+  buildObligationReport,
+  type ObligationReportResult,
+} from "../../features/obligations/lib/obligationReport";
+import { sharePdfFromHtml } from "../../lib/share-pdf-file";
+import * as Clipboard from "expo-clipboard";
 import {
   buildObligationEventActions,
   buildObligationEventNotices,
@@ -130,6 +140,9 @@ function toParamNumber(value: string | string[] | undefined): number | null {
 }
 
 function ObligationDetailScreen() {
+  // Fuerza el re-render de la pantalla al alternar modo privacidad (la máscara
+  // vive en formatCurrency, que lee el store imperativamente).
+  useUiStore((state) => state.privacyMode);
   const {
     id,
     paymentRequestId: paymentRequestIdParam,
@@ -142,6 +155,7 @@ function ObligationDetailScreen() {
     eventId?: string | string[];
   }>();
   const { handleBack } = useOriginBackNavigation();
+  const { reason: notificationReason, dismiss: dismissNotificationReason } = useNotificationReason();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -174,6 +188,10 @@ function ObligationDetailScreen() {
   const [detailViewportHeight, setDetailViewportHeight] = useState(0);
   const [viewerDetailTab, setViewerDetailTab] = useState<"history" | "requests">("history");
   const [unlinkShareConfirmVisible, setUnlinkShareConfirmVisible] = useState(false);
+  const [reportSheetOpen, setReportSheetOpen] = useState(false);
+  const [reportResult, setReportResult] = useState<ObligationReportResult | null>(null);
+  const [reportMessage, setReportMessage] = useState("");
+  const [isSharingReport, setIsSharingReport] = useState(false);
   const detailScrollRef = useRef<ScrollView | null>(null);
   const historySectionYRef = useRef<number | null>(null);
   const eventRowLayoutsRef = useRef<Map<number, { y: number; height: number }>>(new Map());
@@ -206,7 +224,7 @@ function ObligationDetailScreen() {
   );
 
   const obligation: ObligationSummary | SharedObligationSummary | null = useMemo(() => {
-    const fromSnap = snapshot?.obligations.find((o) => o.id === obligationIdNum) ?? null;
+    const fromSnap = snapshot?.obligations?.find((o) => o.id === obligationIdNum) ?? null;
     if (fromSnap) return fromSnap;
     return sharedObligations.find((o) => o.id === obligationIdNum) ?? null;
   }, [snapshot, sharedObligations, obligationIdNum]);
@@ -737,6 +755,35 @@ function ObligationDetailScreen() {
     }
   }
 
+  function handleOpenReport() {
+    if (!obligation || isSharedViewer) return;
+    const result = buildObligationReport({
+      obligation,
+      events: eventsForDetail,
+      ownerName: profile?.fullName ?? null,
+    });
+    setReportResult(result);
+    setReportMessage(result.message);
+    setReportSheetOpen(true);
+  }
+
+  async function handleCopyReportMessage() {
+    await Clipboard.setStringAsync(reportMessage);
+    showToast("Mensaje copiado — pégalo en WhatsApp", "success");
+  }
+
+  async function handleShareReportPdf() {
+    if (!reportResult) return;
+    setIsSharingReport(true);
+    try {
+      await sharePdfFromHtml(reportResult.html, reportResult.fileName, "Compartir reporte");
+    } catch (err) {
+      showToast(humanizeError(err), "error");
+    } finally {
+      setIsSharingReport(false);
+    }
+  }
+
   async function handleUnlinkViewerShare() {
     if (!obligation || !isSharedViewer || !("share" in obligation)) return;
     await toastedMutate({
@@ -1018,10 +1065,12 @@ function ObligationDetailScreen() {
             isSharedViewer={isSharedViewer}
             pendingRequestCount={pendingRequests.length}
             onPressShare={() => { setShareEmail(""); setShareSheetOpen(true); }}
+            onPressReport={handleOpenReport}
             onPressUnlink={() => setUnlinkShareConfirmVisible(true)}
           />
         }
       />
+      <NotificationReasonBanner reason={notificationReason} onDismiss={dismissNotificationReason} />
 
       {pageLoading ? (
         <View style={styles.center}><ActivityIndicator color={COLORS.primary} /></View>
@@ -1468,6 +1517,18 @@ function ObligationDetailScreen() {
         onChangeEmail={setShareEmail}
         onSubmit={handleShare}
         onClose={() => setShareSheetOpen(false)}
+      />
+
+      <ObligationReportSheet
+        styles={styles}
+        visible={reportSheetOpen}
+        folio={reportResult?.folio ?? ""}
+        message={reportMessage}
+        isSharing={isSharingReport}
+        onChangeMessage={setReportMessage}
+        onCopyMessage={() => void handleCopyReportMessage()}
+        onSharePdf={() => void handleShareReportPdf()}
+        onClose={() => setReportSheetOpen(false)}
       />
     </View>
   );

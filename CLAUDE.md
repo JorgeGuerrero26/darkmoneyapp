@@ -40,7 +40,31 @@ Reglas: (1) cambios nativos (Kotlin, permisos, deps nativas) SÍ requieren APK y
 viejos); (2) si el update cambia el shape de datos persistidos, bumpear también el `buster`
 del caché en lib/query-client.ts.
 
+**Changelog**: toda mejora que el usuario note va a `constants/changelog.ts`, en lenguaje que
+entienda alguien que nunca ha tocado un sistema. Las reglas de redacción, la tabla de
+traducción técnico→humano y la regla de qué versión usar (OTA suma a la entrada actual; solo
+un cambio nativo crea entrada nueva) están en `docs/CHANGELOG_STYLE.md`. No improvisar el
+estilo ni anunciar trabajo interno que nadie percibe.
+
 Para builds release del APK Android (cualquier cambio en `plugins/notification-detection/native-src/**/*.kt` o `android/app/src/**`), seguir `docs/BUILD_APK.md`. Reglas no negociables: sincronizar `plugins/` → `android/app/src/main/java/`, limpiar caches, build con `-P` quoteado en PowerShell, y verificar que los strings nuevos aparecen en el DEX antes de declarar el APK listo. `BUILD SUCCESSFUL` no garantiza que el cambio entró.
+
+**APK instalable = EAS build** (la app instalada está firmada con el keystore cloud de EAS;
+un build local de gradle NO puede actualizarla). Lanzar SIEMPRE con:
+
+```bash
+npm run build:android
+```
+
+que corre el preflight `scripts/preflight-native-version.mjs`: si hay cambios nativos
+posteriores al último bump de `version`/`versionCode` en app.json, bloquea el build
+(incidente 2026-07-11: tres binarios distintos etiquetados 1.0.1).
+
+**iPhone**: el usuario tiene un build local firmado con su Apple ID gratis, que Apple
+caduca a los **7 días** ("la app ya no abre"). Para reinstalarlo seguir
+`docs/REINSTALL_IOS.md`: trae los datos del dispositivo, el Team correcto, los parches de
+`ios/` que un `expo prebuild` revierte, y la tabla de errores conocidos. Regla clave: NO
+usar `npx expo run:ios` (su instalador está roto) — compilar con `xcodebuild` e instalar
+con `devicectl`. Los cambios solo-JS llegan al iPhone por la misma OTA que a Android.
 
 ## Git workflow
 
@@ -56,6 +80,10 @@ Para builds release del APK Android (cualquier cambio en `plugins/notification-d
 ## Database migrations
 
 Toda migración nueva en `supabase/migrations/` DEBE quedar documentada en `DATABASE_DICTIONARY.md` antes de cerrar la tarea.
+
+> Nota: `DATABASE_DICTIONARY.md` está **gitignored a propósito** (doc local por máquina;
+> la copia principal vive en la máquina Windows). Si el archivo no existe en la máquina
+> actual, crearlo con la sección de la migración nueva — no forzar su tracking en git.
 
 - Tabla nueva: agregar sección `### nombre_tabla` con descripción, tabla de campos (Campo / Tipo / Nulo / Descripción) e índices/uniques relevantes.
 - Tipo enumerado nuevo: documentar bajo `## 4. Tipos enumerados`.
@@ -135,6 +163,19 @@ Usar componentes compartidos:
 - No hardcodear PEN/USD ni tasas manuales.
 - Usar tipos de cambio persistio sincronizados.
 
+## PDF reports (estándar)
+
+Todo reporte PDF nuevo sigue el estándar del reporte de obligaciones
+(`features/obligations/lib/obligationReport.ts`, referencia canónica):
+
+- Builder puro RN-free en `features/<modulo>/lib/` que devuelve `{ html, folio, fileName, message }`, con test unitario de la ruta de dinero.
+- HTML → PDF con `expo-print` vía `lib/share-pdf-file.ts` (no duplicar el helper).
+- Estructura visual: encabezado con título + wordmark "DarkMoney" y regla de acento; fila meta (moneda · generado · folio); tarjetas de partes; "Resumen ejecutivo" en tabla con fila destacada del monto clave y barra de progreso; tabla principal con columnas numéricas tabulares (Cargo en rojo, Abono en verde, Saldo en negrita, filas cebra); "Condiciones" en grid; footer con sello "Generado con DarkMoney · fecha · Folio".
+- Paleta clara de impresión (no el tema dark): ink #15202B, muted #5B6B7B, acento #0E8C6D, débito #B23A52, líneas #D9E0E7, fondo suave #F2F6F5. Secciones h2 en mayúsculas con letter-spacing.
+- Folio determinista `DM-<id>-<YYYYMMDD>-<HHmm>`; fileName `Reporte_<titulo>_<folio>.pdf`; SIEMPRE escapar datos del usuario en el HTML.
+- Compartir: sheet con mensaje editable + "Copiar mensaje" (expo-clipboard) + "Compartir PDF" — 2 pasos porque Android descarta el texto al adjuntar archivo a WhatsApp.
+- Al segundo reporte que exista, extraer la plantilla/paleta común a `features/reports/lib/` (no antes).
+
 ## Navigation
 
 - Si un módulo se abre desde Más, la ruta debe usar ?from=more.
@@ -197,7 +238,7 @@ Hay dos mecanismos de limpieza:
 
 ### Notification ID estable
 
-Usar `notificationIdFor("${sourcePackage}:${amount}:${System.currentTimeMillis() / 600_000}")` para evitar duplicados cuando Gmail dispara `onNotificationPosted` múltiples veces con diferente contenido.
+Usar `notificationIdFor("${appName}:${amount}:${System.currentTimeMillis() / 600_000}:${counterpartyToken}")` para evitar duplicados cuando Gmail dispara `onNotificationPosted` múltiples veces con diferente contenido. `counterpartyToken` (`extractCounterpartyToken`, regex conservador sobre "X te envió/yapeó/pagó/transfirió") separa tiles cuando 2 transacciones simultáneas del mismo monto vienen de remitentes distintos; sin match queda vacío y preserva el colapso previo.
 
 ## Skills
 

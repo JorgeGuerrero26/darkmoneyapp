@@ -1,5 +1,5 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import {
   Animated,
   Easing,
@@ -35,14 +35,16 @@ import {
 import { es } from "date-fns/locale";
 import {
   AlertTriangle, AlertCircle, Clock, Tag, ArrowRight, Bell, Banknote,
-  Brain, Lock, Sparkles, Target, TrendingUp, X,
+  Brain, Lock, Sparkles, Target, TrendingUp, X, Eye, EyeOff,
   type LucideIcon,
 } from "lucide-react-native";
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Haptics from "expo-haptics";
 import { useAuth } from "../../lib/auth-context";
 import { useWorkspace, useWorkspaceListStore } from "../../lib/workspace-context";
 import {
+  useUserWorkspacesQuery,
   useWorkspaceSnapshotQuery,
   useDashboardMovementsQuery,
   useDashboardAnalyticsQuery,
@@ -50,6 +52,7 @@ import {
   usePersistLearningFeedbackMutation,
   useUpdateMovementMutation,
   useNotificationsQuery,
+  useUserEntitlementQuery,
   useDashboardAiFlowMutation,
   useDashboardAiHealthMutation,
   useDashboardAiHistoryMutation,
@@ -63,18 +66,22 @@ import {
   mergeWorkspaceAndSharedObligations,
 } from "../../services/queries/obligations";
 import { useBudgetScopeMovementsQuery } from "../../services/queries/budget-analytics";
-import type { BudgetOverview, ExchangeRateSummary } from "../../types/domain";
+import type { BudgetOverview, ExchangeRateSummary, SubscriptionSummary } from "../../types/domain";
 import { useUiStore } from "../../store/ui-store";
 import { Card } from "../../components/ui/Card";
 import { Button } from "../../components/ui/Button";
 import { ProgressBar } from "../../components/ui/ProgressBar";
 import { SkeletonCard, SkeletonList } from "../../components/ui/Skeleton";
+import { EmptyState } from "../../components/ui/EmptyState";
+import { useAfterFirstPaint } from "../../hooks/useAfterFirstPaint";
+import { isDashboardDataUnavailable } from "../../features/dashboard/lib/dashboardDataAvailability";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { formatCurrency } from "../../components/ui/AmountDisplay";
 import { MovementForm } from "../../components/forms/MovementForm";
 import { BottomSheet } from "../../components/ui/BottomSheet";
 import { WorkspaceSelector } from "../../components/layout/WorkspaceSelector";
 import { COLORS, ELEVATION, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
+import { IOS_FLOATING_TAB_BAR_SPACE } from "../../constants/floating-tab-bar";
 import { FAB } from "../../components/ui/FAB";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { DayMovementsSheet, type DaySheetMode } from "../../components/dashboard/DayMovementsSheet";
@@ -94,6 +101,10 @@ import { RingChart, type RingSegment } from "../../components/ui/RingChart";
 import { SparkLine } from "../../components/ui/SparkLine";
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { useToast } from "../../hooks/useToast";
+import { MarkSubscriptionPaidSheet } from "../../features/subscriptions/components/MarkSubscriptionPaidSheet";
+import { RecurringIncomeArrivalSheet } from "../../features/recurring-income/components/RecurringIncomeArrivalSheet";
+import { useArrivalSheetController } from "../../features/recurring-income/lib/useArrivalSheetController";
+import { useMarkSubscriptionPaidMutation } from "../../services/queries/subscriptions-recurring-income";
 import { buildCategorySuggestionCandidates } from "../../services/analytics/category-suggestions";
 import { detectMovementAnomalies } from "../../services/analytics/anomaly-detection";
 import { simulateMonthEndCashflow } from "../../services/analytics/cashflow-forecast";
@@ -348,9 +359,38 @@ function DashboardScreen() {
   const queryClient = useQueryClient();
   const { profile, session, signOut } = useAuth();
   const { activeWorkspaceId, activeWorkspace, setWorkspaces } = useWorkspace();
+  // `undefined` mientras no resuelve vs `[]` cuando de verdad no hay ninguno. El store de
+  // workspaces no distingue esos dos casos (arranca en []), y de esa confusión salía el falso
+  // "tablero limpio". React Query comparte la caché, así que esto no añade una petición.
+  const { data: knownWorkspaces } = useUserWorkspacesQuery(profile?.id ?? null);
+  const afterFirstPaint = useAfterFirstPaint();
   const dismissedAlerts = useDismissedDashboardAlerts(activeWorkspaceId);
 
   useDashboardRealtimeSync({ workspaceId: activeWorkspaceId });
+
+  const { showToast } = useToast();
+  const markPaidMutation = useMarkSubscriptionPaidMutation(activeWorkspaceId);
+  const [dashboardPayTarget, setDashboardPayTarget] = useState<SubscriptionSummary | null>(null);
+  const arrival = useArrivalSheetController(activeWorkspaceId);
+
+  const handleDashboardMarkPaid = useCallback(
+    async (args: { paidDate: string; amount: number; accountId: number }) => {
+      if (!dashboardPayTarget) return;
+      try {
+        const { nextDueDate } = await markPaidMutation.mutateAsync({
+          subscription: dashboardPayTarget,
+          paidDate: args.paidDate,
+          amount: args.amount,
+          accountId: args.accountId,
+        });
+        setDashboardPayTarget(null);
+        showToast(`Pago registrado · Próximo cobro: ${nextDueDate}`, "success");
+      } catch (error: unknown) {
+        showToast(error instanceof Error ? error.message : "No se pudo registrar el pago", "error");
+      }
+    },
+    [dashboardPayTarget, markPaidMutation, showToast],
+  );
 
   const [signOutVisible, setSignOutVisible] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
@@ -363,7 +403,7 @@ function DashboardScreen() {
     setSigningOut(true);
     await signOut().finally(() => setSigningOut(false));
   }
-  const { dashboardMode, setDashboardMode, dashboardScrollY, setDashboardScrollY } = useUiStore();
+  const { dashboardMode, setDashboardMode, dashboardScrollY, setDashboardScrollY, privacyMode, togglePrivacyMode } = useUiStore();
   const scrollRef = useRef<import("react-native").ScrollView>(null);
   const scrollSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const advancedSectionY = useRef(0);
@@ -403,6 +443,21 @@ function DashboardScreen() {
     dayEnd: Date;
     mode: DaySheetMode;
   } | null>(null);
+  // Tap del "Resumen financiero del día": el resolver llega con daySheet=today +
+  // token único. Se consume una vez por token (los params persisten en la pantalla).
+  const digestParams = useLocalSearchParams<{ daySheet?: string | string[]; daySheetToken?: string | string[]; daySheetDate?: string | string[] }>();
+  const daySheetTokenConsumedRef = useRef<string | null>(null);
+  useEffect(() => {
+    const token = Array.isArray(digestParams.daySheetToken) ? digestParams.daySheetToken[0] : digestParams.daySheetToken;
+    const mode = Array.isArray(digestParams.daySheet) ? digestParams.daySheet[0] : digestParams.daySheet;
+    if (!token || mode !== "today" || daySheetTokenConsumedRef.current === token) return;
+    daySheetTokenConsumedRef.current = token;
+    // daySheetDate = día del digest (todayKey): un tap al día siguiente abre el día
+    // del resumen, no "hoy". parseDisplayDate evita el off-by-one UTC de new Date(ymd).
+    const dateParam = Array.isArray(digestParams.daySheetDate) ? digestParams.daySheetDate[0] : digestParams.daySheetDate;
+    const base = dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? parseDisplayDate(dateParam) : new Date();
+    setDaySheet({ dayStart: startOfDay(base), dayEnd: endOfDay(base), mode: "all" });
+  }, [digestParams.daySheet, digestParams.daySheetDate, digestParams.daySheetToken]);
   const [displayCurrency, setDisplayCurrency] = useState<string | null>(null);
   const currencyLoadedRef = useRef(false);
 
@@ -444,9 +499,9 @@ function DashboardScreen() {
     if (snapshot?.workspaces?.length) setWorkspaces(snapshot.workspaces);
   }, [snapshot?.workspaces, setWorkspaces]);
 
-  // Prefetch queries for other tabs after workspace is ready
+  // Estas queries solo preparan otra tab: no deben competir con el primer dibujo del dashboard.
   useEffect(() => {
-    if (!supabase || !activeWorkspaceId) return;
+    if (!afterFirstPaint || !supabase || !activeWorkspaceId) return;
     void queryClient.prefetchQuery({
       queryKey: ["obligation-shares", activeWorkspaceId],
       staleTime: STALE.medium,
@@ -496,7 +551,7 @@ function DashboardScreen() {
         return counts;
       },
     });
-  }, [activeWorkspaceId, queryClient]);
+  }, [activeWorkspaceId, afterFirstPaint, queryClient]);
 
   const snapshotActiveWorkspace = useMemo(
     () => snapshot?.workspaces?.find((workspace) => workspace.id === activeWorkspaceId) ?? null,
@@ -511,7 +566,14 @@ function DashboardScreen() {
   const {
     data: scopedBudgetMovements = [],
     error: dashboardBudgetMovementsError,
-  } = useBudgetScopeMovementsQuery(activeWorkspaceId, snapshotBudgets, dataUpdatedAt);
+    // Diferida al primer pintado: la analítica de presupuestos no hace falta para dibujar el
+    // dashboard, y en el arranque competía por los ~150 ms de cada viaje con lo que sí se
+    // necesita. Salía en 3 de los 4 episodios que disparaban el aviso de red lenta.
+  } = useBudgetScopeMovementsQuery(
+    afterFirstPaint ? activeWorkspaceId : null,
+    snapshotBudgets,
+    dataUpdatedAt,
+  );
 
   // Build exchange rate map from snapshot
   const exchangeRateMap = useMemo(
@@ -640,7 +702,10 @@ function DashboardScreen() {
   const isCheckingAdvancedAccess = isAdvanced && !hasAdvancedDashboardGift && dashboardEntitlement.isLoading;
   const shouldShowAdvancedProGate = isAdvanced && !isCheckingAdvancedAccess && !hasAdvancedDashboardAccess;
 
-  if (snapLoading) {
+  // snapLoading (isPending && isFetching) es false cuando la query quedó pausada
+  // (NetInfo reportó offline) o en error, aunque data siga undefined: sin el guard
+  // extra se renderizaba el estado "tablero limpio" falso (incidente 2026-07-13).
+  if (snapLoading || (Boolean(activeWorkspaceId) && !snapshot)) {
     return (
       <View style={[styles.screen, { paddingTop: insets.top }]}>
         <ScreenHeader
@@ -659,12 +724,40 @@ function DashboardScreen() {
     );
   }
 
+  // Ver isDashboardDataUnavailable: distingue "no sé" de "sé que no hay". Un esqueleto infinito
+  // no sirve —la válvula de arranque existe justo para no congelar la app—, así que cuando los
+  // datos no llegaron se dice la verdad y se ofrece reintentar.
+  const dataUnavailable = isDashboardDataUnavailable({
+    knownWorkspaces,
+    activeWorkspaceId,
+    hasSnapshot: Boolean(snapshot),
+  });
+
+  if (dataUnavailable) {
+    return (
+      <View style={[styles.screen, { paddingTop: insets.top }]}>
+        <ScreenHeader
+          title={`Hola, ${profile?.fullName?.split(" ")[0] ?? "usuario"}`}
+          subtitle={format(new Date(), "d MMM yyyy", { locale: es })}
+          showPlanBadge
+        />
+        <ScrollView contentContainerStyle={styles.content}>
+          <EmptyState
+            title="No pudimos cargar tus datos"
+            description="Tu información está a salvo, solo no llegó a este teléfono. Revisa tu conexión y vuelve a intentar."
+            action={{ label: "Reintentar", onPress: onRefresh }}
+          />
+        </ScrollView>
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
       <ScreenHeader
         title={`Hola, ${profile?.fullName?.split(" ")[0] ?? "usuario"}`}
         subtitle={`${workspaceDisplayName} · ${format(new Date(), "d MMM yyyy", { locale: es })}${lastUpdateLabel ? ` · ${lastUpdateLabel}` : ""}`}
-        rightAction={<DashboardHeaderRight onSignOut={handleSignOut} />}
+        rightAction={<DashboardHeaderRight onSignOut={handleSignOut} privacyMode={privacyMode} onTogglePrivacy={() => { void Haptics.selectionAsync(); togglePrivacyMode(); }} />}
         showPlanBadge
       />
 
@@ -762,6 +855,14 @@ function DashboardScreen() {
                 subscriptions={snapshot?.subscriptions ?? []}
                 recurringIncome={snapshot?.recurringIncome ?? []}
                 router={router}
+                onPaySubscription={(id) => {
+                  const sub = (snapshot?.subscriptions ?? []).find((s) => s.id === id);
+                  if (sub) setDashboardPayTarget(sub);
+                }}
+                onConfirmIncome={(id) => {
+                  const item = (snapshot?.recurringIncome ?? []).find((r) => r.id === id);
+                  if (item) arrival.open(item);
+                }}
               />
               <BudgetsSection budgets={correctedDashboardBudgets} router={router} />
             </DashboardSectionBoundary>
@@ -820,7 +921,7 @@ function DashboardScreen() {
         )}
       </ScrollView>
 
-      <FAB onPress={() => setFormVisible(true)} bottom={insets.bottom + 16} />
+      <FAB onPress={() => setFormVisible(true)} bottom={insets.bottom + 16 + IOS_FLOATING_TAB_BAR_SPACE} />
 
       <MovementForm
         visible={formVisible}
@@ -851,6 +952,18 @@ function DashboardScreen() {
           }}
         />
       ) : null}
+      <MarkSubscriptionPaidSheet
+        visible={Boolean(dashboardPayTarget)}
+        subscription={dashboardPayTarget}
+        accounts={snapshot?.accounts ?? []}
+        isPending={markPaidMutation.isPending}
+        onClose={() => setDashboardPayTarget(null)}
+        onConfirm={(args) => void handleDashboardMarkPaid(args)}
+      />
+      <RecurringIncomeArrivalSheet
+        {...arrival.sheetProps}
+        accounts={activeAccounts}
+      />
       <ConfirmDialog
         visible={signOutVisible}
         title="Cerrar sesión"
@@ -876,21 +989,54 @@ import { dashboardSimpleStyles as subStyles } from "../../features/dashboard/com
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: COLORS.canvas },
-  content: { padding: SPACING.lg, gap: SPACING.xl, paddingBottom: 100 },
+  // paddingBottom deja libre la franja de la barra flotante de iOS (0 en Android).
+  content: { padding: SPACING.lg, gap: SPACING.xl, paddingBottom: 100 + IOS_FLOATING_TAB_BAR_SPACE },
 });
 
 // --- Dashboard header right actions -------------------------------------------
 
-function DashboardHeaderRight({ onSignOut }: { onSignOut: () => void }) {
+function DashboardHeaderRight({
+  onSignOut,
+  privacyMode,
+  onTogglePrivacy,
+}: {
+  onSignOut: () => void;
+  privacyMode: boolean;
+  onTogglePrivacy: () => void;
+}) {
   const { profile } = useAuth();
   const { workspaces } = useWorkspaceListStore();
   const router = useRouter();
   const { data: notifications = [] } = useNotificationsQuery(profile?.id ?? null);
   const unreadCount = (notifications as { readAt: string | null }[]).filter((n) => !n.readAt).length;
+  const { data: entitlement } = useUserEntitlementQuery(profile?.id ?? null, profile?.email ?? null);
+  const isPro = entitlement?.proAccessEnabled === true;
 
   return (
     <View style={hdrStyles.row}>
       {workspaces.length > 1 && <WorkspaceSelector />}
+      <TouchableOpacity
+        style={hdrStyles.iconBtn}
+        onPress={onTogglePrivacy}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        accessibilityRole="button"
+        accessibilityLabel={privacyMode ? "Mostrar montos" : "Ocultar montos"}
+      >
+        {privacyMode
+          ? <EyeOff size={19} color={COLORS.storm} strokeWidth={2} />
+          : <Eye size={19} color={COLORS.storm} strokeWidth={2} />}
+      </TouchableOpacity>
+      {isPro ? (
+        <TouchableOpacity
+          style={hdrStyles.iconBtn}
+          onPress={() => router.push("/assistant?from=dashboard")}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button"
+          accessibilityLabel="Abrir asistente"
+        >
+          <Sparkles size={19} color={COLORS.storm} strokeWidth={2} />
+        </TouchableOpacity>
+      ) : null}
       <TouchableOpacity
         style={hdrStyles.iconBtn}
         onPress={() => router.push("/notifications")}

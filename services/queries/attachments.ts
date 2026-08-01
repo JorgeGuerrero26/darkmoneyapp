@@ -6,6 +6,7 @@ import {
   buildEntityAttachmentDir,
   type AttachmentEntityType,
 } from "../../lib/entity-attachments";
+import { countEntityAttachmentsById } from "../../lib/entity-attachment-counts";
 import { supabase } from "../../lib/supabase";
 
 export type EntityAttachmentFile = {
@@ -72,27 +73,33 @@ async function fetchEntityAttachments(
 async function fetchEntityAttachmentCounts(
   workspaceId: number,
   entityType: AttachmentEntityType,
-  entityIds: number[],
 ): Promise<EntityAttachmentCounts> {
   if (!supabase) throw new Error("Supabase no esta configurado.");
-  const client = supabase;
-  if (entityIds.length === 0) return {};
+  const rootPrefix = `${workspaceId}/${entityType}`;
+  const storage = supabase.storage.from(SUPABASE_STORAGE_BUCKET);
+  const objects: Array<{ key?: string | null; name?: string | null }> = [];
+  let cursor: string | undefined;
 
-  const counts = await Promise.all(
-    entityIds.map(async (entityId) => {
-      const folderPath = buildEntityAttachmentDir(workspaceId, entityType, entityId);
-      const { data: files, error } = await client.storage
-        .from(SUPABASE_STORAGE_BUCKET)
-        .list(folderPath, { limit: 20 });
-      if (error) {
-        return [entityId, 0] as const;
-      }
-      const visibleCount = (files ?? []).filter((item) => item.name && !item.name.endsWith("/")).length;
-      return [entityId, visibleCount] as const;
-    }),
-  );
+  do {
+    const { data, error } = await storage.listV2({
+      prefix: `${rootPrefix}/`,
+      cursor,
+      limit: 1000,
+      with_delimiter: false,
+    });
+    // Los badges son informativos. Si Storage no responde, omitirlos es mas seguro
+    // que volver al N+1 de una solicitud por fila y saturar el resto de la app.
+    if (error || !data) return {};
+    objects.push(...data.objects);
 
-  return Object.fromEntries(counts);
+    if (!data.hasNext) break;
+    // Evita mostrar un conteo parcial si el servidor marca otra pagina pero no
+    // entrega el cursor necesario para leerla.
+    if (!data.nextCursor) return {};
+    cursor = data.nextCursor;
+  } while (cursor);
+
+  return countEntityAttachmentsById(rootPrefix, objects);
 }
 
 export function useEntityAttachmentsQuery(
@@ -127,7 +134,7 @@ export function useObligationEventAttachmentCountsQuery(
     queryKey: ["entity-attachment-counts", workspaceId ?? null, "obligation-event", normalizedIds.join(",")],
     queryFn: async (): Promise<EntityAttachmentCounts> => {
       if (!workspaceId || normalizedIds.length === 0) return {};
-      return fetchEntityAttachmentCounts(workspaceId, "obligation-event", normalizedIds);
+      return fetchEntityAttachmentCounts(workspaceId, "obligation-event");
     },
     enabled: Boolean(workspaceId && normalizedIds.length > 0),
     staleTime: STALE.short,
@@ -137,15 +144,19 @@ export function useObligationEventAttachmentCountsQuery(
 export function useMovementAttachmentCountsQuery(
   workspaceId?: number | null,
   movementIds?: number[] | null,
+  enabled = true,
 ) {
   const normalizedIds = (movementIds ?? []).filter((value) => Number.isFinite(value) && value > 0);
   return useQuery({
+    // Mantener los ids en la key conserva el refresco al agregar una entidad;
+    // cada cambio ahora cuesta un solo listado plano, no una llamada por fila.
     queryKey: ["entity-attachment-counts", workspaceId ?? null, "movement", normalizedIds.join(",")],
+    meta: { uxBlocking: false },
     queryFn: async (): Promise<EntityAttachmentCounts> => {
       if (!workspaceId || normalizedIds.length === 0) return {};
-      return fetchEntityAttachmentCounts(workspaceId, "movement", normalizedIds);
+      return fetchEntityAttachmentCounts(workspaceId, "movement");
     },
-    enabled: Boolean(workspaceId && normalizedIds.length > 0),
+    enabled: Boolean(enabled && workspaceId && normalizedIds.length > 0),
     staleTime: STALE.short,
   });
 }

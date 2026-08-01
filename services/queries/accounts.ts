@@ -1,8 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { supabase } from "../../lib/supabase";
+import { withTimeout } from "../../lib/promise-utils";
 import { formatSupabaseError, runBackgroundQueryRefresh } from "./_shared";
 import type { WorkspaceSnapshot } from "./workspace-data";
+
+// Timeout para escrituras de cuenta: tras horas en foreground el socket puede
+// quedar stale y la respuesta HTTP nunca vuelve aunque el write se commitee
+// server-side → el spinner giraba para siempre (incidente 2026-07-20: cambio de
+// tipo de cuenta "cargando" 5 min). 15 s corta y deja reintentar (UPDATE idempotente).
+const ACCOUNT_WRITE_TIMEOUT_MS = 15_000;
 
 export type AccountFormInput = {
   name: string;
@@ -21,23 +28,27 @@ export function useCreateAccountMutation(workspaceId: number | null) {
   return useMutation({
     mutationFn: async (input: AccountFormInput) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
-      const { data, error } = await supabase
-        .from("accounts")
-        .insert({
-          workspace_id: workspaceId,
-          name: input.name,
-          type: input.type,
-          currency_code: input.currencyCode,
-          opening_balance: input.openingBalance,
-          include_in_net_worth: input.includeInNetWorth,
-          color: input.color,
-          icon: input.icon,
-          sort_order: 0,
-          is_archived: false,
-          institution_code: input.institutionCode ?? null,
-        })
-        .select("id")
-        .single();
+      const { data, error } = await withTimeout(
+        supabase
+          .from("accounts")
+          .insert({
+            workspace_id: workspaceId,
+            name: input.name,
+            type: input.type,
+            currency_code: input.currencyCode,
+            opening_balance: input.openingBalance,
+            include_in_net_worth: input.includeInNetWorth,
+            color: input.color,
+            icon: input.icon,
+            sort_order: 0,
+            is_archived: false,
+            institution_code: input.institutionCode ?? null,
+          })
+          .select("id")
+          .single(),
+        ACCOUNT_WRITE_TIMEOUT_MS,
+        "create-account",
+      );
       if (error) throw new Error(formatSupabaseError(error) || "Error de base de datos");
       return data as { id: number };
     },
@@ -52,20 +63,24 @@ export function useUpdateAccountMutation(workspaceId: number | null) {
   return useMutation({
     mutationFn: async ({ id, input }: { id: number; input: Partial<AccountFormInput> }) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
-      const { error } = await supabase
-        .from("accounts")
-        .update({
-          name: input.name,
-          type: input.type,
-          currency_code: input.currencyCode,
-          opening_balance: input.openingBalance,
-          include_in_net_worth: input.includeInNetWorth,
-          color: input.color,
-          icon: input.icon,
-          ...("institutionCode" in input ? { institution_code: input.institutionCode ?? null } : {}),
-        })
-        .eq("id", id)
-        .eq("workspace_id", workspaceId);
+      const { error } = await withTimeout(
+        supabase
+          .from("accounts")
+          .update({
+            name: input.name,
+            type: input.type,
+            currency_code: input.currencyCode,
+            opening_balance: input.openingBalance,
+            include_in_net_worth: input.includeInNetWorth,
+            color: input.color,
+            icon: input.icon,
+            ...("institutionCode" in input ? { institution_code: input.institutionCode ?? null } : {}),
+          })
+          .eq("id", id)
+          .eq("workspace_id", workspaceId),
+        ACCOUNT_WRITE_TIMEOUT_MS,
+        "update-account",
+      );
       if (error) throw new Error(error.message ?? "Error de base de datos");
     },
     onSuccess: () => {

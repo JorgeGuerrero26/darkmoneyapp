@@ -5,6 +5,8 @@ import {
   findPossibleDuplicateMovement,
   recordSuggestionAction,
   syncNativeDetectedSuggestion,
+  countSameDayDetectionSignals,
+  confirmDuplicateWithAi,
   type NativeDetectedMovementSuggestion,
 } from "../services/queries/notification-detection";
 import { type PatternMaps } from "./movement-patterns";
@@ -14,6 +16,7 @@ import {
   filterCategoriesForMovementType,
   orchestrateCategoryAiRecommendation,
 } from "./movement-ai-orchestrator";
+import { resolveDuplicateAction } from "../features/notifications/lib/duplicate-verdict";
 import type { JsonValue } from "../types/domain";
 import { logError, logWarn } from "./error-logger";
 import { withRetry, withTimeout } from "./promise-utils";
@@ -686,23 +689,87 @@ async function runRegistrationFlow(payload: HeadlessPayload) {
     description,
   }).catch(() => null);
   if (duplicate) {
-    // Cerrar la sugerencia como 'duplicate' vinculada al movimiento existente. Antes solo se
-    // re-mostraba la notificación y la sugerencia quedaba pending → reintento infinito en cada
-    // re-disparo (hallazgo N4 de la auditoría).
-    await supabase
-      .from("notification_detected_movement_suggestions")
-      .update({ status: "duplicate", movement_id: duplicate.id, updated_at: new Date().toISOString() })
-      .eq("id", suggestion.id);
-    await supabase
-      .from("notifications")
-      .update({ status: "read", read_at: new Date().toISOString() })
-      .eq("related_entity_type", "detected_movement_suggestion")
-      .eq("related_entity_id", suggestion.id)
-      .eq("kind", "detected_movement_suggestion");
-    nativeDetection?.markSuggestionRegistered?.(payload.suggestionId, payload.notificationId ?? 0);
-    nativeDetection?.requestCancelBankNotification?.(payload.suggestionId);
-    clearRegistrationRetry(payload);
-    return;
+    // Antes de cerrar como 'duplicate' vinculada al movimiento existente, se consulta la IA
+    // (cuando aplica): si no puede confirmar, la sugerencia pasa a 'needs_review' en vez de
+    // cerrarse sola (evita tragarse un movimiento real) o registrarse sin fricción.
+    const existingMetadata: Record<string, JsonValue> =
+      suggestion.metadata && typeof suggestion.metadata === "object" && !Array.isArray(suggestion.metadata)
+        ? (suggestion.metadata as Record<string, JsonValue>)
+        : {};
+    const counts = await countSameDayDetectionSignals({
+      workspaceId,
+      amount,
+      movementType,
+      occurredAt: suggestion.occurredAt,
+      accountId: payload.accountId ?? null,
+    }).catch(() => ({ sameDaySuggestions: 0, sameDayRegisteredFromSuggestions: 0, sameDayMatchingMovements: 1 }));
+    const aiResult = await confirmDuplicateWithAi({
+      workspaceId,
+      suggestion: {
+        description,
+        amountLabel: String(amount),
+        occurredAt: suggestion.occurredAt,
+        sourceApp: suggestion.financialAppKey,
+        rawText: nativeSuggestion.text ?? null,
+      },
+      candidateMovement: {
+        id: duplicate.id,
+        description: duplicate.description ?? null,
+        occurredAt: duplicate.occurredAt,
+        amount,
+      },
+      counts,
+    });
+    const action = resolveDuplicateAction(aiResult.verdict);
+
+    if (action === "close-duplicate") {
+      // Cerrar la sugerencia como 'duplicate' vinculada al movimiento existente (hallazgo N4:
+      // dejarla pending reintentaba el registro en cada re-disparo).
+      await supabase
+        .from("notification_detected_movement_suggestions")
+        .update({
+          status: "duplicate",
+          movement_id: duplicate.id,
+          metadata: { ...existingMetadata, duplicateAi: aiResult },
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", suggestion.id);
+      await supabase
+        .from("notifications")
+        .update({ status: "read", read_at: new Date().toISOString() })
+        .eq("related_entity_type", "detected_movement_suggestion")
+        .eq("related_entity_id", suggestion.id)
+        .eq("kind", "detected_movement_suggestion");
+      nativeDetection?.markSuggestionRegistered?.(payload.suggestionId, payload.notificationId ?? 0);
+      nativeDetection?.requestCancelBankNotification?.(payload.suggestionId);
+      clearRegistrationRetry(payload);
+      return;
+    }
+
+    if (action === "needs-review") {
+      // Sin veredicto: no cerrar ni registrar — el usuario decide desde la bandeja.
+      await supabase
+        .from("notification_detected_movement_suggestions")
+        .update({
+          status: "needs_review",
+          metadata: { ...existingMetadata, duplicateAi: aiResult },
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", suggestion.id);
+      await supabase
+        .from("notifications")
+        .update({
+          title: "Posible duplicado — confírmalo",
+          body: `Detectamos ${description} pero ya hay un movimiento igual hoy. Ábrelo para decidir.`,
+        })
+        .eq("related_entity_type", "detected_movement_suggestion")
+        .eq("related_entity_id", suggestion.id)
+        .eq("kind", "detected_movement_suggestion");
+      nativeDetection?.requestCancelBankNotification?.(payload.suggestionId);
+      clearRegistrationRetry(payload);
+      return;
+    }
+    // action === "register": seguir con el flujo normal de registro (no return).
   }
 
   const movementInput = buildMovementCreateInput({

@@ -4,7 +4,6 @@ import { CheckSquare, Download, Pause, SlidersHorizontal, Trash2, TrendingUp } f
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { format } from "date-fns";
 
 import { ErrorBoundary } from "../components/ui/ErrorBoundary";
 import { UndoBanner } from "../components/ui/UndoBanner";
@@ -20,10 +19,7 @@ import { SkeletonCard } from "../components/ui/Skeleton";
 import { FAB } from "../components/ui/FAB";
 import { RecurringIncomeAnalyticsModal } from "../components/domain/RecurringIncomeAnalyticsModal";
 import { RecurringIncomeForm } from "../components/forms/RecurringIncomeForm";
-import {
-  RecurringIncomeArrivalSheet,
-  type RecurringIncomeBaseChangeMode,
-} from "../features/recurring-income/components/RecurringIncomeArrivalSheet";
+import { RecurringIncomeArrivalSheet } from "../features/recurring-income/components/RecurringIncomeArrivalSheet";
 import { RecurringIncomeFilterSheet } from "../features/recurring-income/components/RecurringIncomeFilterSheet";
 import { RecurringIncomeSummaryBar } from "../features/recurring-income/components/RecurringIncomeSummaryBar";
 import { RecurringIncomeSwipeRow } from "../features/recurring-income/components/RecurringIncomeSwipeRow";
@@ -41,20 +37,20 @@ import {
   type RecurringIncomeFilter,
 } from "../features/recurring-income/lib/recurringIncomeFilters";
 import { buildRecurringIncomeContextNote } from "../features/recurring-income/lib/buildRecurringIncomeContextNote";
+import { useArrivalSheetController } from "../features/recurring-income/lib/useArrivalSheetController";
 import { useAuth } from "../lib/auth-context";
 import { useWorkspace } from "../lib/workspace-context";
+import { useUiStore } from "../store/ui-store";
 import { buildRecurringIncomeCsv } from "../lib/recurring-income-csv";
 import { shareCsvAsFile } from "../lib/share-csv-file";
-import {
-  useConfirmRecurringIncomeArrivalMutation,
-  useWorkspaceSnapshotQuery,
-} from "../services/queries/workspace-data";
+import { useWorkspaceSnapshotQuery } from "../services/queries/workspace-data";
 import {
   useDeleteRecurringIncomeMutation,
   useToggleRecurringIncomePinMutation,
   useUpdateRecurringIncomeMutation,
 } from "../services/queries/subscriptions-recurring-income";
 import { useToast } from "../hooks/useToast";
+import { useNotificationReason } from "../hooks/useNotificationReason";
 import { useOriginBackNavigation } from "../hooks/useOriginBackNavigation";
 import type { RecurringIncomeFrequency, RecurringIncomeSummary } from "../types/domain";
 
@@ -65,12 +61,10 @@ const QUICK_FILTERS: Array<FilterToolbarOption<RecurringIncomeFilter>> = [
   { label: "Cancelados", value: "cancelled" },
 ];
 
-function parseMoneyInput(value: string) {
-  const parsed = Number(value.replace(",", "."));
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
-}
-
 function RecurringIncomeScreen() {
+  // Fuerza el re-render de la pantalla al alternar modo privacidad (la máscara
+  // vive en formatCurrency, que lee el store imperativamente).
+  useUiStore((state) => state.privacyMode);
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
   const router = useRouter();
@@ -78,12 +72,13 @@ function RecurringIncomeScreen() {
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
   const { showToast } = useToast();
+  const { reason: notificationReason } = useNotificationReason();
 
   const { data: snapshot, isLoading } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const updateMutation = useUpdateRecurringIncomeMutation(activeWorkspaceId);
   const togglePinMutation = useToggleRecurringIncomePinMutation(activeWorkspaceId);
   const deleteMutation = useDeleteRecurringIncomeMutation(activeWorkspaceId);
-  const confirmArrivalMutation = useConfirmRecurringIncomeArrivalMutation(activeWorkspaceId);
+  const arrival = useArrivalSheetController(activeWorkspaceId);
 
   const [createFormVisible, setCreateFormVisible] = useState(false);
   const [analyticsTarget, setAnalyticsTarget] = useState<RecurringIncomeSummary | null>(null);
@@ -122,15 +117,6 @@ function RecurringIncomeScreen() {
       setSelectMode(false);
     }
   }, [selectMode, selectedIds.size]);
-
-  const [arrivalTarget, setArrivalTarget] = useState<RecurringIncomeSummary | null>(null);
-  const [arrivalDate, setArrivalDate] = useState(format(new Date(), "yyyy-MM-dd"));
-  const [arrivalAmount, setArrivalAmount] = useState("");
-  const [arrivalAccountId, setArrivalAccountId] = useState<number | null>(null);
-  const [arrivalBaseChangeMode, setArrivalBaseChangeMode] = useState<RecurringIncomeBaseChangeMode>("none");
-  const [arrivalNewBaseAmount, setArrivalNewBaseAmount] = useState("");
-  const [arrivalNotes, setArrivalNotes] = useState("");
-  const [arrivalError, setArrivalError] = useState("");
 
   const recurringIncome = useMemo(
     () => (snapshot?.recurringIncome ?? []).filter((item) => !pendingDeleteIds.has(item.id)),
@@ -236,10 +222,6 @@ function RecurringIncomeScreen() {
     );
   }, [filteredRecurringIncome]);
 
-  const parsedArrivalNewBaseAmount = parseMoneyInput(arrivalNewBaseAmount);
-  const arrivalBaseDelta = arrivalTarget && parsedArrivalNewBaseAmount != null
-    ? parsedArrivalNewBaseAmount - arrivalTarget.amount
-    : null;
   const extraFiltersCount = [
     frequencyFilter !== "all",
     payerFilter != null,
@@ -311,95 +293,6 @@ function RecurringIncomeScreen() {
     });
   }, []);
 
-  const openConfirmArrival = useCallback((item: RecurringIncomeSummary) => {
-    setArrivalTarget(item);
-    setArrivalDate(format(new Date(), "yyyy-MM-dd"));
-    setArrivalAmount(String(item.amount));
-    setArrivalAccountId(item.accountId ?? null);
-    setArrivalBaseChangeMode("none");
-    setArrivalNewBaseAmount(String(item.amount));
-    setArrivalNotes("");
-    setArrivalError("");
-  }, []);
-
-  const closeConfirmArrival = useCallback(() => {
-    setArrivalTarget(null);
-    setArrivalError("");
-  }, []);
-
-  const handleConfirmArrival = useCallback(async () => {
-    if (!arrivalTarget) return;
-    const actualAmount = parseMoneyInput(arrivalAmount);
-    if (!arrivalDate.trim()) {
-      setArrivalError("La fecha real de llegada es obligatoria.");
-      return;
-    }
-    if (actualAmount == null) {
-      setArrivalError("Ingresa un monto real mayor a 0.");
-      return;
-    }
-    if (arrivalAccountId == null) {
-      setArrivalError("Elige la cuenta destino para registrar el movimiento.");
-      return;
-    }
-
-    let nextBaseAmount: number | null = null;
-    if (arrivalBaseChangeMode !== "none") {
-      nextBaseAmount = parseMoneyInput(arrivalNewBaseAmount);
-      if (nextBaseAmount == null) {
-        setArrivalError("Ingresa el nuevo monto base para las próximas llegadas.");
-        return;
-      }
-      if (arrivalBaseChangeMode === "bonus" && nextBaseAmount <= arrivalTarget.amount) {
-        setArrivalError("Si hubo bonificación permanente, el nuevo monto base debe ser mayor al actual.");
-        return;
-      }
-      if (arrivalBaseChangeMode === "discount" && nextBaseAmount >= arrivalTarget.amount) {
-        setArrivalError("Si hubo descuento permanente, el nuevo monto base debe ser menor al actual.");
-        return;
-      }
-    }
-
-    try {
-      setArrivalError("");
-      await confirmArrivalMutation.mutateAsync({
-        recurringIncomeId: arrivalTarget.id,
-        recurringIncomeName: arrivalTarget.name,
-        expectedDate: arrivalTarget.nextExpectedDate,
-        actualDate: arrivalDate,
-        amount: actualAmount,
-        accountId: arrivalAccountId,
-        currentAccountId: arrivalTarget.accountId ?? null,
-        categoryId: arrivalTarget.categoryId ?? null,
-        payerPartyId: arrivalTarget.payerPartyId ?? null,
-        description: arrivalTarget.description ?? null,
-        currencyCode: arrivalTarget.currencyCode,
-        frequency: arrivalTarget.frequency,
-        intervalCount: arrivalTarget.intervalCount,
-        currentBaseAmount: arrivalTarget.amount,
-        newBaseAmount: nextBaseAmount,
-        baseChangeKind: arrivalBaseChangeMode === "none" ? null : arrivalBaseChangeMode,
-        notes: arrivalNotes.trim() || null,
-      });
-      setArrivalTarget(null);
-      showToast("Llegada confirmada", "success");
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "No pudimos confirmar la llegada";
-      setArrivalError(message);
-      showToast(message, "error");
-    }
-  }, [
-    arrivalAccountId,
-    arrivalAmount,
-    arrivalBaseChangeMode,
-    arrivalDate,
-    arrivalNewBaseAmount,
-    arrivalNotes,
-    arrivalTarget,
-    confirmArrivalMutation,
-    showToast,
-  ]);
-
   const handleTogglePin = useCallback((item: RecurringIncomeSummary) => {
     togglePinMutation.mutate(
       { id: item.id, isPinned: !item.isPinned },
@@ -470,21 +363,21 @@ function RecurringIncomeScreen() {
           toggleSelect(item.id);
           return;
         }
-        router.push(`/recurring-income/${item.id}?from=recurring-income`);
+        router.push({ pathname: "/recurring-income/[id]", params: { id: String(item.id), from: "recurring-income" } });
       }}
       onLongPress={() => {
         if (!selectMode) setSelectMode(true);
         toggleSelect(item.id);
       }}
       onDelete={() => startUndoDelete(item)}
-      onConfirmArrival={() => openConfirmArrival(item)}
+      onConfirmArrival={() => arrival.open(item)}
       onToggleStatus={() => handleToggleStatus(item)}
       onAnalytics={() => setAnalyticsTarget(item)}
       onTogglePin={selectMode ? undefined : () => handleTogglePin(item)}
       selected={selectedIds.has(item.id)}
       selectMode={selectMode}
     />
-  ), [handleTogglePin, handleToggleStatus, openConfirmArrival, selectMode, selectedIds, startUndoDelete, toggleSelect]);
+  ), [arrival.open, handleTogglePin, handleToggleStatus, selectMode, selectedIds, startUndoDelete, toggleSelect]);
 
   return (
     <ResourceModuleTemplate
@@ -532,7 +425,11 @@ function RecurringIncomeScreen() {
         />
       )}
       activeFilters={selectMode ? null : <ActiveFilterBar items={activeFilterItems} onClear={clearFilters} />}
-      context={!selectMode && recurringIncome.length > 0 ? <ResourceContextNote>{contextNote}</ResourceContextNote> : null}
+      context={
+        !selectMode && (notificationReason || recurringIncome.length > 0) ? (
+          <ResourceContextNote>{notificationReason ?? contextNote}</ResourceContextNote>
+        ) : null
+      }
       summary={
         !selectMode && filteredRecurringIncome.length > 0 ? (
           <RecurringIncomeSummaryBar
@@ -631,27 +528,8 @@ function RecurringIncomeScreen() {
             onClear={clearAdvancedFilters}
           />
           <RecurringIncomeArrivalSheet
-            visible={Boolean(arrivalTarget)}
-            item={arrivalTarget}
+            {...arrival.sheetProps}
             accounts={activeAccounts}
-            date={arrivalDate}
-            onDateChange={setArrivalDate}
-            amount={arrivalAmount}
-            onAmountChange={setArrivalAmount}
-            accountId={arrivalAccountId}
-            onAccountIdChange={setArrivalAccountId}
-            baseChangeMode={arrivalBaseChangeMode}
-            onBaseChangeModeChange={setArrivalBaseChangeMode}
-            newBaseAmount={arrivalNewBaseAmount}
-            onNewBaseAmountChange={setArrivalNewBaseAmount}
-            notes={arrivalNotes}
-            onNotesChange={setArrivalNotes}
-            error={arrivalError}
-            parsedNewBaseAmount={parsedArrivalNewBaseAmount}
-            baseDelta={arrivalBaseDelta}
-            loading={confirmArrivalMutation.isPending}
-            onClose={closeConfirmArrival}
-            onSubmit={handleConfirmArrival}
           />
           <RecurringIncomeForm
             visible={createFormVisible}

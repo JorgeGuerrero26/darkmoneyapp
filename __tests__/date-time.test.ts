@@ -1,4 +1,4 @@
-import { dateTimeStrToISO, isoToTimeStr, nowTimePeru } from "../lib/date";
+import { dateTimeStrToISO, isoToDateStr, isoToTimeStr, nowTimePeru } from "../lib/date";
 
 describe("dateTimeStrToISO", () => {
   test("combina fecha + hora Perú y convierte a UTC (+5h)", () => {
@@ -17,13 +17,15 @@ describe("dateTimeStrToISO", () => {
 
   test("hora inválida cae al comportamiento previo (no crashea)", () => {
     const result = dateTimeStrToISO("2026-07-07", "99:99");
-    expect(result).toMatch(/^2026-07-07T/);
+    // El instante usa la hora actual: en UTC puede caer en 07-07 o 07-08 según
+    // la hora del día — el invariante es que la fecha PERÚ sea la pedida.
+    expect(isoToDateStr(result)).toBe("2026-07-07");
     expect(result.endsWith("Z")).toBe(true);
   });
 
   test("hora vacía usa la hora actual (dateStrToISO)", () => {
     const result = dateTimeStrToISO("2026-07-07", "");
-    expect(result).toMatch(/^2026-07-07T/);
+    expect(isoToDateStr(result)).toBe("2026-07-07");
   });
 });
 

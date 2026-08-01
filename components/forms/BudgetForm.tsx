@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ScrollView,
   StyleSheet,
@@ -44,9 +44,11 @@ type Props = {
   onClose: () => void;
   onSuccess?: () => void;
   editBudget?: BudgetOverview;
+  /** Prellena el form en modo CREAR (duplicado de otro presupuesto, p. ej. siguiente período). */
+  duplicateBudget?: BudgetOverview;
 };
 
-export function BudgetForm({ visible, onClose, onSuccess, editBudget }: Props) {
+export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateBudget }: Props) {
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
   const { profile } = useAuth();
   const { showToast } = useToast();
@@ -77,29 +79,30 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget }: Props) {
 
   useEffect(() => {
     if (!visible) return;
-    if (editBudget) {
-      setName(editBudget.name);
-      setLimitAmount(String(editBudget.limitAmount));
-      setCurrencyCode(editBudget.currencyCode);
-      setAlertPercent(editBudget.alertPercent);
-      setCategoryId(editBudget.categoryId ?? null);
-      setAccountId(editBudget.accountId ?? null);
-      setRolloverEnabled(editBudget.rolloverEnabled);
-      setPeriodStart(editBudget.periodStart);
-      setPeriodEnd(editBudget.periodEnd);
+    const source = editBudget ?? duplicateBudget;
+    if (source) {
+      setName(source.name);
+      setLimitAmount(String(source.limitAmount));
+      setCurrencyCode(source.currencyCode);
+      setAlertPercent(source.alertPercent);
+      setCategoryId(source.categoryId ?? null);
+      setAccountId(source.accountId ?? null);
+      setRolloverEnabled(source.rolloverEnabled);
+      setPeriodStart(source.periodStart);
+      setPeriodEnd(source.periodEnd);
       const currentMonthStart = format(startOfMonth(now), "yyyy-MM-dd");
       const currentMonthEnd = format(endOfMonth(now), "yyyy-MM-dd");
       const nextMonth = addMonths(now, 1);
       const nextMonthStart = format(startOfMonth(nextMonth), "yyyy-MM-dd");
       const nextMonthEnd = format(endOfMonth(nextMonth), "yyyy-MM-dd");
-      if (editBudget.periodStart === currentMonthStart && editBudget.periodEnd === currentMonthEnd) {
+      if (source.periodStart === currentMonthStart && source.periodEnd === currentMonthEnd) {
         setPeriodPreset("current");
-      } else if (editBudget.periodStart === nextMonthStart && editBudget.periodEnd === nextMonthEnd) {
+      } else if (source.periodStart === nextMonthStart && source.periodEnd === nextMonthEnd) {
         setPeriodPreset("next");
       } else {
         setPeriodPreset("custom");
       }
-      setNotes(editBudget.notes ?? "");
+      setNotes(source.notes ?? "");
     } else {
       const m = new Date();
       setName("");
@@ -116,7 +119,7 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget }: Props) {
     }
     setNameError("");
     setAmountError("");
-  }, [visible, editBudget, defaultCurrency]);
+  }, [visible, editBudget, duplicateBudget, defaultCurrency]);
 
   function setNextMonth() {
     const next = addMonths(now, 1);
@@ -155,7 +158,10 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget }: Props) {
     }
   }
 
+  const submittingRef = useRef(false);
+
   async function handleSubmit() {
+    if (submittingRef.current) return; // guard anti-doble-tap: evita duplicados
     setNameError("");
     setAmountError("");
     let valid = true;
@@ -185,6 +191,7 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget }: Props) {
       notes: notes.trim() || null,
     };
 
+    submittingRef.current = true;
     try {
       if (isEditing && editBudget) {
         await updateMutation.mutateAsync({ id: editBudget.id, input });
@@ -200,6 +207,8 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget }: Props) {
       haptics.error();
       const msg = err instanceof Error ? err.message : "Error desconocido";
       showToast(msg, "error");
+    } finally {
+      submittingRef.current = false;
     }
   }
 

@@ -17,8 +17,18 @@ type Props = {
   style?: StyleProp<TextStyle>;
 };
 
-import { formatCurrency } from "../../lib/format-currency";
-export { formatCurrency };
+import { formatCurrency as formatCurrencyPure, maskedCurrencyLabel } from "../../lib/format-currency";
+import { useUiStore } from "../../store/ui-store";
+
+/**
+ * Versión con modo privacidad del formateador puro: los 81 consumidores de UI
+ * importan desde aquí. Lectura imperativa del store — el re-render lo fuerzan
+ * las suscripciones de pantalla/fila (ver useUiStore((s) => s.privacyMode)).
+ */
+export function formatCurrency(amount: number, currencyCode: string): string {
+  if (useUiStore.getState().privacyMode) return maskedCurrencyLabel(currencyCode);
+  return formatCurrencyPure(amount, currencyCode);
+}
 
 export function AmountDisplay({
   amount,

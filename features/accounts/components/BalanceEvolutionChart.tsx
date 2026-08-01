@@ -177,7 +177,6 @@ const styles = StyleSheet.create({
     borderColor: SURFACE.cardBorder,
     borderRadius: RADIUS.xl,
     padding: SPACING.lg,
-    marginHorizontal: SPACING.lg,
     marginTop: SPACING.md,
     gap: SPACING.sm,
   },

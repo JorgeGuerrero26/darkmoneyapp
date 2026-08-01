@@ -1,3 +1,4 @@
+import type { JsonValue } from "../../../types/domain";
 import { parsePositiveAmountInput } from "../../../lib/amount-parsing";
 
 /**
@@ -64,4 +65,28 @@ export function splitLineDescription(baseDescription: string, index: number, tot
 
 function round2(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+/** True si el metadata de un movimiento indica que ya pertenece a un grupo split. */
+export function hasSplitGroup(metadata: unknown): boolean {
+  return Boolean(
+    metadata &&
+    typeof metadata === "object" &&
+    !Array.isArray(metadata) &&
+    (metadata as Record<string, unknown>).split_group,
+  );
+}
+
+/** Metadata de una línea split: preserva el metadata previo y agrega los campos del grupo. */
+export function splitLineMetadata(
+  existing: unknown,
+  group: string,
+  index: number,
+  total: number,
+): Record<string, JsonValue> {
+  const base =
+    existing && typeof existing === "object" && !Array.isArray(existing)
+      ? { ...(existing as Record<string, JsonValue>) }
+      : {};
+  return { ...base, split_group: group, split_index: index + 1, split_total: total };
 }

@@ -1,3 +1,4 @@
+import { buildNotificationReason } from "../features/notifications/lib/reason-labels";
 import { obligationShareHref } from "./obligation-share-link";
 import { workspaceInviteHref } from "./workspace-invite-link";
 
@@ -12,6 +13,67 @@ function payloadNumber(payload: NotificationPayload, key: string): number | null
 function payloadString(payload: NotificationPayload, key: string): string | null {
   const value = payload?.[key];
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+const MONTH_NAMES_ES = [
+  "enero", "febrero", "marzo", "abril", "mayo", "junio",
+  "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+];
+
+function ymd(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+/** Rango del mes actual + nombre del mes en español. */
+function currentMonthRange(): { from: string; to: string; monthLabel: string } {
+  const now = new Date();
+  const from = new Date(now.getFullYear(), now.getMonth(), 1);
+  const to = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  return { from: ymd(from), to: ymd(to), monthLabel: MONTH_NAMES_ES[now.getMonth()] };
+}
+
+/** Rango de los últimos 7 días. */
+function lastWeekRange(): { from: string; to: string } {
+  const now = new Date();
+  const from = new Date(now);
+  from.setDate(now.getDate() - 7);
+  return { from: ymd(from), to: ymd(now) };
+}
+
+/**
+ * Deep link a Movimientos pre-filtrado. `quickScope` activa el bloque de filtros
+ * rápidos y `quickToken` (único por tap) fuerza el re-trigger; `quickLabel` se
+ * muestra en la ActiveFilterBar como el "porqué" de la notificación.
+ */
+function movementsQuickLink(opts: {
+  label: string;
+  type?: string;
+  categoryId?: number | null;
+  dateFrom?: string;
+  dateTo?: string;
+}) {
+  const params: Record<string, string> = {
+    quickScope: "notification",
+    quickToken: String(Date.now()),
+    quickLabel: opts.label,
+  };
+  if (opts.type) params.quickType = opts.type;
+  if (opts.categoryId && opts.categoryId > 0) params.quickCategoryId = String(opts.categoryId);
+  if (opts.dateFrom && opts.dateTo) {
+    params.quickDateFrom = opts.dateFrom;
+    params.quickDateTo = opts.dateTo;
+  }
+  return { pathname: "/(app)/movements", params };
+}
+
+/** Adjunta la nota del porqué (M2) a una ruta destino. Token único por tap. */
+function withReason(kind: string, payload: NotificationPayload, pathname: string, params: Record<string, string> = {}) {
+  const reason = buildNotificationReason(kind, payload ?? null);
+  if (!reason) return Object.keys(params).length > 0 ? { pathname, params } : pathname;
+  return { pathname, params: { ...params, reason, reasonToken: String(Date.now()) } };
 }
 
 export function resolveNotificationNavigationTarget(input: {
@@ -32,25 +94,48 @@ export function resolveNotificationNavigationTarget(input: {
   switch (kind) {
     case "daily_digest":
     case "daily_ai_digest":
-    case "daily_workspace_summary":
-    case "daily_cashflow_check":
+    case "daily_workspace_summary": {
+      // M1: dashboard con el sheet del día abierto (token retrigger, como quickToken).
+      // El digest trae SU fecha (todayKey): tocarlo al día siguiente debe abrir el día
+      // del resumen, no el día del tap.
+      const digestDay = payloadString(payload, "todayKey");
+      const params: Record<string, string> = { daySheet: "today", daySheetToken: String(Date.now()) };
+      if (digestDay) params.daySheetDate = digestDay;
+      return { pathname: "/(app)/dashboard", params };
+    }
+    case "daily_cashflow_check": {
+      const { from, to } = currentMonthRange();
+      return movementsQuickLink({ label: "Chequeo de flujo del mes", dateFrom: from, dateTo: to });
+    }
     case "daily_budget_review":
-      return "/(app)/dashboard";
+      return withReason(kind, payload, "/(app)/budgets", { from: "notifications" });
     case "budget_alert":
     case "budget_period_ending":
-      return "/budgets?from=notifications";
+      return id != null && relatedEntityType === "budget"
+        ? withReason(kind, payload, "/budget/[id]", { id: String(id), from: "notifications" })
+        : withReason(kind, payload, "/(app)/budgets", { from: "notifications" });
+    case "budget_period_ended":
+      // Accionable: abre el módulo con el form de crear prellenado como
+      // duplicado del siguiente período (no crea nada hasta confirmar).
+      return id != null && relatedEntityType === "budget"
+        ? withReason(kind, payload, "/(app)/budgets", { duplicateFrom: String(id), from: "notifications" })
+        : withReason(kind, payload, "/(app)/budgets", { from: "notifications" });
     case "subscription_reminder":
     case "subscription_overdue":
-      return id ? `/subscription/${id}` : "/subscriptions";
+      return id
+        ? withReason(kind, payload, "/subscription/[id]", { id: String(id) })
+        : withReason(kind, payload, "/subscriptions");
     case "multiple_subscriptions_due":
-      return "/subscriptions";
+      return withReason(kind, payload, "/subscriptions");
     case "obligation_due":
     case "obligation_overdue":
     case "obligation_no_payment":
     case "high_interest_obligation":
-      return obligationRouteId ? `/obligation/${obligationRouteId}` : "/(app)/obligations";
+      return obligationRouteId
+        ? withReason(kind, payload, "/obligation/[id]", { id: String(obligationRouteId) })
+        : "/(app)/obligations";
     case "multiple_obligations_overdue":
-      return "/(app)/obligations";
+      return withReason(kind, payload, "/(app)/obligations");
     case "obligation_event_unlinked":
       return obligationRouteId
         ? {
@@ -109,20 +194,92 @@ export function resolveNotificationNavigationTarget(input: {
     case "low_balance":
     case "negative_balance":
     case "account_dormant":
-      return id ? `/account/${id}` : "/(app)/accounts";
+      return id
+        ? withReason(kind, payload, "/account/[id]", { id: String(id) })
+        : "/(app)/accounts";
     case "upcoming_annual_subscription":
-      return id ? `/subscription/${id}` : "/subscriptions";
+    case "subscription_price_increase":
+      return id
+        ? withReason(kind, payload, "/subscription/[id]", { id: String(id) })
+        : "/subscriptions";
     case "recurring_income_reminder":
-      return "/recurring-income";
-    case "savings_rate_low":
-    case "subscription_cost_heavy":
-    case "no_movements_week":
-    case "no_income_month":
-    case "high_expense_month":
-    case "category_spending_spike":
-    case "expense_income_imbalance":
+      return withReason(kind, payload, "/recurring-income");
+    case "high_expense_month": {
+      const { from, to, monthLabel } = currentMonthRange();
+      return movementsQuickLink({ label: `Gastos elevados de ${monthLabel}`, type: "expense", dateFrom: from, dateTo: to });
+    }
+    case "category_spending_spike": {
+      const { from, to } = currentMonthRange();
+      const catName = payloadString(payload, "categoryName");
+      return movementsQuickLink({
+        label: catName ? `Gasto alto: ${catName}` : "Gasto elevado en categoría",
+        type: "expense",
+        categoryId: relatedEntityType === "category" ? id : null,
+        dateFrom: from,
+        dateTo: to,
+      });
+    }
+    case "no_income_month": {
+      const { from, to } = currentMonthRange();
+      return movementsQuickLink({ label: "Sin ingresos este mes", type: "income", dateFrom: from, dateTo: to });
+    }
+    case "expense_income_imbalance": {
+      const { from, to } = currentMonthRange();
+      return movementsQuickLink({ label: "Gastos vs ingresos del mes", dateFrom: from, dateTo: to });
+    }
+    case "savings_rate_low": {
+      const { from, to } = currentMonthRange();
+      return movementsQuickLink({ label: "Ahorro bajo este mes", dateFrom: from, dateTo: to });
+    }
+    case "no_movements_week": {
+      const { from, to } = lastWeekRange();
+      return movementsQuickLink({ label: "Sin movimientos (última semana)", dateFrom: from, dateTo: to });
+    }
     case "net_worth_negative":
-      return "/(app)/dashboard";
+      return withReason(kind, payload, "/(app)/accounts");
+    case "subscription_cost_heavy":
+      return withReason(kind, payload, "/subscriptions");
+    case "possible_duplicate_charge": {
+      const day = payloadString(payload, "day");
+      const amountLabel = payloadString(payload, "amountLabel");
+      return movementsQuickLink({
+        label: amountLabel ? `Posible cobro duplicado: ${amountLabel}` : "Posible cobro duplicado",
+        type: "expense",
+        dateFrom: day ?? undefined,
+        dateTo: day ?? undefined,
+      });
+    }
+    case "detected_suggestions_pending":
+      return "/notifications";
+    case "expected_income_missed":
+      return withReason(kind, payload, "/recurring-income");
+    case "monthly_recap": {
+      const from = payloadString(payload, "monthFrom");
+      const to = payloadString(payload, "monthTo");
+      const monthLabel = payloadString(payload, "monthLabel");
+      return from && to
+        ? movementsQuickLink({ label: `Resumen de ${monthLabel ?? "el mes"}`, dateFrom: from, dateTo: to })
+        : "/(app)/movements";
+    }
+    case "obligation_milestone":
+      return obligationIdFromPayload
+        ? withReason(kind, payload, "/obligation/[id]", { id: String(obligationIdFromPayload) })
+        : "/(app)/obligations";
+    case "cash_runway_alert":
+      return withReason(kind, payload, "/(app)/accounts");
+    case "commitments_vs_balance":
+      return withReason(kind, payload, "/(app)/obligations");
+    case "assistant_insight": {
+      // Insight proactivo: abre el chat y auto-envía la pregunta que lo motivó.
+      const ask = payloadString(payload, "assistantPrompt");
+      return {
+        pathname: "/assistant",
+        params: {
+          from: "notifications",
+          ...(ask ? { ask, askToken: String(Date.now()) } : {}),
+        },
+      };
+    }
     default:
       return "/notifications";
   }

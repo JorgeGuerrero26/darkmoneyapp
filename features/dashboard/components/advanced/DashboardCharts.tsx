@@ -6,6 +6,7 @@ import { RingChart, type RingSegment } from "../../../../components/ui/RingChart
 import { SparkLine } from "../../../../components/ui/SparkLine";
 import { formatCurrency } from "../../../../components/ui/AmountDisplay";
 import { COLORS, EXTENDED_PALETTE } from "../../../../constants/theme";
+import { useUiStore } from "../../../../store/ui-store";
 import { SectionTitle } from "../simple/SectionTitle";
 import { dashboardSimpleStyles as subStyles } from "../simple/styles";
 
@@ -98,6 +99,7 @@ export function SavingsMomentumChart({
   currency: string;
   onOpenMonth: (dateFrom: string, dateTo: string) => void;
 }) {
+  const privacyMode = useUiStore((state) => state.privacyMode);
   const netValues = data.map((item) => item.income - item.expense);
   const hasData = data.some((item) => item.income > 0 || item.expense > 0);
   if (!hasData) return null;
@@ -122,7 +124,7 @@ export function SavingsMomentumChart({
         Resume si tus meses recientes vienen dejando margen o consumiendo caja. Verde suma ahorro, rojo lo reduce.
       </Text>
       <View style={subStyles.savingsSparkWrap}>
-        <SparkLine values={cumulative} width={260} height={86} positiveColor={COLORS.income} negativeColor={COLORS.expense} />
+        <SparkLine values={cumulative} width={260} height={86} positiveColor={COLORS.income} negativeColor={COLORS.expense} masked={privacyMode} />
       </View>
       <View style={subStyles.savingsStatsRow}>
         <View style={subStyles.savingsStatCard}>
@@ -185,6 +187,7 @@ export function CategoryDonutChart({
   currency: string;
   onOpenCategory: (categoryId: number | null) => void;
 }) {
+  const privacyMode = useUiStore((state) => state.privacyMode);
   const catMap = new Map(categories.map((category) => [category.id, category.name]));
   const allEntries = Array.from(catTotals.entries())
     .map(([id, total]) => ({ id, key: `${id ?? "none"}`, name: catMap.get(id ?? -1) ?? "Sin categoría", total }))
@@ -214,7 +217,7 @@ export function CategoryDonutChart({
       </Text>
       <View style={subStyles.donutChartBody}>
         <TouchableOpacity style={subStyles.donutWrap} onPress={() => onOpenCategory(leader.id ?? null)} activeOpacity={0.84}>
-          <RingChart segments={segments} size={132} thickness={22} />
+          <RingChart segments={segments} size={132} thickness={22} masked={privacyMode} />
           <View style={subStyles.donutCenter}>
             <Text style={subStyles.donutCenterValue}>{leaderPct}%</Text>
             <Text style={subStyles.donutCenterLabel} numberOfLines={1}>{leader.name}</Text>

@@ -3,7 +3,9 @@ import { BlurView } from "expo-blur";
 
 type Props = {
   intensity?: number;
-  tint?: "light" | "dark" | "default" | "systemMaterial";
+  // Los materiales "system*" son los mismos que usan las apps nativas de iOS (el look glass).
+  // En Android no aplican: allí este componente cae a un color plano.
+  tint?: "light" | "dark" | "default" | "systemMaterial" | "systemChromeMaterialDark";
   style?: StyleProp<ViewStyle>;
   children?: React.ReactNode;
   fallbackColor?: string;

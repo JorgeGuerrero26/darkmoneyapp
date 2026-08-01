@@ -2,6 +2,11 @@ import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { subscribeRealtimeChannel } from "../../../lib/realtime-channel";
+import {
+  scheduleCoalescedTask,
+  scheduleQueryInvalidation,
+} from "../../../lib/query-refresh-coalescer";
+import { refreshSnapshotDomains } from "../../../services/queries/workspace-data";
 
 type Input = {
   workspaceId: number | null;
@@ -9,8 +14,8 @@ type Input = {
 
 /**
  * Suscribe el dashboard a cambios realtime en las 3 tablas que afectan sus
- * cifras: `movements`, `accounts`, `obligations`. Cuando llega un evento, se
- * invalidan solo las queries afectadas para que React Query re-fetche.
+ * cifras: `movements`, `accounts`, `obligations`. Las invalidaciones iguales se
+ * agrupan y los movimientos refrescan solo los dominios afectados del snapshot.
  *
  * Filtrado por workspace_id en el servidor — el cliente no recibe eventos de
  * otros workspaces, así que también es eficiente en tráfico.
@@ -31,26 +36,33 @@ export function useDashboardRealtimeSync({ workspaceId }: Input) {
           table: "movements",
           filter: `workspace_id=eq.${workspaceId}`,
           onChange: () => {
-            void queryClient.invalidateQueries({ queryKey: ["dashboard-movements"] });
-            void queryClient.invalidateQueries({ queryKey: ["dashboard-analytics"] });
-            void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
-            void queryClient.invalidateQueries({ queryKey: ["movements"] });
+            scheduleQueryInvalidation(queryClient, ["dashboard-movements"]);
+            scheduleQueryInvalidation(queryClient, ["movements"]);
+            scheduleCoalescedTask(
+              queryClient,
+              `movement-snapshot:${workspaceId}`,
+              () => refreshSnapshotDomains(
+                queryClient,
+                workspaceId,
+                ["accounts", "budgets", "categoryMovements", "subscriptionMovements"],
+              ),
+            );
           },
         },
         {
           table: "accounts",
           filter: `workspace_id=eq.${workspaceId}`,
           onChange: () => {
-            void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+            scheduleQueryInvalidation(queryClient, ["workspace-snapshot"]);
           },
         },
         {
           table: "obligations",
           filter: `workspace_id=eq.${workspaceId}`,
           onChange: () => {
-            void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
-            void queryClient.invalidateQueries({ queryKey: ["dashboard-analytics"] });
-            void queryClient.invalidateQueries({ queryKey: ["shared-obligations"] });
+            scheduleQueryInvalidation(queryClient, ["workspace-snapshot"]);
+            scheduleQueryInvalidation(queryClient, ["dashboard-analytics"]);
+            scheduleQueryInvalidation(queryClient, ["shared-obligations"]);
           },
         },
       ],

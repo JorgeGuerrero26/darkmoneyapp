@@ -158,9 +158,13 @@ if (movementType == "transfer") {
 ### Notification ID stability
 
 ```kotlin
-// Stable ID per source+amount within a 10-minute window.
-// Prevents duplicate tiles when Gmail fires onNotificationPosted multiple times.
-val notificationId = notificationIdFor("${sourcePackage}:${amount}:${System.currentTimeMillis() / 600_000}")
+// Stable ID per app+amount+10-minute-window+counterpartyToken.
+// Prevents duplicate tiles when Gmail fires onNotificationPosted multiple times, and
+// counterpartyToken (extractCounterpartyToken, conservative regex on "X te envió/yapeó/
+// pagó/transfirió") separates tiles when 2 same-amount transactions arrive from different
+// senders in the same window. No match → empty token → same collapse behavior as before.
+val counterpartyToken = extractCounterpartyToken(combined)
+val notificationId = notificationIdFor("${appName}:${amount}:${System.currentTimeMillis() / 600_000}:${counterpartyToken}")
 ```
 
 ---

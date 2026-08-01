@@ -49,6 +49,7 @@ function rollbackNotifications(queryClient: QueryClient, userId: string | null, 
 export function useNotificationsQuery(userId: string | null) {
   return useQuery({
     queryKey: ["notifications", userId],
+    meta: { uxBlocking: false },
     queryFn: async () => {
       if (!supabase || !userId) return [];
       const { data, error } = await supabase
@@ -74,10 +75,11 @@ export function useNotificationsQuery(userId: string | null) {
     },
     enabled: Boolean(userId),
     staleTime: STALE.short,
-    refetchOnMount: "always",
     refetchOnReconnect: true,
     refetchOnWindowFocus: true,
-    refetchInterval: userId ? 10_000 : false,
+    // Realtime global es la vía principal. Este intervalo solo es una red de seguridad si el
+    // socket estuvo degradado; 10 s generaba hasta 360 lecturas por hora sin aportar frescura.
+    refetchInterval: userId ? 60_000 : false,
   });
 }
 
@@ -85,6 +87,7 @@ export type NotificationPreferenceSummary = {
   userId: string;
   pushEnabled: boolean;
   dailyDigestEnabled: boolean;
+  predictiveAlertsEnabled: boolean;
   pushToken: string | null;
   platform: string | null;
 };
@@ -100,6 +103,7 @@ export function useNotificationPreferencesQuery(userId: string | null | undefine
           userId: userId ?? "",
           pushEnabled: false,
           dailyDigestEnabled: true,
+          predictiveAlertsEnabled: true,
           pushToken: null,
           platform: null,
         };
@@ -107,7 +111,7 @@ export function useNotificationPreferencesQuery(userId: string | null | undefine
 
       const { data, error } = await supabase
         .from("notification_preferences")
-        .select("user_id, is_active, daily_digest_enabled, push_token, platform")
+        .select("user_id, is_active, daily_digest_enabled, predictive_alerts_enabled, push_token, platform")
         .eq("user_id", userId)
         .maybeSingle();
 
@@ -117,6 +121,7 @@ export function useNotificationPreferencesQuery(userId: string | null | undefine
         userId,
         pushEnabled: data?.is_active === true,
         dailyDigestEnabled: data?.daily_digest_enabled !== false,
+        predictiveAlertsEnabled: data?.predictive_alerts_enabled !== false,
         pushToken: typeof data?.push_token === "string" ? data.push_token : null,
         platform: typeof data?.platform === "string" ? data.platform : null,
       };
@@ -127,7 +132,7 @@ export function useNotificationPreferencesQuery(userId: string | null | undefine
 export function useUpdateNotificationPreferencesMutation(userId: string | null | undefined) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (input: { dailyDigestEnabled: boolean }) => {
+    mutationFn: async (input: { dailyDigestEnabled: boolean; predictiveAlertsEnabled?: boolean; pushEnabled?: boolean }) => {
       if (!supabase || !userId) throw new Error("Usuario no disponible.");
 
       const { data: existing, error: existingError } = await supabase
@@ -145,6 +150,8 @@ export function useUpdateNotificationPreferencesMutation(userId: string | null |
           .from("notification_preferences")
           .update({
             daily_digest_enabled: input.dailyDigestEnabled,
+            predictive_alerts_enabled: input.predictiveAlertsEnabled,
+            ...(input.pushEnabled !== undefined ? { is_active: input.pushEnabled } : {}),
           })
           .eq("user_id", userId)
         : supabase
@@ -152,8 +159,9 @@ export function useUpdateNotificationPreferencesMutation(userId: string | null |
           .insert({
             user_id: userId,
             platform: Platform.OS,
-            is_active: false,
+            is_active: input.pushEnabled ?? false,
             daily_digest_enabled: input.dailyDigestEnabled,
+            predictive_alerts_enabled: input.predictiveAlertsEnabled,
           });
 
       const { error } = await operation;

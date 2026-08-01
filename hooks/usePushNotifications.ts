@@ -38,12 +38,12 @@ export type PushRegistrationResult =
   | { ok: false; reason: PushRegistrationReason; detail?: string };
 
 export async function registerForPushNotifications(): Promise<PushRegistrationResult> {
-  console.log("[PushNotifications] isDevice:", Constants.isDevice, "executionEnv:", Constants.executionEnvironment);
-  if (!Constants.isDevice) {
-    console.warn("[PushNotifications] Not a real device, skipping.");
-    return { ok: false, reason: "not_device" };
-  }
+  console.log("[PushNotifications] executionEnv:", Constants.executionEnvironment);
 
+  // Nota: no usar Constants.isDevice — fue removido en expo-constants (SDK 54) y
+  // devuelve undefined, lo que hacía que el registro se saltara siempre creyendo
+  // que corría en emulador. El caso Expo Go se cubre abajo; el emulador real
+  // cae de forma segura en el try/catch de getExpoPushTokenAsync.
   const isExpoGo = Constants.executionEnvironment === "storeClient";
   if (isExpoGo) {
     console.warn("[PushNotifications] Expo Go detected, skipping.");
@@ -173,17 +173,10 @@ export function usePushNotifications(userId?: string, handlers?: PushNotificatio
   onRecurringTapRef.current = handlers?.onRecurringIncomeReminderTap;
   onGenericTapRef.current = handlers?.onGenericNotificationTap;
 
-  const handleResponse = useCallback((response: ExpoNotificationResponse) => {
-    // Reject stale responses that Expo may re-emit when a listener is
-    // registered (e.g. after background→foreground if component remounted).
-    // notification.date is seconds since epoch on iOS, ms on Android — normalise.
-    const rawDate = response.notification.date ?? 0;
-    const notifDateMs = rawDate > 1e10 ? rawDate : rawDate * 1000;
-    if (notifDateMs > 0 && notifDateMs < _responseListenerRegisteredAt - 500) {
-      void Notifications?.clearLastNotificationResponseAsync?.().catch(() => {});
-      return;
-    }
-
+  // Dispatch sin el filtro de staleness: se usa directo para la respuesta
+  // inicial de cold start (su notification.date siempre es anterior al
+  // registro del listener porque la app se lanzó con el tap).
+  const dispatchResponse = useCallback((response: ExpoNotificationResponse) => {
     const identifier = String(response.notification.request.identifier ?? "");
     const actionIdentifier = String(response.actionIdentifier ?? "");
     const data = response.notification.request.content.data as Record<string, unknown> | undefined;
@@ -220,6 +213,22 @@ export function usePushNotifications(userId?: string, handlers?: PushNotificatio
     }
   }, []);
 
+  const handleResponse = useCallback(
+    (response: ExpoNotificationResponse) => {
+      // Reject stale responses that Expo may re-emit when a listener is
+      // registered (e.g. after background→foreground if component remounted).
+      // notification.date is seconds since epoch on iOS, ms on Android — normalise.
+      const rawDate = response.notification.date ?? 0;
+      const notifDateMs = rawDate > 1e10 ? rawDate : rawDate * 1000;
+      if (notifDateMs > 0 && notifDateMs < _responseListenerRegisteredAt - 500) {
+        void Notifications?.clearLastNotificationResponseAsync?.().catch(() => {});
+        return;
+      }
+      dispatchResponse(response);
+    },
+    [dispatchResponse],
+  );
+
   useEffect(() => {
     if (!userId || !Notifications) return;
     let cancelled = false;
@@ -240,13 +249,21 @@ export function usePushNotifications(userId?: string, handlers?: PushNotificatio
       // Badge / invalidación en foreground si hiciera falta
     });
 
-    // Clear BEFORE registering the response listener to avoid Expo re-firing the
-    // last stored response (which would navigate the user on every app open).
+    // Capturar la respuesta que pudo haber lanzado la app (cold start por tap
+    // en notificación) ANTES de limpiar; limpiar antes de registrar el listener
+    // evita que Expo re-dispare la última respuesta en cada apertura, pero sin
+    // la captura previa el tap de cold start se perdía y la app abría en el
+    // dashboard sin navegar.
     void (async () => {
+      const initialResponse = await Notifications.getLastNotificationResponseAsync?.().catch(() => null);
       await Notifications.clearLastNotificationResponseAsync?.().catch(() => {});
       if (cancelled) return;
       _responseListenerRegisteredAt = Date.now();
       responseListener.current = Notifications.addNotificationResponseReceivedListener(handleResponse);
+      // Sin filtro de staleness: la fecha de entrega de la notificación es
+      // siempre anterior al registro del listener en cold start. La dedupe por
+      // identifier|action|localReminderKey sigue aplicando.
+      if (initialResponse) dispatchResponse(initialResponse);
     })();
 
     return () => {
@@ -254,7 +271,7 @@ export function usePushNotifications(userId?: string, handlers?: PushNotificatio
       notificationListener.current?.remove();
       responseListener.current?.remove();
     };
-  }, [userId, handleResponse]);
+  }, [userId, handleResponse, dispatchResponse]);
 }
 
 // ── Schedule local reminders for upcoming subscriptions ──────────────────────
@@ -314,6 +331,69 @@ export async function scheduleSubscriptionReminders(
     await setStoredLocalReminderId("subscription_reminder", sub.id, sub.nextDueDate, identifier);
     if (isImmediateCatchUp) {
       await rememberImmediateLocalReminder("subscription_reminder", sub.id, sub.nextDueDate);
+    }
+  }
+}
+
+// ── Schedule local reminder when a budget period ends ────────────────────────
+
+/**
+ * Aviso local al día siguiente del cierre de cada presupuesto (09:00), para
+ * crear el siguiente período desde la notificación. Catch-up: cierres de hace
+ * ≤3 días sin aviso programado (app cerrada ese día) disparan en 1 minuto,
+ * con el mismo throttle que el resto de recordatorios locales.
+ */
+export async function scheduleBudgetEndedReminders(
+  budgets: Array<{ id: number; name: string; periodEnd: string }>,
+) {
+  if (!Notifications) return;
+  const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+  const scheduledKeys = new Set(
+    scheduled
+      .map((notif) => String(notif.content.data?.localReminderKey ?? ""))
+      .filter(Boolean),
+  );
+
+  const now = new Date();
+
+  for (const budget of budgets) {
+    const daysToEnd = calendarDaysFromTodayLocal(budget.periodEnd);
+    if (daysToEnd < -3) continue;
+
+    const parts = budget.periodEnd.split("-").map(Number);
+    const endDate =
+      parts.length === 3 && !parts.some((n) => Number.isNaN(n))
+        ? new Date(parts[0], parts[1] - 1, parts[2])
+        : new Date(budget.periodEnd);
+
+    const fireDate = new Date(endDate);
+    fireDate.setDate(fireDate.getDate() + 1);
+    fireDate.setHours(9, 0, 0, 0);
+    const isImmediateCatchUp = fireDate <= now;
+    const triggerDate = fireDate > now ? fireDate : new Date(now.getTime() + 60_000);
+    const reminderKey = `budget_period_ended:${budget.id}:${budget.periodEnd}`;
+
+    if (scheduledKeys.has(reminderKey)) continue;
+    if (isImmediateCatchUp && await shouldThrottleImmediateLocalReminder("budget_period_ended", budget.id, budget.periodEnd)) {
+      continue;
+    }
+
+    const identifier = await Notifications.scheduleNotificationAsync({
+      content: {
+        title: "Presupuesto finalizado",
+        body: `"${budget.name}" terminó su período. Toca para crear el siguiente.`,
+        data: {
+          kind: "budget_period_ended",
+          relatedEntityType: "budget",
+          relatedEntityId: budget.id,
+          localReminderKey: reminderKey,
+        },
+      },
+      trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: triggerDate },
+    });
+    await setStoredLocalReminderId("budget_period_ended", budget.id, budget.periodEnd, identifier);
+    if (isImmediateCatchUp) {
+      await rememberImmediateLocalReminder("budget_period_ended", budget.id, budget.periodEnd);
     }
   }
 }

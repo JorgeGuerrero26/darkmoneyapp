@@ -6,6 +6,7 @@ import { StyleSheet, View } from "react-native";
 import { useUiStore } from "../../store/ui-store";
 import { useWorkspace } from "../../lib/workspace-context";
 import { humanizeError } from "../../lib/errors";
+import { isAuthLikeError } from "../../lib/auth-error";
 import { todayPeru, dateStrToISO, dateTimeStrToISO, isoToDateStr, isoToTimeStr, nowTimePeru } from "../../lib/date";
 import {
   useWorkspaceSnapshotQuery,
@@ -65,7 +66,7 @@ import { useMovementCreationController } from "../../features/movements/hooks/us
 import { useTransferFxController } from "../../features/movements/hooks/useTransferFxController";
 import { useBalanceImpactPreview } from "../../features/movements/hooks/useBalanceImpactPreview";
 import { getFrequentAmounts } from "../../features/movements/lib/frequent-amounts";
-import { splitLineDescription, validateSplit, type SplitLine } from "../../features/movements/lib/split-movement";
+import { hasSplitGroup, splitLineDescription, splitLineMetadata, validateSplit, type SplitLine } from "../../features/movements/lib/split-movement";
 import { useMovementFormSuggestions } from "../../features/movements/hooks/useMovementFormSuggestions";
 import { useMovementAttachmentSync } from "../../features/movements/hooks/useMovementAttachmentSync";
 import { buildMovementCreateInput, buildMovementUpdateInput } from "../../features/movements/lib/movement-save-contract";
@@ -143,8 +144,16 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   const createCounterparty = useCreateCounterpartyMutation(activeWorkspaceId);
   const createSubscription = useCreateSubscriptionMutation(activeWorkspaceId);
   const createRecurringIncome = useCreateRecurringIncomeMutation(activeWorkspaceId);
-  const { data: dashboardAnalytics } = useDashboardAnalyticsQuery(activeWorkspaceId, profile?.id);
-  const entitlementQuery = useUserEntitlementQuery(profile?.id ?? null, profile?.email ?? null);
+  // El formulario permanece montado dentro de su sheet aun cuando esta cerrado. Mantener los
+  // hooks incondicionales, pero no cargar datos auxiliares hasta que el usuario lo abra.
+  const { data: dashboardAnalytics } = useDashboardAnalyticsQuery(
+    visible ? activeWorkspaceId : null,
+    visible ? profile?.id : null,
+  );
+  const entitlementQuery = useUserEntitlementQuery(
+    visible ? profile?.id ?? null : null,
+    visible ? profile?.email ?? null : null,
+  );
   const persistLearningFeedback = usePersistLearningFeedbackMutation(activeWorkspaceId, profile?.id);
   const {
     data: editMovementAttachments = [],
@@ -155,7 +164,10 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   );
 
   // -- Smart suggestions -----------------------------------------------------
-  const { data: patternMovements } = useMovementPatternsQuery(activeWorkspaceId);
+  // Gated en `visible` como las demas queries de este archivo: el formulario vive montado
+  // dentro de una hoja cerrada, asi que sin el gate esto se pedia en cada arranque de la app
+  // para una pantalla que nadie abrio (medido: aparecia entre las queries que bloqueaban).
+  const { data: patternMovements } = useMovementPatternsQuery(visible ? activeWorkspaceId : null);
   const patternMaps = useMemo(
     () => (patternMovements ? buildPatternMaps(patternMovements) : null),
     [patternMovements],
@@ -180,7 +192,9 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   const [warnings, setWarnings] = useState<MovementFormWarnings>({});
   const [submitError, setSubmitError] = useState("");
   const [cleanupAppliedText, setCleanupAppliedText] = useState<string | null>(null);
-  const [isClosingAfterSubmit, setIsClosingAfterSubmit] = useState(false);
+  // Debe ser un ref: volver a false tras un error no puede reactivar el efecto de
+  // inicialización y borrar el formulario, los adjuntos ni la clave de idempotencia.
+  const isClosingAfterSubmitRef = useRef(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [savedMovementId, setSavedMovementId] = useState<number | undefined>(editMovement?.id);
   const [categoryFeedbackIntent, setCategoryFeedbackIntent] = useState<CategoryFeedbackIntent | null>(null);
@@ -210,7 +224,9 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
 
   const baseCurrency = activeWorkspace?.baseCurrencyCode ?? "PEN";
   const accounts = snapshot?.accounts ?? [];
-  const frequentTransferPair = useFrequentTransferPairQuery(activeWorkspaceId).data ?? null;
+  const frequentTransferPair = useFrequentTransferPairQuery(
+    visible && form.movementType === "transfer" ? activeWorkspaceId : null,
+  ).data ?? null;
   const categories = snapshot?.categories ?? [];
   const counterparties = snapshot?.counterparties ?? [];
   const exchangeRates = snapshot?.exchangeRates ?? [];
@@ -427,14 +443,14 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   // Reset on open / populate when editing
   useEffect(() => {
     if (!visible) {
-      setIsClosingAfterSubmit(false);
+      isClosingAfterSubmitRef.current = false;
       return;
     }
   }, [visible]);
 
   useEffect(() => {
     if (!visible) return;
-    if (isClosingAfterSubmit) return;
+    if (isClosingAfterSubmitRef.current) return;
     attachmentsHydratedRef.current = null;
     initialAttachmentSignatureRef.current = "::ready";
     // Sesión nueva del formulario = intento de registro nuevo: si quedó una clave de un
@@ -505,7 +521,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     setSplitLines(null);
     fx.resetFxState(Boolean((editMovement ?? duplicateMovement)?.destinationAmount));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, editMovement, duplicateMovement, defaultType, initialAccountId, isClosingAfterSubmit]);
+  }, [visible, editMovement, duplicateMovement, defaultType, initialAccountId]);
 
   // El par frecuente puede llegar después de abrir el form (query async). Si el form está
   // en transferencia NUEVA sin cuentas elegidas, prellénalo cuando los datos estén listos.
@@ -878,7 +894,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     submittingRef.current = true;
 
     try {
-      setIsClosingAfterSubmit(true);
+      isClosingAfterSubmitRef.current = true;
       const autoDesc = buildDescription();
       let backgroundAttachmentSync: (() => void) | null = null;
       const isTransfer = form.movementType === "transfer";
@@ -905,6 +921,51 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         subscriptionId: linkedSubscriptionId,
       };
       if (isEditing && editMovement) {
+        if (splitLines && form.movementType === "expense" && linkedEventId == null && !hasSplitGroup(editMovement.metadata)) {
+          // Conversión simple→split: el movimiento original se vuelve la línea 1
+          // (conserva id, adjuntos y dedupe); las demás líneas se crean como hermanas.
+          const splitValidation = validateSplit(splitLines, sourceAmountNum);
+          if (!splitValidation.valid) {
+            isClosingAfterSubmitRef.current = false;
+            haptics.error();
+            setSubmitError(splitValidation.error ?? "Revisa la división de montos");
+            return;
+          }
+          const splitGroup = newClientDedupeKey("split-edit");
+          const firstLine = splitLines[0];
+          await updateMovement.mutateAsync({
+            id: editMovement.id,
+            input: {
+              ...buildMovementUpdateInput({
+                ...movementContract,
+                sourceAmount: parsePositiveAmountInput(firstLine.amount)!,
+                description: splitLineDescription(autoDesc, 0, splitLines.length),
+                categoryId: firstLine.categoryId,
+              }),
+              metadata: splitLineMetadata(editMovement.metadata, splitGroup, 0, splitLines.length),
+            },
+          });
+          for (let index = 1; index < splitLines.length; index++) {
+            const line = splitLines[index];
+            await createMovement.mutateAsync(buildMovementCreateInput({
+              ...movementContract,
+              sourceAmount: parsePositiveAmountInput(line.amount)!,
+              description: splitLineDescription(autoDesc, index, splitLines.length),
+              categoryId: line.categoryId,
+              metadata: splitLineMetadata(null, splitGroup, index, splitLines.length),
+              dedupeKey: `${splitGroup}:split-${index + 1}`,
+            }));
+          }
+          showRichToast({
+            type: "success",
+            title: `Gasto dividido en ${splitLines.length} movimientos`,
+            subtitle: autoDesc,
+          });
+          haptics.success();
+          onSuccess?.();
+          onClose();
+          return;
+        }
         await updateMovement.mutateAsync({
           id: editMovement.id,
           input: buildMovementUpdateInput(movementContract),
@@ -928,7 +989,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
           // recupera las líneas ya insertadas en vez de duplicarlas.
           const splitValidation = validateSplit(splitLines, sourceAmountNum);
           if (!splitValidation.valid) {
-            setIsClosingAfterSubmit(false);
+            isClosingAfterSubmitRef.current = false;
             haptics.error();
             setSubmitError(splitValidation.error ?? "Revisa la división de montos");
             return;
@@ -1002,9 +1063,16 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
       onClose();
       backgroundAttachmentSync?.();
     } catch (err: unknown) {
-      setIsClosingAfterSubmit(false);
+      isClosingAfterSubmitRef.current = false;
       haptics.error();
-      setSubmitError(humanizeError(err));
+      const message = err instanceof Error ? err.message : String(err);
+      // Sesión/token stale (RLS 42501, JWT): el MutationCache ya dispara la
+      // recuperación; avisar que reintente en vez de un error críptico de RLS.
+      setSubmitError(
+        isAuthLikeError(message)
+          ? "Tu sesión se actualizó. Vuelve a tocar Guardar."
+          : humanizeError(err),
+      );
     } finally {
       submittingRef.current = false;
     }
@@ -1164,10 +1232,13 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
             }
             : null
         );
+        const splitUiEnabled = isEditing
+          ? form.movementType === "expense" && linkedEventId == null && !hasSplitGroup(editMovement?.metadata)
+          : true; // creación: comportamiento actual sin cambios
         return (
           <StepDetails
-            splitLines={isEditing ? null : splitLines}
-            onChangeSplitLines={!isEditing && form.movementType === "expense" ? setSplitLines : undefined}
+            splitLines={splitUiEnabled ? splitLines : null}
+            onChangeSplitLines={splitUiEnabled && form.movementType === "expense" ? setSplitLines : undefined}
             splitTotalAmount={sourceAmountNum}
             splitCurrencyCode={sourceAccount?.currencyCode ?? baseCurrency}
             isEditing={isEditing}

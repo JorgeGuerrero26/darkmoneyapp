@@ -59,7 +59,10 @@ export function ObligationEventEditRequestForm({
     onClose();
   }
 
+  const submittingRef = useRef(false);
+
   async function handleSubmit() {
+    if (submittingRef.current) return; // guard anti-doble-tap: evita solicitudes duplicadas
     if (!event || !profile?.id) return;
     setAmountError("");
     setSubmitError("");
@@ -73,6 +76,7 @@ export function ObligationEventEditRequestForm({
       return;
     }
 
+    submittingRef.current = true;
     try {
       await createRequest.mutateAsync({
         obligationId: obligation.id,
@@ -104,6 +108,8 @@ export function ObligationEventEditRequestForm({
       haptics.error();
       setSubmitError(humanizeError(error));
       scrollRef.current?.scrollTo({ y: 0, animated: true });
+    } finally {
+      submittingRef.current = false;
     }
   }
 

@@ -10,8 +10,9 @@ import {
 } from "../../lib/notification-detection-apps";
 import type { MovementFormInput } from "./workspace-data";
 import type { JsonValue, MovementRecord, MovementType } from "../../types/domain";
+import { parseDuplicateVerdict, type DuplicateAiResult } from "../../features/notifications/lib/duplicate-verdict";
 
-export type DetectedMovementStatus = "pending" | "registered" | "discarded" | "duplicate";
+export type DetectedMovementStatus = "pending" | "registered" | "discarded" | "duplicate" | "needs_review";
 export type DetectedMovementConfidence = "high" | "medium" | "low";
 
 export type NotificationDetectionAppSetting = {
@@ -279,8 +280,12 @@ export async function syncNativeDetectedSuggestion(input: {
     notificationKey: input.nativeSuggestion.notificationKey ?? null,
   });
 
-  // Dedupe cruzado: la misma compra puede llegar por 2 fuentes (Billetera Google + correo del banco).
-  // Si existe una sugerencia pendiente reciente con mismo monto+moneda y comercio solapado, se suprime la 2da.
+  // Dedupe cruzado: la misma compra puede llegar por 2 fuentes (Billetera Google + correo del banco)
+  // o por re-fires de Gmail (mismo correo, distinta notificationKey → distinto dedupe_key). Si existe
+  // una sugerencia reciente con mismo monto+moneda y comercio solapado, se suprime la 2da.
+  // Incluye estados "registered"/"duplicate": el caso real es que la 1ra ya se registró (el usuario
+  // tocó "Registro rápido") ANTES de que la 2da llegara — si solo mirásemos "pending" la 2da colaría
+  // como notificación duplicada y no reconocería que el movimiento ya existe.
   const dedupeWindowStart = new Date(Date.now() - 10 * 60 * 1000).toISOString();
   const { data: recentRows } = await supabase
     .from("notification_detected_movement_suggestions")
@@ -288,7 +293,7 @@ export async function syncNativeDetectedSuggestion(input: {
     .eq("workspace_id", input.workspaceId)
     .eq("currency_code", parsedAmount.currencyCode)
     .eq("amount", parsedAmount.amount)
-    .eq("status", "pending")
+    .in("status", ["pending", "registered", "duplicate"])
     .gte("created_at", dedupeWindowStart)
     .limit(20);
   const newNorm = normalizeDescription(description);
@@ -528,6 +533,7 @@ export const AI_NOTIFICATION_FEATURE_LIMITS: Record<string, number> = {
   "movement-counterparty-ai-suggestion": 100,
   "movement-description-ai-cleanup": 100,
   "movement-risk-ai-explanation": 100,
+  "movement-duplicate-ai-check": 50,
 };
 
 export type AiFeatureUsageToday = {
@@ -635,6 +641,84 @@ export async function findPossibleDuplicateMovement(input: DuplicateMovementInpu
     subscriptionId: row.subscription_id,
     metadata: row.metadata,
   };
+}
+
+export type SameDayDetectionSignals = {
+  sameDaySuggestions: number;
+  sameDayRegisteredFromSuggestions: number;
+  sameDayMatchingMovements: number;
+};
+
+/** Conteos que alimentan la verificación IA: si hay más señales detectadas que
+ *  movimientos coincidentes, el "duplicado" probablemente es otro movimiento real. */
+export async function countSameDayDetectionSignals(input: {
+  workspaceId: number;
+  amount: number;
+  movementType: string;
+  occurredAt: string;
+  accountId?: number | null;
+}): Promise<SameDayDetectionSignals> {
+  if (!supabase) throw new Error("Supabase no está configurado.");
+  const date = new Date(input.occurredAt);
+  const day = Number.isNaN(date.getTime()) ? new Date().toISOString().slice(0, 10) : date.toISOString().slice(0, 10);
+  const from = `${day}T00:00:00.000Z`;
+  const to = `${day}T23:59:59.999Z`;
+
+  const suggestionsQuery = supabase
+    .from("notification_detected_movement_suggestions")
+    .select("id, status", { count: "exact" })
+    .eq("workspace_id", input.workspaceId)
+    .eq("amount", input.amount)
+    .gte("occurred_at", from)
+    .lte("occurred_at", to);
+
+  const amountColumn = input.movementType === "income" ? "destination_amount" : "source_amount";
+  let movementsQuery = supabase
+    .from("movements")
+    .select("id", { count: "exact", head: true })
+    .eq("workspace_id", input.workspaceId)
+    .eq("movement_type", input.movementType)
+    .eq("status", "posted")
+    .gte("occurred_at", from)
+    .lte("occurred_at", to)
+    .eq(amountColumn, input.amount);
+  if (input.accountId) {
+    const accountColumn = input.movementType === "income" ? "destination_account_id" : "source_account_id";
+    movementsQuery = movementsQuery.eq(accountColumn, input.accountId);
+  }
+
+  const [suggestionsRes, movementsRes] = await Promise.all([suggestionsQuery, movementsQuery]);
+  const rows = (suggestionsRes.data ?? []) as Array<{ status: string }>;
+  return {
+    sameDaySuggestions: suggestionsRes.count ?? rows.length,
+    sameDayRegisteredFromSuggestions: rows.filter((row) => row.status === "registered").length,
+    sameDayMatchingMovements: movementsRes.count ?? 0,
+  };
+}
+
+const DUPLICATE_AI_TIMEOUT_MS = 8_000;
+
+/** Invoca la edge function movement-duplicate-ai-check con timeout 8s. React-free:
+ *  la usan tanto el flujo headless (background) como el quick entry en foreground.
+ *  Cualquier fallo (timeout, red, respuesta inesperada) degrada a { verdict: "unknown" }. */
+export async function confirmDuplicateWithAi(input: {
+  workspaceId: number;
+  suggestion: { description: string; amountLabel: string; occurredAt: string; sourceApp: string; rawText: string | null };
+  candidateMovement: { id: number; description: string | null; occurredAt: string; amount: number };
+  counts: SameDayDetectionSignals;
+}): Promise<DuplicateAiResult> {
+  if (!supabase) return { verdict: "unknown", reason: null };
+  try {
+    const invoke = supabase.functions.invoke("movement-duplicate-ai-check", { body: input });
+    const timeout = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error("duplicate-ai-timeout")), DUPLICATE_AI_TIMEOUT_MS);
+    });
+    const { data, error } = await Promise.race([invoke, timeout]);
+    if (error) return { verdict: "unknown", reason: null };
+    return parseDuplicateVerdict(data);
+  } catch {
+    return { verdict: "unknown", reason: null };
+  }
 }
 
 export async function findDetectedSuggestionIdByNativeId(
@@ -775,6 +859,7 @@ export function useFrequentTransferPairQuery(workspaceId?: number | null) {
   return useQuery({
     queryKey: ["frequent-transfer-pair", workspaceId ?? null],
     enabled: Boolean(supabase && workspaceId),
+    meta: { uxBlocking: false },
     staleTime: 5 * 60 * 1000,
     queryFn: () => getFrequentTransferPair(workspaceId ?? null),
   });

@@ -107,10 +107,14 @@ export function TimePickerInput({ label, value, onChange, hideLabel = false, var
 
 const styles = StyleSheet.create({
   container: { gap: SPACING.xs },
+  // Espejo de DatePickerInput: ambos van lado a lado en los formularios y
+  // deben verse idénticos en alto, tipografía y label.
   label: {
-    color: COLORS.textMuted,
-    fontFamily: FONT_FAMILY.bodyMedium,
+    color: COLORS.storm,
+    fontFamily: FONT_FAMILY.bodySemibold,
     fontSize: FONT_SIZE.xs,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
   trigger: {
     flexDirection: "row",
@@ -118,24 +122,32 @@ const styles = StyleSheet.create({
     gap: SPACING.sm,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: SURFACE.input,
+    borderColor: SURFACE.inputBorder,
+    backgroundColor: "rgba(5,8,12,0.55)",
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
+    minHeight: 48,
   },
   triggerFormRow: {
+    minHeight: 52,
     paddingVertical: SPACING.md,
     borderRadius: RADIUS.lg,
   },
   triggerIconWrap: {
-    width: 24,
+    width: 36,
+    height: 36,
+    borderRadius: RADIUS.md,
+    backgroundColor: "rgba(107,228,197,0.10)",
+    borderWidth: 1,
+    borderColor: "rgba(107,228,197,0.22)",
     alignItems: "center",
+    justifyContent: "center",
   },
   triggerText: {
     flex: 1,
-    color: COLORS.text,
+    color: COLORS.ink,
     fontFamily: FONT_FAMILY.body,
-    fontSize: FONT_SIZE.sm,
+    fontSize: FONT_SIZE.md,
   },
   triggerPlaceholder: { color: COLORS.storm },
   iosBackdrop: {

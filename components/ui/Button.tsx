@@ -7,6 +7,7 @@ import {
   type StyleProp,
   type ViewStyle,
 } from "react-native";
+import { useEffect, useState } from "react";
 import * as Haptics from "expo-haptics";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 
@@ -34,6 +35,21 @@ export function Button({
   ...rest
 }: Props) {
   const isDisabled = disabled || loading;
+
+  // Si el guardado se alarga (red lenta o socket muerto tras cambiar de red), el spinner
+  // mudo deja al usuario a ciegas sin saber si sigue vivo. A los 5 s se lo decimos. No
+  // promete nada: solo informa. El fetch de Supabase aborta a los 12 s.
+  const [takingLong, setTakingLong] = useState(false);
+  useEffect(() => {
+    if (!loading) {
+      setTakingLong(false);
+      return;
+    }
+    const timer = setTimeout(() => setTakingLong(true), 5000);
+    return () => clearTimeout(timer);
+  }, [loading]);
+
+  const activeLoadingLabel = takingLong ? "La red está lenta…" : loadingLabel;
 
   function handlePress(e: Parameters<NonNullable<PressableProps["onPress"]>>[0]) {
     void Haptics.impactAsync(
@@ -64,9 +80,9 @@ export function Button({
             size="small"
             color={variant === "primary" ? COLORS.textInverse : COLORS.pine}
           />
-          {loadingLabel ? (
+          {activeLoadingLabel ? (
             <Text style={[styles.label, styles[`${variant}Label`], styles[`${size}Label`]]}>
-              {loadingLabel}
+              {activeLoadingLabel}
             </Text>
           ) : null}
         </>

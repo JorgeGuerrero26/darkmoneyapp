@@ -3,7 +3,7 @@ import {
   Animated,
   Dimensions,
   Keyboard,
-  KeyboardAvoidingView,
+  LayoutAnimation,
   Modal,
   PanResponder,
   Platform,
@@ -47,17 +47,37 @@ export function BottomSheet({
   const translateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
   const isSwiping = useRef(false);
-  // Android: el Modal con statusBarTranslucent NO respeta adjustResize, así que el
-  // KeyboardAvoidingView no empuja nada y el teclado tapaba los inputs del sheet.
-  // Medimos el teclado a mano y levantamos el sheet esa altura.
+  // El sheet es position:absolute dentro de un Modal, y el posicionamiento absoluto
+  // IGNORA el padding del padre: por eso KeyboardAvoidingView no lo empujaba en iOS
+  // (y en Android el Modal statusBarTranslucent tampoco respeta adjustResize).
+  // Medimos el teclado a mano y levantamos el sheet esa altura en AMBAS plataformas.
   const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   useEffect(() => {
-    if (Platform.OS !== "android") return;
-    const showSub = Keyboard.addListener("keyboardDidShow", (event) => {
+    // iOS: los eventos *Will* disparan antes de la animación del teclado, así el sheet
+    // sube en sincronía. Android solo emite los *Did* de forma fiable.
+    const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    // El sheet usa maxHeight: en los formularios cuyo contenido llena el sheet (p. ej.
+    // movimientos) recalcular maxHeight cambia el alto visible y sin animación se ve un
+    // "corte". LayoutAnimation con type "keyboard" copia la curva y duración reales del
+    // teclado de iOS, así el alto y el desplazamiento van juntos. Solo iOS: en Android
+    // LayoutAnimation es experimental y el comportamiento actual ya es correcto.
+    const animateWithKeyboard = (duration?: number) => {
+      if (Platform.OS !== "ios") return;
+      LayoutAnimation.configureNext({
+        duration: duration && duration > 0 ? duration : 250,
+        update: { type: "keyboard" },
+      });
+    };
+    const showSub = Keyboard.addListener(showEvent, (event) => {
+      animateWithKeyboard(event.duration);
       setKeyboardHeight(event.endCoordinates?.height ?? 0);
     });
-    const hideSub = Keyboard.addListener("keyboardDidHide", () => setKeyboardHeight(0));
+    const hideSub = Keyboard.addListener(hideEvent, (event) => {
+      animateWithKeyboard(event?.duration);
+      setKeyboardHeight(0);
+    });
     return () => {
       showSub.remove();
       hideSub.remove();
@@ -156,11 +176,8 @@ export function BottomSheet({
         />
       </Animated.View>
 
-      {/* Sheet — iOS usa KAV (padding); Android usa keyboardHeight medido a mano */}
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        style={styles.keyboardContainer}
-      >
+      {/* Sheet — ambas plataformas usan keyboardHeight medido a mano (ver arriba) */}
+      <View style={styles.keyboardContainer}>
       <Animated.View
         style={[
           styles.sheet,
@@ -203,7 +220,7 @@ export function BottomSheet({
           {children}
         </ScrollView>
       </Animated.View>
-      </KeyboardAvoidingView>
+      </View>
     </Modal>
   );
 }

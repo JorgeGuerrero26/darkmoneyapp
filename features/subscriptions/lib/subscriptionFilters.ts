@@ -14,7 +14,7 @@ export const SUBSCRIPTION_FILTERS: Array<{ label: string; value: SubscriptionFil
   { label: "Anual", value: "yearly" },
   { label: "Semanal", value: "weekly" },
   { label: "Trimestral", value: "quarterly" },
-  { label: "Personalizado", value: "custom" },
+  { label: "Cada N días", value: "custom" },
 ];
 
 const STATUS_VALUES = new Set<SubscriptionStatus>(["active", "paused", "cancelled"]);

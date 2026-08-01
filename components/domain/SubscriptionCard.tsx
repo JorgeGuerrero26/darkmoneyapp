@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { BarChart3, CalendarClock, Pin, PinOff } from "lucide-react-native";
 import { format } from "date-fns";
@@ -11,6 +12,7 @@ import {
   ResourceCardMetaText,
 } from "../ui/ResourceCard";
 import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING } from "../../constants/theme";
+import { todayPeru } from "../../lib/date";
 import type { SubscriptionSummary } from "../../types/domain";
 
 type Props = {
@@ -41,7 +43,7 @@ function formatYmdLocal(ymd: string) {
   return format(new Date(p[0], p[1] - 1, p[2]), "d MMM", { locale: es });
 }
 
-export function SubscriptionCard({
+function SubscriptionCardBase({
   subscription,
   monthlyAmount,
   onPress,
@@ -92,9 +94,15 @@ export function SubscriptionCard({
       }
       footer={
         <View style={styles.footer}>
-          <ResourceCardMetaText>
-            Próximo: {formatYmdLocal(subscription.nextDueDate)}
-          </ResourceCardMetaText>
+          {subscription.status === "cancelled" ? (
+            <ResourceCardMetaText>Sin cobros programados</ResourceCardMetaText>
+          ) : subscription.status === "active" && subscription.nextDueDate < todayPeru() ? (
+            <Text style={styles.overdue}>Venció el {formatYmdLocal(subscription.nextDueDate)} — marca el pago</Text>
+          ) : (
+            <ResourceCardMetaText>
+              Próximo: {formatYmdLocal(subscription.nextDueDate)}
+            </ResourceCardMetaText>
+          )}
           <Text style={styles.monthly}>
             ~{formatCurrency(monthlyAmount, subscription.currencyCode)}/mes
           </Text>
@@ -134,4 +142,13 @@ const styles = StyleSheet.create({
     color: COLORS.storm,
     fontFamily: FONT_FAMILY.body,
   },
+  overdue: {
+    flexShrink: 1,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.rosewood,
+    fontFamily: FONT_FAMILY.bodySemibold,
+  },
 });
+
+/** Memoizado: los cards se renderizan en listas largas; evita re-renders cuando las props son estables. */
+export const SubscriptionCard = memo(SubscriptionCardBase);

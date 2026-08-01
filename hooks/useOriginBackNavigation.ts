@@ -3,6 +3,8 @@ import { BackHandler } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 
+import { resolveOriginBackAction, shouldInterceptHardwareBack } from "../lib/origin-back-action";
+
 type OriginBackNavigationOptions = {
   defaultRoute?: string;
   originRoutes?: Record<string, string>;
@@ -14,6 +16,17 @@ function readParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
 }
 
+// En un bottom-tab navigator no existe pop al origen: el fallback debe apuntar
+// al tab que abrió la pantalla. Estos son los tabs raíz; `originRoutes` explícito
+// (para orígenes que no son tab, p. ej. una lista abierta desde otro módulo) gana.
+const MAIN_TAB_ORIGIN_ROUTES: Record<string, string> = {
+  more: "/(app)/more",
+  dashboard: "/(app)/dashboard",
+  movements: "/(app)/movements",
+  accounts: "/(app)/accounts",
+  obligations: "/(app)/obligations",
+};
+
 export function useOriginBackNavigation({
   defaultRoute = "/(app)/more",
   originRoutes = {},
@@ -23,21 +36,30 @@ export function useOriginBackNavigation({
   const navigation = useNavigation();
   const params = useLocalSearchParams<{ from?: string | string[] }>();
   const from = readParam(params.from);
-  const fallbackRoute = from ? originRoutes[from] ?? defaultRoute : defaultRoute;
+  const fallbackRoute = from
+    ? originRoutes[from] ?? MAIN_TAB_ORIGIN_ROUTES[from] ?? defaultRoute
+    : defaultRoute;
   const navigatingRef = useRef(false);
 
   const handleBack = useCallback(() => {
     if (navigatingRef.current) return;
     navigatingRef.current = true;
 
-    if (from) {
-      router.replace(fallbackRoute as any);
+    const action = resolveOriginBackAction({
+      hasOrigin: Boolean(from),
+      canGoBack: navigation.canGoBack(),
+      navigatorType: navigation.getState()?.type,
+    });
+
+    if (action === "pop") {
+      router.back();
       setTimeout(() => { navigatingRef.current = false; }, 300);
       return;
     }
 
-    if (navigation.canGoBack()) {
-      router.back();
+    if (action === "replace-origin") {
+      router.replace(fallbackRoute as any);
+      setTimeout(() => { navigatingRef.current = false; }, 300);
       return;
     }
 
@@ -57,7 +79,9 @@ export function useOriginBackNavigation({
     });
 
     const backHandler = BackHandler.addEventListener("hardwareBackPress", () => {
-      if (!from) return false;
+      if (!shouldInterceptHardwareBack({ hasOrigin: Boolean(from), isFocused: navigation.isFocused() })) {
+        return false;
+      }
       handleBack();
       return true;
     });

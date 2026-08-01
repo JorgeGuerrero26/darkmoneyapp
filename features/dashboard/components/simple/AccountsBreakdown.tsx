@@ -3,6 +3,7 @@ import { Text, View } from "react-native";
 import { Card } from "../../../../components/ui/Card";
 import { RingChart, type RingSegment } from "../../../../components/ui/RingChart";
 import { COLORS } from "../../../../constants/theme";
+import { useUiStore } from "../../../../store/ui-store";
 import { convertAmt } from "../../lib/aggregations";
 import { SectionTitle } from "./SectionTitle";
 import { dashboardSimpleStyles as subStyles } from "./styles";
@@ -28,6 +29,7 @@ export function AccountsBreakdown({
   baseCurrency,
   exchangeRateMap,
 }: AccountsBreakdownProps) {
+  const privacyMode = useUiStore((state) => state.privacyMode);
   const eligible = accounts.filter((a) => !a.isArchived && a.includeInNetWorth);
   if (eligible.length === 0) return null;
 
@@ -57,7 +59,7 @@ export function AccountsBreakdown({
     <Card>
       <SectionTitle>Distribución por cuenta</SectionTitle>
       <View style={subStyles.breakdownWrap}>
-        <RingChart segments={segments} size={108} thickness={20} />
+        <RingChart segments={segments} size={108} thickness={20} masked={privacyMode} />
         <View style={subStyles.breakdownLegend}>
           {top5.map((a) => (
             <View key={a.id} style={subStyles.breakdownItem}>

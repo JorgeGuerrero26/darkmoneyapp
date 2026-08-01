@@ -1,6 +1,8 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SecureStore from "expo-secure-store";
 
+import { SessionReadCache } from "./session-read-cache";
+
 /**
  * Storage para supabase-js respaldado por el Keystore del SO (expo-secure-store)
  * en lugar de AsyncStorage plano (hallazgo S3 de la auditoría: el JWT de sesión
@@ -18,6 +20,25 @@ import * as SecureStore from "expo-secure-store";
 
 const CHUNK_SIZE = 1800;
 
+/**
+ * Coste acumulado de leer la sesión, para saber si el Keychain es el cuello del arranque.
+ *
+ * Cada `secureGet` son 1 + N accesos SECUENCIALES al Keychain (meta + un chunk por fragmento),
+ * y una sesión de Supabase de ~2500 chars son 2-3 chunks. Sin caché, cada relectura los paga
+ * otra vez, y todas van serializadas bajo el lock de auth de supabase-js. Ese es el sospechoso
+ * de que el arranque varíe entre 545 y 2255 ms con la misma red (medido 2026-07-29).
+ *
+ * Antes de meter un caché en memoria hay que saber si esto cuesta 20 ms o 1500: un caché
+ * obsoleto aquí significa usar un refresh token viejo y perder la sesión, y esta app ya se
+ * llevó ese golpe. Se mide primero.
+ */
+const readStats = { calls: 0, keychainReads: 0, totalMs: 0 };
+
+/** Coste de leer la sesión desde que arrancó el proceso. Lo publica el log de arranque. */
+export function sessionStorageReadStats(): { calls: number; keychainReads: number; totalMs: number } {
+  return { ...readStats };
+}
+
 /** SecureStore solo acepta [A-Za-z0-9._-]; las keys de supabase (sb-<ref>-auth-token) cumplen. */
 function sanitizeKey(key: string): string {
   return key.replace(/[^A-Za-z0-9._-]/g, "_");
@@ -32,17 +53,25 @@ function chunkKey(key: string, index: number): string {
 }
 
 async function secureGet(key: string): Promise<string | null> {
-  const metaRaw = await SecureStore.getItemAsync(metaKey(key));
-  if (!metaRaw) return null;
-  const chunkCount = Number(metaRaw);
-  if (!Number.isInteger(chunkCount) || chunkCount <= 0) return null;
-  const chunks: string[] = [];
-  for (let i = 0; i < chunkCount; i += 1) {
-    const part = await SecureStore.getItemAsync(chunkKey(key, i));
-    if (part == null) return null;
-    chunks.push(part);
+  const startedAt = Date.now();
+  readStats.calls += 1;
+  try {
+    const metaRaw = await SecureStore.getItemAsync(metaKey(key));
+    readStats.keychainReads += 1;
+    if (!metaRaw) return null;
+    const chunkCount = Number(metaRaw);
+    if (!Number.isInteger(chunkCount) || chunkCount <= 0) return null;
+    const chunks: string[] = [];
+    for (let i = 0; i < chunkCount; i += 1) {
+      const part = await SecureStore.getItemAsync(chunkKey(key, i));
+      readStats.keychainReads += 1;
+      if (part == null) return null;
+      chunks.push(part);
+    }
+    return chunks.join("");
+  } finally {
+    readStats.totalMs += Date.now() - startedAt;
   }
-  return chunks.join("");
 }
 
 async function secureSet(key: string, value: string): Promise<void> {
@@ -68,26 +97,38 @@ async function secureRemove(key: string): Promise<void> {
   await SecureStore.deleteItemAsync(metaKey(key));
 }
 
-export const secureSessionStorage = {
-  async getItem(key: string): Promise<string | null> {
-    try {
-      const stored = await secureGet(key);
-      if (stored != null) return stored;
-      // Migración lazy desde AsyncStorage (sesiones creadas antes de este cambio).
-      const legacy = await AsyncStorage.getItem(key);
-      if (legacy != null) {
-        try {
-          await secureSet(key, legacy);
-          await AsyncStorage.removeItem(key);
-        } catch {
-          // Si el Keystore no coopera, conservar la copia plana y seguir funcionando.
-        }
-        return legacy;
+/** Lectura real del almacenamiento, sin caché. La usa el caché cuando toca ir al Keychain. */
+async function readFromStore(key: string): Promise<string | null> {
+  try {
+    const stored = await secureGet(key);
+    if (stored != null) return stored;
+    // Migración lazy desde AsyncStorage (sesiones creadas antes de este cambio).
+    const legacy = await AsyncStorage.getItem(key);
+    if (legacy != null) {
+      try {
+        await secureSet(key, legacy);
+        await AsyncStorage.removeItem(key);
+      } catch {
+        // Si el Keystore no coopera, conservar la copia plana y seguir funcionando.
       }
-      return null;
-    } catch {
-      return AsyncStorage.getItem(key);
+      return legacy;
     }
+    return null;
+  } catch {
+    return AsyncStorage.getItem(key);
+  }
+}
+
+/**
+ * Ver session-read-cache.ts. Colapsa las 16-19 lecturas de sesión por arranque —48-57 accesos al
+ * Keychain, ~250 ms, el 42% de un arranque rápido— sin arrastrar un token viejo más allá de unos
+ * segundos.
+ */
+const readCache = new SessionReadCache();
+
+export const secureSessionStorage = {
+  getItem(key: string): Promise<string | null> {
+    return readCache.get(key, () => readFromStore(key));
   },
 
   async setItem(key: string, value: string): Promise<void> {
@@ -96,14 +137,22 @@ export const secureSessionStorage = {
     } catch {
       await AsyncStorage.setItem(key, value);
     }
+    // Lo que este proceso acaba de escribir es autoritativo: se cachea después de que la
+    // escritura haya ido bien, nunca antes.
+    readCache.set(key, value);
   },
 
   async removeItem(key: string): Promise<void> {
+    // El logout es autoritativo ANTES de cualquier I/O: una lectura vieja que termine mientras
+    // se borran los chunks no puede devolver ni volver a publicar la sesión anterior.
+    readCache.set(key, null);
     try {
       await secureRemove(key);
     } catch {
       // Borrar siempre la copia plana aunque el Keystore falle.
     }
     await AsyncStorage.removeItem(key);
+    // Renovar el TTL al terminar, porque el borrado del Keychain puede tardar.
+    readCache.set(key, null);
   },
 };

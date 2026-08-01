@@ -3,8 +3,7 @@
  *
  * Fase 4.2-c: cluster de SHARES (active share, list shares, pending invites,
  * create invite, unlink).
- * Fase 4.2-d: cluster de SHARED-OBLIGATIONS (parsing remoto desde la edge
- * function list-shared-obligations).
+ * Fase 4.2-d: cluster de SHARED-OBLIGATIONS (parsing del RPC list_shared_obligations).
  * Fase 4.2-e: cluster de VIEWER LINKS + PAYMENT REQUESTS.
  *
  * Pendiente: 4.2-f (mutations CORE).
@@ -18,8 +17,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { UNIVERSAL_LINK_HOST } from "../../constants/config";
 import { supabase } from "../../lib/supabase";
 import { STALE } from "../../lib/query-client";
-import { TimeoutError, withTimeout } from "../../lib/promise-utils";
+import { withTimeout } from "../../lib/promise-utils";
 import { dateStrToISO, filterDateFrom, filterDateTo } from "../../lib/date";
+import { patchSnapshotObligationPayment, patchSnapshotWithCreatedMovement } from "./snapshot-cache";
 import {
   mirrorObligationEventAttachmentsToMovement,
   type AttachmentLike,
@@ -351,7 +351,7 @@ export function useUnlinkObligationShareMutation(workspaceId?: number | null) {
   });
 }
 
-// ─── Obligaciones compartidas contigo (edge list-shared-obligations) ─────────
+// ─── Obligaciones compartidas contigo (RPC list_shared_obligations) ──────────
 
 function obligationRowFromUnknown(o: Record<string, unknown>): ObligationSummaryRow | null {
   const id = Number(o.id);
@@ -498,26 +498,24 @@ function parseSharedObligationItem(item: unknown): SharedObligationSummary | nul
 
 async function fetchSharedObligations(): Promise<SharedObligationSummary[]> {
   if (!supabase) return [];
-  // Sin getSession propio: invokeEdgeFunction ya resuelve/refresca la sesión.
-  // Duplicarlo sumaba UNA adquisición extra del lock de auth en el arranque frío,
-  // justo cuando todas las queries iniciales compiten por él (ver constante arriba).
 
-  const response = (await withTimeout(
-    invokeEdgeFunction<Record<string, unknown>>("list-shared-obligations", {}),
+  // RPC en vez de la edge function `list-shared-obligations`: esta consulta era la más lenta
+  // del arranque porque pagaba el hop cliente→función, su arranque en frío y 3 consultas
+  // secuenciales dentro (shares → vista → eventos). Medido desde el teléfono, cada viaje a la
+  // BD cuesta ~150 ms y el trabajo real de Postgres es de 10-60 ms: lo que dominaba era el
+  // número de viajes, no su peso. El RPC devuelve lo mismo en uno (~160 ms medidos).
+  //
+  // La función es SECURITY DEFINER y no acepta parámetros: filtra por auth.uid() internamente,
+  // así que no hay forma de pedir los datos de otro usuario.
+  const { data, error } = await withTimeout(
+    supabase.rpc("list_shared_obligations"),
     OBLIGATION_SHARED_LIST_TIMEOUT_MS,
-    "list-shared-obligations",
-  )) ?? {};
+    "list_shared_obligations",
+  );
 
-  if (response.ok === false) {
-    throw new Error(String(response.error ?? "No se pudieron cargar las obligaciones compartidas."));
-  }
+  if (error) throw new Error(error.message);
 
-  const rawList =
-    (Array.isArray(response.items) ? response.items : null) ??
-    (Array.isArray(response.obligations) ? response.obligations : null) ??
-    (Array.isArray(response.data) ? response.data : null) ??
-    [];
-
+  const rawList = Array.isArray(data) ? data : [];
   const out: SharedObligationSummary[] = [];
   for (const item of rawList) {
     const parsed = parseSharedObligationItem(item);
@@ -531,7 +529,15 @@ export function useSharedObligationsQuery(userId: string | null | undefined) {
     queryKey: ["shared-obligations", userId ?? null],
     enabled: Boolean(supabase && userId),
     staleTime: STALE.medium,
-    retry: (failureCount, error) => !(error instanceof TimeoutError) && failureCount < 1,
+    // Reintentar también los TimeoutError. Diagnóstico 2026-07-17: la BD responde en ms y el
+    // timeout de 20 s venía del CLIENTE — lock de auth en arranque frío o socket muerto tras
+    // cambio de red. Para cuando vence, la contención ya pasó y el reintento entra en segundos;
+    // sin él la sección quedaba vacía hasta el próximo refetch (5 min).
+    //
+    // El paso a RPC (2026-07-29) quita el hop a la edge function y 3 viajes secuenciales, pero
+    // NO ataca esa causa: si los 18 timeouts de 20 s medidos en una semana siguen apareciendo
+    // en app_error_logs, el culpable es el lock de auth, no esta consulta.
+    retry: (failureCount) => failureCount < 1,
     queryFn: fetchSharedObligations,
   });
 }
@@ -2081,6 +2087,8 @@ export async function resolveOwnerEditRequestNotification(
 
 export type ObligationFormInput = {
   userId: string;
+  /** Idempotencia: clave por intento de submit; un retry con la misma clave no duplica. */
+  clientDedupeKey?: string | null;
   title: string;
   direction: "receivable" | "payable";
   originType: "cash_loan" | "sale_financed" | "purchase_financed" | "manual";
@@ -2158,7 +2166,8 @@ export function useCreateObligationMutation(workspaceId: number | null) {
   return useMutation({
     mutationFn: async (input: ObligationFormInput) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
-      const { data, error } = await supabase
+      const dedupeKey = input.clientDedupeKey ?? null;
+      let { data, error } = await supabase
         .from("obligations")
         .insert({
           workspace_id: workspaceId,
@@ -2179,9 +2188,25 @@ export function useCreateObligationMutation(workspaceId: number | null) {
           description: input.description ?? null,
           notes: input.notes ?? null,
           status: "active",
+          client_dedupe_key: dedupeKey,
         })
         .select("id")
         .single();
+      // Idempotencia: si este intento ya insertó antes (retry tras respuesta perdida), el
+      // unique parcial (workspace_id, client_dedupe_key) responde 23505 → devolver la fila
+      // existente como éxito en vez de crear una duplicada.
+      if (error && dedupeKey && (error as { code?: string }).code === "23505") {
+        const existing = await supabase
+          .from("obligations")
+          .select("id")
+          .eq("workspace_id", workspaceId)
+          .eq("client_dedupe_key", dedupeKey)
+          .maybeSingle();
+        if (existing.data) {
+          data = existing.data;
+          error = null;
+        }
+      }
       if (error) throw new Error(error.message ?? "Error de base de datos");
       const created = data as { id: number };
 
@@ -2203,6 +2228,8 @@ export function useCreateObligationMutation(workspaceId: number | null) {
           destinationAccountId: isInflow ? input.openingAccountId : null,
           destinationAmount: isInflow ? input.principalAmount : null,
           obligationId: created.id,
+          // Apertura idempotente: un retry no duplica el movimiento de apertura.
+          dedupeKey: dedupeKey ? `${dedupeKey}:opening` : undefined,
         });
       }
 
@@ -2325,6 +2352,21 @@ export function useCreateObligationPaymentMutation(workspaceId: number | null) {
       };
     },
     onSuccess: (data, variables) => {
+      // Parche quirúrgico primero: saldo de cuenta y pendiente de la obligación
+      // cambian en este frame; el refresh de abajo confirma/corrige detrás.
+      const isReceivable = variables.direction === "receivable";
+      if (data.movementId && variables.accountId) {
+        patchSnapshotWithCreatedMovement(queryClient, data.workspaceId, {
+          id: data.movementId,
+          status: "posted",
+          occurredAt: dateStrToISO(variables.paymentDate),
+          sourceAccountId: isReceivable ? null : variables.accountId,
+          sourceAmount: isReceivable ? null : variables.amount,
+          destinationAccountId: isReceivable ? variables.accountId : null,
+          destinationAmount: isReceivable ? variables.amount : null,
+        });
+      }
+      patchSnapshotObligationPayment(queryClient, data.workspaceId, variables.obligationId, variables.amount);
       const queryKeys: Array<readonly unknown[]> = [
         ["workspace-snapshot"],
         ["movements"],

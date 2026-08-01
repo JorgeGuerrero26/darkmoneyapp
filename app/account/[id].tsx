@@ -12,11 +12,13 @@ import {
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useOriginBackNavigation } from "../../hooks/useOriginBackNavigation";
+import { useNotificationReason } from "../../hooks/useNotificationReason";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { useAuth } from "../../lib/auth-context";
 import { useWorkspace } from "../../lib/workspace-context";
+import { useUiStore } from "../../store/ui-store";
 import { useWorkspaceSnapshotQuery, useArchiveAccountMutation, useDeleteMovementMutation } from "../../services/queries/workspace-data";
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { usePaginatedMovements } from "../../services/queries/movements";
@@ -26,6 +28,7 @@ import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { SkeletonAccountSummary } from "../../components/ui/Skeleton";
 import { BalanceEvolutionChart } from "../../features/accounts/components/BalanceEvolutionChart";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
+import { NotificationReasonBanner } from "../../components/ui/NotificationReasonBanner";
 import { AccountForm } from "../../components/forms/AccountForm";
 import { MovementForm } from "../../components/forms/MovementForm";
 import { formatCurrency } from "../../components/ui/AmountDisplay";
@@ -55,13 +58,18 @@ const ACCOUNT_TYPE_LABEL: Record<string, string> = {
 
 
 function AccountDetailScreen() {
+  // Fuerza el re-render de la pantalla al alternar modo privacidad (la máscara
+  // vive en formatCurrency, que lee el store imperativamente).
+  useUiStore((state) => state.privacyMode);
   const { id } = useLocalSearchParams<{ id: string; from?: string }>();
   const { handleBack } = useOriginBackNavigation({
     originRoutes: {
       accounts: "/(app)/accounts",
       dashboard: "/(app)/dashboard",
+      notifications: "/notifications",
     },
   });
+  const { reason: notificationReason, dismiss: dismissNotificationReason } = useNotificationReason();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -205,37 +213,39 @@ function AccountDetailScreen() {
     <ResourceModuleTemplate
       topInset={insets.top}
       header={
-        <ScreenHeader
-          title={account?.name ?? "Cuenta"}
-          subtitle={headerSubtitle}
-          onBack={handleBack}
-          rightAction={
-            account ? (
-              <HeaderActionGroup
-                actions={[
-                  {
-                    key: account.isArchived ? "restore" : "archive",
-                    icon: account.isArchived ? ArchiveRestore : Archive,
-                    inactiveColor: account.isArchived ? COLORS.pine : COLORS.ember,
-                    onPress: () => setArchiveConfirmVisible(true),
-                    accessibilityLabel: account.isArchived ? "Restaurar cuenta" : "Archivar cuenta",
-                  },
-                  {
-                    key: "edit",
-                    icon: Pencil,
-                    inactiveColor: COLORS.primary,
-                    onPress: () => setEditFormVisible(true),
-                    accessibilityLabel: "Editar cuenta",
-                  },
-                ]}
-              />
-            ) : null
-          }
-        />
+        <>
+          <ScreenHeader
+            title={account?.name ?? "Cuenta"}
+            subtitle={headerSubtitle}
+            onBack={handleBack}
+            rightAction={
+              account ? (
+                <HeaderActionGroup
+                  actions={[
+                    {
+                      key: account.isArchived ? "restore" : "archive",
+                      icon: account.isArchived ? ArchiveRestore : Archive,
+                      inactiveColor: account.isArchived ? COLORS.pine : COLORS.ember,
+                      onPress: () => setArchiveConfirmVisible(true),
+                      accessibilityLabel: account.isArchived ? "Restaurar cuenta" : "Archivar cuenta",
+                    },
+                    {
+                      key: "edit",
+                      icon: Pencil,
+                      inactiveColor: COLORS.primary,
+                      onPress: () => setEditFormVisible(true),
+                      accessibilityLabel: "Editar cuenta",
+                    },
+                  ]}
+                />
+              ) : null
+            }
+          />
+          <NotificationReasonBanner reason={notificationReason} onDismiss={dismissNotificationReason} />
+        </>
       }
       summary={
         account ? (
-          <>
           <View style={styles.summaryCard}>
             <View style={styles.summaryRow}>
               <View style={[styles.iconContainer, { backgroundColor: account.color + "33" }]}>
@@ -280,56 +290,6 @@ function AccountDetailScreen() {
               <Text style={styles.notInNetWorthNote}>No incluida en patrimonio neto</Text>
             ) : null}
           </View>
-          <DetailQuickActions
-            style={styles.quickActions}
-            actions={[
-              ...(!account.isArchived
-                ? [
-                    {
-                      key: "transfer",
-                      label: "Transferir",
-                      icon: ArrowLeftRight,
-                      color: COLORS.pine,
-                      onPress: () => {
-                        setMovementFormType("transfer");
-                        setMovementFormVisible(true);
-                      },
-                    },
-                    {
-                      key: "expense",
-                      label: "Nuevo gasto",
-                      icon: Plus,
-                      color: COLORS.primary,
-                      onPress: () => {
-                        setMovementFormType("expense");
-                        setMovementFormVisible(true);
-                      },
-                    },
-                  ]
-                : []),
-              {
-                key: "edit",
-                label: "Editar",
-                icon: Pencil,
-                color: COLORS.primary,
-                onPress: () => setEditFormVisible(true),
-              },
-              {
-                key: account.isArchived ? "restore" : "archive",
-                label: account.isArchived ? "Restaurar" : "Archivar",
-                icon: account.isArchived ? ArchiveRestore : Archive,
-                color: account.isArchived ? COLORS.pine : COLORS.ember,
-                onPress: () => setArchiveConfirmVisible(true),
-              },
-            ]}
-          />
-          <BalanceEvolutionChart
-            accountId={account.id}
-            currentBalance={account.currentBalance}
-            currencyCode={account.currencyCode}
-            movements={movements}
-          />
-          </>
         ) : (
           <SkeletonAccountSummary />
         )
@@ -339,6 +299,61 @@ function AccountDetailScreen() {
           sections={[{ key: "movements", label: "Movimientos", data: movements, headerVariant: "hidden" }]}
           keyExtractor={(item) => String(item.id)}
           renderItem={renderMovementItem}
+          listHeaderComponent={
+            account ? (
+              <>
+                <DetailQuickActions
+                  style={styles.quickActions}
+                  actions={[
+                    ...(!account.isArchived
+                      ? [
+                          {
+                            key: "transfer",
+                            label: "Transferir",
+                            icon: ArrowLeftRight,
+                            color: COLORS.pine,
+                            onPress: () => {
+                              setMovementFormType("transfer");
+                              setMovementFormVisible(true);
+                            },
+                          },
+                          {
+                            key: "expense",
+                            label: "Nuevo gasto",
+                            icon: Plus,
+                            color: COLORS.primary,
+                            onPress: () => {
+                              setMovementFormType("expense");
+                              setMovementFormVisible(true);
+                            },
+                          },
+                        ]
+                      : []),
+                    {
+                      key: "edit",
+                      label: "Editar",
+                      icon: Pencil,
+                      color: COLORS.primary,
+                      onPress: () => setEditFormVisible(true),
+                    },
+                    {
+                      key: account.isArchived ? "restore" : "archive",
+                      label: account.isArchived ? "Restaurar" : "Archivar",
+                      icon: account.isArchived ? ArchiveRestore : Archive,
+                      color: account.isArchived ? COLORS.pine : COLORS.ember,
+                      onPress: () => setArchiveConfirmVisible(true),
+                    },
+                  ]}
+                />
+                <BalanceEvolutionChart
+                  accountId={account.id}
+                  currentBalance={account.currentBalance}
+                  currencyCode={account.currencyCode}
+                  movements={movements}
+                />
+              </>
+            ) : null
+          }
           refreshing={isLoading && !isFetchingNextPage}
           onRefresh={onRefresh}
           onEndReached={() => {
@@ -448,7 +463,6 @@ const styles = StyleSheet.create({
   negative: { color: COLORS.danger },
   notInNetWorthNote: { fontSize: FONT_SIZE.xs, color: COLORS.textDisabled },
   quickActions: {
-    marginHorizontal: SPACING.lg,
     marginTop: SPACING.md,
   },
 });

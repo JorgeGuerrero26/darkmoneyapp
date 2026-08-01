@@ -1,4 +1,4 @@
-import { useIsFetching, useQueryClient } from "@tanstack/react-query";
+import { onlineManager, useIsFetching, useQueryClient } from "@tanstack/react-query";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import * as Linking from "expo-linking";
 import { Stack, usePathname, useRouter, useSegments } from "expo-router";
@@ -18,6 +18,8 @@ import {
 
 import { COLORS } from "../constants/theme";
 import { AuthProvider, useAuth } from "../lib/auth-context";
+import { logWarn } from "../lib/error-logger";
+import { markStartupReady } from "../lib/startup-timing";
 import { queryClient, queryPersistOptions } from "../lib/query-client";
 import { supabase } from "../lib/supabase";
 import { WorkspaceProvider, useWorkspace } from "../lib/workspace-context";
@@ -64,9 +66,11 @@ import {
   scheduleSubscriptionReminders,
   scheduleObligationReminders,
   scheduleRecurringIncomeReminders,
+  scheduleBudgetEndedReminders,
 } from "../hooks/usePushNotifications";
 import { useAutoSubscriptionMovements } from "../hooks/useAutoSubscriptionMovements";
 import { useNotificationGenerator } from "../hooks/useNotificationGenerator";
+import { useNotificationsRealtimeSync } from "../hooks/useNotificationsRealtimeSync";
 import { BiometricLock } from "../components/ui/BiometricLock";
 import { getNotificationsModule } from "../lib/notifications-runtime";
 import { hasSavedAuthOnDevice } from "../lib/device-auth-state";
@@ -74,17 +78,12 @@ import { clearLastTabRoute, getLastTabRoute } from "../hooks/useTabPersistence";
 
 const Notifications = getNotificationsModule();
 
-// Solo las queries necesarias para PINTAR el dashboard bloquean el overlay de arranque.
-// Historial del recorte: primero salieron las de colaboración (shared-obligations y
-// afines timeouteaban 12 s → ~25 s de "Cargando workspace"); luego movements (la lista
-// completa la carga su propia tab), budget-scope-movements, notifications (la campana
-// puede llegar 1 s tarde) y user-entitlement (solo gatea features de IA). Cada query
-// extra aquí compite además por el lock de auth de supabase-js y alarga el arranque.
+// Solo el núcleo que permite resolver el workspace bloquea el overlay global. Los datos
+// propios de Dashboard/Movimientos muestran sus skeletons dentro de la pantalla: esperar aquí
+// por analytics opcionales hacía que abrir Movimientos pagara consultas de otra tab.
 const INITIAL_WORKSPACE_BOOTSTRAP_QUERY_KEYS = new Set([
   "user-workspaces",
   "workspace-snapshot",
-  "dashboard-movements",
-  "dashboard-analytics",
 ]);
 
 // Tope de escala de fuente del sistema: con fuentes custom (Outfit/Manrope) y la
@@ -275,6 +274,9 @@ function NotificationSetup() {
   const { data: snapshot, isLoading: snapshotLoading } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const { data: notifications = [] } = useNotificationsQuery(profile?.id ?? null);
   const { data: sharedObligations = [] } = useSharedObligationsQuery(session?.user?.id ?? null);
+  // Un solo canal global mantiene campana, badge y lista al día. Antes Realtime vivía solo
+  // dentro de la pantalla Notificaciones y el resto de la app hacía polling cada 10 segundos.
+  useNotificationsRealtimeSync(profile?.id ?? null);
 
   const resolvedActiveWorkspace =
     activeWorkspace ??
@@ -343,6 +345,15 @@ function NotificationSetup() {
       )
     );
 
+  // Instrumentación: el cierre del overlay es el momento en que la app es usable (mientras
+  // está arriba no acepta toques). Se registra una sola vez por sesión para poder ver en
+  // app_error_logs si el arranque lo domina la red, el JS o el render — y optimizar con
+  // datos. Solo cuenta si hubo sesión: sin login no hay bootstrap que medir.
+  useEffect(() => {
+    if (showWorkspaceBootstrapOverlayRaw || !hasSignedInSession) return;
+    markStartupReady("ready", { online: onlineManager.isOnline() });
+  }, [showWorkspaceBootstrapOverlayRaw, hasSignedInSession]);
+
   // Válvula de escape: el overlay bloquea TODO el touch (pointerEvents="auto"). Si una
   // query se cuelga (red lenta/caída) el usuario quedaba encerrado sin poder tocar nada
   // y debía forzar el cierre desde el sistema. Tras el timeout se libera la UI y las
@@ -354,9 +365,29 @@ function NotificationSetup() {
       setBootstrapOverlayTimedOut(false);
       return;
     }
-    const timer = setTimeout(() => setBootstrapOverlayTimedOut(true), BOOTSTRAP_OVERLAY_MAX_MS);
+    const timer = setTimeout(() => {
+      // La válvula se dispara cuando el arranque quedó atascado: dejar registrado el
+      // estado de las queries de bootstrap y del onlineManager para poder diagnosticar
+      // el trigger (¿pausadas por red? ¿error? ¿lentitud?) — incidente 2026-07-13.
+      const queryStates = [...INITIAL_WORKSPACE_BOOTSTRAP_QUERY_KEYS].map((root) => {
+        const states = queryClient
+          .getQueryCache()
+          .findAll({ queryKey: [root] })
+          .map((query) => `${query.state.status}/${query.state.fetchStatus}`)
+          .join(",");
+        return `${root}=${states || "missing"}`;
+      });
+      logWarn("bootstrap", "overlay timeout: liberando UI con queries sin resolver", {
+        online: onlineManager.isOnline(),
+        queries: queryStates.join(" "),
+      });
+      // También cuenta como "usable" (la UI se libera), pero marcado como timeout para
+      // distinguir un arranque sano de uno rescatado por la válvula.
+      markStartupReady("timeout", { online: onlineManager.isOnline(), queries: queryStates.join(" ") });
+      setBootstrapOverlayTimedOut(true);
+    }, BOOTSTRAP_OVERLAY_MAX_MS);
     return () => clearTimeout(timer);
-  }, [showWorkspaceBootstrapOverlayRaw]);
+  }, [queryClient, showWorkspaceBootstrapOverlayRaw]);
   const showWorkspaceBootstrapOverlay = showWorkspaceBootstrapOverlayRaw && !bootstrapOverlayTimedOut;
 
   const bootstrapTitle = isCheckingSession ? "Verificando sesión" : "Cargando workspace";
@@ -458,6 +489,17 @@ function NotificationSetup() {
       console.warn("[NotificationSetup] obligation reminders failed:", error);
     });
   }, [snapshot?.obligations]);
+
+  useEffect(() => {
+    if (!snapshot?.budgets) return;
+    void scheduleBudgetEndedReminders(
+      snapshot.budgets
+        .filter((b) => b.isActive)
+        .map((b) => ({ id: b.id, name: b.name, periodEnd: b.periodEnd })),
+    ).catch((error) => {
+      console.warn("[NotificationSetup] budget ended reminders failed:", error);
+    });
+  }, [snapshot?.budgets]);
 
   useEffect(() => {
     if (!snapshot?.recurringIncome) return;
@@ -770,20 +812,31 @@ function NavigationGuard() {
     [router],
   );
   const onDailyDigestTap = useCallback(() => {
-    const target = resolveNotificationNavigationTarget({ kind: "daily_digest" });
-    router.push(target as never);
+    // Mismo destino que el tap del card en la bandeja: dashboard con el
+    // resumen del día abierto (resolver compartido).
+    router.push(resolveNotificationNavigationTarget({ kind: "daily_workspace_summary" }) as never);
   }, [router]);
 
   const onSubscriptionReminderTap = useCallback(
     (subscriptionId: number) => {
-      router.push(`/subscription/${subscriptionId}`);
+      const target = resolveNotificationNavigationTarget({
+        kind: "subscription_reminder",
+        relatedEntityType: "subscription",
+        relatedEntityId: subscriptionId,
+      });
+      router.push(target as never);
     },
     [router],
   );
 
   const onObligationReminderTap = useCallback(
     (obligationId: number) => {
-      router.push(`/obligation/${obligationId}`);
+      const target = resolveNotificationNavigationTarget({
+        kind: "obligation_due",
+        relatedEntityType: "obligation",
+        relatedEntityId: obligationId,
+      });
+      router.push(target as never);
     },
     [router],
   );
@@ -948,7 +1001,7 @@ function NavigationGuard() {
       if (segments[0] === "(auth)") return;
       await clearPendingDetectedSuggestionNativeId();
       if (cancelled) return;
-      router.push(`/detected-suggestion/${encodeURIComponent(pendingNativeId)}`);
+      router.push({ pathname: "/detected-suggestion/[id]", params: { id: pendingNativeId } });
     })();
     return () => {
       cancelled = true;
@@ -991,9 +1044,13 @@ export default function RootLayout() {
                 <DisplayCurrencyProvider>
                 <ToastProvider>
                   <ErrorBoundary>
-                    <OfflineBanner />
                     <NotificationSetup />
                     <NavigationGuard />
+                    {/* Va DESPUÉS de NavigationGuard, que es quien monta el Stack: flota sobre
+                        el contenido, y los hermanos posteriores se pintan encima. Cuando estaba
+                        primero, la navegación lo tapaba. Antes de AppSplash y BiometricLock a
+                        propósito, para que esos sí lo cubran. */}
+                    <OfflineBanner />
                     <AppSplash />
                     <BiometricLock />
                     <SuccessGlow />

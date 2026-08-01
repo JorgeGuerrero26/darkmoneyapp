@@ -52,8 +52,13 @@ export function subscribeRealtimeChannel({ source, channelName, bindings }: Para
         binding.onChange,
       );
     }
-    channel = next.subscribe((status) => {
-      if (disposed) return;
+    const mine = next;
+    channel = next.subscribe((status, err) => {
+      // Ignorar eventos de un canal ya reemplazado: el removeChannel del retry
+      // emite CLOSED sobre el canal viejo, y tratarlo como fallo nuevo mataba
+      // al canal sano recién suscrito en un loop infinito de 5s (incidente
+      // 2026-07-17: ~2000 warnings/hora en app_error_logs con la app abierta).
+      if (disposed || channel !== mine) return;
       if (status === "SUBSCRIBED") {
         attempt = 0;
         lastLoggedStatus = null;
@@ -62,7 +67,11 @@ export function subscribeRealtimeChannel({ source, channelName, bindings }: Para
       if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
         if (lastLoggedStatus !== status) {
           lastLoggedStatus = status;
-          logWarn("realtime", `${source} channel ${status}`, { channelName, attempt });
+          logWarn("realtime", `${source} channel ${status}`, {
+            channelName,
+            attempt,
+            error: err?.message ?? null,
+          });
         }
         scheduleResubscribe();
       }
@@ -76,8 +85,11 @@ export function subscribeRealtimeChannel({ source, channelName, bindings }: Para
     retryTimer = setTimeout(() => {
       retryTimer = null;
       if (disposed || !supabase) return;
-      if (channel) void supabase.removeChannel(channel);
+      // Soltar la referencia ANTES de removeChannel: así el CLOSED que emite el
+      // canal retirado no pasa el guard `channel !== mine` del callback.
+      const stale = channel;
       channel = null;
+      if (stale) void supabase.removeChannel(stale);
       open();
     }, delay);
   }

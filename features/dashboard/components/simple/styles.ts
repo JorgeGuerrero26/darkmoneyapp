@@ -470,6 +470,11 @@ export const dashboardSimpleStyles = StyleSheet.create({
     backgroundColor: "rgba(255, 95, 95, 0.09)",
     borderColor: "rgba(255, 95, 95, 0.22)",
   },
+  upcomingQuickAction: {
+    marginLeft: SPACING.xs,
+    padding: SPACING.xs,
+    borderRadius: 99,
+  },
   upcomingAmount: {
     fontFamily: FONT_FAMILY.bodySemibold,
     fontSize: FONT_SIZE.sm,

@@ -73,7 +73,7 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent
   const initialAttachmentSignatureRef = useRef("::ready");
   const latestObligation = useMemo(() => {
     if (!obligation) return null;
-    return snapshot?.obligations.find((item) => item.id === obligation.id) ?? obligation;
+    return snapshot?.obligations?.find((item) => item.id === obligation.id) ?? obligation;
   }, [snapshot?.obligations, obligation]);
 
   const today = todayPeru();
@@ -309,7 +309,10 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent
     }
   }
 
+  const submittingRef = useRef(false);
+
   async function handleSubmit() {
+    if (submittingRef.current) return; // guard anti-doble-tap: evita PAGOS duplicados
     setAmountError("");
     setAccountError("");
     setSubmitError("");
@@ -329,6 +332,7 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent
     }
     if (!obligation) return;
 
+    submittingRef.current = true;
     try {
       let backgroundAttachmentSync: (() => void) | null = null;
       let createdPaymentResult: { id: number; movementId: number | null; workspaceId: number } | null = null;
@@ -414,6 +418,8 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent
     } catch (err: unknown) {
       haptics.error();
       setSubmitError(humanizeError(err));
+    } finally {
+      submittingRef.current = false;
     }
   }
 

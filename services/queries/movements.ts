@@ -204,10 +204,10 @@ export function useMovementAttachmentsQuery(
 }
 
 export function usePaginatedMovements(
-  workspaceId?: number | null,
-  filters: MovementFilters = {},
-  /** Incluir en la clave para no reutilizar caché de otro usuario con el mismo workspaceId */
-  userScopeKey?: string | null,
+  workspaceId: number | null | undefined,
+  filters: MovementFilters,
+  /** Exigido para no consultar ni reutilizar caché antes de resolver al usuario actual. */
+  userScopeKey: string | null | undefined,
 ) {
   return useInfiniteQuery({
     queryKey: ["movements", userScopeKey ?? null, workspaceId, filters],
@@ -216,7 +216,7 @@ export function usePaginatedMovements(
     initialPageParam: 0,
     getNextPageParam: (lastPage) =>
       lastPage.hasMore ? lastPage.nextPage : undefined,
-    enabled: Boolean(workspaceId),
+    enabled: Boolean(workspaceId && userScopeKey),
     // 30s + refetch al reconectar: al volver al módulo o recuperar red, si pasaron >30s
     // refetch en background. Realtime cubre el live mientras está abierto.
     staleTime: STALE.short,

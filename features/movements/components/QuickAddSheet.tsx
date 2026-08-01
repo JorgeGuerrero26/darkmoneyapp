@@ -11,10 +11,11 @@ type Props = {
   visible: boolean;
   onClose: () => void;
   onSelect: (type: MovementType) => void;
-  /** Plantillas del workspace: tap = abrir el form prellenado; long-press = eliminar. */
+  /** Plantillas del workspace: tap = abrir el form prellenado; long-press = renombrar o eliminar. */
   templates?: MovementTemplate[];
   onSelectTemplate?: (template: MovementTemplate) => void;
   onDeleteTemplate?: (template: MovementTemplate) => void;
+  onRenameTemplate?: (template: MovementTemplate) => void;
 };
 
 const OPTIONS: { type: MovementType; label: string; Icon: typeof ArrowDownCircle; color: string }[] = [
@@ -27,7 +28,7 @@ const OPTIONS: { type: MovementType; label: string; Icon: typeof ArrowDownCircle
  * Sheet de quick-add disparado por long-press del FAB.
  * Reduce 3-4 taps por entrada manual cuando el usuario sabe el tipo desde el inicio.
  */
-export function QuickAddSheet({ visible, onClose, onSelect, templates, onSelectTemplate, onDeleteTemplate }: Props) {
+export function QuickAddSheet({ visible, onClose, onSelect, templates, onSelectTemplate, onDeleteTemplate, onRenameTemplate }: Props) {
   return (
     <BottomSheet visible={visible} onClose={onClose} title={MOVEMENT_LABELS.list.quickAdd.title} snapHeight={0.4}>
       <View style={styles.content}>
@@ -62,14 +63,32 @@ export function QuickAddSheet({ visible, onClose, onSelect, templates, onSelectT
                   onClose();
                 }}
                 onLongPress={
-                  onDeleteTemplate
+                  onDeleteTemplate || onRenameTemplate
                     ? () => {
                         Alert.alert(
-                          "Eliminar plantilla",
-                          `¿Eliminar la plantilla "${template.name}"?`,
+                          template.name,
+                          "¿Qué quieres hacer con esta plantilla?",
                           [
                             { text: "Cancelar", style: "cancel" },
-                            { text: "Eliminar", style: "destructive", onPress: () => onDeleteTemplate(template) },
+                            ...(onRenameTemplate
+                              ? [{ text: "Renombrar", onPress: () => { onClose(); onRenameTemplate(template); } }]
+                              : []),
+                            ...(onDeleteTemplate
+                              ? [{
+                                  text: "Eliminar",
+                                  style: "destructive" as const,
+                                  onPress: () => {
+                                    Alert.alert(
+                                      "Eliminar plantilla",
+                                      `¿Eliminar la plantilla "${template.name}"?`,
+                                      [
+                                        { text: "Cancelar", style: "cancel" },
+                                        { text: "Eliminar", style: "destructive", onPress: () => onDeleteTemplate(template) },
+                                      ],
+                                    );
+                                  },
+                                }]
+                              : []),
                           ],
                         );
                       }
@@ -87,7 +106,7 @@ export function QuickAddSheet({ visible, onClose, onSelect, templates, onSelectT
                 </View>
               </TouchableOpacity>
             ))}
-            <Text style={styles.templatesHint}>Mantén presionada una plantilla para eliminarla.</Text>
+            <Text style={styles.templatesHint}>Mantén presionada una plantilla para renombrarla o eliminarla.</Text>
           </>
         ) : null}
       </View>

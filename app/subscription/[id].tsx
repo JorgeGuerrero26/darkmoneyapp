@@ -2,12 +2,13 @@ import { useCallback, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { BarChart3, CheckCircle2, Pause, Pencil, Pin, PinOff, Play, Trash2 } from "lucide-react-native";
+import { Ban, BarChart3, CheckCircle2, Pause, Pencil, Pin, PinOff, Play, Trash2 } from "lucide-react-native";
 
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { Card } from "../../components/ui/Card";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { HeaderActionGroup } from "../../components/ui/HeaderActionGroup";
+import { NotificationReasonBanner } from "../../components/ui/NotificationReasonBanner";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTemplate";
 import { SkeletonCard, SkeletonList } from "../../components/ui/Skeleton";
@@ -18,8 +19,12 @@ import { SubscriptionDetailQuickStats } from "../../features/subscriptions/compo
 import { SubscriptionDetailMovements } from "../../features/subscriptions/components/SubscriptionDetailMovements";
 import { MarkSubscriptionPaidSheet } from "../../features/subscriptions/components/MarkSubscriptionPaidSheet";
 import { useOriginBackNavigation } from "../../hooks/useOriginBackNavigation";
+import { useNotificationReason } from "../../hooks/useNotificationReason";
 import { useAuth } from "../../lib/auth-context";
+import { todayPeru } from "../../lib/date";
+import { formatSubscriptionYmd, rollDueDateForward } from "../../lib/subscription-helpers";
 import { useWorkspace } from "../../lib/workspace-context";
+import { useUiStore } from "../../store/ui-store";
 import { useWorkspaceSnapshotQuery } from "../../services/queries/workspace-data";
 import {
   useDeleteSubscriptionMutation,
@@ -38,17 +43,26 @@ function parseSubscriptionId(raw: string | undefined): number | null {
 }
 
 function SubscriptionDetailScreen() {
+  // Fuerza el re-render de la pantalla al alternar modo privacidad (la máscara
+  // vive en formatCurrency, que lee el store imperativamente).
+  useUiStore((state) => state.privacyMode);
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
   const { handleBack } = useOriginBackNavigation({
-    originRoutes: { dashboard: "/(app)/dashboard", subscriptions: "/(app)/subscriptions" },
+    originRoutes: {
+      dashboard: "/(app)/dashboard",
+      subscriptions: "/(app)/subscriptions",
+      notifications: "/notifications",
+    },
   });
+  const { reason: notificationReason, dismiss: dismissNotificationReason } = useNotificationReason();
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
   const { showToast } = useToast();
 
   const [editFormVisible, setEditFormVisible] = useState(false);
   const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
+  const [cancelConfirmVisible, setCancelConfirmVisible] = useState(false);
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
   const [markPaidVisible, setMarkPaidVisible] = useState(false);
 
@@ -70,10 +84,32 @@ function SubscriptionDetailScreen() {
   const handleTogglePause = useCallback(() => {
     if (!subscription) return;
     const newStatus = subscription.status === "active" ? "paused" : "active";
+    // Al reactivar (desde pausada o cancelada), rodar la fecha vencida a la
+    // primera ocurrencia >= hoy según la cadencia registrada.
+    const nextDueDate = newStatus === "active"
+      ? rollDueDateForward(subscription.nextDueDate, subscription.frequency, subscription.intervalCount, todayPeru())
+      : undefined;
     updateMutation.mutate(
-      { id: subscription.id, input: { status: newStatus } },
+      { id: subscription.id, input: { status: newStatus, ...(nextDueDate ? { nextDueDate } : {}) } },
       {
-        onSuccess: () => showToast(newStatus === "paused" ? "Pausada" : "Reactivada", "success"),
+        onSuccess: () => showToast(
+          newStatus === "paused"
+            ? "Pausada"
+            : `Reactivada. Próximo pago: ${formatSubscriptionYmd(nextDueDate ?? subscription.nextDueDate)}`,
+          "success",
+        ),
+        onError: (e) => showToast(e.message, "error"),
+      },
+    );
+  }, [subscription, updateMutation, showToast]);
+
+  const handleCancelSubscription = useCallback(() => {
+    if (!subscription) return;
+    setCancelConfirmVisible(false);
+    updateMutation.mutate(
+      { id: subscription.id, input: { status: "cancelled" } },
+      {
+        onSuccess: () => showToast("Suscripción cancelada. Su historial se conserva.", "success"),
         onError: (e) => showToast(e.message, "error"),
       },
     );
@@ -99,7 +135,8 @@ function SubscriptionDetailScreen() {
     }
   }, [subscription, deleteMutation, handleBack, showToast]);
 
-  const isPaused = subscription?.status === "paused";
+  // Pausadas y canceladas comparten el botón "Reactivar" (con recálculo de fecha).
+  const canReactivate = subscription != null && subscription.status !== "active";
 
   const handleMarkPaid = useCallback(
     async (args: { paidDate: string; amount: number; accountId: number }) => {
@@ -124,43 +161,46 @@ function SubscriptionDetailScreen() {
     <ResourceModuleTemplate
       topInset={insets.top}
       header={
-        <ScreenHeader
-          title={subscription?.name ?? "Suscripción"}
-          subtitle={activeWorkspace?.name}
-          onBack={handleBack}
-          rightAction={
-            subscription ? (
-              <HeaderActionGroup
-                actions={[
-                  {
-                    key: "pin",
-                    icon: subscription.isPinned ? PinOff : Pin,
-                    onPress: handleTogglePin,
-                    accessibilityLabel: subscription.isPinned ? "Desfijar" : "Fijar",
-                  },
-                  {
-                    key: "analytics",
-                    icon: BarChart3,
-                    onPress: () => setAnalyticsOpen(true),
-                    accessibilityLabel: "Ver analítica",
-                  },
-                  {
-                    key: "edit",
-                    icon: Pencil,
-                    onPress: () => setEditFormVisible(true),
-                    accessibilityLabel: "Editar suscripción",
-                  },
-                  {
-                    key: "delete",
-                    icon: Trash2,
-                    onPress: () => setDeleteConfirmVisible(true),
-                    accessibilityLabel: "Eliminar suscripción",
-                  },
-                ]}
-              />
-            ) : null
-          }
-        />
+        <>
+          <ScreenHeader
+            title={subscription?.name ?? "Suscripción"}
+            subtitle={activeWorkspace?.name}
+            onBack={handleBack}
+            rightAction={
+              subscription ? (
+                <HeaderActionGroup
+                  actions={[
+                    {
+                      key: "pin",
+                      icon: subscription.isPinned ? PinOff : Pin,
+                      onPress: handleTogglePin,
+                      accessibilityLabel: subscription.isPinned ? "Desfijar" : "Fijar",
+                    },
+                    {
+                      key: "analytics",
+                      icon: BarChart3,
+                      onPress: () => setAnalyticsOpen(true),
+                      accessibilityLabel: "Ver analítica",
+                    },
+                    {
+                      key: "edit",
+                      icon: Pencil,
+                      onPress: () => setEditFormVisible(true),
+                      accessibilityLabel: "Editar suscripción",
+                    },
+                    {
+                      key: "delete",
+                      icon: Trash2,
+                      onPress: () => setDeleteConfirmVisible(true),
+                      accessibilityLabel: "Eliminar suscripción",
+                    },
+                  ]}
+                />
+              ) : null
+            }
+          />
+          <NotificationReasonBanner reason={notificationReason} onDismiss={dismissNotificationReason} />
+        </>
       }
       list={
         isLoading ? (
@@ -193,10 +233,17 @@ function SubscriptionDetailScreen() {
                   />
                 ) : null}
                 <QuickActionButton
-                  icon={isPaused ? Play : Pause}
-                  label={isPaused ? "Reactivar" : "Pausar"}
+                  icon={canReactivate ? Play : Pause}
+                  label={canReactivate ? "Reactivar" : "Pausar"}
                   onPress={handleTogglePause}
                 />
+                {subscription.status !== "cancelled" ? (
+                  <QuickActionButton
+                    icon={Ban}
+                    label="Cancelar"
+                    onPress={() => setCancelConfirmVisible(true)}
+                  />
+                ) : null}
                 <QuickActionButton
                   icon={BarChart3}
                   label="Análisis"
@@ -247,6 +294,19 @@ function SubscriptionDetailScreen() {
             subscription={subscription}
             movements={postedMovements}
             baseCurrencyCode={baseCurrencyCode}
+          />
+          <ConfirmDialog
+            visible={cancelConfirmVisible && Boolean(subscription)}
+            title="¿Cancelar suscripción?"
+            body={
+              subscription
+                ? `"${subscription.name}" pasará a Canceladas y dejará de generar cobros. Su historial de pagos se conserva y podrás reactivarla cuando quieras.`
+                : undefined
+            }
+            confirmLabel="Sí, cancelar"
+            cancelLabel="Volver"
+            onCancel={() => setCancelConfirmVisible(false)}
+            onConfirm={handleCancelSubscription}
           />
           <ConfirmDialog
             visible={deleteConfirmVisible && Boolean(subscription)}

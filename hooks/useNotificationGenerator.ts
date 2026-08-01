@@ -6,56 +6,53 @@
  * y el usuario tiene sesión activa. Es idempotente: consulta existentes y usa
  * el índice único de notifications para evitar duplicados.
  *
- * Tipos de alerta generados:
- *
- *  DIARIAS
- *  - daily_workspace_summary : resumen mínimo diario del workspace
- *  - daily_cashflow_check    : chequeo mínimo diario de flujo
- *  - daily_budget_review     : revisión mínima diaria de presupuestos
- *
- *  PRESUPUESTOS
- *  - budget_alert           : presupuesto >= alertPercent% o sobre el límite
- *  - budget_period_ending   : período cierra en ≤ 3 días con gasto > 50%
- *
- *  SUSCRIPCIONES
- *  - subscription_reminder  : suscripción activa dentro de ventana de aviso
- *  - subscription_overdue   : suscripción vencida (nextDueDate < hoy)
- *  - multiple_subscriptions_due : 3+ suscripciones vencen en ≤ 7 días
- *
- *  OBLIGACIONES
- *  - obligation_due         : obligación activa vence en ≤ 7 días
- *  - obligation_overdue     : obligación vencida
- *  - obligation_no_payment  : obligación activa con cuotas y sin pago en 45+ días
- *  - multiple_obligations_overdue : 2+ obligaciones vencidas simultáneamente
- *  - high_interest_obligation : obligación activa con tasa ≥ 10% y saldo > 0
- *
- *  CUENTAS
- *  - low_balance            : saldo bajo umbral mínimo en cuenta bank/cash/savings
- *  - negative_balance       : saldo negativo en cuenta que no es préstamo/tarjeta
- *  - account_dormant        : cuenta sin actividad en 60+ días con saldo > 0
- *
- *  GASTOS E INGRESOS
- *  - no_income_month        : sin ingresos registrados este mes (después del día 15)
- *  - high_expense_month     : gastos del mes > mes anterior en 30%+
- *  - category_spending_spike: una categoría subió 50%+ vs mes anterior
- *  - expense_income_imbalance: gastos > 85% de los ingresos este mes
- *
- *  PATRIMONIO
- *  - net_worth_negative     : patrimonio neto total negativo
- *
- *  ANÁLISIS AVANZADO
- *  - savings_rate_low           : tasa de ahorro < 10% tras el día 20
- *  - subscription_cost_heavy    : costo mensual de suscripciones > 30% del ingreso
- *  - upcoming_annual_subscription : suscripción anual vence en 14-30 días
- *  - no_movements_week          : sin movimientos 7 días consecutivos (con actividad previa)
+ * Las reglas de detección viven como builders puros (testeados) en
+ * `features/notifications/lib/alertBuilders.ts`; este hook solo orquesta:
+ * fingerprint del snapshot, ejecución diferida, idempotencia (existingSet +
+ * upsert ignoreDuplicates) y cleanup por vigencia (ALL_KINDS).
  */
 
 import { useEffect, useRef, useState } from "react";
+import { InteractionManager } from "react-native";
 import { supabase } from "../lib/supabase";
 import { queryClient } from "../lib/query-client";
-import { getNotificationPriority } from "../lib/notification-priority";
 import { calendarDaysFromTodayLocal } from "../lib/subscription-helpers";
+import { formatCurrency } from "../lib/format-currency";
+import { findStaleGeneratedNotificationIds } from "../lib/notification-cleanup";
 import type { WorkspaceSnapshot } from "../services/queries/workspace-data";
+import {
+  buildAccountDormantAlerts,
+  buildBudgetLimitAlerts,
+  buildBudgetPeriodEndedAlerts,
+  buildBudgetPeriodEndingAlerts,
+  buildCategorySpendingSpikeAlerts,
+  buildDailyBaselineAlerts,
+  buildDetectedSuggestionsPendingAlert,
+  buildDuplicateChargeAlerts,
+  buildExpectedIncomeMissedAlerts,
+  buildExpenseIncomeImbalanceAlert,
+  buildHighExpenseMonthAlert,
+  buildHighInterestObligationAlerts,
+  buildLowBalanceAlerts,
+  buildMonthlyRecapAlert,
+  buildMultipleObligationsOverdueAlert,
+  buildMultipleSubscriptionsDueAlert,
+  buildNegativeBalanceAlerts,
+  buildNetWorthNegativeAlert,
+  buildNoIncomeMonthAlert,
+  buildNoMovementsWeekAlert,
+  buildObligationDueAlerts,
+  buildObligationMilestoneAlerts,
+  buildObligationNoPaymentAlerts,
+  buildSavingsRateLowAlert,
+  buildSubscriptionCostHeavyAlert,
+  buildSubscriptionOverdueAlerts,
+  buildSubscriptionPriceIncreaseAlerts,
+  buildSubscriptionReminderAlerts,
+  buildUpcomingAnnualSubscriptionAlerts,
+  computeMonthlyMovementAggregates,
+  type AlertRow,
+} from "../features/notifications/lib/alertBuilders";
 
 type NotificationRow = {
   user_id: string;
@@ -83,22 +80,6 @@ function usageDateInLima(date = new Date()): string {
   }).format(date);
 }
 
-function startOfMonth(d: Date): Date {
-  return new Date(d.getFullYear(), d.getMonth(), 1);
-}
-
-function startOfLastMonth(d: Date): Date {
-  return new Date(d.getFullYear(), d.getMonth() - 1, 1);
-}
-
-function endOfLastMonth(d: Date): Date {
-  return new Date(d.getFullYear(), d.getMonth(), 0, 23, 59, 59, 999);
-}
-
-function daysBetween(a: Date, b: Date): number {
-  return Math.floor((b.getTime() - a.getTime()) / 86_400_000);
-}
-
 // ─── Stale cleanup ────────────────────────────────────────────────────────────
 
 const ALL_KINDS = [
@@ -107,6 +88,7 @@ const ALL_KINDS = [
   "daily_budget_review",
   "budget_alert",
   "budget_period_ending",
+  "budget_period_ended",
   "subscription_reminder",
   "subscription_overdue",
   "multiple_subscriptions_due",
@@ -128,137 +110,65 @@ const ALL_KINDS = [
   "subscription_cost_heavy",
   "upcoming_annual_subscription",
   "no_movements_week",
+  // Kinds nuevos (spec 2026-07-10) — los 2 predictivos server-side NO van aquí
+  // (los genera el cron y este cleanup los borraría).
+  "subscription_price_increase",
+  "possible_duplicate_charge",
+  "detected_suggestions_pending",
+  "expected_income_missed",
+  "monthly_recap",
+  "obligation_milestone",
 ];
 
-const DAILY_INFORMATIONAL_MINIMUM = 3;
+type ExistingNotificationRow = {
+  id: number;
+  related_entity_type: string | null;
+  related_entity_id: number | null;
+  kind: string | null;
+  scheduled_for: string;
+};
 
 async function cleanupStaleNotifications(
   userId: string,
   activeRows: NotificationRow[],
+  existingRows: ExistingNotificationRow[],
 ): Promise<void> {
   if (!supabase) return;
 
-  const keepIds: Record<string, Set<number>> = {};
-  for (const kind of ALL_KINDS) keepIds[kind] = new Set();
-  for (const row of activeRows) {
-    keepIds[row.kind]?.add(row.related_entity_id);
-  }
-
-  await Promise.all(
-    ALL_KINDS.map((kind) => {
-      const ids = Array.from(keepIds[kind]);
-      const q = supabase!
-        .from("notifications")
-        .delete()
-        .eq("user_id", userId)
-        .eq("kind", kind);
-      return ids.length ? q.not("related_entity_id", "in", `(${ids.join(",")})`) : q;
-    }),
+  const staleIds = findStaleGeneratedNotificationIds(
+    existingRows,
+    activeRows,
+    ALL_KINDS,
   );
+  if (!staleIds.length) return;
+
+  const { error } = await supabase
+    .from("notifications")
+    .delete()
+    .eq("user_id", userId)
+    .in("id", staleIds);
+  if (error) console.warn("[NotificationGenerator] cleanup error:", error.message);
 }
 
 // ─── Generator ────────────────────────────────────────────────────────────────
 
-function dailyBaselineEntityId(dayKey: string, index: number): number {
-  return Number(dayKey.replace(/-/g, "")) * 10 + index + 1;
+function toNotificationRow(userId: string, nowIso: string, alert: AlertRow): NotificationRow {
+  return { user_id: userId, channel: "in_app", status: "pending", scheduled_for: nowIso, ...alert };
 }
 
-function countLabel(count: number, singular: string, plural: string): string {
-  return `${count} ${count === 1 ? singular : plural}`;
-}
-
-function appendDailyBaselineNotifications(input: {
-  rows: NotificationRow[];
-  userId: string;
-  snapshot: WorkspaceSnapshot;
-  nowIso: string;
-  todayKey: string;
-  workspaceId: number;
-  thisMonthIncome: number;
-  thisMonthExpenses: number;
-}) {
-  const informationalCount = input.rows.filter(
-    (row) => getNotificationPriority(row.kind) === "informational",
-  ).length;
-  const missingCount = DAILY_INFORMATIONAL_MINIMUM - informationalCount;
-  if (missingCount <= 0) return;
-
-  const activeBudgetCount = input.snapshot.budgets.filter((budget) => budget.isActive).length;
-  const activeSubscriptionCount = input.snapshot.subscriptions.filter((sub) => sub.status === "active").length;
-  const activeObligationCount = input.snapshot.obligations.filter((obligation) => obligation.status === "active").length;
-  const openAccountCount = input.snapshot.accounts.filter((account) => !account.isArchived).length;
-  const movementCount = input.snapshot.categoryPostedMovements.length;
-  const expenseIncomeRatio = input.thisMonthIncome > 0
-    ? Math.round((input.thisMonthExpenses / input.thisMonthIncome) * 100)
-    : null;
-
-  const baselineRows: NotificationRow[] = [
-    {
-      user_id: input.userId,
-      channel: "in_app",
-      status: "pending",
-      kind: "daily_workspace_summary",
-      title: "Resumen financiero del día",
-      body: `Tu workspace tiene ${countLabel(openAccountCount, "cuenta activa", "cuentas activas")}, ${countLabel(activeBudgetCount, "presupuesto", "presupuestos")} y ${countLabel(movementCount, "movimiento registrado", "movimientos registrados")}.`,
-      scheduled_for: input.nowIso,
-      related_entity_type: "daily_digest",
-      related_entity_id: dailyBaselineEntityId(input.todayKey, 0),
-      payload: {
-        workspaceId: input.workspaceId,
-        todayKey: input.todayKey,
-        accountCount: openAccountCount,
-        budgetCount: activeBudgetCount,
-        movementCount,
-      },
-    },
-    {
-      user_id: input.userId,
-      channel: "in_app",
-      status: "pending",
-      kind: "daily_cashflow_check",
-      title: "Chequeo de flujo",
-      body: expenseIncomeRatio === null
-        ? "Todavía no hay ingresos suficientes este mes para calcular tu margen. Mantén tus movimientos al día."
-        : `Este mes tus gastos representan el ${expenseIncomeRatio}% de tus ingresos registrados.`,
-      scheduled_for: input.nowIso,
-      related_entity_type: "daily_digest",
-      related_entity_id: dailyBaselineEntityId(input.todayKey, 1),
-      payload: {
-        workspaceId: input.workspaceId,
-        todayKey: input.todayKey,
-        income: input.thisMonthIncome,
-        expenses: input.thisMonthExpenses,
-        expenseIncomeRatio,
-      },
-    },
-    {
-      user_id: input.userId,
-      channel: "in_app",
-      status: "pending",
-      kind: "daily_budget_review",
-      title: "Revisión diaria",
-      body: activeBudgetCount > 0
-        ? `Tienes ${countLabel(activeBudgetCount, "presupuesto", "presupuestos")}, ${countLabel(activeSubscriptionCount, "suscripción", "suscripciones")} y ${countLabel(activeObligationCount, "obligación activa", "obligaciones activas")} para revisar.`
-        : "Aún no tienes presupuestos activos. Crea uno para recibir alertas más precisas sobre tus gastos.",
-      scheduled_for: input.nowIso,
-      related_entity_type: "daily_digest",
-      related_entity_id: dailyBaselineEntityId(input.todayKey, 2),
-      payload: {
-        workspaceId: input.workspaceId,
-        todayKey: input.todayKey,
-        budgetCount: activeBudgetCount,
-        subscriptionCount: activeSubscriptionCount,
-        obligationCount: activeObligationCount,
-      },
-    },
-  ];
-
-  input.rows.push(...baselineRows.slice(0, missingCount));
-}
+/**
+ * El generador necesita el snapshot COMPLETO: obligaciones y presupuestos llegan
+ * diferidos, y correr sin ellos emitiría un ciclo de alertas incompleto.
+ * Exigirlo en el tipo evita que se cuele por descuido.
+ */
+type LoadedSnapshot = WorkspaceSnapshot & {
+  budgets: NonNullable<WorkspaceSnapshot["budgets"]>;
+  obligations: NonNullable<WorkspaceSnapshot["obligations"]>;
+};
 
 async function generateNotifications(
   userId: string,
-  snapshot: WorkspaceSnapshot,
+  snapshot: LoadedSnapshot,
 ): Promise<void> {
   if (!supabase) return;
 
@@ -266,6 +176,11 @@ async function generateNotifications(
   const nowIso = now.toISOString();
   const todayKey = usageDateInLima(now);
   const rows: NotificationRow[] = [];
+
+  const pushAlerts = (alerts: AlertRow[] | AlertRow | null) => {
+    const list = Array.isArray(alerts) ? alerts : alerts ? [alerts] : [];
+    for (const alert of list) rows.push(toNotificationRow(userId, nowIso, alert));
+  };
 
   // Workspace ID (used for workspace-level alerts)
   const workspaceId =
@@ -278,507 +193,158 @@ async function generateNotifications(
   const categoryNameMap = new Map<number, string>();
   for (const c of snapshot.categories) categoryNameMap.set(c.id, c.name);
 
-  // ── Monthly movement aggregates ──────────────────────────────────────────
-  const thisMonthStart = startOfMonth(now);
-  const lastMonthStart = startOfLastMonth(now);
-  const lastMonthEnd = endOfLastMonth(now);
-
-  let thisMonthExpenses = 0;
-  let thisMonthIncome = 0;
-  let lastMonthExpenses = 0;
-  let lastMonthIncome = 0;
-
-  // Per-category monthly totals (for spike detection)
-  const thisMonthByCat = new Map<number, number>();
-  const lastMonthByCat = new Map<number, number>();
-
-  for (const m of snapshot.categoryPostedMovements) {
-    const d = new Date(m.occurredAt);
-    const kind = categoryKindMap.get(m.categoryId);
-    if (!kind || kind === "transfer") continue;
-
-    if (d >= thisMonthStart) {
-      if (kind === "expense") {
-        const amt = m.sourceAmount ?? 0;
-        thisMonthExpenses += amt;
-        thisMonthByCat.set(m.categoryId, (thisMonthByCat.get(m.categoryId) ?? 0) + amt);
-      } else if (kind === "income") {
-        thisMonthIncome += m.destinationAmount ?? 0;
-      }
-    } else if (d >= lastMonthStart && d <= lastMonthEnd) {
-      if (kind === "expense") {
-        const amt = m.sourceAmount ?? 0;
-        lastMonthExpenses += amt;
-        lastMonthByCat.set(m.categoryId, (lastMonthByCat.get(m.categoryId) ?? 0) + amt);
-      } else if (kind === "income") {
-        lastMonthIncome += m.destinationAmount ?? 0;
-      }
-    }
-  }
+  // ── Monthly movement aggregates (builder puro) ───────────────────────────
+  const {
+    thisMonthExpenses,
+    thisMonthIncome,
+    lastMonthExpenses,
+    lastMonthIncome,
+    prevMonthExpenses,
+    thisMonthByCategory: thisMonthByCat,
+    lastMonthByCategory: lastMonthByCat,
+    lastMonthTopCategoryName: lastMonthTopCategory,
+  } = computeMonthlyMovementAggregates(
+    snapshot.categoryPostedMovements,
+    categoryKindMap,
+    categoryNameMap,
+    now,
+  );
 
   // ── 1. Budget alerts ──────────────────────────────────────────────────────
-  for (const budget of snapshot.budgets) {
-    if (!budget.isActive) continue;
-
-    const isOverLimit = budget.usedPercent >= 100;
-    const isNearLimit =
-      !isOverLimit && budget.alertPercent > 0 && budget.usedPercent >= budget.alertPercent;
-
-    if (isOverLimit) {
-      rows.push({
-        user_id: userId, channel: "in_app", status: "pending",
-        kind: "budget_alert",
-        title: "Presupuesto excedido",
-        body: `"${budget.name}" superó su límite (${Math.round(budget.usedPercent)}% usado).`,
-        scheduled_for: nowIso,
-        related_entity_type: "budget", related_entity_id: budget.id,
-        payload: { usedPercent: budget.usedPercent, limitAmount: budget.limitAmount },
-      });
-    } else if (isNearLimit) {
-      rows.push({
-        user_id: userId, channel: "in_app", status: "pending",
-        kind: "budget_alert",
-        title: "Presupuesto cerca del límite",
-        body: `"${budget.name}" va al ${Math.round(budget.usedPercent)}% de su límite (alerta: ${Math.round(budget.alertPercent)}%).`,
-        scheduled_for: nowIso,
-        related_entity_type: "budget", related_entity_id: budget.id,
-        payload: { usedPercent: budget.usedPercent, limitAmount: budget.limitAmount },
-      });
-    }
-  }
+  pushAlerts(buildBudgetLimitAlerts(snapshot.budgets));
 
   // ── 2. Budget period ending soon ─────────────────────────────────────────
-  for (const budget of snapshot.budgets) {
-    if (!budget.isActive) continue;
-    const daysLeft = calendarDaysFromTodayLocal(budget.periodEnd);
-    if (daysLeft >= 0 && daysLeft <= 3 && budget.usedPercent > 50) {
-      rows.push({
-        user_id: userId, channel: "in_app", status: "pending",
-        kind: "budget_period_ending",
-        title: "Período de presupuesto cerrando",
-        body: `"${budget.name}" cierra ${daysLeft === 0 ? "hoy" : `en ${daysLeft} día${daysLeft !== 1 ? "s" : ""}`} y lleva ${Math.round(budget.usedPercent)}% ejecutado.`,
-        scheduled_for: nowIso,
-        related_entity_type: "budget", related_entity_id: budget.id,
-        payload: { daysLeft, usedPercent: budget.usedPercent },
-      });
-    }
-  }
+  pushAlerts(buildBudgetPeriodEndingAlerts(snapshot.budgets, calendarDaysFromTodayLocal));
+
+  // ── 2b. Budget period ended (accionable: crear siguiente período) ────────
+  pushAlerts(buildBudgetPeriodEndedAlerts(snapshot.budgets, calendarDaysFromTodayLocal, formatCurrency));
 
   // ── 3. Subscription reminders ─────────────────────────────────────────────
-  for (const sub of snapshot.subscriptions) {
-    if (sub.status !== "active") continue;
-    const diffDays = calendarDaysFromTodayLocal(sub.nextDueDate);
-    const window = Math.max(1, sub.remindDaysBefore);
-    if (diffDays > window || diffDays < -1) continue;
-
-    const dueLabel =
-      diffDays < 0
-        ? `venció hace ${Math.abs(diffDays)} día${Math.abs(diffDays) !== 1 ? "s" : ""}`
-        : diffDays === 0 ? "vence hoy"
-        : `vence en ${diffDays} día${diffDays !== 1 ? "s" : ""}`;
-
-    rows.push({
-      user_id: userId, channel: "in_app", status: "pending",
-      kind: "subscription_reminder",
-      title: "Suscripción próxima a vencer",
-      body: `"${sub.name}" ${dueLabel}.`,
-      scheduled_for: nowIso,
-      related_entity_type: "subscription", related_entity_id: sub.id,
-      payload: { nextDueDate: sub.nextDueDate, diffDays },
-    });
-  }
+  pushAlerts(buildSubscriptionReminderAlerts(snapshot.subscriptions, calendarDaysFromTodayLocal));
 
   // ── 4. Subscription overdue ───────────────────────────────────────────────
-  for (const sub of snapshot.subscriptions) {
-    if (sub.status !== "active") continue;
-    const diffDays = calendarDaysFromTodayLocal(sub.nextDueDate);
-    if (diffDays < -1) {
-      rows.push({
-        user_id: userId, channel: "in_app", status: "pending",
-        kind: "subscription_overdue",
-        title: "Suscripción vencida sin registrar",
-        body: `"${sub.name}" venció hace ${Math.abs(diffDays)} días y aún no tiene movimiento registrado.`,
-        scheduled_for: nowIso,
-        related_entity_type: "subscription", related_entity_id: sub.id,
-        payload: { nextDueDate: sub.nextDueDate, diffDays },
-      });
-    }
-  }
+  pushAlerts(buildSubscriptionOverdueAlerts(snapshot.subscriptions, calendarDaysFromTodayLocal));
 
   // ── 5. Multiple subscriptions due this week ───────────────────────────────
-  const subsDueThisWeek = snapshot.subscriptions.filter((s) => {
-    if (s.status !== "active") return false;
-    const d = calendarDaysFromTodayLocal(s.nextDueDate);
-    return d >= 0 && d <= 7;
-  });
-  if (subsDueThisWeek.length >= 3) {
-    const totalAmt = subsDueThisWeek.reduce((acc, s) => acc + s.amount, 0);
-    rows.push({
-      user_id: userId, channel: "in_app", status: "pending",
-      kind: "multiple_subscriptions_due",
-      title: "Varias suscripciones vencen esta semana",
-      body: `${subsDueThisWeek.length} suscripciones vencen en los próximos 7 días: ${subsDueThisWeek.map((s) => s.name).join(", ")}.`,
-      scheduled_for: nowIso,
-      related_entity_type: "workspace", related_entity_id: workspaceId,
-      payload: { count: subsDueThisWeek.length, totalAmount: totalAmt },
-    });
-  }
+  pushAlerts(buildMultipleSubscriptionsDueAlert(snapshot.subscriptions, workspaceId, calendarDaysFromTodayLocal));
 
   // ── 6. Obligation due & overdue ───────────────────────────────────────────
-  for (const ob of snapshot.obligations) {
-    if (ob.status !== "active") continue;
-    if (!ob.dueDate) continue;
-    const diffDays = calendarDaysFromTodayLocal(ob.dueDate);
-
-    if (diffDays < 0) {
-      rows.push({
-        user_id: userId, channel: "in_app", status: "pending",
-        kind: "obligation_overdue",
-        title: "Obligación vencida",
-        body: `"${ob.title}" venció hace ${Math.abs(diffDays)} día${Math.abs(diffDays) !== 1 ? "s" : ""}. Saldo pendiente: ${ob.pendingAmount} ${ob.currencyCode}.`,
-        scheduled_for: nowIso,
-        related_entity_type: "obligation", related_entity_id: ob.id,
-        payload: { dueDate: ob.dueDate, diffDays, pendingAmount: ob.pendingAmount },
-      });
-    } else if (diffDays <= 7) {
-      rows.push({
-        user_id: userId, channel: "in_app", status: "pending",
-        kind: "obligation_due",
-        title: diffDays === 0 ? "Obligación vence hoy" : "Obligación próxima a vencer",
-        body: `"${ob.title}" ${diffDays === 0 ? "vence hoy" : `vence en ${diffDays} día${diffDays !== 1 ? "s" : ""}`}. Saldo: ${ob.pendingAmount} ${ob.currencyCode}.`,
-        scheduled_for: nowIso,
-        related_entity_type: "obligation", related_entity_id: ob.id,
-        payload: { dueDate: ob.dueDate, diffDays, pendingAmount: ob.pendingAmount },
-      });
-    }
-  }
+  pushAlerts(buildObligationDueAlerts(snapshot.obligations, calendarDaysFromTodayLocal));
 
   // ── 7. Multiple obligations overdue ──────────────────────────────────────
-  const overdueObligations = snapshot.obligations.filter((o) => {
-    if (o.status !== "active" || !o.dueDate) return false;
-    return calendarDaysFromTodayLocal(o.dueDate) < 0;
-  });
-  if (overdueObligations.length >= 2) {
-    rows.push({
-      user_id: userId, channel: "in_app", status: "pending",
-      kind: "multiple_obligations_overdue",
-      title: "Varias obligaciones vencidas",
-      body: `Tienes ${overdueObligations.length} obligaciones vencidas: ${overdueObligations.map((o) => o.title).join(", ")}.`,
-      scheduled_for: nowIso,
-      related_entity_type: "workspace", related_entity_id: workspaceId,
-      payload: { count: overdueObligations.length },
-    });
-  }
+  pushAlerts(buildMultipleObligationsOverdueAlert(snapshot.obligations, workspaceId, calendarDaysFromTodayLocal));
 
   // ── 8. Obligation with no recent payment ──────────────────────────────────
-  for (const ob of snapshot.obligations) {
-    if (ob.status !== "active") continue;
-    if (!ob.installmentAmount || ob.installmentAmount <= 0) continue;
-    if (ob.pendingAmount <= 0) continue;
-
-    const lastPay = ob.lastPaymentDate ? new Date(ob.lastPaymentDate) : null;
-    const daysSincePayment = lastPay ? daysBetween(lastPay, now) : 999;
-    const startDate = new Date(ob.startDate);
-    const daysSinceStart = daysBetween(startDate, now);
-
-    // Alert if: no payment in 45+ days (and obligation is at least 15 days old)
-    if (daysSincePayment >= 45 && daysSinceStart >= 15) {
-      const msg = lastPay
-        ? `Sin pagos en ${daysSincePayment} días.`
-        : "Sin pagos registrados aún.";
-      rows.push({
-        user_id: userId, channel: "in_app", status: "pending",
-        kind: "obligation_no_payment",
-        title: "Obligación sin pagos recientes",
-        body: `"${ob.title}" tiene saldo pendiente de ${ob.pendingAmount} ${ob.currencyCode}. ${msg}`,
-        scheduled_for: nowIso,
-        related_entity_type: "obligation", related_entity_id: ob.id,
-        payload: { daysSincePayment, pendingAmount: ob.pendingAmount },
-      });
-    }
-  }
+  pushAlerts(buildObligationNoPaymentAlerts(snapshot.obligations, now));
 
   // ── 9. High-interest obligation ───────────────────────────────────────────
-  for (const ob of snapshot.obligations) {
-    if (ob.status !== "active") continue;
-    if (!ob.interestRate || ob.interestRate < 10) continue;
-    if (ob.pendingAmount <= 0) continue;
-
-    rows.push({
-      user_id: userId, channel: "in_app", status: "pending",
-      kind: "high_interest_obligation",
-      title: "Obligación con tasa alta",
-      body: `"${ob.title}" tiene tasa del ${ob.interestRate}% con ${ob.pendingAmount} ${ob.currencyCode} pendiente. Considera priorizar este pago.`,
-      scheduled_for: nowIso,
-      related_entity_type: "obligation", related_entity_id: ob.id,
-      payload: { interestRate: ob.interestRate, pendingAmount: ob.pendingAmount },
-    });
-  }
+  pushAlerts(buildHighInterestObligationAlerts(snapshot.obligations));
 
   // ── 10. Low balance ───────────────────────────────────────────────────────
-  const nonLoanTypes = new Set(["bank", "cash", "savings", "investment", "other"]);
-  for (const acc of snapshot.accounts) {
-    if (acc.isArchived) continue;
-    if (!nonLoanTypes.has(acc.type)) continue;
-    if (acc.currentBalance <= 0) continue; // covered by negative_balance
-
-    // Threshold: 10% of opening balance, minimum 50 units of currency
-    const threshold = Math.max(50, Math.abs(acc.openingBalance) * 0.10);
-    if (acc.currentBalance < threshold && acc.openingBalance > 0) {
-      rows.push({
-        user_id: userId, channel: "in_app", status: "pending",
-        kind: "low_balance",
-        title: "Saldo bajo en cuenta",
-        body: `"${acc.name}" tiene solo ${acc.currentBalance.toFixed(2)} ${acc.currencyCode} disponibles.`,
-        scheduled_for: nowIso,
-        related_entity_type: "account", related_entity_id: acc.id,
-        payload: { currentBalance: acc.currentBalance, threshold },
-      });
-    }
-  }
+  pushAlerts(buildLowBalanceAlerts(snapshot.accounts));
 
   // ── 11. Negative balance ──────────────────────────────────────────────────
-  for (const acc of snapshot.accounts) {
-    if (acc.isArchived) continue;
-    if (!nonLoanTypes.has(acc.type)) continue;
-    if (acc.currentBalance >= 0) continue;
-
-    rows.push({
-      user_id: userId, channel: "in_app", status: "pending",
-      kind: "negative_balance",
-      title: "Saldo negativo en cuenta",
-      body: `"${acc.name}" tiene saldo negativo: ${acc.currentBalance.toFixed(2)} ${acc.currencyCode}.`,
-      scheduled_for: nowIso,
-      related_entity_type: "account", related_entity_id: acc.id,
-      payload: { currentBalance: acc.currentBalance },
-    });
-  }
+  pushAlerts(buildNegativeBalanceAlerts(snapshot.accounts));
 
   // ── 12. Account dormant ───────────────────────────────────────────────────
-  for (const acc of snapshot.accounts) {
-    if (acc.isArchived) continue;
-    if (acc.currentBalance === 0) continue;
-    if (!acc.lastActivity) continue;
-
-    const lastAct = new Date(acc.lastActivity);
-    const daysSince = daysBetween(lastAct, now);
-    if (daysSince >= 60) {
-      rows.push({
-        user_id: userId, channel: "in_app", status: "pending",
-        kind: "account_dormant",
-        title: "Cuenta sin actividad",
-        body: `"${acc.name}" lleva ${daysSince} días sin movimientos y tiene saldo de ${acc.currentBalance.toFixed(2)} ${acc.currencyCode}.`,
-        scheduled_for: nowIso,
-        related_entity_type: "account", related_entity_id: acc.id,
-        payload: { daysSince, currentBalance: acc.currentBalance },
-      });
-    }
-  }
+  pushAlerts(buildAccountDormantAlerts(snapshot.accounts, now));
 
   // ── 13. No income this month (after day 15) ───────────────────────────────
-  if (now.getDate() >= 15 && thisMonthIncome === 0) {
-    rows.push({
-      user_id: userId, channel: "in_app", status: "pending",
-      kind: "no_income_month",
-      title: "Sin ingresos registrados este mes",
-      body: "No se ha registrado ningún ingreso en lo que va del mes. Recuerda mantener tus movimientos actualizados.",
-      scheduled_for: nowIso,
-      related_entity_type: "workspace", related_entity_id: workspaceId,
-      payload: { dayOfMonth: now.getDate() },
-    });
-  }
+  pushAlerts(buildNoIncomeMonthAlert(thisMonthIncome, workspaceId, now));
 
   // ── 14. High expense month (30%+ vs last month) ───────────────────────────
-  if (lastMonthExpenses > 0 && thisMonthExpenses > 0) {
-    const ratio = thisMonthExpenses / lastMonthExpenses;
-    // Only alert if we're at least 7 days into the month (enough data)
-    if (ratio > 1.3 && now.getDate() >= 7) {
-      const pct = Math.round((ratio - 1) * 100);
-      rows.push({
-        user_id: userId, channel: "in_app", status: "pending",
-        kind: "high_expense_month",
-        title: "Gastos elevados este mes",
-        body: `Tus gastos este mes ya superan los del mes pasado en un ${pct}%.`,
-        scheduled_for: nowIso,
-        related_entity_type: "workspace", related_entity_id: workspaceId,
-        payload: { thisMonth: thisMonthExpenses, lastMonth: lastMonthExpenses, ratio },
-      });
-    }
-  }
+  pushAlerts(buildHighExpenseMonthAlert({ thisMonthExpenses, lastMonthExpenses }, workspaceId, now));
 
   // ── 15. Category spending spike (50%+ vs last month) ──────────────────────
-  for (const [catId, thisAmt] of thisMonthByCat) {
-    const lastAmt = lastMonthByCat.get(catId) ?? 0;
-    if (lastAmt <= 0) continue; // need baseline
-    const ratio = thisAmt / lastAmt;
-    // Only alert on meaningful amounts and significant spikes
-    if (ratio > 1.5 && thisAmt > 50) {
-      const catName = categoryNameMap.get(catId) ?? "Categoría";
-      const pct = Math.round((ratio - 1) * 100);
-      rows.push({
-        user_id: userId, channel: "in_app", status: "pending",
-        kind: "category_spending_spike",
-        title: `Gasto elevado en "${catName}"`,
-        body: `Has gastado ${pct}% más en "${catName}" este mes comparado con el mes pasado.`,
-        scheduled_for: nowIso,
-        related_entity_type: "category", related_entity_id: catId,
-        payload: { thisMonth: thisAmt, lastMonth: lastAmt, ratio, categoryName: catName },
-      });
-    }
-  }
+  pushAlerts(buildCategorySpendingSpikeAlerts(thisMonthByCat, lastMonthByCat, categoryNameMap));
 
   // ── 16. Expense/income imbalance ──────────────────────────────────────────
-  if (thisMonthIncome > 0 && thisMonthExpenses > 0) {
-    const ratio = thisMonthExpenses / thisMonthIncome;
-    if (ratio > 0.85 && now.getDate() >= 10) {
-      const pct = Math.round(ratio * 100);
-      rows.push({
-        user_id: userId, channel: "in_app", status: "pending",
-        kind: "expense_income_imbalance",
-        title: "Gastos cerca del total de ingresos",
-        body: `Este mes tus gastos representan el ${pct}% de tus ingresos. Queda poco margen de ahorro.`,
-        scheduled_for: nowIso,
-        related_entity_type: "workspace", related_entity_id: workspaceId,
-        payload: { expenses: thisMonthExpenses, income: thisMonthIncome, ratio },
-      });
-    }
-  }
+  pushAlerts(buildExpenseIncomeImbalanceAlert({ thisMonthExpenses, thisMonthIncome }, workspaceId, now));
 
   // ── 17. Net worth negative ────────────────────────────────────────────────
-  const netWorth = snapshot.accounts
-    .filter((a) => !a.isArchived && a.includeInNetWorth)
-    .reduce((sum, a) => sum + (a.currentBalanceInBaseCurrency ?? a.currentBalance), 0);
-
-  if (netWorth < 0) {
-    rows.push({
-      user_id: userId, channel: "in_app", status: "pending",
-      kind: "net_worth_negative",
-      title: "Patrimonio neto negativo",
-      body: `Tu patrimonio neto total es negativo (${netWorth.toFixed(2)}). Tus deudas superan tus activos.`,
-      scheduled_for: nowIso,
-      related_entity_type: "workspace", related_entity_id: workspaceId,
-      payload: { netWorth },
-    });
-  }
+  pushAlerts(buildNetWorthNegativeAlert(snapshot.accounts, workspaceId));
 
   // ── 18. Savings rate low (after day 20) ──────────────────────────────────
-  if (now.getDate() >= 20 && thisMonthIncome > 0 && thisMonthExpenses > 0) {
-    const savingsRate = (thisMonthIncome - thisMonthExpenses) / thisMonthIncome;
-    if (savingsRate >= 0 && savingsRate < 0.10) {
-      const pct = Math.round(savingsRate * 100);
-      rows.push({
-        user_id: userId, channel: "in_app", status: "pending",
-        kind: "savings_rate_low",
-        title: "Tasa de ahorro muy baja",
-        body: `Solo estás ahorrando el ${pct}% de tus ingresos este mes. Intenta reducir gastos variables para mejorar tu margen.`,
-        scheduled_for: nowIso,
-        related_entity_type: "workspace", related_entity_id: workspaceId,
-        payload: { savingsRate, income: thisMonthIncome, expenses: thisMonthExpenses },
-      });
-    }
-  }
+  pushAlerts(buildSavingsRateLowAlert({ thisMonthIncome, thisMonthExpenses }, workspaceId, now));
 
   // ── 19. Subscriptions cost heavy (> 30% of last month income) ────────────
-  if (lastMonthIncome > 0) {
-    const activeSubs = snapshot.subscriptions.filter((s) => s.status === "active");
-    const monthlySubCost = activeSubs.reduce((sum, s) => {
-      const monthly =
-        s.frequency === "yearly" ? s.amount / 12
-        : s.frequency === "quarterly" ? s.amount / 3
-        : s.frequency === "weekly" ? s.amount * 4.33
-        : s.frequency === "daily" ? s.amount * 30
-        : s.amount;
-      return sum + monthly;
-    }, 0);
-    const ratio = monthlySubCost / lastMonthIncome;
-    if (ratio > 0.30 && activeSubs.length > 0) {
-      const pct = Math.round(ratio * 100);
-      rows.push({
-        user_id: userId, channel: "in_app", status: "pending",
-        kind: "subscription_cost_heavy",
-        title: "Suscripciones consumen mucho de tus ingresos",
-        body: `Tus suscripciones activas equivalen al ${pct}% de tus ingresos del mes pasado. Revisa cuáles realmente usas.`,
-        scheduled_for: nowIso,
-        related_entity_type: "workspace", related_entity_id: workspaceId,
-        payload: { monthlySubCost, ratio, subCount: activeSubs.length },
-      });
-    }
-  }
+  pushAlerts(buildSubscriptionCostHeavyAlert(snapshot.subscriptions, lastMonthIncome, workspaceId));
 
   // ── 20. Upcoming annual subscription (14–30 days away) ───────────────────
-  for (const sub of snapshot.subscriptions) {
-    if (sub.status !== "active") continue;
-    if (sub.frequency !== "yearly") continue;
-    const diffDays = calendarDaysFromTodayLocal(sub.nextDueDate);
-    if (diffDays >= 14 && diffDays <= 30) {
-      const parts = sub.nextDueDate.split("-").map(Number);
-      const dueDate = parts.length === 3 ? new Date(parts[0], parts[1] - 1, parts[2]) : new Date(sub.nextDueDate);
-      rows.push({
-        user_id: userId, channel: "in_app", status: "pending",
-        kind: "upcoming_annual_subscription",
-        title: "Renovación anual próxima",
-        body: `"${sub.name}" se renueva en ${diffDays} días (${dueDate.toLocaleDateString("es", { day: "numeric", month: "long" })}). Monto: ${sub.amount} ${sub.currencyCode}.`,
-        scheduled_for: nowIso,
-        related_entity_type: "subscription", related_entity_id: sub.id,
-        payload: { diffDays, amount: sub.amount, nextDueDate: sub.nextDueDate },
-      });
-    }
-  }
+  pushAlerts(buildUpcomingAnnualSubscriptionAlerts(snapshot.subscriptions, calendarDaysFromTodayLocal));
 
   // ── 21. No movements in last 7 days (but had activity in prior 7 days) ────
-  const sevenDaysAgo = new Date(now.getTime() - 7 * 86_400_000);
-  const fourteenDaysAgo = new Date(now.getTime() - 14 * 86_400_000);
-  const veryRecentMvts = snapshot.categoryPostedMovements.filter(
-    (m) => new Date(m.occurredAt) >= sevenDaysAgo,
+  pushAlerts(buildNoMovementsWeekAlert(snapshot.categoryPostedMovements, workspaceId, now));
+
+  // ── Kinds nuevos (spec 2026-07-10) ────────────────────────────────────────
+  const nuevos: AlertRow[] = [
+    ...buildSubscriptionPriceIncreaseAlerts(snapshot.subscriptions, snapshot.subscriptionPostedMovements),
+    ...buildDuplicateChargeAlerts(snapshot.categoryPostedMovements, categoryKindMap, now),
+    ...buildExpectedIncomeMissedAlerts(snapshot.recurringIncome, snapshot.categoryPostedMovements, categoryKindMap, now),
+    ...buildObligationMilestoneAlerts(snapshot.obligations),
+  ];
+  const recap = buildMonthlyRecapAlert(
+    { lastMonthExpenses, lastMonthIncome, prevMonthExpenses, topCategoryName: lastMonthTopCategory },
+    now,
   );
-  const priorWeekMvts = snapshot.categoryPostedMovements.filter((m) => {
-    const d = new Date(m.occurredAt);
-    return d >= fourteenDaysAgo && d < sevenDaysAgo;
-  });
-  if (veryRecentMvts.length === 0 && priorWeekMvts.length > 0) {
-    rows.push({
-      user_id: userId, channel: "in_app", status: "pending",
-      kind: "no_movements_week",
-      title: "Sin movimientos esta semana",
-      body: "No has registrado movimientos en los últimos 7 días. ¿Olvidaste registrar tus gastos e ingresos?",
-      scheduled_for: nowIso,
-      related_entity_type: "workspace", related_entity_id: workspaceId,
-      payload: { daysSinceLastMovement: 7 },
-    });
-  }
+  if (recap) nuevos.push(recap);
 
-  appendDailyBaselineNotifications({
-    rows,
-    userId,
-    snapshot,
-    nowIso,
-    todayKey,
-    workspaceId,
-    thisMonthIncome,
-    thisMonthExpenses,
-  });
+  // Sugerencias detectadas pendientes (query directa; fallo silencioso)
+  try {
+    const { data: pendientes } = await supabase
+      .from("notification_detected_movement_suggestions")
+      .select("created_at")
+      .eq("user_id", userId)
+      // needs_review también exige acción del usuario (posible duplicado sin veredicto IA).
+      .in("status", ["pending", "needs_review"])
+      .order("created_at", { ascending: true })
+      .limit(50);
+    const pendingAlert = buildDetectedSuggestionsPendingAlert(
+      pendientes?.length ?? 0,
+      pendientes?.[0]?.created_at ?? null,
+      workspaceId,
+      now,
+    );
+    if (pendingAlert) nuevos.push(pendingAlert);
+  } catch { /* sin bloqueo del resto */ }
 
-  // ── Insert only new notifications (idempotent without DB constraint) ──────
-  if (!rows.length) {
-    await cleanupStaleNotifications(userId, rows);
-    void queryClient.invalidateQueries({ queryKey: ["notifications", userId] });
-    return;
-  }
+  rows.push(...nuevos.map((alert) => toNotificationRow(userId, nowIso, alert)));
 
-  const { data: existing } = await supabase
+  pushAlerts(
+    buildDailyBaselineAlerts({
+      existingKinds: rows.map((row) => row.kind),
+      budgets: snapshot.budgets,
+      subscriptions: snapshot.subscriptions,
+      obligations: snapshot.obligations,
+      accounts: snapshot.accounts,
+      movementCount: snapshot.categoryPostedMovements.length,
+      todayKey,
+      workspaceId,
+      thisMonthIncome,
+      thisMonthExpenses,
+    }),
+  );
+
+  // ── Single read for daily idempotency and stale cleanup ─────────────────────────
+  const { data: existing, error: existingError } = await supabase
     .from("notifications")
-    .select("related_entity_type, related_entity_id, kind, scheduled_for")
+    .select("id, related_entity_type, related_entity_id, kind, scheduled_for")
     .eq("user_id", userId)
     .in("kind", ALL_KINDS);
+  if (existingError) {
+    console.warn("[NotificationGenerator] existing notifications error:", existingError.message);
+  }
+
+  const existingRows = (existing ?? []) as ExistingNotificationRow[];
 
   const existingSet = new Set(
-    (existing ?? [])
-      .filter((row: any) => {
-        const scheduledFor = typeof row.scheduled_for === "string" ? row.scheduled_for : "";
+    existingRows
+      .filter((row) => {
+        const scheduledFor = row.scheduled_for;
         if (!scheduledFor) return false;
         return usageDateInLima(new Date(scheduledFor)) === todayKey;
       })
-      .map((row: any) => `${row.related_entity_type}:${row.related_entity_id}:${row.kind}:${todayKey}`),
+      .map((row) => `${row.related_entity_type}:${row.related_entity_id}:${row.kind}:${todayKey}`),
   );
 
   const newRows = rows.filter(
@@ -795,7 +361,7 @@ async function generateNotifications(
     if (error) console.warn("[NotificationGenerator] insert error:", error.message);
   }
 
-  await cleanupStaleNotifications(userId, rows);
+  await cleanupStaleNotifications(userId, rows, existingRows);
   void queryClient.invalidateQueries({ queryKey: ["notifications", userId] });
 }
 
@@ -821,22 +387,37 @@ export function useNotificationGenerator(
   useEffect(() => {
     if (!userId || !snapshot) return;
 
+    // Obligaciones y presupuestos llegan en la query diferida: hasta que estén,
+    // generar produciría un ciclo sin alertas de esos dominios. El efecto vuelve
+    // a correr solo cuando llegan (cambia `snapshot`).
+    const { budgets, obligations } = snapshot;
+    if (!budgets || !obligations) return;
+    const loadedSnapshot: LoadedSnapshot = { ...snapshot, budgets, obligations };
+
     // Fingerprint: recalculate when any relevant data changes
     const fingerprint = [
       generationDayKey,
-      snapshot.budgets.map((b) => `${b.id}:${b.usedPercent}`).join(","),
+      budgets.map((b) => `${b.id}:${b.usedPercent}`).join(","),
       snapshot.subscriptions.map((s) => `${s.id}:${s.nextDueDate}:${s.status}`).join(","),
-      snapshot.obligations.map((o) => `${o.id}:${o.pendingAmount}:${o.status}:${o.lastPaymentDate ?? ""}`).join(","),
+      obligations.map((o) => `${o.id}:${o.pendingAmount}:${o.status}:${o.lastPaymentDate ?? ""}`).join(","),
       snapshot.accounts.map((a) => `${a.id}:${Math.round(a.currentBalance)}`).join(","),
       `m:${snapshot.categoryPostedMovements.length}`,
     ].join("|");
 
     if (fingerprint === lastSnapshotRef.current) return;
-    lastSnapshotRef.current = fingerprint;
 
-    void generateNotifications(userId, snapshot).catch((err) => {
-      console.warn("[NotificationGenerator] error:", err);
-      lastSnapshotRef.current = null; // allow retry on next change
+    // Diferir el análisis (recorre todo el snapshot en el hilo JS) hasta después
+    // de las interacciones en curso: al abrir la app competía con el primer
+    // render y frenaba el arranque. La huella se marca DENTRO de la tarea (al
+    // ejecutar de verdad): si el efecto re-corre y cancela una tarea pendiente,
+    // la huella sin marcar hace que se reprograme en vez de perderse.
+    const task = InteractionManager.runAfterInteractions(() => {
+      lastSnapshotRef.current = fingerprint;
+      void generateNotifications(userId, loadedSnapshot).catch((err) => {
+        console.warn("[NotificationGenerator] error:", err);
+        lastSnapshotRef.current = null; // allow retry on next change
+      });
     });
+    return () => task.cancel();
   }, [userId, snapshot, generationDayKey]);
 }

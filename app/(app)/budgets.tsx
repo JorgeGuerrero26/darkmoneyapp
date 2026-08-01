@@ -5,7 +5,7 @@ import * as Haptics from "expo-haptics";
 import { CheckSquare, Copy, Download, Target, Trash2, X } from "lucide-react-native";
 import { format } from "date-fns";
 import { useQueryClient } from "@tanstack/react-query";
-import { useRouter, useFocusEffect } from "expo-router";
+import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { BudgetAnalyticsModal } from "../../components/domain/BudgetAnalyticsModal";
@@ -32,17 +32,22 @@ import {
   type ActiveBudgetFilter,
 } from "../../features/budgets/lib/budgetFilters";
 import { buildBudgetCSV } from "../../features/budgets/lib/budgetsCsv";
+import { nextPeriodFor } from "../../features/budgets/lib/duplicateBudgetToNextPeriod";
 import { buildRateMap, convertAmount } from "../../features/budgets/lib/budgetCurrency";
 import { buildBudgetsContextNote } from "../../features/budgets/lib/buildBudgetsContextNote";
 import { useAuth } from "../../lib/auth-context";
+import { todayPeru } from "../../lib/date";
 import {
   applyBudgetComputedMetrics,
   buildBudgetMetricsMap,
 } from "../../lib/budget-metrics";
 import { shareCsvAsFile } from "../../lib/share-csv-file";
 import { useWorkspace } from "../../lib/workspace-context";
+import { useUiStore } from "../../store/ui-store";
 import { useToast } from "../../hooks/useToast";
+import { useNotificationReason } from "../../hooks/useNotificationReason";
 import { useOriginBackNavigation } from "../../hooks/useOriginBackNavigation";
+import { IOS_FLOATING_TAB_BAR_SPACE } from "../../constants/floating-tab-bar";
 import { useBudgetScopeMovementsQuery } from "../../services/queries/budget-analytics";
 import { useWorkspaceSnapshotQuery } from "../../services/queries/workspace-data";
 import {
@@ -53,6 +58,9 @@ import {
 import type { BudgetOverview } from "../../types/domain";
 
 function BudgetsScreen() {
+  // Fuerza el re-render de la pantalla al alternar modo privacidad (la máscara
+  // vive en formatCurrency, que lee el store imperativamente).
+  useUiStore((state) => state.privacyMode);
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
   const router = useRouter();
@@ -65,9 +73,11 @@ function BudgetsScreen() {
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
   const { showToast } = useToast();
+  const { reason: notificationReason } = useNotificationReason();
 
   const [formVisible, setFormVisible] = useState(false);
   const [editBudget, setEditBudget] = useState<BudgetOverview | null>(null);
+  const [duplicateBudget, setDuplicateBudget] = useState<BudgetOverview | null>(null);
   const [analyticsBudgetId, setAnalyticsBudgetId] = useState<number | null>(null);
   const [quickEditBudget, setQuickEditBudget] = useState<BudgetOverview | null>(null);
   const [searchText, setSearchText] = useState("");
@@ -84,11 +94,15 @@ function BudgetsScreen() {
   const togglePinMutation = useTogglePinBudgetMutation(activeWorkspaceId);
   const {
     data: snapshot,
-    isLoading: snapshotLoading,
+    isLoading: coreLoading,
+    // Los presupuestos llegan en la query diferida: sin esto la lista pintaría
+    // "sin presupuestos" durante ese hueco en vez del skeleton.
+    deferredLoading,
     isRefetching: snapshotRefetching,
     refetch: refetchSnapshot,
     dataUpdatedAt,
   } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
+  const snapshotLoading = coreLoading || deferredLoading;
 
   const budgets = snapshot?.budgets ?? [];
   const baseCurrencyCode = activeWorkspace?.baseCurrencyCode ?? profile?.baseCurrencyCode ?? "PEN";
@@ -130,10 +144,24 @@ function BudgetsScreen() {
     );
   }, [activeBudgets, budgetMovementsError, metricsMap]);
 
+  const todayYmd = todayPeru();
   const filteredBudgets = useMemo(
-    () => filterBudgets(correctedBudgets, activeFilters, searchText),
-    [activeFilters, correctedBudgets, searchText],
+    () => filterBudgets(correctedBudgets, activeFilters, searchText, todayYmd),
+    [activeFilters, correctedBudgets, searchText, todayYmd],
   );
+
+  // Tap en la notificación "presupuesto finalizado": abre el form de crear
+  // prellenado con el siguiente período del presupuesto vencido.
+  const { duplicateFrom } = useLocalSearchParams<{ duplicateFrom?: string }>();
+  useEffect(() => {
+    if (!duplicateFrom) return;
+    // Cold start desde push: esperar a que el snapshot cargue antes de consumir el param.
+    if (!snapshot) return;
+    router.setParams({ duplicateFrom: undefined });
+    const source = (snapshot.budgets ?? []).find((budget) => budget.id === Number(duplicateFrom));
+    if (!source) return;
+    setDuplicateBudget({ ...source, ...nextPeriodFor(source.periodStart, source.periodEnd) });
+  }, [duplicateFrom, snapshot, router]);
 
   const budgetSections = useMemo(() => buildBudgetSections(filteredBudgets), [filteredBudgets]);
   const rateMap = useMemo(() => buildRateMap(snapshot?.exchangeRates ?? []), [snapshot?.exchangeRates]);
@@ -326,7 +354,7 @@ function BudgetsScreen() {
           toggleSelect(budget.id);
           return;
         }
-        router.push(`/budget/${budget.id}?from=budgets`);
+        router.push({ pathname: "/budget/[id]", params: { id: String(budget.id), from: "budgets" } });
       }}
       onLongPress={() => {
         if (!selectMode) setSelectMode(true);
@@ -397,7 +425,7 @@ function BudgetsScreen() {
           <ActiveFilterBar items={activeFilterItems} onClear={clearFilters} />
         ) : null
       }
-      context={!selectMode ? <ResourceContextNote>{contextNote}</ResourceContextNote> : null}
+      context={!selectMode ? <ResourceContextNote>{notificationReason ?? contextNote}</ResourceContextNote> : null}
       summary={
         !selectMode && filteredBudgets.length > 0 ? (
           <BudgetSummaryBar
@@ -480,7 +508,7 @@ function BudgetsScreen() {
       }
       fab={
         !selectMode ? (
-          <FAB onPress={() => { setEditBudget(null); setFormVisible(true); }} bottom={insets.bottom + 16} />
+          <FAB onPress={() => { setEditBudget(null); setFormVisible(true); }} bottom={insets.bottom + 16 + IOS_FLOATING_TAB_BAR_SPACE} />
         ) : null
       }
       overlays={
@@ -495,6 +523,12 @@ function BudgetsScreen() {
             onClose={() => setEditBudget(null)}
             onSuccess={() => setEditBudget(null)}
             editBudget={editBudget ?? undefined}
+          />
+          <BudgetForm
+            visible={Boolean(duplicateBudget)}
+            onClose={() => setDuplicateBudget(null)}
+            onSuccess={() => setDuplicateBudget(null)}
+            duplicateBudget={duplicateBudget ?? undefined}
           />
           <BudgetAnalyticsModal
             visible={Boolean(analyticsBudget)}

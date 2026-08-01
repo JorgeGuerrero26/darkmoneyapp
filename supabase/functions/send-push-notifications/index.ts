@@ -20,6 +20,7 @@
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import type { Database } from "../_shared/database-types.ts";
 import {
   classifyNotificationKind,
   expoPushPriority,
@@ -61,7 +62,7 @@ function usageDateInLima(date = new Date()): string {
 }
 
 async function logDeliveryDecision(
-  supabase: ReturnType<typeof createClient>,
+  supabase: ReturnType<typeof createClient<Database>>,
   record: NotificationRecord,
   priority: NotificationPriority,
   decision: DeliveryDecision,
@@ -125,7 +126,7 @@ Deno.serve(async (req: Request) => {
     return new Response("Server misconfiguration", { status: 500 });
   }
 
-  const supabase = createClient(supabaseUrl, serviceRoleKey);
+  const supabase = createClient<Database>(supabaseUrl, serviceRoleKey);
   const priority = classifyNotificationKind(record.kind);
   const bypassDailyLimit = priority === "critical";
 

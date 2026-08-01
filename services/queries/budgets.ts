@@ -2,7 +2,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { supabase } from "../../lib/supabase";
 import { runBackgroundQueryRefresh } from "./_shared";
-import type { WorkspaceSnapshot } from "./workspace-data";
+import { isCoreSnapshot } from "./snapshot-cache";
+import type { WorkspaceDeferred } from "./workspace-data";
 import { nextPeriodFor } from "../../features/budgets/lib/duplicateBudgetToNextPeriod";
 import type { BudgetOverview } from "../../types/domain";
 
@@ -95,12 +96,14 @@ export function useTogglePinBudgetMutation(workspaceId: number | null) {
     },
     onMutate: async ({ id, isPinned }) => {
       await queryClient.cancelQueries({ queryKey: ["workspace-snapshot"] });
-      const previousEntries = queryClient.getQueriesData<WorkspaceSnapshot>({ queryKey: ["workspace-snapshot"] });
-      queryClient.setQueriesData<WorkspaceSnapshot>({ queryKey: ["workspace-snapshot"] }, (old) => {
-        if (!old) return old;
+      const previousEntries = queryClient.getQueriesData({ queryKey: ["workspace-snapshot"] });
+      // Los presupuestos viven en la entrada diferida del snapshot, no en el núcleo.
+      queryClient.setQueriesData<unknown>({ queryKey: ["workspace-snapshot"] }, (old: unknown) => {
+        if (!old || isCoreSnapshot(old)) return old;
+        const deferred = old as WorkspaceDeferred;
         return {
-          ...old,
-          budgets: old.budgets.map((b) => (b.id === id ? { ...b, isPinned } : b)),
+          ...deferred,
+          budgets: deferred.budgets.map((b) => (b.id === id ? { ...b, isPinned } : b)),
         };
       });
       return { previousEntries };
@@ -162,10 +165,12 @@ export function useDeleteBudgetMutation(workspaceId: number | null) {
     },
     onMutate: async (id) => {
       await queryClient.cancelQueries({ queryKey: ["workspace-snapshot"] });
-      const previousEntries = queryClient.getQueriesData<WorkspaceSnapshot>({ queryKey: ["workspace-snapshot"] });
-      queryClient.setQueriesData<WorkspaceSnapshot>({ queryKey: ["workspace-snapshot"] }, (old) => {
-        if (!old) return old;
-        return { ...old, budgets: old.budgets.filter((b) => b.id !== id) };
+      const previousEntries = queryClient.getQueriesData({ queryKey: ["workspace-snapshot"] });
+      // Los presupuestos viven en la entrada diferida del snapshot, no en el núcleo.
+      queryClient.setQueriesData<unknown>({ queryKey: ["workspace-snapshot"] }, (old: unknown) => {
+        if (!old || isCoreSnapshot(old)) return old;
+        const deferred = old as WorkspaceDeferred;
+        return { ...deferred, budgets: deferred.budgets.filter((b) => b.id !== id) };
       });
       return { previousEntries };
     },

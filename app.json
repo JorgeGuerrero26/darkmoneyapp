@@ -2,7 +2,7 @@
   "expo": {
     "name": "DarkMoney",
     "slug": "darkmoney",
-    "version": "1.0.0",
+    "version": "1.0.8",
     "scheme": "darkmoney",
     "orientation": "portrait",
     "icon": "./assets/images/logo-sin-fondo.png",
@@ -10,7 +10,8 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.darkmoney.app"
+      "bundleIdentifier": "com.darkmoney.app",
+      "icon": "./assets/images/logo-ios.png"
     },
     "android": {
       "adaptiveIcon": {
@@ -18,6 +19,8 @@
         "backgroundColor": "#05070B"
       },
       "package": "com.darkmoney.app",
+      "versionCode": 9,
+      "googleServicesFile": "./app/google-services.json",
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.POST_NOTIFICATIONS",
@@ -67,12 +70,20 @@
       "expo-local-authentication",
       "expo-secure-store",
       [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "DarkMoney usa el micrófono para registrar movimientos por voz.",
+          "speechRecognitionPermission": "DarkMoney usa reconocimiento de voz para entender lo que dictas.",
+          "androidSpeechServicePackages": ["com.google.android.googlequicksearchbox"]
+        }
+      ],
+      [
         "expo-build-properties",
         {
           "android": {
             "enableMinifyInReleaseBuilds": true,
             "enableShrinkResourcesInReleaseBuilds": true,
-            "extraProguardRules": "-keep class com.darkmoney.app.notificationdetection.** { *; }"
+            "extraProguardRules": "-keep class com.darkmoney.app.notificationdetection.** { *; }\n-keepclassmembers class * implements java.io.Serializable { static final long serialVersionUID; private static final java.io.ObjectStreamField[] serialPersistentFields; private void writeObject(java.io.ObjectOutputStream); private void readObject(java.io.ObjectInputStream); java.lang.Object writeReplace(); java.lang.Object readResolve(); }"
           }
         }
       ]

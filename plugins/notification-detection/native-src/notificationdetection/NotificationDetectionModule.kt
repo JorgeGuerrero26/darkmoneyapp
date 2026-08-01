@@ -35,6 +35,21 @@ class NotificationDetectionModule(
     promise.resolve(hasNotificationListenerAccess())
   }
 
+  /**
+   * RN registra la huella (monto) de un movimiento creado a mano para que el
+   * listener suprima el aviso tardío del banco/correo de esa misma compra.
+   * amountLabel en formato del extractor nativo: "S/ 39.40" | "USD 10.00".
+   */
+  @ReactMethod
+  fun recordManualMovementRegistered(amountLabel: String, promise: Promise) {
+    try {
+      NotificationDetectionStore.recordManualRegisteredAmount(reactContext, amountLabel)
+      promise.resolve(true)
+    } catch (error: Exception) {
+      promise.reject("record_manual_movement_failed", error)
+    }
+  }
+
   @ReactMethod
   fun openNotificationAccessSettings() {
     val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)

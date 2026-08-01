@@ -22,6 +22,7 @@ import { SubscriptionForm } from "../components/forms/SubscriptionForm";
 import { SubscriptionFilterSheet } from "../features/subscriptions/components/SubscriptionFilterSheet";
 import { SubscriptionSummaryBar } from "../features/subscriptions/components/SubscriptionSummaryBar";
 import { SubscriptionSwipeRow } from "../features/subscriptions/components/SubscriptionSwipeRow";
+import { MarkSubscriptionPaidSheet } from "../features/subscriptions/components/MarkSubscriptionPaidSheet";
 import {
   buildSubscriptionSections,
   type SubscriptionListSection,
@@ -40,7 +41,10 @@ import {
 } from "../features/subscriptions/lib/subscriptionFilters";
 import { buildSubscriptionsContextNote } from "../features/subscriptions/lib/buildSubscriptionsContextNote";
 import { useAuth } from "../lib/auth-context";
+import { todayPeru } from "../lib/date";
+import { formatSubscriptionYmd, rollDueDateForward } from "../lib/subscription-helpers";
 import { useWorkspace } from "../lib/workspace-context";
+import { useUiStore } from "../store/ui-store";
 import { buildSubscriptionsCsv } from "../lib/subscriptions-csv";
 import { shareCsvAsFile } from "../lib/share-csv-file";
 import {
@@ -48,14 +52,19 @@ import {
 } from "../services/queries/workspace-data";
 import {
   useDeleteSubscriptionMutation,
+  useMarkSubscriptionPaidMutation,
   useToggleSubscriptionPinMutation,
   useUpdateSubscriptionMutation,
 } from "../services/queries/subscriptions-recurring-income";
 import { useToast } from "../hooks/useToast";
+import { useNotificationReason } from "../hooks/useNotificationReason";
 import { useOriginBackNavigation } from "../hooks/useOriginBackNavigation";
 import type { SubscriptionSummary } from "../types/domain";
 
 function SubscriptionsScreen() {
+  // Fuerza el re-render de la pantalla al alternar modo privacidad (la máscara
+  // vive en formatCurrency, que lee el store imperativamente).
+  useUiStore((state) => state.privacyMode);
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
   const router = useRouter();
@@ -63,14 +72,17 @@ function SubscriptionsScreen() {
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
   const { showToast } = useToast();
+  const { reason: notificationReason } = useNotificationReason();
 
   const { data: snapshot, isLoading, isRefetching, refetch } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const updateMutation = useUpdateSubscriptionMutation(activeWorkspaceId);
   const deleteMutation = useDeleteSubscriptionMutation(activeWorkspaceId);
   const togglePinMutation = useToggleSubscriptionPinMutation(activeWorkspaceId);
+  const markPaidMutation = useMarkSubscriptionPaidMutation(activeWorkspaceId);
 
   const [createFormVisible, setCreateFormVisible] = useState(false);
   const [analyticsTarget, setAnalyticsTarget] = useState<SubscriptionSummary | null>(null);
+  const [markPaidTarget, setMarkPaidTarget] = useState<SubscriptionSummary | null>(null);
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [searchText, setSearchText] = useState("");
   const [activeFilters, setActiveFilters] = useState<ActiveSubscriptionFilter[]>([]);
@@ -224,17 +236,43 @@ function SubscriptionsScreen() {
 
   const handleTogglePause = useCallback((subscription: SubscriptionSummary) => {
     const newStatus = subscription.status === "active" ? "paused" : "active";
+    // Al reactivar, la fecha stale del pasado se rueda a la primera ocurrencia >= hoy
+    // según la cadencia registrada (spec 2026-07-16-suscripciones).
+    const nextDueDate = newStatus === "active"
+      ? rollDueDateForward(subscription.nextDueDate, subscription.frequency, subscription.intervalCount, todayPeru())
+      : undefined;
     updateMutation.mutate(
-      { id: subscription.id, input: { status: newStatus } },
+      { id: subscription.id, input: { status: newStatus, ...(nextDueDate ? { nextDueDate } : {}) } },
       {
         onSuccess: () => showToast(
-          newStatus === "paused" ? "Suscripción pausada" : "Suscripción reactivada",
+          newStatus === "paused"
+            ? "Suscripción pausada"
+            : `Reactivada. Próximo pago: ${formatSubscriptionYmd(nextDueDate ?? subscription.nextDueDate)}`,
           "success",
         ),
         onError: (error) => showToast(error.message, "error"),
       },
     );
   }, [showToast, updateMutation]);
+
+  const handleMarkPaid = useCallback(
+    async (args: { paidDate: string; amount: number; accountId: number }) => {
+      if (!markPaidTarget) return;
+      try {
+        const { nextDueDate } = await markPaidMutation.mutateAsync({
+          subscription: markPaidTarget,
+          paidDate: args.paidDate,
+          amount: args.amount,
+          accountId: args.accountId,
+        });
+        setMarkPaidTarget(null);
+        showToast(`Pago registrado · Próximo cobro: ${nextDueDate}`, "success");
+      } catch (error: unknown) {
+        showToast(error instanceof Error ? error.message : "No se pudo registrar el pago", "error");
+      }
+    },
+    [markPaidMutation, markPaidTarget, showToast],
+  );
 
   const selectedSubscriptions = useMemo(
     () => filteredSubscriptions.filter((s) => selectedIds.has(s.id)),
@@ -296,12 +334,13 @@ function SubscriptionsScreen() {
       }}
       onDelete={() => startUndoDelete(item)}
       onTogglePause={() => handleTogglePause(item)}
+      onPay={() => setMarkPaidTarget(item)}
       onAnalytics={() => setAnalyticsTarget(item)}
       onTogglePin={selectMode ? undefined : () => handleTogglePin(item)}
       selected={selectedIds.has(item.id)}
       selectMode={selectMode}
     />
-  ), [handleTogglePause, handleTogglePin, selectMode, selectedIds, startUndoDelete, toggleSelect]);
+  ), [handleTogglePause, handleTogglePin, router, selectMode, selectedIds, startUndoDelete, toggleSelect]);
 
   const extraFiltersCount = dueDateRange ? 1 : 0;
   const hasFilters = activeFilters.length > 0 || Boolean(searchText.trim()) || extraFiltersCount > 0;
@@ -357,7 +396,11 @@ function SubscriptionsScreen() {
         />
       )}
       activeFilters={selectMode ? null : <ActiveFilterBar items={activeFilterItems} onClear={clearFilters} />}
-      context={!selectMode && subscriptions.length > 0 ? <ResourceContextNote>{contextNote}</ResourceContextNote> : null}
+      context={
+        !selectMode && (notificationReason || subscriptions.length > 0) ? (
+          <ResourceContextNote>{notificationReason ?? contextNote}</ResourceContextNote>
+        ) : null
+      }
       summary={
         !selectMode && filteredSubscriptions.length > 0 ? (
           <SubscriptionSummaryBar
@@ -470,6 +513,14 @@ function SubscriptionsScreen() {
             subscription={analyticsTarget}
             movements={postedMovements}
             baseCurrencyCode={baseCurrencyCode}
+          />
+          <MarkSubscriptionPaidSheet
+            visible={Boolean(markPaidTarget)}
+            subscription={markPaidTarget}
+            accounts={snapshot?.accounts ?? []}
+            isPending={markPaidMutation.isPending}
+            onClose={() => setMarkPaidTarget(null)}
+            onConfirm={(args) => void handleMarkPaid(args)}
           />
         </>
       }

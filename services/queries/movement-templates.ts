@@ -38,10 +38,11 @@ function mapRow(row: Record<string, unknown>): MovementTemplate {
   };
 }
 
-export function useMovementTemplatesQuery(workspaceId: number | null) {
+export function useMovementTemplatesQuery(workspaceId: number | null, enabled = true) {
   return useQuery({
     queryKey: ["movement-templates", workspaceId],
-    enabled: Boolean(supabase && workspaceId),
+    enabled: Boolean(enabled && supabase && workspaceId),
+    meta: { uxBlocking: false },
     staleTime: STALE.medium,
     queryFn: async (): Promise<MovementTemplate[]> => {
       const { data, error } = await supabase!
@@ -81,6 +82,20 @@ export function useCreateMovementTemplateMutation(workspaceId: number | null, us
         .single();
       if (error) throw new Error(error.message ?? "No se pudo guardar la plantilla");
       return mapRow(data as Record<string, unknown>);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["movement-templates"] });
+    },
+  });
+}
+
+export function useRenameMovementTemplateMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ templateId, name }: { templateId: number; name: string }) => {
+      if (!supabase) throw new Error("Supabase no está configurado.");
+      const { error } = await supabase.from("movement_templates").update({ name }).eq("id", templateId);
+      if (error) throw new Error(error.message ?? "No se pudo renombrar la plantilla");
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["movement-templates"] });

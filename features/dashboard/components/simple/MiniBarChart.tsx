@@ -1,7 +1,8 @@
 import { Text, TouchableOpacity, View } from "react-native";
 
 import { Card } from "../../../../components/ui/Card";
-import { COLORS } from "../../../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SURFACE } from "../../../../constants/theme";
+import { useUiStore } from "../../../../store/ui-store";
 import type { DashboardChartDay } from "../../lib/types";
 import { SectionTitle } from "./SectionTitle";
 import { dashboardSimpleStyles as subStyles } from "./styles";
@@ -12,8 +13,31 @@ type MiniBarChartProps = {
 };
 
 export function MiniBarChart({ data, onSelectDay }: MiniBarChartProps) {
+  const privacyMode = useUiStore((state) => state.privacyMode);
   const maxVal = Math.max(...data.flatMap((d) => [d.income, d.expense]), 1);
   const BAR_HEIGHT = 56;
+
+  if (privacyMode) {
+    return (
+      <Card>
+        <SectionTitle>Últimos 7 días - flujo diario</SectionTitle>
+        <View
+          style={{
+            height: BAR_HEIGHT,
+            borderRadius: RADIUS.lg,
+            borderWidth: 1,
+            borderColor: SURFACE.separator,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Text style={{ fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.storm }}>
+            Oculto por privacidad
+          </Text>
+        </View>
+      </Card>
+    );
+  }
 
   return (
     <Card>

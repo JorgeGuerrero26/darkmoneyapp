@@ -1,5 +1,5 @@
 import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import type { LucideIcon } from "lucide-react-native";
 
 import { COLORS, ELEVATION, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
@@ -29,7 +29,7 @@ type Props = {
   contentStyle?: StyleProp<ViewStyle>;
 };
 
-export function ResourceCard({
+function ResourceCardBase({
   title,
   subtitle,
   leading,
@@ -282,3 +282,6 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
 });
+
+/** Memoizado: los cards se renderizan en listas largas; evita re-renders cuando las props son estables. */
+export const ResourceCard = memo(ResourceCardBase);

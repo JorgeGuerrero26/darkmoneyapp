@@ -12,6 +12,7 @@ import {
 import type { LucideIcon } from "lucide-react-native";
 
 import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING, SURFACE } from "../../constants/theme";
+import { IOS_FLOATING_TAB_BAR_SPACE } from "../../constants/floating-tab-bar";
 import { EmptyState } from "./EmptyState";
 import { StaggeredItem } from "./StaggeredItem";
 
@@ -186,7 +187,9 @@ function ResourceSectionHeader<T>({ section }: { section: ResourceSection<T> }) 
 const styles = StyleSheet.create({
   contentContainer: {
     padding: SPACING.lg,
-    paddingBottom: 100,
+    // En iOS la barra flota (absolute) y el contenido corre por detrás: hay que dejar libre
+    // su franja o los últimos items quedan tapados. En Android la constante vale 0.
+    paddingBottom: 100 + IOS_FLOATING_TAB_BAR_SPACE,
   },
   secondaryLoading: {
     flexDirection: "row",

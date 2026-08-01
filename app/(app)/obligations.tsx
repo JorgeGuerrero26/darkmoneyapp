@@ -13,6 +13,7 @@ import { useAuth } from "../../lib/auth-context";
 import { humanizeError } from "../../lib/errors";
 import { parseDisplayDate } from "../../lib/date";
 import { useWorkspace } from "../../lib/workspace-context";
+import { useUiStore } from "../../store/ui-store";
 import { buildShareByObligationId } from "../../lib/obligation-labels";
 import { buildRateMap } from "../../lib/exchange-rate-map";
 import { pendingAmountInBaseCurrency } from "../../lib/obligation-pending-base";
@@ -26,6 +27,7 @@ import {
 } from "../../services/queries/obligations";
 import { PaymentRequestForm } from "../../components/forms/PaymentRequestForm";
 import { useToast } from "../../hooks/useToast";
+import { useNotificationReason } from "../../hooks/useNotificationReason";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { ObligationAnalyticsModal } from "../../components/domain/ObligationAnalyticsModal";
 import { AttachmentPreviewModal } from "../../components/domain/AttachmentPreviewModal";
@@ -47,6 +49,7 @@ import { ResourceContextNote } from "../../components/ui/ResourceContextNote";
 import { HeaderActionGroup } from "../../components/ui/HeaderActionGroup";
 import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTemplate";
 import { COLORS } from "../../constants/theme";
+import { IOS_FLOATING_TAB_BAR_SPACE } from "../../constants/floating-tab-bar";
 import { shareCsvAsFile } from "../../lib/share-csv-file";
 import { ObligationFilterBar } from "../../features/obligations/components/ObligationFilterBar";
 import { ObligationList } from "../../features/obligations/components/ObligationList";
@@ -81,16 +84,28 @@ const UNDO_DELETE_MS = 5000;
 // ─── Screen ──────────────────────────────────────────────────────────────────
 
 function ObligationsScreen() {
+  // Fuerza el re-render de la pantalla al alternar modo privacidad (la máscara
+  // vive en formatCurrency, que lee el store imperativamente).
+  useUiStore((state) => state.privacyMode);
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const queryClient = useQueryClient();
   const { profile, session } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
   const { showToast } = useToast();
+  const { reason: notificationReason } = useNotificationReason();
   const deleteMutation = useDeleteObligationMutation(activeWorkspaceId);
   const archiveMutation = useArchiveObligationMutation(activeWorkspaceId);
 
-  const { data: snapshot, isLoading, dataUpdatedAt } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
+  // Las obligaciones llegan en la query diferida: sin sumar `deferredLoading` la
+  // lista pintaría "sin obligaciones" durante ese hueco en vez del skeleton.
+  const {
+    data: snapshot,
+    isLoading: coreLoading,
+    deferredLoading,
+    dataUpdatedAt,
+  } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
+  const isLoading = coreLoading || deferredLoading;
   const { data: obligationShares = [] } = useObligationSharesQuery(activeWorkspaceId);
   const { data: sharedObligations = [], isLoading: sharedLoading, isFetching: sharedFetching } =
     useSharedObligationsQuery(session?.user?.id ?? null);
@@ -590,7 +605,7 @@ function ObligationsScreen() {
             <ActiveFilterBar items={activeFilterItems} onClear={clearObligationFilters} />
           ) : null
         }
-        context={!selectMode ? <ResourceContextNote>{contextNote}</ResourceContextNote> : null}
+        context={!selectMode ? <ResourceContextNote>{notificationReason ?? contextNote}</ResourceContextNote> : null}
         summary={
           !selectMode && obligationSections.some((section) => section.data.length > 0) ? (
             <ObligationSummaryBar
@@ -651,7 +666,7 @@ function ObligationsScreen() {
             onCreateFirst={() => setCreateFormVisible(true)}
           />
         }
-        fab={!selectMode ? <FAB onPress={() => setCreateFormVisible(true)} bottom={insets.bottom + 16} /> : null}
+        fab={!selectMode ? <FAB onPress={() => setCreateFormVisible(true)} bottom={insets.bottom + 16 + IOS_FLOATING_TAB_BAR_SPACE} /> : null}
         overlays={
           <>
             <ObligationForm

@@ -16,10 +16,12 @@ import {
   View,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
+import Constants from "expo-constants";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as LocalAuthentication from "expo-local-authentication";
 import * as SecureStore from "expo-secure-store";
+import * as Clipboard from "expo-clipboard";
 import { ChevronRight, Fingerprint, Pencil, ShieldCheck } from "lucide-react-native";
 
 import { useAuth } from "../lib/auth-context";
@@ -35,6 +37,11 @@ import {
   type WorkspaceInvitationInput,
 } from "../services/queries/workspace-data";
 import { useSyncExchangeRatePairMutation } from "../services/queries/exchange-rates";
+import {
+  inboundEmailAddress,
+  useInboundEmailAliasQuery,
+  useRotateInboundEmailAliasMutation,
+} from "../services/queries/inbound-email-alias";
 import { Input } from "../components/ui/Input";
 import { Button } from "../components/ui/Button";
 import { BottomSheet } from "../components/ui/BottomSheet";
@@ -46,9 +53,11 @@ import { ResourceModuleTemplate } from "../components/ui/ResourceModuleTemplate"
 import { ScreenHeader } from "../components/layout/ScreenHeader";
 import { useToast } from "../hooks/useToast";
 import { COLORS, EXTENDED_PALETTE, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../constants/theme";
+import { IOS_FLOATING_TAB_BAR_SPACE } from "../constants/floating-tab-bar";
 import { DEFAULT_EXCHANGE_CURRENCY, normalizeSupportedCurrencyCode } from "../constants/currencies";
 import type { WorkspaceRole } from "../types/domain";
 import { SafeBlurView } from "../components/ui/SafeBlurView";
+import { CHANGELOG, CHANGELOG_OLDER } from "../constants/changelog";
 import { useOriginBackNavigation } from "../hooks/useOriginBackNavigation";
 import { registerForPushNotifications, savePushTokenToSupabase } from "../hooks/usePushNotifications";
 
@@ -64,6 +73,7 @@ function SettingsScreen() {
   // ── Sign out dialog (must be before useOriginBackNavigation) ────────────
   const [signOutVisible, setSignOutVisible] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [changelogVisible, setChangelogVisible] = useState(false);
 
   const { handleBack } = useOriginBackNavigation({ skipInterception: signingOut });
   const router = useRouter();
@@ -76,11 +86,38 @@ function SettingsScreen() {
   const updateNotificationPreferencesMutation = useUpdateNotificationPreferencesMutation(profile?.id ?? null);
   const syncExchangeRatePair = useSyncExchangeRatePairMutation();
 
+  // ── Detección por correo ─────────────────────────────────────────────────
+  const inboundAliasQuery = useInboundEmailAliasQuery(profile?.id ?? null, activeWorkspaceId);
+  const rotateInboundAlias = useRotateInboundEmailAliasMutation(
+    profile?.id ?? null,
+    activeWorkspaceId,
+  );
+
+  const handleCopyInboundAddress = async () => {
+    if (!inboundAliasQuery.data) return;
+    await Clipboard.setStringAsync(inboundEmailAddress(inboundAliasQuery.data));
+    showToast("Dirección copiada", "success");
+  };
+
+  const handleRotateInboundAlias = async () => {
+    try {
+      await rotateInboundAlias.mutateAsync();
+      showToast("Dirección lista. Actualiza el filtro de Gmail.", "success");
+    } catch (err) {
+      showToast(humanizeError(err), "error");
+    }
+  };
+
   // ── Profile ──────────────────────────────────────────────────────────────
   const [fullName, setFullName] = useState(profile?.fullName ?? "");
   const [baseCurrencyCode, setBaseCurrencyCode] = useState(normalizeSupportedCurrencyCode(profile?.baseCurrencyCode));
   const [isSaving, setIsSaving] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+
+  // ── Notificaciones push ──────────────────────────────────────────────────
+  // El sistema tiene bloqueados los permisos de notificación para la app:
+  // muestra la ayuda contextual con acceso directo a los ajustes.
+  const [pushPermissionBlocked, setPushPermissionBlocked] = useState(false);
 
   // ── Biometrics ───────────────────────────────────────────────────────────
   const SECURE_EMAIL_KEY = "darkmoney_bio_email";
@@ -301,42 +338,51 @@ function SettingsScreen() {
     activeWorkspace?.kind === "shared" &&
     (activeWorkspace?.role === "owner" || activeWorkspace?.role === "admin");
   const dailyDigestEnabled = notificationPreferencesQuery.data?.dailyDigestEnabled !== false;
+  const predictiveAlertsEnabled = notificationPreferencesQuery.data?.predictiveAlertsEnabled !== false;
   const pushEnabled = notificationPreferencesQuery.data?.pushEnabled === true;
   const pushToken = notificationPreferencesQuery.data?.pushToken ?? null;
   const pushPlatform = notificationPreferencesQuery.data?.platform ?? null;
   const biometricActive = biometricEnabled && bioCredsStored;
 
-  async function handlePushReconnect() {
+  async function handlePushToggle(nextValue: boolean) {
     if (!profile?.id) return;
+
+    if (!nextValue) {
+      try {
+        await updateNotificationPreferencesMutation.mutateAsync({
+          dailyDigestEnabled,
+          predictiveAlertsEnabled,
+          pushEnabled: false,
+        });
+        setPushPermissionBlocked(false);
+        showToast("Avisos desactivados en este teléfono", "success");
+      } catch (err: unknown) {
+        showToast(humanizeError(err), "error");
+      }
+      return;
+    }
+
     try {
       const result = await registerForPushNotifications();
       if (result.ok) {
         await savePushTokenToSupabase(profile.id, result.token);
         await queryClient.invalidateQueries({ queryKey: ["notification-preferences", profile.id] });
-        showToast("Notificaciones push activadas en este dispositivo", "success");
+        setPushPermissionBlocked(false);
+        showToast("Listo: los avisos llegarán a este teléfono", "success");
         return;
       }
       switch (result.reason) {
         case "permissions_denied":
-          showToast(
-            "Permisos denegados. Abre los ajustes del sistema para concederlos.",
-            "warning",
-          );
-          break;
-        case "expo_go":
-          showToast(
-            "Las notificaciones push no funcionan en Expo Go. Necesitas la app instalada desde Play Store.",
-            "warning",
-          );
-          break;
-        case "not_device":
-          showToast("Las notificaciones push no están disponibles en simuladores.", "warning");
-          break;
-        case "module_unavailable":
-          showToast("El módulo de notificaciones no está disponible en este build.", "warning");
+          // El teléfono tiene bloqueadas las notificaciones para la app: mostrar
+          // la ayuda contextual con acceso directo a los ajustes del sistema.
+          setPushPermissionBlocked(true);
           break;
         case "network_error":
-          showToast("No pudimos contactar al servidor de Expo. Revisa tu conexión y reintenta.", "warning");
+          showToast("Sin conexión. Revisa tu internet e inténtalo de nuevo.", "warning");
+          break;
+        default:
+          // expo_go / not_device / module_unavailable: entornos de desarrollo.
+          showToast("Los avisos no están disponibles en este entorno.", "warning");
           break;
       }
     } catch (err: unknown) {
@@ -346,9 +392,27 @@ function SettingsScreen() {
 
   async function handleDailyDigestToggle(nextValue: boolean) {
     try {
-      await updateNotificationPreferencesMutation.mutateAsync({ dailyDigestEnabled: nextValue });
+      await updateNotificationPreferencesMutation.mutateAsync({
+        dailyDigestEnabled: nextValue,
+        predictiveAlertsEnabled,
+      });
       showToast(
         nextValue ? "Digest diario activado" : "Digest diario desactivado",
+        "success",
+      );
+    } catch (err: unknown) {
+      showToast(humanizeError(err), "error");
+    }
+  }
+
+  async function handlePredictiveAlertsToggle(nextValue: boolean) {
+    try {
+      await updateNotificationPreferencesMutation.mutateAsync({
+        dailyDigestEnabled,
+        predictiveAlertsEnabled: nextValue,
+      });
+      showToast(
+        nextValue ? "Alertas predictivas activadas" : "Alertas predictivas desactivadas",
         "success",
       );
     } catch (err: unknown) {
@@ -363,7 +427,14 @@ function SettingsScreen() {
       context={<ResourceContextNote>Administra perfil, workspaces, seguridad y preferencias del dispositivo.</ResourceContextNote>}
       list={
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : "height"}>
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          contentContainerStyle={[
+            styles.content,
+            // Despeja el safe area + la franja de la píldora flotante de iOS.
+            { paddingBottom: insets.bottom + IOS_FLOATING_TAB_BAR_SPACE + SPACING.xxxl },
+          ]}
+          keyboardShouldPersistTaps="handled"
+        >
 
           {/* Profile */}
           <Card>
@@ -473,35 +544,39 @@ function SettingsScreen() {
               </View>
               <ChevronRight size={16} color={COLORS.storm} />
             </TouchableOpacity>
-            <View style={styles.pushStatusBox}>
-              <Text style={styles.pushStatusTitle}>Notificaciones push</Text>
-              <Text style={styles.pushStatusDesc}>
-                {pushEnabled && pushToken
-                  ? `Activo en este dispositivo (${pushPlatform ?? Platform.OS}). Recibirás alertas y recordatorios.`
-                  : "No configurado en este dispositivo. Si denegaste los permisos, ábrelos en los ajustes del sistema y luego pulsa reintentar."}
-              </Text>
-              <View style={styles.pushButtonRow}>
+            <View style={styles.switchRow}>
+              <View style={styles.switchInfo}>
+                <Text style={styles.switchLabel}>Notificaciones push</Text>
+                <Text style={styles.switchDesc}>
+                  {pushEnabled && pushToken
+                    ? `Activo en este dispositivo (${pushPlatform ?? Platform.OS}). Recibirás alertas y recordatorios.`
+                    : "Actívalas para recibir alertas y recordatorios en este teléfono."}
+                </Text>
+              </View>
+              <Switch
+                value={pushEnabled && Boolean(pushToken)}
+                onValueChange={(v) => void handlePushToggle(v)}
+                disabled={updateNotificationPreferencesMutation.isPending || notificationPreferencesQuery.isLoading}
+                trackColor={{ false: COLORS.border, true: COLORS.primary }}
+                thumbColor={EXTENDED_PALETTE.white}
+              />
+            </View>
+            {pushPermissionBlocked ? (
+              <View style={styles.pushStatusBox}>
+                <Text style={styles.pushStatusTitle}>Permisos bloqueados en el sistema</Text>
+                <Text style={styles.pushStatusDesc}>
+                  El teléfono tiene bloqueadas las notificaciones para DarkMoney. Ábrelas en los
+                  ajustes del sistema y vuelve a activar el interruptor.
+                </Text>
                 <TouchableOpacity
-                  style={styles.pushReconnectBtn}
-                  onPress={() => void handlePushReconnect()}
-                  disabled={notificationPreferencesQuery.isLoading}
+                  style={styles.pushSecondaryBtn}
+                  onPress={() => void Linking.openSettings()}
                   activeOpacity={0.84}
                 >
-                  <Text style={styles.pushReconnectText}>
-                    {pushEnabled && pushToken ? "Reintentar activación" : "Activar push"}
-                  </Text>
+                  <Text style={styles.pushSecondaryText}>Abrir ajustes del sistema</Text>
                 </TouchableOpacity>
-                {!(pushEnabled && pushToken) ? (
-                  <TouchableOpacity
-                    style={styles.pushSecondaryBtn}
-                    onPress={() => void Linking.openSettings()}
-                    activeOpacity={0.84}
-                  >
-                    <Text style={styles.pushSecondaryText}>Abrir ajustes del sistema</Text>
-                  </TouchableOpacity>
-                ) : null}
               </View>
-            </View>
+            ) : null}
             <View style={styles.switchRow}>
               <View style={styles.switchInfo}>
                 <Text style={styles.switchLabel}>Resumen diario informativo</Text>
@@ -519,15 +594,131 @@ function SettingsScreen() {
                 thumbColor={EXTENDED_PALETTE.white}
               />
             </View>
+            <View style={styles.switchRow}>
+              <View style={styles.switchInfo}>
+                <Text style={styles.switchLabel}>Alertas predictivas</Text>
+                <Text style={styles.switchDesc}>
+                  Aviso cuando tu saldo proyectado no cubre el mes o tus compromisos.
+                </Text>
+              </View>
+              <Switch
+                value={predictiveAlertsEnabled}
+                onValueChange={(v) => void handlePredictiveAlertsToggle(v)}
+                disabled={updateNotificationPreferencesMutation.isPending || notificationPreferencesQuery.isLoading}
+                trackColor={{ false: COLORS.border, true: COLORS.primary }}
+                thumbColor={EXTENDED_PALETTE.white}
+              />
+            </View>
+          </Card>
+
+          {/* Detección por correo: en iOS no existe la detección de notificaciones de Android,
+              y el usuario necesita ver su dirección para crear el filtro en Gmail. */}
+          <Card>
+            <Text style={styles.sectionTitle}>Detectar pagos por correo</Text>
+            {inboundAliasQuery.data ? (
+              <>
+                <Text selectable style={styles.inboundAddress}>
+                  {inboundEmailAddress(inboundAliasQuery.data)}
+                </Text>
+                <Button
+                  label="Copiar dirección"
+                  variant="secondary"
+                  size="md"
+                  onPress={() => void handleCopyInboundAddress()}
+                />
+                {/* Los dominios van completos y son los reales: Yape usa yape.pe (NO
+                    yape.com.pe), y un filtro con el dominio equivocado no reenvía nada,
+                    en silencio. */}
+                <Text style={styles.inboundHelp}>
+                  En Gmail: Configuración › Filtros › Crear filtro con{"\n"}
+                  De: notificacionesbcp.com.pe OR yape.pe{"\n"}
+                  Acción: Reenviar a esta dirección{"\n"}
+                  Gmail te pedirá confirmar el reenvío una vez.
+                </Text>
+                <Button
+                  label="Generar una nueva"
+                  variant="ghost"
+                  size="md"
+                  loading={rotateInboundAlias.isPending}
+                  loadingLabel="Generando…"
+                  onPress={() => void handleRotateInboundAlias()}
+                />
+              </>
+            ) : (
+              <>
+                <Text style={styles.inboundHelp}>
+                  Genera una dirección privada y reenvía ahí los correos de tu banco. DarkMoney
+                  no accede al resto de tu correo, y nada se registra sin que tú lo confirmes.
+                </Text>
+                <Button
+                  label="Generar dirección"
+                  variant="primary"
+                  size="md"
+                  loading={rotateInboundAlias.isPending}
+                  loadingLabel="Generando…"
+                  onPress={() => void handleRotateInboundAlias()}
+                />
+              </>
+            )}
           </Card>
 
           {/* Sign out */}
           <Button label="Cerrar sesión" variant="danger" size="lg" onPress={handleSignOut} />
+
+          {Constants.expoConfig?.version ? (
+            <TouchableOpacity
+              onPress={() => setChangelogVisible(true)}
+              accessibilityLabel="Ver novedades de cada versión"
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Text style={styles.versionText}>Versión {Constants.expoConfig.version} · Ver novedades</Text>
+            </TouchableOpacity>
+          ) : null}
         </ScrollView>
       </KeyboardAvoidingView>
       }
       overlays={
       <>
+      {/* Changelog / novedades por versión */}
+      <Modal
+        visible={changelogVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setChangelogVisible(false)}
+      >
+        <View style={styles.soOverlay}>
+          <SafeBlurView intensity={30} tint="dark" style={StyleSheet.absoluteFillObject} />
+          <View style={styles.changelogCard}>
+            <Text style={styles.soTitle}>Novedades de DarkMoney</Text>
+            <Text style={styles.changelogSubtitle}>Lo que ha ido mejorando en cada versión</Text>
+            <ScrollView style={styles.changelogScroll} showsVerticalScrollIndicator={false}>
+              {CHANGELOG.map((entry) => (
+                <View key={entry.version} style={styles.changelogEntry}>
+                  <View style={styles.changelogVersionRow}>
+                    <Text style={styles.changelogVersion}>v{entry.version}</Text>
+                    <Text style={styles.changelogEntryTitle}>{entry.title}</Text>
+                  </View>
+                  {entry.changes.map((change, i) => (
+                    <View key={i} style={styles.changelogBulletRow}>
+                      <Text style={styles.changelogBulletDot}>•</Text>
+                      <Text style={styles.changelogBulletText}>{change}</Text>
+                    </View>
+                  ))}
+                </View>
+              ))}
+              <Text style={styles.changelogOlder}>{CHANGELOG_OLDER}</Text>
+            </ScrollView>
+            <Button
+              label="Cerrar"
+              variant="primary"
+              size="lg"
+              style={styles.bioFullBtn}
+              onPress={() => setChangelogVisible(false)}
+            />
+          </View>
+        </View>
+      </Modal>
+
       {/* Biometric setup — password prompt */}
       <Modal
         visible={bioSetupVisible}
@@ -683,6 +874,25 @@ function SettingsScreen() {
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   content: { padding: SPACING.lg, gap: SPACING.lg, paddingBottom: SPACING.xxxl },
+  versionText: {
+    fontSize: FONT_SIZE.xs,
+    fontFamily: FONT_FAMILY.body,
+    color: COLORS.storm,
+    textAlign: "center",
+  },
+  inboundAddress: {
+    fontSize: FONT_SIZE.sm,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    color: COLORS.pine,
+    marginBottom: SPACING.sm,
+  },
+  inboundHelp: {
+    fontSize: FONT_SIZE.xs,
+    fontFamily: FONT_FAMILY.body,
+    color: COLORS.storm,
+    lineHeight: 18,
+    marginBottom: SPACING.sm,
+  },
   sectionTitle: {
     fontSize: FONT_SIZE.sm,
     fontFamily: FONT_FAMILY.bodySemibold,
@@ -796,26 +1006,9 @@ const styles = StyleSheet.create({
     color: COLORS.storm,
     lineHeight: 18,
   },
-  pushButtonRow: {
-    marginTop: SPACING.xs,
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: SPACING.xs,
-  },
-  pushReconnectBtn: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs + 2,
-    borderRadius: RADIUS.full,
-    borderWidth: 1,
-    borderColor: SURFACE.cardActiveBorder,
-    backgroundColor: SURFACE.cardActive,
-  },
-  pushReconnectText: {
-    fontSize: FONT_SIZE.xs,
-    fontFamily: FONT_FAMILY.bodySemibold,
-    color: COLORS.primary,
-  },
   pushSecondaryBtn: {
+    alignSelf: "flex-start",
+    marginTop: SPACING.xs,
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.xs + 2,
     borderRadius: RADIUS.full,
@@ -862,6 +1055,62 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.lg,
     fontFamily: FONT_FAMILY.heading,
     color: COLORS.ink,
+    textAlign: "center",
+  },
+  changelogCard: {
+    width: "100%",
+    maxHeight: "82%",
+    backgroundColor: SURFACE.deepNavy,
+    borderRadius: RADIUS.xl,
+    paddingHorizontal: SPACING.xl,
+    paddingVertical: SPACING.xl,
+    borderWidth: 1,
+    borderColor: SURFACE.cardBorder,
+    gap: SPACING.sm,
+  },
+  changelogSubtitle: {
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    textAlign: "center",
+    marginBottom: SPACING.xs,
+  },
+  changelogScroll: { alignSelf: "stretch" },
+  changelogEntry: {
+    paddingVertical: SPACING.sm,
+    borderTopWidth: 1,
+    borderTopColor: SURFACE.cardBorder,
+    gap: SPACING.xs,
+  },
+  changelogVersionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+    flexWrap: "wrap",
+  },
+  changelogVersion: {
+    fontSize: FONT_SIZE.xs,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    color: COLORS.void,
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 2,
+    borderRadius: RADIUS.full,
+    overflow: "hidden",
+  },
+  changelogEntryTitle: {
+    fontSize: FONT_SIZE.sm,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    color: COLORS.ink,
+    flexShrink: 1,
+  },
+  changelogBulletRow: { flexDirection: "row", gap: SPACING.xs, paddingRight: SPACING.sm },
+  changelogBulletDot: { color: COLORS.primary, fontSize: FONT_SIZE.sm, lineHeight: 20 },
+  changelogBulletText: { flex: 1, fontSize: FONT_SIZE.sm, color: COLORS.storm, lineHeight: 20 },
+  changelogOlder: {
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    fontStyle: "italic",
+    paddingVertical: SPACING.md,
     textAlign: "center",
   },
   soBody: {

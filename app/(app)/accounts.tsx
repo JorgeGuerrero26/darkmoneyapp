@@ -2,6 +2,7 @@ import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View, type SectionListRenderItem } from "react-native";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
+import { IOS_FLOATING_TAB_BAR_SPACE } from "../../constants/floating-tab-bar";
 import { useRouter } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -13,6 +14,7 @@ import { format } from "date-fns";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth } from "../../lib/auth-context";
 import { useWorkspace } from "../../lib/workspace-context";
+import { useUiStore } from "../../store/ui-store";
 import {
   useWorkspaceSnapshotQuery,
   useArchiveAccountMutation,
@@ -28,11 +30,13 @@ import { FilterToolbar } from "../../components/ui/FilterToolbar";
 import { ActiveFilterBar, type ActiveFilterItem } from "../../components/ui/ActiveFilterBar";
 import { HeaderActionGroup } from "../../components/ui/HeaderActionGroup";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
+import { ResourceContextNote } from "../../components/ui/ResourceContextNote";
 import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTemplate";
 import { ResourceSectionList, type ResourceSection } from "../../components/ui/ResourceSectionList";
 import { AccountForm } from "../../components/forms/AccountForm";
 import { AccountNetWorthSummary } from "../../features/accounts/components/AccountNetWorthSummary";
 import { useToast } from "../../hooks/useToast";
+import { useNotificationReason } from "../../hooks/useNotificationReason";
 import { humanizeError } from "../../lib/errors";
 import { shareCsvAsFile } from "../../lib/share-csv-file";
 import { DEFAULT_EXCHANGE_CURRENCY } from "../../constants/currencies";
@@ -76,12 +80,16 @@ const ACCOUNTS_GROUPING_KEY = "darkmoney.accounts.groupByType";
 const ACCOUNTS_COMPOSITION_EXPANDED_KEY = "darkmoney.accounts.compositionExpanded";
 
 function AccountsScreen() {
+  // Fuerza el re-render de la pantalla al alternar modo privacidad (la máscara
+  // vive en formatCurrency, que lee el store imperativamente).
+  useUiStore((state) => state.privacyMode);
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const queryClient = useQueryClient();
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
   const { showToast } = useToast();
+  const { reason: notificationReason } = useNotificationReason();
 
   const { data: snapshot, isLoading, isRefetching, refetch, dataUpdatedAt } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   useAccountsRealtimeSync({ workspaceId: activeWorkspaceId });
@@ -564,6 +572,7 @@ function AccountsScreen() {
             <ActiveFilterBar items={activeFilterItems} onClear={clearAccountFilters} />
           ) : null
         }
+        context={!selectMode && notificationReason ? <ResourceContextNote>{notificationReason}</ResourceContextNote> : null}
         summary={summaryHeader}
         bulkActions={
           selectMode && selectedIds.size > 0 ? (
@@ -618,7 +627,7 @@ function AccountsScreen() {
         }
         fab={
           !selectMode ? (
-            <FAB onPress={() => { setEditAccount(null); setFormVisible(true); }} bottom={insets.bottom + 16} />
+            <FAB onPress={() => { setEditAccount(null); setFormVisible(true); }} bottom={insets.bottom + 16 + IOS_FLOATING_TAB_BAR_SPACE} />
           ) : null
         }
         overlays={

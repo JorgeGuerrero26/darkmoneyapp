@@ -109,7 +109,14 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
       drop("gmail-gate")
       return
     }
-    if (isPromotionalNotification(combined)) {
+    // Google Wallet: su notificación de pago es "<comercio> · PEN39.40 con <tarjeta> ••1234"
+    // y el NOMBRE de la tarjeta puede contener palabras promocionales ("Campaña imágenes del
+    // mundial" es un diseño de tarjeta BCP). El patrón monto + "••" es transaccional
+    // inequívoco: salta el filtro promocional y la inferencia de tipo solo para ese shape.
+    val isWalletTransaction = sourcePackage == WALLET_PACKAGE &&
+      combined.contains("••") &&
+      Regex("""(?i)(pen|s/|usd|\$)\s*[0-9]""").containsMatchIn(combined)
+    if (!isWalletTransaction && isPromotionalNotification(combined)) {
       drop("promotional")
       return
     }
@@ -130,17 +137,34 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
       drop("registered-recent")
       return
     }
+    // Movimiento registrado A MANO en la app con el mismo monto hace <2h: el aviso tardío
+    // del banco/correo de ESA compra no debe re-sugerir (RN escribe la huella al registrar).
+    // Ventana 2h: los correos BCP llegan con minutos de retraso; no cubre días distintos,
+    // así compras nuevas del mismo monto en otro momento sí se detectan.
+    if (NotificationDetectionStore.hasManualRegisteredAmount(applicationContext, amount, withinMs = 2 * 60 * 60_000L)) {
+      drop("manual-registered-dedupe")
+      return
+    }
     // Cross-source dedup: otra FUENTE (banco vs Gmail vs Google Wallet vs Samsung Pay) se salta
     // si ya existe una pending suggestion del mismo monto en los últimos 5 min. Política: el
     // primero llegado gana. Cubre BCP push + BCP email + Wallet/SPay para una misma transacción.
-    // Mismo paquete NO se suprime: dos compras reales del mismo monto y misma fuente en <5 min
-    // (p. ej. vending machine) son transacciones distintas; los re-fires del mismo contenido ya
-    // los dedupea suggestionId vía upsertSuggestion.
-    if (NotificationDetectionStore.hasPendingSuggestionForAmount(context, sourcePackage, amount, withinMs = 5 * 60_000L)) {
+    // Mismo paquete NO se suprime para apps de banco/wallet: dos compras reales del mismo monto y
+    // misma fuente en <5 min (p. ej. vending machine) son transacciones distintas.
+    // EXCEPCIÓN email (Gmail): re-dispara el MISMO correo con distinta notificationKey → distinto
+    // suggestionId → antes colaba una 2da sugerencia. Un correo de banco = una transacción, así
+    // que para email SÍ dedupeamos mismo-paquete por monto+ventana.
+    val isEmailSource = sourcePackage == GMAIL_PACKAGE
+    if (NotificationDetectionStore.hasPendingSuggestionForAmount(context, sourcePackage, amount, withinMs = 5 * 60_000L, includeSamePackage = isEmailSource)) {
       drop("pending-amount-dedupe")
       return
     }
-    val detection = inferMovementDetection(combined)
+    // El shape de pago de Wallet no trae verbos ("consumo", "pagaste"): la inferencia
+    // genérica lo marcaría low-confidence. Un pago de tarjeta vía Wallet es siempre gasto.
+    val detection = if (isWalletTransaction) {
+      DetectionResult("expense", "high")
+    } else {
+      inferMovementDetection(combined)
+    }
     if (detection.confidence == "low") {
       drop("low-confidence")
       return
@@ -154,15 +178,21 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
       combined,
       amount,
     )
-    // Use financialApp+amount+10min-bucket as notification ID so that:
+    // Use financialApp+amount+10min-bucket+counterpartyToken as notification ID so that:
     // 1. Cross-source detections of the same transaction (Yape push + Yape email)
     //    collapse into one tile (manager.notify with same ID replaces).
     // 2. Gmail re-fires (different content → different suggestionId) also collapse.
+    // 3. counterpartyToken separa tiles cuando 2 transacciones simultáneas del mismo monto
+    //    vienen de remitentes distintos (p. ej. 2 yapes de S/50 de personas distintas en el
+    //    mismo bucket de 10 min): antes colapsaban en una sola tile y se perdía una. Si el
+    //    extractor no matchea (no es un "X te envió/yapeó/..."), el token queda vacío y el
+    //    id es idéntico al anterior: el colapso de los casos 1 y 2 sigue intacto.
     // Si la sugerencia YA existe (re-escaneo de bandeja), reusar su tile id: un re-proceso en
     // otro bucket de 10 min debe REEMPLAZAR la misma tile, no crear una duplicada.
     val existingSuggestion = NotificationDetectionStore.getSuggestion(context, suggestionId)
+    val counterpartyToken = extractCounterpartyToken(combined)
     val notificationId = existingSuggestion?.optInt("notificationId", 0)?.takeIf { it > 0 }
-      ?: notificationIdFor("${appName}:${amount}:${System.currentTimeMillis() / 600_000}")
+      ?: notificationIdFor("${appName}:${amount}:${System.currentTimeMillis() / 600_000}:${counterpartyToken}")
 
     val suggestion = JSONObject()
       .put("id", suggestionId)
@@ -429,6 +459,17 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
       ?: "Movimiento detectado"
   }
 
+  /** Token del remitente para diferenciar tiles de transacciones distintas con el mismo
+   *  monto en la misma ventana. Conservador: sin match → vacío (colapso actual intacto,
+   *  necesario para re-fires de Gmail y push+email del mismo evento). */
+  private fun extractCounterpartyToken(combined: String): String {
+    val match = Regex(
+      "([\\p{L}][\\p{L} .*]{1,30}?)\\s+te\\s+(envió|yapeó|pagó|transfirió)",
+      RegexOption.IGNORE_CASE,
+    ).find(combined) ?: return ""
+    return match.groupValues[1].trim().lowercase().replace(Regex("[^a-záéíóúñ ]"), "").take(24)
+  }
+
   private fun extractFinancialEmailMerchant(value: String): String? {
     val searchable = financialEmailTransactionalBody(value)
     val patterns = listOf(
@@ -636,9 +677,17 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
     )
 
     // Tap en el cuerpo: abre la app (deep-link) al movimiento detectado. No es trampoline.
+    // CLEAR_TOP + SINGLE_TOP: sin ellos, Samsung/One UI puede apilar una SEGUNDA
+    // MainActivity (pese a launchMode singleTask) cuando el intent trae una data
+    // URI distinta a la del task existente. Dos ventanas vivas rompen el foco del
+    // teclado (inputs que pierden lo escrito) y la medición de altura de los sheets.
     val openAppIntent = Intent(Intent.ACTION_VIEW, Uri.parse("darkmoney://detected-suggestion/$suggestionId"))
       .setComponent(ComponentName(this, "com.darkmoney.app.MainActivity"))
-      .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      .addFlags(
+        Intent.FLAG_ACTIVITY_NEW_TASK or
+          Intent.FLAG_ACTIVITY_CLEAR_TOP or
+          Intent.FLAG_ACTIVITY_SINGLE_TOP,
+      )
     val openAppPendingIntent = PendingIntent.getActivity(
       this,
       notificationId + 2,
@@ -707,6 +756,7 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
 
   companion object {
     private const val GMAIL_PACKAGE = "com.google.android.gm"
+private const val WALLET_PACKAGE = "com.google.android.apps.walletnfcrel"
     private val RELAY_PACKAGES = setOf(
       "com.google.android.apps.walletnfcrel", // Google Wallet mirrors bank card payments
       "com.samsung.android.spay",             // Samsung Pay mirrors bank card payments
@@ -718,36 +768,19 @@ class DarkMoneyNotificationListenerService : NotificationListenerService() {
     }
 
     /**
-     * Cancela inmediatamente la notificacion bancaria asociada al sbn.key. Si el listener
-     * service no esta bound (app cerrada hace rato), encola la key en SharedPreferences
-     * para que el listener la consuma en onListenerConnected y onNotificationPosted.
+     * NO-OP por diseño: DarkMoney NUNCA descarta notificaciones de otras apps (Yape, banco,
+     * Gmail, etc.). Antes cancelaba la notificacion del sbn.key tras registrar, lo que hacia
+     * "desaparecer" avisos legitimos del usuario. La app solo cancela sus PROPIAS tiles
+     * ("movimiento detectado") via NotificationManager.cancel(id), nunca las ajenas.
      */
     fun cancelBankNotificationByKey(context: android.content.Context, key: String) {
-      if (key.isBlank()) return
-      val service = currentService?.get()
-      if (service != null) {
-        try {
-          service.cancelNotification(key)
-          android.util.Log.d("DarkMoneyND", "cancelBankNotificationByKey: cancelled inline key=$key")
-          return
-        } catch (e: Exception) {
-          android.util.Log.d("DarkMoneyND", "cancelBankNotificationByKey: inline cancel failed, queuing key=$key err=${e.message}")
-        }
-      }
-      NotificationDetectionStore.addPendingCancellationKey(context, key)
+      // Intencionalmente sin efecto. Ver comentario arriba.
     }
 
     fun consumePendingCancellations(service: DarkMoneyNotificationListenerService) {
-      val keys = NotificationDetectionStore.takePendingCancellationKeys(service.applicationContext)
-      if (keys.isEmpty()) return
-      for (key in keys) {
-        try {
-          service.cancelNotification(key)
-          android.util.Log.d("DarkMoneyND", "consumePendingCancellations: cancelled key=$key")
-        } catch (e: Exception) {
-          android.util.Log.d("DarkMoneyND", "consumePendingCancellations: failed key=$key err=${e.message}")
-        }
-      }
+      // Purga claves encoladas por versiones anteriores SIN cancelarlas: DarkMoney ya no
+      // descarta notificaciones de otras apps. Solo vacia la cola para no dejar basura.
+      NotificationDetectionStore.takePendingCancellationKeys(service.applicationContext)
     }
   }
 }

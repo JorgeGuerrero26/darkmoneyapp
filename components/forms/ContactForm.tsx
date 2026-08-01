@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 
 import { useWorkspace } from "../../lib/workspace-context";
@@ -94,7 +94,10 @@ export function ContactForm({ visible, onClose, onSuccess, editContact }: Props)
     }
   }
 
+  const submittingRef = useRef(false);
+
   async function handleSubmit() {
+    if (submittingRef.current) return; // guard anti-doble-tap: evita duplicados
     setNameError("");
     if (!name.trim()) { haptics.error(); setNameError("El nombre es obligatorio"); return; }
 
@@ -107,6 +110,7 @@ export function ContactForm({ visible, onClose, onSuccess, editContact }: Props)
       notes: notes.trim() || null,
     };
 
+    submittingRef.current = true;
     try {
       if (isEditing && editContact) {
         await updateMutation.mutateAsync({ id: editContact.id, input });
@@ -123,6 +127,8 @@ export function ContactForm({ visible, onClose, onSuccess, editContact }: Props)
     } catch (err: unknown) {
       haptics.error();
       showToast(humanizeError(err), "error");
+    } finally {
+      submittingRef.current = false;
     }
   }
 

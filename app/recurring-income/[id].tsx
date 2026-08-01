@@ -21,6 +21,7 @@ import { RecurringIncomeDetailHistory } from "../../features/recurring-income/co
 import { useOriginBackNavigation } from "../../hooks/useOriginBackNavigation";
 import { useAuth } from "../../lib/auth-context";
 import { useWorkspace } from "../../lib/workspace-context";
+import { useUiStore } from "../../store/ui-store";
 import {
   useConfirmRecurringIncomeArrivalMutation,
   useWorkspaceSnapshotQuery,
@@ -46,6 +47,9 @@ function parseMoneyInput(value: string) {
 }
 
 function RecurringIncomeDetailScreen() {
+  // Fuerza el re-render de la pantalla al alternar modo privacidad (la máscara
+  // vive en formatCurrency, que lee el store imperativamente).
+  useUiStore((state) => state.privacyMode);
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
   const { handleBack } = useOriginBackNavigation({

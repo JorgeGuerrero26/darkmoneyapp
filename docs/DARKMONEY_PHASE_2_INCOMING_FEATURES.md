@@ -32,7 +32,8 @@ Todo lo siguiente YA EXISTE y las epicas deben asumirlo como base:
 
 - **Estandarizacion 100%**: los 10 modulos de recurso auditados y conformes
   (2026-07-05); auditoria de movimientos sin hallazgos altos/medios abiertos.
-- **Red de seguridad**: 35 tests TS (jest-expo) + 19 tests JUnit Kotlin + CI en
+- **Red de seguridad**: 126 tests TS (jest-expo, conteo 2026-07-12 tras migrar
+  las reglas de notificaciones a builders puros) + 19 tests JUnit Kotlin + CI en
   GitHub Actions (typecheck + tests en cada push). Toda feature nueva de Fase 2
   DEBE entrar con tests de su logica pura.
 - **OTA updates operativo** (EAS Update, canal `preview`): los cambios JS se
@@ -212,6 +213,16 @@ no de construirlas desde cero.
 6. **Reusar el sistema estandar**: nuevos modulos deben usar
    `ResourceModuleTemplate`, filtros tipados, `ActiveFilterBar`,
    `MetricSummaryBar`, `ResourceSectionList`, `FAB` y `useOriginBackNavigation`.
+7. **Logica compartible vive en `@darkmoney/shared`**: toda logica de dominio
+   pura que web y movil puedan necesitar (agregaciones del read model
+   historico, contratos de herramientas IA, modelo de evidencia, tipos y
+   builders de insights, calculos financieros) se implementa en el paquete
+   `@darkmoney/shared` (repo `JorgeGuerrero26/darkmoneyshare`), no en el
+   codigo RN. El movil la consume via wrappers finos de re-export, como ya
+   se hace con `@darkmoney/shared/health` (health score del dashboard, via
+   `features/dashboard/lib/health.ts`) y `@darkmoney/shared/currency`
+   (conversion de paridad, via `lib/currency-conversion.ts`). Solo queda en
+   la app lo especifico de plataforma: UI, navegacion, storage, queries.
 
 ## Fase 2.0 - Fundaciones Antes De Nuevas Features
 
@@ -487,6 +498,39 @@ Nuevo:
 - Exportacion PDF cuando el contenido ya sea estable.
 - Snapshot de reporte con filtros, periodo, moneda y fecha de generacion.
 - Programacion opcional de reporte mensual.
+
+Sub-feature priorizada: **Reporte de transparencia de credito/deuda** —
+**IMPLEMENTADA 2026-07-19** (commit acb1abd, APK 1.0.5): builder puro en
+`features/obligations/lib/obligationReport.ts`, sheet en el detalle, helper
+`lib/share-pdf-file.ts`. Quedan como referencia las decisiones del brainstorm:
+
+- Problema: los companeros con quienes se comparte un credito/deuda no revisan
+  la app; el owner necesita empujarles un estado de cuenta confiable.
+- Formato: **PDF** via `expo-print` (plantilla HTML+CSS con tokens de marca).
+  OJO: dependencia nativa nueva -> requiere APK con bump de version; los ajustes
+  de plantilla posteriores viajan por OTA.
+- Alcance: **solo el owner**, en TODAS sus obligaciones (compartidas o no; sirve
+  tambien como constancia personal). Punto de entrada: detalle de la obligacion
+  (ObligationDetailHeaderActions).
+- Contenido del PDF: encabezado formal (titulo, partes, moneda, fecha, folio
+  unico), resumen ejecutivo (monto original, aumentos, pagado, intereses y
+  comisiones, saldo pendiente, % progreso), **tabla cronologica de eventos con
+  saldo corrido** (la clave de transparencia: cada evento muestra como quedo el
+  saldo), condiciones (cuotas, tasa, vencimiento, estado) y pie con sello
+  "Generado con DarkMoney - fecha/hora - folio".
+- Flujo de compartir: al generar se abre un sheet "Reporte listo" con el mensaje
+  predeterminado EDITABLE + boton "Copiar mensaje" + boton "Compartir PDF"
+  (reusar patron de `lib/share-csv-file.ts` con expo-sharing). Restriccion
+  tecnica validada: Android descarta el EXTRA_TEXT al compartir un archivo a
+  WhatsApp, por eso el mensaje va por portapapeles en 2 pasos.
+- Mensaje predeterminado (tono profesional, con resumen numerico):
+  "Hola [nombre], te comparto el estado de cuenta actualizado de nuestro
+  [credito/deuda] '[titulo]': saldo pendiente [moneda] [monto] al [fecha].
+  Lo genero desde mi app de finanzas para que tengas total transparencia del
+  detalle y el historico. Cualquier duda me dices."
+- Ideas para despues (NO en v1): envio automatico mensual, historial de reportes
+  generados como constancia, QR en el PDF que invite a aceptar el share y ver
+  el credito en vivo.
 
 No hacer:
 
@@ -814,6 +858,6 @@ La meta declarada es publicar en Play Store. Implicancias para Fase 2:
 - `supabase/migrations/*ai*`
 - `supabase/migrations/*notification*`
 - `supabase/migrations/202606100002_movements_client_dedupe_key.sql`
-- `docs/AUDITORIA_REGISTRO_MOVIMIENTOS.md`
+- `docs/archive/AUDITORIA_REGISTRO_MOVIMIENTOS.md`
 - `docs/APP_DESIGN_AND_CODE_PATTERNS.md`
-- `docs/OBLIGATIONS_MODULE_AUDIT.md`
+- `docs/archive/OBLIGATIONS_MODULE_AUDIT.md`

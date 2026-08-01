@@ -131,7 +131,10 @@ export function PrincipalAdjustmentForm({ visible, mode, obligation, onClose, on
     }
   }
 
+  const submittingRef = useRef(false);
+
   async function handleSubmit() {
+    if (submittingRef.current) return; // guard anti-doble-tap: evita ajustes duplicados
     setAmountError("");
     setAccountError("");
     setSubmitError("");
@@ -150,6 +153,7 @@ export function PrincipalAdjustmentForm({ visible, mode, obligation, onClose, on
       return;
     }
     if (!obligation) return;
+    submittingRef.current = true;
     try {
       if (isEditMode && editEvent) {
         await updateEventMutation.mutateAsync({
@@ -182,6 +186,8 @@ export function PrincipalAdjustmentForm({ visible, mode, obligation, onClose, on
     } catch (err: unknown) {
       haptics.error();
       setSubmitError(humanizeError(err));
+    } finally {
+      submittingRef.current = false;
     }
   }
 

@@ -21,6 +21,8 @@ import { useToast } from "../../hooks/useToast";
 import { useHaptics } from "../../hooks/useHaptics";
 import {
   findPossibleDuplicateMovement,
+  countSameDayDetectionSignals,
+  confirmDuplicateWithAi,
   recordSuggestionAction,
   useAiUsageTodayQuery,
   useNotificationDetectionSettingsQuery,
@@ -44,6 +46,7 @@ import {
   useWorkspaceSnapshotQuery,
 } from "../../services/queries/workspace-data";
 import { useMovementPatternsQuery } from "../../services/queries/movement-patterns";
+import { EMAIL_SOURCE_PACKAGE } from "../../services/queries/inbound-email-alias";
 import { buildPatternMaps, scoreCategoryFromDescription } from "../../lib/movement-patterns";
 import { normalizeAnalyticsText } from "../../services/analytics/movement-features";
 import { useMovementCategoryAiSuggestion } from "../../hooks/useMovementCategoryAiSuggestion";
@@ -68,10 +71,12 @@ import { dateTimeStrToISO, isoToTimeStr, nowTimePeru, todayPeru } from "../../li
 import { validateMovementForm } from "../../features/movements/lib/form-validation";
 import { patternMovementAmount } from "../../features/movements/lib/pattern-heuristics";
 import { CategoryPicker } from "../../features/movements/components/form/MovementChipPickers";
+import { SplitAmountEditor } from "../../features/movements/components/form/SplitAmountEditor";
 import {
   deriveLearnedCategoryMatch,
   mapAiCategoryRecommendation,
 } from "../../features/movements/lib/category-suggestion-derivation";
+import { splitLineMetadata, splitLineDescription, validateSplit, type SplitLine } from "../../features/movements/lib/split-movement";
 import { LOCAL_CATEGORY_AI_CONFIDENCE_THRESHOLD } from "../../lib/movement-ai-orchestrator";
 
 // Heurísticas compartidas con MovementForm y el runtime sync (features/movements/lib).
@@ -119,7 +124,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
   const { data: snapshot } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const settingsQuery = useNotificationDetectionSettingsQuery(profile?.id, activeWorkspaceId);
   const settings = settingsQuery.data ?? [];
-  const frequentTransferPair = useFrequentTransferPairQuery(activeWorkspaceId).data ?? null;
+  const frequentTransferPair = useFrequentTransferPairQuery(visible ? activeWorkspaceId : null).data ?? null;
   const createMovement = useCreateMovementMutation(activeWorkspaceId);
   const deleteMovement = useDeleteMovementMutation(activeWorkspaceId);
   const createCategory = useCreateCategoryMutation(activeWorkspaceId);
@@ -131,7 +136,8 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
   const entitlementQuery = useUserEntitlementQuery(profile?.id ?? null, profile?.email ?? null);
   const aiUsageQuery = useAiUsageTodayQuery(profile?.id ?? null);
   const persistLearningFeedback = usePersistLearningFeedbackMutation(activeWorkspaceId, profile?.id);
-  const { data: patternMovements } = useMovementPatternsQuery(activeWorkspaceId);
+  // Ver MovementForm: sin el gate en `visible` esto se pide con la hoja cerrada.
+  const { data: patternMovements } = useMovementPatternsQuery(visible ? activeWorkspaceId : null);
   const { data: dashboardAnalytics } = useDashboardAnalyticsQuery(activeWorkspaceId, profile?.id);
   const patternMaps = useMemo(
     () => (patternMovements ? buildPatternMaps(patternMovements) : null),
@@ -145,6 +151,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
   const [destinationAmount, setDestinationAmount] = useState("");
   const [transferFxRate, setTransferFxRate] = useState("");
   const [categoryId, setCategoryId] = useState<number | null>(null);
+  const [splitLines, setSplitLines] = useState<SplitLine[] | null>(null);
   const [counterpartyId, setCounterpartyId] = useState<number | null>(null);
   const [description, setDescription] = useState("");
   const [notes, setNotes] = useState("");
@@ -160,6 +167,10 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
   const [categoryFeedbackIntent, setCategoryFeedbackIntent] = useState<CategoryFeedbackIntent | null>(null);
   const [linkedSubscriptionId, setLinkedSubscriptionId] = useState<number | null>(null);
   const [linkedRecurringIncomeId, setLinkedRecurringIncomeId] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (movementType !== "expense" && splitLines) setSplitLines(null);
+  }, [movementType, splitLines]);
 
   const {
     activeAccountsSorted: activeAccounts,
@@ -436,6 +447,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
     setTime(suggestion.occurredAt ? isoToTimeStr(suggestion.occurredAt) : nowTimePeru());
     setCategoryId(null);
     setCounterpartyId(null);
+    setSplitLines(null);
     // Transferencias: prellenar origen→destino con el par más usado (mismo default que el
     // overlay nativo). Si el par resuelve a cuentas activas distintas, manda sobre el default
     // por moneda; si no, cae al comportamiento previo (default + primera "otra").
@@ -780,40 +792,134 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
           description,
         });
         if (duplicate) {
-          // El guard se libera en el finally de submit() al retornar: el usuario decide en el
-          // diálogo y "Registrar de todas formas" re-entra vía submit(true).
-          // Copy concreto (qué coincidió) en vez del genérico: el usuario necesita saber POR QUÉ
-          // parece duplicado para decidir, y poder ver el existente (auditoría, hallazgo R12).
-          const duplicateAmount = duplicate.sourceAmount ?? duplicate.destinationAmount;
-          const duplicateDate = new Date(duplicate.occurredAt).toLocaleDateString("es-PE", {
-            day: "2-digit",
-            month: "short",
-          });
-          const duplicateDetail = [
-            duplicate.description ? `"${duplicate.description}"` : "un movimiento igual",
-            `el ${duplicateDate}`,
-            duplicateAmount != null ? `por ${duplicateAmount.toFixed(2)}` : null,
-          ].filter(Boolean).join(" ");
-          Alert.alert(
-            "Puede que este movimiento ya exista",
-            `Ya registraste ${duplicateDetail} en la misma cuenta. Si es el mismo, no lo registres de nuevo.`,
-            [
-              {
-                text: "Ver el existente",
-                onPress: () => {
-                  onClose();
-                  router.push(`/movement/${duplicate.id}` as never);
-                },
+          // Pro: la IA revisa el candidato antes de mostrar el Alert. "distinct" registra sin
+          // fricción (no re-entra submit() para evitar el guard anti-doble-tap, que lo dejaría en
+          // no-op); "duplicate" con motivo lo añade al Alert; "unknown"/no-Pro deja el Alert igual.
+          let duplicateAiReason: string | null = null;
+          let confirmedDistinct = false;
+          if (entitlementQuery.data?.proAccessEnabled) {
+            const counts = await countSameDayDetectionSignals({
+              workspaceId: activeWorkspaceId,
+              amount: parsedAmount,
+              movementType,
+              occurredAt,
+              accountId,
+            }).catch(() => ({ sameDaySuggestions: 0, sameDayRegisteredFromSuggestions: 0, sameDayMatchingMovements: 1 }));
+            const aiResult = await confirmDuplicateWithAi({
+              workspaceId: activeWorkspaceId,
+              suggestion: {
+                description: description.trim() || suggestion.description,
+                amountLabel: String(parsedAmount),
+                occurredAt,
+                sourceApp: suggestion.financialAppKey,
+                rawText: suggestion.description ?? null,
               },
-              { text: "Registrar de todas formas", onPress: () => void submit(true) },
-              { text: "Cancelar", style: "cancel" },
-            ],
-          );
-          return;
+              candidateMovement: {
+                id: duplicate.id,
+                description: duplicate.description ?? null,
+                occurredAt: duplicate.occurredAt,
+                amount: parsedAmount,
+              },
+              counts,
+            });
+            if (aiResult.verdict === "distinct") {
+              confirmedDistinct = true;
+            } else if (aiResult.verdict === "duplicate" && aiResult.reason) {
+              duplicateAiReason = aiResult.reason;
+            }
+          }
+          if (confirmedDistinct) {
+            // La IA confirma que es otro movimiento: no return, sigue el flujo normal de registro.
+          } else {
+            // El guard se libera en el finally de submit() al retornar: el usuario decide en el
+            // diálogo y "Registrar de todas formas" re-entra vía submit(true).
+            // Copy concreto (qué coincidió) en vez del genérico: el usuario necesita saber POR QUÉ
+            // parece duplicado para decidir, y poder ver el existente (auditoría, hallazgo R12).
+            const duplicateAmount = duplicate.sourceAmount ?? duplicate.destinationAmount;
+            const duplicateDate = new Date(duplicate.occurredAt).toLocaleDateString("es-PE", {
+              day: "2-digit",
+              month: "short",
+            });
+            const duplicateDetail = [
+              duplicate.description ? `"${duplicate.description}"` : "un movimiento igual",
+              `el ${duplicateDate}`,
+              duplicateAmount != null ? `por ${duplicateAmount.toFixed(2)}` : null,
+            ].filter(Boolean).join(" ");
+            Alert.alert(
+              "Puede que este movimiento ya exista",
+              `Ya registraste ${duplicateDetail} en la misma cuenta. Si es el mismo, no lo registres de nuevo.${duplicateAiReason ? `\n\nIA: ${duplicateAiReason}` : ""}`,
+              [
+                {
+                  text: "Ver el existente",
+                  onPress: () => {
+                    onClose();
+                    router.push(`/movement/${duplicate.id}` as never);
+                  },
+                },
+                { text: "Registrar de todas formas", onPress: () => void submit(true) },
+                { text: "Cancelar", style: "cancel" },
+              ],
+            );
+            return;
+          }
         }
       } finally {
         setCheckingDuplicate(false);
       }
+    }
+
+    const detectionMetadata = {
+      source: "notification_detection",
+      suggestionId: suggestion.id,
+      financialAppKey: suggestion.financialAppKey,
+      confidence: suggestion.confidence,
+      counterpartyAi: counterpartySuggestion?.source === "deepseek" ? counterpartySuggestion : null,
+      recurring_income_id: linkedRecurringIncomeId,
+      recurringAi: recurringSuggestion?.source === "deepseek" ? recurringSuggestion : null,
+      riskAi: movementRisk?.source === "deepseek" ? movementRisk : null,
+      budgetAi: budgetImpact?.source === "deepseek" ? budgetImpact : null,
+    };
+
+    if (movementType === "expense" && splitLines) {
+      const splitValidation = validateSplit(splitLines, parsedAmount);
+      if (!splitValidation.valid) {
+        showToast(splitValidation.error ?? "Revisa la división de montos", "error");
+        return;
+      }
+      const splitGroup = `suggestion:${suggestion.id}`;
+      try {
+        let firstCreatedId: number | null = null;
+        for (let index = 0; index < splitLines.length; index++) {
+          const line = splitLines[index];
+          const created = await createMovement.mutateAsync(buildMovementCreateInput({
+            movementType: "expense",
+            status: "posted",
+            occurredAt,
+            description: splitLineDescription(description.trim() || suggestion.description, index, splitLines.length),
+            notes: notes.trim() || null,
+            sourceAccountId: accountId,
+            sourceAmount: parsePositiveAmountInput(line.amount)!,
+            destinationAccountId: accountId,
+            destinationAmount: parsePositiveAmountInput(line.amount)!,
+            transferCurrenciesDiffer: false,
+            fxRate: null,
+            categoryId: line.categoryId,
+            counterpartyId,
+            subscriptionId: linkedSubscriptionId,
+            metadata: splitLineMetadata(detectionMetadata, splitGroup, index, splitLines.length),
+            // Línea 1 conserva la clave del headless (`suggestion:<id>`): si ambas vías
+            // corren, la línea 1 colisiona con el movimiento único del headless y no se duplica.
+            dedupeKey: index === 0 ? splitGroup : `${splitGroup}:split-${index + 1}`,
+          }));
+          if (firstCreatedId == null) firstCreatedId = created.id;
+        }
+        // Feedback de categoría omitido: la división usa varias categorías, no una sola.
+        await finishRegistration(firstCreatedId!, null);
+      } catch (error) {
+        haptics.error();
+        showToast(error instanceof Error ? error.message : "No se pudo guardar el movimiento", "error");
+      }
+      return;
     }
 
     try {
@@ -832,95 +938,94 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
         categoryId,
         counterpartyId,
         subscriptionId: linkedSubscriptionId,
-        metadata: {
-          source: "notification_detection",
-          suggestionId: suggestion.id,
-          financialAppKey: suggestion.financialAppKey,
-          confidence: suggestion.confidence,
-          counterpartyAi: counterpartySuggestion?.source === "deepseek" ? counterpartySuggestion : null,
-          recurring_income_id: linkedRecurringIncomeId,
-          recurringAi: recurringSuggestion?.source === "deepseek" ? recurringSuggestion : null,
-          riskAi: movementRisk?.source === "deepseek" ? movementRisk : null,
-          budgetAi: budgetImpact?.source === "deepseek" ? budgetImpact : null,
-        },
+        metadata: detectionMetadata,
         // Misma clave que usa el headless para esta sugerencia: si ambas vías corren
         // (app abierta + overlay), la segunda recibe el movimiento ya creado.
         dedupeKey: `suggestion:${suggestion.id}`,
       }));
-      await markSuggestion.mutateAsync({ suggestionId: suggestion.id, status: "registered", movementId: created.id });
-      if (profile?.id && activeWorkspaceId) {
-        if (categoryFeedbackIntent) {
-          const isAccept = categoryFeedbackIntent.kind === "accepted_category_suggestion";
-          void recordSuggestionAction({
-            userId: profile.id,
-            workspaceId: activeWorkspaceId,
-            suggestionId: suggestion.id,
-            dedupeKey: suggestion.dedupeKey,
-            action: isAccept ? "accept_category" : "override_category",
-            surface: "quick_entry",
-            confidenceAtDecision: categoryFeedbackIntent.confidence ?? null,
-            modelAtDecision: categoryFeedbackIntent.source === "deepseek" ? "deepseek" : null,
-            suggestedValue: categoryFeedbackIntent.categoryName ?? null,
-            finalValue: categoryId != null ? String(categoryId) : null,
-            metadata: { kind: categoryFeedbackIntent.kind },
-          });
-        }
-        const initialDescription = suggestion.description ?? "";
-        const finalDescription = description.trim() || initialDescription;
-        if (finalDescription !== initialDescription) {
-          void recordSuggestionAction({
-            userId: profile.id,
-            workspaceId: activeWorkspaceId,
-            suggestionId: suggestion.id,
-            dedupeKey: suggestion.dedupeKey,
-            action: "edit_description",
-            surface: "quick_entry",
-            suggestedValue: initialDescription,
-            finalValue: finalDescription,
-          });
-        }
+      await finishRegistration(created.id, categoryFeedbackIntent);
+    } catch (error) {
+      haptics.error();
+      showToast(error instanceof Error ? error.message : "No se pudo guardar el movimiento", "error");
+    }
+  }
+
+  /**
+   * Post-procesamiento común a la vía única y a la vía split (marcar sugerencia, telemetría,
+   * feedback de categoría, toast y cierre) para que ambas se mantengan sincronizadas.
+   */
+  async function finishRegistration(movementId: number, feedbackIntent: CategoryFeedbackIntent | null) {
+    if (!suggestion) return;
+    await markSuggestion.mutateAsync({ suggestionId: suggestion.id, status: "registered", movementId });
+    if (profile?.id && activeWorkspaceId) {
+      if (feedbackIntent) {
+        const isAccept = feedbackIntent.kind === "accepted_category_suggestion";
         void recordSuggestionAction({
           userId: profile.id,
           workspaceId: activeWorkspaceId,
           suggestionId: suggestion.id,
           dedupeKey: suggestion.dedupeKey,
-          action: "register",
+          action: isAccept ? "accept_category" : "override_category",
           surface: "quick_entry",
-          confidenceAtDecision: suggestion.confidence,
-          metadata: { movementType, financialAppKey: suggestion.financialAppKey },
+          confidenceAtDecision: feedbackIntent.confidence ?? null,
+          modelAtDecision: feedbackIntent.source === "deepseek" ? "deepseek" : null,
+          suggestedValue: feedbackIntent.categoryName ?? null,
+          finalValue: categoryId != null ? String(categoryId) : null,
+          metadata: { kind: feedbackIntent.kind },
         });
       }
-      if (categoryId != null && categoryFeedbackIntent) {
-        void persistLearningFeedback.mutateAsync({
-          movementId: created.id,
-          feedbackKind: categoryFeedbackIntent.kind,
-          normalizedDescription: normalizeAnalyticsText(description.trim() || suggestion.description) || null,
-          previousCategoryId: null,
-          acceptedCategoryId: categoryId,
-          confidence: categoryFeedbackIntent.confidence ?? (categoryFeedbackIntent.kind === "accepted_category_suggestion" ? 0.7 : null),
-          source: categoryFeedbackIntent.source === "deepseek" ? "notification-form-ai" : "notification-form",
-          metadata: {
-            categoryName: categoryFeedbackIntent.categoryName ?? null,
-            reasons: categoryFeedbackIntent.reasons ?? [],
-            aiProvider: categoryFeedbackIntent.source === "deepseek" ? "deepseek" : null,
-            suggestionId: suggestion.id,
-            financialAppKey: suggestion.financialAppKey,
-          },
+      const initialDescription = suggestion.description ?? "";
+      const finalDescription = description.trim() || initialDescription;
+      if (finalDescription !== initialDescription) {
+        void recordSuggestionAction({
+          userId: profile.id,
+          workspaceId: activeWorkspaceId,
+          suggestionId: suggestion.id,
+          dedupeKey: suggestion.dedupeKey,
+          action: "edit_description",
+          surface: "quick_entry",
+          suggestedValue: initialDescription,
+          finalValue: finalDescription,
         });
       }
-      if (notificationId) markNotificationRead.mutate(notificationId);
-      haptics.success();
-      showRichToast({
-        type: "success",
-        title: "Movimiento guardado",
-        subtitle: "Toca deshacer si fue un error",
-        onUndo: () => undoRegistration(created.id),
+      void recordSuggestionAction({
+        userId: profile.id,
+        workspaceId: activeWorkspaceId,
+        suggestionId: suggestion.id,
+        dedupeKey: suggestion.dedupeKey,
+        action: "register",
+        surface: "quick_entry",
+        confidenceAtDecision: suggestion.confidence,
+        metadata: { movementType, financialAppKey: suggestion.financialAppKey },
       });
-      onClose();
-    } catch (error) {
-      haptics.error();
-      showToast(error instanceof Error ? error.message : "No se pudo guardar el movimiento", "error");
     }
+    if (categoryId != null && feedbackIntent) {
+      void persistLearningFeedback.mutateAsync({
+        movementId,
+        feedbackKind: feedbackIntent.kind,
+        normalizedDescription: normalizeAnalyticsText(description.trim() || suggestion.description) || null,
+        previousCategoryId: null,
+        acceptedCategoryId: categoryId,
+        confidence: feedbackIntent.confidence ?? (feedbackIntent.kind === "accepted_category_suggestion" ? 0.7 : null),
+        source: feedbackIntent.source === "deepseek" ? "notification-form-ai" : "notification-form",
+        metadata: {
+          categoryName: feedbackIntent.categoryName ?? null,
+          reasons: feedbackIntent.reasons ?? [],
+          aiProvider: feedbackIntent.source === "deepseek" ? "deepseek" : null,
+          suggestionId: suggestion.id,
+          financialAppKey: suggestion.financialAppKey,
+        },
+      });
+    }
+    if (notificationId) markNotificationRead.mutate(notificationId);
+    haptics.success();
+    showRichToast({
+      type: "success",
+      title: "Movimiento guardado",
+      subtitle: "Toca deshacer si fue un error",
+      onUndo: () => undoRegistration(movementId),
+    });
+    onClose();
   }
 
   /**
@@ -939,11 +1044,19 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
     });
   }
 
-  const displayAppLabel = suggestion
+  const baseAppLabel = suggestion
     ? (getFinancialAppByKey(suggestion.financialAppKey)?.label
         ?? resolveFinancialAppByPackage(suggestion.packageName)?.label
         ?? suggestion.appLabel)
     : "Movimiento detectado";
+
+  // Las sugerencias por correo no vienen de una notificación de app. Decirlo evita que el
+  // usuario crea que la detección de Android dejó de funcionar en su iPhone (en iOS no existe,
+  // y el correo es justamente el sustituto).
+  const displayAppLabel =
+    suggestion?.packageName === EMAIL_SOURCE_PACKAGE
+      ? `${baseAppLabel} · por correo`
+      : baseAppLabel;
 
 
   if (suggestion?.status === "registered" || suggestion?.status === "duplicate") {
@@ -1067,12 +1180,23 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
 
         {!isTransfer && (
         <>
-        <CategoryPicker
-          label="Categoría (opcional)"
-          categories={categories}
-          selectedId={categoryId}
-          onSelect={selectCategoryManually}
-        />
+        {splitLines == null ? (
+          <CategoryPicker
+            label="Categoría (opcional)"
+            categories={categories}
+            selectedId={categoryId}
+            onSelect={selectCategoryManually}
+          />
+        ) : null}
+        {movementType === "expense" ? (
+          <SplitAmountEditor
+            lines={splitLines}
+            onChangeLines={setSplitLines}
+            categories={categories}
+            totalAmount={parsePositiveAmountInput(amount) ?? 0}
+            currencyCode={selectedBudgetAccount?.currencyCode ?? ""}
+          />
+        ) : null}
         <CategorySuggestionBlock
           loading={aiCategorySuggestionLoading}
           attempted={aiCategorySuggestionAttempted}

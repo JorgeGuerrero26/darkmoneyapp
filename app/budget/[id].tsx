@@ -9,6 +9,7 @@ import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { Card } from "../../components/ui/Card";
 import { SkeletonCard, SkeletonList } from "../../components/ui/Skeleton";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
+import { NotificationReasonBanner } from "../../components/ui/NotificationReasonBanner";
 import { HeaderActionGroup } from "../../components/ui/HeaderActionGroup";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTemplate";
@@ -19,9 +20,11 @@ import { BudgetDetailQuickStats } from "../../features/budgets/components/Budget
 import { BudgetDetailContributions } from "../../features/budgets/components/BudgetDetailContributions";
 import { BudgetDetailHistory } from "../../features/budgets/components/BudgetDetailHistory";
 import { useOriginBackNavigation } from "../../hooks/useOriginBackNavigation";
+import { useNotificationReason } from "../../hooks/useNotificationReason";
 import { useToast } from "../../hooks/useToast";
 import { useAuth } from "../../lib/auth-context";
 import { useWorkspace } from "../../lib/workspace-context";
+import { useUiStore } from "../../store/ui-store";
 import { useWorkspaceSnapshotQuery } from "../../services/queries/workspace-data";
 import {
   useDeleteBudgetMutation,
@@ -43,12 +46,20 @@ function parseBudgetId(raw: string | undefined): number | null {
 }
 
 function BudgetDetailScreen() {
+  // Fuerza el re-render de la pantalla al alternar modo privacidad (la máscara
+  // vive en formatCurrency, que lee el store imperativamente).
+  useUiStore((state) => state.privacyMode);
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
   const { handleBack } = useOriginBackNavigation({
-    originRoutes: { dashboard: "/(app)/dashboard", budgets: "/(app)/budgets" },
+    originRoutes: {
+      dashboard: "/(app)/dashboard",
+      budgets: "/(app)/budgets",
+      notifications: "/notifications",
+    },
   });
+  const { reason: notificationReason, dismiss: dismissNotificationReason } = useNotificationReason();
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
   const { showToast } = useToast();
@@ -132,43 +143,46 @@ function BudgetDetailScreen() {
     <ResourceModuleTemplate
       topInset={insets.top}
       header={
-        <ScreenHeader
-          title={budget?.name ?? "Presupuesto"}
-          subtitle={activeWorkspace?.name}
-          onBack={handleBack}
-          rightAction={
-            budget ? (
-              <HeaderActionGroup
-                actions={[
-                  {
-                    key: "pin",
-                    icon: budget.isPinned ? PinOff : Pin,
-                    onPress: handleTogglePin,
-                    accessibilityLabel: budget.isPinned ? "Desfijar" : "Fijar",
-                  },
-                  {
-                    key: "duplicate",
-                    icon: Copy,
-                    onPress: () => void handleDuplicate(),
-                    accessibilityLabel: "Duplicar al próximo período",
-                  },
-                  {
-                    key: "edit",
-                    icon: Pencil,
-                    onPress: () => setEditVisible(true),
-                    accessibilityLabel: "Editar presupuesto",
-                  },
-                  {
-                    key: "delete",
-                    icon: Trash2,
-                    onPress: () => setDeleteConfirmVisible(true),
-                    accessibilityLabel: "Eliminar presupuesto",
-                  },
-                ]}
-              />
-            ) : null
-          }
-        />
+        <>
+          <ScreenHeader
+            title={budget?.name ?? "Presupuesto"}
+            subtitle={activeWorkspace?.name}
+            onBack={handleBack}
+            rightAction={
+              budget ? (
+                <HeaderActionGroup
+                  actions={[
+                    {
+                      key: "pin",
+                      icon: budget.isPinned ? PinOff : Pin,
+                      onPress: handleTogglePin,
+                      accessibilityLabel: budget.isPinned ? "Desfijar" : "Fijar",
+                    },
+                    {
+                      key: "duplicate",
+                      icon: Copy,
+                      onPress: () => void handleDuplicate(),
+                      accessibilityLabel: "Duplicar al próximo período",
+                    },
+                    {
+                      key: "edit",
+                      icon: Pencil,
+                      onPress: () => setEditVisible(true),
+                      accessibilityLabel: "Editar presupuesto",
+                    },
+                    {
+                      key: "delete",
+                      icon: Trash2,
+                      onPress: () => setDeleteConfirmVisible(true),
+                      accessibilityLabel: "Eliminar presupuesto",
+                    },
+                  ]}
+                />
+              ) : null
+            }
+          />
+          <NotificationReasonBanner reason={notificationReason} onDismiss={dismissNotificationReason} />
+        </>
       }
       list={
         isLoading ? (

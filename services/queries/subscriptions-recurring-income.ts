@@ -4,6 +4,11 @@ import { supabase } from "../../lib/supabase";
 import { STALE } from "../../lib/query-client";
 import { toNum, type NumericLike } from "./_shared";
 import { markSubscriptionPaid } from "../../features/subscriptions/lib/markSubscriptionPaid";
+import {
+  isCoreSnapshot,
+  patchSnapshotSubscriptionNextDue,
+  patchSnapshotWithCreatedMovement,
+} from "./snapshot-cache";
 import type {
   RecurringIncomeFrequency,
   RecurringIncomeStatus,
@@ -162,9 +167,10 @@ export function useDeleteRecurringIncomeMutation(workspaceId: number | null) {
     },
     onMutate: async (id) => {
       await queryClient.cancelQueries({ queryKey: ["workspace-snapshot"] });
-      const previousEntries = queryClient.getQueriesData<WorkspaceSnapshot>({ queryKey: ["workspace-snapshot"] });
-      queryClient.setQueriesData<WorkspaceSnapshot>({ queryKey: ["workspace-snapshot"] }, (old) => {
-        if (!old) return old;
+      const previousEntries = queryClient.getQueriesData({ queryKey: ["workspace-snapshot"] });
+      // El prefijo también matchea la entrada diferida (sin `recurringIncome`).
+      queryClient.setQueriesData<unknown>({ queryKey: ["workspace-snapshot"] }, (old: unknown) => {
+        if (!isCoreSnapshot(old)) return old;
         return { ...old, recurringIncome: old.recurringIncome.filter((item) => item.id !== id) };
       });
       return { previousEntries };
@@ -336,9 +342,10 @@ export function useDeleteSubscriptionMutation(workspaceId: number | null) {
     },
     onMutate: async (id) => {
       await queryClient.cancelQueries({ queryKey: ["workspace-snapshot"] });
-      const previousEntries = queryClient.getQueriesData<WorkspaceSnapshot>({ queryKey: ["workspace-snapshot"] });
-      queryClient.setQueriesData<WorkspaceSnapshot>({ queryKey: ["workspace-snapshot"] }, (old) => {
-        if (!old) return old;
+      const previousEntries = queryClient.getQueriesData({ queryKey: ["workspace-snapshot"] });
+      // El prefijo también matchea la entrada diferida (sin `subscriptions`).
+      queryClient.setQueriesData<unknown>({ queryKey: ["workspace-snapshot"] }, (old: unknown) => {
+        if (!isCoreSnapshot(old)) return old;
         return { ...old, subscriptions: old.subscriptions.filter((s) => s.id !== id) };
       });
       return { previousEntries };
@@ -409,8 +416,37 @@ export function useMarkSubscriptionPaidMutation(workspaceId: number | null) {
         accountId: args.accountId,
       });
     },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+    onSuccess: (result, variables) => {
+      // Parche quirúrgico primero: saldo de la cuenta, historial de la
+      // suscripción y próximo cobro cambian en este frame; el refetch de abajo
+      // confirma/corrige en segundo plano.
+      if (workspaceId) {
+        if (result.movementId != null) {
+          patchSnapshotWithCreatedMovement(queryClient, workspaceId, {
+            id: result.movementId,
+            status: "posted",
+            categoryId: variables.subscription.categoryId ?? null,
+            subscriptionId: variables.subscription.id,
+            occurredAt: result.occurredAt,
+            sourceAccountId: variables.accountId,
+            sourceAmount: variables.amount,
+          });
+        }
+        patchSnapshotSubscriptionNextDue(queryClient, workspaceId, variables.subscription.id, result.nextDueDate);
+        // Fase 3: refetch selectivo de los dominios afectados (saldos exactos y
+        // presupuestos) en vez del snapshot completo. Import dinámico: este
+        // módulo es re-exportado por workspace-data y un import estático de
+        // valor crearía un ciclo en la inicialización.
+        void import("./workspace-data")
+          .then(({ refreshSnapshotDomains }) =>
+            refreshSnapshotDomains(queryClient, workspaceId, ["accounts", "budgets"]),
+          )
+          .catch(() => {
+            void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+          });
+      } else {
+        void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+      }
     },
   });
 }

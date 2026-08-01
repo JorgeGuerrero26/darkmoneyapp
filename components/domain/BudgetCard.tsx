@@ -1,8 +1,12 @@
+import { memo } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { AlertTriangle, BarChart2, Pin, PinOff, Target, Zap } from "lucide-react-native";
+import { format } from "date-fns";
+import { es } from "date-fns/locale";
 
 import { formatCurrency } from "../ui/AmountDisplay";
 import { ProgressBar } from "../ui/ProgressBar";
+import { useUiStore } from "../../store/ui-store";
 import {
   ResourceCard,
   ResourceCardBadge,
@@ -10,7 +14,14 @@ import {
   ResourceCardMetaText,
 } from "../ui/ResourceCard";
 import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING } from "../../constants/theme";
+import { parseDisplayDate } from "../../lib/date";
 import type { BudgetOverview } from "../../types/domain";
+
+function formatPeriodRange(periodStart: string, periodEnd: string): string {
+  const start = format(parseDisplayDate(periodStart), "d MMM", { locale: es });
+  const end = format(parseDisplayDate(periodEnd), "d MMM", { locale: es });
+  return `${start} – ${end}`;
+}
 
 type Props = {
   budget: BudgetOverview;
@@ -22,7 +33,10 @@ type Props = {
   onTogglePin?: () => void;
 };
 
-export function BudgetCard({ budget, selected, onPress, onLongPress, onAnalytics, onQuickEdit, onTogglePin }: Props) {
+function BudgetCardBase({ budget, selected, onPress, onLongPress, onAnalytics, onQuickEdit, onTogglePin }: Props) {
+  // Suscripción propia: invalida el memo cuando cambia el modo privacidad
+  // (los props no cambian al alternar, sin esto la fila mostraría el monto viejo).
+  useUiStore((state) => state.privacyMode);
   const statusColor = budget.isOverLimit
     ? COLORS.rosewood
     : budget.isNearLimit
@@ -86,6 +100,7 @@ export function BudgetCard({ budget, selected, onPress, onLongPress, onAnalytics
       meta={
         <>
           <ResourceCardBadge label={statusLabel} color={statusColor} />
+          <ResourceCardBadge label={formatPeriodRange(budget.periodStart, budget.periodEnd)} color={COLORS.storm} />
           <ResourceCardBadge label={`${budget.movementCount} mov`} color={COLORS.storm} />
           {budget.rolloverEnabled ? <ResourceCardBadge label="Rollover" color={COLORS.primary} /> : null}
         </>
@@ -160,3 +175,6 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.xs,
   },
 });
+
+/** Memoizado: los cards se renderizan en listas largas; evita re-renders cuando las props son estables. */
+export const BudgetCard = memo(BudgetCardBase);

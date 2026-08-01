@@ -22,6 +22,7 @@ import {
 } from "../ui/ResourceCard";
 import { COLORS, FONT_FAMILY, FONT_SIZE } from "../../constants/theme";
 import { formatCurrency } from "../ui/AmountDisplay";
+import { useUiStore } from "../../store/ui-store";
 import { parseDisplayDate } from "../../lib/date";
 import type { MovementRecord } from "../../types/domain";
 import {
@@ -116,6 +117,9 @@ export const MovementRow = memo(function MovementRow({
   onPress,
   onLongPress,
 }: Props) {
+  // Suscripción propia: invalida el memo cuando cambia el modo privacidad
+  // (los props no cambian al alternar, sin esto la fila mostraría el monto viejo).
+  useUiStore((state) => state.privacyMode);
   const config = TYPE_ICON[movement.movementType] ?? { Icon: Circle, color: COLORS.storm };
   const { Icon } = config;
   const transferDisplay = movement.movementType === "transfer"
