@@ -4,12 +4,18 @@
 // APK tiene cada teléfono, y runtimeVersion/OTA anclados a la versión).
 //
 // Uso: node scripts/preflight-native-version.mjs   (encadenado en npm run build:android)
-import { execSync } from "node:child_process";
+//
+// Los comandos van con execFileSync + array de argumentos, nunca con una cadena
+// de shell: en Windows execSync la ejecuta con cmd.exe, donde las comillas
+// simples son literales y el patrón de -G llegaba corrupto (devolvía vacío y el
+// preflight abortaba todos los builds).
+import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 
-const sh = (cmd) => execSync(cmd, { encoding: "utf8" }).trim();
+const git = (...args) => execFileSync("git", args, { encoding: "utf8" }).trim();
 
 // Último commit que tocó la línea "version" de app.json (bump o setup).
-const lastBump = sh(`git log -1 --format=%H -G'"version"\\s*:' -- app.json`);
+const lastBump = git("log", "-1", "--format=%H", '-G"version"\\s*:', "--", "app.json");
 if (!lastBump) {
   console.error("preflight: no se encontró ningún bump de versión en app.json");
   process.exit(1);
@@ -21,19 +27,24 @@ const NATIVE_PATHS = [
   "android/app/src/",
 ];
 
-const changed = sh(
-  `git log --name-only --format= ${lastBump}..HEAD -- ${NATIVE_PATHS.join(" ")}`,
+const changed = git(
+  "log",
+  "--name-only",
+  "--format=",
+  `${lastBump}..HEAD`,
+  "--",
+  ...NATIVE_PATHS,
 )
   .split("\n")
   .filter(Boolean);
 
 // También cuenta lo NO commiteado (working tree) en esas rutas.
-const dirty = sh(`git status --porcelain -- ${NATIVE_PATHS.join(" ")}`)
+const dirty = git("status", "--porcelain", "--", ...NATIVE_PATHS)
   .split("\n")
   .filter(Boolean);
 
 if (changed.length || dirty.length) {
-  const version = sh(`node -p "require('./app.json').expo.version"`);
+  const version = JSON.parse(readFileSync("app.json", "utf8")).expo.version;
   console.error(
     `preflight: hay cambios nativos posteriores al último bump (v${version}):`,
   );
