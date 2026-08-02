@@ -10,14 +10,21 @@ export type ChangelogEntry = {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "1.0.9",
+    title: "Detecta tus pagos desde el correo",
+    changes: [
+      "Ya puedes detectar tus pagos automáticamente desde el correo: en Configuración generas una dirección privada, reenvías ahí los correos que te manda tu banco y DarkMoney te sugiere el movimiento listo para confirmar. Es la forma de detectar pagos en iPhone.",
+      "La app abre bastante más rápido y puedes registrar un movimiento de inmediato, sin esperar a que terminen de cargar tus créditos, deudas y presupuestos.",
+      "Si tocas \"Guardar\" dos veces por nervios, ya no se registra dos veces.",
+      "Cuando tu conexión se pone lenta o cambias de WiFi a datos móviles, la app te avisa y se recupera sola en vez de quedarse en blanco.",
+      "Si algo falla al guardar, ya no pierdes lo que escribiste: el formulario conserva tus datos para que lo intentes de nuevo.",
+    ],
+  },
+  {
     version: "1.0.8",
-    title: "El asistente te habla y tus pagos llegan por correo",
+    title: "El asistente te habla",
     changes: [
       "El asistente puede responderte en voz alta: activa el \"modo hablante\", háblale y te contesta hablando. Ideal para consultar tu plata sin mirar la pantalla. (Pro)",
-      "En iPhone ya puedes detectar tus pagos automáticamente: en Configuración generas una dirección privada, reenvías ahí los correos que te manda tu banco y DarkMoney te sugiere el movimiento listo para confirmar.",
-      "Si tocas \"Guardar\" dos veces por nervios, ya no se registra dos veces.",
-      "Registrar un movimiento apenas abres la app es más rápido: ya no tienes que esperar a que terminen de cargar tus créditos, deudas y presupuestos.",
-      "El aviso de \"conexión lenta\" ya no aparece cuando tu internet va bien.",
     ],
   },
   {

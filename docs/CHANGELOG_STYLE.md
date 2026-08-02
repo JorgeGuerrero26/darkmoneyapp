@@ -67,21 +67,22 @@ Esto se equivoca fácil y tiene consecuencias:
 
 Ver la sección *OTA updates* de `CLAUDE.md`.
 
-### Pendiente: 1.0.9 en el próximo binario
+### Hecho: 1.0.9 (2026-08-02)
 
-Decidido el 2026-07-28. La entrada de 1.0.8 acumula varias mejoras enviadas por OTA, y el
-número se quedó quieto a propósito: bumpearlo sin construir binarios dejaría sin updates al
-iPhone, al Android y al APK del compañero, los tres con runtime `1.0.8`.
+Ejecutado el plan que se decidió el 2026-07-28. La entrada de 1.0.8 había acumulado mejoras
+enviadas por OTA con el número quieto a propósito; al construir el binario 1.0.9 se movieron
+a su entrada (detección de pagos por correo, doble toque en *Guardar*, arranque más rápido,
+aviso de conexión lenta) y 1.0.8 se quedó solo con el asistente hablante, que sí venía dentro
+de aquel binario.
 
-**En el próximo build nativo hay que hacer las tres cosas juntas:**
+**Deuda que dejó el bump:** el iPhone corre un `.ipa` con runtime `1.0.8` y no hay Mac para
+recompilarlo, así que **dejó de recibir OTAs**. Se quedó con todo lo publicado hasta el
+2026-07-31, que era el estado completo de `main`. Para volver a alimentarlo hay que rehacer el
+`.ipa` (ver `docs/REINSTALL_IOS.md`) o publicar a mano contra el runtime viejo revirtiendo
+`version` temporalmente — feo, evitarlo.
 
-1. `version: "1.0.9"` y `versionCode: 10` en `app.json`.
-2. Entrada nueva `1.0.9` en `constants/changelog.ts`, moviendo a ella lo que se anunció como
-   1.0.8 pero salió después del binario 1.0.8 (detección de pagos por correo, el arreglo del
-   doble toque en *Guardar*, el aviso de conexión lenta).
-3. Los builds: `npm run build:android` y, para iOS, `docs/REINSTALL_IOS.md`.
-
-Si se bumpea la versión sin el paso 3, los dispositivos quedan congelados.
+Regla que sigue vigente: **bumpear `version` sin construir los binarios de las dos
+plataformas congela a la que se quedó atrás.**
 
 ## Antes de cerrar
 
