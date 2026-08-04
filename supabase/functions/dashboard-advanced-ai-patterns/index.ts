@@ -330,7 +330,10 @@ async function requestGeminiReply(apiKey: string, model: string, prompt: string)
         generationConfig: {
           temperature: 0.4,
           topP: 0.9,
-          maxOutputTokens: 420,
+          // Los modelos que razonan (3.x) descuentan el pensamiento de este
+          // mismo presupuesto: con 420 se lo gastaban pensando y devolvian texto
+          // vacio, sin error. Se amplia solo para ellos.
+          maxOutputTokens: model.startsWith("gemini-3") ? 2048 : 420,
           responseMimeType: "application/json",
         },
       }),
