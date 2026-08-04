@@ -12,10 +12,14 @@ import {
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Mic, Send, Sparkles, Volume2, VolumeX } from "lucide-react-native";
-import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from "expo-speech-recognition";
 import * as Speech from "expo-speech";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
+import {
+  ExpoSpeechRecognitionModule,
+  isDictationAvailable,
+  useSpeechRecognitionEvent,
+} from "../lib/speech-recognition-safe";
 import { ErrorBoundary } from "../components/ui/ErrorBoundary";
 import { ScreenHeader } from "../components/layout/ScreenHeader";
 import { MovementForm, type MovementDuplicateSource } from "../components/forms/MovementForm";
@@ -763,15 +767,17 @@ function AssistantScreen() {
             onSubmitEditing={() => void send(input)}
             accessibilityLabel="Escribe tu pregunta"
           />
-          <TouchableOpacity
-            style={[styles.micBtn, isListening ? styles.micBtnActive : null]}
-            onPressIn={() => void startDictation()}
-            onPressOut={stopDictation}
-            disabled={isThinking}
-            accessibilityLabel="Mantén presionado para dictar"
-          >
-            <Mic size={18} color={isListening ? COLORS.void : COLORS.primary} />
-          </TouchableOpacity>
+          {isDictationAvailable ? (
+            <TouchableOpacity
+              style={[styles.micBtn, isListening ? styles.micBtnActive : null]}
+              onPressIn={() => void startDictation()}
+              onPressOut={stopDictation}
+              disabled={isThinking}
+              accessibilityLabel="Mantén presionado para dictar"
+            >
+              <Mic size={18} color={isListening ? COLORS.void : COLORS.primary} />
+            </TouchableOpacity>
+          ) : null}
           <TouchableOpacity
             style={[styles.sendBtn, (!input.trim() || isThinking) ? styles.sendBtnDisabled : null]}
             onPress={() => void send(input)}
