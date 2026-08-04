@@ -44,6 +44,31 @@ Release, no Debug: con Debug el bundle JS no queda embebido y la app necesitarí
 servidor de desarrollo. Sin firmar y con `generic/platform=iOS` **no hace falta el iPhone
 conectado**, porque AltStore re-firma todo (incluidos los 3 frameworks embebidos).
 
+### ⚠️ `BUILD SUCCEEDED` tampoco garantiza que los módulos nativos entraron
+
+Igual que en Android con el DEX, hay que **verificar el binario**. Este `.ipa` 1.0.8 se
+generó con un `expo prebuild` cuyo `pod install` no se completó: el `Info.plist` traía los
+textos de permiso de voz (el plugin sí corrió) pero el binario **no traía el módulo**.
+Resultado: abrir el asistente cerraba la app en el iPhone, y nada en el build lo delató.
+
+Comprobar antes de instalar, comparando contra un módulo que sí deba estar:
+
+```bash
+unzip -o -q DarkMoney-X.Y.Z.ipa -d /tmp/ipa
+APP=/tmp/ipa/Payload/DarkMoney.app
+for k in ExpoSpeechRecognition ExpoSpeech ExpoCamera ExpoSecureStore; do
+  echo "$k: $(grep -oa "$k" "$APP/DarkMoney" | wc -l)"
+done
+```
+
+Un `0` donde los demás dan cientos = ese pod no se enlazó. En el caso real:
+`ExpoSpeechRecognition: 0` frente a `ExpoSpeech: 233` y `ExpoCamera: 2048`.
+
+Mitigado en JS desde `lib/speech-recognition-safe.ts`: los paquetes que resuelven su nativo
+con `requireNativeModule` en el cuerpo del módulo **lanzan al importarse**, así que un
+import estático tumba la pantalla entera. Envolver en `require` guardado con degradación a
+no-ops. Aplicar el mismo patrón a cualquier dep nativa nueva que use el asistente.
+
 ### Cómo se instala ahora (Windows, gratis)
 
 **AltStore** (o **SideStore**, que se renueva solo por wifi) firma el `.ipa` con el Apple ID
