@@ -118,10 +118,15 @@ async function callGemini(
 /**
  * Motor del asistente. Preferencia: Gemini vía su endpoint COMPATIBLE con OpenAI
  * (mismo shape de tools/tool_calls → reusa todo el loop) por su mejor seguimiento
- * de instrucciones y menor adulación que deepseek-chat. DeepSeek queda de
- * respaldo. Modelo configurable por secret (ASSISTANT_GEMINI_MODEL, default
- * gemini-2.5-flash; poner gemini-2.5-pro para probar Pro). Forzar DeepSeek con
- * ASSISTANT_PROVIDER=deepseek.
+ * de instrucciones y menor adulación que DeepSeek.
+ *
+ * OJO: DeepSeek NO es un respaldo en ejecución. Solo se usa si falta
+ * GEMINI_API_KEY o si se fuerza con ASSISTANT_PROVIDER=deepseek; si Gemini
+ * responde con error, la excepción sube y el usuario ve un fallo. Si algún día
+ * se quiere respaldo real, hay que envolver callGemini en try/catch aquí.
+ *
+ * Modelo configurable por secret (ASSISTANT_GEMINI_MODEL, hoy gemini-3.6-flash;
+ * el default del código queda en gemini-2.5-flash por prudencia).
  */
 async function callModel(messages: ChatMessage[]) {
   const geminiKey = Deno.env.get("GEMINI_API_KEY")?.trim();
