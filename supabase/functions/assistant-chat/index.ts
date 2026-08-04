@@ -120,27 +120,49 @@ async function callGemini(
  * (mismo shape de tools/tool_calls → reusa todo el loop) por su mejor seguimiento
  * de instrucciones y menor adulación que DeepSeek.
  *
- * OJO: DeepSeek NO es un respaldo en ejecución. Solo se usa si falta
- * GEMINI_API_KEY o si se fuerza con ASSISTANT_PROVIDER=deepseek; si Gemini
- * responde con error, la excepción sube y el usuario ve un fallo. Si algún día
- * se quiere respaldo real, hay que envolver callGemini en try/catch aquí.
+ * DeepSeek SÍ es respaldo en ejecución: Gemini se intenta dos veces (sus 503 de
+ * "modelo sobrecargado" son frecuentes y pasajeros) y, si ambos fallan, responde
+ * DeepSeek. El usuario solo ve un error si también falla el respaldo. Forzar
+ * DeepSeek de entrada con ASSISTANT_PROVIDER=deepseek.
  *
- * Modelo configurable por secret (ASSISTANT_GEMINI_MODEL, hoy gemini-3.6-flash;
- * el default del código queda en gemini-2.5-flash por prudencia).
+ * Modelo configurable por secret (ASSISTANT_GEMINI_MODEL; el default del código
+ * queda en gemini-2.5-flash por prudencia).
  */
 async function callModel(messages: ChatMessage[]) {
   const geminiKey = Deno.env.get("GEMINI_API_KEY")?.trim();
   const forceDeepseek = Deno.env.get("ASSISTANT_PROVIDER")?.trim() === "deepseek";
 
+  let geminiError: unknown = null;
+
   if (geminiKey && !forceDeepseek) {
     const model = Deno.env.get("ASSISTANT_GEMINI_MODEL")?.trim() || "gemini-2.5-flash";
-    const message = await callGemini(geminiKey, model, messages, true, 30_000);
-    return { message, model };
+    // Los modelos 3.x razonan siempre (no se puede desactivar) y tardan más que
+    // los 2.x, así que con 30 s se quedaban cortos y cortaban por timeout.
+    const timeoutMs = model.startsWith("gemini-3") ? 55_000 : 30_000;
+
+    // Dos intentos: los 503 de Gemini ("modelo sobrecargado") son frecuentes y
+    // pasajeros, y antes cualquiera de ellos llegaba al usuario como un error.
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      try {
+        const message = await callGemini(geminiKey, model, messages, true, timeoutMs);
+        return { message, model };
+      } catch (error) {
+        geminiError = error;
+        console.warn(`[assistant-chat] gemini intento ${attempt}/2 falló`, error);
+        if (attempt === 1) await new Promise((r) => setTimeout(r, 800));
+      }
+    }
+    // Si los dos intentos fallaron, sigue hacia DeepSeek en vez de reventar.
   }
 
   const apiKey = Deno.env.get("DEEPSEEK_API_KEY")?.trim();
-  if (!apiKey) throw new Error("Falta GEMINI_API_KEY o DEEPSEEK_API_KEY.");
-  const model = Deno.env.get("ASSISTANT_DEEPSEEK_MODEL")?.trim() || "deepseek-chat";
+  if (!apiKey) {
+    // Sin respaldo configurado, el error útil es el de Gemini, no "falta la key".
+    if (geminiError) throw geminiError;
+    throw new Error("Falta GEMINI_API_KEY o DEEPSEEK_API_KEY.");
+  }
+  // deepseek-chat y deepseek-reasoner se descontinuaron el 2026-07-24.
+  const model = Deno.env.get("ASSISTANT_DEEPSEEK_MODEL")?.trim() || "deepseek-v4-flash";
   const response = await fetch("https://api.deepseek.com/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
