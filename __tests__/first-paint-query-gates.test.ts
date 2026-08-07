@@ -33,6 +33,26 @@ describe("consultas secundarias fuera del primer pintado", () => {
     );
   });
 
+  /**
+   * Diferir una consulta y marcarla como no bloqueante son DOS arreglos distintos, y se
+   * hicieron por separado sin conectarlos: `budget-scope-movements` y
+   * `pending-obligation-share-invites` se retrasaban bien con useAfterFirstPaint, pero seguían
+   * contando como "el usuario está esperando" para el aviso de red lenta. Resultado medido en
+   * los logs del 05 y 06 de agosto de 2026: los 5 de 5 avisos de "conexión lenta" los
+   * disparaban esas dos, con la app entera ya pintada delante y sin que nadie esperase nada.
+   *
+   * Si difieres una consulta al primer pintado, márcala también aquí.
+   */
+  it("las consultas diferidas al primer pintado no cuentan para el aviso de red lenta", () => {
+    const budgets = read("services/queries/budget-analytics.ts");
+    const obligations = read("services/queries/obligations-impl.ts");
+
+    expect(budgets).toContain('"budget-scope-movements"');
+    expect(budgets).toContain("meta: { uxBlocking: false }");
+    expect(obligations).toContain('"pending-obligation-share-invites"');
+    expect(obligations).toContain("meta: { uxBlocking: false }");
+  });
+
   it("no monta Dashboard anticipadamente ni adelanta prefetch de otras tabs", () => {
     const layout = read("app/(app)/_layout.tsx");
     const dashboard = read("app/(app)/dashboard.tsx");

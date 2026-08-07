@@ -181,6 +181,11 @@ export function usePendingObligationShareInvitesQuery(
     queryKey: ["pending-obligation-share-invites", userId ?? null, normalizedEmail],
     enabled: Boolean(supabase && userId && normalizedEmail),
     staleTime: STALE.short,
+    // Chequeo de invitaciones en segundo plano: el layout la difiere con useAfterFirstPaint
+    // y su resultado solo pinta un badge. Nadie espera mirando. Sin esta marca contaba como
+    // "bloqueante" y era, junto a budget-scope-movements, la causa del aviso de red lenta
+    // en 5 de los 5 avisos registrados entre el 05 y el 06 de agosto de 2026.
+    meta: { uxBlocking: false },
     queryFn: async (): Promise<PendingObligationShareInviteItem[]> => {
       if (!supabase || !userId || !normalizedEmail) return [];
       const { data, error } = await supabase

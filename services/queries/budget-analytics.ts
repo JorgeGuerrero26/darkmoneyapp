@@ -117,6 +117,10 @@ export function useBudgetScopeMovementsQuery(
     enabled: Boolean(workspaceId && periodStart && periodEnd && budgets.length > 0),
     staleTime: STALE.short,
     placeholderData: (previousData) => previousData,
+    // El dashboard la difiere con useAfterFirstPaint: arranca cuando la pantalla YA está
+    // pintada, así que el usuario nunca la está esperando. Sin esta marca contaba como
+    // "bloqueante" y disparaba el aviso de red lenta con la app entera cargada delante.
+    meta: { uxBlocking: false },
     queryFn: () => fetchBudgetScopeMovements(workspaceId!, periodStart!, periodEnd!),
   });
 }
