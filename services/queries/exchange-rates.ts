@@ -49,6 +49,7 @@ export function useExchangeRatesQuery() {
 export function useCreateExchangeRateMutation() {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["create-exchange-rate"],
     mutationFn: async (input: { fromCurrencyCode: string; toCurrencyCode: string; rate: number; notes?: string }) => {
       if (!supabase) throw new Error("Supabase no configurado");
       const { error } = await supabase.from("exchange_rates").insert({
@@ -71,6 +72,7 @@ export function useCreateExchangeRateMutation() {
 export function useUpdateExchangeRateMutation() {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["update-exchange-rate"],
     mutationFn: async (input: {
       id: number;
       fromCurrencyCode: string;
@@ -150,6 +152,7 @@ async function upsertExchangeRateRow(input: {
 export function useSyncExchangeRatePairMutation() {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["sync-exchange-rate-pair"],
     mutationFn: async (input: { fromCurrencyCode: string; toCurrencyCode: string }) => {
       const liveRate = await fetchLiveExchangeRate(input.fromCurrencyCode, input.toCurrencyCode);
       const from = liveRate.fromCurrencyCode.toUpperCase().trim();
@@ -194,6 +197,7 @@ export function useSyncExchangeRatePairMutation() {
 export function useDeleteExchangeRateMutation() {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["delete-exchange-rate"],
     mutationFn: async (id: number) => {
       if (!supabase) throw new Error("Supabase no configurado");
       const { error } = await supabase.from("exchange_rates").delete().eq("id", id);
@@ -209,6 +213,7 @@ export function useDeleteExchangeRateMutation() {
 export function useToggleExchangeRatePinMutation() {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["toggle-exchange-rate-pin"],
     mutationFn: async ({ id, isPinned }: { id: number; isPinned: boolean }) => {
       if (!supabase) throw new Error("Supabase no configurado");
       const { error } = await supabase

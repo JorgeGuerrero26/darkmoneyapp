@@ -132,6 +132,7 @@ export function useNotificationPreferencesQuery(userId: string | null | undefine
 export function useUpdateNotificationPreferencesMutation(userId: string | null | undefined) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["update-notification-preferences"],
     mutationFn: async (input: { dailyDigestEnabled: boolean; predictiveAlertsEnabled?: boolean; pushEnabled?: boolean }) => {
       if (!supabase || !userId) throw new Error("Usuario no disponible.");
 
@@ -180,6 +181,7 @@ export function useUpdateNotificationPreferencesMutation(userId: string | null |
 export function useMarkNotificationReadMutation(userId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["mark-notification-read"],
     mutationFn: async (notificationId: number) => {
       if (!supabase) throw new Error("Supabase no está configurado.");
       const { error } = await supabase
@@ -200,6 +202,7 @@ export function useMarkNotificationReadMutation(userId: string | null) {
 export function useMarkAllNotificationsReadMutation(userId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["mark-all-notifications-read"],
     mutationFn: async () => {
       if (!supabase || !userId) throw new Error("Usuario no disponible.");
       const { error } = await supabase
@@ -223,6 +226,7 @@ export function useMarkAllNotificationsReadMutation(userId: string | null) {
 export function useMarkNotificationUnreadMutation(userId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["mark-notification-unread"],
     mutationFn: async (notificationId: number) => {
       if (!supabase) throw new Error("Supabase no está configurado.");
       const { error } = await supabase
@@ -243,6 +247,7 @@ export function useMarkNotificationUnreadMutation(userId: string | null) {
 export function useMarkAllNotificationsUnreadMutation(userId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["mark-all-notifications-unread"],
     mutationFn: async () => {
       if (!supabase || !userId) throw new Error("Usuario no disponible.");
       const { error } = await supabase
@@ -264,6 +269,7 @@ export function useMarkAllNotificationsUnreadMutation(userId: string | null) {
 export function useMarkNotificationsReadMutation(userId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["mark-notifications-read"],
     mutationFn: async (notificationIds: number[]) => {
       if (!supabase) throw new Error("Supabase no está configurado.");
       if (!notificationIds.length) return;
@@ -288,6 +294,7 @@ export function useMarkNotificationsReadMutation(userId: string | null) {
 export function useMarkNotificationsUnreadMutation(userId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["mark-notifications-unread"],
     mutationFn: async (notificationIds: number[]) => {
       if (!supabase) throw new Error("Supabase no está configurado.");
       if (!notificationIds.length) return;
@@ -312,6 +319,7 @@ export function useMarkNotificationsUnreadMutation(userId: string | null) {
 export function useDeleteNotificationMutation(userId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["delete-notification"],
     mutationFn: async (notificationId: number) => {
       if (!supabase) throw new Error("Supabase no está configurado.");
       const { error } = await supabase
@@ -331,6 +339,7 @@ export function useDeleteNotificationMutation(userId: string | null) {
 export function useDeleteNotificationsMutation(userId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["delete-notifications"],
     mutationFn: async (notificationIds: number[]) => {
       if (!supabase) throw new Error("Supabase no está configurado.");
       if (!notificationIds.length) return;

@@ -290,6 +290,7 @@ export function useCreateObligationShareInviteMutation(workspaceId?: number | nu
   const queryClient = useQueryClient();
   const appUrl = buildHostedAppUrl();
   return useMutation({
+    mutationKey: ["create-obligation-share-invite"],
     mutationFn: async (input: ObligationShareInviteInput) => {
       const response = await withTimeout(
         invokeEdgeFunction<{
@@ -335,6 +336,7 @@ export function useCreateObligationShareInviteMutation(workspaceId?: number | nu
 export function useUnlinkObligationShareMutation(workspaceId?: number | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["unlink-obligation-share"],
     mutationFn: async (input: UnlinkObligationShareInput) => {
       const response = await invokeEdgeFunction<{
         ok: boolean;
@@ -718,6 +720,7 @@ export type PaymentRequestInput = {
 export function useCreatePaymentRequestMutation() {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["create-payment-request"],
     mutationFn: async (input: PaymentRequestInput) => {
       if (!supabase) throw new Error("Supabase no disponible.");
       const client = supabase;
@@ -872,6 +875,7 @@ export type AcceptPaymentRequestInput = {
 export function useAcceptPaymentRequestMutation() {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["accept-payment-request"],
     mutationFn: async (input: AcceptPaymentRequestInput) => {
       if (!supabase) throw new Error("Supabase no disponible.");
       const nowIso = new Date().toISOString();
@@ -1016,6 +1020,7 @@ export function useAcceptPaymentRequestMutation() {
 export function useRejectPaymentRequestMutation() {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["reject-payment-request"],
     mutationFn: async ({
       requestId,
       obligationId,
@@ -1193,6 +1198,7 @@ export function viewerLinkedEventMovementConfig(input: Pick<LinkEventToAccountIn
 export function useLinkEventToAccountMutation() {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["link-event-to-account"],
     mutationFn: async (input: LinkEventToAccountInput) => {
       if (!supabase) throw new Error("Supabase no disponible.");
 
@@ -1271,6 +1277,7 @@ export function useLinkEventToAccountMutation() {
 export function useUpsertLinkEventToAccountMutation() {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["upsert-link-event-to-account"],
     mutationFn: async (input: LinkEventToAccountInput) => {
       if (!supabase) throw new Error("Supabase no disponible.");
       const client = supabase;
@@ -1397,6 +1404,7 @@ export type DeleteViewerEventLinkInput = {
 export function useDeleteViewerEventLinkMutation() {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["delete-viewer-event-link"],
     mutationFn: async (input: DeleteViewerEventLinkInput) => {
       if (!supabase) throw new Error("Supabase no disponible.");
       if (input.movementId) {
@@ -2124,6 +2132,7 @@ export type ObligationFormInput = {
 export function useDeleteObligationMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["delete-obligation"],
     mutationFn: async (id: number) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const { count, error: eventsError } = await supabase
@@ -2154,6 +2163,7 @@ export function useDeleteObligationMutation(workspaceId: number | null) {
 export function useArchiveObligationMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["archive-obligation"],
     mutationFn: async ({ id, archived }: { id: number; archived: boolean }) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const nextStatus: ObligationStatus = archived ? "cancelled" : "active";
@@ -2178,6 +2188,7 @@ export function useArchiveObligationMutation(workspaceId: number | null) {
 export function useCreateObligationMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["create-obligation"],
     mutationFn: async (input: ObligationFormInput) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const dedupeKey = input.clientDedupeKey ?? null;
@@ -2262,6 +2273,7 @@ export function useCreateObligationMutation(workspaceId: number | null) {
 export function useUpdateObligationMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["update-obligation"],
     mutationFn: async ({ id, input }: { id: number; input: Partial<ObligationFormInput> }) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const payload: Record<string, unknown> = {};
@@ -2311,6 +2323,7 @@ export type ObligationPaymentInput = {
 export function useCreateObligationPaymentMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["create-obligation-payment"],
     mutationFn: async (input: ObligationPaymentInput) => {
       if (!supabase) throw new Error("Supabase no disponible.");
       const wsId = await fetchObligationWorkspaceId(input.obligationId);
@@ -2401,6 +2414,7 @@ export function useCreateObligationPaymentMutation(workspaceId: number | null) {
 export function useLinkMovementToObligationMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["link-movement-to-obligation"],
     mutationFn: async ({
       movementId,
       obligationId,
@@ -2465,6 +2479,7 @@ export type PrincipalAdjustmentInput = {
 export function useCreatePrincipalAdjustmentMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["create-principal-adjustment"],
     mutationFn: async (input: PrincipalAdjustmentInput) => {
       if (!supabase) throw new Error("Supabase no disponible.");
       const wsId = await fetchObligationWorkspaceId(input.obligationId);
@@ -2718,6 +2733,7 @@ export async function updateObligationEventAndSyncMovements(
 export function useUpdateObligationEventMutation() {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["update-obligation-event"],
     mutationFn: (input: UpdateObligationEventInput) => updateObligationEventAndSyncMovements(input),
     onSuccess: (data, variables) => {
       const queryKeys: Array<readonly unknown[]> = [
@@ -2756,6 +2772,7 @@ export type DeleteObligationEventInput = {
 export function useDeleteObligationEventMutation() {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["delete-obligation-event"],
     mutationFn: async (input: DeleteObligationEventInput) => {
       if (!supabase) throw new Error("Supabase no disponible.");
 
@@ -2921,6 +2938,7 @@ export type CreateObligationEventDeleteRequestInput = {
 export function useCreateObligationEventDeleteRequestMutation() {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["create-obligation-event-delete-request"],
     mutationFn: async (input: CreateObligationEventDeleteRequestInput) => {
       if (!supabase) throw new Error("Supabase no disponible.");
       const client = supabase;
@@ -3035,6 +3053,7 @@ export type RejectObligationEventDeleteRequestInput = {
 export function useRejectObligationEventDeleteRequestMutation() {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["reject-obligation-event-delete-request"],
     mutationFn: async (input: RejectObligationEventDeleteRequestInput) => {
       if (!supabase) throw new Error("Supabase no disponible.");
       const now = new Date().toISOString();
@@ -3153,6 +3172,7 @@ export type RejectObligationEventEditRequestInput = {
 export function useCreateObligationEventEditRequestMutation() {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["create-obligation-event-edit-request"],
     mutationFn: async (input: CreateObligationEventEditRequestInput) => {
       if (!supabase) throw new Error("Supabase no disponible.");
       const now = new Date().toISOString();
@@ -3213,6 +3233,7 @@ export function useCreateObligationEventEditRequestMutation() {
 export function useAcceptObligationEventEditRequestMutation() {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["accept-obligation-event-edit-request"],
     mutationFn: async (input: AcceptObligationEventEditRequestInput) => {
       if (!supabase) throw new Error("Supabase no disponible.");
       const now = new Date().toISOString();
@@ -3312,6 +3333,7 @@ export function useAcceptObligationEventEditRequestMutation() {
 export function useRejectObligationEventEditRequestMutation() {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["reject-obligation-event-edit-request"],
     mutationFn: async (input: RejectObligationEventEditRequestInput) => {
       if (!supabase) throw new Error("Supabase no disponible.");
       const now = new Date().toISOString();

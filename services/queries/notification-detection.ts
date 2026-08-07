@@ -220,6 +220,7 @@ export function useNotificationDetectionSettingsQuery(userId?: string | null, wo
 export function useUpsertNotificationDetectionSettingMutation(userId?: string | null, workspaceId?: number | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["upsert-notification-detection-setting"],
     mutationFn: async (input: NotificationDetectionAppSetting) => {
       if (!supabase || !userId || !workspaceId) throw new Error("Workspace no disponible.");
       const { error } = await supabase
@@ -411,6 +412,7 @@ export function useDetectedMovementSuggestionQuery(suggestionId?: number | null)
 export function useMarkDetectedMovementSuggestionMutation(userId?: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["mark-detected-movement-suggestion"],
     mutationFn: async (input: { suggestionId: number; status: DetectedMovementStatus; movementId?: number | null }) => {
       if (!supabase) throw new Error("Supabase no está configurado.");
       const { error } = await supabase

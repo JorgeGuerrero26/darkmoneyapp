@@ -52,6 +52,7 @@ export function useRotateInboundEmailAliasMutation(
 ) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["rotate-inbound-email-alias"],
     mutationFn: async () => {
       if (!supabase || !userId || !workspaceId) throw new Error("Sesión no disponible.");
 

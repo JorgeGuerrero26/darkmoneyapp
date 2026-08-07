@@ -60,6 +60,7 @@ export type RecurringIncomeFormInput = {
 export function useCreateRecurringIncomeMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["create-recurring-income"],
     mutationFn: async (input: RecurringIncomeFormInput) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const { data: authData, error: authErr } = await supabase.auth.getUser();
@@ -105,6 +106,7 @@ export function useCreateRecurringIncomeMutation(workspaceId: number | null) {
 export function useUpdateRecurringIncomeMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["update-recurring-income"],
     mutationFn: async ({ id, input }: { id: number; input: Partial<RecurringIncomeFormInput> & { status?: RecurringIncomeStatus } }) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const payload: Record<string, unknown> = {};
@@ -142,6 +144,7 @@ export function useUpdateRecurringIncomeMutation(workspaceId: number | null) {
 export function useDeleteRecurringIncomeMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["delete-recurring-income"],
     mutationFn: async (id: number) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const { error: occErr } = await supabase
@@ -224,6 +227,7 @@ export function useRecurringIncomeOccurrencesQuery(
 export function useCreateSubscriptionMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["create-subscription"],
     mutationFn: async (input: SubscriptionFormInput) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const { data: authData, error: authErr } = await supabase.auth.getUser();
@@ -269,6 +273,7 @@ export function useCreateSubscriptionMutation(workspaceId: number | null) {
 export function useUpdateSubscriptionMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["update-subscription"],
     mutationFn: async ({ id, input }: { id: number; input: Partial<SubscriptionFormInput> & { status?: string } }) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const payload: Record<string, unknown> = {};
@@ -306,6 +311,7 @@ export function useUpdateSubscriptionMutation(workspaceId: number | null) {
 export function useDeleteSubscriptionMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["delete-subscription"],
     mutationFn: async (id: number) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
 
@@ -364,6 +370,7 @@ export function useDeleteSubscriptionMutation(workspaceId: number | null) {
 export function useToggleSubscriptionPinMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["toggle-subscription-pin"],
     mutationFn: async ({ id, isPinned }: { id: number; isPinned: boolean }) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const { error } = await supabase
@@ -406,6 +413,7 @@ type MarkPaidArgs = {
 export function useMarkSubscriptionPaidMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["mark-subscription-paid"],
     mutationFn: async (args: MarkPaidArgs) => {
       if (!workspaceId) throw new Error("Workspace no disponible.");
       return await markSubscriptionPaid({
@@ -454,6 +462,7 @@ export function useMarkSubscriptionPaidMutation(workspaceId: number | null) {
 export function useToggleRecurringIncomePinMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["toggle-recurring-income-pin"],
     mutationFn: async ({ id, isPinned }: { id: number; isPinned: boolean }) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const { error } = await supabase

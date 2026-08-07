@@ -26,6 +26,7 @@ export type AccountFormInput = {
 export function useCreateAccountMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["create-account"],
     mutationFn: async (input: AccountFormInput) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const { data, error } = await withTimeout(
@@ -61,6 +62,7 @@ export function useCreateAccountMutation(workspaceId: number | null) {
 export function useUpdateAccountMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["update-account"],
     mutationFn: async ({ id, input }: { id: number; input: Partial<AccountFormInput> }) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const { error } = await withTimeout(
@@ -92,6 +94,7 @@ export function useUpdateAccountMutation(workspaceId: number | null) {
 export function useArchiveAccountMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["archive-account"],
     mutationFn: async ({ id, archived }: { id: number; archived: boolean }) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const { error } = await supabase
@@ -127,6 +130,7 @@ export function useArchiveAccountMutation(workspaceId: number | null) {
 export function useDeleteAccountMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["delete-account"],
     mutationFn: async (id: number) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const { error } = await supabase

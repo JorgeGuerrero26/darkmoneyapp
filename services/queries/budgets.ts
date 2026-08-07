@@ -25,6 +25,7 @@ export type BudgetUpdateInput = Partial<BudgetFormInput>;
 export function useCreateBudgetMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["create-budget"],
     mutationFn: async (input: BudgetFormInput) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const { data, error } = await supabase
@@ -56,6 +57,7 @@ export function useCreateBudgetMutation(workspaceId: number | null) {
 export function useUpdateBudgetMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["update-budget"],
     mutationFn: async ({ id, input }: { id: number; input: BudgetUpdateInput }) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const payload: Record<string, unknown> = {};
@@ -85,6 +87,7 @@ export function useUpdateBudgetMutation(workspaceId: number | null) {
 export function useTogglePinBudgetMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["toggle-pin-budget"],
     mutationFn: async ({ id, isPinned }: { id: number; isPinned: boolean }) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const { error } = await supabase
@@ -122,6 +125,7 @@ export function useTogglePinBudgetMutation(workspaceId: number | null) {
 export function useDuplicateBudgetMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["duplicate-budget"],
     mutationFn: async (source: BudgetOverview) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const { periodStart, periodEnd } = nextPeriodFor(source.periodStart, source.periodEnd);
@@ -154,6 +158,7 @@ export function useDuplicateBudgetMutation(workspaceId: number | null) {
 export function useDeleteBudgetMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["delete-budget"],
     mutationFn: async (id: number) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const { error } = await supabase

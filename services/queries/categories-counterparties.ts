@@ -34,6 +34,7 @@ export type CategoryFormInput = {
 export function useCreateCategoryMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["create-category"],
     mutationFn: async (input: CategoryFormInput) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const { data: authData, error: authErr } = await supabase.auth.getUser();
@@ -86,6 +87,7 @@ export function useCreateCategoryMutation(workspaceId: number | null) {
 export function useUpdateCategoryMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["update-category"],
     mutationFn: async ({ id, input }: { id: number; input: Partial<CategoryFormInput> }) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       if (input.parentId !== undefined && input.parentId === id) {
@@ -122,6 +124,7 @@ export function useUpdateCategoryMutation(workspaceId: number | null) {
 export function useToggleCategoryMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["toggle-category"],
     mutationFn: async ({ id, isActive }: { id: number; isActive: boolean }) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const { data: authData, error: authErr } = await supabase.auth.getUser();
@@ -143,6 +146,7 @@ export function useToggleCategoryMutation(workspaceId: number | null) {
 export function useDeleteCategoryMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["delete-category"],
     mutationFn: async (id: number) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
 
@@ -211,6 +215,7 @@ export type CounterpartyFormInput = {
 export function useCreateCounterpartyMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["create-counterparty"],
     mutationFn: async (input: CounterpartyFormInput) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const { data, error } = await supabase
@@ -240,6 +245,7 @@ export function useCreateCounterpartyMutation(workspaceId: number | null) {
 export function useUpdateCounterpartyMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["update-counterparty"],
     mutationFn: async ({ id, input }: { id: number; input: Partial<CounterpartyFormInput> & { isArchived?: boolean } }) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const payload: Record<string, unknown> = {};
@@ -267,6 +273,7 @@ export function useUpdateCounterpartyMutation(workspaceId: number | null) {
 export function useToggleCounterpartyPinMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["toggle-counterparty-pin"],
     mutationFn: async ({ id, isPinned }: { id: number; isPinned: boolean }) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const { data: authData, error: authErr } = await supabase.auth.getUser();
@@ -289,6 +296,7 @@ export function useToggleCounterpartyPinMutation(workspaceId: number | null) {
 export function useDeleteCounterpartyMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["delete-counterparty"],
     mutationFn: async (id: number) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
 
@@ -330,6 +338,7 @@ export function useDeleteCounterpartyMutation(workspaceId: number | null) {
 export function useToggleCategoryPinMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["toggle-category-pin"],
     mutationFn: async ({ id, isPinned }: { id: number; isPinned: boolean }) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const { data: authData, error: authErr } = await supabase.auth.getUser();

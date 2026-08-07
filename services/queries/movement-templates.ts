@@ -60,6 +60,7 @@ export function useMovementTemplatesQuery(workspaceId: number | null, enabled = 
 export function useCreateMovementTemplateMutation(workspaceId: number | null, userId: string | null | undefined) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["create-movement-template"],
     mutationFn: async (input: MovementTemplateInput): Promise<MovementTemplate> => {
       if (!supabase || !workspaceId || !userId) throw new Error("Workspace no disponible.");
       const { data, error } = await supabase
@@ -92,6 +93,7 @@ export function useCreateMovementTemplateMutation(workspaceId: number | null, us
 export function useRenameMovementTemplateMutation() {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["rename-movement-template"],
     mutationFn: async ({ templateId, name }: { templateId: number; name: string }) => {
       if (!supabase) throw new Error("Supabase no está configurado.");
       const { error } = await supabase.from("movement_templates").update({ name }).eq("id", templateId);
@@ -106,6 +108,7 @@ export function useRenameMovementTemplateMutation() {
 export function useDeleteMovementTemplateMutation() {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["delete-movement-template"],
     mutationFn: async (templateId: number) => {
       if (!supabase) throw new Error("Supabase no está configurado.");
       const { error } = await supabase.from("movement_templates").delete().eq("id", templateId);

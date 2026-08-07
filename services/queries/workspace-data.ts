@@ -1902,6 +1902,7 @@ export type DashboardAiSummaryResponse = {
 
 export function useDashboardAiSummaryMutation() {
   return useMutation({
+    mutationKey: ["dashboard-ai-summary"],
     mutationFn: async (input: DashboardAiSummaryInput): Promise<DashboardAiSummaryResponse> => {
       if (!input.workspaceId) throw new Error("No se encontró el workspace activo.");
       if (!input.summary || typeof input.summary !== "object") {
@@ -1920,6 +1921,7 @@ export type DashboardAiPatternsResponse = DashboardAiSummaryResponse;
 
 export function useDashboardAiPatternsMutation() {
   return useMutation({
+    mutationKey: ["dashboard-ai-patterns"],
     mutationFn: async (input: DashboardAiPatternsInput): Promise<DashboardAiPatternsResponse> => {
       if (!input.workspaceId) throw new Error("No se encontró el workspace activo.");
       if (!input.summary || typeof input.summary !== "object") {
@@ -1938,6 +1940,7 @@ export type DashboardAiFlowResponse = DashboardAiSummaryResponse;
 
 export function useDashboardAiFlowMutation() {
   return useMutation({
+    mutationKey: ["dashboard-ai-flow"],
     mutationFn: async (input: DashboardAiFlowInput): Promise<DashboardAiFlowResponse> => {
       if (!input.workspaceId) throw new Error("No se encontró el workspace activo.");
       if (!input.summary || typeof input.summary !== "object") {
@@ -1956,6 +1959,7 @@ export type DashboardAiHistoryResponse = DashboardAiSummaryResponse;
 
 export function useDashboardAiHistoryMutation() {
   return useMutation({
+    mutationKey: ["dashboard-ai-history"],
     mutationFn: async (input: DashboardAiHistoryInput): Promise<DashboardAiHistoryResponse> => {
       if (!input.workspaceId) throw new Error("No se encontró el workspace activo.");
       if (!input.summary || typeof input.summary !== "object") {
@@ -1974,6 +1978,7 @@ export type DashboardAiHealthResponse = DashboardAiSummaryResponse;
 
 export function useDashboardAiHealthMutation() {
   return useMutation({
+    mutationKey: ["dashboard-ai-health"],
     mutationFn: async (input: DashboardAiHealthInput): Promise<DashboardAiHealthResponse> => {
       if (!input.workspaceId) throw new Error("No se encontró el workspace activo.");
       if (!input.summary || typeof input.summary !== "object") {
@@ -2041,6 +2046,7 @@ export async function requestMovementCategoryAiSuggestion(
 
 export function useMovementCategoryAiSuggestionMutation() {
   return useMutation({
+    mutationKey: ["movement-category-ai-suggestion"],
     mutationFn: requestMovementCategoryAiSuggestion,
   });
 }
@@ -2081,6 +2087,7 @@ export async function requestMovementDescriptionCleanup(
 
 export function useMovementDescriptionCleanupMutation() {
   return useMutation({
+    mutationKey: ["movement-description-cleanup"],
     mutationFn: requestMovementDescriptionCleanup,
   });
 }
@@ -2137,6 +2144,7 @@ export async function requestMovementCounterpartyAiSuggestion(
 
 export function useMovementCounterpartyAiSuggestionMutation() {
   return useMutation({
+    mutationKey: ["movement-counterparty-ai-suggestion"],
     mutationFn: requestMovementCounterpartyAiSuggestion,
   });
 }
@@ -2213,6 +2221,7 @@ export async function requestMovementRecurringAiSuggestion(
 
 export function useMovementRecurringAiSuggestionMutation() {
   return useMutation({
+    mutationKey: ["movement-recurring-ai-suggestion"],
     mutationFn: requestMovementRecurringAiSuggestion,
   });
 }
@@ -2361,6 +2370,7 @@ export async function requestMovementBudgetAiRecommendation(
 
 export function usePersistDashboardAnalyticsMutation(workspaceId: number | null) {
   return useMutation({
+    mutationKey: ["persist-dashboard-analytics"],
     mutationFn: async (input: PersistDashboardAnalyticsInput) => {
       if (!supabase || !workspaceId) return { persisted: false };
       const nowIso = new Date().toISOString();
@@ -2427,6 +2437,7 @@ export function usePersistLearningFeedbackMutation(
 ) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["persist-learning-feedback"],
     mutationFn: async (input: PersistLearningFeedbackInput) => {
       if (!supabase || !workspaceId) return { persisted: false };
       const payload = {
@@ -2665,6 +2676,7 @@ export type { MovementUpdateInput };
 export function useUpdateMovementMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["update-movement"],
     mutationFn: async ({ id, input }: { id: number; input: MovementUpdateInput }) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const payload: Record<string, unknown> = {};
@@ -2728,6 +2740,7 @@ export function useUpdateMovementMutation(workspaceId: number | null) {
 export function useVoidMovementMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["void-movement"],
     mutationFn: async (id: number) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const { error } = await supabase
@@ -2764,6 +2777,7 @@ export function useVoidMovementMutation(workspaceId: number | null) {
 export function useDeleteMovementMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["delete-movement"],
     mutationFn: async (id: number) => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const { error } = await supabase
@@ -2934,6 +2948,7 @@ export {
 export function useConfirmRecurringIncomeArrivalMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["confirm-recurring-income-arrival"],
     mutationFn: async (input: {
       recurringIncomeId: number;
       recurringIncomeName: string;
@@ -3458,6 +3473,7 @@ export type CreateSharedWorkspaceInput = {
 export function useCreateSharedWorkspaceMutation() {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["create-shared-workspace"],
     mutationFn: async (input: CreateSharedWorkspaceInput) => {
       const response = await invokeEdgeFunction<{ ok: boolean; error?: string; workspace?: Workspace }>(
         "create-shared-workspace",
@@ -3498,6 +3514,7 @@ export function useCreateWorkspaceInvitationMutation(workspaceId?: number | null
   const queryClient = useQueryClient();
   const appUrl = buildHostedAppUrl();
   return useMutation({
+    mutationKey: ["create-workspace-invitation"],
     mutationFn: async (input: WorkspaceInvitationInput) => {
       const response = await invokeEdgeFunction<{
         ok: boolean; error?: string;
