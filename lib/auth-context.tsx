@@ -214,6 +214,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const authBeforeInitialGetSessionRef = useRef(false);
   const resumeSessionSyncInFlightRef = useRef(false);
   const signingOutRef = useRef(false);
+  /** Última sesión conocida, legible sin cerrar sobre el estado viejo dentro del efecto. */
+  const sessionRef = useRef<Session | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -225,6 +227,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       if (cancelled || signingOutRef.current) return;
       if (options.blockUi) setIsLoading(true);
 
+      sessionRef.current = nextSession;
       setSession(nextSession);
       setUser(nextSession?.user ?? null);
       // Propagar el JWT al socket realtime: postgres_changes con RLS solo entrega eventos si el
@@ -256,6 +259,25 @@ export function AuthProvider({ children }: PropsWithChildren) {
       try {
         const { data } = await withTimeout(supabase.auth.getSession(), 5_000);
         if (cancelled) return;
+
+        // Un `null` aquí NO prueba que la sesión expirara. getSession() lee del Llavero a través
+        // de secure-session-storage, y esa capa devuelve null SIN lanzar cuando una lectura sale
+        // incompleta (falta un chunk, el Keystore no respondió, otro contexto estaba escribiendo).
+        // Para getSession() eso es indistinguible de "no hay sesión".
+        //
+        // Borrarla entonces costaba caro y era lo que el usuario veía al bloquear/desbloquear el
+        // teléfono: aparecía la animación del login y volvía a entrar solo. Y peor que el
+        // parpadeo, syncSession(null) llama a clearSessionScopedClientState() y tira la caché
+        // entera, forzando a recargarlo todo de golpe al volver.
+        //
+        // Mismo criterio que el guardián de SIGNED_OUT espurio de más abajo: ante la duda se
+        // conserva la sesión local. Una expiración real se descubre igual, por dos vías que sí
+        // revalidan — el evento SIGNED_OUT y el 401 del siguiente request (recoverSession).
+        if (!data.session && sessionRef.current) {
+          logInfo("auth", "foreground reconcile devolvio null con sesion local viva: se conserva");
+          return;
+        }
+
         // Sin blockUi: ya hay sesión cargada, no hace falta mostrar el overlay al volver del background
         await syncSession(data.session);
       } catch (err) {
