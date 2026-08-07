@@ -69,9 +69,18 @@ const OBLIGATION_SHARE_EDGE_TIMEOUT_MS = 18_000;
 // Diagnóstico 2026-07-05 (dispositivo real): la BD responde en ~120 ms y la edge
 // function en 0.7-1.7 s incluso fría. Los timeouts venían del CLIENTE en arranque
 // frío: todas las queries iniciales compiten por el lock de auth de supabase-js
-// (getSession/refresh serializados). 20 s da margen para salir de esa contención;
-// la query ya no bloquea el bootstrap, así que esperar no retiene al usuario.
-const OBLIGATION_SHARED_LIST_TIMEOUT_MS = 20_000;
+// (getSession/refresh serializados).
+//
+// Aquello se resolvió con 20 s "porque esperar no retiene al usuario". Los logs del
+// 2026-08-06 falsan esa premisa: sí lo retiene. El resto de peticiones aborta a los
+// 12 s (SUPABASE_FETCH_TIMEOUT_MS, bajado el 2026-07-27 con el razonamiento
+// contrario: tras un cambio de red el socket está muerto y esperar solo congela).
+// Esta se quedaba 8 s más en "buscando", contando como bloqueante para el aviso de
+// red lenta — y es el origen de 121 de los ~171 timeouts registrados en 45 días.
+// Alineado con el global: falla a la vez que las demás y su reintento sale por una
+// conexión nueva antes. NO ataca la contención del lock de auth, que sigue siendo la
+// causa raíz de las ráfagas.
+const OBLIGATION_SHARED_LIST_TIMEOUT_MS = 12_000;
 
 // ─── Helpers compartidos con shared-obligations (4.2-d) ──────────────────────
 
