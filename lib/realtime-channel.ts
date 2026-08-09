@@ -65,7 +65,18 @@ export function subscribeRealtimeChannel({ source, channelName, bindings }: Para
         return;
       }
       if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
-        if (lastLoggedStatus !== status) {
+        // Un fallo en el PRIMER intento no es una avería: el socket es compartido, y cuando el
+        // teléfono se duerme o cambia de red se cae entero. Medido del 06 al 09 de agosto de
+        // 2026: de 62 eventos, la mayoría eran CHANNEL_ERROR con attempt=0 llegando en el MISMO
+        // segundo para dashboard/notifications/movements/accounts —la firma de un socket caído,
+        // no de cuatro canales rotos— y se rehacían solos sin escalar.
+        //
+        // Se avisa cuando el reintento automático YA falló (attempt >= 1), o cuando el servidor
+        // manda un motivo concreto: esos son los que valen ("mismatch between server and client
+        // bindings", "InvalidJWTToken"), y son 3 en dos semanas frente a cientos de blips.
+        // Mismo criterio que MIN_BLOCKED_FOR_NETWORK_WARNING: un solo síntoma no es una avería.
+        const worthLogging = attempt >= 1 || Boolean(err?.message);
+        if (worthLogging && lastLoggedStatus !== status) {
           lastLoggedStatus = status;
           logWarn("realtime", `${source} channel ${status}`, {
             channelName,

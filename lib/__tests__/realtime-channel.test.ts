@@ -33,6 +33,9 @@ jest.mock("../supabase", () => ({
 }));
 
 import { subscribeRealtimeChannel } from "../realtime-channel";
+import { logWarn } from "../error-logger";
+
+const logWarnMock = logWarn as jest.Mock;
 
 function subscribe() {
   return subscribeRealtimeChannel({
@@ -46,6 +49,7 @@ describe("subscribeRealtimeChannel", () => {
   beforeEach(() => {
     jest.useFakeTimers();
     mockChannels.length = 0;
+    logWarnMock.mockClear();
   });
 
   afterEach(() => {
@@ -77,6 +81,50 @@ describe("subscribeRealtimeChannel", () => {
     mockChannels[1].cb?.("CLOSED");
     jest.advanceTimersByTime(5_000);
     expect(mockChannels).toHaveLength(3);
+    dispose();
+  });
+
+  /**
+   * El socket es COMPARTIDO por todos los canales: cuando el teléfono se duerme o cambia de red
+   * se cae entero y los cuatro canales reportan fallo en el mismo segundo. Medido del 06 al 09 de
+   * agosto de 2026: la mayoría de los 62 eventos eran ese blip con attempt=0, y se rehacían solos.
+   * Avisar de cada uno convertía el log en ruido y escondía los 3 fallos que sí importaban.
+   */
+  it("el primer fallo sin motivo NO se registra: es el blip de un socket que se rehace solo", () => {
+    const dispose = subscribe();
+
+    mockChannels[0].cb?.("CHANNEL_ERROR");
+    expect(logWarnMock).not.toHaveBeenCalled();
+
+    dispose();
+  });
+
+  it("si el reintento tampoco lo arregla, entonces sí se registra", () => {
+    const dispose = subscribe();
+
+    mockChannels[0].cb?.("CHANNEL_ERROR");
+    jest.advanceTimersByTime(5_000);
+    // Segundo canal: el reintento ya salió y vuelve a fallar.
+    mockChannels[1].cb?.("CHANNEL_ERROR");
+
+    expect(logWarnMock).toHaveBeenCalledTimes(1);
+    expect(logWarnMock.mock.calls[0][2]).toMatchObject({ attempt: 1 });
+
+    dispose();
+  });
+
+  it("un motivo concreto del servidor se registra siempre, aunque sea el primer intento", () => {
+    const dispose = subscribe();
+
+    // Estos son los que valen: "mismatch between server and client bindings", "InvalidJWTToken".
+    mockChannels[0].cb?.("CHANNEL_ERROR", new Error("mismatch between server and client bindings"));
+
+    expect(logWarnMock).toHaveBeenCalledTimes(1);
+    expect(logWarnMock.mock.calls[0][2]).toMatchObject({
+      attempt: 0,
+      error: "mismatch between server and client bindings",
+    });
+
     dispose();
   });
 
