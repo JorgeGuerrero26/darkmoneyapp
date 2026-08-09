@@ -16,8 +16,8 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Ya puedes detectar tus pagos automáticamente desde el correo: en Configuración generas una dirección privada, reenvías ahí los correos que te manda tu banco y DarkMoney te sugiere el movimiento listo para confirmar. Es la forma de detectar pagos en iPhone.",
       "La app abre bastante más rápido y puedes registrar un movimiento de inmediato, sin esperar a que terminen de cargar tus créditos, deudas y presupuestos.",
       "Si tocas \"Guardar\" dos veces por nervios, ya no se registra dos veces.",
-      "Cuando tu conexión se pone lenta o cambias de WiFi a datos móviles, la app te avisa y se recupera sola en vez de quedarse en blanco.",
-      "Si algo falla al guardar, ya no pierdes lo que escribiste: el formulario conserva tus datos para que lo intentes de nuevo.",
+      "Al bloquear y desbloquear el teléfono, la app ya no te muestra la pantalla de inicio de sesión: sigues donde estabas.",
+      "Cuando la conexión falla —se pone lenta, cambias de WiFi a datos móviles o se corta a mitad de un guardado— la app se recupera sola y no pierdes lo que habías escrito.",
     ],
   },
   {
