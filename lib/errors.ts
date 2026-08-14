@@ -115,3 +115,34 @@ export function humanizeError(err: unknown): string {
 
   return "Ocurrió un error inesperado. Intenta de nuevo";
 }
+
+/**
+ * Mensaje TÉCNICO para logs (no para el usuario: eso es `humanizeError`).
+ *
+ * Los errores de Supabase NO son instancias de `Error`, son objetos planos
+ * `{ message, details, hint, code }`. Con `String(error)` salían como el literal
+ * "[object Object]": 37 registros en 21 días completamente ilegibles.
+ *
+ * Y no era solo cosmético. `isAuthLikeError("[object Object]")` es `false`, así que la
+ * recuperación de sesión NO se disparaba para ninguno de ellos; si alguno era un token
+ * vencido o un 42501, la app se quedaba mirando.
+ */
+export function errorLogMessage(err: unknown): string {
+  if (err instanceof Error) return err.message || err.name || "Error sin mensaje";
+  if (typeof err === "string") return err;
+  if (typeof err === "object" && err !== null) {
+    const e = err as Record<string, unknown>;
+    // El código va delante: isAuthLikeError busca 42501 y compañía.
+    const parts = [e.code, e.message, e.details, e.hint]
+      .filter((p) => typeof p === "string" && p.trim().length > 0)
+      .map(String);
+    if (parts.length) return parts.join(" | ");
+    try {
+      const json = JSON.stringify(err);
+      if (json && json !== "{}") return json.slice(0, 300);
+    } catch {
+      /* referencias circulares: cae al genérico de abajo */
+    }
+  }
+  return String(err);
+}

@@ -8,6 +8,7 @@ import { AppState } from "react-native";
 import { logError, logWarn } from "./error-logger";
 import { supabase } from "./supabase";
 import { isAuthLikeError } from "./auth-error";
+import { errorLogMessage } from "./errors";
 import { resolveNetworkTransport } from "./network-transport";
 
 /**
@@ -167,14 +168,14 @@ export const queryClient = new QueryClient({
   },
   queryCache: new QueryCache({
     onError: (error, query) => {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = errorLogMessage(error);
       logWarn("query", message, { queryKey: query.queryKey });
       if (isAuthLikeError(message)) void recoverSession();
     },
   }),
   mutationCache: new MutationCache({
     onError: (error, _vars, _ctx, mutation) => {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = errorLogMessage(error);
       logError("mutation", message, { mutationKey: mutation.options.mutationKey });
       if (isAuthLikeError(message)) void recoverSession();
     },
