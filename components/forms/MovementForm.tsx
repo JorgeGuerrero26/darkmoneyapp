@@ -52,7 +52,7 @@ import { type Attachment } from "../domain/AttachmentPicker";
 import { buildCategorySuggestionCandidates } from "../../services/analytics/category-suggestions";
 import { normalizeAnalyticsText } from "../../services/analytics/movement-features";
 import { sortByName } from "../../lib/sort-locale";
-import { newClientDedupeKey } from "../../lib/idempotency";
+import { isAmbiguousTransportError, newClientDedupeKey } from "../../lib/idempotency";
 import { parsePositiveAmountInput } from "../../lib/amount-parsing";
 import {
   learnedConfidence as movementFormLearnedConfidence,
@@ -1071,7 +1071,12 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
       setSubmitError(
         isAuthLikeError(message)
           ? "Tu sesión se actualizó. Vuelve a tocar Guardar."
-          : humanizeError(err),
+          : isAmbiguousTransportError(err instanceof Error ? { message: err.message } : null)
+            // Decir "no se pudo guardar" sería mentir: con un corte de transporte el servidor
+            // pudo haberlo guardado. El detalle ya se refrescó desde el servidor, así que lo
+            // honesto es mandar al usuario a mirarlo antes de que lo registre dos veces.
+            ? "No pudimos confirmar si se guardó. Revisa el movimiento antes de volver a intentarlo."
+            : humanizeError(err),
       );
     } finally {
       submittingRef.current = false;
@@ -1111,6 +1116,20 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
       onClose={handleClose}
       title={stepTitle}
       snapHeight={0.85}
+      // Dentro del sheet y no como hermano: iOS solo presenta un Modal a la vez y el diálogo
+      // no llegaba a aparecer, dejando el formulario sin poder cerrarse (reportado 2026-08-13).
+      overlay={
+        <ConfirmDialog
+          inline
+          visible={discardVisible}
+          title="¿Descartar cambios?"
+          body="Los datos ingresados se perderán."
+          confirmLabel="Descartar"
+          cancelLabel="Continuar editando"
+          onCancel={() => setDiscardVisible(false)}
+          onConfirm={() => { setDiscardVisible(false); onClose(); }}
+        />
+      }
     >
       {/* Step indicator · hidden when editing */}
       {!isEditing ? (
@@ -1305,16 +1324,6 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         );
       })() : null}
     </BottomSheet>
-
-    <ConfirmDialog
-      visible={discardVisible}
-      title="¿Descartar cambios?"
-      body="Los datos ingresados se perderán."
-      confirmLabel="Descartar"
-      cancelLabel="Continuar editando"
-      onCancel={() => setDiscardVisible(false)}
-      onConfirm={() => { setDiscardVisible(false); onClose(); }}
-    />
     </>
   );
 }

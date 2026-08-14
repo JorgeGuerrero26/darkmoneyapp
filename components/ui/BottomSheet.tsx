@@ -31,6 +31,15 @@ type Props = {
   scrollRef?: React.RefObject<ScrollView | null>;
   backdropColor?: string;
   blurBackdrop?: boolean;
+  /**
+   * Capa que se pinta SOBRE el sheet, dentro del mismo Modal y fuera del ScrollView.
+   *
+   * Existe porque iOS solo presenta un Modal a la vez: un diálogo hermano de este sheet no
+   * llega a aparecer y el usuario se queda sin poder cerrar el formulario (reportado el
+   * 2026-08-13 en iPhone). Fuera del ScrollView a propósito, para que no se desplace con el
+   * contenido ni lo recorte. Usar con `<ConfirmDialog inline />`.
+   */
+  overlay?: React.ReactNode;
 };
 
 export function BottomSheet({
@@ -42,6 +51,7 @@ export function BottomSheet({
   scrollRef,
   backdropColor = "rgba(0,0,0,0.45)",
   blurBackdrop = true,
+  overlay,
 }: Props) {
   const insets = useSafeAreaInsets();
   const translateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
@@ -221,6 +231,8 @@ export function BottomSheet({
         </ScrollView>
       </Animated.View>
       </View>
+
+      {overlay}
     </Modal>
   );
 }
