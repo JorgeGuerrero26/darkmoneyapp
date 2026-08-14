@@ -310,6 +310,23 @@ function NotificationSetup() {
     !shouldWaitForInitialQueries ||
     settledInitialQueryKey === initialQueryKey;
 
+  // Espejo vivo de las condiciones que retienen el overlay. Va en un ref porque lo lee un
+  // setTimeout de 15 s: metido en las deps del efecto reiniciaría el temporizador en cada
+  // cambio y la válvula no saltaría nunca; leído por cierre, quedaría congelado al valor de
+  // hace 15 s y el log mentiría.
+  const bootstrapGateRef = useRef<Record<string, boolean>>({});
+  bootstrapGateRef.current = {
+    checkingSession: isCheckingSession,
+    noProfile: !profile?.id,
+    workspacesLoading,
+    workspacesUndefined: workspaces === undefined,
+    noActiveWorkspace: hasWorkspaceRows && !activeWorkspaceId,
+    noResolvedWorkspace: hasWorkspaceRows && !resolvedActiveWorkspace,
+    snapshotLoading: hasWorkspaceRows && snapshotLoading,
+    noSnapshot: hasWorkspaceRows && !snapshot,
+    initialQueriesPending: !initialWorkspaceQueriesSettled,
+  };
+
   useEffect(() => {
     if (!initialQueryKey || !hasWorkspaceRows || workspaceCoreLoading) {
       setSettledInitialQueryKey(null);
@@ -377,9 +394,20 @@ function NotificationSetup() {
           .join(",");
         return `${root}=${states || "missing"}`;
       });
+      // QUÉ condición retiene la puerta. Sin esto solo se veía el estado de las queries, y
+      // los 12 timeouts registrados hasta el 2026-08-12 salían todos con `online: true` y
+      // consultas en `pending/idle` —ni siquiera descargando—, sin forma de saber cuál de las
+      // cuatro condiciones de workspaceCoreLoading seguía en pie. Es el fallo que el usuario
+      // fotografió como "No pudimos cargar tus datos" con la conexión perfectamente bien.
+      const gate = bootstrapGateRef.current;
       logWarn("bootstrap", "overlay timeout: liberando UI con queries sin resolver", {
         online: onlineManager.isOnline(),
         queries: queryStates.join(" "),
+        // Solo las que siguen bloqueando: el log queda corto y legible.
+        gate: Object.entries(gate)
+          .filter(([, held]) => held)
+          .map(([name]) => name)
+          .join(",") || "ninguna",
       });
       // También cuenta como "usable" (la UI se libera), pero marcado como timeout para
       // distinguir un arranque sano de uno rescatado por la válvula.
