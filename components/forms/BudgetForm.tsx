@@ -232,6 +232,19 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
       onClose={handleClose}
       title={isEditing ? "Editar presupuesto" : "Nuevo presupuesto"}
       snapHeight={0.92}
+      // Dentro del sheet: iOS solo presenta un Modal a la vez y como hermano no aparecía.
+      overlay={
+        <ConfirmDialog
+          inline
+          visible={discardVisible}
+          title="¿Descartar cambios?"
+          body="Los datos ingresados se perderán."
+          confirmLabel="Descartar"
+          cancelLabel="Continuar editando"
+          onCancel={() => setDiscardVisible(false)}
+          onConfirm={() => { setDiscardVisible(false); onClose(); }}
+        />
+      }
     >
       {/* Name */}
       <View>
@@ -449,16 +462,6 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
         style={styles.submitBtn}
       />
     </BottomSheet>
-
-    <ConfirmDialog
-      visible={discardVisible}
-      title="¿Descartar cambios?"
-      body="Los datos ingresados se perderán."
-      confirmLabel="Descartar"
-      cancelLabel="Continuar editando"
-      onCancel={() => setDiscardVisible(false)}
-      onConfirm={() => { setDiscardVisible(false); onClose(); }}
-    />
     </>
   );
 }

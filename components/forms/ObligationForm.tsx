@@ -543,6 +543,35 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
         title={isEditing ? "Editar obligación" : "Nueva obligación"}
         snapHeight={0.95}
         scrollRef={scrollRef}
+        // Dentro del sheet: iOS solo presenta un Modal a la vez y como hermanos no aparecían.
+        overlay={
+          <>
+            <ConfirmDialog
+              inline
+              visible={showDiscard}
+              title="¿Descartar cambios?"
+              body="Se perderán los datos ingresados."
+              confirmLabel="Descartar"
+              cancelLabel="Continuar"
+              onCancel={() => setShowDiscard(false)}
+              onConfirm={() => { setShowDiscard(false); onClose(); }}
+            />
+            <ConfirmDialog
+              inline
+              visible={unlinkShareConfirmVisible}
+              title={activeShare?.status === "pending" ? "Cancelar invitación" : "Desvincular acceso compartido"}
+              body={
+                activeShare?.status === "pending"
+                  ? "La invitación quedará cancelada y la otra persona ya no podrá aceptarla."
+                  : "La otra persona dejará de ver este crédito o deuda en su módulo de obligaciones. Tu registro original se conservará."
+              }
+              confirmLabel={activeShare?.status === "pending" ? "Cancelar invitación" : "Desvincular"}
+              cancelLabel="Volver"
+              onCancel={() => setUnlinkShareConfirmVisible(false)}
+              onConfirm={() => { setUnlinkShareConfirmVisible(false); void handleUnlinkShare(); }}
+            />
+          </>
+        }
       >
       {submitError ? (
         <View style={styles.submitErrorBanner}>
@@ -1119,29 +1148,6 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
         </View>
       ) : null}
     </BottomSheet>
-
-    <ConfirmDialog
-      visible={showDiscard}
-      title="¿Descartar cambios?"
-      body="Se perderán los datos ingresados."
-      confirmLabel="Descartar"
-      cancelLabel="Continuar"
-      onCancel={() => setShowDiscard(false)}
-      onConfirm={() => { setShowDiscard(false); onClose(); }}
-    />
-    <ConfirmDialog
-      visible={unlinkShareConfirmVisible}
-      title={activeShare?.status === "pending" ? "Cancelar invitación" : "Desvincular acceso compartido"}
-      body={
-        activeShare?.status === "pending"
-          ? "La invitación quedará cancelada y la otra persona ya no podrá aceptarla."
-          : "La otra persona dejará de ver este crédito o deuda en su módulo de obligaciones. Tu registro original se conservará."
-      }
-      confirmLabel={activeShare?.status === "pending" ? "Cancelar invitación" : "Desvincular"}
-      cancelLabel="Volver"
-      onCancel={() => setUnlinkShareConfirmVisible(false)}
-      onConfirm={() => { setUnlinkShareConfirmVisible(false); void handleUnlinkShare(); }}
-    />
   </>
   );
 }

@@ -136,21 +136,25 @@ export function ContactForm({ visible, onClose, onSuccess, editContact }: Props)
 
   return (
     <>
-    <ConfirmDialog
-      visible={showDiscardDialog}
-      title="¿Descartar cambios?"
-      body="Perderás los cambios que no hayas guardado."
-      confirmLabel="Descartar"
-      cancelLabel="Continuar editando"
-      destructive
-      onConfirm={() => { setShowDiscardDialog(false); onClose(); }}
-      onCancel={() => setShowDiscardDialog(false)}
-    />
     <BottomSheet
       visible={visible}
       onClose={handleClose}
       title={isEditing ? "Editar contacto" : "Nuevo contacto"}
       snapHeight={0.85}
+      // Dentro del sheet: iOS solo presenta un Modal a la vez y como hermano no aparecía.
+      overlay={
+        <ConfirmDialog
+          inline
+          visible={showDiscardDialog}
+          title="¿Descartar cambios?"
+          body="Perderás los cambios que no hayas guardado."
+          confirmLabel="Descartar"
+          cancelLabel="Continuar editando"
+          destructive
+          onConfirm={() => { setShowDiscardDialog(false); onClose(); }}
+          onCancel={() => setShowDiscardDialog(false)}
+        />
+      }
     >
       {/* Type */}
       <View>

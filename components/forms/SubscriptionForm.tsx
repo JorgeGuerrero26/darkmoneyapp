@@ -406,6 +406,19 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
         onClose={handleClose}
         title={isEditing ? "Editar suscripción" : "Nueva suscripción"}
         snapHeight={0.95}
+        // Dentro del sheet: iOS solo presenta un Modal a la vez y como hermano no aparecía.
+        overlay={
+          <ConfirmDialog
+            inline
+            visible={showDiscard}
+            title="¿Descartar cambios?"
+            body="Se perderán los datos ingresados."
+            confirmLabel="Descartar"
+            cancelLabel="Continuar"
+            onCancel={() => setShowDiscard(false)}
+            onConfirm={() => { setShowDiscard(false); onClose(); }}
+          />
+        }
       >
       {/* Name */}
       <View>
@@ -750,16 +763,6 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
         style={styles.submitBtn}
       />
     </BottomSheet>
-
-    <ConfirmDialog
-      visible={showDiscard}
-      title="¿Descartar cambios?"
-      body="Se perderán los datos ingresados."
-      confirmLabel="Descartar"
-      cancelLabel="Continuar"
-      onCancel={() => setShowDiscard(false)}
-      onConfirm={() => { setShowDiscard(false); onClose(); }}
-    />
   </>
   );
 }

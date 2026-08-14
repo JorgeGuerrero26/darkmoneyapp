@@ -223,6 +223,22 @@ export function CategoryForm({ visible, onClose, onSuccess, editCategory }: Prop
         onClose={handleClose}
         title={isEditing ? "Editar categoría" : "Nueva categoría"}
         snapHeight={0.92}
+        // Dentro del sheet: iOS solo presenta un Modal a la vez y como hermano no aparecía.
+        overlay={
+          <ConfirmDialog
+            inline
+            visible={showDiscard}
+            title="¿Descartar cambios?"
+            body="Se perderán los datos ingresados."
+            confirmLabel="Descartar"
+            cancelLabel="Continuar"
+            onCancel={() => setShowDiscard(false)}
+            onConfirm={() => {
+              setShowDiscard(false);
+              onClose();
+            }}
+          />
+        }
       >
         <View>
           <Text style={styles.label}>Ícono (Lucide, como en la web)</Text>
@@ -348,19 +364,6 @@ export function CategoryForm({ visible, onClose, onSuccess, editCategory }: Prop
           style={styles.submitBtn}
         />
       </BottomSheet>
-
-      <ConfirmDialog
-        visible={showDiscard}
-        title="¿Descartar cambios?"
-        body="Se perderán los datos ingresados."
-        confirmLabel="Descartar"
-        cancelLabel="Continuar"
-        onCancel={() => setShowDiscard(false)}
-        onConfirm={() => {
-          setShowDiscard(false);
-          onClose();
-        }}
-      />
     </>
   );
 }

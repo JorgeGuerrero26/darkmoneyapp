@@ -214,7 +214,26 @@ export function PrincipalAdjustmentForm({ visible, mode, obligation, onClose, on
 
   return (
     <>
-      <BottomSheet visible={visible} onClose={handleClose} title={title} snapHeight={0.7} scrollRef={scrollRef}>
+      <BottomSheet
+        visible={visible}
+        onClose={handleClose}
+        title={title}
+        snapHeight={0.7}
+        scrollRef={scrollRef}
+        // Dentro del sheet: iOS solo presenta un Modal a la vez y como hermano no aparecía.
+        overlay={
+          <ConfirmDialog
+            inline
+            visible={showDiscard}
+            title="¿Descartar cambios?"
+            body="Se perderán los datos ingresados."
+            confirmLabel="Descartar"
+            cancelLabel="Continuar"
+            onCancel={() => setShowDiscard(false)}
+            onConfirm={() => { setShowDiscard(false); onClose(); }}
+          />
+        }
+      >
         {obligation && !isEditMode ? (
           <View style={styles.infoBox}>
             {/* Title row */}
@@ -348,16 +367,6 @@ export function PrincipalAdjustmentForm({ visible, mode, obligation, onClose, on
           style={styles.submitBtn}
         />
       </BottomSheet>
-
-      <ConfirmDialog
-        visible={showDiscard}
-        title="¿Descartar cambios?"
-        body="Se perderán los datos ingresados."
-        confirmLabel="Descartar"
-        cancelLabel="Continuar"
-        onCancel={() => setShowDiscard(false)}
-        onConfirm={() => { setShowDiscard(false); onClose(); }}
-      />
     </>
   );
 }

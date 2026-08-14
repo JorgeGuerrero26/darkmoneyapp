@@ -311,6 +311,19 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
         onClose={handleClose}
         title={isEditing ? "Editar ingreso fijo" : "Nuevo ingreso fijo"}
         snapHeight={0.88}
+        // Dentro del sheet: iOS solo presenta un Modal a la vez y como hermano no aparecía.
+        overlay={
+          <ConfirmDialog
+            inline
+            visible={showDiscard}
+            title="¿Descartar cambios?"
+            body="Se perderán los datos ingresados."
+            confirmLabel="Descartar"
+            cancelLabel="Continuar"
+            onCancel={() => setShowDiscard(false)}
+            onConfirm={() => { setShowDiscard(false); onClose(); }}
+          />
+        }
       >
         <View style={styles.section}>
           <Text style={styles.label}>Nombre *</Text>
@@ -585,16 +598,6 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
           </View>
         </View>
       </BottomSheet>
-
-      <ConfirmDialog
-        visible={showDiscard}
-        title="¿Descartar cambios?"
-        body="Se perderán los datos ingresados."
-        confirmLabel="Descartar"
-        cancelLabel="Continuar"
-        onCancel={() => setShowDiscard(false)}
-        onConfirm={() => { setShowDiscard(false); onClose(); }}
-      />
     </>
   );
 }

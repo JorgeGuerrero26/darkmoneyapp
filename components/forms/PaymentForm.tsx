@@ -459,6 +459,19 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent
         title={actionTitle}
         snapHeight={0.75}
         scrollRef={scrollRef}
+        // Dentro del sheet: iOS solo presenta un Modal a la vez y como hermano no aparecía.
+        overlay={
+          <ConfirmDialog
+            inline
+            visible={showDiscard}
+            title="¿Descartar cambios?"
+            body={discardBody}
+            confirmLabel="Descartar"
+            cancelLabel="Continuar"
+            onCancel={() => setShowDiscard(false)}
+            onConfirm={() => { setShowDiscard(false); onClose(); }}
+          />
+        }
       >
       {/* Obligation summary + balance preview — solo en modo crear */}
       {obligation && !isEditMode ? (
@@ -660,16 +673,6 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent
         style={styles.submitBtn}
       />
     </BottomSheet>
-
-    <ConfirmDialog
-      visible={showDiscard}
-      title="¿Descartar cambios?"
-      body={discardBody}
-      confirmLabel="Descartar"
-      cancelLabel="Continuar"
-      onCancel={() => setShowDiscard(false)}
-      onConfirm={() => { setShowDiscard(false); onClose(); }}
-    />
   </>
   );
 }

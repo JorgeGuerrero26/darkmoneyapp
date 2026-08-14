@@ -266,6 +266,61 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
         onClose={handleClose}
         title={editAccount ? "Editar cuenta" : "Nueva cuenta"}
         snapHeight={0.94}
+        // Dentro del sheet: iOS solo presenta un Modal a la vez y como hermanos no aparecían.
+        // Los tres conviven porque en modo inline el que no está visible no pinta nada.
+        overlay={
+          <>
+            {/* Discard changes */}
+            <ConfirmDialog
+              inline
+              visible={discardVisible}
+              title="¿Descartar cambios?"
+              body="Los cambios no guardados se perderán."
+              confirmLabel="Descartar"
+              cancelLabel="Continuar editando"
+              onCancel={() => setDiscardVisible(false)}
+              onConfirm={() => { setDiscardVisible(false); onClose(); }}
+            />
+
+            {/* Archive / restore confirmation */}
+            <ConfirmDialog
+              inline
+              visible={archiveConfirm}
+              title={editAccount?.isArchived ? "¿Restaurar cuenta?" : "¿Archivar cuenta?"}
+              body={
+                editAccount?.isArchived
+                  ? "La cuenta volverá a aparecer en tu lista activa y en el patrimonio neto."
+                  : "La cuenta quedará oculta. Sus movimientos históricos se conservarán intactos y podrás restaurarla después."
+              }
+              confirmLabel={editAccount?.isArchived ? "Sí, restaurar" : "Sí, archivar"}
+              cancelLabel="Cancelar"
+              onCancel={() => setArchiveConfirm(false)}
+              onConfirm={handleArchiveToggle}
+            />
+
+            {/* Permanent delete */}
+            <ConfirmDialog
+              inline
+              visible={deleteConfirm}
+              title="Eliminar cuenta"
+              body="Esta acción es irreversible. Si tiene movimientos vinculados, la eliminación fallará y los datos se conservarán."
+              confirmLabel="Eliminar"
+              cancelLabel="Cancelar"
+              onCancel={() => setDeleteConfirm(false)}
+              onConfirm={async () => {
+                if (!editAccount) return;
+                setDeleteConfirm(false);
+                try {
+                  await deleteMutation.mutateAsync(editAccount.id);
+                  showToast("Cuenta eliminada", "success");
+                  onClose();
+                } catch (err: unknown) {
+                  showToast(humanizeError(err), "error");
+                }
+              }}
+            />
+          </>
+        }
       >
         {/* Live preview */}
         <View style={styles.previewRow}>
@@ -420,53 +475,6 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
           </TouchableOpacity>
         ) : null}
       </BottomSheet>
-
-      {/* Discard changes */}
-      <ConfirmDialog
-        visible={discardVisible}
-        title="¿Descartar cambios?"
-        body="Los cambios no guardados se perderán."
-        confirmLabel="Descartar"
-        cancelLabel="Continuar editando"
-        onCancel={() => setDiscardVisible(false)}
-        onConfirm={() => { setDiscardVisible(false); onClose(); }}
-      />
-
-      {/* Archive / restore confirmation */}
-      <ConfirmDialog
-        visible={archiveConfirm}
-        title={editAccount?.isArchived ? "¿Restaurar cuenta?" : "¿Archivar cuenta?"}
-        body={
-          editAccount?.isArchived
-            ? "La cuenta volverá a aparecer en tu lista activa y en el patrimonio neto."
-            : "La cuenta quedará oculta. Sus movimientos históricos se conservarán intactos y podrás restaurarla después."
-        }
-        confirmLabel={editAccount?.isArchived ? "Sí, restaurar" : "Sí, archivar"}
-        cancelLabel="Cancelar"
-        onCancel={() => setArchiveConfirm(false)}
-        onConfirm={handleArchiveToggle}
-      />
-
-      {/* Permanent delete */}
-      <ConfirmDialog
-        visible={deleteConfirm}
-        title="Eliminar cuenta"
-        body="Esta acción es irreversible. Si tiene movimientos vinculados, la eliminación fallará y los datos se conservarán."
-        confirmLabel="Eliminar"
-        cancelLabel="Cancelar"
-        onCancel={() => setDeleteConfirm(false)}
-        onConfirm={async () => {
-          if (!editAccount) return;
-          setDeleteConfirm(false);
-          try {
-            await deleteMutation.mutateAsync(editAccount.id);
-            showToast("Cuenta eliminada", "success");
-            onClose();
-          } catch (err: unknown) {
-            showToast(humanizeError(err), "error");
-          }
-        }}
-      />
     </>
   );
 }
