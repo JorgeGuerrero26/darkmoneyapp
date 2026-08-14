@@ -1,4 +1,32 @@
-import { shouldConfirmIdempotentWrite } from "../idempotency";
+import { isAmbiguousTransportError, shouldConfirmIdempotentWrite } from "../idempotency";
+
+/**
+ * La misma pregunta sirve para dos decisiones opuestas: en un insert, si conviene confirmar por
+ * clave idempotente; en un update, si es seguro revertir el cambio optimista. Revertir tras un
+ * abort le enseñaba al usuario sus datos viejos junto a un error mientras el servidor ya tenía
+ * los nuevos (reportado el 2026-08-13 al editar un movimiento).
+ */
+describe("isAmbiguousTransportError", () => {
+  it.each([
+    { message: "AbortError: Aborted" },
+    { message: "TypeError: Network request failed" },
+    { message: "Timeout (12000ms) at list_shared_obligations" },
+  ])("un corte de transporte NO prueba que no se guardara: $message", (error) => {
+    expect(isAmbiguousTransportError(error)).toBe(true);
+  });
+
+  it.each([
+    { code: "42501", message: "new row violates row-level security" },
+    { code: "23514", message: "check constraint failed" },
+    { message: "valor inválido" },
+  ])("un error con causa conocida sí prueba que no se guardo: $code $message", (error) => {
+    expect(isAmbiguousTransportError(error)).toBe(false);
+  });
+
+  it("sin error no hay ambigüedad", () => {
+    expect(isAmbiguousTransportError(null)).toBe(false);
+  });
+});
 
 describe("shouldConfirmIdempotentWrite", () => {
   it.each([

@@ -18,15 +18,21 @@ type IdempotentWriteError = {
 };
 
 /**
- * Un timeout/error de transporte después de enviar un POST es ambiguo: el servidor
- * puede haber confirmado el insert aunque la respuesta no haya vuelto. Solo esos
- * errores permiten consultar la clave idempotente; errores SQL/RLS/validación no.
+ * ¿El error dice "no sé si se guardó"?
+ *
+ * Un corte de transporte tras enviar la petición es AMBIGUO: el servidor pudo aplicarla y
+ * perderse solo la respuesta. Un error con código SQL (RLS, validación, constraint) no: ahí
+ * consta que no se guardó.
+ *
+ * La distinción importa en los dos sentidos. En un insert habilita confirmar por clave
+ * idempotente. En un update decide si se puede revertir el cambio optimista: revertir tras un
+ * abort le enseña al usuario los datos viejos junto a un error mientras el servidor ya tiene
+ * los nuevos (reportado el 2026-08-13 al editar un movimiento).
  */
-export function shouldConfirmIdempotentWrite(
-  dedupeKey: string | null | undefined,
+export function isAmbiguousTransportError(
   error: IdempotentWriteError | null | undefined,
 ): boolean {
-  if (!dedupeKey || !error) return false;
+  if (!error) return false;
   if (error.code?.trim()) return false;
 
   const message = [error.message, error.details, error.hint]
@@ -42,4 +48,17 @@ export function shouldConfirmIdempotentWrite(
     message.includes("fetcherror") ||
     message.includes("networkerror")
   );
+}
+
+/**
+ * Un timeout/error de transporte después de enviar un POST es ambiguo: el servidor
+ * puede haber confirmado el insert aunque la respuesta no haya vuelto. Solo esos
+ * errores permiten consultar la clave idempotente; errores SQL/RLS/validación no.
+ */
+export function shouldConfirmIdempotentWrite(
+  dedupeKey: string | null | undefined,
+  error: IdempotentWriteError | null | undefined,
+): boolean {
+  if (!dedupeKey) return false;
+  return isAmbiguousTransportError(error);
 }

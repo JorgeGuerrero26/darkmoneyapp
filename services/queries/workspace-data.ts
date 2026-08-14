@@ -2472,7 +2472,7 @@ export function usePersistLearningFeedbackMutation(
 // ─── Movement mutations ───────────────────────────────────────────────────────
 
 import type { MovementFormInput } from "../../features/movements/lib/movement-input-types";
-import { shouldConfirmIdempotentWrite } from "../../lib/idempotency";
+import { isAmbiguousTransportError, shouldConfirmIdempotentWrite } from "../../lib/idempotency";
 export type { MovementFormInput };
 
 const MOVEMENT_RECORD_COLUMNS =
@@ -2721,7 +2721,19 @@ export function useUpdateMovementMutation(workspaceId: number | null) {
       });
       return { previous };
     },
-    onError: (_err, { id }, context) => {
+    onError: (err, { id }, context) => {
+      // Un abort/timeout NO prueba que el update fallara: el servidor pudo aplicarlo y perderse
+      // solo la respuesta. Revertir ahí le muestra al usuario sus datos VIEJOS junto a un error,
+      // con el cambio ya guardado — reportado el 2026-08-13 ("me dio error pero sí actualizó",
+      // registrado como update-movement/AbortError a las 20:24). En ese caso no se adivina: se
+      // vuelve a preguntar al servidor y gana lo que él diga.
+      if (isAmbiguousTransportError(err)) {
+        void queryClient.invalidateQueries({ queryKey: ["movement", id] });
+        void queryClient.invalidateQueries({ queryKey: ["movements"] });
+        void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+        return;
+      }
+      // Error con código (RLS, validación, constraint): consta que no se guardó, se revierte.
       if (context?.previous !== undefined) {
         queryClient.setQueryData(["movement", id], context.previous);
       }
