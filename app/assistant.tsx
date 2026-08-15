@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Mic, Send, Sparkles, Volume2, VolumeX } from "lucide-react-native";
+import { Mic, Send, Sparkles, Trash2, Volume2, VolumeX } from "lucide-react-native";
 import * as Speech from "expo-speech";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -20,6 +20,7 @@ import {
   isDictationAvailable,
   useSpeechRecognitionEvent,
 } from "../lib/speech-recognition-safe";
+import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { ErrorBoundary } from "../components/ui/ErrorBoundary";
 import { ScreenHeader } from "../components/layout/ScreenHeader";
 import { MovementForm, type MovementDuplicateSource } from "../components/forms/MovementForm";
@@ -99,6 +100,10 @@ function pickDefaultAccount(
   );
 }
 
+const CHAT_STORAGE_KEY = "assistant/chat";
+/** Tope de lo guardado: por encima del historial que el servidor acepta, sin llenar el disco. */
+const MAX_STORED_ITEMS = 40;
+
 const WELCOME =
   "Hola, soy tu asistente. Pregúntame lo que quieras sobre tus movimientos — o toca una sugerencia para empezar:";
 
@@ -119,6 +124,7 @@ function AssistantScreen() {
   const [items, setItems] = useState<ChatItem[]>([
     { id: "welcome", role: "assistant", content: WELCOME },
   ]);
+  const [clearVisible, setClearVisible] = useState(false);
   const [input, setInput] = useState("");
   const [isThinking, setIsThinking] = useState(false);
   const [remainingToday, setRemainingToday] = useState<number | null>(null);
@@ -162,6 +168,56 @@ function AssistantScreen() {
     });
     return () => { Speech.stop(); };
   }, []);
+
+  /**
+   * La conversación vivía SOLO en memoria: salir de la pantalla la borraba entera, y con ella
+   * el contexto de las repreguntas ("¿y si además invierto 200 al mes?"). Se guarda en el
+   * teléfono, no en el servidor: son cifras personales y no hay razón para que salgan de aquí.
+   *
+   * Solo texto y rol. Los borradores y la evidencia no se persisten a propósito: un borrador
+   * restaurado tentaría a confirmar un movimiento cuyo contexto ya no existe.
+   */
+  const [chatLoaded, setChatLoaded] = useState(false);
+  useEffect(() => {
+    void AsyncStorage.getItem(CHAT_STORAGE_KEY)
+      .then((raw) => {
+        if (!raw) return;
+        const parsed: unknown = JSON.parse(raw);
+        if (!Array.isArray(parsed) || parsed.length === 0) return;
+        const restored = parsed
+          .filter((i): i is { id: string; role: "user" | "assistant"; content: string } =>
+            typeof i === "object" && i !== null &&
+            typeof (i as ChatItem).content === "string" &&
+            ((i as ChatItem).role === "user" || (i as ChatItem).role === "assistant"),
+          )
+          .slice(-MAX_STORED_ITEMS)
+          .map((i) => ({ id: i.id, role: i.role, content: i.content }));
+        if (restored.length) setItems(restored);
+      })
+      .catch(() => { /* guardado corrupto: se empieza limpio, no vale romper la pantalla */ })
+      .finally(() => setChatLoaded(true));
+  }, []);
+
+  useEffect(() => {
+    if (!chatLoaded) return; // no pisar lo guardado con el saludo inicial antes de leerlo
+    const toStore = items
+      .filter((i) => i.id !== "welcome" && !i.error)
+      .slice(-MAX_STORED_ITEMS)
+      .map(({ id, role, content }) => ({ id, role, content }));
+    if (toStore.length === 0) {
+      void AsyncStorage.removeItem(CHAT_STORAGE_KEY);
+      return;
+    }
+    void AsyncStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(toStore));
+  }, [items, chatLoaded]);
+
+  const clearChat = useCallback(() => {
+    setClearVisible(false);
+    setItems([{ id: "welcome", role: "assistant", content: WELCOME }]);
+    void AsyncStorage.removeItem(CHAT_STORAGE_KEY);
+    Speech.stop();
+    showToast("Conversación borrada", "success");
+  }, [showToast]);
 
   const toggleSpeakMode = useCallback(() => {
     setSpeakMode((prev) => {
@@ -703,13 +759,24 @@ function AssistantScreen() {
         onBack={handleBack}
         withSafeArea
         rightAction={
+          <View style={styles.headerActions}>
+            {items.length > 1 ? (
+              <TouchableOpacity
+                onPress={() => setClearVisible(true)}
+                accessibilityLabel="Borrar la conversación"
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Trash2 size={20} color={COLORS.storm} />
+              </TouchableOpacity>
+            ) : null}
           <TouchableOpacity
             onPress={toggleSpeakMode}
             accessibilityLabel={speakMode ? "Desactivar modo hablante" : "Activar modo hablante"}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
             {speakMode ? <Volume2 size={20} color={COLORS.primary} /> : <VolumeX size={20} color={COLORS.storm} />}
-          </TouchableOpacity>
+            </TouchableOpacity>
+          </View>
         }
       />
       <View style={styles.flex}>
@@ -795,12 +862,26 @@ function AssistantScreen() {
         onSuccess={() => showToast("Movimiento guardado ✓", "success")}
         duplicateMovement={editDuplicate}
       />
+
+      {/* Aquí sí como Modal normal: esta pantalla no vive dentro de un BottomSheet, y el
+          formulario de arriba nunca está abierto a la vez (lo abre otra acción). */}
+      <ConfirmDialog
+        visible={clearVisible}
+        icon="🗑️"
+        title="¿Borrar la conversación?"
+        body="Se borrará de este teléfono y no podrás recuperarla. Tus movimientos y tus datos no se tocan."
+        confirmLabel="Borrar"
+        cancelLabel="Cancelar"
+        onCancel={() => setClearVisible(false)}
+        onConfirm={clearChat}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: COLORS.canvas },
+  headerActions: { flexDirection: "row", alignItems: "center", gap: SPACING.md },
   flex: { flex: 1 },
   listContent: {
     padding: SPACING.md,

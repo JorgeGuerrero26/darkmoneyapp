@@ -41,7 +41,23 @@ const DAILY_LIMIT = 30;
 const FEATURE_KEY = "assistant_chat";
 // 4 rondas: los análisis compra/venta suelen necesitar búsqueda + contexto extra.
 const MAX_TOOL_ROUNDS = 4;
-const MAX_HISTORY = 8;
+/**
+ * Cuánto contexto conserva una conversación.
+ *
+ * Los valores viejos (8 turnos, 500 caracteres por mensaje, 500 en la pregunta) estaban
+ * pensados para consultas de una línea y hacían imposible el caso real: una planificación
+ * mensual con sueldos, cuotas y gastos ocupa ~1200 caracteres solo en la pregunta, y la
+ * respuesta con las tablas mes a mes, varios miles. Se recortaba TODO en silencio: el usuario
+ * veía un número mal calculado sin saber que la mitad de sus datos se habían tirado.
+ *
+ * El coste sigue siendo despreciable: aun con la ventana llena son ~20k tokens de entrada,
+ * céntimos al día con el volumen real de la app.
+ */
+const MAX_HISTORY = 16;
+/** Recorte por mensaje del historial: una tabla de proyección mensual cabe en 3000. */
+const MAX_HISTORY_CHARS = 3000;
+/** Recorte de la pregunta del usuario: describir ingresos y gastos completos pasa de 1000. */
+const MAX_QUESTION_CHARS = 4000;
 
 type ChatMessage = {
   role: "system" | "user" | "assistant" | "tool";
@@ -756,7 +772,7 @@ Deno.serve(async (req) => {
 
   try {
     const body = await readJsonBody(req);
-    const message = typeof body.message === "string" ? body.message.trim().slice(0, 500) : "";
+    const message = typeof body.message === "string" ? body.message.trim().slice(0, MAX_QUESTION_CHARS) : "";
     const workspaceId = Number(body.workspaceId);
     if (!message || !Number.isFinite(workspaceId)) {
       return jsonResponse({ ok: false, error: "Faltan message o workspaceId." }, 400);
@@ -798,7 +814,10 @@ Deno.serve(async (req) => {
       ? (body.history as Array<Record<string, unknown>>)
           .filter((item) => (item.role === "user" || item.role === "assistant") && typeof item.content === "string")
           .slice(-MAX_HISTORY)
-          .map((item) => ({ role: item.role as "user" | "assistant", content: (item.content as string).slice(0, 500) }))
+          .map((item) => ({
+            role: item.role as "user" | "assistant",
+            content: (item.content as string).slice(0, MAX_HISTORY_CHARS),
+          }))
       : [];
 
     const nowLima = new Date().toLocaleString("es-PE", { timeZone: "America/Lima", dateStyle: "full" });
