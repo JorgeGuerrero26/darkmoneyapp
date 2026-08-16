@@ -2522,15 +2522,31 @@ export async function createMovement(
     ),
   );
   if (error && dedupeKey && shouldFindExisting) {
-    const existing = await supabase
-      .from("movements")
-      .select(MOVEMENT_RECORD_COLUMNS)
-      .eq("workspace_id", workspaceId)
-      .eq("client_dedupe_key", dedupeKey)
-      .maybeSingle();
-    if (existing.data) {
-      data = existing.data;
-      error = null;
+    // La confirmación se lanzaba UNA vez y justo después del abort, o sea en el mismo instante
+    // de red que acaba de fallar: se atascaba igual, y como su propio error se ignoraba, el
+    // código seguía de largo y mostraba "no pudimos confirmar" aunque el movimiento existiera.
+    // Medido el 2026-08-15: dos create-movement abortados, ambos precedidos por otra escritura
+    // abortada segundos antes — el atasco dura unos segundos y luego se despeja.
+    //
+    // Se reintenta con espera creciente. El usuario ya está esperando; unos segundos más son
+    // mucho mejores que un error falso que le empuje a registrar el movimiento dos veces.
+    const CONFIRM_BACKOFF_MS = [0, 1_500, 3_500];
+    for (const wait of CONFIRM_BACKOFF_MS) {
+      if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+      const existing = await supabase
+        .from("movements")
+        .select(MOVEMENT_RECORD_COLUMNS)
+        .eq("workspace_id", workspaceId)
+        .eq("client_dedupe_key", dedupeKey)
+        .maybeSingle();
+      if (existing.data) {
+        data = existing.data;
+        error = null;
+        break;
+      }
+      // Sin fila Y sin error de transporte = el servidor respondió y NO se guardó: no hay
+      // nada que esperar, se corta el reintento y el error original es correcto.
+      if (!existing.error || !isAmbiguousTransportError(existing.error)) break;
     }
   }
 
