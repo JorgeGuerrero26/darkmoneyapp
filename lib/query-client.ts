@@ -8,6 +8,7 @@ import { AppState } from "react-native";
 import { logError, logWarn } from "./error-logger";
 import { supabase } from "./supabase";
 import { isAuthLikeError } from "./auth-error";
+import { isBackendWarmingUp } from "./idempotency";
 import { errorLogMessage } from "./errors";
 import { resolveNetworkTransport } from "./network-transport";
 
@@ -159,11 +160,25 @@ export const queryClient = new QueryClient({
       gcTime: PERSIST_MAX_AGE_MS,
       // 2 reintentos: el primero suele caer todavía en el socket muerto tras un cambio de
       // red; el segundo ya sale por una conexión nueva. Con el timeout en 12 s el peor caso
-      // sigue siendo más corto que antes (30 s + 1 reintento). Las MUTATIONS no reintentan
-      // (default 0) a propósito: no todas son idempotentes y duplicarían registros.
+      // sigue siendo más corto que antes (30 s + 1 reintento). Para las MUTATIONS ver la
+      // política de abajo: solo reintentan si el backend estaba despertando.
       retry: 2,
       refetchOnWindowFocus: false,
       placeholderData: (previousData: unknown) => previousData,
+    },
+    mutations: {
+      // Las mutaciones siguen SIN reintentar por defecto: no todas son idempotentes y
+      // duplicarían registros. La única excepción es el backend despertando
+      // (PGRST001/2/3), donde PostgREST no pudo ni hablar con la base: el statement no
+      // llegó a ejecutarse, así que no hay nada que duplicar y reintentar es seguro.
+      //
+      // Es lo que sufría el usuario al abrir la app tras horas en segundo plano e ir
+      // directo a registrar algo: se le mostraba "PGRST002 ... Retrying." como un fallo
+      // definitivo, cuando el propio mensaje dice que hay que reintentar.
+      retry: (failureCount: number, error: unknown) =>
+        failureCount < 2 && isBackendWarmingUp(error),
+      // Despertar PostgREST tarda un par de segundos: esperar es lo que lo resuelve.
+      retryDelay: (attempt: number) => 1_500 * (attempt + 1),
     },
   },
   queryCache: new QueryCache({
