@@ -12,7 +12,7 @@ import {
   View,
 } from "react-native";
 import type { useRouter } from "expo-router";
-import { useQueryClient } from "@tanstack/react-query";
+import { useIsMutating, useQueryClient } from "@tanstack/react-query";
 import { LinearGradient } from "expo-linear-gradient";
 import {
   differenceInDays,
@@ -71,6 +71,7 @@ import {
   type DashboardMovementRow,
 } from "../../../../services/queries/workspace-data";
 import { useToast } from "../../../../hooks/useToast";
+import { useAfterFirstPaint } from "../../../../hooks/useAfterFirstPaint";
 
 import {
   expenseAmt,
@@ -1499,8 +1500,30 @@ export function AdvancedDashboard({
 
   const lastPersistedAnalyticsKeyRef = useRef<string | null>(null);
 
+  /**
+   * Esta escritura es de fondo y prescindible (señales analíticas), pero es PESADA: un upsert
+   * con una fila por movimiento con señal. Salía al montar el dashboard, o sea dentro de la
+   * ráfaga de peticiones del arranque, y competía con lo que el usuario sí está esperando.
+   *
+   * Medido en app_error_logs: 3 de los 5 create-movement abortados entre el 16 y el 25 de
+   * agosto de 2026 van precedidos, en el MISMO minuto, por un persist-dashboard-analytics
+   * abortado. Es el escenario que reportó el usuario: abrir la app tras horas y correr a
+   * registrar algo.
+   *
+   * Así que espera al primer pintado y cede el paso mientras haya un guardado del usuario en
+   * vuelo. No se pierde nada: al liberarse, el efecto vuelve a entrar y persiste igual.
+   */
+  const afterFirstPaint = useAfterFirstPaint();
+  const userWritesInFlight = useIsMutating({
+    predicate: (mutation) => {
+      const key = mutation.options.mutationKey?.[0];
+      return typeof key === "string" && !key.startsWith("persist-");
+    },
+  });
+
   useEffect(() => {
     if (!workspaceId) return;
+    if (!afterFirstPaint || userWritesInFlight > 0) return;
     const periodKey = format(new Date(), "yyyy-MM");
     const persistKey = JSON.stringify({
       workspaceId,
@@ -1566,7 +1589,7 @@ export function AdvancedDashboard({
         confidence: projectionModel.confidence,
       },
     });
-  }, [anomalySignals, categorySuggestions, persistDashboardAnalyticsMutation, projectionModel, workspaceId]);
+  }, [afterFirstPaint, anomalySignals, categorySuggestions, persistDashboardAnalyticsMutation, projectionModel, userWritesInFlight, workspaceId]);
 
   const weeklyPatternInsight = useMemo(() => {
     const totals = Array.from({ length: 7 }, () => 0);
