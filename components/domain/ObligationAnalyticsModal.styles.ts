@@ -23,7 +23,7 @@ export const styles = StyleSheet.create({
     padding: SPACING.lg,
     gap: SPACING.sm,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.10)",
+    borderColor: "rgba(244,241,236,0.10)",
   },
   approvalTitle: {
     fontFamily: FONT_FAMILY.bodySemibold,
@@ -48,8 +48,8 @@ export const styles = StyleSheet.create({
     padding: SPACING.sm,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
-    backgroundColor: "rgba(255,255,255,0.04)",
+    borderColor: "rgba(244,241,236,0.08)",
+    backgroundColor: "rgba(244,241,236,0.04)",
   },
   approvalAccountRowSelected: {
     borderColor: COLORS.primary + "88",
@@ -207,7 +207,7 @@ export const styles = StyleSheet.create({
     width: 36,
     height: 4,
     borderRadius: RADIUS.full,
-    backgroundColor: "rgba(255,255,255,0.22)",
+    backgroundColor: "rgba(244,241,236,0.22)",
     marginTop: SPACING.md,
     marginBottom: SPACING.xs,
   },
@@ -217,7 +217,7 @@ export const styles = StyleSheet.create({
     paddingHorizontal: SPACING.lg,
     paddingVertical: SPACING.md,
     borderBottomWidth: 0.5,
-    borderBottomColor: "rgba(255,255,255,0.10)",
+    borderBottomColor: "rgba(244,241,236,0.10)",
   },
   headerText: { flex: 1 },
   title: {
@@ -233,7 +233,7 @@ export const styles = StyleSheet.create({
   },
   closeBtn: {
     padding: SPACING.xs,
-    backgroundColor: "rgba(255,255,255,0.07)",
+    backgroundColor: "rgba(244,241,236,0.07)",
     borderRadius: RADIUS.sm,
   },
   content: {
@@ -306,10 +306,10 @@ export const styles = StyleSheet.create({
   insightCard: {
     flex: 1,
     minWidth: "45%",
-    backgroundColor: "rgba(255,255,255,0.04)",
+    backgroundColor: "rgba(244,241,236,0.04)",
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
+    borderColor: "rgba(244,241,236,0.08)",
     padding: SPACING.md,
     gap: 4,
   },
@@ -456,7 +456,7 @@ export const styles = StyleSheet.create({
     flex: 1,
     width: "100%",
     justifyContent: "flex-end",
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: "rgba(244,241,236,0.05)",
     borderRadius: 4,
     overflow: "hidden",
   },
@@ -504,8 +504,8 @@ export const styles = StyleSheet.create({
     borderColor: COLORS.pine + "55",
   },
   installmentPending: {
-    backgroundColor: "rgba(255,255,255,0.05)",
-    borderColor: "rgba(255,255,255,0.12)",
+    backgroundColor: "rgba(244,241,236,0.05)",
+    borderColor: "rgba(244,241,236,0.12)",
   },
   installmentNum: {
     fontFamily: FONT_FAMILY.bodyMedium,
@@ -520,13 +520,13 @@ export const styles = StyleSheet.create({
     marginTop: SPACING.md,
     paddingTop: SPACING.sm,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "rgba(255,255,255,0.12)",
+    borderTopColor: "rgba(244,241,236,0.12)",
     gap: SPACING.sm,
   },
   historyPagerBtn: {
     padding: SPACING.sm,
     borderRadius: RADIUS.md,
-    backgroundColor: "rgba(255,255,255,0.08)",
+    backgroundColor: "rgba(244,241,236,0.08)",
   },
   historyPagerBtnDisabled: {
     opacity: 0.35,
@@ -675,10 +675,10 @@ export const styles = StyleSheet.create({
     gap: SPACING.xs,
   },
   rejectInlineInput: {
-    backgroundColor: "rgba(255,255,255,0.07)",
+    backgroundColor: "rgba(244,241,236,0.07)",
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.15)",
+    borderColor: "rgba(244,241,236,0.15)",
     padding: SPACING.xs + 2,
     color: COLORS.ink,
     fontSize: FONT_SIZE.sm,
@@ -776,7 +776,7 @@ export const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: RADIUS.full,
     borderWidth: 1,
-    backgroundColor: "rgba(255,255,255,0.04)",
+    backgroundColor: "rgba(244,241,236,0.04)",
   },
   timelineSummaryPositivePill: {
     borderColor: COLORS.income + "44",
@@ -787,7 +787,7 @@ export const styles = StyleSheet.create({
     backgroundColor: COLORS.expense + "14",
   },
   timelineSummaryNeutralPill: {
-    borderColor: "rgba(255,255,255,0.12)",
+    borderColor: "rgba(244,241,236,0.12)",
   },
   timelineSummaryValue: {
     fontFamily: FONT_FAMILY.heading,
@@ -856,9 +856,9 @@ export const styles = StyleSheet.create({
     gap: SPACING.xs,
     padding: SPACING.md,
     borderRadius: RADIUS.md,
-    backgroundColor: "rgba(255,255,255,0.03)",
+    backgroundColor: "rgba(244,241,236,0.03)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
+    borderColor: "rgba(244,241,236,0.08)",
   },
   timelineTopRow: {
     flexDirection: "row",
@@ -876,9 +876,9 @@ export const styles = StyleSheet.create({
     paddingHorizontal: SPACING.xs + 2,
     paddingVertical: 4,
     borderRadius: RADIUS.full,
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: "rgba(244,241,236,0.05)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
+    borderColor: "rgba(244,241,236,0.08)",
   },
   timelineImpactPill: {
     paddingHorizontal: SPACING.xs + 2,
@@ -946,7 +946,7 @@ export const styles = StyleSheet.create({
   tl2DateLine: {
     flex: 1,
     height: 1,
-    backgroundColor: "rgba(255,255,255,0.07)",
+    backgroundColor: "rgba(244,241,236,0.07)",
     marginLeft: 10,
   },
   tl2DayTotal: {
@@ -964,7 +964,7 @@ export const styles = StyleSheet.create({
   tl2LineSegment: {
     width: 2,
     flex: 1,
-    backgroundColor: "rgba(255,255,255,0.07)",
+    backgroundColor: "rgba(244,241,236,0.07)",
     minHeight: 8,
   },
   tl2LineEnd: {
@@ -981,10 +981,10 @@ export const styles = StyleSheet.create({
     flex: 1,
     marginLeft: 8,
     marginBottom: 6,
-    backgroundColor: "rgba(255,255,255,0.03)",
+    backgroundColor: "rgba(244,241,236,0.03)",
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.07)",
+    borderColor: "rgba(244,241,236,0.07)",
     padding: 10,
     paddingHorizontal: 12,
     flexDirection: "row",

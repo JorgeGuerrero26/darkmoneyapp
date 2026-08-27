@@ -187,8 +187,8 @@ function getBadgeStyle(tone: EntityActionSheetTone) {
       };
     default:
       return {
-        backgroundColor: "rgba(255,255,255,0.06)",
-        borderColor: "rgba(255,255,255,0.12)",
+        backgroundColor: "rgba(244,241,236,0.06)",
+        borderColor: "rgba(244,241,236,0.12)",
       };
   }
 }
@@ -232,8 +232,8 @@ function getNoticeStyle(tone: EntityActionSheetTone) {
       };
     default:
       return {
-        backgroundColor: "rgba(255,255,255,0.04)",
-        borderColor: "rgba(255,255,255,0.10)",
+        backgroundColor: "rgba(244,241,236,0.04)",
+        borderColor: "rgba(244,241,236,0.10)",
       };
   }
 }

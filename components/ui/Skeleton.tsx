@@ -50,7 +50,7 @@ export function Skeleton({ width = "100%", height = 16, borderRadius = RADIUS.sm
     >
       {measuredWidth > 0 ? (
         <AnimatedLinearGradient
-          colors={["rgba(255,255,255,0)", "rgba(255,255,255,0.12)", "rgba(255,255,255,0)"]}
+          colors={["rgba(244,241,236,0)", "rgba(244,241,236,0.12)", "rgba(244,241,236,0)"]}
           start={{ x: 0, y: 0.5 }}
           end={{ x: 1, y: 0.5 }}
           style={[StyleSheet.absoluteFillObject, { transform: [{ translateX }] }]}

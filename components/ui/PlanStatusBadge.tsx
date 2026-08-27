@@ -70,8 +70,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   badgeLoading: {
-    backgroundColor: "rgba(255,255,255,0.05)",
-    borderColor: "rgba(255,255,255,0.12)",
+    backgroundColor: "rgba(244,241,236,0.05)",
+    borderColor: "rgba(244,241,236,0.12)",
   },
   badgePro: {
     backgroundColor: COLORS.pro + "18",

@@ -409,9 +409,9 @@ export const styles = StyleSheet.create({
     color: COLORS.income,
   },
   eventCard: {
-    backgroundColor: "rgba(255,255,255,0.03)",
+    backgroundColor: "rgba(244,241,236,0.03)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.07)",
+    borderColor: "rgba(244,241,236,0.07)",
     overflow: "hidden",
   },
   eventCardInner: {
@@ -555,9 +555,9 @@ export const styles = StyleSheet.create({
     paddingHorizontal: SPACING.xs + 2,
     paddingVertical: 3,
     borderRadius: RADIUS.full,
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: "rgba(244,241,236,0.05)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.10)",
+    borderColor: "rgba(244,241,236,0.10)",
   },
   eventMetaChipText: {
     fontSize: 10,
@@ -593,8 +593,8 @@ export const styles = StyleSheet.create({
     color: COLORS.danger,
   },
   eventMetaChipNeutral: {
-    backgroundColor: "rgba(255,255,255,0.05)",
-    borderColor: "rgba(255,255,255,0.10)",
+    backgroundColor: "rgba(244,241,236,0.05)",
+    borderColor: "rgba(244,241,236,0.10)",
   },
   eventMetaChipTextNeutral: {
     color: COLORS.storm,
@@ -647,9 +647,9 @@ export const styles = StyleSheet.create({
     paddingHorizontal: SPACING.xs + 2,
     paddingVertical: 4,
     borderRadius: RADIUS.full,
-    backgroundColor: "rgba(255,255,255,0.06)",
+    backgroundColor: "rgba(244,241,236,0.06)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
+    borderColor: "rgba(244,241,236,0.08)",
   },
   eventAttachmentLoadingText: {
     fontSize: FONT_SIZE.xs,
@@ -712,7 +712,7 @@ export const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-start",
     gap: SPACING.sm,
-    backgroundColor: "rgba(255,255,255,0.04)",
+    backgroundColor: "rgba(244,241,236,0.04)",
     borderRadius: RADIUS.md,
     borderWidth: 1,
     borderColor: COLORS.danger + "33",
@@ -791,8 +791,8 @@ export const styles = StyleSheet.create({
     gap: SPACING.sm,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.10)",
-    backgroundColor: "rgba(255,255,255,0.04)",
+    borderColor: "rgba(244,241,236,0.10)",
+    backgroundColor: "rgba(244,241,236,0.04)",
     padding: SPACING.sm,
   },
   ownerDeleteTargetAccent: {
@@ -879,10 +879,10 @@ export const styles = StyleSheet.create({
   rejectTitle: { fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.ink, textAlign: "center" },
   rejectSub: { fontSize: FONT_SIZE.sm, color: COLORS.storm, textAlign: "center" },
   rejectInputWrap: {
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: "rgba(244,241,236,0.05)",
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.1)",
+    borderColor: "rgba(244,241,236,0.1)",
     padding: SPACING.sm,
   },
   rejectInput: { color: COLORS.ink, fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.body },
@@ -941,9 +941,9 @@ export const styles = StyleSheet.create({
     paddingHorizontal: SPACING.xs + 2,
     paddingVertical: 4,
     borderRadius: RADIUS.full,
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: "rgba(244,241,236,0.05)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.10)",
+    borderColor: "rgba(244,241,236,0.10)",
   },
   viewerAccountUnlinkedText: {
     fontSize: FONT_SIZE.xs,
@@ -1027,8 +1027,8 @@ export const styles = StyleSheet.create({
     borderColor: COLORS.danger + "26",
   },
   linkSheetImpactCardNeutral: {
-    backgroundColor: "rgba(255,255,255,0.04)",
-    borderColor: "rgba(255,255,255,0.10)",
+    backgroundColor: "rgba(244,241,236,0.04)",
+    borderColor: "rgba(244,241,236,0.10)",
   },
   linkSheetImpactTitle: {
     fontSize: FONT_SIZE.xs,
@@ -1060,8 +1060,8 @@ export const styles = StyleSheet.create({
     padding: SPACING.sm,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
-    backgroundColor: "rgba(255,255,255,0.04)",
+    borderColor: "rgba(244,241,236,0.08)",
+    backgroundColor: "rgba(244,241,236,0.04)",
   },
   linkAccountRowSelected: {
     borderColor: COLORS.primary + "88",
@@ -1114,7 +1114,7 @@ export const styles = StyleSheet.create({
   },
   linkNoAccounts: { fontSize: FONT_SIZE.sm, color: COLORS.storm, textAlign: "center", paddingVertical: SPACING.sm },
   viewerRequestCard: {
-    backgroundColor: "rgba(255,255,255,0.04)",
+    backgroundColor: "rgba(244,241,236,0.04)",
     borderRadius: RADIUS.md,
     borderWidth: 1,
     padding: SPACING.sm,

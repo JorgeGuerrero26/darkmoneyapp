@@ -316,7 +316,7 @@ const styles = StyleSheet.create({
     marginTop: SPACING.lg,
     paddingTop: SPACING.md,
     borderTopWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.08)",
+    borderTopColor: "rgba(244,241,236,0.08)",
   },
   actionTitle: {
     fontSize: FONT_SIZE.md,
@@ -349,7 +349,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.xl,
     padding: SPACING.lg,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
+    borderColor: "rgba(244,241,236,0.08)",
   },
   modalTitle: {
     fontSize: FONT_SIZE.lg,

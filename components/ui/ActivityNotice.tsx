@@ -130,7 +130,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.xl,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.10)",
+    borderColor: "rgba(244,241,236,0.10)",
     backgroundColor: SURFACE.card,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 12 },

@@ -34,8 +34,8 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.sm,
     borderRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: "rgba(215, 190, 123, 0.28)",
-    backgroundColor: "rgba(215, 190, 123, 0.08)",
+    borderColor: "rgba(217,182,92, 0.28)",
+    backgroundColor: "rgba(217,182,92, 0.08)",
   },
   text: {
     flex: 1,

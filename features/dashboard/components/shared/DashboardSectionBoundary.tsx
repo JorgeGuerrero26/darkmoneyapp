@@ -83,10 +83,10 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
     paddingHorizontal: SPACING.lg,
     paddingVertical: SPACING.sm,
-    backgroundColor: "rgba(255,255,255,0.08)",
+    backgroundColor: "rgba(244,241,236,0.08)",
     borderRadius: RADIUS.full,
     borderWidth: 0.5,
-    borderColor: "rgba(255,255,255,0.15)",
+    borderColor: "rgba(244,241,236,0.15)",
   },
   btnText: {
     fontFamily: FONT_FAMILY.bodySemibold,

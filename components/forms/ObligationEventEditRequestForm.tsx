@@ -263,9 +263,9 @@ const styles = StyleSheet.create({
   },
   inputWrap: {
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
+    borderColor: "rgba(244,241,236,0.08)",
     borderRadius: RADIUS.md,
-    backgroundColor: "rgba(255,255,255,0.04)",
+    backgroundColor: "rgba(244,241,236,0.04)",
     paddingHorizontal: SPACING.sm,
     minHeight: 48,
     justifyContent: "center",

@@ -335,7 +335,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 4,
     borderRadius: RADIUS.full,
-    backgroundColor: "rgba(255,255,255,0.22)",
+    backgroundColor: "rgba(244,241,236,0.22)",
     marginTop: SPACING.md,
     marginBottom: SPACING.sm,
   },
@@ -385,7 +385,7 @@ const styles = StyleSheet.create({
 
   divider: {
     height: 0.5,
-    backgroundColor: "rgba(255,255,255,0.10)",
+    backgroundColor: "rgba(244,241,236,0.10)",
     marginHorizontal: SPACING.lg,
   },
 

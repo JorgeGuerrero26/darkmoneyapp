@@ -101,7 +101,7 @@ const styles = StyleSheet.create({
   container: {
     marginTop: SPACING.xs,
     borderTopWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.08)",
+    borderTopColor: "rgba(244,241,236,0.08)",
     paddingTop: SPACING.sm,
     gap: SPACING.sm,
   },

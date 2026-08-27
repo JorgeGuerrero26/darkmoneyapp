@@ -293,7 +293,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 4,
     borderRadius: 2,
-    backgroundColor: "rgba(255,255,255,0.2)",
+    backgroundColor: "rgba(244,241,236,0.2)",
   },
   closeBtn: {
     position: "absolute",
@@ -397,9 +397,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 5,
     paddingVertical: 2,
     borderRadius: RADIUS.full,
-    backgroundColor: "rgba(255,255,255,0.06)",
+    backgroundColor: "rgba(244,241,236,0.06)",
     borderWidth: 0.5,
-    borderColor: "rgba(255,255,255,0.10)",
+    borderColor: "rgba(244,241,236,0.10)",
   },
   attBadgeText: {
     fontFamily: FONT_FAMILY.bodyMedium,

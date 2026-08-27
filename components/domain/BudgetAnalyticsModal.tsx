@@ -158,7 +158,7 @@ export function BudgetAnalyticsModal({ visible, budget, analytics, onClose }: Pr
     const ringSegments: RingSegment[] = analytics.spentAmount <= budget.limitAmount
       ? [
           { key: "spent", value: analytics.spentAmount, color: budget.isOverLimit ? COLORS.rosewood : COLORS.primary },
-          { key: "remaining", value: Math.max(0, budget.limitAmount - analytics.spentAmount), color: "rgba(255,255,255,0.14)" },
+          { key: "remaining", value: Math.max(0, budget.limitAmount - analytics.spentAmount), color: "rgba(244,241,236,0.14)" },
         ]
       : [
           { key: "limit", value: budget.limitAmount, color: COLORS.primary },
@@ -471,7 +471,7 @@ const styles = StyleSheet.create({
     width: 42,
     height: 4,
     borderRadius: RADIUS.full,
-    backgroundColor: "rgba(255,255,255,0.18)",
+    backgroundColor: "rgba(244,241,236,0.18)",
     marginTop: SPACING.sm,
   },
   header: {
@@ -502,7 +502,7 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: RADIUS.full,
-    backgroundColor: "rgba(255,255,255,0.06)",
+    backgroundColor: "rgba(244,241,236,0.06)",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -563,7 +563,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.sm + 2,
     paddingVertical: 7,
     borderRadius: RADIUS.full,
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: "rgba(244,241,236,0.05)",
   },
   heroChipText: {
     fontFamily: FONT_FAMILY.bodyMedium,
@@ -594,7 +594,7 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: RADIUS.lg,
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: "rgba(244,241,236,0.05)",
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 2,
@@ -779,7 +779,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.sm,
     paddingVertical: 5,
     borderRadius: RADIUS.full,
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: "rgba(244,241,236,0.05)",
   },
   contributionTagText: {
     fontFamily: FONT_FAMILY.bodyMedium,

@@ -1113,7 +1113,7 @@ const styles = StyleSheet.create({
   splashProgressTrack: {
     width: 160,
     height: 2,
-    backgroundColor: "rgba(255,255,255,0.08)",
+    backgroundColor: "rgba(244,241,236,0.08)",
     borderRadius: 1,
     overflow: "hidden",
     marginTop: 52,
@@ -1156,10 +1156,10 @@ const styles = StyleSheet.create({
     borderLeftWidth: 1,
     borderRightWidth: 1,
     borderBottomWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.18)",
-    borderLeftColor: "rgba(255,255,255,0.10)",
-    borderRightColor: "rgba(255,255,255,0.08)",
-    borderBottomColor: "rgba(255,255,255,0.05)",
+    borderTopColor: "rgba(244,241,236,0.18)",
+    borderLeftColor: "rgba(244,241,236,0.10)",
+    borderRightColor: "rgba(244,241,236,0.08)",
+    borderBottomColor: "rgba(244,241,236,0.05)",
   },
   workspaceBootstrapLogoStage: {
     width: 140,

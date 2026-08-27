@@ -77,7 +77,7 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.sm,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
+    borderColor: "rgba(244,241,236,0.12)",
     backgroundColor: SURFACE.card,
     gap: 2,
     minWidth: 100,

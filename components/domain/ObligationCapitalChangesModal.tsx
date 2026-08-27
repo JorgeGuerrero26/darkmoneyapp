@@ -192,7 +192,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.md,
     borderWidth: 1,
     borderColor: SURFACE.cardBorder,
-    backgroundColor: "rgba(255,255,255,0.04)",
+    backgroundColor: "rgba(244,241,236,0.04)",
     padding: SPACING.md,
     gap: SPACING.xs,
   },

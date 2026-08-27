@@ -66,7 +66,7 @@ export function SparkLine({
           y1={result.baseY}
           x2={width - 6}
           y2={result.baseY}
-          stroke="rgba(255,255,255,0.18)"
+          stroke="rgba(244,241,236,0.18)"
           strokeWidth={1}
           strokeDasharray="3,2"
         />

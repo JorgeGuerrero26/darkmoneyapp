@@ -692,7 +692,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     gap: SPACING.sm,
-    backgroundColor: "rgba(255,255,255,0.04)",
+    backgroundColor: "rgba(244,241,236,0.04)",
     borderRadius: RADIUS.sm,
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,

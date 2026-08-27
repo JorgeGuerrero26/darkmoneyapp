@@ -3318,7 +3318,7 @@ export function AdvancedDashboard({
           >
             <View style={subStyles.aiSummaryButtonAccent} />
             <View style={subStyles.aiSummaryButtonInner}>
-              <Sparkles size={16} color={dashboardAiSummaryMutation.isPending || dashboardAiLimitReached ? "rgba(255,255,255,0.4)" : GEMINI_BRAND.teal} />
+              <Sparkles size={16} color={dashboardAiSummaryMutation.isPending || dashboardAiLimitReached ? "rgba(244,241,236,0.4)" : GEMINI_BRAND.teal} />
               <Text style={subStyles.aiSummaryButtonLabel}>
                 {dashboardAiSummaryMutation.isPending
                   ? "Preparando explicacion..."
@@ -4037,7 +4037,7 @@ export function AdvancedDashboard({
             >
               <View style={subStyles.aiSummaryButtonAccent} />
               <View style={subStyles.aiSummaryButtonInner}>
-                <Sparkles size={16} color={dashboardAiPatternsMutation.isPending || dashboardAiPatternsLimitReached ? "rgba(255,255,255,0.4)" : GEMINI_BRAND.teal} />
+                <Sparkles size={16} color={dashboardAiPatternsMutation.isPending || dashboardAiPatternsLimitReached ? "rgba(244,241,236,0.4)" : GEMINI_BRAND.teal} />
                 <Text style={subStyles.aiSummaryButtonLabel}>
                   {dashboardAiPatternsMutation.isPending
                     ? "Preparando explicacion..."
@@ -4393,7 +4393,7 @@ export function AdvancedDashboard({
             >
               <View style={subStyles.aiSummaryButtonAccent} />
               <View style={subStyles.aiSummaryButtonInner}>
-                <Sparkles size={16} color={dashboardAiFlowMutation.isPending || dashboardAiFlowLimitReached ? "rgba(255,255,255,0.4)" : GEMINI_BRAND.teal} />
+                <Sparkles size={16} color={dashboardAiFlowMutation.isPending || dashboardAiFlowLimitReached ? "rgba(244,241,236,0.4)" : GEMINI_BRAND.teal} />
                 <Text style={subStyles.aiSummaryButtonLabel}>
                   {dashboardAiFlowMutation.isPending
                     ? "Preparando explicacion..."
@@ -4645,7 +4645,7 @@ export function AdvancedDashboard({
             >
               <View style={subStyles.aiSummaryButtonAccent} />
               <View style={subStyles.aiSummaryButtonInner}>
-                <Sparkles size={16} color={dashboardAiHistoryMutation.isPending || dashboardAiHistoryLimitReached ? "rgba(255,255,255,0.4)" : GEMINI_BRAND.teal} />
+                <Sparkles size={16} color={dashboardAiHistoryMutation.isPending || dashboardAiHistoryLimitReached ? "rgba(244,241,236,0.4)" : GEMINI_BRAND.teal} />
                 <Text style={subStyles.aiSummaryButtonLabel}>
                   {dashboardAiHistoryMutation.isPending
                     ? "Preparando explicacion..."
@@ -5159,7 +5159,7 @@ export function AdvancedDashboard({
             >
               <View style={subStyles.aiSummaryButtonAccent} />
               <View style={subStyles.aiSummaryButtonInner}>
-                <Sparkles size={16} color={dashboardAiHealthMutation.isPending || dashboardAiHealthLimitReached ? "rgba(255,255,255,0.4)" : GEMINI_BRAND.teal} />
+                <Sparkles size={16} color={dashboardAiHealthMutation.isPending || dashboardAiHealthLimitReached ? "rgba(244,241,236,0.4)" : GEMINI_BRAND.teal} />
                 <Text style={subStyles.aiSummaryButtonLabel}>
                   {dashboardAiHealthMutation.isPending
                     ? "Preparando explicacion..."
