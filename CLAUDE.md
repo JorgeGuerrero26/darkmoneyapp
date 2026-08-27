@@ -28,11 +28,22 @@ Ejecutar npm run lint solo si el entorno tiene configuración ESLint válida.
 Si lint falla por configuración ausente o por ESLint flat config faltante, reportarlo sin bloquear el cambio.
 
 **OTA updates (EAS Update, canal `preview`)**: los cambios SOLO JS/assets ya no requieren
-rebuild del APK. Publicar con:
+rebuild del APK. Publicar SIEMPRE con:
 
 ```bash
-npx eas-cli update --channel preview --message "descripcion del cambio"
+npm run ota -- "descripcion del cambio"
 ```
+
+**No usar `eas-cli update` a pelo.** El iPhone corre un IPA cuyo `runtimeVersion` quedó
+congelado en **1.0.8** mientras el repo va en 1.0.9, así que cada cambio hay que publicarlo
+**dos veces** (una por runtime, cambiando `app.json` en medio). Publicar una sola vez deja al
+iPhone atrás **en silencio**: no hay error, y la única señal es que el usuario reporta que un
+arreglo "no llegó". `scripts/publish-ota.mjs` hace las dos y restaura `app.json` aunque la
+publicación falle a mitad.
+
+El congelado NO se puede levantar hoy: no hay Mac y `eas.json` no tiene perfil de iOS. Un IPA
+nuevo necesita cuenta de Apple Developer, y entonces `eas build --platform ios` sí corre desde
+Windows. Ese día: quitar `FROZEN_RUNTIME` del script.
 
 El teléfono lo descarga al abrir la app y lo aplica en el siguiente arranque (2 aperturas).
 Reglas: (1) cambios nativos (Kotlin, permisos, deps nativas) SÍ requieren APK y deben bumpear
