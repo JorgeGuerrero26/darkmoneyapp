@@ -179,7 +179,7 @@ const styles = StyleSheet.create({
   filterChip: {
     paddingHorizontal: SPACING.md,
     minHeight: 38,
-    borderRadius: RADIUS.full,
+    borderRadius: RADIUS.sm,
     backgroundColor: SURFACE.card,
     borderWidth: 1,
     borderColor: SURFACE.cardBorder,
@@ -187,8 +187,11 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   filterChipActive: {
-    backgroundColor: COLORS.pine + "22",
-    borderColor: COLORS.pine + "55",
+    // Chip de SELECCION: rectangulo lleno de tinta, igual que PillSelector. En verde se
+    // confundia con el chip de filtro ACTIVO (gris y removible), que es otra cosa: uno dice
+    // "elegi esto" y el otro "esto se puede quitar".
+    backgroundColor: COLORS.action,
+    borderColor: COLORS.action,
   },
   filterChipText: {
     fontSize: FONT_SIZE.sm,
@@ -198,7 +201,7 @@ const styles = StyleSheet.create({
     includeFontPadding: false,
     textAlignVertical: "center",
   },
-  filterChipTextActive: { color: COLORS.pine },
+  filterChipTextActive: { color: COLORS.actionText },
   actionButton: {
     width: 38,
     height: 38,

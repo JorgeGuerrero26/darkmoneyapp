@@ -223,8 +223,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.xl,
     marginTop: SPACING.sm,
     paddingTop: SPACING.md,
-    borderTopWidth: 1,
-    borderTopColor: SURFACE.separator,
+    paddingBottom: SPACING.xs,
+    // La regla va DEBAJO, no encima: cierra el encabezado contra sus propias filas en vez de
+    // separarlo del dia anterior. A todo el ancho, al reves que el separador entre filas, que
+    // se sangra 62px — asi se distingue "empieza un dia" de "otra fila mas".
+    borderBottomWidth: 1,
+    borderBottomColor: SURFACE.separator,
     // Pegajoso sobre el lienzo: sin fondo propio el contenido se leeria por debajo.
     backgroundColor: COLORS.canvas,
   },

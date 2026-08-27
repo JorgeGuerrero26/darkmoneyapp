@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { TextInput } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
-import { StyleSheet, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 
 import { useUiStore } from "../../store/ui-store";
 import { useWorkspace } from "../../lib/workspace-context";
@@ -60,7 +60,7 @@ import {
   patternMovementAmount,
 } from "../../features/movements/lib/pattern-heuristics";
 import { LOCAL_CATEGORY_AI_CONFIDENCE_THRESHOLD } from "../../lib/movement-ai-orchestrator";
-import { COLORS, SPACING, SURFACE } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import type { MovementType, MovementStatus, MovementRecord, ExchangeRateSummary } from "../../types/domain";
 import { useMovementCreationController } from "../../features/movements/hooks/useMovementCreationController";
 import { useTransferFxController } from "../../features/movements/hooks/useTransferFxController";
@@ -1139,8 +1139,18 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
           accessibilityLabel={`Paso ${step} de 3: ${stepTitle}`}
           accessibilityValue={{ min: 1, max: 3, now: step }}
         >
-          {([1, 2, 3] as Step[]).map((s) => (
-            <View key={s} style={[styles.stepDot, step >= s && styles.stepDotActive]} />
+          {STEP_LABELS.map(({ step: s, label }) => (
+            <View key={s} style={styles.stepItem}>
+              {/* La regla marca el AVANCE (los pasos ya pisados); la etiqueta marca DONDE
+                  estas. Son dos preguntas distintas y por eso van en dos canales. */}
+              <View style={[styles.stepRule, step >= s && styles.stepRuleActive]} />
+              <Text
+                style={[styles.stepLabel, step === s && styles.stepLabelActive]}
+                numberOfLines={1}
+              >
+                {s} · {label}
+              </Text>
+            </View>
           ))}
         </View>
       ) : null}
@@ -1331,26 +1341,38 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
 // -- Sub-components ------------------------------------------------------------
 
 // --- Styles -------------------------------------------------------------------
+const STEP_LABELS: { step: Step; label: string }[] = [
+  { step: 1, label: "Tipo" },
+  { step: 2, label: "Montos" },
+  { step: 3, label: "Detalles" },
+];
+
 const styles = StyleSheet.create({
   stepRow: {
     flexDirection: "row",
-    justifyContent: "center",
-    gap: 6,
-    marginBottom: SPACING.md,
-    alignItems: "center",
+    gap: SPACING.sm,
+    marginBottom: SPACING.lg,
   },
-  stepDot: {
-    width: 24,
-    height: 4,
-    borderRadius: 2,
+  stepItem: {
+    flex: 1,
+    gap: 6,
+  },
+  stepRule: {
+    height: 2,
+    borderRadius: RADIUS.full,
     backgroundColor: SURFACE.inputBorder,
   },
-  stepDotActive: {
-    backgroundColor: COLORS.pine,
-    width: 32,
-    shadowColor: COLORS.shadow,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.6,
-    shadowRadius: 6,
+  stepRuleActive: {
+    // Hueso, como el resto de acciones: el avance no es un exito ni un ingreso, y en verde
+    // competia con los colores que ya significan plata. Y sin resplandor.
+    backgroundColor: COLORS.action,
+  },
+  stepLabel: {
+    fontFamily: FONT_FAMILY.bodyMedium,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.textDisabled,
+  },
+  stepLabelActive: {
+    color: COLORS.ink,
   },
 });

@@ -33,32 +33,39 @@ export type CurrencyParts = {
  * los decimales al 48 % atenuados: así el número manda y la moneda no compite con el importe.
  * Los decimales están para la exactitud, no para el vistazo rápido.
  *
- * Usa `formatToParts` en vez de una expresión regular a propósito: el símbolo, el separador de
- * miles y el decimal cambian por moneda y por locale, y partir "S/ 1,234.56" a mano se rompe
- * en cuanto aparece una moneda que pone el símbolo detrás o usa la coma como decimal.
+ * Las piezas se sacan del texto que devuelve `formatCurrency`, NO de `Intl.formatToParts`.
+ *
+ * Parece el camino tosco y es justo al revés. Hermes —el motor de JavaScript del teléfono—
+ * trae un ICU recortado en el que las dos funciones NO coinciden: `format()` devuelve el
+ * símbolo ("S/") y `formatToParts()` devuelve el código ("PEN"). En Node coinciden, así que el
+ * fallo pasó los tests y solo se vio en el iPhone: el encabezado del día mostraba "S/ 168.40"
+ * y la fila de al lado "PEN 42.90", porque cada uno iba por un camino distinto.
+ *
+ * Partiendo el texto ya formateado, la cifra que se enseña es SIEMPRE la misma que sale por la
+ * vía de toda la vida. El símbolo puede ir delante o detrás: se toma lo que queda fuera del
+ * bloque numérico, sea de un lado o del otro.
  */
 export function formatCurrencyParts(amount: number, currencyCode: string): CurrencyParts {
-  try {
-    const parts = new Intl.NumberFormat("es-PE", {
-      style: "currency",
-      currency: currencyCode,
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).formatToParts(Math.abs(amount));
-
-    const pick = (...types: string[]) =>
-      parts.filter((part) => types.includes(part.type)).map((part) => part.value).join("");
-
-    const symbol = pick("currency").trim();
-    const integer = pick("integer", "group");
-    const fraction = pick("decimal", "fraction");
-    // Si el locale devolvió algo inesperado, mejor una cifra entera que una vacía.
-    if (!integer) return { symbol: symbol || currencyCode, integer: Math.abs(amount).toFixed(0), fraction: "" };
-    return { symbol: symbol || currencyCode, integer, fraction };
-  } catch {
+  const formatted = formatCurrency(Math.abs(amount), currencyCode);
+  // Dígitos con sus separadores de miles y decimal, sin comerse el símbolo.
+  const match = /\d[\d.,   ]*\d|\d/.exec(formatted);
+  if (!match) {
     const [integer = "0", fraction = "00"] = Math.abs(amount).toFixed(2).split(".");
     return { symbol: currencyCode, integer, fraction: `.${fraction}` };
   }
+
+  const numeric = match[0];
+  const symbol = (formatted.slice(0, match.index) + formatted.slice(match.index + numeric.length))
+    .replace(/[  ]/g, " ")
+    .trim();
+
+  // Siempre se formatea con 2 decimales, así que los últimos 3 caracteres son <separador><dd>.
+  const hasFraction = /[.,]\d{2}$/.test(numeric);
+  return {
+    symbol: symbol || currencyCode,
+    integer: hasFraction ? numeric.slice(0, -3) : numeric,
+    fraction: hasFraction ? numeric.slice(-3) : "",
+  };
 }
 
 /**

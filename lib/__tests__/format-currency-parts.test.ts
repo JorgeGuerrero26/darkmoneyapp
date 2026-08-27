@@ -51,3 +51,32 @@ describe("formatCurrencyParts", () => {
     expect(formatCurrencyParts(1234567.89, "PEN").integer).toContain(",");
   });
 });
+
+/**
+ * Regresion del iPhone: la fila mostraba "PEN 42.90" mientras el encabezado del dia, a dos
+ * centimetros, mostraba "S/ 168.40".
+ *
+ * Causa: `formatCurrencyParts` usaba `Intl.formatToParts` y `formatCurrency` usa `format()`.
+ * En Node las dos devuelven "S/" — por eso los tests pasaban —, pero el ICU recortado de
+ * Hermes hace que `formatToParts` devuelva el CODIGO de la moneda. Un test que solo mire las
+ * piezas por separado nunca lo detecta; hay que atarlas al texto que ya funciona.
+ */
+describe("las piezas salen del mismo sitio que la cifra de siempre", () => {
+  it("el simbolo es exactamente el que usa formatCurrency", () => {
+    for (const code of ["PEN", "USD"]) {
+      const parts = formatCurrencyParts(1234.56, code);
+      const soloSimbolo = formatCurrency(1234.56, code).replace(/[\d.,\s]/g, "");
+      expect(parts.symbol.replace(/\s/g, "")).toBe(soloSimbolo);
+    }
+  });
+
+  it("nunca devuelve el codigo cuando la moneda tiene simbolo propio", () => {
+    expect(formatCurrencyParts(23.8, "PEN").symbol).not.toBe("PEN");
+  });
+
+  it("el simbolo no arrastra digitos ni separadores", () => {
+    const { symbol } = formatCurrencyParts(1234.56, "PEN");
+    expect(symbol).not.toMatch(/\d/);
+    expect(symbol).not.toMatch(/[.,]/);
+  });
+});
