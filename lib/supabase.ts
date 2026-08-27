@@ -2,6 +2,7 @@ import "react-native-url-polyfill/auto";
 import { createClient } from "@supabase/supabase-js";
 import { AppState } from "react-native";
 
+import { resolveFetchTimeoutMs } from "./fetch-timeout-budget";
 import { secureSessionStorage } from "./secure-session-storage";
 
 export const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL ?? "";
@@ -10,25 +11,23 @@ export const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? "";
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
 
 /**
- * Timeout global para TODA llamada HTTP de supabase-js (queries, mutations, auth,
- * storage). Tras horas en foreground el socket queda stale: el servidor commitea
- * el write pero la respuesta nunca vuelve y, sin límite, el fetch cuelga para
- * siempre (incidente 2026-07-20: guardar cuenta "cargando" 5 min). Aquí el arreglo
- * es único y cubre todos los formularios. NO afecta:
+ * Timeout global para TODA llamada HTTP de supabase-js (queries, mutations, auth, storage).
+ * Tras horas en foreground el socket queda stale: el servidor commitea el write pero la
+ * respuesta nunca vuelve y, sin límite, el fetch cuelga para siempre (incidente 2026-07-20:
+ * guardar cuenta "cargando" 5 min). Aquí el arreglo es único y cubre todos los formularios.
+ * NO afecta:
  *   - el asistente / edge functions → usan su propio fetch (services/queries/workspace-data.ts)
  *   - realtime → usa websockets, no fetch
- * 30 s: holgado para subir comprobantes en redes lentas, pero corta el cuelgue.
+ *
+ * El plazo NO es único: lo decide resolveFetchTimeoutMs, que da más margen a las escrituras
+ * de tabla que a las lecturas. El porqué está documentado en lib/fetch-timeout-budget.ts.
  */
-// 12 s: tras un cambio de red (WiFi↔datos) los sockets anteriores quedan muertos y la
-// petición se cuelga hasta agotar este plazo. Con 30 s la app se veía congelada ~15-30 s y,
-// con el reintento, hasta un minuto antes de fallar (incidente 2026-07-27). 12 s sigue
-// siendo holgado para una red lenta pero viva, y deja que el reintento salga por una
-// conexión nueva mucho antes.
-const SUPABASE_FETCH_TIMEOUT_MS = 12_000;
-
 function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), SUPABASE_FETCH_TIMEOUT_MS);
+  const request = typeof input === "object" && "url" in input ? (input as Request) : null;
+  const url = typeof input === "string" ? input : (request?.url ?? String(input));
+  const timeoutMs = resolveFetchTimeoutMs(url, init?.method ?? request?.method);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   // Respetar un signal que el propio supabase-js haya pasado (p. ej. cancelaciones).
   const callerSignal = init?.signal;
   if (callerSignal) {
