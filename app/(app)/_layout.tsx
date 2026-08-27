@@ -5,8 +5,8 @@ import { Animated, Platform, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Home, ArrowLeftRight, WalletCards, Scale, LayoutGrid } from "lucide-react-native";
 
-import { COLORS, FONT_FAMILY, RADIUS, SPACING, SURFACE } from "../../constants/theme";
-import { FLOATING_TAB_BAR_GAP, FLOATING_TAB_BAR_HEIGHT } from "../../constants/floating-tab-bar";
+import { COLORS, RADIUS, SPACING, SURFACE } from "../../constants/theme";
+import { TAB_BAR_CONTENT_HEIGHT } from "../../constants/floating-tab-bar";
 import { useNotificationsQuery } from "../../services/queries/workspace-data";
 import { usePendingObligationShareInvitesQuery } from "../../services/queries/obligations";
 import { useAuth } from "../../lib/auth-context";
@@ -16,28 +16,21 @@ import { useTabPersistence } from "../../hooks/useTabPersistence";
 import { useNotificationDetectionRuntimeSync } from "../../hooks/useNotificationDetectionRuntimeSync";
 import { useNotificationDetectionForegroundReconcile } from "../../hooks/useNotificationDetectionForegroundReconcile";
 
+/**
+ * Franja anclada a todo el ancho, con blur y filete superior. Igual en iOS y en Android.
+ *
+ * Antes en iOS era una píldora flotante: lo más bonito de la app y también lo más caro.
+ * Al ser `position: absolute` React Navigation no le reservaba espacio, así que CADA lista y
+ * CADA botón flotante tenía que dejar la franja libre a mano (8 sitios con
+ * IOS_FLOATING_TAB_BAR_SPACE), y con la letra del sistema agrandada las cinco etiquetas se
+ * cortaban. Anclada reserva su hueco sola.
+ */
 function TabBarBackground() {
-  const insets = useSafeAreaInsets();
-
-  // ANDROID: se mantiene tal cual (el usuario validó ese look). SafeBlurView no difumina en
-  // Android, así que allá el velo opaco ES el fondo y ocupa todo el ancho.
-  if (Platform.OS !== "ios") {
-    return (
-      <View style={StyleSheet.absoluteFillObject}>
-        <SafeBlurView blur intensity={32} tint="dark" style={StyleSheet.absoluteFillObject} />
-        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: "rgba(10,10,9,0.82)" }]} />
-        <View style={styles.topBorder} />
-      </View>
-    );
-  }
-
-  // iOS: la barra YA es la píldora flotante (tabBarStyle absolute), así que el fondo solo
-  // tiene que rellenarla y recortar el blur a sus esquinas. El velo va tenue (antes 0.82
-  // tapaba el blur y la barra se veía plana).
   return (
-    <View style={styles.iosPillClip}>
-      <SafeBlurView blur intensity={80} tint="systemChromeMaterialDark" style={StyleSheet.absoluteFillObject} />
-      <View style={[StyleSheet.absoluteFillObject, { backgroundColor: "rgba(10,10,9,0.30)" }]} />
+    <View style={StyleSheet.absoluteFillObject}>
+      <SafeBlurView blur intensity={20} tint="dark" style={StyleSheet.absoluteFillObject} />
+      <View style={[StyleSheet.absoluteFillObject, { backgroundColor: "rgba(10,10,9,0.86)" }]} />
+      <View style={styles.topBorder} />
     </View>
   );
 }
@@ -123,47 +116,24 @@ export default function AppLayout() {
   useNotificationDetectionRuntimeSync();
   useNotificationDetectionForegroundReconcile();
   const insets = useSafeAreaInsets();
-  const isIOS = Platform.OS === "ios";
-  // iOS: la barra es una píldora FLOTANTE absoluta, separada de los bordes, con el contenido
-  // corriendo por detrás. Al ser absolute React Navigation no le reserva espacio: la franja
-  // la dejan libre las listas (ResourceSectionList) y los FAB vía IOS_FLOATING_TAB_BAR_SPACE.
-  // Sin paddings propios, los iconos quedan centrados por construcción.
-  const iosTabBarStyle = {
-    position: "absolute" as const,
-    // MEDIDO: React Navigation ignora `left`/`right` aquí (impone los suyos). Lo que sí
-    // respeta es el padding, y en RN los hijos absolutos (el fondo de la píldora) se
-    // posicionan dentro del padding box — así que paddingHorizontal define el margen real
-    // Y de paso mete los iconos dentro de la píldora.
-    left: 0,
-    right: 0,
-    bottom: insets.bottom + FLOATING_TAB_BAR_GAP,
-    height: FLOATING_TAB_BAR_HEIGHT,
+  // Franja anclada, en el flujo, igual en las dos plataformas. Ya no es absolute: React
+  // Navigation vuelve a reservarle el hueco, así que ninguna lista ni ningún botón flotante
+  // tiene que dejarlo libre a mano. El safe area va DENTRO del alto (no como margen inferior)
+  // para que el fondo llegue hasta el borde de la pantalla y no quede una franja sin pintar.
+  const tabBarStyle = {
+    height: TAB_BAR_CONTENT_HEIGHT + insets.bottom,
+    paddingBottom: insets.bottom + SPACING.sm,
+    paddingTop: 6,
     backgroundColor: "transparent",
     borderTopWidth: 0,
     elevation: 0,
-    // Margen lateral REAL de la píldora (con 12pt quedaba pegada a los bordes de la pantalla).
-    paddingHorizontal: SPACING.xxl,
-    // React Navigation reserva el hueco de la etiqueta DEBAJO del icono aunque
-    // tabBarShowLabel sea false, así que el icono queda alto; medido en simulador: 10pt
-    // sobre el centro de la píldora. paddingTop lo compensa.
-    paddingTop: 10,
-    paddingBottom: 0,
   };
   return (
     <Tabs
       detachInactiveScreens={false}
       screenOptions={{
         headerShown: false,
-        tabBarStyle: isIOS
-          ? iosTabBarStyle
-          : {
-              backgroundColor: "transparent",
-              borderTopWidth: 0,
-              elevation: 0,
-              height: 64,
-              paddingBottom: 8,
-              paddingTop: 6,
-            },
+        tabBarStyle,
         tabBarBackground: TabBarBackground,
         tabBarActiveTintColor: COLORS.tabActive,
         tabBarInactiveTintColor: COLORS.tabInactive,
@@ -221,24 +191,13 @@ const styles = StyleSheet.create({
   // tabBarBackground en un contenedor a sangre e ignora el left/right/padding del
   // tabBarStyle, así que el margen lateral se define ACÁ. (El paddingHorizontal del
   // tabBarStyle sí mueve los iconos, y se deja igual para que queden dentro.)
-  iosPillClip: {
-    position: "absolute",
-    left: SPACING.xxl,
-    right: SPACING.xxl,
-    top: 0,
-    bottom: 0,
-    borderRadius: FLOATING_TAB_BAR_HEIGHT / 2,
-    overflow: "hidden",
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "rgba(255,255,255,0.16)",
-  },
   topBorder: {
     position: "absolute",
     top: 0,
     left: 0,
     right: 0,
     height: 0.75,
-    backgroundColor: "rgba(255,255,255,0.14)",
+    backgroundColor: SURFACE.tabBorder,
   },
   tabIconWrap: {
     alignItems: "center",

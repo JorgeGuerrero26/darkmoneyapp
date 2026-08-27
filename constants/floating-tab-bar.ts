@@ -1,20 +1,24 @@
 import { Platform } from "react-native";
 
 /**
- * Barra de pestañas flotante de iOS.
+ * Barra de pestañas ANCLADA.
  *
- * En iOS la barra es una píldora `position: absolute` separada del borde, así que el
- * contenido corre POR DETRÁS de ella (es lo que da la sensación de flotar y de vidrio).
- * A cambio, React Navigation ya no le reserva espacio: cada lista/scroll y cada FAB debe
- * dejar libre esta franja para no quedar tapado.
+ * Hasta el rediseño, en iOS era una píldora flotante `position: absolute`: el contenido corría
+ * por detrás, que es lo que daba la sensación de flotar. El precio era que React Navigation NO
+ * le reservaba espacio, así que cada lista y cada botón flotante tenía que dejar la franja
+ * libre a mano — y con la letra del sistema agrandada las cinco etiquetas se cortaban.
  *
- * En Android la barra sigue en el flujo y ocupa todo el ancho, así que aquí vale 0 y nada
- * cambia de ese lado.
+ * Ahora la barra está en el flujo en ambas plataformas y reserva su hueco sola.
  */
-export const FLOATING_TAB_BAR_HEIGHT = 60;
-/** Separación entre la píldora y el safe area inferior. */
-export const FLOATING_TAB_BAR_GAP = 8;
 
-/** Espacio que la píldora ocupa por encima del safe area. 0 en Android. */
-export const IOS_FLOATING_TAB_BAR_SPACE =
-  Platform.OS === "ios" ? FLOATING_TAB_BAR_HEIGHT + FLOATING_TAB_BAR_GAP : 0;
+/** Alto de la barra SIN el safe area, que se suma aparte. */
+export const TAB_BAR_CONTENT_HEIGHT = 64;
+
+/**
+ * Espacio extra que las pantallas deben dejar libre por encima del safe area.
+ *
+ * Vale 0 desde que la barra está anclada. Se conserva exportado a propósito: lo consumen 8
+ * pantallas y borrarlo obligaría a tocarlas todas para no ganar nada. Sumar 0 es correcto.
+ * Si algún día vuelve una barra flotante, este es el único sitio que hay que cambiar.
+ */
+export const IOS_FLOATING_TAB_BAR_SPACE = Platform.OS === "ios" ? 0 : 0;

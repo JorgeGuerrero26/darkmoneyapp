@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { Plus } from "lucide-react-native";
 import { Animated, StyleSheet, TouchableOpacity, View } from "react-native";
-import { COLORS, ELEVATION, SPACING } from "../../constants/theme";
+import { COLORS, RADIUS, SHADOW, SPACING } from "../../constants/theme";
 
 type Props = {
   onPress: () => void;
@@ -44,21 +44,23 @@ export function FAB({ onPress, bottom, onLongPress, accessibilityLabel = "Agrega
 }
 
 const styles = StyleSheet.create({
+  // Forma de TARJETA, no de circulo: rima con los radios cerrados del resto de la app. Un
+  // circulo perfecto sobre esquinas de 14 se lee como una pieza prestada de otra interfaz.
   glowWrap: {
     position: "absolute",
-    right: SPACING.lg,
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    right: SPACING.xl,
+    width: 58,
+    height: 58,
+    borderRadius: RADIUS.xl,
     borderWidth: 2.5,
     borderColor: COLORS.action + "26",
     backgroundColor: "transparent",
-    ...ELEVATION[3],
+    ...SHADOW.floating,
   },
   fab: {
     width: "100%",
     height: "100%",
-    borderRadius: 26,
+    borderRadius: RADIUS.xl,
     backgroundColor: COLORS.action,
     alignItems: "center",
     justifyContent: "center",
