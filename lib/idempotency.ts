@@ -91,3 +91,38 @@ export function isBackendWarmingUp(error: unknown): boolean {
     message.toLowerCase().includes("schema cache")
   );
 }
+
+/**
+ * Espera creciente entre intentos de confirmación. La suma (~7,7 s) es el margen que le damos
+ * al servidor para terminar una escritura que el cliente ya abortó.
+ */
+export const IDEMPOTENT_CONFIRM_BACKOFF_MS = [0, 1_200, 2_500, 4_000];
+
+const sleepMs = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Tras un write ambiguo, busca la fila por su clave idempotente hasta que aparezca.
+ *
+ * La regla clave está en cuándo NO rendirse. Una lectura limpia que no devuelve fila parece
+ * decir "el servidor contestó, no se guardó", y por eso el bucle se cortaba ahí. Es falso:
+ * abortar es una decisión SOLO del cliente, el servidor nunca se entera y sigue ejecutando el
+ * INSERT. El 2026-08-26 a las 19:37 el movimiento "Moto" se confirmó en la base justo cuando
+ * el cliente se rindió, y el usuario recibió "no pudimos confirmar" sobre una fila que existía.
+ * Ausencia de fila no es prueba de fracaso: es "todavía no".
+ *
+ * Solo se corta antes de tiempo si el propio SELECT falla con un error que NO es de transporte
+ * (RLS, SQL, sesión): ahí la consulta está rota y repetirla no cambia nada.
+ */
+export async function confirmIdempotentWrite<T>(
+  lookup: () => PromiseLike<{ data: T | null; error: IdempotentWriteError | null }>,
+  opts?: { sleep?: (ms: number) => Promise<void>; schedule?: readonly number[] },
+): Promise<T | null> {
+  const sleep = opts?.sleep ?? sleepMs;
+  for (const wait of opts?.schedule ?? IDEMPOTENT_CONFIRM_BACKOFF_MS) {
+    if (wait > 0) await sleep(wait);
+    const found = await lookup();
+    if (found.data) return found.data;
+    if (found.error && !isAmbiguousTransportError(found.error)) return null;
+  }
+  return null;
+}

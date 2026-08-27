@@ -2472,7 +2472,11 @@ export function usePersistLearningFeedbackMutation(
 // ─── Movement mutations ───────────────────────────────────────────────────────
 
 import type { MovementFormInput } from "../../features/movements/lib/movement-input-types";
-import { isAmbiguousTransportError, shouldConfirmIdempotentWrite } from "../../lib/idempotency";
+import {
+  confirmIdempotentWrite,
+  isAmbiguousTransportError,
+  shouldConfirmIdempotentWrite,
+} from "../../lib/idempotency";
 export type { MovementFormInput };
 
 const MOVEMENT_RECORD_COLUMNS =
@@ -2530,23 +2534,20 @@ export async function createMovement(
     //
     // Se reintenta con espera creciente. El usuario ya está esperando; unos segundos más son
     // mucho mejores que un error falso que le empuje a registrar el movimiento dos veces.
-    const CONFIRM_BACKOFF_MS = [0, 1_500, 3_500];
-    for (const wait of CONFIRM_BACKOFF_MS) {
-      if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
-      const existing = await supabase
+    //
+    // Y NO se rinde cuando el SELECT responde limpio sin fila: ausencia de fila no es prueba
+    // de fracaso, es "todavía no". El porqué está en confirmIdempotentWrite.
+    const confirmed = await confirmIdempotentWrite(() =>
+      supabase!
         .from("movements")
         .select(MOVEMENT_RECORD_COLUMNS)
         .eq("workspace_id", workspaceId)
         .eq("client_dedupe_key", dedupeKey)
-        .maybeSingle();
-      if (existing.data) {
-        data = existing.data;
-        error = null;
-        break;
-      }
-      // Sin fila Y sin error de transporte = el servidor respondió y NO se guardó: no hay
-      // nada que esperar, se corta el reintento y el error original es correcto.
-      if (!existing.error || !isAmbiguousTransportError(existing.error)) break;
+        .maybeSingle(),
+    );
+    if (confirmed) {
+      data = confirmed as typeof data;
+      error = null;
     }
   }
 
