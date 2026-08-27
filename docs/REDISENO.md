@@ -369,7 +369,7 @@ tema, que es exactamente por lo que había acumulado 20 hex propios.
 — sobre todo la tabla de tonos de `DarkMoneyToast`. A partir de ahora cualquier hex NUEVO
 queda bloqueado.
 
-### [x] Fase 6 — Anatomía de componentes — HECHA (parcial, ver abajo)
+### [x] Fase 6 — Anatomía de componentes — HECHA
 
 **Qué**: la parte que toca componentes, no tokens.
 
@@ -396,7 +396,7 @@ queda bloqueado.
 **Riesgo**: alto. Toca layout compartido por los once módulos. **`ResourceModuleTemplate` y
 su orden de 8 slots NO cambian** — solo cambia el peso tipográfico dentro de cada franja.
 
-### [ ] Fase 7 — Barra inferior y flotante
+### [x] Fase 7 — Barra inferior y flotante — HECHA
 
 **Qué**: de píldora flotante a **franja anclada** con blur y filete superior, 78 px con el
 safe area. El flotante mantiene forma de tarjeta (no círculo), 58 px, a 96 px del borde.
@@ -537,3 +537,38 @@ Se dividió en tres commits (`6a`, `6b`, `6c`).
 - El monto de 46 px en el **input** del formulario (`FONT_SIZE.amountInput` ya existe, sin
   consumidor) y el de 44 px en **patrimonio** (`FONT_SIZE.display`, `AmountDisplay size="display"`
   ya soportado, sin consumidor).
+
+---
+
+## 9. Cierre — las 7 fases están dentro
+
+Fases 6d y 7 completaron lo que faltaba:
+
+- **Cifras grandes en su sitio**: patrimonio a 44 px (venía en 38 con tracking fijo) y el
+  monto del formulario a 46 px. Eran tokens sin consumidor.
+- **Avisos con tres canales**: punto del icono + filete de 3 px + label del estado teñido.
+  El **título se queda en tinta plena** a propósito: es el dato, no el estado. Fiarlo todo al
+  color deja fuera a quien no lo distingue bien.
+- **Vencimiento junto a la cifra** en la tarjeta de obligación: "cuánto" y "cuándo" se leen
+  juntos.
+- **Barra anclada** + `IOS_FLOATING_TAB_BAR_SPACE = 0` (se conserva exportado: lo consumen 8
+  pantallas y borrarlo obligaría a tocarlas todas para no ganar nada).
+- **FAB con forma de tarjeta**, 58 px, radio 14.
+
+### Lo único que se decidió NO hacer, y por qué
+
+El diseño pedía **"máximo un badge visible; el resto entra al detalle"** en la tarjeta de
+recurso. No se aplicó: hoy la tarjeta de obligación muestra dirección, estado y **si está
+compartida**. Esconder que una deuda es compartida no es una decisión estética, es quitar
+información funcional de una pantalla que se consulta de un vistazo. **Es una decisión de
+producto del usuario, no del rediseño.** Si la quiere, es un cambio de 3 líneas en
+`ObligationSwipeRow.tsx`.
+
+### Deuda conocida que queda viva
+
+- `app.json` sigue con `#05070B` en splash y adaptiveIcon: **config nativa**, no viaja por
+  OTA. La pantalla de arranque del sistema seguirá azul hasta el próximo binario.
+- 48 hex de tema en el baseline de `check:no-hex`, sobre todo la tabla de tonos de
+  `DarkMoneyToast`. No molestan visualmente (ya están en la paleta nueva); son deuda de forma.
+- `ELEVATION[0..5]` sigue como alias de `SHADOW`. Código nuevo debe usar `SHADOW`.
+- `SURFACE.deepNavy` conserva el nombre azul con valor grafito (6 call sites).
