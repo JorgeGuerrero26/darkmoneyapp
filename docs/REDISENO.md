@@ -369,7 +369,7 @@ tema, que es exactamente por lo que había acumulado 20 hex propios.
 — sobre todo la tabla de tonos de `DarkMoneyToast`. A partir de ahora cualquier hex NUEVO
 queda bloqueado.
 
-### [ ] Fase 6 — Anatomía de componentes
+### [x] Fase 6 — Anatomía de componentes — HECHA (parcial, ver abajo)
 
 **Qué**: la parte que toca componentes, no tokens.
 
@@ -503,3 +503,37 @@ npx eas-cli update --channel preview --message "…"
 El changelog de usuario va en `constants/changelog.ts` siguiendo `docs/CHANGELOG_STYLE.md`.
 Un rediseño se anuncia **una sola vez y al final**, cuando todas las fases estén dentro; no
 una entrada por fase.
+
+---
+
+## 8. Fase 6 — lo que entró y lo que falta
+
+Se dividió en tres commits (`6a`, `6b`, `6c`).
+
+**Hecho:**
+
+- **Jerarquía del monto** — `formatCurrencyParts` en `lib/format-currency.ts` +
+  `AmountDisplay` con tres pesos. Usa `Intl.formatToParts`, no una expresión regular: el
+  símbolo, el separador de miles y el decimal cambian por moneda, y partir `"S/ 1,234.56"` a
+  mano se rompe con la primera moneda que ponga el símbolo detrás. 6 tests, uno reconstruye
+  la cifra desde las piezas y la compara con el formato de siempre.
+- **Fila de movimiento** — `ResourceCard variant="row"`: 56 px, sin tarjeta ni sombra ni
+  fondo, separador sangrado 62 px. El resto de módulos siguen en `variant="card"`.
+- **Encabezado de día** — 26 px, pegajoso, con el **neto del día** a la derecha. El cálculo
+  es puro (`groupMovementsByDate`) y el formateo vive en la pantalla, porque el modo
+  privacidad es de UI. 5 tests.
+- **Cinta de métricas** — la columna `strong` lleva fondo elevado.
+- **Chips** — dos registros distintos: selección en tinta plena, filtro activo en gris con
+  filete y **sin color de estado**.
+- **Estado vacío** — fuera el círculo de 60 px; borde punteado.
+
+**Pendiente de la fase 6** (no bloquea nada, son mejoras acotadas):
+
+- **Tarjeta de recurso en cuatro niveles fijos** (identidad, cifra, avance, acción) con el
+  badge de vencimiento subido al bloque de la cifra y máximo un badge visible. Hoy
+  `ResourceCard` ya tiene las piezas, pero el orden y el límite de badges no están forzados.
+- **Avisos con tres canales** (filete, label y borde completo teñido solo en el error). Hoy
+  se distinguen por tono, que es el canal que el rediseño considera insuficiente.
+- El monto de 46 px en el **input** del formulario (`FONT_SIZE.amountInput` ya existe, sin
+  consumidor) y el de 44 px en **patrimonio** (`FONT_SIZE.display`, `AmountDisplay size="display"`
+  ya soportado, sin consumidor).
