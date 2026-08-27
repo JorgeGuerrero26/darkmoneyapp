@@ -241,9 +241,9 @@ export const dashboardSimpleStyles = StyleSheet.create({
   },
   heroValue: {
     fontFamily: FONT_FAMILY.heading,
-    fontSize: 38,
+    fontSize: FONT_SIZE.display,
     color: COLORS.ink,
-    letterSpacing: -0.5,
+    letterSpacing: -0.035 * FONT_SIZE.display,
     marginTop: 2,
   },
   heroNetPill: {

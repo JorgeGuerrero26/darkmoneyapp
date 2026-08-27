@@ -8,7 +8,7 @@ import {
   type StyleProp,
   type ViewStyle,
 } from "react-native";
-import { COLORS, FONT_SIZE, FONT_WEIGHT, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, FONT_WEIGHT, RADIUS, SPACING } from "../../constants/theme";
 
 type Props = {
   value: string;
@@ -102,8 +102,10 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    fontSize: FONT_SIZE.xxxl,
+    fontSize: FONT_SIZE.amountInput,
+    fontFamily: FONT_FAMILY.heading,
     fontWeight: FONT_WEIGHT.bold,
+    letterSpacing: -0.035 * FONT_SIZE.amountInput,
     color: COLORS.text,
     padding: 0,
   },

@@ -108,12 +108,17 @@ export function UrgentAlertsCard({ obligations, budgets, subscriptions, router, 
             onPress={() => router.push(item.route as Parameters<typeof router.push>[0])}
             activeOpacity={0.7}
           >
+            {/* Segundo canal ademas del tono del icono: un filete a la izquierda. Fiarlo
+                todo al color deja fuera a quien no lo distingue bien. */}
+            <View style={[alertStyles.rowAccent, { backgroundColor: item.tone }]} />
             <View style={[alertStyles.iconDot, { backgroundColor: item.tone + "22" }]}>{item.icon}</View>
             <View style={alertStyles.rowBody}>
               <Text style={alertStyles.rowLabel} numberOfLines={1}>
                 {item.label}
               </Text>
-              <Text style={alertStyles.rowSub}>{item.sub}</Text>
+              {/* Tercer canal: el label del estado toma el tono. El titulo se queda en tinta
+                  plena — es el dato, no el estado, y teñirlo le quitaria contraste. */}
+              <Text style={[alertStyles.rowSub, { color: item.tone }]}>{item.sub}</Text>
             </View>
             <ArrowRight size={14} color={COLORS.storm} />
           </TouchableOpacity>
@@ -168,8 +173,14 @@ const alertStyles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: SPACING.md,
-    paddingLeft: SPACING.lg,
+    paddingLeft: SPACING.md,
     paddingVertical: SPACING.md,
+  },
+  rowAccent: {
+    width: 3,
+    alignSelf: "stretch",
+    borderRadius: RADIUS.full,
+    marginRight: SPACING.xs,
   },
   dismissBtn: {
     padding: SPACING.xs,
