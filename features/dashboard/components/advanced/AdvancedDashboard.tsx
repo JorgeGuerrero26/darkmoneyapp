@@ -12,7 +12,7 @@ import {
   View,
 } from "react-native";
 import type { useRouter } from "expo-router";
-import { useIsMutating, useQueryClient } from "@tanstack/react-query";
+import { useIsFetching, useIsMutating, useQueryClient } from "@tanstack/react-query";
 import { LinearGradient } from "expo-linear-gradient";
 import {
   differenceInDays,
@@ -1521,9 +1521,16 @@ export function AdvancedDashboard({
     },
   });
 
+  // Esperar al primer pintado no bastó: el 2026-08-26 a las 19:37 esta escritura arrancó a los
+  // pocos segundos del arranque, con 3 consultas de obligaciones todavía en vuelo, y seguía
+  // ocupando el tubo cuando el usuario tocó Guardar 16 s después. El candado de escrituras solo
+  // impide EMPEZAR durante un guardado; no ayuda si esta salió primero. Así que también espera a
+  // que la tormenta de consultas del arranque amaine.
+  const queriesInFlight = useIsFetching();
+
   useEffect(() => {
     if (!workspaceId) return;
-    if (!afterFirstPaint || userWritesInFlight > 0) return;
+    if (!afterFirstPaint || userWritesInFlight > 0 || queriesInFlight > 0) return;
     const periodKey = format(new Date(), "yyyy-MM");
     const persistKey = JSON.stringify({
       workspaceId,
@@ -1589,7 +1596,7 @@ export function AdvancedDashboard({
         confidence: projectionModel.confidence,
       },
     });
-  }, [afterFirstPaint, anomalySignals, categorySuggestions, persistDashboardAnalyticsMutation, projectionModel, userWritesInFlight, workspaceId]);
+  }, [afterFirstPaint, anomalySignals, categorySuggestions, persistDashboardAnalyticsMutation, projectionModel, queriesInFlight, userWritesInFlight, workspaceId]);
 
   const weeklyPatternInsight = useMemo(() => {
     const totals = Array.from({ length: 7 }, () => 0);
