@@ -2,7 +2,7 @@
   "expo": {
     "name": "DarkMoney",
     "slug": "darkmoney",
-    "version": "1.0.9",
+    "version": "1.0.10",
     "scheme": "darkmoney",
     "orientation": "portrait",
     "icon": "./assets/images/logo-sin-fondo.png",
@@ -16,10 +16,10 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/app-icon-playstore.png",
-        "backgroundColor": "#05070B"
+        "backgroundColor": "#0E0D0C"
       },
       "package": "com.darkmoney.app",
-      "versionCode": 10,
+      "versionCode": 11,
       "googleServicesFile": "./app/google-services.json",
       "permissions": [
         "android.permission.CAMERA",
@@ -46,7 +46,7 @@
           "image": "./assets/images/logo-sin-fondo.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#05070B"
+          "backgroundColor": "#0E0D0C"
         }
       ],
       [

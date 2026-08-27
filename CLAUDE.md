@@ -34,16 +34,23 @@ rebuild del APK. Publicar SIEMPRE con:
 npm run ota -- "descripcion del cambio"
 ```
 
-**No usar `eas-cli update` a pelo.** El iPhone corre un IPA cuyo `runtimeVersion` quedó
-congelado en **1.0.8** mientras el repo va en 1.0.9, así que cada cambio hay que publicarlo
-**dos veces** (una por runtime, cambiando `app.json` en medio). Publicar una sola vez deja al
-iPhone atrás **en silencio**: no hay error, y la única señal es que el usuario reporta que un
-arreglo "no llegó". `scripts/publish-ota.mjs` hace las dos y restaura `app.json` aunque la
-publicación falle a mitad.
+**No usar `eas-cli update` a pelo.** Hay **tres runtimes vivos** a la vez y una publicación
+normal solo alcanza al del repo:
 
-El congelado NO se puede levantar hoy: no hay Mac y `eas.json` no tiene perfil de iOS. Un IPA
-nuevo necesita cuenta de Apple Developer, y entonces `eas build --platform ios` sí corre desde
-Windows. Ese día: quitar `FROZEN_RUNTIME` del script.
+| Runtime | Quién lo corre |
+|---|---|
+| actual (`app.json`) | el APK nuevo |
+| 1.0.9 | el APK que tienen los compañeros |
+| 1.0.8 | el IPA del iPhone, congelado |
+
+Publicar en uno solo deja a los demás atrás **en silencio**: no hay error, y la única señal es
+que alguien reporta que un arreglo "no llegó". `scripts/publish-ota.mjs` publica en todos y
+restaura `app.json` aunque falle a mitad. La lista está en `LEGACY_RUNTIMES`: sacar una entrada
+SOLO cuando conste que ya nadie corre ese binario.
+
+El congelado de iOS no se puede levantar hoy: no hay Mac y `eas.json` no tiene perfil de iOS.
+Un IPA nuevo necesita cuenta de Apple Developer — y con ella `eas build --platform ios` corre
+desde Windows, sin Mac.
 
 El teléfono lo descarga al abrir la app y lo aplica en el siguiente arranque (2 aperturas).
 Reglas: (1) cambios nativos (Kotlin, permisos, deps nativas) SÍ requieren APK y deben bumpear

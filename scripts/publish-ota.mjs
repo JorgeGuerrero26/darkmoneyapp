@@ -15,9 +15,10 @@
  *
  * ## Cuándo borrar esto
  *
- * En cuanto exista un IPA nuevo con runtime 1.0.9 — o sea, cuando haya cuenta de Apple
- * Developer y `eas build --platform ios` pueda correr desde Windows. Ese día: quitar
- * FROZEN_RUNTIME, y este script se vuelve un `eas update` normal.
+ * Cuando exista un IPA nuevo con el runtime actual — o sea, cuando haya cuenta de Apple
+ * Developer y `eas build --platform ios` pueda correr desde Windows —, sacar 1.0.8 de
+ * LEGACY_RUNTIMES. Cuando los compañeros instalen el APK nuevo, sacar también 1.0.9. Con la
+ * lista vacía, este script se vuelve un `eas update` normal y se puede borrar.
  *
  * ## Uso
  *
@@ -31,10 +32,16 @@ const APP_JSON = "app.json";
 const CHANNEL = "preview";
 
 /**
- * Runtime del IPA que corre el iPhone. `null` desactiva el segundo publicado.
- * Ver el bloque "Cuándo borrar esto" de arriba.
+ * Runtimes VIEJOS que siguen vivos ahí fuera y a los que también hay que publicar.
+ *
+ *   1.0.9 — el APK que tienen los compañeros. Mientras no instalen el nuevo, esta es su
+ *           única vía de recibir arreglos.
+ *   1.0.8 — el IPA del iPhone, congelado hasta que haya cuenta de Apple Developer.
+ *
+ * Se quita una entrada de aquí SOLO cuando conste que ya nadie corre ese binario. Dejar una
+ * de más solo gasta un publicado; quitarla antes de tiempo deja a alguien tirado en silencio.
  */
-const FROZEN_RUNTIME = "1.0.8";
+const LEGACY_RUNTIMES = ["1.0.9", "1.0.8"];
 
 const args = process.argv.slice(2);
 const dryRun = args.includes("--dry-run");
@@ -77,17 +84,20 @@ function publish(runtime) {
 const original = readFileSync(APP_JSON, "utf8");
 const version = readVersion(original);
 
-console.log(`Mensaje:  ${message}`);
-console.log(`Version:  ${version}${FROZEN_RUNTIME ? `  (+ runtime congelado ${FROZEN_RUNTIME})` : ""}`);
+const pending = LEGACY_RUNTIMES.filter((runtime) => runtime !== version);
 
-let restored = false;
+console.log(`Mensaje:  ${message}`);
+console.log(`Runtimes: ${[version, ...pending].join(", ")}`);
+
+let restored = true;
 try {
   publish(version);
 
-  if (FROZEN_RUNTIME && FROZEN_RUNTIME !== version) {
-    writeFileSync(APP_JSON, setVersion(original, version, FROZEN_RUNTIME));
+  for (const runtime of pending) {
+    restored = false;
+    writeFileSync(APP_JSON, setVersion(original, version, runtime));
     try {
-      publish(FROZEN_RUNTIME);
+      publish(runtime);
     } finally {
       writeFileSync(APP_JSON, original);
       restored = true;

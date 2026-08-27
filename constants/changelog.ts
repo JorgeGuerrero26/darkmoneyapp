@@ -10,6 +10,13 @@ export type ChangelogEntry = {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "1.0.10",
+    title: "El arranque combina con el resto",
+    changes: [
+      "La pantalla que ves mientras la app abre ya no es azul: usa el mismo gris cálido que todo lo demás, así que abrir DarkMoney ya no da un salto de color.",
+    ],
+  },
+  {
     version: "1.0.9",
     title: "Detecta tus pagos desde el correo",
     changes: [
