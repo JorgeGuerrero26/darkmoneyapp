@@ -16,7 +16,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { X } from "lucide-react-native";
-import { COLORS, ELEVATION, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SHADOW, SPACING, SURFACE } from "../../constants/theme";
 import { SafeBlurView } from "./SafeBlurView";
 
 const SCREEN_HEIGHT = Dimensions.get("window").height;
@@ -250,15 +250,19 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     backgroundColor: SURFACE.sheet,
-    borderTopLeftRadius: RADIUS.xl,
-    borderTopRightRadius: RADIUS.xl,
+    // La hoja tiene su propio radio (20): mas abierto que una tarjeta (14) porque es la
+    // pieza que entra desde abajo y el arco la anuncia.
+    borderTopLeftRadius: RADIUS.sheet,
+    borderTopRightRadius: RADIUS.sheet,
     borderTopWidth: 1,
     borderLeftWidth: 1,
     borderRightWidth: 1,
     borderTopColor: SURFACE.sheetBorder,
     borderLeftColor: SURFACE.sheetBorder,
     borderRightColor: SURFACE.sheetBorder,
-    ...ELEVATION[4],
+    // Sombra hacia ARRIBA: separa la hoja del contenido que tapa, en vez de proyectar
+    // sobre la nada que hay debajo.
+    ...SHADOW.sheet,
   },
   handleWrap: {
     alignItems: "center",

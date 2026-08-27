@@ -1348,7 +1348,7 @@ const styles = StyleSheet.create({
   stepDotActive: {
     backgroundColor: COLORS.pine,
     width: 32,
-    shadowColor: COLORS.pine,
+    shadowColor: COLORS.shadow,
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.6,
     shadowRadius: 6,

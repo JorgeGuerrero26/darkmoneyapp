@@ -177,7 +177,7 @@ const styles = StyleSheet.create({
   chipActive: {
     backgroundColor: COLORS.pine + "28",
     borderColor: COLORS.pine + "99",
-    shadowColor: COLORS.pine,
+    shadowColor: COLORS.shadow,
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.18,
     shadowRadius: 8,

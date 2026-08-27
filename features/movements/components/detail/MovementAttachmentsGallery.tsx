@@ -282,7 +282,7 @@ const styles = StyleSheet.create({
   },
   cardSelected: {
     borderColor: COLORS.primary,
-    shadowColor: COLORS.primary,
+    shadowColor: COLORS.shadow,
     shadowOpacity: 0.18,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 6 },

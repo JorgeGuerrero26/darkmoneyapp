@@ -262,7 +262,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.pine + "1A",   // 10% mint
     borderWidth: 1,
     borderColor: COLORS.pine + "33",       // 20% mint border
-    shadowColor: COLORS.pine,
+    shadowColor: COLORS.shadow,
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.30,
     shadowRadius: 8,

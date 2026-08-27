@@ -85,6 +85,10 @@ export const COLORS = {
   // y solo tres niveles: filete 7% · marcado 13% · foco 45% (sin color, sin glow).
   border:      "rgba(244,241,236,0.07)",   // filete
   borderLight: "rgba(244,241,236,0.05)",
+
+  // Sombra — SIEMPRE neutra. Existe como token para que nadie vuelva a teñir una sombra con
+  // un color de acento: el resplandor de menta era de lo que más acercaba la app a cripto.
+  shadow: "#000000",
 };
 
 // ─── Extended palette (advanced dashboard / charts) ───────────────────────────
@@ -181,61 +185,58 @@ export const GLASS = {
   dangerBg:         "rgba(226,160,126,0.14)",
 };
 
-// ─── Material Elevation (standard elevation scale) ────────────────────────────
-// Each level provides shadow props for React Native `style`.
-// Usage: style={ELEVATION[2]}
-export const ELEVATION: Record<
-  number,
-  {
-    shadowColor: string;
-    shadowOffset: { width: number; height: number };
-    shadowOpacity: number;
-    shadowRadius: number;
-    elevation: number;
-  }
-> = {
-  0: {
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0,
-    shadowRadius: 0,
-    elevation: 0,
-  },
-  1: {
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.15,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  2: {
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.18,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  3: {
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.22,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  4: {
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.25,
-    shadowRadius: 16,
+// ─── Sombras ──────────────────────────────────────────────────────────────────
+// Rediseño fase 2: de seis niveles a DOS, y ninguno de color. Las sombras teñidas de menta
+// eran, junto al azul y los radios grandes, lo que más acercaba la app a una interfaz de
+// cripto. Y las tarjetas dejan de tener sombra: se separan por un paso de fondo y un filete.
+type ShadowStyle = {
+  shadowColor: string;
+  shadowOffset: { width: number; height: number };
+  shadowOpacity: number;
+  shadowRadius: number;
+  elevation: number;
+};
+
+const NO_SHADOW: ShadowStyle = {
+  shadowColor: COLORS.shadow,
+  shadowOffset: { width: 0, height: 0 },
+  shadowOpacity: 0,
+  shadowRadius: 0,
+  elevation: 0,
+};
+
+export const SHADOW: Record<"none" | "floating" | "sheet", ShadowStyle> = {
+  /** Tarjetas, filas, banners inline: sin sombra. */
+  none: NO_SHADOW,
+  /** Lo que de verdad flota sobre el contenido: FAB, toast, diálogo. */
+  floating: {
+    shadowColor: COLORS.shadow,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.45,
+    shadowRadius: 20,
     elevation: 12,
   },
-  5: {
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.30,
-    shadowRadius: 24,
+  /** Hojas: la sombra sube, no baja — separa la hoja del contenido que tapa. */
+  sheet: {
+    shadowColor: COLORS.shadow,
+    shadowOffset: { width: 0, height: -10 },
+    shadowOpacity: 0.6,
+    shadowRadius: 44,
     elevation: 24,
   },
+};
+
+// ─── Material Elevation (alias de compatibilidad) ─────────────────────────────
+// Se conservan las claves 0–5 para no tocar los 12 call sites `...ELEVATION[n]`, pero ya solo
+// hay dos sombras detrás. 0–2 eran tarjetas y ahora no proyectan nada; 3–5 sí flotan.
+// En código nuevo usar SHADOW.none / SHADOW.floating / SHADOW.sheet, que dicen la intención.
+export const ELEVATION: Record<number, ShadowStyle> = {
+  0: SHADOW.none,
+  1: SHADOW.none,
+  2: SHADOW.none,
+  3: SHADOW.floating,
+  4: SHADOW.floating,
+  5: SHADOW.floating,
 };
 
 // ─── Material Surface Tokens (solid, non-glass) ───────────────────────────────
@@ -290,11 +291,15 @@ export const SPACING = {
 };
 
 // ─── Border radius ────────────────────────────────────────────────────────────
+// Rediseño fase 2: la escala se cierra entera. 12/18/22/28 es de las cosas que más hacen que
+// la app se vea de plantilla — una tarjeta de reporte no es un globo. Cerrar el radio hace
+// que las cifras alineadas parezcan columnas de un reporte, que es el registro que se busca.
 export const RADIUS = {
-  sm:   12,    // mini chips / tags
-  md:   18,    // buttons, inputs, fields
-  lg:   22,    // icon avatars / account icons
-  xl:   28,    // cards, modals, sheets
+  sm:    4,    // mini chips / tags          (era 12)
+  md:    8,    // buttons, inputs, fields    (era 18)
+  lg:   10,    // icon avatars / account icons (era 22)
+  xl:   14,    // cards, modals              (era 28)
+  sheet: 20,   // hojas — SOLO las esquinas de arriba
   full: 9999,  // badges, status pills
 };
 

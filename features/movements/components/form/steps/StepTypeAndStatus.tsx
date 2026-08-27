@@ -161,7 +161,7 @@ const styles = StyleSheet.create({
   statusPillActive: {
     backgroundColor: COLORS.pine + "28",
     borderColor: COLORS.pine + "99",
-    shadowColor: COLORS.pine,
+    shadowColor: COLORS.shadow,
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.2,
     shadowRadius: 8,

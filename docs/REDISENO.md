@@ -203,16 +203,29 @@ tenía. **Pasos 1–3 hechos; el paso 4 (migrar botones primarios a `action`) qu
   `SCAN_DIRS`. **No bloquear por esto**; se regenera el baseline en la fase 5, que es donde
   se limpia esa deuda de verdad.
 
-### [ ] Fase 2 — Forma: radios, bordes y sombras
+### [x] Fase 2 — Forma: radios y sombras — HECHA
 
-**Qué**: cerrar `RADIUS`, reducir `ELEVATION` de seis niveles a dos y sin tinte, pasar los
-bordes de blanco puro al hueso del texto en tres niveles.
+**Qué**: cerrar `RADIUS`, reducir las sombras de seis niveles a dos y sin tinte. (Los bordes
+en tres niveles de hueso entraron ya en la fase 1, junto con el resto de la paleta.)
 
-**Archivos**: `constants/theme.ts`, más los 12 archivos con `borderRadius` literal
-(sección 5).
+**Archivos**: `constants/theme.ts`, `components/ui/BottomSheet.tsx`, más 9 archivos con
+sombras teñidas.
 
-**Riesgo**: bajo-medio. `ELEVATION` está indexado por número (`ELEVATION[3]`) en 12 sitios:
-mantener las claves 0–5 mapeando a los dos niveles nuevos evita romper llamadas.
+**Cómo se resolvió**:
+
+- `RADIUS` 12/18/22/28 → **4/8/10/14**, con `sheet: 20` nuevo. Un solo cambio alcanza los
+  375 call sites tokenizados.
+- `SHADOW` nuevo y explícito: `none` · `floating` · `sheet`. `ELEVATION[0..5]` se conserva
+  como alias (12 call sites usan `...ELEVATION[n]`), mapeando 0–2 → `none` y 3–5 →
+  `floating`. Las tarjetas dejan de proyectar sombra: se separan por un paso de fondo y un
+  filete.
+- `BottomSheet` pasa a `RADIUS.sheet` y a `SHADOW.sheet` (sombra hacia **arriba**, −10 px).
+- **12 sombras teñidas de menta despintadas** en 9 archivos, vía token nuevo `COLORS.shadow`.
+  Existe como token justamente para que nadie vuelva a teñir una sombra con un acento.
+
+**Pendiente movido a la fase 5**: los ~74 `borderRadius` literales. Muchos son **círculos**
+(40/45/50 con ancho = alto: avatares, botón biométrico, FAB) y encogerlos a 14 los rompería.
+Necesitan revisión sitio por sitio, no un reemplazo masivo.
 
 ### [ ] Fase 3 — Quitar el vidrio esmerilado
 

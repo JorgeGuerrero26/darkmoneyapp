@@ -490,7 +490,7 @@ const styles = StyleSheet.create({
   },
   thumbCardActive: {
     borderColor: COLORS.primary,
-    shadowColor: COLORS.primary,
+    shadowColor: COLORS.shadow,
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.32,
     shadowRadius: 10,
