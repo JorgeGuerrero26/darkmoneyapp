@@ -132,7 +132,7 @@ const styles = StyleSheet.create({
     minHeight: 40,
     paddingHorizontal: SPACING.lg,
     paddingVertical: SPACING.xs + 2,
-    backgroundColor: SURFACE.separator,
+    backgroundColor: SURFACE.card,
     borderTopWidth: 0.5,
     borderBottomWidth: 0.5,
     borderColor: SURFACE.sheetBorder,

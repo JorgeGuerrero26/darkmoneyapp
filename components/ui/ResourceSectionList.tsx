@@ -221,8 +221,9 @@ const styles = StyleSheet.create({
     minHeight: 26,
     // 20 = margen lateral unico. Alinea el encabezado con el texto de las filas.
     paddingHorizontal: SPACING.xl,
-    marginTop: SPACING.sm,
-    paddingTop: SPACING.md,
+    // Sin marginTop: el margen queda FUERA del fondo y dejaba una franja transparente por la
+    // que se colaba la fila que pasaba por debajo. Todo el aire va en padding.
+    paddingTop: SPACING.lg,
     paddingBottom: SPACING.xs,
     // La regla va DEBAJO, no encima: cierra el encabezado contra sus propias filas en vez de
     // separarlo del dia anterior. A todo el ancho, al reves que el separador entre filas, que
