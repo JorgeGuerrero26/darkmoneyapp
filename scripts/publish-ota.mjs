@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Publica una actualización OTA en los DOS runtimes vivos, en un solo comando.
+ * Publica una actualización OTA en TODOS los runtimes vivos, en un solo comando.
  *
  * ## Por qué existe
  *
@@ -25,7 +25,7 @@
  *   npm run ota -- "descripcion del cambio"
  *   npm run ota -- "descripcion" --dry-run     # enseña lo que haría, sin publicar
  */
-import { execFileSync } from "node:child_process";
+import { execSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 
 const APP_JSON = "app.json";
@@ -71,11 +71,24 @@ function publish(runtime) {
     console.log("   (dry-run: no se publica)");
     return;
   }
-  execFileSync(
-    "npx",
-    ["eas-cli", "update", "--channel", CHANNEL, "--message", message, "--non-interactive"],
-    { stdio: "inherit", shell: process.platform === "win32" },
+  // El shell es OBLIGATORIO en Windows: `npx` es un .cmd y Node no puede lanzarlo sin él. Pero
+  // con shell activo Node pega los argumentos en una sola cadena SIN entrecomillarlos, así que
+  // un mensaje con espacios se parte en dos (`--message prueba real` -> dos argumentos) y
+  // eas-cli aborta. Por eso el entrecomillado va a mano, y distinto por plataforma.
+  execSync(
+    `npx eas-cli update --channel ${CHANNEL} --message ${quote(message)} --non-interactive`,
+    { stdio: "inherit" },
   );
+}
+
+/** Entrecomilla un argumento para el shell de cada plataforma. */
+function quote(value) {
+  if (process.platform === "win32") {
+    // cmd.exe: comillas dobles, y una comilla interna se escapa duplicándola.
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  // sh: comillas simples; para meter una comilla simple hay que cerrar, escaparla y reabrir.
+  return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 // El original se guarda ENTERO, no solo la versión: si algo peta a mitad, se reescribe tal
@@ -114,4 +127,4 @@ if (readFileSync(APP_JSON, "utf8") !== original) {
 }
 
 console.log(`\napp.json intacto en ${version}.`);
-console.log(dryRun ? "Dry-run terminado." : "Publicado en los dos runtimes.");
+console.log(dryRun ? "Dry-run terminado." : `Publicado en ${1 + pending.length} runtime(s).`);
