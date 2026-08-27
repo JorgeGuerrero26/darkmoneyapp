@@ -74,8 +74,8 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.12)",
   },
   badgePro: {
-    backgroundColor: COLORS.primary + "18",
-    borderColor: COLORS.primary + "44",
+    backgroundColor: COLORS.pro + "18",
+    borderColor: COLORS.pro + "44",
   },
   badgeFree: {
     backgroundColor: COLORS.gold + "14",
@@ -90,7 +90,7 @@ const styles = StyleSheet.create({
     color: COLORS.storm,
   },
   labelPro: {
-    color: COLORS.primary,
+    color: COLORS.pro,
   },
   labelFree: {
     color: COLORS.gold,

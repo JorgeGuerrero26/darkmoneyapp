@@ -37,7 +37,7 @@ export function FAB({ onPress, bottom, onLongPress, accessibilityLabel = "Agrega
         accessibilityLabel={accessibilityLabel}
         accessibilityHint={accessibilityHint}
       >
-        <Plus size={22} color={COLORS.textInverse} strokeWidth={2.5} />
+        <Plus size={22} color={COLORS.actionText} strokeWidth={2.5} />
       </TouchableOpacity>
     </Animated.View>
   );
@@ -51,7 +51,7 @@ const styles = StyleSheet.create({
     height: 52,
     borderRadius: 26,
     borderWidth: 2.5,
-    borderColor: COLORS.primary + "40",
+    borderColor: COLORS.action + "26",
     backgroundColor: "transparent",
     ...ELEVATION[3],
   },
@@ -59,7 +59,7 @@ const styles = StyleSheet.create({
     width: "100%",
     height: "100%",
     borderRadius: 26,
-    backgroundColor: COLORS.primary,
+    backgroundColor: COLORS.action,
     alignItems: "center",
     justifyContent: "center",
   },

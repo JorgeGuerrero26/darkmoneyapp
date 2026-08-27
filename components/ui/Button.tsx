@@ -78,7 +78,7 @@ export function Button({
         <>
           <ActivityIndicator
             size="small"
-            color={variant === "primary" ? COLORS.textInverse : COLORS.pine}
+            color={variant === "primary" ? COLORS.actionText : COLORS.pine}
           />
           {activeLoadingLabel ? (
             <Text style={[styles.label, styles[`${variant}Label`], styles[`${size}Label`]]}>
@@ -105,7 +105,9 @@ const styles = StyleSheet.create({
   },
   // Variants
   primary: {
-    backgroundColor: COLORS.pine,
+    // Sin tono: es el elemento con mas contraste de la pantalla (16.5:1), asi que el pulgar
+    // lo encuentra sin buscar, y libera el verde para significar solo "entro plata".
+    backgroundColor: COLORS.action,
   },
   secondary: {
     backgroundColor: SURFACE.card,
@@ -135,7 +137,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
     flexShrink: 1,
   },
-  primaryLabel:   { color: COLORS.textInverse },
+  primaryLabel:   { color: COLORS.actionText },
   secondaryLabel: { color: COLORS.ink },
   ghostLabel:     { color: COLORS.ink },
   dangerLabel:    { color: COLORS.rosewood },

@@ -75,14 +75,14 @@ const styles = StyleSheet.create({
   pill: {
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.xs + 2,
-    borderRadius: RADIUS.full,
+    borderRadius: RADIUS.sm,
     backgroundColor: SURFACE.card,
     borderWidth: 1,
     borderColor: SURFACE.cardBorder,
   },
   pillActive: {
-    backgroundColor: COLORS.pine,
-    borderColor: COLORS.pine,
+    backgroundColor: COLORS.action,
+    borderColor: COLORS.action,
   },
   disabled: {
     opacity: 0.45,
@@ -93,6 +93,6 @@ const styles = StyleSheet.create({
     fontFamily: FONT_FAMILY.bodyMedium,
   },
   pillTextActive: {
-    color: COLORS.textInverse,
+    color: COLORS.actionText,
   },
 });

@@ -5,7 +5,7 @@ import { Animated, Platform, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Home, ArrowLeftRight, WalletCards, Scale, LayoutGrid } from "lucide-react-native";
 
-import { COLORS, FONT_FAMILY, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { FLOATING_TAB_BAR_GAP, FLOATING_TAB_BAR_HEIGHT } from "../../constants/floating-tab-bar";
 import { useNotificationsQuery } from "../../services/queries/workspace-data";
 import { usePendingObligationShareInvitesQuery } from "../../services/queries/obligations";
@@ -165,8 +165,8 @@ export default function AppLayout() {
               paddingTop: 6,
             },
         tabBarBackground: TabBarBackground,
-        tabBarActiveTintColor: COLORS.pine,
-        tabBarInactiveTintColor: COLORS.storm,
+        tabBarActiveTintColor: COLORS.tabActive,
+        tabBarInactiveTintColor: COLORS.tabInactive,
         tabBarShowLabel: false,
       }}
     >
@@ -259,13 +259,10 @@ const styles = StyleSheet.create({
     right: Platform.OS === "ios" ? -4 : -8,
   },
   tabIconPillActive: {
-    backgroundColor: COLORS.pine + "1A",   // 10% mint
+    // Era un resplandor de menta al 10% con borde y sombra: el "glow" que el rediseño saca de
+    // toda la app. La pestaña activa se marca con superficie y filete, no con luz de color.
+    backgroundColor: SURFACE.pressed,
     borderWidth: 1,
-    borderColor: COLORS.pine + "33",       // 20% mint border
-    shadowColor: COLORS.shadow,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.30,
-    shadowRadius: 8,
-    elevation: 4,
+    borderColor: SURFACE.subtleBorder,
   },
 });
