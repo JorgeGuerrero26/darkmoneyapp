@@ -16,7 +16,7 @@ import {
   Manrope_600SemiBold,
 } from "@expo-google-fonts/manrope";
 
-import { COLORS } from "../constants/theme";
+import { COLORS, SURFACE } from "../constants/theme";
 import { AuthProvider, useAuth } from "../lib/auth-context";
 import { logWarn } from "../lib/error-logger";
 import { markStartupReady } from "../lib/startup-timing";
@@ -800,7 +800,7 @@ function NotificationSetup() {
       <SafeBlurView
         intensity={60}
         tint="dark"
-        fallbackColor="rgba(5,7,11,0.94)"
+        fallbackColor={SURFACE.deepNavy}
         style={StyleSheet.absoluteFillObject}
       />
       <View style={styles.workspaceBootstrapVeil} />

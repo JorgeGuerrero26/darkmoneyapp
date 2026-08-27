@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { CloudOff } from "lucide-react-native";
 import { useNetworkStatus } from "../../hooks/useNetworkStatus";
 import { logWarn } from "../../lib/error-logger";
-import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import {
   MIN_BLOCKED_FOR_NETWORK_WARNING,
   SLOW_AFTER_MS,
@@ -101,7 +101,7 @@ export function OfflineBanner() {
         <SafeBlurView
           intensity={26}
           tint="dark"
-          fallbackColor="rgba(7,11,20,0.92)"
+          fallbackColor={SURFACE.card}
           style={StyleSheet.absoluteFillObject}
         />
         <View style={styles.pillTint} />
@@ -136,7 +136,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     borderWidth: 1,
     borderColor: COLORS.border,
-    backgroundColor: "rgba(7,11,20,0.92)",
+    backgroundColor: SURFACE.card,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.26,
@@ -145,7 +145,8 @@ const styles = StyleSheet.create({
   },
   pillTint: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(5,7,11,0.26)",
+    // El velo existía para oscurecer el blur. Sin blur debajo sobra: la superficie ya es opaca.
+    backgroundColor: "transparent",
   },
   text: {
     color: COLORS.ink,

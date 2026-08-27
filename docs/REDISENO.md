@@ -227,7 +227,7 @@ sombras teñidas.
 (40/45/50 con ancho = alto: avatares, botón biométrico, FAB) y encogerlos a 14 los rompería.
 Necesitan revisión sitio por sitio, no un reemplazo masivo.
 
-### [ ] Fase 3 — Quitar el vidrio esmerilado
+### [x] Fase 3 — Quitar el vidrio esmerilado — HECHA
 
 **Qué**: el blur sobrevive **solo** en la barra inferior y el fondo de las hojas. Todo lo
 demás pasa a superficie opaca con filete de 1 px.
@@ -244,6 +244,28 @@ demás pasa a superficie opaca con filete de 1 px.
 el fondo — ver `__tests__/dialog-inside-sheet.test.ts`.
 
 **Beneficio colateral**: menos blur = menos batería y menos trabajo de GPU en listas largas.
+
+**Cómo se resolvió — el defecto se invirtió en vez de editar 11 call sites**:
+
+`SafeBlurView` ya caía a color liso en Android desde siempre, **y ese es el look que el
+usuario venía validando**. Así que en vez de borrar `<SafeBlurView>` de 11 archivos (edición
+de layout, riesgo real), se le añadió la prop `blur` con **defecto `false`**:
+
+- Los 11 sitios que lo pierden no se tocaron: ahora rinden liso solos.
+- Solo 2 opt-ins: barra inferior (`app/(app)/_layout.tsx`, ambas ramas) y backdrop de hojas
+  (`components/ui/BottomSheet.tsx`).
+
+Ajustes que sí hicieron falta, porque sin blur el color de debajo pasa a verse:
+
+- `BiometricLock`: un scrim al 45 % dejaría leer los saldos a través del bloqueo → `COLORS.void` opaco.
+- `OfflineBanner` y `ActivityNotice`: pasan a superficie opaca (`SURFACE.card`) y su velo
+  interno queda en `transparent` — existía solo para oscurecer el blur.
+- Velo de la barra inferior: era `rgba(7,11,20,…)` azul y **se ve de verdad**, porque la barra
+  es uno de los dos sitios que conservan blur → `rgba(10,10,9,…)`.
+- `app/_layout.tsx` (overlay de arranque): `rgba(5,7,11,0.94)` → `SURFACE.deepNavy`.
+
+**Test de guardia**: `__tests__/glass-only-where-it-belongs.test.ts` falla si alguien pide
+`blur` fuera de esos dos archivos, o si el defecto de `SafeBlurView` deja de ser `false`.
 
 ### [ ] Fase 4 — Tipografía
 

@@ -190,7 +190,7 @@ export function BiometricLock() {
 
   return (
     <View style={styles.overlay}>
-      <SafeBlurView intensity={80} tint="dark" style={StyleSheet.absoluteFillObject} />
+      <SafeBlurView fallbackColor={COLORS.void} style={StyleSheet.absoluteFillObject} />
       <View style={styles.card}>
 
         {/* Ícono con anillo de brillo */}

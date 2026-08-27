@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Animated, StyleSheet, Text, View } from "react-native";
 
-import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { useUiStore, type ActivityNotice } from "../../store/ui-store";
 import { SafeBlurView } from "./SafeBlurView";
 
@@ -97,7 +97,7 @@ export function ActivityNoticeContainer() {
         <SafeBlurView
           intensity={26}
           tint="dark"
-          fallbackColor="rgba(7,11,20,0.92)"
+          fallbackColor={SURFACE.card}
           style={StyleSheet.absoluteFillObject}
         />
         <View style={styles.cardTint} />
@@ -131,7 +131,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.10)",
-    backgroundColor: "rgba(7,11,20,0.92)",
+    backgroundColor: SURFACE.card,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 0.28,
@@ -140,7 +140,8 @@ const styles = StyleSheet.create({
   },
   cardTint: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(5,7,11,0.26)",
+    // El velo existía para oscurecer el blur. Sin blur debajo sobra: la superficie ya es opaca.
+    backgroundColor: "transparent",
   },
   title: {
     color: COLORS.ink,

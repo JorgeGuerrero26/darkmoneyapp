@@ -24,8 +24,8 @@ function TabBarBackground() {
   if (Platform.OS !== "ios") {
     return (
       <View style={StyleSheet.absoluteFillObject}>
-        <SafeBlurView intensity={32} tint="dark" style={StyleSheet.absoluteFillObject} />
-        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: "rgba(7,11,20,0.82)" }]} />
+        <SafeBlurView blur intensity={32} tint="dark" style={StyleSheet.absoluteFillObject} />
+        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: "rgba(10,10,9,0.82)" }]} />
         <View style={styles.topBorder} />
       </View>
     );
@@ -36,8 +36,8 @@ function TabBarBackground() {
   // tapaba el blur y la barra se veía plana).
   return (
     <View style={styles.iosPillClip}>
-      <SafeBlurView intensity={80} tint="systemChromeMaterialDark" style={StyleSheet.absoluteFillObject} />
-      <View style={[StyleSheet.absoluteFillObject, { backgroundColor: "rgba(7,11,20,0.30)" }]} />
+      <SafeBlurView blur intensity={80} tint="systemChromeMaterialDark" style={StyleSheet.absoluteFillObject} />
+      <View style={[StyleSheet.absoluteFillObject, { backgroundColor: "rgba(10,10,9,0.30)" }]} />
     </View>
   );
 }

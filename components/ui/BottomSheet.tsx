@@ -175,6 +175,7 @@ export function BottomSheet({
       <Animated.View style={[StyleSheet.absoluteFillObject, { opacity: backdropOpacity }]}>
         {blurBackdrop ? (
           <SafeBlurView
+            blur
             intensity={22}
             tint="dark"
             style={StyleSheet.absoluteFillObject}
