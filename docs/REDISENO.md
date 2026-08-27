@@ -267,7 +267,7 @@ Ajustes que sí hicieron falta, porque sin blur el color de debajo pasa a verse:
 **Test de guardia**: `__tests__/glass-only-where-it-belongs.test.ts` falla si alguien pide
 `blur` fuera de esos dos archivos, o si el defecto de `SafeBlurView` deja de ser `false`.
 
-### [ ] Fase 4 — Tipografía
+### [x] Fase 4 — Tipografía — HECHA
 
 **Qué**: `npm i @expo-google-fonts/archivo @expo-google-fonts/ibm-plex-sans`, registrar en
 `app/_layout.tsx`, remapear `FONT_FAMILY` y agregar los tamaños 44 y 46 a `FONT_SIZE`.
@@ -282,6 +282,30 @@ en los chips de filtro. **Probar con la letra del sistema agrandada.**
 **No olvidar**: la pantalla de carga vive en `app/_layout.tsx` y espera a que las fuentes
 carguen. Sumar dos familias alarga ese paso — verificar que no reaparezcan los timeouts de
 `bootstrap` que ya están instrumentados.
+
+**Cómo se resolvió**:
+
+- Se cargan **5 caras, solo una más que antes**: `Archivo_500Medium`, `Archivo_600SemiBold`,
+  `IBMPlexSans_400Regular/500Medium/600SemiBold`. Archivo lleva dos pesos porque la jerarquía
+  del monto (símbolo en 500, enteros en 600) los usa dentro de la MISMA cifra. Los pesos 400 y
+  700 de Archivo que menciona el diseño **no se cargan**: nadie los usa todavía.
+- `@expo-google-fonts/outfit` y `/manrope` **desinstalados**.
+- `FONT_SIZE` suma `display: 44` (patrimonio) y `amountInput: 46`. Nombres semánticos, no
+  `xxxxl`: tienen un único uso cada uno.
+- Se tokenizaron los **3 `fontFamily` literales** que quedaban, todos en la pantalla de
+  arranque de `app/_layout.tsx`.
+
+**El fallo que casi se cuela, y por qué hay test**: React Native **no avisa** cuando un
+`fontFamily` nombra una fuente que nadie cargó — cae a la del sistema en silencio. Los tres
+literales del arranque seguían diciendo `Outfit_600SemiBold` y `Manrope_400Regular`; nada
+habría petado, ningún linter lo marca, y esa pantalla se habría quedado en la fuente del
+sistema para siempre. `__tests__/fonts-are-actually-loaded.test.ts` cruza `FONT_FAMILY`
+contra el `useFonts` del layout raíz en los dos sentidos: ninguna cara declarada sin cargar,
+ninguna cara cargada que nadie use (descargarla retiene la pantalla de carga para nada).
+
+**Pendiente de verificación en dispositivo**: métricas distintas → revisar texto cortado en
+las 5 etiquetas de la barra inferior y en los chips de filtro, con la letra del sistema
+agrandada. El tope `maxFontSizeMultiplier: 1.2` sigue puesto en `app/_layout.tsx`.
 
 ### [ ] Fase 5 — Limpieza de valores a mano
 

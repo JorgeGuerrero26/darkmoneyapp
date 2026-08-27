@@ -20,8 +20,8 @@
   },
   "dependencies": {
     "@darkmoney/shared": "github:JorgeGuerrero26/darkmoneyshare",
-    "@expo-google-fonts/manrope": "^0.4.2",
-    "@expo-google-fonts/outfit": "^0.4.3",
+    "@expo-google-fonts/archivo": "^0.4.2",
+    "@expo-google-fonts/ibm-plex-sans": "^0.4.1",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/datetimepicker": "8.4.4",
     "@react-native-community/netinfo": "^11.4.1",

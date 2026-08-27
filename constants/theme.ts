@@ -309,14 +309,19 @@ export const RADIUS = {
 export const SHAPE = RADIUS;
 
 // ─── Font sizes ───────────────────────────────────────────────────────────────
+// La escala se CONSERVA: 11–32 ya estaba bien resuelta y migrarla no compra nada. Solo se
+// suman los dos tamaños de cifra que el rediseño necesita, y llevan nombre semántico porque
+// tienen un único uso cada uno.
 export const FONT_SIZE = {
-  xs:   11,
-  sm:   13,
-  md:   15,
-  lg:   17,
-  xl:   20,
-  xxl:  24,
-  xxxl: 32,
+  xs:   11,   // labels de sección, encabezado de día
+  sm:   13,   // metadatos, subtítulos, chips
+  md:   15,   // título de fila, cuerpo, inputs
+  lg:   17,   // monto de fila
+  xl:   20,   // título de hoja
+  xxl:  24,   // título de pantalla
+  xxxl: 32,   // cifra de tarjeta
+  display:     44,   // patrimonio neto
+  amountInput: 46,   // el monto mientras lo escribes
 };
 
 // ─── Font weights ─────────────────────────────────────────────────────────────
@@ -329,9 +334,21 @@ export const FONT_WEIGHT = {
 
 // ─── Font families ────────────────────────────────────────────────────────────
 // Loaded via @expo-google-fonts in app/_layout.tsx
+//
+// Rediseño fase 4. Outfit → Archivo, Manrope → IBM Plex Sans:
+//
+// - Outfit es GEOMÉTRICA: las O y los ceros perfectamente circulares y de ancho uniforme son
+//   justo lo que hace que un dashboard se vea de plantilla. Archivo es grotesca de reporte
+//   impreso, trae cifras tabulares de verdad y a 44px sigue leyéndose de un vistazo al sol.
+// - Manrope pierde detalle en la ñ, los acentos y la puntuación a 11–13px, que en ESPAÑOL
+//   pesa mucho más que en inglés. Plex tiene terminales rectas, aperturas más grandes y
+//   diacríticos diseñados para tamaño chico.
 export const FONT_FAMILY = {
-  heading:      "Outfit_600SemiBold",   // titles, KPIs
-  body:         "Manrope_400Regular",   // body text, descriptions
-  bodyMedium:   "Manrope_500Medium",    // labels, subtitles
-  bodySemibold: "Manrope_600SemiBold",  // caps labels, button text
+  heading:       "Archivo_600SemiBold",     // titles, KPIs, enteros del monto
+  // El símbolo de moneda va un peso por debajo del número, dentro de la MISMA cifra: sabes
+  // en qué moneda estás sin que la moneda compita con el importe.
+  headingMedium: "Archivo_500Medium",
+  body:          "IBMPlexSans_400Regular",  // body text, descriptions
+  bodyMedium:    "IBMPlexSans_500Medium",   // labels, subtitles
+  bodySemibold:  "IBMPlexSans_600SemiBold", // caps labels, button text
 };

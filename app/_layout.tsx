@@ -9,14 +9,17 @@ import { Animated, Easing, Image, ImageBackground, Platform, StyleSheet, Text, T
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { DarkTheme, ThemeProvider } from "@react-navigation/native";
-import { Outfit_600SemiBold } from "@expo-google-fonts/outfit";
 import {
-  Manrope_400Regular,
-  Manrope_500Medium,
-  Manrope_600SemiBold,
-} from "@expo-google-fonts/manrope";
+  Archivo_500Medium,
+  Archivo_600SemiBold,
+} from "@expo-google-fonts/archivo";
+import {
+  IBMPlexSans_400Regular,
+  IBMPlexSans_500Medium,
+  IBMPlexSans_600SemiBold,
+} from "@expo-google-fonts/ibm-plex-sans";
 
-import { COLORS, SURFACE } from "../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, SURFACE } from "../constants/theme";
 import { AuthProvider, useAuth } from "../lib/auth-context";
 import { logWarn } from "../lib/error-logger";
 import { markStartupReady } from "../lib/startup-timing";
@@ -86,7 +89,7 @@ const INITIAL_WORKSPACE_BOOTSTRAP_QUERY_KEYS = new Set([
   "workspace-snapshot",
 ]);
 
-// Tope de escala de fuente del sistema: con fuentes custom (Outfit/Manrope) y la
+// Tope de escala de fuente del sistema: con fuentes custom (Archivo/IBM Plex Sans) y la
 // fuente "Grande/Enorme" de MIUI/One UI, los glifos crecen mas que su caja y las
 // filas densas (summary bars, chips) se cortan. 1.2 respeta accesibilidad
 // razonable sin romper el layout. Aplica a TODA la app.
@@ -220,11 +223,15 @@ function AppSplash() {
 }
 
 function FontLoader({ children }: { children: React.ReactNode }) {
+  // Cinco caras, una más que antes: Archivo trae dos pesos porque la jerarquía del monto
+  // (símbolo en 500, enteros en 600) los usa dentro de la MISMA cifra. Cargar solo lo que se
+  // usa importa: este paso retiene la pantalla de carga hasta que termina.
   const [fontsLoaded] = useFonts({
-    Outfit_600SemiBold,
-    Manrope_400Regular,
-    Manrope_500Medium,
-    Manrope_600SemiBold,
+    Archivo_500Medium,
+    Archivo_600SemiBold,
+    IBMPlexSans_400Regular,
+    IBMPlexSans_500Medium,
+    IBMPlexSans_600SemiBold,
   });
   if (!fontsLoaded) return <View style={{ flex: 1, backgroundColor: COLORS.void }} />;
   return <>{children}</>;
@@ -1166,22 +1173,22 @@ const styles = StyleSheet.create({
     height: 108,
   },
   workspaceBootstrapTitle: {
-    color: "#F5F7FB",
-    fontSize: 22,
-    fontFamily: "Outfit_600SemiBold",
+    color: COLORS.ink,
+    fontSize: FONT_SIZE.xxl,
+    fontFamily: FONT_FAMILY.heading,
     textAlign: "center",
   },
   workspaceBootstrapBody: {
-    color: "#96A2B5",
-    fontSize: 14,
-    fontFamily: "Manrope_400Regular",
+    color: COLORS.storm,
+    fontSize: FONT_SIZE.sm,
+    fontFamily: FONT_FAMILY.body,
     textAlign: "center",
     lineHeight: 20,
   },
   splashMessage: {
-    color: "#96A2B5",
-    fontSize: 14,
-    fontFamily: "Manrope_400Regular",
+    color: COLORS.storm,
+    fontSize: FONT_SIZE.sm,
+    fontFamily: FONT_FAMILY.body,
     textAlign: "center",
     marginTop: 20,
   },
