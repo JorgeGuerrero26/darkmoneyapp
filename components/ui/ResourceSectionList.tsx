@@ -23,6 +23,9 @@ export type ResourceSection<T, K extends string = string> = {
   data: T[];
   headerVariant?: "default" | "divider" | "hidden";
   headerIcon?: LucideIcon;
+  /** Valor alineado a la derecha del titulo. En movimientos, el neto del dia. */
+  trailing?: string;
+  trailingColor?: string;
 };
 
 type EmptyConfig = {
@@ -172,6 +175,15 @@ function ResourceSectionHeader<T>({ section }: { section: ResourceSection<T> }) 
       <View style={styles.dividerHeader}>
         {Icon ? <Icon size={13} color={COLORS.storm} strokeWidth={2} /> : null}
         <Text style={styles.dividerLabel}>{section.label}</Text>
+        {/* El total del dia da la orientacion que antes pretendia dar la tarjeta. */}
+        {section.trailing ? (
+          <Text
+            style={[styles.dividerTrailing, section.trailingColor ? { color: section.trailingColor } : null]}
+            numberOfLines={1}
+          >
+            {section.trailing}
+          </Text>
+        ) : null}
       </View>
     );
   }
@@ -206,15 +218,28 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: SPACING.xs,
+    minHeight: 26,
+    // 20 = margen lateral unico. Alinea el encabezado con el texto de las filas.
+    paddingHorizontal: SPACING.xl,
     marginTop: SPACING.sm,
     paddingTop: SPACING.md,
     borderTopWidth: 1,
     borderTopColor: SURFACE.separator,
+    // Pegajoso sobre el lienzo: sin fondo propio el contenido se leeria por debajo.
+    backgroundColor: COLORS.canvas,
   },
   dividerLabel: {
-    fontSize: FONT_SIZE.sm,
+    fontSize: FONT_SIZE.xs,
     color: COLORS.storm,
-    fontFamily: FONT_FAMILY.bodyMedium,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+  },
+  dividerTrailing: {
+    marginLeft: "auto",
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.fog,
+    fontFamily: FONT_FAMILY.heading,
   },
   sectionLabel: {
     fontSize: FONT_SIZE.xs,

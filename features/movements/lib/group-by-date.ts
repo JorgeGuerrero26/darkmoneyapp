@@ -1,3 +1,8 @@
+import {
+  movementActsAsIncome,
+  movementDisplayAmount,
+  movementIsTransfer,
+} from "../../../lib/movement-amounts";
 import type { MovementRecord } from "../../../types/domain";
 
 /**
@@ -18,6 +23,19 @@ export type MovementListSection = {
   hint?: string;
   data: MovementRecord[];
   headerVariant?: "default" | "divider" | "hidden";
+  /** Neto del dia, ya formateado. Lo pinta el encabezado pegajoso a la derecha. */
+  trailing?: string;
+  trailingColor?: string;
+  /**
+   * Neto del dia SIN formatear, y su moneda.
+   *
+   * Se deja crudo a proposito: quien pinta decide como mostrarlo, porque el modo privacidad
+   * vive en la capa de UI y esta funcion es pura. `netCurrencyCode` queda en null cuando el
+   * dia mezcla monedas — sumar soles con dolares daria un total falso, y es mejor no enseñar
+   * ninguno que enseñar uno inventado.
+   */
+  netAmount: number;
+  netCurrencyCode: string | null;
 };
 
 function ymdInLima(date: Date): string {
@@ -87,9 +105,25 @@ export function groupMovementsByDate(
         label: formatDateLabel(ymd, todayYmd),
         data: currentBucket,
         headerVariant: "divider",
+        netAmount: 0,
+        netCurrencyCode: null,
       });
     }
     currentBucket!.push(movement);
+  }
+
+  for (const section of sections) {
+    section.netAmount = 0;
+    const currencies = new Set<string>();
+    for (const movement of section.data) {
+      // Las transferencias no suman ni restan: la plata se mueve, no se gana ni se pierde.
+      if (movementIsTransfer(movement)) continue;
+      const code = movement.sourceCurrencyCode ?? movement.destinationCurrencyCode ?? null;
+      if (code) currencies.add(code);
+      const amount = Math.abs(movementDisplayAmount(movement));
+      section.netAmount += movementActsAsIncome(movement) ? amount : -amount;
+    }
+    section.netCurrencyCode = currencies.size === 1 ? [...currencies][0] : null;
   }
 
   return sections;

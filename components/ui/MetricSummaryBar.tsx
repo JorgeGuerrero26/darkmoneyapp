@@ -45,7 +45,9 @@ export function MetricSummaryBar({ items, trailingLabel, actions = [] }: Props) 
           const Icon = item.icon;
           const hasHelp = Boolean(item.helpTitle || item.helpDescription);
           const itemContent = (
-            <View style={[styles.item, hasHelp && styles.itemWithHelp]}>
+            // La columna destacada lleva fondo elevado: de las tres, es la unica que responde
+            // a la pregunta real ("¿cuanto me queda?"). Las otras dos son el detalle.
+            <View style={[styles.item, hasHelp && styles.itemWithHelp, item.strong && styles.itemStrong]}>
               {Icon ? <Icon size={11} color={item.color ?? COLORS.storm} strokeWidth={2.5} /> : null}
               <Text
                 style={[item.strong ? styles.valueStrong : styles.value, item.color ? { color: item.color } : null]}
@@ -151,6 +153,12 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   itemWithHelp: {
+    paddingVertical: 2,
+  },
+  itemStrong: {
+    backgroundColor: SURFACE.subtle,
+    borderRadius: RADIUS.sm,
+    paddingHorizontal: SPACING.sm,
     paddingVertical: 2,
   },
   helpPressable: {

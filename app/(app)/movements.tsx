@@ -60,7 +60,9 @@ type FilterStatus = MovementStatus | "all";
 import { groupMovementsByDate, type MovementListSection } from "../../features/movements/lib/group-by-date";
 import { useMovementsRealtimeSync } from "../../features/movements/hooks/useMovementsRealtimeSync";
 import { buildExchangeRateMap, resolveRate } from "../../features/dashboard/lib/aggregations";
-import { SPACING } from "../../constants/theme";
+import { COLORS, SPACING } from "../../constants/theme";
+import { maskedCurrencyLabel } from "../../lib/format-currency";
+import { formatCurrency } from "../../components/ui/AmountDisplay";
 import { IOS_FLOATING_TAB_BAR_SPACE } from "../../constants/floating-tab-bar";
 
 const MOVEMENTS_CURRENCY_KEY = "darkmoney.movements.displayCurrency";
@@ -120,8 +122,9 @@ function buildCSV(movements: MovementRecord[]): string {
 
 function MovementsScreen() {
   // Fuerza el re-render de la pantalla al alternar modo privacidad (la máscara
-  // vive en formatCurrency, que lee el store imperativamente).
-  useUiStore((state) => state.privacyMode);
+  // vive en formatCurrency, que lee el store imperativamente). El neto del día sí necesita
+  // el valor: se formatea aquí, no dentro de formatCurrency.
+  const privacyMode = useUiStore((state) => state.privacyMode);
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const {
@@ -691,9 +694,23 @@ function MovementsScreen() {
     [allMovements, selectedIds],
   );
 
+  // El neto del dia se calcula puro en groupMovementsByDate y se formatea AQUI, porque el
+  // modo privacidad es de UI. Sin moneda unica no se enseña total: sumar soles con dolares
+  // daria una cifra falsa, y es mejor ninguna que una inventada.
   const movementSections = useMemo<MovementListSection[]>(
-    () => groupMovementsByDate(allMovements),
-    [allMovements],
+    () =>
+      groupMovementsByDate(allMovements).map((section) => {
+        if (!section.netCurrencyCode || section.netAmount === 0) return section;
+        const sign = section.netAmount > 0 ? "+" : "−";
+        return {
+          ...section,
+          trailing: privacyMode
+            ? maskedCurrencyLabel(section.netCurrencyCode)
+            : `${sign}${formatCurrency(Math.abs(section.netAmount), section.netCurrencyCode)}`,
+          trailingColor: section.netAmount > 0 ? COLORS.income : COLORS.expense,
+        };
+      }),
+    [allMovements, privacyMode],
   );
 
   const activeFilterItems = useMemo<ActiveFilterItem[]>(() => {
