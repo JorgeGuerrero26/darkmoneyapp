@@ -11,8 +11,14 @@ import { Platform } from "react-native";
  * Ahora la barra está en el flujo en ambas plataformas y reserva su hueco sola.
  */
 
-/** Alto de la barra SIN el safe area, que se suma aparte. */
-export const TAB_BAR_CONTENT_HEIGHT = 64;
+/**
+ * Alto de la barra SIN el safe area, que se suma aparte.
+ *
+ * 44 y no 64: con 64 la barra medía 98pt en un iPhone con notch y quedaba un hueco enorme
+ * bajo los iconos. Con 44 mide 78pt con el safe area, que es lo que pide el rediseño, y deja
+ * 44pt de contenido — justo el area tactil minima.
+ */
+export const TAB_BAR_CONTENT_HEIGHT = 44;
 
 /**
  * Espacio extra que las pantallas deben dejar libre por encima del safe area.

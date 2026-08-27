@@ -120,10 +120,19 @@ export default function AppLayout() {
   // Navigation vuelve a reservarle el hueco, así que ninguna lista ni ningún botón flotante
   // tiene que dejarlo libre a mano. El safe area va DENTRO del alto (no como margen inferior)
   // para que el fondo llegue hasta el borde de la pantalla y no quede una franja sin pintar.
+  // El safe area inferior es la zona del indicador de inicio: se deja libre y NADA mas. Antes
+  // se le sumaban 8pt de propina, y con el alto de contenido en 64 la barra media 98pt en un
+  // iPhone con notch — de ahi el hueco enorme bajo los iconos.
+  //
+  // El minimo cubre Android sin safe area (navegacion por gestos reporta 0): sin el, la barra
+  // quedaria pegada al borde de la pantalla.
+  const bottomInset = Math.max(insets.bottom, SPACING.sm);
   const tabBarStyle = {
-    height: TAB_BAR_CONTENT_HEIGHT + insets.bottom,
-    paddingBottom: insets.bottom + SPACING.sm,
-    paddingTop: 6,
+    height: TAB_BAR_CONTENT_HEIGHT + bottomInset,
+    paddingBottom: bottomInset,
+    // 0 a proposito: con el alto en 44 esto deja EXACTAMENTE 44pt de contenido, que es el
+    // area tactil minima. Cualquier padding aqui la baja de 44 y rompe la regla.
+    paddingTop: 0,
     backgroundColor: "transparent",
     borderTopWidth: 0,
     elevation: 0,
