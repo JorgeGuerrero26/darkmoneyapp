@@ -164,9 +164,30 @@ acción principal a hueso sin tono.
 
 **Riesgo**: bajo. Un solo archivo, revertible con un revert.
 
-**Ojo**: `COLORS.primary` alimenta también el spinner, el foco de inputs y el tab activo.
-Al quitarle el tono hay que verificar que el tab activo siga distinguiéndose del inactivo
-sin apoyarse en el color.
+**La complicación real — medida en el repo**:
+
+| Token | Usos | Valor hoy |
+|---|---:|---|
+| `COLORS.primary` | 412 | `#6BE4C5` |
+| `COLORS.pine` | 147 | `#6BE4C5` |
+| `COLORS.income` | 199 | `#6BE4C5` |
+| `COLORS.success` | 8 | `#6BE4C5` |
+
+**766 usos del mismo menta.** Es exactamente lo que el diseñador diagnosticó sin ver el
+código: un token con cinco significados. Por eso `primary` NO se puede apuntar directo al
+hueso — entre esos 412 usos hay focos de input, spinners, estados activos y éxitos, que no
+son botones de acción.
+
+Plan para desenredarlo sin romper nada:
+
+1. Token nuevo `COLORS.action = "#F4F1EC"` (hueso) + `actionText` oscuro para el texto encima.
+2. `income` / `success` → `#86CE96`. Se mueven solos y quedan bien.
+3. `primary` / `pine` → `#86CE96` de entrada, para que nada quede sin color mientras tanto.
+4. Migrar a `action` **solo los call sites que son botón primario** (`Button` variant
+   primary, FAB, "Confirmar", "Guardar"). El resto se queda con el verde.
+
+El paso 4 es acotado y verificable: el resto de los 766 usos conserva el significado que ya
+tenía.
 
 ### [ ] Fase 2 — Forma: radios, bordes y sombras
 
