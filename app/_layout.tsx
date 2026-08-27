@@ -106,7 +106,9 @@ const AppTheme = {
   ...DarkTheme,
   colors: {
     ...DarkTheme.colors,
-    background: "transparent",
+    // Era "transparent": el lienzo lo pintaba la ventana nativa en #05070B (azul). Con el
+    // rediseño en grafito cálido eso dejaba la base fría bajo todo lo demás.
+    background: COLORS.canvas,
   },
 };
 
@@ -195,7 +197,7 @@ function AppSplash() {
     <Animated.View
       style={[
         StyleSheet.absoluteFillObject,
-        { opacity: screenOpacity, backgroundColor: "#05070B", zIndex: 999, alignItems: "center", justifyContent: "center" },
+        { opacity: screenOpacity, backgroundColor: COLORS.void, zIndex: 999, alignItems: "center", justifyContent: "center" },
       ]}
     >
       <Animated.View style={{ opacity: logoOpacity, transform: [{ scale: logoScale }] }}>
@@ -224,7 +226,7 @@ function FontLoader({ children }: { children: React.ReactNode }) {
     Manrope_500Medium,
     Manrope_600SemiBold,
   });
-  if (!fontsLoaded) return <View style={{ flex: 1, backgroundColor: "#05070B" }} />;
+  if (!fontsLoaded) return <View style={{ flex: 1, backgroundColor: COLORS.void }} />;
   return <>{children}</>;
 }
 

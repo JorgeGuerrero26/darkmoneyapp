@@ -154,7 +154,7 @@ márgenes individuales.
 
 Una fase = un commit = una validación. Cada una es revertible sola.
 
-### [ ] Fase 1 — Color
+### [x] Fase 1 — Color — HECHA
 
 **Qué**: reemplazar la paleta en `constants/theme.ts` (COLORS, EXTENDED_PALETTE,
 CHART_PALETTE, BADGE_TONES, SURFACE, GLASS). Agregar el token `pro` violeta. Cambiar la
@@ -187,7 +187,21 @@ Plan para desenredarlo sin romper nada:
    primary, FAB, "Confirmar", "Guardar"). El resto se queda con el verde.
 
 El paso 4 es acotado y verificable: el resto de los 766 usos conserva el significado que ya
-tenía.
+tenía. **Pasos 1–3 hechos; el paso 4 (migrar botones primarios a `action`) queda pendiente.**
+
+**Hallazgos al ejecutarla:**
+
+- **El lienzo era `transparent`.** Lo pintaba la ventana nativa en `#05070B` (azul), vía
+  `AppTheme.colors.background` en `app/_layout.tsx`. Sin cambiar eso, todo se calentaba y la
+  base quedaba fría debajo. Ahora apunta a `COLORS.canvas`.
+- **`app.json` tiene `backgroundColor: "#05070B"` en splash y adaptiveIcon.** Eso es
+  **configuración nativa**: NO viaja por OTA. La pantalla de arranque del sistema seguirá
+  azul en el APK e IPA actuales hasta que se haga un binario nuevo. El splash interno de la
+  app (`app/_layout.tsx`) sí quedó en grafito.
+- **`npm run check:no-hex` YA fallaba en HEAD antes del rediseño** (verificado con
+  `git stash`). Es deuda previa: el baseline se generó cuando `lib/` no estaba en
+  `SCAN_DIRS`. **No bloquear por esto**; se regenera el baseline en la fase 5, que es donde
+  se limpia esa deuda de verdad.
 
 ### [ ] Fase 2 — Forma: radios, bordes y sombras
 
