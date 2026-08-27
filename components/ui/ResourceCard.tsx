@@ -27,6 +27,15 @@ type Props = {
   onLongPress?: () => void;
   style?: StyleProp<ViewStyle>;
   contentStyle?: StyleProp<ViewStyle>;
+  /**
+   * "card" (por defecto) para recursos: cuenta, deuda, presupuesto, suscripcion.
+   *
+   * "row" para listas largas — hoy solo movimientos. Sin tarjeta, sin sombra y sin fondo
+   * propio: texto sobre lienzo con un separador sangrado. Con cientos de filas cada tarjeta
+   * cobra un peaje de 16px de aire y dos bordes; asi caben 4 filas mas por pantalla sin bajar
+   * ningun tamaño de letra. El area tactil se queda en 56 > 44.
+   */
+  variant?: "card" | "row";
 };
 
 function ResourceCardBase({
@@ -44,11 +53,13 @@ function ResourceCardBase({
   onLongPress,
   style,
   contentStyle,
+  variant = "card",
 }: Props) {
+  const isRow = variant === "row";
   return (
     <Pressable
       style={({ pressed }) => [
-        styles.card,
+        isRow ? styles.row : styles.card,
         selected && styles.selected,
         archived && styles.archived,
         disabled && styles.disabled,
@@ -60,6 +71,9 @@ function ResourceCardBase({
       delayLongPress={400}
       accessibilityRole={onPress ? "button" : undefined}
     >
+      {/* Separador sangrado 62px: se alinea con el TEXTO, no con el borde de pantalla.
+          Va absoluto para no robarle alto a la fila ni sumarse al padding. */}
+      {isRow ? <View style={styles.rowSeparator} pointerEvents="none" /> : null}
       <View style={[styles.mainRow, contentStyle]}>
         {leading ? <View style={styles.leading}>{leading}</View> : null}
 
@@ -175,6 +189,21 @@ export function ResourceCardMetaText({
 }
 
 const styles = StyleSheet.create({
+  row: {
+    minHeight: 56,
+    paddingVertical: SPACING.sm,
+    // 20 es el margen lateral unico de la app.
+    paddingHorizontal: SPACING.xl,
+    justifyContent: "center",
+  },
+  rowSeparator: {
+    position: "absolute",
+    left: 62,
+    right: 0,
+    bottom: 0,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: SURFACE.separator,
+  },
   card: {
     borderRadius: RADIUS.xl,
     backgroundColor: SURFACE.card,

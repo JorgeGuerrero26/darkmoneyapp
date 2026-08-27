@@ -4,7 +4,7 @@ import { Copy, Trash2 } from "lucide-react-native";
 
 import { MovementRow } from "./MovementRow";
 import { SwipeActionRow } from "../ui/SwipeActionRow";
-import { COLORS, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, SPACING } from "../../constants/theme";
 import type { MovementRecord } from "../../types/domain";
 
 const REVEAL_WIDTH = 80;
@@ -55,7 +55,7 @@ export const SwipeableMovementRow = memo(function SwipeableMovementRow({
   return (
     <SwipeActionRow
       revealWidth={REVEAL_WIDTH}
-      borderRadius={RADIUS.xl}
+      borderRadius={0}
       style={styles.container}
       leftAction={
         onDuplicate

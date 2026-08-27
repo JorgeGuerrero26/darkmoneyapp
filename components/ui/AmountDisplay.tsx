@@ -1,5 +1,5 @@
 import { StyleSheet, Text, type StyleProp, type TextStyle } from "react-native";
-import { COLORS, FONT_SIZE, FONT_WEIGHT } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, FONT_WEIGHT } from "../../constants/theme";
 import type { MovementType } from "../../types/domain";
 import {
   movementDisplayAmount,
@@ -13,11 +13,19 @@ type Props = {
   movementType?: MovementType;
   sourceAmount?: number | null;
   destinationAmount?: number | null;
-  size?: "sm" | "md" | "lg" | "xl";
+  size?: "sm" | "md" | "lg" | "xl" | "display";
   style?: StyleProp<TextStyle>;
+  /** Sobrescribe el color derivado del tipo. Para quien ya lo calculo con mas contexto. */
+  color?: string;
+  /** Idem con el signo. "" fuerza sin signo; undefined deja el derivado del tipo. */
+  prefix?: string;
 };
 
-import { formatCurrency as formatCurrencyPure, maskedCurrencyLabel } from "../../lib/format-currency";
+import {
+  formatCurrency as formatCurrencyPure,
+  formatCurrencyParts,
+  maskedCurrencyLabel,
+} from "../../lib/format-currency";
 import { useUiStore } from "../../store/ui-store";
 
 /**
@@ -38,6 +46,8 @@ export function AmountDisplay({
   destinationAmount,
   size = "md",
   style,
+  color: colorOverride,
+  prefix: prefixOverride,
 }: Props) {
   let color = COLORS.text;
   let prefix = "";
@@ -69,21 +79,55 @@ export function AmountDisplay({
     color = COLORS.transfer;
   }
 
-  const formatted = formatCurrency(displayAmount, currencyCode);
+  if (colorOverride) color = colorOverride;
+  if (prefixOverride !== undefined) prefix = prefixOverride;
+
+  const fontSize = SIZE_PX[size];
+
+  // Modo privacidad: la cifra es "S/ ••••" y no hay nada que jerarquizar.
+  if (useUiStore.getState().privacyMode) {
+    return (
+      <Text style={[styles.base, { fontSize, color }, style]}>
+        {maskedCurrencyLabel(currencyCode)}
+      </Text>
+    );
+  }
+
+  const { symbol, integer, fraction } = formatCurrencyParts(displayAmount, currencyCode);
 
   return (
-    <Text style={[styles.base, styles[size], { color }, style]}>
-      {prefix}{formatted}
+    <Text style={[styles.base, { fontSize, color }, style]}>
+      {/* El signo va a tamaño completo a propósito: es información, no puntuación. */}
+      {prefix ? <Text style={styles.sign}>{prefix}</Text> : null}
+      {/* 43 % y peso medio: sabes en qué moneda estás sin que la moneda compita. */}
+      <Text style={[styles.symbol, { fontSize: Math.round(fontSize * 0.43) }]}>{symbol} </Text>
+      {/* Lo único a tamaño completo. El tracking negativo aprieta la cifra en columna. */}
+      <Text style={[styles.integer, { letterSpacing: -0.035 * fontSize }]}>{integer}</Text>
+      {/* 48 % y tinta al 55 %: presentes para la exactitud, invisibles para el vistazo. */}
+      {fraction ? (
+        <Text style={[styles.fraction, { fontSize: Math.round(fontSize * 0.48), color: color + "8C" }]}>
+          {fraction}
+        </Text>
+      ) : null}
     </Text>
   );
 }
 
+const SIZE_PX: Record<NonNullable<Props["size"]>, number> = {
+  sm: FONT_SIZE.sm,
+  md: FONT_SIZE.md,
+  lg: FONT_SIZE.lg,
+  xl: FONT_SIZE.xxl,
+  display: FONT_SIZE.display,
+};
+
 const styles = StyleSheet.create({
   base: {
+    fontFamily: FONT_FAMILY.heading,
     fontWeight: FONT_WEIGHT.semibold,
   },
-  sm: { fontSize: FONT_SIZE.sm },
-  md: { fontSize: FONT_SIZE.md },
-  lg: { fontSize: FONT_SIZE.lg },
-  xl: { fontSize: FONT_SIZE.xxl },
+  sign:    { fontFamily: FONT_FAMILY.heading },
+  symbol:  { fontFamily: FONT_FAMILY.headingMedium, color: COLORS.storm },
+  integer: { fontFamily: FONT_FAMILY.heading },
+  fraction:{ fontFamily: FONT_FAMILY.heading },
 });

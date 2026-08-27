@@ -20,8 +20,8 @@ import {
   ResourceCardIcon,
   ResourceCardMetaText,
 } from "../ui/ResourceCard";
-import { COLORS, FONT_FAMILY, FONT_SIZE } from "../../constants/theme";
-import { formatCurrency } from "../ui/AmountDisplay";
+import { COLORS, FONT_FAMILY } from "../../constants/theme";
+import { AmountDisplay } from "../ui/AmountDisplay";
 import { useUiStore } from "../../store/ui-store";
 import { parseDisplayDate } from "../../lib/date";
 import type { MovementRecord } from "../../types/domain";
@@ -181,10 +181,15 @@ export const MovementRow = memo(function MovementRow({
         </>
       }
       trailing={
-        <Text style={[styles.amount, { color: amountColor }]}>
-          {prefix}{formatCurrency(amount, currencyCode)}
-        </Text>
+        <AmountDisplay
+          amount={amount}
+          currencyCode={currencyCode}
+          size="lg"
+          color={amountColor}
+          prefix={prefix}
+        />
       }
+      variant="row"
     />
   );
 });
@@ -199,9 +204,5 @@ const styles = StyleSheet.create({
     fontFamily: FONT_FAMILY.bodyMedium,
     fontSize: 9,
     color: COLORS.storm,
-  },
-  amount: {
-    fontFamily: FONT_FAMILY.heading,
-    fontSize: FONT_SIZE.sm,
   },
 });
