@@ -18,6 +18,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Si tocas \"Guardar\" dos veces por nervios, ya no se registra dos veces.",
       "Al bloquear y desbloquear el teléfono, la app ya no te muestra la pantalla de inicio de sesión: sigues donde estabas.",
       "Cuando la conexión falla —se pone lenta, cambias de WiFi a datos móviles o se corta a mitad de un guardado— la app se recupera sola y no pierdes lo que habías escrito.",
+      "Si guardas algo apenas abres la app y la conexión todavía va lenta, DarkMoney espera a que el servidor termine antes de darte por perdido: ya no te avisa que no sabe si se guardó cuando en realidad sí quedó registrado.",
     ],
   },
   {
