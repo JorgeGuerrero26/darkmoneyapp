@@ -1,6 +1,6 @@
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
-import { COLORS, ELEVATION, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 
 export type ActiveFilterItem = {
   key: string;
@@ -47,13 +47,14 @@ const styles = StyleSheet.create({
   chip: {
     paddingHorizontal: SPACING.sm,
     paddingVertical: 3,
-    borderRadius: RADIUS.full,
-    backgroundColor: COLORS.primary + "18",
-    ...ELEVATION[1],
+    borderRadius: RADIUS.sm,
+    backgroundColor: SURFACE.subtle,
+    borderWidth: 1,
+    borderColor: SURFACE.cardBorder,
   },
   chipText: {
     fontSize: FONT_SIZE.xs,
-    color: COLORS.primary,
+    color: COLORS.fog,
     fontFamily: FONT_FAMILY.bodyMedium,
   },
   clearText: {
