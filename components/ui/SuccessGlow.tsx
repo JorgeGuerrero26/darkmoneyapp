@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { Animated, Easing, StyleSheet, View } from "react-native";
 import { useUiStore } from "../../store/ui-store";
 
-const GLOW_COLOR = "#6BE4C5";
+const GLOW_COLOR = "#86CE96";
 
 /**
  * Full-screen edge-rim glow that briefly appears on every success operation.

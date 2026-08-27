@@ -1,7 +1,7 @@
 import { StyleSheet, Text, TouchableOpacity, View, type StyleProp, type ViewStyle } from "react-native";
 import { ChevronLeft } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING, SURFACE } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { PlanStatusBadge } from "../ui/PlanStatusBadge";
 import { useHaptics } from "../../hooks/useHaptics";
 
@@ -79,7 +79,7 @@ const styles = StyleSheet.create({
     marginRight: SPACING.sm,
     width: 32,
     height: 32,
-    borderRadius: 10,
+    borderRadius: RADIUS.lg,
     backgroundColor: SURFACE.card,
     borderWidth: 1,
     borderColor: SURFACE.cardBorder,

@@ -15,7 +15,7 @@ import { useAuth } from "../../lib/auth-context";
 import { humanizeError } from "../../lib/errors";
 import { Input } from "../../components/ui/Input";
 import { Button } from "../../components/ui/Button";
-import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING } from "../../constants/theme";
 
 type FormErrors = {
   fullName?: string;
@@ -236,7 +236,7 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.md,
     paddingHorizontal: SPACING.xl,
     backgroundColor: COLORS.primary,
-    borderRadius: 10,
+    borderRadius: RADIUS.md,
   },
   backButtonText: { color: "#FFF", fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.md },
 });

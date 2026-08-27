@@ -506,7 +506,7 @@ const styles = StyleSheet.create({
   thumbFooter: {
     paddingHorizontal: SPACING.xs,
     paddingVertical: SPACING.xs,
-    backgroundColor: "rgba(5,7,10,0.72)",
+    backgroundColor: "rgba(10,10,9,0.72)",
   },
   thumbLabel: {
     fontSize: FONT_SIZE.xs,

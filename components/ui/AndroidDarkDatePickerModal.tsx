@@ -209,10 +209,10 @@ const styles = StyleSheet.create({
   card: {
     width: "100%",
     maxWidth: 360,
-    backgroundColor: "rgba(10,14,20,0.98)",
+    backgroundColor: "rgba(14,13,12,0.98)",
     borderRadius: RADIUS.xl,
     borderWidth: 1,
-    borderTopColor: "rgba(107,228,197,0.28)",
+    borderTopColor: "rgba(134,206,150,0.28)",
     borderLeftColor: "rgba(255,255,255,0.10)",
     borderRightColor: "rgba(255,255,255,0.08)",
     borderBottomColor: "rgba(255,255,255,0.05)",

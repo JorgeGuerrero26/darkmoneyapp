@@ -593,7 +593,7 @@ const styles = StyleSheet.create({
   metricIcon: {
     width: 28,
     height: 28,
-    borderRadius: 10,
+    borderRadius: RADIUS.lg,
     backgroundColor: "rgba(255,255,255,0.05)",
     alignItems: "center",
     justifyContent: "center",

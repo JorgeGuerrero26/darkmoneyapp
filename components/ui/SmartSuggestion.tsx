@@ -120,10 +120,10 @@ const styles = StyleSheet.create({
     gap: SPACING.xs,
     paddingVertical: SPACING.xs + 2,
     paddingHorizontal: SPACING.md,
-    backgroundColor: "rgba(107,228,197,0.06)",
+    backgroundColor: "rgba(134,206,150,0.06)",
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: "rgba(107,228,197,0.20)",
+    borderColor: "rgba(134,206,150,0.20)",
     marginTop: -SPACING.xs,
   },
   copy: {
@@ -169,7 +169,7 @@ const styles = StyleSheet.create({
     backgroundColor: SURFACE.deepNavy,
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: "rgba(107,228,197,0.22)",
+    borderColor: "rgba(134,206,150,0.22)",
     marginTop: -SPACING.xs,
   },
   loadingGradientWrap: {
@@ -185,9 +185,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderRadius: RADIUS.full,
-    backgroundColor: "rgba(107,228,197,0.10)",
+    backgroundColor: "rgba(134,206,150,0.10)",
     borderWidth: 1,
-    borderColor: "rgba(107,228,197,0.24)",
+    borderColor: "rgba(134,206,150,0.24)",
   },
   loadingTitle: {
     fontFamily: FONT_FAMILY.bodySemibold,

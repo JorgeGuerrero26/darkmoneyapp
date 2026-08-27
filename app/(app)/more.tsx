@@ -14,7 +14,7 @@ import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { Badge } from "../../components/ui/Badge";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
-import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING, SURFACE } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { IOS_FLOATING_TAB_BAR_SPACE } from "../../constants/floating-tab-bar";
 
 type MenuItem = {
@@ -177,7 +177,7 @@ const styles = StyleSheet.create({
   iconWrap: {
     width: 36,
     height: 36,
-    borderRadius: 10,
+    borderRadius: RADIUS.lg,
     backgroundColor: SURFACE.card,
     alignItems: "center",
     justifyContent: "center",

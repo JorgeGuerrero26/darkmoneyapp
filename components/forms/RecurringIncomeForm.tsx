@@ -465,7 +465,7 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
             onChange={setStartDate}
             required
             Icon={CalendarPlus}
-            accentColor="#9AA7FF"
+            accentColor="#9DB2DE"
           />
 
           <FormDateField

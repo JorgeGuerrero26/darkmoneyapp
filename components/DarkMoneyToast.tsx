@@ -18,6 +18,8 @@ import {
 import Svg, { Rect, Path } from 'react-native-svg'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
+import { RADIUS } from '../constants/theme'
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type ToastType = 'success' | 'update' | 'transfer' | 'delete' | 'info'
@@ -40,11 +42,11 @@ const THEME: Record<ToastType, {
   subtitleColor: string
   undoBorder: string
 }> = {
-  success:  { bg: '#0A1E14', iconBg: '#112B1C', accent: '#2CC787', subtitleColor: '#6AAF90', undoBorder: 'rgba(44,199,135,0.35)' },
+  success:  { bg: '#0A1E14', iconBg: '#16281A', accent: '#86CE96', subtitleColor: '#86CE96', undoBorder: 'rgba(134,206,150,0.35)' },
   update:   { bg: '#1C1700', iconBg: '#302700', accent: '#E8C44A', subtitleColor: '#A08830', undoBorder: 'rgba(232,196,74,0.35)' },
-  transfer: { bg: '#130E28', iconBg: '#1E1440', accent: '#9B7AE8', subtitleColor: '#6A5090', undoBorder: 'rgba(155,122,232,0.35)' },
+  transfer: { bg: '#17131C', iconBg: '#241C30', accent: '#C0A6D8', subtitleColor: '#8E7AA8', undoBorder: 'rgba(192,166,216,0.35)' },
   delete:   { bg: '#200A0A', iconBg: '#381212', accent: '#E85A5A', subtitleColor: '#A04040', undoBorder: 'rgba(232,90,90,0.35)' },
-  info:     { bg: '#0A1824', iconBg: '#10243A', accent: '#60A5FA', subtitleColor: '#7EA9D8', undoBorder: 'rgba(96,165,250,0.35)' },
+  info:     { bg: '#191D26', iconBg: '#232935', accent: '#9DB2DE', subtitleColor: '#9DB2DE', undoBorder: 'rgba(157,178,222,0.35)' },
 }
 
 // ─── Dimensions ───────────────────────────────────────────────────────────────
@@ -53,7 +55,7 @@ const TOAST_W = 320
 const TOAST_H = 64
 const TOAST_EXPANDED_H = 128
 const EXPANDED_TOAST_DURATION_MS = 8000
-const RADIUS  = 18
+const TOAST_RADIUS = RADIUS.xl
 
 function roundedRectPerimeter(width: number, height: number, radius: number) {
   return (
@@ -127,7 +129,7 @@ function BorderProgress({
   color: string
   height: number
 }) {
-  const perimeter = roundedRectPerimeter(TOAST_W, height, RADIUS)
+  const perimeter = roundedRectPerimeter(TOAST_W, height, TOAST_RADIUS)
   const dashOffset = progress.interpolate({
     inputRange:  [0, 1],
     outputRange: [0, perimeter],
@@ -143,7 +145,7 @@ function BorderProgress({
       <Rect
         x={1} y={1}
         width={TOAST_W - 2} height={height - 2}
-        rx={RADIUS - 1}
+        rx={TOAST_RADIUS - 1}
         fill="none"
         stroke={color}
         strokeWidth={1.5}
@@ -152,7 +154,7 @@ function BorderProgress({
       <AnimatedRect
         x={1} y={1}
         width={TOAST_W - 2} height={height - 2}
-        rx={RADIUS - 1}
+        rx={TOAST_RADIUS - 1}
         fill="none"
         stroke={color}
         strokeWidth={1.5}
@@ -384,7 +386,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     alignSelf: 'center',
     width: TOAST_W,
-    borderRadius: RADIUS,
+    borderRadius: TOAST_RADIUS,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
@@ -404,7 +406,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
   },
   messageAreaExpanded: {
     alignItems: 'flex-start',
@@ -415,7 +417,7 @@ const styles = StyleSheet.create({
   iconBox: {
     width: 36,
     height: 36,
-    borderRadius: 11,
+    borderRadius: RADIUS.lg,
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,

@@ -135,7 +135,7 @@ const styles = StyleSheet.create({
     left: SPACING.lg,
     right: SPACING.lg,
     backgroundColor: COLORS.mist,
-    borderRadius: 28,
+    borderRadius: RADIUS.xl,
     borderWidth: 1,
     borderColor: SURFACE.cardBorder,
     overflow: "hidden",

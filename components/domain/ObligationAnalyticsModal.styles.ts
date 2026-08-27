@@ -18,7 +18,7 @@ export const styles = StyleSheet.create({
     justifyContent: "flex-end",
   },
   approvalSheet: {
-    backgroundColor: "rgba(8,12,18,0.98)",
+    backgroundColor: "rgba(14,13,12,0.98)",
     borderRadius: RADIUS.xl,
     padding: SPACING.lg,
     gap: SPACING.sm,
@@ -934,7 +934,7 @@ export const styles = StyleSheet.create({
     borderRadius: 5,
     backgroundColor: COLORS.storm,
     borderWidth: 2,
-    borderColor: "rgba(18,20,26,1)",
+    borderColor: "rgba(28,27,25,1)",
   },
   tl2DateLabel: {
     fontSize: 10,

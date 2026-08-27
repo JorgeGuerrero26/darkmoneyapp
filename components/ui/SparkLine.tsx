@@ -18,8 +18,8 @@ export function SparkLine({
   values,
   width,
   height,
-  positiveColor = "#10B981",
-  negativeColor = "#EF4444",
+  positiveColor = "#86CE96",
+  negativeColor = "#EC7466",
   masked = false,
 }: Props) {
   const result = useMemo(() => {

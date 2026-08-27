@@ -421,12 +421,12 @@ export const dashboardSimpleStyles = StyleSheet.create({
     borderWidth: 1,
   },
   upcomingBadgeIncome: {
-    backgroundColor: "rgba(41, 204, 126, 0.11)",
-    borderColor: "rgba(41, 204, 126, 0.28)",
+    backgroundColor: "rgba(134,206,150, 0.11)",
+    borderColor: "rgba(134,206,150, 0.28)",
   },
   upcomingBadgeSubscription: {
-    backgroundColor: "rgba(111, 120, 255, 0.11)",
-    borderColor: "rgba(111, 120, 255, 0.24)",
+    backgroundColor: "rgba(157,178,222, 0.11)",
+    borderColor: "rgba(157,178,222, 0.24)",
   },
   upcomingBadgeObligation: {
     backgroundColor: "rgba(255, 95, 95, 0.10)",
@@ -463,8 +463,8 @@ export const dashboardSimpleStyles = StyleSheet.create({
     borderWidth: 1,
   },
   upcomingAmountPillIncome: {
-    backgroundColor: "rgba(41, 204, 126, 0.10)",
-    borderColor: "rgba(41, 204, 126, 0.24)",
+    backgroundColor: "rgba(134,206,150, 0.10)",
+    borderColor: "rgba(134,206,150, 0.24)",
   },
   upcomingAmountPillOut: {
     backgroundColor: "rgba(255, 95, 95, 0.09)",
@@ -889,14 +889,14 @@ export const dashboardSimpleStyles = StyleSheet.create({
     minWidth: "46%",
     padding: SPACING.md,
     borderRadius: RADIUS.xl,
-    backgroundColor: "rgba(9,22,27,0.78)",
+    backgroundColor: "rgba(20,19,18,0.78)",
     borderWidth: 1,
     borderColor: COLORS.primary + "22",
     gap: SPACING.xs,
   },
   learningSignalCardWide: {
     minWidth: "100%",
-    backgroundColor: "rgba(8,31,36,0.88)",
+    backgroundColor: "rgba(20,19,18,0.88)",
   },
   learningSignalHeader: {
     flexDirection: "row",
@@ -1206,7 +1206,7 @@ export const dashboardSimpleStyles = StyleSheet.create({
     minWidth: "46%",
     padding: SPACING.md,
     borderRadius: RADIUS.xl,
-    backgroundColor: "rgba(12,18,31,0.92)",
+    backgroundColor: "rgba(20,19,18,0.92)",
     borderWidth: 1,
     borderColor: SURFACE.softBorder,
     gap: SPACING.xs,
@@ -1289,7 +1289,7 @@ export const dashboardSimpleStyles = StyleSheet.create({
   aiSummaryAmbientGlowBlue: {
     top: -20,
     right: -10,
-    backgroundColor: "rgba(92,141,255,0.10)",
+    backgroundColor: "rgba(157,178,222,0.10)",
   },
   aiSummaryAmbientGlowCoral: {
     bottom: -20,
@@ -1304,7 +1304,7 @@ export const dashboardSimpleStyles = StyleSheet.create({
   aiSummaryAmbientGlowTeal: {
     top: -20,
     left: -10,
-    backgroundColor: "rgba(73,215,190,0.08)",
+    backgroundColor: "rgba(134,206,150,0.08)",
   },
   aiSummaryBadgeRow: {
     gap: SPACING.sm,
@@ -1319,7 +1319,7 @@ export const dashboardSimpleStyles = StyleSheet.create({
     borderRadius: RADIUS.full,
     backgroundColor: SURFACE.deepNavy,
     borderWidth: 1,
-    borderColor: "rgba(73,215,190,0.30)",
+    borderColor: "rgba(134,206,150,0.30)",
   },
   aiSummaryGeminiDotsRow: {
     flexDirection: "row",
@@ -1340,7 +1340,7 @@ export const dashboardSimpleStyles = StyleSheet.create({
   aiSummaryGeminiKicker: {
     fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.xs,
-    color: "rgba(223,231,245,0.72)",
+    color: "rgba(244,241,236,0.72)",
     lineHeight: 18,
     maxWidth: 360,
   },
@@ -1365,9 +1365,9 @@ export const dashboardSimpleStyles = StyleSheet.create({
     width: 76,
     height: 76,
     borderRadius: 38,
-    backgroundColor: "rgba(73,215,190,0.12)",
+    backgroundColor: "rgba(134,206,150,0.12)",
     borderWidth: 1,
-    borderColor: "rgba(73,215,190,0.28)",
+    borderColor: "rgba(134,206,150,0.28)",
   },
   aiSummaryIconWrap: {
     width: 56,
@@ -1377,7 +1377,7 @@ export const dashboardSimpleStyles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: SURFACE.deepNavy,
     borderWidth: 1.5,
-    borderColor: "rgba(73,215,190,0.36)",
+    borderColor: "rgba(134,206,150,0.36)",
     shadowColor: EXTENDED_PALETTE.teal,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.32,
@@ -1390,9 +1390,9 @@ export const dashboardSimpleStyles = StyleSheet.create({
     borderRadius: 21,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(73,215,190,0.12)",
+    backgroundColor: "rgba(134,206,150,0.12)",
     borderWidth: 1,
-    borderColor: "rgba(73,215,190,0.22)",
+    borderColor: "rgba(134,206,150,0.22)",
   },
   aiSummaryTitle: {
     fontFamily: FONT_FAMILY.heading,
@@ -1402,14 +1402,14 @@ export const dashboardSimpleStyles = StyleSheet.create({
   aiSummaryBody: {
     fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.sm,
-    color: "rgba(231,238,248,0.80)",
+    color: "rgba(244,241,236,0.80)",
     lineHeight: 22,
   },
   aiSummarySelectorLabel: {
     marginTop: SPACING.xs,
     fontFamily: FONT_FAMILY.bodySemibold,
     fontSize: FONT_SIZE.xs,
-    color: "rgba(198,210,227,0.78)",
+    color: "rgba(196,190,180,0.78)",
     textTransform: "uppercase",
     letterSpacing: 0.8,
   },
@@ -1431,8 +1431,8 @@ export const dashboardSimpleStyles = StyleSheet.create({
     overflow: "hidden",
   },
   aiSummaryToneChipActive: {
-    backgroundColor: "rgba(92,141,255,0.12)",
-    borderColor: "rgba(92,141,255,0.36)",
+    backgroundColor: "rgba(157,178,222,0.12)",
+    borderColor: "rgba(157,178,222,0.36)",
   },
   aiSummaryToneChipTitle: {
     fontFamily: FONT_FAMILY.bodySemibold,
@@ -1445,11 +1445,11 @@ export const dashboardSimpleStyles = StyleSheet.create({
   aiSummaryToneChipBody: {
     fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.xs,
-    color: "rgba(170,183,204,0.74)",
+    color: "rgba(163,156,144,0.74)",
     lineHeight: 18,
   },
   aiSummaryToneChipBodyActive: {
-    color: "rgba(240,245,255,0.88)",
+    color: "rgba(244,241,236,0.88)",
   },
   aiSummaryButton: {
     marginTop: SPACING.md,
@@ -1459,7 +1459,7 @@ export const dashboardSimpleStyles = StyleSheet.create({
     paddingVertical: SPACING.md,
     backgroundColor: SURFACE.deepNavy,
     borderWidth: 1.5,
-    borderColor: "rgba(73,215,190,0.36)",
+    borderColor: "rgba(134,206,150,0.36)",
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
@@ -1479,7 +1479,7 @@ export const dashboardSimpleStyles = StyleSheet.create({
     width: 140,
     height: 140,
     borderRadius: 70,
-    backgroundColor: "rgba(73,215,190,0.12)",
+    backgroundColor: "rgba(134,206,150,0.12)",
   },
   aiSummaryButtonInner: {
     flexDirection: "row",
@@ -1497,7 +1497,7 @@ export const dashboardSimpleStyles = StyleSheet.create({
     marginTop: SPACING.md,
     fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.xs,
-    color: "rgba(193,206,225,0.76)",
+    color: "rgba(196,190,180,0.76)",
     lineHeight: 19,
   },
   aiSummaryResponseCard: {
@@ -1509,7 +1509,7 @@ export const dashboardSimpleStyles = StyleSheet.create({
     borderRadius: RADIUS.lg,
     backgroundColor: SURFACE.deepNavy,
     borderWidth: 1,
-    borderColor: "rgba(92,141,255,0.16)",
+    borderColor: "rgba(157,178,222,0.16)",
     overflow: "hidden",
     gap: SPACING.sm,
   },
@@ -1536,20 +1536,20 @@ export const dashboardSimpleStyles = StyleSheet.create({
   aiSummaryGlossaryHint: {
     fontFamily: FONT_FAMILY.body,
     fontSize: 12,
-    color: "rgba(180,216,255,0.76)",
+    color: "rgba(207,220,242,0.76)",
     lineHeight: 18,
   },
   aiSummaryResponseText: {
     fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.sm,
-    color: "rgba(230,240,255,0.92)",
+    color: "rgba(213,224,244,0.92)",
     lineHeight: 22,
   },
   aiSummaryResponseTerm: {
     color: EXTENDED_PALETTE.mintLighter,
     textDecorationLine: "underline",
-    textDecorationColor: "rgba(73,215,190,0.65)",
-    backgroundColor: "rgba(73,215,190,0.12)",
+    textDecorationColor: "rgba(134,206,150,0.65)",
+    backgroundColor: "rgba(134,206,150,0.12)",
   },
   aiSummaryTermSheet: {
     gap: SPACING.md,
@@ -1562,9 +1562,9 @@ export const dashboardSimpleStyles = StyleSheet.create({
     paddingHorizontal: SPACING.sm,
     paddingVertical: 6,
     borderRadius: RADIUS.full,
-    backgroundColor: "rgba(73,215,190,0.10)",
+    backgroundColor: "rgba(134,206,150,0.10)",
     borderWidth: 1,
-    borderColor: "rgba(73,215,190,0.20)",
+    borderColor: "rgba(134,206,150,0.20)",
   },
   aiSummaryTermSheetBadgeText: {
     fontFamily: FONT_FAMILY.bodySemibold,
@@ -1579,7 +1579,7 @@ export const dashboardSimpleStyles = StyleSheet.create({
   aiSummaryTermSheetBody: {
     fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.md,
-    color: "rgba(230,240,255,0.88)",
+    color: "rgba(213,224,244,0.88)",
     lineHeight: 24,
   },
   aiSummaryFooterRow: {
@@ -1588,13 +1588,13 @@ export const dashboardSimpleStyles = StyleSheet.create({
   aiSummaryFooterText: {
     fontFamily: FONT_FAMILY.body,
     fontSize: 12,
-    color: "rgba(169,184,205,0.68)",
+    color: "rgba(163,156,144,0.68)",
     lineHeight: 18,
   },
   executiveModalOverlay: {
     flex: 1,
     justifyContent: "flex-end",
-    backgroundColor: "rgba(5,8,18,0.82)",
+    backgroundColor: "rgba(10,10,9,0.82)",
     padding: SPACING.md,
   },
   executiveModalCard: {
@@ -1640,7 +1640,7 @@ export const dashboardSimpleStyles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "rgba(5,8,18,0.72)",
+    backgroundColor: "rgba(10,10,9,0.72)",
     padding: SPACING.md,
   },
   movementPreviewBackdrop: {
@@ -1850,7 +1850,7 @@ export const dashboardSimpleStyles = StyleSheet.create({
   explanationVisualCard: {
     padding: SPACING.md,
     borderRadius: RADIUS.xl,
-    backgroundColor: "rgba(9,22,27,0.82)",
+    backgroundColor: "rgba(20,19,18,0.82)",
     borderWidth: 1,
     borderColor: COLORS.primary + "1F",
     gap: SPACING.md,
@@ -1905,13 +1905,13 @@ export const dashboardSimpleStyles = StyleSheet.create({
   explanationSectionCard: {
     padding: SPACING.md,
     borderRadius: RADIUS.xl,
-    backgroundColor: "rgba(8,13,24,0.72)",
+    backgroundColor: "rgba(14,13,12,0.72)",
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.075)",
     gap: SPACING.md,
   },
   explanationSectionCardCollapsed: {
-    backgroundColor: "rgba(8,13,24,0.48)",
+    backgroundColor: "rgba(14,13,12,0.48)",
   },
   explanationSectionHeader: {
     flexDirection: "row",
@@ -2041,7 +2041,7 @@ export const dashboardSimpleStyles = StyleSheet.create({
     backgroundColor: EXTENDED_PALETTE.rosePink,
   },
   resultMeaningCardPositive: {
-    backgroundColor: "rgba(18,48,40,0.92)",
+    backgroundColor: "rgba(22,40,27,0.92)",
     borderColor: COLORS.primary + "18",
   },
   resultMeaningCardWarning: {
@@ -2077,7 +2077,7 @@ export const dashboardSimpleStyles = StyleSheet.create({
     gap: SPACING.sm,
     padding: SPACING.md,
     borderRadius: RADIUS.xl,
-    backgroundColor: "rgba(59,166,142,0.24)",
+    backgroundColor: "rgba(111,180,126,0.24)",
     borderWidth: 1,
     borderColor: COLORS.primary + "26",
   },
@@ -2221,7 +2221,7 @@ export const dashboardSimpleStyles = StyleSheet.create({
     width: "48%",
     padding: SPACING.md,
     borderRadius: RADIUS.xl,
-    backgroundColor: "rgba(12,18,31,0.90)",
+    backgroundColor: "rgba(20,19,18,0.90)",
     borderWidth: 1,
     borderColor: SURFACE.softBorder,
     gap: SPACING.xs,
@@ -2267,7 +2267,7 @@ export const dashboardSimpleStyles = StyleSheet.create({
   widgetPanelCard: {
     padding: SPACING.md,
     borderRadius: RADIUS.xl,
-    backgroundColor: "rgba(12,18,31,0.90)",
+    backgroundColor: "rgba(20,19,18,0.90)",
     borderWidth: 1,
     borderColor: SURFACE.softBorder,
     gap: SPACING.sm,
@@ -2315,7 +2315,7 @@ export const dashboardSimpleStyles = StyleSheet.create({
     marginTop: SPACING.md,
     padding: SPACING.lg,
     borderRadius: RADIUS.xl,
-    backgroundColor: "rgba(16,34,31,0.94)",
+    backgroundColor: "rgba(20,34,24,0.94)",
     borderWidth: 1,
     borderColor: COLORS.primary + "22",
     gap: SPACING.md,
@@ -2382,7 +2382,7 @@ export const dashboardSimpleStyles = StyleSheet.create({
     flex: 1,
     padding: SPACING.md,
     borderRadius: RADIUS.xl,
-    backgroundColor: "rgba(12,18,31,0.90)",
+    backgroundColor: "rgba(20,19,18,0.90)",
     borderWidth: 1,
     borderColor: SURFACE.softBorder,
     gap: SPACING.xs,
@@ -2394,7 +2394,7 @@ export const dashboardSimpleStyles = StyleSheet.create({
     gap: SPACING.xs,
     padding: SPACING.md,
     borderRadius: RADIUS.xl,
-    backgroundColor: "rgba(8,13,24,0.58)",
+    backgroundColor: "rgba(14,13,12,0.58)",
     borderWidth: 1,
     borderColor: SURFACE.separator,
     borderLeftWidth: 2,
@@ -2587,7 +2587,7 @@ export const dashboardSimpleStyles = StyleSheet.create({
     gap: SPACING.sm,
     padding: SPACING.md,
     borderRadius: RADIUS.xl,
-    backgroundColor: "rgba(9,22,27,0.78)",
+    backgroundColor: "rgba(20,19,18,0.78)",
     borderWidth: 1,
     borderColor: COLORS.primary + "22",
   },
@@ -2895,7 +2895,7 @@ export const dashboardSimpleStyles = StyleSheet.create({
   projectionCard: {
     padding: SPACING.md,
     borderRadius: RADIUS.xl,
-    backgroundColor: "rgba(12,18,31,0.90)",
+    backgroundColor: "rgba(20,19,18,0.90)",
     borderWidth: 1,
     borderColor: SURFACE.softBorder,
     gap: SPACING.sm,
@@ -2907,7 +2907,7 @@ export const dashboardSimpleStyles = StyleSheet.create({
   projectionFormulaBox: {
     padding: SPACING.md,
     borderRadius: RADIUS.xl,
-    backgroundColor: "rgba(5,10,18,0.58)",
+    backgroundColor: "rgba(10,10,9,0.58)",
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.09)",
     gap: SPACING.sm,
@@ -3107,8 +3107,8 @@ export const dashboardSimpleStyles = StyleSheet.create({
     borderColor: "rgba(215,190,123,0.35)",
   },
   proGateBadgeMuted: {
-    backgroundColor: "rgba(150,162,181,0.10)",
-    borderColor: "rgba(150,162,181,0.20)",
+    backgroundColor: "rgba(163,156,144,0.10)",
+    borderColor: "rgba(163,156,144,0.20)",
   },
   proGateBadgeText: {
     fontFamily: FONT_FAMILY.bodySemibold,

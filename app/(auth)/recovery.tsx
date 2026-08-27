@@ -16,7 +16,7 @@ import { useAuth } from "../../lib/auth-context";
 import { humanizeError } from "../../lib/errors";
 import { Input } from "../../components/ui/Input";
 import { Button } from "../../components/ui/Button";
-import { COLORS, FONT_SIZE, FONT_WEIGHT, SPACING } from "../../constants/theme";
+import { COLORS, FONT_SIZE, FONT_WEIGHT, RADIUS, SPACING } from "../../constants/theme";
 
 export default function RecoveryScreen() {
   const insets = useSafeAreaInsets();
@@ -132,6 +132,6 @@ const styles = StyleSheet.create({
   errorBannerText: { color: COLORS.danger, fontSize: FONT_SIZE.sm },
   backLink: { flexDirection: "row", alignItems: "center", gap: 4, paddingVertical: SPACING.sm },
   backLinkText: { color: COLORS.primary, fontSize: FONT_SIZE.sm },
-  backButton: { paddingVertical: SPACING.md, paddingHorizontal: SPACING.xl, backgroundColor: COLORS.primary, borderRadius: 10 },
+  backButton: { paddingVertical: SPACING.md, paddingHorizontal: SPACING.xl, backgroundColor: COLORS.primary, borderRadius: RADIUS.md },
   backButtonText: { color: "#FFF", fontWeight: FONT_WEIGHT.semibold, fontSize: FONT_SIZE.md },
 });

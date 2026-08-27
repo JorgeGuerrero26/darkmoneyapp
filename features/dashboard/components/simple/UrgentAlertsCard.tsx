@@ -182,7 +182,7 @@ const alertStyles = StyleSheet.create({
   iconDot: {
     width: 28,
     height: 28,
-    borderRadius: 99,
+    borderRadius: RADIUS.full,
     alignItems: "center",
     justifyContent: "center",
   },

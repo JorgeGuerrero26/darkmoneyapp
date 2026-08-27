@@ -307,7 +307,7 @@ ninguna cara cargada que nadie use (descargarla retiene la pantalla de carga par
 las 5 etiquetas de la barra inferior y en los chips de filtro, con la letra del sistema
 agrandada. El tope `maxFontSizeMultiplier: 1.2` sigue puesto en `app/_layout.tsx`.
 
-### [ ] Fase 5 — Limpieza de valores a mano
+### [x] Fase 5 — Limpieza de valores a mano — HECHA
 
 **Qué**: llevar a tokens los 110 hex y 168 `rgba()` sueltos. Sin esto quedan islas azules
 en medio del grafito.
@@ -338,6 +338,36 @@ tema de la app.
 **Ojo con `lib/account-institutions.ts`**: son los colores de marca de los bancos (BCP,
 Interbank, etc.). No son tokens de tema — se revisan uno a uno para que no vibren contra el
 grafito, pero conservan su identidad.
+
+**Cómo se resolvió**:
+
+La clave fue **separar cromo de identidad** en vez de reemplazar todo a ciegas.
+
+- *Cromo* (superficies, textos, acentos de la app): **109 valores recoloreados en 17
+  archivos**, con una tabla explícita origen→destino. Se detectaron buscando tinte frío
+  (`b > r`), no contando `rgba()` a ojo: `rgba(0,0,0,x)` nunca sobró.
+- *Identidad* (**no se toca**): marcas de bancos, los colores que el usuario elige para sus
+  cuentas y categorías, y la paleta clara de impresión del PDF. El azul del BCP es del BCP.
+  `ColorPicker.tsx` ya lo decía en un comentario: *"the palette is visible to the user, these
+  hex values are part of the design intent, not theme tokens"*.
+- El peor archivo era `features/dashboard/components/simple/styles.ts` con **53** valores
+  fríos — el menta y el índigo viejos hardcodeados. Es justo el dashboard que el usuario mira
+  a diario.
+
+**Radios**: un script clasificó los literales comparando el radio contra el ancho/alto
+cercano. **28 eran círculos** (radio == mitad de la dimensión: avatares, botón biométrico,
+puntos) y se quedan intactos; **14 eran superficies** y pasaron a token por número de línea.
+Queda 1: el FAB, que en la fase 7 cambia de círculo a tarjeta.
+
+**Trampa encontrada**: `DarkMoneyToast.tsx` tenía un `const RADIUS = 18` **local** que tapaba
+al del tema — y además alimenta la geometría SVG del borde animado, así que tiene que seguir
+siendo un número. Renombrado a `TOAST_RADIUS = RADIUS.xl`. Ese archivo tampoco importaba el
+tema, que es exactamente por lo que había acumulado 20 hex propios.
+
+**Baseline de `check:no-hex` regenerado**: pasa de fallar (deuda vieja mal registrada) a
+**exit 0**. De las 113 entradas, **65 son de identidad** y solo **48 son deuda real de tema**
+— sobre todo la tabla de tonos de `DarkMoneyToast`. A partir de ahora cualquier hex NUEVO
+queda bloqueado.
 
 ### [ ] Fase 6 — Anatomía de componentes
 

@@ -1,6 +1,6 @@
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
-import { COLORS, FONT_FAMILY, SPACING, SURFACE } from "../../../../constants/theme";
+import { COLORS, FONT_FAMILY, RADIUS, SPACING, SURFACE } from "../../../../constants/theme";
 
 export type AdvancedTab = "Resumen" | "Patrones" | "Flujo" | "Historial" | "Salud";
 
@@ -54,7 +54,7 @@ const tabBarStyles = StyleSheet.create({
   chip: {
     paddingHorizontal: 14,
     paddingVertical: 7,
-    borderRadius: 20,
+    borderRadius: RADIUS.sm,
     backgroundColor: SURFACE.separator,
     borderWidth: 1,
     borderColor: SURFACE.cardBorder,

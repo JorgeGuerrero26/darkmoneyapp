@@ -41,7 +41,7 @@ export const styles = StyleSheet.create({
     width: 30,
     height: 30,
     borderRadius: RADIUS.full,
-    backgroundColor: "rgba(5,7,11,0.16)",
+    backgroundColor: "rgba(10,10,9,0.16)",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -57,7 +57,7 @@ export const styles = StyleSheet.create({
   },
   detailActionMeta: {
     fontSize: FONT_SIZE.xs,
-    color: "rgba(5,7,11,0.72)",
+    color: "rgba(10,10,9,0.72)",
     fontFamily: FONT_FAMILY.bodyMedium,
   },
   detailActionsRow: {
@@ -747,7 +747,7 @@ export const styles = StyleSheet.create({
     borderRadius: RADIUS.lg,
     borderWidth: 1,
     borderColor: COLORS.danger + "28",
-    backgroundColor: "rgba(10,14,20,0.58)",
+    backgroundColor: "rgba(14,13,12,0.58)",
     padding: SPACING.md,
   },
   ownerDeleteRequestHeader: {

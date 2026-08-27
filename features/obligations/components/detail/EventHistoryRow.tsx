@@ -11,7 +11,7 @@ import {
 import { Images } from "lucide-react-native";
 
 import { formatCurrency } from "../../../../components/ui/AmountDisplay";
-import { COLORS } from "../../../../constants/theme";
+import { COLORS, RADIUS } from "../../../../constants/theme";
 import { EVENT_TYPE_ICON } from "../../../../lib/obligation-event-presentation";
 import {
   obligationHistoryEventAmountPrefix,
@@ -170,12 +170,12 @@ export function EventHistoryRow({
 
   const cardRadius =
     cardPosition === "single"
-      ? { borderRadius: 12 }
+      ? { borderRadius: RADIUS.xl }
       : cardPosition === "first"
-        ? { borderTopLeftRadius: 12, borderTopRightRadius: 12, borderBottomLeftRadius: 4, borderBottomRightRadius: 4 }
+        ? { borderTopLeftRadius: RADIUS.xl, borderTopRightRadius: RADIUS.xl, borderBottomLeftRadius: RADIUS.sm, borderBottomRightRadius: RADIUS.sm }
         : cardPosition === "last"
-          ? { borderTopLeftRadius: 4, borderTopRightRadius: 4, borderBottomLeftRadius: 12, borderBottomRightRadius: 12 }
-          : { borderRadius: 4 };
+          ? { borderTopLeftRadius: RADIUS.sm, borderTopRightRadius: RADIUS.sm, borderBottomLeftRadius: RADIUS.xl, borderBottomRightRadius: RADIUS.xl }
+          : { borderRadius: RADIUS.sm };
 
   const hasChipsRow =
     showAttachmentLoading ||

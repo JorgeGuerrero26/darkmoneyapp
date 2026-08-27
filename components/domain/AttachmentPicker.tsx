@@ -636,7 +636,7 @@ const styles = StyleSheet.create({
   thumbMeta: {
     paddingHorizontal: SPACING.sm,
     paddingVertical: SPACING.sm,
-    backgroundColor: "rgba(7,11,20,0.92)",
+    backgroundColor: "rgba(14,13,12,0.92)",
   },
   thumbStatus: {
     fontSize: FONT_SIZE.xs,
@@ -645,7 +645,7 @@ const styles = StyleSheet.create({
   },
   thumbOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(7,11,20,0.55)",
+    backgroundColor: "rgba(14,13,12,0.55)",
     alignItems: "center",
     justifyContent: "flex-end",
     paddingBottom: SPACING.sm,
@@ -669,7 +669,7 @@ const styles = StyleSheet.create({
     width: 26,
     height: 26,
     borderRadius: 13,
-    backgroundColor: "rgba(7,11,20,0.72)",
+    backgroundColor: "rgba(14,13,12,0.72)",
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.18)",
     alignItems: "center",
@@ -682,10 +682,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: SPACING.sm,
-    backgroundColor: "rgba(107,228,197,0.08)",
+    backgroundColor: "rgba(134,206,150,0.08)",
     borderWidth: 1,
     borderStyle: "dashed",
-    borderColor: "rgba(107,228,197,0.35)",
+    borderColor: "rgba(134,206,150,0.35)",
     minHeight: 144,
   },
   addCardEmpty: {

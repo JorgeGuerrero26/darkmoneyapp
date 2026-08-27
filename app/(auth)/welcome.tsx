@@ -98,7 +98,7 @@ export default function WelcomeScreen() {
                   styles.fadeLayer,
                   {
                     height: layer.height,
-                    backgroundColor: `rgba(3,7,17,${layer.opacity})`,
+                    backgroundColor: `rgba(8,8,7,${layer.opacity})`,
                   },
                 ]}
               />
@@ -176,7 +176,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: 180,
-    backgroundColor: "rgba(3,7,17,0.20)",
+    backgroundColor: "rgba(8,8,7,0.20)",
   },
   fadeLayer: {
     position: "absolute",

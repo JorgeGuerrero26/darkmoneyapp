@@ -19,7 +19,7 @@ import {
   IBMPlexSans_600SemiBold,
 } from "@expo-google-fonts/ibm-plex-sans";
 
-import { COLORS, FONT_FAMILY, FONT_SIZE, SURFACE } from "../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SURFACE } from "../constants/theme";
 import { AuthProvider, useAuth } from "../lib/auth-context";
 import { logWarn } from "../lib/error-logger";
 import { markStartupReady } from "../lib/startup-timing";
@@ -109,7 +109,7 @@ const AppTheme = {
   ...DarkTheme,
   colors: {
     ...DarkTheme.colors,
-    // Era "transparent": el lienzo lo pintaba la ventana nativa en #05070B (azul). Con el
+    // Era "transparent": el lienzo lo pintaba la ventana nativa en #0E0D0C (azul). Con el
     // rediseño en grafito cálido eso dejaba la base fría bajo todo lo demás.
     background: COLORS.canvas,
   },
@@ -1129,7 +1129,7 @@ const styles = StyleSheet.create({
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(5, 7, 11, 0.12)",
+    backgroundColor: "rgba(10,10,9, 0.12)",
   },
   workspaceBootstrapOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -1140,7 +1140,7 @@ const styles = StyleSheet.create({
   },
   workspaceBootstrapVeil: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(5,7,11,0.42)",
+    backgroundColor: "rgba(10,10,9,0.42)",
   },
   workspaceBootstrapCard: {
     width: "100%",
@@ -1150,8 +1150,8 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingHorizontal: 24,
     paddingVertical: 30,
-    borderRadius: 24,
-    backgroundColor: "rgba(9,13,18,0.90)",
+    borderRadius: RADIUS.xl,
+    backgroundColor: "rgba(14,13,12,0.90)",
     borderTopWidth: 1,
     borderLeftWidth: 1,
     borderRightWidth: 1,
