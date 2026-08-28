@@ -15,14 +15,13 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import * as ImagePicker from "expo-image-picker";
 import Constants from "expo-constants";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as LocalAuthentication from "expo-local-authentication";
 import * as SecureStore from "expo-secure-store";
 import * as Clipboard from "expo-clipboard";
-import { ChevronRight, Fingerprint, Pencil, ShieldCheck } from "lucide-react-native";
+import { ChevronRight, Fingerprint, Mail, ShieldCheck } from "lucide-react-native";
 
 import { useAuth } from "../lib/auth-context";
 import { useWorkspace, useWorkspaceListStore } from "../lib/workspace-context";
@@ -110,11 +109,6 @@ function SettingsScreen() {
     }
   };
 
-  // ── Profile ──────────────────────────────────────────────────────────────
-  const [fullName, setFullName] = useState(profile?.fullName ?? "");
-  const [baseCurrencyCode, setBaseCurrencyCode] = useState(normalizeSupportedCurrencyCode(profile?.baseCurrencyCode));
-  const [isSaving, setIsSaving] = useState(false);
-  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
 
   // ── Notificaciones push ──────────────────────────────────────────────────
   // El sistema tiene bloqueados los permisos de notificación para la app:
@@ -196,6 +190,8 @@ function SettingsScreen() {
 
   // ── Workspace invite sheet ────────────────────────────────────────────────
   const [inviteSheetOpen, setInviteSheetOpen] = useState(false);
+  const [toneSheetOpen, setToneSheetOpen] = useState(false);
+  const [inboundSheetOpen, setInboundSheetOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<Exclude<WorkspaceRole, "owner">>("member");
   const [inviteNote, setInviteNote] = useState("");
@@ -278,64 +274,13 @@ function SettingsScreen() {
     }
   }
 
-  // ── Profile save ─────────────────────────────────────────────────────────
-  async function handleSave() {
-    if (!fullName.trim()) return;
-    setIsSaving(true);
-    try {
-      await saveProfile({
-        fullName: fullName.trim(),
-        baseCurrencyCode,
-        timezone: profile?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
-      });
-      await syncDefaultExchangeCurrency(baseCurrencyCode);
-      showToast("Perfil guardado", "success");
-    } catch (err: unknown) {
-      showToast(humanizeError(err), "error");
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
-  async function handleAvatarPress() {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== "granted") {
-      showToast("Se necesita permiso para acceder a la galería", "error");
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: "images",
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-    });
-    if (result.canceled || !result.assets[0]) return;
-    setIsUploadingAvatar(true);
-    try {
-      await saveAvatar(result.assets[0].uri);
-      showToast("Foto de perfil actualizada", "warning");
-    } catch (err: unknown) {
-      showToast(humanizeError(err), "error");
-    } finally {
-      setIsUploadingAvatar(false);
-    }
-  }
-
-  async function handleAvatarRemove() {
-    setIsUploadingAvatar(true);
-    try {
-      await removeAvatar();
-      showToast("Foto de perfil eliminada", "success");
-    } catch {
-      showToast("No se pudo eliminar la foto", "error");
-    } finally {
-      setIsUploadingAvatar(false);
-    }
-  }
-
   function handleSignOut() {
     setSignOutVisible(true);
   }
+
+  const activeToneLabel =
+    DASHBOARD_AI_TONE_OPTIONS.find((option) => option.id === aiTone)?.label ??
+    DASHBOARD_AI_TONE_OPTIONS[0].label;
 
   const canInvite =
     activeWorkspace?.kind === "shared" &&
@@ -344,7 +289,6 @@ function SettingsScreen() {
   const predictiveAlertsEnabled = notificationPreferencesQuery.data?.predictiveAlertsEnabled !== false;
   const pushEnabled = notificationPreferencesQuery.data?.pushEnabled === true;
   const pushToken = notificationPreferencesQuery.data?.pushToken ?? null;
-  const pushPlatform = notificationPreferencesQuery.data?.platform ?? null;
   const biometricActive = biometricEnabled && bioCredsStored;
 
   async function handlePushToggle(nextValue: boolean) {
@@ -439,45 +383,28 @@ function SettingsScreen() {
           keyboardShouldPersistTaps="handled"
         >
 
-          {/* Profile */}
-          <Card>
-            <Text style={styles.sectionTitle}>Perfil</Text>
-            <TouchableOpacity
-              style={styles.avatarWrap}
-              onPress={handleAvatarPress}
-              activeOpacity={0.8}
-              disabled={isUploadingAvatar}
-            >
-              {profile?.avatarUrl ? (
-                <Image source={{ uri: profile.avatarUrl }} style={styles.avatarImage} />
-              ) : (
-                <View style={styles.avatarFallback}>
-                  <Text style={styles.avatarText}>{profile?.initials ?? "DM"}</Text>
-                </View>
-              )}
-              <View style={styles.avatarOverlay}>
-                {isUploadingAvatar
-                  ? <ActivityIndicator size="small" color={EXTENDED_PALETTE.white} />
-                  : <Pencil size={20} color={EXTENDED_PALETTE.white} strokeWidth={2} />}
-              </View>
-            </TouchableOpacity>
+          {/* 620 px de formulario para algo que se toca una vez al año. Vive en /profile. */}
+          <TouchableOpacity
+            style={styles.settingsNavRow}
+            activeOpacity={0.82}
+            onPress={() => router.push("/(app)/profile?from=settings" as any)}
+          >
             {profile?.avatarUrl ? (
-              <TouchableOpacity onPress={handleAvatarRemove} disabled={isUploadingAvatar}>
-                <Text style={styles.avatarRemoveText}>Eliminar foto</Text>
-              </TouchableOpacity>
-            ) : null}
-            <View style={styles.form}>
-              <Input label="Nombre completo" value={fullName} onChangeText={setFullName} autoCapitalize="words" />
-              <Input label="Correo electrónico" value={profile?.email ?? ""} editable={false} style={styles.disabledInput} />
-              <CurrencySelector
-                label="Moneda base"
-                value={baseCurrencyCode}
-                onChange={setBaseCurrencyCode}
-                hint={`Se sincronizara automaticamente contra ${DEFAULT_EXCHANGE_CURRENCY}.`}
-              />
+              <Image source={{ uri: profile.avatarUrl }} style={styles.profileRowAvatar} />
+            ) : (
+              <View style={[styles.settingsNavIcon, styles.profileRowFallback]}>
+                <Text style={styles.profileRowInitials}>{profile?.initials ?? "DM"}</Text>
+              </View>
+            )}
+            <View style={styles.settingsNavCopy}>
+              <Text style={styles.switchLabel}>{profile?.fullName || "Tu perfil"}</Text>
+              <Text style={styles.switchDesc}>
+                {profile?.email ?? ""}
+                {profile?.baseCurrencyCode ? ` · ${normalizeSupportedCurrencyCode(profile.baseCurrencyCode)}` : ""}
+              </Text>
             </View>
-            <Button label="Guardar perfil" onPress={handleSave} loading={isSaving} style={styles.saveButton} />
-          </Card>
+            <ChevronRight size={16} color={COLORS.storm} />
+          </TouchableOpacity>
 
           {/* Workspaces */}
           <Card>
@@ -555,27 +482,15 @@ function SettingsScreen() {
                 preferencia, así que se elige una vez aquí en lugar de repintarse en las cinco
                 pestañas del dashboard. */}
             {dashboardMode === "advanced" ? (
-              <View style={styles.aiToneBlock}>
-                <Text style={styles.switchLabel}>Cómo te habla el asistente del inicio</Text>
-                <View style={styles.aiToneRow}>
-                  {DASHBOARD_AI_TONE_OPTIONS.map((option) => {
-                    const active = option.id === aiTone;
-                    return (
-                      <TouchableOpacity
-                        key={option.id}
-                        style={[styles.aiToneChip, active && styles.aiToneChipActive]}
-                        onPress={() => setAiTone(option.id)}
-                        activeOpacity={0.84}
-                      >
-                        <Text style={[styles.aiToneChipTitle, active && styles.aiToneChipTitleActive]}>
-                          {option.label}
-                        </Text>
-                        <Text style={styles.aiToneChipBody}>{option.description}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
+              <TouchableOpacity
+                style={styles.aiToneRow}
+                onPress={() => setToneSheetOpen(true)}
+                activeOpacity={0.82}
+              >
+                <Text style={[styles.switchLabel, styles.aiToneLabel]}>Cómo te habla el asistente</Text>
+                <Text style={styles.aiToneValue}>{activeToneLabel}</Text>
+                <ChevronRight size={16} color={COLORS.storm} />
+              </TouchableOpacity>
             ) : null}
           </Card>
 
@@ -598,11 +513,6 @@ function SettingsScreen() {
             <View style={styles.switchRow}>
               <View style={styles.switchInfo}>
                 <Text style={styles.switchLabel}>Notificaciones push</Text>
-                <Text style={styles.switchDesc}>
-                  {pushEnabled && pushToken
-                    ? `Activo en este dispositivo (${pushPlatform ?? Platform.OS}). Recibirás alertas y recordatorios.`
-                    : "Actívalas para recibir alertas y recordatorios en este teléfono."}
-                </Text>
               </View>
               <Switch
                 value={pushEnabled && Boolean(pushToken)}
@@ -631,11 +541,6 @@ function SettingsScreen() {
             <View style={styles.switchRow}>
               <View style={styles.switchInfo}>
                 <Text style={styles.switchLabel}>Resumen diario informativo</Text>
-                <Text style={styles.switchDesc}>
-                  {pushEnabled
-                    ? "Recibe un solo resumen al final del día con alertas informativas."
-                    : "Se guardará tu preferencia aunque ahora no tengas push activo."}
-                </Text>
               </View>
               <Switch
                 value={dailyDigestEnabled}
@@ -662,59 +567,30 @@ function SettingsScreen() {
             </View>
           </Card>
 
-          {/* Detección por correo: en iOS no existe la detección de notificaciones de Android,
-              y el usuario necesita ver su dirección para crear el filtro en Gmail. */}
-          <Card>
-            <Text style={styles.sectionTitle}>Detectar pagos por correo</Text>
-            {inboundAliasQuery.data ? (
-              <>
-                <Text selectable style={styles.inboundAddress}>
-                  {inboundEmailAddress(inboundAliasQuery.data)}
-                </Text>
-                <Button
-                  label="Copiar dirección"
-                  variant="secondary"
-                  size="md"
-                  onPress={() => void handleCopyInboundAddress()}
-                />
-                {/* Los dominios van completos y son los reales: Yape usa yape.pe (NO
-                    yape.com.pe), y un filtro con el dominio equivocado no reenvía nada,
-                    en silencio. */}
-                <Text style={styles.inboundHelp}>
-                  En Gmail: Configuración › Filtros › Crear filtro con{"\n"}
-                  De: notificacionesbcp.com.pe OR yape.pe{"\n"}
-                  Acción: Reenviar a esta dirección{"\n"}
-                  Gmail te pedirá confirmar el reenvío una vez.
-                </Text>
-                <Button
-                  label="Generar una nueva"
-                  variant="ghost"
-                  size="md"
-                  loading={rotateInboundAlias.isPending}
-                  loadingLabel="Generando…"
-                  onPress={() => void handleRotateInboundAlias()}
-                />
-              </>
-            ) : (
-              <>
-                <Text style={styles.inboundHelp}>
-                  Genera una dirección privada y reenvía ahí los correos de tu banco. DarkMoney
-                  no accede al resto de tu correo, y nada se registra sin que tú lo confirmes.
-                </Text>
-                <Button
-                  label="Generar dirección"
-                  variant="primary"
-                  size="md"
-                  loading={rotateInboundAlias.isPending}
-                  loadingLabel="Generando…"
-                  onPress={() => void handleRotateInboundAlias()}
-                />
-              </>
-            )}
-          </Card>
+          {/* En iOS no existe la detección de notificaciones de Android, así que esta es la vía;
+              pero es configuración de una sola vez, no una tarjeta permanente con dos botones. */}
+          <TouchableOpacity
+            style={styles.settingsNavRow}
+            activeOpacity={0.82}
+            onPress={() => setInboundSheetOpen(true)}
+          >
+            <View style={styles.settingsNavIcon}>
+              <Mail size={18} color={COLORS.primary} />
+            </View>
+            <View style={styles.settingsNavCopy}>
+              <Text style={styles.switchLabel}>Detectar pagos por correo</Text>
+              <Text style={styles.switchDesc}>
+                {inboundAliasQuery.data ? inboundEmailAddress(inboundAliasQuery.data) : "Sin dirección todavía"}
+              </Text>
+            </View>
+            <ChevronRight size={16} color={COLORS.storm} />
+          </TouchableOpacity>
 
-          {/* Sign out */}
-          <Button label="Cerrar sesión" variant="danger" size="lg" onPress={handleSignOut} />
+          {/* Es la única acción irreversible de la pantalla, así que NO se pinta como el
+              control más llamativo: va en texto, al final, donde se busca a propósito. */}
+          <TouchableOpacity onPress={handleSignOut} style={styles.signOutRow} activeOpacity={0.7}>
+            <Text style={styles.signOutText}>Cerrar sesión</Text>
+          </TouchableOpacity>
 
           {Constants.expoConfig?.version ? (
             <TouchableOpacity
@@ -833,6 +709,75 @@ function SettingsScreen() {
       />
 
       {/* ── Invite member sheet ───────────────────────────────────────── */}
+      {/* El tono es el REGISTRO con que la IA te habla. La explicación de cada uno se lee
+          aquí, que es cuando importa: en la fila solo va el valor elegido. */}
+      <BottomSheet visible={toneSheetOpen} onClose={() => setToneSheetOpen(false)} title="Cómo te habla el asistente">
+        {DASHBOARD_AI_TONE_OPTIONS.map((option) => {
+          const active = option.id === aiTone;
+          return (
+            <TouchableOpacity
+              key={option.id}
+              style={[styles.toneSheetRow, active && styles.toneSheetRowActive]}
+              onPress={() => {
+                setAiTone(option.id);
+                setToneSheetOpen(false);
+              }}
+              activeOpacity={0.84}
+            >
+              <Text style={[styles.toneSheetTitle, active && styles.toneSheetTitleActive]}>{option.label}</Text>
+              <Text style={styles.toneSheetBody}>{option.description}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </BottomSheet>
+
+      <BottomSheet visible={inboundSheetOpen} onClose={() => setInboundSheetOpen(false)} title="Detectar pagos por correo">
+        {inboundAliasQuery.data ? (
+          <>
+            <Text selectable style={styles.inboundAddress}>
+              {inboundEmailAddress(inboundAliasQuery.data)}
+            </Text>
+            <Button
+              label="Copiar dirección"
+              variant="secondary"
+              size="md"
+              onPress={() => void handleCopyInboundAddress()}
+            />
+            {/* Los dominios van completos y son los reales: Yape usa yape.pe (NO
+                yape.com.pe), y un filtro con el dominio equivocado no reenvía nada,
+                en silencio. */}
+            <Text style={styles.inboundHelp}>
+              En Gmail: Configuración › Filtros › Crear filtro con{"\n"}
+              De: notificacionesbcp.com.pe OR yape.pe{"\n"}
+              Acción: Reenviar a esta dirección{"\n"}
+              Gmail te pedirá confirmar el reenvío una vez.
+            </Text>
+            <Button
+              label="Generar una nueva"
+              variant="ghost"
+              size="md"
+              loading={rotateInboundAlias.isPending}
+              loadingLabel="Generando…"
+              onPress={() => void handleRotateInboundAlias()}
+            />
+          </>
+        ) : (
+          <>
+            <Text style={styles.inboundHelp}>
+              Genera una dirección privada y reenvía ahí los correos de tu banco. DarkMoney
+              no accede al resto de tu correo, y nada se registra sin que tú lo confirmes.
+            </Text>
+            <Button
+              label="Generar dirección"
+              variant="secondary"
+              size="md"
+              loading={rotateInboundAlias.isPending}
+              loadingLabel="Generando…"
+              onPress={() => void handleRotateInboundAlias()}
+            />
+          </>
+        )}
+      </BottomSheet>
       <BottomSheet
         visible={inviteSheetOpen}
         onClose={() => setInviteSheetOpen(false)}
@@ -923,21 +868,47 @@ function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
-  aiToneBlock: { gap: SPACING.sm, marginTop: SPACING.md },
-  aiToneRow: { flexDirection: "row", gap: SPACING.sm },
-  aiToneChip: {
-    flex: 1,
+  aiToneRow: {
+    minHeight: 52,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+    marginTop: SPACING.md,
+  },
+  // El violeta se queda: es COLORS.pro, el color de la IA en todo el sistema. Lo que sobraba
+  // eran las dos tarjetas de 90 px, no el color.
+  aiToneLabel: { flex: 1 },
+  aiToneValue: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.sm, color: COLORS.pro },
+  toneSheetRow: {
     padding: SPACING.md,
-    borderRadius: RADIUS.md,
-    backgroundColor: SURFACE.subtle,
+    borderRadius: RADIUS.lg,
     borderWidth: 1,
     borderColor: SURFACE.cardBorder,
-    gap: 2,
+    backgroundColor: SURFACE.card,
+    marginBottom: SPACING.sm,
+    gap: SPACING.xs,
   },
-  aiToneChipActive: { borderColor: COLORS.pro, backgroundColor: COLORS.proMuted },
-  aiToneChipTitle: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.sm, color: COLORS.fog },
-  aiToneChipTitleActive: { color: COLORS.pro },
-  aiToneChipBody: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm, lineHeight: 16 },
+  toneSheetRowActive: { borderColor: COLORS.pro, backgroundColor: COLORS.proMuted },
+  toneSheetTitle: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.md, color: COLORS.fog },
+  toneSheetTitleActive: { color: COLORS.pro },
+  toneSheetBody: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm, lineHeight: 16 },
+  profileRowAvatar: { width: 36, height: 36, borderRadius: 18 },
+  profileRowFallback: { backgroundColor: COLORS.primary },
+  profileRowInitials: {
+    fontFamily: FONT_FAMILY.heading,
+    fontSize: FONT_SIZE.sm,
+    color: EXTENDED_PALETTE.white,
+  },
+  signOutRow: {
+    minHeight: 52,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  signOutText: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.storm,
+  },
   flex: { flex: 1 },
   content: { padding: SPACING.lg, gap: SPACING.lg, paddingBottom: SPACING.xxxl },
   versionText: {
@@ -967,44 +938,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginBottom: SPACING.md,
   },
-  avatarWrap: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    alignSelf: "center",
-    marginBottom: SPACING.sm,
-    overflow: "hidden",
-  },
-  avatarImage: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-  },
-  avatarFallback: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: COLORS.primary,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  avatarOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: SURFACE.imageScrim,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  avatarRemoveText: {
-    fontSize: FONT_SIZE.xs,
-    fontFamily: FONT_FAMILY.body,
-    color: COLORS.storm,
-    textAlign: "center",
-    marginBottom: SPACING.md,
-  },
-  avatarText: { fontSize: FONT_SIZE.xxl, fontFamily: FONT_FAMILY.heading, color: EXTENDED_PALETTE.white },
-  form: { gap: SPACING.md },
-  disabledInput: { opacity: 0.5 },
-  saveButton: { marginTop: SPACING.lg },
   wsRow: {
     flexDirection: "row",
     alignItems: "center",

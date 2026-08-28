@@ -91,6 +91,7 @@ const HIDDEN_ROUTES = [
   "categories",
   "exchange-rates",
   "settings",
+  "profile",
   "notification-detection",
   "notification-onboarding",
 ] as const;
