@@ -45,7 +45,7 @@ export function RecurringIncomeSwipeRow({
   return (
     <SwipeActionRow
       revealWidth={96}
-      borderRadius={RADIUS.xl}
+      borderRadius={0}
       leftAction={item.status === "active" ? {
         label: "Confirmar",
         icon: CalendarClock,

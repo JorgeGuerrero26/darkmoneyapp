@@ -143,7 +143,7 @@ export function ObligationSwipeRow({
   return (
     <SwipeActionRow
       revealWidth={REVEAL_W}
-      borderRadius={RADIUS.xl}
+      borderRadius={0}
       leftAction={{
         label: paySwipeLabel,
         icon: CreditCard,
@@ -178,14 +178,6 @@ export function ObligationSwipeRow({
           }}
           onLongPress={onLongPress}
           leading={<ResourceCardIcon icon={CreditCard} color={directionColor} />}
-          actions={[
-            {
-              key: "analytics",
-              icon: BarChart2,
-              onPress: onAnalytics,
-              accessibilityLabel: "Ver analítica de crédito o deuda",
-            },
-          ]}
           trailing={
             // La barra de 340px para decir 10% era desproporcionada. Baja a 56px y sube JUNTO al
             // monto, que es donde se compara: cuánto queda y cuánto llevas, de un vistazo.

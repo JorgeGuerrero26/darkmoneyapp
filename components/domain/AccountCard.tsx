@@ -146,7 +146,7 @@ function AccountCardBase({
   }
 
   return (
-    <SwipeActionRow rightAction={rightAction} borderRadius={RADIUS.xl}>
+    <SwipeActionRow rightAction={rightAction} borderRadius={0}>
       {({ close, isOpen }) => (
         <AccountCardContent
           account={account}

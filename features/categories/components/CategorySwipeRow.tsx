@@ -55,7 +55,7 @@ export function CategorySwipeRow({
   return (
     <SwipeActionRow
       revealWidth={92}
-      borderRadius={RADIUS.xl}
+      borderRadius={0}
       leftAction={canToggle ? {
         label: category.isActive ? "Desactivar" : "Activar",
         icon: Power,

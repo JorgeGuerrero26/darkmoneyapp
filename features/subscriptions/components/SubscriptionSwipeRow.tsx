@@ -68,7 +68,7 @@ export function SubscriptionSwipeRow({
   return (
     <SwipeActionRow
       revealWidth={92}
-      borderRadius={RADIUS.xl}
+      borderRadius={0}
       leftAction={leftAction}
       rightAction={{
         label: "Eliminar",

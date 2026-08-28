@@ -77,7 +77,10 @@ export function ResourceSectionList<T, S extends ResourceSection<T> = ResourceSe
   contentContainerStyle,
   listHeaderComponent,
   listFooterComponent,
-  itemSeparatorHeight = SPACING.sm,
+  // 0 por defecto: desde que TODAS las listas son filas sobre lienzo, el hueco de 8px es el
+  // aire que necesitaban las tarjetas para separarse. Ahora separa el filete sangrado que
+  // dibuja la propia fila; con hueco, cada fila vuelve a leerse como un bloque suelto.
+  itemSeparatorHeight = 0,
   sectionSeparatorHeight = SPACING.md,
   animateItems = true,
   itemAnimationMaxStagger = 10,

@@ -31,7 +31,7 @@ export function BudgetSwipeRow({
   return (
     <SwipeActionRow
       revealWidth={88}
-      borderRadius={RADIUS.xl}
+      borderRadius={0}
       leftAction={{
         label: "Duplicar",
         icon: Copy,

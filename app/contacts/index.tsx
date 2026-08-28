@@ -493,7 +493,6 @@ function ContactsScreen() {
       }
       list={
         <ResourceSectionList
-          itemSeparatorHeight={0}
           sections={contactSections}
           keyExtractor={(item) => String(item.id)}
           renderItem={renderContactItem}

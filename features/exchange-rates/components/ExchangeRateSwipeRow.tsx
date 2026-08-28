@@ -38,7 +38,7 @@ export function ExchangeRateSwipeRow({
   return (
     <SwipeActionRow
       revealWidth={92}
-      borderRadius={RADIUS.xl}
+      borderRadius={0}
       rightAction={{
         label: "Eliminar",
         icon: Trash2,

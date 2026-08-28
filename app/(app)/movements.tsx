@@ -971,7 +971,6 @@ function MovementsScreen() {
             sections={movementSections}
             keyExtractor={(item) => String(item.id)}
             renderItem={renderItem}
-            itemSeparatorHeight={0}
             stickyHeaders
             refreshing={isRefetching && !isFetchingNextPage}
             onRefresh={onRefresh}
