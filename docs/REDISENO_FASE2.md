@@ -1,0 +1,189 @@
+# Plan de rediseño — DarkMoney (Revisión 02)
+
+> Plan de ejecución de la **segunda tanda**. La primera (paleta, tipografía, formas, densidad,
+> barra inferior) está cerrada en [`REDISENO.md`](REDISENO.md) — sus 7 fases están dentro.
+>
+> Vive en el repo a propósito: sobrevive a que se pierda o se compacte una conversación.
+
+Fuente de verdad visual: `DarkMoney - Rediseño.dc.html` (Revisión 01 = Home, Revisión 02 =
+Patrones / Flujo / Historial / Salud). Export en `Descargas/Diseño de app móvil.zip`.
+
+Este archivo es el plan de ejecución. Si algo del código y algo del documento se contradicen,
+manda el documento; si el documento se equivoca sobre el dato, manda el código y se corrige el
+documento.
+
+Fecha: 27 ago 2026 · es-PE · moneda base PEN
+
+---
+
+## 1. Decisiones que necesitan al dueño del producto
+
+### Decisión A — el conmutador Simple / Avanzado
+
+Situación: hoy convive con cinco pestañas (Resumen, Patrones, Flujo, Historial, Salud). Los dos
+controles responden la misma pregunta —cuánto detalle quiero— y juntos empujan la primera cifra
+a 390px del borde superior. El conmutador se repinta en las cinco pestañas.
+
+| Opción | Qué implica | Riesgo para quien ya usa la app |
+|---|---|---|
+| **A1 — Preferencia en Ajustes** (recomendada) | El modo se elige una vez en Ajustes y se recuerda. Deja de ocupar espacio en cada pestaña. Nada se elimina, se muda. | Bajo. Quien ya tenía Avanzado sigue en Avanzado. Necesita un aviso único la primera vez: "El modo ahora vive en Ajustes". |
+| A2 — Solo en Resumen | El conmutador se queda pero únicamente en la primera pestaña. Las otras heredan el modo. | Muy bajo, pero no resuelve la duplicación conceptual: siguen siendo dos controles de profundidad. |
+| A3 — Se elimina y la profundidad se abre por tarjeta | Cada tarjeta tiene su "ver detalle". No hay modo global. | Alto. Es un cambio de modelo mental; quien usaba Simple para no ver ruido pierde ese refugio. |
+
+Recomendación: **A1**. El modo es una preferencia, no un destino de navegación, y las
+preferencias viven en Ajustes. Recupera ~60px en las cinco pestañas sin quitarle nada a nadie.
+Si Avanzado es además una función de pago (hay `useDashboardEntitlement`), A1 es la única opción
+que no confunde "modo" con "plan".
+
+**Pendiente de respuesta. Nada de la fase 5 se ejecuta hasta que esto se decida.**
+
+### Decisión B — las dos tarjetas de texto de cada pestaña
+
+Cada pestaña abre con una tarjeta de título + tres viñetas, y debajo otra de "lectura rápida"
+con dos párrafos. Son 300–380px de texto que describe la pantalla antes de mostrarla, cinco
+veces.
+
+Recomendación: eliminarlas. El nombre de la pestaña ya anuncia el contenido, y la nota de
+alcance se conserva como una línea de 11px al pie de la tarjeta que la necesita.
+Si esas viñetas existen porque los usuarios no entendían la pestaña, la respuesta correcta no es
+dejarlas: es un "¿qué es esto?" en el encabezado que abra la explicación una vez.
+
+### Decisión C — el amarillo *(añadida al ejecutar: el plan se contradice con la Revisión 01)*
+
+La regla transversal 3 dice "el amarillo (`COLORS.gold`) sale del sistema", y la fase 1 pide
+retirarlo de los usos de dashboard. Pero la **Revisión 01** —ya implementada y en producción—
+define `#D9B65C` como el color semántico de **advertencia**: "vence pronto, pago detectado,
+revisar".
+
+Hoy `COLORS.gold` / `COLORS.warning` sostiene, fuera del dashboard: los vencimientos de
+obligaciones, los presupuestos cerca del tope, los avisos de pago detectado y el badge de plan
+por vencer. Retirarlo "del sistema" dejaría a *advertencia* sin color propio y la empujaría a
+confundirse con *error*, que es justo la distinción que el brief original marcó como regla dura.
+
+Lectura propuesta: el amarillo **sale del dashboard avanzado** (donde se usaba como decoración,
+no como advertencia) y **se conserva como token semántico** en el resto de la app. Confirmar.
+
+---
+
+## 2. Reglas transversales
+
+1. **El saludo no viaja.** "Hola, Adrian · Adrian Guerrero · fecha · Usuario Pro" existe solo en
+   Resumen. Al entrar a una pestaña el encabezado colapsa a 44px con el nombre de la pestaña.
+2. **Ninguna pantalla se presenta a sí misma.** Nada de párrafos que describan lo que viene abajo.
+3. **El color es información.** Menta solo en deltas positivos reales. Clay solo en lo negativo o
+   anómalo. Los niveles y totales van en hueso. Nunca dos cifras del mismo color compitiendo en
+   una pantalla. El amarillo sale del sistema — **ver Decisión C**.
+4. **Cero no es estado vacío.** Si no hay dato, se dice con palabras.
+5. **Un solo aviso a la vez.** Los puntos de color en las pestañas y el contador de la barra
+   inferior se retiran; queda el de la campana.
+6. **Escala de grises fija:** `#F4F1EC` principal · `#C4BEB4` labels y subtítulos · `#A39C90`
+   metadatos · `#6B6459` deshabilitado. No se introducen grises intermedios.
+
+---
+
+## 3. Fases
+
+Orden pensado para que las primeras no puedan romper nada y las de riesgo lleguen ya con el
+sistema visual estabilizado.
+
+### [ ] Fase 1 — Solo borrar y recolorear (sin riesgo, sin decisiones)
+
+- Quitar las tarjetas de intro y de "lectura rápida" de las cinco pestañas — **depende de la Decisión B**.
+- Mover las frases explicativas de menta/clay a gris; dejar el color solo en la cifra.
+- Reemplazar los `S/ 0.00` de estado vacío por texto ("Sin movimientos previstos", "Sin compromisos").
+- Retirar los puntos de color de las pestañas y el contador de la barra inferior.
+- Sustituir cualquier gris fuera de la escala del punto 6.
+
+Archivos: `features/dashboard/components/advanced/AdvancedDashboard.tsx` (arreglo de viñetas
+~L3865 y `scopeLabel` en toda la sección de detalles), `components/advanced/AdvancedCards.tsx`,
+`components/simple/styles.ts`, `constants/theme.ts` (retirar `gold` de los usos de dashboard).
+
+Verificación: ninguna cadena de más de 40 caracteres queda con color de dato; ningún
+`COLORS.gold` en `features/dashboard`.
+
+### [ ] Fase 2 — Encabezado y pestañas
+
+- Encabezado colapsado de 44px en las pestañas internas.
+- Pestañas con subrayado en vez de cápsula rellena, sin scroll horizontal cortado ("Salud" hoy
+  queda a medias).
+- El ámbito de la pantalla (año 2026/2025 en Historial) sube a la barra de título.
+
+Archivos: `components/advanced/DashboardTabBar.tsx`, `hooks/useTabPersistence.ts`, `app/index.tsx`.
+
+Verificación: las cinco etiquetas caben en 393px sin recorte; el primer monto de cada pestaña
+aparece antes de los 200px.
+
+### [ ] Fase 3 — La tarjeta de Gemini
+
+- Una sola tarjeta compartida, 128px: una línea de qué hace, selector de tono y botón. Sin borde
+  degradado, sin halo, sin los cuatro puntos de color.
+- El selector Informe / Asesor se queda solo en Patrones. En Salud la IA propone trabajo concreto
+  ("Categorizar 91 movimientos"), no un informe.
+
+Archivos: `components/advanced/ExplanationCard.tsx`, `hooks/useDashboardAiOrchestration.ts` (sin
+cambios de lógica, solo de presentación).
+
+Verificación: la tarjeta aparece una vez por pestaña y ocupa menos de 140px.
+
+### [ ] Fase 4 — Gráficos
+
+- **Flujo:** el puente de cierre necesita línea de cero visible y cada barra parte donde terminó
+  la anterior. Saldo y cierre en hueso; solo el ritmo variable en menta. Fuera los cuatro botones
+  de cápsula: la fila entera es tocable.
+- **Historial:** eliminar la lista mes a mes que duplica el gráfico (quedan mejor y peor mes).
+  Las barras negativas bajan del eje. Meses sin dato = filete gris.
+
+Archivos: `components/advanced/DashboardCharts.tsx`, `lib/advanced-builders.ts` (solo si el
+modelo no expone ya el signo por mes).
+
+Verificación: un mes negativo se dibuja por debajo del eje; ninguna fila de mes duplica un dato
+del gráfico.
+
+### [ ] Fase 5 — Simple / Avanzado — **bloqueada por la Decisión A**
+
+Si A1: mover el control a Ajustes, persistir la elección, aviso único la primera vez.
+Si A2: recortar el render a Resumen. Si A3: plan aparte, no entra en esta tanda.
+
+Archivos: `app/settings.tsx`, `app/index.tsx`, store de UI.
+
+Verificación: un usuario existente en Avanzado sigue en Avanzado después de actualizar.
+
+### [ ] Fase 6 — Listas
+
+- Contactos y Movimientos pasan de tarjetas a líneas de 56px sobre el lienzo.
+- Quitar la etiqueta de categoría duplicada (hoy aparece como subtítulo y como chip en la misma fila).
+- Botón flotante que no tape la última fila.
+
+Verificación: entran 4 filas más por pantalla sin reducir el tamaño de texto; ningún dato aparece
+dos veces en la misma fila.
+
+> Nota de estado al crear este plan: **Movimientos ya pasó a filas de 56px** en la tanda
+> anterior (`ResourceCard variant="row"`). De la fase 6 queda pendiente Contactos, la categoría
+> duplicada y el flotante.
+
+---
+
+## 4. Lo que no se toca
+
+- La lógica de proyección, Monte Carlo, HHI y estabilidad de ingresos. El rediseño no discute los
+  cálculos, solo cómo se presentan.
+- Los textos de explicación que el usuario abre a propósito (hojas de detalle). Ahí el párrafo
+  largo sí corresponde.
+- La hoja "Tipo de movimiento": ya quedó bien, sirve de referencia para el resto.
+- `AdvancedDashboard.tsx` pasa de las 5,000 líneas. Este plan no pide refactorizarlo; pide
+  cambios localizados. Si se parte el archivo, que sea en un cambio aparte y sin tocar
+  presentación al mismo tiempo.
+
+---
+
+## 5. Registro de decisiones
+
+| Fecha | Decisión | Resuelta por |
+|---|---|---|
+| 27 ago 2026 | Botón principal en hueso, no en menta: el menta queda para flujo de caja | Diseño |
+| 27 ago 2026 | Gasto en clay, no en rosa; en listas largas el monto va en hueso | Diseño |
+| 27 ago 2026 | Barra inferior anclada en vez de píldora flotante | Diseño |
+| 27 ago 2026 | Cinta de métricas: label arriba en versalitas, cifra grande debajo | Diseño |
+| — | **Decisión A: Simple / Avanzado** | Pendiente — producto |
+| — | **Decisión B: tarjetas de texto meta** | Pendiente — producto |
+| — | **Decisión C: alcance del amarillo** | Pendiente — producto |
