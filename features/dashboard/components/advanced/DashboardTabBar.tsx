@@ -1,6 +1,6 @@
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
-import { COLORS, FONT_FAMILY, RADIUS, SPACING, SURFACE } from "../../../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../../../constants/theme";
 
 export type AdvancedTab = "Resumen" | "Patrones" | "Flujo" | "Historial" | "Salud";
 
@@ -14,6 +14,16 @@ export const ADVANCED_TABS: { id: AdvancedTab; label: string }[] = [
 
 export type TabIndicator = { tab: AdvancedTab; count?: number; dot?: string };
 
+/**
+ * Pestañas del dashboard avanzado: **subrayado, no cápsula rellena**.
+ *
+ * Cinco cápsulas rellenas competían por atención con las tarjetas que hay justo debajo, que es
+ * donde están las cifras. Un subrayado marca la posición sin pedir turno.
+ *
+ * También deja de haber scroll horizontal: con cápsulas de 14pt de padding las cinco no cabían
+ * en 393px y "Salud" quedaba cortada a medias, que es peor que no verla. Sin relleno caben
+ * repartidas, así que la fila se distribuye y todas se ven enteras.
+ */
 export function DashboardTabBar({
   activeTab,
   onTabChange,
@@ -24,63 +34,91 @@ export function DashboardTabBar({
   indicators?: TabIndicator[];
 }) {
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={tabBarStyles.row} style={tabBarStyles.container}>
+    <View style={tabBarStyles.container}>
       {ADVANCED_TABS.map((tab) => {
+        const isActive = activeTab === tab.id;
         const ind = indicators.find((i) => i.tab === tab.id);
         return (
           <Pressable
             key={tab.id}
             onPress={() => onTabChange(tab.id)}
-            style={[tabBarStyles.chip, activeTab === tab.id && tabBarStyles.chipActive]}
+            style={tabBarStyles.tab}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: isActive }}
           >
-            <Text style={[tabBarStyles.chipText, activeTab === tab.id && tabBarStyles.chipTextActive]}>{tab.label}</Text>
-            {ind?.count != null && ind.count > 0 ? (
-              <View style={tabBarStyles.badge}>
-                <Text style={tabBarStyles.badgeText}>{ind.count > 99 ? "99+" : ind.count}</Text>
-              </View>
-            ) : ind?.dot ? (
-              <View style={[tabBarStyles.dot, { backgroundColor: ind.dot }]} />
-            ) : null}
+            <View style={tabBarStyles.labelRow}>
+              <Text
+                style={[tabBarStyles.label, isActive && tabBarStyles.labelActive]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.85}
+                maxFontSizeMultiplier={1.1}
+              >
+                {tab.label}
+              </Text>
+              {ind?.count != null && ind.count > 0 ? (
+                <View style={tabBarStyles.badge}>
+                  <Text style={tabBarStyles.badgeText}>{ind.count > 99 ? "99+" : ind.count}</Text>
+                </View>
+              ) : ind?.dot ? (
+                <View style={[tabBarStyles.dot, { backgroundColor: ind.dot }]} />
+              ) : null}
+            </View>
+            {/* El subrayado ocupa sitio SIEMPRE, aunque sea transparente: si apareciera solo en
+                la activa, las etiquetas darían un salto de 2px al cambiar de pestaña. */}
+            <View style={[tabBarStyles.underline, isActive && tabBarStyles.underlineActive]} />
           </Pressable>
         );
       })}
-    </ScrollView>
+    </View>
   );
 }
 
 const tabBarStyles = StyleSheet.create({
-  container: { marginBottom: 4 },
-  row: { paddingHorizontal: SPACING.md, gap: 8, paddingVertical: 6 },
-  chip: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: RADIUS.sm,
-    backgroundColor: SURFACE.separator,
-    borderWidth: 1,
-    borderColor: SURFACE.cardBorder,
-    position: "relative",
+  container: {
+    flexDirection: "row",
+    paddingHorizontal: SPACING.xl,
+    marginBottom: SPACING.sm,
   },
-  chipActive: {
-    backgroundColor: COLORS.successMuted,
-    borderColor: COLORS.primary + "45",
+  tab: {
+    flex: 1,
+    alignItems: "center",
+    gap: 6,
+    paddingTop: SPACING.sm,
   },
-  chipText: {
+  labelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  label: {
     fontFamily: FONT_FAMILY.bodyMedium,
-    fontSize: 13,
+    fontSize: FONT_SIZE.sm,
     color: COLORS.storm,
   },
-  chipTextActive: {
-    color: COLORS.primary,
+  labelActive: {
+    color: COLORS.ink,
     fontFamily: FONT_FAMILY.bodySemibold,
   },
+  underline: {
+    height: 2,
+    alignSelf: "stretch",
+    marginHorizontal: SPACING.sm,
+    borderRadius: RADIUS.full,
+    backgroundColor: "transparent",
+  },
+  underlineActive: {
+    backgroundColor: COLORS.ink,
+  },
   badge: {
-    position: "absolute",
-    top: -4,
-    right: -6,
     minWidth: 16,
     height: 16,
-    borderRadius: 8,
-    backgroundColor: COLORS.gold,
+    borderRadius: RADIUS.full,
+    // Sin amarillo: en el dashboard sale del sistema (Decisión C). Superficie neutra con la
+    // cifra en tinta — el contador ya destaca por existir, no necesita color encima.
+    backgroundColor: SURFACE.subtle,
+    borderWidth: 1,
+    borderColor: SURFACE.cardBorder,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 3,
@@ -88,14 +126,11 @@ const tabBarStyles = StyleSheet.create({
   badgeText: {
     fontFamily: FONT_FAMILY.bodySemibold,
     fontSize: 9,
-    color: COLORS.textInverse,
+    color: COLORS.fog,
   },
   dot: {
-    position: "absolute",
-    top: -2,
-    right: -2,
-    width: 7,
-    height: 7,
-    borderRadius: 4,
+    width: 6,
+    height: 6,
+    borderRadius: RADIUS.full,
   },
 });
