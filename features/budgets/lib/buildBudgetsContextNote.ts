@@ -5,7 +5,7 @@ type Args = {
 
 export function buildBudgetsContextNote({ visibleCount, totalCount }: Args): string {
   if (visibleCount === totalCount) {
-    return "Presupuestos calculados con movimientos del período configurado en cada presupuesto.";
+    return "Toca un presupuesto para editarlo · desliza para eliminarlo.";
   }
   return `Mostrando ${visibleCount} de ${totalCount} presupuestos activos.`;
 }

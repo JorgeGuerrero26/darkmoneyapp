@@ -497,8 +497,8 @@ function BudgetsScreen() {
               action: { label: "Crear primer presupuesto", onPress: () => setFormVisible(true) },
             } : {
               variant: "no-results",
-              title: "Sin resultados",
-              description: "Ningún presupuesto coincide con tu búsqueda o filtros.",
+              // Nombrar los que SI tienes: "sin resultados" hacia pensar que no habia ninguno.
+              description: `Tus ${correctedBudgets.length} presupuesto${correctedBudgets.length === 1 ? "" : "s"} están fuera de este filtro.`,
               action: { label: "Limpiar filtros", onPress: clearFilters },
             }
           }

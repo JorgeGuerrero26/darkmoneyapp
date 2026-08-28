@@ -1,5 +1,5 @@
 import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
-import { Inbox, Search, type LucideIcon } from "lucide-react-native";
+import { Inbox, type LucideIcon } from "lucide-react-native";
 import { Button } from "./Button";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 
@@ -28,15 +28,26 @@ const DEFAULTS: Record<Variant, { title: string; description: string }> = {
 
 export function EmptyState({ variant = "empty", icon, title, description, hint, style, action }: Props) {
   const defaults = DEFAULTS[variant];
-  const DefaultIcon = variant === "no-results" ? Search : Inbox;
-  const Icon = icon ?? DefaultIcon;
+  const Icon = icon ?? Inbox;
+
+  /**
+   * Sin resultados NO es lo mismo que sin datos.
+   *
+   * Cuando no hay nada creado, esto es lo único en pantalla y el recuadro punteado con icono
+   * invita a crear el primero. Cuando el filtro esconde lo que sí existe, la barra de contexto
+   * ya dice "mostrando 0 de 3": el recuadro de 300 px repite el mismo hecho en grande y empuja
+   * el botón de limpiar fuera de la vista. Ahí basta la frase y el botón.
+   */
+  const isNoResults = variant === "no-results";
 
   return (
-    <View style={[styles.container, style]}>
-      <View style={styles.iconWrap}>
-        <Icon size={26} color={COLORS.storm} strokeWidth={1.5} />
-      </View>
-      <Text style={styles.title}>{title ?? defaults.title}</Text>
+    <View style={[isNoResults ? styles.plain : styles.container, style]}>
+      {isNoResults ? null : (
+        <View style={styles.iconWrap}>
+          <Icon size={26} color={COLORS.storm} strokeWidth={1.5} />
+        </View>
+      )}
+      {isNoResults ? null : <Text style={styles.title}>{title ?? defaults.title}</Text>}
       <Text style={styles.description}>{description ?? defaults.description}</Text>
       {hint ? <Text style={styles.hint}>{hint}</Text> : null}
       {action ? (
@@ -53,6 +64,13 @@ export function EmptyState({ variant = "empty", icon, title, description, hint, 
 }
 
 const styles = StyleSheet.create({
+  plain: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: SPACING.xxl,
+    paddingHorizontal: SPACING.xl,
+    gap: SPACING.sm,
+  },
   container: {
     flex: 1,
     alignItems: "center",

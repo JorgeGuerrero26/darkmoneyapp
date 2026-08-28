@@ -31,7 +31,8 @@ export type ResourceSection<T, K extends string = string> = {
 type EmptyConfig = {
   icon?: LucideIcon;
   variant?: "empty" | "no-results";
-  title: string;
+  /** Opcional: la variante `no-results` no pinta título, solo la frase. */
+  title?: string;
   description: string;
   action?: { label: string; onPress: () => void };
 };
