@@ -1405,6 +1405,21 @@ export const dashboardSimpleStyles = StyleSheet.create({
     color: "rgba(244,241,236,0.80)",
     lineHeight: 22,
   },
+  // Cabecera de la tarjeta de IA en una linea. Reemplaza a la insignia con cuatro puntos, el
+  // titulo, los dos parrafos y el orbe con halo: ~640px que decian lo mismo tres veces.
+  aiSummaryCompactHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+    marginBottom: SPACING.sm,
+  },
+  aiSummaryCompactTitle: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.sm,
+    // Violeta: es el tono reservado a la IA. Lo que dice la IA es una opinion; lo que dice un
+    // saldo es un hecho, y por eso no comparten color.
+    color: COLORS.pro,
+  },
   aiSummarySelectorLabel: {
     marginTop: SPACING.xs,
     fontFamily: FONT_FAMILY.bodySemibold,

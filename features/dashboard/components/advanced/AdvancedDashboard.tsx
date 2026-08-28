@@ -105,7 +105,6 @@ import { DashboardSectionBoundary } from "../shared/DashboardSectionBoundary";
 import { AiResponseSkeleton } from "./AiResponseSkeleton";
 import {
   DASHBOARD_AI_TONE_OPTIONS,
-  GEMINI_BRAND,
   buildDashboardAiTextParts,
   ensureDashboardAiComplexTerms,
   type DashboardAiComplexTerm,
@@ -3216,82 +3215,13 @@ export function AdvancedDashboard({
       <View style={{ height: SPACING.sm }} />
       <Card>
         <View style={subStyles.aiSummaryShellWrap}>
-          <LinearGradient
-            colors={[GEMINI_BRAND.blue, GEMINI_BRAND.coral, GEMINI_BRAND.gold, GEMINI_BRAND.teal]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={subStyles.aiSummaryGradientBorder}
-            pointerEvents="none"
-          />
         <View style={subStyles.aiSummaryShell}>
-          <Animated.View
-            pointerEvents="none"
-            style={[
-              subStyles.aiSummaryAmbientGlow,
-              subStyles.aiSummaryAmbientGlowBlue,
-              { transform: [{ scale: dashboardAiHaloScale }] },
-            ]}
-          />
-          <Animated.View
-            pointerEvents="none"
-            style={[
-              subStyles.aiSummaryAmbientGlow,
-              subStyles.aiSummaryAmbientGlowCoral,
-              { transform: [{ scale: dashboardAiHaloScale }, { translateY: dashboardAiOrbShift }] },
-            ]}
-          />
-          <Animated.View
-            pointerEvents="none"
-            style={[
-              subStyles.aiSummaryAmbientGlow,
-              subStyles.aiSummaryAmbientGlowGold,
-              { transform: [{ scale: dashboardAiHaloScale }, { translateY: Animated.multiply(dashboardAiOrbShift, -0.6) }] },
-            ]}
-          />
-          <Animated.View
-            pointerEvents="none"
-            style={[
-              subStyles.aiSummaryAmbientGlow,
-              subStyles.aiSummaryAmbientGlowTeal,
-              { transform: [{ scale: dashboardAiHaloScale }, { translateY: dashboardAiOrbShift }] },
-            ]}
-          />
-          <Animated.View style={[subStyles.aiSummaryBadgeRow, { transform: [{ translateY: dashboardAiBadgeTranslateY }] }]}>
-            <View style={subStyles.aiSummaryGeminiBadge}>
-              <Sparkles size={12} color={GEMINI_BRAND.teal} />
-              <View style={subStyles.aiSummaryGeminiDotsRow}>
-                <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.blue }]} />
-                <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.coral }]} />
-                <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.gold }]} />
-                <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.teal }]} />
-              </View>
-              <Text style={subStyles.aiSummaryGeminiBadgeText}>Impulsado por Gemini AI</Text>
-            </View>
-            <Text style={subStyles.aiSummaryGeminiKicker}>Lee las señales de tu dashboard y las convierte en una explicación accionable.</Text>
-          </Animated.View>
-          <View style={subStyles.aiSummaryHeader}>
-            <View style={subStyles.aiSummaryHeaderText}>
-              <Text style={subStyles.aiSummaryTitle}>Tu situación explicada</Text>
-              <Text style={subStyles.aiSummaryBody}>
-                Una capa inteligente de Gemini toma el estado actual de tu dashboard y lo convierte en una lectura simple, accionable y más fácil de entender.
-              </Text>
-            </View>
-            <View style={subStyles.aiSummaryOrbWrap}>
-              <Animated.View
-                pointerEvents="none"
-                style={[
-                  subStyles.aiSummaryPulseHalo,
-                  { opacity: dashboardAiHaloOpacity, transform: [{ scale: dashboardAiHaloScale }] },
-                ]}
-              />
-              <Animated.View style={{ transform: [{ scale: dashboardAiCoreScale }] }}>
-                <View style={subStyles.aiSummaryIconWrap}>
-                  <View style={subStyles.aiSummaryIconRing}>
-                    <Sparkles size={20} color={GEMINI_BRAND.teal} />
-                  </View>
-                </View>
-              </Animated.View>
-            </View>
+          {/* Una linea de que hace, y ya. Antes lo explicaba tres veces —insignia, titulo y dos
+              parrafos— con borde degradado, cuatro orbes animados y un halo. Es una funcion de
+              la app, no una marca aparte. */}
+          <View style={subStyles.aiSummaryCompactHeader}>
+            <Sparkles size={14} color={COLORS.pro} />
+            <Text style={subStyles.aiSummaryCompactTitle}>Explica tu situación con IA</Text>
           </View>
           <Text style={subStyles.aiSummarySelectorLabel}>Elige cómo quieres ver la explicación</Text>
           <View style={subStyles.aiSummaryToneRow}>
@@ -3328,7 +3258,7 @@ export function AdvancedDashboard({
           >
             <View style={subStyles.aiSummaryButtonAccent} />
             <View style={subStyles.aiSummaryButtonInner}>
-              <Sparkles size={16} color={dashboardAiSummaryMutation.isPending || dashboardAiLimitReached ? "rgba(244,241,236,0.4)" : GEMINI_BRAND.teal} />
+              <Sparkles size={16} color={dashboardAiSummaryMutation.isPending || dashboardAiLimitReached ? "rgba(244,241,236,0.4)" : COLORS.pro} />
               <Text style={subStyles.aiSummaryButtonLabel}>
                 {dashboardAiSummaryMutation.isPending
                   ? "Preparando explicacion..."
@@ -3343,21 +3273,8 @@ export function AdvancedDashboard({
           {dashboardAiSummaryMutation.isPending && !dashboardAiReply ? <AiResponseSkeleton /> : null}
           {dashboardAiReply ? (
             <View style={subStyles.aiSummaryResponseCard}>
-              <LinearGradient
-                pointerEvents="none"
-                colors={[GEMINI_BRAND.blue, GEMINI_BRAND.coral, GEMINI_BRAND.gold, GEMINI_BRAND.teal]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 0, y: 1 }}
-                style={subStyles.aiSummaryResponseGradientBar}
-              />
               <View style={subStyles.aiSummaryResponseAiTag}>
-                <Sparkles size={11} color={GEMINI_BRAND.teal} />
-                <View style={subStyles.aiSummaryGeminiDotsRow}>
-                  <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.blue, width: 5, height: 5 }]} />
-                  <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.coral, width: 5, height: 5 }]} />
-                  <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.gold, width: 5, height: 5 }]} />
-                  <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.teal, width: 5, height: 5 }]} />
-                </View>
+                <Sparkles size={11} color={COLORS.pro} />
                 <Text style={subStyles.aiSummaryResponseLabel}>
                   {dashboardAiTone === "managerial" ? "Gemini · Modo gerencial" : "Gemini · Modo asesor"}
                 </Text>
@@ -3423,7 +3340,7 @@ export function AdvancedDashboard({
         {activeDashboardAiTerm ? (
           <View style={subStyles.aiSummaryTermSheet}>
             <View style={subStyles.aiSummaryTermSheetBadge}>
-              <Sparkles size={12} color={GEMINI_BRAND.teal} />
+              <Sparkles size={12} color={COLORS.pro} />
               <Text style={subStyles.aiSummaryTermSheetBadgeText}>Explicación simple</Text>
             </View>
             <Text style={subStyles.aiSummaryTermSheetTitle}>{activeDashboardAiTerm.term}</Text>
@@ -3926,82 +3843,13 @@ export function AdvancedDashboard({
       <View style={{ height: SPACING.sm }} />
       <Card>
         <View style={subStyles.aiSummaryShellWrap}>
-          <LinearGradient
-            colors={[GEMINI_BRAND.blue, GEMINI_BRAND.coral, GEMINI_BRAND.gold, GEMINI_BRAND.teal]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={subStyles.aiSummaryGradientBorder}
-            pointerEvents="none"
-          />
           <View style={subStyles.aiSummaryShell}>
-            <Animated.View
-              pointerEvents="none"
-              style={[
-                subStyles.aiSummaryAmbientGlow,
-                subStyles.aiSummaryAmbientGlowBlue,
-                { transform: [{ scale: dashboardAiHaloScale }] },
-              ]}
-            />
-            <Animated.View
-              pointerEvents="none"
-              style={[
-                subStyles.aiSummaryAmbientGlow,
-                subStyles.aiSummaryAmbientGlowCoral,
-                { transform: [{ scale: dashboardAiHaloScale }, { translateY: dashboardAiOrbShift }] },
-              ]}
-            />
-            <Animated.View
-              pointerEvents="none"
-              style={[
-                subStyles.aiSummaryAmbientGlow,
-                subStyles.aiSummaryAmbientGlowGold,
-                { transform: [{ scale: dashboardAiHaloScale }, { translateY: Animated.multiply(dashboardAiOrbShift, -0.6) }] },
-              ]}
-            />
-            <Animated.View
-              pointerEvents="none"
-              style={[
-                subStyles.aiSummaryAmbientGlow,
-                subStyles.aiSummaryAmbientGlowTeal,
-                { transform: [{ scale: dashboardAiHaloScale }, { translateY: dashboardAiOrbShift }] },
-              ]}
-            />
-            <Animated.View style={[subStyles.aiSummaryBadgeRow, { transform: [{ translateY: dashboardAiBadgeTranslateY }] }]}>
-              <View style={subStyles.aiSummaryGeminiBadge}>
-                <Sparkles size={12} color={GEMINI_BRAND.teal} />
-                <View style={subStyles.aiSummaryGeminiDotsRow}>
-                  <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.blue }]} />
-                  <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.coral }]} />
-                  <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.gold }]} />
-                  <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.teal }]} />
-                </View>
-                <Text style={subStyles.aiSummaryGeminiBadgeText}>Impulsado por Gemini AI</Text>
-              </View>
-              <Text style={subStyles.aiSummaryGeminiKicker}>Interpreta hábitos, subidas y gastos raros para que entiendas cómo se mueve tu dinero.</Text>
-            </Animated.View>
-            <View style={subStyles.aiSummaryHeader}>
-              <View style={subStyles.aiSummaryHeaderText}>
-                <Text style={subStyles.aiSummaryTitle}>Tus patrones explicados</Text>
-                <Text style={subStyles.aiSummaryBody}>
-                  Gemini toma los hábitos repetidos, los cambios recientes y las anomalías del dashboard para explicarte qué patrones ya se están formando en tus finanzas.
-                </Text>
-              </View>
-              <View style={subStyles.aiSummaryOrbWrap}>
-                <Animated.View
-                  pointerEvents="none"
-                  style={[
-                    subStyles.aiSummaryPulseHalo,
-                    { opacity: dashboardAiHaloOpacity, transform: [{ scale: dashboardAiHaloScale }] },
-                  ]}
-                />
-                <Animated.View style={{ transform: [{ scale: dashboardAiCoreScale }] }}>
-                  <View style={subStyles.aiSummaryIconWrap}>
-                    <View style={subStyles.aiSummaryIconRing}>
-                      <Sparkles size={20} color={GEMINI_BRAND.teal} />
-                    </View>
-                  </View>
-                </Animated.View>
-              </View>
+            {/* Una linea de que hace, y ya. Antes lo explicaba tres veces —insignia, titulo y dos
+                parrafos— con borde degradado, cuatro orbes animados y un halo. Es una funcion de
+                la app, no una marca aparte. */}
+            <View style={subStyles.aiSummaryCompactHeader}>
+              <Sparkles size={14} color={COLORS.pro} />
+              <Text style={subStyles.aiSummaryCompactTitle}>Explica tu situación con IA</Text>
             </View>
             <Text style={subStyles.aiSummarySelectorLabel}>Elige cómo quieres ver la explicación</Text>
             <View style={subStyles.aiSummaryToneRow}>
@@ -4038,7 +3886,7 @@ export function AdvancedDashboard({
             >
               <View style={subStyles.aiSummaryButtonAccent} />
               <View style={subStyles.aiSummaryButtonInner}>
-                <Sparkles size={16} color={dashboardAiPatternsMutation.isPending || dashboardAiPatternsLimitReached ? "rgba(244,241,236,0.4)" : GEMINI_BRAND.teal} />
+                <Sparkles size={16} color={dashboardAiPatternsMutation.isPending || dashboardAiPatternsLimitReached ? "rgba(244,241,236,0.4)" : COLORS.pro} />
                 <Text style={subStyles.aiSummaryButtonLabel}>
                   {dashboardAiPatternsMutation.isPending
                     ? "Preparando explicacion..."
@@ -4053,21 +3901,8 @@ export function AdvancedDashboard({
             {dashboardAiPatternsMutation.isPending && !dashboardAiPatternsReply ? <AiResponseSkeleton /> : null}
             {dashboardAiPatternsReply ? (
               <View style={subStyles.aiSummaryResponseCard}>
-                <LinearGradient
-                  pointerEvents="none"
-                  colors={[GEMINI_BRAND.blue, GEMINI_BRAND.coral, GEMINI_BRAND.gold, GEMINI_BRAND.teal]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 0, y: 1 }}
-                  style={subStyles.aiSummaryResponseGradientBar}
-                />
                 <View style={subStyles.aiSummaryResponseAiTag}>
-                  <Sparkles size={11} color={GEMINI_BRAND.teal} />
-                  <View style={subStyles.aiSummaryGeminiDotsRow}>
-                    <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.blue, width: 5, height: 5 }]} />
-                    <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.coral, width: 5, height: 5 }]} />
-                    <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.gold, width: 5, height: 5 }]} />
-                    <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.teal, width: 5, height: 5 }]} />
-                  </View>
+                  <Sparkles size={11} color={COLORS.pro} />
                   <Text style={subStyles.aiSummaryResponseLabel}>
                     {dashboardAiTone === "managerial" ? "Gemini · Patrones gerenciales" : "Gemini · Patrones en modo asesor"}
                   </Text>
@@ -4273,82 +4108,13 @@ export function AdvancedDashboard({
       <View style={{ height: SPACING.sm }} />
       <Card>
         <View style={subStyles.aiSummaryShellWrap}>
-          <LinearGradient
-            colors={[GEMINI_BRAND.blue, GEMINI_BRAND.coral, GEMINI_BRAND.gold, GEMINI_BRAND.teal]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={subStyles.aiSummaryGradientBorder}
-            pointerEvents="none"
-          />
           <View style={subStyles.aiSummaryShell}>
-            <Animated.View
-              pointerEvents="none"
-              style={[
-                subStyles.aiSummaryAmbientGlow,
-                subStyles.aiSummaryAmbientGlowBlue,
-                { transform: [{ scale: dashboardAiHaloScale }] },
-              ]}
-            />
-            <Animated.View
-              pointerEvents="none"
-              style={[
-                subStyles.aiSummaryAmbientGlow,
-                subStyles.aiSummaryAmbientGlowCoral,
-                { transform: [{ scale: dashboardAiHaloScale }, { translateY: dashboardAiOrbShift }] },
-              ]}
-            />
-            <Animated.View
-              pointerEvents="none"
-              style={[
-                subStyles.aiSummaryAmbientGlow,
-                subStyles.aiSummaryAmbientGlowGold,
-                { transform: [{ scale: dashboardAiHaloScale }, { translateY: Animated.multiply(dashboardAiOrbShift, -0.6) }] },
-              ]}
-            />
-            <Animated.View
-              pointerEvents="none"
-              style={[
-                subStyles.aiSummaryAmbientGlow,
-                subStyles.aiSummaryAmbientGlowTeal,
-                { transform: [{ scale: dashboardAiHaloScale }, { translateY: dashboardAiOrbShift }] },
-              ]}
-            />
-            <Animated.View style={[subStyles.aiSummaryBadgeRow, { transform: [{ translateY: dashboardAiBadgeTranslateY }] }]}>
-              <View style={subStyles.aiSummaryGeminiBadge}>
-                <Sparkles size={12} color={GEMINI_BRAND.teal} />
-                <View style={subStyles.aiSummaryGeminiDotsRow}>
-                  <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.blue }]} />
-                  <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.coral }]} />
-                  <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.gold }]} />
-                  <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.teal }]} />
-                </View>
-                <Text style={subStyles.aiSummaryGeminiBadgeText}>Impulsado por Gemini AI</Text>
-              </View>
-              <Text style={subStyles.aiSummaryGeminiKicker}>Interpreta tu caja, compromisos y proyección para que entiendas cómo viene el flujo.</Text>
-            </Animated.View>
-            <View style={subStyles.aiSummaryHeader}>
-              <View style={subStyles.aiSummaryHeaderText}>
-                <Text style={subStyles.aiSummaryTitle}>Tu flujo explicado</Text>
-                <Text style={subStyles.aiSummaryBody}>
-                  Gemini toma la proyección, la agenda comprometida y la salud de caja para explicarte con claridad qué presión tiene tu flujo y qué deberías vigilar primero.
-                </Text>
-              </View>
-              <View style={subStyles.aiSummaryOrbWrap}>
-                <Animated.View
-                  pointerEvents="none"
-                  style={[
-                    subStyles.aiSummaryPulseHalo,
-                    { opacity: dashboardAiHaloOpacity, transform: [{ scale: dashboardAiHaloScale }] },
-                  ]}
-                />
-                <Animated.View style={{ transform: [{ scale: dashboardAiCoreScale }] }}>
-                  <View style={subStyles.aiSummaryIconWrap}>
-                    <View style={subStyles.aiSummaryIconRing}>
-                      <Sparkles size={20} color={GEMINI_BRAND.teal} />
-                    </View>
-                  </View>
-                </Animated.View>
-              </View>
+            {/* Una linea de que hace, y ya. Antes lo explicaba tres veces —insignia, titulo y dos
+                parrafos— con borde degradado, cuatro orbes animados y un halo. Es una funcion de
+                la app, no una marca aparte. */}
+            <View style={subStyles.aiSummaryCompactHeader}>
+              <Sparkles size={14} color={COLORS.pro} />
+              <Text style={subStyles.aiSummaryCompactTitle}>Explica tu situación con IA</Text>
             </View>
             <Text style={subStyles.aiSummarySelectorLabel}>Elige cómo quieres ver la explicación</Text>
             <View style={subStyles.aiSummaryToneRow}>
@@ -4385,7 +4151,7 @@ export function AdvancedDashboard({
             >
               <View style={subStyles.aiSummaryButtonAccent} />
               <View style={subStyles.aiSummaryButtonInner}>
-                <Sparkles size={16} color={dashboardAiFlowMutation.isPending || dashboardAiFlowLimitReached ? "rgba(244,241,236,0.4)" : GEMINI_BRAND.teal} />
+                <Sparkles size={16} color={dashboardAiFlowMutation.isPending || dashboardAiFlowLimitReached ? "rgba(244,241,236,0.4)" : COLORS.pro} />
                 <Text style={subStyles.aiSummaryButtonLabel}>
                   {dashboardAiFlowMutation.isPending
                     ? "Preparando explicacion..."
@@ -4400,21 +4166,8 @@ export function AdvancedDashboard({
             {dashboardAiFlowMutation.isPending && !dashboardAiFlowReply ? <AiResponseSkeleton /> : null}
             {dashboardAiFlowReply ? (
               <View style={subStyles.aiSummaryResponseCard}>
-                <LinearGradient
-                  pointerEvents="none"
-                  colors={[GEMINI_BRAND.blue, GEMINI_BRAND.coral, GEMINI_BRAND.gold, GEMINI_BRAND.teal]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 0, y: 1 }}
-                  style={subStyles.aiSummaryResponseGradientBar}
-                />
                 <View style={subStyles.aiSummaryResponseAiTag}>
-                  <Sparkles size={11} color={GEMINI_BRAND.teal} />
-                  <View style={subStyles.aiSummaryGeminiDotsRow}>
-                    <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.blue, width: 5, height: 5 }]} />
-                    <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.coral, width: 5, height: 5 }]} />
-                    <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.gold, width: 5, height: 5 }]} />
-                    <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.teal, width: 5, height: 5 }]} />
-                  </View>
+                  <Sparkles size={11} color={COLORS.pro} />
                   <Text style={subStyles.aiSummaryResponseLabel}>
                     {dashboardAiTone === "managerial" ? "Gemini · Flujo gerencial" : "Gemini · Flujo en modo asesor"}
                   </Text>
@@ -4516,82 +4269,13 @@ export function AdvancedDashboard({
       <View style={{ height: SPACING.sm }} />
       <Card>
         <View style={subStyles.aiSummaryShellWrap}>
-          <LinearGradient
-            colors={[GEMINI_BRAND.blue, GEMINI_BRAND.coral, GEMINI_BRAND.gold, GEMINI_BRAND.teal]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={subStyles.aiSummaryGradientBorder}
-            pointerEvents="none"
-          />
           <View style={subStyles.aiSummaryShell}>
-            <Animated.View
-              pointerEvents="none"
-              style={[
-                subStyles.aiSummaryAmbientGlow,
-                subStyles.aiSummaryAmbientGlowBlue,
-                { transform: [{ scale: dashboardAiHaloScale }] },
-              ]}
-            />
-            <Animated.View
-              pointerEvents="none"
-              style={[
-                subStyles.aiSummaryAmbientGlow,
-                subStyles.aiSummaryAmbientGlowCoral,
-                { transform: [{ scale: dashboardAiHaloScale }, { translateY: dashboardAiOrbShift }] },
-              ]}
-            />
-            <Animated.View
-              pointerEvents="none"
-              style={[
-                subStyles.aiSummaryAmbientGlow,
-                subStyles.aiSummaryAmbientGlowGold,
-                { transform: [{ scale: dashboardAiHaloScale }, { translateY: Animated.multiply(dashboardAiOrbShift, -0.6) }] },
-              ]}
-            />
-            <Animated.View
-              pointerEvents="none"
-              style={[
-                subStyles.aiSummaryAmbientGlow,
-                subStyles.aiSummaryAmbientGlowTeal,
-                { transform: [{ scale: dashboardAiHaloScale }, { translateY: dashboardAiOrbShift }] },
-              ]}
-            />
-            <Animated.View style={[subStyles.aiSummaryBadgeRow, { transform: [{ translateY: dashboardAiBadgeTranslateY }] }]}>
-              <View style={subStyles.aiSummaryGeminiBadge}>
-                <Sparkles size={12} color={GEMINI_BRAND.teal} />
-                <View style={subStyles.aiSummaryGeminiDotsRow}>
-                  <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.blue }]} />
-                  <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.coral }]} />
-                  <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.gold }]} />
-                  <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.teal }]} />
-                </View>
-                <Text style={subStyles.aiSummaryGeminiBadgeText}>Impulsado por Gemini AI</Text>
-              </View>
-              <Text style={subStyles.aiSummaryGeminiKicker}>Interpreta tu evolución en el tiempo para explicarte qué cambió, qué se repite y qué merece vigilarse.</Text>
-            </Animated.View>
-            <View style={subStyles.aiSummaryHeader}>
-              <View style={subStyles.aiSummaryHeaderText}>
-                <Text style={subStyles.aiSummaryTitle}>Tu historial explicado</Text>
-                <Text style={subStyles.aiSummaryBody}>
-                  Gemini toma el año seleccionado, los cambios detectados y las métricas históricas para explicarte cómo viene evolucionando tu dinero y qué lectura merece más atención.
-                </Text>
-              </View>
-              <View style={subStyles.aiSummaryOrbWrap}>
-                <Animated.View
-                  pointerEvents="none"
-                  style={[
-                    subStyles.aiSummaryPulseHalo,
-                    { opacity: dashboardAiHaloOpacity, transform: [{ scale: dashboardAiHaloScale }] },
-                  ]}
-                />
-                <Animated.View style={{ transform: [{ scale: dashboardAiCoreScale }] }}>
-                  <View style={subStyles.aiSummaryIconWrap}>
-                    <View style={subStyles.aiSummaryIconRing}>
-                      <Sparkles size={20} color={GEMINI_BRAND.teal} />
-                    </View>
-                  </View>
-                </Animated.View>
-              </View>
+            {/* Una linea de que hace, y ya. Antes lo explicaba tres veces —insignia, titulo y dos
+                parrafos— con borde degradado, cuatro orbes animados y un halo. Es una funcion de
+                la app, no una marca aparte. */}
+            <View style={subStyles.aiSummaryCompactHeader}>
+              <Sparkles size={14} color={COLORS.pro} />
+              <Text style={subStyles.aiSummaryCompactTitle}>Explica tu situación con IA</Text>
             </View>
             <Text style={subStyles.aiSummarySelectorLabel}>Elige cómo quieres ver la explicación</Text>
             <View style={subStyles.aiSummaryToneRow}>
@@ -4628,7 +4312,7 @@ export function AdvancedDashboard({
             >
               <View style={subStyles.aiSummaryButtonAccent} />
               <View style={subStyles.aiSummaryButtonInner}>
-                <Sparkles size={16} color={dashboardAiHistoryMutation.isPending || dashboardAiHistoryLimitReached ? "rgba(244,241,236,0.4)" : GEMINI_BRAND.teal} />
+                <Sparkles size={16} color={dashboardAiHistoryMutation.isPending || dashboardAiHistoryLimitReached ? "rgba(244,241,236,0.4)" : COLORS.pro} />
                 <Text style={subStyles.aiSummaryButtonLabel}>
                   {dashboardAiHistoryMutation.isPending
                     ? "Preparando explicacion..."
@@ -4643,21 +4327,8 @@ export function AdvancedDashboard({
             {dashboardAiHistoryMutation.isPending && !dashboardAiHistoryReply ? <AiResponseSkeleton /> : null}
             {dashboardAiHistoryReply ? (
               <View style={subStyles.aiSummaryResponseCard}>
-                <LinearGradient
-                  pointerEvents="none"
-                  colors={[GEMINI_BRAND.blue, GEMINI_BRAND.coral, GEMINI_BRAND.gold, GEMINI_BRAND.teal]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 0, y: 1 }}
-                  style={subStyles.aiSummaryResponseGradientBar}
-                />
                 <View style={subStyles.aiSummaryResponseAiTag}>
-                  <Sparkles size={11} color={GEMINI_BRAND.teal} />
-                  <View style={subStyles.aiSummaryGeminiDotsRow}>
-                    <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.blue, width: 5, height: 5 }]} />
-                    <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.coral, width: 5, height: 5 }]} />
-                    <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.gold, width: 5, height: 5 }]} />
-                    <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.teal, width: 5, height: 5 }]} />
-                  </View>
+                  <Sparkles size={11} color={COLORS.pro} />
                   <Text style={subStyles.aiSummaryResponseLabel}>
                     {dashboardAiTone === "managerial" ? "Gemini · Historial gerencial" : "Gemini · Historial en modo asesor"}
                   </Text>
@@ -5020,82 +4691,13 @@ export function AdvancedDashboard({
       <View style={{ height: SPACING.sm }} />
       <Card>
         <View style={subStyles.aiSummaryShellWrap}>
-          <LinearGradient
-            colors={[GEMINI_BRAND.blue, GEMINI_BRAND.coral, GEMINI_BRAND.gold, GEMINI_BRAND.teal]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={subStyles.aiSummaryGradientBorder}
-            pointerEvents="none"
-          />
           <View style={subStyles.aiSummaryShell}>
-            <Animated.View
-              pointerEvents="none"
-              style={[
-                subStyles.aiSummaryAmbientGlow,
-                subStyles.aiSummaryAmbientGlowBlue,
-                { transform: [{ scale: dashboardAiHaloScale }] },
-              ]}
-            />
-            <Animated.View
-              pointerEvents="none"
-              style={[
-                subStyles.aiSummaryAmbientGlow,
-                subStyles.aiSummaryAmbientGlowCoral,
-                { transform: [{ scale: dashboardAiHaloScale }, { translateY: dashboardAiOrbShift }] },
-              ]}
-            />
-            <Animated.View
-              pointerEvents="none"
-              style={[
-                subStyles.aiSummaryAmbientGlow,
-                subStyles.aiSummaryAmbientGlowGold,
-                { transform: [{ scale: dashboardAiHaloScale }, { translateY: Animated.multiply(dashboardAiOrbShift, -0.6) }] },
-              ]}
-            />
-            <Animated.View
-              pointerEvents="none"
-              style={[
-                subStyles.aiSummaryAmbientGlow,
-                subStyles.aiSummaryAmbientGlowTeal,
-                { transform: [{ scale: dashboardAiHaloScale }, { translateY: dashboardAiOrbShift }] },
-              ]}
-            />
-            <Animated.View style={[subStyles.aiSummaryBadgeRow, { transform: [{ translateY: dashboardAiBadgeTranslateY }] }]}>
-              <View style={subStyles.aiSummaryGeminiBadge}>
-                <Sparkles size={12} color={GEMINI_BRAND.teal} />
-                <View style={subStyles.aiSummaryGeminiDotsRow}>
-                  <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.blue }]} />
-                  <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.coral }]} />
-                  <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.gold }]} />
-                  <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.teal }]} />
-                </View>
-                <Text style={subStyles.aiSummaryGeminiBadgeText}>Impulsado por Gemini AI</Text>
-              </View>
-              <Text style={subStyles.aiSummaryGeminiKicker}>Interpreta tu limpieza operativa, la calidad del dato y los puntos que hoy bajan la precisión del sistema.</Text>
-            </Animated.View>
-            <View style={subStyles.aiSummaryHeader}>
-              <View style={subStyles.aiSummaryHeaderText}>
-                <Text style={subStyles.aiSummaryTitle}>Tu salud financiera explicada</Text>
-                <Text style={subStyles.aiSummaryBody}>
-                  Gemini toma los pendientes, las sugerencias y la calidad actual del dashboard para explicarte qué está frenando la precisión y qué conviene ordenar primero.
-                </Text>
-              </View>
-              <View style={subStyles.aiSummaryOrbWrap}>
-                <Animated.View
-                  pointerEvents="none"
-                  style={[
-                    subStyles.aiSummaryPulseHalo,
-                    { opacity: dashboardAiHaloOpacity, transform: [{ scale: dashboardAiHaloScale }] },
-                  ]}
-                />
-                <Animated.View style={{ transform: [{ scale: dashboardAiCoreScale }] }}>
-                  <View style={subStyles.aiSummaryIconWrap}>
-                    <View style={subStyles.aiSummaryIconRing}>
-                      <Sparkles size={20} color={GEMINI_BRAND.teal} />
-                    </View>
-                  </View>
-                </Animated.View>
-              </View>
+            {/* Una linea de que hace, y ya. Antes lo explicaba tres veces —insignia, titulo y dos
+                parrafos— con borde degradado, cuatro orbes animados y un halo. Es una funcion de
+                la app, no una marca aparte. */}
+            <View style={subStyles.aiSummaryCompactHeader}>
+              <Sparkles size={14} color={COLORS.pro} />
+              <Text style={subStyles.aiSummaryCompactTitle}>Explica tu situación con IA</Text>
             </View>
             <Text style={subStyles.aiSummarySelectorLabel}>Elige cómo quieres ver la explicación</Text>
             <View style={subStyles.aiSummaryToneRow}>
@@ -5132,7 +4734,7 @@ export function AdvancedDashboard({
             >
               <View style={subStyles.aiSummaryButtonAccent} />
               <View style={subStyles.aiSummaryButtonInner}>
-                <Sparkles size={16} color={dashboardAiHealthMutation.isPending || dashboardAiHealthLimitReached ? "rgba(244,241,236,0.4)" : GEMINI_BRAND.teal} />
+                <Sparkles size={16} color={dashboardAiHealthMutation.isPending || dashboardAiHealthLimitReached ? "rgba(244,241,236,0.4)" : COLORS.pro} />
                 <Text style={subStyles.aiSummaryButtonLabel}>
                   {dashboardAiHealthMutation.isPending
                     ? "Preparando explicacion..."
@@ -5147,21 +4749,8 @@ export function AdvancedDashboard({
             {dashboardAiHealthMutation.isPending && !dashboardAiHealthReply ? <AiResponseSkeleton /> : null}
             {dashboardAiHealthReply ? (
               <View style={subStyles.aiSummaryResponseCard}>
-                <LinearGradient
-                  pointerEvents="none"
-                  colors={[GEMINI_BRAND.blue, GEMINI_BRAND.coral, GEMINI_BRAND.gold, GEMINI_BRAND.teal]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 0, y: 1 }}
-                  style={subStyles.aiSummaryResponseGradientBar}
-                />
                 <View style={subStyles.aiSummaryResponseAiTag}>
-                  <Sparkles size={11} color={GEMINI_BRAND.teal} />
-                  <View style={subStyles.aiSummaryGeminiDotsRow}>
-                    <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.blue, width: 5, height: 5 }]} />
-                    <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.coral, width: 5, height: 5 }]} />
-                    <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.gold, width: 5, height: 5 }]} />
-                    <View style={[subStyles.aiSummaryGeminiDot, { backgroundColor: GEMINI_BRAND.teal, width: 5, height: 5 }]} />
-                  </View>
+                  <Sparkles size={11} color={COLORS.pro} />
                   <Text style={subStyles.aiSummaryResponseLabel}>
                     {dashboardAiTone === "managerial" ? "Gemini · Salud gerencial" : "Gemini · Salud en modo asesor"}
                   </Text>
