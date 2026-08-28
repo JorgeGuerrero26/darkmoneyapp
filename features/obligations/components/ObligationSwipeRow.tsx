@@ -167,6 +167,7 @@ export function ObligationSwipeRow({
     >
       {({ close, isOpen }) => (
         <ResourceCard
+          variant="row"
           title={obligation.counterparty || obligation.title}
           subtitle={supportLine}
           onPress={() => {
