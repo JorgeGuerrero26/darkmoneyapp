@@ -12,6 +12,7 @@ import {
 } from "../../../components/ui/ResourceCard";
 import { SwipeActionRow } from "../../../components/ui/SwipeActionRow";
 import { AmountDisplay, formatCurrency } from "../../../components/ui/AmountDisplay";
+import { dueDateColor } from "../../../lib/due-tone";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS } from "../../../constants/theme";
 import { parseDisplayDate } from "../../../lib/date";
 import { getObligationStatusLabel, getShareStatusLabel } from "../../../lib/obligation-labels";
@@ -115,7 +116,10 @@ export function ObligationSwipeRow({
               prefix=""
             />
             {obligation.dueDate && !isPaid ? (
-              <Text style={styles.dueDate} numberOfLines={1}>
+              <Text
+                style={[styles.dueDate, { color: dueDateColor(obligation.dueDate) }]}
+                numberOfLines={1}
+              >
                 Vence {format(parseDisplayDate(obligation.dueDate), "d MMM", { locale: es })}
               </Text>
             ) : null}
@@ -265,5 +269,6 @@ const styles = StyleSheet.create({
   },
   progressText: { fontSize: FONT_SIZE.xs, color: COLORS.storm },
   amountBlock: { alignItems: "flex-end", gap: 2 },
-  dueDate: { fontSize: FONT_SIZE.xs, color: COLORS.warning },
+  // El color NO va aqui: depende de la fecha y lo decide lib/due-tone.
+  dueDate: { fontSize: FONT_SIZE.xs },
 });

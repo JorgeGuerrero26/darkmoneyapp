@@ -44,7 +44,8 @@ export function SubscriptionSummaryBar({
           icon: Pause,
           value: String(pausedCount),
           label: "pausadas",
-          color: pausedCount > 0 ? COLORS.gold : COLORS.storm,
+          // Un conteo de pausadas no es una advertencia. Ver lib/due-tone.
+          color: COLORS.storm,
           helpTitle: "Suscripciones pausadas",
           helpDescription: "Suscripciones que siguen registradas pero no se consideran activas para próximos pagos ni para el costo mensual estimado.",
         },

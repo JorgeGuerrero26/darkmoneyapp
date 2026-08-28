@@ -21,7 +21,8 @@ export function ExchangeRatesSummaryBar({ pairCount, currencyCount, usdReference
               icon: DollarSign,
               value: usdReference.rate.toLocaleString("es-PE", { maximumFractionDigits: 3 }),
               label: `${usdReference.baseCurrencyCode}/USD`,
-              color: COLORS.gold,
+              // Una tasa de cambio es un dato neutro, no un aviso: hueso.
+              color: COLORS.ink,
               strong: true,
               helpTitle: "Referencia USD",
               helpDescription: `Cuántos ${usdReference.baseCurrencyCode} equivalen a 1 USD según la tasa sincronizada más reciente. USD es la referencia por defecto para comparaciones.`,

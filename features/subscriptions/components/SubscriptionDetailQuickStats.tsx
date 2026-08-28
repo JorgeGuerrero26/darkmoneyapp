@@ -3,6 +3,7 @@ import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
 import { Card } from "../../../components/ui/Card";
+import { dueDateColor } from "../../../lib/due-tone";
 import { COLORS, FONT_FAMILY, FONT_SIZE, FONT_WEIGHT, RADIUS, SPACING } from "../../../constants/theme";
 import type { SubscriptionSummary } from "../../../types/domain";
 
@@ -29,7 +30,9 @@ export function SubscriptionDetailQuickStats({ subscription }: Props) {
     days < 0 ? `Hace ${Math.abs(days)} día${Math.abs(days) === 1 ? "" : "s"}` :
     days === 0 ? "Hoy" :
     `En ${days} día${days === 1 ? "" : "s"}`;
-  const daysColor = days < 0 ? COLORS.rosewood : days <= 3 ? COLORS.gold : COLORS.text;
+  // El umbral no se decide aqui: sale de lib/due-tone, que es el unico sitio donde vive.
+  // Antes eran 3 dias en esta pantalla y 7 en otras, con el mismo color.
+  const daysColor = dueDateColor(subscription.nextDueDate);
 
   return (
     <Card>

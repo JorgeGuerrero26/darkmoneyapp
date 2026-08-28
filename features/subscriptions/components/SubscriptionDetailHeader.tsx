@@ -18,7 +18,9 @@ const STATUS_LABEL: Record<SubscriptionSummary["status"], string> = {
 
 function statusColor(status: SubscriptionSummary["status"]) {
   if (status === "active") return COLORS.income;
-  if (status === "paused") return COLORS.gold;
+  // Pausado es un estado, no un aviso: gris apagado. En amarillo competia con lo que de
+  // verdad urge, y ademas repetia lo que ya dicen la capsula y el icono.
+  if (status === "paused") return COLORS.textDisabled;
   return COLORS.storm;
 }
 

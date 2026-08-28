@@ -119,23 +119,29 @@ aire para que el botón flotante no tape la última.
 
 ---
 
-## 3. Contradicción con la Decisión C (27 ago) — necesita al dueño
+## 3. El amarillo — RESUELTO el 28 ago 2026
 
-**Ayer se decidió**: el amarillo sale del dashboard avanzado y **se conserva** como token
-semántico de advertencia en el resto de la app (129 usos: vencimientos, topes de presupuesto,
-pagos detectados, plan por vencer).
+La Revisión 03 volvió sobre el amarillo con un argumento más concreto que el de la víspera: en
+estas pantallas marcaba **vencimiento, tasa de cambio y estado pausado a la vez**, o sea nada.
 
-**La Revisión 03 dice**: *"El amarillo se retira: hoy significa vencimiento, tasa de cambio y
-estado pausado a la vez, o sea nada."*
+La precisión que lo salva: **el amarillo es advertencia de algo que todavía no pasó pero está
+cerca.** Lo ya vencido es un hecho, no un aviso.
 
-No es el mismo argumento que la vez pasada. Antes era "sale del sistema" a secas. Ahora es
-concreto y **verificable**: en estas ocho pantallas el amarillo marca tres cosas distintas, y un
-token con tres significados no comunica ninguno — que es exactamente el razonamiento con el que
-se le quitó el color al botón principal.
+| Estado | Color | Ejemplo |
+|---|---|---|
+| Ya venció | clay | "Venció el 4 jun · marca el pago" |
+| Vence en ≤ 7 días | **amarillo** | Lo único que urge |
+| Vence más adelante | gris | "Vence 31 ene 2027" no advierte de nada |
+| Pausado | gris apagado | Es un estado, no un aviso |
+| Tasa de cambio | hueso | Dato neutro |
 
-Pero *vencimiento* sí es una advertencia legítima, y sin amarillo cae en el clay del gasto o en
-el rojo del error.
+Sin la línea entre *vencido* y *por vencer*, amarillo y clay significarían los dos
+"vencimiento" y volveríamos al problema.
 
-**Lectura propuesta**: retirar el amarillo de *tasa de cambio* y *estado pausado* (que no son
-advertencias), **conservarlo solo para vencimiento**. Así deja de significar tres cosas sin
-perder la única para la que existe. **Pendiente de confirmar.**
+**El umbral se define en UN solo sitio**: `lib/due-tone.ts` (`DUE_SOON_DAYS = 7`). Si cada
+módulo decide cuándo pinta amarillo, en tres meses vuelve a significar tres cosas. Antes estaba
+repartido —3 días en Suscripciones, 7 en Notificaciones, 30 en el dashboard— y el vencimiento
+de una obligación iba **fijo en amarillo sin mirar la fecha**.
+
+Hecho: `lib/due-tone.ts` con 8 tests, aplicado a obligaciones, suscripciones (próximo cobro y
+estado pausado) y tipos de cambio.
