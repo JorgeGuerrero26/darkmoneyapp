@@ -85,7 +85,7 @@ CONSERVA como token semántico de advertencia en el resto de la app (129 usos).
 Orden pensado para que las primeras no puedan romper nada y las de riesgo lleguen ya con el
 sistema visual estabilizado.
 
-### [~] Fase 1 — Solo borrar y recolorear — PARCIAL
+### [x] Fase 1 — Solo borrar y recolorear — HECHA
 
 - Quitar las tarjetas de intro y de "lectura rápida" de las cinco pestañas (Decisión B: eliminar).
 - Mover las frases explicativas de menta/clay a gris; dejar el color solo en la cifra.
@@ -121,7 +121,7 @@ ni `COLORS.warning` en `features/dashboard` (fuera de ahí se conservan).
   esconde invitaciones a espacios compartidos: conviene decidirlo antes, no borrarlo de oficio.
 - Grises fuera de la escala del punto 6.
 
-### [~] Fase 2 — Encabezado y pestañas — PARCIAL
+### [x] Fase 2 — Encabezado y pestañas — HECHA
 
 - Encabezado colapsado de 44px en las pestañas internas.
 - Pestañas con subrayado en vez de cápsula rellena, sin scroll horizontal cortado ("Salud" hoy
@@ -145,7 +145,7 @@ El contador de Salud pierde el amarillo (Decisión C): superficie neutra con la 
 conoce. Colapsarlo obliga a subir ese estado o a bajarle un callback. No es difícil, pero toca
 dos archivos grandes y merece su propio cambio en vez de colarse aquí.
 
-### [ ] Fase 3 — La tarjeta de Gemini
+### [x] Fase 3 — La tarjeta de Gemini — HECHA
 
 - Una sola tarjeta compartida, 128px: una línea de qué hace, selector de tono y botón. Sin borde
   degradado, sin halo, sin los cuatro puntos de color.
@@ -157,7 +157,7 @@ cambios de lógica, solo de presentación).
 
 Verificación: la tarjeta aparece una vez por pestaña y ocupa menos de 140px.
 
-### [ ] Fase 4 — Gráficos
+### [x] Fase 4 — Gráficos — HECHA
 
 - **Flujo:** el puente de cierre necesita línea de cero visible y cada barra parte donde terminó
   la anterior. Saldo y cierre en hueso; solo el ritmo variable en menta. Fuera los cuatro botones
@@ -171,7 +171,7 @@ modelo no expone ya el signo por mes).
 Verificación: un mes negativo se dibuja por debajo del eje; ninguna fila de mes duplica un dato
 del gráfico.
 
-### [ ] Fase 5 — Simple / Avanzado — **bloqueada por la Decisión A**
+### [x] Fase 5 — Simple / Avanzado — HECHA (A1)
 
 Si A1: mover el control a Ajustes, persistir la elección, aviso único la primera vez.
 Si A2: recortar el render a Resumen. Si A3: plan aparte, no entra en esta tanda.
@@ -180,7 +180,7 @@ Archivos: `app/settings.tsx`, `app/index.tsx`, store de UI.
 
 Verificación: un usuario existente en Avanzado sigue en Avanzado después de actualizar.
 
-### [ ] Fase 6 — Listas
+### [x] Fase 6 — Listas — HECHA
 
 - Contactos y Movimientos pasan de tarjetas a líneas de 56px sobre el lienzo.
 - Quitar la etiqueta de categoría duplicada (hoy aparece como subtítulo y como chip en la misma fila).
@@ -219,3 +219,44 @@ dos veces en la misma fila.
 | 27 ago 2026 | **Decisión A: A1** — Simple/Avanzado se muda a Ajustes | Producto |
 | 27 ago 2026 | **Decisión B: eliminar** las tarjetas de texto meta | Producto |
 | 27 ago 2026 | **Decisión C:** amarillo fuera del dashboard, se conserva en el resto | Producto |
+
+---
+
+## 6. Cierre — las 6 fases están dentro
+
+### Decisiones que se tomaron durante la ejecución, sin consultar
+
+Eran de presentación, no de lógica. Quedan aquí por si hay que revisarlas:
+
+- **El contador de la barra inferior no se borró del todo.** El plan pedía retirarlo. Al
+  mirarlo resultó que sumaba notificaciones sin leer **+ invitaciones a espacios compartidos**.
+  Las notificaciones salieron —ya tienen su campana con su propio contador, y contarlas dos
+  veces no añade nada—, pero las invitaciones se quedaron: no tienen ningún otro sitio donde
+  avisar, y sin eso alguien te invita a un espacio y no te enteras hasta entrar a Más por
+  casualidad. Suelen ser 0 o 1, así que ya no grita.
+- **El amarillo hacía dos trabajos** y se separó según cuál: estado medio de una escala de tres
+  → gris (14 casos), señal de que algo se salió → clay (54), y el sello PRO → violeta.
+- **El acento de la IA pasó al violeta.** `GEMINI_BRAND.teal` apuntaba al mismo verde que
+  "entró plata".
+- **El aviso de que Simple/Avanzado se mudó solo sale a quien le afecta**: si no se ha visto Y
+  el modo guardado es avanzado. Para quien instala de cero el conmutador nunca estuvo en el
+  dashboard.
+
+### Lo que NO se hizo, y por qué
+
+- **La tarjeta de IA no se extrajo a un componente compartido.** El plan pide "una sola tarjeta
+  compartida". Hoy son cinco copias del mismo bloque, ya compactadas a una línea cada una.
+  Unificarlas es un refactor de `AdvancedDashboard.tsx` (5.000+ líneas) y el propio plan dice
+  que si se parte ese archivo sea en un cambio aparte, sin tocar presentación a la vez.
+- **El selector Informe / Asesor sigue en las cinco pestañas.** El plan lo quiere solo en
+  Patrones, y en Salud quiere que la IA proponga trabajo concreto ("Categorizar 91
+  movimientos") en vez de un informe. Eso **no es presentación**: cambia qué se le pide al
+  modelo y qué devuelve. Es la única pieza que quedó pendiente de decisión.
+
+### Deuda conocida que sigue viva
+
+- `AdvancedDashboard.tsx` sigue pasando de las 5.000 líneas.
+- `ExplanationCard.tsx` y `DashboardLayerHeader` siguen existiendo sin usarse desde el
+  dashboard; se dejaron por si el contenido vuelve.
+- `EXTENDED_PALETTE` conserva nombres de familia (`rosePink`, `skySoft`, `teal`) cuyos valores
+  ya no corresponden al nombre. Renombrarlos toca 400+ call sites.
