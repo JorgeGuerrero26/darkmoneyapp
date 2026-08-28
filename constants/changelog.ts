@@ -14,6 +14,12 @@ export const CHANGELOG: ChangelogEntry[] = [
     title: "DarkMoney estrena look",
     changes: [
       "DarkMoney estrena look. El fondo pasa de azulado a un gris cálido, los montos se leen de un vistazo porque los céntimos ya no compiten con la cifra, y en la lista de movimientos caben cuatro filas más por pantalla sin que la letra se haga más chica.",
+      "El inicio va directo al grano: se fueron los textos que describían la pantalla antes de mostrarla, así que ves tus cifras apenas abres.",
+      "Cuando no hay nada previsto para la semana, la app te lo dice con palabras en vez de mostrarte ceros que parecían un error de carga.",
+      "El gráfico de cierre de mes ahora se lee como un recorrido: cada barra arranca donde terminó la anterior, así ves qué te sube y qué te baja el saldo.",
+      "En el historial del año, los meses en los que gastaste más de lo que entró bajan por debajo de la línea. Un mal mes se ve de un golpe.",
+      "Elegir entre vista simple y avanzada se mudó a Configuración: se elige una vez y se recuerda, en vez de ocupar sitio en cada pantalla.",
+      "Tus contactos ahora entran más por pantalla, y ya no repiten la categoría dos veces en la misma línea.",
       "Los colores ahora significan una sola cosa cada uno: verde es plata que entra, y los gastos ya no se ven como si fueran un error. El asistente tiene su propio color, para que distingas lo que él opina de lo que dicen tus cuentas.",
       "Cada día de la lista de movimientos te dice de un vistazo cuánto entró o salió ese día.",
       "La pantalla que ves mientras la app abre ya no es azul: usa el mismo gris cálido que todo lo demás, así que abrir DarkMoney ya no da un salto de color.",
