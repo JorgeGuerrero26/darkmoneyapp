@@ -1,4 +1,4 @@
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useState } from "react";
@@ -7,14 +7,15 @@ import {
 } from "lucide-react-native";
 
 import { useAuth } from "../../lib/auth-context";
-import { useNotificationsQuery, useUserEntitlementQuery } from "../../services/queries/workspace-data";
+import { useNotificationsQuery, useUserEntitlementQuery, useWorkspaceSnapshotQuery } from "../../services/queries/workspace-data";
+import { useWorkspace } from "../../lib/workspace-context";
+import { formatCurrency } from "../../components/ui/AmountDisplay";
+import { getMonthlySubscriptionAmount } from "../../features/subscriptions/lib/subscriptionFilters";
+import { getMonthlyRecurringIncomeAmount } from "../../features/recurring-income/lib/recurringIncomeFilters";
 import { useHaptics } from "../../hooks/useHaptics";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
-import { Button } from "../../components/ui/Button";
-import { Card } from "../../components/ui/Card";
 import { Badge } from "../../components/ui/Badge";
-import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
-import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING, SURFACE } from "../../constants/theme";
 import { IOS_FLOATING_TAB_BAR_SPACE } from "../../constants/floating-tab-bar";
 
 type MenuItem = {
@@ -28,19 +29,31 @@ type MenuItem = {
 export default function MoreScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { user, signOut } = useAuth();
+  const { user, profile } = useAuth();
   const haptics = useHaptics();
-  const [signOutVisible, setSignOutVisible] = useState(false);
-  const [signingOut, setSigningOut] = useState(false);
 
-  async function confirmSignOut() {
-    setSigningOut(true);
-    await signOut().finally(() => setSigningOut(false));
-  }
 
   const { data: notifications } = useNotificationsQuery(user?.id ?? null);
   const unreadCount = (notifications ?? []).filter((n) => n.status !== "read").length;
   const { data: entitlement } = useUserEntitlementQuery(user?.id ?? null, user?.email ?? null);
+  const { activeWorkspaceId } = useWorkspace();
+  const { data: snapshot } = useWorkspaceSnapshotQuery(profile ?? null, activeWorkspaceId);
+
+  // El menú dice el ESTADO de cada sección en vez de explicar su nombre. Todo sale del snapshot
+  // que la app ya tiene cargado: ni una consulta nueva por esto.
+  const subscriptions = snapshot?.subscriptions ?? [];
+  const recurringIncome = snapshot?.recurringIncome ?? [];
+  const activeSubs = subscriptions.filter((item) => item.status === "active");
+  const activeIncome = recurringIncome.filter((item) => item.status === "active");
+  const subsMonthly = activeSubs.reduce((sum, item) => sum + getMonthlySubscriptionAmount(item), 0);
+  const incomeMonthly = activeIncome.reduce((sum, item) => sum + getMonthlyRecurringIncomeAmount(item), 0);
+  const baseCurrency = profile?.baseCurrencyCode ?? "PEN";
+  const contactCount = (snapshot?.counterparties ?? []).filter((c) => !c.isArchived).length;
+  const categoryCount = (snapshot?.categories ?? []).length;
+  const budgetCount = (snapshot?.budgets ?? []).length;
+  const usdRate = (snapshot?.exchangeRates ?? []).find(
+    (rate) => rate.fromCurrencyCode === "USD" && rate.toCurrencyCode === baseCurrency,
+  );
   const isPro = entitlement?.proAccessEnabled === true;
 
   const menuItems: MenuItem[] = [
@@ -49,7 +62,7 @@ export default function MoreScreen() {
       ? [{
           Icon: Sparkles,
           title: "Asistente",
-          subtitle: "Pregunta por tus movimientos en lenguaje natural",
+          subtitle: "Pregunta en lenguaje natural",
           route: "/assistant?from=more",
         } as MenuItem]
       : []),
@@ -63,43 +76,43 @@ export default function MoreScreen() {
     {
       Icon: Users,
       title: "Contactos",
-      subtitle: "Clientes, proveedores y más",
+      subtitle: contactCount > 0 ? `${contactCount} contacto${contactCount === 1 ? "" : "s"}` : "Ninguno todavía",
       route: "/(app)/contacts?from=more",
     },
     {
       Icon: BarChart3,
       title: "Presupuestos",
-      subtitle: "Controla tus gastos por categoría",
+      subtitle: budgetCount > 0 ? `${budgetCount} activo${budgetCount === 1 ? "" : "s"}` : "Ninguno todavía",
       route: "/budgets?from=more",
     },
     {
       Icon: RefreshCw,
       title: "Suscripciones",
-      subtitle: "Pagos recurrentes",
+      subtitle: activeSubs.length > 0 ? `${formatCurrency(subsMonthly, baseCurrency)} al mes` : "Ninguna todavía",
       route: "/(app)/subscriptions?from=more",
     },
     {
       Icon: TrendingUp,
       title: "Ingresos fijos",
-      subtitle: "Sueldos, rentas y cobros recurrentes",
+      subtitle: activeIncome.length > 0 ? `${formatCurrency(incomeMonthly, baseCurrency)} al mes` : "Ninguno todavía",
       route: "/(app)/recurring-income?from=more",
     },
     {
       Icon: Tag,
       title: "Categorías",
-      subtitle: "Organiza tus movimientos",
+      subtitle: `${categoryCount} categoría${categoryCount === 1 ? "" : "s"}`,
       route: "/(app)/categories?from=more",
     },
     {
       Icon: ArrowLeftRight,
       title: "Tipos de cambio",
-      subtitle: "Tasas para conversión de monedas",
+      subtitle: usdRate ? `1 USD = ${usdRate.rate}` : "Sin tasas configuradas",
       route: "/(app)/exchange-rates?from=more",
     },
     {
       Icon: Settings,
       title: "Configuración",
-      subtitle: "Perfil, workspace y preferencias",
+      subtitle: "Perfil, seguridad y preferencias",
       route: "/(app)/settings?from=more",
     },
   ];
@@ -117,75 +130,43 @@ export default function MoreScreen() {
         ]}
       >
         {menuItems.map((item) => (
-          <Card
+          <Pressable
             key={item.route}
             onPress={() => { haptics.light(); router.push(item.route as any); }}
-            style={styles.menuCard}
+            style={({ pressed }) => [styles.menuRow, pressed && styles.menuRowPressed]}
+            accessibilityRole="button"
           >
-            <View style={styles.menuRow}>
-              <View style={styles.iconWrap}>
-                <item.Icon size={18} color={COLORS.primary} />
-              </View>
-              <View style={styles.menuInfo}>
-                <Text style={styles.menuTitle}>{item.title}</Text>
-                <Text style={styles.menuSubtitle} numberOfLines={1}>{item.subtitle}</Text>
-              </View>
-              {item.badge ? <Badge count={item.badge} /> : null}
-              <ChevronRight size={16} color={COLORS.storm} />
+            <View style={styles.menuInfo}>
+              <Text style={styles.menuTitle}>{item.title}</Text>
+              <Text style={styles.menuSubtitle} numberOfLines={1}>{item.subtitle}</Text>
             </View>
-          </Card>
+            {item.badge ? <Badge count={item.badge} /> : null}
+            <ChevronRight size={16} color={COLORS.textDisabled} />
+          </Pressable>
         ))}
 
-        <Button
-          label="Cerrar sesión"
-          variant="danger"
-          size="lg"
-          style={styles.signOutButton}
-          onPress={() => {
-            haptics.warning();
-            setSignOutVisible(true);
-          }}
-        />
       </ScrollView>
 
-      <ConfirmDialog
-        visible={signOutVisible}
-        icon="👋"
-        title="¿Cerrar sesión?"
-        body="Se cerrará tu sesión en este dispositivo. Podrás volver a ingresar cuando quieras."
-        confirmLabel="Cerrar sesión"
-        cancelLabel="Cancelar"
-        destructive
-        confirmLoading={signingOut}
-        confirmLoadingLabel="Cerrando sesión"
-        onCancel={() => setSignOutVisible(false)}
-        onConfirm={() => { void confirmSignOut(); }}
-      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: COLORS.bg },
-  content: { padding: SPACING.lg, gap: SPACING.sm },
-  menuCard: { padding: SPACING.md },
+  content: { paddingVertical: SPACING.sm },
   menuRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: SPACING.md,
+    minHeight: 56,
+    // 20 = margen lateral único de la app, el mismo de las filas de lista.
+    paddingHorizontal: SPACING.xl,
+    paddingVertical: SPACING.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: SURFACE.separator,
   },
-  iconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: RADIUS.lg,
-    backgroundColor: SURFACE.card,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  menuInfo: { flex: 1, gap: 2 },
+  menuRowPressed: { backgroundColor: SURFACE.pressed },
+  menuInfo: { flex: 1, minWidth: 0, gap: 2 },
   menuTitle: { fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.bodyMedium, color: COLORS.ink },
   menuSubtitle: { fontSize: FONT_SIZE.xs, color: COLORS.storm },
-  signOutButton: {
-    marginTop: SPACING.lg,
-  },
 });

@@ -18,7 +18,10 @@ export function Badge({ count }: Props) {
 
 const styles = StyleSheet.create({
   badge: {
-    backgroundColor: COLORS.gold,
+    // Rojo, no amarillo. El amarillo significa "vence en <= 7 dias" (lib/due-tone) y un
+    // contador de notificaciones no es un vencimiento. Ademas la campana del inicio ya usa
+    // este rojo: el mismo dato con el mismo color en las dos pantallas.
+    backgroundColor: COLORS.danger,
     borderRadius: RADIUS.full,
     minWidth: 18,
     height: 18,
