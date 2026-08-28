@@ -216,6 +216,7 @@ export default function NotificationDetectionScreen() {
       <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + SPACING.xl }]}>
         {!nativeAvailable ? (
           <View style={styles.limitNotice}>
+            <Text style={styles.limitNoticeTitle}>No disponible en este build</Text>
             <Text style={styles.limitNoticeText}>
               La detección automática necesita la app instalada desde Play Store. Puedes dejar todo
               configurado ahora y empezará a funcionar cuando instales esa versión.
@@ -301,9 +302,6 @@ export default function NotificationDetectionScreen() {
                 DarkMoney analiza solo las apps que actives, para sugerir movimientos. No registra
                 nada sin tu confirmación.
               </Text>
-              <Text style={styles.text}>
-                Elige qué apps puede analizar DarkMoney y a qué cuenta se asignará cada movimiento detectado.
-              </Text>
             </View>
             <Text style={styles.stateCount}>
               {enabledAppCount} de {FINANCIAL_APPS.length} activas
@@ -342,6 +340,10 @@ export default function NotificationDetectionScreen() {
               </View>
             );
           })}
+
+          {/* El destino es tocable pero no lo parece: sin esta linea, cambiar de cuenta es un
+              gesto que solo descubre quien lo intenta por casualidad. */}
+          <Text style={styles.listHint}>Toca una app activa para cambiar su cuenta de destino.</Text>
         </Card>
 
         <Button
@@ -492,6 +494,18 @@ const styles = StyleSheet.create({
     borderLeftWidth: 3,
     borderLeftColor: COLORS.expense,
     backgroundColor: SURFACE.subtle,
+  },
+  listHint: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    marginTop: SPACING.sm,
+  },
+  limitNoticeTitle: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.ink,
+    marginBottom: 2,
   },
   limitNoticeText: { fontSize: FONT_SIZE.sm, lineHeight: 20, color: COLORS.fog },
   stateCount: { fontSize: FONT_SIZE.xs, color: COLORS.storm },
