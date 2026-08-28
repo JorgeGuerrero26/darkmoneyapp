@@ -92,7 +92,7 @@ export function MovementSummaryBar({
             helpDescription: "Diferencia entre ingresos y gastos visibles. Si es positivo entró más dinero; si es negativo salió más dinero.",
           },
         ]}
-        trailingLabel={partial ? "parcial ↓" : null}
+        trailingLabel={partial ? "Totales de los movimientos cargados hasta ahora. Sigue bajando para incluir el resto." : null}
       />
     </View>
   );

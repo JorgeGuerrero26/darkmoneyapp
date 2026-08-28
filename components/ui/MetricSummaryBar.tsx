@@ -85,7 +85,6 @@ export function MetricSummaryBar({ items, trailingLabel, actions = [] }: Props) 
             </View>
           );
         })}
-        {trailingLabel ? <Text style={styles.trailing}>{trailingLabel}</Text> : null}
         {showActions ? (
           <View style={styles.actions}>
             {actions.map((action) => (
@@ -103,6 +102,9 @@ export function MetricSummaryBar({ items, trailingLabel, actions = [] }: Props) 
           </View>
         ) : null}
       </View>
+      {/* La nota de alcance va al PIE y con palabras, no apretada entre las columnas.
+          "parcial ↓" no decia nada: significa que los totales solo cubren lo cargado. */}
+      {trailingLabel ? <Text style={styles.footnote}>{trailingLabel}</Text> : null}
 
       <BottomSheet
         visible={Boolean(selectedHelpItem)}
@@ -193,17 +195,25 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     color: COLORS.storm,
   },
-  trailing: {
-    fontFamily: FONT_FAMILY.body,
-    fontSize: 9,
-    color: COLORS.textDisabled,
-    marginLeft: "auto",
-  },
   actions: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
     marginLeft: "auto",
+    // Aire y separador propio: sin esto los chips quedaban pegados al borde donde termina el
+    // fondo elevado de la columna, y el corte de color parecia un fallo de dibujado.
+    paddingHorizontal: SPACING.md,
+    borderLeftWidth: 1,
+    borderLeftColor: SURFACE.cardBorder,
+    alignSelf: "stretch",
+  },
+  // Nota al pie de la cinta: alcance del dato, en letra chica y con palabras.
+  footnote: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.textDisabled,
+    marginHorizontal: SPACING.xl,
+    marginTop: SPACING.xs,
   },
   action: {
     paddingHorizontal: SPACING.sm,
