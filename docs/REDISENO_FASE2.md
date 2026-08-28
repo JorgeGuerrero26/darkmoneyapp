@@ -35,7 +35,7 @@ preferencias viven en Ajustes. Recupera ~60px en las cinco pestañas sin quitarl
 Si Avanzado es además una función de pago (hay `useDashboardEntitlement`), A1 es la única opción
 que no confunde "modo" con "plan".
 
-**Pendiente de respuesta. Nada de la fase 5 se ejecuta hasta que esto se decida.**
+**RESUELTA 27 ago 2026: A1.** El modo se muda a Ajustes y se recuerda.
 
 ### Decisión B — las dos tarjetas de texto de cada pestaña
 
@@ -45,8 +45,7 @@ veces.
 
 Recomendación: eliminarlas. El nombre de la pestaña ya anuncia el contenido, y la nota de
 alcance se conserva como una línea de 11px al pie de la tarjeta que la necesita.
-Si esas viñetas existen porque los usuarios no entendían la pestaña, la respuesta correcta no es
-dejarlas: es un "¿qué es esto?" en el encabezado que abra la explicación una vez.
+**RESUELTA 27 ago 2026: se eliminan.** Sin "¿qué es esto?" por ahora.
 
 ### Decisión C — el amarillo *(añadida al ejecutar: el plan se contradice con la Revisión 01)*
 
@@ -60,8 +59,8 @@ obligaciones, los presupuestos cerca del tope, los avisos de pago detectado y el
 por vencer. Retirarlo "del sistema" dejaría a *advertencia* sin color propio y la empujaría a
 confundirse con *error*, que es justo la distinción que el brief original marcó como regla dura.
 
-Lectura propuesta: el amarillo **sale del dashboard avanzado** (donde se usaba como decoración,
-no como advertencia) y **se conserva como token semántico** en el resto de la app. Confirmar.
+**RESUELTA 27 ago 2026:** el amarillo sale del dashboard avanzado (73 usos, decoración) y se
+CONSERVA como token semántico de advertencia en el resto de la app (129 usos).
 
 ---
 
@@ -72,7 +71,7 @@ no como advertencia) y **se conserva como token semántico** en el resto de la a
 2. **Ninguna pantalla se presenta a sí misma.** Nada de párrafos que describan lo que viene abajo.
 3. **El color es información.** Menta solo en deltas positivos reales. Clay solo en lo negativo o
    anómalo. Los niveles y totales van en hueso. Nunca dos cifras del mismo color compitiendo en
-   una pantalla. El amarillo sale del sistema — **ver Decisión C**.
+   una pantalla. El amarillo sale del DASHBOARD, no del sistema — ver Decisión C.
 4. **Cero no es estado vacío.** Si no hay dato, se dice con palabras.
 5. **Un solo aviso a la vez.** Los puntos de color en las pestañas y el contador de la barra
    inferior se retiran; queda el de la campana.
@@ -86,9 +85,9 @@ no como advertencia) y **se conserva como token semántico** en el resto de la a
 Orden pensado para que las primeras no puedan romper nada y las de riesgo lleguen ya con el
 sistema visual estabilizado.
 
-### [ ] Fase 1 — Solo borrar y recolorear (sin riesgo, sin decisiones)
+### [~] Fase 1 — Solo borrar y recolorear — PARCIAL
 
-- Quitar las tarjetas de intro y de "lectura rápida" de las cinco pestañas — **depende de la Decisión B**.
+- Quitar las tarjetas de intro y de "lectura rápida" de las cinco pestañas (Decisión B: eliminar).
 - Mover las frases explicativas de menta/clay a gris; dejar el color solo en la cifra.
 - Reemplazar los `S/ 0.00` de estado vacío por texto ("Sin movimientos previstos", "Sin compromisos").
 - Retirar los puntos de color de las pestañas y el contador de la barra inferior.
@@ -98,8 +97,29 @@ Archivos: `features/dashboard/components/advanced/AdvancedDashboard.tsx` (arregl
 ~L3865 y `scopeLabel` en toda la sección de detalles), `components/advanced/AdvancedCards.tsx`,
 `components/simple/styles.ts`, `constants/theme.ts` (retirar `gold` de los usos de dashboard).
 
-Verificación: ninguna cadena de más de 40 caracteres queda con color de dato; ningún
-`COLORS.gold` en `features/dashboard`.
+Verificación: ninguna cadena de más de 40 caracteres queda con color de dato; ningún `COLORS.gold`
+ni `COLORS.warning` en `features/dashboard` (fuera de ahí se conservan).
+
+**Hecho:**
+
+- Las **5 tarjetas de intro** (`DashboardLayerHeader`) fuera, y con ellas el párrafo "Tres
+  lecturas de estado…". El componente sigue existiendo por si vuelve a hacer falta.
+- Las **3 frases interpretativas** del resumen ejecutivo pasan a gris fijo (`COLORS.storm`).
+  Eran las que el diseñador señaló una por una.
+- **Puntos de color de las pestañas fuera.** Sobrevive el contador de Salud, que es el único
+  que apunta a trabajo concreto ("91 movimientos por categorizar"); los puntos de Patrones y
+  Flujo solo decían "aquí hay algo", que es lo que ya dice estar en un dashboard.
+
+**Pendiente de la fase 1:**
+
+- Retirar los ~73 usos de `COLORS.gold` del dashboard (Decisión C). Es un barrido grande y
+  cada uso hay que mirarlo: algunos son advertencia legítima y deben pasar a clay, otros son
+  decoración y van a gris.
+- Estados vacíos: `S/ 0.00` → "Sin movimientos previstos" / "Sin compromisos".
+- El contador de la barra inferior (`useMoreBadgeCount`) — vive en `app/(app)/_layout.tsx`,
+  no en el dashboard, y suma notificaciones sin leer + invitaciones pendientes. Quitarlo
+  esconde invitaciones a espacios compartidos: conviene decidirlo antes, no borrarlo de oficio.
+- Grises fuera de la escala del punto 6.
 
 ### [ ] Fase 2 — Encabezado y pestañas
 
@@ -184,6 +204,6 @@ dos veces en la misma fila.
 | 27 ago 2026 | Gasto en clay, no en rosa; en listas largas el monto va en hueso | Diseño |
 | 27 ago 2026 | Barra inferior anclada en vez de píldora flotante | Diseño |
 | 27 ago 2026 | Cinta de métricas: label arriba en versalitas, cifra grande debajo | Diseño |
-| — | **Decisión A: Simple / Avanzado** | Pendiente — producto |
-| — | **Decisión B: tarjetas de texto meta** | Pendiente — producto |
-| — | **Decisión C: alcance del amarillo** | Pendiente — producto |
+| 27 ago 2026 | **Decisión A: A1** — Simple/Avanzado se muda a Ajustes | Producto |
+| 27 ago 2026 | **Decisión B: eliminar** las tarjetas de texto meta | Producto |
+| 27 ago 2026 | **Decisión C:** amarillo fuera del dashboard, se conserva en el resto | Producto |

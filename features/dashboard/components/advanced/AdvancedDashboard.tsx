@@ -149,7 +149,6 @@ import {
   AlgorithmReadinessCard,
   AnomalyWatch,
   CurrencyExposure,
-  DashboardLayerHeader,
   DataQuality,
   FinancialGraphCard,
   PeriodRadar,
@@ -3106,34 +3105,21 @@ export function AdvancedDashboard({
       <DashboardTabBar
         activeTab={activeTab}
         onTabChange={handleTabChange}
+        // Un solo aviso a la vez: si todo llama, nada llama. Sobrevive el contador de Salud,
+        // que es el unico que apunta a trabajo concreto ("91 movimientos por categorizar").
+        // Los puntos de Patrones y Flujo solo decian "aqui hay algo", que es lo que ya dice
+        // estar en un dashboard.
         indicators={[
           ...(review.totalIssues > 0 ? [{ tab: 'Salud' as AdvancedTab, count: review.totalIssues }] : []),
-          ...(anomalySignals.length > 0 ? [{ tab: 'Patrones' as AdvancedTab, dot: COLORS.gold }] : []),
-          ...(cashCushion.days < 30 || pressureStatus === "Bajo presión"
-            ? [{ tab: 'Flujo' as AdvancedTab, dot: COLORS.expense }]
-            : []),
         ]}
       />
 
       {activeTab === 'Resumen' && (
         <DashboardSectionBoundary sectionLabel="Resumen">
         <>
-      <DashboardLayerHeader
-        kicker="Resumen"
-        title="Estado actual"
-        bullets={[
-          "Calidad de los datos: qué tan fiables son las cifras",
-          "Presión de caja en los próximos 7 días",
-          "Estimado de cómo cerrarás el mes",
-        ]}
-      />
-
       <View style={{ height: SPACING.sm }} />
       <Card>
         <SectionTitle>Resumen ejecutivo</SectionTitle>
-        <Text style={subStyles.executiveIntro}>
-          Tres lecturas de estado para entender el panorama sin entrar todavía en la acción concreta.
-        </Text>
         <View style={subStyles.executiveGrid}>
           <TouchableOpacity style={subStyles.executiveCard} activeOpacity={0.84} onPress={() => setExecutiveDetail("focus")}>
             <View style={subStyles.executiveTop}>
@@ -3148,7 +3134,7 @@ export function AdvancedDashboard({
             <Text style={subStyles.executiveCaption}>
               {review.totalIssues > 0 ? `${review.totalIssues} punto${review.totalIssues === 1 ? "" : "s"} sin resolver` : "Sin issues pendientes"}
             </Text>
-            <Text style={[subStyles.executiveInterpret, { color: learning.readinessScore >= 75 ? COLORS.income : review.totalIssues > 0 ? COLORS.gold : COLORS.storm }]}>
+            <Text style={subStyles.executiveInterpret}>
               {learning.readinessScore >= 75
                 ? "Los números son confiables para tomar decisiones."
                 : review.totalIssues > 0
@@ -3176,7 +3162,7 @@ export function AdvancedDashboard({
             </View>
             <Text style={subStyles.executiveValue}>{formatCurrency(weekWindow.expectedInflow - weekWindow.expectedOutflow, activeCurrency)}</Text>
             <Text style={subStyles.executiveCaption}>Entran {formatCurrency(weekWindow.expectedInflow, activeCurrency)} · salen {formatCurrency(weekWindow.expectedOutflow, activeCurrency)}</Text>
-            <Text style={[subStyles.executiveInterpret, { color: weekWindow.expectedInflow >= weekWindow.expectedOutflow ? COLORS.income : COLORS.gold }]}>
+            <Text style={subStyles.executiveInterpret}>
               {weekWindow.expectedInflow >= weekWindow.expectedOutflow
                 ? "Semana con margen positivo — sin presión inmediata."
                 : "Más compromisos que ingresos esta semana — revisa el flujo."}
@@ -3193,7 +3179,7 @@ export function AdvancedDashboard({
             </View>
             <Text style={subStyles.executiveValue}>{formatCurrency(monthEndReading, activeCurrency)}</Text>
             <Text style={subStyles.executiveCaption}>Hoy: {formatCurrency(currentVisibleBalance, activeCurrency)} · {activeAccounts.length} cuenta{activeAccounts.length === 1 ? "" : "s"}</Text>
-            <Text style={[subStyles.executiveInterpret, { color: monthEndDelta >= 0 ? COLORS.income : COLORS.expense }]}>
+            <Text style={subStyles.executiveInterpret}>
               {monthEndDelta >= 0
                 ? `Cerrarías el mes con ${formatCurrency(monthEndDelta, activeCurrency)} más que hoy.`
                 : `Se proyecta consumir ${formatCurrency(Math.abs(monthEndDelta), activeCurrency)} del saldo actual.`}
@@ -3858,15 +3844,6 @@ export function AdvancedDashboard({
       {activeTab === 'Patrones' && (
         <DashboardSectionBoundary sectionLabel="Patrones">
         <>
-      <DashboardLayerHeader
-        kicker="Patrones"
-        title="Hábitos y tendencias"
-        bullets={[
-          "Hábitos que se repiten en los últimos 90 días",
-          "Categorías que subieron frente a los 14 días anteriores",
-          "Movimientos que se salen de lo normal para ti",
-        ]}
-      />
       <View style={{ height: SPACING.sm }} />
       <Card>
         <SectionTitle>Lectura rápida de patrones</SectionTitle>
@@ -4258,15 +4235,6 @@ export function AdvancedDashboard({
       {activeTab === 'Flujo' && (
         <DashboardSectionBoundary sectionLabel="Flujo">
         <>
-      <DashboardLayerHeader
-        kicker="Flujo"
-        title="Proyección y compromisos"
-        bullets={[
-          "Proyección de cierre del mes en 3 escenarios",
-          "Flujo neto esperado esta semana y los próximos 30 días",
-          "Salud de caja, suscripciones y obligaciones próximas",
-        ]}
-      />
       <View style={{ height: SPACING.sm }} />
       <ProjectionBridgeChart
         currentVisibleBalance={currentVisibleBalance}
@@ -4512,15 +4480,6 @@ export function AdvancedDashboard({
       {activeTab === 'Historial' && (
         <DashboardSectionBoundary sectionLabel="Historial">
         <>
-      <DashboardLayerHeader
-        kicker="Historial"
-        title="Evolución en el tiempo"
-        bullets={[
-          "Neto mes a mes del año seleccionado — toca un mes para ver el detalle",
-          "Tasa de ahorro y estabilidad de ingresos en los últimos 6 meses",
-          "Comparación con el mismo mes del año pasado",
-        ]}
-      />
       <View style={{ height: SPACING.sm }} />
       <AnnualHistoryPanel
         years={historyYears}
@@ -5025,16 +4984,6 @@ export function AdvancedDashboard({
       {activeTab === 'Salud' && (
         <DashboardSectionBoundary sectionLabel="Salud">
         <>
-      <DashboardLayerHeader
-        kicker="Salud"
-        title="Calidad financiera y limpieza"
-        bullets={[
-          "Tareas pendientes que reducen la precisión del dashboard",
-          "Sugerencias de IA para categorizar movimientos sin etiquetar",
-          "Eficiencia de cobros y calidad general del dato",
-        ]}
-      />
-
       <View style={{ height: SPACING.sm }} />
       <ReviewInbox
         movements={movements}

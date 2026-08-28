@@ -3204,6 +3204,9 @@ export const dashboardSimpleStyles = StyleSheet.create({
     fontSize: FONT_SIZE.xs,
     lineHeight: 16,
     marginTop: 3,
+    // Gris fijo, sin color de dato. El color lo lleva la cifra de arriba; la frase que la
+    // explica es apoyo. Antes se teñia de menta o clay segun el signo y competia con ella.
+    color: COLORS.storm,
   },
   healthScoreInterpret: {
     fontFamily: FONT_FAMILY.body,
