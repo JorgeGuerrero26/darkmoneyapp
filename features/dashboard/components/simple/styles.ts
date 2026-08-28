@@ -2515,6 +2515,15 @@ export const dashboardSimpleStyles = StyleSheet.create({
   annualMonthColMuted: {
     opacity: 0.28,
   },
+  // Grafico anual con EJE: los meses que suman crecen hacia arriba y los que restan cuelgan
+  // hacia abajo. Con todo hacia arriba no habia forma de ver un mes malo de un vistazo.
+  annualHalfTop: { flex: 1, justifyContent: "flex-end", alignItems: "center" },
+  annualHalfBottom: { flex: 1, justifyContent: "flex-start", alignItems: "center" },
+  annualZeroLine: { height: 1, alignSelf: "stretch", backgroundColor: SURFACE.separator },
+  annualNetBar: { width: 7, borderRadius: RADIUS.sm },
+  // Mes sin dato: un filete, no una columna vacia. Una columna vacia se confunde con un mes
+  // de neto cero, y no es lo mismo "no gaste nada" que "todavia no ha pasado".
+  annualNoData: { width: 7, height: 2, borderRadius: RADIUS.full, backgroundColor: SURFACE.track },
   annualBarsBox: {
     width: "100%",
     height: 74,
@@ -2705,6 +2714,15 @@ export const dashboardSimpleStyles = StyleSheet.create({
     fontFamily: FONT_FAMILY.bodySemibold,
     fontSize: FONT_SIZE.sm,
     textAlign: "right",
+  },
+  // Nota de alcance: al pie y en letra chica, que es donde vive la letra chica. Antes era un
+  // parrafo de entrada que describia el grafico antes de enseñarlo.
+  bridgeFootnote: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    lineHeight: 16,
+    color: COLORS.textDisabled,
+    marginTop: SPACING.sm,
   },
   bridgeTrack: {
     position: "relative",

@@ -1,6 +1,7 @@
 import { ScrollView, Text, TouchableOpacity, View } from "react-native";
 import { endOfMonth, format, startOfMonth, subMonths } from "date-fns";
 
+import { buildBridgeSegments } from "./bridge-rows";
 import { Card } from "../../../../components/ui/Card";
 import { RingChart, type RingSegment } from "../../../../components/ui/RingChart";
 import { SparkLine } from "../../../../components/ui/SparkLine";
@@ -29,63 +30,65 @@ export function ProjectionBridgeChart({
   onExplainProjection: () => void;
   onOpenMonthMovements: () => void;
 }) {
-  const rows = [
-    { label: "Saldo visible hoy", detail: "Lo que suman tus cuentas visibles", amount: currentVisibleBalance, tone: "base" as const, action: "Abrir cuentas", onPress: onOpenAccounts },
-    { label: "Agenda comprometida", detail: "Ingresos fijos menos pagos esperados", amount: committedNet, tone: committedNet >= 0 ? ("positive" as const) : ("negative" as const), action: "Entender agenda", onPress: onExplainProjection },
-    { label: "Ritmo variable", detail: "Proyección de gastos e ingresos no fijos", amount: variableNet, tone: variableNet >= 0 ? ("positive" as const) : ("negative" as const), action: "Ver movimientos", onPress: onOpenMonthMovements },
-    { label: "Cierre esperado", detail: "Resultado estimado de fin de mes", amount: expectedBalance, tone: expectedBalance >= currentVisibleBalance ? ("positive" as const) : ("warning" as const), action: "Ver cálculo", onPress: onExplainProjection },
+  const inputs = [
+    { key: "hoy", label: "Saldo visible hoy", amount: currentVisibleBalance, kind: "total" as const, onPress: onOpenAccounts },
+    { key: "agenda", label: "Agenda comprometida", amount: committedNet, kind: "delta" as const, onPress: onExplainProjection },
+    { key: "ritmo", label: "Ritmo variable", amount: variableNet, kind: "delta" as const, onPress: onOpenMonthMovements },
+    { key: "cierre", label: "Cierre esperado", amount: expectedBalance, kind: "total" as const, onPress: onExplainProjection },
   ];
-  const maxAbs = Math.max(...rows.map((row) => Math.abs(row.amount)), 1);
+  const segments = buildBridgeSegments(inputs);
 
   return (
     <Card>
-      <Text style={subStyles.visualChartKicker}>Proyección</Text>
-      <SectionTitle>Puente de cierre de mes</SectionTitle>
-      <Text style={subStyles.visualChartIntro}>
-        Te muestra qué empuja la caja estimada: saldo actual, agenda fija y ritmo variable. Si una barra va a la izquierda, resta.
-      </Text>
+      <SectionTitle>Puente de cierre</SectionTitle>
       <View style={subStyles.bridgeChartStack}>
-        {rows.map((row) => {
-          const width = Math.max(3, Math.min(50, (Math.abs(row.amount) / maxAbs) * 50));
-          const isNegative = row.amount < 0;
-          const color =
-            row.tone === "positive"
-              ? COLORS.income
-              : row.tone === "negative"
-                ? COLORS.expense
-                : row.tone === "warning"
-                  ? COLORS.expense
-                  : COLORS.primary;
+        {segments.map((segment, index) => {
+          const row = inputs[index];
+          // Saldo y cierre son NIVELES, no deltas: van en hueso. El color se reserva para los
+          // dos tramos que de verdad mueven la cifra, que es la pregunta del puente.
+          const isLevel = segment.kind === "total";
+          const color = isLevel
+            ? COLORS.ink
+            : segment.amount === 0
+              ? COLORS.storm
+              : segment.amount > 0
+                ? COLORS.income
+                : COLORS.expense;
+          // Cero no es estado vacio: una agenda sin nada se dice con palabras.
+          const emptyDelta = !isLevel && segment.amount === 0;
           return (
-            <TouchableOpacity key={row.label} style={subStyles.bridgeRow} onPress={row.onPress} activeOpacity={0.84}>
+            <TouchableOpacity key={segment.key} style={subStyles.bridgeRow} onPress={row.onPress} activeOpacity={0.84}>
               <View style={subStyles.bridgeRowHeader}>
-                <View style={{ flex: 1 }}>
-                  <Text style={subStyles.bridgeLabel}>{row.label}</Text>
-                  <Text style={subStyles.bridgeDetail}>{row.detail}</Text>
-                </View>
+                <Text style={[subStyles.bridgeLabel, { flex: 1 }]}>{segment.label}</Text>
                 <Text style={[subStyles.bridgeAmount, { color }]}>
-                  {row.amount > 0 && row.tone !== "base" ? "+" : ""}
-                  {formatCurrency(row.amount, currency)}
+                  {emptyDelta
+                    ? "Sin compromisos"
+                    : `${!isLevel && segment.amount > 0 ? "+" : ""}${formatCurrency(segment.amount, currency)}`}
                 </Text>
               </View>
               <View style={subStyles.bridgeTrack}>
-                <View style={subStyles.bridgeAxis} />
+                {/* Linea de cero visible y en el MISMO sitio en las cuatro filas: sin ella no
+                    se sabe desde donde crece cada tramo. */}
+                <View style={[subStyles.bridgeAxis, { left: `${segment.zero}%` as any }]} />
                 <View
                   style={[
                     subStyles.bridgeFill,
                     {
-                      width: `${width}%` as any,
+                      left: `${segment.left}%` as any,
+                      width: `${segment.width}%` as any,
                       backgroundColor: color,
-                      left: isNegative ? (`${50 - width}%` as any) : "50%",
                     },
                   ]}
                 />
               </View>
-              <Text style={subStyles.visualChartAction}>{row.action}</Text>
             </TouchableOpacity>
           );
         })}
       </View>
+      {/* La nota de alcance vive al pie y en letra chica, no como parrafo de entrada. */}
+      <Text style={subStyles.bridgeFootnote}>
+        Si una barra va a la izquierda del eje, resta. Proyección basada en el ritmo de los últimos 30 días.
+      </Text>
     </Card>
   );
 }
@@ -276,7 +279,6 @@ export function AnnualHistoryPanel({
   const yearExpense = observed.reduce((sum, month) => sum + month.expense, 0);
   const yearNet = yearIncome - yearExpense;
   const savingsRate = yearIncome > 0 ? (yearNet / yearIncome) * 100 : null;
-  const maxFlow = Math.max(...data.flatMap((month) => [month.income, month.expense]), 1);
   const maxNetAbs = Math.max(...observed.map((month) => Math.abs(month.net)), 1);
   const bestMonth = observed.reduce<AnnualHistoryMonth | null>((best, month) => (!best || month.net > best.net ? month : best), null);
   const worstMonth = observed.reduce<AnnualHistoryMonth | null>((worst, month) => (!worst || month.net < worst.net ? month : worst), null);
@@ -332,7 +334,13 @@ export function AnnualHistoryPanel({
       </View>
 
       <View style={subStyles.annualFlowChart}>
-        {data.map((month) => (
+        {data.map((month) => {
+          // Meses sin dato: filete gris. Una columna vacia se confunde con un mes de neto cero,
+          // y no es lo mismo "no gaste nada" que "todavia no ha pasado".
+          const hasData = !month.isFuture && (month.income > 0 || month.expense > 0);
+          const net = month.income - month.expense;
+          const height = hasData ? Math.max((Math.abs(net) / maxNetAbs) * 34, 3) : 0;
+          return (
           <TouchableOpacity
             key={month.label}
             style={[subStyles.annualMonthCol, month.isFuture && subStyles.annualMonthColMuted]}
@@ -340,48 +348,27 @@ export function AnnualHistoryPanel({
             activeOpacity={month.isFuture ? 1 : 0.84}
           >
             <View style={subStyles.annualBarsBox}>
-              <View
-                style={[
-                  subStyles.annualFlowBar,
-                  { height: Math.max((month.income / maxFlow) * 70, month.income > 0 ? 3 : 0), backgroundColor: COLORS.income + "cc" },
-                ]}
-              />
-              <View
-                style={[
-                  subStyles.annualFlowBar,
-                  { height: Math.max((month.expense / maxFlow) * 70, month.expense > 0 ? 3 : 0), backgroundColor: COLORS.expense + "cc" },
-                ]}
-              />
+              {/* Mitad de ARRIBA: solo los meses que sumaron. */}
+              <View style={subStyles.annualHalfTop}>
+                {hasData && net > 0 ? (
+                  <View style={[subStyles.annualNetBar, { height, backgroundColor: COLORS.income }]} />
+                ) : null}
+              </View>
+              <View style={subStyles.annualZeroLine} />
+              {/* Mitad de ABAJO: los que restaron cuelgan del eje. */}
+              <View style={subStyles.annualHalfBottom}>
+                {hasData && net < 0 ? (
+                  <View style={[subStyles.annualNetBar, { height, backgroundColor: COLORS.expense }]} />
+                ) : !hasData ? (
+                  <View style={subStyles.annualNoData} />
+                ) : null}
+              </View>
             </View>
             <Text style={subStyles.chartLabel}>{month.label}</Text>
           </TouchableOpacity>
-        ))}
-      </View>
-
-      <View style={subStyles.chartLegend}>
-        <View style={subStyles.legendItem}><View style={[subStyles.legendDot, { backgroundColor: COLORS.income }]} /><Text style={subStyles.legendText}>Ingresos</Text></View>
-        <View style={subStyles.legendItem}><View style={[subStyles.legendDot, { backgroundColor: COLORS.expense }]} /><Text style={subStyles.legendText}>Gastos</Text></View>
-      </View>
-
-      <View style={subStyles.annualNetList}>
-        {observed.map((month) => {
-          const width = Math.max(8, (Math.abs(month.net) / maxNetAbs) * 100);
-          const positive = month.net >= 0;
-          return (
-            <TouchableOpacity key={month.label} style={subStyles.annualNetRow} onPress={() => onSelectMonth(month)} activeOpacity={0.84}>
-              <Text style={subStyles.annualNetMonth}>{month.label}</Text>
-              <View style={subStyles.annualNetTrack}>
-                <View style={[subStyles.annualNetFill, { width: `${width}%` as any, backgroundColor: positive ? COLORS.income : COLORS.expense }]} />
-              </View>
-              <Text style={[subStyles.annualNetAmount, { color: positive ? COLORS.income : COLORS.expense }]}>
-                {positive ? "+" : ""}
-                {formatCurrency(month.net, currency)}
-              </Text>
-            </TouchableOpacity>
           );
         })}
       </View>
-
       <Text style={subStyles.visualChartFootnote}>
         Mejor mes: {bestMonth ? `${bestMonth.label} (${formatCurrency(bestMonth.net, currency)})` : "-"} · Peor mes:{" "}
         {worstMonth ? `${worstMonth.label} (${formatCurrency(worstMonth.net, currency)})` : "-"}.
