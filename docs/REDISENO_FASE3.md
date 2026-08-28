@@ -54,7 +54,7 @@ Sin cifra principal (Contactos, Categorías):
 "CONTACTOS 9", "MONEDAS 20", "CATEGORÍAS 27" venían en menta. **No son plata.** El menta se
 reserva para dinero que entra y el clay para lo que sale o se salió de rango.
 
-**El amarillo se retira** — ver la contradicción en la sección 3.
+**El amarillo no se retira: se acota a una sola cosa** — ver la sección 3, ya resuelta.
 
 ### [ ] PLANTILLA 3 — Los filtros no se cortan a media palabra
 
@@ -95,9 +95,10 @@ aire para que el botón flotante no tape la última.
   que las cuatro personas que te deben S/ 24,133.30.
 - Fuera la cápsula de tipo (el icono ya lo dice) y "Cobra" (ya está en el monto).
 
-### [ ] I · Suscripciones
+### [~] I · Suscripciones — PARCIAL
 - El importe y la frecuencia aparecían dos veces en la misma tarjeta.
-- El amarillo marcaba "PAUSADAS 1", la cápsula "Pausada" y el icono: tres veces lo mismo.
+- ~~El amarillo marcaba "PAUSADAS 1", la cápsula "Pausada" y el icono~~ — **hecho**: pausado va
+  en gris apagado, y el próximo cobro usa el umbral único.
 - Fijado es un **atributo** (estrella) que ordena, no un grupo con encabezado propio.
 
 ### [ ] J · Categorías
@@ -107,7 +108,8 @@ aire para que el botón flotante no tape la última.
   con 158.
 - Fuera "Creada por ti" (cierto para las 27) y el conteo de suscripciones (cero en casi todas).
 
-### [ ] K · Tipos de cambio
+### [~] K · Tipos de cambio — PARCIAL
+- ~~La tira en amarillo~~ — **hecho**: una tasa es dato neutro, va en hueso.
 - Cifra principal: "1 USD en soles · 3.3516".
 - 20 monedas en fila horizontal → **selector**.
 - La tira mostraba "PEN/USD 3.352" redondeado mientras las filas decían 3.3516: tres números
