@@ -84,6 +84,24 @@ recompilarlo, así que **dejó de recibir OTAs**. Se quedó con todo lo publicad
 Regla que sigue vigente: **bumpear `version` sin construir los binarios de las dos
 plataformas congela a la que se quedó atrás.**
 
+### Hecho: 1.0.10 (2026-08-27)
+
+Mismo movimiento que en 1.0.9, y por el mismo motivo. El binario 1.0.9 salió al principio del
+día; encima de él se publicaron por OTA el rediseño visual entero y dos arreglos de fiabilidad,
+que se habían ido acumulando en la entrada de 1.0.9 con el número quieto. Al construir el
+binario 1.0.10 (splash en grafito) esas líneas se movieron a su entrada, y 1.0.9 se quedó solo
+con lo que venía dentro de aquel APK: detección por correo, arranque más rápido, doble toque en
+*Guardar* y recuperación de conexión.
+
+El título de 1.0.10 lo lidera el rediseño porque es lo único que el usuario nota al abrir. El
+color del arranque —que es lo que obligó al binario— queda como una línea más dentro de él: es
+parte del mismo cambio de aspecto, no un tema aparte.
+
+**Regla que se confirma:** cuando se construye un binario, lo publicado por OTA desde el
+binario anterior se mueve a la entrada nueva. La entrada vieja se queda solo con lo que iba
+dentro de aquel binario. Si no, la versión que la gente tiene en pantalla muestra una nota
+menor mientras el cambio grande queda enterrado en una versión anterior.
+
 ## Antes de cerrar
 
 - [ ] Ninguna línea contiene una palabra de la lista de prohibido.
