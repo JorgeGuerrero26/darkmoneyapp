@@ -23,24 +23,24 @@ y un import muerto**, ya retirados.
 
 ## 1. L · Más
 
-### [ ] Nueve tarjetas idénticas son una lista disfrazada
+### [x] Nueve tarjetas idénticas son una lista disfrazada
 Las nueve entradas comparten borde, fondo y chevrón, así que la tarjeta no separa nada: solo
 suma **94 px por opción**. Pasan a filas de 56 px sobre el lienzo y el menú cabe entero sin
 desplazarse, agrupado por para qué sirve cada cosa.
 
-### [ ] El subtítulo cambia por un dato
+### [x] El subtítulo cambia por un dato
 "Pagos recurrentes", "Organiza tus movimientos", "Tasas para conversión de monedas" explican
 palabras que ya se entienden. En su lugar va **lo que hay dentro**: `S/ 60.07 al mes`,
 `27 categorías`, `1 USD = 3.3516`. Un menú que dice el estado de cada sección ahorra entrar a
 mirar.
 
-### [ ] El menta no es decoración
+### [x] El menta no es decoración
 Los nueve iconos venían en menta, el color que en el resto de la app significa dinero que entra.
 Aquí no significa nada, y con nueve seguidos tampoco decora. **Salen**: sin ellos los títulos se
 alinean al mismo borde. El badge de 94 pasa del amarillo al **rojo de la campana**, que es como
 ya lo ves en el Home.
 
-### [ ] "Cerrar sesión" estaba dos veces
+### [x] "Cerrar sesión" estaba dos veces
 Aquí como botón de 68 px con borde clay, y otra vez al fondo de Configuración. **Se queda solo
 en Configuración**, que es donde vive lo de tu cuenta. Un menú de navegación no debería terminar
 en la única acción irreversible de la app.
@@ -49,23 +49,23 @@ en la única acción irreversible de la app.
 
 ## 2. M · Detección automática
 
-### [ ] "Elegir cuenta" siete veces significa que nada está configurado
+### [x] "Elegir cuenta" siete veces significa que nada está configurado
 Cada app trae un desplegable vacío, así que activar el interruptor no basta: quedan **ocho
 decisiones pendientes** que nadie va a tomar. La cuenta destino **se preselecciona con la
 principal** y el desplegable desaparece: la fila dice "a Cuenta Principal" y se toca solo para
 cambiarla. De 110 px por app a 60 px.
 
-### [ ] Una app apagada no necesita mostrar su configuración
+### [x] Una app apagada no necesita mostrar su configuración
 Los bancos en off dibujan igual su desplegable en gris: 60 px de control inactivo cada uno.
 Apagados son **una línea de 52 px** con el nombre y el interruptor; el destino aparece al
 encenderlos.
 
-### [ ] La cápsula "Activa" contradecía el aviso de arriba
+### [x] La cápsula "Activa" contradecía el aviso de arriba
 La pantalla dice que la detección no está disponible en este build y tres dedos más abajo una
 cápsula verde dice "Activa". Se cambia por el **conteo real de apps activas**, que es un dato y
 no una afirmación que el aviso desmiente.
 
-### [ ] Dos tarjetas de texto antes del primer control
+### [x] Dos tarjetas de texto antes del primer control
 Suman 260 px de párrafo, y la segunda ofrece "Abrir ajustes del sistema" para un permiso que
 este build no puede usar. Queda el aviso —en **clay**, porque es una limitación real— y la
 explicación de privacidad como una línea sobre la lista. El botón vuelve cuando el permiso sirva
@@ -75,16 +75,16 @@ de algo.
 
 ## 3. N · Configuración
 
-### [ ] El perfil no se edita en línea, se abre
+### [x] El perfil no se edita en línea, se abre
 Foto, nombre, correo, moneda base y "Guardar perfil" ocupan **620 px de formulario** antes de la
 primera preferencia. Y el correo es un campo editable con el texto en gris de placeholder, así
 que no se sabe si está puesto o vacío. El perfil pasa a **una fila que abre su propia pantalla**.
 
-### [ ] Veinte cápsulas de moneda, otra vez
+### [x] Veinte cápsulas de moneda, otra vez
 Misma falla que en Tipos de cambio y misma solución: **una fila que dice PEN y abre la lista**.
 Ocupaba 200 px en cuadrícula. De paso, *"Se sincronizara"* va con tilde.
 
-### [ ] El morado no existe en el sistema
+### [x] El morado no existe en el sistema
 El tono del asistente está como **par de tarjetas de 90 px** con borde y texto violeta, y
 compite con "Modo avanzado", que es la preferencia importante de esa sección. Pasa a **una fila
 con el valor a la derecha**; la explicación de cada tono se lee al abrirla, que es cuando
@@ -95,12 +95,12 @@ importa.
 > el color sino **la forma**: dos tarjetas de 90 px para una preferencia secundaria. La fila
 > puede conservar el violeta en el valor.
 
-### [ ] No todo interruptor necesita dos líneas de explicación
+### [x] No todo interruptor necesita dos líneas de explicación
 El paréntesis con el sistema operativo y la promesa de alertas no cambian nada al decidir. Push
 y Resumen diario se explican solos y quedan en **52 px**; Alertas predictivas conserva su línea,
 porque ahí sí hay algo que no es obvio.
 
-### [ ] Dos botones primarios y una acción irreversible
+### [x] Dos botones primarios y una acción irreversible
 "Guardar perfil" y "Generar dirección" son los dos hueso lleno, que en el resto de la app
 significa **acción principal**. Guardar se va con el perfil a su pantalla; "Detectar pagos por
 correo" se vuelve **una fila más** y su párrafo de privacidad se lee dentro. "Cerrar sesión"

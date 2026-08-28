@@ -28,6 +28,10 @@ export const CHANGELOG: ChangelogEntry[] = [
       "La barra de abajo ya no tapa lo último de cada lista, y con la letra del sistema en grande dejó de cortarse.",
       "Al bloquear y desbloquear el teléfono, la app ya no te muestra la pantalla de inicio de sesión: sigues donde estabas.",
       "Si guardas algo apenas abres la app y la conexión todavía va lenta, DarkMoney espera a que el servidor termine antes de darte por perdido: ya no te avisa que no sabe si se guardó cuando en realidad sí quedó registrado.",
+      "El menú \"Más\" ahora cabe entero sin desplazarse, y cada opción te dice lo que tiene dentro: cuánto te cuestan al mes tus suscripciones, cuántas categorías tienes, a cómo está el dólar.",
+      "Configuración dejó de empezar con un formulario largo. Tus datos y tu foto tienen ahora su propia pantalla, y las preferencias se ven todas juntas apenas entras.",
+      "Elegir tu moneda base ya no es buscar entre veintidós botoncitos: es una línea que dice cuál tienes y abre la lista al tocarla.",
+      "En Detección automática ya no hay que elegir cuenta app por app: viene puesta tu cuenta principal y se cambia solo si quieres otra.",
     ],
   },
   {
