@@ -1,4 +1,3 @@
-import { CalendarClock, Pause, Wallet } from "lucide-react-native";
 
 import { formatCurrency } from "../../../components/ui/AmountDisplay";
 import { MetricSummaryBar } from "../../../components/ui/MetricSummaryBar";
@@ -18,7 +17,7 @@ export function SubscriptionSummaryBar({
   currencyCode,
 }: Props) {
   const partes = [`${activeCount} activa${activeCount === 1 ? "" : "s"}`];
-  if (pausedCount > 0) partes.push(`${pausedCount} pausada${pausedCount === 1 ? "" : "s"}`);
+  if (pausedCount > 0) partes.push(`${pausedCount} pausada${pausedCount === 1 ? "" : "s"}, no suma al mes`);
 
   return (
     <MetricSummaryBar
