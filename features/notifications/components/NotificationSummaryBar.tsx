@@ -1,4 +1,3 @@
-import { Bell, CheckCheck, Mail } from "lucide-react-native";
 
 import { MetricSummaryBar } from "../../../components/ui/MetricSummaryBar";
 import { COLORS } from "../../../constants/theme";
@@ -22,59 +21,33 @@ export function NotificationSummaryBar({
   onDeleteAllRead,
   actionsDisabled,
 }: Props) {
+  const partes: string[] = [];
+  if (readCount > 0) partes.push(`${readCount} leída${readCount === 1 ? "" : "s"}`);
+  if (inviteCount > 0) partes.push(`${inviteCount} invitación${inviteCount === 1 ? "" : "es"} pendiente${inviteCount === 1 ? "" : "s"}`);
+
+  const actions = [
+    onMarkAllRead && unreadCount > 0
+      ? { key: "read-all", label: "Leer todas", disabled: actionsDisabled, onPress: onMarkAllRead }
+      : null,
+    onMarkAllUnread && readCount > 0
+      ? { key: "unread-all", label: "No leer", disabled: actionsDisabled, onPress: onMarkAllUnread }
+      : null,
+    onDeleteAllRead && readCount > 0
+      ? { key: "delete-read", label: "Eliminar leídas", destructive: true, disabled: actionsDisabled, onPress: onDeleteAllRead }
+      : null,
+  ].filter((a): a is NonNullable<typeof a> => a !== null);
+
   return (
     <MetricSummaryBar
-      items={[
-        {
-          key: "unread",
-          icon: Bell,
-          value: String(unreadCount),
-          label: "sin leer",
-          color: unreadCount > 0 ? COLORS.primary : COLORS.storm,
-          strong: true,
-          helpTitle: "Notificaciones sin leer",
-          helpDescription: "Notificaciones pendientes de revisar. Incluye alertas financieras, recordatorios y avisos relevantes.",
-        },
-        {
-          key: "read",
-          icon: CheckCheck,
-          value: String(readCount),
-          label: "leídas",
-          color: COLORS.income,
-          helpTitle: "Notificaciones leídas",
-          helpDescription: "Notificaciones que ya fueron marcadas como revisadas.",
-        },
-        {
-          key: "invites",
-          icon: Mail,
-          value: String(inviteCount),
-          label: "invitaciones",
-          color: inviteCount > 0 ? COLORS.pine : COLORS.storm,
-          helpTitle: "Invitaciones",
-          helpDescription: "Invitaciones relacionadas con workspaces compartidos o colaboración.",
-        },
-      ]}
-      actions={[
-        ...(onMarkAllRead ? [{
-          key: "read-all",
-          label: "Leer todas",
-          disabled: unreadCount === 0 || actionsDisabled,
-          onPress: onMarkAllRead,
-        }] : []),
-        ...(onMarkAllUnread ? [{
-          key: "unread-all",
-          label: "No leer",
-          disabled: readCount === 0 || actionsDisabled,
-          onPress: onMarkAllUnread,
-        }] : []),
-        ...(onDeleteAllRead ? [{
-          key: "delete-read",
-          label: "Eliminar leídas",
-          disabled: readCount === 0 || actionsDisabled,
-          onPress: onDeleteAllRead,
-          destructive: true,
-        }] : []),
-      ]}
+      label="Sin leer"
+      value={String(unreadCount)}
+      valueColor={unreadCount > 0 ? COLORS.ink : COLORS.storm}
+      support={partes.length > 0 ? partes.join(" · ") : "Todo al día"}
+      actions={actions}
+      help={{
+        title: "Notificaciones sin leer",
+        description: "Pendientes de revisar: alertas financieras, recordatorios y pagos detectados.",
+      }}
     />
   );
 }

@@ -17,39 +17,19 @@ export function SubscriptionSummaryBar({
   pausedCount,
   currencyCode,
 }: Props) {
+  const partes = [`${activeCount} activa${activeCount === 1 ? "" : "s"}`];
+  if (pausedCount > 0) partes.push(`${pausedCount} pausada${pausedCount === 1 ? "" : "s"}`);
+
   return (
     <MetricSummaryBar
-      items={[
-        {
-          key: "monthly",
-          icon: Wallet,
-          value: formatCurrency(monthlyTotal, currencyCode),
-          label: "al mes",
-          color: COLORS.expense,
-          strong: true,
-          helpTitle: "Costo mensual estimado",
-          helpDescription: "Suma las suscripciones activas convertidas a un equivalente mensual en la moneda base del workspace.",
-        },
-        {
-          key: "active",
-          icon: CalendarClock,
-          value: String(activeCount),
-          label: "activas",
-          color: COLORS.primary,
-          helpTitle: "Suscripciones activas",
-          helpDescription: "Cantidad de suscripciones activas que se consideran para próximos pagos y para el costo mensual estimado.",
-        },
-        {
-          key: "paused",
-          icon: Pause,
-          value: String(pausedCount),
-          label: "pausadas",
-          // Un conteo de pausadas no es una advertencia. Ver lib/due-tone.
-          color: COLORS.storm,
-          helpTitle: "Suscripciones pausadas",
-          helpDescription: "Suscripciones que siguen registradas pero no se consideran activas para próximos pagos ni para el costo mensual estimado.",
-        },
-      ]}
+      label="Al mes"
+      value={formatCurrency(monthlyTotal, currencyCode)}
+      valueColor={COLORS.expense}
+      support={partes.join(" · ")}
+      help={{
+        title: "Gasto mensual en suscripciones",
+        description: "Suma de tus suscripciones activas llevada a su equivalente mensual.",
+      }}
     />
   );
 }

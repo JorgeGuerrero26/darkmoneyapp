@@ -21,15 +21,12 @@ export function AccountNetWorthSummary({
 
   return (
     <MetricSummaryBar
-      items={[{
-        key: "net-worth",
-        label: "Patrimonio neto",
-        value: formatCurrency(totalNetWorth, activeCurrency),
-        color: COLORS.ink,
-        strong: true,
-        helpTitle: "Patrimonio neto",
-        helpDescription: "Suma de saldos de cuentas activas marcadas para incluirse en patrimonio. Puedes cambiar la moneda con los botones de la derecha.",
-      }]}
+      label="Patrimonio neto"
+      value={formatCurrency(totalNetWorth, activeCurrency)}
+      help={{
+        title: "Patrimonio neto",
+        description: "Suma de saldos de cuentas activas marcadas para incluirse en patrimonio. Puedes cambiar la moneda con los botones de la derecha.",
+      }}
       actions={currencyOptions.map((currency) => ({
         key: currency,
         label: currency,

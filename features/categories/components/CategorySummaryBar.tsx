@@ -1,7 +1,5 @@
-import { Layers3, Power, Tag } from "lucide-react-native";
 
 import { MetricSummaryBar } from "../../../components/ui/MetricSummaryBar";
-import { COLORS } from "../../../constants/theme";
 
 type Props = {
   totalCount: number;
@@ -10,38 +8,13 @@ type Props = {
 };
 
 export function CategorySummaryBar({ totalCount, activeCount, systemCount }: Props) {
-  return (
-    <MetricSummaryBar
-      items={[
-        {
-          key: "total",
-          icon: Tag,
-          value: String(totalCount),
-          label: "categorías",
-          color: COLORS.primary,
-          strong: true,
-          helpTitle: "Total de categorías",
-          helpDescription: "Cantidad de categorías visibles con los filtros actuales. Incluye categorías creadas por ti y categorías predefinidas del sistema.",
-        },
-        {
-          key: "active",
-          icon: Power,
-          value: String(activeCount),
-          label: "activas",
-          color: COLORS.income,
-          helpTitle: "Categorías activas",
-          helpDescription: "Categorías disponibles para clasificar movimientos, suscripciones, presupuestos u otros registros.",
-        },
-        {
-          key: "system",
-          icon: Layers3,
-          value: String(systemCount),
-          label: "sistema",
-          color: COLORS.info,
-          helpTitle: "Categorías del sistema",
-          helpDescription: "Categorías predefinidas que vienen con la app. Sirven como base inicial y no se editan igual que las categorías creadas por ti.",
-        },
-      ]}
-    />
-  );
+  const propias = totalCount - systemCount;
+  const partes = [
+    `${totalCount} categoría${totalCount === 1 ? "" : "s"}`,
+    activeCount === totalCount ? "todas activas" : `${activeCount} activa${activeCount === 1 ? "" : "s"}`,
+  ];
+  if (systemCount > 0) partes.push(`${propias} tuya${propias === 1 ? "" : "s"}`);
+
+  // Sin cifra: un conteo de categorías no merece 32px ni es dinero.
+  return <MetricSummaryBar support={partes.join(" · ")} />;
 }

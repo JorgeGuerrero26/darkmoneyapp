@@ -17,41 +17,35 @@ export function ObligationSummaryBar({
   netTotal,
   currencyCode,
 }: Props) {
+  const meDeben = receivableTotal > 0;
+  const debo = payableTotal > 0;
+  // La cifra es la que domina; si las dos existen, manda el neto.
+  const headline = meDeben && debo
+    ? { label: netTotal >= 0 ? "Neto a favor" : "Neto en contra", amount: Math.abs(netTotal), color: netTotal >= 0 ? COLORS.income : COLORS.expense }
+    : debo
+      ? { label: "Debes", amount: payableTotal, color: COLORS.expense }
+      : { label: "Te deben", amount: receivableTotal, color: COLORS.income };
+
+  const partes: string[] = [];
+  if (meDeben && debo) {
+    partes.push(`Te deben ${formatCurrency(receivableTotal, currencyCode)}`);
+    partes.push(`debes ${formatCurrency(payableTotal, currencyCode)}`);
+  } else if (!debo) {
+    partes.push("No debes nada");
+  } else {
+    partes.push("Nadie te debe");
+  }
+
   return (
     <MetricSummaryBar
-      items={[
-        {
-          key: "receivable",
-          icon: ArrowDownLeft,
-          value: formatCurrency(receivableTotal, currencyCode),
-          label: "por cobrar",
-          compactLabel: "cobrar",
-          color: COLORS.pine,
-          helpTitle: "Total por cobrar",
-          helpDescription: "Monto pendiente que otras personas te deben dentro de los créditos y deudas visibles.",
-        },
-        {
-          key: "payable",
-          icon: ArrowUpRight,
-          value: formatCurrency(payableTotal, currencyCode),
-          label: "por pagar",
-          compactLabel: "pagar",
-          color: COLORS.rosewood,
-          helpTitle: "Total por pagar",
-          helpDescription: "Monto pendiente que tú debes pagar dentro de los créditos y deudas visibles.",
-        },
-        {
-          key: "net",
-          icon: Scale,
-          value: formatCurrency(Math.abs(netTotal), currencyCode),
-          label: netTotal >= 0 ? "neto a favor" : "neto en contra",
-          compactLabel: netTotal >= 0 ? "neto +" : "neto -",
-          color: netTotal >= 0 ? COLORS.pine : COLORS.rosewood,
-          strong: true,
-          helpTitle: netTotal >= 0 ? "Neto a favor" : "Neto en contra",
-          helpDescription: "Diferencia entre lo pendiente por cobrar y lo pendiente por pagar. Resume si tu posición neta está a favor o en contra.",
-        },
-      ]}
+      label={headline.label}
+      value={formatCurrency(headline.amount, currencyCode)}
+      valueColor={headline.color}
+      support={partes.join(" · ")}
+      help={{
+        title: headline.label,
+        description: "Suma de lo pendiente en tus créditos y deudas activos, convertido a la moneda que elegiste.",
+      }}
     />
   );
 }

@@ -3,7 +3,7 @@ import type { SectionListRenderItem } from "react-native";
 import { useRouter } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Archive, CheckSquare, Download, Trash2, Users } from "lucide-react-native";
+import { Archive, CheckSquare, Download, Trash2 } from "lucide-react-native";
 import { format } from "date-fns";
 
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
@@ -443,32 +443,14 @@ function ContactsScreen() {
       summary={
         !selectMode && filteredContacts.length > 0 ? (
           <MetricSummaryBar
-            items={[
-              {
-                key: "total",
-                icon: Users,
-                value: String(summary.total),
-                label: "contactos",
-                color: COLORS.primary,
-                strong: true,
-                helpTitle: "Contactos visibles",
-                helpDescription: "Cantidad total de contactos que coinciden con la búsqueda y filtros actuales.",
-              },
-              {
-                key: "active",
-                value: String(summary.active),
-                label: "activos",
-                helpTitle: "Contactos activos",
-                helpDescription: "Contactos disponibles para usarse en créditos, deudas, movimientos u otros módulos.",
-              },
-              {
-                key: "linked",
-                value: String(summary.linked),
-                label: "vinculados",
-                helpTitle: "Contactos vinculados",
-                helpDescription: "Contactos que ya tienen relación con registros financieros, como créditos, deudas o movimientos.",
-              },
-            ]}
+            // Sin cifra grande: un conteo de contactos no merece 32px ni es dinero. Lo que sí
+            // importa —cuántos tienen movimientos o deudas— va en la frase.
+            support={[
+              `${summary.total} contacto${summary.total === 1 ? "" : "s"}`,
+              summary.linked > 0
+                ? `${summary.linked} con movimientos o deudas`
+                : "ninguno con movimientos todavía",
+            ].join(" · ")}
           />
         ) : null
       }

@@ -19,41 +19,24 @@ export function BudgetSummaryBar({
   attentionCount,
   currencyCode,
 }: Props) {
+  const excedido = remainingTotal < 0;
+  const partes = [
+    `${formatCurrency(spentTotal, currencyCode)} de ${formatCurrency(limitTotal, currencyCode)}`,
+  ];
+  if (attentionCount > 0) {
+    partes.push(`${attentionCount} presupuesto${attentionCount === 1 ? "" : "s"} cerca del tope`);
+  }
+
   return (
     <MetricSummaryBar
-      items={[
-        {
-          key: "limit",
-          icon: Target,
-          value: formatAmountPlain(limitTotal, currencyCode),
-          label: `Límite ${currencyCode}`,
-          color: COLORS.primary,
-          helpTitle: "Límite total",
-          helpDescription: "Suma de los límites de los presupuestos visibles con los filtros actuales, convertida a la moneda base.",
-        },
-        {
-          key: "spent",
-          icon: PiggyBank,
-          value: formatAmountPlain(spentTotal, currencyCode),
-          label: "Gastado",
-          color: spentTotal > limitTotal ? COLORS.expense : COLORS.storm,
-          helpTitle: "Gasto acumulado",
-          helpDescription: "Suma de los movimientos reales que consumen los presupuestos visibles dentro de sus períodos y alcances configurados.",
-        },
-        {
-          key: "remaining",
-          icon: AlertTriangle,
-          value: formatAmountPlain(Math.abs(remainingTotal), currencyCode),
-          label: attentionCount > 0 ? `${attentionCount} alerta` : "disponible",
-          compactLabel: attentionCount > 0 ? `${attentionCount} alerta` : "libre",
-          color: remainingTotal < 0 ? COLORS.expense : COLORS.income,
-          strong: true,
-          helpTitle: attentionCount > 0 ? "Presupuestos con alerta" : "Disponible total",
-          helpDescription: attentionCount > 0
-            ? "Cantidad de presupuestos visibles que están cerca del límite o ya lo superaron."
-            : "Monto disponible antes de llegar al límite total de los presupuestos visibles.",
-        },
-      ]}
+      label={excedido ? "Te pasaste" : "Disponible"}
+      value={formatCurrency(Math.abs(remainingTotal), currencyCode)}
+      valueColor={excedido ? COLORS.expense : COLORS.ink}
+      support={partes.join(" · ")}
+      help={{
+        title: excedido ? "Te pasaste del tope" : "Disponible",
+        description: "Diferencia entre el tope de tus presupuestos activos y lo que llevas gastado.",
+      }}
     />
   );
 }

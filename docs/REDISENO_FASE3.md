@@ -32,7 +32,7 @@ Verificado en el código, no solo en la maqueta:
 
 ## 1. Las cuatro reglas de la plantilla
 
-### [ ] PLANTILLA 1 — La tira de tres cifras se vuelve una línea
+### [x] PLANTILLA 1 — La tira de tres cifras se vuelve una línea — HECHA
 
 **Una** cifra principal (34 px) y el resto como línea de apoyo en gris. **Si el módulo no tiene
 una cifra que merezca 34 px, no lleva cifra** — solo la línea.
@@ -49,12 +49,31 @@ Sin cifra principal (Contactos, Categorías):
 9 contactos · 4 con saldo abierto por S/ 24,133.30
 ```
 
-### [ ] PLANTILLA 2 — Conteos en hueso, soles en color
+### [x] PLANTILLA 2 — Conteos en hueso, soles en color — HECHA
 
 "CONTACTOS 9", "MONEDAS 20", "CATEGORÍAS 27" venían en menta. **No son plata.** El menta se
 reserva para dinero que entra y el clay para lo que sale o se salió de rango.
 
 **El amarillo no se retira: se acota a una sola cosa** — ver la sección 3, ya resuelta.
+
+**Hecho.** `MetricSummaryBar` cambia de API: `items[]` → `label` + `value` + `support`. Los diez
+consumidores migrados. Cada uno compone su propia FRASE en vez de rellenar celdas:
+
+| Módulo | Cifra | Frase |
+|---|---|---|
+| Créditos y deudas | la que domina (neto solo si hay ambas) | "No debes nada" |
+| Movimientos | Neto | "Entró X · salió Y" |
+| Presupuestos | Disponible / Te pasaste | "X de Y · N cerca del tope" |
+| Suscripciones | Al mes | "6 activas · 1 pausada" |
+| Ingresos fijos | Al mes (en menta) | "3 activos · 1 por llegar" |
+| Notificaciones | Sin leer | "12 leídas · 1 invitación" |
+| Tipos de cambio | 1 USD en PEN | "2 pares · 20 monedas" |
+| **Contactos** | *ninguna* | "9 contactos · 4 con movimientos" |
+| **Categorías** | *ninguna* | "27 categorías · todas activas" |
+
+Contactos y Categorías se quedan **sin cifra**: un conteo no merece 32 px ni es dinero. Eso
+cierra también la PLANTILLA 2 —los conteos que iban en menta ya no existen como cifra— y de
+paso caen los iconos por celda, que solo servían para rellenar.
 
 ### [ ] PLANTILLA 3 — Los filtros no se cortan a media palabra
 

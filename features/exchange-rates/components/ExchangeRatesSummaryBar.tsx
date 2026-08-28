@@ -1,7 +1,6 @@
-import { Coins, DollarSign, Repeat2 } from "lucide-react-native";
 
 import { MetricSummaryBar } from "../../../components/ui/MetricSummaryBar";
-import { COLORS } from "../../../constants/theme";
+
 import type { UsdReferenceRate } from "../lib/usdReferenceRate";
 
 type Props = {
@@ -12,43 +11,15 @@ type Props = {
 };
 
 export function ExchangeRatesSummaryBar({ pairCount, currencyCount, usdReference }: Props) {
+  const partes = [`${pairCount} par${pairCount === 1 ? "" : "es"} configurado${pairCount === 1 ? "" : "s"}`];
+  if (currencyCount > 0) partes.push(`${currencyCount} moneda${currencyCount === 1 ? "" : "s"}`);
+
   return (
     <MetricSummaryBar
-      items={[
-        ...(usdReference
-          ? [{
-              key: "usd",
-              icon: DollarSign,
-              value: usdReference.rate.toLocaleString("es-PE", { maximumFractionDigits: 3 }),
-              label: `${usdReference.baseCurrencyCode}/USD`,
-              // Una tasa de cambio es un dato neutro, no un aviso: hueso.
-              color: COLORS.ink,
-              strong: true,
-              helpTitle: "Referencia USD",
-              helpDescription: `Cuántos ${usdReference.baseCurrencyCode} equivalen a 1 USD según la tasa sincronizada más reciente. USD es la referencia por defecto para comparaciones.`,
-            }]
-          : []),
-        {
-          key: "pairs",
-          icon: Repeat2,
-          value: String(pairCount),
-          label: "pares",
-          color: COLORS.primary,
-          strong: true,
-          helpTitle: "Pares de cambio",
-          helpDescription: "Cantidad de combinaciones origen/destino disponibles para convertir montos entre monedas.",
-        },
-        {
-          key: "currencies",
-          icon: Coins,
-          value: String(currencyCount),
-          label: "monedas",
-          color: COLORS.pine,
-          helpTitle: "Monedas disponibles",
-          helpDescription: "Cantidad de monedas consideradas por los tipos de cambio actuales del workspace.",
-        },
-      ]}
-      trailingLabel="1 origen = tasa destino"
+      label={usdReference ? `1 USD en ${usdReference.baseCurrencyCode}` : undefined}
+      value={usdReference ? String(usdReference.rate) : null}
+      support={partes.join(" · ")}
+      footnote="1 unidad de la moneda origen equivale a la tasa mostrada en la moneda destino."
     />
   );
 }

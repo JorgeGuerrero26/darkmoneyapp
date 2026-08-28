@@ -19,39 +19,20 @@ export function RecurringIncomeSummaryBar({
   pausedCount,
   currencyCode,
 }: Props) {
+  const partes = [`${activeCount} activo${activeCount === 1 ? "" : "s"}`];
+  if (upcomingCount > 0) partes.push(`${upcomingCount} por llegar`);
+  if (pausedCount > 0) partes.push(`${pausedCount} pausado${pausedCount === 1 ? "" : "s"}`);
+
   return (
     <MetricSummaryBar
-      items={[
-        {
-          key: "monthly",
-          icon: TrendingUp,
-          value: formatCurrency(monthlyTotal, currencyCode),
-          label: "al mes",
-          color: COLORS.income,
-          strong: true,
-          helpTitle: "Ingreso mensual estimado",
-          helpDescription: "Suma los ingresos fijos activos convertidos a un equivalente mensual en la moneda base del workspace.",
-        },
-        {
-          key: "active",
-          icon: CalendarClock,
-          value: String(activeCount),
-          label: "activos",
-          color: COLORS.primary,
-          helpTitle: "Ingresos activos",
-          helpDescription: "Cantidad de ingresos fijos activos que se consideran para próximas llegadas y para el total mensual estimado.",
-        },
-        {
-          key: "paused",
-          icon: Pause,
-          value: String(pausedCount),
-          label: "pausados",
-          compactLabel: "pausa",
-          color: pausedCount > 0 ? COLORS.gold : COLORS.storm,
-          helpTitle: "Ingresos pausados",
-          helpDescription: `Cantidad de ingresos fijos pausados. No se suman al estimado mensual ni generan próximas llegadas. Activos próximos en 30 días: ${upcomingCount}.`,
-        },
-      ]}
+      label="Al mes"
+      value={formatCurrency(monthlyTotal, currencyCode)}
+      valueColor={COLORS.income}
+      support={partes.join(" · ")}
+      help={{
+        title: "Ingreso mensual recurrente",
+        description: "Suma de tus ingresos fijos activos llevada a su equivalente mensual.",
+      }}
     />
   );
 }

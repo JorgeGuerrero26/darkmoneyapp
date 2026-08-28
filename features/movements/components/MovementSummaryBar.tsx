@@ -1,5 +1,4 @@
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { TrendingDown, TrendingUp } from "lucide-react-native";
 
 import { formatAmountPlain, formatCurrency } from "../../../components/ui/AmountDisplay";
 import { MetricSummaryBar } from "../../../components/ui/MetricSummaryBar";
@@ -63,36 +62,18 @@ export function MovementSummaryBar({
         </View>
       ) : null}
       <MetricSummaryBar
-        items={[
-          {
-            key: "income",
-            icon: TrendingUp,
-            value: formatAmountPlain(summary.incomeTotal, activeCurrency),
-            label: "Ingresos",
-            color: COLORS.income,
-            helpTitle: "Ingresos filtrados",
-            helpDescription: `Total de movimientos de ingreso que coinciden con la búsqueda y filtros actuales. Se muestra en ${activeCurrency}.`,
-          },
-          {
-            key: "expense",
-            icon: TrendingDown,
-            value: formatAmountPlain(summary.expenseTotal, activeCurrency),
-            label: "Gastos",
-            color: COLORS.expense,
-            helpTitle: "Gastos filtrados",
-            helpDescription: `Total de movimientos de gasto que coinciden con la búsqueda y filtros actuales. Se muestra en ${activeCurrency}.`,
-          },
-          {
-            key: "net",
-            value: formatAmountPlain(summary.net, activeCurrency, true),
-            label: `Neto ${activeCurrency}`,
-            color: summary.net >= 0 ? COLORS.income : COLORS.expense,
-            strong: true,
-            helpTitle: "Neto del filtro",
-            helpDescription: "Diferencia entre ingresos y gastos visibles. Si es positivo entró más dinero; si es negativo salió más dinero.",
-          },
-        ]}
-        trailingLabel={partial ? "Totales de los movimientos cargados hasta ahora. Sigue bajando para incluir el resto." : null}
+        label={`Neto ${activeCurrency}`}
+        value={formatAmountPlain(summary.net, activeCurrency, true)}
+        valueColor={summary.net >= 0 ? COLORS.income : COLORS.expense}
+        support={[
+          `Entró ${formatCurrency(summary.incomeTotal, activeCurrency)}`,
+          `salió ${formatCurrency(summary.expenseTotal, activeCurrency)}`,
+        ].join(" · ")}
+        footnote={partial ? "Totales de los movimientos cargados hasta ahora. Sigue bajando para incluir el resto." : null}
+        help={{
+          title: "Neto del filtro",
+          description: "Diferencia entre ingresos y gastos visibles. Si es positivo entró más dinero del que salió.",
+        }}
       />
     </View>
   );
