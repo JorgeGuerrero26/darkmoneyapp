@@ -355,6 +355,10 @@ function ProGateLoading() {
 
 function DashboardScreen() {
   const insets = useSafeAreaInsets();
+  // Espejo de la pestaña activa del dashboard avanzado. Solo sirve para colapsar el encabezado:
+  // el saludo existe UNA vez, en Resumen, y en las otras cuatro pestañas se convierte en una
+  // barra de 44px con el nombre de la pestaña. Repetirlo consumia 210px en cada una.
+  const [advancedTab, setAdvancedTab] = useState<AdvancedTab>("Resumen");
   const router = useRouter();
   const queryClient = useQueryClient();
   const { profile, session, signOut } = useAuth();
@@ -404,6 +408,9 @@ function DashboardScreen() {
     await signOut().finally(() => setSigningOut(false));
   }
   const { dashboardMode, setDashboardMode, dashboardScrollY, setDashboardScrollY, privacyMode, togglePrivacyMode } = useUiStore();
+  // Solo colapsa en modo avanzado y fuera de Resumen: en Simple no hay pestañas, y en Resumen
+  // el saludo es justamente lo que abre la pantalla.
+  const isAdvancedCollapsedHeader = dashboardMode === "advanced" && advancedTab !== "Resumen";
   const scrollRef = useRef<import("react-native").ScrollView>(null);
   const scrollSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const advancedSectionY = useRef(0);
@@ -754,12 +761,19 @@ function DashboardScreen() {
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
-      <ScreenHeader
-        title={`Hola, ${profile?.fullName?.split(" ")[0] ?? "usuario"}`}
-        subtitle={`${workspaceDisplayName} · ${format(new Date(), "d MMM yyyy", { locale: es })}${lastUpdateLabel ? ` · ${lastUpdateLabel}` : ""}`}
-        rightAction={<DashboardHeaderRight onSignOut={handleSignOut} privacyMode={privacyMode} onTogglePrivacy={() => { void Haptics.selectionAsync(); togglePrivacyMode(); }} />}
-        showPlanBadge
-      />
+      {isAdvancedCollapsedHeader ? (
+        <ScreenHeader
+          title={advancedTab}
+          rightAction={<DashboardHeaderRight onSignOut={handleSignOut} privacyMode={privacyMode} onTogglePrivacy={() => { void Haptics.selectionAsync(); togglePrivacyMode(); }} />}
+        />
+      ) : (
+        <ScreenHeader
+          title={`Hola, ${profile?.fullName?.split(" ")[0] ?? "usuario"}`}
+          subtitle={`${workspaceDisplayName} · ${format(new Date(), "d MMM yyyy", { locale: es })}${lastUpdateLabel ? ` · ${lastUpdateLabel}` : ""}`}
+          rightAction={<DashboardHeaderRight onSignOut={handleSignOut} privacyMode={privacyMode} onTogglePrivacy={() => { void Haptics.selectionAsync(); togglePrivacyMode(); }} />}
+          showPlanBadge
+        />
+      )}
 
       <ScrollView
         ref={scrollRef}
@@ -891,6 +905,7 @@ function DashboardScreen() {
         {isAdvanced && hasAdvancedDashboardAccess && (
           <View onLayout={(e) => { advancedSectionY.current = e.nativeEvent.layout.y; }}>
           <AdvancedDashboard
+            onActiveTabChange={setAdvancedTab}
             movements={movements}
             obligations={obligationsMerged}
             subscriptions={snapshot?.subscriptions ?? []}

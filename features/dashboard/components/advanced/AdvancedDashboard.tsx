@@ -184,6 +184,7 @@ export function AdvancedDashboard({
   accountCurrencyMap,
   onRequestPrecisionFocus,
   onScrollToTop,
+  onActiveTabChange,
 }: {
   movements: DashboardMovementRow[];
   obligations: Array<{ id: number; title: string; direction: string; pendingAmount: number; installmentAmount?: number | null; currencyCode: string; dueDate: string | null; status: string; lastPaymentDate?: string | null; startDate?: string; counterparty: string }>;
@@ -202,6 +203,8 @@ export function AdvancedDashboard({
   analytics: DashboardAnalyticsBundle | null | undefined;
   router: ReturnType<typeof useRouter>;
   accountCurrencyMap: Map<number, string>;
+  /** Avisa a la PANTALLA en que pestaña estamos, para que colapse su encabezado. */
+  onActiveTabChange?: (tab: AdvancedTab) => void;
   onRequestPrecisionFocus?: () => void;
   onScrollToTop?: () => void;
 }) {
@@ -2805,6 +2808,9 @@ export function AdvancedDashboard({
   const dashboardAiUsageDate = dashboardAi.usageDate;
   const dashboardAiIsAdmin = dashboardAi.isAdmin;
   const [activeTab, setActiveTab] = useState<AdvancedTab>('Resumen');
+  useEffect(() => {
+    onActiveTabChange?.(activeTab);
+  }, [activeTab, onActiveTabChange]);
   const weekHasSchedule = weekWindow.expectedInflow > 0 || weekWindow.expectedOutflow > 0;
   useEffect(() => {
     const animation = Animated.loop(
