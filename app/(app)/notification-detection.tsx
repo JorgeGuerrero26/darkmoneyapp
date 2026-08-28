@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { Battery, Bell, ChevronDown, Eye, ShieldCheck } from "lucide-react-native";
+import { Battery, Bell, ChevronDown, Eye } from "lucide-react-native";
 import {
   AppState,
   Linking,
@@ -34,7 +34,7 @@ import {
 import { useWorkspaceSnapshotQuery, useDashboardAnalyticsQuery } from "../../services/queries/workspace-data";
 import { useMovementPatternsQuery } from "../../services/queries/movement-patterns";
 import { buildPatternMaps } from "../../lib/movement-patterns";
-import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
+import { COLORS, EXTENDED_PALETTE, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import type { AccountSummary } from "../../types/domain";
 
 const Notifications = getNotificationsModule();
@@ -192,9 +192,18 @@ export default function NotificationDetectionScreen() {
     upsertSetting.mutate({ ...current, ...patch, financialAppKey: key });
   }
 
+  // Sin cuenta elegida se usa la principal, no "Elegir cuenta": una preselección razonable
+  // deja la pantalla configurada de entrada en vez de dejar ocho decisiones pendientes.
+  const defaultAccount = activeAccounts[0] ?? null;
+  const enabledAppCount = FINANCIAL_APPS.filter(
+    (app) => (settingsByKey.get(app.key) ?? { enabled: app.defaultEnabled }).enabled,
+  ).length;
+
   function accountName(accountId?: number | null) {
-    if (!accountId) return "Elegir cuenta";
-    return activeAccounts.find((account) => account.id === accountId)?.name ?? "Cuenta no disponible";
+    const target = accountId
+      ? activeAccounts.find((account) => account.id === accountId)
+      : defaultAccount;
+    return target?.name ?? "sin cuenta disponible";
   }
 
   if (!onboardingChecked) {
@@ -205,34 +214,13 @@ export default function NotificationDetectionScreen() {
     <View style={[styles.screen, { paddingTop: insets.top }]}>
       <ScreenHeader title="Detección automática" onBack={handleBack} />
       <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + SPACING.xl }]}>
-        <Card style={styles.card}>
-          <View style={styles.headerRow}>
-            <View style={styles.iconBubble}>
-              <ShieldCheck size={18} color={COLORS.primary} />
-            </View>
-            <View style={styles.copy}>
-              <Text style={styles.title}>Movimientos desde notificaciones</Text>
-              <Text style={styles.text}>
-                DarkMoney analiza solo las apps financieras que actives para sugerir movimientos. No registra nada sin tu confirmación.
-              </Text>
-            </View>
-          </View>
-        </Card>
-
         {!nativeAvailable ? (
-          <Card style={styles.card}>
-            <Text style={styles.title}>Detección no disponible en este build</Text>
-            <Text style={styles.text}>
-              La detección automática de movimientos desde notificaciones requiere la app instalada desde Play Store (build nativo de Android). En Expo Go o en web no está disponible.
+          <View style={styles.limitNotice}>
+            <Text style={styles.limitNoticeText}>
+              La detección automática necesita la app instalada desde Play Store. Puedes dejar todo
+              configurado ahora y empezará a funcionar cuando instales esa versión.
             </Text>
-            <TouchableOpacity
-              style={styles.bannerCta}
-              onPress={() => void Linking.openSettings()}
-              activeOpacity={0.84}
-            >
-              <Text style={styles.bannerCtaText}>Abrir ajustes del sistema</Text>
-            </TouchableOpacity>
-          </Card>
+          </View>
         ) : (
           <Card style={styles.card}>
             <Text style={styles.title}>Permisos</Text>
@@ -310,11 +298,15 @@ export default function NotificationDetectionScreen() {
             <View style={styles.copy}>
               <Text style={styles.title}>Apps financieras</Text>
               <Text style={styles.text}>
+                DarkMoney analiza solo las apps que actives, para sugerir movimientos. No registra
+                nada sin tu confirmación.
+              </Text>
+              <Text style={styles.text}>
                 Elige qué apps puede analizar DarkMoney y a qué cuenta se asignará cada movimiento detectado.
               </Text>
             </View>
-            <Text style={[styles.statePill, detectionEnabled ? styles.stateOn : styles.stateOff]}>
-              {detectionEnabled ? "Activa" : "Apagada"}
+            <Text style={styles.stateCount}>
+              {enabledAppCount} de {FINANCIAL_APPS.length} activas
             </Text>
           </View>
 
@@ -325,27 +317,28 @@ export default function NotificationDetectionScreen() {
                 <View style={styles.appTop}>
                   <View style={styles.copy}>
                     <Text style={styles.appTitle}>{app.label}</Text>
-                    <Text style={styles.appSubtitle}>{app.subtitle}</Text>
+                    {/* El destino solo aparece si la app está encendida. Apagada, su desplegable
+                        en gris eran 60px de control inactivo que no llevaban a ninguna parte. */}
+                    {setting.enabled ? (
+                      <TouchableOpacity
+                        onPress={() => setAccountPickerFor(app.key)}
+                        activeOpacity={0.82}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Cambiar la cuenta de ${app.label}`}
+                      >
+                        <Text style={styles.appDestination}>
+                          a {accountName(setting.defaultAccountId)}
+                        </Text>
+                      </TouchableOpacity>
+                    ) : null}
                   </View>
                   <Switch
                     value={setting.enabled}
                     onValueChange={(enabled) => patchSetting(app.key, { enabled })}
                     trackColor={{ false: COLORS.border, true: COLORS.primary }}
-                    thumbColor="#FFFFFF"
+                    thumbColor={EXTENDED_PALETTE.white}
                   />
                 </View>
-                <TouchableOpacity
-                  style={[styles.accountButton, !setting.enabled && styles.disabledSurface]}
-                  disabled={!setting.enabled}
-                  activeOpacity={0.82}
-                  onPress={() => setAccountPickerFor(app.key)}
-                >
-                  <Text style={styles.accountLabel}>Cuenta predeterminada</Text>
-                  <View style={styles.accountValueRow}>
-                    <Text style={styles.accountValue}>{accountName(setting.defaultAccountId)}</Text>
-                    <ChevronDown size={16} color={COLORS.textMuted} />
-                  </View>
-                </TouchableOpacity>
               </View>
             );
           })}
@@ -429,15 +422,6 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: COLORS.bg },
   content: { padding: SPACING.lg, gap: SPACING.md },
   card: { padding: SPACING.md, gap: SPACING.md },
-  headerRow: { flexDirection: "row", gap: SPACING.md },
-  iconBubble: {
-    width: 38,
-    height: 38,
-    borderRadius: RADIUS.md,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: COLORS.primary + "1A",
-  },
   copy: { flex: 1, gap: SPACING.xs },
   title: { color: COLORS.text, fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.md },
   text: { color: COLORS.textMuted, fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, lineHeight: 20 },
@@ -497,6 +481,21 @@ const styles = StyleSheet.create({
   },
   stateOn: { color: COLORS.primary, backgroundColor: COLORS.successMuted },
   stateOff: { color: COLORS.textMuted, backgroundColor: SURFACE.subtle },
+  // El destino, como linea de apoyo bajo el nombre. Antes era un desplegable de 60px por app.
+  // Un conteo no es un estado: sin capsula ni color. La capsula verde afirmaba algo que el
+  // aviso de arriba desmentia.
+  // Clay y no amarillo: es una limitación real de este build, no algo que esté por vencer.
+  limitNotice: {
+    marginHorizontal: SPACING.xl,
+    padding: SPACING.md,
+    borderRadius: RADIUS.md,
+    borderLeftWidth: 3,
+    borderLeftColor: COLORS.expense,
+    backgroundColor: SURFACE.subtle,
+  },
+  limitNoticeText: { fontSize: FONT_SIZE.sm, lineHeight: 20, color: COLORS.fog },
+  stateCount: { fontSize: FONT_SIZE.xs, color: COLORS.storm },
+  appDestination: { fontSize: FONT_SIZE.xs, color: COLORS.storm, marginTop: 2 },
   appRow: {
     gap: SPACING.sm,
     borderRadius: RADIUS.lg,
