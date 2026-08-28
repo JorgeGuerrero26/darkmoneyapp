@@ -32,6 +32,9 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Configuración dejó de empezar con un formulario largo. Tus datos y tu foto tienen ahora su propia pantalla, y las preferencias se ven todas juntas apenas entras.",
       "Elegir tu moneda base ya no es buscar entre veintidós botoncitos: es una línea que dice cuál tienes y abre la lista al tocarla.",
       "En Detección automática ya no hay que elegir cuenta app por app: viene puesta tu cuenta principal y se cambia solo si quieres otra.",
+      "Las opciones del menú \"Más\" ahora vienen agrupadas: lo que reclama tu atención, lo que se repite cada mes y lo que se configura una vez.",
+      "Cuando un filtro esconde todo lo que tienes, la app ya no te dice \"sin resultados\" como si no hubiera nada: te dice cuántos tienes y te ofrece quitar el filtro.",
+      "En Suscripciones, el total del mes ahora aclara que las pausadas no están sumadas, así que la cuenta ya no parece mal hecha.",
     ],
   },
   {
