@@ -176,7 +176,7 @@ export const dashboardSimpleStyles = StyleSheet.create({
   },
   toggleText: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.sm, color: COLORS.storm },
   toggleTextActive: { fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.ink },
-  proBadge: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.xs - 1, color: COLORS.gold },
+  proBadge: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.xs - 1, color: COLORS.pro },
 
   // Hero card - most prominent, gets the full premium glass treatment
   heroCard: {
@@ -1055,9 +1055,9 @@ export const dashboardSimpleStyles = StyleSheet.create({
     marginTop: SPACING.md,
     padding: SPACING.md,
     borderRadius: RADIUS.xl,
-    backgroundColor: COLORS.gold + "12",
+    backgroundColor: COLORS.expense + "12",
     borderWidth: 1,
-    borderColor: COLORS.gold + "22",
+    borderColor: COLORS.expense + "22",
   },
   commandRecommendationText: {
     flex: 1,
@@ -1100,7 +1100,7 @@ export const dashboardSimpleStyles = StyleSheet.create({
   presetSituationalText: {
     fontFamily: FONT_FAMILY.bodyMedium,
     fontSize: FONT_SIZE.xs,
-    color: COLORS.gold,
+    color: COLORS.expense,
     marginTop: SPACING.xs,
     lineHeight: 16,
   },
@@ -1236,7 +1236,7 @@ export const dashboardSimpleStyles = StyleSheet.create({
     backgroundColor: COLORS.primary + "18",
   },
   executiveTonePillWarning: {
-    backgroundColor: COLORS.gold + "18",
+    backgroundColor: COLORS.expense + "18",
   },
   executiveToneText: {
     fontFamily: FONT_FAMILY.bodySemibold,
@@ -1245,7 +1245,7 @@ export const dashboardSimpleStyles = StyleSheet.create({
     flexShrink: 1,
   },
   executiveToneTextWarning: {
-    color: COLORS.gold,
+    color: COLORS.expense,
   },
   executiveValue: {
     fontFamily: FONT_FAMILY.heading,
@@ -2035,7 +2035,7 @@ export const dashboardSimpleStyles = StyleSheet.create({
     backgroundColor: COLORS.primary,
   },
   resultMeaningIndicatorWarning: {
-    backgroundColor: COLORS.gold,
+    backgroundColor: COLORS.expense,
   },
   resultMeaningIndicatorDanger: {
     backgroundColor: EXTENDED_PALETTE.rosePink,
@@ -2062,7 +2062,7 @@ export const dashboardSimpleStyles = StyleSheet.create({
     color: COLORS.primary,
   },
   resultMeaningToneWarning: {
-    color: COLORS.gold,
+    color: COLORS.expense,
   },
   resultMeaningToneDanger: {
     color: EXTENDED_PALETTE.rosePink,
@@ -2090,7 +2090,7 @@ export const dashboardSimpleStyles = StyleSheet.create({
   panelKicker: {
     fontFamily: FONT_FAMILY.bodySemibold,
     fontSize: FONT_SIZE.xs,
-    color: COLORS.gold,
+    color: COLORS.expense,
     textTransform: "uppercase",
     letterSpacing: 0.8,
     marginBottom: SPACING.xs,
@@ -2134,7 +2134,7 @@ export const dashboardSimpleStyles = StyleSheet.create({
   panelCoachLabel: {
     fontFamily: FONT_FAMILY.bodySemibold,
     fontSize: FONT_SIZE.xs,
-    color: COLORS.gold,
+    color: COLORS.expense,
     textTransform: "uppercase",
     letterSpacing: 0.6,
   },
@@ -2152,7 +2152,7 @@ export const dashboardSimpleStyles = StyleSheet.create({
   panelCoachPillText: {
     fontFamily: FONT_FAMILY.bodySemibold,
     fontSize: FONT_SIZE.xs,
-    color: COLORS.gold,
+    color: COLORS.expense,
   },
   panelCoachBody: {
     fontFamily: FONT_FAMILY.body,
@@ -2194,7 +2194,7 @@ export const dashboardSimpleStyles = StyleSheet.create({
   panelApplyBtnText: {
     fontFamily: FONT_FAMILY.bodySemibold,
     fontSize: FONT_SIZE.sm,
-    color: COLORS.gold,
+    color: COLORS.expense,
   },
   presetHeaderRow: {
     flexDirection: "row",
@@ -2250,13 +2250,13 @@ export const dashboardSimpleStyles = StyleSheet.create({
     paddingHorizontal: SPACING.sm,
     paddingVertical: 4,
     borderRadius: RADIUS.full,
-    backgroundColor: COLORS.gold + "18",
+    backgroundColor: COLORS.expense + "18",
     flexShrink: 0,
   },
   presetBadgeText: {
     fontFamily: FONT_FAMILY.bodySemibold,
     fontSize: FONT_SIZE.xs,
-    color: COLORS.gold,
+    color: COLORS.expense,
   },
   presetCardBody: {
     fontFamily: FONT_FAMILY.body,
@@ -3026,7 +3026,7 @@ export const dashboardSimpleStyles = StyleSheet.create({
   anomalyBadgeReview: { backgroundColor: "rgba(217,182,92,0.16)" },
   anomalyBadgeText: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.xs },
   anomalyBadgeTextStrong: { color: EXTENDED_PALETTE.rosePink },
-  anomalyBadgeTextReview: { color: COLORS.gold },
+  anomalyBadgeTextReview: { color: COLORS.expense },
   anomalyBody: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.ink, lineHeight: 24 },
   anomalyBottom: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: SPACING.sm },
   anomalyMeta: { flex: 1, fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm, lineHeight: 18 },
@@ -3113,7 +3113,7 @@ export const dashboardSimpleStyles = StyleSheet.create({
   proGateBadgeText: {
     fontFamily: FONT_FAMILY.bodySemibold,
     fontSize: 10,
-    color: COLORS.gold,
+    color: COLORS.expense,
     letterSpacing: 0.8,
   },
   proGateFeatures: {
@@ -3199,6 +3199,15 @@ export const dashboardSimpleStyles = StyleSheet.create({
   },
 
   // Interpretation lines — one sentence per metric telling the user what the number means
+  // Estado vacio de tarjeta ejecutiva: mismo hueco que ocuparia la cifra, pero en gris y en
+  // cuerpo. Si fuera del tamaño del monto competiria con las tarjetas que si tienen dato.
+  executiveEmptyValue: {
+    fontFamily: FONT_FAMILY.bodyMedium,
+    fontSize: FONT_SIZE.md,
+    lineHeight: FONT_SIZE.md + 6,
+    color: COLORS.fog,
+    marginTop: 2,
+  },
   executiveInterpret: {
     fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.xs,

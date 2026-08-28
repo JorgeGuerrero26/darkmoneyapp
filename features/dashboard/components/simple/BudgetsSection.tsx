@@ -78,8 +78,8 @@ export function BudgetsSection({ budgets, router }: BudgetsSectionProps) {
                   b.isOverLimit
                     ? { color: COLORS.expense }
                     : isBurnTier
-                      ? { color: COLORS.gold }
-                      : { color: COLORS.warning },
+                      ? { color: COLORS.expense }
+                      : { color: COLORS.expense },
                 ]}
               >
                 {Math.round(b.usedPercent)}%
@@ -95,7 +95,7 @@ export function BudgetsSection({ budgets, router }: BudgetsSectionProps) {
                     left: `${Math.min(b.usedPercent, 98)}%` as unknown as number,
                     width: `${Math.min(projectedPercent - b.usedPercent, 100 - b.usedPercent)}%` as unknown as number,
                     height: 6,
-                    backgroundColor: COLORS.gold + "66",
+                    backgroundColor: COLORS.expense + "66",
                     borderRadius: 3,
                   }}
                 />

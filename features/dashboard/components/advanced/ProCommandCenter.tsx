@@ -159,7 +159,7 @@ export function ProCommandCenter({
         </View>
       </View>
       <View style={subStyles.commandRecommendation}>
-        <TrendingUp size={16} color={COLORS.gold} />
+        <TrendingUp size={16} color={COLORS.expense} />
         <Text style={subStyles.commandRecommendationText}>{recommendation}</Text>
       </View>
     </Card>

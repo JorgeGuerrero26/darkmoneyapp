@@ -45,7 +45,7 @@ export class DashboardSectionBoundary extends Component<Props, State> {
     return (
       <Card>
         <View style={styles.row}>
-          <AlertTriangle size={20} color={COLORS.gold} strokeWidth={1.5} />
+          <AlertTriangle size={20} color={COLORS.expense} strokeWidth={1.5} />
           <View style={styles.copy}>
             <Text style={styles.title}>No pudimos cargar “{this.props.sectionLabel}”</Text>
             <Text style={styles.message} numberOfLines={3}>

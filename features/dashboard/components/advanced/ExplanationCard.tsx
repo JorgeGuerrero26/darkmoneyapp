@@ -27,7 +27,7 @@ export function ExplanationVisualSummary({
   const urgency = tone === "danger" ? 92 : tone === "warning" ? 66 : 34;
   const clarity = Math.min(100, Math.max(28, detailCount * 16));
   const actionStrength = Math.min(100, Math.max(actionsCount > 0 ? 42 : 18, actionsCount * 44));
-  const toneColor = tone === "positive" ? COLORS.primary : tone === "danger" ? EXTENDED_PALETTE.rosePink : COLORS.gold;
+  const toneColor = tone === "positive" ? COLORS.primary : tone === "danger" ? EXTENDED_PALETTE.rosePink : COLORS.expense;
   const items = [
     { label: "Lectura", value: urgency, caption: explanationToneLabel(tone), color: toneColor },
     { label: "Claridad", value: clarity, caption: `${detailCount} puntos`, color: COLORS.secondary },

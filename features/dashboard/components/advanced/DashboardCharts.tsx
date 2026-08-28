@@ -54,7 +54,7 @@ export function ProjectionBridgeChart({
               : row.tone === "negative"
                 ? COLORS.expense
                 : row.tone === "warning"
-                  ? COLORS.gold
+                  ? COLORS.expense
                   : COLORS.primary;
           return (
             <TouchableOpacity key={row.label} style={subStyles.bridgeRow} onPress={row.onPress} activeOpacity={0.84}>
@@ -196,7 +196,7 @@ export function CategoryDonutChart({
   const total = allEntries.reduce((sum, entry) => sum + entry.total, 0);
   if (total <= 0) return null;
 
-  const palette = [COLORS.expense, COLORS.gold, COLORS.primary, COLORS.secondary, EXTENDED_PALETTE.skySoft];
+  const palette = [COLORS.expense, COLORS.expense, COLORS.primary, COLORS.secondary, EXTENDED_PALETTE.skySoft];
   const topEntries = allEntries.slice(0, 5);
   const rest = allEntries.slice(5).reduce((sum, entry) => sum + entry.total, 0);
   const visibleEntries = rest > 0 ? [...topEntries, { id: undefined, key: "rest", name: "Otros", total: rest }] : topEntries;
@@ -325,7 +325,7 @@ export function AnnualHistoryPanel({
         </View>
         <View style={subStyles.annualSummaryCard}>
           <Text style={subStyles.savingsStatLabel}>Ahorro</Text>
-          <Text style={[subStyles.annualSummaryValue, { color: savingsRate == null ? COLORS.storm : savingsRate >= 0 ? COLORS.gold : COLORS.expense }]}>
+          <Text style={[subStyles.annualSummaryValue, { color: savingsRate == null ? COLORS.storm : savingsRate >= 0 ? COLORS.expense : COLORS.expense }]}>
             {savingsRate == null ? "-" : `${savingsRate.toFixed(1)}%`}
           </Text>
         </View>

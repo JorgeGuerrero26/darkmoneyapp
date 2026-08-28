@@ -179,7 +179,7 @@ export function UpcomingSection({ obligations, subscriptions, recurringIncome, r
                   accessibilityRole="button"
                   accessibilityLabel={item.quickActionLabel}
                 >
-                  <CheckCircle2 size={20} color={item.flow === "in" ? COLORS.income : COLORS.gold} />
+                  <CheckCircle2 size={20} color={item.flow === "in" ? COLORS.income : COLORS.expense} />
                 </TouchableOpacity>
               ) : null}
             </View>

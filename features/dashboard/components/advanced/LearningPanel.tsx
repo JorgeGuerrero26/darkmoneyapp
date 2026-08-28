@@ -94,7 +94,7 @@ export function LearningPanel({
       },
       {
         icon: Tag,
-        color: COLORS.warning,
+        color: COLORS.expense,
         label: "Categorías",
         title: categoryConcentration.topCategory ? `${categoryConcentration.topCategory} pesa ${categoryConcentration.topShare ?? 0}%` : "Sin categoría dominante clara",
         body: categoryConcentration.topCategory
@@ -103,7 +103,7 @@ export function LearningPanel({
       },
       {
         icon: Sparkles,
-        color: COLORS.gold,
+        color: COLORS.expense,
         label: "Repeticiones",
         title: learning.repeatedDescription
           ? `${learning.repeatedDescription.label} aparece ${learning.repeatedDescription.count} veces`
@@ -121,7 +121,7 @@ export function LearningPanel({
       },
       {
         icon: AlertTriangle,
-        color: categorySuggestionsCount > 0 || anomalySignalsCount > 0 ? COLORS.gold : COLORS.primary,
+        color: categorySuggestionsCount > 0 || anomalySignalsCount > 0 ? COLORS.expense : COLORS.primary,
         label: "Acciones útiles",
         title:
           categorySuggestionsCount > 0 || anomalySignalsCount > 0
@@ -164,9 +164,9 @@ export function LearningPanel({
       <View style={subStyles.learningTopGrid}>
         <View style={subStyles.learningMetricCard}><Brain size={16} color={COLORS.primary} /><Text style={subStyles.learningMetricValue}>{learning.usefulCount}</Text><Text style={subStyles.learningMetricLabel}>Movimientos útiles</Text></View>
         <View style={subStyles.learningMetricCard}><Clock size={16} color={COLORS.secondary} /><Text style={subStyles.learningMetricValue}>{learning.historyDays} d</Text><Text style={subStyles.learningMetricLabel}>Historia observada</Text></View>
-        <View style={subStyles.learningMetricCard}><Tag size={16} color={COLORS.warning} /><Text style={subStyles.learningMetricValue}>{Math.round(learning.categorizedRate * 100)}%</Text><Text style={subStyles.learningMetricLabel}>Categorías útiles</Text></View>
+        <View style={subStyles.learningMetricCard}><Tag size={16} color={COLORS.expense} /><Text style={subStyles.learningMetricValue}>{Math.round(learning.categorizedRate * 100)}%</Text><Text style={subStyles.learningMetricLabel}>Categorías útiles</Text></View>
         <View style={subStyles.learningMetricCard}><Sparkles size={16} color={COLORS.income} /><Text style={subStyles.learningMetricValue}>{learning.readinessScore}%</Text><Text style={subStyles.learningMetricLabel}>Confianza actual</Text></View>
-        <View style={subStyles.learningMetricCard}><Brain size={16} color={COLORS.gold} /><Text style={subStyles.learningMetricValue}>{acceptedFeedbackCount}</Text><Text style={subStyles.learningMetricLabel}>Respuestas usadas</Text></View>
+        <View style={subStyles.learningMetricCard}><Brain size={16} color={COLORS.expense} /><Text style={subStyles.learningMetricValue}>{acceptedFeedbackCount}</Text><Text style={subStyles.learningMetricLabel}>Respuestas usadas</Text></View>
       </View>
       <Text style={subStyles.learningGroupTitle}>Dónde ya ve señales</Text>
       <View style={subStyles.learningSignalList}>
@@ -204,7 +204,7 @@ export function LearningPanel({
       <View style={subStyles.learningInsightList}>
         {learning.insights.map((insight) => (
           <View key={insight} style={subStyles.learningInsightRow}>
-            <Sparkles size={14} color={COLORS.gold} />
+            <Sparkles size={14} color={COLORS.expense} />
             <Text style={subStyles.learningInsightText}>{insight}</Text>
           </View>
         ))}

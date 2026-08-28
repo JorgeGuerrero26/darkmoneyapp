@@ -114,12 +114,12 @@ export function AlgorithmReadinessCard({
             <View key={check.label} style={subStyles.readinessRow}>
               <View style={subStyles.readinessTop}>
                 <Text style={subStyles.readinessLabel}>{check.label}</Text>
-                <Text style={[subStyles.readinessStatus, { color: ready ? COLORS.income : COLORS.gold }]}>
+                <Text style={[subStyles.readinessStatus, { color: ready ? COLORS.income : COLORS.expense }]}>
                   {ready ? "Listo" : `${check.current}/${check.required}`}
                 </Text>
               </View>
               <View style={subStyles.readinessTrack}>
-                <View style={[subStyles.readinessFill, { width: `${pct}%` as any, backgroundColor: ready ? COLORS.income : COLORS.gold }]} />
+                <View style={[subStyles.readinessFill, { width: `${pct}%` as any, backgroundColor: ready ? COLORS.income : COLORS.expense }]} />
               </View>
               <Text style={subStyles.readinessDetail}>{check.detail}</Text>
             </View>
@@ -315,7 +315,7 @@ export function DataQuality({
       <SectionTitle>Calidad de datos</SectionTitle>
       {noCat > 0 && (
         <TouchableOpacity style={subStyles.dqRow} onPress={onOpenNoCategory} activeOpacity={0.82}>
-          <Tag size={13} color={COLORS.gold} />
+          <Tag size={13} color={COLORS.expense} />
           <Text style={subStyles.dqText}>{noCat} movimiento{noCat !== 1 ? "s" : ""} sin categoría</Text>
           <ArrowRight size={14} color={COLORS.storm} />
         </TouchableOpacity>
@@ -347,7 +347,7 @@ export function CurrencyExposure({
   const total = Array.from(byCode.values()).reduce((s, v) => s + v, 0);
   if (total <= 0) return null;
 
-  const TINTS = [COLORS.pine, COLORS.ember, COLORS.gold, COLORS.rosewood, COLORS.storm];
+  const TINTS = [COLORS.pine, COLORS.ember, COLORS.storm, COLORS.rosewood, COLORS.storm];
   const entries = Array.from(byCode.entries()).sort((a, b) => b[1] - a[1]);
 
   return (

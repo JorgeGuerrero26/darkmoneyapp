@@ -308,7 +308,7 @@ export function AdvancedDashboard({
     const adjustedDailyBurn = dailyBurn + (windows[2]?.expectedOutflow ?? 0) / 30;
     const daysWithCommitments = Math.round(currentVisibleBalance / Math.max(adjustedDailyBurn, 1));
     const label = days >= 90 ? "Sólido" : days >= 30 ? "Adecuado" : "Corto";
-    const color = days >= 90 ? COLORS.income : days >= 30 ? COLORS.gold : COLORS.expense;
+    const color = days >= 90 ? COLORS.income : days >= 30 ? COLORS.storm : COLORS.expense;
     return { days, daysWithCommitments, dailyBurn, label, color };
   }, [accountCurrencyMap, activeCurrency, currentVisibleBalance, exchangeRateMap, movements, windows]);
 
@@ -480,7 +480,7 @@ export function AdvancedDashboard({
         : (validRates[validRates.length - 1] - validRates[0]) < -3 ? "empeorando"
         : "estable"
       : "insuficiente";
-    const color = lastRate == null ? COLORS.storm : lastRate >= 20 ? COLORS.income : lastRate >= 0 ? COLORS.gold : COLORS.expense;
+    const color = lastRate == null ? COLORS.storm : lastRate >= 20 ? COLORS.income : lastRate >= 0 ? COLORS.storm : COLORS.expense;
     return { months, avgRate, lastRate, trend, color };
   }, [accountCurrencyMap, activeCurrency, exchangeRateMap, movements]);
 
@@ -495,7 +495,7 @@ export function AdvancedDashboard({
     const score = Math.round(Math.max(0, Math.min(100, (1 - cv) * 100)));
     const cvPct = Math.round(cv * 100);
     const label = score >= 75 ? "Muy estable" : score >= 50 ? "Moderado" : "Variable";
-    const color = score >= 75 ? COLORS.income : score >= 50 ? COLORS.gold : COLORS.expense;
+    const color = score >= 75 ? COLORS.income : score >= 50 ? COLORS.storm : COLORS.expense;
     return { score, cvPct, label, color };
   }, [advancedStats.monthlyPulse]);
 
@@ -506,7 +506,7 @@ export function AdvancedDashboard({
     if (total <= 0) return { hhi: null, label: "Sin datos", color: COLORS.storm, topCategory: null, topCategoryId: null, topShare: null };
     const hhi = Array.from(catTotals.values()).reduce((s, v) => s + Math.pow(v / total, 2), 0);
     const label = hhi > 0.25 ? "Concentrado" : hhi > 0.15 ? "Moderado" : "Diversificado";
-    const color = hhi > 0.25 ? COLORS.expense : hhi > 0.15 ? COLORS.gold : COLORS.income;
+    const color = hhi > 0.25 ? COLORS.expense : hhi > 0.15 ? COLORS.storm : COLORS.income;
     let topCatId: number | null = null;
     let topVal = 0;
     for (const [catId, val] of catTotals) {
@@ -533,7 +533,7 @@ export function AdvancedDashboard({
     const resolved = dueInWindow.filter((ob) => ob.status === "paid").length;
     const rate = Math.round((resolved / total) * 100);
     const label = rate >= 80 ? "Eficiente" : rate >= 50 ? "Parcial" : "Bajo";
-    const color = rate >= 80 ? COLORS.income : rate >= 50 ? COLORS.gold : COLORS.expense;
+    const color = rate >= 80 ? COLORS.income : rate >= 50 ? COLORS.storm : COLORS.expense;
     return { rate, resolved, total, label, color };
   }, [obligations]);
 
@@ -726,13 +726,13 @@ export function AdvancedDashboard({
   const panelCoachChips = useMemo<CoachChip[]>(() => {
     const chips: CoachChip[] = [];
     if (review.uncategorizedCount > 0)
-      chips.push({ icon: Tag, color: COLORS.warning, label: `${review.uncategorizedCount} sin categoría · comparativos imprecisos`, weight: "high" });
+      chips.push({ icon: Tag, color: COLORS.expense, label: `${review.uncategorizedCount} sin categoría · comparativos imprecisos`, weight: "high" });
     if (review.overdueObligationsCount > 0)
       chips.push({ icon: AlertTriangle, color: COLORS.expense, label: `${review.overdueObligationsCount} vencimiento${review.overdueObligationsCount === 1 ? "" : "s"} · cartera desactualizada`, weight: "high" });
     if (weekWindow.expectedOutflow > weekWindow.expectedInflow)
-      chips.push({ icon: TrendingUp, color: COLORS.gold, label: "Semana: más sale que entra", weight: "medium" });
+      chips.push({ icon: TrendingUp, color: COLORS.expense, label: "Semana: más sale que entra", weight: "medium" });
     if (spendingTrend.expenseTrendPct > 5)
-      chips.push({ icon: TrendingUp, color: COLORS.gold, label: `Gasto acelerando +${spendingTrend.expenseTrendPct.toFixed(0)}% esta semana`, weight: "medium" });
+      chips.push({ icon: TrendingUp, color: COLORS.expense, label: `Gasto acelerando +${spendingTrend.expenseTrendPct.toFixed(0)}% esta semana`, weight: "medium" });
     if (cashCushion.days < 30)
       chips.push({ icon: AlertCircle, color: COLORS.expense, label: `Caja libre: ${cashCushion.days}d solamente`, weight: "high" });
     if (chips.length === 0)
@@ -2805,6 +2805,7 @@ export function AdvancedDashboard({
   const dashboardAiUsageDate = dashboardAi.usageDate;
   const dashboardAiIsAdmin = dashboardAi.isAdmin;
   const [activeTab, setActiveTab] = useState<AdvancedTab>('Resumen');
+  const weekHasSchedule = weekWindow.expectedInflow > 0 || weekWindow.expectedOutflow > 0;
   useEffect(() => {
     const animation = Animated.loop(
       Animated.sequence([
@@ -3114,6 +3115,8 @@ export function AdvancedDashboard({
         ]}
       />
 
+      {/* Hay agenda real esta semana? Distinto de "todo suma cero": si no hay ni cobros ni
+          pagos previstos, la tarjeta lo dice con palabras en vez de enseñar tres ceros. */}
       {activeTab === 'Resumen' && (
         <DashboardSectionBoundary sectionLabel="Resumen">
         <>
@@ -3160,13 +3163,28 @@ export function AdvancedDashboard({
                 <Text style={[subStyles.executiveToneText, pressureStatus === "Bajo presión" && subStyles.executiveToneTextWarning]}>{pressureStatus}</Text>
               </View>
             </View>
-            <Text style={subStyles.executiveValue}>{formatCurrency(weekWindow.expectedInflow - weekWindow.expectedOutflow, activeCurrency)}</Text>
-            <Text style={subStyles.executiveCaption}>Entran {formatCurrency(weekWindow.expectedInflow, activeCurrency)} · salen {formatCurrency(weekWindow.expectedOutflow, activeCurrency)}</Text>
-            <Text style={subStyles.executiveInterpret}>
-              {weekWindow.expectedInflow >= weekWindow.expectedOutflow
-                ? "Semana con margen positivo — sin presión inmediata."
-                : "Más compromisos que ingresos esta semana — revisa el flujo."}
-            </Text>
+            {/* Cero NO es estado vacio. "S/ 0.00 · Entran S/ 0.00 · salen S/ 0.00" se lee como
+                fallo de carga, no como "no hay nada previsto". Cuando de verdad no hay agenda
+                se dice con palabras y la unica cifra que queda es real: los dias de caja libre.
+                El cero vuelve a aparecer solo cuando significa cero. */}
+            {weekHasSchedule ? (
+              <>
+                <Text style={subStyles.executiveValue}>{formatCurrency(weekWindow.expectedInflow - weekWindow.expectedOutflow, activeCurrency)}</Text>
+                <Text style={subStyles.executiveCaption}>Entran {formatCurrency(weekWindow.expectedInflow, activeCurrency)} · salen {formatCurrency(weekWindow.expectedOutflow, activeCurrency)}</Text>
+                <Text style={subStyles.executiveInterpret}>
+                  {weekWindow.expectedInflow >= weekWindow.expectedOutflow
+                    ? "Semana con margen positivo — sin presión inmediata."
+                    : "Más compromisos que ingresos esta semana — revisa el flujo."}
+                </Text>
+              </>
+            ) : (
+              <>
+                <Text style={subStyles.executiveEmptyValue}>Sin movimientos previstos</Text>
+                <Text style={subStyles.executiveInterpret}>
+                  No hay cobros ni pagos agendados para los próximos 7 días.
+                </Text>
+              </>
+            )}
             <Text style={[subStyles.executiveDeltaChip, { color: cashCushion.color }]}>Caja libre: {cashCushion.days}d · {cashCushion.label}</Text>
           </TouchableOpacity>
 
@@ -3654,7 +3672,7 @@ export function AdvancedDashboard({
               </View>
               <View style={subStyles.annualSummaryCard}>
                 <Text style={subStyles.savingsStatLabel}>Ahorro</Text>
-                <Text style={[subStyles.annualSummaryValue, { color: selectedAnnualMonthDetail.savingsRate == null ? COLORS.storm : selectedAnnualMonthDetail.savingsRate >= 0 ? COLORS.gold : COLORS.expense }]}>
+                <Text style={[subStyles.annualSummaryValue, { color: selectedAnnualMonthDetail.savingsRate == null ? COLORS.storm : selectedAnnualMonthDetail.savingsRate >= 0 ? COLORS.expense : COLORS.expense }]}>
                   {selectedAnnualMonthDetail.savingsRate == null ? "-" : `${selectedAnnualMonthDetail.savingsRate.toFixed(1)}%`}
                 </Text>
               </View>
@@ -4873,7 +4891,7 @@ export function AdvancedDashboard({
               : "Registra al menos 2 meses de movimientos para ver tu promedio de ahorro."}
           </Text>
           {monthlySavingsRate.lastRate != null && monthlySavingsRate.avgRate != null ? (
-            <Text style={[subStyles.advMetricInterpret, { color: monthlySavingsRate.lastRate >= monthlySavingsRate.avgRate ? COLORS.income : COLORS.gold }]}>
+            <Text style={[subStyles.advMetricInterpret, { color: monthlySavingsRate.lastRate >= monthlySavingsRate.avgRate ? COLORS.income : COLORS.expense }]}>
               {monthlySavingsRate.lastRate > monthlySavingsRate.avgRate + 1
                 ? `Este mes ahorras ${(monthlySavingsRate.lastRate - monthlySavingsRate.avgRate).toFixed(1)}% más que tu promedio — por encima de lo habitual.`
                 : monthlySavingsRate.lastRate < monthlySavingsRate.avgRate - 1
@@ -4885,7 +4903,7 @@ export function AdvancedDashboard({
             {monthlySavingsRate.months.map((m, i) => {
               const pct = m.rate;
               const barH = pct == null ? 4 : Math.min(40, Math.max(4, Math.abs(pct) * 0.8));
-              const barColor = pct == null ? COLORS.storm : pct >= 20 ? COLORS.income : pct >= 0 ? COLORS.gold : COLORS.expense;
+              const barColor = pct == null ? COLORS.storm : pct >= 20 ? COLORS.income : pct >= 0 ? COLORS.storm : COLORS.expense;
               return (
                 <View key={i} style={subStyles.advMetricBarItem}>
                   <View style={[subStyles.advMetricBar, { height: barH, backgroundColor: barColor }]} />
@@ -5278,28 +5296,28 @@ export function AdvancedDashboard({
         <View style={subStyles.annualSummaryGrid}>
           <View style={subStyles.annualSummaryCard}>
             <Text style={subStyles.savingsStatLabel}>Confianza sistema</Text>
-            <Text style={[subStyles.annualSummaryValue, { color: learning.readinessScore >= 75 ? COLORS.income : learning.readinessScore >= 50 ? COLORS.gold : COLORS.expense }]}>
+            <Text style={[subStyles.annualSummaryValue, { color: learning.readinessScore >= 75 ? COLORS.income : learning.readinessScore >= 50 ? COLORS.storm : COLORS.expense }]}>
               {learning.readinessScore}%
             </Text>
             <Text style={subStyles.annualDetailMini}>{learning.readinessScore >= 75 ? "Fiable" : learning.readinessScore >= 50 ? "Suficiente" : "Baja"}</Text>
           </View>
           <View style={subStyles.annualSummaryCard}>
             <Text style={subStyles.savingsStatLabel}>Confianza proyección</Text>
-            <Text style={[subStyles.annualSummaryValue, { color: projectionModel.confidence >= 70 ? COLORS.income : projectionModel.confidence >= 40 ? COLORS.gold : COLORS.expense }]}>
+            <Text style={[subStyles.annualSummaryValue, { color: projectionModel.confidence >= 70 ? COLORS.income : projectionModel.confidence >= 40 ? COLORS.storm : COLORS.expense }]}>
               {projectionModel.confidence}%
             </Text>
             <Text style={subStyles.annualDetailMini}>{projectionModel.confidenceLabel}</Text>
           </View>
           <View style={subStyles.annualSummaryCard}>
             <Text style={subStyles.savingsStatLabel}>Issues pendientes</Text>
-            <Text style={[subStyles.annualSummaryValue, { color: review.totalIssues === 0 ? COLORS.income : review.totalIssues <= 3 ? COLORS.gold : COLORS.expense }]}>
+            <Text style={[subStyles.annualSummaryValue, { color: review.totalIssues === 0 ? COLORS.income : review.totalIssues <= 3 ? COLORS.storm : COLORS.expense }]}>
               {review.totalIssues}
             </Text>
             <Text style={subStyles.annualDetailMini}>{review.totalIssues === 0 ? "Todo limpio" : "Por resolver"}</Text>
           </View>
           <View style={subStyles.annualSummaryCard}>
             <Text style={subStyles.savingsStatLabel}>Datos útiles</Text>
-            <Text style={[subStyles.annualSummaryValue, { color: learning.historyDays >= 90 ? COLORS.income : learning.historyDays >= 30 ? COLORS.gold : COLORS.expense }]}>
+            <Text style={[subStyles.annualSummaryValue, { color: learning.historyDays >= 90 ? COLORS.income : learning.historyDays >= 30 ? COLORS.storm : COLORS.expense }]}>
               {learning.historyDays}d
             </Text>
             <Text style={subStyles.annualDetailMini}>{learning.historyDays >= 90 ? "Sólido" : learning.historyDays >= 30 ? "Suficiente" : "Poco historial"}</Text>
@@ -5380,14 +5398,14 @@ export function AdvancedDashboard({
                 </Text>
                 {review.uncategorizedCount > 0 ? (
                   <TouchableOpacity style={subStyles.actionPillRow} onPress={openSummaryUncategorizedPreview} activeOpacity={0.85}>
-                    <AlertTriangle size={15} color={COLORS.gold} />
+                    <AlertTriangle size={15} color={COLORS.expense} />
                     <Text style={subStyles.actionPillBody}>{review.uncategorizedCount} movimientos sin categoría siguen quitando precisión a las comparaciones.</Text>
                     <View style={subStyles.actionPill}><Text style={subStyles.actionPillText}>Ordenar</Text></View>
                   </TouchableOpacity>
                 ) : null}
                 {learning.historyDays < 30 ? (
                   <View style={subStyles.actionPillRow}>
-                    <AlertTriangle size={15} color={COLORS.gold} />
+                    <AlertTriangle size={15} color={COLORS.expense} />
                     <Text style={subStyles.actionPillBody}>Todavía falta un poco más de historia para separar hábitos reales de semanas aisladas.</Text>
                     <View style={subStyles.actionPill}><Text style={subStyles.actionPillText}>Registrar</Text></View>
                   </View>

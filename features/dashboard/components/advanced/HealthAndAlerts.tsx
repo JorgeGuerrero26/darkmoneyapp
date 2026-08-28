@@ -39,7 +39,7 @@ export function HealthScore({
     overdueCount,
   });
   const score = health.score;
-  const scoreColor = score >= 80 ? COLORS.income : score >= 60 ? COLORS.warning : COLORS.expense;
+  const scoreColor = score >= 80 ? COLORS.income : score >= 60 ? COLORS.storm : COLORS.expense;
 
   return (
     <Card>
@@ -60,9 +60,9 @@ export function HealthScore({
             <Text style={subStyles.healthDesc}>{ind.valueLabel}</Text>
           </View>
           <View style={subStyles.healthTrack}>
-            <View style={[subStyles.healthFill, { width: `${ind.score}%`, backgroundColor: ind.score >= 75 ? COLORS.income : ind.score >= 50 ? COLORS.warning : COLORS.expense }]} />
+            <View style={[subStyles.healthFill, { width: `${ind.score}%`, backgroundColor: ind.score >= 75 ? COLORS.income : ind.score >= 50 ? COLORS.storm : COLORS.expense }]} />
           </View>
-          <Text style={[subStyles.healthInterpret, { color: ind.score >= 75 ? COLORS.income : ind.score >= 50 ? COLORS.gold : COLORS.expense }]}>
+          <Text style={[subStyles.healthInterpret, { color: ind.score >= 75 ? COLORS.income : ind.score >= 50 ? COLORS.storm : COLORS.expense }]}>
             {ind.interpret}
           </Text>
         </View>
@@ -120,7 +120,7 @@ export function AlertCenter({
       alerts.push({
         key: `sub-due-${s.id}`,
         icon: Clock,
-        color: COLORS.gold,
+        color: COLORS.expense,
         message: `Suscripción próxima: "${s.name}" el ${format(d, "d MMM", { locale: es })}`,
       });
     }
@@ -131,7 +131,7 @@ export function AlertCenter({
     alerts.push({
       key: "no-cat",
       icon: Tag,
-      color: COLORS.gold,
+      color: COLORS.expense,
       message: `${noCatCount} movimiento${noCatCount !== 1 ? "s" : ""} sin categoría`,
     });
   }
@@ -184,7 +184,7 @@ export function ObligationWatch({
     const d = new Date(dueDate);
     const days = differenceInDays(d, now);
     if (days < 0) return { text: `${Math.abs(days)}d vencida`, color: COLORS.rosewood };
-    if (days === 0) return { text: "Hoy", color: COLORS.gold };
+    if (days === 0) return { text: "Hoy", color: COLORS.expense };
     return { text: `en ${days}d`, color: COLORS.storm };
   }
 

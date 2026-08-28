@@ -65,13 +65,13 @@ export function UrgentAlertsCard({ obligations, budgets, subscriptions, router, 
       key: `bg-${b.id}`,
       // Reaparece al pasar de "cerca" a "excedido" o cada +25% de sobregiro.
       signature: b.isOverLimit ? `over-${Math.floor(b.usedPercent / 25)}` : "near",
-      icon: <AlertCircle size={14} color={b.isOverLimit ? COLORS.expense : COLORS.warning} />,
+      icon: <AlertCircle size={14} color={b.isOverLimit ? COLORS.expense : COLORS.expense} />,
       label: scope && scope.toLowerCase() !== b.name.trim().toLowerCase() ? `${b.name} · ${scope}` : b.name,
       sub: b.isOverLimit
         ? `Límite superado · ${Math.round(b.usedPercent)}% usado`
         : `Cerca del límite · ${Math.round(b.usedPercent)}% usado`,
       route: `/budget/${b.id}?from=dashboard`,
-      tone: b.isOverLimit ? COLORS.expense : COLORS.warning,
+      tone: b.isOverLimit ? COLORS.expense : COLORS.expense,
     });
   }
 
@@ -84,11 +84,11 @@ export function UrgentAlertsCard({ obligations, budgets, subscriptions, router, 
     items.push({
       key: `sub-${s.id}`,
       signature: diff === 0 ? "due-today" : `soon-${diff}`,
-      icon: <Clock size={14} color={COLORS.gold} />,
+      icon: <Clock size={14} color={COLORS.expense} />,
       label: s.name,
       sub: diff === 0 ? "Vence hoy" : `Vence en ${diff} día${diff === 1 ? "" : "s"}`,
       route: "/subscriptions",
-      tone: COLORS.gold,
+      tone: COLORS.expense,
     });
   }
 
@@ -98,7 +98,7 @@ export function UrgentAlertsCard({ obligations, budgets, subscriptions, router, 
   return (
     <View style={alertStyles.container}>
       <View style={alertStyles.header}>
-        <Bell size={13} color={COLORS.warning} />
+        <Bell size={13} color={COLORS.expense} />
         <Text style={alertStyles.headerText}>Alertas</Text>
       </View>
       {visibleItems.map((item, idx) => (
@@ -159,7 +159,7 @@ const alertStyles = StyleSheet.create({
   headerText: {
     fontFamily: FONT_FAMILY.bodySemibold,
     fontSize: FONT_SIZE.xs,
-    color: COLORS.warning,
+    color: COLORS.expense,
     letterSpacing: 0.6,
     textTransform: "uppercase",
   },

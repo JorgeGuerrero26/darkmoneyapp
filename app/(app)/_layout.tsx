@@ -7,7 +7,6 @@ import { Home, ArrowLeftRight, WalletCards, Scale, LayoutGrid } from "lucide-rea
 
 import { COLORS, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { TAB_BAR_CONTENT_HEIGHT } from "../../constants/floating-tab-bar";
-import { useNotificationsQuery } from "../../services/queries/workspace-data";
 import { usePendingObligationShareInvitesQuery } from "../../services/queries/obligations";
 import { useAuth } from "../../lib/auth-context";
 import { Badge } from "../../components/ui/Badge";
@@ -99,7 +98,6 @@ const HIDDEN_ROUTES = [
 /** Cuenta del badge de "Más": notificaciones sin leer + invitaciones pendientes. */
 function useMoreBadgeCount() {
   const { user, profile } = useAuth();
-  const { data: notifications } = useNotificationsQuery(user?.id ?? null);
   // Diferidas al primer pintado: es solo el contador del badge de "Más", no hace falta para
   // dibujar nada. Salía en 3 de los 4 episodios que disparaban el aviso de red lenta.
   const afterFirstPaint = useAfterFirstPaint();
@@ -107,8 +105,16 @@ function useMoreBadgeCount() {
     afterFirstPaint ? user?.id : null,
     profile?.email,
   );
-  const unreadCount = (notifications ?? []).filter((n) => n.status !== "read").length;
-  return unreadCount + pendingInvites.length;
+  // Un solo aviso a la vez. El contador sumaba notificaciones sin leer + invitaciones, y con
+  // 93 encima competía con todo lo demás: si todo llama, nada llama.
+  //
+  // Las notificaciones sin leer SALEN de aquí porque ya tienen su propia campana en el
+  // encabezado, con su contador. Contarlas dos veces no añade información.
+  //
+  // Las invitaciones a espacios compartidos se QUEDAN, y por eso el badge no se borró del todo:
+  // no tienen ningún otro sitio donde avisar. Sin esto, alguien te invita a un espacio y no te
+  // enteras hasta que entras a Más por casualidad. Suelen ser 0 o 1, así que ya no grita.
+  return pendingInvites.length;
 }
 
 export default function AppLayout() {
