@@ -125,7 +125,7 @@ function SettingsScreen() {
 
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [bioCredsStored, setBioCredsStored] = useState(false);
-  const { biometricEnabled, setBiometricEnabled } = useUiStore();
+  const { biometricEnabled, setBiometricEnabled, dashboardMode, setDashboardMode } = useUiStore();
 
   // Password setup modal (shown after biometric auth when enabling)
   const [bioSetupVisible, setBioSetupVisible] = useState(false);
@@ -527,6 +527,26 @@ function SettingsScreen() {
               </View>
             </Card>
           ) : null}
+
+          <Card>
+            <Text style={styles.sectionTitle}>Vista del inicio</Text>
+            <View style={styles.switchRow}>
+              <View style={styles.switchInfo}>
+                <Text style={styles.switchLabel}>Modo avanzado</Text>
+                <Text style={styles.switchDesc}>
+                  {dashboardMode === "advanced"
+                    ? "Ves patrones, flujo, historial y salud de tus finanzas"
+                    : "Ves lo esencial: saldo, movimientos y alertas"}
+                </Text>
+              </View>
+              <Switch
+                value={dashboardMode === "advanced"}
+                onValueChange={(v) => setDashboardMode(v ? "advanced" : "simple")}
+                trackColor={{ false: COLORS.border, true: COLORS.primary }}
+                thumbColor={EXTENDED_PALETTE.white}
+              />
+            </View>
+          </Card>
 
           <Card>
             <Text style={styles.sectionTitle}>Notificaciones</Text>

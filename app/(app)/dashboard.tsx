@@ -196,7 +196,6 @@ import {
 
 import { SectionTitle } from "../../features/dashboard/components/simple/SectionTitle";
 import { MacroContextCard } from "../../features/dashboard/components/simple/MacroContextCard";
-import { ModeToggle } from "../../features/dashboard/components/simple/ModeToggle";
 import { HeroCard } from "../../features/dashboard/components/simple/HeroCard";
 import { MiniBarChart } from "../../features/dashboard/components/simple/MiniBarChart";
 import { AccountsScroll } from "../../features/dashboard/components/simple/AccountsScroll";
@@ -407,7 +406,10 @@ function DashboardScreen() {
     setSigningOut(true);
     await signOut().finally(() => setSigningOut(false));
   }
-  const { dashboardMode, setDashboardMode, dashboardScrollY, setDashboardScrollY, privacyMode, togglePrivacyMode } = useUiStore();
+  const { dashboardMode, setDashboardMode, dashboardScrollY, setDashboardScrollY, privacyMode, togglePrivacyMode, dashboardModeMoveSeen, markDashboardModeMoveSeen } = useUiStore();
+  // Solo a quien ya usaba el modo avanzado: para quien instala de cero el conmutador nunca
+  // estuvo en el dashboard, así que anunciar que "se mudó" no significaría nada.
+  const shouldAnnounceModeMoved = !dashboardModeMoveSeen && dashboardMode === "advanced";
   // Solo colapsa en modo avanzado y fuera de Resumen: en Simple no hay pestañas, y en Resumen
   // el saludo es justamente lo que abre la pantalla.
   const isAdvancedCollapsedHeader = dashboardMode === "advanced" && advancedTab !== "Resumen";
@@ -795,8 +797,19 @@ function DashboardScreen() {
           />
         }
       >
-        {/* 1. Mode toggle */}
-        <ModeToggle mode={dashboardMode} setMode={setDashboardMode} isPro={hasAdvancedDashboardAccess} />
+        {/* El conmutador Simple/Avanzado se mudó a Ajustes → Vista del inicio (Decisión A1):
+            hacía el mismo trabajo que las pestañas y empujaba la primera cifra 60px más abajo,
+            en las cinco. Aquí solo queda el aviso, y una sola vez. */}
+        {shouldAnnounceModeMoved ? (
+          <Card>
+            <Text style={styles.modeMovedTitle}>El modo Simple / Avanzado se mudó</Text>
+            <Text style={styles.modeMovedBody}>
+              Ahora se elige una vez en Ajustes → Vista del inicio, y se recuerda. Sigues en el
+              modo que tenías.
+            </Text>
+            <Button label="Entendido" variant="secondary" onPress={markDashboardModeMoveSeen} />
+          </Card>
+        ) : null}
         {isCheckingAdvancedAccess ? <ProGateLoading /> : shouldShowAdvancedProGate ? (
           <>
             <ProGate />
@@ -1003,6 +1016,19 @@ function DashboardScreen() {
 import { dashboardSimpleStyles as subStyles } from "../../features/dashboard/components/simple/styles";
 
 const styles = StyleSheet.create({
+  modeMovedTitle: {
+    fontFamily: FONT_FAMILY.heading,
+    fontSize: FONT_SIZE.md,
+    color: COLORS.ink,
+    marginBottom: SPACING.xs,
+  },
+  modeMovedBody: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.storm,
+    lineHeight: 20,
+    marginBottom: SPACING.md,
+  },
   screen: { flex: 1, backgroundColor: COLORS.canvas },
   // paddingBottom deja libre la franja de la barra flotante de iOS (0 en Android).
   content: { padding: SPACING.lg, gap: SPACING.xl, paddingBottom: 100 + IOS_FLOATING_TAB_BAR_SPACE },

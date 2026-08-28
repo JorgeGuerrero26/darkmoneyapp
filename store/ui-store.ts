@@ -26,6 +26,16 @@ type UiState = {
   /** Última cuenta usada al crear un movimiento (sigue la categoría sin persistir). */
   lastMovementAccountId: number | null;
   dashboardMode: DashboardMode;
+  /**
+   * ¿Ya se avisó de que Simple/Avanzado se mudó a Ajustes?
+   *
+   * Se persiste porque el aviso tiene que salir UNA vez por persona, no una por arranque.
+   * Arranca en `false`, así que quien ya usaba la app lo ve; quien instala de cero también,
+   * pero para esa persona el conmutador nunca estuvo en el dashboard y el aviso sobra —
+   * por eso solo se muestra si además hay un modo guardado de antes.
+   */
+  dashboardModeMoveSeen: boolean;
+  markDashboardModeMoveSeen: () => void;
   dashboardScrollY: number;
   /** Modo privacidad: enmascara montos y gráficos en toda la app (persistido). */
   privacyMode: boolean;
@@ -53,6 +63,7 @@ export const useUiStore = create<UiState>()(
       biometricEnabled: false,
       lastMovementAccountId: null,
       dashboardMode: "simple",
+      dashboardModeMoveSeen: false,
       dashboardScrollY: 0,
       privacyMode: false,
       togglePrivacyMode: () => set((state) => ({ privacyMode: !state.privacyMode })),
@@ -94,6 +105,7 @@ export const useUiStore = create<UiState>()(
       setBiometricEnabled: (enabled) => set({ biometricEnabled: enabled }),
       setLastMovementAccountId: (accountId) => set({ lastMovementAccountId: accountId }),
       setDashboardMode: (mode) => set({ dashboardMode: mode }),
+      markDashboardModeMoveSeen: () => set({ dashboardModeMoveSeen: true }),
       setDashboardScrollY: (y) => set({ dashboardScrollY: y }),
       triggerSuccessGlow: () => set((s) => ({ successGlowToken: s.successGlowToken + 1 })),
     }),
@@ -103,6 +115,7 @@ export const useUiStore = create<UiState>()(
       partialize: (state) => ({
         lastMovementAccountId: state.lastMovementAccountId,
         dashboardMode: state.dashboardMode,
+        dashboardModeMoveSeen: state.dashboardModeMoveSeen,
         biometricEnabled: state.biometricEnabled,
         privacyMode: state.privacyMode,
       }),
