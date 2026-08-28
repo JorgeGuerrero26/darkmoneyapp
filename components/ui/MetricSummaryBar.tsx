@@ -47,23 +47,25 @@ export function MetricSummaryBar({ items, trailingLabel, actions = [] }: Props) 
           const itemContent = (
             // La columna destacada lleva fondo elevado: de las tres, es la unica que responde
             // a la pregunta real ("¿cuanto me queda?"). Las otras dos son el detalle.
-            <View style={[styles.item, hasHelp && styles.itemWithHelp, item.strong && styles.itemStrong]}>
-              {Icon ? <Icon size={11} color={item.color ?? COLORS.storm} strokeWidth={2.5} /> : null}
+            <View style={[styles.item, item.strong && styles.itemStrong]}>
+              <View style={styles.labelRow}>
+                {Icon ? <Icon size={10} color={item.color ?? COLORS.storm} strokeWidth={2.5} /> : null}
+                <Text
+                  style={[styles.label, item.color ? { color: item.color } : null]}
+                  numberOfLines={1}
+                  maxFontSizeMultiplier={1.1}
+                >
+                  {item.compactLabel ?? item.label}
+                </Text>
+              </View>
               <Text
-                style={[item.strong ? styles.valueStrong : styles.value, item.color ? { color: item.color } : null]}
+                style={[styles.value, item.color ? { color: item.color } : null]}
                 numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.7}
                 maxFontSizeMultiplier={1.1}
               >
                 {item.value}
-              </Text>
-              <Text
-                style={styles.label}
-                numberOfLines={1}
-                adjustsFontSizeToFit
-                minimumFontScale={0.75}
-                maxFontSizeMultiplier={1.1}
-              >
-                {item.compactLabel ?? item.label}
               </Text>
             </View>
           );
@@ -126,69 +128,66 @@ export function MetricSummaryBar({ items, trailingLabel, actions = [] }: Props) 
 }
 
 const styles = StyleSheet.create({
+  // Una sola pieza con reglas verticales, en vez de tres tarjetas con tres bordes y tres
+  // sombras. Va como tarjeta cerrada, no como franja a sangre.
   root: {
     flexDirection: "row",
-    alignItems: "center",
-    minHeight: 40,
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.xs + 2,
+    alignItems: "stretch",
+    marginHorizontal: SPACING.xl,
+    borderRadius: RADIUS.xl,
+    borderWidth: 1,
+    borderColor: SURFACE.cardBorder,
     backgroundColor: SURFACE.card,
-    borderTopWidth: 0.5,
-    borderBottomWidth: 0.5,
-    borderColor: SURFACE.sheetBorder,
-    gap: SPACING.sm,
+    overflow: "hidden",
   },
   itemWrap: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "stretch",
     flex: 1,
     minWidth: 0,
-    gap: SPACING.sm,
   },
   item: {
+    flex: 1,
+    minWidth: 0,
+    gap: 3,
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.md,
+    justifyContent: "center",
+  },
+  labelRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    flex: 1,
-    minWidth: 0,
   },
-  itemWithHelp: {
-    paddingVertical: 2,
-  },
+  // La columna destacada lleva fondo elevado: de las tres, es la unica que responde a la
+  // pregunta real ("cuanto me queda"). Las otras dos son el detalle que la explica.
   itemStrong: {
     backgroundColor: SURFACE.subtle,
-    borderRadius: RADIUS.sm,
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 2,
   },
   helpPressable: {
     flex: 1,
     minWidth: 0,
   },
   separator: {
-    width: 0.5,
-    height: 16,
+    width: 1,
     backgroundColor: SURFACE.cardBorder,
   },
   // lineHeight explicito: sin el, las fuentes custom con fontScale grande (MIUI)
   // dibujan glifos mas altos que la caja de linea y el texto sale cortado.
   value: {
-    fontFamily: FONT_FAMILY.bodySemibold,
-    fontSize: FONT_SIZE.xs,
-    lineHeight: FONT_SIZE.xs + 6,
-    color: COLORS.ink,
-  },
-  valueStrong: {
     fontFamily: FONT_FAMILY.heading,
-    fontSize: FONT_SIZE.sm,
-    lineHeight: FONT_SIZE.sm + 6,
+    fontSize: FONT_SIZE.xl,
+    lineHeight: FONT_SIZE.xl + 4,
+    letterSpacing: -0.035 * FONT_SIZE.xl,
     color: COLORS.ink,
   },
   label: {
-    fontFamily: FONT_FAMILY.body,
-    fontSize: 10,
-    lineHeight: 15,
-    color: COLORS.textDisabled,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+    lineHeight: FONT_SIZE.xs + 3,
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+    color: COLORS.storm,
     flexShrink: 1,
     minWidth: 0,
   },
