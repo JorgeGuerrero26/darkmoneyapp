@@ -60,6 +60,9 @@ function ContactCardContent({
 
   return (
     <ResourceCard
+      // Fila sobre lienzo, no tarjeta: la lista de contactos es larga y cada tarjeta cobraba
+      // 16px de aire y dos bordes. Mismo tratamiento que la lista de movimientos.
+      variant="row"
       title={contact.name}
       subtitle={primaryDetail || typeLabel}
       archived={contact.isArchived}
@@ -78,7 +81,7 @@ function ContactCardContent({
       ]}
       meta={
         <>
-          <ResourceCardBadge label={typeLabel} color={COLORS.primary} />
+          {primaryDetail ? <ResourceCardBadge label={typeLabel} color={COLORS.primary} /> : null}
           {metrics?.receivablePendingTotal ? <ResourceCardBadge label="Cobra" color={COLORS.pine} /> : null}
           {metrics?.payablePendingTotal ? <ResourceCardBadge label="Debe" color={COLORS.rosewood} /> : null}
           {movementCount > 0 ? <ResourceCardMetaText>{movementCount} mov.</ResourceCardMetaText> : null}
