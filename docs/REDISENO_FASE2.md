@@ -110,16 +110,13 @@ ni `COLORS.warning` en `features/dashboard` (fuera de ahí se conservan).
   que apunta a trabajo concreto ("91 movimientos por categorizar"); los puntos de Patrones y
   Flujo solo decían "aquí hay algo", que es lo que ya dice estar en un dashboard.
 
-**Pendiente de la fase 1:**
-
-- Retirar los ~73 usos de `COLORS.gold` del dashboard (Decisión C). Es un barrido grande y
-  cada uso hay que mirarlo: algunos son advertencia legítima y deben pasar a clay, otros son
-  decoración y van a gris.
-- Estados vacíos: `S/ 0.00` → "Sin movimientos previstos" / "Sin compromisos".
-- El contador de la barra inferior (`useMoreBadgeCount`) — vive en `app/(app)/_layout.tsx`,
-  no en el dashboard, y suma notificaciones sin leer + invitaciones pendientes. Quitarlo
-  esconde invitaciones a espacios compartidos: conviene decidirlo antes, no borrarlo de oficio.
-- Grises fuera de la escala del punto 6.
+- **El amarillo fuera del dashboard**: 73 → 0, y los 129 de fuera intactos. Repartido según
+  el papel que hacía — 14 estados medios a gris, 54 señales de anomalía a clay, el sello PRO a
+  violeta.
+- **Estado vacío real** en la tarjeta de riesgo: sin agenda para la semana dice "Sin
+  movimientos previstos" en vez de tres ceros que se leen como fallo de carga.
+- **El contador de la barra inferior** deja de sumar notificaciones (ya tienen su campana) y
+  se queda solo con las invitaciones a espacios compartidos — ver sección 6.
 
 ### [x] Fase 2 — Encabezado y pestañas — HECHA
 
@@ -140,10 +137,10 @@ cortada. Medido: la más larga ("Historial") ocupa 64 px de los 71 disponibles.
 
 El contador de Salud pierde el amarillo (Decisión C): superficie neutra con la cifra en hueso.
 
-**Pendiente — el encabezado colapsado de 44 px.** `activeTab` vive DENTRO de
-`AdvancedDashboard.tsx` (L2807) y el encabezado se pinta en `app/(app)/dashboard.tsx`, que no lo
-conoce. Colapsarlo obliga a subir ese estado o a bajarle un callback. No es difícil, pero toca
-dos archivos grandes y merece su propio cambio en vez de colarse aquí.
+**Hecho — el encabezado colapsado.** `AdvancedDashboard` avisa hacia arriba con
+`onActiveTabChange` en vez de subir el estado entero: subirlo obligaría a mover también los dos
+sitios que hacen `setActiveTab` por su cuenta (saltar a Salud desde una alerta, saltar a Flujo
+desde el aviso de caja). La pantalla solo necesita saber DÓNDE estás, no mandar.
 
 ### [x] Fase 3 — La tarjeta de Gemini — HECHA
 
