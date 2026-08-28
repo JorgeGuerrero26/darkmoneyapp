@@ -1,5 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import { ErrorBoundary } from "../components/ui/ErrorBoundary";
 import {
   ActivityIndicator,
@@ -21,7 +22,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as LocalAuthentication from "expo-local-authentication";
 import * as SecureStore from "expo-secure-store";
 import * as Clipboard from "expo-clipboard";
-import { ChevronRight, Fingerprint, Mail, ShieldCheck } from "lucide-react-native";
+import { Check, ChevronRight, Fingerprint } from "lucide-react-native";
 
 import { useAuth } from "../lib/auth-context";
 import { useWorkspace, useWorkspaceListStore } from "../lib/workspace-context";
@@ -38,6 +39,9 @@ import {
   type WorkspaceInvitationInput,
 } from "../services/queries/workspace-data";
 import { useSyncExchangeRatePairMutation } from "../services/queries/exchange-rates";
+import { useNotificationDetectionSettingsQuery } from "../services/queries/notification-detection";
+import { notificationDetection } from "../lib/notification-detection-native";
+import { FINANCIAL_APPS } from "../lib/notification-detection-apps";
 import {
   inboundEmailAddress,
   useInboundEmailAliasQuery,
@@ -49,13 +53,12 @@ import { BottomSheet } from "../components/ui/BottomSheet";
 import { Card } from "../components/ui/Card";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { CurrencySelector } from "../components/ui/CurrencySelector";
-import { ResourceContextNote } from "../components/ui/ResourceContextNote";
 import { ResourceModuleTemplate } from "../components/ui/ResourceModuleTemplate";
 import { ScreenHeader } from "../components/layout/ScreenHeader";
 import { useToast } from "../hooks/useToast";
 import { COLORS, EXTENDED_PALETTE, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../constants/theme";
 import { IOS_FLOATING_TAB_BAR_SPACE } from "../constants/floating-tab-bar";
-import { DEFAULT_EXCHANGE_CURRENCY, normalizeSupportedCurrencyCode } from "../constants/currencies";
+import { DEFAULT_EXCHANGE_CURRENCY, SUPPORTED_CURRENCIES, normalizeSupportedCurrencyCode } from "../constants/currencies";
 import type { WorkspaceRole } from "../types/domain";
 import { SafeBlurView } from "../components/ui/SafeBlurView";
 import { CHANGELOG, CHANGELOG_OLDER } from "../constants/changelog";
@@ -68,6 +71,72 @@ const ROLE_OPTIONS: { label: string; value: Exclude<WorkspaceRole, "owner"> }[] 
   { label: "Lector", value: "viewer" },
 ];
 
+/**
+ * Un grupo de ajustes: fondo y borde UNA vez, no una tarjeta por cada dos interruptores.
+ *
+ * Cinco `Card` apiladas hacían que la pantalla se leyera como cinco bloques sueltos en vez de
+ * un índice. El grupo dibuja la caja; las filas de dentro se separan con una línea fina.
+ */
+function SettingsGroup({ children }: { children: ReactNode }) {
+  return <View style={styles.group}>{children}</View>;
+}
+
+/**
+ * La fila de ajuste: 56 px de alto **propios**.
+ *
+ * El alto lo pone la fila, no el texto que lleve dentro. Antes lo daba el subtítulo, así que
+ * al quitar los subtítulos que no cambiaban ninguna decisión los tres interruptores de
+ * Notificaciones salieron pegados uno encima de otro.
+ */
+function SettingsRow({
+  label,
+  support,
+  value,
+  valueColor,
+  leading,
+  trailing,
+  onPress,
+  last,
+}: {
+  label: string;
+  support?: string;
+  value?: string;
+  valueColor?: string;
+  leading?: ReactNode;
+  trailing?: ReactNode;
+  onPress?: () => void;
+  last?: boolean;
+}) {
+  const body = (
+    <>
+      {leading}
+      <View style={styles.rowCopy}>
+        <Text style={styles.rowLabel}>{label}</Text>
+        {support ? (
+          <Text style={styles.rowSupport} numberOfLines={2}>
+            {support}
+          </Text>
+        ) : null}
+      </View>
+      {value ? <Text style={[styles.rowValue, valueColor ? { color: valueColor } : null]}>{value}</Text> : null}
+      {trailing}
+      {onPress ? <ChevronRight size={16} color={COLORS.storm} /> : null}
+    </>
+  );
+
+  return (
+    <View style={[styles.row, !last && styles.rowDivided]}>
+      {onPress ? (
+        <TouchableOpacity style={styles.rowTouch} onPress={onPress} activeOpacity={0.72}>
+          {body}
+        </TouchableOpacity>
+      ) : (
+        <View style={styles.rowTouch}>{body}</View>
+      )}
+    </View>
+  );
+}
+
 function SettingsScreen() {
   const insets = useSafeAreaInsets();
 
@@ -79,10 +148,11 @@ function SettingsScreen() {
   const { handleBack } = useOriginBackNavigation({ skipInterception: signingOut });
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { profile, saveProfile, saveAvatar, removeAvatar, signOut } = useAuth();
+  const { profile, saveProfile, signOut } = useAuth();
   const { activeWorkspace, activeWorkspaceId, setActiveWorkspaceId, setWorkspaces } = useWorkspace();
   const { workspaces } = useWorkspaceListStore();
   const { showToast } = useToast();
+  const detectionSettingsQuery = useNotificationDetectionSettingsQuery(profile?.id, activeWorkspaceId);
   const notificationPreferencesQuery = useNotificationPreferencesQuery(profile?.id ?? null);
   const updateNotificationPreferencesMutation = useUpdateNotificationPreferencesMutation(profile?.id ?? null);
   const syncExchangeRatePair = useSyncExchangeRatePairMutation();
@@ -191,6 +261,8 @@ function SettingsScreen() {
   // ── Workspace invite sheet ────────────────────────────────────────────────
   const [inviteSheetOpen, setInviteSheetOpen] = useState(false);
   const [toneSheetOpen, setToneSheetOpen] = useState(false);
+  const [currencySheetOpen, setCurrencySheetOpen] = useState(false);
+  const [workspaceSheetOpen, setWorkspaceSheetOpen] = useState(false);
   const [inboundSheetOpen, setInboundSheetOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<Exclude<WorkspaceRole, "owner">>("member");
@@ -278,9 +350,43 @@ function SettingsScreen() {
     setSignOutVisible(true);
   }
 
-  const activeToneLabel =
-    DASHBOARD_AI_TONE_OPTIONS.find((option) => option.id === aiTone)?.label ??
-    DASHBOARD_AI_TONE_OPTIONS[0].label;
+  // La moneda base vive aquí y no en /profile: cambia lo que ves en TODA la app, no es un
+  // dato de la cuenta como el nombre o la foto.
+  const baseCurrencyCode = normalizeSupportedCurrencyCode(profile?.baseCurrencyCode);
+
+  async function handleBaseCurrencyChange(nextCode: string) {
+    const normalized = normalizeSupportedCurrencyCode(nextCode);
+    if (normalized === baseCurrencyCode) return;
+    try {
+      await saveProfile({
+        fullName: profile?.fullName ?? "",
+        baseCurrencyCode: normalized,
+        timezone: profile?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+      });
+      await syncDefaultExchangeCurrency(normalized);
+      showToast(`Moneda base: ${normalized}`, "success");
+    } catch (err: unknown) {
+      showToast(humanizeError(err), "error");
+    }
+  }
+
+  function openWorkspaceSheet() {
+    setWorkspaceSheetOpen(true);
+  }
+
+  const activeWorkspaceSummary = activeWorkspace
+    ? `${activeWorkspace.kind === "personal" ? "Personal" : "Compartido"} · ${activeWorkspace.role}`
+    : undefined;
+
+  const enabledDetectionApps = FINANCIAL_APPS.filter((app) => {
+    const setting = detectionSettingsQuery.data?.find((row) => row.financialAppKey === app.key);
+    return setting?.enabled ?? app.defaultEnabled;
+  }).length;
+  const detectionSummary = notificationDetection.isAvailable()
+    ? `${enabledDetectionApps} de ${FINANCIAL_APPS.length} apps activas`
+    : `${enabledDetectionApps} apps · no disponible en este build`;
+
+  const activeTone = DASHBOARD_AI_TONE_OPTIONS.find((option) => option.id === aiTone) ?? DASHBOARD_AI_TONE_OPTIONS[0];
 
   const canInvite =
     activeWorkspace?.kind === "shared" &&
@@ -371,7 +477,6 @@ function SettingsScreen() {
     <ResourceModuleTemplate
       topInset={insets.top}
       header={<ScreenHeader title="Configuración" onBack={handleBack} />}
-      context={<ResourceContextNote>Administra perfil, workspaces, seguridad y preferencias del dispositivo.</ResourceContextNote>}
       list={
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : "height"}>
         <ScrollView
@@ -383,145 +488,191 @@ function SettingsScreen() {
           keyboardShouldPersistTaps="handled"
         >
 
-          {/* 620 px de formulario para algo que se toca una vez al año. Vive en /profile. */}
-          <TouchableOpacity
-            style={styles.settingsNavRow}
-            activeOpacity={0.82}
-            onPress={() => router.push("/(app)/profile?from=settings" as any)}
-          >
-            {profile?.avatarUrl ? (
-              <Image source={{ uri: profile.avatarUrl }} style={styles.profileRowAvatar} />
-            ) : (
-              <View style={[styles.settingsNavIcon, styles.profileRowFallback]}>
-                <Text style={styles.profileRowInitials}>{profile?.initials ?? "DM"}</Text>
-              </View>
-            )}
-            <View style={styles.settingsNavCopy}>
-              <Text style={styles.switchLabel}>{profile?.fullName || "Tu perfil"}</Text>
-              <Text style={styles.switchDesc}>
-                {profile?.email ?? ""}
-                {profile?.baseCurrencyCode ? ` · ${normalizeSupportedCurrencyCode(profile.baseCurrencyCode)}` : ""}
-              </Text>
-            </View>
-            <ChevronRight size={16} color={COLORS.storm} />
-          </TouchableOpacity>
+          <SettingsGroup>
+            <SettingsRow
+              onPress={() => router.push("/(app)/profile?from=settings" as any)}
+              leading={
+                profile?.avatarUrl ? (
+                  <Image source={{ uri: profile.avatarUrl }} style={styles.profileRowAvatar} />
+                ) : (
+                  <View style={styles.profileRowFallback}>
+                    <Text style={styles.profileRowInitials}>{profile?.initials ?? "DM"}</Text>
+                  </View>
+                )
+              }
+              label={profile?.fullName || "Tu perfil"}
+              support={profile?.email ?? undefined}
+            />
 
-          {/* Workspaces */}
-          <Card>
-            <Text style={styles.sectionTitle}>Workspaces</Text>
-            {workspaces.map((ws) => (
-              <View key={ws.id} style={[styles.wsRow, ws.id === activeWorkspaceId && styles.wsRowActive]}>
-                <View style={styles.wsInfo}>
-                  <Text style={styles.wsName}>{ws.name}</Text>
-                  <Text style={styles.wsKind}>
-                    {ws.kind === "personal" ? "Personal" : "Compartido"} · {ws.role}
-                  </Text>
-                </View>
-                {ws.id === activeWorkspaceId ? <Text style={styles.wsActiveBadge}>Activo</Text> : null}
-              </View>
-            ))}
+            {/* La moneda base se queda aquí, no en /profile: es la preferencia que cambia lo
+                que ves en TODA la app, no un dato de la cuenta. */}
+            <SettingsRow
+              onPress={() => setCurrencySheetOpen(true)}
+              label="Moneda base"
+              value={baseCurrencyCode}
+            />
 
-            <View style={styles.wsActions}>
-              {canInvite ? (
-                <TouchableOpacity style={styles.wsActionBtn} onPress={openInviteSheet}>
-                  <Text style={styles.wsActionText}>＋ Invitar miembro</Text>
-                </TouchableOpacity>
-              ) : null}
-              <TouchableOpacity style={styles.wsActionBtn} onPress={openCreateWsSheet}>
-                <Text style={styles.wsActionText}>＋ Crear workspace</Text>
-              </TouchableOpacity>
-            </View>
-          </Card>
+            <SettingsRow
+              onPress={openWorkspaceSheet}
+              label="Workspace"
+              support={activeWorkspaceSummary}
+              last
+            />
+          </SettingsGroup>
 
-          {/* Seguridad */}
           {biometricAvailable ? (
-            <Card>
+            <>
               <Text style={styles.sectionTitle}>Seguridad</Text>
-              <View style={styles.switchRow}>
-                <View style={styles.switchInfo}>
-                  <Text style={styles.switchLabel}>Acceso con huella digital</Text>
-                  <Text style={styles.switchDesc}>
-                    {biometricActive
+              <SettingsGroup>
+                <SettingsRow
+                  label="Acceso con huella digital"
+                  support={
+                    biometricActive
                       ? "Activo · puedes entrar sin contraseña"
                       : bioCredsStored
                         ? "Desactivado · tus credenciales siguen guardadas"
-                        : "Actívalo para entrar tocando tu huella"}
-                  </Text>
-                </View>
+                        : "Actívalo para entrar tocando tu huella"
+                  }
+                  last
+                  trailing={
+                    <Switch
+                      value={biometricActive}
+                      onValueChange={(v) => void handleBiometricToggle(v)}
+                      trackColor={{ false: COLORS.border, true: COLORS.primary }}
+                      thumbColor={EXTENDED_PALETTE.white}
+                    />
+                  }
+                />
+              </SettingsGroup>
+            </>
+          ) : null}
+
+          <Text style={styles.sectionTitle}>Vista del inicio</Text>
+          <SettingsGroup>
+            <SettingsRow
+              label="Modo avanzado"
+              support={
+                dashboardMode === "advanced"
+                  ? "Patrones, flujo, historial y salud"
+                  : "Lo esencial: saldo, movimientos y alertas"
+              }
+              last={dashboardMode !== "advanced"}
+              trailing={
                 <Switch
-                  value={biometricActive}
-                  onValueChange={(v) => void handleBiometricToggle(v)}
+                  value={dashboardMode === "advanced"}
+                  onValueChange={(v) => setDashboardMode(v ? "advanced" : "simple")}
                   trackColor={{ false: COLORS.border, true: COLORS.primary }}
                   thumbColor={EXTENDED_PALETTE.white}
                 />
-              </View>
-            </Card>
-          ) : null}
+              }
+            />
 
-          <Card>
-            <Text style={styles.sectionTitle}>Vista del inicio</Text>
-            <View style={styles.switchRow}>
-              <View style={styles.switchInfo}>
-                <Text style={styles.switchLabel}>Modo avanzado</Text>
-                <Text style={styles.switchDesc}>
-                  {dashboardMode === "advanced"
-                    ? "Ves patrones, flujo, historial y salud de tus finanzas"
-                    : "Ves lo esencial: saldo, movimientos y alertas"}
-                </Text>
+            <BottomSheet
+        visible={currencySheetOpen}
+        onClose={() => setCurrencySheetOpen(false)}
+        title="Moneda base"
+        snapHeight={0.6}
+      >
+        {SUPPORTED_CURRENCIES.map((currency) => {
+          const active = currency.code === baseCurrencyCode;
+          return (
+            <TouchableOpacity
+              key={currency.code}
+              style={styles.sheetOption}
+              onPress={() => {
+                setCurrencySheetOpen(false);
+                void handleBaseCurrencyChange(currency.code);
+              }}
+              activeOpacity={0.82}
+            >
+              <View style={styles.rowCopy}>
+                <Text style={[styles.rowLabel, active && styles.sheetOptionActive]}>{currency.code}</Text>
+                <Text style={styles.rowSupport}>{currency.name}</Text>
               </View>
-              <Switch
-                value={dashboardMode === "advanced"}
-                onValueChange={(v) => setDashboardMode(v ? "advanced" : "simple")}
-                trackColor={{ false: COLORS.border, true: COLORS.primary }}
-                thumbColor={EXTENDED_PALETTE.white}
-              />
+              {active ? <Check size={16} color={COLORS.ink} /> : null}
+            </TouchableOpacity>
+          );
+        })}
+        <Text style={styles.rowSupport}>
+          Se sincronizará automáticamente contra {DEFAULT_EXCHANGE_CURRENCY}.
+        </Text>
+      </BottomSheet>
+
+      <BottomSheet visible={workspaceSheetOpen} onClose={() => setWorkspaceSheetOpen(false)} title="Workspaces">
+        {workspaces.map((ws) => (
+          <TouchableOpacity
+            key={ws.id}
+            style={styles.sheetOption}
+            onPress={() => {
+              setActiveWorkspaceId(ws.id);
+              setWorkspaceSheetOpen(false);
+            }}
+            activeOpacity={0.82}
+          >
+            <View style={styles.rowCopy}>
+              <Text style={[styles.rowLabel, ws.id === activeWorkspaceId && styles.sheetOptionActive]}>{ws.name}</Text>
+              <Text style={styles.rowSupport}>
+                {ws.kind === "personal" ? "Personal" : "Compartido"} · {ws.role}
+              </Text>
             </View>
+            {ws.id === activeWorkspaceId ? <Check size={16} color={COLORS.ink} /> : null}
+          </TouchableOpacity>
+        ))}
+        <View style={styles.wsActions}>
+          {canInvite ? (
+            <TouchableOpacity
+              style={styles.wsActionBtn}
+              onPress={() => {
+                setWorkspaceSheetOpen(false);
+                openInviteSheet();
+              }}
+            >
+              <Text style={styles.wsActionText}>＋ Invitar miembro</Text>
+            </TouchableOpacity>
+          ) : null}
+          <TouchableOpacity
+            style={styles.wsActionBtn}
+            onPress={() => {
+              setWorkspaceSheetOpen(false);
+              openCreateWsSheet();
+            }}
+          >
+            <Text style={styles.wsActionText}>＋ Crear workspace</Text>
+          </TouchableOpacity>
+        </View>
+      </BottomSheet>
 
-            {/* El tono es el REGISTRO con que la IA te habla, no lo que se le pide: la caché
+      {/* El tono es el REGISTRO con que la IA te habla, no lo que se le pide: la caché
                 guarda una respuesta por tono y el contrato con el servidor no cambia. Es una
                 preferencia, así que se elige una vez aquí en lugar de repintarse en las cinco
                 pestañas del dashboard. */}
             {dashboardMode === "advanced" ? (
-              <TouchableOpacity
-                style={styles.aiToneRow}
+              <SettingsRow
                 onPress={() => setToneSheetOpen(true)}
-                activeOpacity={0.82}
-              >
-                <Text style={[styles.switchLabel, styles.aiToneLabel]}>Cómo te habla el asistente</Text>
-                <Text style={styles.aiToneValue}>{activeToneLabel}</Text>
-                <ChevronRight size={16} color={COLORS.storm} />
-              </TouchableOpacity>
-            ) : null}
-          </Card>
-
-          <Card>
-            <Text style={styles.sectionTitle}>Notificaciones</Text>
-            <TouchableOpacity
-              style={styles.settingsNavRow}
-              activeOpacity={0.82}
-              onPress={() => router.push("/(app)/notification-detection?from=settings" as any)}
-            >
-              <View style={styles.settingsNavIcon}>
-                <ShieldCheck size={18} color={COLORS.primary} />
-              </View>
-              <View style={styles.settingsNavCopy}>
-                <Text style={styles.switchLabel}>Detección automática</Text>
-                <Text style={styles.switchDesc}>Sugiere movimientos desde apps financieras seleccionadas.</Text>
-              </View>
-              <ChevronRight size={16} color={COLORS.storm} />
-            </TouchableOpacity>
-            <View style={styles.switchRow}>
-              <View style={styles.switchInfo}>
-                <Text style={styles.switchLabel}>Notificaciones push</Text>
-              </View>
-              <Switch
-                value={pushEnabled && Boolean(pushToken)}
-                onValueChange={(v) => void handlePushToggle(v)}
-                disabled={updateNotificationPreferencesMutation.isPending || notificationPreferencesQuery.isLoading}
-                trackColor={{ false: COLORS.border, true: COLORS.primary }}
-                thumbColor={EXTENDED_PALETTE.white}
+                label="Tono del asistente"
+                support={activeTone?.description}
+                value={activeTone?.label}
+                valueColor={COLORS.pro}
+                last
               />
-            </View>
+            ) : null}
+          </SettingsGroup>
+
+          <Text style={styles.sectionTitle}>Notificaciones</Text>
+          <SettingsGroup>
+            <SettingsRow
+              label="Push en este dispositivo"
+              trailing={
+                <Switch
+                  value={pushEnabled && Boolean(pushToken)}
+                  onValueChange={(v) => void handlePushToggle(v)}
+                  disabled={updateNotificationPreferencesMutation.isPending || notificationPreferencesQuery.isLoading}
+                  trackColor={{ false: COLORS.border, true: COLORS.primary }}
+                  thumbColor={EXTENDED_PALETTE.white}
+                />
+              }
+            />
+
             {pushPermissionBlocked ? (
               <View style={styles.pushStatusBox}>
                 <Text style={styles.pushStatusTitle}>Permisos bloqueados en el sistema</Text>
@@ -538,53 +689,47 @@ function SettingsScreen() {
                 </TouchableOpacity>
               </View>
             ) : null}
-            <View style={styles.switchRow}>
-              <View style={styles.switchInfo}>
-                <Text style={styles.switchLabel}>Resumen diario informativo</Text>
-              </View>
-              <Switch
-                value={dailyDigestEnabled}
-                onValueChange={(v) => void handleDailyDigestToggle(v)}
-                disabled={updateNotificationPreferencesMutation.isPending || notificationPreferencesQuery.isLoading}
-                trackColor={{ false: COLORS.border, true: COLORS.primary }}
-                thumbColor={EXTENDED_PALETTE.white}
-              />
-            </View>
-            <View style={styles.switchRow}>
-              <View style={styles.switchInfo}>
-                <Text style={styles.switchLabel}>Alertas predictivas</Text>
-                <Text style={styles.switchDesc}>
-                  Aviso cuando tu saldo proyectado no cubre el mes o tus compromisos.
-                </Text>
-              </View>
-              <Switch
-                value={predictiveAlertsEnabled}
-                onValueChange={(v) => void handlePredictiveAlertsToggle(v)}
-                disabled={updateNotificationPreferencesMutation.isPending || notificationPreferencesQuery.isLoading}
-                trackColor={{ false: COLORS.border, true: COLORS.primary }}
-                thumbColor={EXTENDED_PALETTE.white}
-              />
-            </View>
-          </Card>
 
-          {/* En iOS no existe la detección de notificaciones de Android, así que esta es la vía;
-              pero es configuración de una sola vez, no una tarjeta permanente con dos botones. */}
-          <TouchableOpacity
-            style={styles.settingsNavRow}
-            activeOpacity={0.82}
-            onPress={() => setInboundSheetOpen(true)}
-          >
-            <View style={styles.settingsNavIcon}>
-              <Mail size={18} color={COLORS.primary} />
-            </View>
-            <View style={styles.settingsNavCopy}>
-              <Text style={styles.switchLabel}>Detectar pagos por correo</Text>
-              <Text style={styles.switchDesc}>
-                {inboundAliasQuery.data ? inboundEmailAddress(inboundAliasQuery.data) : "Sin dirección todavía"}
-              </Text>
-            </View>
-            <ChevronRight size={16} color={COLORS.storm} />
-          </TouchableOpacity>
+            <SettingsRow
+              label="Resumen diario"
+              trailing={
+                <Switch
+                  value={dailyDigestEnabled}
+                  onValueChange={(v) => void handleDailyDigestToggle(v)}
+                  disabled={updateNotificationPreferencesMutation.isPending || notificationPreferencesQuery.isLoading}
+                  trackColor={{ false: COLORS.border, true: COLORS.primary }}
+                  thumbColor={EXTENDED_PALETTE.white}
+                />
+              }
+            />
+
+            <SettingsRow
+              label="Alertas predictivas"
+              support="Aviso cuando tu saldo proyectado no cubre el mes o tus compromisos."
+              trailing={
+                <Switch
+                  value={predictiveAlertsEnabled}
+                  onValueChange={(v) => void handlePredictiveAlertsToggle(v)}
+                  disabled={updateNotificationPreferencesMutation.isPending || notificationPreferencesQuery.isLoading}
+                  trackColor={{ false: COLORS.border, true: COLORS.primary }}
+                  thumbColor={EXTENDED_PALETTE.white}
+                />
+              }
+            />
+
+            <SettingsRow
+              onPress={() => router.push("/(app)/notification-detection?from=settings" as any)}
+              label="Detección automática"
+              support={detectionSummary}
+            />
+
+            <SettingsRow
+              onPress={() => setInboundSheetOpen(true)}
+              label="Detectar pagos por correo"
+              support={inboundAliasQuery.data ? inboundEmailAddress(inboundAliasQuery.data) : "Sin dirección todavía"}
+              last
+            />
+          </SettingsGroup>
 
           {/* Es la única acción irreversible de la pantalla, así que NO se pinta como el
               control más llamativo: va en texto, al final, donde se busca a propósito. */}
@@ -868,17 +1013,19 @@ function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
-  aiToneRow: {
+  // El violeta se queda: es COLORS.pro, el color de la IA en todo el sistema. Lo que sobraba
+  // eran las dos tarjetas de 90 px, no el color.
+  sheetOption: {
     minHeight: 52,
     flexDirection: "row",
     alignItems: "center",
-    gap: SPACING.sm,
-    marginTop: SPACING.md,
+    gap: SPACING.md,
+    paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.md,
+    backgroundColor: SURFACE.card,
+    marginBottom: SPACING.xs,
   },
-  // El violeta se queda: es COLORS.pro, el color de la IA en todo el sistema. Lo que sobraba
-  // eran las dos tarjetas de 90 px, no el color.
-  aiToneLabel: { flex: 1 },
-  aiToneValue: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.sm, color: COLORS.pro },
+  sheetOptionActive: { color: COLORS.ink },
   toneSheetRow: {
     padding: SPACING.md,
     borderRadius: RADIUS.lg,
@@ -893,7 +1040,14 @@ const styles = StyleSheet.create({
   toneSheetTitleActive: { color: COLORS.pro },
   toneSheetBody: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm, lineHeight: 16 },
   profileRowAvatar: { width: 36, height: 36, borderRadius: 18 },
-  profileRowFallback: { backgroundColor: COLORS.primary },
+  profileRowFallback: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.primary,
+  },
   profileRowInitials: {
     fontFamily: FONT_FAMILY.heading,
     fontSize: FONT_SIZE.sm,
@@ -910,7 +1064,32 @@ const styles = StyleSheet.create({
     color: COLORS.storm,
   },
   flex: { flex: 1 },
-  content: { padding: SPACING.lg, gap: SPACING.lg, paddingBottom: SPACING.xxxl },
+  group: {
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: SURFACE.cardBorder,
+    backgroundColor: SURFACE.card,
+    overflow: "hidden",
+  },
+  // El alto es de la FILA, no del texto: sin esto, una fila sin subtítulo colapsa a la altura
+  // del Switch y tres seguidas se ven pegadas.
+  row: { minHeight: 56, justifyContent: "center" },
+  rowDivided: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: SURFACE.separator,
+  },
+  rowTouch: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.md,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+  },
+  rowCopy: { flex: 1, gap: 2 },
+  rowLabel: { fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.bodyMedium, color: COLORS.ink },
+  rowSupport: { fontSize: FONT_SIZE.xs, fontFamily: FONT_FAMILY.body, color: COLORS.storm, lineHeight: 16 },
+  rowValue: { fontSize: FONT_SIZE.sm, fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.fog },
+  content: { padding: SPACING.lg, gap: SPACING.md, paddingBottom: SPACING.xxxl },
   versionText: {
     fontSize: FONT_SIZE.xs,
     fontFamily: FONT_FAMILY.body,
@@ -931,26 +1110,15 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.sm,
   },
   sectionTitle: {
-    fontSize: FONT_SIZE.sm,
+    fontSize: FONT_SIZE.xs,
     fontFamily: FONT_FAMILY.bodySemibold,
     color: COLORS.storm,
     textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginBottom: SPACING.md,
+    letterSpacing: 0.6,
+    marginTop: SPACING.md,
+    marginBottom: -SPACING.xs,
+    paddingHorizontal: SPACING.xs,
   },
-  wsRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: SPACING.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: SURFACE.separator,
-  },
-  wsRowActive: { backgroundColor: SURFACE.cardActive, marginHorizontal: -SPACING.md, paddingHorizontal: SPACING.md, borderRadius: RADIUS.sm },
-  wsInfo: { gap: 2 },
-  wsName: { fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.bodyMedium, color: COLORS.ink },
-  wsKind: { fontSize: FONT_SIZE.xs, color: COLORS.storm },
-  wsActiveBadge: { fontSize: FONT_SIZE.xs, color: COLORS.primary, fontFamily: FONT_FAMILY.bodySemibold },
   wsActions: { flexDirection: "row", gap: SPACING.sm, marginTop: SPACING.md, flexWrap: "wrap" },
   wsActionBtn: {
     paddingHorizontal: SPACING.md,
@@ -960,31 +1128,6 @@ const styles = StyleSheet.create({
     borderColor: COLORS.primary,
   },
   wsActionText: { fontSize: FONT_SIZE.sm, color: COLORS.primary, fontFamily: FONT_FAMILY.bodyMedium },
-  switchRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  switchInfo: { flex: 1, gap: 2, marginRight: SPACING.md },
-  switchLabel: { fontSize: FONT_SIZE.sm, fontFamily: FONT_FAMILY.bodyMedium, color: COLORS.ink },
-  switchDesc: { fontSize: FONT_SIZE.xs, color: COLORS.storm },
-  settingsNavRow: {
-    minHeight: 56,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: SPACING.md,
-    padding: SPACING.md,
-    marginBottom: SPACING.md,
-    borderRadius: RADIUS.lg,
-    borderWidth: 1,
-    borderColor: SURFACE.cardBorder,
-    backgroundColor: SURFACE.card,
-  },
-  settingsNavIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: RADIUS.md,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: SURFACE.cardActive,
-  },
-  settingsNavCopy: { flex: 1, gap: 2 },
   pushStatusBox: {
     marginBottom: SPACING.md,
     padding: SPACING.md,

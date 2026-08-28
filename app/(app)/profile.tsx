@@ -16,7 +16,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { Button } from "../../components/ui/Button";
-import { CurrencySelector } from "../../components/ui/CurrencySelector";
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { Input } from "../../components/ui/Input";
 import { useOriginBackNavigation } from "../../hooks/useOriginBackNavigation";
@@ -42,9 +41,7 @@ function ProfileScreen() {
   const syncExchangeRatePair = useSyncExchangeRatePairMutation();
 
   const [fullName, setFullName] = useState(profile?.fullName ?? "");
-  const [baseCurrencyCode, setBaseCurrencyCode] = useState(
-    normalizeSupportedCurrencyCode(profile?.baseCurrencyCode),
-  );
+  const baseCurrencyCode = normalizeSupportedCurrencyCode(profile?.baseCurrencyCode);
   const [isSaving, setIsSaving] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
 
@@ -161,14 +158,6 @@ function ProfileScreen() {
             <Text style={styles.readonlyLabel}>Correo electrónico</Text>
             <Text style={styles.readonlyValue}>{profile?.email ?? "—"}</Text>
           </View>
-
-          <CurrencySelector
-            label="Moneda base"
-            value={baseCurrencyCode}
-            onChange={setBaseCurrencyCode}
-            variant="row"
-            hint={`Se sincronizará automáticamente contra ${DEFAULT_EXCHANGE_CURRENCY}.`}
-          />
 
           <Button label="Guardar perfil" onPress={handleSave} loading={isSaving} style={styles.saveButton} />
         </ScrollView>
