@@ -38,6 +38,23 @@ export function formatCurrency(amount: number, currencyCode: string): string {
   return formatCurrencyPure(amount, currencyCode);
 }
 
+/**
+ * La cifra SIN el símbolo de moneda: "6,800.00".
+ *
+ * Para la cinta de resumen, donde la moneda ya la lleva la etiqueta ("NETO PEN"). Repetir el
+ * símbolo en cada columna no añade nada y sí quita ancho: con tres columnas en 393px, un
+ * "S/ 3,143.50" a 20px no entra, y la cifra —que es lo único que importa ahí— acaba
+ * encogiéndose hasta desaparecer.
+ *
+ * Respeta el modo privacidad igual que `formatCurrency`.
+ */
+export function formatAmountPlain(amount: number, currencyCode: string, signed = false): string {
+  if (useUiStore.getState().privacyMode) return "••••";
+  const { integer, fraction } = formatCurrencyParts(amount, currencyCode);
+  const sign = signed ? (amount < 0 ? "−" : "+") : amount < 0 ? "−" : "";
+  return `${sign}${integer}${fraction}`;
+}
+
 export function AmountDisplay({
   amount,
   currencyCode,

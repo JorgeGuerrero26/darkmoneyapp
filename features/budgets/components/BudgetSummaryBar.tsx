@@ -1,6 +1,6 @@
 import { AlertTriangle, PiggyBank, Target } from "lucide-react-native";
 
-import { formatCurrency } from "../../../components/ui/AmountDisplay";
+import { formatAmountPlain, formatCurrency } from "../../../components/ui/AmountDisplay";
 import { MetricSummaryBar } from "../../../components/ui/MetricSummaryBar";
 import { COLORS } from "../../../constants/theme";
 
@@ -25,8 +25,8 @@ export function BudgetSummaryBar({
         {
           key: "limit",
           icon: Target,
-          value: formatCurrency(limitTotal, currencyCode),
-          label: "límite",
+          value: formatAmountPlain(limitTotal, currencyCode),
+          label: `Límite ${currencyCode}`,
           color: COLORS.primary,
           helpTitle: "Límite total",
           helpDescription: "Suma de los límites de los presupuestos visibles con los filtros actuales, convertida a la moneda base.",
@@ -34,8 +34,8 @@ export function BudgetSummaryBar({
         {
           key: "spent",
           icon: PiggyBank,
-          value: formatCurrency(spentTotal, currencyCode),
-          label: "gastado",
+          value: formatAmountPlain(spentTotal, currencyCode),
+          label: "Gastado",
           color: spentTotal > limitTotal ? COLORS.expense : COLORS.storm,
           helpTitle: "Gasto acumulado",
           helpDescription: "Suma de los movimientos reales que consumen los presupuestos visibles dentro de sus períodos y alcances configurados.",
@@ -43,7 +43,7 @@ export function BudgetSummaryBar({
         {
           key: "remaining",
           icon: AlertTriangle,
-          value: formatCurrency(Math.abs(remainingTotal), currencyCode),
+          value: formatAmountPlain(Math.abs(remainingTotal), currencyCode),
           label: attentionCount > 0 ? `${attentionCount} alerta` : "disponible",
           compactLabel: attentionCount > 0 ? `${attentionCount} alerta` : "libre",
           color: remainingTotal < 0 ? COLORS.expense : COLORS.income,

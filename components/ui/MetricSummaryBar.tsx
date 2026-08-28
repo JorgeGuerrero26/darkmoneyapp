@@ -61,8 +61,7 @@ export function MetricSummaryBar({ items, trailingLabel, actions = [] }: Props) 
               <Text
                 style={[styles.value, item.color ? { color: item.color } : null]}
                 numberOfLines={1}
-                adjustsFontSizeToFit
-                minimumFontScale={0.7}
+                ellipsizeMode="tail"
                 maxFontSizeMultiplier={1.1}
               >
                 {item.value}
@@ -133,6 +132,9 @@ const styles = StyleSheet.create({
   root: {
     flexDirection: "row",
     alignItems: "stretch",
+    // Suelo de alto: sin el, una columna sin dato encogia la cinta entera y el resto quedaba
+    // recortado por el overflow:hidden de esta misma tarjeta.
+    minHeight: 62,
     marginHorizontal: SPACING.xl,
     borderRadius: RADIUS.xl,
     borderWidth: 1,
@@ -176,9 +178,11 @@ const styles = StyleSheet.create({
   // dibujan glifos mas altos que la caja de linea y el texto sale cortado.
   value: {
     fontFamily: FONT_FAMILY.heading,
-    fontSize: FONT_SIZE.xl,
-    lineHeight: FONT_SIZE.xl + 4,
-    letterSpacing: -0.035 * FONT_SIZE.xl,
+    // 17 y no 20: con tres columnas en 393px quedan ~93px utiles por cifra, y a 20px un
+    // "+12,487.60" ya no entra. Mejor una cifra que se lee entera que una recortada.
+    fontSize: FONT_SIZE.lg,
+    lineHeight: FONT_SIZE.lg + 4,
+    letterSpacing: -0.035 * FONT_SIZE.lg,
     color: COLORS.ink,
   },
   label: {
@@ -188,8 +192,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
     textTransform: "uppercase",
     color: COLORS.storm,
-    flexShrink: 1,
-    minWidth: 0,
   },
   trailing: {
     fontFamily: FONT_FAMILY.body,

@@ -1,7 +1,7 @@
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { TrendingDown, TrendingUp } from "lucide-react-native";
 
-import { formatCurrency } from "../../../components/ui/AmountDisplay";
+import { formatAmountPlain, formatCurrency } from "../../../components/ui/AmountDisplay";
 import { MetricSummaryBar } from "../../../components/ui/MetricSummaryBar";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../../constants/theme";
 
@@ -67,8 +67,8 @@ export function MovementSummaryBar({
           {
             key: "income",
             icon: TrendingUp,
-            value: formatCurrency(summary.incomeTotal, activeCurrency),
-            label: `${summary.incomeCount} mov`,
+            value: formatAmountPlain(summary.incomeTotal, activeCurrency),
+            label: "Ingresos",
             color: COLORS.income,
             helpTitle: "Ingresos filtrados",
             helpDescription: `Total de movimientos de ingreso que coinciden con la búsqueda y filtros actuales. Se muestra en ${activeCurrency}.`,
@@ -76,16 +76,16 @@ export function MovementSummaryBar({
           {
             key: "expense",
             icon: TrendingDown,
-            value: formatCurrency(summary.expenseTotal, activeCurrency),
-            label: `${summary.expenseCount} mov`,
+            value: formatAmountPlain(summary.expenseTotal, activeCurrency),
+            label: "Gastos",
             color: COLORS.expense,
             helpTitle: "Gastos filtrados",
             helpDescription: `Total de movimientos de gasto que coinciden con la búsqueda y filtros actuales. Se muestra en ${activeCurrency}.`,
           },
           {
             key: "net",
-            value: `${summary.net >= 0 ? "+" : "-"}${formatCurrency(Math.abs(summary.net), activeCurrency)}`,
-            label: "neto",
+            value: formatAmountPlain(summary.net, activeCurrency, true),
+            label: `Neto ${activeCurrency}`,
             color: summary.net >= 0 ? COLORS.income : COLORS.expense,
             strong: true,
             helpTitle: "Neto del filtro",
