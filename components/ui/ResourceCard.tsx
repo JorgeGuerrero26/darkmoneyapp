@@ -82,7 +82,12 @@ function ResourceCardBase({
     >
       {/* Separador sangrado 62px: se alinea con el TEXTO, no con el borde de pantalla.
           Va absoluto para no robarle alto a la fila ni sumarse al padding. */}
-      {isRow ? <View style={styles.rowSeparator} pointerEvents="none" /> : null}
+      {isRow ? (
+        <View
+          style={[styles.rowSeparator, { left: leading ? 62 : SPACING.xl }]}
+          pointerEvents="none"
+        />
+      ) : null}
       <View style={[styles.mainRow, contentStyle]}>
         {leading ? <View style={styles.leading}>{leading}</View> : null}
 
@@ -222,7 +227,6 @@ const styles = StyleSheet.create({
   },
   rowSeparator: {
     position: "absolute",
-    left: 62,
     right: 0,
     bottom: 0,
     height: StyleSheet.hairlineWidth,

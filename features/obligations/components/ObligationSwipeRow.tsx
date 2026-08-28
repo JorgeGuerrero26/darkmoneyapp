@@ -8,7 +8,6 @@ import { ProgressBar } from "../../../components/ui/ProgressBar";
 import {
   ResourceCard,
   ResourceCardBadge,
-  ResourceCardIcon,
 } from "../../../components/ui/ResourceCard";
 import { SwipeActionRow } from "../../../components/ui/SwipeActionRow";
 import { AmountDisplay, formatCurrency } from "../../../components/ui/AmountDisplay";
@@ -116,7 +115,6 @@ export function ObligationSwipeRow({
         selected={selected}
         onPress={onOpenDetail}
         onLongPress={onLongPress}
-        leading={<ResourceCardIcon icon={CreditCard} color={directionColor} />}
         trailing={
           <View style={styles.amountBlock}>
             <AmountDisplay
@@ -178,7 +176,6 @@ export function ObligationSwipeRow({
             onOpenDetail();
           }}
           onLongPress={onLongPress}
-          leading={<ResourceCardIcon icon={CreditCard} color={directionColor} />}
           trailing={
             // La barra de 340px para decir 10% era desproporcionada. Baja a 56px y sube JUNTO al
             // monto, que es donde se compara: cuánto queda y cuánto llevas, de un vistazo.
