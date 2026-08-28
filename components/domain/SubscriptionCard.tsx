@@ -52,6 +52,7 @@ function SubscriptionCardBase({
   return (
     <ResourceCard
       pinned={subscription.isPinned}
+      variant="row"
       title={subscription.name}
       subtitle={subscription.vendor || subscription.categoryName || "Suscripción"}
       archived={subscription.status === "cancelled"}

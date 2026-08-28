@@ -57,6 +57,7 @@ function NotificationCardComponent({
 
   return (
     <ResourceCard
+      variant="row"
       title={notification.title}
       subtitle={notification.body}
       selected={selected}

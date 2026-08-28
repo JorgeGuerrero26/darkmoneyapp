@@ -50,6 +50,7 @@ function BudgetCardBase({ budget, selected, onPress, onLongPress, onAnalytics, o
   return (
     <ResourceCard
       pinned={budget.isPinned}
+      variant="row"
       title={budget.name}
       subtitle={budget.scopeLabel}
       selected={selected}

@@ -66,6 +66,7 @@ function AccountCardContent({
 
   return (
     <ResourceCard
+      variant="row"
       title={account.name}
       subtitle={subtitle}
       selected={selected}

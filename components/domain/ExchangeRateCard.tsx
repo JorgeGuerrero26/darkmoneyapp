@@ -32,6 +32,7 @@ function ExchangeRateCardBase({ rate, onPress, onLongPress, selected = false }: 
   return (
     <ResourceCard
       pinned={rate.isPinned}
+      variant="row"
       title={title}
       subtitle={formatEffectiveAt(rate.effectiveAt)}
       selected={selected}

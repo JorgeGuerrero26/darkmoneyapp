@@ -42,6 +42,7 @@ function CategoryCardBase({
   return (
     <ResourceCard
       pinned={category.isPinned}
+      variant="row"
       title={category.name}
       subtitle={category.parentName ? `${kindLabel} · ${category.parentName}` : kindLabel}
       archived={!category.isActive}

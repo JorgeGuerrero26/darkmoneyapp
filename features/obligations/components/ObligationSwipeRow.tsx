@@ -95,18 +95,29 @@ export function ObligationSwipeRow({
         : COLORS.storm;
   const paySwipeLabel = obligationSwipeActionLabel(obligation.direction, Boolean(isSharedWithMe));
 
+  // Tipo · avance · vencimiento en UNA línea. Antes eran tres cápsulas —"Me deben", "Activa",
+  // "Compartida"— todas deducibles del filtro activo y del signo del monto.
+  const supportLine = [
+    obligation.title,
+    !isPaid ? `${Math.round(obligation.progressPercent)}% pagado` : "Pagada",
+    obligation.dueDate
+      ? `vence ${format(parseDisplayDate(obligation.dueDate), "d MMM yyyy", { locale: es })}`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
   if (selectMode) {
     return (
       <ResourceCard
-        title={obligation.title}
-        subtitle={obligation.counterparty}
+        variant="row"
+        title={obligation.counterparty || obligation.title}
+        subtitle={supportLine}
         selected={selected}
         onPress={onOpenDetail}
         onLongPress={onLongPress}
         leading={<ResourceCardIcon icon={CreditCard} color={directionColor} />}
         trailing={
-          // "Cuanto" y "cuando" se leen juntos: el vencimiento sube al bloque de la cifra en
-          // vez de vivir abajo, al lado del porcentaje pagado.
           <View style={styles.amountBlock}>
             <AmountDisplay
               amount={obligation.pendingAmount}
@@ -115,34 +126,15 @@ export function ObligationSwipeRow({
               color={color}
               prefix=""
             />
-            {obligation.dueDate && !isPaid ? (
-              <Text
-                style={[styles.dueDate, { color: dueDateColor(obligation.dueDate) }]}
-                numberOfLines={1}
-              >
-                Vence {format(parseDisplayDate(obligation.dueDate), "d MMM", { locale: es })}
-              </Text>
+            {!isPaid ? (
+              <View style={styles.miniProgress}>
+                <ProgressBar percent={obligation.progressPercent} alertPercent={100} height={3} />
+              </View>
             ) : null}
           </View>
         }
         meta={
-          <>
-            <ResourceCardBadge label={directionLabel} color={directionColor} />
-            <ResourceCardBadge label={obligationStatusLabel} color={obligationStatusColor} />
-            {shareLabel ? (
-              <ResourceCardBadge label={shareLabel} color={shareColor} icon={Users} />
-            ) : null}
-          </>
-        }
-        footer={
-          !isPaid ? (
-            <View style={styles.footer}>
-              <ProgressBar percent={obligation.progressPercent} alertPercent={100} height={5} />
-              <View style={styles.progressRow}>
-                <Text style={styles.progressText}>{Math.round(obligation.progressPercent)}% pagado</Text>
-              </View>
-            </View>
-          ) : null
+          shareLabel ? <ResourceCardBadge label={shareLabel} color={shareColor} icon={Users} /> : null
         }
       />
     );
@@ -175,8 +167,8 @@ export function ObligationSwipeRow({
     >
       {({ close, isOpen }) => (
         <ResourceCard
-          title={obligation.title}
-          subtitle={obligation.counterparty}
+          title={obligation.counterparty || obligation.title}
+          subtitle={supportLine}
           onPress={() => {
             if (isOpen()) {
               close();
@@ -195,52 +187,41 @@ export function ObligationSwipeRow({
             },
           ]}
           trailing={
-            <Text style={[styles.amount, { color }]}>
-              {formatCurrency(obligation.pendingAmount, obligation.currencyCode)}
-            </Text>
+            // La barra de 340px para decir 10% era desproporcionada. Baja a 56px y sube JUNTO al
+            // monto, que es donde se compara: cuánto queda y cuánto llevas, de un vistazo.
+            <View style={styles.amountBlock}>
+              <AmountDisplay
+                amount={obligation.pendingAmount}
+                currencyCode={obligation.currencyCode}
+                size="lg"
+                color={color}
+                prefix=""
+              />
+              {!isPaid ? (
+                <View style={styles.miniProgress}>
+                  <ProgressBar percent={obligation.progressPercent} alertPercent={100} height={3} />
+                </View>
+              ) : null}
+            </View>
           }
           meta={
-            <>
-              <ResourceCardBadge label={directionLabel} color={directionColor} />
-              <ResourceCardBadge label={obligationStatusLabel} color={obligationStatusColor} />
-              {pendingRequestCount > 0 ? (
-                <ResourceCardBadge
-                  label={`${pendingRequestCount} pendiente${pendingRequestCount === 1 ? "" : "s"}`}
-                  color={COLORS.danger}
-                  icon={Bell}
-                  onPress={onAnalytics}
-                  accessibilityLabel={`${pendingRequestCount} solicitudes pendientes`}
-                />
-              ) : null}
-            {shareLabel ? (
-              <ResourceCardBadge label={shareLabel} color={shareColor} icon={Users} />
-            ) : null}
-            {isSharedWithMe && "share" in obligation ? (
-              <ResourceCardBadge
-                label={`Compartido${
-                  (obligation as SharedObligationSummary).share.ownerDisplayName?.trim()
-                    ? ` · ${(obligation as SharedObligationSummary).share.ownerDisplayName!.trim()}`
-                    : ""
-                }`}
-                color={COLORS.secondary}
-                icon={Users}
-              />
-            ) : null}
-            </>
-          }
-          footer={
-            !isPaid ? (
-              <View style={styles.footer}>
-                <ProgressBar percent={obligation.progressPercent} alertPercent={100} height={5} />
-                <View style={styles.progressRow}>
-                  <Text style={styles.progressText}>{Math.round(obligation.progressPercent)}% pagado</Text>
-                  {obligation.dueDate ? (
-                    <Text style={styles.dueDate}>
-                      Vence {format(parseDisplayDate(obligation.dueDate), "d MMM yyyy", { locale: es })}
-                    </Text>
-                  ) : null}
-                </View>
-              </View>
+            // Solo lo EXCEPCIONAL. "Me deben" y "Activa" se deducen del filtro y del signo del
+            // monto, así que repetirlos en cada fila no añade nada.
+            pendingRequestCount > 0 || shareLabel || (isSharedWithMe && "share" in obligation) ? (
+              <>
+                {pendingRequestCount > 0 ? (
+                  <ResourceCardBadge
+                    label={`${pendingRequestCount} pendiente${pendingRequestCount === 1 ? "" : "s"}`}
+                    color={COLORS.danger}
+                    icon={Bell}
+                    onPress={onAnalytics}
+                    accessibilityLabel={`${pendingRequestCount} solicitudes pendientes`}
+                  />
+                ) : null}
+                {shareLabel ? (
+                  <ResourceCardBadge label={shareLabel} color={shareColor} icon={Users} />
+                ) : null}
+              </>
             ) : null
           }
         />
@@ -268,7 +249,10 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   progressText: { fontSize: FONT_SIZE.xs, color: COLORS.storm },
-  amountBlock: { alignItems: "flex-end", gap: 2 },
+  amountBlock: { alignItems: "flex-end", gap: 4 },
+  // 56px: lo justo para comparar avance entre filas. A 340px una barra para decir 10% era
+  // desproporcionada y competia con el propio monto.
+  miniProgress: { width: 56 },
   // El color NO va aqui: depende de la fecha y lo decide lib/due-tone.
   dueDate: { fontSize: FONT_SIZE.xs },
 });

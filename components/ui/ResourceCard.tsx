@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
 import { memo, type ReactNode } from "react";
-import { Star, type LucideIcon } from "lucide-react-native";
+import { ChevronRight, Star, type LucideIcon } from "lucide-react-native";
 
 import { COLORS, ELEVATION, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 
@@ -100,6 +100,12 @@ function ResourceCardBase({
           ) : null}
           {meta ? <View style={styles.meta}>{meta}</View> : null}
         </View>
+
+        {/* Chevron: la fila ENTERA es tocable, y hay que verlo. Solo en variante fila y solo
+            si de verdad lleva a algun sitio. */}
+        {isRow && onPress && actions.length === 0 ? (
+          <ChevronRight size={18} color={COLORS.textDisabled} />
+        ) : null}
 
         {actions.length > 0 ? (
           <View style={styles.actions}>

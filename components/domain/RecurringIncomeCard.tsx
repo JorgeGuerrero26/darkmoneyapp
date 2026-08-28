@@ -51,6 +51,7 @@ export function RecurringIncomeCard({
   return (
     <ResourceCard
       pinned={item.isPinned}
+      variant="row"
       title={item.name}
       subtitle={item.payer?.trim() ? item.payer : "Sin pagador"}
       archived={item.status === "cancelled"}

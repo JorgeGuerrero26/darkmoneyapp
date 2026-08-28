@@ -124,12 +124,19 @@ quitar nada que las pantallas de detalle ya tuvieran `togglePinMutation` y el to
 
 ## 2. Por pantalla
 
-### [ ] F · Créditos y deudas
-- Una cifra ("Te deben") + "No debes nada · 4 activas, 1 compartida".
-- La tarjeta traía cuatro etiquetas y ningún dato nuevo: el título se repetía en las cuatro filas.
-- Barra de progreso de 340 px → **56 px** junto al monto.
-- Fuera el icono de gráfico por fila: abría analítica de UNA obligación desde la lista,
-  compitiendo con el toque de la fila.
+### [x] F · Créditos y deudas — HECHA
+- ~~Una cifra + frase de apoyo~~ **hecho**.
+- ~~Cuatro etiquetas y ningún dato nuevo~~ **hecho**: el título pasa a ser la **persona** —antes
+  era `obligation.title`, "Diversas Ventas de Productos" en las cuatro filas, que no distingue
+  nada— y el estado baja a la línea de apoyo. Las cápsulas "Me deben" y "Activa" salen: se
+  deducen del filtro y del signo. Solo quedan las excepcionales (solicitudes, compartida).
+- ~~Barra de progreso de 340 px~~ **hecho**: 56 px junto al monto, donde se compara.
+- ~~Icono de gráfico por fila~~ **hecho**.
+
+**Y lo que faltaba de verdad:** las ocho pantallas seguían en **bloques de tarjeta**. Solo
+Movimientos y Contactos habían pasado a fila. Ahora las once tarjetas usan `variant="row"` con
+chevrón, menos `NotificationInviteCard` — una invitación con aceptar/rechazar es una tarjeta de
+acción, no una fila de lista.
 
 ### [ ] G · Notificaciones
 - "Leer todas" / "No leer" / "Eliminar leídas" salen del recuadro de cifras.
