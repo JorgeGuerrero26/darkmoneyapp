@@ -46,7 +46,7 @@ import { applyContactFilter } from "../../features/contacts/lib/contactsFilter";
 import { buildContactMetricsById } from "../../features/contacts/lib/contactMetrics";
 import { buildContactsContextNote } from "../../features/contacts/lib/contactsContextNote";
 
-type ContactListSection = ResourceSection<CounterpartyOverview, "pinned" | "active" | "archived">;
+type ContactListSection = ResourceSection<CounterpartyOverview, "pinned" | "with-balance" | "active" | "archived">;
 
 function ContactsScreen() {
   const insets = useSafeAreaInsets();
@@ -175,12 +175,29 @@ function ContactsScreen() {
         headerVariant: "default",
       });
     }
-    if (unpinnedActiveContacts.length > 0) {
+    // Con saldo abierto primero: es el motivo por el que abres esta pantalla. Dentro de cada
+    // grupo se conserva el orden que traía, que ya venía ordenado.
+    const conSaldo = unpinnedActiveContacts.filter((contact) => {
+      const metrics = contactMetricsById.get(contact.id);
+      return Boolean(metrics && (metrics.receivablePendingTotal > 0 || metrics.payablePendingTotal > 0));
+    });
+    const sinSaldo = unpinnedActiveContacts.filter((contact) => !conSaldo.includes(contact));
+
+    if (conSaldo.length > 0) {
+      sections.push({
+        key: "with-balance",
+        label: `Con saldo abierto (${conSaldo.length})`,
+        data: conSaldo,
+        headerVariant: "default",
+      });
+    }
+    if (sinSaldo.length > 0) {
       sections.push({
         key: "active",
-        label: "Activos",
-        data: unpinnedActiveContacts,
-        headerVariant: pinnedContacts.length > 0 ? "default" : "hidden",
+        label: "Sin saldo pendiente",
+        data: sinSaldo,
+        // Sin encabezado si es el único grupo: no hay nada de lo que distinguirlo.
+        headerVariant: conSaldo.length > 0 || pinnedContacts.length > 0 ? "divider" : "hidden",
       });
     }
     if (archivedContacts.length > 0) {
@@ -193,7 +210,7 @@ function ContactsScreen() {
       });
     }
     return sections;
-  }, [archivedContacts, pinnedContacts, unpinnedActiveContacts]);
+  }, [archivedContacts, contactMetricsById, pinnedContacts, unpinnedActiveContacts]);
 
   const activeFilterItems = useMemo<ActiveFilterItem[]>(() => {
     const items: ActiveFilterItem[] = contactFilters.map((filterValue) => ({

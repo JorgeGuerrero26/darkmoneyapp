@@ -318,7 +318,6 @@ function SubscriptionsScreen() {
   const renderSubscription: SectionListRenderItem<SubscriptionSummary, SubscriptionListSection> = useCallback(({ item }) => (
     <SubscriptionSwipeRow
       subscription={item}
-      monthlyAmount={getMonthlySubscriptionAmount(item)}
       onPress={() => {
         if (selectMode) {
           toggleSelect(item.id);

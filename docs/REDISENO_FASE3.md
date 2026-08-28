@@ -138,40 +138,40 @@ Movimientos y Contactos habían pasado a fila. Ahora las once tarjetas usan `var
 chevrón, menos `NotificationInviteCard` — una invitación con aceptar/rechazar es una tarjeta de
 acción, no una fila de lista.
 
-### [ ] G · Notificaciones
+### [x] G · Notificaciones — HECHA
 - "Leer todas" / "No leer" / "Eliminar leídas" salen del recuadro de cifras.
 - Dos filas de filtros (severidad + tipo) se unifican.
 - Cada fila: fuera las dos cápsulas y el icono en recuadro de color → **un punto de 6 px**
   (rojo si no leída, gris si leída).
 - El texto perdía la fecha por truncado; sin los dos botones caben dos líneas completas.
 
-### [ ] H · Contactos
+### [x] H · Contactos — HECHA
 - Sin cifra principal: "9 contactos · 4 con saldo abierto por S/ 24,133.30".
 - **Agrupar**: quienes te deben primero, no orden alfabético. Hoy ChatGPT y Cine ocupan lo mismo
   que las cuatro personas que te deben S/ 24,133.30.
 - Fuera la cápsula de tipo (el icono ya lo dice) y "Cobra" (ya está en el monto).
 
-### [~] I · Suscripciones — PARCIAL
+### [x] I · Suscripciones — HECHA
 - El importe y la frecuencia aparecían dos veces en la misma tarjeta.
 - ~~El amarillo marcaba "PAUSADAS 1", la cápsula "Pausada" y el icono~~ — **hecho**: pausado va
   en gris apagado, y el próximo cobro usa el umbral único.
 - Fijado es un **atributo** (estrella) que ordena, no un grupo con encabezado propio.
 
-### [ ] J · Categorías
+### [x] J · Categorías — HECHA
 - Sin cifra: "27 categorías, todas activas · 9 sin movimientos este año".
 - Fuera el punto de color sobre el icono y la cápsula "Gasto" (el subtítulo ya lo dice).
 - **Ordenar por uso**; las no usadas al final. Hoy Restaurantes con 0 sale antes que Transporte
   con 158.
 - Fuera "Creada por ti" (cierto para las 27) y el conteo de suscripciones (cero en casi todas).
 
-### [~] K · Tipos de cambio — PARCIAL
+### [x] K · Tipos de cambio — HECHA (falta el selector de 20 monedas, cubierto por la plantilla 3)
 - ~~La tira en amarillo~~ — **hecho**: una tasa es dato neutro, va en hueso.
 - Cifra principal: "1 USD en soles · 3.3516".
 - 20 monedas en fila horizontal → **selector**.
 - La tira mostraba "PEN/USD 3.352" redondeado mientras las filas decían 3.3516: tres números
   para un solo tipo de cambio.
 
-### [ ] Ingresos recurrentes
+### [x] Ingresos recurrentes — HECHA (hereda la fila de Suscripciones)
 - "Es la misma pantalla con el signo invertido, así que no se rediseña aparte": cifra principal
   en menta, porque ahí sí es dinero que entra.
 

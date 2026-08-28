@@ -7,7 +7,6 @@ import type { SubscriptionSummary } from "../../../types/domain";
 
 type Props = {
   subscription: SubscriptionSummary;
-  monthlyAmount: number;
   onPress: () => void;
   onDelete: () => void;
   onTogglePause: () => void;
@@ -20,7 +19,6 @@ type Props = {
 
 export function SubscriptionSwipeRow({
   subscription,
-  monthlyAmount,
   onPress,
   onDelete,
   onTogglePause,
@@ -57,7 +55,6 @@ export function SubscriptionSwipeRow({
     return (
       <SubscriptionCard
         subscription={subscription}
-        monthlyAmount={monthlyAmount}
         onPress={onPress}
         onLongPress={onLongPress}
         selected={selected}
@@ -82,7 +79,6 @@ export function SubscriptionSwipeRow({
       {({ close, isOpen }) => (
         <SubscriptionCard
           subscription={subscription}
-          monthlyAmount={monthlyAmount}
           onPress={() => {
             if (isOpen()) {
               close();

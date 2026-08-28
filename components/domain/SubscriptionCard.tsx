@@ -17,7 +17,6 @@ import type { SubscriptionSummary } from "../../types/domain";
 
 type Props = {
   subscription: SubscriptionSummary;
-  monthlyAmount: number;
   onPress: () => void;
   onLongPress?: () => void;
   selected?: boolean;
@@ -43,7 +42,6 @@ function formatYmdLocal(ymd: string) {
 
 function SubscriptionCardBase({
   subscription,
-  monthlyAmount,
   onPress,
   onLongPress,
   selected = false,
@@ -76,20 +74,15 @@ function SubscriptionCardBase({
         </>
       }
       footer={
-        <View style={styles.footer}>
-          {subscription.status === "cancelled" ? (
-            <ResourceCardMetaText>Sin cobros programados</ResourceCardMetaText>
-          ) : subscription.status === "active" && subscription.nextDueDate < todayPeru() ? (
-            <Text style={styles.overdue}>Venció el {formatYmdLocal(subscription.nextDueDate)} — marca el pago</Text>
-          ) : (
-            <ResourceCardMetaText>
-              Próximo: {formatYmdLocal(subscription.nextDueDate)}
-            </ResourceCardMetaText>
-          )}
-          <Text style={styles.monthly}>
-            ~{formatCurrency(monthlyAmount, subscription.currencyCode)}/mes
-          </Text>
-        </View>
+        // Sin el equivalente mensual: ya estaba escrito arriba a la derecha, y el total del mes
+        // vive en el resumen de la pantalla. Aquí solo queda cuándo toca el próximo cobro.
+        subscription.status === "cancelled" ? (
+          <ResourceCardMetaText>Sin cobros programados</ResourceCardMetaText>
+        ) : subscription.status === "active" && subscription.nextDueDate < todayPeru() ? (
+          <Text style={styles.overdue}>Venció el {formatYmdLocal(subscription.nextDueDate)} · marca el pago</Text>
+        ) : (
+          <ResourceCardMetaText>Próximo: {formatYmdLocal(subscription.nextDueDate)}</ResourceCardMetaText>
+        )
       }
     />
   );
@@ -109,18 +102,6 @@ const styles = StyleSheet.create({
     color: COLORS.storm,
   },
   frequency: {
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.storm,
-    fontFamily: FONT_FAMILY.body,
-  },
-  footer: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: SPACING.sm,
-  },
-  monthly: {
-    flexShrink: 0,
     fontSize: FONT_SIZE.xs,
     color: COLORS.storm,
     fontFamily: FONT_FAMILY.body,

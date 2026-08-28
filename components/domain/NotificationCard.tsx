@@ -10,7 +10,7 @@ import {
   ResourceCardIcon,
   ResourceCardMetaText,
 } from "../ui/ResourceCard";
-import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING, SURFACE } from "../../constants/theme";
 import {
   getNotificationPriority,
   getNotificationPriorityMeta,
@@ -64,7 +64,7 @@ function NotificationCardComponent({
       archived={!unread}
       onPress={() => onPress(notification)}
       onLongPress={() => onLongPress(notification)}
-      leading={<ResourceCardIcon icon={kindMeta.icon} color={kindMeta.color} />}
+      leading={<View style={[styles.dot, unread ? styles.dotUnread : styles.dotRead]} />}
       actions={selectionMode ? [] : [
         ...(unread ? [{
           key: "archive",
@@ -82,12 +82,8 @@ function NotificationCardComponent({
         },
       ]}
       meta={
-        <>
-          <ResourceCardBadge label={priorityMeta.label} color={priorityMeta.color} />
-          {unread ? <ResourceCardBadge label="Nueva" color={kindMeta.color} /> : null}
-          {selected ? <ResourceCardBadge label="Seleccionada" color={COLORS.primary} /> : null}
-          {obligationTitle ? <ResourceCardMetaText>{obligationTitle}</ResourceCardMetaText> : null}
-        </>
+        // Solo lo que NO se deduce del punto, del encabezado de fecha ni del filtro activo.
+        obligationTitle ? <ResourceCardMetaText>{obligationTitle}</ResourceCardMetaText> : null
       }
       footer={
         <View style={styles.footer}>
@@ -106,6 +102,16 @@ function NotificationCardComponent({
 export const NotificationCard = memo(NotificationCardComponent);
 
 const styles = StyleSheet.create({
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    // Alineado con la primera línea del título, no centrado en la fila: una fila de dos líneas
+    // dejaría el punto flotando a media altura sin apuntar a nada.
+    marginTop: 6,
+  },
+  dotUnread: { backgroundColor: COLORS.dangerStrong },
+  dotRead: { backgroundColor: SURFACE.subtleBorder },
   footer: {
     flexDirection: "row",
     alignItems: "center",

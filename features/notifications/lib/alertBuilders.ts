@@ -14,6 +14,14 @@ import type {
 } from "../../../types/domain";
 import { getNotificationPriority } from "../../../lib/notification-priority";
 
+/** "2026-08-26" -> "26 ago". Una fecha se escribe como fecha, no en ISO. */
+const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+function diaLegible(ymd: string): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  if (!y || !m || !d) return ymd;
+  return `${d} ${MESES[m - 1] ?? ""}`.trim();
+}
+
 export type AlertRow = {
   kind: string;
   title: string;
@@ -86,7 +94,7 @@ export function buildDuplicateChargeAlerts(
     rows.push({
       kind: "possible_duplicate_charge",
       title: "Posible cobro duplicado",
-      body: `Registraste ${grupo.length} gastos idénticos de ${fmt(Number(amount))} el ${day}. Revisa si es un doble cobro.`,
+      body: `Registraste ${grupo.length} gastos idénticos de ${fmt(Number(amount))} el ${diaLegible(day)}. Revisa si es un doble cobro.`,
       related_entity_type: "movement",
       related_entity_id: minId,
       payload: { day, amountLabel: fmt(Number(amount)), movementIds: grupo.map((m) => m.id) },
