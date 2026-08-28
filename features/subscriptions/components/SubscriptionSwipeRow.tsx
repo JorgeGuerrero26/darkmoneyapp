@@ -12,7 +12,6 @@ type Props = {
   onDelete: () => void;
   onTogglePause: () => void;
   onPay: () => void;
-  onAnalytics: () => void;
   onLongPress?: () => void;
   onTogglePin?: () => void;
   selected?: boolean;
@@ -26,7 +25,6 @@ export function SubscriptionSwipeRow({
   onDelete,
   onTogglePause,
   onPay,
-  onAnalytics,
   onLongPress,
   onTogglePin,
   selected = false,
@@ -62,7 +60,6 @@ export function SubscriptionSwipeRow({
         monthlyAmount={monthlyAmount}
         onPress={onPress}
         onLongPress={onLongPress}
-        onAnalytics={onAnalytics}
         selected={selected}
       />
     );
@@ -94,7 +91,6 @@ export function SubscriptionSwipeRow({
             onPress();
           }}
           onLongPress={onLongPress}
-          onAnalytics={onAnalytics}
           onTogglePin={onTogglePin}
         />
       )}

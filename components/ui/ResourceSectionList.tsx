@@ -199,13 +199,12 @@ function ResourceSectionHeader<T>({ section }: { section: ResourceSection<T> }) 
 const styles = StyleSheet.create({
   contentContainer: {
     padding: SPACING.lg,
-    // Hueco para que el botón flotante no tape la última fila: 58 de botón + 16 de aire debajo
-    // + 24 de respiro por encima. Antes eran 100 fijos, que con la barra ya anclada dejaba el
-    // flotante justo encima del último movimiento.
+    // 140: el botón flotante mide 58 y se apoya a 16 del borde, así que con 98 quedaba justo
+    // rozando la última fila. Con 140 hay respiro de verdad y la última se lee entera.
     //
     // IOS_FLOATING_TAB_BAR_SPACE vale 0 desde que la barra está en el flujo; se conserva en la
     // suma para que, si algún día vuelve a flotar, este cálculo siga siendo correcto.
-    paddingBottom: 58 + SPACING.lg + SPACING.xxl + IOS_FLOATING_TAB_BAR_SPACE,
+    paddingBottom: 140 + IOS_FLOATING_TAB_BAR_SPACE,
   },
   secondaryLoading: {
     flexDirection: "row",

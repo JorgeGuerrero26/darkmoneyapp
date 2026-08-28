@@ -75,7 +75,7 @@ Contactos y Categorías se quedan **sin cifra**: un conteo no merece 32 px ni es
 cierra también la PLANTILLA 2 —los conteos que iban en menta ya no existen como cifra— y de
 paso caen los iconos por celda, que solo servían para rellenar.
 
-### [ ] PLANTILLA 3 — Los filtros no se cortan a media palabra
+### [x] PLANTILLA 3 — Los filtros no se cortan a media palabra — HECHA
 
 "Incumpl…", "Cor…", "CHF" cortado por el borde. La fila sigue desplazándose, pero el recorte cae
 **entre cápsulas** y un degradado avisa que hay más.
@@ -83,12 +83,29 @@ paso caen los iconos por celda, que solo servían para rellenar.
 Cuando las opciones pasan de **seis** —20 monedas en Tipos de cambio— deja de ser filtro y se
 vuelve **selector**: un control que abre lista.
 
-### [ ] PLANTILLA 4 — Una etiqueta por fila y una sola acción
+### [~] PLANTILLA 4 — Una etiqueta por fila y una sola acción — PARCIAL
 
 La categoría aparece dos veces (subtítulo "Persona" + cápsula "Persona") y hay hasta **tres
 botones por fila** (fijar, pausar, gráfico) sobre 44 px. La fila entera es tocable con chevrón;
 fijar y pausar pasan a **deslizar**, que ya se usa en Categorías. La lista termina con 140 px de
 aire para que el botón flotante no tape la última.
+
+**Hecho (plantilla 3).** El umbral vive en `FilterToolbar`, no por pantalla:
+`MAX_INLINE_OPTIONS = 6`. Pasadas seis, la fila se cambia por un control que abre la lista
+entera — afecta a Cuentas (9), Presupuestos (9) y el filtro de tipo de Notificaciones (9).
+Debajo de seis, la fila se desplaza con un degradado al borde que avisa de que sigue, y las
+cápsulas ya no recortan su texto: una que dice "Incumpl…" no filtra nada.
+
+**Hecho (plantilla 4).** Fuera el icono de gráfico de las filas de Suscripciones e Ingresos
+fijos: abría la analítica de UN elemento desde la lista, compitiendo con el toque de la fila.
+Vive en el detalle, que es donde ya estaba. Al quitarlo, el modal de la pantalla de lista quedó
+sin disparador, así que se retiró también junto a su estado — código muerto, no una pérdida.
+El pie de lista sube de 98 a **140 px**.
+
+**Pendiente (plantilla 4) — necesita decisión.** *Fijar* y *pausar* deberían pasar a deslizar,
+pero **los dos lados del deslizar ya están ocupados**: en Suscripciones por *Pagar/Reactivar* y
+*Eliminar*; en Ingresos fijos por *Confirmar* y *Eliminar*. Meter fijar ahí obliga a desalojar
+una acción que la gente ya tiene en el dedo. Es una decisión de producto, no de estilo.
 
 ---
 

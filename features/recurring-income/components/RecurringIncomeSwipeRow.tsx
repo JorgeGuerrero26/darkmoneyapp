@@ -12,7 +12,6 @@ type Props = {
   onDelete: () => void;
   onConfirmArrival: () => void;
   onToggleStatus: () => void;
-  onAnalytics: () => void;
   onLongPress?: () => void;
   onTogglePin?: () => void;
   selected?: boolean;
@@ -26,7 +25,6 @@ export function RecurringIncomeSwipeRow({
   onDelete,
   onConfirmArrival,
   onToggleStatus,
-  onAnalytics,
   onLongPress,
   onTogglePin,
   selected = false,
@@ -39,7 +37,6 @@ export function RecurringIncomeSwipeRow({
         monthlyAmount={monthlyAmount}
         onPress={onPress}
         onLongPress={onLongPress}
-        onAnalytics={onAnalytics}
         onToggleStatus={onToggleStatus}
         selected={selected}
       />
@@ -78,7 +75,6 @@ export function RecurringIncomeSwipeRow({
             onPress();
           }}
           onLongPress={onLongPress}
-          onAnalytics={onAnalytics}
           onToggleStatus={onToggleStatus}
           onTogglePin={onTogglePin}
         />

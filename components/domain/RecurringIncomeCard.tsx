@@ -1,5 +1,5 @@
 import { StyleSheet, Text, View } from "react-native";
-import { BarChart3, CalendarClock, Pause, Pin, PinOff, Play, TrendingUp } from "lucide-react-native";
+import { CalendarClock, Pause, Pin, PinOff, Play, TrendingUp } from "lucide-react-native";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
@@ -17,7 +17,6 @@ type Props = {
   item: RecurringIncomeSummary;
   monthlyAmount: number;
   onPress: () => void;
-  onAnalytics: () => void;
   onToggleStatus: () => void;
   onLongPress?: () => void;
   onTogglePin?: () => void;
@@ -46,7 +45,6 @@ export function RecurringIncomeCard({
   item,
   monthlyAmount,
   onPress,
-  onAnalytics,
   onToggleStatus,
   onLongPress,
   onTogglePin,
@@ -79,12 +77,6 @@ export function RecurringIncomeCard({
           color: item.status === "active" ? COLORS.gold : COLORS.primary,
           accessibilityLabel: item.status === "active" ? "Pausar ingreso fijo" : "Reactivar ingreso fijo",
         }] : []),
-        {
-          key: "analytics",
-          icon: BarChart3,
-          onPress: onAnalytics,
-          accessibilityLabel: "Ver analítica del ingreso fijo",
-        },
       ]}
       trailing={
         <View style={styles.trailing}>

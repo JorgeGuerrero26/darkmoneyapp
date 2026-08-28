@@ -1,6 +1,6 @@
 import { memo } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import { BarChart3, CalendarClock, Pin, PinOff } from "lucide-react-native";
+import { CalendarClock, Pin, PinOff } from "lucide-react-native";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
@@ -19,7 +19,6 @@ type Props = {
   subscription: SubscriptionSummary;
   monthlyAmount: number;
   onPress: () => void;
-  onAnalytics: () => void;
   onLongPress?: () => void;
   onTogglePin?: () => void;
   selected?: boolean;
@@ -47,7 +46,6 @@ function SubscriptionCardBase({
   subscription,
   monthlyAmount,
   onPress,
-  onAnalytics,
   onLongPress,
   onTogglePin,
   selected = false,
@@ -70,12 +68,6 @@ function SubscriptionCardBase({
           color: subscription.isPinned ? COLORS.primary : COLORS.storm,
           accessibilityLabel: subscription.isPinned ? "Desfijar suscripción" : "Fijar suscripción",
         }] : []),
-        {
-          key: "analytics",
-          icon: BarChart3,
-          onPress: onAnalytics,
-          accessibilityLabel: "Ver analítica de la suscripción",
-        },
       ]}
       trailing={
         <View style={styles.trailing}>

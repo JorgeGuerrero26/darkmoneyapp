@@ -1,8 +1,18 @@
+import { useState } from "react";
 import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
-import { Search, X, type LucideIcon } from "lucide-react-native";
+import { Check, ChevronDown, Search, X, type LucideIcon } from "lucide-react-native";
+
+import { BottomSheet } from "./BottomSheet";
 
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
+
+/**
+ * A partir de aqui la fila deja de servir: para llegar a la ultima hay que desplazar a ciegas,
+ * sin saber cuantas quedan. Se cambia por un control que abre la lista entera.
+ */
+const MAX_INLINE_OPTIONS = 6;
 
 export type FilterToolbarOption<T extends string> = {
   value: T;
@@ -47,12 +57,26 @@ export function FilterToolbar<T extends string>({
   const hasSearch = Boolean(onSearchChange);
   const multiSelect = Boolean(selectedValues && onSelectedValuesChange);
   const activeValues = selectedValues ?? [];
+  const [selectorOpen, setSelectorOpen] = useState(false);
+  const useSelector = options.length > MAX_INLINE_OPTIONS;
 
   function isActive(optionValue: T) {
     if (!multiSelect) return value === optionValue;
     if (allValue && optionValue === allValue) return activeValues.length === 0;
     return activeValues.includes(optionValue);
   }
+
+  // Lo que dice el boton del selector: la eleccion actual, o cuantas hay para elegir.
+  const selectorLabel = (() => {
+    if (multiSelect) {
+      if (activeValues.length === 0) return `Filtrar · ${options.length} opciones`;
+      if (activeValues.length === 1) {
+        return options.find((o) => o.value === activeValues[0])?.label ?? "Filtrado";
+      }
+      return `${activeValues.length} filtros`;
+    }
+    return options.find((o) => o.value === value)?.label ?? `Filtrar · ${options.length} opciones`;
+  })();
 
   function handleOptionPress(optionValue: T) {
     void Haptics.selectionAsync();
@@ -74,6 +98,7 @@ export function FilterToolbar<T extends string>({
   }
 
   return (
+    <>
     <View style={styles.root}>
       {hasSearch ? (
         <View style={styles.searchBox}>
@@ -99,24 +124,48 @@ export function FilterToolbar<T extends string>({
       ) : null}
 
       <View style={styles.controlsRow}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.filtersRow}
-          style={styles.filtersScroll}
-        >
-          {options.map((option) => (
-            <TouchableOpacity
-              key={option.value}
-              style={[styles.filterChip, isActive(option.value) && styles.filterChipActive]}
-              onPress={() => handleOptionPress(option.value)}
+        {useSelector ? (
+          <TouchableOpacity
+            style={styles.selectorTrigger}
+            onPress={() => setSelectorOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Elegir filtro"
+          >
+            <Text style={styles.selectorTriggerText} numberOfLines={1}>{selectorLabel}</Text>
+            <ChevronDown size={15} color={COLORS.storm} />
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.filtersScroll}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.filtersRow}
             >
-              <Text style={[styles.filterChipText, isActive(option.value) && styles.filterChipTextActive]}>
-                {option.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+              {options.map((option) => (
+                <TouchableOpacity
+                  key={option.value}
+                  style={[styles.filterChip, isActive(option.value) && styles.filterChipActive]}
+                  onPress={() => handleOptionPress(option.value)}
+                >
+                  {/* Sin recorte de texto: una capsula que dice "Incumpl…" no filtra nada. La
+                      capsula crece y es la FILA la que se desplaza. */}
+                  <Text style={[styles.filterChipText, isActive(option.value) && styles.filterChipTextActive]}>
+                    {option.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            {/* Degradado al borde: avisa de que la fila sigue. Sin el, la ultima capsula
+                aparece cortada a media palabra y parece un fallo de dibujado. */}
+            <LinearGradient
+              colors={["rgba(20,19,18,0)", COLORS.canvas]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.fade}
+              pointerEvents="none"
+            />
+          </View>
+        )}
 
         {actions.map((action) => {
           const Icon = action.icon;
@@ -136,10 +185,80 @@ export function FilterToolbar<T extends string>({
         })}
       </View>
     </View>
+
+      {/* Pasadas seis opciones, la fila se cambia por esta lista: se ven todas de una vez en
+          lugar de desplazar a ciegas sin saber cuantas quedan. */}
+      <BottomSheet visible={selectorOpen} onClose={() => setSelectorOpen(false)} title="Filtrar" snapHeight={0.6}>
+        {options.map((option) => (
+          <TouchableOpacity
+            key={option.value}
+            style={styles.selectorRow}
+            onPress={() => {
+              handleOptionPress(option.value);
+              if (!multiSelect) setSelectorOpen(false);
+            }}
+          >
+            <Text style={[styles.selectorRowText, isActive(option.value) && styles.selectorRowTextActive]}>
+              {option.label}
+            </Text>
+            {isActive(option.value) ? <Check size={16} color={COLORS.ink} /> : null}
+          </TouchableOpacity>
+        ))}
+      </BottomSheet>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
+  selectorTrigger: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: SPACING.sm,
+    marginLeft: SPACING.lg,
+    paddingHorizontal: SPACING.md,
+    minHeight: 38,
+    borderRadius: RADIUS.sm,
+    backgroundColor: SURFACE.card,
+    borderWidth: 1,
+    borderColor: SURFACE.cardBorder,
+  },
+  selectorTriggerText: {
+    flex: 1,
+    minWidth: 0,
+    fontFamily: FONT_FAMILY.bodyMedium,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.ink,
+  },
+  selectorRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: SPACING.md,
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.xl,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: SURFACE.separator,
+  },
+  selectorRowText: {
+    flex: 1,
+    minWidth: 0,
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.md,
+    color: COLORS.fog,
+  },
+  selectorRowTextActive: {
+    color: COLORS.ink,
+    fontFamily: FONT_FAMILY.bodySemibold,
+  },
+  fade: {
+    position: "absolute",
+    right: 0,
+    top: 0,
+    bottom: 0,
+    width: SPACING.xxl,
+  },
   root: {
     gap: SPACING.sm,
     paddingTop: SPACING.md,

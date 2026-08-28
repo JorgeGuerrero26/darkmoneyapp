@@ -17,7 +17,6 @@ import { BulkActionBar } from "../components/ui/BulkActionBar";
 import { ResourceSectionList } from "../components/ui/ResourceSectionList";
 import { SkeletonCard } from "../components/ui/Skeleton";
 import { FAB } from "../components/ui/FAB";
-import { RecurringIncomeAnalyticsModal } from "../components/domain/RecurringIncomeAnalyticsModal";
 import { RecurringIncomeForm } from "../components/forms/RecurringIncomeForm";
 import { RecurringIncomeArrivalSheet } from "../features/recurring-income/components/RecurringIncomeArrivalSheet";
 import { RecurringIncomeFilterSheet } from "../features/recurring-income/components/RecurringIncomeFilterSheet";
@@ -81,7 +80,6 @@ function RecurringIncomeScreen() {
   const arrival = useArrivalSheetController(activeWorkspaceId);
 
   const [createFormVisible, setCreateFormVisible] = useState(false);
-  const [analyticsTarget, setAnalyticsTarget] = useState<RecurringIncomeSummary | null>(null);
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [searchText, setSearchText] = useState("");
   const [activeFilters, setActiveFilters] = useState<ActiveRecurringIncomeFilter[]>([]);
@@ -372,7 +370,6 @@ function RecurringIncomeScreen() {
       onDelete={() => startUndoDelete(item)}
       onConfirmArrival={() => arrival.open(item)}
       onToggleStatus={() => handleToggleStatus(item)}
-      onAnalytics={() => setAnalyticsTarget(item)}
       onTogglePin={selectMode ? undefined : () => handleTogglePin(item)}
       selected={selectedIds.has(item.id)}
       selectMode={selectMode}
@@ -535,13 +532,6 @@ function RecurringIncomeScreen() {
             visible={createFormVisible}
             onClose={() => setCreateFormVisible(false)}
             onSuccess={() => setCreateFormVisible(false)}
-          />
-          <RecurringIncomeAnalyticsModal
-            visible={Boolean(analyticsTarget)}
-            item={analyticsTarget}
-            baseCurrencyCode={baseCurrencyCode}
-            exchangeRates={snapshot?.exchangeRates ?? []}
-            onClose={() => setAnalyticsTarget(null)}
           />
           <UndoBanner
             visible={pendingDeleteIds.size > 0}

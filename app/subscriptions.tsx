@@ -17,7 +17,6 @@ import { BulkActionBar } from "../components/ui/BulkActionBar";
 import { ResourceSectionList } from "../components/ui/ResourceSectionList";
 import { SkeletonCard } from "../components/ui/Skeleton";
 import { FAB } from "../components/ui/FAB";
-import { SubscriptionAnalyticsModal } from "../components/domain/SubscriptionAnalyticsModal";
 import { SubscriptionForm } from "../components/forms/SubscriptionForm";
 import { SubscriptionFilterSheet } from "../features/subscriptions/components/SubscriptionFilterSheet";
 import { SubscriptionSummaryBar } from "../features/subscriptions/components/SubscriptionSummaryBar";
@@ -81,7 +80,6 @@ function SubscriptionsScreen() {
   const markPaidMutation = useMarkSubscriptionPaidMutation(activeWorkspaceId);
 
   const [createFormVisible, setCreateFormVisible] = useState(false);
-  const [analyticsTarget, setAnalyticsTarget] = useState<SubscriptionSummary | null>(null);
   const [markPaidTarget, setMarkPaidTarget] = useState<SubscriptionSummary | null>(null);
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [searchText, setSearchText] = useState("");
@@ -335,7 +333,6 @@ function SubscriptionsScreen() {
       onDelete={() => startUndoDelete(item)}
       onTogglePause={() => handleTogglePause(item)}
       onPay={() => setMarkPaidTarget(item)}
-      onAnalytics={() => setAnalyticsTarget(item)}
       onTogglePin={selectMode ? undefined : () => handleTogglePin(item)}
       selected={selectedIds.has(item.id)}
       selectMode={selectMode}
@@ -506,13 +503,6 @@ function SubscriptionsScreen() {
             onUndo={() => pendingDeleteIds.forEach((id) => undoDelete(id))}
             durationMs={5000}
             bottomOffset={insets.bottom + 80}
-          />
-          <SubscriptionAnalyticsModal
-            visible={Boolean(analyticsTarget)}
-            onClose={() => setAnalyticsTarget(null)}
-            subscription={analyticsTarget}
-            movements={postedMovements}
-            baseCurrencyCode={baseCurrencyCode}
           />
           <MarkSubscriptionPaidSheet
             visible={Boolean(markPaidTarget)}
