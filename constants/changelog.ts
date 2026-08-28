@@ -19,6 +19,8 @@ export const CHANGELOG: ChangelogEntry[] = [
       "El gráfico de cierre de mes ahora se lee como un recorrido: cada barra arranca donde terminó la anterior, así ves qué te sube y qué te baja el saldo.",
       "En el historial del año, los meses en los que gastaste más de lo que entró bajan por debajo de la línea. Un mal mes se ve de un golpe.",
       "Elegir entre vista simple y avanzada se mudó a Configuración: se elige una vez y se recuerda, en vez de ocupar sitio en cada pantalla.",
+      "Cómo te habla el asistente del inicio también se elige una vez en Configuración, en lugar de preguntártelo en cada pantalla.",
+      "En la pestaña de Salud, en vez de un texto que te explica el problema, ahora hay un botón que te lleva directo a los movimientos sin categoría para arreglarlos.",
       "Tus contactos ahora entran más por pantalla, y ya no repiten la categoría dos veces en la misma línea.",
       "Los colores ahora significan una sola cosa cada uno: verde es plata que entra, y los gastos ya no se ven como si fueran un error. El asistente tiene su propio color, para que distingas lo que él opina de lo que dicen tus cuentas.",
       "Cada día de la lista de movimientos te dice de un vistazo cuánto entró o salió ese día.",

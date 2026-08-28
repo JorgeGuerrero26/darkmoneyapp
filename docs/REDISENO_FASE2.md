@@ -245,12 +245,31 @@ Eran de presentación, no de lógica. Quedan aquí por si hay que revisarlas:
   compartida". Hoy son cinco copias del mismo bloque, ya compactadas a una línea cada una.
   Unificarlas es un refactor de `AdvancedDashboard.tsx` (5.000+ líneas) y el propio plan dice
   que si se parte ese archivo sea en un cambio aparte, sin tocar presentación a la vez.
-- **El selector Informe / Asesor sigue en las cinco pestañas.** El plan lo quiere solo en
-  Patrones, y en Salud quiere que la IA proponga trabajo concreto ("Categorizar 91
-  movimientos") en vez de un informe. Eso **no es presentación**: cambia qué se le pide al
-  modelo y qué devuelve. Es la única pieza que quedó pendiente de decisión.
+- ~~El selector Informe / Asesor~~ — **resuelto el 28 ago 2026, y mi lectura era errónea.**
+  No es un selector de *qué se le pide* al modelo: es el **tono** (`DASHBOARD_AI_TONE_OPTIONS`),
+  o sea el registro con que te habla. La caché ya guardaba una respuesta por tono y por pestaña
+  (`responses[tone]`) y el valor ya se persistía por usuario en AsyncStorage. El contrato con la
+  edge function no se toca.
+
+  Así que la regla correcta no era "quitarlo de Salud" sino **elegirlo una vez**, igual que
+  Simple/Avanzado. Sale a Ajustes vía `useDashboardAiTone`, extraído de la orquestación para no
+  duplicar la fuente de verdad.
+
+- ~~Categorizar necesita al modelo~~ — **falso.** `suggestCategoryFromDescription` y
+  `suggestCategoryFromCounterparty` ya proponen categoría con patrones locales en los tres
+  formularios; la lista de movimientos ya trae filtro `uncategorized` y `BulkActionBar`; y
+  `openSummaryUncategorizedPreview` ya existía en el propio dashboard. Las piezas estaban todas.
+
+  En Salud la tarjeta de IA **desaparece** y en su lugar va un botón que lleva a los movimientos
+  sin categoría. Una pestaña de limpieza necesita una acción, no un texto generado.
 
 ### Deuda conocida que sigue viva
+
+- La IA de Salud (`dashboardAiHealthPayload`, su caché y sus derivados) sigue calculándose
+  aunque ya no la pinta nadie. Son ~10 `useMemo` que corren en cada render para nada. Se dejan
+  porque la edge function sigue viva y borrarlos es una limpieza aparte, pero es trabajo
+  desperdiciado en cada pintado.
+
 
 - `AdvancedDashboard.tsx` sigue pasando de las 5.000 líneas.
 - `ExplanationCard.tsx` y `DashboardLayerHeader` siguen existiendo sin usarse desde el

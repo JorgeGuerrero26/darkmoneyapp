@@ -28,6 +28,8 @@ import { useAuth } from "../lib/auth-context";
 import { useWorkspace, useWorkspaceListStore } from "../lib/workspace-context";
 import { humanizeError } from "../lib/errors";
 import { useUiStore } from "../store/ui-store";
+import { useDashboardAiTone } from "../features/dashboard/hooks/useDashboardAiTone";
+import { DASHBOARD_AI_TONE_OPTIONS } from "../features/dashboard/lib/dashboard-ai-content";
 import {
   fetchUserWorkspaces,
   useCreateSharedWorkspaceMutation,
@@ -126,6 +128,7 @@ function SettingsScreen() {
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [bioCredsStored, setBioCredsStored] = useState(false);
   const { biometricEnabled, setBiometricEnabled, dashboardMode, setDashboardMode } = useUiStore();
+  const { tone: aiTone, setTone: setAiTone } = useDashboardAiTone(profile?.id ?? null);
 
   // Password setup modal (shown after biometric auth when enabling)
   const [bioSetupVisible, setBioSetupVisible] = useState(false);
@@ -546,6 +549,34 @@ function SettingsScreen() {
                 thumbColor={EXTENDED_PALETTE.white}
               />
             </View>
+
+            {/* El tono es el REGISTRO con que la IA te habla, no lo que se le pide: la caché
+                guarda una respuesta por tono y el contrato con el servidor no cambia. Es una
+                preferencia, así que se elige una vez aquí en lugar de repintarse en las cinco
+                pestañas del dashboard. */}
+            {dashboardMode === "advanced" ? (
+              <View style={styles.aiToneBlock}>
+                <Text style={styles.switchLabel}>Cómo te habla el asistente del inicio</Text>
+                <View style={styles.aiToneRow}>
+                  {DASHBOARD_AI_TONE_OPTIONS.map((option) => {
+                    const active = option.id === aiTone;
+                    return (
+                      <TouchableOpacity
+                        key={option.id}
+                        style={[styles.aiToneChip, active && styles.aiToneChipActive]}
+                        onPress={() => setAiTone(option.id)}
+                        activeOpacity={0.84}
+                      >
+                        <Text style={[styles.aiToneChipTitle, active && styles.aiToneChipTitleActive]}>
+                          {option.label}
+                        </Text>
+                        <Text style={styles.aiToneChipBody}>{option.description}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            ) : null}
           </Card>
 
           <Card>
@@ -892,6 +923,21 @@ function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
+  aiToneBlock: { gap: SPACING.sm, marginTop: SPACING.md },
+  aiToneRow: { flexDirection: "row", gap: SPACING.sm },
+  aiToneChip: {
+    flex: 1,
+    padding: SPACING.md,
+    borderRadius: RADIUS.md,
+    backgroundColor: SURFACE.subtle,
+    borderWidth: 1,
+    borderColor: SURFACE.cardBorder,
+    gap: 2,
+  },
+  aiToneChipActive: { borderColor: COLORS.pro, backgroundColor: COLORS.proMuted },
+  aiToneChipTitle: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.sm, color: COLORS.fog },
+  aiToneChipTitleActive: { color: COLORS.pro },
+  aiToneChipBody: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm, lineHeight: 16 },
   flex: { flex: 1 },
   content: { padding: SPACING.lg, gap: SPACING.lg, paddingBottom: SPACING.xxxl },
   versionText: {

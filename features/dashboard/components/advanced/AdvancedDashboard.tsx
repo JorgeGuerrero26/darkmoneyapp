@@ -3223,30 +3223,6 @@ export function AdvancedDashboard({
             <Sparkles size={14} color={COLORS.pro} />
             <Text style={subStyles.aiSummaryCompactTitle}>Explica tu situación con IA</Text>
           </View>
-          <Text style={subStyles.aiSummarySelectorLabel}>Elige cómo quieres ver la explicación</Text>
-          <View style={subStyles.aiSummaryToneRow}>
-            {DASHBOARD_AI_TONE_OPTIONS.map((option) => {
-              const active = option.id === dashboardAiTone;
-              return (
-                <TouchableOpacity
-                  key={option.id}
-                  activeOpacity={0.85}
-                  style={[subStyles.aiSummaryToneChip, active && subStyles.aiSummaryToneChipActive]}
-                  onPress={() => {
-                    setDashboardAiTone(option.id);
-                    setActiveDashboardAiTerm(null);
-                  }}
-                >
-                  <Text style={[subStyles.aiSummaryToneChipTitle, active && subStyles.aiSummaryToneChipTitleActive]}>
-                    {option.label}
-                  </Text>
-                  <Text style={[subStyles.aiSummaryToneChipBody, active && subStyles.aiSummaryToneChipBodyActive]}>
-                    {option.description}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
           <TouchableOpacity
             activeOpacity={0.86}
             onPress={() => void handleRequestDashboardAiSummary()}
@@ -3851,30 +3827,6 @@ export function AdvancedDashboard({
               <Sparkles size={14} color={COLORS.pro} />
               <Text style={subStyles.aiSummaryCompactTitle}>Explica tu situación con IA</Text>
             </View>
-            <Text style={subStyles.aiSummarySelectorLabel}>Elige cómo quieres ver la explicación</Text>
-            <View style={subStyles.aiSummaryToneRow}>
-              {DASHBOARD_AI_TONE_OPTIONS.map((option) => {
-                const active = option.id === dashboardAiTone;
-                return (
-                  <TouchableOpacity
-                    key={option.id}
-                    activeOpacity={0.85}
-                    style={[subStyles.aiSummaryToneChip, active && subStyles.aiSummaryToneChipActive]}
-                    onPress={() => {
-                      setDashboardAiTone(option.id);
-                      setActiveDashboardAiTerm(null);
-                    }}
-                  >
-                    <Text style={[subStyles.aiSummaryToneChipTitle, active && subStyles.aiSummaryToneChipTitleActive]}>
-                      {option.label}
-                    </Text>
-                    <Text style={[subStyles.aiSummaryToneChipBody, active && subStyles.aiSummaryToneChipBodyActive]}>
-                      {option.description}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
             <TouchableOpacity
               activeOpacity={0.86}
               onPress={() => void handleRequestDashboardAiPatterns()}
@@ -4116,30 +4068,6 @@ export function AdvancedDashboard({
               <Sparkles size={14} color={COLORS.pro} />
               <Text style={subStyles.aiSummaryCompactTitle}>Explica tu situación con IA</Text>
             </View>
-            <Text style={subStyles.aiSummarySelectorLabel}>Elige cómo quieres ver la explicación</Text>
-            <View style={subStyles.aiSummaryToneRow}>
-              {DASHBOARD_AI_TONE_OPTIONS.map((option) => {
-                const active = option.id === dashboardAiTone;
-                return (
-                  <TouchableOpacity
-                    key={option.id}
-                    activeOpacity={0.85}
-                    style={[subStyles.aiSummaryToneChip, active && subStyles.aiSummaryToneChipActive]}
-                    onPress={() => {
-                      setDashboardAiTone(option.id);
-                      setActiveDashboardAiTerm(null);
-                    }}
-                  >
-                    <Text style={[subStyles.aiSummaryToneChipTitle, active && subStyles.aiSummaryToneChipTitleActive]}>
-                      {option.label}
-                    </Text>
-                    <Text style={[subStyles.aiSummaryToneChipBody, active && subStyles.aiSummaryToneChipBodyActive]}>
-                      {option.description}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
             <TouchableOpacity
               activeOpacity={0.86}
               onPress={() => void handleRequestDashboardAiFlow()}
@@ -4276,30 +4204,6 @@ export function AdvancedDashboard({
             <View style={subStyles.aiSummaryCompactHeader}>
               <Sparkles size={14} color={COLORS.pro} />
               <Text style={subStyles.aiSummaryCompactTitle}>Explica tu situación con IA</Text>
-            </View>
-            <Text style={subStyles.aiSummarySelectorLabel}>Elige cómo quieres ver la explicación</Text>
-            <View style={subStyles.aiSummaryToneRow}>
-              {DASHBOARD_AI_TONE_OPTIONS.map((option) => {
-                const active = option.id === dashboardAiTone;
-                return (
-                  <TouchableOpacity
-                    key={option.id}
-                    activeOpacity={0.85}
-                    style={[subStyles.aiSummaryToneChip, active && subStyles.aiSummaryToneChipActive]}
-                    onPress={() => {
-                      setDashboardAiTone(option.id);
-                      setActiveDashboardAiTerm(null);
-                    }}
-                  >
-                    <Text style={[subStyles.aiSummaryToneChipTitle, active && subStyles.aiSummaryToneChipTitleActive]}>
-                      {option.label}
-                    </Text>
-                    <Text style={[subStyles.aiSummaryToneChipBody, active && subStyles.aiSummaryToneChipBodyActive]}>
-                      {option.description}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
             </View>
             <TouchableOpacity
               activeOpacity={0.86}
@@ -4688,107 +4592,37 @@ export function AdvancedDashboard({
         onOpenMovementIssue={openHealthMovementIssuePreview}
       />
 
-      <View style={{ height: SPACING.sm }} />
-      <Card>
-        <View style={subStyles.aiSummaryShellWrap}>
-          <View style={subStyles.aiSummaryShell}>
-            {/* Una linea de que hace, y ya. Antes lo explicaba tres veces —insignia, titulo y dos
-                parrafos— con borde degradado, cuatro orbes animados y un halo. Es una funcion de
-                la app, no una marca aparte. */}
-            <View style={subStyles.aiSummaryCompactHeader}>
-              <Sparkles size={14} color={COLORS.pro} />
-              <Text style={subStyles.aiSummaryCompactTitle}>Explica tu situación con IA</Text>
-            </View>
-            <Text style={subStyles.aiSummarySelectorLabel}>Elige cómo quieres ver la explicación</Text>
-            <View style={subStyles.aiSummaryToneRow}>
-              {DASHBOARD_AI_TONE_OPTIONS.map((option) => {
-                const active = option.id === dashboardAiTone;
-                return (
-                  <TouchableOpacity
-                    key={option.id}
-                    activeOpacity={0.85}
-                    style={[subStyles.aiSummaryToneChip, active && subStyles.aiSummaryToneChipActive]}
-                    onPress={() => {
-                      setDashboardAiTone(option.id);
-                      setActiveDashboardAiTerm(null);
-                    }}
-                  >
-                    <Text style={[subStyles.aiSummaryToneChipTitle, active && subStyles.aiSummaryToneChipTitleActive]}>
-                      {option.label}
-                    </Text>
-                    <Text style={[subStyles.aiSummaryToneChipBody, active && subStyles.aiSummaryToneChipBodyActive]}>
-                      {option.description}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+      {/* Salud es una pestaña de LIMPIEZA: lo que hace falta ahi es una accion, no un texto
+          generado. La tarjeta de IA se va y en su lugar queda el atajo a los movimientos sin
+          categoria, que es exactamente el trabajo pendiente que la pestaña esta contando.
+
+          No hace falta el modelo para esto: suggestCategoryFromDescription y
+          suggestCategoryFromCounterparty ya proponen categoria con patrones locales en los
+          tres formularios, y la lista de movimientos ya trae filtro de sin categoria y
+          acciones en lote. Las piezas estaban; faltaba el boton. */}
+      {review.uncategorizedCount > 0 ? (
+        <>
+          <View style={{ height: SPACING.sm }} />
+          <Card>
+            <SectionTitle>Trabajo pendiente</SectionTitle>
+            <Text style={subStyles.bridgeFootnote}>
+              {review.uncategorizedCount} movimiento{review.uncategorizedCount === 1 ? "" : "s"} sin
+              categoría. Al ordenarlos, el dashboard compara mejor tus gastos e ingresos.
+            </Text>
             <TouchableOpacity
+              style={subStyles.aiSummaryButton}
+              onPress={openSummaryUncategorizedPreview}
               activeOpacity={0.86}
-              onPress={() => void handleRequestDashboardAiHealth()}
-              disabled={dashboardAiHealthMutation.isPending || dashboardAiHealthLimitReached}
-              style={[
-                subStyles.aiSummaryButton,
-                (dashboardAiHealthMutation.isPending || dashboardAiHealthLimitReached) && subStyles.aiSummaryButtonDisabled,
-              ]}
             >
-              <View style={subStyles.aiSummaryButtonAccent} />
               <View style={subStyles.aiSummaryButtonInner}>
-                <Sparkles size={16} color={dashboardAiHealthMutation.isPending || dashboardAiHealthLimitReached ? "rgba(244,241,236,0.4)" : COLORS.pro} />
                 <Text style={subStyles.aiSummaryButtonLabel}>
-                  {dashboardAiHealthMutation.isPending
-                    ? "Preparando explicacion..."
-                    : dashboardAiHealthLimitReached
-                      ? "Consulta de hoy usada"
-                      : dashboardAiTone === "managerial"
-                        ? "Ver informe de salud"
-                        : "Hablar con mi asesor de salud"}
+                  Categorizar {review.uncategorizedCount} movimiento{review.uncategorizedCount === 1 ? "" : "s"}
                 </Text>
               </View>
             </TouchableOpacity>
-            {dashboardAiHealthMutation.isPending && !dashboardAiHealthReply ? <AiResponseSkeleton /> : null}
-            {dashboardAiHealthReply ? (
-              <View style={subStyles.aiSummaryResponseCard}>
-                <View style={subStyles.aiSummaryResponseAiTag}>
-                  <Sparkles size={11} color={COLORS.pro} />
-                  <Text style={subStyles.aiSummaryResponseLabel}>
-                    {dashboardAiTone === "managerial" ? "Gemini · Salud gerencial" : "Gemini · Salud en modo asesor"}
-                  </Text>
-                </View>
-                {dashboardAiHealthResolvedTerms.length > 0 ? (
-                  <Text style={subStyles.aiSummaryGlossaryHint}>
-                    Toca las palabras resaltadas para ver su explicación.
-                  </Text>
-                ) : null}
-                <Text style={subStyles.aiSummaryResponseText}>
-                  {dashboardAiHealthTextParts.map((part, index) => (
-                    part.type === "term" ? (
-                      <Text
-                        key={`${part.term.term}-health-${index}`}
-                        style={subStyles.aiSummaryResponseTerm}
-                        onPress={() => setActiveDashboardAiTerm(part.term)}
-                      >
-                        {part.value}
-                      </Text>
-                    ) : (
-                      <Text key={`health-text-${index}`}>{part.value}</Text>
-                    )
-                  ))}
-                </Text>
-              </View>
-            ) : (
-              <Text style={subStyles.aiSummaryHint}>
-                {dashboardAiHealthLimitReached
-                  ? "Ya usaste tu explicación de IA de hoy en este módulo. Podrás pedir otra mañana."
-                  : "Gemini interpreta tus pendientes, la calidad del dato y las sugerencias activas para explicarte qué está afectando hoy la salud del sistema."}
-              </Text>
-            )}
-            <View style={subStyles.aiSummaryFooterRow}>
-              <Text style={subStyles.aiSummaryFooterText}>La explicación usa solo las señales de limpieza y calidad visibles en esta pestaña.</Text>
-            </View>
-          </View>
-        </View>
-      </Card>
+          </Card>
+        </>
+      ) : null}
 
       <View style={{ height: SPACING.sm }} />
       <Card>
