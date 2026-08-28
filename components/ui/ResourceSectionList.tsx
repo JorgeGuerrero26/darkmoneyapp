@@ -223,15 +223,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.xl,
     // Sin marginTop: el margen queda FUERA del fondo y dejaba una franja transparente por la
     // que se colaba la fila que pasaba por debajo. Todo el aire va en padding.
-    paddingTop: SPACING.lg,
-    paddingBottom: SPACING.xs,
+    paddingTop: SPACING.md,
+    paddingBottom: SPACING.md,
     // La regla va DEBAJO, no encima: cierra el encabezado contra sus propias filas en vez de
     // separarlo del dia anterior. A todo el ancho, al reves que el separador entre filas, que
     // se sangra 62px — asi se distingue "empieza un dia" de "otra fila mas".
     borderBottomWidth: 1,
     borderBottomColor: SURFACE.separator,
-    // Pegajoso sobre el lienzo: sin fondo propio el contenido se leeria por debajo.
-    backgroundColor: COLORS.canvas,
+    // BANDA con tono propio, no el mismo lienzo. Es pegajoso: las filas se desplazan por
+    // DEBAJO y quedan cortadas a media altura. Con el color del lienzo ese corte no se
+    // explica —parece que la lista se rompe— y con una banda visible se lee como lo que es:
+    // una cabecera que tapa. Un paso por encima del lienzo, como una tarjeta.
+    backgroundColor: SURFACE.card,
   },
   dividerLabel: {
     fontSize: FONT_SIZE.xs,
