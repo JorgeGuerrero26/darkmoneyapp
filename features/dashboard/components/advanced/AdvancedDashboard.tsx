@@ -104,7 +104,6 @@ import { useDashboardAiOrchestration } from "../../hooks/useDashboardAiOrchestra
 import { DashboardSectionBoundary } from "../shared/DashboardSectionBoundary";
 import { AiResponseSkeleton } from "./AiResponseSkeleton";
 import {
-  DASHBOARD_AI_TONE_OPTIONS,
   buildDashboardAiTextParts,
   ensureDashboardAiComplexTerms,
   type DashboardAiComplexTerm,
