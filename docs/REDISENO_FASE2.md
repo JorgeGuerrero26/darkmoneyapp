@@ -121,7 +121,7 @@ ni `COLORS.warning` en `features/dashboard` (fuera de ahí se conservan).
   esconde invitaciones a espacios compartidos: conviene decidirlo antes, no borrarlo de oficio.
 - Grises fuera de la escala del punto 6.
 
-### [ ] Fase 2 — Encabezado y pestañas
+### [~] Fase 2 — Encabezado y pestañas — PARCIAL
 
 - Encabezado colapsado de 44px en las pestañas internas.
 - Pestañas con subrayado en vez de cápsula rellena, sin scroll horizontal cortado ("Salud" hoy
@@ -132,6 +132,18 @@ Archivos: `components/advanced/DashboardTabBar.tsx`, `hooks/useTabPersistence.ts
 
 Verificación: las cinco etiquetas caben en 393px sin recorte; el primer monto de cada pestaña
 aparece antes de los 200px.
+
+**Hecho — las pestañas.** De cápsula rellena a **subrayado**. Cinco cápsulas competían por
+atención con las tarjetas que hay justo debajo, que es donde están las cifras. Además desaparece
+el scroll horizontal: la fila se reparte en cinco columnas iguales y "Salud" deja de quedar
+cortada. Medido: la más larga ("Historial") ocupa 64 px de los 71 disponibles.
+
+El contador de Salud pierde el amarillo (Decisión C): superficie neutra con la cifra en hueso.
+
+**Pendiente — el encabezado colapsado de 44 px.** `activeTab` vive DENTRO de
+`AdvancedDashboard.tsx` (L2807) y el encabezado se pinta en `app/(app)/dashboard.tsx`, que no lo
+conoce. Colapsarlo obliga a subir ese estado o a bajarle un callback. No es difícil, pero toca
+dos archivos grandes y merece su propio cambio en vez de colarse aquí.
 
 ### [ ] Fase 3 — La tarjeta de Gemini
 
