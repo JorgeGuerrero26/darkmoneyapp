@@ -1,6 +1,6 @@
 import { memo } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { AlertTriangle, BarChart2, Pin, PinOff, Target, Zap } from "lucide-react-native";
+import { AlertTriangle, BarChart2, Target, Zap } from "lucide-react-native";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
@@ -30,10 +30,9 @@ type Props = {
   onLongPress?: () => void;
   onAnalytics?: () => void;
   onQuickEdit?: () => void;
-  onTogglePin?: () => void;
 };
 
-function BudgetCardBase({ budget, selected, onPress, onLongPress, onAnalytics, onQuickEdit, onTogglePin }: Props) {
+function BudgetCardBase({ budget, selected, onPress, onLongPress, onAnalytics, onQuickEdit }: Props) {
   // Suscripción propia: invalida el memo cuando cambia el modo privacidad
   // (los props no cambian al alternar, sin esto la fila mostraría el monto viejo).
   useUiStore((state) => state.privacyMode);
@@ -50,6 +49,7 @@ function BudgetCardBase({ budget, selected, onPress, onLongPress, onAnalytics, o
 
   return (
     <ResourceCard
+      pinned={budget.isPinned}
       title={budget.name}
       subtitle={budget.scopeLabel}
       selected={selected}
@@ -57,13 +57,6 @@ function BudgetCardBase({ budget, selected, onPress, onLongPress, onAnalytics, o
       onLongPress={onLongPress}
       leading={<ResourceCardIcon icon={Target} color={statusColor} />}
       actions={[
-        ...(onTogglePin ? [{
-          key: "pin",
-          icon: budget.isPinned ? PinOff : Pin,
-          onPress: onTogglePin,
-          color: budget.isPinned ? COLORS.primary : COLORS.storm,
-          accessibilityLabel: budget.isPinned ? "Desfijar presupuesto" : "Fijar presupuesto",
-        }] : []),
         ...(onAnalytics ? [{
           key: "analytics",
           icon: BarChart2,

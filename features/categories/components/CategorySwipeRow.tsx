@@ -86,7 +86,6 @@ export function CategorySwipeRow({
           }}
           onLongPress={onLongPress}
           onAnalytics={onAnalytics}
-          onTogglePin={onTogglePin}
         />
       )}
     </SwipeActionRow>

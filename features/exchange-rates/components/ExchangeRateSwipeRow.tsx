@@ -59,7 +59,6 @@ export function ExchangeRateSwipeRow({
             onPress();
           }}
           onLongPress={onLongPress}
-          onTogglePin={onTogglePin}
         />
       )}
     </SwipeActionRow>

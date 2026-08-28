@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
 import { memo, type ReactNode } from "react";
-import type { LucideIcon } from "lucide-react-native";
+import { Star, type LucideIcon } from "lucide-react-native";
 
 import { COLORS, ELEVATION, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 
@@ -36,6 +36,14 @@ type Props = {
    * ningun tamaño de letra. El area tactil se queda en 56 > 44.
    */
   variant?: "card" | "row";
+  /**
+   * La fila está fijada.
+   *
+   * Se enseña el RESULTADO, no el control: ver que algo está fijado es información; poder
+   * fijarlo desde la lista no lo es. Fijar es excepcional —una vez por contacto en la vida— y
+   * vive en la hoja de detalle, que es donde ya editas todo lo demás de esa fila.
+   */
+  pinned?: boolean;
 };
 
 function ResourceCardBase({
@@ -54,6 +62,7 @@ function ResourceCardBase({
   style,
   contentStyle,
   variant = "card",
+  pinned,
 }: Props) {
   const isRow = variant === "row";
   return (
@@ -78,9 +87,12 @@ function ResourceCardBase({
         {leading ? <View style={styles.leading}>{leading}</View> : null}
 
         <View style={styles.body}>
-          <Text style={styles.title} numberOfLines={1}>
-            {title}
-          </Text>
+          <View style={styles.titleRow}>
+            {pinned ? <Star size={12} color={COLORS.fog} fill={COLORS.fog} /> : null}
+            <Text style={styles.title} numberOfLines={1}>
+              {title}
+            </Text>
+          </View>
           {subtitle ? (
             <Text style={styles.subtitle} numberOfLines={1}>
               {subtitle}
@@ -189,6 +201,12 @@ export function ResourceCardMetaText({
 }
 
 const styles = StyleSheet.create({
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    minWidth: 0,
+  },
   row: {
     minHeight: 56,
     paddingVertical: SPACING.sm,

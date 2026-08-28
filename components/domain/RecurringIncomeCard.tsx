@@ -1,5 +1,5 @@
 import { StyleSheet, Text, View } from "react-native";
-import { CalendarClock, Pause, Pin, PinOff, Play, TrendingUp } from "lucide-react-native";
+import { CalendarClock, TrendingUp } from "lucide-react-native";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
@@ -17,9 +17,7 @@ type Props = {
   item: RecurringIncomeSummary;
   monthlyAmount: number;
   onPress: () => void;
-  onToggleStatus: () => void;
   onLongPress?: () => void;
-  onTogglePin?: () => void;
   selected?: boolean;
 };
 
@@ -45,16 +43,14 @@ export function RecurringIncomeCard({
   item,
   monthlyAmount,
   onPress,
-  onToggleStatus,
   onLongPress,
-  onTogglePin,
   selected = false,
 }: Props) {
   const statusColor = getStatusColor(item.status);
-  const canToggleStatus = item.status === "active" || item.status === "paused";
 
   return (
     <ResourceCard
+      pinned={item.isPinned}
       title={item.name}
       subtitle={item.payer?.trim() ? item.payer : "Sin pagador"}
       archived={item.status === "cancelled"}
@@ -62,22 +58,6 @@ export function RecurringIncomeCard({
       onPress={onPress}
       onLongPress={onLongPress}
       leading={<ResourceCardIcon icon={TrendingUp} color={statusColor} />}
-      actions={[
-        ...(onTogglePin ? [{
-          key: "pin",
-          icon: item.isPinned ? PinOff : Pin,
-          onPress: onTogglePin,
-          color: item.isPinned ? COLORS.primary : COLORS.storm,
-          accessibilityLabel: item.isPinned ? "Desfijar ingreso fijo" : "Fijar ingreso fijo",
-        }] : []),
-        ...(canToggleStatus ? [{
-          key: "toggle-status",
-          icon: item.status === "active" ? Pause : Play,
-          onPress: onToggleStatus,
-          color: item.status === "active" ? COLORS.gold : COLORS.primary,
-          accessibilityLabel: item.status === "active" ? "Pausar ingreso fijo" : "Reactivar ingreso fijo",
-        }] : []),
-      ]}
       trailing={
         <View style={styles.trailing}>
           <Text style={[styles.amount, item.status !== "active" && styles.amountMuted]}>

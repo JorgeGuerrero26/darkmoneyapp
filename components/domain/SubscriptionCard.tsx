@@ -1,6 +1,6 @@
 import { memo } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import { CalendarClock, Pin, PinOff } from "lucide-react-native";
+import { CalendarClock } from "lucide-react-native";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
@@ -20,7 +20,6 @@ type Props = {
   monthlyAmount: number;
   onPress: () => void;
   onLongPress?: () => void;
-  onTogglePin?: () => void;
   selected?: boolean;
 };
 
@@ -47,12 +46,12 @@ function SubscriptionCardBase({
   monthlyAmount,
   onPress,
   onLongPress,
-  onTogglePin,
   selected = false,
 }: Props) {
   const statusColor = getStatusColor(subscription.status);
   return (
     <ResourceCard
+      pinned={subscription.isPinned}
       title={subscription.name}
       subtitle={subscription.vendor || subscription.categoryName || "Suscripción"}
       archived={subscription.status === "cancelled"}
@@ -60,15 +59,6 @@ function SubscriptionCardBase({
       onPress={onPress}
       onLongPress={onLongPress}
       leading={<ResourceCardIcon icon={CalendarClock} color={statusColor} />}
-      actions={[
-        ...(onTogglePin ? [{
-          key: "pin",
-          icon: subscription.isPinned ? PinOff : Pin,
-          onPress: onTogglePin,
-          color: subscription.isPinned ? COLORS.primary : COLORS.storm,
-          accessibilityLabel: subscription.isPinned ? "Desfijar suscripción" : "Fijar suscripción",
-        }] : []),
-      ]}
       trailing={
         <View style={styles.trailing}>
           <Text style={[styles.amount, subscription.status !== "active" && styles.amountMuted]}>

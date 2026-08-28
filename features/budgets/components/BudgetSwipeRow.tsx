@@ -63,7 +63,6 @@ export function BudgetSwipeRow({
           onLongPress={onLongPress}
           onAnalytics={onAnalytics}
           onQuickEdit={onQuickEdit}
-          onTogglePin={onTogglePin}
         />
       )}
     </SwipeActionRow>

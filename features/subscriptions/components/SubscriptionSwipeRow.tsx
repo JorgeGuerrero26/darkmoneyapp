@@ -91,7 +91,6 @@ export function SubscriptionSwipeRow({
             onPress();
           }}
           onLongPress={onLongPress}
-          onTogglePin={onTogglePin}
         />
       )}
     </SwipeActionRow>

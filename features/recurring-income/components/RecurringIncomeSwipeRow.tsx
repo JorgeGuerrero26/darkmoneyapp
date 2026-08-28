@@ -37,7 +37,6 @@ export function RecurringIncomeSwipeRow({
         monthlyAmount={monthlyAmount}
         onPress={onPress}
         onLongPress={onLongPress}
-        onToggleStatus={onToggleStatus}
         selected={selected}
       />
     );
@@ -75,8 +74,6 @@ export function RecurringIncomeSwipeRow({
             onPress();
           }}
           onLongPress={onLongPress}
-          onToggleStatus={onToggleStatus}
-          onTogglePin={onTogglePin}
         />
       )}
     </SwipeActionRow>

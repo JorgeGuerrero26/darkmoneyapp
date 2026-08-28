@@ -83,7 +83,7 @@ paso caen los iconos por celda, que solo servían para rellenar.
 Cuando las opciones pasan de **seis** —20 monedas en Tipos de cambio— deja de ser filtro y se
 vuelve **selector**: un control que abre lista.
 
-### [~] PLANTILLA 4 — Una etiqueta por fila y una sola acción — PARCIAL
+### [x] PLANTILLA 4 — Una etiqueta por fila y una sola acción — HECHA
 
 La categoría aparece dos veces (subtítulo "Persona" + cápsula "Persona") y hay hasta **tres
 botones por fila** (fijar, pausar, gráfico) sobre 44 px. La fila entera es tocable con chevrón;
@@ -102,10 +102,23 @@ Vive en el detalle, que es donde ya estaba. Al quitarlo, el modal de la pantalla
 sin disparador, así que se retiró también junto a su estado — código muerto, no una pérdida.
 El pie de lista sube de 98 a **140 px**.
 
-**Pendiente (plantilla 4) — necesita decisión.** *Fijar* y *pausar* deberían pasar a deslizar,
-pero **los dos lados del deslizar ya están ocupados**: en Suscripciones por *Pagar/Reactivar* y
-*Eliminar*; en Ingresos fijos por *Confirmar* y *Eliminar*. Meter fijar ahí obliga a desalojar
-una acción que la gente ya tiene en el dedo. Es una decisión de producto, no de estilo.
+**RESUELTO el 28 ago.** No se desaloja nada del deslizar: lo que hay ahí —*Pagar*,
+*Confirmar*, *Eliminar*— son las acciones frecuentes y se ganan el dedo.
+
+> **La regla, para que no vuelva a salir:** el deslizar es para lo que haces **seguido sobre
+> muchas filas**. Lo excepcional va al detalle. **Si algo no cabe en los dos lados, es señal de
+> que no era de deslizar.**
+
+*Fijar* y *pausar* no son acciones de lista: fijar se hace una vez por contacto en la vida, y
+pausar una vez por suscripción. Las dos viven en la hoja de detalle, donde ya se edita todo lo
+demás de esa fila. **Lo que sale de la fila es el botón, no la función.**
+
+Lo que sí queda visible es el **resultado**: la estrella en las filas fijadas. Ver que algo está
+fijado es información; poder fijarlo desde la lista no lo es.
+
+Hecho: botón de fijar fuera de las **seis** tarjetas, botón de pausar fuera de Ingresos fijos, y
+`ResourceCard` gana `pinned` para que la estrella sea la misma en todas. Verificado antes de
+quitar nada que las pantallas de detalle ya tuvieran `togglePinMutation` y el toggle de estado.
 
 ---
 

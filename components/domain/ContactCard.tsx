@@ -1,6 +1,6 @@
 import { memo } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import { Archive, ArchiveRestore, Pin, PinOff, Trash2 } from "lucide-react-native";
+import { Archive, ArchiveRestore, Trash2 } from "lucide-react-native";
 
 import {
   ResourceCard,
@@ -63,6 +63,7 @@ function ContactCardContent({
       // Fila sobre lienzo, no tarjeta: la lista de contactos es larga y cada tarjeta cobraba
       // 16px de aire y dos bordes. Mismo tratamiento que la lista de movimientos.
       variant="row"
+      pinned={contact.isPinned}
       title={contact.name}
       subtitle={primaryDetail || typeLabel}
       archived={contact.isArchived}
@@ -70,15 +71,6 @@ function ContactCardContent({
       onLongPress={onLongPress}
       selected={selected}
       leading={<ResourceCardIcon icon={ContactIcon} color={COLORS.primary} />}
-      actions={[
-        ...(onTogglePin ? [{
-          key: "pin",
-          icon: contact.isPinned ? PinOff : Pin,
-          onPress: onTogglePin,
-          color: contact.isPinned ? COLORS.primary : COLORS.storm,
-          accessibilityLabel: contact.isPinned ? "Desfijar contacto" : "Fijar contacto",
-        }] : []),
-      ]}
       meta={
         <>
           {primaryDetail ? <ResourceCardBadge label={typeLabel} color={COLORS.primary} /> : null}

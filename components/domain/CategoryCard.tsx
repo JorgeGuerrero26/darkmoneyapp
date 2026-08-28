@@ -1,6 +1,6 @@
 import { memo } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import { BarChart3, Pin, PinOff } from "lucide-react-native";
+import { BarChart3 } from "lucide-react-native";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
@@ -20,7 +20,6 @@ type Props = {
   onPress: () => void;
   onAnalytics: () => void;
   onLongPress?: () => void;
-  onTogglePin?: () => void;
   selected?: boolean;
 };
 
@@ -38,11 +37,11 @@ function CategoryCardBase({
   onPress,
   onAnalytics,
   onLongPress,
-  onTogglePin,
   selected = false,
 }: Props) {
   return (
     <ResourceCard
+      pinned={category.isPinned}
       title={category.name}
       subtitle={category.parentName ? `${kindLabel} · ${category.parentName}` : kindLabel}
       archived={!category.isActive}
@@ -57,13 +56,6 @@ function CategoryCardBase({
         </View>
       }
       actions={[
-        ...(onTogglePin ? [{
-          key: "pin",
-          icon: category.isPinned ? PinOff : Pin,
-          onPress: onTogglePin,
-          color: category.isPinned ? COLORS.primary : COLORS.storm,
-          accessibilityLabel: category.isPinned ? "Desfijar categoría" : "Fijar categoría",
-        }] : []),
         {
           key: "analytics",
           icon: BarChart3,
