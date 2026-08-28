@@ -17,6 +17,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { UNIVERSAL_LINK_HOST } from "../../constants/config";
 import { supabase } from "../../lib/supabase";
 import { STALE } from "../../lib/query-client";
+import { warmAuthToken } from "../../lib/auth-warmup";
 import { withTimeout } from "../../lib/promise-utils";
 import { dateStrToISO, filterDateFrom, filterDateTo } from "../../lib/date";
 import { patchSnapshotObligationPayment, patchSnapshotWithCreatedMovement } from "./snapshot-cache";
@@ -523,6 +524,12 @@ async function fetchSharedObligations(): Promise<SharedObligationSummary[]> {
   //
   // La función es SECURITY DEFINER y no acepta parámetros: filtra por auth.uid() internamente,
   // así que no hay forma de pedir los datos de otro usuario.
+  // El token PRIMERO, FUERA del cronómetro. withTimeout empieza a contar al crear la promesa,
+  // y supabase.rpc resuelve el token por dentro tomando el lock de auth: al volver de segundo
+  // plano ese lock está contendido y la espera se comía el presupuesto sin que la red hiciera
+  // nada. Ver lib/auth-warmup.ts para la evidencia.
+  await warmAuthToken();
+
   const { data, error } = await withTimeout(
     supabase.rpc("list_shared_obligations"),
     OBLIGATION_SHARED_LIST_TIMEOUT_MS,
