@@ -158,3 +158,43 @@ mockup pide una con líneas finas.
 **Lo que no está en el mockup y se conserva:** los bloques de sugerencia (categoría, contraparte,
 recurrente, cuenta) y los avisos de riesgo y presupuesto. Solo aparecen cuando hay algo que
 sugerir, así que el diseñador no los vio. Van después del grupo, no entre sus filas.
+
+---
+
+## 6. Tercera pasada — el paso de monto (29 ago)
+
+Mismo caso que la segunda pasada: los ocho puntos escritos se aplicaron, pero el mockup dibuja
+el paso 1 con una maquetación que no estaba en la lista numerada.
+
+### Lo que pide el mockup
+
+- **Las cuentas son filas, no cápsulas.** `Sale de` y `Entra a` van en un grupo de dos filas con
+  el nombre de la cuenta a la derecha y el chevron, igual que `Categoría` y `Contraparte` en el
+  paso 2. Hoy son dos scrollers horizontales de cápsulas: si tienes seis cuentas, las últimas se
+  cortan por el borde y no hay forma de saber que están ahí.
+- **El enlace de detalles va DEBAJO del botón Guardar.** Hoy está al final del scroll, encima de
+  la barra fija, así que el orden de lectura es "detalles primero, guardar después" — justo al
+  revés de lo que el paso decide: guardar es lo normal, entrar a detalles es la excepción.
+- **`Saldos después` es una sola tarjeta.** Las dos cuentas y la línea *"Tu patrimonio no
+  cambia"* viven dentro de la misma caja. Hoy son dos tarjetas con borde y un tercer recuadro
+  aparte para la frase: tres cajas para una sola idea.
+
+### Cómo se resuelve
+
+`AccountPicker` **no se toca**: lo usan también Detección automática y la tarjeta de movimiento
+detectado, que no están en esta revisión. El formulario pasa a `FormOptionRow` + la lista
+buscable, que es la pieza que ya usan categoría y contraparte.
+
+Los dos selectores de cuenta van `inline` por la prop `overlay` del sheet: **iOS presenta un
+Modal a la vez**, y un selector hermano del formulario no llega a aparecer (fallo del
+2026-08-13).
+
+`BalanceImpactPreview` gana `grouped`, igual que `FormOptionRow`: sin caja propia, para que el
+grupo dibuje una sola. El aviso de saldo negativo conserva su fondo rojo — es lo único de esa
+tarjeta que sí es una alarma.
+
+### Lo que NO se copia del mockup
+
+El mockup dibuja los saldos **sin el símbolo de la moneda** (`4,205.62`). El punto C de esta
+misma revisión pide lo contrario —`S/ 21.30`, con símbolo y dos decimales, como en el resto de
+la app— y esa regla se aplicó hace dos días. Se mantiene el símbolo.
