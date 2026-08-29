@@ -46,6 +46,9 @@ export const Input = forwardRef<TextInput, Props>(function Input(
    * verdad no cabe, corta con puntos suspensivos, que es honesto y legible.
    *
    * Solo se activa cuando el campo está vacío, y no intercepta toques.
+   *
+   * El `placeholder: ""` va **después** de `{...rest}` a propósito: si va antes, la prop del
+   * llamador lo repisa, el nativo se pinta igual y quedan los dos textos encima.
    */
   const showCustomPlaceholder = Boolean(rest.placeholder) && !rest.value;
   const resolvedAccessibilityLabel = accessibilityLabel ?? label ?? rest.placeholder;
@@ -59,12 +62,12 @@ export const Input = forwardRef<TextInput, Props>(function Input(
           ref={ref}
           style={[styles.input, style]}
           placeholderTextColor={COLORS.storm}
-          {...(showCustomPlaceholder ? { placeholder: "" } : null)}
           onFocus={(e) => { setFocused(true); onFocus?.(e); }}
           onBlur={(e) => { setFocused(false); onBlur?.(e); }}
           accessibilityLabel={resolvedAccessibilityLabel}
           accessibilityHint={resolvedAccessibilityHint}
           {...rest}
+          {...(showCustomPlaceholder ? { placeholder: "" } : null)}
         />
         {showCustomPlaceholder ? (
           <Text
