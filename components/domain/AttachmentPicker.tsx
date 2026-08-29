@@ -376,10 +376,13 @@ export function AttachmentPicker({
             </View>
           ) : null}
 
+          {/* Sin comprobantes el boton va solo, con la explicacion a su derecha, como en el
+              mockup. En cuanto hay uno, la fila pasa a ser el carrusel de miniaturas. */}
           <ScrollView
-            horizontal
+            horizontal={attachments.length > 0}
+            scrollEnabled={attachments.length > 0}
             showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.row}
+            contentContainerStyle={attachments.length > 0 ? styles.row : styles.emptyRow}
           >
             {attachments.map((attachment, index) => (
               <View key={`${attachment.uri}-${index}`} style={styles.thumbCard}>
@@ -429,7 +432,7 @@ export function AttachmentPicker({
                   {hasUploadingItems || isCheckingProAccess ? (
                     <ActivityIndicator size="small" color={COLORS.primary} />
                   ) : (
-                    <Plus size={20} color={COLORS.primary} />
+                    <Plus size={20} color={COLORS.fog} />
                   )}
                 </View>
                 <Text style={styles.addTitle}>
@@ -442,10 +445,10 @@ export function AttachmentPicker({
                 </Text>
               </TouchableOpacity>
             ) : null}
+            {attachments.length === 0 ? (
+              <Text style={styles.helper}>{helperText}</Text>
+            ) : null}
           </ScrollView>
-          {attachments.length === 0 ? (
-            <Text style={styles.helper}>{helperText}</Text>
-          ) : null}
         </View>
       </View>
 
@@ -540,7 +543,13 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 2,
   },
+  emptyRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.md,
+  },
   helper: {
+    flex: 1,
     fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.xs,
     color: COLORS.storm,
@@ -637,39 +646,37 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  // Neutra: adjuntar una foto no es dinero que entra, y el menta significa eso en todo el
+  // sistema.
   addCard: {
     width: 112,
     borderRadius: RADIUS.lg,
     padding: SPACING.md,
     alignItems: "center",
     justifyContent: "center",
-    gap: SPACING.sm,
-    backgroundColor: "rgba(134,206,150,0.08)",
+    gap: SPACING.xs,
     borderWidth: 1,
     borderStyle: "dashed",
-    borderColor: "rgba(134,206,150,0.35)",
+    borderColor: SURFACE.cardBorder,
     minHeight: 144,
   },
   addCardEmpty: {
-    width: 146,
+    width: 104,
+    minHeight: 104,
   },
   addCardDisabled: {
     opacity: 0.68,
   },
   addIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 24,
+    height: 24,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(244,241,236,0.07)",
-    borderWidth: 1,
-    borderColor: "rgba(244,241,236,0.12)",
   },
   addTitle: {
-    fontSize: FONT_SIZE.md,
-    color: COLORS.ink,
-    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.fog,
+    fontFamily: FONT_FAMILY.bodyMedium,
   },
   addCaption: {
     fontSize: FONT_SIZE.xs,
