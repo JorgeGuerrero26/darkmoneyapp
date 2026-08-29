@@ -187,7 +187,7 @@ export const StepDetails = memo(function StepDetails({
       <BudgetImpactBlock loading={budgetImpactLoading} impact={budgetImpact} />
 
       <Input
-        label="Descripción (opcional)"
+        label="Descripción"
         placeholder="Se genera automáticamente si la dejas vacía"
         value={description}
         onChangeText={onChangeDescription}
@@ -204,7 +204,7 @@ export const StepDetails = memo(function StepDetails({
 
       {splitLines == null ? (
         <CategoryPicker
-          label="Categoría (opcional)"
+          label="Categoría"
           categories={categoriesForPicker}
           selectedId={categoryId}
           onSelect={onSelectCategory}
@@ -229,7 +229,7 @@ export const StepDetails = memo(function StepDetails({
       />
 
       <CounterpartyPicker
-        label="Contraparte (opcional)"
+        label="Contraparte"
         counterparties={counterpartiesSorted}
         selectedId={counterpartyId}
         onSelect={onSelectCounterparty}
@@ -283,7 +283,7 @@ export const StepDetails = memo(function StepDetails({
       ) : null}
 
       <Input
-        label="Notas (opcional)"
+        label="Notas"
         placeholder="Notas adicionales…"
         value={notes}
         onChangeText={onChangeNotes}
@@ -313,15 +313,9 @@ export const StepDetails = memo(function StepDetails({
         </View>
       ) : null}
 
-      <View style={styles.navRow}>
-        <Button label="← Atrás" variant="ghost" onPress={onBack} style={styles.btnHalf} />
-        <Button
-          label={isEditing ? "Actualizar" : "Guardar"}
-          onPress={onSubmit}
-          loading={submitLoading}
-          style={styles.btnHalf}
-        />
-      </View>
+      {/* Los botones viven en la barra anclada del formulario: aquí solo aparecían al llegar
+          al final del desplazamiento. */}
+      <View style={styles.footerSpacer} />
     </View>
   );
 });
@@ -360,6 +354,5 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.sm,
     color: COLORS.danger,
   },
-  navRow: { flexDirection: "row", gap: SPACING.sm, marginTop: SPACING.sm },
-  btnHalf: { flex: 1 },
+  footerSpacer: { height: 88 },
 });

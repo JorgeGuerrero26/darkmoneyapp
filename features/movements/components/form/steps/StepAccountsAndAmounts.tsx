@@ -1,9 +1,9 @@
 import { memo } from "react";
+import { ArrowDownCircle, ArrowLeftRight, ArrowUpCircle, ChevronRight } from "lucide-react-native";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import { AccountPicker } from "../../../../../components/domain/AccountPicker";
 import { BalanceImpactPreview } from "../../../../../components/domain/BalanceImpactPreview";
-import { Button } from "../../../../../components/ui/Button";
 import { CurrencyInput } from "../../../../../components/ui/CurrencyInput";
 import { Input } from "../../../../../components/ui/Input";
 import {
@@ -14,33 +14,24 @@ import {
   SPACING,
   SURFACE,
 } from "../../../../../constants/theme";
-import type { AccountSummary, MovementType } from "../../../../../types/domain";
+import { SegmentedControl } from "../../../../../components/ui/SegmentedControl";
+import { MOVEMENT_LABELS } from "../../../lib/labels";
+import type { AccountSummary, MovementStatus, MovementType } from "../../../../../types/domain";
 
-function FrequentAmountChips({ amounts, currencyCode, onPick }: {
-  amounts: number[];
-  currencyCode: string;
-  onPick: (amount: number) => void;
-}) {
-  if (amounts.length === 0) return null;
-  return (
-    <View style={styles.frequentRow}>
-      <Text style={styles.frequentLabel}>Frecuentes:</Text>
-      {amounts.map((amount) => (
-        <TouchableOpacity
-          key={amount}
-          style={styles.frequentChip}
-          onPress={() => onPick(amount)}
-          accessibilityRole="button"
-          accessibilityLabel={`Usar monto frecuente ${amount} ${currencyCode}`}
-        >
-          <Text style={styles.frequentChipText}>
-            {amount.toLocaleString("es-PE", { minimumFractionDigits: amount % 1 === 0 ? 0 : 2, maximumFractionDigits: 2 })}
-          </Text>
-        </TouchableOpacity>
-      ))}
-    </View>
-  );
-}
+const TYPE_OPTIONS: { type: MovementType; label: string; Icon: typeof ArrowDownCircle; color: string }[] = [
+  { type: "expense", label: MOVEMENT_LABELS.type.expense, Icon: ArrowDownCircle, color: COLORS.expense },
+  { type: "income", label: MOVEMENT_LABELS.type.income, Icon: ArrowUpCircle, color: COLORS.income },
+  { type: "transfer", label: MOVEMENT_LABELS.type.transfer, Icon: ArrowLeftRight, color: COLORS.transfer },
+];
+
+// Estado NO es plata. Se pintaba en menta —el color de lo que entra— a diez píxeles del tipo en
+// clay, así que un gasto confirmado se veía por un instante como un ingreso. Tres opciones
+// fijas y excluyentes son exactamente el caso del segmentado.
+const STATUS_OPTIONS: { value: MovementStatus; label: string }[] = [
+  { value: "posted", label: MOVEMENT_LABELS.status.posted },
+  { value: "pending", label: MOVEMENT_LABELS.status.pending },
+  { value: "planned", label: MOVEMENT_LABELS.status.planned },
+];
 
 function formatShortDate(value: string) {
   const date = new Date(value);
@@ -69,6 +60,9 @@ type FormWarnings = {
 
 type Props = {
   movementType: MovementType;
+  status: MovementStatus;
+  onChangeType: (type: MovementType) => void;
+  onChangeStatus: (status: MovementStatus) => void;
   isEditing: boolean;
 
   // Amounts
@@ -107,9 +101,6 @@ type Props = {
   originalSourceAccount: AccountSummary | null;
   originalDestinationAccount: AccountSummary | null;
 
-  // Montos frecuentes (2+ usos) para el tipo+cuenta: chips de un tap bajo el input.
-  frequentAmounts?: number[];
-  onPickFrequentAmount?: (amount: number) => void;
 
   // Defaults / shared
   baseCurrencyCode: string;
@@ -117,12 +108,14 @@ type Props = {
   warnings: FormWarnings;
 
   // Nav
-  onBack: () => void;
-  onNext: () => void;
+  onOpenDetails: () => void;
 };
 
 export const StepAccountsAndAmounts = memo(function StepAccountsAndAmounts({
   movementType,
+  status,
+  onChangeType,
+  onChangeStatus,
   isEditing,
   sourceAmount,
   destinationAmount,
@@ -153,35 +146,48 @@ export const StepAccountsAndAmounts = memo(function StepAccountsAndAmounts({
   originalSourceAccount,
   originalDestinationAccount,
   baseCurrencyCode,
-  frequentAmounts,
-  onPickFrequentAmount,
   errors,
   warnings,
-  onBack,
-  onNext,
+  onOpenDetails,
 }: Props) {
   const isIncome = movementType === "income";
   const isTransfer = movementType === "transfer";
 
   return (
     <View style={styles.section}>
+      {/* Tipo y estado eran una pantalla entera con dos controles de una línea. */}
+      <View style={styles.typeGrid}>
+        {TYPE_OPTIONS.map((opt) => {
+          const isActive = movementType === opt.type;
+          return (
+            <TouchableOpacity
+              key={opt.type}
+              style={[styles.typeButton, isActive && { borderColor: opt.color }]}
+              onPress={() => onChangeType(opt.type)}
+              activeOpacity={0.78}
+              accessibilityRole="button"
+              accessibilityLabel={`Tipo de movimiento: ${opt.label}`}
+              accessibilityState={{ selected: isActive }}
+            >
+              <opt.Icon size={22} color={isActive ? opt.color : COLORS.storm} />
+              {/* Antes esto llevaba borde, icono, etiqueta Y un punto, todo del mismo color:
+                  cuatro marcas para decir una cosa. Queda el borde y el peso del texto. */}
+              <Text style={[styles.typeLabel, isActive && { color: opt.color }]}>{opt.label}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
       {/* Source amount / account (for expense and transfer) */}
       {!isIncome ? (
         <>
           <CurrencyInput
-            label={isTransfer ? "Monto origen" : "Monto"}
+            label="Monto"
             value={sourceAmount}
             onChangeText={onChangeSourceAmount}
             currencyCode={sourceAccount?.currencyCode ?? baseCurrencyCode}
             error={errors.sourceAmount}
           />
-          {frequentAmounts && onPickFrequentAmount ? (
-            <FrequentAmountChips
-              amounts={frequentAmounts}
-              currencyCode={sourceAccount?.currencyCode ?? baseCurrencyCode}
-              onPick={onPickFrequentAmount}
-            />
-          ) : null}
           {warnings.sourceAmount ? (
             <Text
               style={styles.warningHint}
@@ -192,7 +198,7 @@ export const StepAccountsAndAmounts = memo(function StepAccountsAndAmounts({
             </Text>
           ) : null}
           <AccountPicker
-            label="Cuenta origen"
+            label={isTransfer ? "Sale de" : "Cuenta"}
             accounts={activeAccountsSorted}
             selectedId={sourceAccountId}
             onSelect={onChangeSourceAccount}
@@ -205,7 +211,7 @@ export const StepAccountsAndAmounts = memo(function StepAccountsAndAmounts({
       {(isIncome || isTransfer) ? (
         <>
           <AccountPicker
-            label="Cuenta destino"
+            label={isTransfer ? "Entra a" : "Cuenta"}
             accounts={destinationAccountsSorted}
             selectedId={destinationAccountId}
             onSelect={onChangeDestinationAccount}
@@ -220,13 +226,6 @@ export const StepAccountsAndAmounts = memo(function StepAccountsAndAmounts({
                 currencyCode={destinationAccount?.currencyCode ?? baseCurrencyCode}
                 error={errors.destinationAmount}
               />
-              {frequentAmounts && onPickFrequentAmount ? (
-                <FrequentAmountChips
-                  amounts={frequentAmounts}
-                  currencyCode={destinationAccount?.currencyCode ?? baseCurrencyCode}
-                  onPick={onPickFrequentAmount}
-                />
-              ) : null}
             </>
           ) : null}
           {isTransfer && transferCurrenciesDiffer ? (
@@ -272,14 +271,29 @@ export const StepAccountsAndAmounts = memo(function StepAccountsAndAmounts({
           {isTransfer && !transferCurrenciesDiffer && sourceAccount && destinationAccount ? (
             <View style={styles.sameCurrencyNote}>
               <Text style={styles.sameCurrencyText}>
-                Misma moneda ({sourceAccount.currencyCode}) · el monto se transfiere igual.
+                Las dos cuentas son en {sourceAccount.currencyCode}: se transfiere el mismo monto.
+                Tu patrimonio no cambia.
               </Text>
             </View>
           ) : null}
         </>
       ) : null}
 
-      {/* Balance impact preview */}
+      {!isTransfer ? (
+        <SegmentedControl
+          label="Estado"
+          options={STATUS_OPTIONS}
+          value={status}
+          onChange={onChangeStatus}
+        />
+      ) : null}
+
+      {/* "Saldo después" en singular cuando hay una cuenta; plural en una transferencia, donde
+          se mueven las dos. El mockup lo dice así. */}
+      {sourceAccount || destinationAccount ? (
+        <Text style={styles.balancesLabel}>{isTransfer ? "Saldos después" : "Saldo después"}</Text>
+      ) : null}
+
       {sourceAccount && projectedSourceBalance !== null ? (
         <BalanceImpactPreview
           label={
@@ -321,41 +335,54 @@ export const StepAccountsAndAmounts = memo(function StepAccountsAndAmounts({
         />
       ) : null}
 
-      <View style={styles.navRow}>
-        <Button label="← Atrás" variant="ghost" onPress={onBack} style={styles.btnHalf} />
-        <Button label="Siguiente →" onPress={onNext} style={styles.btnHalf} />
-      </View>
+      {/* Con el monto y la cuenta elegidos el movimiento YA es valido, asi que el boton es
+          Guardar. Los detalles quedan como un destino al que se entra a proposito. */}
+      <TouchableOpacity
+        style={styles.detailsLink}
+        onPress={onOpenDetails}
+        activeOpacity={0.72}
+        accessibilityRole="button"
+      >
+        <Text style={styles.detailsLinkText}>
+          {isTransfer
+            ? "Añadir nota o comprobante"
+            : "Añadir categoría, nota o comprobante"}
+        </Text>
+        <ChevronRight size={15} color={COLORS.storm} />
+      </TouchableOpacity>
+
+      {/* Deja sitio a la barra anclada para que no tape el enlace. */}
+      <View style={styles.footerSpacer} />
     </View>
   );
 });
 
 const styles = StyleSheet.create({
-  frequentRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    flexWrap: "wrap",
-    gap: SPACING.sm,
-    marginTop: -SPACING.xs,
-  },
-  frequentLabel: {
-    color: COLORS.textMuted,
-    fontFamily: FONT_FAMILY.bodyMedium,
+  section: { gap: SPACING.md },
+  balancesLabel: {
     fontSize: FONT_SIZE.xs,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    color: COLORS.storm,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+    marginBottom: -SPACING.xs,
   },
-  frequentChip: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs,
-    borderRadius: RADIUS.full,
+  typeGrid: { flexDirection: "row", gap: SPACING.sm },
+  typeButton: {
+    flex: 1,
+    alignItems: "center",
+    gap: SPACING.xs,
+    paddingVertical: SPACING.md,
+    borderRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: SURFACE.softBorder,
+    borderColor: SURFACE.cardBorder,
     backgroundColor: SURFACE.card,
   },
-  frequentChipText: {
-    color: COLORS.text,
-    fontFamily: FONT_FAMILY.bodySemibold,
+  typeLabel: {
     fontSize: FONT_SIZE.sm,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    color: COLORS.storm,
   },
-  section: { gap: SPACING.md },
   warningHint: {
     color: COLORS.warning,
     fontFamily: FONT_FAMILY.body,
@@ -397,6 +424,17 @@ const styles = StyleSheet.create({
     color: COLORS.storm,
     fontFamily: FONT_FAMILY.body,
   },
-  navRow: { flexDirection: "row", gap: SPACING.sm, marginTop: SPACING.sm },
-  btnHalf: { flex: 1 },
+  footerSpacer: { height: 72 },
+  detailsLink: {
+    minHeight: 48,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: SPACING.xs,
+  },
+  detailsLinkText: {
+    fontFamily: FONT_FAMILY.bodyMedium,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.storm,
+  },
 });

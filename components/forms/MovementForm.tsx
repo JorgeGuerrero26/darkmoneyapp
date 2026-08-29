@@ -47,6 +47,7 @@ import {
 } from "../../lib/movement-recurring-suggestions";
 import type { MovementRiskItem } from "../../lib/movement-risk-analysis";
 import { BottomSheet } from "../ui/BottomSheet";
+import { Button } from "../ui/Button";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { type Attachment } from "../domain/AttachmentPicker";
 import { buildCategorySuggestionCandidates } from "../../services/analytics/category-suggestions";
@@ -65,7 +66,6 @@ import type { MovementType, MovementStatus, MovementRecord, ExchangeRateSummary 
 import { useMovementCreationController } from "../../features/movements/hooks/useMovementCreationController";
 import { useTransferFxController } from "../../features/movements/hooks/useTransferFxController";
 import { useBalanceImpactPreview } from "../../features/movements/hooks/useBalanceImpactPreview";
-import { getFrequentAmounts } from "../../features/movements/lib/frequent-amounts";
 import { hasSplitGroup, splitLineDescription, splitLineMetadata, validateSplit, type SplitLine } from "../../features/movements/lib/split-movement";
 import { useMovementFormSuggestions } from "../../features/movements/hooks/useMovementFormSuggestions";
 import { useMovementAttachmentSync } from "../../features/movements/hooks/useMovementAttachmentSync";
@@ -75,7 +75,6 @@ import {
   validateMovementForm,
   type MovementFormWarnings,
 } from "../../features/movements/lib/form-validation";
-import { StepTypeAndStatus } from "../../features/movements/components/form/steps/StepTypeAndStatus";
 import { StepAccountsAndAmounts } from "../../features/movements/components/form/steps/StepAccountsAndAmounts";
 import { StepDetails } from "../../features/movements/components/form/steps/StepDetails";
 
@@ -474,7 +473,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         occurredTime: editMovement.occurredAt ? isoToTimeStr(editMovement.occurredAt) : nowTimePeru(),
         notes: editMovement.notes ?? "",
       });
-      setStep(2); // Edit opens on amount/account first
+      setStep(1); // Editar aterriza en monto y cuenta, que ahora es el paso 1
     } else if (duplicateMovement) {
       // Repetir movimiento: mismo contenido, fecha de HOY, siempre como creación nueva
       // (posted). El usuario aterriza en el paso de monto para confirmar/ajustar.
@@ -492,7 +491,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         occurredTime: nowTimePeru(),
         notes: duplicateMovement.notes ?? "",
       });
-      setStep(2);
+      setStep(1);
     } else {
       setStep(1);
       const initial = getInitialForm(defaultType);
@@ -748,15 +747,6 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     if (form.movementType !== "expense" && splitLines) setSplitLines(null);
   }, [form.movementType, splitLines]);
 
-  // Montos frecuentes (2+ usos) para el tipo+cuenta elegidos: chips de un tap en el paso 2.
-  const frequentAmounts = useMemo(
-    () => getFrequentAmounts({
-      movements: patternMovements,
-      movementType: form.movementType,
-      accountId: form.movementType === "income" ? form.destinationAccountId : form.sourceAccountId,
-    }),
-    [patternMovements, form.movementType, form.destinationAccountId, form.sourceAccountId],
-  );
 
   // Proyecciones de saldo del preview (fase 3 del refactor R7).
   const {
@@ -809,11 +799,14 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   ]);
 
   // --- Validation per step ---
-  function validateStep1(): boolean {
-    return true; // type is always selected
-  }
-
-  function validateStep2(): boolean {
+  /**
+   * Lo que hace falta para que el movimiento sea VALIDO: monto y cuenta.
+   *
+   * El paso de detalles no tiene un solo campo obligatorio —descripcion, categoria,
+   * contraparte, notas y comprobantes lo dicen en su propia etiqueta—, asi que con esto ya se
+   * puede guardar y los detalles pasan a ser un destino, no un peaje.
+   */
+  function validateAmountStep(): boolean {
     const result = validateMovementForm(
       {
         movementType: form.movementType,
@@ -837,11 +830,6 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     return result.valid;
   }
 
-  function validateStep3(): boolean {
-    // Description is optional · auto-generated on submit if empty
-    setErrors({});
-    return true;
-  }
 
   // Auto-generate description if user left it empty
   function buildDescription(): string {
@@ -872,21 +860,22 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   }
 
   function goNext() {
-    if (step === 1 && validateStep1()) { haptics.selection(); setStep(2); }
-    else if (step === 2 && validateStep2()) { haptics.selection(); setStep(3); }
+    if (validateAmountStep()) { haptics.selection(); setStep(2); }
     else haptics.error();
   }
 
   function goBack() {
-    if (step === 2) { haptics.light(); setStep(1); }
-    else if (step === 3) { haptics.light(); setStep(2); }
+    haptics.light();
+    setStep(1);
   }
 
   async function handleSubmit() {
     setSubmitError("");
-    if (!validateStep3()) {
+    // Se puede guardar desde el paso 1, asi que la validacion corre entera aunque el paso de
+    // detalles no se haya abierto nunca.
+    if (!validateAmountStep()) {
       haptics.error();
-      descriptionRef.current?.focus();
+      setStep(1);
       return;
     }
     // Anti-doble-tap: ignorar si ya hay un guardado en vuelo (evita movimientos duplicados).
@@ -1099,15 +1088,17 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     }
   }
 
+  // El titulo viejo mentia: la hoja de detalles tiene seis campos, no dos. Y le faltaban las
+  // tildes.
+  const submitLoading =
+    createMovement.isPending ||
+    updateMovement.isPending ||
+    createSubscription.isPending ||
+    createRecurringIncome.isPending;
+
   const stepTitle = isEditing
-    ? step === 1
-      ? "Editar movimiento - tipo"
-      : step === 2
-        ? "Editar movimiento - monto y cuenta"
-        : "Editar movimiento - descripcion y categoria"
-    : step === 1 ? "Tipo de movimiento"
-    : step === 2 ? "Monto y cuenta"
-    : "Descripcion y categoria";
+    ? step === 1 ? "Editar movimiento" : "Detalles"
+    : step === 1 ? "Nuevo movimiento" : "Detalles";
 
   return (
     <>
@@ -1119,6 +1110,21 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
       // Dentro del sheet y no como hermano: iOS solo presenta un Modal a la vez y el diálogo
       // no llegaba a aparecer, dejando el formulario sin poder cerrarse (reportado 2026-08-13).
       overlay={
+        <>
+        {/* Regla 3 de la plantilla: barra fija al pie. Antes el botón solo aparecía al
+            desplazarse hasta el final, así que en la primera pantalla no había ninguno. */}
+        <View style={styles.submitBar}>
+          {step === 2 ? (
+            <Button label="Atrás" variant="ghost" size="lg" onPress={goBack} style={styles.btnBack} />
+          ) : null}
+          <Button
+            label={isEditing ? "Actualizar" : "Guardar"}
+            onPress={handleSubmit}
+            loading={submitLoading}
+            size="lg"
+            style={styles.btnSubmit}
+          />
+        </View>
         <ConfirmDialog
           inline
           visible={discardVisible}
@@ -1129,6 +1135,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
           onCancel={() => setDiscardVisible(false)}
           onConfirm={() => { setDiscardVisible(false); onClose(); }}
         />
+        </>
       }
     >
       {/* Step indicator · hidden when editing */}
@@ -1136,8 +1143,8 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         <View
           style={styles.stepRow}
           accessibilityRole="progressbar"
-          accessibilityLabel={`Paso ${step} de 3: ${stepTitle}`}
-          accessibilityValue={{ min: 1, max: 3, now: step }}
+          accessibilityLabel={`Paso ${step} de 2: ${stepTitle}`}
+          accessibilityValue={{ min: 1, max: 2, now: step }}
         >
           {STEP_LABELS.map(({ step: s, label }) => (
             <View key={s} style={styles.stepItem}>
@@ -1155,9 +1162,9 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         </View>
       ) : null}
 
-      {/* -- STEP 1: type + status -- */}
+      {/* -- PASO 1: tipo, monto, cuenta y estado -- */}
       {step === 1 ? (
-        <StepTypeAndStatus
+        <StepAccountsAndAmounts
           movementType={form.movementType}
           status={form.status}
           onChangeType={(type) => {
@@ -1166,14 +1173,6 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
             if (type === "transfer") applyTransferDefaultsIfEmpty();
           }}
           onChangeStatus={(status) => patch({ status })}
-          onNext={goNext}
-        />
-      ) : null}
-
-      {/* -- STEP 2: amount + accounts -- */}
-      {step === 2 ? (
-        <StepAccountsAndAmounts
-          movementType={form.movementType}
           isEditing={isEditing}
           sourceAmount={form.sourceAmount}
           destinationAmount={form.destinationAmount}
@@ -1210,24 +1209,17 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
           revertedOriginalSourceBalance={revertedOriginalSourceBalance}
           projectedDestBalance={projectedDestBalance}
           revertedOriginalDestBalance={revertedOriginalDestBalance}
-          frequentAmounts={frequentAmounts}
-          onPickFrequentAmount={(amount) => {
-            const value = String(amount);
-            if (form.movementType === "income") patch({ destinationAmount: value });
-            else patch({ sourceAmount: value });
-          }}
           originalSourceAccount={originalSourceAccount}
           originalDestinationAccount={originalDestinationAccount}
           baseCurrencyCode={baseCurrency}
           errors={errors}
           warnings={warnings}
-          onBack={goBack}
-          onNext={goNext}
+          onOpenDetails={goNext}
         />
       ) : null}
 
-      {/* -- STEP 3: description + category + counterparty + date -- */}
-      {step === 3 ? (() => {
+      {/* -- PASO 2: detalles, todos opcionales -- */}
+      {step === 2 ? (() => {
         const catSuggestion = catSuggestionId !== null
           ? categoriesForPicker.find((c) => c.id === catSuggestionId) ?? null
           : null;
@@ -1341,13 +1333,38 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
 // -- Sub-components ------------------------------------------------------------
 
 // --- Styles -------------------------------------------------------------------
+// Dos pasos, y el segundo dice en el propio indicador que es opcional: asi no hace falta
+// repetir "(opcional)" en cada uno de sus campos, con dos formatos distintos ademas.
 const STEP_LABELS: { step: Step; label: string }[] = [
+  { step: 1, label: "Monto" },
+  { step: 2, label: "Detalles · opcional" },
+];
+
+const OLD_STEP_LABELS: { step: Step; label: string }[] = [
   { step: 1, label: "Tipo" },
   { step: 2, label: "Montos" },
   { step: 3, label: "Detalles" },
 ];
 
 const styles = StyleSheet.create({
+  submitBar: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 10,
+    elevation: 10,
+    flexDirection: "row",
+    gap: SPACING.sm,
+    paddingHorizontal: SPACING.xl,
+    paddingTop: SPACING.md,
+    paddingBottom: SPACING.xl,
+    backgroundColor: SURFACE.sheet,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: SURFACE.separator,
+  },
+  btnBack: { flex: 1 },
+  btnSubmit: { flex: 2 },
   stepRow: {
     flexDirection: "row",
     gap: SPACING.sm,
