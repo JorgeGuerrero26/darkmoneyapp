@@ -9,6 +9,14 @@ type Props = {
   currentBalance: number;
   projectedBalance: number;
   currencyCode: string;
+  /**
+   * La fila vive dentro de un grupo: sin caja propia, que la dibuja el grupo.
+   *
+   * Dos saldos con su propio borde apilados dibujan dos cajas, y el mockup pide una con las dos
+   * cuentas dentro. El aviso de saldo negativo conserva su fondo: es lo único de aquí que sí es
+   * una alarma.
+   */
+  grouped?: boolean;
 };
 
 /**
@@ -22,11 +30,23 @@ type Props = {
  * movimiento sin teñirlo. El rojo se reserva para lo único que sí es un problema: que el saldo
  * quede **negativo de verdad**.
  */
-export function BalanceImpactPreview({ label, currentBalance, projectedBalance, currencyCode }: Props) {
+export function BalanceImpactPreview({
+  label,
+  currentBalance,
+  projectedBalance,
+  currencyCode,
+  grouped = false,
+}: Props) {
   const isNegative = projectedBalance < 0;
 
   return (
-    <View style={[styles.container, isNegative && styles.containerWarning]}>
+    <View
+      style={[
+        styles.container,
+        grouped && !isNegative && styles.containerGrouped,
+        isNegative && styles.containerWarning,
+      ]}
+    >
       {isNegative ? (
         <View style={styles.warningRow}>
           <AlertTriangle size={13} color={COLORS.danger} />
@@ -57,6 +77,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: SURFACE.cardBorder,
     gap: SPACING.xs,
+  },
+  containerGrouped: {
+    backgroundColor: "transparent",
+    borderWidth: 0,
+    paddingHorizontal: 0,
   },
   containerWarning: {
     borderColor: COLORS.danger,

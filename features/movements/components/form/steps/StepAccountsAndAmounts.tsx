@@ -1,10 +1,11 @@
 import { memo } from "react";
-import { ArrowDownCircle, ArrowLeftRight, ArrowUpCircle, ChevronRight } from "lucide-react-native";
+import { ArrowDownCircle, ArrowLeftRight, ArrowUpCircle } from "lucide-react-native";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
-import { AccountPicker } from "../../../../../components/domain/AccountPicker";
 import { BalanceImpactPreview } from "../../../../../components/domain/BalanceImpactPreview";
+import { currencyPluralName } from "../../../../../constants/currencies";
 import { CurrencyInput } from "../../../../../components/ui/CurrencyInput";
+import { FormOptionRow } from "../../../../../components/ui/FormOptionRow";
 import { Input } from "../../../../../components/ui/Input";
 import {
   COLORS,
@@ -73,14 +74,10 @@ type Props = {
   onChangeTransferDestinationAmount: (value: string) => void;
 
   // Accounts
-  sourceAccountId: number | null;
-  destinationAccountId: number | null;
-  activeAccountsSorted: AccountSummary[];
-  destinationAccountsSorted: AccountSummary[];
   sourceAccount: AccountSummary | null;
   destinationAccount: AccountSummary | null;
-  onChangeSourceAccount: (id: number) => void;
-  onChangeDestinationAccount: (id: number) => void;
+  onOpenSourceAccount: () => void;
+  onOpenDestinationAccount: () => void;
 
   // Transfer FX
   transferCurrenciesDiffer: boolean;
@@ -107,8 +104,6 @@ type Props = {
   errors: FormErrors;
   warnings: FormWarnings;
 
-  // Nav
-  onOpenDetails: () => void;
 };
 
 export const StepAccountsAndAmounts = memo(function StepAccountsAndAmounts({
@@ -122,14 +117,10 @@ export const StepAccountsAndAmounts = memo(function StepAccountsAndAmounts({
   onChangeSourceAmount,
   onChangeDestinationAmount,
   onChangeTransferDestinationAmount,
-  sourceAccountId,
-  destinationAccountId,
-  activeAccountsSorted,
-  destinationAccountsSorted,
   sourceAccount,
   destinationAccount,
-  onChangeSourceAccount,
-  onChangeDestinationAccount,
+  onOpenSourceAccount,
+  onOpenDestinationAccount,
   transferCurrenciesDiffer,
   transferRateInput,
   onChangeTransferRate,
@@ -148,10 +139,16 @@ export const StepAccountsAndAmounts = memo(function StepAccountsAndAmounts({
   baseCurrencyCode,
   errors,
   warnings,
-  onOpenDetails,
 }: Props) {
   const isIncome = movementType === "income";
   const isTransfer = movementType === "transfer";
+
+  // Sin un solo saldo que enseñar la tarjeta quedaría vacía con su rótulo encima.
+  const hasBalances =
+    (sourceAccount !== null && projectedSourceBalance !== null) ||
+    (originalSourceAccount !== null && revertedOriginalSourceBalance !== null) ||
+    (destinationAccount !== null && projectedDestBalance !== null) ||
+    (originalDestinationAccount !== null && revertedOriginalDestBalance !== null);
 
   return (
     <View style={styles.section}>
@@ -178,7 +175,7 @@ export const StepAccountsAndAmounts = memo(function StepAccountsAndAmounts({
         })}
       </View>
 
-      {/* Source amount / account (for expense and transfer) */}
+      {/* Monto: en un gasto y en una transferencia sale de la cuenta origen. */}
       {!isIncome ? (
         <>
           <CurrencyInput
@@ -197,36 +194,55 @@ export const StepAccountsAndAmounts = memo(function StepAccountsAndAmounts({
               {warnings.sourceAmount}
             </Text>
           ) : null}
-          <AccountPicker
-            label={isTransfer ? "Sale de" : "Cuenta"}
-            accounts={activeAccountsSorted}
-            selectedId={sourceAccountId}
-            onSelect={onChangeSourceAccount}
-            error={errors.sourceAccountId}
-          />
         </>
       ) : null}
 
-      {/* Destination account + amount (income, transfer) */}
-      {(isIncome || isTransfer) ? (
-        <>
-          <AccountPicker
-            label={isTransfer ? "Entra a" : "Cuenta"}
-            accounts={destinationAccountsSorted}
-            selectedId={destinationAccountId}
-            onSelect={onChangeDestinationAccount}
-            error={errors.destinationAccountId}
+      {/* Las cuentas son filas, no cápsulas: con seis cuentas las últimas se cortaban por el
+          borde de un scroller horizontal y no había forma de saber que estaban ahí. Misma
+          fila que categoría y contraparte en el paso 2. */}
+      <View style={styles.group}>
+        {!isIncome ? (
+          <FormOptionRow
+            grouped
+            label={isTransfer ? "Sale de" : "Cuenta"}
+            value={sourceAccount?.name ?? null}
+            placeholder="Elegir cuenta"
+            onPress={onOpenSourceAccount}
+            last={!isTransfer}
           />
+        ) : null}
+        {isIncome || isTransfer ? (
+          <FormOptionRow
+            grouped
+            label={isTransfer ? "Entra a" : "Cuenta"}
+            value={destinationAccount?.name ?? null}
+            placeholder="Elegir cuenta"
+            onPress={onOpenDestinationAccount}
+            last
+          />
+        ) : null}
+      </View>
+      {errors.sourceAccountId ? (
+        <Text style={styles.fieldError} accessibilityLiveRegion="polite" accessibilityRole="alert">
+          {errors.sourceAccountId}
+        </Text>
+      ) : null}
+      {errors.destinationAccountId ? (
+        <Text style={styles.fieldError} accessibilityLiveRegion="polite" accessibilityRole="alert">
+          {errors.destinationAccountId}
+        </Text>
+      ) : null}
+
+      {isIncome || isTransfer ? (
+        <>
           {isIncome ? (
-            <>
-              <CurrencyInput
-                label="Monto"
-                value={destinationAmount}
-                onChangeText={onChangeDestinationAmount}
-                currencyCode={destinationAccount?.currencyCode ?? baseCurrencyCode}
-                error={errors.destinationAmount}
-              />
-            </>
+            <CurrencyInput
+              label="Monto"
+              value={destinationAmount}
+              onChangeText={onChangeDestinationAmount}
+              currencyCode={destinationAccount?.currencyCode ?? baseCurrencyCode}
+              error={errors.destinationAmount}
+            />
           ) : null}
           {isTransfer && transferCurrenciesDiffer ? (
             <CurrencyInput
@@ -268,14 +284,6 @@ export const StepAccountsAndAmounts = memo(function StepAccountsAndAmounts({
               </Text>
             </View>
           ) : null}
-          {isTransfer && !transferCurrenciesDiffer && sourceAccount && destinationAccount ? (
-            <View style={styles.sameCurrencyNote}>
-              <Text style={styles.sameCurrencyText}>
-                Las dos cuentas son en {sourceAccount.currencyCode}: se transfiere el mismo monto.
-                Tu patrimonio no cambia.
-              </Text>
-            </View>
-          ) : null}
         </>
       ) : null}
 
@@ -289,69 +297,72 @@ export const StepAccountsAndAmounts = memo(function StepAccountsAndAmounts({
       ) : null}
 
       {/* "Saldo después" en singular cuando hay una cuenta; plural en una transferencia, donde
-          se mueven las dos. El mockup lo dice así. */}
-      {sourceAccount || destinationAccount ? (
-        <Text style={styles.balancesLabel}>{isTransfer ? "Saldos después" : "Saldo después"}</Text>
+          se mueven las dos. El mockup lo dice así.
+
+          Las dos cuentas y la frase del patrimonio van en UNA tarjeta: eran dos cajas con borde
+          y un tercer recuadro suelto para la frase, tres cajas para una sola idea. */}
+      {hasBalances ? (
+        <View style={styles.balancesBlock}>
+          <Text style={styles.balancesLabel}>{isTransfer ? "Saldos después" : "Saldo después"}</Text>
+          <View style={styles.balancesCard}>
+            {sourceAccount && projectedSourceBalance !== null ? (
+              <BalanceImpactPreview
+                grouped
+                label={
+                  isEditing && originalSourceAccount && originalSourceAccount.id !== sourceAccount.id
+                    ? `Cuenta seleccionada: ${sourceAccount.name}`
+                    : sourceAccount.name
+                }
+                currentBalance={sourceAccount.currentBalance}
+                projectedBalance={projectedSourceBalance}
+                currencyCode={sourceAccount.currencyCode}
+              />
+            ) : null}
+            {originalSourceAccount && revertedOriginalSourceBalance !== null ? (
+              <BalanceImpactPreview
+                grouped
+                label={`Cuenta anterior: ${originalSourceAccount.name}`}
+                currentBalance={originalSourceAccount.currentBalance}
+                projectedBalance={revertedOriginalSourceBalance}
+                currencyCode={originalSourceAccount.currencyCode}
+              />
+            ) : null}
+            {destinationAccount && projectedDestBalance !== null ? (
+              <BalanceImpactPreview
+                grouped
+                label={
+                  isEditing && originalDestinationAccount && originalDestinationAccount.id !== destinationAccount.id
+                    ? `Cuenta seleccionada: ${destinationAccount.name}`
+                    : destinationAccount.name
+                }
+                currentBalance={destinationAccount.currentBalance}
+                projectedBalance={projectedDestBalance}
+                currencyCode={destinationAccount.currencyCode}
+              />
+            ) : null}
+            {originalDestinationAccount && revertedOriginalDestBalance !== null ? (
+              <BalanceImpactPreview
+                grouped
+                label={`Cuenta anterior: ${originalDestinationAccount.name}`}
+                currentBalance={originalDestinationAccount.currentBalance}
+                projectedBalance={revertedOriginalDestBalance}
+                currencyCode={originalDestinationAccount.currencyCode}
+              />
+            ) : null}
+            {isTransfer && !transferCurrenciesDiffer && sourceAccount && destinationAccount ? (
+              <Text style={styles.sameCurrencyText}>
+                Las dos cuentas son en {currencyPluralName(sourceAccount.currencyCode)}: se
+                transfiere el mismo monto.
+                Tu patrimonio no cambia.
+              </Text>
+            ) : null}
+          </View>
+        </View>
       ) : null}
 
-      {sourceAccount && projectedSourceBalance !== null ? (
-        <BalanceImpactPreview
-          label={
-            isEditing && originalSourceAccount && originalSourceAccount.id !== sourceAccount.id
-              ? `Cuenta seleccionada: ${sourceAccount.name}`
-              : sourceAccount.name
-          }
-          currentBalance={sourceAccount.currentBalance}
-          projectedBalance={projectedSourceBalance}
-          currencyCode={sourceAccount.currencyCode}
-        />
-      ) : null}
-      {originalSourceAccount && revertedOriginalSourceBalance !== null ? (
-        <BalanceImpactPreview
-          label={`Cuenta anterior: ${originalSourceAccount.name}`}
-          currentBalance={originalSourceAccount.currentBalance}
-          projectedBalance={revertedOriginalSourceBalance}
-          currencyCode={originalSourceAccount.currencyCode}
-        />
-      ) : null}
-      {destinationAccount && projectedDestBalance !== null ? (
-        <BalanceImpactPreview
-          label={
-            isEditing && originalDestinationAccount && originalDestinationAccount.id !== destinationAccount.id
-              ? `Cuenta seleccionada: ${destinationAccount.name}`
-              : destinationAccount.name
-          }
-          currentBalance={destinationAccount.currentBalance}
-          projectedBalance={projectedDestBalance}
-          currencyCode={destinationAccount.currencyCode}
-        />
-      ) : null}
-      {originalDestinationAccount && revertedOriginalDestBalance !== null ? (
-        <BalanceImpactPreview
-          label={`Cuenta anterior: ${originalDestinationAccount.name}`}
-          currentBalance={originalDestinationAccount.currentBalance}
-          projectedBalance={revertedOriginalDestBalance}
-          currencyCode={originalDestinationAccount.currencyCode}
-        />
-      ) : null}
-
-      {/* Con el monto y la cuenta elegidos el movimiento YA es valido, asi que el boton es
-          Guardar. Los detalles quedan como un destino al que se entra a proposito. */}
-      <TouchableOpacity
-        style={styles.detailsLink}
-        onPress={onOpenDetails}
-        activeOpacity={0.72}
-        accessibilityRole="button"
-      >
-        <Text style={styles.detailsLinkText}>
-          {isTransfer
-            ? "Añadir nota o comprobante"
-            : "Añadir categoría, nota o comprobante"}
-        </Text>
-        <ChevronRight size={15} color={COLORS.storm} />
-      </TouchableOpacity>
-
-      {/* Deja sitio a la barra anclada para que no tape el enlace. */}
+      {/* El enlace a detalles vive DEBAJO del botón Guardar, en la barra fija: aquí abajo el
+          orden de lectura era "detalles primero, guardar después", al revés de lo que este
+          paso decide. Deja sitio a esa barra para que no tape el final de la lista. */}
       <View style={styles.footerSpacer} />
     </View>
   );
@@ -359,13 +370,36 @@ export const StepAccountsAndAmounts = memo(function StepAccountsAndAmounts({
 
 const styles = StyleSheet.create({
   section: { gap: SPACING.md },
+  group: {
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: SURFACE.cardBorder,
+    backgroundColor: SURFACE.card,
+    overflow: "hidden",
+  },
+  fieldError: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.danger,
+    marginTop: -SPACING.sm,
+    marginLeft: SPACING.xs,
+  },
+  balancesBlock: { gap: SPACING.sm },
+  balancesCard: {
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: SURFACE.cardBorder,
+    backgroundColor: SURFACE.card,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.md,
+    gap: SPACING.sm,
+  },
   balancesLabel: {
     fontSize: FONT_SIZE.xs,
     fontFamily: FONT_FAMILY.bodySemibold,
     color: COLORS.storm,
     textTransform: "uppercase",
     letterSpacing: 0.8,
-    marginBottom: -SPACING.xs,
   },
   typeGrid: { flexDirection: "row", gap: SPACING.sm },
   typeButton: {
@@ -411,30 +445,12 @@ const styles = StyleSheet.create({
     lineHeight: 17,
   },
   fxRateNoteTextMissing: { color: COLORS.ink },
-  sameCurrencyNote: {
-    backgroundColor: SURFACE.card,
-    borderRadius: RADIUS.md,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    borderWidth: 1,
-    borderColor: SURFACE.cardBorder,
-  },
   sameCurrencyText: {
     fontSize: FONT_SIZE.xs,
     color: COLORS.storm,
     fontFamily: FONT_FAMILY.body,
+    lineHeight: 17,
   },
-  footerSpacer: { height: 72 },
-  detailsLink: {
-    minHeight: 48,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: SPACING.xs,
-  },
-  detailsLinkText: {
-    fontFamily: FONT_FAMILY.bodyMedium,
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.storm,
-  },
+  // La barra fija lleva ahora el botón Y el enlace a detalles, así que ocupa más alto.
+  footerSpacer: { height: 140 },
 });

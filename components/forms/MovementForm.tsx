@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { TextInput } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { ChevronRight } from "lucide-react-native";
 
 import { useUiStore } from "../../store/ui-store";
 import { useWorkspace } from "../../lib/workspace-context";
@@ -189,6 +190,8 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   const [discardVisible, setDiscardVisible] = useState(false);
   const [categoryPickerOpen, setCategoryPickerOpen] = useState(false);
   const [counterpartyPickerOpen, setCounterpartyPickerOpen] = useState(false);
+  const [sourceAccountPickerOpen, setSourceAccountPickerOpen] = useState(false);
+  const [destinationAccountPickerOpen, setDestinationAccountPickerOpen] = useState(false);
   const [form, setForm] = useState<FormState>(() => getInitialForm(defaultType));
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
   const [warnings, setWarnings] = useState<MovementFormWarnings>({});
@@ -1117,16 +1120,37 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         {/* Regla 3 de la plantilla: barra fija al pie. Antes el botón solo aparecía al
             desplazarse hasta el final, así que en la primera pantalla no había ninguno. */}
         <View style={styles.submitBar}>
-          {step === 2 ? (
-            <Button label="Atrás" variant="ghost" size="lg" onPress={goBack} style={styles.btnBack} />
+          <View style={styles.submitRow}>
+            {step === 2 ? (
+              <Button label="Atrás" variant="ghost" size="lg" onPress={goBack} style={styles.btnBack} />
+            ) : null}
+            <Button
+              label={isEditing ? "Actualizar" : "Guardar"}
+              onPress={handleSubmit}
+              loading={submitLoading}
+              size="lg"
+              style={styles.btnSubmit}
+            />
+          </View>
+          {/* Con el monto y la cuenta elegidos el movimiento YA es válido, así que el botón es
+              Guardar y los detalles quedan como un destino al que se entra a propósito. Por eso
+              el enlace va DEBAJO del botón, como lo dibuja el mockup: al final del scroll el
+              orden de lectura era "detalles primero, guardar después". */}
+          {step === 1 ? (
+            <TouchableOpacity
+              style={styles.detailsLink}
+              onPress={goNext}
+              activeOpacity={0.72}
+              accessibilityRole="button"
+            >
+              <Text style={styles.detailsLinkText}>
+                {form.movementType === "transfer"
+                  ? "Añadir nota o comprobante"
+                  : "Añadir categoría, nota o comprobante"}
+              </Text>
+              <ChevronRight size={15} color={COLORS.storm} />
+            </TouchableOpacity>
           ) : null}
-          <Button
-            label={isEditing ? "Actualizar" : "Guardar"}
-            onPress={handleSubmit}
-            loading={submitLoading}
-            size="lg"
-            style={styles.btnSubmit}
-          />
         </View>
         <SearchableSelectSheet
           inline
@@ -1151,6 +1175,32 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
           value={form.counterpartyId}
           onChange={(id) => patch({ counterpartyId: id })}
           onClose={() => setCounterpartyPickerOpen(false)}
+        />
+        <SearchableSelectSheet
+          inline
+          visible={sourceAccountPickerOpen}
+          title={form.movementType === "transfer" ? "Sale de" : "Cuenta"}
+          options={activeAccountsSorted.map((a) => ({ value: a.id as number | null, label: a.name }))}
+          value={form.sourceAccountId}
+          onChange={(id) => {
+            if (id === null) return;
+            if (form.movementType === "transfer") fx.setTransferDestinationEdited(false);
+            patch({ sourceAccountId: id });
+          }}
+          onClose={() => setSourceAccountPickerOpen(false)}
+        />
+        <SearchableSelectSheet
+          inline
+          visible={destinationAccountPickerOpen}
+          title={form.movementType === "transfer" ? "Entra a" : "Cuenta"}
+          options={destinationAccountsSorted.map((a) => ({ value: a.id as number | null, label: a.name }))}
+          value={form.destinationAccountId}
+          onChange={(id) => {
+            if (id === null) return;
+            if (form.movementType === "transfer") fx.setTransferDestinationEdited(false);
+            patch({ destinationAccountId: id });
+          }}
+          onClose={() => setDestinationAccountPickerOpen(false)}
         />
         <ConfirmDialog
           inline
@@ -1209,20 +1259,10 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
             fx.setTransferDestinationEdited(true);
             patch({ destinationAmount: v });
           }}
-          sourceAccountId={form.sourceAccountId}
-          destinationAccountId={form.destinationAccountId}
-          activeAccountsSorted={activeAccountsSorted}
-          destinationAccountsSorted={destinationAccountsSorted}
           sourceAccount={sourceAccount}
           destinationAccount={destinationAccount}
-          onChangeSourceAccount={(id) => {
-            if (form.movementType === "transfer") fx.setTransferDestinationEdited(false);
-            patch({ sourceAccountId: id });
-          }}
-          onChangeDestinationAccount={(id) => {
-            if (form.movementType === "transfer") fx.setTransferDestinationEdited(false);
-            patch({ destinationAccountId: id });
-          }}
+          onOpenSourceAccount={() => setSourceAccountPickerOpen(true)}
+          onOpenDestinationAccount={() => setDestinationAccountPickerOpen(true)}
           transferCurrenciesDiffer={transferCurrenciesDiffer}
           transferRateInput={fx.transferRateInput}
           onChangeTransferRate={fx.onChangeTransferRate}
@@ -1241,7 +1281,6 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
           baseCurrencyCode={baseCurrency}
           errors={errors}
           warnings={warnings}
-          onOpenDetails={goNext}
         />
       ) : null}
 
@@ -1383,8 +1422,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     zIndex: 10,
     elevation: 10,
-    flexDirection: "row",
-    gap: SPACING.sm,
+    gap: SPACING.xs,
     paddingHorizontal: SPACING.xl,
     paddingTop: SPACING.md,
     paddingBottom: SPACING.xl,
@@ -1392,8 +1430,24 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: SURFACE.separator,
   },
+  submitRow: {
+    flexDirection: "row",
+    gap: SPACING.sm,
+  },
   btnBack: { flex: 1 },
   btnSubmit: { flex: 2 },
+  detailsLink: {
+    minHeight: 44,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: SPACING.xs,
+  },
+  detailsLinkText: {
+    fontFamily: FONT_FAMILY.bodyMedium,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.storm,
+  },
   stepRow: {
     flexDirection: "row",
     gap: SPACING.sm,
