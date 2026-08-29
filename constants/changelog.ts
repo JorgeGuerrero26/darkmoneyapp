@@ -42,6 +42,10 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Desapareció el campo \"Orden\" de las categorías, que pedía un número sin explicar para qué servía. Ahora se acomoda solo.",
       "Elegir moneda, cuenta, categoría o contacto en cualquier formulario ya no es una fila de botones que se corta por el borde: es una lista que se abre y se puede buscar.",
       "Los botones de guardar ahora te dicen qué falta —\"Falta el monto\"— en vez de quedarse apagados sin explicar por qué.",
+      "La pestaña Salud dejó de ser interminable. Antes te daba cuatro porcentajes distintos de \"confianza\" sin decirte cuál mirar; ahora hay uno solo, con lo que falta para subirlo.",
+      "En Salud, lo primero que ves por revisar son los movimientos sin contraparte: eran los más numerosos y estaban escondidos. Y los que no tienen categoría te dicen cuánto pesan de tu gasto.",
+      "La proyección del cierre de mes ya no está repetida en dos pestañas: vive solo en Flujo, que es donde la buscas.",
+      "Lo de \"cómo aprende DarkMoney\" se mudó a Configuración › Acerca de. Estaba en medio de tus finanzas ocupando media pantalla, y no era algo que pudieras cambiar.",
     ],
   },
   {

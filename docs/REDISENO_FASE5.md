@@ -126,32 +126,32 @@ sin rellenar**.
 
 ## 5. Q · Salud (Revisión 06) — ~5.000 px de desplazamiento
 
-### [ ] Cuatro porcentajes de confianza, ninguno es "la" confianza
+### [x] Cuatro porcentajes de confianza, ninguno es "la" confianza
 86% (tres veces con tres nombres), 68%, 78% y 74%. **Queda uno**: la precisión del dato, 86%,
 con el umbral por debajo del cual las proyecciones no se sostienen. El 68% de la banda
 pertenece a Flujo.
 
-### [ ] La fórmula del cierre está en la pestaña equivocada
+### [x] La fórmula del cierre está en la pestaña equivocada
 Saldo visible, Agenda comprometida, Ritmo variable y Resultado esperado son el puente de cierre
 **de Flujo**, repetido aquí. **Sale de Salud**: dos pestañas no deben responder la misma
 pregunta.
 
-### [ ] El dato más grave estaba enterrado
+### [x] El dato más grave estaba enterrado
 "409 movimientos sin contraparte" era la segunda viñeta de una tarjeta, sin tocar nada. Sube a
 **primera fila de "Por revisar"**. Y "Sin categoría pesa 45%" pasa a ser **el subtítulo del 91**:
 el número y su consecuencia juntos.
 
-### [ ] Los dos bloques que miden el producto — DECISIÓN TOMADA (28 ago)
+### [x] Los dos bloques que miden el producto — DECISIÓN TOMADA (28 ago)
 Resuelto **(c) + (b)**: en Salud queda solo la línea accionable —la precisión sube a 96% al
 resolver los pendientes— y el relato del aprendizaje **se muda a Configuración → Acerca de**.
 "Madurez del análisis" y "Aprendiendo de ti" suman ~1.400 px y no hay nada que el usuario pueda
 hacer con ellos: la Fase 4 no sube porque él haga algo.
 
-### [ ] El patrón semanal aparece dos veces
+### [x] El patrón semanal aparece dos veces
 "sábado concentra 38% del gasto" está en dos sitios con distinta redacción, y es un patrón: su
 pestaña es **Patrones**. Igual "Taxi aparece 66 veces".
 
-### [ ] Detalles de redacción
+### [x] Detalles de redacción
 "300 correcciónes tuya" lleva tilde de más y falta concordancia. Los chips "Activos", "Media" y
 "Visible" no dicen nada verificable. "QUE CONVIENE LIMPIAR O REFORZAR" → "Qué conviene limpiar".
 
@@ -174,15 +174,31 @@ pestaña es **Patrones**. Igual "Taxi aparece 66 veces".
 Hecho y publicado: las cuatro reglas transversales, categoría, cuenta, suscripción, contacto,
 tipo de cambio y presupuesto. La moneda quedó unificada en los seis formularios que la piden.
 
-### [ ] Pendiente — listas de entidades en dos formularios
+### [x] Listas de entidades en dos formularios
 Quedan como cápsulas que se desplazan y deberían ser selector, por la misma regla 2:
 
 - **Nueva obligación**: contacto, cuenta de liquidación y cuenta de apertura.
 - **Nuevo ingreso fijo**: pagador, cuenta destino, categoría, día del mes (31 opciones) y día de
   la semana. No es uno de los siete de la revisión, pero comparte las mismas fallas.
 
-Son tres y cinco bloques anidados dentro de condicionales, y el detector de límites automático
-no acertó con ellos: hay que hacerlos a mano, uno a uno, verificando el árbol JSX.
+Hechos el 29 ago. Iban por número de línea con aserción en los dos extremos, comprobando que
+el rango contuviera cápsulas antes de tocarlo — el detector automático de límites falló dos
+veces antes.
 
-### [ ] Pendiente — toda la Revisión 06 (Salud)
-La sección 5 de este documento, sin empezar.
+### [x] Revisión 06 (Salud)
+Hecha el 29 ago. Ver sección 5.
+
+---
+
+## 8. Cerrado (29 ago)
+
+Revisiones 05 y 06 completas y publicadas por OTA en los tres runtimes.
+
+Dos cosas que NO se hicieron, a propósito:
+
+- **La frase del mockup «el orden se cambia arrastrando las filas en Categorías».** Esa lista no
+  tiene reordenamiento por arrastre. Prometer un gesto que no existe es peor que no decir nada.
+- **El bloque derivado de Nueva obligación**, porque ya estaba hecho (ver sección 4).
+
+Componentes retirados por quedarse sin usuarios: `IconPicker`, `ColorPicker`, `CurrencyPicker`
+(cuentas), `LearningPanel`, `ProjectionFormulaBreakdown`, `ActivityTimeline`, `DataQuality`.
