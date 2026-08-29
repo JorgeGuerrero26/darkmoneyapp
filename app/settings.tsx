@@ -731,6 +731,17 @@ function SettingsScreen() {
             />
           </SettingsGroup>
 
+          <SettingsGroup>
+            {/* Aquí vive el relato de cómo la app aprende: sacado de la pestaña Salud, donde
+                medía el producto y no tus finanzas. */}
+            <SettingsRow
+              onPress={() => router.push("/(app)/about?from=settings" as any)}
+              label="Acerca de"
+              support="Cómo aprende DarkMoney con lo que registras"
+              last
+            />
+          </SettingsGroup>
+
           {/* Es la única acción irreversible de la pantalla, así que NO se pinta como el
               control más llamativo: va en texto, al final, donde se busca a propósito. */}
           <TouchableOpacity onPress={handleSignOut} style={styles.signOutRow} activeOpacity={0.7}>
