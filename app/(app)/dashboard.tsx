@@ -209,7 +209,6 @@ import { AccountsBreakdown } from "../../features/dashboard/components/simple/Ac
 import { SavingsTrendCard } from "../../features/dashboard/components/simple/SavingsTrendCard";
 import { ReviewInbox } from "../../features/dashboard/components/simple/ReviewInbox";
 import { FutureFlowPreview } from "../../features/dashboard/components/simple/FutureFlowPreview";
-import { ProjectionFormulaBreakdown } from "../../features/dashboard/components/simple/ProjectionFormulaBreakdown";
 import { GettingStartedCard } from "../../features/dashboard/components/simple/GettingStartedCard";
 import {
   buildFutureFlowWindows,
@@ -239,7 +238,6 @@ import {
   ExplanationVisualSummary,
 } from "../../features/dashboard/components/advanced/ExplanationCard";
 
-import { LearningPanel } from "../../features/dashboard/components/advanced/LearningPanel";
 import { ProCommandCenter } from "../../features/dashboard/components/advanced/ProCommandCenter";
 
 import {
@@ -257,13 +255,11 @@ import {
 } from "../../features/dashboard/components/advanced/HealthAndAlerts";
 
 import {
-  ActivityTimeline,
   AdvancedGiftCard,
   AlgorithmReadinessCard,
   AnomalyWatch,
   CurrencyExposure,
   DashboardLayerHeader,
-  DataQuality,
   FinancialGraphCard,
   PeriodRadar,
   TransferSnapshot,

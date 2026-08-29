@@ -2717,6 +2717,45 @@ export const dashboardSimpleStyles = StyleSheet.create({
   },
   // Nota de alcance: al pie y en letra chica, que es donde vive la letra chica. Antes era un
   // parrafo de entrada que describia el grafico antes de enseñarlo.
+  // Salud: el unico porcentaje que queda en la pestaña, con su umbral.
+  reviewHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  reviewHeaderAction: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.ink,
+  },
+  precisionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: SPACING.sm,
+  },
+  precisionLabel: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.ink,
+  },
+  precisionDays: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+  },
+  precisionValue: {
+    fontFamily: FONT_FAMILY.heading,
+    fontSize: 40,
+    lineHeight: 46,
+    marginTop: SPACING.xs,
+  },
+  precisionBody: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    lineHeight: 18,
+  },
   bridgeFootnote: {
     fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.xs,

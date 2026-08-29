@@ -295,42 +295,6 @@ export function TransferSnapshot({
   );
 }
 
-export function DataQuality({
-  movements,
-  onOpenNoCategory,
-  onOpenNoCounterparty,
-}: {
-  movements: DashboardMovementRow[];
-  onOpenNoCategory?: () => void;
-  onOpenNoCounterparty?: () => void;
-}) {
-  const relevant = movements.filter((m) => isCategorizedCashflow(m));
-  const noCat = relevant.filter((m) => m.categoryId == null).length;
-  const noCounterparty = relevant.filter((m) => m.counterpartyId == null).length;
-
-  if (noCat === 0 && noCounterparty === 0) return null;
-
-  return (
-    <Card>
-      <SectionTitle>Calidad de datos</SectionTitle>
-      {noCat > 0 && (
-        <TouchableOpacity style={subStyles.dqRow} onPress={onOpenNoCategory} activeOpacity={0.82}>
-          <Tag size={13} color={COLORS.expense} />
-          <Text style={subStyles.dqText}>{noCat} movimiento{noCat !== 1 ? "s" : ""} sin categoría</Text>
-          <ArrowRight size={14} color={COLORS.storm} />
-        </TouchableOpacity>
-      )}
-      {noCounterparty > 0 && (
-        <TouchableOpacity style={subStyles.dqRow} onPress={onOpenNoCounterparty} activeOpacity={0.82}>
-          <AlertCircle size={13} color={COLORS.storm} />
-          <Text style={subStyles.dqText}>{noCounterparty} movimiento{noCounterparty !== 1 ? "s" : ""} sin contraparte</Text>
-          <ArrowRight size={14} color={COLORS.storm} />
-        </TouchableOpacity>
-      )}
-    </Card>
-  );
-}
-
 export function CurrencyExposure({
   accounts,
 }: {
@@ -434,41 +398,6 @@ export function PeriodRadar({
           </View>
         ))}
       </View>
-    </Card>
-  );
-}
-
-export function ActivityTimeline({ snapshot }: { snapshot: any }) {
-  const log: any[] = snapshot?.activityLog ?? [];
-  if (log.length === 0) return null;
-
-  const items = log.slice(0, 12);
-
-  function iconFor(entityType: string): LucideIcon {
-    if (entityType === "movement") return Banknote;
-    if (entityType === "obligation") return AlertCircle;
-    if (entityType === "subscription") return Clock;
-    return Tag;
-  }
-
-  return (
-    <Card>
-      <SectionTitle>Actividad reciente</SectionTitle>
-      {items.map((entry: any, i: number) => {
-        const Icon = iconFor(entry.entity_type ?? "");
-        const d = entry.created_at ? new Date(entry.created_at) : null;
-        return (
-          <View key={i} style={[subStyles.timelineRow, i < items.length - 1 && subStyles.leadersSep]}>
-            <Icon size={14} color={COLORS.storm} />
-            <View style={subStyles.timelineContent}>
-              <Text style={subStyles.timelineDesc} numberOfLines={2}>
-                {entry.description ?? `${entry.action ?? ""} ${entry.entity_type ?? ""}`}
-              </Text>
-              {d && <Text style={subStyles.timelineDate}>{format(d, "d MMM HH:mm", { locale: es })}</Text>}
-            </View>
-          </View>
-        );
-      })}
     </Card>
   );
 }

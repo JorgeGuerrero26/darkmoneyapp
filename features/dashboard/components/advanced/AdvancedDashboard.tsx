@@ -117,7 +117,6 @@ import { movementPreviewActionLabel } from "../../lib/aggregations";
 
 import { SectionTitle } from "../simple/SectionTitle";
 import { FutureFlowPreview } from "../simple/FutureFlowPreview";
-import { ProjectionFormulaBreakdown } from "../simple/ProjectionFormulaBreakdown";
 import { ReviewInbox } from "../simple/ReviewInbox";
 import { dashboardSimpleStyles as subStyles } from "../simple/styles";
 
@@ -128,7 +127,6 @@ import {
   ExplanationSection,
   ExplanationVisualSummary,
 } from "./ExplanationCard";
-import { LearningPanel } from "./LearningPanel";
 import { ProCommandCenter } from "./ProCommandCenter";
 import {
   CategoryBreakdown,
@@ -143,12 +141,10 @@ import {
   PaymentOptimizationCard,
 } from "./HealthAndAlerts";
 import {
-  ActivityTimeline,
   AdvancedGiftCard,
   AlgorithmReadinessCard,
   AnomalyWatch,
   CurrencyExposure,
-  DataQuality,
   FinancialGraphCard,
   PeriodRadar,
   TransferSnapshot,
@@ -582,7 +578,12 @@ export function AdvancedDashboard({
     const oldest = useful[useful.length - 1];
     const historyDays = oldest ? Math.max(1, differenceInDays(new Date(), new Date(oldest.occurredAt))) : 0;
     const readinessScore = Math.round(Math.min(1, useful.length / 120) * 40 + Math.min(1, historyDays / 120) * 25 + categorizedRate * 35);
-    return { categorizedRate, historyDays, readinessScore, usefulCount: useful.length };
+    // Cuanto subiria si se resolvieran los pendientes: es la unica linea accionable que
+    // contenian los ~1.400 px de "madurez del analisis" que salieron de la pantalla.
+    const potentialScore = Math.round(
+      Math.min(1, useful.length / 120) * 40 + Math.min(1, historyDays / 120) * 25 + 35,
+    );
+    return { categorizedRate, historyDays, readinessScore, potentialScore, usefulCount: useful.length };
   }, [movements]);
 
   const anomalySignals = useMemo(
@@ -740,13 +741,7 @@ export function AdvancedDashboard({
     if (chips.length === 0)
       chips.push({ icon: Sparkles, color: COLORS.income, label: "Base sana · sin fricción fuerte hoy", weight: "low" });
     return chips.slice(0, 4);
-  }, [cashCushion.days, review.overdueObligationsCount, review.uncategorizedCount, spendingTrend.expenseTrendPct, weekWindow.expectedInflow, weekWindow.expectedOutflow]);
-
-  const qualityOpenInitial = review.totalIssues > 0 || learning.readinessScore < 75;
-  const [qualityOpen, setQualityOpen] = useState(qualityOpenInitial);
-  useEffect(() => {
-    setQualityOpen(qualityOpenInitial);
-  }, [qualityOpenInitial]);
+  }, [cashCushion.days, review.overdueObligationsCount, review.uncategorizedCount, spendingTrend.expenseTrendPct, weekWindow.expectedInflow, weekWindow.expectedOutflow]);
   const [executiveDetail, setExecutiveDetail] = useState<"focus" | "risk" | "month" | null>(null);
   const [advancedDetail, setAdvancedDetail] = useState<"focusCenter" | "projection" | "review" | "advancedMetrics" | "quality" | "categoryConcentration" | "savingsRate" | "incomeStability" | "seasonalComparison" | "collectionEfficiency" | null>(null);
   const [projectionDetail, setProjectionDetail] = useState<"conservative" | "expected" | "included" | null>(null);
@@ -1141,17 +1136,29 @@ export function AdvancedDashboard({
     });
   }, [noCounterpartyReviewMovements, openMovementPreview]);
 
-  const openHealthMovementIssuePreview = useCallback((key: "uncategorized" | "pending" | "duplicates") => {
-    if (key === "uncategorized") {
-      openSummaryUncategorizedPreview();
-      return;
-    }
-    if (key === "pending") {
-      openPendingReviewPreview();
-      return;
-    }
-    openDuplicateExpensesPreview();
-  }, [openDuplicateExpensesPreview, openPendingReviewPreview, openSummaryUncategorizedPreview]);
+  const openHealthMovementIssuePreview = useCallback(
+    (key: "uncategorized" | "pending" | "duplicates" | "no-counterparty") => {
+      if (key === "uncategorized") {
+        openSummaryUncategorizedPreview();
+        return;
+      }
+      if (key === "no-counterparty") {
+        openNoCounterpartyPreview();
+        return;
+      }
+      if (key === "pending") {
+        openPendingReviewPreview();
+        return;
+      }
+      openDuplicateExpensesPreview();
+    },
+    [
+      openDuplicateExpensesPreview,
+      openNoCounterpartyPreview,
+      openPendingReviewPreview,
+      openSummaryUncategorizedPreview,
+    ],
+  );
 
   const openCategorySuggestionPreview = useCallback((suggestion: DashboardCategorySuggestion) => {
     const movement = movementById.get(suggestion.movementId);
@@ -1249,7 +1256,6 @@ export function AdvancedDashboard({
     setAdvancedDetail(null);
     setProjectionDetail(null);
     setActiveTab('Salud');
-    setQualityOpen(true);
     InteractionManager.runAfterInteractions(() => {
       setTimeout(() => onRequestPrecisionFocus?.(), 300);
     });
@@ -2040,7 +2046,7 @@ export function AdvancedDashboard({
         review.uncategorizedCount > 0
           ? { label: `Abrir ${review.uncategorizedCount} sin categoría`, onPress: openSummaryUncategorizedPreview }
           : null,
-        { label: qualityOpen ? "Ver capa de precisión" : "Abrir capa de precisión", onPress: openPrecisionLayer },
+        { label: "Ir a Salud", onPress: openPrecisionLayer },
       ].filter((action): action is { label: string; onPress: () => void } => Boolean(action)),
     },
     risk: {
@@ -2111,7 +2117,6 @@ export function AdvancedDashboard({
     review.pendingMovementsCount,
     review.subscriptionsAttentionCount,
     review.uncategorizedCount,
-    qualityOpen,
     router,
     weekWindow.expectedInflow,
     weekWindow.expectedOutflow,
@@ -2269,7 +2274,7 @@ export function AdvancedDashboard({
         collectionEfficiency.total > 0
           ? { label: "Abrir creditos y deudas", onPress: () => { setAdvancedDetail(null); router.push("/obligations" as never); } }
           : null,
-        { label: qualityOpen ? "Ver capa de calidad" : "Abrir capa de calidad", onPress: openPrecisionLayer },
+        { label: "Ir a Salud", onPress: openPrecisionLayer },
       ].filter((action): action is { label: string; onPress: () => void } => Boolean(action)),
     },
     quality: {
@@ -2287,7 +2292,7 @@ export function AdvancedDashboard({
         qualitySnapshot.noCategoryCount > 0
           ? { label: `Abrir ${qualitySnapshot.noCategoryCount} sin categoría`, onPress: openSummaryUncategorizedPreview }
           : null,
-        { label: qualityOpen ? "Ocultar capa de calidad" : "Abrir capa de calidad", onPress: qualityOpen ? () => { setAdvancedDetail(null); setQualityOpen(false); } : openPrecisionLayer },
+        { label: "Ir a Salud", onPress: openPrecisionLayer },
       ].filter((action): action is { label: string; onPress: () => void } => Boolean(action)),
     },
     categoryConcentration: {
@@ -2438,7 +2443,6 @@ export function AdvancedDashboard({
     projectionModel.pressureThreshold,
     projectionModel.variableExpenseProjection,
     projectionModel.variableIncomeProjection,
-    qualityOpen,
     qualitySnapshot.noCategoryCount,
     qualitySnapshot.noCounterpartyCount,
     review.overdueObligationsCount,
@@ -4584,6 +4588,32 @@ export function AdvancedDashboard({
         <DashboardSectionBoundary sectionLabel="Salud">
         <>
       <View style={{ height: SPACING.sm }} />
+      {/* La pantalla decia 86% ("confianza actual", tres veces con tres nombres distintos),
+          68% ("proyeccion con bandas"), 78% ("categorias utiles") y 74% ("Fase 4"). Puestos
+          asi, no se sabe cual mirar ni por que difieren. Queda uno, con el umbral por debajo
+          del cual las proyecciones dejan de sostenerse. */}
+      <Card>
+        <View style={subStyles.precisionHeader}>
+          <Text style={subStyles.precisionLabel}>Precisión del dato</Text>
+          <Text style={subStyles.precisionDays}>{learning.historyDays} días observados</Text>
+        </View>
+        <Text
+          style={[
+            subStyles.precisionValue,
+            { color: learning.readinessScore >= 80 ? COLORS.income : COLORS.expense },
+          ]}
+        >
+          {learning.readinessScore}%
+        </Text>
+        <Text style={subStyles.precisionBody}>
+          {learning.potentialScore > learning.readinessScore
+            ? `Resolver los pendientes de abajo la lleva a ${learning.potentialScore}%. `
+            : ""}
+          Por debajo de 80% las proyecciones dejan de ser fiables.
+        </Text>
+      </Card>
+
+      <View style={{ height: SPACING.sm }} />
       <ReviewInbox
         movements={movements}
         subscriptions={subscriptions}
@@ -4592,37 +4622,6 @@ export function AdvancedDashboard({
         onOpenMovementIssue={openHealthMovementIssuePreview}
       />
 
-      {/* Salud es una pestaña de LIMPIEZA: lo que hace falta ahi es una accion, no un texto
-          generado. La tarjeta de IA se va y en su lugar queda el atajo a los movimientos sin
-          categoria, que es exactamente el trabajo pendiente que la pestaña esta contando.
-
-          No hace falta el modelo para esto: suggestCategoryFromDescription y
-          suggestCategoryFromCounterparty ya proponen categoria con patrones locales en los
-          tres formularios, y la lista de movimientos ya trae filtro de sin categoria y
-          acciones en lote. Las piezas estaban; faltaba el boton. */}
-      {review.uncategorizedCount > 0 ? (
-        <>
-          <View style={{ height: SPACING.sm }} />
-          <Card>
-            <SectionTitle>Trabajo pendiente</SectionTitle>
-            <Text style={subStyles.bridgeFootnote}>
-              {review.uncategorizedCount} movimiento{review.uncategorizedCount === 1 ? "" : "s"} sin
-              categoría. Al ordenarlos, el dashboard compara mejor tus gastos e ingresos.
-            </Text>
-            <TouchableOpacity
-              style={subStyles.aiSummaryButton}
-              onPress={openSummaryUncategorizedPreview}
-              activeOpacity={0.86}
-            >
-              <View style={subStyles.aiSummaryButtonInner}>
-                <Text style={subStyles.aiSummaryButtonLabel}>
-                  Categorizar {review.uncategorizedCount} movimiento{review.uncategorizedCount === 1 ? "" : "s"}
-                </Text>
-              </View>
-            </TouchableOpacity>
-          </Card>
-        </>
-      ) : null}
 
       <View style={{ height: SPACING.sm }} />
       <Card>
@@ -4669,7 +4668,7 @@ export function AdvancedDashboard({
       <View style={{ height: SPACING.sm }} />
       <Card>
         <View style={subStyles.cardHeaderWithAction}>
-          <SectionTitle>Eficiencia de cobranza</SectionTitle>
+          <SectionTitle>Eficiencia de cobro</SectionTitle>
         </View>
         <TouchableOpacity style={subStyles.advMetricSection} onPress={() => setAdvancedDetail("collectionEfficiency")} activeOpacity={0.84}>
           <View style={subStyles.advMetricHeader}>
@@ -4705,160 +4704,12 @@ export function AdvancedDashboard({
       <View style={{ height: SPACING.sm }} />
       <CurrencyExposure accounts={snapshot?.accounts ?? []} />
 
+      {/* La proyección del cierre y sus bandas viven en Flujo; el relato del aprendizaje, en
+          Ajustes › Acerca de. Aquí solo queda lo que se puede arreglar. */}
       <View style={{ height: SPACING.sm }} />
-      <Card>
-        <View style={subStyles.qualityHeader}>
-          <View style={{ flex: 1, gap: 4 }}>
-            <Text style={subStyles.qualityKicker}>Calidad</Text>
-            <Text style={subStyles.qualityTitle}>Datos, aprendizaje y actividad</Text>
-            <Text style={subStyles.qualityBody}>Aquí quedan las capas más técnicas: calidad del dato, exposición, aprendizaje del sistema y actividad reciente.</Text>
-          </View>
-          <View style={subStyles.qualityActions}>
-            <TouchableOpacity style={subStyles.inlineExplainBtn} onPress={() => setAdvancedDetail("quality")} activeOpacity={0.82}>
-              <Text style={subStyles.inlineExplainBtnText}>Entender</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={subStyles.qualityToggleBtn} onPress={() => setQualityOpen((value) => !value)} activeOpacity={0.85}>
-              <Text style={subStyles.qualityToggleBtnText}>{qualityOpen ? "Ocultar" : "Abrir"}</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-        <View style={subStyles.annualSummaryGrid}>
-          <View style={subStyles.annualSummaryCard}>
-            <Text style={subStyles.savingsStatLabel}>Confianza sistema</Text>
-            <Text style={[subStyles.annualSummaryValue, { color: learning.readinessScore >= 75 ? COLORS.income : learning.readinessScore >= 50 ? COLORS.storm : COLORS.expense }]}>
-              {learning.readinessScore}%
-            </Text>
-            <Text style={subStyles.annualDetailMini}>{learning.readinessScore >= 75 ? "Fiable" : learning.readinessScore >= 50 ? "Suficiente" : "Baja"}</Text>
-          </View>
-          <View style={subStyles.annualSummaryCard}>
-            <Text style={subStyles.savingsStatLabel}>Confianza proyección</Text>
-            <Text style={[subStyles.annualSummaryValue, { color: projectionModel.confidence >= 70 ? COLORS.income : projectionModel.confidence >= 40 ? COLORS.storm : COLORS.expense }]}>
-              {projectionModel.confidence}%
-            </Text>
-            <Text style={subStyles.annualDetailMini}>{projectionModel.confidenceLabel}</Text>
-          </View>
-          <View style={subStyles.annualSummaryCard}>
-            <Text style={subStyles.savingsStatLabel}>Issues pendientes</Text>
-            <Text style={[subStyles.annualSummaryValue, { color: review.totalIssues === 0 ? COLORS.income : review.totalIssues <= 3 ? COLORS.storm : COLORS.expense }]}>
-              {review.totalIssues}
-            </Text>
-            <Text style={subStyles.annualDetailMini}>{review.totalIssues === 0 ? "Todo limpio" : "Por resolver"}</Text>
-          </View>
-          <View style={subStyles.annualSummaryCard}>
-            <Text style={subStyles.savingsStatLabel}>Datos útiles</Text>
-            <Text style={[subStyles.annualSummaryValue, { color: learning.historyDays >= 90 ? COLORS.income : learning.historyDays >= 30 ? COLORS.storm : COLORS.expense }]}>
-              {learning.historyDays}d
-            </Text>
-            <Text style={subStyles.annualDetailMini}>{learning.historyDays >= 90 ? "Sólido" : learning.historyDays >= 30 ? "Suficiente" : "Poco historial"}</Text>
-          </View>
-        </View>
-      </Card>
-
-      {qualityOpen ? (
-        <>
-          <View style={{ height: SPACING.sm }} />
-          <DataQuality
-            movements={movements}
-            onOpenNoCategory={openSummaryUncategorizedPreview}
-            onOpenNoCounterparty={openNoCounterpartyPreview}
-          />
-          {qualitySnapshot.noCategoryCount > 0 || qualitySnapshot.noCounterpartyCount > 0 ? (
-            <View style={{ height: SPACING.sm }} />
-          ) : null}
-          <LearningPanel
-            movements={movements}
-            projectionModel={projectionModel}
-            activeCurrency={activeCurrency}
-            weeklyPatternInsight={weeklyPatternInsight}
-            categoryConcentration={categoryConcentration}
-            categorySuggestionsCount={categorySuggestions.length}
-            anomalySignalsCount={anomalySignals.length}
-            acceptedFeedbackCount={acceptedFeedbackCount}
-            cashCushionDays={cashCushion.days}
-            cashCushionLabel={cashCushion.label}
-          />
-          <Card>
-            <SectionTitle>Proyección</SectionTitle>
-            <View style={subStyles.projectionStack}>
-              <View style={subStyles.projectionCard}>
-                <View style={subStyles.projectionTop}>
-                  <Text style={subStyles.projectionLabel}>Alertas y coach</Text>
-                  <View style={subStyles.executiveTonePill}>
-                    <Text style={subStyles.executiveToneText}>Activos</Text>
-                  </View>
-                </View>
-                <Text style={subStyles.projectionTitle}>{learning.readinessScore}% de confianza actual</Text>
-                <Text style={subStyles.projectionBody}>
-                  Con esta base ya es más fácil separar ruido de señal: el sistema puede priorizar mejor liquidez, cartera y control.
-                </Text>
-              </View>
-              <View style={subStyles.projectionCard}>
-                <View style={subStyles.projectionTop}>
-                  <Text style={subStyles.projectionLabel}>Proyección con bandas</Text>
-                  <View style={subStyles.executiveTonePill}>
-                    <Text style={subStyles.executiveToneText}>{projectionModel.confidenceLabel}</Text>
-                  </View>
-                </View>
-                <Text style={subStyles.projectionTitle}>{projectionModel.confidence}% de confianza actual</Text>
-                <ProjectionFormulaBreakdown
-                  activeCurrency={activeCurrency}
-                  currentVisibleBalance={currentVisibleBalance}
-                  visibleBalanceLabel={visibleBalanceLabel}
-                  visibleAccountSummary={visibleAccountSummary}
-                  committedNet={projectionCommittedNet}
-                  variableNet={projectionVariableNet}
-                  expectedBalance={projectionModel.expectedBalance}
-                />
-              <View style={subStyles.projectionScenarioStrip}>
-                <Text style={subStyles.projectionScenarioText}>Conservador: {formatCurrency(projectionModel.conservativeBalance, activeCurrency)}</Text>
-                <Text style={subStyles.projectionScenarioText}>Alto: {formatCurrency(projectionModel.optimisticBalance, activeCurrency)}</Text>
-              </View>
-              <View style={subStyles.projectionScenarioStrip}>
-                <Text style={subStyles.projectionScenarioText}>Simulado bajo: {formatCurrency(projectionModel.monteCarloLowBalance, activeCurrency)}</Text>
-                <Text style={subStyles.projectionScenarioText}>Riesgo: {projectionModel.pressureProbability}% bajo {formatCurrency(projectionModel.pressureThreshold, activeCurrency)}</Text>
-              </View>
-            </View>
-              <View style={subStyles.projectionCard}>
-                <View style={subStyles.projectionTop}>
-                  <Text style={subStyles.projectionLabel}>Que conviene limpiar o reforzar</Text>
-                </View>
-                <Text style={subStyles.projectionBody}>
-                  Si mejoras estos puntos, el dashboard deja de adivinar y pasa a explicarte mejor por qué hoy estás estable, con margen o bajo presión.
-                </Text>
-                {review.uncategorizedCount > 0 ? (
-                  <TouchableOpacity style={subStyles.actionPillRow} onPress={openSummaryUncategorizedPreview} activeOpacity={0.85}>
-                    <AlertTriangle size={15} color={COLORS.expense} />
-                    <Text style={subStyles.actionPillBody}>{review.uncategorizedCount} movimientos sin categoría siguen quitando precisión a las comparaciones.</Text>
-                    <View style={subStyles.actionPill}><Text style={subStyles.actionPillText}>Ordenar</Text></View>
-                  </TouchableOpacity>
-                ) : null}
-                {learning.historyDays < 30 ? (
-                  <View style={subStyles.actionPillRow}>
-                    <AlertTriangle size={15} color={COLORS.expense} />
-                    <Text style={subStyles.actionPillBody}>Todavía falta un poco más de historia para separar hábitos reales de semanas aisladas.</Text>
-                    <View style={subStyles.actionPill}><Text style={subStyles.actionPillText}>Registrar</Text></View>
-                  </View>
-                ) : null}
-              </View>
-              {weeklyPatternInsight ? (
-                <View style={subStyles.projectionCard}>
-                  <View style={subStyles.projectionTop}>
-                    <Text style={subStyles.projectionLabel}>Patron semanal</Text>
-                    <View style={subStyles.executiveTonePill}>
-                      <Text style={subStyles.executiveToneText}>Visible</Text>
-                    </View>
-                  </View>
-                  <Text style={subStyles.projectionTitle}>Ritmo de gasto</Text>
-                  <Text style={subStyles.projectionBody}>
-                    {weeklyPatternInsight.dayLabel} pesa {weeklyPatternInsight.share}% del gasto observado. Ya se nota una concentración de salida de dinero ese día.
-                  </Text>
-                </View>
-              ) : null}
-            </View>
-          </Card>
-          <ActivityTimeline snapshot={snapshot} />
-        </>
-      ) : null}
+      <Text style={subStyles.bridgeFootnote}>
+        La proyección del cierre y sus bandas viven en Flujo.
+      </Text>
       </>
       </DashboardSectionBoundary>
       )}
