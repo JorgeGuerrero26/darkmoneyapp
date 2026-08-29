@@ -134,3 +134,27 @@ ese número es el de detalles, así que abrían en la pantalla equivocada. Corre
 El indicador de pasos sigue oculto al **editar**: editar un movimiento no es un flujo de dos
 pasos con progreso, es una hoja con los mismos campos. La crítica era que el indicador
 desaparecía en el último paso de la creación, y eso sí está resuelto.
+
+---
+
+## 5. Segunda pasada — el paso de detalles (29 ago)
+
+La primera pasada aplicó los ocho puntos escritos, pero dejó el paso 2 con su maquetación vieja:
+el mockup lo dibuja distinto y eso no estaba en la lista numerada.
+
+- Descripción **sin etiqueta encima**: el placeholder lleva la frase entera.
+- Categoría, Contraparte y Fecha y hora en **un grupo de tres filas** con el valor a la derecha.
+  Eran dos scrollers horizontales de cápsulas —cada uno con su buscador— y dos selectores de
+  fecha sueltos lado a lado.
+- **Notas** pasa de etiqueta de campo a rótulo de sección.
+- **Comprobantes**: rótulo + cupo a la derecha. Había insignia dorada, ante-título, título, ayuda
+  y cápsula: cinco elementos donde el diseño pide dos.
+- El indicador dice `2 · Detalles · opcional` desde el paso 1 —que es cuando esa palabra decide
+  si entras— y `2 · Detalles` una vez dentro, como en los dos mockups.
+
+`FormOptionRow` gana `grouped`/`last`: tres filas con borde propio dibujan tres cajas, y el
+mockup pide una con líneas finas.
+
+**Lo que no está en el mockup y se conserva:** los bloques de sugerencia (categoría, contraparte,
+recurrente, cuenta) y los avisos de riesgo y presupuesto. Solo aparecen cuando hay algo que
+sugerir, así que el diseñador no los vio. Van después del grupo, no entre sus filas.
