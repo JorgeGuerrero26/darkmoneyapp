@@ -15,6 +15,21 @@ export function obligationViewerActsAsCollector(
   return direction === "receivable" ? !isSharedViewer : isSharedViewer;
 }
 
+/**
+ * La dirección **desde tu lado**, para una obligación que puede venir compartida.
+ *
+ * `direction` está guardada desde el lado del dueño. Cuando la lista mezcla las tuyas con las
+ * que te compartieron —el dashboard con `mergeWorkspaceAndSharedObligations`, la pantalla de
+ * créditos y deudas— leer `o.direction === "receivable"` cuenta las deudas compartidas como
+ * dinero que entra. Esta función es la forma corta de no equivocarse.
+ */
+export function obligationViewerDirection(obligation: { direction?: string }): ObligationDirection {
+  const isSharedViewer = "viewerMode" in obligation;
+  return obligation.direction === "receivable"
+    ? (isSharedViewer ? "payable" : "receivable")
+    : (isSharedViewer ? "receivable" : "payable");
+}
+
 export function obligationSwipeActionLabel(
   direction: ObligationDirection,
   isSharedViewer: boolean,
