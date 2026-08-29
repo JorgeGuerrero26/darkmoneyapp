@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
-import { ArrowRight } from "lucide-react-native";
+import { ArrowRight, ChevronDown } from "lucide-react-native";
 
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 
@@ -12,68 +12,74 @@ type CurrencyPickerProps = {
   exclude?: string;
 };
 
+/**
+ * La moneda, en una fila que abre la lista.
+ *
+ * Eran veinte cápsulas en una fila horizontal —con la séptima cortada por el borde— más un
+ * botón "Otro" que descubría un campo de texto. Pasadas seis opciones el control correcto es
+ * un selector.
+ *
+ * La lista se despliega **en su sitio**, no como capa flotante: este formulario se pasa como
+ * `children` del sheet, no por su ranura `overlay`, así que una capa absoluta la recortaría el
+ * ScrollView.
+ */
 function CurrencyPicker({ label, value, onChange, options, exclude }: CurrencyPickerProps) {
   const visible = options.filter((option) => option !== exclude);
-  const isKnown = visible.includes(value);
-  const [mode, setMode] = useState<string>(() => {
-    if (!value) return visible.length ? "" : "other";
-    return isKnown ? value : "other";
-  });
-  const [custom, setCustom] = useState(() => (isKnown ? "" : value));
-
-  function pick(option: string) {
-    setMode(option);
-    onChange(option === "other" ? custom : option);
-  }
-
-  function handleCustomChange(next: string) {
-    const upper = next.toUpperCase();
-    setCustom(upper);
-    onChange(upper);
-  }
-
-  const showInput = mode === "other" || visible.length === 0;
+  const [open, setOpen] = useState(false);
+  const [custom, setCustom] = useState(() => (visible.includes(value) ? "" : value));
 
   return (
     <View style={styles.pickerWrap}>
       <Text style={styles.inputLabel}>{label}</Text>
-      {visible.length > 0 ? (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pillRow}>
-          {visible.map((option) => (
-            <TouchableOpacity
-              key={option}
-              style={[styles.pill, mode === option && styles.pillActive]}
-              onPress={() => pick(option)}
-              activeOpacity={0.7}
-            >
-              <Text style={[styles.pillText, mode === option && styles.pillTextActive]}>{option}</Text>
-            </TouchableOpacity>
-          ))}
-          <TouchableOpacity
-            style={[styles.pill, styles.pillOther, mode === "other" && styles.pillOtherActive]}
-            onPress={() => pick("other")}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.pillText, mode === "other" && styles.pillTextActive]}>Otro</Text>
-          </TouchableOpacity>
-        </ScrollView>
-      ) : null}
-      {showInput ? (
-        <TextInput
-          style={[styles.input, visible.length > 0 && styles.inputStacked]}
-          placeholder="ej. EUR"
-          placeholderTextColor={COLORS.storm}
-          value={custom}
-          onChangeText={handleCustomChange}
-          autoCapitalize="characters"
-          maxLength={3}
-          autoFocus={mode === "other"}
-        />
+      <TouchableOpacity
+        style={styles.selectTrigger}
+        onPress={() => setOpen((prev) => !prev)}
+        activeOpacity={0.78}
+        accessibilityRole="button"
+        accessibilityLabel={`${label}: ${value || "elegir"}`}
+      >
+        <Text style={[styles.selectValue, !value && styles.selectPlaceholder]}>{value || "Elegir"}</Text>
+        <ChevronDown size={16} color={COLORS.storm} />
+      </TouchableOpacity>
+
+      {open ? (
+        <View style={styles.selectList}>
+          <ScrollView style={styles.selectScroll} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+            {visible.map((option) => (
+              <TouchableOpacity
+                key={option}
+                style={styles.selectOption}
+                onPress={() => {
+                  onChange(option);
+                  setCustom("");
+                  setOpen(false);
+                }}
+                activeOpacity={0.78}
+              >
+                <Text style={[styles.selectOptionText, option === value && styles.selectOptionActive]}>
+                  {option}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+          <TextInput
+            style={styles.input}
+            placeholder="Otra (ej. JPY)"
+            placeholderTextColor={COLORS.storm}
+            value={custom}
+            onChangeText={(next) => {
+              const upper = next.toUpperCase();
+              setCustom(upper);
+              onChange(upper);
+            }}
+            autoCapitalize="characters"
+            maxLength={3}
+          />
+        </View>
       ) : null}
     </View>
   );
 }
-
 type Props = {
   initialFrom?: string;
   initialTo?: string;
@@ -127,9 +133,12 @@ export function ExchangeRateForm({
 
   return (
     <View style={styles.body}>
+      {/* Antes decía literalmente «1 [origen] = tasa [destino]»: una plantilla que nadie
+          rellenó. Ahora se lee con las monedas elegidas, y mientras falten lo explica. */}
       <Text style={styles.hint}>
-        1 [origen] = tasa [destino]{"  "}
-        <Text style={styles.hintExample}>ej. 1 USD = 3.72 PEN</Text>
+        {from && to
+          ? `La tasa dice cuántos ${to} equivale 1 ${from}.`
+          : "La tasa dice cuántas unidades de la moneda destino equivalen a 1 de la de origen."}
       </Text>
 
       <View style={styles.pairRow}>
@@ -188,29 +197,28 @@ export function ExchangeRateForm({
 const styles = StyleSheet.create({
   body: { gap: SPACING.md, paddingBottom: SPACING.lg },
   hint: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.storm },
-  hintExample: { color: COLORS.pine, fontFamily: FONT_FAMILY.bodySemibold },
   pairRow: { flexDirection: "row", alignItems: "flex-start", gap: SPACING.sm },
   pairInputWrap: { flex: 1 },
   arrowWrap: { paddingTop: SPACING.xxl + SPACING.xs / 2 },
-  pickerWrap: { gap: SPACING.xs + 2 },
-  pillRow: { flexDirection: "row", gap: SPACING.xs, flexWrap: "nowrap" },
-  pill: {
+  selectTrigger: {
+    minHeight: 44,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs + 3,
-    borderRadius: RADIUS.full,
-    backgroundColor: SURFACE.card,
+    borderRadius: RADIUS.md,
     borderWidth: 1,
     borderColor: SURFACE.cardBorder,
+    backgroundColor: SURFACE.card,
   },
-  pillActive: { backgroundColor: SURFACE.cardActive, borderColor: SURFACE.cardActiveBorder },
-  pillOther: { borderStyle: "dashed" },
-  pillOtherActive: {
-    backgroundColor: COLORS.infoMuted,
-    borderColor: COLORS.secondary,
-    borderStyle: "solid",
-  },
-  pillText: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.xs, color: COLORS.storm },
-  pillTextActive: { fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.ink },
+  selectValue: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.md, color: COLORS.ink },
+  selectPlaceholder: { color: COLORS.storm, fontFamily: FONT_FAMILY.body },
+  selectList: { marginTop: SPACING.xs, gap: SPACING.xs },
+  selectScroll: { maxHeight: 180 },
+  selectOption: { minHeight: 40, justifyContent: "center", paddingHorizontal: SPACING.md },
+  selectOptionText: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.fog },
+  selectOptionActive: { color: COLORS.ink, fontFamily: FONT_FAMILY.bodySemibold },
+  pickerWrap: { gap: SPACING.xs + 2 },
   inputLabel: {
     fontFamily: FONT_FAMILY.bodySemibold,
     fontSize: FONT_SIZE.xs,
@@ -228,7 +236,6 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.md,
     color: COLORS.ink,
   },
-  inputStacked: { marginTop: SPACING.xs },
   errorBanner: {
     backgroundColor: SURFACE.dangerBg,
     borderRadius: RADIUS.sm,

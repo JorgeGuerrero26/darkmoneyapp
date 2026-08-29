@@ -12,18 +12,20 @@ import {
 } from "../../services/queries/workspace-data";
 import type { CounterpartyOverview } from "../../types/domain";
 import { BottomSheet } from "../ui/BottomSheet";
+import { FormOptionRow } from "../ui/FormOptionRow";
+import { SearchableSelectSheet } from "../ui/SearchableSelectSheet";
 import { Button } from "../ui/Button";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { sortByLabel } from "../../lib/sort-locale";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 
-const TYPE_OPTIONS: { value: CounterpartyFormInput["type"]; label: string; emoji: string }[] = sortByLabel([
-  { value: "person", label: "Persona", emoji: "👤" },
-  { value: "company", label: "Empresa", emoji: "🏢" },
-  { value: "merchant", label: "Comercio", emoji: "🏪" },
-  { value: "service", label: "Servicio", emoji: "⚙️" },
-  { value: "bank", label: "Banco", emoji: "🏦" },
-  { value: "other", label: "Otro", emoji: "◦" },
+const TYPE_OPTIONS: { value: CounterpartyFormInput["type"]; label: string }[] = sortByLabel([
+  { value: "person", label: "Persona" },
+  { value: "company", label: "Empresa" },
+  { value: "merchant", label: "Comercio" },
+  { value: "service", label: "Servicio" },
+  { value: "bank", label: "Banco" },
+  { value: "other", label: "Otro" },
 ]);
 
 type Props = {
@@ -42,6 +44,7 @@ export function ContactForm({ visible, onClose, onSuccess, editContact }: Props)
 
   const isEditing = Boolean(editContact);
 
+  const [typeOpen, setTypeOpen] = useState(false);
   const [name, setName] = useState("");
   const [type, setType] = useState<CounterpartyFormInput["type"]>("person");
   const [phone, setPhone] = useState("");
@@ -143,6 +146,16 @@ export function ContactForm({ visible, onClose, onSuccess, editContact }: Props)
       snapHeight={0.85}
       // Dentro del sheet: iOS solo presenta un Modal a la vez y como hermano no aparecía.
       overlay={
+        <>
+        <SearchableSelectSheet
+          inline
+          visible={typeOpen}
+          title="Tipo de contacto"
+          options={TYPE_OPTIONS.map((opt) => ({ value: opt.value, label: opt.label }))}
+          value={type}
+          onChange={setType}
+          onClose={() => setTypeOpen(false)}
+        />
         <ConfirmDialog
           inline
           visible={showDiscardDialog}
@@ -154,27 +167,12 @@ export function ContactForm({ visible, onClose, onSuccess, editContact }: Props)
           onConfirm={() => { setShowDiscardDialog(false); onClose(); }}
           onCancel={() => setShowDiscardDialog(false)}
         />
+        </>
       }
     >
-      {/* Type */}
-      <View>
-        <Text style={styles.label}>Tipo</Text>
-        <View style={styles.typeGrid}>
-          {TYPE_OPTIONS.map((opt) => (
-            <TouchableOpacity
-              key={opt.value}
-              style={[styles.typeBtn, type === opt.value && styles.typeBtnActive]}
-              onPress={() => setType(opt.value)}
-            >
-              <Text style={styles.typeEmoji}>{opt.emoji}</Text>
-              <Text style={[styles.typeLabel, type === opt.value && styles.typeLabelActive]}>
-                {opt.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </View>
 
+      {/* Los seis tipos eran cápsulas con emoji que se cortaban por el borde. El emoji sale:
+          no distingue nada que la palabra no diga, y con seis seguidos tampoco decora. */}
       {/* Name */}
       <View>
         <Text style={styles.label}>Nombre *</Text>
@@ -188,6 +186,11 @@ export function ContactForm({ visible, onClose, onSuccess, editContact }: Props)
         {nameError ? <Text style={styles.fieldError}>{nameError}</Text> : null}
       </View>
 
+      <FormOptionRow
+        label="Tipo"
+        value={TYPE_OPTIONS.find((opt) => opt.value === type)?.label ?? null}
+        onPress={() => setTypeOpen(true)}
+      />
       {/* Phone */}
       <View>
         <Text style={styles.label}>Teléfono (opcional)</Text>
@@ -276,21 +279,5 @@ const styles = StyleSheet.create({
   textArea: { minHeight: 72 },
   inputError: { borderColor: COLORS.danger },
   fieldError: { fontSize: FONT_SIZE.xs, color: COLORS.danger, marginTop: 4 },
-  typeGrid: { flexDirection: "row", flexWrap: "wrap", gap: SPACING.sm },
-  typeBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: SPACING.xs,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: SURFACE.cardBorder,
-    backgroundColor: SURFACE.card,
-  },
-  typeBtnActive: { borderColor: SURFACE.cardActiveBorder, backgroundColor: SURFACE.cardActive },
-  typeEmoji: { fontSize: 16 },
-  typeLabel: { fontSize: FONT_SIZE.sm, color: COLORS.storm, fontFamily: FONT_FAMILY.bodyMedium },
-  typeLabelActive: { color: COLORS.pine },
   submitBtn: { marginTop: SPACING.sm },
 });
