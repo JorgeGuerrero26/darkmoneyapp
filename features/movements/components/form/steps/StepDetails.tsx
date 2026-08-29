@@ -1,4 +1,4 @@
-import { memo, type RefObject } from "react";
+import { memo, useState, type RefObject } from "react";
 import { StyleSheet, Text, View, type TextInput } from "react-native";
 import { AlertCircle } from "lucide-react-native";
 
@@ -6,6 +6,7 @@ import { AttachmentPicker, type Attachment } from "../../../../../components/dom
 import { Button } from "../../../../../components/ui/Button";
 import { DatePickerInput } from "../../../../../components/ui/DatePickerInput";
 import { TimePickerInput } from "../../../../../components/ui/TimePickerInput";
+import { FormOptionRow } from "../../../../../components/ui/FormOptionRow";
 import { Input } from "../../../../../components/ui/Input";
 import { SmartSuggestion } from "../../../../../components/ui/SmartSuggestion";
 import {
@@ -14,6 +15,7 @@ import {
   FONT_SIZE,
   RADIUS,
   SPACING,
+  SURFACE,
 } from "../../../../../constants/theme";
 import type {
   AccountSummary,
@@ -29,7 +31,6 @@ import {
   RiskWarningBlock,
   type CategorySuggestionState,
 } from "../MovementFormBlocks";
-import { CategoryPicker, CounterpartyPicker } from "../MovementChipPickers";
 import { SplitAmountEditor } from "../SplitAmountEditor";
 import type { SplitLine } from "../../../lib/split-movement";
 import type { MovementRiskExplanation } from "../../../../../lib/movement-risk-analysis";
@@ -117,12 +118,31 @@ type Props = {
   savedMovementId: number | undefined;
   isHydratingExistingAttachments: boolean;
 
+  // Selectores de categoría y contraparte: los abre el formulario, porque su capa tiene que
+  // ir en la ranura `overlay` del sheet (iOS presenta un Modal a la vez).
+  onOpenCategory: () => void;
+  onOpenCounterparty: () => void;
+
   // Submit
   submitError: string;
   submitLoading: boolean;
   onBack: () => void;
   onSubmit: () => void;
 };
+
+/** Hoy / Ayer / 12 sep — como se escribe una fecha cuando se habla, no en ISO. */
+function describeDay(ymd: string): string {
+  const parts = ymd.split("-").map(Number);
+  if (parts.length !== 3 || parts.some(Number.isNaN)) return ymd;
+  const date = new Date(parts[0], parts[1] - 1, parts[2]);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const diff = Math.round((date.getTime() - today.getTime()) / 86_400_000);
+  if (diff === 0) return "Hoy";
+  if (diff === -1) return "Ayer";
+  if (diff === 1) return "Mañana";
+  return date.toLocaleDateString("es-PE", { day: "numeric", month: "short" });
+}
 
 export const StepDetails = memo(function StepDetails({
   isEditing,
@@ -176,19 +196,31 @@ export const StepDetails = memo(function StepDetails({
   onChangeAttachments,
   savedMovementId,
   isHydratingExistingAttachments,
+  onOpenCategory,
+  onOpenCounterparty,
   submitError,
   submitLoading,
   onBack,
   onSubmit,
 }: Props) {
+  const [dateTimeOpen, setDateTimeOpen] = useState(false);
+
+  const selectedCategoryName =
+    categoriesForPicker.find((category) => category.id === categoryId)?.name ?? null;
+  const selectedCounterpartyName =
+    counterpartiesSorted.find((counterparty) => counterparty.id === counterpartyId)?.name ?? null;
+
+  // "Hoy, 14:50": la fecha en palabras cuando es hoy o ayer, que es el 90 % de los casos.
+  const dateTimeLabel = `${describeDay(occurredAt)}, ${occurredTime}`;
+
   return (
     <View style={styles.section}>
       <RiskWarningBlock loading={movementRiskLoading} risk={movementRisk} />
       <BudgetImpactBlock loading={budgetImpactLoading} impact={budgetImpact} />
 
+      {/* Sin etiqueta encima: el placeholder ya dice qué es Y qué pasa si lo dejas vacío. */}
       <Input
-        label="Descripción"
-        placeholder="Se genera automáticamente si la dejas vacía"
+        placeholder="Descripción — se genera sola si la dejas vacía"
         value={description}
         onChangeText={onChangeDescription}
         autoFocus
@@ -202,14 +234,56 @@ export const StepDetails = memo(function StepDetails({
         onApply={onApplyDescriptionCleanup}
       />
 
-      {splitLines == null ? (
-        <CategoryPicker
-          label="Categoría"
-          categories={categoriesForPicker}
-          selectedId={categoryId}
-          onSelect={onSelectCategory}
+      {/* Tres filas en un grupo, con el valor a la derecha. Categoría y contraparte eran
+          scrollers de cápsulas con su propio buscador, y la fecha dos selectores sueltos. */}
+      <View style={styles.group}>
+        {splitLines == null ? (
+          <FormOptionRow
+            grouped
+            label="Categoría"
+            value={selectedCategoryName}
+            placeholder="Sin asignar"
+            onPress={onOpenCategory}
+          />
+        ) : null}
+        <FormOptionRow
+          grouped
+          label="Contraparte"
+          value={selectedCounterpartyName}
+          placeholder="Ninguna"
+          onPress={onOpenCounterparty}
         />
+        <FormOptionRow
+          grouped
+          label="Fecha y hora"
+          value={dateTimeLabel}
+          onPress={() => setDateTimeOpen((open) => !open)}
+          last
+        />
+      </View>
+
+      {dateTimeOpen ? (
+        <View style={styles.dateTimeRow}>
+          <View style={styles.dateTimeDate}>
+            <DatePickerInput label="Fecha" value={occurredAt} onChange={onChangeOccurredAt} />
+          </View>
+          <View style={styles.dateTimeTime}>
+            <TimePickerInput label="Hora" value={occurredTime} onChange={onChangeOccurredTime} />
+          </View>
+        </View>
       ) : null}
+      {warnings.occurredAt ? (
+        <Text
+          style={styles.warningHint}
+          accessibilityLiveRegion="polite"
+          accessibilityRole="alert"
+        >
+          {warnings.occurredAt}
+        </Text>
+      ) : null}
+
+      {/* Lo que la app propone sola: solo aparece cuando hay algo que proponer, así que no
+          estaba en el mockup. Va después del grupo, no intercalado entre sus filas. */}
       {onChangeSplitLines ? (
         <SplitAmountEditor
           lines={splitLines ?? null}
@@ -226,13 +300,6 @@ export const StepDetails = memo(function StepDetails({
         hasLocalSuggestion={hasLocalCategorySuggestion}
         suggestion={categorySuggestionToShow}
         onApply={onApplyCategorySuggestion}
-      />
-
-      <CounterpartyPicker
-        label="Contraparte"
-        counterparties={counterpartiesSorted}
-        selectedId={counterpartyId}
-        onSelect={onSelectCounterparty}
       />
       <CounterpartyAiBlock
         loading={aiCounterpartySuggestionLoading}
@@ -255,36 +322,9 @@ export const StepDetails = memo(function StepDetails({
           onApply={() => onPickSuggestedAccount(accountSuggestion)}
         />
       ) : null}
-
-      <View style={styles.dateTimeRow}>
-        <View style={styles.dateTimeDate}>
-          <DatePickerInput
-            label="Fecha"
-            value={occurredAt}
-            onChange={onChangeOccurredAt}
-          />
-        </View>
-        <View style={styles.dateTimeTime}>
-          <TimePickerInput
-            label="Hora"
-            value={occurredTime}
-            onChange={onChangeOccurredTime}
-          />
-        </View>
-      </View>
-      {warnings.occurredAt ? (
-        <Text
-          style={styles.warningHint}
-          accessibilityLiveRegion="polite"
-          accessibilityRole="alert"
-        >
-          {warnings.occurredAt}
-        </Text>
-      ) : null}
-
+      <Text style={styles.sectionLabel}>Notas</Text>
       <Input
-        label="Notas"
-        placeholder="Notas adicionales…"
+        placeholder="Para lo que no cabe en la descripción"
         value={notes}
         onChangeText={onChangeNotes}
         multiline
@@ -321,6 +361,21 @@ export const StepDetails = memo(function StepDetails({
 });
 
 const styles = StyleSheet.create({
+  group: {
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: SURFACE.cardBorder,
+    backgroundColor: SURFACE.card,
+    overflow: "hidden",
+  },
+  sectionLabel: {
+    fontSize: FONT_SIZE.xs,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    color: COLORS.storm,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+    marginBottom: -SPACING.xs,
+  },
   dateTimeRow: {
     flexDirection: "row",
     gap: SPACING.sm,

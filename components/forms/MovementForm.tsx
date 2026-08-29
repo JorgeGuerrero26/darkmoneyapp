@@ -48,6 +48,7 @@ import {
 import type { MovementRiskItem } from "../../lib/movement-risk-analysis";
 import { BottomSheet } from "../ui/BottomSheet";
 import { Button } from "../ui/Button";
+import { SearchableSelectSheet } from "../ui/SearchableSelectSheet";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { type Attachment } from "../domain/AttachmentPicker";
 import { buildCategorySuggestionCandidates } from "../../services/analytics/category-suggestions";
@@ -186,6 +187,8 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
 
   const [step, setStep] = useState<Step>(1);
   const [discardVisible, setDiscardVisible] = useState(false);
+  const [categoryPickerOpen, setCategoryPickerOpen] = useState(false);
+  const [counterpartyPickerOpen, setCounterpartyPickerOpen] = useState(false);
   const [form, setForm] = useState<FormState>(() => getInitialForm(defaultType));
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
   const [warnings, setWarnings] = useState<MovementFormWarnings>({});
@@ -1125,6 +1128,30 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
             style={styles.btnSubmit}
           />
         </View>
+        <SearchableSelectSheet
+          inline
+          visible={categoryPickerOpen}
+          title="Categoría"
+          options={[
+            { value: null as number | null, label: "Sin asignar" },
+            ...categoriesForPicker.map((c) => ({ value: c.id as number | null, label: c.name })),
+          ]}
+          value={form.categoryId}
+          onChange={(id) => patch({ categoryId: id })}
+          onClose={() => setCategoryPickerOpen(false)}
+        />
+        <SearchableSelectSheet
+          inline
+          visible={counterpartyPickerOpen}
+          title="Contraparte"
+          options={[
+            { value: null as number | null, label: "Ninguna" },
+            ...counterpartiesSorted.map((cp) => ({ value: cp.id as number | null, label: cp.name })),
+          ]}
+          value={form.counterpartyId}
+          onChange={(id) => patch({ counterpartyId: id })}
+          onClose={() => setCounterpartyPickerOpen(false)}
+        />
         <ConfirmDialog
           inline
           visible={discardVisible}
@@ -1155,7 +1182,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
                 style={[styles.stepLabel, step === s && styles.stepLabelActive]}
                 numberOfLines={1}
               >
-                {s} · {label}
+                {s} · {s === 2 && step === 2 ? "Detalles" : label}
               </Text>
             </View>
           ))}
@@ -1318,6 +1345,8 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
             onChangeAttachments={setAttachments}
             savedMovementId={savedMovementId}
             isHydratingExistingAttachments={editMovementAttachmentsLoading}
+            onOpenCategory={() => setCategoryPickerOpen(true)}
+            onOpenCounterparty={() => setCounterpartyPickerOpen(true)}
             submitError={submitError}
             submitLoading={createMovement.isPending || updateMovement.isPending || createSubscription.isPending || createRecurringIncome.isPending}
             onBack={goBack}
