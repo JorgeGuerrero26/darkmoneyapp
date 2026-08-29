@@ -36,7 +36,7 @@ comprobante, sigue estando todo.
 
 ## 1. Los ocho puntos
 
-### [ ] A · Dos colores de selección en la misma pantalla
+### [x] A · Dos colores de selección en la misma pantalla
 La cuenta origen elegida se marca con borde **naranja** y la destino con borde **azul**. Son el
 mismo estado —"esto es lo que elegiste"— pintado de dos colores, y el azul no existe en el
 sistema.
@@ -48,7 +48,7 @@ sistema.
 Estar seleccionado se ve igual en toda la app: **borde hueso y etiqueta en hueso**, sin color.
 El color queda libre para decir de qué tipo es el movimiento.
 
-### [ ] B · En una transferencia nadie gana ni pierde
+### [x] B · En una transferencia nadie gana ni pierde
 Las dos tarjetas de proyección pintan el saldo que baja en rojo y el que sube en verde. Es la
 misma plata cambiándose de bolsillo: **el patrimonio no se mueve un centavo**. Pintarlo así dice
 que la mitad de la operación fue una pérdida.
@@ -56,33 +56,33 @@ que la mitad de la operación fue una pérdida.
 Los cuatro montos van **en hueso**, con el saldo anterior **tachado** al costado, y una línea al
 pie que dice que el patrimonio no cambia. **El rojo se reserva para saldo negativo de verdad.**
 
-### [ ] C · "PEN 21.3" no es un monto en soles
+### [x] C · "PEN 21.3" no es un monto en soles
 Código ISO en vez del símbolo y el número sin los dos decimales. En el resto de la app el mismo
 monto es **S/ 21.30**: símbolo, dos decimales, separador de miles y fuente tabular.
 
 Y **"Cuenta Sueldo PEN" sobra**: la moneda de la cuenta solo importa cuando las dos no coinciden,
 y ese caso ya tiene su propia línea.
 
-### [ ] D · De dónde salen 50, 20 y 300
+### [x] D · De dónde salen 50, 20 y 300
 "Frecuentes: 50 · 20 · 300" son tres números **sin procedencia declarada**, y ninguno es el monto
 que estás escribiendo. Con el teclado numérico ya abierto, tocar "50" no es más rápido que
 escribirlo. **Se retiran.**
 
-### [ ] E · "Confirmado" en verde dice ingreso
+### [x] E · "Confirmado" en verde dice ingreso
 El estado se pinta en menta y el tipo en clay, a diez píxeles de distancia. Menta significa plata
 que entra: un gasto confirmado se ve por un instante como un ingreso. **Estado no es plata**: va
 como **control segmentado**, con lo elegido en hueso sobre fondo oscuro.
 
-### [ ] F · Tres señales para un solo estado
+### [x] F · Tres señales para un solo estado
 La tarjeta "Gasto" elegida lleva borde clay, ícono clay, etiqueta clay **y un punto clay debajo**.
 Cuatro marcas para decir una cosa. Queda el borde y el peso de la etiqueta; **el punto se va**.
 
-### [ ] G · El botón Guardar solo aparece si haces scroll
+### [x] G · El botón Guardar solo aparece si haces scroll
 Es la regla 3 de la plantilla —barra fija al pie— sin aplicar. Además el indicador de pasos
 desaparece en el último paso, justo donde más falta hace saber cuánto queda. **La barra queda
 anclada y el indicador se mantiene en los dos pasos.**
 
-### [ ] H · Detalles de redacción
+### [x] H · Detalles de redacción
 - "Descripcion y categoria" → con tildes. Y el título miente: la pantalla tiene seis campos.
 - "Se guardaran junto con el movimiento" y "Camara o galeria" → con tildes.
 - "0/5" se lee como fracción de progreso cuando es un **cupo**: va **"0 de 5"**.
@@ -115,3 +115,22 @@ botones **Atrás** y **Guardar**.
 - `AccountPicker` lo usan también otros formularios: comprobar antes de cambiar el color de
   selección.
 - Guardar desde el paso 1 debe correr **toda** la validación, no solo la del paso visible.
+
+---
+
+## 4. Cerrado (29 ago)
+
+Los ocho puntos aplicados y publicados por OTA en los tres runtimes.
+
+### Un bug que introdujo el propio cambio
+Editar y duplicar hacían `setStep(2)` porque el 2 **era** el paso de monto. Al pasar a dos pasos
+ese número es el de detalles, así que abrían en la pantalla equivocada. Corregido a `setStep(1)`.
+
+### Componentes retirados
+`StepTypeAndStatus` (sus dos controles viven ahora en el paso de monto) y
+`features/movements/lib/frequent-amounts.ts` con su test, al retirarse los montos frecuentes.
+
+### Lo que NO cambió, y por qué
+El indicador de pasos sigue oculto al **editar**: editar un movimiento no es un flujo de dos
+pasos con progreso, es una hoja con los mismos campos. La crítica era que el indicador
+desaparecía en el último paso de la creación, y eso sí está resuelto.

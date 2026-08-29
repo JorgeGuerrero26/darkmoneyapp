@@ -46,6 +46,11 @@ export const CHANGELOG: ChangelogEntry[] = [
       "En Salud, lo primero que ves por revisar son los movimientos sin contraparte: eran los más numerosos y estaban escondidos. Y los que no tienen categoría te dicen cuánto pesan de tu gasto.",
       "La proyección del cierre de mes ya no está repetida en dos pestañas: vive solo en Flujo, que es donde la buscas.",
       "Lo de \"cómo aprende DarkMoney\" se mudó a Configuración › Acerca de. Estaba en medio de tus finanzas ocupando media pantalla, y no era algo que pudieras cambiar.",
+      "Registrar un movimiento es mucho más rápido: pones el monto y la cuenta y ya puedes guardar. Antes te obligaba a pasar por una pantalla entera de campos que no eran obligatorios.",
+      "Los detalles —categoría, contraparte, notas, comprobantes— siguen ahí, pero ahora entras solo si los necesitas.",
+      "El botón de guardar ya no se esconde al final: está fijo abajo desde que abres el formulario.",
+      "El monto se escribe como en el resto de la app: S/ 21.30, no \"PEN 21.3\".",
+      "En una transferencia entre tus cuentas ya no se pinta una mitad en rojo como si hubieras perdido plata: es la misma plata cambiando de bolsillo, y la app ahora te lo dice.",
     ],
   },
   {
