@@ -35,6 +35,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Las opciones del menú \"Más\" ahora vienen agrupadas: lo que reclama tu atención, lo que se repite cada mes y lo que se configura una vez.",
       "Cuando un filtro esconde todo lo que tienes, la app ya no te dice \"sin resultados\" como si no hubiera nada: te dice cuántos tienes y te ofrece quitar el filtro.",
       "En Suscripciones, el total del mes ahora aclara que las pausadas no están sumadas, así que la cuenta ya no parece mal hecha.",
+      "Arreglado un error de cuentas: una deuda que alguien compartió contigo se sumaba a lo que te deben en vez de a lo que debes. Por eso podías ver \"No debes nada\" teniendo una deuda justo debajo. Afectaba también a las cifras del inicio.",
     ],
   },
   {
