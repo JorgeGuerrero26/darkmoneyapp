@@ -5,14 +5,17 @@ import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../
 
 // Type presets (default icon + color per account type). Used when the user
 // picks a new type and hasn't manually customized icon/color yet.
+// Los siete presets usan los mismos seis tonos que el selector de apariencia. Antes eran hex
+// sueltos —incluido un violeta, que en el sistema significa IA— que no salian en ninguna otra
+// pantalla: un color de cuenta es una etiqueta para reconocerla, no decoracion libre.
 export const TYPE_PRESETS: Record<string, { icon: string; color: string }> = {
-  cash:        { icon: "banknote",    color: "#b48b34" },
-  bank:        { icon: "landmark",    color: "#4566d6" },
-  savings:     { icon: "piggy-bank",  color: "#1b6a58" },
-  credit_card: { icon: "credit-card", color: "#8f3e3e" },
-  investment:  { icon: "trending-up", color: "#8366f2" },
-  loan:        { icon: "briefcase",   color: "#c46a31" },
-  other:       { icon: "wallet",      color: "#6b7280" },
+  cash:        { icon: "banknote",    color: COLORS.gold },
+  bank:        { icon: "landmark",    color: COLORS.ember },
+  savings:     { icon: "piggy-bank",  color: COLORS.pine },
+  credit_card: { icon: "credit-card", color: COLORS.dangerStrong },
+  investment:  { icon: "trending-up", color: COLORS.pine },
+  loan:        { icon: "briefcase",   color: COLORS.dangerSoft },
+  other:       { icon: "wallet",      color: COLORS.neutral },
 };
 
 export const ACCOUNT_TYPES = sortByLabel([

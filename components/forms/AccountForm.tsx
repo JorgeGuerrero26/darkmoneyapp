@@ -1,6 +1,6 @@
 import { Archive, ArchiveRestore, Trash2, Clock } from "lucide-react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   StyleSheet,
   Switch,
@@ -28,15 +28,15 @@ import {
 } from "../../services/queries/workspace-data";
 import type { AccountSummary } from "../../types/domain";
 import { BottomSheet } from "../ui/BottomSheet";
+import { FormOptionRow } from "../ui/FormOptionRow";
+import { AppearancePickerOverlay, CATEGORY_COLOR_CHOICES } from "./AppearancePickerOverlay";
+import { CurrencySelectOverlay, CustomCurrencyField } from "./CurrencySelectOverlay";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { Button } from "../ui/Button";
 import { CurrencyInput } from "../ui/CurrencyInput";
 import { formatCurrency } from "../ui/AmountDisplay";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
-import { IconPicker } from "../../features/accounts/components/form/IconPicker";
-import { ColorPicker, ACCOUNT_COLORS } from "../../features/accounts/components/form/ColorPicker";
 import { AccountTypePicker, ACCOUNT_TYPES, TYPE_PRESETS } from "../../features/accounts/components/form/AccountTypePicker";
-import { CurrencyPicker } from "../../features/accounts/components/form/CurrencyPicker";
 import { InstitutionPicker } from "../../features/accounts/components/form/InstitutionPicker";
 
 const DRAFT_TTL_MS = 10 * 60 * 1000; // 10 minutes
@@ -76,6 +76,8 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
 
   const [nameError, setNameError] = useState("");
   const [discardVisible, setDiscardVisible] = useState(false);
+  const [appearanceOpen, setAppearanceOpen] = useState(false);
+  const [currencyOpen, setCurrencyOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [archiveConfirm, setArchiveConfirm] = useState(false);
 
@@ -147,7 +149,7 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
       setCurrencyCode(editAccount.currencyCode);
       setOpeningBalance(String(editAccount.openingBalance ?? 0));
       setIncludeInNetWorth(editAccount.includeInNetWorth);
-      setColor(editAccount.color ?? TYPE_PRESETS[editAccount.type]?.color ?? ACCOUNT_COLORS[0]);
+      setColor(editAccount.color ?? TYPE_PRESETS[editAccount.type]?.color ?? CATEGORY_COLOR_CHOICES[0]);
       const iconVal = editAccount.icon ?? ACCOUNT_ICON_OPTIONS[0].value;
       setIcon(getAccountIconOption(iconVal)?.value ?? ACCOUNT_ICON_OPTIONS[0].value);
       setInstitutionCode(editAccount.institutionCode ?? null);
@@ -257,6 +259,10 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
   }
 
   const SelectedIcon = getAccountIcon(icon, type);
+  const accountIconOptions = useMemo(
+    () => ACCOUNT_ICON_OPTIONS.map((option) => ({ key: option.value, Icon: option.Icon })),
+    [],
+  );
   const resolvedCurrency = customCurrency.trim().toUpperCase() || currencyCode;
 
   return (
@@ -296,6 +302,23 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
               cancelLabel="Cancelar"
               onCancel={() => setArchiveConfirm(false)}
               onConfirm={handleArchiveToggle}
+            />
+
+            <CurrencySelectOverlay
+              visible={currencyOpen}
+              onClose={() => setCurrencyOpen(false)}
+              value={resolvedCurrency}
+              onChange={(code) => { setCurrencyCode(code); setCustomCurrency(""); }}
+            />
+
+            <AppearancePickerOverlay
+              visible={appearanceOpen}
+              onClose={() => setAppearanceOpen(false)}
+              color={color}
+              onColorChange={(c) => { setColor(c); colorCustomized.current = true; }}
+              icon={icon}
+              onIconChange={(v) => { setIcon(v); iconCustomized.current = true; }}
+              iconOptions={accountIconOptions}
             />
 
             {/* Permanent delete */}
@@ -355,24 +378,6 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
           </View>
         ) : null}
 
-        {/* Icon */}
-        <IconPicker
-          value={icon}
-          tint={color}
-          onChange={(v) => {
-            setIcon(v);
-            iconCustomized.current = true;
-          }}
-        />
-
-        {/* Color */}
-        <ColorPicker
-          value={color}
-          onChange={(c) => {
-            setColor(c);
-            colorCustomized.current = true;
-          }}
-        />
 
         {/* Name */}
         <View>
@@ -401,16 +406,32 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
         {/* Type */}
         <AccountTypePicker value={type} onChange={handleTypeChange} />
 
+        {/* La apariencia va detrás de una fila: 28 íconos y 12 colores no pueden abrir un
+            formulario cuyo único campo obligatorio es el nombre. */}
+        <FormOptionRow
+          label="Apariencia"
+          value={null}
+          placeholder="Cambiar"
+          leading={
+            <View style={[styles.appearanceSwatch, { borderColor: color }]}>
+              <SelectedIcon size={20} color={color} strokeWidth={2} />
+            </View>
+          }
+          onPress={() => setAppearanceOpen(true)}
+        />
+
         {/* Institution (optional) */}
         <InstitutionPicker value={institutionCode} onChange={setInstitutionCode} />
 
-        {/* Currency */}
-        <CurrencyPicker
-          value={currencyCode}
-          customValue={customCurrency}
-          onChange={setCurrencyCode}
-          onCustomChange={setCustomCurrency}
+        {/* Moneda: pasadas seis opciones, selector. */}
+        <FormOptionRow
+          label="Moneda"
+          value={resolvedCurrency}
+          onPress={() => setCurrencyOpen(true)}
         />
+        {customCurrency.trim() ? (
+          <CustomCurrencyField value={customCurrency} onChange={setCustomCurrency} />
+        ) : null}
 
         {/* Opening balance */}
         <CurrencyInput
@@ -480,6 +501,14 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
 }
 
 const styles = StyleSheet.create({
+  appearanceSwatch: {
+    width: 36,
+    height: 36,
+    borderRadius: RADIUS.md,
+    borderWidth: 2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   previewRow: {
     flexDirection: "row",
     alignItems: "center",
