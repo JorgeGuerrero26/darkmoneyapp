@@ -8,6 +8,7 @@ import {
   type StyleProp,
   type ViewStyle,
 } from "react-native";
+import { formatCurrencyParts } from "../../lib/format-currency";
 import { COLORS, FONT_FAMILY, FONT_SIZE, FONT_WEIGHT, RADIUS, SPACING } from "../../constants/theme";
 
 type Props = {
@@ -42,6 +43,21 @@ export const CurrencyInput = forwardRef<TextInput, Props>(function CurrencyInput
     onChangeText(cleaned);
   }
 
+  // El campo mostraba el codigo ISO y el numero sin sus dos decimales: "PEN 21.3". El mismo
+  // monto en el resto de la app es "S/ 21.30". `formatCurrencyParts` ya resuelve el simbolo,
+  // y de paso esquiva la divergencia de Hermes con `formatToParts()` en el telefono.
+  const currencySymbol = formatCurrencyParts(0, currencyCode).symbol || currencyCode;
+
+  // Al salir del campo se completan los decimales: 21.3 escrito queda como 21.30.
+  function handleBlur() {
+    const trimmed = value.trim();
+    if (!trimmed) return;
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed)) return;
+    const normalized = parsed.toFixed(2);
+    if (normalized !== trimmed) onChangeText(normalized);
+  }
+
   return (
     <TouchableOpacity
       style={[styles.container, error ? styles.containerError : null, style]}
@@ -50,7 +66,7 @@ export const CurrencyInput = forwardRef<TextInput, Props>(function CurrencyInput
     >
       {label ? <Text style={styles.label}>{label}</Text> : null}
       <View style={styles.row}>
-        <Text style={styles.currency}>{currencyCode}</Text>
+        <Text style={styles.currency}>{currencySymbol}</Text>
         <TextInput
           ref={inputRef}
           style={styles.input}
@@ -60,6 +76,7 @@ export const CurrencyInput = forwardRef<TextInput, Props>(function CurrencyInput
           placeholder={placeholder}
           placeholderTextColor={COLORS.textDisabled}
           returnKeyType="done"
+          onBlur={handleBlur}
           accessibilityLabel={label ? `${label} en ${currencyCode}` : `Monto en ${currencyCode}`}
           accessibilityHint={error ? `Error: ${error}` : undefined}
         />

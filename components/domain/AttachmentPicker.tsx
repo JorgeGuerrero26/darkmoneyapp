@@ -134,8 +134,8 @@ export function AttachmentPicker({
     }
     if (!resolvedEntityId) {
       return entityType === "obligation-event"
-        ? "Se guardaran junto con el evento cuando termines de registrarlo."
-        : "Se guardaran junto con el movimiento cuando termines de crearlo.";
+        ? "Se guardan junto al evento cuando termines de registrarlo."
+        : "Se guardan junto al movimiento cuando termines de crearlo.";
     }
     if (attachments.length === 0) {
       return `Agrega boletas, tickets o fotos para dejar el ${entityLabel} mejor documentado.`;
@@ -372,8 +372,8 @@ export function AttachmentPicker({
             <View style={styles.counterPill}>
               <Text style={styles.counterText}>
                 {isHydratingExisting && attachments.length === 0
-                  ? `.../${MAX_ATTACHMENTS}`
-                  : `${attachments.length}/${MAX_ATTACHMENTS}`}
+                  ? `... de ${MAX_ATTACHMENTS}`
+                  : `${attachments.length} de ${MAX_ATTACHMENTS}`}
               </Text>
             </View>
           </View>
@@ -450,7 +450,7 @@ export function AttachmentPicker({
                   {isUploadLocked
                     ? "Desbloquea comprobantes"
                     : attachments.length === 0
-                      ? "Camara o galeria"
+                      ? "Cámara o galería"
                       : "Otro comprobante"}
                 </Text>
               </TouchableOpacity>
@@ -484,7 +484,7 @@ export function AttachmentPicker({
             <Camera size={20} color={COLORS.primary} />
           </View>
           <View style={styles.sourceCopy}>
-            <Text style={styles.sourceTitle}>Camara</Text>
+            <Text style={styles.sourceTitle}>Cámara</Text>
             <Text style={styles.sourceBody}>Toma el comprobante sin salir del flujo.</Text>
           </View>
           <ChevronRight size={18} color={COLORS.storm} />
