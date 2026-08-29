@@ -31,6 +31,7 @@ import { sortByName } from "../../lib/sort-locale";
 import type { ObligationSummary, SharedObligationSummary } from "../../types/domain";
 import { BottomSheet } from "../ui/BottomSheet";
 import { FormOptionRow } from "../ui/FormOptionRow";
+import { SearchableSelectSheet } from "../ui/SearchableSelectSheet";
 import { CurrencySelectOverlay } from "./CurrencySelectOverlay";
 import { Button } from "../ui/Button";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
@@ -152,6 +153,9 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
   const today = format(new Date(), "yyyy-MM-dd");
 
   const [currencyOpen, setCurrencyOpen] = useState(false);
+  const [counterpartyOpen, setCounterpartyOpen] = useState(false);
+  const [settlementOpen, setSettlementOpen] = useState(false);
+  const [openingAccountOpen, setOpeningAccountOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [direction, setDirection] = useState<"receivable" | "payable">("payable");
   const [originType, setOriginType] = useState<ObligationFormInput["originType"]>("manual");
@@ -548,6 +552,39 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
         // Dentro del sheet: iOS solo presenta un Modal a la vez y como hermanos no aparecían.
         overlay={
           <>
+            <SearchableSelectSheet
+              inline
+              visible={counterpartyOpen}
+              title="Contacto"
+              options={counterpartiesSorted.map((cp) => ({ value: cp.id as number | null, label: cp.name }))}
+              value={counterpartyId}
+              onChange={(id) => { setCounterpartyId(id); setCounterpartyError(""); }}
+              onClose={() => setCounterpartyOpen(false)}
+            />
+            <SearchableSelectSheet
+              inline
+              visible={settlementOpen}
+              title="Cuenta de liquidación"
+              options={[
+                { value: null as number | null, label: "Sin cuenta" },
+                ...activeAccountsSorted.map((acc) => ({ value: acc.id as number | null, label: acc.name })),
+              ]}
+              value={settlementAccountId}
+              onChange={(id) => { setSettlementAccountId(id); setSettlementAccountError(""); }}
+              onClose={() => setSettlementOpen(false)}
+            />
+            <SearchableSelectSheet
+              inline
+              visible={openingAccountOpen}
+              title="Cuenta de apertura"
+              options={[
+                { value: null as number | null, label: "Sin cuenta" },
+                ...activeAccountsSorted.map((acc) => ({ value: acc.id as number | null, label: acc.name })),
+              ]}
+              value={openingAccountId}
+              onChange={setOpeningAccountId}
+              onClose={() => setOpeningAccountOpen(false)}
+            />
             <CurrencySelectOverlay
               visible={currencyOpen}
               onClose={() => setCurrencyOpen(false)}
@@ -705,30 +742,16 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
           {/* Opening account — when cash moves */}
           {openingImpact !== "none" && activeAccounts.length > 0 ? (
             <View style={styles.openingAccountSection}>
-              <Text style={styles.label}>
-                {openingImpact === "outflow" ? "Cuenta desde donde salió el dinero" : "Cuenta donde entró el dinero"}
-              </Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                <View style={styles.pillRow}>
-                  <TouchableOpacity
-                    style={[styles.pill, openingAccountId === null && styles.pillActive]}
-                    onPress={() => setOpeningAccountId(null)}
-                  >
-                    <Text style={[styles.pillText, openingAccountId === null && styles.pillTextActive]}>Sin cuenta</Text>
-                  </TouchableOpacity>
-                  {activeAccountsSorted.map((acc) => (
-                    <TouchableOpacity
-                      key={acc.id}
-                      style={[styles.pill, openingAccountId === acc.id && styles.pillActive]}
-                      onPress={() => setOpeningAccountId(acc.id)}
-                    >
-                      <Text style={[styles.pillText, openingAccountId === acc.id && styles.pillTextActive]}>
-                        {acc.name}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </ScrollView>
+              <FormOptionRow
+                label={
+                  openingImpact === "outflow"
+                    ? "Cuenta desde donde salió el dinero"
+                    : "Cuenta donde entró el dinero"
+                }
+                value={activeAccountsSorted.find((acc) => acc.id === openingAccountId)?.name ?? null}
+                placeholder="Sin cuenta"
+                onPress={() => setOpeningAccountOpen(true)}
+              />
             </View>
           ) : null}
         </View>
@@ -760,24 +783,14 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
 
       {/* Counterparty */}
       <View onLayout={(event) => { counterpartySectionYRef.current = event.nativeEvent.layout.y; }}>
-        <Text style={styles.label}>Contacto *</Text>
         <View style={counterpartyError ? styles.sectionErrorWrap : null}>
           {counterpartiesSorted.length > 0 ? (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View style={styles.pillRow}>
-                {counterpartiesSorted.map((cp) => (
-                  <TouchableOpacity
-                    key={cp.id}
-                    style={[styles.pill, counterpartyId === cp.id && styles.pillActive]}
-                    onPress={() => { setCounterpartyId(cp.id); setCounterpartyError(""); }}
-                  >
-                    <Text style={[styles.pillText, counterpartyId === cp.id && styles.pillTextActive]}>
-                      {cp.name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </ScrollView>
+            <FormOptionRow
+              label="Contacto *"
+              value={counterpartiesSorted.find((cp) => cp.id === counterpartyId)?.name ?? null}
+              placeholder="Elegir contacto"
+              onPress={() => setCounterpartyOpen(true)}
+            />
           ) : (
             <View style={styles.emptyRequirementBox}>
               <Text style={styles.emptyRequirementTitle}>No tienes contactos creados</Text>
@@ -803,29 +816,13 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
       {/* Settlement account */}
       {activeAccounts.length > 0 ? (
         <View onLayout={(event) => { settlementSectionYRef.current = event.nativeEvent.layout.y; }}>
-          <Text style={styles.label}>Cuenta de liquidación</Text>
           <View style={settlementAccountError ? styles.sectionErrorWrap : null}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View style={styles.pillRow}>
-                <TouchableOpacity
-                  style={[styles.pill, settlementAccountId === null && styles.pillActive]}
-                  onPress={() => { setSettlementAccountId(null); setSettlementAccountError(""); }}
-                >
-                  <Text style={[styles.pillText, settlementAccountId === null && styles.pillTextActive]}>Ninguna</Text>
-                </TouchableOpacity>
-                {activeAccountsSorted.map((acc) => (
-                  <TouchableOpacity
-                    key={acc.id}
-                    style={[styles.pill, settlementAccountId === acc.id && styles.pillActive]}
-                    onPress={() => { setSettlementAccountId(acc.id); setSettlementAccountError(""); }}
-                  >
-                    <Text style={[styles.pillText, settlementAccountId === acc.id && styles.pillTextActive]}>
-                      {acc.name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </ScrollView>
+            <FormOptionRow
+              label="Cuenta de liquidación"
+              value={activeAccountsSorted.find((acc) => acc.id === settlementAccountId)?.name ?? null}
+              placeholder="Sin cuenta"
+              onPress={() => setSettlementOpen(true)}
+            />
           </View>
           {settlementAccountError ? <Text style={styles.fieldError}>{settlementAccountError}</Text> : null}
         </View>

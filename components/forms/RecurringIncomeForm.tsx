@@ -24,6 +24,7 @@ import {
 import type { RecurringIncomeSummary } from "../../types/domain";
 import { BottomSheet } from "../ui/BottomSheet";
 import { FormOptionRow } from "../ui/FormOptionRow";
+import { SearchableSelectSheet } from "../ui/SearchableSelectSheet";
 import { CurrencySelectOverlay } from "./CurrencySelectOverlay";
 import { Button } from "../ui/Button";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
@@ -85,6 +86,9 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
   const isEditing = Boolean(editRecurringIncome);
 
   const [currencyOpen, setCurrencyOpen] = useState(false);
+  const [payerOpen, setPayerOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [categoryOpen, setCategoryOpen] = useState(false);
   const [name, setName] = useState("");
   const [payerPartyId, setPayerPartyId] = useState<number | null>(null);
   const [amount, setAmount] = useState("");
@@ -326,7 +330,43 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
               onCancel={() => setShowDiscard(false)}
               onConfirm={() => { setShowDiscard(false); onClose(); }}
             />
-            <CurrencySelectOverlay
+            <SearchableSelectSheet
+            inline
+            visible={payerOpen}
+            title="Pagador"
+            options={[
+              { value: null as number | null, label: "Ninguno" },
+              ...counterparties.map((cp) => ({ value: cp.id as number | null, label: cp.name })),
+            ]}
+            value={payerPartyId}
+            onChange={setPayerPartyId}
+            onClose={() => setPayerOpen(false)}
+          />
+          <SearchableSelectSheet
+            inline
+            visible={accountOpen}
+            title="Cuenta destino"
+            options={[
+              { value: null as number | null, label: "Sin cuenta" },
+              ...activeAccounts.map((acc) => ({ value: acc.id as number | null, label: acc.name })),
+            ]}
+            value={accountId}
+            onChange={setAccountId}
+            onClose={() => setAccountOpen(false)}
+          />
+          <SearchableSelectSheet
+            inline
+            visible={categoryOpen}
+            title="Categoría"
+            options={[
+              { value: null as number | null, label: "Sin categoría" },
+              ...incomeCategories.map((cat) => ({ value: cat.id as number | null, label: cat.name })),
+            ]}
+            value={categoryId}
+            onChange={setCategoryId}
+            onClose={() => setCategoryOpen(false)}
+          />
+          <CurrencySelectOverlay
               visible={currencyOpen}
               onClose={() => setCurrencyOpen(false)}
               value={currencyCode}
@@ -466,7 +506,7 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
             onChange={setStartDate}
             required
             Icon={CalendarPlus}
-            accentColor="#9DB2DE"
+            accentColor={COLORS.ember}
           />
 
           <FormDateField
@@ -477,7 +517,7 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
             optional
             placeholder="Sin fecha de fin"
             Icon={CalendarX2}
-            accentColor="#E7C878"
+            accentColor={COLORS.gold}
           />
 
           <Text style={styles.label}>Avisar con anticipación</Text>
@@ -495,43 +535,19 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
             </View>
           </ScrollView>
 
-          <Text style={styles.label}>Pagador (opcional)</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View style={styles.pillRow}>
-              <TouchableOpacity style={[styles.pill, payerPartyId == null && styles.pillActive]} onPress={() => setPayerPartyId(null)}>
-                <Text style={[styles.pillText, payerPartyId == null && styles.pillTextActive]}>Ninguno</Text>
-              </TouchableOpacity>
-              {counterparties.map((counterparty) => (
-                <TouchableOpacity
-                  key={counterparty.id}
-                  style={[styles.pill, payerPartyId === counterparty.id && styles.pillActive]}
-                  onPress={() => setPayerPartyId(counterparty.id)}
-                >
-                  <Text style={[styles.pillText, payerPartyId === counterparty.id && styles.pillTextActive]}>
-                    {counterparty.name}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </ScrollView>
+          <FormOptionRow
+            label="Pagador"
+            value={counterparties.find((cp) => cp.id === payerPartyId)?.name ?? null}
+            placeholder="Ninguno"
+            onPress={() => setPayerOpen(true)}
+          />
 
-          <Text style={styles.label}>Cuenta destino (opcional)</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View style={styles.pillRow}>
-              <TouchableOpacity style={[styles.pill, accountId == null && styles.pillActive]} onPress={() => setAccountId(null)}>
-                <Text style={[styles.pillText, accountId == null && styles.pillTextActive]}>Sin cuenta</Text>
-              </TouchableOpacity>
-              {activeAccounts.map((account) => (
-                <TouchableOpacity
-                  key={account.id}
-                  style={[styles.pill, accountId === account.id && styles.pillActive]}
-                  onPress={() => setAccountId(account.id)}
-                >
-                  <Text style={[styles.pillText, accountId === account.id && styles.pillTextActive]}>{account.name}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </ScrollView>
+          <FormOptionRow
+            label="Cuenta destino"
+            value={activeAccounts.find((account) => account.id === accountId)?.name ?? null}
+            placeholder="Sin cuenta"
+            onPress={() => setAccountOpen(true)}
+          />
           {accSuggestionId !== null ? (() => {
             const account = activeAccounts.find((item) => item.id === accSuggestionId);
             return account ? (
@@ -543,23 +559,12 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
             ) : null;
           })() : null}
 
-          <Text style={styles.label}>Categoría (opcional)</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View style={styles.pillRow}>
-              <TouchableOpacity style={[styles.pill, categoryId == null && styles.pillActive]} onPress={() => setCategoryId(null)}>
-                <Text style={[styles.pillText, categoryId == null && styles.pillTextActive]}>Sin categoría</Text>
-              </TouchableOpacity>
-              {incomeCategories.map((category) => (
-                <TouchableOpacity
-                  key={category.id}
-                  style={[styles.pill, categoryId === category.id && styles.pillActive]}
-                  onPress={() => setCategoryId(category.id)}
-                >
-                  <Text style={[styles.pillText, categoryId === category.id && styles.pillTextActive]}>{category.name}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </ScrollView>
+          <FormOptionRow
+            label="Categoría"
+            value={incomeCategories.find((category) => category.id === categoryId)?.name ?? null}
+            placeholder="Sin categoría"
+            onPress={() => setCategoryOpen(true)}
+          />
           {catSuggestionId !== null ? (() => {
             const category = incomeCategories.find((item) => item.id === catSuggestionId);
             return category ? (
