@@ -35,3 +35,39 @@ export function normalizeSupportedCurrencyCode(code: string | null | undefined, 
   if (normalized && SUPPORTED_CURRENCY_CODES.includes(normalized)) return normalized;
   return fallback;
 }
+
+/**
+ * El plural coloquial de cada moneda.
+ *
+ * Para las frases donde el código ISO no se lee como lo diría una persona: "las dos cuentas son
+ * en soles", no "las dos cuentas son en PEN". Si la moneda no está en la lista, se devuelve el
+ * código, que es peor pero nunca es falso.
+ */
+const CURRENCY_PLURALS: Record<string, string> = {
+  PEN: "soles",
+  USD: "dólares",
+  EUR: "euros",
+  GBP: "libras",
+  JPY: "yenes",
+  CAD: "dólares canadienses",
+  AUD: "dólares australianos",
+  CHF: "francos suizos",
+  CNY: "yuanes",
+  MXN: "pesos mexicanos",
+  BRL: "reales",
+  CLP: "pesos chilenos",
+  COP: "pesos colombianos",
+  ARS: "pesos argentinos",
+  UYU: "pesos uruguayos",
+  BOB: "bolivianos",
+  PYG: "guaraníes",
+  CRC: "colones",
+  DOP: "pesos dominicanos",
+  GTQ: "quetzales",
+};
+
+export function currencyPluralName(code: string | null | undefined) {
+  const normalized = code?.trim().toUpperCase();
+  if (!normalized) return "";
+  return CURRENCY_PLURALS[normalized] ?? normalized;
+}
