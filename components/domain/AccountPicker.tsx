@@ -34,20 +34,14 @@ export function AccountPicker({
           return (
             <TouchableOpacity
               key={acc.id}
-              style={[
-                styles.accountChip,
-                isSelected && { borderColor: acc.color, backgroundColor: acc.color + "22" },
-              ]}
+              style={[styles.accountChip, isSelected && styles.accountChipSelected]}
               onPress={() => onSelect(acc.id)}
               accessibilityRole="button"
               accessibilityLabel={`${acc.name}, ${acc.currencyCode}`}
               accessibilityState={{ selected: isSelected }}
             >
-              <Text style={[styles.accountChipName, isSelected && { color: acc.color }]}>
+              <Text style={[styles.accountChipName, isSelected && styles.accountChipNameSelected]}>
                 {acc.name}
-              </Text>
-              <Text style={styles.accountChipBalance}>
-                {acc.currencyCode}
               </Text>
             </TouchableOpacity>
           );
@@ -87,12 +81,21 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 3,
   },
+  // Estar seleccionado se ve IGUAL en toda la app: borde hueso, etiqueta hueso, sin color.
+  // Antes el borde usaba `acc.color` —el color de la cuenta—, asi que el mismo estado se
+  // pintaba naranja en la cuenta origen y azul en la destino, y el azul no existe en el
+  // sistema. El color queda libre para decir de que TIPO es el movimiento, que es lo unico
+  // que aqui depende del color.
+  accountChipSelected: {
+    borderColor: COLORS.ink,
+    backgroundColor: SURFACE.cardActive,
+  },
   accountChipName: {
     fontSize: FONT_SIZE.sm,
     fontFamily: FONT_FAMILY.bodySemibold,
     color: COLORS.ink,
   },
-  accountChipBalance: { fontSize: FONT_SIZE.xs, color: COLORS.storm },
+  accountChipNameSelected: { color: COLORS.ink, fontFamily: FONT_FAMILY.bodySemibold },
   emptyPicker: { fontSize: FONT_SIZE.sm, color: COLORS.storm },
   fieldError: { fontSize: FONT_SIZE.xs, color: COLORS.danger },
 });

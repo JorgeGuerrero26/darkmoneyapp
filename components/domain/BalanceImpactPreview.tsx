@@ -1,7 +1,8 @@
 import { StyleSheet, Text, View } from "react-native";
-import { AlertTriangle, ArrowRight } from "lucide-react-native";
+import { AlertTriangle } from "lucide-react-native";
+
 import { formatCurrency } from "../ui/AmountDisplay";
-import { COLORS, FONT_SIZE, FONT_WEIGHT, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 
 type Props = {
   label: string;
@@ -10,41 +11,35 @@ type Props = {
   currencyCode: string;
 };
 
-export function BalanceImpactPreview({
-  label,
-  currentBalance,
-  projectedBalance,
-  currencyCode,
-}: Props) {
-  const diff = projectedBalance - currentBalance;
+/**
+ * Cómo queda un saldo después del movimiento.
+ *
+ * **En una transferencia nadie gana ni pierde.** Antes el saldo que baja iba en rojo y el que
+ * sube en verde, pero es la misma plata cambiándose de bolsillo: el patrimonio no se mueve un
+ * centavo, y pintarlo así decía que la mitad de la operación fue una pérdida.
+ *
+ * Ahora los montos van **en hueso**, con el saldo anterior tachado al costado para que se vea el
+ * movimiento sin teñirlo. El rojo se reserva para lo único que sí es un problema: que el saldo
+ * quede **negativo de verdad**.
+ */
+export function BalanceImpactPreview({ label, currentBalance, projectedBalance, currencyCode }: Props) {
   const isNegative = projectedBalance < 0;
-  const isDecreasing = diff < 0;
 
   return (
     <View style={[styles.container, isNegative && styles.containerWarning]}>
-      {isNegative && (
+      {isNegative ? (
         <View style={styles.warningRow}>
           <AlertTriangle size={13} color={COLORS.danger} />
           <Text style={styles.warning}>El saldo quedaría negativo</Text>
         </View>
-      )}
-      <Text style={styles.accountLabel}>{label}</Text>
+      ) : null}
       <View style={styles.row}>
-        <View style={styles.col}>
-          <Text style={styles.balanceLabel}>Actual</Text>
-          <Text style={styles.balanceValue}>
-            {formatCurrency(currentBalance, currencyCode)}
-          </Text>
-        </View>
-        <ArrowRight size={16} color={COLORS.textMuted} />
-        <View style={styles.col}>
-          <Text style={styles.balanceLabel}>Proyectado</Text>
-          <Text
-            style={[
-              styles.balanceValue,
-              isNegative ? styles.negative : isDecreasing ? styles.negative : styles.positive,
-            ]}
-          >
+        <Text style={styles.accountLabel} numberOfLines={1}>
+          {label}
+        </Text>
+        <View style={styles.amounts}>
+          <Text style={styles.previous}>{formatCurrency(currentBalance, currencyCode)}</Text>
+          <Text style={[styles.projected, isNegative && styles.projectedNegative]}>
             {formatCurrency(projectedBalance, currencyCode)}
           </Text>
         </View>
@@ -55,44 +50,43 @@ export function BalanceImpactPreview({
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: COLORS.bgCard,
+    backgroundColor: SURFACE.card,
     borderRadius: RADIUS.md,
-    padding: SPACING.md,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    gap: SPACING.sm,
+    borderColor: SURFACE.cardBorder,
+    gap: SPACING.xs,
   },
   containerWarning: {
     borderColor: COLORS.danger,
     backgroundColor: COLORS.dangerMuted,
   },
-  warningRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
+  warningRow: { flexDirection: "row", alignItems: "center", gap: 4 },
   warning: {
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.danger,
-    fontWeight: FONT_WEIGHT.semibold,
-  },
-  accountLabel: {
     fontSize: FONT_SIZE.xs,
-    color: COLORS.textMuted,
+    color: COLORS.danger,
+    fontFamily: FONT_FAMILY.bodySemibold,
   },
   row: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
     gap: SPACING.md,
   },
-  col: { flex: 1, gap: 2 },
-  balanceLabel: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted },
-  balanceValue: {
-    fontSize: FONT_SIZE.md,
-    fontWeight: FONT_WEIGHT.semibold,
-    color: COLORS.text,
+  accountLabel: { flex: 1, fontSize: FONT_SIZE.sm, color: COLORS.fog, fontFamily: FONT_FAMILY.body },
+  amounts: { flexDirection: "row", alignItems: "baseline", gap: SPACING.sm },
+  // Tachado y en gris: se ve de dónde viene el saldo sin que compita con el resultado.
+  previous: {
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    fontFamily: FONT_FAMILY.headingMedium,
+    textDecorationLine: "line-through",
   },
-  positive: { color: COLORS.income },
-  negative: { color: COLORS.danger },
-  neutral: { color: COLORS.text },
+  projected: {
+    fontSize: FONT_SIZE.md,
+    color: COLORS.ink,
+    fontFamily: FONT_FAMILY.heading,
+  },
+  projectedNegative: { color: COLORS.danger },
 });
