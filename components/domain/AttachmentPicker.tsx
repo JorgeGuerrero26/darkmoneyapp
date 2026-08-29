@@ -359,23 +359,12 @@ export function AttachmentPicker({
       <View style={styles.container}>
         <View style={styles.panel}>
           <View style={styles.headerRow}>
-            <View style={styles.headerLeft}>
-              <View style={styles.badge}>
-                <Images size={18} color={COLORS.gold} />
-              </View>
-              <View style={styles.headerCopy}>
-                <Text style={styles.eyebrow}>Adjuntar imagen</Text>
-                <Text style={styles.title}>Comprobantes</Text>
-                <Text style={styles.subtitle}>{helperText}</Text>
-              </View>
-            </View>
-            <View style={styles.counterPill}>
-              <Text style={styles.counterText}>
-                {isHydratingExisting && attachments.length === 0
-                  ? `... de ${MAX_ATTACHMENTS}`
-                  : `${attachments.length} de ${MAX_ATTACHMENTS}`}
-              </Text>
-            </View>
+            <Text style={styles.title}>Comprobantes</Text>
+            <Text style={styles.counterText}>
+              {isHydratingExisting && attachments.length === 0
+                ? `... de ${MAX_ATTACHMENTS}`
+                : `${attachments.length} de ${MAX_ATTACHMENTS}`}
+            </Text>
           </View>
 
           {isUploadLocked ? (
@@ -449,13 +438,14 @@ export function AttachmentPicker({
                 <Text style={styles.addCaption}>
                   {isUploadLocked
                     ? "Desbloquea comprobantes"
-                    : attachments.length === 0
-                      ? "Cámara o galería"
-                      : "Otro comprobante"}
+                    : "Agregar"}
                 </Text>
               </TouchableOpacity>
             ) : null}
           </ScrollView>
+          {attachments.length === 0 ? (
+            <Text style={styles.helper}>{helperText}</Text>
+          ) : null}
         </View>
       </View>
 
@@ -542,59 +532,31 @@ const styles = StyleSheet.create({
   },
   headerRow: {
     flexDirection: "row",
-    alignItems: "flex-start",
-    gap: SPACING.md,
-  },
-  headerLeft: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: SPACING.md,
-  },
-  badge: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
     alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: COLORS.warningMuted,
-    borderWidth: 1,
-    borderColor: COLORS.gold + "55",
+    justifyContent: "space-between",
+    marginBottom: SPACING.sm,
   },
   headerCopy: {
     flex: 1,
     gap: 2,
   },
-  eyebrow: {
+  helper: {
+    fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.xs,
     color: COLORS.storm,
+    lineHeight: 17,
+  },
+  title: {
     fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
     textTransform: "uppercase",
     letterSpacing: 0.8,
   },
-  title: {
-    fontSize: FONT_SIZE.lg,
-    color: COLORS.ink,
-    fontFamily: FONT_FAMILY.heading,
-  },
-  subtitle: {
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.storm,
-    fontFamily: FONT_FAMILY.body,
-    lineHeight: 20,
-  },
-  counterPill: {
-    paddingHorizontal: SPACING.sm + 2,
-    paddingVertical: SPACING.xs + 2,
-    borderRadius: RADIUS.full,
-    backgroundColor: "rgba(244,241,236,0.08)",
-    borderWidth: 1,
-    borderColor: "rgba(244,241,236,0.12)",
-  },
   counterText: {
+    fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.xs,
-    color: COLORS.ink,
-    fontFamily: FONT_FAMILY.bodySemibold,
+    color: COLORS.storm,
   },
   proLockBanner: {
     gap: 4,
