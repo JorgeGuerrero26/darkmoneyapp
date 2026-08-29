@@ -36,6 +36,12 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Cuando un filtro esconde todo lo que tienes, la app ya no te dice \"sin resultados\" como si no hubiera nada: te dice cuántos tienes y te ofrece quitar el filtro.",
       "En Suscripciones, el total del mes ahora aclara que las pausadas no están sumadas, así que la cuenta ya no parece mal hecha.",
       "Arreglado un error de cuentas: una deuda que alguien compartió contigo se sumaba a lo que te deben en vez de a lo que debes. Por eso podías ver \"No debes nada\" teniendo una deuda justo debajo. Afectaba también a las cifras del inicio.",
+      "Crear una suscripción ya no es una pantalla larguísima: pide el nombre, el monto, cada cuánto se cobra y cuándo es el próximo, y todo lo demás está en \"Opcionales\" por si lo necesitas.",
+      "Ya no te pide tres fechas para una suscripción. Solo la del próximo cobro, que es la única que el sistema usa; el inicio y el fin quedaron como opcionales.",
+      "Crear una categoría empieza por el nombre. Los íconos y colores pasaron a una línea que abres si quieres cambiarlos, en vez de ocupar media pantalla antes del único campo obligatorio.",
+      "Desapareció el campo \"Orden\" de las categorías, que pedía un número sin explicar para qué servía. Ahora se acomoda solo.",
+      "Elegir moneda, cuenta, categoría o contacto en cualquier formulario ya no es una fila de botones que se corta por el borde: es una lista que se abre y se puede buscar.",
+      "Los botones de guardar ahora te dicen qué falta —\"Falta el monto\"— en vez de quedarse apagados sin explicar por qué.",
     ],
   },
   {

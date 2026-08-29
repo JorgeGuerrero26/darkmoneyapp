@@ -26,16 +26,16 @@ del trabajo**: la regla se arregla una vez y se propaga, como en la Revisión 03
 
 ## 1. Las cuatro reglas transversales
 
-### [ ] FORMULARIO · 1 — Lo obligatorio primero
+### [x] FORMULARIO · 1 — Lo obligatorio primero
 Nueva categoría abre con 29 íconos y 10 colores: 400 px de decoración antes del campo NOMBRE,
 que es el único con asterisco. Nueva cuenta hace lo mismo. El formulario empieza por lo que no
 se puede omitir y **la apariencia baja a una fila** que muestra la elección actual.
 
-### [ ] FORMULARIO · 2 — Pasadas seis opciones, selector
+### [x] FORMULARIO · 2 — Pasadas seis opciones, selector
 Tercera vez que aparece la regla. Aplica a **proveedor, contacto, categoría, cuenta y moneda**.
 27 cápsulas de categoría padre en cuadrícula, 20 de moneda, nombres cortados por el borde.
 
-### [ ] FORMULARIO · 3 — La paleta no es del sistema
+### [x] FORMULARIO · 3 — La paleta no es del sistema
 Doce círculos saturados —violeta, rosa, azul eléctrico, naranja— que no existen en ninguna otra
 pantalla. Bajan a **seis tonos derivados del sistema**: son etiquetas para reconocer de un
 vistazo, no decoración libre. El violeta de las tarjetas de fecha se retira.
@@ -44,7 +44,7 @@ vistazo, no decoración libre. El violeta de las tarjetas de fecha se retira.
 > reservado a la IA. Usarlo como color de categoría lo vacía de significado, que es
 > exactamente lo que dice la crítica.
 
-### [ ] FORMULARIO · 4 — El botón dice qué falta
+### [x] FORMULARIO · 4 — El botón dice qué falta
 "Crear suscripción" vive al final de 2.400 px: para saber si ya puedes guardar hay que volver a
 subir. Pasa a **barra fija con el estado al lado**; mientras falte algo, lo nombra. Y el monto
 deja de ser un `0.00` gris dentro de una caja gris, que se lee como deshabilitado.
@@ -53,25 +53,25 @@ deja de ser un `0.00` gris dentro de una caja gris, que se lee como deshabilitad
 
 ## 2. O · Nueva suscripción — el caso más largo (~2.400 px)
 
-### [ ] De tres fechas a una
+### [x] De tres fechas a una
 Inicio, Próximo cobro y Fin, cada una en una tarjeta de 190 px con su párrafo — y el propio
 texto admite que Inicio "no mueve por sí sola el próximo cobro". Queda **el próximo cobro**;
 inicio y fin bajan a Opcionales. Ahorra 570 px.
 
-### [ ] "Repetir cada N periodos" es dos preguntas
+### [x] "Repetir cada N periodos" es dos preguntas
 Frecuencia con seis cápsulas + Personalizado + campo numérico + la línea "Cadencia resultante".
 Tres controles para responder cada cuánto se cobra. Queda **un selector que dice "Cada mes"**;
 si eliges algo a medida, el número se pide ahí.
 
-### [ ] El monto se ve editable
+### [x] El monto se ve editable
 `PEN 0.00` en gris medio sobre caja gris parece bloqueado. El número va **en hueso con cursor
 visible**, y el prefijo es el símbolo —S/— no el código ISO.
 
-### [ ] Ocho campos opcionales no son ocho campos
+### [x] Ocho campos opcionales no son ocho campos
 Proveedor, moneda, cuenta de débito, categoría, descripción y notas suman 700 px marcados
 "(opcional)". Se agrupan en **una fila que los nombra y los abre**.
 
-### [ ] Los textos didácticos — DECISIÓN TOMADA (28 ago)
+### [x] Los textos didácticos — DECISIÓN TOMADA (28 ago)
 ~900 px de prosa. Se aplica la propuesta: la explicación aparece **una vez, la primera vez que
 abres el formulario**, y después vive **detrás del "?" del encabezado**. Se queda fija solo la
 frase que desambigua el campo obligatorio: qué significa "próximo cobro". **"Así lo hará el
@@ -81,17 +81,17 @@ sistema" se retira** — es un eco: si el formulario está bien redactado, no ne
 
 ## 3. P · Nueva categoría — el más decorativo
 
-### [ ] "ORDEN (SORT_ORDER)" no es lenguaje de usuario
+### [x] "ORDEN (SORT_ORDER)" no es lenguaje de usuario
 Pide un número —280— y lo explica con "el servidor usa max(sort_order)+10". Es el nombre de la
 columna y la lógica del backend puestos en la pantalla. **Sale**: el orden se resuelve solo al
 crear y se cambia arrastrando en la lista.
 
-### [ ] Veintinueve íconos y diez colores antes del nombre
+### [x] Veintinueve íconos y diez colores antes del nombre
 Apariencia se vuelve **una fila con la muestra de lo elegido**. Elegir sigue siendo posible;
 solo deja de ser lo primero. La nota "(Lucide, como en la web)" está escrita para quien
 programa.
 
-### [ ] Veintisiete cápsulas para la categoría padre
+### [x] Veintisiete cápsulas para la categoría padre
 Selector con búsqueda. Y **"Ambos / Gasto / Ingreso" pasa a segmentado**: tres opciones
 excluyentes y cortas, exactamente el caso del control.
 
@@ -99,22 +99,26 @@ excluyentes y cortas, exactamente el caso del control.
 
 ## 4. Los otros cinco formularios
 
-### [ ] Nuevo contacto
+### [x] Nuevo contacto
 Es el que está mejor. Solo necesita que **los seis tipos dejen de ser cápsulas con emoji
 cortadas**.
 
-### [ ] Nueva obligación — el caso propio que sí vale la pena
+### [x] Nueva obligación — YA ESTABA HECHO
 Las tres tarjetas "¿Cómo nació esta deuda?" y los tres radios de "Impacto inicial en cuenta"
-**preguntan lo mismo dos veces**: elegir "Me prestaron dinero" ya implica que entra dinero. El
-segundo bloque **se deriva del primero** y aparece **solo en Manual**.
+"preguntan lo mismo dos veces", dice la revisión. En el código **ya no**: `getAutoOpeningImpact`
+deriva el impacto de `cash_loan`, `sale_financed` y `purchase_financed`, y el bloque de radios
+está envuelto en `{originType === "manual" ? ...}`. En Manual el origen no determina el impacto
+—ese es el sentido de Manual—, así que ahí no hay duplicación que quitar.
 
-### [ ] Nueva cuenta
+Igual que el hallazgo que abría la Revisión 04, el diseñador miraba un build anterior.
+
+### [x] Nueva cuenta
 Hereda el arreglo de apariencia (28 íconos y 12 colores).
 
-### [ ] Nuevo presupuesto
+### [x] Nuevo presupuesto
 Los mismos selectores.
 
-### [ ] Nuevo tipo de cambio
+### [x] Nuevo tipo de cambio
 Los mismos selectores, y además **"1 [origen] = tasa [destino]" con corchetes es una plantilla
 sin rellenar**.
 
@@ -162,3 +166,23 @@ pestaña es **Patrones**. Igual "Taxi aparece 66 veces".
 4. Obligación — el bloque derivado.
 5. Contacto, Presupuesto, Tipo de cambio.
 6. Salud.
+
+---
+
+## 7. Estado al cerrar la pasada de formularios (29 ago)
+
+Hecho y publicado: las cuatro reglas transversales, categoría, cuenta, suscripción, contacto,
+tipo de cambio y presupuesto. La moneda quedó unificada en los seis formularios que la piden.
+
+### [ ] Pendiente — listas de entidades en dos formularios
+Quedan como cápsulas que se desplazan y deberían ser selector, por la misma regla 2:
+
+- **Nueva obligación**: contacto, cuenta de liquidación y cuenta de apertura.
+- **Nuevo ingreso fijo**: pagador, cuenta destino, categoría, día del mes (31 opciones) y día de
+  la semana. No es uno de los siete de la revisión, pero comparte las mismas fallas.
+
+Son tres y cinco bloques anidados dentro de condicionales, y el detector de límites automático
+no acertó con ellos: hay que hacerlos a mano, uno a uno, verificando el árbol JSX.
+
+### [ ] Pendiente — toda la Revisión 06 (Salud)
+La sección 5 de este documento, sin empezar.
