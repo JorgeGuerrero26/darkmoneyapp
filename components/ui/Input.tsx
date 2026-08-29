@@ -9,6 +9,7 @@ import {
   type ViewStyle,
 } from "react-native";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
+import { TextField } from "./TextField";
 
 type Props = TextInputProps & {
   label?: string;
@@ -36,21 +37,8 @@ export const Input = forwardRef<TextInput, Props>(function Input(
 ) {
   const [focused, setFocused] = useState(false);
 
-  /**
-   * El placeholder se pinta como `Text`, no con la prop nativa.
-   *
-   * En iOS, cuando el texto del placeholder no le cabe al campo, `UITextField` **aprieta el
-   * kerning** hasta que entre en vez de recortarlo: las letras se pegan y la frase deja de
-   * parecerse a la tipografía del resto de la app (reportado el 2026-08-29 con
-   * "Descripción — se genera sola si la dejas vacía"). Un `Text` respeta la fuente y, si de
-   * verdad no cabe, corta con puntos suspensivos, que es honesto y legible.
-   *
-   * Solo se activa cuando el campo está vacío, y no intercepta toques.
-   *
-   * El `placeholder: ""` va **después** de `{...rest}` a propósito: si va antes, la prop del
-   * llamador lo repisa, el nativo se pinta igual y quedan los dos textos encima.
-   */
-  const showCustomPlaceholder = Boolean(rest.placeholder) && !rest.value;
+  // El placeholder lo pinta `TextField` como `Text`: iOS aprieta el kerning del nativo hasta
+  // que la frase entre, y deja de parecerse a la tipografía del resto de la app.
   const resolvedAccessibilityLabel = accessibilityLabel ?? label ?? rest.placeholder;
   const resolvedAccessibilityHint = accessibilityHint ?? (error ? `${hint ? `${hint}. ` : ""}Error: ${error}` : hint);
 
@@ -58,7 +46,7 @@ export const Input = forwardRef<TextInput, Props>(function Input(
     <View style={[styles.container, containerStyle]}>
       {label ? <Text style={styles.label}>{label}</Text> : null}
       <View style={[styles.inputWrap, focused && styles.inputWrapFocused, error ? styles.inputWrapError : null]}>
-        <TextInput
+        <TextField
           ref={ref}
           style={[styles.input, style]}
           placeholderTextColor={COLORS.storm}
@@ -67,17 +55,7 @@ export const Input = forwardRef<TextInput, Props>(function Input(
           accessibilityLabel={resolvedAccessibilityLabel}
           accessibilityHint={resolvedAccessibilityHint}
           {...rest}
-          {...(showCustomPlaceholder ? { placeholder: "" } : null)}
         />
-        {showCustomPlaceholder ? (
-          <Text
-            style={[styles.placeholder, rest.multiline && styles.placeholderMultiline]}
-            pointerEvents="none"
-            numberOfLines={1}
-          >
-            {rest.placeholder}
-          </Text>
-        ) : null}
         {rightElement ? <View style={styles.rightSlot}>{rightElement}</View> : null}
       </View>
       {error ? (
@@ -126,16 +104,6 @@ const styles = StyleSheet.create({
     fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.md,
   },
-  placeholder: {
-    position: "absolute",
-    left: SPACING.md,
-    right: SPACING.md,
-    color: COLORS.storm,
-    fontFamily: FONT_FAMILY.body,
-    fontSize: FONT_SIZE.md,
-  },
-  // En multilínea el cursor arranca arriba, no centrado.
-  placeholderMultiline: { top: SPACING.sm + 4 },
   rightSlot: {
     paddingRight: SPACING.sm,
     alignItems: "center",
