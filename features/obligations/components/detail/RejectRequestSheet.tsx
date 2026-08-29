@@ -2,7 +2,6 @@ import {
   Modal,
   Pressable,
   Text,
-  TextInput,
   View,
   type StyleProp,
   type ViewStyle,
@@ -16,6 +15,7 @@ import { formatCurrency } from "../../../../components/ui/AmountDisplay";
 import { COLORS, SPACING } from "../../../../constants/theme";
 import { parseDisplayDate } from "../../../../lib/date";
 import type { ObligationPaymentRequest } from "../../../../types/domain";
+import { TextField } from "../../../../components/ui/TextField";
 
 export type RejectRequestSheetStyles = {
   overlay: StyleProp<ViewStyle>;
@@ -71,7 +71,7 @@ export function RejectRequestSheet({
             </Text>
           ) : null}
           <View style={styles.rejectInputWrap}>
-            <TextInput
+            <TextField
               style={styles.rejectInput}
               value={rejectReason}
               onChangeText={onChangeReason}

@@ -1,10 +1,11 @@
-import { StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Plus, Split, Trash2, X } from "lucide-react-native";
 
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../../../constants/theme";
 import type { CategorySummary } from "../../../../types/domain";
 import { CategoryPicker } from "./MovementChipPickers";
 import { validateSplit, type SplitLine } from "../../lib/split-movement";
+import { TextField } from "../../../../components/ui/TextField";
 
 type Props = {
   lines: SplitLine[] | null;
@@ -72,7 +73,7 @@ export function SplitAmountEditor({ lines, onChangeLines, categories, totalAmoun
               </TouchableOpacity>
             ) : null}
           </View>
-          <TextInput
+          <TextField
             value={line.amount}
             onChangeText={(value) => patchLine(index, { amount: value })}
             keyboardType="decimal-pad"

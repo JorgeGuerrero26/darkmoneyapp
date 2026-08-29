@@ -5,7 +5,6 @@ import {
   Keyboard,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -22,6 +21,7 @@ import {
 } from "../lib/speech-recognition-safe";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { ErrorBoundary } from "../components/ui/ErrorBoundary";
+import { TextField } from "../components/ui/TextField";
 import { ScreenHeader } from "../components/layout/ScreenHeader";
 import { MovementForm, type MovementDuplicateSource } from "../components/forms/MovementForm";
 import { AssistantDraftCard } from "../features/assistant/components/AssistantDraftCard";
@@ -823,7 +823,7 @@ function AssistantScreen() {
             { paddingBottom: (keyboardOpen ? 0 : insets.bottom) + SPACING.sm, marginBottom: keyboardHeight },
           ]}
         >
-          <TextInput
+          <TextField
             style={styles.input}
             value={input}
             onChangeText={setInput}

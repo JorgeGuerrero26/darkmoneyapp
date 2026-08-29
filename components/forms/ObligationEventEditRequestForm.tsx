@@ -13,6 +13,7 @@ import { Button } from "../ui/Button";
 import { CurrencyInput } from "../ui/CurrencyInput";
 import { DatePickerInput } from "../ui/DatePickerInput";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING } from "../../constants/theme";
+import { TextField } from "../ui/TextField";
 
 type Props = {
   visible: boolean;
@@ -163,7 +164,7 @@ export function ObligationEventEditRequestForm({
         <View style={styles.field}>
           <Text style={styles.fieldLabel}>Cuota propuesta</Text>
           <View style={styles.inputWrap}>
-            <TextInput
+            <TextField
               style={styles.input}
               value={installmentNo}
               onChangeText={setInstallmentNo}
@@ -178,7 +179,7 @@ export function ObligationEventEditRequestForm({
       <View style={styles.field}>
         <Text style={styles.fieldLabel}>Descripcion propuesta</Text>
         <View style={styles.inputWrap}>
-          <TextInput
+          <TextField
             style={styles.input}
             value={description}
             onChangeText={setDescription}
@@ -191,7 +192,7 @@ export function ObligationEventEditRequestForm({
       <View style={styles.field}>
         <Text style={styles.fieldLabel}>Notas propuestas</Text>
         <View style={[styles.inputWrap, styles.textAreaWrap]}>
-          <TextInput
+          <TextField
             style={[styles.input, styles.textArea]}
             value={notes}
             onChangeText={setNotes}

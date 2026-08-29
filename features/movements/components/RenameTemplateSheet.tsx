@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { StyleSheet, Text, TextInput, TouchableOpacity } from "react-native";
+import { StyleSheet, Text, TouchableOpacity } from "react-native";
 
 import { BottomSheet } from "../../../components/ui/BottomSheet";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../../constants/theme";
 import { normalizeTemplateName } from "../lib/template-name";
 import type { MovementTemplate } from "../../../services/queries/movement-templates";
+import { TextField } from "../../../components/ui/TextField";
 
 type Props = {
   template: MovementTemplate | null;
@@ -23,7 +24,7 @@ export function RenameTemplateSheet({ template, isPending, onClose, onConfirm }:
   const normalized = normalizeTemplateName(name);
   return (
     <BottomSheet visible={Boolean(template)} onClose={onClose} title="Renombrar plantilla" snapHeight={0.32}>
-      <TextInput
+      <TextField
         style={styles.input}
         value={name}
         onChangeText={setName}

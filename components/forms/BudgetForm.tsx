@@ -4,7 +4,6 @@ import {
   StyleSheet,
   Switch,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -30,6 +29,7 @@ import { CurrencyInput } from "../ui/CurrencyInput";
 import { DatePickerInput } from "../ui/DatePickerInput";
 import { sortByName } from "../../lib/sort-locale";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
+import { TextField } from "../ui/TextField";
 
 
 const ALERT_PRESETS = [
@@ -286,7 +286,7 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
       {/* Name */}
       <View>
         <Text style={styles.label}>Nombre *</Text>
-        <TextInput
+        <TextField
           style={[styles.textInput, nameError ? styles.inputError : null]}
           value={name}
           onChangeText={(t) => { setName(t); setNameError(""); }}
@@ -433,7 +433,7 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
       {/* Notes */}
       <View>
         <Text style={styles.label}>Notas (opcional)</Text>
-        <TextInput
+        <TextField
           style={[styles.textInput, styles.textArea]}
           value={notes}
           onChangeText={setNotes}

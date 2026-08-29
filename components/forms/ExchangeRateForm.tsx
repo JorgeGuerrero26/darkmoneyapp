@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { ArrowRight, ChevronDown } from "lucide-react-native";
 
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
+import { TextField } from "../ui/TextField";
 
 type CurrencyPickerProps = {
   label: string;
@@ -62,7 +63,7 @@ function CurrencyPicker({ label, value, onChange, options, exclude }: CurrencyPi
               </TouchableOpacity>
             ))}
           </ScrollView>
-          <TextInput
+          <TextField
             style={styles.input}
             placeholder="Otra (ej. JPY)"
             placeholderTextColor={COLORS.storm}
@@ -154,7 +155,7 @@ export function ExchangeRateForm({
       </View>
 
       <Text style={styles.inputLabel}>Tasa de cambio</Text>
-      <TextInput
+      <TextField
         style={styles.input}
         placeholder="3.72"
         placeholderTextColor={COLORS.storm}
@@ -164,7 +165,7 @@ export function ExchangeRateForm({
       />
 
       <Text style={styles.inputLabel}>Notas (opcional)</Text>
-      <TextInput
+      <TextField
         style={styles.input}
         placeholder="ej. Tipo de cambio BCP"
         placeholderTextColor={COLORS.storm}

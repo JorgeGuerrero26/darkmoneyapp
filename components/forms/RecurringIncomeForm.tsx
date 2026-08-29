@@ -34,6 +34,7 @@ import { FormDateField } from "./FormDateField";
 import { SmartSuggestion } from "../ui/SmartSuggestion";
 import { sortByName } from "../../lib/sort-locale";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
+import { TextField } from "../ui/TextField";
 
 const FREQUENCY_OPTIONS: { value: RecurringIncomeFormInput["frequency"]; label: string }[] = [
   { value: "weekly", label: "Semanal" },
@@ -377,7 +378,7 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
       >
         <View style={styles.section}>
           <Text style={styles.label}>Nombre *</Text>
-          <TextInput
+          <TextField
             ref={nameRef}
             style={styles.input}
             value={name}
@@ -422,7 +423,7 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
           <Text style={styles.label}>
             {frequency === "custom" ? "Repetir cada N días" : "Repetir cada N periodos"}
           </Text>
-          <TextInput
+          <TextField
             style={styles.input}
             value={intervalCount}
             onChangeText={setIntervalCount}
@@ -577,7 +578,7 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
           })() : null}
 
           <Text style={styles.label}>Notas (opcional)</Text>
-          <TextInput
+          <TextField
             style={styles.notesInput}
             multiline
             value={notes}

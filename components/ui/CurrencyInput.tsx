@@ -8,6 +8,7 @@ import {
   type StyleProp,
   type ViewStyle,
 } from "react-native";
+import { TextField } from "./TextField";
 import { formatCurrencyParts } from "../../lib/format-currency";
 import { COLORS, FONT_FAMILY, FONT_SIZE, FONT_WEIGHT, RADIUS, SPACING } from "../../constants/theme";
 
@@ -67,7 +68,7 @@ export const CurrencyInput = forwardRef<TextInput, Props>(function CurrencyInput
       {label ? <Text style={styles.label}>{label}</Text> : null}
       <View style={styles.row}>
         <Text style={styles.currency}>{currencySymbol}</Text>
-        <TextInput
+        <TextField
           ref={inputRef}
           style={styles.input}
           value={value}

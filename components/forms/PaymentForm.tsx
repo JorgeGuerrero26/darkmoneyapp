@@ -31,6 +31,7 @@ import { DatePickerInput } from "../ui/DatePickerInput";
 import { formatCurrency } from "../ui/AmountDisplay";
 import { sortByName } from "../../lib/sort-locale";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
+import { TextField } from "../ui/TextField";
 
 type Props = {
   visible: boolean;
@@ -507,7 +508,7 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent
         </View>
         <View style={{ flex: 1 }}>
           <Text style={styles.label}>N° cuota</Text>
-          <TextInput
+          <TextField
             style={styles.textInput}
             value={installmentNo}
             onChangeText={(t) => setInstallmentNo(t.replace(/[^0-9]/g, ""))}
@@ -602,7 +603,7 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent
       {/* Description */}
       <View>
         <Text style={styles.label}>Descripción (opcional)</Text>
-        <TextInput
+        <TextField
           style={styles.textInput}
           value={description}
           onChangeText={setDescription}
@@ -615,7 +616,7 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent
       {/* Notes */}
       <View>
         <Text style={styles.label}>Notas (opcional)</Text>
-        <TextInput
+        <TextField
           style={styles.textInput}
           value={notes}
           onChangeText={setNotes}

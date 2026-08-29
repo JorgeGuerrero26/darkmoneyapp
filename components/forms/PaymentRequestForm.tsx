@@ -21,6 +21,7 @@ import { Button } from "../ui/Button";
 import { CurrencyInput } from "../ui/CurrencyInput";
 import { DatePickerInput } from "../ui/DatePickerInput";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING } from "../../constants/theme";
+import { TextField } from "../ui/TextField";
 
 type Props = {
   visible: boolean;
@@ -225,7 +226,7 @@ export function PaymentRequestForm({ visible, onClose, onSuccess, obligation }: 
       <View style={styles.field}>
         <Text style={styles.fieldLabel}>Descripción (opcional)</Text>
         <View style={styles.textAreaWrap}>
-          <TextInput
+          <TextField
             style={styles.textArea}
             value={description}
             onChangeText={setDescription}

@@ -1,8 +1,9 @@
 import { useMemo, useState } from "react";
-import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import { ACCOUNT_INSTITUTIONS, type AccountInstitution } from "../../../../lib/account-institutions";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../../../constants/theme";
+import { TextField } from "../../../../components/ui/TextField";
 import { InstitutionAvatar } from "../InstitutionAvatar";
 
 type Props = {
@@ -29,7 +30,7 @@ export function InstitutionPicker({ value, onChange, label = "Institución" }: P
   return (
     <View accessibilityRole="radiogroup" accessibilityLabel="Institución financiera">
       <Text style={styles.sectionLabel}>{label}</Text>
-      <TextInput
+      <TextField
         style={styles.search}
         value={query}
         onChangeText={setQuery}

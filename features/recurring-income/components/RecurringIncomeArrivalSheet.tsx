@@ -1,4 +1,4 @@
-import { StyleSheet, Text, TextInput, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
@@ -10,6 +10,7 @@ import { DatePickerInput } from "../../../components/ui/DatePickerInput";
 import { PillSelector } from "../../../components/ui/PillSelector";
 import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../../constants/theme";
 import type { AccountSummary, RecurringIncomeSummary } from "../../../types/domain";
+import { TextField } from "../../../components/ui/TextField";
 
 export type RecurringIncomeBaseChangeMode = "none" | "bonus" | "discount";
 
@@ -163,7 +164,7 @@ export function RecurringIncomeArrivalSheet({
             ) : null}
           </View>
 
-          <TextInput
+          <TextField
             style={styles.notesInput}
             multiline
             value={notes}

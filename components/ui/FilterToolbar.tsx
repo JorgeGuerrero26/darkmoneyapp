@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
 import { Check, ChevronDown, Search, X, type LucideIcon } from "lucide-react-native";
 
 import { BottomSheet } from "./BottomSheet";
+import { TextField } from "./TextField";
 
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 
@@ -103,7 +104,7 @@ export function FilterToolbar<T extends string>({
       {hasSearch ? (
         <View style={styles.searchBox}>
           <Search size={16} color={COLORS.storm} strokeWidth={2} />
-          <TextInput
+          <TextField
             value={searchValue ?? ""}
             onChangeText={onSearchChange}
             placeholder={searchPlaceholder}

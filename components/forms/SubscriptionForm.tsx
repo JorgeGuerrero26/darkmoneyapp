@@ -35,6 +35,7 @@ import { BusinessDateNotice } from "../ui/BusinessDateNotice";
 import { SmartSuggestion } from "../ui/SmartSuggestion";
 import { sortByName } from "../../lib/sort-locale";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
+import { TextField } from "../ui/TextField";
 
 
 const FREQUENCY_OPTIONS: { value: SubscriptionFormInput["frequency"]; label: string }[] = [
@@ -379,10 +380,10 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
 
   const isLoading = createMutation.isPending || updateMutation.isPending;
   const intervalValue = Math.max(1, parseInt(intervalCount, 10) || 1);
-  const recurrenceLabel = subscriptionFrequencyListLabel(intervalValue, frequency, FREQUENCY_LABELS);
+  const recurrenceLabel = subscriptionFrequencyListLabel(intervalValue, frequency, FREQUENCY_LABELS);
   const selectedAccountName = accountId !== null
     ? activeAccounts.find((account) => account.id === accountId)?.name ?? null
-    : null;
+    : null;
 
   // Name → suggest category (debounced)
   useEffect(() => {
@@ -521,7 +522,7 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
           cuándo. Lo demás vive en Opcionales, que la mayoría va a pasar de largo. */}
       <View>
         <Text style={styles.label}>Nombre *</Text>
-        <TextInput
+        <TextField
           ref={nameRef}
           style={[styles.textInput, nameError ? styles.inputError : null]}
           value={name}
@@ -551,7 +552,7 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
       {frequency === "custom" ? (
         <View>
           <Text style={styles.label}>Cada cuántos días</Text>
-          <TextInput
+          <TextField
             style={styles.textInput}
             value={intervalCount}
             onChangeText={setIntervalCount}
@@ -687,7 +688,7 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
 
           <View>
             <Text style={styles.label}>Descripción</Text>
-            <TextInput
+            <TextField
               ref={descriptionRef}
               style={styles.textInput}
               value={description}
@@ -701,7 +702,7 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
 
           <View>
             <Text style={styles.label}>Notas internas</Text>
-            <TextInput
+            <TextField
               style={[styles.textInput, styles.notesInput]}
               value={notes}
               onChangeText={setNotes}

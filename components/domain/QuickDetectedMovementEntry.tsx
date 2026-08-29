@@ -78,6 +78,7 @@ import {
 } from "../../features/movements/lib/category-suggestion-derivation";
 import { splitLineMetadata, splitLineDescription, validateSplit, type SplitLine } from "../../features/movements/lib/split-movement";
 import { LOCAL_CATEGORY_AI_CONFIDENCE_THRESHOLD } from "../../lib/movement-ai-orchestrator";
+import { TextField } from "../ui/TextField";
 
 // Heurísticas compartidas con MovementForm y el runtime sync (features/movements/lib).
 
@@ -1157,7 +1158,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
                   accessibilityLabel="Monto en la cuenta destino"
                 />
                 <Text style={styles.selectRowLabel}>Tipo de cambio</Text>
-                <TextInput
+                <TextField
                   value={transferFxRate}
                   onChangeText={setTransferFxRate}
                   keyboardType="decimal-pad"
@@ -1249,7 +1250,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
         )}
 
         <Text style={styles.selectRowLabel}>Notas (opcional)</Text>
-        <TextInput
+        <TextField
           value={notes}
           onChangeText={setNotes}
           style={styles.input}

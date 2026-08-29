@@ -40,6 +40,7 @@ import { CurrencyInput } from "../ui/CurrencyInput";
 import { BusinessDateNotice } from "../ui/BusinessDateNotice";
 import { DatePickerInput } from "../ui/DatePickerInput";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
+import { TextField } from "../ui/TextField";
 
 
 const DIRECTION_OPTIONS = [
@@ -642,7 +643,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
       {/* Title */}
       <View>
         <Text style={styles.label}>Título *</Text>
-        <TextInput
+        <TextField
           ref={titleRef}
           style={[styles.textInput, titleError ? styles.inputError : null]}
           value={title}
@@ -854,7 +855,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
       <View style={styles.twoCol}>
         <View style={styles.colHalf}>
           <Text style={styles.label}>Cuota</Text>
-          <TextInput
+          <TextField
             style={styles.textInput}
             value={installmentAmount}
             onChangeText={setInstallmentAmount}
@@ -865,7 +866,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
         </View>
         <View style={styles.colHalf}>
           <Text style={styles.label}># Cuotas</Text>
-          <TextInput
+          <TextField
             style={styles.textInput}
             value={installmentCount}
             onChangeText={setInstallmentCount}
@@ -879,7 +880,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
       {/* Interest rate */}
       <View>
         <Text style={styles.label}>Tasa de interés % (opcional)</Text>
-        <TextInput
+        <TextField
           style={styles.textInput}
           value={interestRate}
           onChangeText={setInterestRate}
@@ -892,7 +893,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
       {/* Description */}
       <View>
         <Text style={styles.label}>Descripción (opcional)</Text>
-        <TextInput
+        <TextField
           ref={descriptionRef}
           style={styles.textInput}
           value={description}
@@ -907,7 +908,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
       {/* Notes */}
       <View>
         <Text style={styles.label}>Notas (opcional)</Text>
-        <TextInput
+        <TextField
           ref={notesRef}
           style={[styles.textInput, styles.textArea]}
           value={notes}

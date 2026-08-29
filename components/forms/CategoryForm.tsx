@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { StyleSheet, Switch, Text, TextInput, View } from "react-native";
+import { StyleSheet, Switch, Text, View } from "react-native";
 
 import { useWorkspace } from "../../lib/workspace-context";
 import { useAuth } from "../../lib/auth-context";
@@ -28,6 +28,7 @@ import {
   normalizeIconLookupKey,
 } from "../../lib/category-icons";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
+import { TextField } from "../ui/TextField";
 
 // Sin `sortByLabel`: en un segmentado el orden es parte del control, y de más común a menos
 // común se lee mejor que alfabético.
@@ -263,7 +264,7 @@ export function CategoryForm({ visible, onClose, onSuccess, editCategory }: Prop
       {/* Lo obligatorio primero: antes esto vivía tras 400 px de íconos y colores. */}
       <View>
         <Text style={styles.label}>Nombre *</Text>
-        <TextInput
+        <TextField
           style={[styles.textInput, nameError ? styles.inputError : null]}
           value={name}
           onChangeText={(t) => { setName(t); setNameError(""); }}

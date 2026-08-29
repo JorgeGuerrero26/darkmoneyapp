@@ -5,7 +5,6 @@ import {
   StyleSheet,
   Switch,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -38,6 +37,7 @@ import { formatCurrency } from "../ui/AmountDisplay";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { AccountTypePicker, ACCOUNT_TYPES, TYPE_PRESETS } from "../../features/accounts/components/form/AccountTypePicker";
 import { InstitutionPicker } from "../../features/accounts/components/form/InstitutionPicker";
+import { TextField } from "../ui/TextField";
 
 const DRAFT_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
@@ -382,7 +382,7 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
         {/* Name */}
         <View>
           <Text style={styles.sectionLabel}>Nombre *</Text>
-          <TextInput
+          <TextField
             style={[styles.textInput, nameError ? styles.textInputError : null]}
             value={name}
             onChangeText={(t) => { setName(t); setNameError(""); }}

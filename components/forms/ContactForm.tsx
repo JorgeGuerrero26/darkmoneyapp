@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import { useWorkspace } from "../../lib/workspace-context";
 import { useToast } from "../../hooks/useToast";
@@ -18,6 +18,7 @@ import { Button } from "../ui/Button";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { sortByLabel } from "../../lib/sort-locale";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
+import { TextField } from "../ui/TextField";
 
 const TYPE_OPTIONS: { value: CounterpartyFormInput["type"]; label: string }[] = sortByLabel([
   { value: "person", label: "Persona" },
@@ -176,7 +177,7 @@ export function ContactForm({ visible, onClose, onSuccess, editContact }: Props)
       {/* Name */}
       <View>
         <Text style={styles.label}>Nombre *</Text>
-        <TextInput
+        <TextField
           style={[styles.textInput, nameError ? styles.inputError : null]}
           value={name}
           onChangeText={(t) => { setName(t); setNameError(""); }}
@@ -194,7 +195,7 @@ export function ContactForm({ visible, onClose, onSuccess, editContact }: Props)
       {/* Phone */}
       <View>
         <Text style={styles.label}>Teléfono (opcional)</Text>
-        <TextInput
+        <TextField
           style={styles.textInput}
           value={phone}
           onChangeText={setPhone}
@@ -207,7 +208,7 @@ export function ContactForm({ visible, onClose, onSuccess, editContact }: Props)
       {/* Email */}
       <View>
         <Text style={styles.label}>Email (opcional)</Text>
-        <TextInput
+        <TextField
           style={styles.textInput}
           value={email}
           onChangeText={setEmail}
@@ -221,7 +222,7 @@ export function ContactForm({ visible, onClose, onSuccess, editContact }: Props)
       {/* Document */}
       <View>
         <Text style={styles.label}>DNI / RUC (opcional)</Text>
-        <TextInput
+        <TextField
           style={styles.textInput}
           value={documentNumber}
           onChangeText={setDocumentNumber}
@@ -234,7 +235,7 @@ export function ContactForm({ visible, onClose, onSuccess, editContact }: Props)
       {/* Notes */}
       <View>
         <Text style={styles.label}>Notas (opcional)</Text>
-        <TextInput
+        <TextField
           style={[styles.textInput, styles.textArea]}
           value={notes}
           onChangeText={setNotes}

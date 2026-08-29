@@ -23,6 +23,7 @@ import { formatCurrency } from "../ui/AmountDisplay";
 import { BalanceImpactPreview } from "../domain/BalanceImpactPreview";
 import { sortByName } from "../../lib/sort-locale";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
+import { TextField } from "../ui/TextField";
 
 type Mode = "increase" | "decrease";
 
@@ -287,7 +288,7 @@ export function PrincipalAdjustmentForm({ visible, mode, obligation, onClose, on
 
         <View>
           <Text style={styles.label}>Motivo (opcional)</Text>
-          <TextInput
+          <TextField
             style={styles.textInput}
             value={reason}
             onChangeText={setReason}

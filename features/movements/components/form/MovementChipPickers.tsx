@@ -1,5 +1,5 @@
 import { memo, useState } from "react";
-import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import {
   COLORS,
@@ -9,6 +9,7 @@ import {
   SPACING,
   SURFACE,
 } from "../../../../constants/theme";
+import { TextField } from "../../../../components/ui/TextField";
 import type { CategorySummary, CounterpartySummary } from "../../../../types/domain";
 
 type CounterpartyProps = {
@@ -40,7 +41,7 @@ export const CounterpartyPicker = memo(function CounterpartyPicker({
     <View style={styles.pickerWrap} accessibilityLabel={label}>
       <Text style={styles.sectionLabel}>{label}</Text>
       {showSearch ? (
-        <TextInput
+        <TextField
           value={query}
           onChangeText={setQuery}
           placeholder="Buscar contraparte…"
@@ -109,7 +110,7 @@ export const CategoryPicker = memo(function CategoryPicker({
     <View style={styles.pickerWrap} accessibilityLabel={label}>
       <Text style={styles.sectionLabel}>{label}</Text>
       {showSearch ? (
-        <TextInput
+        <TextField
           value={query}
           onChangeText={setQuery}
           placeholder="Buscar categoría…"

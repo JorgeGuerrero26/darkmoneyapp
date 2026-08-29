@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react";
-import { FlatList, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { FlatList, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Check, Search, X } from "lucide-react-native";
 
 import { BottomSheet } from "./BottomSheet";
 import { SafeBlurView } from "./SafeBlurView";
+import { TextField } from "./TextField";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 
 export type SelectOption<T = number | null> = {
@@ -66,12 +67,13 @@ export function SearchableSelectSheet<T = number | null>({
       {showSearch ? (
         <View style={styles.searchRow}>
           <Search size={16} color={COLORS.storm} style={styles.searchIcon} />
-          <TextInput
+          <TextField
             value={query}
             onChangeText={setQuery}
             placeholder="Buscar..."
             placeholderTextColor={COLORS.storm}
             style={styles.searchInput}
+            containerStyle={styles.searchFieldWrap}
             autoCorrect={false}
             autoCapitalize="none"
           />
@@ -173,6 +175,7 @@ const styles = StyleSheet.create({
     gap: SPACING.sm,
   },
   searchIcon: { flexShrink: 0 },
+  searchFieldWrap: { alignSelf: "stretch" },
   searchInput: {
     flex: 1,
     color: COLORS.ink,

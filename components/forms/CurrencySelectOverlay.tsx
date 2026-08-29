@@ -1,9 +1,10 @@
 import { useMemo } from "react";
-import { StyleSheet, Text, TextInput, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 
 import { SUPPORTED_CURRENCIES } from "../../constants/currencies";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { SearchableSelectSheet, type SelectOption } from "../ui/SearchableSelectSheet";
+import { TextField } from "../ui/TextField";
 
 type Props = {
   visible: boolean;
@@ -56,7 +57,7 @@ export function CustomCurrencyField({ value, onChange }: CustomProps) {
   return (
     <View style={styles.root}>
       <Text style={styles.label}>Código de moneda</Text>
-      <TextInput
+      <TextField
         style={styles.input}
         value={value}
         onChangeText={(t) => onChange(t.toUpperCase())}
