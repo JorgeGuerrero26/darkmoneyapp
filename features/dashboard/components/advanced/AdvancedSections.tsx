@@ -1,4 +1,5 @@
 import { Text, TouchableOpacity, View } from "react-native";
+import { obligationViewerDirection } from "../../../../lib/obligation-viewer-labels";
 import type { useRouter } from "expo-router";
 import { endOfMonth, format, startOfMonth, subMonths } from "date-fns";
 
@@ -11,8 +12,8 @@ import { dashboardSimpleStyles as subStyles } from "../simple/styles";
 type ObligationItem = { id: number; title: string; direction: string; pendingAmount: number; currencyCode: string; counterparty: string };
 
 export function ObligationsSection({ obligations, router }: { obligations: ObligationItem[]; router: ReturnType<typeof useRouter> }) {
-  const receivable = obligations.filter((o) => o.direction === "receivable").slice(0, 3);
-  const payable = obligations.filter((o) => o.direction === "payable").slice(0, 3);
+  const receivable = obligations.filter((o) => obligationViewerDirection(o) === "receivable").slice(0, 3);
+  const payable = obligations.filter((o) => obligationViewerDirection(o) === "payable").slice(0, 3);
   if (receivable.length === 0 && payable.length === 0) return null;
 
   function renderGroup(title: string, items: ObligationItem[], color: string) {

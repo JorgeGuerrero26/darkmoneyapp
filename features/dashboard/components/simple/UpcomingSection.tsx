@@ -1,4 +1,5 @@
 import { Text, TouchableOpacity, View } from "react-native";
+import { obligationViewerDirection } from "../../../../lib/obligation-viewer-labels";
 import type { useRouter } from "expo-router";
 import { addDays, differenceInDays, format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -57,8 +58,8 @@ export function UpcomingSection({ obligations, subscriptions, recurringIncome, r
         currency: ob.currencyCode,
         date: d,
         kind: "obligation",
-        flow: ob.direction === "receivable" ? "in" : "out",
-        badge: ob.direction === "receivable" ? "Cobro" : "Deuda",
+        flow: obligationViewerDirection(ob) === "receivable" ? "in" : "out",
+        badge: obligationViewerDirection(ob) === "receivable" ? "Cobro" : "Deuda",
         onPress: () => router.push(`/obligation/${ob.id}`),
       });
     }

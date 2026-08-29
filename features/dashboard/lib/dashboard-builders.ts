@@ -1,4 +1,5 @@
 import { addDays, differenceInDays } from "date-fns";
+import { obligationViewerDirection } from "../../../lib/obligation-viewer-labels";
 
 import { movementDisplayAmount } from "../../../lib/movement-amounts";
 import { parseDisplayDate } from "../../../lib/date";
@@ -173,7 +174,7 @@ export function buildFutureFlowWindows(
       );
       if (convertedAmount === null) unconvertedCount += 1;
       scheduledCount += 1;
-      if (obligation.direction === "receivable") {
+      if (obligationViewerDirection(obligation) === "receivable") {
         receivableCount += 1;
         expectedInflow += convertedAmount ?? 0;
       } else {

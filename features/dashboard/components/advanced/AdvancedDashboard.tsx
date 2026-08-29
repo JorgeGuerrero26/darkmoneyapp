@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { obligationViewerDirection } from "../../../../lib/obligation-viewer-labels";
 import {
   Animated,
   Easing,
@@ -522,7 +523,7 @@ export function AdvancedDashboard({
   const collectionEfficiency = useMemo(() => {
     const now = new Date();
     const thirtyDaysAgo = subDays(now, 30);
-    const receivable = obligations.filter((ob) => ob.direction === "receivable");
+    const receivable = obligations.filter((ob) => obligationViewerDirection(ob) === "receivable");
     if (receivable.length === 0) return { rate: null, resolved: 0, total: 0, label: "Sin cobros", color: COLORS.storm };
     const dueInWindow = receivable.filter((ob) => {
       if (!ob.dueDate) return false;

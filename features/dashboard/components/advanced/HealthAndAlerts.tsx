@@ -1,4 +1,5 @@
 import { Text, TouchableOpacity, View } from "react-native";
+import { obligationViewerDirection } from "../../../../lib/obligation-viewer-labels";
 import type { useRouter } from "expo-router";
 import { addDays, differenceInDays, format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -176,8 +177,8 @@ export function ObligationWatch({
   const active = obligations.filter((o) => o.status === "active");
   if (active.length === 0) return null;
 
-  const receivable = active.filter((o) => o.direction === "receivable");
-  const payable = active.filter((o) => o.direction === "payable");
+  const receivable = active.filter((o) => obligationViewerDirection(o) === "receivable");
+  const payable = active.filter((o) => obligationViewerDirection(o) === "payable");
 
   function agingText(dueDate: string | null): { text: string; color: string } {
     if (!dueDate) return { text: "Sin fecha", color: COLORS.storm };

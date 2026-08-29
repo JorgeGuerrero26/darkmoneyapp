@@ -1,4 +1,5 @@
 import { Text, TouchableOpacity, View } from "react-native";
+import { obligationViewerDirection } from "../../../../lib/obligation-viewer-labels";
 import type { useRouter } from "expo-router";
 
 import { formatCurrency } from "../../../../components/ui/AmountDisplay";
@@ -22,7 +23,7 @@ type LeadersProps = {
 
 function ReceivableLeaders({ obligations, router }: LeadersProps) {
   const items = obligations
-    .filter((o) => o.direction === "receivable" && o.status === "active")
+    .filter((o) => obligationViewerDirection(o) === "receivable" && o.status === "active")
     .sort((a, b) => b.pendingAmount - a.pendingAmount)
     .slice(0, 3);
   if (items.length === 0) return null;
@@ -51,7 +52,7 @@ function ReceivableLeaders({ obligations, router }: LeadersProps) {
 
 function PayableLeaders({ obligations, router }: LeadersProps) {
   const items = obligations
-    .filter((o) => o.direction === "payable" && o.status === "active")
+    .filter((o) => obligationViewerDirection(o) === "payable" && o.status === "active")
     .sort((a, b) => b.pendingAmount - a.pendingAmount)
     .slice(0, 3);
   if (items.length === 0) return null;
@@ -79,8 +80,8 @@ function PayableLeaders({ obligations, router }: LeadersProps) {
 }
 
 export function LeadersRow({ obligations, router }: LeadersProps) {
-  const hasReceivable = obligations.some((o) => o.direction === "receivable" && o.status === "active");
-  const hasPayable = obligations.some((o) => o.direction === "payable" && o.status === "active");
+  const hasReceivable = obligations.some((o) => obligationViewerDirection(o) === "receivable" && o.status === "active");
+  const hasPayable = obligations.some((o) => obligationViewerDirection(o) === "payable" && o.status === "active");
   if (!hasReceivable && !hasPayable) return null;
 
   return (
