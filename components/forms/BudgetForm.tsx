@@ -22,6 +22,7 @@ import {
 import type { BudgetOverview } from "../../types/domain";
 import { BottomSheet } from "../ui/BottomSheet";
 import { FormOptionRow } from "../ui/FormOptionRow";
+import { SearchableSelectSheet } from "../ui/SearchableSelectSheet";
 import { CurrencySelectOverlay } from "./CurrencySelectOverlay";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { Button } from "../ui/Button";
@@ -63,6 +64,8 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
   const now = new Date();
 
   const [currencyOpen, setCurrencyOpen] = useState(false);
+  const [categoryOpen, setCategoryOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
   const [name, setName] = useState("");
   const [limitAmount, setLimitAmount] = useState("");
   const [currencyCode, setCurrencyCode] = useState(defaultCurrency);
@@ -247,6 +250,30 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
             onCancel={() => setDiscardVisible(false)}
             onConfirm={() => { setDiscardVisible(false); onClose(); }}
           />
+          <SearchableSelectSheet
+            inline
+            visible={categoryOpen}
+            title="Categoría"
+            options={[
+              { value: null as number | null, label: "Todas" },
+              ...expenseCategories.map((cat) => ({ value: cat.id as number | null, label: cat.name })),
+            ]}
+            value={categoryId}
+            onChange={setCategoryId}
+            onClose={() => setCategoryOpen(false)}
+          />
+          <SearchableSelectSheet
+            inline
+            visible={accountOpen}
+            title="Cuenta"
+            options={[
+              { value: null as number | null, label: "Todas" },
+              ...activeAccounts.map((acc) => ({ value: acc.id as number | null, label: acc.name })),
+            ]}
+            value={accountId}
+            onChange={setAccountId}
+            onClose={() => setAccountOpen(false)}
+          />
           <CurrencySelectOverlay
             visible={currencyOpen}
             onClose={() => setCurrencyOpen(false)}
@@ -368,58 +395,22 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
 
       {/* Category filter (optional) */}
       {expenseCategories.length > 0 ? (
-        <View>
-          <Text style={styles.label}>Categoría (opcional)</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View style={styles.pillRow}>
-              <TouchableOpacity
-                style={[styles.pill, categoryId === null && styles.pillActive]}
-                onPress={() => setCategoryId(null)}
-              >
-                <Text style={[styles.pillText, categoryId === null && styles.pillTextActive]}>Todas</Text>
-              </TouchableOpacity>
-              {expenseCategories.map((cat) => (
-                <TouchableOpacity
-                  key={cat.id}
-                  style={[styles.pill, categoryId === cat.id && styles.pillActive]}
-                  onPress={() => setCategoryId(cat.id)}
-                >
-                  <Text style={[styles.pillText, categoryId === cat.id && styles.pillTextActive]}>
-                    {cat.name}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </ScrollView>
-        </View>
+        <FormOptionRow
+          label="Categoría"
+          value={expenseCategories.find((cat) => cat.id === categoryId)?.name ?? null}
+          placeholder="Todas"
+          onPress={() => setCategoryOpen(true)}
+        />
       ) : null}
 
       {/* Account filter (optional) */}
       {activeAccounts.length > 0 ? (
-        <View>
-          <Text style={styles.label}>Cuenta (opcional)</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View style={styles.pillRow}>
-              <TouchableOpacity
-                style={[styles.pill, accountId === null && styles.pillActive]}
-                onPress={() => setAccountId(null)}
-              >
-                <Text style={[styles.pillText, accountId === null && styles.pillTextActive]}>Todas</Text>
-              </TouchableOpacity>
-              {activeAccounts.map((acc) => (
-                <TouchableOpacity
-                  key={acc.id}
-                  style={[styles.pill, accountId === acc.id && styles.pillActive]}
-                  onPress={() => setAccountId(acc.id)}
-                >
-                  <Text style={[styles.pillText, accountId === acc.id && styles.pillTextActive]}>
-                    {acc.name}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </ScrollView>
-        </View>
+        <FormOptionRow
+          label="Cuenta"
+          value={activeAccounts.find((acc) => acc.id === accountId)?.name ?? null}
+          placeholder="Todas"
+          onPress={() => setAccountOpen(true)}
+        />
       ) : null}
 
       {/* Rollover */}
