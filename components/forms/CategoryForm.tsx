@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { StyleSheet, Switch, Text, TextInput, View } from "react-native";
 
 import { useWorkspace } from "../../lib/workspace-context";
 import { useAuth } from "../../lib/auth-context";
@@ -13,10 +13,13 @@ import {
   type CategoryFormInput,
 } from "../../services/queries/workspace-data";
 import type { CategoryOverview } from "../../types/domain";
-import { BottomSheet } from "../ui/BottomSheet";
-import { Button } from "../ui/Button";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
-import { sortByLabel, sortByName } from "../../lib/sort-locale";
+import { FormOptionRow } from "../ui/FormOptionRow";
+import { FormSheetScaffold } from "../ui/FormSheetScaffold";
+import { SearchableSelectSheet, type SelectOption } from "../ui/SearchableSelectSheet";
+import { SegmentedControl } from "../ui/SegmentedControl";
+import { AppearancePickerOverlay, CATEGORY_COLOR_CHOICES } from "./AppearancePickerOverlay";
+import { sortByName } from "../../lib/sort-locale";
 import {
   CATEGORY_ICON_PICKER_KEYS,
   DEFAULT_CATEGORY_ICON_KEY,
@@ -26,17 +29,14 @@ import {
 } from "../../lib/category-icons";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 
-const KIND_OPTIONS = sortByLabel([
-  { value: "expense", label: "Gasto" },
-  { value: "income", label: "Ingreso" },
+// Sin `sortByLabel`: en un segmentado el orden es parte del control, y de más común a menos
+// común se lee mejor que alfabético.
+const KIND_OPTIONS: { value: CategoryFormInput["kind"]; label: string }[] = [
+  { value: "expense", label: "Gastos" },
+  { value: "income", label: "Ingresos" },
   { value: "both", label: "Ambos" },
-]);
-
-const CATEGORY_COLORS = [
-  "#6366F1", "#10B981", "#F59E0B", "#EF4444",
-  "#3B82F6", "#8B5CF6", "#EC4899", "#14B8A6",
-  "#F97316", "#84CC16",
 ];
+
 
 const KIND_DEFAULT_COLORS: Record<CategoryFormInput["kind"], string> = {
   expense: COLORS.expense,
@@ -62,22 +62,18 @@ export function CategoryForm({ visible, onClose, onSuccess, editCategory }: Prop
 
   const isEditing = Boolean(editCategory);
 
-  const defaultSortOrderStr = useMemo(() => {
-    const nums = (snapshot?.categories ?? []).map((c) => c.sortOrder ?? 0);
-    const m = nums.length ? Math.max(...nums) : 0;
-    return String(m + 10);
-  }, [snapshot?.categories]);
 
   const [name, setName] = useState("");
   const [kind, setKind] = useState<CategoryFormInput["kind"]>("expense");
   const [color, setColor] = useState(KIND_DEFAULT_COLORS.expense);
   const [icon, setIcon] = useState(DEFAULT_CATEGORY_ICON_KEY);
   const [parentId, setParentId] = useState<number | null>(null);
-  const [sortOrder, setSortOrder] = useState(defaultSortOrderStr);
   const [isActive, setIsActive] = useState(true);
 
   const [nameError, setNameError] = useState("");
   const [showDiscard, setShowDiscard] = useState(false);
+  const [appearanceOpen, setAppearanceOpen] = useState(false);
+  const [parentOpen, setParentOpen] = useState(false);
 
   useEffect(() => {
     if (!visible) return;
@@ -87,7 +83,6 @@ export function CategoryForm({ visible, onClose, onSuccess, editCategory }: Prop
       setColor(editCategory.color ?? KIND_DEFAULT_COLORS[editCategory.kind]);
       setIcon(iconKeyForFormState(editCategory.icon));
       setParentId(editCategory.parentId ?? null);
-      setSortOrder(String(editCategory.sortOrder ?? 0));
       setIsActive(editCategory.isActive);
     } else {
       setName("");
@@ -95,11 +90,10 @@ export function CategoryForm({ visible, onClose, onSuccess, editCategory }: Prop
       setColor(KIND_DEFAULT_COLORS.expense);
       setIcon(DEFAULT_CATEGORY_ICON_KEY);
       setParentId(null);
-      setSortOrder(defaultSortOrderStr);
       setIsActive(true);
     }
     setNameError("");
-  }, [visible, editCategory, defaultSortOrderStr]);
+  }, [visible, editCategory]);
 
   function changeKind(next: CategoryFormInput["kind"]) {
     const prevDef = KIND_DEFAULT_COLORS[kind];
@@ -119,7 +113,6 @@ export function CategoryForm({ visible, onClose, onSuccess, editCategory }: Prop
       color !== (ec.color ?? KIND_DEFAULT_COLORS[ec.kind]) ||
       normalizeIconLookupKey(icon) !== normalizeIconLookupKey(ec.icon ?? DEFAULT_CATEGORY_ICON_KEY) ||
       parentId !== (ec.parentId ?? null) ||
-      sortOrder !== String(ec.sortOrder ?? 0) ||
       isActive !== ec.isActive
     );
   }
@@ -146,18 +139,6 @@ export function CategoryForm({ visible, onClose, onSuccess, editCategory }: Prop
       return;
     }
 
-    let resolvedSort: number | undefined;
-    if (sortOrder.trim() === "") {
-      resolvedSort = isEditing && editCategory ? editCategory.sortOrder : undefined;
-    } else {
-      const so = parseInt(sortOrder, 10);
-      if (!Number.isFinite(so) || so < 0) {
-        haptics.error();
-        showToast("El orden debe ser un número ≥ 0", "error");
-        return;
-      }
-      resolvedSort = so;
-    }
 
     if (isEditing && editCategory && parentId === editCategory.id) {
       haptics.error();
@@ -176,7 +157,7 @@ export function CategoryForm({ visible, onClose, onSuccess, editCategory }: Prop
             color: color.trim() || null,
             icon: icon.trim() || null,
             parentId,
-            sortOrder: resolvedSort ?? editCategory.sortOrder,
+            // El orden no se edita aquí: se conserva el que ya tenía.
             isActive,
           },
         });
@@ -188,7 +169,7 @@ export function CategoryForm({ visible, onClose, onSuccess, editCategory }: Prop
           color: color.trim() || null,
           icon: icon.trim() || null,
           parentId,
-          sortOrder: resolvedSort,
+          // Al crear lo resuelve el servidor con max(sort_order)+10; nadie elige 280 a conciencia.
           isActive: true,
         });
         showToast("Categoría creada", "success");
@@ -214,17 +195,55 @@ export function CategoryForm({ visible, onClose, onSuccess, editCategory }: Prop
     return sortByName(raw);
   }, [snapshot?.categories, kind, editCategory?.id]);
 
+  const iconOptions = useMemo(
+    () => CATEGORY_ICON_PICKER_KEYS.map((key) => ({ key, Icon: getLucideIconForCategory(key) })),
+    [],
+  );
+
   const isLoading = createMutation.isPending || updateMutation.isPending;
 
+  const parentName = parentOptions.find((option) => option.id === parentId)?.name ?? null;
+  const SelectedIcon = getLucideIconForCategory(icon);
+
+  const parentSelectOptions: SelectOption<number | null>[] = [
+    { value: null, label: "Ninguna", meta: "Categoría de primer nivel" },
+    ...parentOptions.map((option) => ({ value: option.id as number | null, label: option.name })),
+  ];
+
   return (
-    <>
-      <BottomSheet
-        visible={visible}
-        onClose={handleClose}
-        title={isEditing ? "Editar categoría" : "Nueva categoría"}
-        snapHeight={0.92}
-        // Dentro del sheet: iOS solo presenta un Modal a la vez y como hermano no aparecía.
-        overlay={
+    <FormSheetScaffold
+      visible={visible}
+      onClose={handleClose}
+      title={isEditing ? "Editar categoría" : "Nueva categoría"}
+      submitLabel={isEditing ? "Guardar cambios" : "Crear categoría"}
+      onSubmit={handleSubmit}
+      submitLoading={isLoading}
+      missingLabel={name.trim() ? null : "Falta el nombre"}
+      snapHeight={0.92}
+      overlay={
+        <>
+          <AppearancePickerOverlay
+            visible={appearanceOpen}
+            onClose={() => setAppearanceOpen(false)}
+            color={color}
+            onColorChange={setColor}
+            icon={icon}
+            onIconChange={setIcon}
+            iconOptions={iconOptions}
+            isIconSelected={(optionKey, current) =>
+              normalizeIconLookupKey(current) === normalizeIconLookupKey(optionKey)
+            }
+          />
+          <SearchableSelectSheet
+            inline
+            visible={parentOpen}
+            title="Dentro de"
+            options={parentSelectOptions}
+            value={parentId}
+            onChange={setParentId}
+            onClose={() => setParentOpen(false)}
+          />
+          {/* Dentro del sheet: iOS solo presenta un Modal a la vez. */}
           <ConfirmDialog
             inline
             visible={showDiscard}
@@ -238,133 +257,67 @@ export function CategoryForm({ visible, onClose, onSuccess, editCategory }: Prop
               onClose();
             }}
           />
-        }
-      >
-        <View>
-          <Text style={styles.label}>Ícono (Lucide, como en la web)</Text>
-          <Text style={styles.iconHint}>
-            Mismo tipo de iconos que la versión web; se guarda el nombre (ej. home, car, utensils-crossed).
-          </Text>
-          <View style={styles.iconGrid}>
-            {CATEGORY_ICON_PICKER_KEYS.map((key) => {
-              const Icon = getLucideIconForCategory(key);
-              const selected = normalizeIconLookupKey(icon) === normalizeIconLookupKey(key);
-              return (
-                <TouchableOpacity
-                  key={key}
-                  style={[styles.iconBtn, selected && styles.iconBtnActive]}
-                  onPress={() => setIcon(key)}
-                  accessibilityLabel={`Icono ${key}`}
-                >
-                  <Icon size={22} color={selected ? COLORS.pine : COLORS.ink} strokeWidth={2} />
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
-
-        <View>
-          <Text style={styles.label}>Color</Text>
-          <View style={styles.colorRow}>
-            {CATEGORY_COLORS.map((c) => (
-              <TouchableOpacity
-                key={c}
-                style={[styles.colorDot, { backgroundColor: c }, color === c && styles.colorDotActive]}
-                onPress={() => setColor(c)}
-              />
-            ))}
-          </View>
-        </View>
-
-        <View>
-          <Text style={styles.label}>Nombre *</Text>
-          <TextInput
-            style={[styles.textInput, nameError ? styles.inputError : null]}
-            value={name}
-            onChangeText={(t) => { setName(t); setNameError(""); }}
-            placeholder="Ej. Alimentación, Transporte"
-            placeholderTextColor={COLORS.textDisabled}
-            maxLength={80}
-          />
-          {nameError ? <Text style={styles.fieldError}>{nameError}</Text> : null}
-        </View>
-
-        <View>
-          <Text style={styles.label}>Tipo</Text>
-          <View style={styles.pillRow}>
-            {KIND_OPTIONS.map((k) => (
-              <TouchableOpacity
-                key={k.value}
-                style={[styles.pill, kind === k.value && styles.pillActive]}
-                onPress={() => changeKind(k.value as CategoryFormInput["kind"])}
-              >
-                <Text style={[styles.pillText, kind === k.value && styles.pillTextActive]}>{k.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        <View>
-          <Text style={styles.label}>Orden (sort_order)</Text>
-          <TextInput
-            style={styles.textInput}
-            value={sortOrder}
-            onChangeText={setSortOrder}
-            placeholder={defaultSortOrderStr}
-            placeholderTextColor={COLORS.textDisabled}
-            keyboardType="number-pad"
-          />
-          <Text style={styles.hint}>
-            Crear: vacío o 0 → el servidor usa max(sort_order)+10. Editar: vacío mantiene el orden actual.
-          </Text>
-        </View>
-
-        {parentOptions.length > 0 ? (
-          <View>
-            <Text style={styles.label}>Categoría padre (opcional)</Text>
-            <View style={styles.pillWrap}>
-              <TouchableOpacity
-                style={[styles.pill, parentId === null && styles.pillActive]}
-                onPress={() => setParentId(null)}
-              >
-                <Text style={[styles.pillText, parentId === null && styles.pillTextActive]}>Ninguna</Text>
-              </TouchableOpacity>
-              {parentOptions.map((p) => (
-                <TouchableOpacity
-                  key={p.id}
-                  style={[styles.pill, parentId === p.id && styles.pillActive]}
-                  onPress={() => setParentId(p.id)}
-                >
-                  <Text style={[styles.pillText, parentId === p.id && styles.pillTextActive]}>{p.name}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-        ) : null}
-
-        {isEditing ? (
-          <View style={styles.switchRow}>
-            <View style={styles.switchInfo}>
-              <Text style={styles.switchLabel}>Categoría activa</Text>
-              <Text style={styles.switchDesc}>Las inactivas no aparecen en la mayoría de selectores</Text>
-            </View>
-            <Switch
-              value={isActive}
-              onValueChange={setIsActive}
-              trackColor={{ false: COLORS.border, true: COLORS.primary }}
-              thumbColor="#FFFFFF"
-            />
-          </View>
-        ) : null}
-
-        <Button
-          label={isEditing ? "Guardar cambios" : "Crear categoría"}
-          onPress={handleSubmit}
-          loading={isLoading}
-          style={styles.submitBtn}
+        </>
+      }
+    >
+      {/* Lo obligatorio primero: antes esto vivía tras 400 px de íconos y colores. */}
+      <View>
+        <Text style={styles.label}>Nombre *</Text>
+        <TextInput
+          style={[styles.textInput, nameError ? styles.inputError : null]}
+          value={name}
+          onChangeText={(t) => { setName(t); setNameError(""); }}
+          placeholder="Ej. Alimentación, Transporte"
+          placeholderTextColor={COLORS.textDisabled}
+          maxLength={80}
         />
-      </BottomSheet>
-    </>
+        {nameError ? <Text style={styles.fieldError}>{nameError}</Text> : null}
+      </View>
+
+      <SegmentedControl
+        label="Se usa para"
+        options={KIND_OPTIONS}
+        value={kind}
+        onChange={changeKind}
+      />
+
+      <FormOptionRow
+        label="Apariencia"
+        value={null}
+        placeholder="Cambiar"
+        leading={
+          <View style={[styles.appearanceSwatch, { borderColor: color }]}>
+            <SelectedIcon size={20} color={color} strokeWidth={2} />
+          </View>
+        }
+        onPress={() => setAppearanceOpen(true)}
+      />
+
+      {parentOptions.length > 0 ? (
+        <FormOptionRow
+          label="Dentro de"
+          support="Agrupa esta categoría bajo otra"
+          value={parentName}
+          placeholder="Ninguna"
+          onPress={() => setParentOpen(true)}
+        />
+      ) : null}
+
+      {isEditing ? (
+        <View style={styles.switchRow}>
+          <View style={styles.switchInfo}>
+            <Text style={styles.switchLabel}>Categoría activa</Text>
+            <Text style={styles.switchDesc}>Las inactivas no aparecen en la mayoría de selectores</Text>
+          </View>
+          <Switch
+            value={isActive}
+            onValueChange={setIsActive}
+            trackColor={{ false: COLORS.border, true: COLORS.primary }}
+            thumbColor={COLORS.ink}
+          />
+        </View>
+      ) : null}
+    </FormSheetScaffold>
   );
 }
 
@@ -377,11 +330,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginBottom: SPACING.xs,
   },
-  hint: {
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.storm,
-    marginTop: 4,
-  },
   textInput: {
     backgroundColor: SURFACE.card,
     borderRadius: RADIUS.md,
@@ -392,48 +340,16 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.md,
     color: COLORS.ink,
   },
-  inputError: { borderColor: COLORS.danger },
-  fieldError: { fontSize: FONT_SIZE.xs, color: COLORS.danger, marginTop: 4 },
-  iconGrid: { flexDirection: "row", flexWrap: "wrap", gap: SPACING.sm },
-  iconHint: {
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.storm,
-    marginBottom: SPACING.sm,
-    lineHeight: 18,
-  },
-  iconBtn: {
-    width: 44,
-    height: 44,
+  appearanceSwatch: {
+    width: 36,
+    height: 36,
     borderRadius: RADIUS.md,
-    backgroundColor: SURFACE.card,
+    borderWidth: 2,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 2,
-    borderColor: "transparent",
   },
-  iconBtnActive: { borderColor: COLORS.pine, backgroundColor: COLORS.pine + "18" },
-  colorRow: { flexDirection: "row", flexWrap: "wrap", gap: SPACING.sm },
-  colorDot: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    borderWidth: 2,
-    borderColor: "transparent",
-  },
-  colorDotActive: { borderColor: COLORS.ink, borderWidth: 3 },
-  pillRow: { flexDirection: "row", gap: SPACING.sm },
-  pillWrap: { flexDirection: "row", flexWrap: "wrap", gap: SPACING.sm },
-  pill: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs + 2,
-    borderRadius: RADIUS.full,
-    backgroundColor: SURFACE.card,
-    borderWidth: 1,
-    borderColor: SURFACE.cardBorder,
-  },
-  pillActive: { backgroundColor: COLORS.pine, borderColor: COLORS.pine },
-  pillText: { fontSize: FONT_SIZE.sm, color: COLORS.storm, fontFamily: FONT_FAMILY.bodyMedium },
-  pillTextActive: { color: COLORS.textInverse },
+  inputError: { borderColor: COLORS.danger },
+  fieldError: { fontSize: FONT_SIZE.xs, color: COLORS.danger, marginTop: 4 },
   switchRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -447,5 +363,4 @@ const styles = StyleSheet.create({
   switchInfo: { flex: 1, gap: 2, marginRight: SPACING.md },
   switchLabel: { fontSize: FONT_SIZE.sm, fontFamily: FONT_FAMILY.bodyMedium, color: COLORS.ink },
   switchDesc: { fontSize: FONT_SIZE.xs, color: COLORS.storm },
-  submitBtn: { marginTop: SPACING.sm },
 });
