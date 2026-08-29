@@ -25,7 +25,7 @@ type ReviewInboxProps = {
     status: string;
   }>;
   router: ReturnType<typeof useRouter>;
-  onOpenMovementIssue?: (key: "uncategorized" | "pending" | "duplicates") => void;
+  onOpenMovementIssue?: (key: "uncategorized" | "pending" | "duplicates" | "no-counterparty") => void;
 };
 
 export function ReviewInbox({ movements, subscriptions, obligations, router, onOpenMovementIssue }: ReviewInboxProps) {
@@ -35,7 +35,22 @@ export function ReviewInbox({ movements, subscriptions, obligations, router, onO
   );
 
   const items = [
-    { key: "uncategorized", count: review.uncategorizedCount, title: "Sin categoria", detail: "Movimientos aplicados que aun no clasificas.", route: "/movements", icon: Tag, tone: COLORS.expense },
+    // Sin contraparte va primero: es el conteo mas alto y el que explica por que Contactos se
+    // siente vacio, y estaba enterrado como segunda viñeta de otra tarjeta.
+    { key: "no-counterparty", count: review.noCounterpartyCount, title: "Sin contraparte", detail: "No se sabe a quien le pagaste.", route: "/movements", icon: AlertCircle, tone: COLORS.storm },
+    // El numero y su consecuencia juntos: cuanto pesa lo que esta sin clasificar.
+    {
+      key: "uncategorized",
+      count: review.uncategorizedCount,
+      title: "Sin categoría",
+      detail:
+        review.uncategorizedExpenseShare > 0
+          ? `Pesan ${review.uncategorizedExpenseShare}% de tu gasto.`
+          : "Movimientos aplicados que aún no clasificas.",
+      route: "/movements",
+      icon: Tag,
+      tone: COLORS.expense,
+    },
     { key: "pending", count: review.pendingMovementsCount, title: "Pendientes de aplicar", detail: "Todavia no impactan el saldo real.", route: "/movements", icon: Clock, tone: COLORS.expense },
     { key: "duplicates", count: review.duplicateExpenseGroups, title: "Posibles duplicados", detail: "Fecha cercana, monto parecido y texto similar.", route: "/movements", icon: AlertTriangle, tone: COLORS.expense },
     { key: "subscriptions", count: review.subscriptionsAttentionCount, title: "Suscripciones por revisar", detail: "Sin cuenta ligada o con vencimiento pasado.", route: "/subscriptions", icon: Bell, tone: COLORS.secondary },
@@ -44,9 +59,35 @@ export function ReviewInbox({ movements, subscriptions, obligations, router, onO
     { key: "overdue", count: review.overdueObligationsCount, title: "Cobros o pagos vencidos", detail: "Compromisos con fecha pasada y saldo pendiente.", route: "/obligations", icon: AlertTriangle, tone: COLORS.expense },
   ].filter((item) => item.count > 0);
 
+  // El mockup pone la accion en el encabezado: la tarjeta "Trabajo pendiente" que habia
+  // debajo repetia el primer item de esta lista con otras palabras y su propio boton.
+  const firstItem = items[0];
+
   return (
     <Card>
-      <SectionTitle>Por revisar</SectionTitle>
+      <View style={subStyles.reviewHeaderRow}>
+        <SectionTitle>Por revisar</SectionTitle>
+        {firstItem ? (
+          <TouchableOpacity
+            onPress={() => {
+              if (
+              (firstItem.key === "uncategorized" ||
+                firstItem.key === "pending" ||
+                firstItem.key === "duplicates" ||
+                firstItem.key === "no-counterparty") &&
+                onOpenMovementIssue
+              ) {
+                onOpenMovementIssue(firstItem.key);
+                return;
+              }
+              router.push(firstItem.route as never);
+            }}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={subStyles.reviewHeaderAction}>Empezar</Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
       {items.length === 0 ? (
         <View style={subStyles.richEmptyState}>
           <Sparkles size={18} color={COLORS.income} />
@@ -63,7 +104,10 @@ export function ReviewInbox({ movements, subscriptions, obligations, router, onO
               style={subStyles.reviewItem}
               onPress={() => {
                 if (
-                  (item.key === "uncategorized" || item.key === "pending" || item.key === "duplicates") &&
+                  (item.key === "uncategorized" ||
+                    item.key === "pending" ||
+                    item.key === "duplicates" ||
+                    item.key === "no-counterparty") &&
                   onOpenMovementIssue
                 ) {
                   onOpenMovementIssue(item.key);

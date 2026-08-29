@@ -10,6 +10,16 @@ import { convertAmt, isCategorizedCashflow, isExpense } from "./aggregations";
 
 export type DashboardReviewInbox = {
   uncategorizedCount: number;
+  /**
+   * Movimientos sin contraparte.
+   *
+   * Era la segunda viñeta de una tarjeta de dos líneas, sin nada que tocar, mientras 1.400 px
+   * más abajo se detallaba la madurez del análisis. Son más que los movimientos útiles totales
+   * y explican por qué Contactos se siente vacío: sube a primera fila de «Por revisar».
+   */
+  noCounterpartyCount: number;
+  /** Qué parte del gasto pesa lo que está sin categoría: el número y su consecuencia juntos. */
+  uncategorizedExpenseShare: number;
   pendingMovementsCount: number;
   duplicateExpenseGroups: number;
   subscriptionsAttentionCount: number;
@@ -38,6 +48,19 @@ export function buildReviewInboxSnapshot(
     (movement) =>
       movement.status === "posted" && isCategorizedCashflow(movement) && movement.categoryId == null,
   ).length;
+
+  const cashflowMovements = movements.filter(
+    (movement) => movement.status === "posted" && isCategorizedCashflow(movement),
+  );
+  const noCounterpartyCount = cashflowMovements.filter((movement) => movement.counterpartyId == null).length;
+
+  // El peso sobre el gasto, no sobre el total de movimientos: es lo que cambia si lo ordenas.
+  const expenseMovements = cashflowMovements.filter(isExpense);
+  const totalExpense = expenseMovements.reduce((sum, movement) => sum + Math.abs(movementDisplayAmount(movement)), 0);
+  const uncategorizedExpense = expenseMovements
+    .filter((movement) => movement.categoryId == null)
+    .reduce((sum, movement) => sum + Math.abs(movementDisplayAmount(movement)), 0);
+  const uncategorizedExpenseShare = totalExpense > 0 ? Math.round((uncategorizedExpense / totalExpense) * 100) : 0;
 
   const pendingMovementsCount = movements.filter((movement) => movement.status === "pending").length;
 
@@ -75,6 +98,7 @@ export function buildReviewInboxSnapshot(
 
   const totalIssues =
     uncategorizedCount +
+    noCounterpartyCount +
     pendingMovementsCount +
     duplicateExpenseGroups +
     subscriptionsAttentionCount +
@@ -91,6 +115,8 @@ export function buildReviewInboxSnapshot(
     subscriptionsAttentionCount,
     totalIssues,
     uncategorizedCount,
+    noCounterpartyCount,
+    uncategorizedExpenseShare,
   };
 }
 
