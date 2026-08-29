@@ -1,0 +1,117 @@
+# Plan de rediseño — DarkMoney (Revisión 07)
+
+> Séptima tanda: **Registrar movimiento** — el formulario de mayor uso de la app.
+> Las anteriores están cerradas en [`REDISENO.md`](REDISENO.md) (sistema visual),
+> [`REDISENO_FASE2.md`](REDISENO_FASE2.md) (dashboard), [`REDISENO_FASE3.md`](REDISENO_FASE3.md)
+> (módulos de lista), [`REDISENO_FASE4.md`](REDISENO_FASE4.md) (pantallas de sistema) y
+> [`REDISENO_FASE5.md`](REDISENO_FASE5.md) (formularios y Salud).
+
+Fuente: `DarkMoney - Rediseño.dc.html`, Revisión 07 (29 ago 2026).
+
+Archivos: `components/forms/MovementForm.tsx` (1.378 líneas) y sus tres pasos en
+`features/movements/components/form/steps/`.
+
+---
+
+## 0. El hallazgo que ordena todo lo demás
+
+> El paso 3 **no tiene un solo campo obligatorio**. Descripción, Categoría, Contraparte, Notas y
+> Comprobantes: los cinco lo dicen en su propia etiqueta. Y aun así el paso 2 termina en
+> "Siguiente →", que obliga a pasar por una pantalla entera de campos que nadie tiene que llenar
+> antes de poder guardar.
+
+Con el monto y la cuenta elegidos el movimiento **ya es válido**. Así que:
+
+- El botón del paso de monto es **Guardar**.
+- Los detalles pasan a ser **un destino al que se entra a propósito**, no un peaje.
+- Tipo y estado son dos controles de una línea cada uno, no una pantalla: **suben al paso de
+  monto**.
+
+El formulario queda en **dos pasos**: `1 · Monto` y `2 · Detalles · opcional`.
+
+Para el que solo anota un taxi, el formulario se acaba en el paso 1; para el que adjunta el
+comprobante, sigue estando todo.
+
+---
+
+## 1. Los ocho puntos
+
+### [ ] A · Dos colores de selección en la misma pantalla
+La cuenta origen elegida se marca con borde **naranja** y la destino con borde **azul**. Son el
+mismo estado —"esto es lo que elegiste"— pintado de dos colores, y el azul no existe en el
+sistema.
+
+> Causa real: `components/domain/AccountPicker.tsx` usa `acc.color` —el color **de la cuenta**—
+> como borde de selección. Como cada cuenta tiene el suyo, el estado "seleccionado" cambia de
+> color según qué cuenta toques.
+
+Estar seleccionado se ve igual en toda la app: **borde hueso y etiqueta en hueso**, sin color.
+El color queda libre para decir de qué tipo es el movimiento.
+
+### [ ] B · En una transferencia nadie gana ni pierde
+Las dos tarjetas de proyección pintan el saldo que baja en rojo y el que sube en verde. Es la
+misma plata cambiándose de bolsillo: **el patrimonio no se mueve un centavo**. Pintarlo así dice
+que la mitad de la operación fue una pérdida.
+
+Los cuatro montos van **en hueso**, con el saldo anterior **tachado** al costado, y una línea al
+pie que dice que el patrimonio no cambia. **El rojo se reserva para saldo negativo de verdad.**
+
+### [ ] C · "PEN 21.3" no es un monto en soles
+Código ISO en vez del símbolo y el número sin los dos decimales. En el resto de la app el mismo
+monto es **S/ 21.30**: símbolo, dos decimales, separador de miles y fuente tabular.
+
+Y **"Cuenta Sueldo PEN" sobra**: la moneda de la cuenta solo importa cuando las dos no coinciden,
+y ese caso ya tiene su propia línea.
+
+### [ ] D · De dónde salen 50, 20 y 300
+"Frecuentes: 50 · 20 · 300" son tres números **sin procedencia declarada**, y ninguno es el monto
+que estás escribiendo. Con el teclado numérico ya abierto, tocar "50" no es más rápido que
+escribirlo. **Se retiran.**
+
+### [ ] E · "Confirmado" en verde dice ingreso
+El estado se pinta en menta y el tipo en clay, a diez píxeles de distancia. Menta significa plata
+que entra: un gasto confirmado se ve por un instante como un ingreso. **Estado no es plata**: va
+como **control segmentado**, con lo elegido en hueso sobre fondo oscuro.
+
+### [ ] F · Tres señales para un solo estado
+La tarjeta "Gasto" elegida lleva borde clay, ícono clay, etiqueta clay **y un punto clay debajo**.
+Cuatro marcas para decir una cosa. Queda el borde y el peso de la etiqueta; **el punto se va**.
+
+### [ ] G · El botón Guardar solo aparece si haces scroll
+Es la regla 3 de la plantilla —barra fija al pie— sin aplicar. Además el indicador de pasos
+desaparece en el último paso, justo donde más falta hace saber cuánto queda. **La barra queda
+anclada y el indicador se mantiene en los dos pasos.**
+
+### [ ] H · Detalles de redacción
+- "Descripcion y categoria" → con tildes. Y el título miente: la pantalla tiene seis campos.
+- "Se guardaran junto con el movimiento" y "Camara o galeria" → con tildes.
+- "0/5" se lee como fracción de progreso cuando es un **cupo**: va **"0 de 5"**.
+- **"(opcional)" aparece en cuatro campos con dos formatos distintos**. Si el paso entero es
+  opcional, se dice una vez en el indicador de pasos y se retira de cada campo.
+
+---
+
+## 2. Textos exactos del mockup
+
+Paso 1 (gasto): `Monto` · `Cuenta` · `Saldo después` · `Estado` · botón **Guardar** ·
+enlace **"Añadir categoría, nota o comprobante"**.
+
+Paso 1 (transferencia): `Sale de` · `Entra a` · `Saldos después` · la línea
+*"Las dos cuentas son en soles: se transfiere el mismo monto. Tu patrimonio no cambia."* ·
+enlace **"Añadir nota o comprobante"** (sin categoría: una transferencia no la lleva).
+
+Paso 2: `Descripción — se genera sola si la dejas vacía` · `Categoría` · `Contraparte` ·
+`Fecha y hora` · `Notas / Para lo que no cabe en la descripción` · `Comprobantes 0 de 5` ·
+*"Cámara o galería. Se guardan junto al movimiento cuando termines de crearlo."* ·
+botones **Atrás** y **Guardar**.
+
+---
+
+## 3. Riesgos conocidos
+
+- `MovementFormStep` es `1 | 2 | 3` y se usa en la validación por paso y en el scroll-to-error.
+  Pasar a dos pasos toca `validateStep1/2/3`, `handleNext`, `handleBack` y el `setStep(2)` de
+  edición.
+- `AccountPicker` lo usan también otros formularios: comprobar antes de cambiar el color de
+  selección.
+- Guardar desde el paso 1 debe correr **toda** la validación, no solo la del paso visible.
