@@ -23,6 +23,8 @@ import {
 import { computeNextRecurringDate, subscriptionFrequencyListLabel } from "../../lib/subscription-helpers";
 import type { SubscriptionSummary } from "../../types/domain";
 import { BottomSheet } from "../ui/BottomSheet";
+import { FormOptionRow } from "../ui/FormOptionRow";
+import { CurrencySelectOverlay } from "./CurrencySelectOverlay";
 import { Button } from "../ui/Button";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { CurrencyInput } from "../ui/CurrencyInput";
@@ -32,7 +34,6 @@ import { SmartSuggestion } from "../ui/SmartSuggestion";
 import { sortByName } from "../../lib/sort-locale";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 
-const POPULAR_CURRENCIES = ["PEN", "USD", "EUR", "MXN", "COP", "ARS", "CLP", "BRL"];
 
 const FREQUENCY_OPTIONS: { value: SubscriptionFormInput["frequency"]; label: string }[] = [
   { value: "weekly",    label: "Semanal" },
@@ -103,6 +104,7 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
     () => (patternMovements ? buildPatternMaps(patternMovements) : null),
     [patternMovements],
   );
+  const [currencyOpen, setCurrencyOpen] = useState(false);
   const [catSuggestionId, setCatSuggestionId] = useState<number | null>(null);
   const [accSuggestionId, setAccSuggestionId] = useState<number | null>(null);
   const nameDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -408,16 +410,24 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
         snapHeight={0.95}
         // Dentro del sheet: iOS solo presenta un Modal a la vez y como hermano no aparecía.
         overlay={
-          <ConfirmDialog
-            inline
-            visible={showDiscard}
-            title="¿Descartar cambios?"
-            body="Se perderán los datos ingresados."
-            confirmLabel="Descartar"
-            cancelLabel="Continuar"
-            onCancel={() => setShowDiscard(false)}
-            onConfirm={() => { setShowDiscard(false); onClose(); }}
-          />
+          <>
+            <ConfirmDialog
+              inline
+              visible={showDiscard}
+              title="¿Descartar cambios?"
+              body="Se perderán los datos ingresados."
+              confirmLabel="Descartar"
+              cancelLabel="Continuar"
+              onCancel={() => setShowDiscard(false)}
+              onConfirm={() => { setShowDiscard(false); onClose(); }}
+            />
+            <CurrencySelectOverlay
+              visible={currencyOpen}
+              onClose={() => setCurrencyOpen(false)}
+              value={currencyCode}
+              onChange={setCurrencyCode}
+            />
+          </>
         }
       >
       {/* Name */}
@@ -465,20 +475,11 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
 
       {/* Currency */}
       <View>
-        <Text style={styles.label}>Moneda</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <View style={styles.pillRow}>
-            {POPULAR_CURRENCIES.map((c) => (
-              <TouchableOpacity
-                key={c}
-                style={[styles.pill, currencyCode === c && styles.pillActive]}
-                onPress={() => setCurrencyCode(c)}
-              >
-                <Text style={[styles.pillText, currencyCode === c && styles.pillTextActive]}>{c}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </ScrollView>
+        <FormOptionRow
+          label="Moneda"
+          value={currencyCode}
+          onPress={() => setCurrencyOpen(true)}
+        />
       </View>
 
       {/* Amount */}

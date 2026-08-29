@@ -23,6 +23,8 @@ import {
 } from "../../lib/movement-patterns";
 import type { RecurringIncomeSummary } from "../../types/domain";
 import { BottomSheet } from "../ui/BottomSheet";
+import { FormOptionRow } from "../ui/FormOptionRow";
+import { CurrencySelectOverlay } from "./CurrencySelectOverlay";
 import { Button } from "../ui/Button";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { CurrencyInput } from "../ui/CurrencyInput";
@@ -32,7 +34,6 @@ import { SmartSuggestion } from "../ui/SmartSuggestion";
 import { sortByName } from "../../lib/sort-locale";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 
-const POPULAR_CURRENCIES = ["PEN", "USD", "EUR", "MXN", "COP", "ARS", "CLP"];
 const FREQUENCY_OPTIONS: { value: RecurringIncomeFormInput["frequency"]; label: string }[] = [
   { value: "weekly", label: "Semanal" },
   { value: "monthly", label: "Mensual" },
@@ -83,6 +84,7 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
   const today = format(new Date(), "yyyy-MM-dd");
   const isEditing = Boolean(editRecurringIncome);
 
+  const [currencyOpen, setCurrencyOpen] = useState(false);
   const [name, setName] = useState("");
   const [payerPartyId, setPayerPartyId] = useState<number | null>(null);
   const [amount, setAmount] = useState("");
@@ -313,16 +315,24 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
         snapHeight={0.88}
         // Dentro del sheet: iOS solo presenta un Modal a la vez y como hermano no aparecía.
         overlay={
-          <ConfirmDialog
-            inline
-            visible={showDiscard}
-            title="¿Descartar cambios?"
-            body="Se perderán los datos ingresados."
-            confirmLabel="Descartar"
-            cancelLabel="Continuar"
-            onCancel={() => setShowDiscard(false)}
-            onConfirm={() => { setShowDiscard(false); onClose(); }}
-          />
+          <>
+            <ConfirmDialog
+              inline
+              visible={showDiscard}
+              title="¿Descartar cambios?"
+              body="Se perderán los datos ingresados."
+              confirmLabel="Descartar"
+              cancelLabel="Continuar"
+              onCancel={() => setShowDiscard(false)}
+              onConfirm={() => { setShowDiscard(false); onClose(); }}
+            />
+            <CurrencySelectOverlay
+              visible={currencyOpen}
+              onClose={() => setCurrencyOpen(false)}
+              value={currencyCode}
+              onChange={setCurrencyCode}
+            />
+          </>
         }
       >
         <View style={styles.section}>
@@ -345,20 +355,11 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
             error={amountError}
           />
 
-          <Text style={styles.label}>Moneda</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View style={styles.pillRow}>
-              {POPULAR_CURRENCIES.map((code) => (
-                <TouchableOpacity
-                  key={code}
-                  style={[styles.pill, currencyCode === code && styles.pillActive]}
-                  onPress={() => setCurrencyCode(code)}
-                >
-                  <Text style={[styles.pillText, currencyCode === code && styles.pillTextActive]}>{code}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </ScrollView>
+          <FormOptionRow
+            label="Moneda"
+            value={currencyCode}
+            onPress={() => setCurrencyOpen(true)}
+          />
 
           <Text style={styles.label}>Frecuencia</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>

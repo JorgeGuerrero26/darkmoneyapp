@@ -30,6 +30,8 @@ import { shouldResendShareInvite } from "../../lib/obligation-share";
 import { sortByName } from "../../lib/sort-locale";
 import type { ObligationSummary, SharedObligationSummary } from "../../types/domain";
 import { BottomSheet } from "../ui/BottomSheet";
+import { FormOptionRow } from "../ui/FormOptionRow";
+import { CurrencySelectOverlay } from "./CurrencySelectOverlay";
 import { Button } from "../ui/Button";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { Input } from "../ui/Input";
@@ -38,7 +40,6 @@ import { BusinessDateNotice } from "../ui/BusinessDateNotice";
 import { DatePickerInput } from "../ui/DatePickerInput";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 
-const POPULAR_CURRENCIES = ["PEN", "USD", "EUR", "MXN", "COP", "ARS", "CLP", "BRL"];
 
 const DIRECTION_OPTIONS = [
   { value: "receivable", label: "Por cobrar", emoji: "↑", color: COLORS.income },
@@ -150,6 +151,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
   const defaultCurrency = activeWorkspace?.baseCurrencyCode ?? "PEN";
   const today = format(new Date(), "yyyy-MM-dd");
 
+  const [currencyOpen, setCurrencyOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [direction, setDirection] = useState<"receivable" | "payable">("payable");
   const [originType, setOriginType] = useState<ObligationFormInput["originType"]>("manual");
@@ -546,6 +548,12 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
         // Dentro del sheet: iOS solo presenta un Modal a la vez y como hermanos no aparecían.
         overlay={
           <>
+            <CurrencySelectOverlay
+              visible={currencyOpen}
+              onClose={() => setCurrencyOpen(false)}
+              value={currencyCode}
+              onChange={(code) => { setCurrencyCode(code); setCurrencyError(""); }}
+            />
             <ConfirmDialog
               inline
               visible={showDiscard}
@@ -729,22 +737,11 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
       {/* Currency — solo en creación */}
       {!isEditing ? (
         <View onLayout={(event) => { currencySectionYRef.current = event.nativeEvent.layout.y; }}>
-          <Text style={styles.label}>Moneda</Text>
-          <View style={currencyError ? styles.sectionErrorWrap : null}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View style={styles.pillRow}>
-                {POPULAR_CURRENCIES.map((c) => (
-                  <TouchableOpacity
-                    key={c}
-                    style={[styles.pill, currencyCode === c && styles.pillActive]}
-                    onPress={() => { setCurrencyCode(c); setCurrencyError(""); }}
-                  >
-                    <Text style={[styles.pillText, currencyCode === c && styles.pillTextActive]}>{c}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </ScrollView>
-          </View>
+          <FormOptionRow
+            label="Moneda"
+            value={currencyCode}
+            onPress={() => setCurrencyOpen(true)}
+          />
           {currencyError ? <Text style={styles.fieldError}>{currencyError}</Text> : null}
         </View>
       ) : null}

@@ -21,6 +21,8 @@ import {
 } from "../../services/queries/workspace-data";
 import type { BudgetOverview } from "../../types/domain";
 import { BottomSheet } from "../ui/BottomSheet";
+import { FormOptionRow } from "../ui/FormOptionRow";
+import { CurrencySelectOverlay } from "./CurrencySelectOverlay";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { Button } from "../ui/Button";
 import { CurrencyInput } from "../ui/CurrencyInput";
@@ -28,7 +30,6 @@ import { DatePickerInput } from "../ui/DatePickerInput";
 import { sortByName } from "../../lib/sort-locale";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 
-const POPULAR_CURRENCIES = ["PEN", "USD", "EUR", "MXN", "COP", "ARS", "CLP", "BRL"];
 
 const ALERT_PRESETS = [
   { label: "70%", value: 70 },
@@ -61,6 +62,7 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
   const defaultCurrency = activeWorkspace?.baseCurrencyCode ?? "PEN";
   const now = new Date();
 
+  const [currencyOpen, setCurrencyOpen] = useState(false);
   const [name, setName] = useState("");
   const [limitAmount, setLimitAmount] = useState("");
   const [currencyCode, setCurrencyCode] = useState(defaultCurrency);
@@ -234,16 +236,24 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
       snapHeight={0.92}
       // Dentro del sheet: iOS solo presenta un Modal a la vez y como hermano no aparecía.
       overlay={
-        <ConfirmDialog
-          inline
-          visible={discardVisible}
-          title="¿Descartar cambios?"
-          body="Los datos ingresados se perderán."
-          confirmLabel="Descartar"
-          cancelLabel="Continuar editando"
-          onCancel={() => setDiscardVisible(false)}
-          onConfirm={() => { setDiscardVisible(false); onClose(); }}
-        />
+        <>
+          <ConfirmDialog
+            inline
+            visible={discardVisible}
+            title="¿Descartar cambios?"
+            body="Los datos ingresados se perderán."
+            confirmLabel="Descartar"
+            cancelLabel="Continuar editando"
+            onCancel={() => setDiscardVisible(false)}
+            onConfirm={() => { setDiscardVisible(false); onClose(); }}
+          />
+          <CurrencySelectOverlay
+            visible={currencyOpen}
+            onClose={() => setCurrencyOpen(false)}
+            value={currencyCode}
+            onChange={setCurrencyCode}
+          />
+        </>
       }
     >
       {/* Name */}
@@ -323,22 +333,11 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
       </View>
 
       {/* Currency */}
-      <View>
-        <Text style={styles.label}>Moneda</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <View style={styles.pillRow}>
-            {POPULAR_CURRENCIES.map((c) => (
-              <TouchableOpacity
-                key={c}
-                style={[styles.pill, currencyCode === c && styles.pillActive]}
-                onPress={() => setCurrencyCode(c)}
-              >
-                <Text style={[styles.pillText, currencyCode === c && styles.pillTextActive]}>{c}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </ScrollView>
-      </View>
+        <FormOptionRow
+          label="Moneda"
+          value={currencyCode}
+          onPress={() => setCurrencyOpen(true)}
+        />
 
       {/* Limit amount */}
       <CurrencyInput
