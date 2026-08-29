@@ -71,6 +71,7 @@ import {
 import { canDeleteObligation } from "../../features/obligations/lib/obligationPermissions";
 import { useObligationAnalyticsActions } from "../../features/obligations/lib/useObligationAnalyticsActions";
 
+import { buildObligationSummary } from "../../features/obligations/lib/buildObligationSummary";
 import { buildObligationCSV } from "../../features/obligations/lib/obligationsCsv";
 import { searchObligations } from "../../features/obligations/lib/obligationsSearch";
 import { buildObligationsContextNote } from "../../features/obligations/lib/obligationsContextNote";
@@ -397,25 +398,10 @@ function ObligationsScreen() {
     setSearchText("");
   }
 
-  const obligationSummary = useMemo(() => {
-    const visibleItems = obligationSections.flatMap((section) =>
-      section.key === "archived-divider" ? [] : section.data,
-    );
-    return visibleItems.reduce(
-      (summary, obligation) => {
-        const amount = pendingAmountInBaseCurrency(obligation, exchangeRateMap, baseCurrency);
-
-        if (obligation.direction === "receivable") {
-          summary.receivableTotal += amount;
-        } else {
-          summary.payableTotal += amount;
-        }
-        summary.netTotal = summary.receivableTotal - summary.payableTotal;
-        return summary;
-      },
-      { receivableTotal: 0, payableTotal: 0, netTotal: 0 },
-    );
-  }, [baseCurrency, exchangeRateMap, obligationSections]);
+  const obligationSummary = useMemo(
+    () => buildObligationSummary(obligationSections, exchangeRateMap, baseCurrency),
+    [baseCurrency, exchangeRateMap, obligationSections],
+  );
 
   const exportableObligations = useMemo(
     () => obligationSections.flatMap((section) => section.key === "archived-divider" ? [] : section.data),
