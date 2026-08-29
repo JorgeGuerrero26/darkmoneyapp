@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
-import { CalendarClock, CalendarPlus, CalendarX2, AlertCircle } from "lucide-react-native";
+import { StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { AlertCircle } from "lucide-react-native";
 import { format } from "date-fns";
 import { useWorkspace } from "../../lib/workspace-context";
 import { useAuth } from "../../lib/auth-context";
@@ -20,16 +20,18 @@ import {
   suggestCategoryFromCounterparty,
   suggestCategoryFromDescription,
 } from "../../lib/movement-patterns";
-import { computeNextRecurringDate, subscriptionFrequencyListLabel } from "../../lib/subscription-helpers";
+import { subscriptionFrequencyListLabel } from "../../lib/subscription-helpers";
 import type { SubscriptionSummary } from "../../types/domain";
 import { BottomSheet } from "../ui/BottomSheet";
+import { DatePickerInput } from "../ui/DatePickerInput";
 import { FormOptionRow } from "../ui/FormOptionRow";
+import { FormFirstRunHelp, useFormFirstRunHelp } from "./FormFirstRunHelp";
+import { SearchableSelectSheet } from "../ui/SearchableSelectSheet";
 import { CurrencySelectOverlay } from "./CurrencySelectOverlay";
 import { Button } from "../ui/Button";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { CurrencyInput } from "../ui/CurrencyInput";
 import { BusinessDateNotice } from "../ui/BusinessDateNotice";
-import { FormDateField } from "./FormDateField";
 import { SmartSuggestion } from "../ui/SmartSuggestion";
 import { sortByName } from "../../lib/sort-locale";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
@@ -66,11 +68,6 @@ function parseLocalYmd(ymd: string): Date {
   return new Date(parts[0], parts[1] - 1, parts[2]);
 }
 
-function formatYmdPreview(ymd: string): string {
-  if (!ymd.trim()) return "sin fecha";
-  return format(parseLocalYmd(ymd), "d MMM yyyy");
-}
-
 function buildIntervalHelperCopy(
   frequency: SubscriptionFormInput["frequency"],
   intervalCount: number,
@@ -105,6 +102,16 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
     [patternMovements],
   );
   const [currencyOpen, setCurrencyOpen] = useState(false);
+  const [frequencyOpen, setFrequencyOpen] = useState(false);
+  const [remindOpen, setRemindOpen] = useState(false);
+  const [vendorOpen, setVendorOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [categoryOpen, setCategoryOpen] = useState(false);
+  const [showOptional, setShowOptional] = useState(false);
+  const { open: helpOpen, dismiss: dismissHelp, show: showHelp } = useFormFirstRunHelp(
+    "dm_help_subscription_form",
+    visible,
+  );
   const [catSuggestionId, setCatSuggestionId] = useState<number | null>(null);
   const [accSuggestionId, setAccSuggestionId] = useState<number | null>(null);
   const nameDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -358,16 +365,24 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
     () => sortByName(snapshot?.counterparties ?? []),
     [snapshot?.counterparties],
   );
+  // El botón vivía al final de 2.400 px: para saber si ya podías guardar había que volver a
+  // subir a repasar los campos. Ahora lo NOMBRA.
+  const missingLabel = !name.trim()
+    ? "Falta el nombre"
+    : !amount.trim() || Number(amount) <= 0
+      ? "Falta el monto"
+      : !nextDueDate.trim()
+        ? "Falta el próximo cobro"
+        : autoCreateMovement && accountId === null
+          ? "Falta la cuenta de débito"
+          : null;
+
   const isLoading = createMutation.isPending || updateMutation.isPending;
   const intervalValue = Math.max(1, parseInt(intervalCount, 10) || 1);
-  const recurrenceLabel = subscriptionFrequencyListLabel(intervalValue, frequency, FREQUENCY_LABELS);
-  const nextCycleDate = nextDueDate.trim()
-    ? computeNextRecurringDate(nextDueDate, frequency, intervalValue)
-    : "";
+  const recurrenceLabel = subscriptionFrequencyListLabel(intervalValue, frequency, FREQUENCY_LABELS);
   const selectedAccountName = accountId !== null
     ? activeAccounts.find((account) => account.id === accountId)?.name ?? null
-    : null;
-  const intervalHelperCopy = buildIntervalHelperCopy(frequency, intervalValue, recurrenceLabel);
+    : null;
 
   // Name → suggest category (debounced)
   useEffect(() => {
@@ -421,7 +436,66 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
               onCancel={() => setShowDiscard(false)}
               onConfirm={() => { setShowDiscard(false); onClose(); }}
             />
-            <CurrencySelectOverlay
+            <SearchableSelectSheet
+            inline
+            visible={frequencyOpen}
+            title="Se repite"
+            options={FREQUENCY_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
+            value={frequency}
+            onChange={(next: SubscriptionFormInput["frequency"]) => {
+              setFrequency(next);
+              // Personalizado es el único que necesita un número; se pide justo después,
+              // no como campo permanente para los otros cinco.
+              if (next !== "custom") setIntervalCount("1");
+            }}
+            onClose={() => setFrequencyOpen(false)}
+          />
+          <SearchableSelectSheet
+            inline
+            visible={remindOpen}
+            title="Avisarme antes"
+            options={REMIND_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
+            value={remindDaysBefore}
+            onChange={setRemindDaysBefore}
+            onClose={() => setRemindOpen(false)}
+          />
+          <SearchableSelectSheet
+            inline
+            visible={vendorOpen}
+            title="Proveedor"
+            options={[
+              { value: null as number | null, label: "Ninguno" },
+              ...counterparties.map((cp) => ({ value: cp.id as number | null, label: cp.name })),
+            ]}
+            value={vendorPartyId}
+            onChange={setVendorPartyId}
+            onClose={() => setVendorOpen(false)}
+          />
+          <SearchableSelectSheet
+            inline
+            visible={accountOpen}
+            title="Cuenta de débito"
+            options={[
+              { value: null as number | null, label: "Ninguna" },
+              ...activeAccounts.map((acc) => ({ value: acc.id as number | null, label: acc.name })),
+            ]}
+            value={accountId}
+            onChange={setAccountId}
+            onClose={() => setAccountOpen(false)}
+          />
+          <SearchableSelectSheet
+            inline
+            visible={categoryOpen}
+            title="Categoría"
+            options={[
+              { value: null as number | null, label: "Ninguna" },
+              ...expenseCategories.map((cat) => ({ value: cat.id as number | null, label: cat.name })),
+            ]}
+            value={categoryId}
+            onChange={setCategoryId}
+            onClose={() => setCategoryOpen(false)}
+          />
+          <CurrencySelectOverlay
               visible={currencyOpen}
               onClose={() => setCurrencyOpen(false)}
               value={currencyCode}
@@ -431,6 +505,20 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
         }
       >
       {/* Name */}
+      <FormFirstRunHelp
+        open={helpOpen}
+        onDismiss={dismissHelp}
+        onShow={showHelp}
+        title="Cómo funciona"
+        lines={[
+          "El sistema no adivina las fechas: toma el próximo cobro que elijas y desde ahí repite según cada cuánto se cobre.",
+          "Inicio y Fin están en Opcionales. Inicio es solo referencia y Fin puede quedar vacío si no hay fecha de baja.",
+          "Si activas «Registrar el gasto solo», ese día se anota el gasto en la cuenta que elijas y la fecha pasa al siguiente ciclo.",
+        ]}
+      />
+
+      {/* Cuatro decisiones en una pantalla, sin desplazarse: nombre, monto, cada cuánto y
+          cuándo. Lo demás vive en Opcionales, que la mayoría va a pasar de largo. */}
       <View>
         <Text style={styles.label}>Nombre *</Text>
         <TextInput
@@ -438,51 +526,13 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
           style={[styles.textInput, nameError ? styles.inputError : null]}
           value={name}
           onChangeText={(t) => { setName(t); setNameError(""); }}
-          placeholder="Ej. Netflix, Spotify, Adobe CC"
+          placeholder="Netflix, Spotify, Adobe…"
           placeholderTextColor={COLORS.textDisabled}
           returnKeyType="next"
         />
         {nameError ? <Text style={styles.fieldError}>{nameError}</Text> : null}
       </View>
 
-      {/* Vendor (counterparty picker) */}
-      {counterparties.length > 0 ? (
-        <View>
-          <Text style={styles.label}>Proveedor (opcional)</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View style={styles.pillRow}>
-              <TouchableOpacity
-                style={[styles.pill, vendorPartyId === null && styles.pillActive]}
-                onPress={() => setVendorPartyId(null)}
-              >
-                <Text style={[styles.pillText, vendorPartyId === null && styles.pillTextActive]}>Ninguno</Text>
-              </TouchableOpacity>
-              {counterparties.map((cp) => (
-                <TouchableOpacity
-                  key={cp.id}
-                  style={[styles.pill, vendorPartyId === cp.id && styles.pillActive]}
-                  onPress={() => setVendorPartyId(cp.id)}
-                >
-                  <Text style={[styles.pillText, vendorPartyId === cp.id && styles.pillTextActive]}>
-                    {cp.name}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </ScrollView>
-        </View>
-      ) : null}
-
-      {/* Currency */}
-      <View>
-        <FormOptionRow
-          label="Moneda"
-          value={currencyCode}
-          onPress={() => setCurrencyOpen(true)}
-        />
-      </View>
-
-      {/* Amount */}
       <CurrencyInput
         label="Monto *"
         value={amount}
@@ -491,264 +541,178 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
         error={amountError}
       />
 
-      {/* Frequency */}
-      <View>
-        <Text style={styles.label}>Frecuencia</Text>
-        <View style={styles.pillWrap}>
-          {FREQUENCY_OPTIONS.map((f) => (
-            <TouchableOpacity
-              key={f.value}
-              style={[styles.pill, frequency === f.value && styles.pillActive]}
-              onPress={() => setFrequency(f.value)}
-            >
-              <Text style={[styles.pillText, frequency === f.value && styles.pillTextActive]}>
-                {f.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-        <Text style={styles.helperText}>
-          El sistema usa el próximo cobro como base para repetir esta suscripción. En personalizado, el intervalo siempre se mide en días.
-        </Text>
-      </View>
-
-      {/* Interval count */}
-      <View>
-        <Text style={styles.label}>
-          {frequency === "custom" ? "Repetir cada N días" : "Repetir cada N periodos"}
-        </Text>
-        <TextInput
-          style={styles.textInput}
-          value={intervalCount}
-          onChangeText={setIntervalCount}
-          placeholder="1"
-          placeholderTextColor={COLORS.textDisabled}
-          keyboardType="number-pad"
-        />
-        <Text style={styles.helperText}>{intervalHelperCopy}</Text>
-      </View>
-
-      <View style={styles.systemCard}>
-        <Text style={styles.systemCardTitle}>Así lo hará el sistema</Text>
-        <Text style={styles.systemCardLine}>
-          Inicio: {formatYmdPreview(startDate)}. Esta fecha es referencia y evita que el próximo cobro quede antes del inicio.
-        </Text>
-        <Text style={styles.systemCardLine}>
-          Próximo cobro: {formatYmdPreview(nextDueDate)}. Esta es la fecha real que se mostrará en listados y recordatorios.
-        </Text>
-        <Text style={styles.systemCardLine}>
-          Repetición: {recurrenceLabel}. Después del cobro del {formatYmdPreview(nextDueDate)}, el siguiente pasará al {formatYmdPreview(nextCycleDate)}.
-        </Text>
-        <Text style={styles.systemCardLine}>
-          {autoCreateMovement
-            ? selectedAccountName
-              ? `Movimiento automático activo: ese día se registrará un gasto en ${selectedAccountName}.`
-              : "Movimiento automático activo, pero aún falta elegir la cuenta donde se registrará el gasto."
-            : "Movimiento automático desactivado: la suscripción solo avisará y mostrará el próximo cobro."}
-        </Text>
-      </View>
-
-      {/* Fechas — campos con ayuda y selector unificado */}
-      <View style={styles.datesBlock}>
-        <View style={styles.datesIntro}>
-          <Text style={styles.datesIntroTitle}>Fechas de la suscripción</Text>
-          <Text style={styles.datesIntroBody}>
-            El sistema no adivina las fechas: toma el próximo cobro que elijas y desde ahí repite según la frecuencia. En «Fin» puedes dejar vacío si no hay fecha de baja.
-          </Text>
-        </View>
-
-      <FormDateField
-        title="Inicio de la suscripción"
-        description="Marca desde cuándo existe este servicio o contrato. No mueve por sí sola el próximo cobro; sirve como referencia y como fecha mínima válida."
-        required
-        value={startDate}
-        onChange={setStartDate}
-        placeholder="Elegir fecha de inicio"
-        Icon={CalendarPlus}
-        accentColor={COLORS.primary}
+      {/* Antes eran tres controles para una pregunta: seis cápsulas de frecuencia, un campo
+          numérico y la línea "Cadencia resultante" que traducía lo recién elegido. */}
+      <FormOptionRow
+        label="Se repite"
+        value={recurrenceLabel}
+        onPress={() => setFrequencyOpen(true)}
       />
+      {frequency === "custom" ? (
+        <View>
+          <Text style={styles.label}>Cada cuántos días</Text>
+          <TextInput
+            style={styles.textInput}
+            value={intervalCount}
+            onChangeText={setIntervalCount}
+            placeholder="1"
+            placeholderTextColor={COLORS.textDisabled}
+            keyboardType="number-pad"
+          />
+        </View>
+      ) : null}
 
-      <FormDateField
-        title="Próximo cobro o renovación"
-        description="Esta es la fecha real que usará el sistema para mostrar vencimientos, enviar recordatorios y calcular el siguiente ciclo."
-        required
+      {/* La única fecha que hace algo. Inicio y fin bajaron a Opcionales: el propio texto del
+          formulario admitía que Inicio "no mueve por sí sola el próximo cobro". */}
+      <DatePickerInput
+        label="Próximo cobro"
         value={nextDueDate}
         onChange={setNextDueDate}
-        placeholder="Elegir próximo cobro"
-        minimumDate={
-          startDate
-            ? (() => {
-                const p = startDate.split("-").map(Number);
-                return new Date(p[0], p[1] - 1, p[2]);
-              })()
-            : undefined
-        }
-        Icon={CalendarClock}
-        accentColor={COLORS.gold}
+        placeholder="Elegir fecha"
+        variant="formRow"
+        minimumDate={startDate ? parseLocalYmd(startDate) : undefined}
       />
+      <Text style={styles.helperText}>Desde esta fecha se calcula el ciclo.</Text>
       <BusinessDateNotice dateValue={nextDueDate} onApplySuggestedDate={setNextDueDate} />
 
-      <FormDateField
-        title="Fin de la suscripción"
-        description="Solo si hay una fecha de baja o fin de contrato. Si la suscripción es indefinida o aún no sabes cuándo termina, déjalo vacío (sin límite hasta que la pauses o canceles en estado)."
-        optional
-        value={endDate}
-        onChange={setEndDate}
-        placeholder="Sin fecha de fin — opcional"
-        minimumDate={
-          startDate
-            ? (() => {
-                const p = startDate.split("-").map(Number);
-                return new Date(p[0], p[1] - 1, p[2]);
-              })()
-            : undefined
-        }
-        Icon={CalendarX2}
-        accentColor={COLORS.secondary}
+      <FormOptionRow
+        label="Avisarme antes"
+        value={REMIND_OPTIONS.find((option) => option.value === remindDaysBefore)?.label ?? "Sin aviso"}
+        onPress={() => setRemindOpen(true)}
       />
-      </View>
 
-      {/* Account */}
-      {activeAccounts.length > 0 ? (
-        <View style={{ gap: SPACING.xs }}>
-          <Text style={styles.label}>Cuenta de débito</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View style={styles.pillRow}>
-              <TouchableOpacity
-                style={[styles.pill, accountId === null && styles.pillActive]}
-                onPress={() => setAccountId(null)}
-              >
-                <Text style={[styles.pillText, accountId === null && styles.pillTextActive]}>Ninguna</Text>
-              </TouchableOpacity>
-              {activeAccounts.map((acc) => (
-                <TouchableOpacity
-                  key={acc.id}
-                  style={[styles.pill, accountId === acc.id && styles.pillActive]}
-                  onPress={() => setAccountId(acc.id)}
-                >
-                  <Text style={[styles.pillText, accountId === acc.id && styles.pillTextActive]}>
-                    {acc.name}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </ScrollView>
-          <Text style={styles.helperText}>
-            Si activas movimiento automático, esta cuenta es obligatoria porque aquí se registrará el gasto.
-          </Text>
-          {accSuggestionId !== null ? (() => {
-            const acc = activeAccounts.find((a) => a.id === accSuggestionId);
-            return acc ? (
-              <SmartSuggestion
-                label={acc.name}
-                detail="Cuenta aprendida por pagos parecidos a este proveedor"
-                onApply={() => setAccountId(acc.id)}
-              />
-            ) : null;
-          })() : null}
-        </View>
-      ) : null}
-
-      {/* Category */}
-      {expenseCategories.length > 0 ? (
-        <View style={{ gap: SPACING.xs }}>
-          <Text style={styles.label}>Categoría (opcional)</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View style={styles.pillRow}>
-              <TouchableOpacity
-                style={[styles.pill, categoryId === null && styles.pillActive]}
-                onPress={() => setCategoryId(null)}
-              >
-                <Text style={[styles.pillText, categoryId === null && styles.pillTextActive]}>Ninguna</Text>
-              </TouchableOpacity>
-              {expenseCategories.map((cat) => (
-                <TouchableOpacity
-                  key={cat.id}
-                  style={[styles.pill, categoryId === cat.id && styles.pillActive]}
-                  onPress={() => setCategoryId(cat.id)}
-                >
-                  <Text style={[styles.pillText, categoryId === cat.id && styles.pillTextActive]}>
-                    {cat.name}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </ScrollView>
-          {catSuggestionId !== null ? (() => {
-            const cat = expenseCategories.find((c) => c.id === catSuggestionId);
-            return cat ? (
-              <SmartSuggestion
-                label={cat.name}
-                detail="Categoría sugerida por nombre y proveedor"
-                onApply={() => setCategoryId(cat.id)}
-              />
-            ) : null;
-          })() : null}
-        </View>
-      ) : null}
-
-      {/* Remind days */}
-      <View>
-        <Text style={styles.label}>Recordatorio</Text>
-        <View style={styles.pillWrap}>
-          {REMIND_OPTIONS.map((r) => (
-            <TouchableOpacity
-              key={r.value}
-              style={[styles.pill, remindDaysBefore === r.value && styles.pillActive]}
-              onPress={() => setRemindDaysBefore(r.value)}
-            >
-              <Text style={[styles.pillText, remindDaysBefore === r.value && styles.pillTextActive]}>
-                {r.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-        <Text style={styles.helperText}>
-          Solo envía un aviso antes del próximo cobro. No registra el gasto por sí mismo.
-        </Text>
-      </View>
-
-      {/* Auto create movement */}
       <View style={styles.switchRow}>
         <View style={styles.switchInfo}>
-          <Text style={styles.switchLabel}>Crear movimiento automáticamente</Text>
-          <Text style={styles.switchDesc}>Al llegar el próximo cobro, registra el gasto y luego mueve la fecha al siguiente ciclo.</Text>
+          <Text style={styles.switchLabel}>Registrar el gasto solo</Text>
+          <Text style={styles.switchDesc}>
+            {autoCreateMovement && !accountId
+              ? "Necesita una cuenta de débito — elígela en Opcionales"
+              : "Necesita una cuenta de débito"}
+          </Text>
         </View>
         <Switch
           value={autoCreateMovement}
           onValueChange={setAutoCreateMovement}
           trackColor={{ false: COLORS.border, true: COLORS.primary }}
-          thumbColor="#FFFFFF"
+          thumbColor={COLORS.ink}
         />
       </View>
 
-      {/* Description */}
-      <View>
-        <Text style={styles.label}>Descripción (opcional)</Text>
-        <TextInput
-          ref={descriptionRef}
-          style={styles.textInput}
-          value={description}
-          onChangeText={setDescription}
-          placeholder="Resumen visible en listados"
-          placeholderTextColor={COLORS.textDisabled}
-          returnKeyType="next"
-          blurOnSubmit
-        />
-      </View>
+      {/* Ocho campos marcados "(opcional)" sumaban 700 px que la mayoría pasa de largo. */}
+      <FormOptionRow
+        label="Opcionales"
+        support="Proveedor, moneda, cuenta, categoría, fechas y notas"
+        value={null}
+        placeholder={showOptional ? "Ocultar" : "Abrir"}
+        onPress={() => setShowOptional((open) => !open)}
+      />
 
-      <View>
-        <Text style={styles.label}>Notas internas (opcional)</Text>
-        <TextInput
-          style={[styles.textInput, styles.notesInput]}
-          value={notes}
-          onChangeText={setNotes}
-          placeholder="Notas adicionales"
-          placeholderTextColor={COLORS.textDisabled}
-          multiline
-          textAlignVertical="top"
-        />
-      </View>
+      {showOptional ? (
+        <View style={styles.optionalBlock}>
+          {counterparties.length > 0 ? (
+            <FormOptionRow
+              label="Proveedor"
+              value={counterparties.find((cp) => cp.id === vendorPartyId)?.name ?? null}
+              placeholder="Ninguno"
+              onPress={() => setVendorOpen(true)}
+            />
+          ) : null}
+
+          <FormOptionRow
+            label="Moneda"
+            value={currencyCode}
+            onPress={() => setCurrencyOpen(true)}
+          />
+
+          {activeAccounts.length > 0 ? (
+            <>
+              <FormOptionRow
+                label="Cuenta de débito"
+                value={selectedAccountName}
+                placeholder="Ninguna"
+                onPress={() => setAccountOpen(true)}
+              />
+              {accSuggestionId !== null ? (() => {
+                const acc = activeAccounts.find((a) => a.id === accSuggestionId);
+                return acc ? (
+                  <SmartSuggestion
+                    label={acc.name}
+                    detail="Cuenta aprendida por pagos parecidos a este proveedor"
+                    onApply={() => setAccountId(acc.id)}
+                  />
+                ) : null;
+              })() : null}
+            </>
+          ) : null}
+
+          {expenseCategories.length > 0 ? (
+            <>
+              <FormOptionRow
+                label="Categoría"
+                value={expenseCategories.find((c) => c.id === categoryId)?.name ?? null}
+                placeholder="Ninguna"
+                onPress={() => setCategoryOpen(true)}
+              />
+              {catSuggestionId !== null ? (() => {
+                const cat = expenseCategories.find((c) => c.id === catSuggestionId);
+                return cat ? (
+                  <SmartSuggestion
+                    label={cat.name}
+                    detail="Categoría sugerida por nombre y proveedor"
+                    onApply={() => setCategoryId(cat.id)}
+                  />
+                ) : null;
+              })() : null}
+            </>
+          ) : null}
+
+          <DatePickerInput
+            label="Inicio"
+            value={startDate}
+            onChange={setStartDate}
+            placeholder="Elegir fecha"
+            variant="formRow"
+          />
+
+          <DatePickerInput
+            label="Fin"
+            value={endDate}
+            onChange={setEndDate}
+            placeholder="Sin fecha de fin"
+            optional
+            showInlineClear
+            variant="formRow"
+            minimumDate={startDate ? parseLocalYmd(startDate) : undefined}
+          />
+
+          <View>
+            <Text style={styles.label}>Descripción</Text>
+            <TextInput
+              ref={descriptionRef}
+              style={styles.textInput}
+              value={description}
+              onChangeText={setDescription}
+              placeholder="Resumen visible en listados"
+              placeholderTextColor={COLORS.textDisabled}
+              returnKeyType="next"
+              blurOnSubmit
+            />
+          </View>
+
+          <View>
+            <Text style={styles.label}>Notas internas</Text>
+            <TextInput
+              style={[styles.textInput, styles.notesInput]}
+              value={notes}
+              onChangeText={setNotes}
+              placeholder="Notas adicionales"
+              placeholderTextColor={COLORS.textDisabled}
+              multiline
+              textAlignVertical="top"
+            />
+          </View>
+        </View>
+      ) : null}
 
       {submitError ? (
         <View style={styles.submitErrorBanner}>
@@ -757,12 +721,15 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
         </View>
       ) : null}
 
-      <Button
-        label={isEditing ? "Guardar cambios" : "Crear suscripción"}
-        onPress={handleSubmit}
-        loading={isLoading}
-        style={styles.submitBtn}
-      />
+      <View style={styles.submitBar}>
+        {missingLabel ? <Text style={styles.missingLabel}>{missingLabel}</Text> : null}
+        <Button
+          label={isEditing ? "Guardar cambios" : "Crear suscripción"}
+          onPress={handleSubmit}
+          loading={isLoading}
+          size="lg"
+        />
+      </View>
     </BottomSheet>
   </>
   );
@@ -796,27 +763,21 @@ const styles = StyleSheet.create({
   },
   inputError: { borderColor: COLORS.danger },
   fieldError: { fontSize: FONT_SIZE.xs, color: COLORS.danger, marginTop: SPACING.xs },
+  optionalBlock: {
+    gap: SPACING.md,
+    paddingTop: SPACING.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: SURFACE.separator,
+  },
+  submitBar: { gap: SPACING.xs, marginTop: SPACING.sm },
+  missingLabel: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    textAlign: "center",
+  },
   pillRow: { flexDirection: "row", gap: SPACING.sm },
   pillWrap: { flexDirection: "row", flexWrap: "wrap", gap: SPACING.sm },
-  systemCard: {
-    gap: SPACING.xs,
-    padding: SPACING.md,
-    borderRadius: RADIUS.lg,
-    backgroundColor: COLORS.secondary + "10",
-    borderWidth: 1,
-    borderColor: COLORS.secondary + "30",
-  },
-  systemCardTitle: {
-    fontSize: FONT_SIZE.sm,
-    fontFamily: FONT_FAMILY.bodySemibold,
-    color: COLORS.ink,
-  },
-  systemCardLine: {
-    fontSize: FONT_SIZE.xs,
-    fontFamily: FONT_FAMILY.body,
-    color: COLORS.storm,
-    lineHeight: 18,
-  },
   pill: {
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.xs + 2,
@@ -843,7 +804,6 @@ const styles = StyleSheet.create({
   switchInfo: { flex: 1, gap: SPACING.xs / 2, marginRight: SPACING.md },
   switchLabel: { fontSize: FONT_SIZE.sm, fontFamily: FONT_FAMILY.bodyMedium, color: COLORS.ink },
   switchDesc: { fontSize: FONT_SIZE.xs, color: COLORS.storm },
-  submitBtn: { marginTop: SPACING.sm },
   submitErrorBanner: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -860,21 +820,6 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.sm,
     color: COLORS.danger,
     lineHeight: 20,
-  },
-  datesBlock: { gap: SPACING.md },
-  datesIntro: {
-    gap: SPACING.xs,
-  },
-  datesIntroTitle: {
-    fontSize: FONT_SIZE.sm,
-    fontFamily: FONT_FAMILY.bodySemibold,
-    color: COLORS.ink,
-  },
-  datesIntroBody: {
-    fontSize: FONT_SIZE.xs,
-    fontFamily: FONT_FAMILY.body,
-    color: COLORS.storm,
-    lineHeight: 18,
   },
   notesInput: { minHeight: 88, paddingTop: SPACING.sm },
 });
