@@ -15,6 +15,15 @@ type Props = {
   leading?: ReactNode;
   onPress: () => void;
   disabled?: boolean;
+  /**
+   * La fila vive dentro de un grupo: sin caja propia, separada por una línea fina.
+   *
+   * Tres filas con su propio borde apiladas dibujan tres cajas; el grupo dibuja UNA y el
+   * borde interior lo pone el separador.
+   */
+  grouped?: boolean;
+  /** Última del grupo: sin línea debajo. */
+  last?: boolean;
 };
 
 /**
@@ -34,10 +43,17 @@ export function FormOptionRow({
   leading,
   onPress,
   disabled = false,
+  grouped = false,
+  last = false,
 }: Props) {
   return (
     <TouchableOpacity
-      style={[styles.row, disabled && styles.rowDisabled]}
+      style={[
+        styles.row,
+        grouped ? styles.rowGrouped : styles.rowStandalone,
+        grouped && !last && styles.rowDivided,
+        disabled && styles.rowDisabled,
+      ]}
       onPress={onPress}
       disabled={disabled}
       activeOpacity={0.78}
@@ -64,10 +80,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: SPACING.md,
     paddingHorizontal: SPACING.md,
+  },
+  rowStandalone: {
     borderRadius: RADIUS.lg,
     borderWidth: 1,
     borderColor: SURFACE.cardBorder,
     backgroundColor: SURFACE.card,
+  },
+  rowGrouped: { backgroundColor: "transparent" },
+  rowDivided: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: SURFACE.separator,
   },
   rowDisabled: { opacity: 0.5 },
   leading: { flexShrink: 0 },
