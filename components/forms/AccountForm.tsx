@@ -1,4 +1,4 @@
-import { Archive, ArchiveRestore, Trash2, Clock } from "lucide-react-native";
+import { Archive, ArchiveRestore, Trash2, Clock, Wallet } from "lucide-react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -26,17 +26,18 @@ import {
   type AccountFormInput,
 } from "../../services/queries/workspace-data";
 import type { AccountSummary } from "../../types/domain";
-import { BottomSheet } from "../ui/BottomSheet";
 import { FormOptionRow } from "../ui/FormOptionRow";
+import { FormSheetScaffold } from "../ui/FormSheetScaffold";
+import { SearchableSelectSheet } from "../ui/SearchableSelectSheet";
 import { AppearancePickerOverlay, CATEGORY_COLOR_CHOICES } from "./AppearancePickerOverlay";
 import { CurrencySelectOverlay, CustomCurrencyField } from "./CurrencySelectOverlay";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
-import { Button } from "../ui/Button";
 import { CurrencyInput } from "../ui/CurrencyInput";
 import { formatCurrency } from "../ui/AmountDisplay";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
-import { AccountTypePicker, ACCOUNT_TYPES, TYPE_PRESETS } from "../../features/accounts/components/form/AccountTypePicker";
-import { InstitutionPicker } from "../../features/accounts/components/form/InstitutionPicker";
+import { currencyPluralTitle } from "../../constants/currencies";
+import { ACCOUNT_INSTITUTIONS, findInstitution } from "../../lib/account-institutions";
+import { ACCOUNT_TYPES, TYPE_PRESETS, accountTypeLabel } from "../../features/accounts/lib/account-types";
 import { TextField } from "../ui/TextField";
 
 const DRAFT_TTL_MS = 10 * 60 * 1000; // 10 minutes
@@ -64,7 +65,7 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
   const [type, setType] = useState("bank");
   const [currencyCode, setCurrencyCode] = useState(defaultCurrency);
   const [customCurrency, setCustomCurrency] = useState("");
-  const [openingBalance, setOpeningBalance] = useState("0");
+  const [openingBalance, setOpeningBalance] = useState("0.00");
   const [includeInNetWorth, setIncludeInNetWorth] = useState(true);
   const [color, setColor] = useState(TYPE_PRESETS["bank"].color);
   const [icon, setIcon] = useState(TYPE_PRESETS["bank"].icon);
@@ -78,6 +79,8 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
   const [discardVisible, setDiscardVisible] = useState(false);
   const [appearanceOpen, setAppearanceOpen] = useState(false);
   const [currencyOpen, setCurrencyOpen] = useState(false);
+  const [typeOpen, setTypeOpen] = useState(false);
+  const [institutionOpen, setInstitutionOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [archiveConfirm, setArchiveConfirm] = useState(false);
 
@@ -87,7 +90,7 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
   // ── Dirty check ──────────────────────────────────────────────────────────
   function isDirty() {
     if (!editAccount) {
-      return name.trim() !== "" || openingBalance !== "0";
+      return name.trim() !== "" || openingBalance !== "0.00";
     }
     return (
       name.trim() !== editAccount.name ||
@@ -95,7 +98,7 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
       color !== (editAccount.color ?? TYPE_PRESETS["bank"].color) ||
       icon !== (editAccount.icon ?? TYPE_PRESETS["bank"].icon) ||
       includeInNetWorth !== editAccount.includeInNetWorth ||
-      openingBalance !== String(editAccount.openingBalance ?? 0) ||
+      openingBalance !== (editAccount.openingBalance ?? 0).toFixed(2) ||
       institutionCode !== (editAccount.institutionCode ?? null)
     );
   }
@@ -125,7 +128,7 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
       setIcon(draft.icon ?? TYPE_PRESETS["bank"].icon);
       setCurrencyCode(draft.currencyCode ?? defaultCurrency);
       setCustomCurrency(draft.customCurrency ?? "");
-      setOpeningBalance(draft.openingBalance ?? "0");
+      setOpeningBalance(draft.openingBalance ?? "0.00");
       setIncludeInNetWorth(draft.includeInNetWorth ?? true);
       setInstitutionCode(draft.institutionCode ?? null);
       colorCustomized.current = true;
@@ -147,7 +150,7 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
       setName(editAccount.name);
       setType(editAccount.type);
       setCurrencyCode(editAccount.currencyCode);
-      setOpeningBalance(String(editAccount.openingBalance ?? 0));
+      setOpeningBalance((editAccount.openingBalance ?? 0).toFixed(2));
       setIncludeInNetWorth(editAccount.includeInNetWorth);
       setColor(editAccount.color ?? TYPE_PRESETS[editAccount.type]?.color ?? CATEGORY_COLOR_CHOICES[0]);
       const iconVal = editAccount.icon ?? ACCOUNT_ICON_OPTIONS[0].value;
@@ -160,7 +163,7 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
       setName("");
       setType("bank");
       setCurrencyCode(defaultCurrency);
-      setOpeningBalance("0");
+      setOpeningBalance("0.00");
       setIncludeInNetWorth(true);
       setColor(TYPE_PRESETS["bank"].color);
       setIcon(TYPE_PRESETS["bank"].icon);
@@ -265,294 +268,286 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
   );
   const resolvedCurrency = customCurrency.trim().toUpperCase() || currencyCode;
 
+  const institutionLabel = findInstitution(institutionCode)?.label ?? null;
+
   return (
-    <>
-      <BottomSheet
-        visible={visible}
-        onClose={handleClose}
-        title={editAccount ? "Editar cuenta" : "Nueva cuenta"}
-        snapHeight={0.94}
-        // Dentro del sheet: iOS solo presenta un Modal a la vez y como hermanos no aparecían.
-        // Los tres conviven porque en modo inline el que no está visible no pinta nada.
-        overlay={
-          <>
-            {/* Discard changes */}
-            <ConfirmDialog
-              inline
-              visible={discardVisible}
-              title="¿Descartar cambios?"
-              body="Los cambios no guardados se perderán."
-              confirmLabel="Descartar"
-              cancelLabel="Continuar editando"
-              onCancel={() => setDiscardVisible(false)}
-              onConfirm={() => { setDiscardVisible(false); onClose(); }}
-            />
-
-            {/* Archive / restore confirmation */}
-            <ConfirmDialog
-              inline
-              visible={archiveConfirm}
-              title={editAccount?.isArchived ? "¿Restaurar cuenta?" : "¿Archivar cuenta?"}
-              body={
-                editAccount?.isArchived
-                  ? "La cuenta volverá a aparecer en tu lista activa y en el patrimonio neto."
-                  : "La cuenta quedará oculta. Sus movimientos históricos se conservarán intactos y podrás restaurarla después."
-              }
-              confirmLabel={editAccount?.isArchived ? "Sí, restaurar" : "Sí, archivar"}
-              cancelLabel="Cancelar"
-              onCancel={() => setArchiveConfirm(false)}
-              onConfirm={handleArchiveToggle}
-            />
-
-            <CurrencySelectOverlay
-              visible={currencyOpen}
-              onClose={() => setCurrencyOpen(false)}
-              value={resolvedCurrency}
-              onChange={(code) => { setCurrencyCode(code); setCustomCurrency(""); }}
-            />
-
-            <AppearancePickerOverlay
-              visible={appearanceOpen}
-              onClose={() => setAppearanceOpen(false)}
-              color={color}
-              onColorChange={(c) => { setColor(c); colorCustomized.current = true; }}
-              icon={icon}
-              onIconChange={(v) => { setIcon(v); iconCustomized.current = true; }}
-              iconOptions={accountIconOptions}
-            />
-
-            {/* Permanent delete */}
-            <ConfirmDialog
-              inline
-              visible={deleteConfirm}
-              title="Eliminar cuenta"
-              body="Esta acción es irreversible. Si tiene movimientos vinculados, la eliminación fallará y los datos se conservarán."
-              confirmLabel="Eliminar"
-              cancelLabel="Cancelar"
-              onCancel={() => setDeleteConfirm(false)}
-              onConfirm={async () => {
-                if (!editAccount) return;
-                setDeleteConfirm(false);
-                try {
-                  await deleteMutation.mutateAsync(editAccount.id);
-                  showToast("Cuenta eliminada", "success");
-                  onClose();
-                } catch (err: unknown) {
-                  showToast(humanizeError(err), "error");
-                }
-              }}
-            />
-          </>
-        }
-      >
-        {/* Live preview */}
-        <View style={styles.previewRow}>
-          <View style={[styles.previewIcon, { backgroundColor: color + "33" }]}>
-            <SelectedIcon size={28} color={color} />
-          </View>
-          <View style={styles.previewInfo}>
-            <Text style={styles.previewName} numberOfLines={1}>
-              {name.trim() || "Nueva cuenta"}
-            </Text>
-            <Text style={styles.previewType}>
-              {ACCOUNT_TYPES.find((t) => t.value === type)?.label ?? type} · {resolvedCurrency}
-            </Text>
-          </View>
-          {editAccount ? (
-            <View style={styles.balanceChip}>
-              <Text style={styles.balanceChipLabel}>Saldo actual</Text>
-              <Text style={[styles.balanceChipAmount, editAccount.currentBalance < 0 && { color: COLORS.expense }]}>
-                {formatCurrency(editAccount.currentBalance, editAccount.currencyCode)}
-              </Text>
-            </View>
-          ) : null}
-        </View>
-
-        {/* Last activity (edit only) */}
-        {editAccount?.lastActivity ? (
-          <View style={styles.infoRow}>
-            <Clock size={12} color={COLORS.storm} />
-            <Text style={styles.infoText}>
-              Última actividad: {format(parseDisplayDate(editAccount.lastActivity), "d MMM yyyy", { locale: es })}
-            </Text>
-          </View>
-        ) : null}
-
-
-        {/* Name */}
-        <View>
-          <Text style={styles.sectionLabel}>Nombre *</Text>
-          <TextField
-            style={[styles.textInput, nameError ? styles.textInputError : null]}
-            value={name}
-            onChangeText={(t) => { setName(t); setNameError(""); }}
-            placeholder="Ej. BCP Soles, Efectivo casa"
-            placeholderTextColor={COLORS.storm}
-            accessibilityLabel="Nombre de la cuenta"
-            accessibilityHint="Campo obligatorio. Ejemplo: BCP Soles."
-            returnKeyType="next"
+    <FormSheetScaffold
+      visible={visible}
+      onClose={handleClose}
+      title={editAccount ? "Editar cuenta" : "Nueva cuenta"}
+      snapHeight={0.94}
+      submitLabel={editAccount ? "Guardar cambios" : "Crear cuenta"}
+      onSubmit={handleSubmit}
+      submitLoading={createMutation.isPending || updateMutation.isPending}
+      // Mientras falte el nombre el botón está apagado y dice qué falta. Reemplaza al asterisco
+      // de "NOMBRE *", que no se explica en ninguna parte de la app.
+      submitDisabled={!name.trim()}
+      missingLabel={name.trim() ? null : "Falta el nombre"}
+      // Dentro del sheet: iOS solo presenta un Modal a la vez y como hermanos no aparecían.
+      // Conviven porque en modo inline el que no está visible no pinta nada.
+      overlay={
+        <>
+          <ConfirmDialog
+            inline
+            visible={discardVisible}
+            title="¿Descartar cambios?"
+            body="Los cambios no guardados se perderán."
+            confirmLabel="Descartar"
+            cancelLabel="Continuar editando"
+            onCancel={() => setDiscardVisible(false)}
+            onConfirm={() => { setDiscardVisible(false); onClose(); }}
           />
-          {nameError ? (
-            <Text
-              style={styles.fieldError}
-              accessibilityLiveRegion="polite"
-              accessibilityRole="alert"
+
+          <ConfirmDialog
+            inline
+            visible={archiveConfirm}
+            title={editAccount?.isArchived ? "¿Restaurar cuenta?" : "¿Archivar cuenta?"}
+            body={
+              editAccount?.isArchived
+                ? "La cuenta volverá a aparecer en tu lista activa y en el patrimonio neto."
+                : "La cuenta quedará oculta. Sus movimientos históricos se conservarán intactos y podrás restaurarla después."
+            }
+            confirmLabel={editAccount?.isArchived ? "Sí, restaurar" : "Sí, archivar"}
+            cancelLabel="Cancelar"
+            onCancel={() => setArchiveConfirm(false)}
+            onConfirm={handleArchiveToggle}
+          />
+
+          <SearchableSelectSheet
+            inline
+            visible={typeOpen}
+            title="Tipo de cuenta"
+            options={ACCOUNT_TYPES.map((t) => ({ value: t.value, label: t.label }))}
+            value={type}
+            onChange={handleTypeChange}
+            onClose={() => setTypeOpen(false)}
+          />
+
+          {/* La búsqueda vive DENTRO de la hoja que elige, no al costado del formulario:
+              antes había un campo "Buscar institución…" y debajo una fila de cápsulas con las
+              mismas instituciones, dos controles para un dato. */}
+          <SearchableSelectSheet
+            inline
+            visible={institutionOpen}
+            title="Institución"
+            options={[
+              { value: null as string | null, label: "Ninguna" },
+              ...ACCOUNT_INSTITUTIONS.map((i) => ({ value: i.code as string | null, label: i.label })),
+            ]}
+            value={institutionCode}
+            onChange={setInstitutionCode}
+            onClose={() => setInstitutionOpen(false)}
+          />
+
+          <CurrencySelectOverlay
+            visible={currencyOpen}
+            onClose={() => setCurrencyOpen(false)}
+            value={resolvedCurrency}
+            onChange={(code) => { setCurrencyCode(code); setCustomCurrency(""); }}
+          />
+
+          <AppearancePickerOverlay
+            visible={appearanceOpen}
+            onClose={() => setAppearanceOpen(false)}
+            color={color}
+            onColorChange={(c) => { setColor(c); colorCustomized.current = true; }}
+            icon={icon}
+            onIconChange={(v) => { setIcon(v); iconCustomized.current = true; }}
+            iconOptions={accountIconOptions}
+          />
+
+          <ConfirmDialog
+            inline
+            visible={deleteConfirm}
+            title="Eliminar cuenta"
+            body="Esta acción es irreversible. Si tiene movimientos vinculados, la eliminación fallará y los datos se conservarán."
+            confirmLabel="Eliminar"
+            cancelLabel="Cancelar"
+            onCancel={() => setDeleteConfirm(false)}
+            onConfirm={async () => {
+              if (!editAccount) return;
+              setDeleteConfirm(false);
+              try {
+                await deleteMutation.mutateAsync(editAccount.id);
+                showToast("Cuenta eliminada", "success");
+                onClose();
+              } catch (err: unknown) {
+                showToast(humanizeError(err), "error");
+              }
+            }}
+          />
+        </>
+      }
+      footer={
+        editAccount ? (
+          <>
+            <TouchableOpacity
+              style={[styles.secondaryBtn, editAccount.isArchived && styles.secondaryBtnActive]}
+              onPress={() => setArchiveConfirm(true)}
+              activeOpacity={0.8}
             >
-              {nameError}
-            </Text>
-          ) : null}
+              {editAccount.isArchived
+                ? <ArchiveRestore size={14} color={COLORS.pine} strokeWidth={2} />
+                : <Archive size={14} color={COLORS.storm} strokeWidth={2} />}
+              <Text style={[styles.secondaryBtnText, editAccount.isArchived && { color: COLORS.pine }]}>
+                {editAccount.isArchived ? "Restaurar cuenta" : "Archivar cuenta"}
+              </Text>
+            </TouchableOpacity>
+
+            {editAccount.isArchived ? (
+              <TouchableOpacity
+                style={styles.dangerBtn}
+                onPress={() => setDeleteConfirm(true)}
+                activeOpacity={0.8}
+              >
+                <Trash2 size={14} color={COLORS.danger} strokeWidth={2} />
+                <Text style={styles.dangerBtnText}>Eliminar permanentemente</Text>
+              </TouchableOpacity>
+            ) : null}
+          </>
+        ) : null
+      }
+    >
+      {/* Sin vista previa: repetía el título "Nueva cuenta" y los dos datos que estás por
+          elegir, 120 px antes del primer campo. Al editar sí quedan los dos datos que el
+          formulario NO enseña: el saldo de hoy y cuándo se movió por última vez. */}
+      {editAccount ? (
+        <View style={styles.infoRow}>
+          <Wallet size={12} color={COLORS.storm} />
+          <Text style={styles.infoText}>
+            Saldo actual: {formatCurrency(editAccount.currentBalance, editAccount.currencyCode)}
+          </Text>
         </View>
+      ) : null}
+      {editAccount?.lastActivity ? (
+        <View style={styles.infoRow}>
+          <Clock size={12} color={COLORS.storm} />
+          <Text style={styles.infoText}>
+            Última actividad: {format(parseDisplayDate(editAccount.lastActivity), "d MMM yyyy", { locale: es })}
+          </Text>
+        </View>
+      ) : null}
 
-        {/* Type */}
-        <AccountTypePicker value={type} onChange={handleTypeChange} />
-
-        {/* La apariencia va detrás de una fila: 28 íconos y 12 colores no pueden abrir un
-            formulario cuyo único campo obligatorio es el nombre. */}
-        <FormOptionRow
-          label="Apariencia"
-          value={null}
-          placeholder="Cambiar"
-          leading={
-            <View style={[styles.appearanceSwatch, { borderColor: color }]}>
-              <SelectedIcon size={20} color={color} strokeWidth={2} />
-            </View>
-          }
-          onPress={() => setAppearanceOpen(true)}
+      {/* Dos gramáticas de etiqueta en todo el formulario: mayúscula espaciada para lo que se
+          escribe, fila con el valor a la derecha para lo que se elige. Había cuatro. */}
+      <View style={styles.field}>
+        <Text style={styles.sectionLabel}>Nombre</Text>
+        <TextField
+          style={[styles.textInput, nameError ? styles.textInputError : null]}
+          value={name}
+          onChangeText={(t) => { setName(t); setNameError(""); }}
+          placeholder="BCP Soles, Efectivo casa…"
+          placeholderTextColor={COLORS.storm}
+          accessibilityLabel="Nombre de la cuenta"
+          returnKeyType="next"
         />
+        {nameError ? (
+          <Text
+            style={styles.fieldError}
+            accessibilityLiveRegion="polite"
+            accessibilityRole="alert"
+          >
+            {nameError}
+          </Text>
+        ) : null}
+      </View>
 
-        {/* Institution (optional) */}
-        <InstitutionPicker value={institutionCode} onChange={setInstitutionCode} />
-
-        {/* Moneda: pasadas seis opciones, selector. */}
+      {/* Tipo e Institución eran dos scrollers de cápsulas que se cortaban por el borde
+          ("Pr…", un círculo sin nombre). Pasan a filas, junto a Moneda y Apariencia. */}
+      <View style={styles.group}>
         <FormOptionRow
+          grouped
+          label="Tipo"
+          value={accountTypeLabel(type)}
+          onPress={() => setTypeOpen(true)}
+        />
+        <FormOptionRow
+          grouped
+          label="Institución"
+          value={institutionLabel}
+          placeholder="Ninguna"
+          onPress={() => setInstitutionOpen(true)}
+        />
+        <FormOptionRow
+          grouped
           label="Moneda"
-          value={resolvedCurrency}
+          value={currencyPluralTitle(resolvedCurrency)}
           onPress={() => setCurrencyOpen(true)}
         />
-        {customCurrency.trim() ? (
-          <CustomCurrencyField value={customCurrency} onChange={setCustomCurrency} />
-        ) : null}
+        {/* La apariencia se enseña, no se dice: la fila lleva el ícono elegido en vez de la
+            palabra "Cambiar". El contorno va en el gris de las demás filas. */}
+        <FormOptionRow
+          grouped
+          last
+          label="Apariencia"
+          onPress={() => setAppearanceOpen(true)}
+          trailing={
+            <View style={styles.appearanceSwatch}>
+              <SelectedIcon size={15} color={color} strokeWidth={2} />
+            </View>
+          }
+        />
+      </View>
+      {customCurrency.trim() ? (
+        <CustomCurrencyField value={customCurrency} onChange={setCustomCurrency} />
+      ) : null}
 
-        {/* Opening balance */}
+      <View style={styles.field}>
+        <Text style={styles.sectionLabel}>{editAccount ? "Saldo inicial (base)" : "Saldo inicial"}</Text>
         <CurrencyInput
-          label={editAccount ? "Saldo inicial (base)" : "Saldo inicial"}
           value={openingBalance}
           onChangeText={setOpeningBalance}
           currencyCode={resolvedCurrency}
         />
-        {editAccount ? (
-          <Text style={styles.openingBalanceHint}>
-            El saldo actual se calcula como saldo inicial + movimientos confirmados.
-          </Text>
-        ) : null}
+        <Text style={styles.fieldHint}>
+          {editAccount
+            ? "El saldo actual se calcula como saldo inicial + movimientos confirmados."
+            : "Lo que hay en la cuenta hoy. Se puede corregir después."}
+        </Text>
+      </View>
 
-        {/* Include in net worth */}
-        <View style={styles.switchRow}>
-          <View style={styles.switchInfo}>
-            <Text style={styles.switchLabel}>Incluir en patrimonio neto</Text>
-            <Text style={styles.switchDesc}>Afecta el balance total del dashboard</Text>
-          </View>
-          <Switch
-            value={includeInNetWorth}
-            onValueChange={setIncludeInNetWorth}
-            trackColor={{ false: COLORS.storm + "44", true: COLORS.primary + "88" }}
-            thumbColor="#FFFFFF"
-          />
+      {/* Estar activado no es un ingreso: el interruptor va en hueso, no en menta. */}
+      <View style={styles.switchRow}>
+        <View style={styles.switchInfo}>
+          <Text style={styles.switchLabel}>Contar en el patrimonio</Text>
+          <Text style={styles.switchDesc}>Suma al total del inicio</Text>
         </View>
-
-        {/* Submit */}
-        <Button
-          label={editAccount ? "Guardar cambios" : "Crear cuenta"}
-          onPress={handleSubmit}
-          loading={createMutation.isPending || updateMutation.isPending}
-          style={styles.submitBtn}
+        <Switch
+          value={includeInNetWorth}
+          onValueChange={setIncludeInNetWorth}
+          trackColor={{ false: COLORS.border, true: COLORS.ink }}
+          thumbColor={includeInNetWorth ? COLORS.bg : COLORS.fog}
+          ios_backgroundColor={COLORS.border}
         />
-
-        {/* Archive / restore (only in edit mode) */}
-        {editAccount ? (
-          <TouchableOpacity
-            style={[styles.secondaryBtn, editAccount.isArchived && styles.secondaryBtnActive]}
-            onPress={() => setArchiveConfirm(true)}
-            activeOpacity={0.8}
-          >
-            {editAccount.isArchived
-              ? <ArchiveRestore size={14} color={COLORS.pine} strokeWidth={2} />
-              : <Archive size={14} color={COLORS.storm} strokeWidth={2} />}
-            <Text style={[styles.secondaryBtnText, editAccount.isArchived && { color: COLORS.pine }]}>
-              {editAccount.isArchived ? "Restaurar cuenta" : "Archivar cuenta"}
-            </Text>
-          </TouchableOpacity>
-        ) : null}
-
-        {/* Permanent delete — only when archived */}
-        {editAccount?.isArchived ? (
-          <TouchableOpacity
-            style={styles.dangerBtn}
-            onPress={() => setDeleteConfirm(true)}
-            activeOpacity={0.8}
-          >
-            <Trash2 size={14} color={COLORS.danger} strokeWidth={2} />
-            <Text style={styles.dangerBtnText}>Eliminar permanentemente</Text>
-          </TouchableOpacity>
-        ) : null}
-      </BottomSheet>
-    </>
+      </View>
+    </FormSheetScaffold>
   );
 }
 
 const styles = StyleSheet.create({
   appearanceSwatch: {
-    width: 36,
-    height: 36,
-    borderRadius: RADIUS.md,
-    borderWidth: 2,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  previewRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: SPACING.md,
-    backgroundColor: SURFACE.card,
-    borderRadius: RADIUS.lg,
-    padding: SPACING.md,
+    width: 26,
+    height: 26,
+    borderRadius: RADIUS.sm,
     borderWidth: 1,
     borderColor: SURFACE.cardBorder,
-  },
-  previewIcon: {
-    width: 52,
-    height: 52,
-    borderRadius: RADIUS.lg,
+    backgroundColor: COLORS.bgInput,
     alignItems: "center",
     justifyContent: "center",
-    flexShrink: 0,
   },
-  previewInfo: { flex: 1 },
-  previewName: {
-    fontFamily: FONT_FAMILY.bodySemibold,
-    fontSize: FONT_SIZE.md,
-    color: COLORS.ink,
+  group: {
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: SURFACE.cardBorder,
+    backgroundColor: SURFACE.card,
+    overflow: "hidden",
   },
-  previewType: {
+  field: { gap: SPACING.sm },
+  fieldHint: {
     fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.xs,
     color: COLORS.storm,
-    marginTop: 2,
-  },
-  balanceChip: {
-    alignItems: "flex-end",
-    gap: 2,
-    flexShrink: 0,
-  },
-  balanceChipLabel: {
-    fontFamily: FONT_FAMILY.body,
-    fontSize: 10,
-    color: COLORS.storm,
-  },
-  balanceChipAmount: {
-    fontFamily: FONT_FAMILY.heading,
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.income,
+    lineHeight: 17,
   },
   infoRow: {
     flexDirection: "row",
@@ -565,22 +560,12 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.xs,
     color: COLORS.storm,
   },
-  openingBalanceHint: {
-    fontFamily: FONT_FAMILY.body,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.storm,
-    fontStyle: "italic",
-    paddingHorizontal: 2,
-    marginTop: -SPACING.xs,
-  },
-
   sectionLabel: {
     fontSize: FONT_SIZE.xs,
     fontFamily: FONT_FAMILY.bodySemibold,
     color: COLORS.storm,
     textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginBottom: SPACING.xs,
+    letterSpacing: 0.8,
   },
   textInput: {
     backgroundColor: SURFACE.card,
@@ -606,9 +591,8 @@ const styles = StyleSheet.create({
     borderColor: SURFACE.cardBorder,
   },
   switchInfo: { flex: 1, gap: 2, marginRight: SPACING.md },
-  switchLabel: { fontSize: FONT_SIZE.sm, fontFamily: FONT_FAMILY.bodyMedium, color: COLORS.ink },
+  switchLabel: { fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.bodyMedium, color: COLORS.ink },
   switchDesc: { fontSize: FONT_SIZE.xs, color: COLORS.storm },
-  submitBtn: { marginTop: SPACING.sm },
   secondaryBtn: {
     flexDirection: "row",
     alignItems: "center",

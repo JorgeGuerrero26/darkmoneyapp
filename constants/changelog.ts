@@ -38,6 +38,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Arreglado un error de cuentas: una deuda que alguien compartió contigo se sumaba a lo que te deben en vez de a lo que debes. Por eso podías ver \"No debes nada\" teniendo una deuda justo debajo. Afectaba también a las cifras del inicio.",
       "Crear una suscripción ya no es una pantalla larguísima: pide el nombre, el monto, cada cuánto se cobra y cuándo es el próximo, y todo lo demás está en \"Opcionales\" por si lo necesitas.",
       "Ya no te pide tres fechas para una suscripción. Solo la del próximo cobro, que es la única que el sistema usa; el inicio y el fin quedaron como opcionales.",
+      "Crear una cuenta ya no empieza por dos filas de botones que se cortan por el borde: tipo, institución, moneda y apariencia son cuatro líneas que abren su lista, y el botón te dice qué falta mientras no le pongas nombre.",
       "Crear una categoría empieza por el nombre. Los íconos y colores pasaron a una línea que abres si quieres cambiarlos, en vez de ocupar media pantalla antes del único campo obligatorio.",
       "Desapareció el campo \"Orden\" de las categorías, que pedía un número sin explicar para qué servía. Ahora se acomoda solo.",
       "Elegir moneda, cuenta, categoría o contacto en cualquier formulario ya no es una fila de botones que se corta por el borde: es una lista que se abre y se puede buscar.",
