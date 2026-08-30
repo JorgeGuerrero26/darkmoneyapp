@@ -21,6 +21,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Elegir entre vista simple y avanzada se mudó a Configuración: se elige una vez y se recuerda, en vez de ocupar sitio en cada pantalla.",
       "Cómo te habla el asistente del inicio también se elige una vez en Configuración, en lugar de preguntártelo en cada pantalla.",
       "En la pestaña de Salud, en vez de un texto que te explica el problema, ahora hay un botón que te lleva directo a los movimientos sin categoría para arreglarlos.",
+      "La lista de cuentas deja de gastar media pantalla en buscar y filtrar dos filas: esos controles aparecen cuando tienes ocho cuentas o más, y hasta entonces el sitio es para tu patrimonio. \"Agregar cuenta\" pasa a ser la última línea de la lista.",
       "Tus contactos ahora entran más por pantalla, y ya no repiten la categoría dos veces en la misma línea.",
       "Los colores ahora significan una sola cosa cada uno: verde es plata que entra, y los gastos ya no se ven como si fueran un error. El asistente tiene su propio color, para que distingas lo que él opina de lo que dicen tus cuentas.",
       "Cada día de la lista de movimientos te dice de un vistazo cuánto entró o salió ese día.",
