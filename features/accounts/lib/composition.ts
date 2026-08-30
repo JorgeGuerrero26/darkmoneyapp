@@ -1,5 +1,6 @@
 import type { AccountSummary } from "../../../types/domain";
 import { resolveConversion, type ExchangeRateMap } from "../../../lib/exchange-rate-map";
+import { TYPE_PRESETS } from "./account-types";
 
 /**
  * One slice of the donut: an aggregated bucket of accounts by type.
@@ -37,18 +38,23 @@ export type Composition = {
   netWorth: number;
 };
 
-// Color palette mirrors features/accounts/lib/account-types.ts
-// to keep the donut visually aligned with the type-pill colors users see in
-// the edit form.
+/**
+ * Los mismos tonos que el resto de la app le da a cada tipo de cuenta.
+ *
+ * El comentario decía que reflejaba los presets desde siempre, pero eran hex sueltos de la
+ * paleta vieja: un azul que no existe en el sistema —y era el único azul de la app— y un violeta
+ * que hoy significa IA. Ahora sale de `TYPE_PRESETS`, que es de donde salen el ícono y el color
+ * de la cuenta cuando la creas.
+ */
 const TYPE_COLORS: Record<string, string> = {
-  bank:        "#4566d6",
-  savings:     "#1b6a58",
-  credit_card: "#8f3e3e",
-  cash:        "#b48b34",
-  investment:  "#8366f2",
-  loan:        "#c46a31",
-  loan_wallet: "#c46a31",
-  other:       "#6b7280",
+  bank:        TYPE_PRESETS.bank.color,
+  savings:     TYPE_PRESETS.savings.color,
+  credit_card: TYPE_PRESETS.credit_card.color,
+  cash:        TYPE_PRESETS.cash.color,
+  investment:  TYPE_PRESETS.investment.color,
+  loan:        TYPE_PRESETS.loan.color,
+  loan_wallet: TYPE_PRESETS.loan.color,
+  other:       TYPE_PRESETS.other.color,
 };
 
 const TYPE_LABELS: Record<string, string> = {

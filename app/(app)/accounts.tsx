@@ -468,7 +468,14 @@ function AccountsScreen() {
     [allAccounts, activeCurrency, baseCurrency, exchangeRateMap],
   );
 
-  const hasCompositionData = composition.assets.length > 0 || composition.debts > 0;
+  /**
+   * La composición aparece cuando hay algo que componer.
+   *
+   * Con un solo tipo de cuenta el anillo es una circunferencia entera al 100 % y el centro
+   * repite, cuarenta píxeles más abajo, el mismo patrimonio neto que acaba de leerse en el
+   * encabezado. Un gráfico de una sola porción no compara nada.
+   */
+  const hasCompositionData = composition.assets.length > 1 || composition.debts > 0;
 
   const summaryHeader = !selectMode && activeFiltered.length > 0 ? (
     <>

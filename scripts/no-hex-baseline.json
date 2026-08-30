@@ -5,40 +5,6 @@
       "match": "\"#FFFFFF\""
     }
   ],
-  "features/accounts/lib/composition.ts": [
-    {
-      "line": 44,
-      "match": "\"#4566d6\""
-    },
-    {
-      "line": 45,
-      "match": "\"#1b6a58\""
-    },
-    {
-      "line": 46,
-      "match": "\"#8f3e3e\""
-    },
-    {
-      "line": 47,
-      "match": "\"#b48b34\""
-    },
-    {
-      "line": 48,
-      "match": "\"#8366f2\""
-    },
-    {
-      "line": 49,
-      "match": "\"#c46a31\""
-    },
-    {
-      "line": 50,
-      "match": "\"#c46a31\""
-    },
-    {
-      "line": 51,
-      "match": "\"#6b7280\""
-    }
-  ],
   "features/obligations/lib/obligation-detail.styles.ts": [
     {
       "line": 260,
@@ -217,7 +183,7 @@
   ],
   "components/layout/OfflineBanner.tsx": [
     {
-      "line": 140,
+      "line": 157,
       "match": "\"#000\""
     }
   ],
