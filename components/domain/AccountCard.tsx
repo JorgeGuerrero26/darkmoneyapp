@@ -1,6 +1,6 @@
 import { memo } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import { Archive, ArchiveRestore } from "lucide-react-native";
+import { Archive, ArchiveRestore, BarChart2 } from "lucide-react-native";
 
 import {
   ResourceCard,
@@ -12,7 +12,6 @@ import { useUiStore } from "../../store/ui-store";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING } from "../../constants/theme";
 import { getAccountIcon } from "../../lib/account-icons";
 import { findInstitution } from "../../lib/account-institutions";
-import { TYPE_PRESETS } from "../../features/accounts/lib/account-types";
 import { pickAccountBadge } from "../../features/accounts/lib/badges";
 import type { AccountSummary } from "../../types/domain";
 
@@ -61,19 +60,9 @@ function AccountCardContent({
   const AccountIcon = getAccountIcon(account.icon, account.type);
   const badge = pickAccountBadge(account, baseCurrencyCode);
   const institution = findInstitution(account.institutionCode);
-  /**
-   * La moneda NO va en el subtítulo: el monto de al lado ya empieza por su símbolo, y cuando la
-   * cuenta está en otra moneda que el patrimonio ya lo dice su distintivo. Escrito en las dos
-   * filas y en las dos iguales, no distinguía una de otra.
-   */
-  const subtitle = institution ? institution.label : typeLabel;
-  /**
-   * El color solo cuando lo eligió el usuario en Apariencia. Al crear la cuenta se pone el del
-   * preset de su tipo, así que pintar por él hacía que dos cuentas "Banco" salieran de colores
-   * distintos sin que eso significara nada.
-   */
-  const presetColor = TYPE_PRESETS[account.type]?.color;
-  const chosenColor = account.color && account.color !== presetColor ? account.color : null;
+  const subtitle = institution
+    ? `${institution.label} · ${typeLabel} · ${account.currencyCode}`
+    : `${typeLabel} · ${account.currencyCode}`;
 
   return (
     <ResourceCard
@@ -84,7 +73,7 @@ function AccountCardContent({
       archived={account.isArchived}
       onPress={onPress}
       onLongPress={onLongPress}
-      leading={<ResourceCardIcon icon={AccountIcon} color={chosenColor} />}
+      leading={<ResourceCardIcon icon={AccountIcon} color={account.color} />}
       meta={
         badge ? (
           <View style={[styles.badge, badge.tone === "danger" && styles.badgeDanger, badge.tone === "muted" && styles.badgeMuted, badge.tone === "info" && styles.badgeInfo]}>
@@ -93,6 +82,16 @@ function AccountCardContent({
             </Text>
           </View>
         ) : null
+      }
+      actions={
+        onAnalytics
+          ? [{
+              key: "analytics",
+              icon: BarChart2,
+              onPress: onAnalytics,
+              accessibilityLabel: "Ver analítica de cuenta",
+            }]
+          : []
       }
       trailing={
         <Text style={[styles.balance, isNegative && styles.balanceNegative]}>

@@ -143,28 +143,13 @@ function ResourceCardBase({
   );
 }
 
-/**
- * El ícono de una fila.
- *
- * `color` es opcional: **sin color el contenedor va en el gris de superficie y el ícono en
- * hueso**. Pintar por tipo cuando todas las filas son del mismo tipo no clasifica nada, solo
- * decora — dos cuentas que dicen "Banco" salían una azul y otra naranja. El color se usa cuando
- * lo eligió el usuario.
- */
 export function ResourceCardIcon({
   icon: Icon,
   color,
 }: {
   icon: LucideIcon;
-  color?: string | null;
+  color: string;
 }) {
-  if (!color) {
-    return (
-      <View style={[styles.iconWrap, styles.iconWrapNeutral]}>
-        <Icon size={20} color={COLORS.fog} strokeWidth={1.8} />
-      </View>
-    );
-  }
   return (
     <View style={[styles.iconWrap, { backgroundColor: color + "18" }]}>
       <Icon size={20} color={color} strokeWidth={2} />
@@ -323,11 +308,6 @@ const styles = StyleSheet.create({
     paddingTop: SPACING.sm,
     borderTopWidth: 1,
     borderTopColor: SURFACE.separator,
-  },
-  iconWrapNeutral: {
-    backgroundColor: COLORS.bgInput,
-    borderWidth: 1,
-    borderColor: SURFACE.cardBorder,
   },
   iconWrap: {
     width: 44,
