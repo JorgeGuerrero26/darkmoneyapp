@@ -2,7 +2,8 @@ import { memo } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { AlertCircle } from "lucide-react-native";
 
-import { SmartSuggestion, SmartSuggestionEmpty, SmartSuggestionLoading } from "../../../../components/ui/SmartSuggestion";
+import { SmartSuggestion } from "../../../../components/ui/SmartSuggestion";
+import { suggestionReason } from "../../../../lib/suggestion-reason";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING } from "../../../../constants/theme";
 import {
   recurringFrequencyLabel,
@@ -32,19 +33,10 @@ export type CategorySuggestionState = {
 };
 
 type RiskBlockProps = {
-  loading: boolean;
   risk: MovementRiskExplanation | null;
 };
 
-export const RiskWarningBlock = memo(function RiskWarningBlock({ loading, risk }: RiskBlockProps) {
-  if (loading) {
-    return (
-      <SmartSuggestionLoading
-        title="Revisando antes de guardar"
-        detail="Analizando si este movimiento podría estar repetido o fuera de patrón."
-      />
-    );
-  }
+export const RiskWarningBlock = memo(function RiskWarningBlock({ risk }: RiskBlockProps) {
   if (!risk) return null;
   return (
     <View style={styles.warning}>
@@ -61,19 +53,10 @@ export const RiskWarningBlock = memo(function RiskWarningBlock({ loading, risk }
 });
 
 type BudgetImpactBlockProps = {
-  loading: boolean;
   impact: MovementBudgetImpact | null;
 };
 
-export const BudgetImpactBlock = memo(function BudgetImpactBlock({ loading, impact }: BudgetImpactBlockProps) {
-  if (loading) {
-    return (
-      <SmartSuggestionLoading
-        title="Revisando presupuesto"
-        detail="Calculando si este movimiento afecta un presupuesto sensible."
-      />
-    );
-  }
+export const BudgetImpactBlock = memo(function BudgetImpactBlock({ impact }: BudgetImpactBlockProps) {
   if (!impact) return null;
   return (
     <View style={styles.warning}>
@@ -94,146 +77,98 @@ export const BudgetImpactBlock = memo(function BudgetImpactBlock({ loading, impa
 });
 
 type DescriptionCleanupBlockProps = {
-  loading: boolean;
   cleanup: DescriptionCleanupResult | null;
   onApply: (cleaned: string) => void;
 };
 
 export const DescriptionCleanupBlock = memo(function DescriptionCleanupBlock({
-  loading,
   cleanup,
   onApply,
 }: DescriptionCleanupBlockProps) {
-  if (loading) {
-    return (
-      <SmartSuggestionLoading
-        title="Limpiando descripción"
-        detail="Estamos revisando si el texto puede quedar más claro antes de guardar."
-      />
-    );
-  }
   if (!cleanup) return null;
   return (
     <SmartSuggestion
+      grouped
       label={cleanup.cleanedDescription}
-      detail={`Descripción limpia · ${Math.round(cleanup.confidence * 100)}% · ${cleanup.reasons.join(" · ")}`}
+      detail="Descripción sugerida"
       onApply={() => onApply(cleanup.cleanedDescription)}
     />
   );
 });
 
 type CategoryAiBlockProps = {
-  loading: boolean;
-  attempted: boolean;
-  errored?: boolean;
-  hasLocalSuggestion: boolean;
   suggestion: CategorySuggestionState | null;
   onApply: (suggestion: CategorySuggestionState) => void;
 };
 
 export const CategoryAiBlock = memo(function CategoryAiBlock({
-  loading,
-  attempted,
-  errored,
-  hasLocalSuggestion,
   suggestion,
   onApply,
 }: CategoryAiBlockProps) {
-  if (loading) {
-    return (
-      <SmartSuggestionLoading
-        detail={
-          hasLocalSuggestion
-            ? "Puede confirmar la sugerencia actual; si aparece una mejor, la actualizaremos."
-            : "Buscando una categoría más precisa para este movimiento."
-        }
-      />
-    );
-  }
-  if (errored && !suggestion) {
-    return <SmartSuggestionEmpty message="IA no disponible" />;
-  }
-  if (attempted && !suggestion) {
-    return <SmartSuggestionEmpty message="IA sin sugerencia" />;
-  }
   if (!suggestion) return null;
   return (
     <SmartSuggestion
+      grouped
       label={suggestion.categoryName}
-      detail={`${suggestion.source === "deepseek" ? "Mejor sugerencia · " : ""}${Math.round(suggestion.confidence * 100)}% · ${suggestion.reasons.join(" · ")}`}
+      detail={suggestionReason(suggestion.reasons, "Categoría sugerida")}
       onApply={() => onApply(suggestion)}
     />
   );
 });
 
 type CounterpartyAiBlockProps = {
-  loading: boolean;
-  attempted: boolean;
   hasSelectedCounterparty: boolean;
   suggestion: CounterpartySuggestionResult | null;
   onApply: (suggestion: CounterpartySuggestionResult) => void;
 };
 
 export const CounterpartyAiBlock = memo(function CounterpartyAiBlock({
-  loading,
-  attempted,
   hasSelectedCounterparty,
   suggestion,
   onApply,
 }: CounterpartyAiBlockProps) {
-  if (loading) {
-    return (
-      <SmartSuggestionLoading
-        title="Buscando contraparte"
-        detail="Revisando si este movimiento corresponde a un contacto o comercio."
-      />
-    );
-  }
-  if (attempted && !suggestion) {
-    return <SmartSuggestionEmpty message="Sin sugerencia de contraparte" />;
-  }
   if (hasSelectedCounterparty || !suggestion) return null;
   const label =
     suggestion.type === "new_counterparty" && suggestion.newCounterpartyName
       ? `Crear contraparte "${suggestion.newCounterpartyName}"`
       : suggestion.counterpartyName ?? "Contraparte sugerida";
-  const detail = `${suggestion.source === "deepseek" ? "Mejor sugerencia · " : ""}${Math.round(suggestion.confidence * 100)}% · ${suggestion.reasons.join(" · ")}`;
-  return <SmartSuggestion label={label} detail={detail} onApply={() => onApply(suggestion)} />;
+  return (
+    <SmartSuggestion
+      grouped
+      label={label}
+      detail={suggestionReason(suggestion.reasons, "Contraparte sugerida")}
+      onApply={() => onApply(suggestion)}
+    />
+  );
 });
 
 type RecurringAiBlockProps = {
-  loading: boolean;
-  attempted: boolean;
   alreadyLinked: boolean;
   suggestion: MovementRecurringSuggestionResult | null;
   onApply: (suggestion: MovementRecurringSuggestionResult) => void;
 };
 
+/**
+ * La recurrencia no modifica ninguna fila del formulario —propone crear una suscripción o un
+ * ingreso fijo—, así que es la única sugerencia que va suelta, después de la tarjeta.
+ */
 export const RecurringAiBlock = memo(function RecurringAiBlock({
-  loading,
-  attempted,
   alreadyLinked,
   suggestion,
   onApply,
 }: RecurringAiBlockProps) {
-  if (loading) {
-    return (
-      <SmartSuggestionLoading
-        title="Detectando recurrencia"
-        detail="Revisando si este movimiento se repite como cargo o ingreso fijo."
-      />
-    );
-  }
-  if (attempted && !suggestion && !alreadyLinked) {
-    return <SmartSuggestionEmpty message="Sin detección de recurrencia" />;
-  }
   if (alreadyLinked || !suggestion) return null;
   const label =
     suggestion.type === "recurring_income"
       ? `Crear ingreso fijo "${suggestion.name}"`
       : `Crear suscripción "${suggestion.name}"`;
-  const detail = `${suggestion.source === "deepseek" ? "Mejor sugerencia · " : ""}${Math.round(suggestion.confidence * 100)}% · ${recurringFrequencyLabel(suggestion.frequency)} · ${suggestion.reasons.join(" · ")}`;
-  return <SmartSuggestion label={label} detail={detail} onApply={() => onApply(suggestion)} />;
+  return (
+    <SmartSuggestion
+      label={label}
+      detail={suggestionReason(suggestion.reasons, `Se repite ${recurringFrequencyLabel(suggestion.frequency)}`)}
+      onApply={() => onApply(suggestion)}
+    />
+  );
 });
 
 const styles = StyleSheet.create({

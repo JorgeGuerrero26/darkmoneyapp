@@ -1,5 +1,5 @@
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { Plus, Split, Trash2, X } from "lucide-react-native";
+import { Plus, Trash2, X } from "lucide-react-native";
 
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../../../constants/theme";
 import type { CategorySummary } from "../../../../types/domain";
@@ -16,27 +16,15 @@ type Props = {
 };
 
 /**
- * Editor de división de un gasto en varias categorías. `lines === null` = split
- * apagado (solo muestra el toggle). Cada línea = categoría + monto; la suma debe
- * igualar el monto total del paso 2.
+ * Editor de división de un gasto en varias categorías. `lines === null` = split apagado: el
+ * interruptor es ahora una fila de la tarjeta de campos. Cada línea = categoría + monto; la
+ * suma debe igualar el monto total del paso 2.
  */
 export function SplitAmountEditor({ lines, onChangeLines, categories, totalAmount, currencyCode }: Props) {
-  if (lines === null) {
-    return (
-      <TouchableOpacity
-        style={styles.toggle}
-        onPress={() => onChangeLines([
-          { categoryId: null, amount: "" },
-          { categoryId: null, amount: "" },
-        ])}
-        accessibilityRole="button"
-        accessibilityLabel="Dividir el gasto en varias categorías"
-      >
-        <Split size={14} color={COLORS.primary} />
-        <Text style={styles.toggleText}>Dividir en varias categorías</Text>
-      </TouchableOpacity>
-    );
-  }
+  // Apagado no pinta nada: el interruptor es ahora una fila de la tarjeta de campos. En menta
+  // y entre dos sugerencias parecía una tercera propuesta del sistema, y no es de la IA: es una
+  // acción del usuario.
+  if (lines === null) return null;
 
   const validation = validateSplit(lines, totalAmount);
 
@@ -111,18 +99,6 @@ export function SplitAmountEditor({ lines, onChangeLines, categories, totalAmoun
 }
 
 const styles = StyleSheet.create({
-  toggle: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: SPACING.xs,
-    alignSelf: "flex-start",
-    paddingVertical: SPACING.xs,
-  },
-  toggleText: {
-    color: COLORS.primary,
-    fontFamily: FONT_FAMILY.bodySemibold,
-    fontSize: FONT_SIZE.xs,
-  },
   container: {
     gap: SPACING.sm,
     borderRadius: RADIUS.md,

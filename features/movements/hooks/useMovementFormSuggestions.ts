@@ -143,7 +143,8 @@ export function useMovementFormSuggestions({
       categoryId: match.categoryId,
       categoryName: match.categoryName,
       confidence: match.confidence,
-      reasons: ["aprendido de una corrección tuya", match.similarity >= 0.92 ? "texto casi igual" : "texto parecido"],
+      // Una sola razón y verificable: le dice al usuario que su corrección anterior sirvió.
+      reasons: ["porque corregiste esto antes"],
     };
   }, [categoriesForPicker, currentSuggestionMovement, learningFeedback, categoryId]);
 

@@ -1,5 +1,5 @@
-import { memo, useState, type RefObject } from "react";
-import { StyleSheet, Text, View, type TextInput } from "react-native";
+import { memo, useRef, useState, type RefObject } from "react";
+import { StyleSheet, Text, View, type ScrollView, type TextInput } from "react-native";
 import { AlertCircle } from "lucide-react-native";
 
 import { AttachmentPicker, type Attachment } from "../../../../../components/domain/AttachmentPicker";
@@ -8,6 +8,7 @@ import { DatePickerInput } from "../../../../../components/ui/DatePickerInput";
 import { TimePickerInput } from "../../../../../components/ui/TimePickerInput";
 import { FormOptionRow } from "../../../../../components/ui/FormOptionRow";
 import { Input } from "../../../../../components/ui/Input";
+import { TextField } from "../../../../../components/ui/TextField";
 import { SmartSuggestion } from "../../../../../components/ui/SmartSuggestion";
 import {
   COLORS,
@@ -45,6 +46,13 @@ type FormWarnings = {
 
 type Props = {
   isEditing: boolean;
+  /**
+   * El scroll de la hoja, para llevar el campo enfocado por encima del teclado.
+   *
+   * La hoja se encoge sola cuando entra el teclado, pero el desplazamiento se queda donde
+   * estaba: enfocar las notas las dejaba justo debajo del corte.
+   */
+  scrollRef?: RefObject<ScrollView | null>;
 
   // Description
   descriptionRef: RefObject<TextInput | null>;
@@ -57,13 +65,10 @@ type Props = {
   onChangeNotes: (value: string) => void;
 
   // Risk / budget
-  movementRiskLoading: boolean;
   movementRisk: MovementRiskExplanation | null;
-  budgetImpactLoading: boolean;
   budgetImpact: MovementBudgetImpact | null;
 
   // Description cleanup
-  descriptionCleanupLoading: boolean;
   descriptionCleanup: DescriptionCleanupResult | null;
   onApplyDescriptionCleanup: (cleaned: string) => void;
 
@@ -76,10 +81,6 @@ type Props = {
   onChangeSplitLines?: (lines: SplitLine[] | null) => void;
   splitTotalAmount?: number;
   splitCurrencyCode?: string;
-  aiCategorySuggestionLoading: boolean;
-  aiCategorySuggestionAttempted: boolean;
-  aiCategorySuggestionErrored?: boolean;
-  hasLocalCategorySuggestion: boolean;
   categorySuggestionToShow: CategorySuggestionState | null;
   onApplyCategorySuggestion: (sug: CategorySuggestionState) => void;
 
@@ -87,14 +88,10 @@ type Props = {
   counterpartiesSorted: CounterpartySummary[];
   counterpartyId: number | null;
   onSelectCounterparty: (id: number | null) => void;
-  aiCounterpartySuggestionLoading: boolean;
-  aiCounterpartySuggestionAttempted: boolean;
   counterpartySuggestionToShow: CounterpartySuggestionResult | null;
   onApplyCounterpartySuggestion: (sug: CounterpartySuggestionResult) => void;
 
   // Recurring
-  recurringSuggestionLoading: boolean;
-  recurringSuggestionAttempted: boolean;
   recurringAlreadyLinked: boolean;
   recurringSuggestion: MovementRecurringSuggestionResult | null;
   onApplyRecurringSuggestion: (sug: MovementRecurringSuggestionResult) => void;
@@ -146,17 +143,15 @@ function describeDay(ymd: string): string {
 
 export const StepDetails = memo(function StepDetails({
   isEditing,
+  scrollRef,
   descriptionRef,
   notesRef,
   description,
   onChangeDescription,
   notes,
   onChangeNotes,
-  movementRiskLoading,
   movementRisk,
-  budgetImpactLoading,
   budgetImpact,
-  descriptionCleanupLoading,
   descriptionCleanup,
   onApplyDescriptionCleanup,
   categoriesForPicker,
@@ -166,21 +161,13 @@ export const StepDetails = memo(function StepDetails({
   onChangeSplitLines,
   splitTotalAmount,
   splitCurrencyCode,
-  aiCategorySuggestionLoading,
-  aiCategorySuggestionAttempted,
-  aiCategorySuggestionErrored,
-  hasLocalCategorySuggestion,
   categorySuggestionToShow,
   onApplyCategorySuggestion,
   counterpartiesSorted,
   counterpartyId,
   onSelectCounterparty,
-  aiCounterpartySuggestionLoading,
-  aiCounterpartySuggestionAttempted,
   counterpartySuggestionToShow,
   onApplyCounterpartySuggestion,
-  recurringSuggestionLoading,
-  recurringSuggestionAttempted,
   recurringAlreadyLinked,
   recurringSuggestion,
   onApplyRecurringSuggestion,
@@ -204,6 +191,8 @@ export const StepDetails = memo(function StepDetails({
   onSubmit,
 }: Props) {
   const [dateTimeOpen, setDateTimeOpen] = useState(false);
+  const [descriptionFocused, setDescriptionFocused] = useState(false);
+  const notesTop = useRef(0);
 
   const selectedCategoryName =
     categoriesForPicker.find((category) => category.id === categoryId)?.name ?? null;
@@ -213,53 +202,91 @@ export const StepDetails = memo(function StepDetails({
   // "Hoy, 14:50": la fecha en palabras cuando es hoy o ayer, que es el 90 % de los casos.
   const dateTimeLabel = `${describeDay(occurredAt)}, ${occurredTime}`;
 
+  // Cada sugerencia va pegada a la fila que cambia, dentro de la misma tarjeta. La fila de
+  // arriba cede su línea divisoria: la sugerencia trae la suya.
+  const showCategoryRow = splitLines == null;
+  const categorySuggestion = showCategoryRow ? categorySuggestionToShow : null;
+  const counterpartySuggestion = counterpartyId == null ? counterpartySuggestionToShow : null;
+  const showSplitRow = onChangeSplitLines != null && splitLines == null;
+
   return (
     <View style={styles.section}>
-      <RiskWarningBlock loading={movementRiskLoading} risk={movementRisk} />
-      <BudgetImpactBlock loading={budgetImpactLoading} impact={budgetImpact} />
+      <RiskWarningBlock risk={movementRisk} />
+      <BudgetImpactBlock impact={budgetImpact} />
 
-      {/* Sin etiqueta encima: el placeholder ya dice qué es Y qué pasa si lo dejas vacío. */}
-      <Input
-        placeholder="Descripción — se genera sola si la dejas vacía"
-        value={description}
-        onChangeText={onChangeDescription}
-        autoFocus
-        ref={descriptionRef}
-        returnKeyType="next"
-        onSubmitEditing={() => notesRef.current?.focus()}
-      />
-      <DescriptionCleanupBlock
-        loading={descriptionCleanupLoading}
-        cleanup={descriptionCleanup}
-        onApply={onApplyDescriptionCleanup}
-      />
+      {/* Sin etiqueta encima: el placeholder ya dice qué es Y qué pasa si lo dejas vacío. La
+          sugerencia de descripción vive en la misma tarjeta, debajo del texto que cambia. */}
+      <View style={[styles.group, descriptionFocused && styles.groupFocused]}>
+        <TextField
+          style={styles.descriptionInput}
+          placeholder="Descripción — se genera sola si la dejas vacía"
+          placeholderTextColor={COLORS.storm}
+          value={description}
+          onChangeText={onChangeDescription}
+          autoFocus
+          ref={descriptionRef}
+          returnKeyType="next"
+          onSubmitEditing={() => notesRef.current?.focus()}
+          onFocus={() => setDescriptionFocused(true)}
+          onBlur={() => setDescriptionFocused(false)}
+          accessibilityLabel="Descripción del movimiento"
+        />
+        <DescriptionCleanupBlock
+          cleanup={descriptionCleanup}
+          onApply={onApplyDescriptionCleanup}
+        />
+      </View>
 
-      {/* Tres filas en un grupo, con el valor a la derecha. Categoría y contraparte eran
-          scrollers de cápsulas con su propio buscador, y la fecha dos selectores sueltos. */}
+      {/* Las filas en un grupo, con el valor a la derecha, y cada sugerencia inmediatamente
+          debajo de la fila que modifica: aplicada desde el fondo de la pantalla, cambiaba una
+          fila que quedaba 120 px más arriba, fuera de la vista. */}
       <View style={styles.group}>
-        {splitLines == null ? (
+        {showCategoryRow ? (
           <FormOptionRow
             grouped
             label="Categoría"
             value={selectedCategoryName}
             placeholder="Sin asignar"
             onPress={onOpenCategory}
+            last={Boolean(categorySuggestion)}
           />
         ) : null}
+        <CategoryAiBlock
+          suggestion={categorySuggestion}
+          onApply={onApplyCategorySuggestion}
+        />
         <FormOptionRow
           grouped
           label="Contraparte"
           value={selectedCounterpartyName}
           placeholder="Ninguna"
           onPress={onOpenCounterparty}
+          last={Boolean(counterpartySuggestion)}
+        />
+        <CounterpartyAiBlock
+          hasSelectedCounterparty={counterpartyId != null}
+          suggestion={counterpartySuggestionToShow}
+          onApply={onApplyCounterpartySuggestion}
         />
         <FormOptionRow
           grouped
           label="Fecha y hora"
           value={dateTimeLabel}
           onPress={() => setDateTimeOpen((open) => !open)}
-          last
+          last={!showSplitRow}
         />
+        {showSplitRow ? (
+          <FormOptionRow
+            grouped
+            last
+            muted
+            label="Repartir entre varias categorías"
+            onPress={() => onChangeSplitLines?.([
+              { categoryId: null, amount: "" },
+              { categoryId: null, amount: "" },
+            ])}
+          />
+        ) : null}
       </View>
 
       {dateTimeOpen ? (
@@ -282,8 +309,6 @@ export const StepDetails = memo(function StepDetails({
         </Text>
       ) : null}
 
-      {/* Lo que la app propone sola: solo aparece cuando hay algo que proponer, así que no
-          estaba en el mockup. Va después del grupo, no intercalado entre sus filas. */}
       {onChangeSplitLines ? (
         <SplitAmountEditor
           lines={splitLines ?? null}
@@ -293,24 +318,8 @@ export const StepDetails = memo(function StepDetails({
           currencyCode={splitCurrencyCode ?? ""}
         />
       ) : null}
-      <CategoryAiBlock
-        loading={aiCategorySuggestionLoading}
-        attempted={aiCategorySuggestionAttempted}
-        errored={aiCategorySuggestionErrored}
-        hasLocalSuggestion={hasLocalCategorySuggestion}
-        suggestion={categorySuggestionToShow}
-        onApply={onApplyCategorySuggestion}
-      />
-      <CounterpartyAiBlock
-        loading={aiCounterpartySuggestionLoading}
-        attempted={aiCounterpartySuggestionAttempted}
-        hasSelectedCounterparty={counterpartyId != null}
-        suggestion={counterpartySuggestionToShow}
-        onApply={onApplyCounterpartySuggestion}
-      />
+      {/* Las dos que no cambian ninguna fila: proponen crear algo, así que van sueltas. */}
       <RecurringAiBlock
-        loading={recurringSuggestionLoading}
-        attempted={recurringSuggestionAttempted}
         alreadyLinked={recurringAlreadyLinked}
         suggestion={recurringSuggestion}
         onApply={onApplyRecurringSuggestion}
@@ -322,18 +331,24 @@ export const StepDetails = memo(function StepDetails({
           onApply={() => onPickSuggestedAccount(accountSuggestion)}
         />
       ) : null}
-      <Text style={styles.sectionLabel}>Notas</Text>
-      <Input
-        placeholder="Para lo que no cabe en la descripción"
-        value={notes}
-        onChangeText={onChangeNotes}
-        multiline
-        numberOfLines={3}
-        style={styles.notesInput}
-        ref={notesRef}
-        returnKeyType="done"
-        blurOnSubmit
-      />
+      <View
+        style={styles.notesField}
+        onLayout={(event) => { notesTop.current = event.nativeEvent.layout.y; }}
+      >
+        <Text style={styles.sectionLabel}>Notas</Text>
+        <Input
+          placeholder="Para lo que no cabe en la descripción"
+          value={notes}
+          onChangeText={onChangeNotes}
+          multiline
+          numberOfLines={3}
+          style={styles.notesInput}
+          ref={notesRef}
+          returnKeyType="done"
+          blurOnSubmit
+          onFocus={() => scrollRef?.current?.scrollTo({ y: notesTop.current, animated: true })}
+        />
+      </View>
 
       <AttachmentPicker
         movementId={savedMovementId}
@@ -367,6 +382,15 @@ const styles = StyleSheet.create({
     backgroundColor: SURFACE.card,
     overflow: "hidden",
   },
+  groupFocused: { borderColor: SURFACE.inputFocus },
+  descriptionInput: {
+    minHeight: 52,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm + 4,
+    color: COLORS.ink,
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.md,
+  },
   sectionLabel: {
     fontSize: FONT_SIZE.xs,
     fontFamily: FONT_FAMILY.bodySemibold,
@@ -391,6 +415,7 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.sm,
     marginLeft: SPACING.xs,
   },
+  notesField: { gap: SPACING.sm },
   notesInput: { height: 72, textAlignVertical: "top" },
   submitErrorBanner: {
     flexDirection: "row",

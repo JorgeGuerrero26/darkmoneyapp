@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { TextInput } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { ChevronRight } from "lucide-react-native";
 
 import { useUiStore } from "../../store/ui-store";
@@ -184,6 +184,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   );
 
   const notesRef = useRef<TextInput>(null);
+  const sheetScrollRef = useRef<ScrollView>(null);
   const descriptionRef = useRef<TextInput>(null);
 
   const [step, setStep] = useState<Step>(1);
@@ -296,7 +297,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   // Memoize to avoid dateStrToISO (which includes current ms) from producing a
   // new string on every render and invalidating AI hook stable keys.
   const occurredAtISO = useMemo(() => dateTimeStrToISO(form.occurredAt, form.occurredTime), [form.occurredAt, form.occurredTime]);
-  const { cleanup: descriptionCleanup, isLoading: descriptionCleanupLoading } = useMovementDescriptionCleanup({
+  const { cleanup: descriptionCleanup } = useMovementDescriptionCleanup({
     enabled: Boolean(visible && form.movementType !== "transfer" && form.description !== cleanupAppliedText),
     workspaceId: activeWorkspaceId,
     surface: "movement_form",
@@ -306,11 +307,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     proAccessEnabled: entitlementQuery.data?.proAccessEnabled,
   });
   const counterpartyDescriptionForSuggestion = descriptionCleanup?.cleanedDescription ?? form.description;
-  const {
-    suggestion: recurringSuggestion,
-    isLoading: recurringSuggestionLoading,
-    aiAttempted: recurringSuggestionAttempted,
-  } = useMovementRecurringAiSuggestion({
+  const { suggestion: recurringSuggestion } = useMovementRecurringAiSuggestion({
     enabled: Boolean(visible && !isEditing && form.movementType !== "transfer"),
     workspaceId: activeWorkspaceId,
     surface: "movement_form",
@@ -326,7 +323,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     recurringIncome: snapshot?.recurringIncome ?? [],
     proAccessEnabled: entitlementQuery.data?.proAccessEnabled,
   });
-  const { impact: budgetImpact, isLoading: budgetImpactLoading } = useMovementBudgetImpact({
+  const { impact: budgetImpact } = useMovementBudgetImpact({
     enabled: Boolean(visible && form.movementType === "expense" && form.categoryId != null),
     workspaceId: activeWorkspaceId,
     surface: "movement_form",
@@ -349,11 +346,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     workspaceBaseCurrencyCode: baseCurrency,
     proAccessEnabled: entitlementQuery.data?.proAccessEnabled,
   });
-  const {
-    suggestion: aiCounterpartySuggestion,
-    isLoading: aiCounterpartySuggestionLoading,
-    aiAttempted: aiCounterpartySuggestionAttempted,
-  } = useMovementCounterpartyAiSuggestion({
+  const { suggestion: aiCounterpartySuggestion } = useMovementCounterpartyAiSuggestion({
     enabled: Boolean(visible && form.counterpartyId == null && form.movementType !== "transfer"),
     workspaceId: activeWorkspaceId,
     surface: "movement_form",
@@ -368,13 +361,8 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   // Sugerencias de categoría (aprendida/algorítmica/IA), riesgo y cuenta sugerida
   // (fase 4 del refactor R7).
   const {
-    localCategorySuggestion,
-    aiCategorySuggestionLoading,
-    aiCategorySuggestionAttempted,
-    aiCategorySuggestionOutcome,
     bestCategorySuggestion,
     movementRisk,
-    movementRiskLoading,
     accountSuggestionId,
   } = useMovementFormSuggestions({
     visible,
@@ -1113,6 +1101,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
       onClose={handleClose}
       title={stepTitle}
       snapHeight={0.85}
+      scrollRef={sheetScrollRef}
       /* Regla 3 de la plantilla: barra fija al pie. Antes el botón solo aparecía al
          desplazarse hasta el final, así que en la primera pantalla no había ninguno. */
       footer={
@@ -1326,6 +1315,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
           : true; // creación: comportamiento actual sin cambios
         return (
           <StepDetails
+            scrollRef={sheetScrollRef}
             splitLines={splitUiEnabled ? splitLines : null}
             onChangeSplitLines={splitUiEnabled && form.movementType === "expense" ? setSplitLines : undefined}
             splitTotalAmount={sourceAmountNum}
@@ -1340,11 +1330,8 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
             }}
             notes={form.notes}
             onChangeNotes={(v) => patch({ notes: v })}
-            movementRiskLoading={movementRiskLoading}
             movementRisk={movementRisk}
-            budgetImpactLoading={budgetImpactLoading}
             budgetImpact={budgetImpact}
-            descriptionCleanupLoading={descriptionCleanupLoading}
             descriptionCleanup={descriptionCleanup}
             onApplyDescriptionCleanup={(cleaned) => {
               setCleanupAppliedText(cleaned);
@@ -1353,21 +1340,13 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
             categoriesForPicker={categoriesForPicker}
             categoryId={form.categoryId}
             onSelectCategory={selectCategoryManually}
-            aiCategorySuggestionLoading={aiCategorySuggestionLoading}
-            aiCategorySuggestionAttempted={aiCategorySuggestionAttempted}
-            aiCategorySuggestionErrored={aiCategorySuggestionOutcome === "error"}
-            hasLocalCategorySuggestion={Boolean(localCategorySuggestion)}
             categorySuggestionToShow={categorySuggestionToShow}
             onApplyCategorySuggestion={(sug) => void applyCategorySuggestion(sug)}
             counterpartiesSorted={counterpartiesSorted}
             counterpartyId={form.counterpartyId}
             onSelectCounterparty={(id) => patch({ counterpartyId: id })}
-            aiCounterpartySuggestionLoading={aiCounterpartySuggestionLoading}
-            aiCounterpartySuggestionAttempted={aiCounterpartySuggestionAttempted}
             counterpartySuggestionToShow={counterpartySuggestionToShow}
             onApplyCounterpartySuggestion={(sug) => void applyCounterpartySuggestion(sug)}
-            recurringSuggestionLoading={recurringSuggestionLoading}
-            recurringSuggestionAttempted={recurringSuggestionAttempted}
             recurringAlreadyLinked={Boolean(linkedSubscriptionId || linkedRecurringIncomeId)}
             recurringSuggestion={recurringSuggestion}
             onApplyRecurringSuggestion={(sug) => void applyRecurringSuggestion(sug)}
