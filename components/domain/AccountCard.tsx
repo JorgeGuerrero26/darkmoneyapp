@@ -1,13 +1,15 @@
 import { memo } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import { Archive, ArchiveRestore, BarChart2 } from "lucide-react-native";
+import { Archive, ArchiveRestore } from "lucide-react-native";
 
 import {
   ResourceCard,
+  ResourceCardBadge,
   ResourceCardIcon,
+  ResourceCardMetaText,
 } from "../ui/ResourceCard";
 import { SwipeActionRow } from "../ui/SwipeActionRow";
-import { formatCurrency } from "../ui/AmountDisplay";
+import { AmountDisplay } from "../ui/AmountDisplay";
 import { useUiStore } from "../../store/ui-store";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING } from "../../constants/theme";
 import { getAccountIcon } from "../../lib/account-icons";
@@ -22,7 +24,6 @@ type Props = {
   onPress?: () => void;
   onArchive?: () => void;
   onRestore?: () => void;
-  onAnalytics?: () => void;
   onLongPress?: () => void;
   selected?: boolean;
   selectMode?: boolean;
@@ -45,14 +46,12 @@ function AccountCardContent({
   baseCurrencyCode,
   onPress,
   onLongPress,
-  onAnalytics,
   selected,
 }: {
   account: AccountSummary;
   baseCurrencyCode?: string;
   onPress?: () => void;
   onLongPress?: () => void;
-  onAnalytics?: () => void;
   selected?: boolean;
 }) {
   const typeLabel = ACCOUNT_TYPE_LABELS[account.type] ?? account.type;
@@ -60,43 +59,43 @@ function AccountCardContent({
   const AccountIcon = getAccountIcon(account.icon, account.type);
   const badge = pickAccountBadge(account, baseCurrencyCode);
   const institution = findInstitution(account.institutionCode);
-  const subtitle = institution
-    ? `${institution.label} · ${typeLabel} · ${account.currencyCode}`
-    : `${typeLabel} · ${account.currencyCode}`;
 
   return (
     <ResourceCard
       variant="row"
       title={account.name}
-      subtitle={subtitle}
       selected={selected}
       archived={account.isArchived}
       onPress={onPress}
       onLongPress={onLongPress}
       leading={<ResourceCardIcon icon={AccountIcon} color={account.color} />}
+      /**
+       * Misma anatomía que la fila de movimiento: el tipo como distintivo del color del ícono,
+       * y el resto de datos como metadatos sueltos. Antes era una frase encadenada con puntos
+       * medios —"BCP · Banco · PEN"— que crecía o encogía según qué datos tuviera la cuenta.
+       */
       meta={
-        badge ? (
-          <View style={[styles.badge, badge.tone === "danger" && styles.badgeDanger, badge.tone === "muted" && styles.badgeMuted, badge.tone === "info" && styles.badgeInfo]}>
-            <Text style={[styles.badgeText, badge.tone === "danger" && styles.badgeTextDanger, badge.tone === "muted" && styles.badgeTextMuted, badge.tone === "info" && styles.badgeTextInfo]}>
-              {badge.label}
-            </Text>
-          </View>
-        ) : null
+        <>
+          <ResourceCardBadge label={typeLabel} color={account.color} />
+          {institution ? <ResourceCardMetaText>{institution.label}</ResourceCardMetaText> : null}
+          {badge ? (
+            <View style={[styles.badge, badge.tone === "danger" && styles.badgeDanger, badge.tone === "muted" && styles.badgeMuted, badge.tone === "info" && styles.badgeInfo]}>
+              <Text style={[styles.badgeText, badge.tone === "danger" && styles.badgeTextDanger, badge.tone === "muted" && styles.badgeTextMuted, badge.tone === "info" && styles.badgeTextInfo]}>
+                {badge.label}
+              </Text>
+            </View>
+          ) : null}
+        </>
       }
-      actions={
-        onAnalytics
-          ? [{
-              key: "analytics",
-              icon: BarChart2,
-              onPress: onAnalytics,
-              accessibilityLabel: "Ver analítica de cuenta",
-            }]
-          : []
-      }
+      /* El saldo con la misma pieza que el monto de un movimiento: mismo tamaño, misma fuente
+         tabular y el mismo respeto por el modo privacidad. */
       trailing={
-        <Text style={[styles.balance, isNegative && styles.balanceNegative]}>
-          {formatCurrency(account.currentBalance, account.currencyCode)}
-        </Text>
+        <AmountDisplay
+          amount={account.currentBalance}
+          currencyCode={account.currencyCode}
+          size="lg"
+          color={isNegative ? COLORS.expense : COLORS.ink}
+        />
       }
     />
   );
@@ -108,7 +107,6 @@ function AccountCardBase({
   onPress,
   onArchive,
   onRestore,
-  onAnalytics,
   onLongPress,
   selected,
 }: Props) {
@@ -139,7 +137,6 @@ function AccountCardBase({
         baseCurrencyCode={baseCurrencyCode}
         onPress={onPress}
         onLongPress={onLongPress}
-        onAnalytics={onAnalytics}
         selected={selected}
       />
     );
@@ -151,7 +148,6 @@ function AccountCardBase({
         <AccountCardContent
           account={account}
           baseCurrencyCode={baseCurrencyCode}
-          onAnalytics={onAnalytics}
           selected={selected}
           onLongPress={onLongPress}
           onPress={() => {
@@ -168,14 +164,6 @@ function AccountCardBase({
 }
 
 const styles = StyleSheet.create({
-  balance: {
-    fontFamily: FONT_FAMILY.heading,
-    fontSize: FONT_SIZE.md,
-    color: COLORS.ink,
-  },
-  balanceNegative: {
-    color: COLORS.rosewood,
-  },
   badge: {
     alignSelf: "flex-start",
     paddingHorizontal: SPACING.sm,

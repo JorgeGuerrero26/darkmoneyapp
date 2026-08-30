@@ -21,7 +21,6 @@ import {
   useSyncExchangeRatePairMutation,
 } from "../../services/queries/workspace-data";
 import { AccountCard } from "../../components/domain/AccountCard";
-import { AccountAnalyticsModal } from "../../components/domain/AccountAnalyticsModal";
 import { SkeletonCard, SkeletonList } from "../../components/ui/Skeleton";
 import { BulkActionBar } from "../../components/ui/BulkActionBar";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
@@ -171,7 +170,6 @@ function AccountsScreen() {
   // ── UI state ──────────────────────────────────────────────────────────────
   const [formVisible, setFormVisible] = useState(false);
   const [editAccount, setEditAccount] = useState<AccountSummary | null>(null);
-  const [analyticsAccount, setAnalyticsAccount] = useState<AccountSummary | null>(null);
   const [searchText, setSearchText] = useState("");
   const [typeFilters, setTypeFilters] = useState<AccountTypeFilter[]>([]);
   const [showArchived, setShowArchived] = useState(false);
@@ -433,7 +431,6 @@ function AccountsScreen() {
           }
         }}
         onArchive={() => handleArchive(account)}
-        onAnalytics={() => setAnalyticsAccount(account)}
       />
     ) : (
       <AccountCard
@@ -453,7 +450,6 @@ function AccountsScreen() {
           }
         }}
         onRestore={() => handleArchive(account)}
-        onAnalytics={() => setAnalyticsAccount(account)}
       />
     )
   ), [baseCurrency, handleArchive, router, selectMode, selectedIds, toggleSelect]);
@@ -536,12 +532,24 @@ function AccountsScreen() {
                 />
               ) : (
                 <HeaderActionGroup
-                  actions={[{
-                    key: "export",
-                    icon: Download,
-                    onPress: () => exportCSV(filtered),
-                    accessibilityLabel: "Exportar CSV",
-                  }]}
+                  actions={[
+                    {
+                      key: "export",
+                      icon: Download,
+                      onPress: () => exportCSV(filtered),
+                      accessibilityLabel: "Exportar CSV",
+                    },
+                    {
+                      // Con etiqueta y en el encabezado, igual que "Filtros" en Movimientos:
+                      // un botón redondo sin texto no se adivina.
+                      key: "archived",
+                      icon: Archive,
+                      label: "Archivadas",
+                      active: showArchived,
+                      onPress: () => setShowArchived((v) => !v),
+                      accessibilityLabel: "Mostrar cuentas archivadas",
+                    },
+                  ]}
                 />
               )
             }
@@ -563,13 +571,6 @@ function AccountsScreen() {
                 onPress: toggleGroupByType,
                 active: groupByType,
                 accessibilityLabel: "Agrupar por tipo de cuenta",
-              },
-              {
-                key: "archived",
-                icon: Archive,
-                onPress: () => setShowArchived((v) => !v),
-                active: showArchived,
-                accessibilityLabel: "Mostrar cuentas archivadas",
               },
             ]}
           />
@@ -644,12 +645,6 @@ function AccountsScreen() {
               editAccount={editAccount ?? undefined}
               onClose={() => { setFormVisible(false); setEditAccount(null); }}
               onSuccess={() => { setFormVisible(false); setEditAccount(null); }}
-            />
-
-            <AccountAnalyticsModal
-              visible={Boolean(analyticsAccount)}
-              account={analyticsAccount}
-              onClose={() => setAnalyticsAccount(null)}
             />
 
             <ConfirmDialog
