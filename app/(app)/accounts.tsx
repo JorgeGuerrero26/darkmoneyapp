@@ -2,14 +2,14 @@ import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View, type SectionListRenderItem } from "react-native";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
-import { IOS_FLOATING_TAB_BAR_SPACE } from "../../constants/floating-tab-bar";
 import { useRouter } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
-  Archive, CheckSquare, ChevronDown, ChevronUp, Download, Layers, PieChart, X,
+  Archive, CheckSquare, ChevronDown, ChevronUp, Download, Layers, PieChart, Plus, X,
 } from "lucide-react-native";
 import { format } from "date-fns";
+import { es } from "date-fns/locale";
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth } from "../../lib/auth-context";
@@ -21,11 +21,9 @@ import {
   useSyncExchangeRatePairMutation,
 } from "../../services/queries/workspace-data";
 import { AccountCard } from "../../components/domain/AccountCard";
-import { AccountAnalyticsModal } from "../../components/domain/AccountAnalyticsModal";
 import { SkeletonCard, SkeletonList } from "../../components/ui/Skeleton";
 import { BulkActionBar } from "../../components/ui/BulkActionBar";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
-import { FAB } from "../../components/ui/FAB";
 import { FilterToolbar } from "../../components/ui/FilterToolbar";
 import { ActiveFilterBar, type ActiveFilterItem } from "../../components/ui/ActiveFilterBar";
 import { HeaderActionGroup } from "../../components/ui/HeaderActionGroup";
@@ -54,7 +52,7 @@ type AccountTypeFilter = "all" | "bank" | "cash" | "savings" | "credit_card" | "
 type AccountListSection = ResourceSection<AccountSummary, string>;
 
 const TYPE_FILTERS: { label: string; value: AccountTypeFilter }[] = [
-  { label: "Todas", value: "all" },
+  { label: "Todas las cuentas", value: "all" },
   { label: "Banco",       value: "bank" },
   { label: "Efectivo",    value: "cash" },
   { label: "Ahorro",      value: "savings" },
@@ -77,6 +75,15 @@ const TYPE_GROUP_ORDER: { value: string; label: string }[] = [
 ];
 
 const ACCOUNTS_GROUPING_KEY = "darkmoney.accounts.groupByType";
+
+/**
+ * A partir de cuántas cuentas aparecen el buscador y el filtro.
+ *
+ * Con dos cuentas ocupaban 110 px del encabezado para operar sobre una lista que cabe entera en
+ * la pantalla, con 500 px de vacío debajo. Ocho es cuando la lista deja de verse de un vistazo;
+ * hasta ahí, ese espacio es del patrimonio.
+ */
+const LIST_CONTROLS_MIN_ACCOUNTS = 8;
 const ACCOUNTS_COMPOSITION_EXPANDED_KEY = "darkmoney.accounts.compositionExpanded";
 
 function AccountsScreen() {
@@ -91,23 +98,12 @@ function AccountsScreen() {
   const { showToast } = useToast();
   const { reason: notificationReason } = useNotificationReason();
 
-  const { data: snapshot, isLoading, isRefetching, refetch, dataUpdatedAt } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
+  const { data: snapshot, isLoading, isRefetching, refetch } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   useAccountsRealtimeSync({ workspaceId: activeWorkspaceId });
   const archiveAccount = useArchiveAccountMutation(activeWorkspaceId);
   const syncExchangeRatePair = useSyncExchangeRatePairMutation();
   const syncPairRequestRef = useRef<string | null>(null);
 
-  const lastUpdateLabel = useMemo(() => {
-    if (!dataUpdatedAt) return "";
-    const seconds = Math.floor((Date.now() - dataUpdatedAt) / 1000);
-    if (seconds < 10) return "Ahora";
-    if (seconds < 60) return `Actualizado hace ${seconds}s`;
-    const minutes = Math.floor(seconds / 60);
-    if (minutes < 60) return `Actualizado hace ${minutes}min`;
-    const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `Actualizado hace ${hours}h`;
-    return `Actualizado hace ${Math.floor(hours / 24)}d`;
-  }, [dataUpdatedAt]);
 
   // ── Currency display (shared via DisplayCurrencyProvider) ──────────────────
   const { displayCurrency, setDisplayCurrency } = useDisplayCurrency();
@@ -171,7 +167,6 @@ function AccountsScreen() {
   // ── UI state ──────────────────────────────────────────────────────────────
   const [formVisible, setFormVisible] = useState(false);
   const [editAccount, setEditAccount] = useState<AccountSummary | null>(null);
-  const [analyticsAccount, setAnalyticsAccount] = useState<AccountSummary | null>(null);
   const [searchText, setSearchText] = useState("");
   const [typeFilters, setTypeFilters] = useState<AccountTypeFilter[]>([]);
   const [showArchived, setShowArchived] = useState(false);
@@ -433,7 +428,6 @@ function AccountsScreen() {
           }
         }}
         onArchive={() => handleArchive(account)}
-        onAnalytics={() => setAnalyticsAccount(account)}
       />
     ) : (
       <AccountCard
@@ -453,10 +447,45 @@ function AccountsScreen() {
           }
         }}
         onRestore={() => handleArchive(account)}
-        onAnalytics={() => setAnalyticsAccount(account)}
       />
     )
   ), [baseCurrency, handleArchive, router, selectMode, selectedIds, toggleSelect]);
+
+  const showListControls = allAccounts.length >= LIST_CONTROLS_MIN_ACCOUNTS;
+
+  /**
+   * Por debajo del umbral no hay barra donde ver ni quitar un filtro, así que no puede quedar
+   * ninguno puesto: si archivas cuentas hasta bajar de ocho con un filtro activo, la lista
+   * escondería cuentas sin decir por qué y sin forma de destaparlas.
+   */
+  useEffect(() => {
+    if (showListControls) return;
+    if (typeFilters.length === 0 && searchText === "" && !groupByType) return;
+    setTypeFilters([]);
+    setSearchText("");
+    if (groupByType) toggleGroupByType();
+  }, [groupByType, searchText, showListControls, toggleGroupByType, typeFilters.length]);
+
+
+  /**
+   * El conmutador de moneda solo cuando hay algo que convertir: si todas las cuentas que suman
+   * al patrimonio están en la misma moneda, ofrecer PEN/USD no cambia ninguna cifra.
+   */
+  const mixesCurrencies = useMemo(() => {
+    const currencies = new Set(
+      allAccounts
+        .filter((account) => !account.isArchived && account.includeInNetWorth)
+        .map((account) => account.currencyCode.toUpperCase()),
+    );
+    return currencies.size > 1;
+  }, [allAccounts]);
+
+  /** La marca de tiempo que importa no es "hace 21 s", es a qué fecha está el patrimonio. */
+  const netWorthSupport = useMemo(() => {
+    const activeCount = allAccounts.filter((account) => !account.isArchived).length;
+    const cuentas = `${activeCount} ${activeCount === 1 ? "cuenta activa" : "cuentas activas"}`;
+    return `${cuentas} · al ${format(new Date(), "d 'de' MMMM", { locale: es })}`;
+  }, [allAccounts]);
 
   const composition = useMemo(
     () => computeComposition({
@@ -482,7 +511,8 @@ function AccountsScreen() {
       <AccountNetWorthSummary
         totalNetWorth={totalNetWorth}
         activeCurrency={activeCurrency}
-        currencyOptions={currencyOptions}
+        support={netWorthSupport}
+        currencyOptions={mixesCurrencies ? currencyOptions : []}
         disabledCurrencyOptions={disabledCurrencyOptions}
         onCurrencyChange={handleCurrencyChange}
       />
@@ -522,7 +552,6 @@ function AccountsScreen() {
       header={
         <ScreenHeader
             title={selectMode ? `${selectedIds.size} seleccionadas` : "Cuentas"}
-            subtitle={lastUpdateLabel || undefined}
             rightAction={
               selectMode ? (
                 <HeaderActionGroup
@@ -536,46 +565,53 @@ function AccountsScreen() {
                 />
               ) : (
                 <HeaderActionGroup
-                  actions={[{
-                    key: "export",
-                    icon: Download,
-                    onPress: () => exportCSV(filtered),
-                    accessibilityLabel: "Exportar CSV",
-                  }]}
+                  actions={[
+                    {
+                      // Un botón redondo sin etiqueta no se adivina. Si la acción es "ver
+                      // archivadas", se dice con palabras.
+                      key: "archived",
+                      icon: Archive,
+                      label: "Archivadas",
+                      active: showArchived,
+                      onPress: () => setShowArchived((v) => !v),
+                      accessibilityLabel: "Mostrar cuentas archivadas",
+                    },
+                    {
+                      key: "export",
+                      icon: Download,
+                      onPress: () => exportCSV(filtered),
+                      accessibilityLabel: "Exportar CSV",
+                    },
+                  ]}
                 />
               )
             }
           />
         }
         toolbar={
-          <FilterToolbar
-            options={TYPE_FILTERS}
-            selectedValues={typeFilters}
-            onSelectedValuesChange={setTypeFilters}
-            allValue="all"
-            searchValue={searchText}
-            onSearchChange={setSearchText}
-            searchPlaceholder="Buscar cuentas..."
-            actions={[
-              {
-                key: "group-by-type",
-                icon: Layers,
-                onPress: toggleGroupByType,
-                active: groupByType,
-                accessibilityLabel: "Agrupar por tipo de cuenta",
-              },
-              {
-                key: "archived",
-                icon: Archive,
-                onPress: () => setShowArchived((v) => !v),
-                active: showArchived,
-                accessibilityLabel: "Mostrar cuentas archivadas",
-              },
-            ]}
-          />
+          showListControls ? (
+            <FilterToolbar
+              options={TYPE_FILTERS}
+              selectedValues={typeFilters}
+              onSelectedValuesChange={setTypeFilters}
+              allValue="all"
+              searchValue={searchText}
+              onSearchChange={setSearchText}
+              searchPlaceholder="Buscar cuentas..."
+              actions={[
+                {
+                  key: "group-by-type",
+                  icon: Layers,
+                  onPress: toggleGroupByType,
+                  active: groupByType,
+                  accessibilityLabel: "Agrupar por tipo de cuenta",
+                },
+              ]}
+            />
+          ) : null
         }
         activeFilters={
-          !selectMode ? (
+          !selectMode && showListControls ? (
             <ActiveFilterBar items={activeFilterItems} onClear={clearAccountFilters} />
           ) : null
         }
@@ -630,12 +666,23 @@ function AccountsScreen() {
             refreshing={isRefetching}
             onRefresh={onRefresh}
             contentContainerStyle={localStyles.listContent}
+            /* Un botón flotante sobre 500 px de vacío anuncia una lista larga que no existe.
+               Al final de la lista, "Agregar cuenta" es una fila más y dice lo que hace. */
+            listFooterComponent={
+              !selectMode ? (
+                <TouchableOpacity
+                  style={localStyles.addRow}
+                  onPress={() => { setEditAccount(null); setFormVisible(true); }}
+                  activeOpacity={0.72}
+                  accessibilityRole="button"
+                  accessibilityLabel="Agregar cuenta"
+                >
+                  <Plus size={16} color={COLORS.storm} strokeWidth={1.8} />
+                  <Text style={localStyles.addRowText}>Agregar cuenta</Text>
+                </TouchableOpacity>
+              ) : null
+            }
           />
-        }
-        fab={
-          !selectMode ? (
-            <FAB onPress={() => { setEditAccount(null); setFormVisible(true); }} bottom={insets.bottom + 16 + IOS_FLOATING_TAB_BAR_SPACE} />
-          ) : null
         }
         overlays={
           <>
@@ -644,12 +691,6 @@ function AccountsScreen() {
               editAccount={editAccount ?? undefined}
               onClose={() => { setFormVisible(false); setEditAccount(null); }}
               onSuccess={() => { setFormVisible(false); setEditAccount(null); }}
-            />
-
-            <AccountAnalyticsModal
-              visible={Boolean(analyticsAccount)}
-              account={analyticsAccount}
-              onClose={() => setAnalyticsAccount(null)}
             />
 
             <ConfirmDialog
@@ -679,6 +720,20 @@ const localStyles = StyleSheet.create({
   },
   listContent: {
     paddingTop: SPACING.sm,
+  },
+  addRow: {
+    minHeight: 56,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.md,
+    paddingHorizontal: SPACING.lg,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: SURFACE.separator,
+  },
+  addRowText: {
+    fontFamily: FONT_FAMILY.bodyMedium,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.fog,
   },
   compositionHeader: {
     flexDirection: "row",

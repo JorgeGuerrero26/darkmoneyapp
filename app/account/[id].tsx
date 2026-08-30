@@ -1,4 +1,4 @@
-import { Archive, ArchiveRestore, ArrowLeftRight, Pencil, Plus } from "lucide-react-native";
+import { Archive, ArchiveRestore, ArrowLeftRight, BarChart2, Pencil, Plus } from "lucide-react-native";
 import { FAB } from "../../components/ui/FAB";
 import { DetailQuickActions } from "../../components/ui/DetailQuickActions";
 import { HeaderActionGroup } from "../../components/ui/HeaderActionGroup";
@@ -27,6 +27,7 @@ import { SwipeableMovementRow } from "../../components/domain/SwipeableMovementR
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { SkeletonAccountSummary } from "../../components/ui/Skeleton";
 import { BalanceEvolutionChart } from "../../features/accounts/components/BalanceEvolutionChart";
+import { AccountAnalyticsModal } from "../../components/domain/AccountAnalyticsModal";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { NotificationReasonBanner } from "../../components/ui/NotificationReasonBanner";
 import { AccountForm } from "../../components/forms/AccountForm";
@@ -77,6 +78,7 @@ function AccountDetailScreen() {
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
 
   const [editFormVisible, setEditFormVisible] = useState(false);
+  const [analyticsVisible, setAnalyticsVisible] = useState(false);
   const [movementFormVisible, setMovementFormVisible] = useState(false);
   const [movementFormType, setMovementFormType] = useState<"expense" | "transfer">("expense");
   const [archiveConfirmVisible, setArchiveConfirmVisible] = useState(false);
@@ -330,6 +332,15 @@ function AccountDetailScreen() {
                         ]
                       : []),
                     {
+                      // La analítica vivía detrás de un ícono de barritas en cada fila de la
+                      // lista, pegado al saldo. Su sitio es el detalle de la cuenta.
+                      key: "analytics",
+                      label: "Analítica",
+                      icon: BarChart2,
+                      color: COLORS.fog,
+                      onPress: () => setAnalyticsVisible(true),
+                    },
+                    {
                       key: "edit",
                       label: "Editar",
                       icon: Pencil,
@@ -375,6 +386,12 @@ function AccountDetailScreen() {
       }
       overlays={
         <>
+          <AccountAnalyticsModal
+            visible={analyticsVisible && Boolean(account)}
+            account={account ?? null}
+            onClose={() => setAnalyticsVisible(false)}
+          />
+
           {/* Edit account form */}
           {account ? (
             <AccountForm
