@@ -67,16 +67,25 @@ export function FilterToolbar<T extends string>({
     return activeValues.includes(optionValue);
   }
 
-  // Lo que dice el boton del selector: la eleccion actual, o cuantas hay para elegir.
+  /**
+   * Lo que dice el botón del selector: **su estado**, no cuántas opciones ofrece.
+   *
+   * Decía "Filtrar · 8 opciones", que es un dato que se descubre al abrirlo y que a nadie le
+   * sirve antes. Sin filtro puesto, el estado es el de la opción "todas" del propio módulo
+   * —"Todas", "Todos"—, que es la respuesta a "¿qué estoy viendo?".
+   */
+  const allOptionLabel = allValue !== undefined
+    ? options.find((option) => option.value === allValue)?.label
+    : undefined;
   const selectorLabel = (() => {
     if (multiSelect) {
-      if (activeValues.length === 0) return `Filtrar · ${options.length} opciones`;
+      if (activeValues.length === 0) return allOptionLabel ?? "Sin filtrar";
       if (activeValues.length === 1) {
         return options.find((o) => o.value === activeValues[0])?.label ?? "Filtrado";
       }
       return `${activeValues.length} filtros`;
     }
-    return options.find((o) => o.value === value)?.label ?? `Filtrar · ${options.length} opciones`;
+    return options.find((o) => o.value === value)?.label ?? allOptionLabel ?? "Sin filtrar";
   })();
 
   function handleOptionPress(optionValue: T) {
