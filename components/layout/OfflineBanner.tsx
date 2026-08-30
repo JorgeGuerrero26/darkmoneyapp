@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Animated, StyleSheet, Text, View } from "react-native";
 import { useIsFetching, useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -10,10 +10,19 @@ import {
   MIN_BLOCKED_FOR_NETWORK_WARNING,
   SLOW_AFTER_MS,
   SLOW_CHECK_INTERVAL_MS,
+  countBlockedFamilies,
   isBlockingQuery,
 } from "../../lib/slow-network-signal";
 import { isStartupComplete } from "../../lib/startup-timing";
 import { SafeBlurView } from "../ui/SafeBlurView";
+
+/** Las queries que ahora mismo dejan al usuario esperando algo que no puede ver. */
+function blockedQueriesNow(queryClient: ReturnType<typeof useQueryClient>) {
+  return queryClient
+    .getQueryCache()
+    .findAll()
+    .filter((query) => query.state.fetchStatus === "fetching" && isBlockingQuery(query));
+}
 
 export function OfflineBanner() {
   const { isConnected } = useNetworkStatus();
@@ -30,11 +39,20 @@ export function OfflineBanner() {
    *
    * Y hacen falta al menos MIN_BLOCKED_FOR_NETWORK_WARNING: ver por qué ahí.
    */
-  const blockingFetches = useIsFetching({ predicate: isBlockingQuery });
-  const isBlocked = blockingFetches >= MIN_BLOCKED_FOR_NETWORK_WARNING;
-  const [isSlow, setIsSlow] = useState(false);
-
   const queryClient = useQueryClient();
+  // El contador dispara el re-render; la lista se lee del caché para saber QUIÉN bloquea.
+  const blockingFetches = useIsFetching({ predicate: isBlockingQuery });
+  // Se cuentan FAMILIAS, no consultas: la pantalla de obligaciones monta tres de la misma
+  // familia y caen juntas por la misma causa, así que pasaban el umbral que existe justo para
+  // no culpar a la red cuando lo colgado es un endpoint.
+  const blockedFamilies = useMemo(
+    () => countBlockedFamilies(blockedQueriesNow(queryClient)),
+    // blockingFetches entra a propósito: es lo que marca que la tanda cambió.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [blockingFetches, queryClient],
+  );
+  const isBlocked = blockedFamilies >= MIN_BLOCKED_FOR_NETWORK_WARNING;
+  const [isSlow, setIsSlow] = useState(false);
 
   useEffect(() => {
     if (!isBlocked) {
@@ -61,16 +79,15 @@ export function OfflineBanner() {
       // adivinando, y adivinar ya costó dos rondas: el usuario lo veía con 143 Mbps de fibra
       // mientras las hipótesis se probaban a ciegas. Mismo patrón que el log de la válvula
       // de bootstrap.
-      const culprits = queryClient
-        .getQueryCache()
-        .findAll()
-        .filter((query) => query.state.fetchStatus === "fetching" && isBlockingQuery(query))
-        .map((query) => {
-          const root = Array.isArray(query.queryKey) ? String(query.queryKey[0]) : String(query.queryKey);
-          return `${root}=${query.state.status}/${query.state.fetchStatus}`;
-        });
-      logWarn("slow-network-notice", `aviso mostrado con ${culprits.length} queries bloqueadas`, {
+      const blocked = blockedQueriesNow(queryClient);
+      const culprits = blocked.map((query) => {
+        const root = Array.isArray(query.queryKey) ? String(query.queryKey[0]) : String(query.queryKey);
+        return `${root}=${query.state.status}/${query.state.fetchStatus}`;
+      });
+      const families = countBlockedFamilies(blocked);
+      logWarn("slow-network-notice", `aviso mostrado con ${culprits.length} queries de ${families} familias`, {
         blocked: culprits.length,
+        families,
         queries: culprits.join(" "),
       });
     }, SLOW_CHECK_INTERVAL_MS);

@@ -1,6 +1,11 @@
 // Se importa el módulo puro, NO el componente: importar OfflineBanner arrastra error-logger →
 // supabase → AsyncStorage, que bajo jest es null y tumbaba la suite entera.
-import { MIN_BLOCKED_FOR_NETWORK_WARNING, isBlockingQuery } from "../lib/slow-network-signal";
+import {
+  MIN_BLOCKED_FOR_NETWORK_WARNING,
+  countBlockedFamilies,
+  isBlockingQuery,
+  queryFamily,
+} from "../lib/slow-network-signal";
 
 /**
  * El aviso de "red lenta" salía con el dashboard entero ya cargado y 143 Mbps de fibra, porque
@@ -48,5 +53,42 @@ describe("umbral para culpar a la red", () => {
     // El incidente de 06:42 abortó ~10 queries en dos segundos.
     expect(2 >= MIN_BLOCKED_FOR_NETWORK_WARNING).toBe(true);
     expect(10 >= MIN_BLOCKED_FOR_NETWORK_WARNING).toBe(true);
+  });
+});
+
+/**
+ * Medido en `app_error_logs`: 28 de los 31 avisos de la última semana llevaban
+ * `shared-obligations` dentro, con la red del usuario perfectamente bien. La pantalla de
+ * obligaciones monta tres consultas de la misma familia y caen juntas por la misma causa, así
+ * que pasaban un umbral que existe justo para no culpar a la red por un endpoint colgado.
+ */
+describe("familias", () => {
+  const q = (root: string) => ({ queryKey: [root, 1] });
+
+  it("las tres consultas de obligaciones son un solo endpoint colgado", () => {
+    const blocked = [
+      q("shared-obligations"),
+      q("obligation-shares"),
+      q("obligation-payment-request-counts"),
+    ];
+    expect(countBlockedFamilies(blocked)).toBe(1);
+    expect(countBlockedFamilies(blocked) >= MIN_BLOCKED_FOR_NETWORK_WARNING).toBe(false);
+  });
+
+  it("un corte de verdad tumba varias familias y sí cruza el umbral", () => {
+    // Incidente del 28-07 a las 06:42: ~10 queries abortadas en dos segundos.
+    const blocked = [
+      q("workspace-snapshot"),
+      q("dashboard-movements"),
+      q("user-workspaces"),
+      q("shared-obligations"),
+    ];
+    expect(countBlockedFamilies(blocked)).toBe(2);
+    expect(countBlockedFamilies(blocked) >= MIN_BLOCKED_FOR_NETWORK_WARNING).toBe(true);
+  });
+
+  it("una query desconocida es su propia familia", () => {
+    expect(queryFamily(["notification-detection-settings", 1])).toBe("notification-detection-settings");
+    expect(countBlockedFamilies([q("shared-obligations"), q("notification-detection-settings")])).toBe(2);
   });
 });

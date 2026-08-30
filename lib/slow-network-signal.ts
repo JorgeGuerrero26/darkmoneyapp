@@ -37,3 +37,42 @@ export const SLOW_AFTER_MS = 8000;
 
 /** Cada cuánto se reevalúa mientras hay queries bloqueadas. */
 export const SLOW_CHECK_INTERVAL_MS = 1000;
+
+/**
+ * A qué familia pertenece una query.
+ *
+ * El umbral de arriba existe para no culpar a la red cuando lo que se cuelga es **un** endpoint.
+ * Pero las obligaciones compartidas no se cuelgan solas: la pantalla monta tres consultas de la
+ * misma familia a la vez y caen juntas por la misma causa, así que pasaban el umbral y el aviso
+ * salía igual. Medido en `app_error_logs`: **28 de los 31 avisos de la última semana** llevaban
+ * `shared-obligations` dentro, con la red del usuario perfectamente bien.
+ *
+ * Contando familias, tres consultas de obligaciones siguen siendo un endpoint colgado — y un
+ * corte de conexión de verdad, que tumba la tanda entera, sigue cruzando el umbral porque toca
+ * varias familias a la vez.
+ */
+const FAMILY_BY_ROOT: Record<string, string> = {
+  "shared-obligations": "obligations",
+  "obligation-shares": "obligations",
+  "obligation-active-share": "obligations",
+  "obligation-payment-requests": "obligations",
+  "obligation-payment-request-counts": "obligations",
+  "obligation-events": "obligations",
+  "user-workspaces": "workspace",
+  "workspace-snapshot": "workspace",
+  "dashboard-movements": "workspace",
+  "dashboard-year-movements": "workspace",
+  "dashboard-analytics": "workspace",
+  movements: "workspace",
+};
+
+export function queryFamily(queryKey: unknown): string {
+  const root = Array.isArray(queryKey) ? queryKey[0] : queryKey;
+  const name = typeof root === "string" ? root : String(root);
+  return FAMILY_BY_ROOT[name] ?? name;
+}
+
+/** Cuántas familias distintas están bloqueando al usuario ahora mismo. */
+export function countBlockedFamilies(queries: readonly { queryKey: unknown }[]): number {
+  return new Set(queries.map((query) => queryFamily(query.queryKey))).size;
+}
