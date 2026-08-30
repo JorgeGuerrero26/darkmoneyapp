@@ -5,6 +5,8 @@ import type { WorkspaceInvitationStatus } from "../../types/domain";
 
 import { UNIVERSAL_LINK_HOST } from "../../constants/config";
 import { supabase, supabaseAnonKey, supabaseUrl } from "../../lib/supabase";
+import { SAVE_CEILING_MS } from "../../lib/fetch-timeout-budget";
+import { withTimeout } from "../../lib/promise-utils";
 import { STALE, queryClient } from "../../lib/query-client";
 import { isCoreSnapshot, patchSnapshotWithCreatedMovement } from "./snapshot-cache";
 import {
@@ -2620,7 +2622,10 @@ export function useCreateMovementMutation(workspaceId: number | null) {
     // (useIsMutating) mientras un create sigue en vuelo, incluso si el usuario ya
     // cerró el formulario — antes no había señal y lo registraba de nuevo a mano.
     mutationKey: ["create-movement"],
-    mutationFn: (input: MovementFormInput) => createMovement(workspaceId!, input),
+    // Techo de punta a punta: sin él, una espera de turno dentro de supabase-js deja el botón
+    // girando para siempre. Ver SAVE_CEILING_MS.
+    mutationFn: (input: MovementFormInput) =>
+      withTimeout(createMovement(workspaceId!, input), SAVE_CEILING_MS, "guardar movimiento"),
     onSuccess: (_data, variables) => {
       // Primero el parche quirúrgico del cache: saldo y listas cambian en este
       // frame; el refetch de abajo confirma/corrige en segundo plano.
@@ -2694,7 +2699,8 @@ export function useUpdateMovementMutation(workspaceId: number | null) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: ["update-movement"],
-    mutationFn: async ({ id, input }: { id: number; input: MovementUpdateInput }) => {
+    // Mismo techo que al crear: ver SAVE_CEILING_MS.
+    mutationFn: ({ id, input }: { id: number; input: MovementUpdateInput }) => withTimeout((async () => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const payload: Record<string, unknown> = {};
       if (input.description !== undefined) payload.description = input.description;
@@ -2715,7 +2721,7 @@ export function useUpdateMovementMutation(workspaceId: number | null) {
         .eq("id", id)
         .eq("workspace_id", workspaceId);
       if (error) throw new Error(error.message ?? "Error de base de datos");
-    },
+    })(), SAVE_CEILING_MS, "actualizar movimiento"),
     onMutate: async ({ id, input }) => {
       await queryClient.cancelQueries({ queryKey: ["movement", id] });
       const previous = queryClient.getQueryData(["movement", id]);

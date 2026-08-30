@@ -6,7 +6,14 @@
  * temporizador de 12 s lo daba por muerto, y el usuario vio "No pudimos confirmar si se
  * guardó" sobre un registro que existía.
  */
-import { READ_TIMEOUT_MS, WRITE_TIMEOUT_MS, resolveFetchTimeoutMs } from "../fetch-timeout-budget";
+import {
+  READ_TIMEOUT_MS,
+  SAVE_CEILING_MS,
+  WRITE_TIMEOUT_MS,
+  resolveFetchTimeoutMs,
+} from "../fetch-timeout-budget";
+import { IDEMPOTENT_CONFIRM_BACKOFF_MS, isAmbiguousTransportError } from "../idempotency";
+import { TimeoutError } from "../promise-utils";
 
 const REST = "https://proj.supabase.co/rest/v1/movements";
 const RPC = "https://proj.supabase.co/rest/v1/rpc/list_shared_obligations";
@@ -36,5 +43,27 @@ describe("resolveFetchTimeoutMs", () => {
 
   it("storage no cambia de plazo con este cambio", () => {
     expect(resolveFetchTimeoutMs(STORAGE, "POST")).toBe(READ_TIMEOUT_MS);
+  });
+});
+
+/**
+ * El techo de punta a punta existe para otra cosa que los plazos de `fetch`: supabase-js
+ * serializa las operaciones de sesión, así que una que no termina nunca deja a la escritura
+ * esperando un turno que no llega — sin fetch, sin abort y sin error. Incidente del 2026-08-30
+ * a las 11:02: diez minutos de botón girando y ni una línea en los logs.
+ */
+describe("techo de un guardado completo", () => {
+  it("da margen a la escritura y a su confirmación antes de rendirse", () => {
+    const confirmBudget = IDEMPOTENT_CONFIRM_BACKOFF_MS.reduce((a, b) => a + b, 0);
+    expect(SAVE_CEILING_MS).toBeGreaterThan(WRITE_TIMEOUT_MS + confirmBudget);
+  });
+
+  it("el mensaje al vencer se lee como ambiguo, no como un fallo", () => {
+    // El servidor pudo haber guardado: decir "no se guardó" sería mentir. Con "timeout" dentro,
+    // el formulario muestra "no pudimos confirmar si se guardó".
+    expect(new TimeoutError("guardar movimiento", SAVE_CEILING_MS).message.toLowerCase()).toContain("timeout");
+    expect(
+      isAmbiguousTransportError({ message: new TimeoutError("guardar movimiento", SAVE_CEILING_MS).message }),
+    ).toBe(true);
   });
 });

@@ -31,3 +31,23 @@ export function resolveFetchTimeoutMs(url: string, method: string | undefined): 
   if (url.includes("/rest/v1/rpc/")) return READ_TIMEOUT_MS;
   return WRITE_TIMEOUT_MS;
 }
+
+/**
+ * Techo de un guardado completo, de punta a punta.
+ *
+ * Los plazos de arriba solo cubren el `fetch`. Pero supabase-js resuelve el token **antes** de
+ * pedir la red, y ahí serializa: mientras una operación de sesión sigue en vuelo, cada llamada
+ * nueva espera a la anterior (`_acquireLock` encola incluso sin lock real en React Native). Si
+ * una de esas operaciones no termina nunca, la escritura se queda esperando un turno que no
+ * llega — sin `fetch`, sin abort, sin error. Medido el 2026-08-30 a las 11:02: el botón se quedó
+ * ~10 minutos en "guardando" y en `app_error_logs` no hay una sola línea en 23 minutos.
+ *
+ * Este techo no arregla la causa: garantiza que el usuario reciba una respuesta. Al vencer, el
+ * mensaje lleva "timeout", así que `isAmbiguousTransportError` lo trata como lo que es —el
+ * servidor pudo haberlo guardado— y el formulario dice "no pudimos confirmar si se guardó" en
+ * vez de "no se guardó". La clave de dedupe hace que reintentar sea seguro.
+ *
+ * Va por encima de WRITE_TIMEOUT_MS + la confirmación idempotente para no cortar un guardado
+ * que todavía está haciendo su trabajo.
+ */
+export const SAVE_CEILING_MS = 60_000;
