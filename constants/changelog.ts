@@ -52,6 +52,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       "El botón de guardar ya no se esconde al final: está fijo abajo desde que abres el formulario.",
       "El monto se escribe como en el resto de la app: S/ 21.30, no \"PEN 21.3\".",
       "En una transferencia entre tus cuentas ya no se pinta una mitad en rojo como si hubieras perdido plata: es la misma plata cambiando de bolsillo, y la app ahora te lo dice.",
+      "Las sugerencias de la app ya no anuncian que están pensando ni te dicen que no encontraron nada: aparecen solo cuando hay algo que proponer, pegadas al campo que van a cambiar, y te dan la razón en palabras —\"Porque corregiste esto antes\"— en vez de un porcentaje que no sabías con qué comparar.",
       "En los detalles del movimiento, elegir categoría o contraparte ya no es una fila de botones que se corta por el borde: es una lista que se abre y se puede buscar.",
       "La fecha y la hora ahora se ven de un vistazo —\"Hoy, 14:50\"— y se abren solo si quieres cambiarlas.",
     ],
