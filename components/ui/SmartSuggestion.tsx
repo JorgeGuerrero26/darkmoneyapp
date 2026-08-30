@@ -1,210 +1,101 @@
-import { useEffect, useRef } from "react";
-import { Animated, Easing, Pressable, StyleSheet, Text, View } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Sparkles } from "lucide-react-native";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { useHaptics } from "../../hooks/useHaptics";
 
 type Props = {
+  /** Lo que se propone: el texto limpio, el nombre de la categoría. */
   label: string;
+  /** Una razón corta, la más fuerte. O qué clase de sugerencia es. */
   detail?: string;
   onApply: () => void;
+  /**
+   * La sugerencia vive dentro de la tarjeta del campo que va a cambiar: sin caja propia, con
+   * el fondo un paso más claro para que se lea como una propuesta y no como un valor puesto.
+   */
+  grouped?: boolean;
 };
 
-type LoadingProps = {
-  title?: string;
-  detail?: string;
-};
-
-type EmptyProps = {
-  message?: string;
-};
-
-const AI_GRADIENT_COLORS = [COLORS.secondary, COLORS.dangerSoft, COLORS.gold, COLORS.primary] as const;
-
-export function SmartSuggestion({ label, detail, onApply }: Props) {
+/**
+ * Una sugerencia de la app, pegada al campo que modifica.
+ *
+ * **Se muestra cuando existe.** Mientras se calcula no se anuncia y, si no hay resultado, no se
+ * ocupa espacio en decirlo: tres tarjetas de 76 px ("Revisando antes de guardar", "Buscando
+ * contraparte", "Detectando recurrencia") describían procesos internos con los que el usuario
+ * no podía hacer nada, y al terminar sin resultado dejaban dos líneas grises diciendo que no
+ * había nada que decir.
+ *
+ * **Sin porcentaje.** Un número sin umbral no le dice a nadie si aceptar o revisar: ¿68 % es
+ * suficiente? Si el sistema solo propone por encima de su propio corte, el número no cambia
+ * ninguna decisión. Lo que sirve es la razón en palabras — "Porque corregiste esto antes"—,
+ * que además es verificable.
+ *
+ * **Sin color.** La marca es el destello en gris. Lo que distingue una sugerencia no es el
+ * color: es que trae un botón para aceptarla.
+ */
+export function SmartSuggestion({ label, detail, onApply, grouped = false }: Props) {
   const haptics = useHaptics();
   return (
-    <Pressable
-      style={({ pressed }) => [styles.row, pressed && styles.pressed]}
-      onPress={() => { haptics.light(); onApply(); }}
-    >
-      <Sparkles size={13} color={COLORS.primary} strokeWidth={2} />
+    <View style={[styles.row, grouped ? styles.rowGrouped : styles.rowStandalone]}>
+      <Sparkles size={14} color={COLORS.storm} strokeWidth={1.6} />
       <View style={styles.copy}>
-        <Text style={styles.text} numberOfLines={1}>
-          Sugerido:{" "}
-          <Text style={styles.value}>{label}</Text>
-        </Text>
+        <Text style={styles.label} numberOfLines={1}>{label}</Text>
         {detail ? <Text style={styles.detail} numberOfLines={1}>{detail}</Text> : null}
       </View>
-      <View style={styles.applyBadge}>
-        <Text style={styles.applyText}>Aplicar</Text>
-      </View>
-    </Pressable>
-  );
-}
-
-export function SmartSuggestionLoading({
-  title = "Preparando una mejor sugerencia",
-  detail = "Revisando si conviene confirmar o mejorar la categoría actual.",
-}: LoadingProps) {
-  const breath = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    const animation = Animated.loop(
-      Animated.sequence([
-        Animated.timing(breath, {
-          toValue: 1,
-          duration: 2200,
-          easing: Easing.inOut(Easing.quad),
-          useNativeDriver: true,
-        }),
-        Animated.timing(breath, {
-          toValue: 0,
-          duration: 2200,
-          easing: Easing.inOut(Easing.quad),
-          useNativeDriver: true,
-        }),
-      ]),
-    );
-    animation.start();
-    return () => {
-      animation.stop();
-      breath.stopAnimation();
-    };
-  }, [breath]);
-
-  const opacity = breath.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0.45, 0.9],
-  });
-  const scale = breath.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0.985, 1.015],
-  });
-
-  return (
-    <View style={styles.loadingRow}>
-      <Animated.View style={[styles.loadingGradientWrap, { opacity, transform: [{ scaleX: scale }] }]}>
-        <LinearGradient
-          colors={AI_GRADIENT_COLORS}
-          start={{ x: 0, y: 0.5 }}
-          end={{ x: 1, y: 0.5 }}
-          style={StyleSheet.absoluteFill}
-        />
-      </Animated.View>
-      <View style={styles.loadingIcon}>
-        <Sparkles size={13} color={COLORS.primary} strokeWidth={2} />
-      </View>
-      <View style={styles.copy}>
-        <Text style={styles.loadingTitle} numberOfLines={1}>{title}</Text>
-        <Text style={styles.detail} numberOfLines={2}>{detail}</Text>
-      </View>
-    </View>
-  );
-}
-
-export function SmartSuggestionEmpty({ message = "IA sin sugerencia" }: EmptyProps) {
-  return (
-    <View style={styles.emptyRow}>
-      <Sparkles size={11} color={COLORS.storm} strokeWidth={1.5} />
-      <Text style={styles.emptyText}>{message}</Text>
+      <Pressable
+        style={({ pressed }) => [styles.useBtn, pressed && styles.pressed]}
+        onPress={() => { haptics.light(); onApply(); }}
+        accessibilityRole="button"
+        accessibilityLabel={`Usar ${label}`}
+        hitSlop={6}
+      >
+        <Text style={styles.useText}>Usar</Text>
+      </Pressable>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   row: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: SPACING.xs,
-    paddingVertical: SPACING.xs + 2,
-    paddingHorizontal: SPACING.md,
-    backgroundColor: "rgba(134,206,150,0.06)",
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: "rgba(134,206,150,0.20)",
-    marginTop: -SPACING.xs,
-  },
-  copy: {
-    flex: 1,
-  },
-  pressed: { opacity: 0.7 },
-  text: {
-    fontFamily: FONT_FAMILY.body,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.storm,
-  },
-  value: {
-    fontFamily: FONT_FAMILY.bodySemibold,
-    color: COLORS.primary,
-  },
-  detail: {
-    marginTop: 1,
-    fontFamily: FONT_FAMILY.body,
-    fontSize: 10,
-    color: COLORS.storm,
-  },
-  applyBadge: {
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 2,
-    backgroundColor: SURFACE.cardActive,
-    borderRadius: RADIUS.full,
-    borderWidth: 1,
-    borderColor: SURFACE.cardActiveBorder,
-  },
-  applyText: {
-    fontFamily: FONT_FAMILY.bodySemibold,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.primary,
-  },
-  loadingRow: {
-    position: "relative",
-    overflow: "hidden",
+    minHeight: 48,
     flexDirection: "row",
     alignItems: "center",
     gap: SPACING.sm,
-    paddingVertical: SPACING.sm,
     paddingHorizontal: SPACING.md,
-    backgroundColor: SURFACE.deepNavy,
-    borderRadius: RADIUS.md,
+    paddingVertical: SPACING.sm,
+    backgroundColor: SURFACE.input,
+  },
+  rowGrouped: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: SURFACE.separator,
+  },
+  rowStandalone: {
+    borderRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: "rgba(134,206,150,0.22)",
-    marginTop: -SPACING.xs,
+    borderColor: SURFACE.cardBorder,
   },
-  loadingGradientWrap: {
-    position: "absolute",
-    left: -12,
-    right: -12,
-    top: 0,
-    height: 2,
-  },
-  loadingIcon: {
-    width: 24,
-    height: 24,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: RADIUS.full,
-    backgroundColor: "rgba(134,206,150,0.10)",
-    borderWidth: 1,
-    borderColor: "rgba(134,206,150,0.24)",
-  },
-  loadingTitle: {
-    fontFamily: FONT_FAMILY.bodySemibold,
-    fontSize: FONT_SIZE.xs,
+  copy: { flex: 1, gap: 2 },
+  label: {
+    fontFamily: FONT_FAMILY.bodyMedium,
+    fontSize: FONT_SIZE.sm,
     color: COLORS.ink,
   },
-  emptyRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: SPACING.xs,
-    paddingVertical: SPACING.xs,
-    paddingHorizontal: SPACING.md,
-    marginTop: -SPACING.xs,
-  },
-  emptyText: {
+  detail: {
     fontFamily: FONT_FAMILY.body,
-    fontSize: 10,
+    fontSize: FONT_SIZE.xs,
     color: COLORS.storm,
+  },
+  useBtn: {
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    borderRadius: RADIUS.sm,
+    borderWidth: 1,
+    borderColor: SURFACE.inputBorder,
+  },
+  pressed: { opacity: 0.7 },
+  useText: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.ink,
   },
 });

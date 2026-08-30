@@ -29,6 +29,13 @@ type Props = {
   grouped?: boolean;
   /** Última del grupo: sin línea debajo. */
   last?: boolean;
+  /**
+   * Fila de acción, no de campo: la etiqueta va apagada.
+   *
+   * "Repartir entre varias categorías" no guarda un valor, abre un editor. En hueso pleno se
+   * lee como un campo más del grupo.
+   */
+  muted?: boolean;
 };
 
 /**
@@ -51,6 +58,7 @@ export function FormOptionRow({
   disabled = false,
   grouped = false,
   last = false,
+  muted = false,
 }: Props) {
   return (
     <TouchableOpacity
@@ -68,7 +76,7 @@ export function FormOptionRow({
     >
       {leading ? <View style={styles.leading}>{leading}</View> : null}
       <View style={styles.copy}>
-        <Text style={styles.label}>{label}</Text>
+        <Text style={[styles.label, muted && styles.labelMuted]}>{label}</Text>
         {support ? <Text style={styles.support}>{support}</Text> : null}
       </View>
       {trailing ?? (
@@ -104,6 +112,7 @@ const styles = StyleSheet.create({
   leading: { flexShrink: 0 },
   copy: { flex: 1, gap: 2 },
   label: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.md, color: COLORS.ink },
+  labelMuted: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.fog },
   support: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
   value: {
     flexShrink: 1,
