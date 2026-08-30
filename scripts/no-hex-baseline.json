@@ -1,84 +1,4 @@
 {
-  "features/accounts/components/form/AccountTypePicker.tsx": [
-    {
-      "line": 9,
-      "match": "\"#b48b34\""
-    },
-    {
-      "line": 10,
-      "match": "\"#4566d6\""
-    },
-    {
-      "line": 11,
-      "match": "\"#1b6a58\""
-    },
-    {
-      "line": 12,
-      "match": "\"#8f3e3e\""
-    },
-    {
-      "line": 13,
-      "match": "\"#8366f2\""
-    },
-    {
-      "line": 14,
-      "match": "\"#c46a31\""
-    },
-    {
-      "line": 15,
-      "match": "\"#6b7280\""
-    }
-  ],
-  "features/accounts/components/form/ColorPicker.tsx": [
-    {
-      "line": 8,
-      "match": "\"#1b6a58\""
-    },
-    {
-      "line": 8,
-      "match": "\"#2d9076\""
-    },
-    {
-      "line": 8,
-      "match": "\"#4566d6\""
-    },
-    {
-      "line": 8,
-      "match": "\"#6f82f1\""
-    },
-    {
-      "line": 9,
-      "match": "\"#b48b34\""
-    },
-    {
-      "line": 9,
-      "match": "\"#d39d3a\""
-    },
-    {
-      "line": 9,
-      "match": "\"#8f3e3e\""
-    },
-    {
-      "line": 9,
-      "match": "\"#c55f5f\""
-    },
-    {
-      "line": 10,
-      "match": "\"#8366f2\""
-    },
-    {
-      "line": 10,
-      "match": "\"#9c7dff\""
-    },
-    {
-      "line": 10,
-      "match": "\"#c46a31\""
-    },
-    {
-      "line": 10,
-      "match": "\"#6b7280\""
-    }
-  ],
   "features/accounts/components/InstitutionAvatar.tsx": [
     {
       "line": 45,
@@ -243,13 +163,13 @@
   ],
   "components/domain/AccountPicker.tsx": [
     {
-      "line": 84,
+      "line": 78,
       "match": "\"#000\""
     }
   ],
   "components/domain/AttachmentPicker.tsx": [
     {
-      "line": 537,
+      "line": 530,
       "match": "\"#000\""
     }
   ],
@@ -277,89 +197,21 @@
       "match": "\"#FFF\""
     }
   ],
-  "components/forms/AccountForm.tsx": [
-    {
-      "line": 438,
-      "match": "\"#FFFFFF\""
-    }
-  ],
   "components/forms/BudgetForm.tsx": [
     {
-      "line": 439,
-      "match": "\"#FFFFFF\""
-    }
-  ],
-  "components/forms/CategoryForm.tsx": [
-    {
-      "line": 36,
-      "match": "\"#6366F1\""
-    },
-    {
-      "line": 36,
-      "match": "\"#10B981\""
-    },
-    {
-      "line": 36,
-      "match": "\"#F59E0B\""
-    },
-    {
-      "line": 36,
-      "match": "\"#EF4444\""
-    },
-    {
-      "line": 37,
-      "match": "\"#3B82F6\""
-    },
-    {
-      "line": 37,
-      "match": "\"#8B5CF6\""
-    },
-    {
-      "line": 37,
-      "match": "\"#EC4899\""
-    },
-    {
-      "line": 37,
-      "match": "\"#14B8A6\""
-    },
-    {
-      "line": 38,
-      "match": "\"#F97316\""
-    },
-    {
-      "line": 38,
-      "match": "\"#84CC16\""
-    },
-    {
-      "line": 355,
+      "line": 429,
       "match": "\"#FFFFFF\""
     }
   ],
   "components/forms/PaymentForm.tsx": [
     {
-      "line": 543,
+      "line": 544,
       "match": "\"#FFFFFF\""
     }
   ],
   "components/forms/PrincipalAdjustmentForm.tsx": [
     {
-      "line": 317,
-      "match": "\"#FFFFFF\""
-    }
-  ],
-  "components/forms/RecurringIncomeForm.tsx": [
-    {
-      "line": 468,
-      "match": "\"#9DB2DE\""
-    },
-    {
-      "line": 479,
-      "match": "\"#E7C878\""
-    }
-  ],
-  "components/forms/SubscriptionForm.tsx": [
-    {
-      "line": 720,
+      "line": 318,
       "match": "\"#FFFFFF\""
     }
   ],
@@ -395,12 +247,6 @@
     {
       "line": 5,
       "match": "\"#86CE96\""
-    }
-  ],
-  "app/(app)/notification-detection.tsx": [
-    {
-      "line": 334,
-      "match": "\"#FFFFFF\""
     }
   ],
   "app/(auth)/login.tsx": [

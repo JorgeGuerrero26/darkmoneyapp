@@ -46,7 +46,7 @@ const OLD_HEX: Record<string, string> = {
 const IDENTITY = [
   "account-institutions",
   "ColorPicker",
-  "AccountTypePicker",
+  "account-types",
   "composition/",
   "CategoryForm",
   "obligationReport",

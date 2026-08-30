@@ -37,7 +37,7 @@ export type Composition = {
   netWorth: number;
 };
 
-// Color palette mirrors features/accounts/components/form/AccountTypePicker.tsx
+// Color palette mirrors features/accounts/lib/account-types.ts
 // to keep the donut visually aligned with the type-pill colors users see in
 // the edit form.
 const TYPE_COLORS: Record<string, string> = {
