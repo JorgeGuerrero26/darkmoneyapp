@@ -9,7 +9,10 @@ import {
   View,
 } from "react-native";
 import { format } from "date-fns";
-import { TrendingUp, TrendingDown, Share2, Eye, Mail, AlertCircle } from "lucide-react-native";
+import { es } from "date-fns/locale";
+import { parseDisplayDate } from "../../lib/date";
+import { formatCurrency } from "../ui/AmountDisplay";
+import { TrendingUp, TrendingDown, Share2, Eye, AlertCircle } from "lucide-react-native";
 
 import { useWorkspace } from "../../lib/workspace-context";
 import { useAuth } from "../../lib/auth-context";
@@ -30,7 +33,18 @@ import { shouldResendShareInvite } from "../../lib/obligation-share";
 import { sortByName } from "../../lib/sort-locale";
 import type { ObligationSummary, SharedObligationSummary } from "../../types/domain";
 import { BottomSheet } from "../ui/BottomSheet";
+import { ArrowDown, ArrowUp } from "lucide-react-native";
 import { FormOptionRow } from "../ui/FormOptionRow";
+import { ObligationDetailsSheet } from "../../features/obligations/components/ObligationDetailsSheet";
+import { PaymentPlanSheet } from "../../features/obligations/components/PaymentPlanSheet";
+import {
+  describePlan,
+  expandPaymentPlan,
+  normalizePaymentPlan,
+  parsePaymentPlan,
+  type PaymentPlan,
+} from "../../features/obligations/lib/payment-plan";
+import { currencyPluralTitle } from "../../constants/currencies";
 import { SearchableSelectSheet } from "../ui/SearchableSelectSheet";
 import { CurrencySelectOverlay } from "./CurrencySelectOverlay";
 import { Button } from "../ui/Button";
@@ -43,9 +57,13 @@ import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../
 import { TextField } from "../ui/TextField";
 
 
+/**
+ * "Por cobrar" y "por pagar" son términos de contabilidad: describen la deuda, no la relación.
+ * Quien registra que le prestó S/ 200 a un amigo piensa "me deben".
+ */
 const DIRECTION_OPTIONS = [
-  { value: "receivable", label: "Por cobrar", emoji: "↑", color: COLORS.income },
-  { value: "payable",    label: "Por pagar",  emoji: "↓", color: COLORS.expense },
+  { value: "receivable", label: "Me deben" },
+  { value: "payable",    label: "Yo debo" },
 ];
 
 type OriginOption = {
@@ -170,6 +188,11 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
   const [manualImpact, setManualImpact] = useState<"none" | "inflow" | "outflow">("none");
   const [installmentAmount, setInstallmentAmount] = useState("");
   const [installmentCount, setInstallmentCount] = useState("");
+  const [paymentPlan, setPaymentPlan] = useState<PaymentPlan | null>(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [planOpen, setPlanOpen] = useState(false);
+  const [originOpen, setOriginOpen] = useState(false);
+  const [startDateOpen, setStartDateOpen] = useState(false);
   const [interestRate, setInterestRate] = useState("");
   const [description, setDescription] = useState("");
   const [notes, setNotes] = useState("");
@@ -227,6 +250,11 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
       setManualImpact("none");
       setInstallmentAmount(editObligation.installmentAmount ? String(editObligation.installmentAmount) : "");
       setInstallmentCount(editObligation.installmentCount ? String(editObligation.installmentCount) : "");
+      // El plan guardado manda; si la obligación es vieja, se reconstruye del número de cuotas.
+      setPaymentPlan(
+        parsePaymentPlan(editObligation.paymentPlan)
+        ?? (editObligation.installmentCount ? { mode: "equal", count: editObligation.installmentCount } : null),
+      );
       setInterestRate(editObligation.interestRate ? String(editObligation.interestRate) : "");
       setDescription(editObligation.description ?? "");
       setNotes(editObligation.notes ?? "");
@@ -321,6 +349,9 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
          dueDate !== (editObligation?.dueDate ?? "") ||
          installmentAmount !== (editObligation?.installmentAmount ? String(editObligation.installmentAmount) : "") ||
          installmentCount !== (editObligation?.installmentCount ? String(editObligation.installmentCount) : "") ||
+         // El plan puede cambiar sin que cambien la cuota ni el número de cuotas: de seis
+         // iguales a seis a medida que suman lo mismo.
+         JSON.stringify(normalizePaymentPlan(paymentPlan)) !== JSON.stringify(parsePaymentPlan(editObligation?.paymentPlan)) ||
          interestRate !== (editObligation?.interestRate ? String(editObligation.interestRate) : "") ||
          description !== (editObligation?.description ?? "") ||
          notes !== (editObligation?.notes ?? "") ||
@@ -429,6 +460,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
             dueDate: dueDate || null,
             installmentAmount: installmentAmount ? parseFloat(installmentAmount) : null,
             installmentCount: installmentCount ? parseInt(installmentCount) : null,
+            paymentPlan: normalizePaymentPlan(paymentPlan),
             interestRate: interestRate ? parseFloat(interestRate) : null,
             description: description.trim() || null,
             notes: notes.trim() || null,
@@ -472,6 +504,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
           settlementAccountId,
           installmentAmount: installmentAmount ? parseFloat(installmentAmount) : null,
           installmentCount: installmentCount ? parseInt(installmentCount) : null,
+          paymentPlan: normalizePaymentPlan(paymentPlan),
           interestRate: interestRate ? parseFloat(interestRate) : null,
           description: description.trim() || null,
           notes: notes.trim() || null,
@@ -542,6 +575,52 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
   const openingImpact = getAutoOpeningImpact(direction, originType, manualImpact);
   const selectedOrigin = originOptions.find((o) => o.value === originType) ?? originOptions[0];
 
+  const counterpartyName = counterpartiesSorted.find((cp) => cp.id === counterpartyId)?.name ?? null;
+  const settlementAccountName = activeAccountsSorted.find((acc) => acc.id === settlementAccountId)?.name ?? null;
+  /** La moneda solo se enseña cuando NO es la del patrimonio: si coincide, no distingue nada. */
+  const showCurrencyRow = currencyCode.toUpperCase() !== defaultCurrency.toUpperCase();
+
+  /** La consecuencia de lo elegido, en una línea, en vez de preguntarla otra vez más abajo. */
+  const impactLine = openingImpact === "none"
+    ? "No mueve dinero de tus cuentas al crearla."
+    : openingImpact === "outflow"
+      ? "Sale dinero de tu cuenta al crearla."
+      : "Entra dinero a tu cuenta al crearla.";
+
+  const startDateLabel = (() => {
+    const parsed = parseDisplayDate(startDate);
+    if (Number.isNaN(parsed.getTime())) return startDate;
+    const label = format(parsed, "d MMM", { locale: es });
+    return startDate === today ? `Hoy, ${label}` : label;
+  })();
+
+  const principalNumber = Number(principalAmount) || 0;
+  const planLabel = describePlan({
+    plan: paymentPlan,
+    principal: principalNumber,
+    startDate,
+    formatAmount: (amount) => formatCurrency(amount, currencyCode),
+  });
+  /** De dónde sale la cuota, para que la cifra no aparezca de la nada. */
+  const planHint = (() => {
+    if (!paymentPlan || paymentPlan.mode !== "equal" || principalNumber <= 0) return null;
+    const payments = expandPaymentPlan({ plan: paymentPlan, principal: principalNumber, startDate });
+    if (payments.length === 0) return null;
+    return `${formatCurrency(principalNumber, currencyCode)} ÷ ${payments.length}. Se recalcula si cambias el monto.`;
+  })();
+
+  /**
+   * Lo que falta para poder guardar, en palabras. Reemplaza a los asteriscos, que aparecían en
+   * tres campos sin explicarse en ninguna parte.
+   */
+  const missingLabel = (() => {
+    if (isEditing) return null;
+    if (!title.trim()) return "Falta el título";
+    if (principalNumber <= 0) return "Falta el monto";
+    if (counterpartyId == null) return "Falta el contacto";
+    return null;
+  })();
+
   return (
     <>
       <BottomSheet
@@ -550,9 +629,86 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
         title={isEditing ? "Editar obligación" : "Nueva obligación"}
         snapHeight={0.95}
         scrollRef={scrollRef}
+        footer={
+          <View style={styles.submitBar}>
+            <Button
+              label={
+                sharedViewer
+                  ? "Solo lectura"
+                  : isEditing
+                    ? "Guardar cambios"
+                    : "Crear obligación"
+              }
+              size="lg"
+              onPress={handleSubmit}
+              loading={isLoading || shareMutation.isPending || unlinkShareMutation.isPending}
+              disabled={Boolean(sharedViewer) || Boolean(missingLabel)}
+            />
+            {missingLabel ? (
+              <Text style={styles.submitNote}>{missingLabel}</Text>
+            ) : !isEditing && counterpartyName ? (
+              /* Invitar es una acción sobre algo que ya existe. Mientras tanto, se dice. */
+              <Text style={styles.submitNote}>
+                Podrás invitar a {counterpartyName.split(" ")[0]} cuando esté creada
+              </Text>
+            ) : null}
+          </View>
+        }
         // Dentro del sheet: iOS solo presenta un Modal a la vez y como hermanos no aparecían.
         overlay={
           <>
+            {/* Las hojas van primero: los selectores que se abren DESDE ellas se pintan después
+                y quedan por encima. */}
+            <ObligationDetailsSheet
+              visible={detailsOpen}
+              planLabel={planLabel}
+              planHint={planHint}
+              onOpenPlan={() => setPlanOpen(true)}
+              dueDate={dueDate}
+              onChangeDueDate={setDueDate}
+              interestRate={interestRate}
+              onChangeInterestRate={setInterestRate}
+              settlementAccountLabel={settlementAccountName}
+              onOpenSettlementAccount={() => setSettlementOpen(true)}
+              description={description}
+              onChangeDescription={setDescription}
+              notes={notes}
+              onChangeNotes={setNotes}
+              onClose={() => setDetailsOpen(false)}
+              onDone={() => setDetailsOpen(false)}
+            />
+            <PaymentPlanSheet
+              visible={planOpen}
+              plan={paymentPlan}
+              principal={principalNumber}
+              currencyCode={currencyCode}
+              startDate={startDate}
+              onClose={() => setPlanOpen(false)}
+              onSave={(plan) => {
+                setPaymentPlan(plan);
+                // Las dos columnas viejas se siguen escribiendo mientras haya obligaciones que
+                // las lean: el número de cuotas sale del plan, y la cuota de dividir el monto.
+                const payments = plan
+                  ? expandPaymentPlan({ plan, principal: principalNumber, startDate })
+                  : [];
+                setInstallmentCount(payments.length > 0 ? String(payments.length) : "");
+                setInstallmentAmount(payments.length > 0 ? String(payments[0].amount) : "");
+              }}
+            />
+            <SearchableSelectSheet
+              inline
+              visible={originOpen}
+              title="Cómo nació"
+              options={originOptions.map((opt) => ({ value: opt.value as string, label: opt.label, meta: opt.description }))}
+              value={originType as string}
+              onChange={(value) => {
+                setOriginType(value as ObligationFormInput["originType"]);
+                setOpeningAccountId(null);
+                setManualImpact("none");
+                setOriginError("");
+              }}
+              onClose={() => setOriginOpen(false)}
+            />
             <SearchableSelectSheet
               inline
               visible={counterpartyOpen}
@@ -640,319 +796,199 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
         </View>
       ) : null}
 
-      {/* Title */}
-      <View>
-        <Text style={styles.label}>Título *</Text>
+      {/* El título abre el formulario: es lo que el usuario ya sabe cuando lo abre. Sin
+          asterisco — lo que falta lo nombra el botón. */}
+      <View style={styles.field}>
+        <Text style={styles.sectionLabel}>Título</Text>
         <TextField
           ref={titleRef}
           style={[styles.textInput, titleError ? styles.inputError : null]}
           value={title}
           onChangeText={(t) => { setTitle(t); setTitleError(""); }}
-          placeholder="Ej. Préstamo a Juan, Deuda tarjeta"
-          placeholderTextColor={COLORS.textDisabled}
+          placeholder="Préstamo a Juan, deuda tarjeta…"
+          placeholderTextColor={COLORS.storm}
           returnKeyType="next"
-          onSubmitEditing={() => descriptionRef.current?.focus()}
+          accessibilityLabel="Título de la obligación"
         />
         {titleError ? <Text style={styles.fieldError}>{titleError}</Text> : null}
       </View>
 
-      {/* Direction — solo en creación */}
+      {/* "Por cobrar" y "Por pagar" son términos de contabilidad y describen la deuda, no la
+          relación. Quien registra que le prestó S/ 200 a un amigo piensa "me deben". Y lo
+          elegido va en hueso: el verde es plata que entra, no una selección. */}
       {!isEditing ? (
-        <View>
-          <Text style={styles.label}>Dirección</Text>
-          <View style={styles.directionRow}>
-            {DIRECTION_OPTIONS.map((opt) => (
+        <View style={styles.directionRow}>
+          {DIRECTION_OPTIONS.map((opt) => {
+            const isSelected = direction === opt.value;
+            const Icon = opt.value === "receivable" ? ArrowUp : ArrowDown;
+            return (
               <TouchableOpacity
                 key={opt.value}
-                style={[
-                  styles.directionBtn,
-                  direction === opt.value && { borderColor: opt.color, backgroundColor: opt.color + "22" },
-                ]}
+                style={[styles.directionBtn, isSelected && styles.directionBtnSelected]}
                 onPress={() => setDirection(opt.value as "receivable" | "payable")}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityState={{ selected: isSelected }}
               >
-                <Text style={[styles.directionEmoji, { color: opt.color }]}>{opt.emoji}</Text>
-                <Text style={[styles.directionLabel, direction === opt.value && { color: opt.color }]}>
+                <Icon size={15} color={isSelected ? COLORS.ink : COLORS.storm} strokeWidth={2} />
+                <Text style={[styles.directionLabel, isSelected && styles.directionLabelSelected]}>
                   {opt.label}
                 </Text>
               </TouchableOpacity>
-            ))}
-          </View>
+            );
+          })}
         </View>
       ) : null}
 
-      {/* Origin type — solo en creación */}
+      {/* El monto va como el de Registrar movimiento: hueso, tabular y con el símbolo delante.
+          Era el segundo dato más importante y el que peor se veía. */}
       {!isEditing ? (
-        <View style={styles.originSection} onLayout={(event) => { originSectionYRef.current = event.nativeEvent.layout.y; }}>
-          <Text style={styles.label}>¿Cómo nació esta {direction === "receivable" ? "cuenta por cobrar" : "deuda"}?</Text>
-          <View style={[styles.originList, originError ? styles.sectionErrorWrap : null]}>
-            {originOptions.map((opt) => {
-              const isSelected = originType === opt.value;
-              return (
-                <TouchableOpacity
-                  key={opt.value}
-                  style={[styles.originCard, isSelected && styles.originCardSelected]}
-                  onPress={() => { setOriginType(opt.value); setOpeningAccountId(null); setManualImpact("none"); setOriginError(""); }}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.originCardHeader}>
-                    <Text style={[styles.originCardLabel, isSelected && styles.originCardLabelSelected]}>
-                      {opt.label}
-                    </Text>
-                    {isSelected ? (
-                      <View style={styles.originCheckDot} />
-                    ) : null}
-                  </View>
-                  <Text style={styles.originCardDesc}>{opt.description}</Text>
-                  <View style={[styles.originImpactBadge, { borderColor: opt.impactColor + "55" }]}>
-                    <Text style={[styles.originImpactText, { color: opt.impactColor }]}>{opt.impactLabel}</Text>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-          {originError ? <Text style={styles.fieldError}>{originError}</Text> : null}
-
-          {/* Manual: impact selector */}
-          {originType === "manual" ? (
-            <View style={styles.manualImpactSection}>
-              <Text style={styles.label}>Impacto inicial en cuenta</Text>
-              {MANUAL_IMPACT_OPTIONS.map((opt) => {
-                const isSel = manualImpact === opt.value;
-                return (
-                  <TouchableOpacity
-                    key={opt.value}
-                    style={[styles.manualImpactRow, isSel && styles.manualImpactRowSelected]}
-                    onPress={() => { setManualImpact(opt.value); setOpeningAccountId(null); }}
-                    activeOpacity={0.8}
-                  >
-                    <View style={styles.manualImpactRadio}>
-                      {isSel ? <View style={styles.manualImpactRadioInner} /> : null}
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.manualImpactLabel, isSel && styles.manualImpactLabelSelected]}>
-                        {opt.label}
-                      </Text>
-                      <Text style={styles.manualImpactDesc}>{opt.desc}</Text>
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          ) : null}
-
-          {/* Opening account — when cash moves */}
-          {openingImpact !== "none" && activeAccounts.length > 0 ? (
-            <View style={styles.openingAccountSection}>
-              <FormOptionRow
-                label={
-                  openingImpact === "outflow"
-                    ? "Cuenta desde donde salió el dinero"
-                    : "Cuenta donde entró el dinero"
-                }
-                value={activeAccountsSorted.find((acc) => acc.id === openingAccountId)?.name ?? null}
-                placeholder="Sin cuenta"
-                onPress={() => setOpeningAccountOpen(true)}
-              />
-            </View>
-          ) : null}
-        </View>
-      ) : null}
-
-      {/* Currency — solo en creación */}
-      {!isEditing ? (
-        <View onLayout={(event) => { currencySectionYRef.current = event.nativeEvent.layout.y; }}>
-          <FormOptionRow
-            label="Moneda"
-            value={currencyCode}
-            onPress={() => setCurrencyOpen(true)}
+        <View style={styles.field}>
+          <Text style={styles.sectionLabel}>Monto</Text>
+          <CurrencyInput
+            ref={principalAmountRef}
+            value={principalAmount}
+            onChangeText={(t) => { setPrincipalAmount(t); setAmountError(""); }}
+            currencyCode={currencyCode}
+            error={amountError}
           />
-          {currencyError ? <Text style={styles.fieldError}>{currencyError}</Text> : null}
         </View>
       ) : null}
 
-      {/* Principal amount — solo en creación */}
-      {!isEditing ? (
-        <CurrencyInput
-          ref={principalAmountRef}
-          label="Monto principal *"
-          value={principalAmount}
-          onChangeText={(t) => { setPrincipalAmount(t); setAmountError(""); }}
-          currencyCode={currencyCode}
-          error={amountError}
-        />
-      ) : null}
-
-      {/* Counterparty */}
+      {/* Contacto y origen, como filas con su valor a la derecha. */}
       <View onLayout={(event) => { counterpartySectionYRef.current = event.nativeEvent.layout.y; }}>
-        <View style={counterpartyError ? styles.sectionErrorWrap : null}>
-          {counterpartiesSorted.length > 0 ? (
+        {counterpartiesSorted.length > 0 ? (
+          <View style={[styles.group, counterpartyError ? styles.sectionErrorWrap : null]}>
             <FormOptionRow
-              label="Contacto *"
-              value={counterpartiesSorted.find((cp) => cp.id === counterpartyId)?.name ?? null}
+              grouped
+              label="Contacto"
+              value={counterpartyName}
               placeholder="Elegir contacto"
               onPress={() => setCounterpartyOpen(true)}
+              last={isEditing && !showCurrencyRow}
             />
-          ) : (
-            <View style={styles.emptyRequirementBox}>
-              <Text style={styles.emptyRequirementTitle}>No tienes contactos creados</Text>
-              <Text style={styles.emptyRequirementText}>
-                Necesitas crear al menos un contacto en el módulo Contactos antes de guardar esta obligación.
-              </Text>
-              <Button
-                label="Ir a Contactos"
-                variant="secondary"
-                size="sm"
-                style={styles.emptyRequirementButton}
-                onPress={() => {
-                  onClose();
-                  router.push("/contacts");
-                }}
+            {!isEditing ? (
+              <FormOptionRow
+                grouped
+                label="Cómo nació"
+                value={selectedOrigin.label}
+                onPress={() => setOriginOpen(true)}
+                last={!showCurrencyRow}
               />
-            </View>
-          )}
-        </View>
+            ) : null}
+            {/* La moneda solo cuando NO es la del patrimonio: si coincide, el dato no distingue
+                nada. Y se dice en palabras, no con el código ISO. */}
+            {showCurrencyRow ? (
+              <FormOptionRow
+                grouped
+                last
+                label="Moneda"
+                value={currencyPluralTitle(currencyCode)}
+                onPress={() => setCurrencyOpen(true)}
+              />
+            ) : null}
+          </View>
+        ) : (
+          <View style={styles.emptyRequirementBox}>
+            <Text style={styles.emptyRequirementTitle}>No tienes contactos creados</Text>
+            <Text style={styles.emptyRequirementText}>
+              Necesitas crear al menos un contacto en el módulo Contactos antes de guardar esta obligación.
+            </Text>
+            <Button
+              label="Ir a Contactos"
+              variant="secondary"
+              size="sm"
+              style={styles.emptyRequirementButton}
+              onPress={() => {
+                onClose();
+                router.push("/contacts");
+              }}
+            />
+          </View>
+        )}
         {counterpartyError ? <Text style={styles.fieldError}>{counterpartyError}</Text> : null}
       </View>
 
-      {/* Settlement account */}
-      {activeAccounts.length > 0 ? (
-        <View onLayout={(event) => { settlementSectionYRef.current = event.nativeEvent.layout.y; }}>
-          <View style={settlementAccountError ? styles.sectionErrorWrap : null}>
-            <FormOptionRow
-              label="Cuenta de liquidación"
-              value={activeAccountsSorted.find((acc) => acc.id === settlementAccountId)?.name ?? null}
-              placeholder="Sin cuenta"
-              onPress={() => setSettlementOpen(true)}
-            />
-          </View>
-          {settlementAccountError ? <Text style={styles.fieldError}>{settlementAccountError}</Text> : null}
+      {/* La consecuencia de lo elegido, en una línea. El formulario preguntaba dos veces lo
+          mismo —el origen y el "impacto inicial en cuenta"— y dejaba contestar distinto en cada
+          una. Los radios salen solo en Manual, que es el único caso sin respuesta determinada. */}
+      {!isEditing && originType !== "manual" ? (
+        <View style={styles.impactNote}>
+          <Text style={styles.impactNoteText}>{impactLine}</Text>
         </View>
       ) : null}
 
-      {/* Dates */}
-      {!isEditing ? (
-        <View onLayout={(event) => { startDateSectionYRef.current = event.nativeEvent.layout.y; }}>
-          <View style={startDateError ? styles.sectionErrorWrap : null}>
-            <DatePickerInput
-              label="Fecha de inicio"
-              value={startDate}
-              onChange={(value) => { setStartDate(value); setStartDateError(""); }}
-            />
-          </View>
-          {startDateError ? <Text style={styles.fieldError}>{startDateError}</Text> : null}
+      {!isEditing && originType === "manual" ? (
+        <View style={styles.manualImpactSection}>
+          <Text style={styles.sectionLabel}>Impacto inicial en cuenta</Text>
+          {MANUAL_IMPACT_OPTIONS.map((opt) => {
+            const isSel = manualImpact === opt.value;
+            return (
+              <TouchableOpacity
+                key={opt.value}
+                style={[styles.manualImpactRow, isSel && styles.manualImpactRowSelected]}
+                onPress={() => { setManualImpact(opt.value); setOpeningAccountId(null); }}
+                activeOpacity={0.8}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: isSel }}
+              >
+                <View style={styles.manualImpactRadio}>
+                  {isSel ? <View style={styles.manualImpactRadioInner} /> : null}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.manualImpactLabel, isSel && styles.manualImpactLabelSelected]}>
+                    {opt.label}
+                  </Text>
+                  <Text style={styles.manualImpactDesc}>{opt.desc}</Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
         </View>
       ) : null}
 
-      <DatePickerInput
-        label="Fecha de vencimiento (opcional)"
-        value={dueDate}
-        onChange={setDueDate}
-        optional
-      />
-      <BusinessDateNotice dateValue={dueDate} onApplySuggestedDate={setDueDate} />
-
-      {/* Installments */}
-      <View style={styles.twoCol}>
-        <View style={styles.colHalf}>
-          <Text style={styles.label}>Cuota</Text>
-          <TextField
-            style={styles.textInput}
-            value={installmentAmount}
-            onChangeText={setInstallmentAmount}
-            placeholder="0.00"
-            placeholderTextColor={COLORS.textDisabled}
-            keyboardType="decimal-pad"
-          />
-        </View>
-        <View style={styles.colHalf}>
-          <Text style={styles.label}># Cuotas</Text>
-          <TextField
-            style={styles.textInput}
-            value={installmentCount}
-            onChangeText={setInstallmentCount}
-            placeholder="0"
-            placeholderTextColor={COLORS.textDisabled}
-            keyboardType="number-pad"
-          />
-        </View>
-      </View>
-
-      {/* Interest rate */}
-      <View>
-        <Text style={styles.label}>Tasa de interés % (opcional)</Text>
-        <TextField
-          style={styles.textInput}
-          value={interestRate}
-          onChangeText={setInterestRate}
-          placeholder="0.00"
-          placeholderTextColor={COLORS.textDisabled}
-          keyboardType="decimal-pad"
+      {!isEditing && openingImpact !== "none" && activeAccounts.length > 0 ? (
+        <FormOptionRow
+          label={openingImpact === "outflow" ? "Sale de" : "Entra a"}
+          value={activeAccountsSorted.find((acc) => acc.id === openingAccountId)?.name ?? null}
+          placeholder="Sin cuenta"
+          onPress={() => setOpeningAccountOpen(true)}
         />
-      </View>
-
-      {/* Description */}
-      <View>
-        <Text style={styles.label}>Descripción (opcional)</Text>
-        <TextField
-          ref={descriptionRef}
-          style={styles.textInput}
-          value={description}
-          onChangeText={setDescription}
-          placeholder="Descripción breve"
-          placeholderTextColor={COLORS.textDisabled}
-          returnKeyType="next"
-          onSubmitEditing={() => notesRef.current?.focus()}
-        />
-      </View>
-
-      {/* Notes */}
-      <View>
-        <Text style={styles.label}>Notas (opcional)</Text>
-        <TextField
-          ref={notesRef}
-          style={[styles.textInput, styles.textArea]}
-          value={notes}
-          onChangeText={setNotes}
-          placeholder="Observaciones adicionales"
-          placeholderTextColor={COLORS.textDisabled}
-          multiline
-          numberOfLines={3}
-          textAlignVertical="top"
-          returnKeyType="done"
-          blurOnSubmit
-        />
-      </View>
-
-      {/* Compartir al crear (opcional) — se envía al guardar si hay correo */}
-      {!isEditing ? (
-        <View style={styles.shareSection}>
-          <View style={styles.shareTitleRow}>
-            <Mail size={16} color={COLORS.storm} strokeWidth={2} />
-            <Text style={styles.shareTitle}>Invitar por correo (opcional)</Text>
-          </View>
-          <Text style={styles.shareHint}>
-            Si completas el correo, al crear la obligación se enviará la invitación automáticamente.
-          </Text>
-          <Input
-            label="Email del destinatario"
-            value={shareEmail}
-            onChangeText={setShareEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
-            placeholder="correo@ejemplo.com"
-          />
-          <Input
-            label="Mensaje (opcional)"
-            value={shareMessage}
-            onChangeText={setShareMessage}
-            placeholder="Texto que verá el invitado en el correo"
-            multiline
-            numberOfLines={3}
-            style={styles.shareMessageInput}
-          />
-        </View>
       ) : null}
+
+      {/* Desde, y la puerta a los catorce campos opcionales. */}
+      <View style={styles.group} onLayout={(event) => { startDateSectionYRef.current = event.nativeEvent.layout.y; }}>
+        {!isEditing ? (
+          <FormOptionRow
+            grouped
+            label="Desde"
+            value={startDateLabel}
+            onPress={() => setStartDateOpen((open) => !open)}
+          />
+        ) : null}
+        <FormOptionRow
+          grouped
+          last
+          label="Más detalles"
+          support="Cuotas, tasa, vencimiento, notas"
+          value=""
+          placeholder=""
+          onPress={() => setDetailsOpen(true)}
+        />
+      </View>
+      {startDateOpen && !isEditing ? (
+        <DatePickerInput
+          label="Desde"
+          value={startDate}
+          onChange={(value) => { setStartDate(value); setStartDateError(""); }}
+        />
+      ) : null}
+      {startDateError ? <Text style={styles.fieldError}>{startDateError}</Text> : null}
+
+
+      {/* Invitar por correo salía del formulario de creación: convertía el botón de guardar en
+          un botón que además le escribe a alguien, sin previsualización. Es una acción sobre una
+          obligación que ya existe, así que se ofrece al terminar. */}
 
       {/* Compartir — edición, solo dueño */}
       {isEditing && editObligation && isOwnerObligation(editObligation) ? (
@@ -1109,20 +1145,6 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
         </View>
       ) : null}
 
-      <Button
-        label={
-          sharedViewer
-            ? "Solo lectura"
-            : isEditing
-              ? "Guardar cambios"
-              : "Crear obligación"
-        }
-        onPress={handleSubmit}
-        loading={isLoading || shareMutation.isPending || unlinkShareMutation.isPending}
-        disabled={Boolean(sharedViewer)}
-        style={styles.submitBtn}
-      />
-
       {/* Principal adjustment — solo dueño */}
       {isEditing && onAdjust && editObligation && isOwnerObligation(editObligation) ? (
         <View style={styles.adjustRow}>
@@ -1148,13 +1170,73 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
 }
 
 const styles = StyleSheet.create({
-  label: {
-    fontSize: FONT_SIZE.xs,
+  inputError: { borderColor: COLORS.danger },
+  fieldError: { fontSize: FONT_SIZE.xs, color: COLORS.danger, marginTop: 4 },
+  sectionErrorWrap: {
+    borderWidth: 1,
+    borderColor: COLORS.danger,
+    borderRadius: RADIUS.md,
+    padding: SPACING.xs,
+  },
+  directionLabel: { fontSize: FONT_SIZE.sm, fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.storm },
+  shareSection: {
+    marginTop: SPACING.md,
+    padding: SPACING.md,
+    borderRadius: RADIUS.lg,
+    backgroundColor: SURFACE.card,
+    borderWidth: 1,
+    borderColor: SURFACE.cardBorder,
+    gap: SPACING.sm,
+  },
+  field: { gap: SPACING.sm },
+  sectionLabel: {
     fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
     color: COLORS.storm,
     textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginBottom: SPACING.xs,
+    letterSpacing: 0.8,
+  },
+  group: {
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: SURFACE.cardBorder,
+    backgroundColor: SURFACE.card,
+    overflow: "hidden",
+  },
+  // Estar elegido se ve igual en toda la app: borde y etiqueta en hueso, sin color. El verde es
+  // plata que entra, y aquí marcaba una deuda que sale.
+  directionBtnSelected: {
+    borderColor: COLORS.ink,
+    backgroundColor: SURFACE.cardActive,
+  },
+  directionLabelSelected: { color: COLORS.ink },
+  impactNote: {
+    backgroundColor: SURFACE.card,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: SURFACE.cardBorder,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm + 2,
+  },
+  impactNoteText: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    lineHeight: 17,
+  },
+  submitBar: {
+    gap: SPACING.xs,
+    paddingHorizontal: SPACING.xl,
+    paddingTop: SPACING.md,
+    backgroundColor: SURFACE.sheet,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: SURFACE.separator,
+  },
+  submitNote: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    textAlign: "center",
   },
   textInput: {
     backgroundColor: SURFACE.card,
@@ -1165,15 +1247,6 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.sm,
     fontSize: FONT_SIZE.md,
     color: COLORS.ink,
-  },
-  textArea: { minHeight: 72 },
-  inputError: { borderColor: COLORS.danger },
-  fieldError: { fontSize: FONT_SIZE.xs, color: COLORS.danger, marginTop: 4 },
-  sectionErrorWrap: {
-    borderWidth: 1,
-    borderColor: COLORS.danger,
-    borderRadius: RADIUS.md,
-    padding: SPACING.xs,
   },
   emptyRequirementBox: {
     gap: SPACING.sm,
@@ -1209,33 +1282,6 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: SURFACE.cardBorder,
     backgroundColor: SURFACE.card,
-  },
-  directionEmoji: { fontSize: FONT_SIZE.xl },
-  directionLabel: { fontSize: FONT_SIZE.sm, fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.storm },
-  pillRow: { flexDirection: "row", gap: SPACING.sm },
-  pillWrap: { flexDirection: "row", flexWrap: "wrap", gap: SPACING.sm },
-  pill: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs + 2,
-    borderRadius: RADIUS.full,
-    backgroundColor: SURFACE.card,
-    borderWidth: 1,
-    borderColor: SURFACE.cardBorder,
-  },
-  pillActive: { backgroundColor: COLORS.pine, borderColor: COLORS.pine },
-  pillText: { fontSize: FONT_SIZE.sm, color: COLORS.storm, fontFamily: FONT_FAMILY.bodyMedium },
-  pillTextActive: { color: COLORS.textInverse },
-  twoCol: { flexDirection: "row", gap: SPACING.md },
-  colHalf: { flex: 1 },
-  submitBtn: { marginTop: SPACING.sm },
-  shareSection: {
-    marginTop: SPACING.md,
-    padding: SPACING.md,
-    borderRadius: RADIUS.lg,
-    backgroundColor: SURFACE.card,
-    borderWidth: 1,
-    borderColor: SURFACE.cardBorder,
-    gap: SPACING.sm,
   },
   shareTitleRow: {
     flexDirection: "row",
@@ -1355,56 +1401,6 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   // ── Origin type section ──────────────────────────────────────────────────
-  originSection: { gap: SPACING.sm },
-  originList: { gap: SPACING.sm },
-  originCard: {
-    padding: SPACING.md,
-    borderRadius: RADIUS.lg,
-    borderWidth: 1,
-    borderColor: SURFACE.cardBorder,
-    backgroundColor: SURFACE.card,
-    gap: SPACING.xs,
-  },
-  originCardSelected: {
-    borderColor: COLORS.pine,
-    backgroundColor: COLORS.pine + "18",
-  },
-  originCardHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  originCardLabel: {
-    fontFamily: FONT_FAMILY.bodySemibold,
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.storm,
-  },
-  originCardLabelSelected: { color: COLORS.ink },
-  originCheckDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: COLORS.pine,
-  },
-  originCardDesc: {
-    fontFamily: FONT_FAMILY.body,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.storm,
-    lineHeight: 17,
-  },
-  originImpactBadge: {
-    alignSelf: "flex-start",
-    marginTop: SPACING.xs,
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 3,
-    borderRadius: RADIUS.full,
-    borderWidth: 1,
-    backgroundColor: "transparent",
-  },
-  originImpactText: {
-    fontFamily: FONT_FAMILY.bodyMedium,
-    fontSize: FONT_SIZE.xs,
-  },
   // ── Manual impact ────────────────────────────────────────────────────────
   manualImpactSection: {
     marginTop: SPACING.xs,
@@ -1459,5 +1455,4 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   // ── Opening account ──────────────────────────────────────────────────────
-  openingAccountSection: { gap: SPACING.xs },
 });
