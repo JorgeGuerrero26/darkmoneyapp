@@ -17,42 +17,19 @@ export function PlanStatusBadge({ compact = false }: Props) {
 
   if (!user?.id && !profile?.id) return null;
 
-  const isLoading = entitlementQuery.isLoading && !entitlementQuery.data;
+  // Mientras se comprueba no se pinta nada. "Comprobando plan" era lo primero que leía el
+  // usuario debajo de su nombre al abrir la app: anunciar que el sistema está preguntando no
+  // es información, y el que abre su app de finanzas no viene a saber eso.
+  if (entitlementQuery.isLoading && !entitlementQuery.data) return null;
+
   const isPro = entitlementQuery.data?.proAccessEnabled ?? false;
-  const label = isLoading
-    ? compact
-      ? "Plan..."
-      : "Comprobando plan"
-    : isPro
-      ? compact
-        ? "Pro"
-        : "Usuario Pro"
-      : compact
-        ? "Free"
-        : "Usuario Free";
+  const label = isPro
+    ? compact ? "Pro" : "Usuario Pro"
+    : compact ? "Free" : "Usuario Free";
 
   return (
-    <View
-      style={[
-        styles.badge,
-        isLoading
-          ? styles.badgeLoading
-          : isPro
-            ? styles.badgePro
-            : styles.badgeFree,
-      ]}
-    >
-      <Text
-        style={[
-          styles.label,
-          isLoading
-            ? styles.labelLoading
-            : isPro
-              ? styles.labelPro
-              : styles.labelFree,
-        ]}
-        numberOfLines={1}
-      >
+    <View style={[styles.badge, isPro ? styles.badgePro : styles.badgeFree]}>
+      <Text style={[styles.label, isPro ? styles.labelPro : styles.labelFree]} numberOfLines={1}>
         {label}
       </Text>
     </View>
@@ -69,10 +46,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     justifyContent: "center",
   },
-  badgeLoading: {
-    backgroundColor: "rgba(244,241,236,0.05)",
-    borderColor: "rgba(244,241,236,0.12)",
-  },
   badgePro: {
     backgroundColor: COLORS.pro + "18",
     borderColor: COLORS.pro + "44",
@@ -85,9 +58,6 @@ const styles = StyleSheet.create({
     fontFamily: FONT_FAMILY.bodySemibold,
     fontSize: FONT_SIZE.xs - 1,
     letterSpacing: 0.3,
-  },
-  labelLoading: {
-    color: COLORS.storm,
   },
   labelPro: {
     color: COLORS.pro,

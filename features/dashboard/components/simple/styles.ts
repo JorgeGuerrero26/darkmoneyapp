@@ -3178,10 +3178,6 @@ export const dashboardSimpleStyles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(217,182,92,0.35)",
   },
-  proGateBadgeMuted: {
-    backgroundColor: "rgba(163,156,144,0.10)",
-    borderColor: "rgba(163,156,144,0.20)",
-  },
   proGateBadgeText: {
     fontFamily: FONT_FAMILY.bodySemibold,
     fontSize: 10,

@@ -76,3 +76,28 @@ justo debajo del corte. Ahora el campo de notas se lleva arriba al enfocarlo.
 `SmartSuggestion` es compartida, así que el cambio alcanza también a la tarjeta de movimiento
 detectado (`QuickDetectedMovementEntry`), que tenía las mismas tres tarjetas de proceso, los
 mismos porcentajes y el mismo "Aplicar" en menta.
+
+---
+
+## 3. Lo primero que se ve al abrir la app (30 ago)
+
+Reportado con una captura del arranque en frío: debajo del nombre, un distintivo **"Comprobando
+plan"**; debajo, una tira con candado que decía **"Dashboard Avanzado · Verificando acceso…"**;
+y debajo de eso, nada. Tres cuartos de pantalla en negro mientras la app hablaba de sí misma.
+
+Es el punto A de esta misma revisión, en la primera pantalla de todas: **anunciar que estás
+comprobando no es información**. El que abre su app de finanzas no viene a saber que el sistema
+está preguntando por su plan.
+
+**Por qué pasa en cada arranque.** El derecho de acceso (`user-entitlement`) está fuera de la
+lista de queries que se guardan a disco, a propósito: un plan cacheado 24 h daría Pro a quien ya
+lo canceló. Así que en cada arranque en frío hay una ida al servidor, y el inicio se quedaba en
+blanco esperándola — el resto del tablero ya estaba en pantalla, porque el snapshot sí se
+persiste.
+
+**Arreglo.** El distintivo no se pinta mientras se comprueba: aparece cuando hay respuesta. Y en
+lugar de la tira con candado va el **esqueleto** que ya usa el resto del inicio: la forma de lo
+que viene, no un cartel diciendo que se está mirando.
+
+No se toca la exclusión del caché: el plan se sigue comprobando en cada arranque, solo que en
+silencio.

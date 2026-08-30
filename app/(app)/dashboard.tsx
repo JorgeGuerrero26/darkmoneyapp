@@ -331,23 +331,6 @@ function ProGate() {
 
 // --- Main screen --------------------------------------------------------------
 
-function ProGateLoading() {
-  return (
-    <View style={[subStyles.proGate, { flexDirection: "row", alignItems: "center" }]}>
-      <View style={subStyles.proGateIconWrap}>
-        <Lock size={16} color={COLORS.storm} strokeWidth={1.8} />
-      </View>
-      <View style={subStyles.proGateText}>
-        <Text style={subStyles.proGateTitle}>Dashboard Avanzado</Text>
-        <Text style={subStyles.proGateBody}>Verificando acceso...</Text>
-      </View>
-      <View style={[subStyles.proGateBadge, subStyles.proGateBadgeMuted]}>
-        <Text style={[subStyles.proGateBadgeText, { color: COLORS.storm }]}>PRO</Text>
-      </View>
-    </View>
-  );
-}
-
 function DashboardScreen() {
   const insets = useSafeAreaInsets();
   // Espejo de la pestaña activa del dashboard avanzado. Solo sirve para colapsar el encabezado:
@@ -806,7 +789,17 @@ function DashboardScreen() {
             <Button label="Entendido" variant="secondary" onPress={markDashboardModeMoveSeen} />
           </Card>
         ) : null}
-        {isCheckingAdvancedAccess ? <ProGateLoading /> : shouldShowAdvancedProGate ? (
+        {/* Mientras se comprueba el plan, el esqueleto de lo que viene — el mismo que usa el
+            resto del inicio. Antes esto era una tira con un candado que decía "Verificando
+            acceso…" y dejaba la pantalla en blanco: lo primero que veía el usuario al abrir la
+            app era la app hablando de sí misma. */}
+        {isCheckingAdvancedAccess ? (
+          <SkeletonList>
+            <SkeletonCard />
+            <SkeletonCard />
+            <SkeletonCard />
+          </SkeletonList>
+        ) : shouldShowAdvancedProGate ? (
           <>
             <ProGate />
           </>
