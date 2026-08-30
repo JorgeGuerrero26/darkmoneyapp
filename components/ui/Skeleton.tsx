@@ -12,6 +12,14 @@ type Props = {
   style?: StyleProp<ViewStyle>;
 };
 
+/**
+ * Una pieza de contenido que todavía no llegó.
+ *
+ * El relleno va en `SURFACE.track` —el mismo de las barras de progreso—, no en el color de la
+ * tarjeta: las piezas vivían dentro de una tarjeta de ese mismo color, así que no se distinguían
+ * de su propio fondo y el brillo que las recorre barría algo invisible. Se veía una tarjeta
+ * vacía y quieta.
+ */
 export function Skeleton({ width = "100%", height = 16, borderRadius = RADIUS.sm, style }: Props) {
   const progress = useRef(new Animated.Value(0)).current;
   const [measuredWidth, setMeasuredWidth] = useState(0);
@@ -44,13 +52,13 @@ export function Skeleton({ width = "100%", height = 16, borderRadius = RADIUS.sm
     <View
       onLayout={handleLayout}
       style={[
-        { width: width as any, height, borderRadius, backgroundColor: SURFACE.card, overflow: "hidden" },
+        { width: width as any, height, borderRadius, backgroundColor: SURFACE.track, overflow: "hidden" },
         style,
       ]}
     >
       {measuredWidth > 0 ? (
         <AnimatedLinearGradient
-          colors={["rgba(244,241,236,0)", "rgba(244,241,236,0.12)", "rgba(244,241,236,0)"]}
+          colors={["rgba(244,241,236,0)", "rgba(244,241,236,0.18)", "rgba(244,241,236,0)"]}
           start={{ x: 0, y: 0.5 }}
           end={{ x: 1, y: 0.5 }}
           style={[StyleSheet.absoluteFillObject, { transform: [{ translateX }] }]}

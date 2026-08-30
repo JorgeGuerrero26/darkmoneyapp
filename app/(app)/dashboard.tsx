@@ -71,7 +71,7 @@ import { useUiStore } from "../../store/ui-store";
 import { Card } from "../../components/ui/Card";
 import { Button } from "../../components/ui/Button";
 import { ProgressBar } from "../../components/ui/ProgressBar";
-import { SkeletonCard, SkeletonList } from "../../components/ui/Skeleton";
+import { SkeletonCard, SkeletonKpi, SkeletonList } from "../../components/ui/Skeleton";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { useAfterFirstPaint } from "../../hooks/useAfterFirstPaint";
 import { isDashboardDataUnavailable } from "../../features/dashboard/lib/dashboardDataAvailability";
@@ -703,7 +703,7 @@ function DashboardScreen() {
         />
         <ScrollView contentContainerStyle={styles.content}>
           <SkeletonList>
-            <SkeletonCard />
+            <SkeletonKpi />
             <SkeletonCard />
             <SkeletonCard />
           </SkeletonList>
@@ -795,7 +795,7 @@ function DashboardScreen() {
             app era la app hablando de sí misma. */}
         {isCheckingAdvancedAccess ? (
           <SkeletonList>
-            <SkeletonCard />
+            <SkeletonKpi />
             <SkeletonCard />
             <SkeletonCard />
           </SkeletonList>
