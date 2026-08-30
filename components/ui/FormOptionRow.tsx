@@ -13,6 +13,11 @@ type Props = {
   support?: string;
   /** Muestra de lo elegido: el color y el icono de una categoría, la bandera de una moneda. */
   leading?: ReactNode;
+  /**
+   * Ocupa el sitio del valor, a la derecha. Para lo que se enseña en vez de decirse: la
+   * apariencia elegida es su propio ícono, no la palabra "Cambiar".
+   */
+  trailing?: ReactNode;
   onPress: () => void;
   disabled?: boolean;
   /**
@@ -41,6 +46,7 @@ export function FormOptionRow({
   placeholder = "Elegir",
   support,
   leading,
+  trailing,
   onPress,
   disabled = false,
   grouped = false,
@@ -58,16 +64,18 @@ export function FormOptionRow({
       disabled={disabled}
       activeOpacity={0.78}
       accessibilityRole="button"
-      accessibilityLabel={`${label}: ${value ?? placeholder}`}
+      accessibilityLabel={trailing ? label : `${label}: ${value ?? placeholder}`}
     >
       {leading ? <View style={styles.leading}>{leading}</View> : null}
       <View style={styles.copy}>
         <Text style={styles.label}>{label}</Text>
         {support ? <Text style={styles.support}>{support}</Text> : null}
       </View>
-      <Text style={[styles.value, !value && styles.valuePlaceholder]} numberOfLines={1}>
-        {value || placeholder}
-      </Text>
+      {trailing ?? (
+        <Text style={[styles.value, !value && styles.valuePlaceholder]} numberOfLines={1}>
+          {value || placeholder}
+        </Text>
+      )}
       <ChevronRight size={16} color={COLORS.storm} />
     </TouchableOpacity>
   );

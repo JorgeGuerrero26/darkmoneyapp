@@ -64,7 +64,6 @@ export function FormSheetScaffold({
           {overlay}
           {/* Fuera del ScrollView: es lo único que no debe desplazarse. */}
           <View style={styles.submitBar}>
-            {missingLabel ? <Text style={styles.missing}>{missingLabel}</Text> : null}
             <Button
               label={submitLabel}
               onPress={onSubmit}
@@ -72,6 +71,7 @@ export function FormSheetScaffold({
               disabled={submitDisabled}
               size="lg"
             />
+            {missingLabel ? <Text style={styles.missing}>{missingLabel}</Text> : null}
           </View>
         </>
       }

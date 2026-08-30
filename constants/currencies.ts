@@ -71,3 +71,15 @@ export function currencyPluralName(code: string | null | undefined) {
   if (!normalized) return "";
   return CURRENCY_PLURALS[normalized] ?? normalized;
 }
+
+/**
+ * El plural con mayúscula inicial, para filas y títulos: "Soles", "Dólares".
+ *
+ * En una fila de formulario el código ISO no se lee: "PEN" es para el backend, no para quien
+ * abre una cuenta.
+ */
+export function currencyPluralTitle(code: string | null | undefined) {
+  const plural = currencyPluralName(code);
+  if (!plural) return "";
+  return plural.charAt(0).toUpperCase() + plural.slice(1);
+}
