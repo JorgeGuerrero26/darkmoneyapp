@@ -1199,11 +1199,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
           />
         ) : null}
         <CategorySuggestionBlock
-          loading={aiCategorySuggestionLoading}
-          attempted={aiCategorySuggestionAttempted}
           suggestion={categorySuggestion ? { categoryName: categorySuggestion.categoryName, detail: categorySuggestion.detail } : null}
-          hasLocalSuggestion={Boolean(localCategorySuggestion)}
-          errored={aiCategorySuggestionOutcome === "error"}
           onApply={() => categorySuggestion && void applyCategorySuggestion(categorySuggestion)}
         />
         </>
@@ -1223,7 +1219,6 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
         {!isTransfer && (
         <>
         <DescriptionCleanupBlock
-          loading={descriptionCleanupLoading}
           cleanup={descriptionCleanup}
           onApply={(cleaned) => {
             setCleanupAppliedText(cleaned);
@@ -1231,21 +1226,17 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
           }}
         />
         <CounterpartySuggestionBlock
-          loading={counterpartySuggestionLoading}
-          attempted={counterpartySuggestionAttempted}
           hasSelectedCounterparty={Boolean(selectedCounterparty)}
           suggestion={counterpartySuggestion}
           onApply={(sug) => void applyCounterpartySuggestion(sug)}
         />
         <RecurringSuggestionBlock
-          loading={recurringSuggestionLoading}
-          attempted={recurringSuggestionAttempted}
           alreadyLinked={Boolean(linkedSubscriptionId || linkedRecurringIncomeId)}
           suggestion={recurringSuggestion}
           onApply={(sug) => void applyRecurringSuggestion(sug)}
         />
-        <RiskBlock loading={movementRiskLoading} risk={movementRisk} />
-        <BudgetBlock loading={budgetImpactLoading} impact={budgetImpact} />
+        <RiskBlock risk={movementRisk} />
+        <BudgetBlock impact={budgetImpact} />
         </>
         )}
 
