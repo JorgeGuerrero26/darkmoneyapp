@@ -390,6 +390,14 @@ export type ObligationSummary = {
   dueDate: string | null;
   installmentAmount?: number | null;
   installmentCount?: number | null;
+  /**
+   * El plan de pagos, cuando lo hay. Ver `features/obligations/lib/payment-plan.ts`.
+   *
+   * Sustituye a `installmentAmount`/`installmentCount`, que eran dos campos libres capaces de
+   * contradecirse. Se guarda sin tipar aquí para no atar `types/domain` a la feature; quien lo
+   * lee lo pasa por `parsePaymentPlan`.
+   */
+  paymentPlan?: unknown;
   interestRate?: number | null;
   description?: string | null;
   notes?: string | null;

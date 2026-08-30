@@ -445,6 +445,8 @@ export type ObligationSummaryRow = {
   due_date: string | null;
   installment_amount: NumericLike;
   installment_count: number | null;
+  /** Plan de pagos serializado. Ver `features/obligations/lib/payment-plan.ts`. */
+  payment_plan?: unknown;
   interest_rate: NumericLike;
   description: string | null;
   notes: string | null;

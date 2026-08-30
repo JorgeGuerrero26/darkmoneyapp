@@ -394,6 +394,7 @@ function obligationRowFromUnknown(o: Record<string, unknown>): ObligationSummary
   copyIfMissing(o, "due_date", "dueDate");
   copyIfMissing(o, "installment_amount", "installmentAmount");
   copyIfMissing(o, "installment_count", "installmentCount");
+  copyIfMissing(o, "payment_plan", "paymentPlan");
   copyIfMissing(o, "interest_rate", "interestRate");
   copyIfMissing(o, "payment_count", "paymentCount");
   copyIfMissing(o, "last_payment_date", "lastPaymentDate");
@@ -427,6 +428,7 @@ function obligationRowFromUnknown(o: Record<string, unknown>): ObligationSummary
     due_date: o.due_date != null ? String(o.due_date) : null,
     installment_amount: (o.installment_amount as NumericLike) ?? null,
     installment_count: o.installment_count != null ? Number(o.installment_count) : null,
+    payment_plan: o.payment_plan ?? null,
     interest_rate: (o.interest_rate as NumericLike) ?? null,
     description: o.description != null ? String(o.description) : null,
     notes: o.notes != null ? String(o.notes) : null,
@@ -1504,6 +1506,7 @@ export function mapObligation(
     dueDate: row.due_date,
     installmentAmount: row.installment_amount ? toNum(row.installment_amount) : null,
     installmentCount: row.installment_count,
+    paymentPlan: row.payment_plan ?? null,
     interestRate: row.interest_rate ? toNum(row.interest_rate) : null,
     description: row.description,
     notes: row.notes,
@@ -2131,6 +2134,8 @@ export type ObligationFormInput = {
   dueDate?: string | null;
   installmentAmount?: number | null;
   installmentCount?: number | null;
+  /** Plan de pagos serializado. Ver `features/obligations/lib/payment-plan.ts`. */
+  paymentPlan?: unknown;
   interestRate?: number | null;
   description?: string | null;
   notes?: string | null;
@@ -2215,6 +2220,7 @@ export function useCreateObligationMutation(workspaceId: number | null) {
           start_date: input.startDate,
           due_date: input.dueDate ?? null,
           installment_amount: input.installmentAmount ?? null,
+          payment_plan: input.paymentPlan ?? null,
           installment_count: input.installmentCount ?? null,
           interest_rate: input.interestRate ?? null,
           description: input.description ?? null,
@@ -2289,6 +2295,7 @@ export function useUpdateObligationMutation(workspaceId: number | null) {
       if (input.settlementAccountId !== undefined) payload.settlement_account_id = input.settlementAccountId;
       if (input.dueDate !== undefined) payload.due_date = input.dueDate;
       if (input.installmentAmount !== undefined) payload.installment_amount = input.installmentAmount;
+      if (input.paymentPlan !== undefined) payload.payment_plan = input.paymentPlan ?? null;
       if (input.installmentCount !== undefined) payload.installment_count = input.installmentCount;
       if (input.interestRate !== undefined) payload.interest_rate = input.interestRate;
       if (input.description !== undefined) payload.description = input.description;
