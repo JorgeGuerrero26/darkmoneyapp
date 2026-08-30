@@ -95,3 +95,24 @@ eran sus únicos consumidores.
 - **Los interruptores del resto de la app siguen en menta.** El mismo `trackColor` está en
   doce sitios más (Configuración, Presupuestos, Suscripciones, Detección). La revisión mira
   esta pantalla; el barrido se hace cuando se pida, de una vez y con su propia validación.
+
+---
+
+## 4. El hueco entre el último campo y el botón (29 ago)
+
+Reportado sobre el paso de monto: entre "Estado" y "Guardar" quedaba un vacío de unos 70 px.
+
+**Causa.** La barra del pie se pintaba como capa absoluta pegada al borde de la **pantalla**,
+así que cada formulario tenía que dejar un hueco al final de su contenido para que la barra no
+lo tapara. Ese hueco es un número a ojo —72, 88, 96, 140— y el sheet, que mide por contenido,
+lo suma a su alto: si sobra, se ve el vacío; si falta, la barra come el final de la lista.
+
+Y colgando del borde de la pantalla, con el teclado abierto la barra se quedaba **detrás** del
+teclado: en el paso de detalles no había ningún botón a la vista.
+
+**Arreglo.** `BottomSheet` gana `footer`: la barra es **hermana del scroll dentro del sheet**.
+El sheet mide contenido + barra, el scroll se encoge solo, la barra sube con el sheet cuando
+entra el teclado, y los cuatro huecos a ojo desaparecen. El respiro de abajo lo pone el sheet,
+que ya conoce el safe area.
+
+Alcanza a los dos pasos del movimiento y a los siete formularios de `FormSheetScaffold`.

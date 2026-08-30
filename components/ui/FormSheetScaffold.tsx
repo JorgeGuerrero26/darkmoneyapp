@@ -59,21 +59,19 @@ export function FormSheetScaffold({
       title={title}
       snapHeight={snapHeight}
       scrollRef={scrollRef}
-      overlay={
-        <>
-          {overlay}
-          {/* Fuera del ScrollView: es lo único que no debe desplazarse. */}
-          <View style={styles.submitBar}>
-            <Button
-              label={submitLabel}
-              onPress={onSubmit}
-              loading={submitLoading}
-              disabled={submitDisabled}
-              size="lg"
-            />
-            {missingLabel ? <Text style={styles.missing}>{missingLabel}</Text> : null}
-          </View>
-        </>
+      overlay={overlay}
+      // Fuera del ScrollView: es lo único que no debe desplazarse.
+      footer={
+        <View style={styles.submitBar}>
+          <Button
+            label={submitLabel}
+            onPress={onSubmit}
+            loading={submitLoading}
+            disabled={submitDisabled}
+            size="lg"
+          />
+          {missingLabel ? <Text style={styles.missing}>{missingLabel}</Text> : null}
+        </View>
       }
     >
       <View style={[styles.root, contentStyle]}>
@@ -86,8 +84,6 @@ export function FormSheetScaffold({
         ) : null}
         {children}
         {footer}
-        {/* Deja sitio a la barra fija para que no tape el último campo. */}
-        <View style={styles.submitBarSpacer} />
       </View>
     </BottomSheet>
   );
@@ -115,15 +111,8 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   submitBar: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    zIndex: 10,
-    elevation: 10,
     paddingHorizontal: SPACING.xl,
     paddingTop: SPACING.md,
-    paddingBottom: SPACING.xl,
     gap: SPACING.xs,
     backgroundColor: SURFACE.sheet,
     borderTopWidth: StyleSheet.hairlineWidth,
@@ -135,5 +124,4 @@ const styles = StyleSheet.create({
     color: COLORS.storm,
     textAlign: "center",
   },
-  submitBarSpacer: { height: 96 },
 });

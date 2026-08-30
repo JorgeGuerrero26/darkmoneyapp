@@ -1113,12 +1113,9 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
       onClose={handleClose}
       title={stepTitle}
       snapHeight={0.85}
-      // Dentro del sheet y no como hermano: iOS solo presenta un Modal a la vez y el diálogo
-      // no llegaba a aparecer, dejando el formulario sin poder cerrarse (reportado 2026-08-13).
-      overlay={
-        <>
-        {/* Regla 3 de la plantilla: barra fija al pie. Antes el botón solo aparecía al
-            desplazarse hasta el final, así que en la primera pantalla no había ninguno. */}
+      /* Regla 3 de la plantilla: barra fija al pie. Antes el botón solo aparecía al
+         desplazarse hasta el final, así que en la primera pantalla no había ninguno. */
+      footer={
         <View style={styles.submitBar}>
           <View style={styles.submitRow}>
             {step === 2 ? (
@@ -1152,6 +1149,11 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
             </TouchableOpacity>
           ) : null}
         </View>
+      }
+      // Dentro del sheet y no como hermano: iOS solo presenta un Modal a la vez y el diálogo
+      // no llegaba a aparecer, dejando el formulario sin poder cerrarse (reportado 2026-08-13).
+      overlay={
+        <>
         <SearchableSelectSheet
           inline
           visible={categoryPickerOpen}
@@ -1416,16 +1418,9 @@ const OLD_STEP_LABELS: { step: Step; label: string }[] = [
 
 const styles = StyleSheet.create({
   submitBar: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    zIndex: 10,
-    elevation: 10,
     gap: SPACING.xs,
     paddingHorizontal: SPACING.xl,
     paddingTop: SPACING.md,
-    paddingBottom: SPACING.xl,
     backgroundColor: SURFACE.sheet,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: SURFACE.separator,

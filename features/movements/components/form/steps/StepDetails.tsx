@@ -355,7 +355,6 @@ export const StepDetails = memo(function StepDetails({
 
       {/* Los botones viven en la barra anclada del formulario: aquí solo aparecían al llegar
           al final del desplazamiento. */}
-      <View style={styles.footerSpacer} />
     </View>
   );
 });
@@ -409,5 +408,4 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.sm,
     color: COLORS.danger,
   },
-  footerSpacer: { height: 88 },
 });

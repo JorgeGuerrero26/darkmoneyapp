@@ -40,6 +40,19 @@ type Props = {
    * contenido ni lo recorte. Usar con `<ConfirmDialog inline />`.
    */
   overlay?: React.ReactNode;
+  /**
+   * Barra fija al pie, **hermana** del scroll dentro del sheet.
+   *
+   * Antes cada formulario la pintaba como capa absoluta al fondo de la pantalla, y eso pedía
+   * dejar un hueco al final del contenido para que la barra no lo tapara. El hueco es un
+   * número a ojo: si sobra, se ve un vacío entre el último campo y el botón; si falta, la
+   * barra come el final de la lista. Y con el teclado abierto la capa se quedaba **detrás**
+   * del teclado, porque colgaba del borde de la pantalla y no del sheet.
+   *
+   * Como hermana, el sheet mide contenido + barra, el scroll se encoge solo y la barra sube
+   * con el sheet cuando entra el teclado.
+   */
+  footer?: React.ReactNode;
 };
 
 export function BottomSheet({
@@ -52,6 +65,7 @@ export function BottomSheet({
   backdropColor = "rgba(0,0,0,0.45)",
   blurBackdrop = true,
   overlay,
+  footer,
 }: Props) {
   const insets = useSafeAreaInsets();
   const translateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
@@ -226,10 +240,14 @@ export function BottomSheet({
           ref={scrollRef as React.RefObject<ScrollView> | undefined}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
+          // Se encoge para dejar sitio a la barra: sin esto el scroll empuja el pie fuera del
+          // alto máximo del sheet.
+          style={styles.scroll}
           contentContainerStyle={styles.content}
         >
           {children}
         </ScrollView>
+        {footer}
       </Animated.View>
       </View>
 
@@ -302,5 +320,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  scroll: { flexShrink: 1 },
   content: { padding: SPACING.lg, gap: SPACING.md },
 });

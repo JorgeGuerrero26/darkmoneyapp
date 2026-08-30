@@ -362,8 +362,7 @@ export const StepAccountsAndAmounts = memo(function StepAccountsAndAmounts({
 
       {/* El enlace a detalles vive DEBAJO del botón Guardar, en la barra fija: aquí abajo el
           orden de lectura era "detalles primero, guardar después", al revés de lo que este
-          paso decide. Deja sitio a esa barra para que no tape el final de la lista. */}
-      <View style={styles.footerSpacer} />
+          paso decide. */}
     </View>
   );
 });
@@ -451,6 +450,4 @@ const styles = StyleSheet.create({
     fontFamily: FONT_FAMILY.body,
     lineHeight: 17,
   },
-  // La barra fija lleva ahora el botón Y el enlace a detalles, así que ocupa más alto.
-  footerSpacer: { height: 140 },
 });
