@@ -35,6 +35,7 @@ import type { ObligationSummary, SharedObligationSummary } from "../../types/dom
 import { BottomSheet } from "../ui/BottomSheet";
 import { ArrowDown, ArrowUp } from "lucide-react-native";
 import { FormOptionRow } from "../ui/FormOptionRow";
+import { ObligationCreatedSheet } from "../../features/obligations/components/ObligationCreatedSheet";
 import { ObligationDetailsSheet } from "../../features/obligations/components/ObligationDetailsSheet";
 import { PaymentPlanSheet } from "../../features/obligations/components/PaymentPlanSheet";
 import {
@@ -193,6 +194,13 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
   const [planOpen, setPlanOpen] = useState(false);
   const [originOpen, setOriginOpen] = useState(false);
   const [startDateOpen, setStartDateOpen] = useState(false);
+  /** La obligación recién creada, mientras se ofrece invitar. */
+  const [createdObligation, setCreatedObligation] = useState<{
+    id: number;
+    title: string;
+    summary: string;
+    counterpartyName: string;
+  } | null>(null);
   const [interestRate, setInterestRate] = useState("");
   const [description, setDescription] = useState("");
   const [notes, setNotes] = useState("");
@@ -342,6 +350,13 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
   }
 
   function handleClose() {
+    // Con la obligación ya creada, cerrar el sheet es irse sin invitar: no hay nada que descartar.
+    if (createdObligation) {
+      setCreatedObligation(null);
+      onSuccess?.();
+      onClose();
+      return;
+    }
     const isDirty = isEditing
       ? (title !== (editObligation?.title ?? "") ||
          counterpartyId !== (editObligation?.counterpartyId ?? null) ||
@@ -525,6 +540,25 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
         } else {
           showToast("Obligación creada", "success");
         }
+        submitDedupeKeyRef.current = null; // éxito → rotar la clave para el próximo registro
+        haptics.success();
+        // La obligación YA está guardada: invitar es una acción posterior y opcional. Si no hay
+        // a quién invitar, no hay nada que ofrecer.
+        if (counterpartyName) {
+          setCreatedObligation({
+            id: created.id,
+            title: title.trim(),
+            summary: [
+              formatCurrency(principalNumber, currencyCode),
+              planLabel ?? null,
+            ].filter(Boolean).join(" · "),
+            counterpartyName,
+          });
+          return;
+        }
+        onSuccess?.();
+        onClose();
+        return;
       }
       submitDedupeKeyRef.current = null; // éxito → rotar la clave para el próximo registro
       haptics.success();
@@ -657,6 +691,42 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
         // Dentro del sheet: iOS solo presenta un Modal a la vez y como hermanos no aparecían.
         overlay={
           <>
+            <ObligationCreatedSheet
+              visible={Boolean(createdObligation)}
+              title={createdObligation?.title ?? ""}
+              summary={createdObligation?.summary ?? ""}
+              counterpartyName={createdObligation?.counterpartyName ?? ""}
+              email={shareEmail}
+              onChangeEmail={setShareEmail}
+              message={shareMessage}
+              onChangeMessage={setShareMessage}
+              sending={shareMutation.isPending}
+              onSend={async () => {
+                if (!createdObligation || !activeWorkspaceId) return;
+                try {
+                  const r = await shareMutation.mutateAsync({
+                    workspaceId: activeWorkspaceId,
+                    obligationId: createdObligation.id,
+                    invitedEmail: shareEmail.trim().toLowerCase(),
+                    message: shareMessage.trim() || null,
+                  });
+                  showToast(
+                    r.emailSent ? `Invitación enviada a ${r.invitedEmail}` : "Invitación registrada",
+                    "success",
+                  );
+                  setCreatedObligation(null);
+                  onSuccess?.();
+                  onClose();
+                } catch (err: unknown) {
+                  showToast(humanizeError(err), "error");
+                }
+              }}
+              onDismiss={() => {
+                setCreatedObligation(null);
+                onSuccess?.();
+                onClose();
+              }}
+            />
             {/* Las hojas van primero: los selectores que se abren DESDE ellas se pintan después
                 y quedan por encima. */}
             <ObligationDetailsSheet

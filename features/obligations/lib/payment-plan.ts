@@ -199,3 +199,87 @@ export function parsePaymentPlan(raw: unknown): PaymentPlan | null {
   }
   return null;
 }
+
+/** Un pago real, tal como quedó registrado. */
+export type ActualPayment = { amount: number; date: string };
+
+export type ReconciledPayment = ScheduledPayment & {
+  /** Lo que se pagó contra este pago del plan, si ya se pagó. */
+  paid: number | null;
+  paidDate: string | null;
+  /** `paid - amount` cuando difieren. `null` si coinciden o si aún no se pagó. */
+  deviation: number | null;
+  /**
+   * El monto que este pago tenía antes de absorber la desviación acumulada.
+   *
+   * Solo lo lleva el último pago calculado: "Cierra el saldo · era 50.00".
+   */
+  adjustedFrom: number | null;
+};
+
+/**
+ * Cruza el plan con los pagos que de verdad entraron.
+ *
+ * **El plan queda fijo** (decisión del 2026-08-30): si alguien paga S/ 320 donde el acuerdo decía
+ * 300, los S/ 20 de más NO se reparten ni corrigen los pagos siguientes —son montos pactados con
+ * otra persona—. Bajan al **último pago calculado**, que es el que ya existía para absorber el
+ * saldo. Si paga de menos, ese pago final sube.
+ *
+ * Cuando todos los pagos son acordados no hay dónde absorber la diferencia: el plan se queda como
+ * está y la diferencia se ve en el saldo, no reescribiendo lo que dos personas pactaron.
+ */
+export function reconcilePlan({
+  plan,
+  principal,
+  startDate,
+  payments,
+}: {
+  plan: PaymentPlan;
+  principal: number;
+  startDate: string;
+  payments: readonly ActualPayment[];
+}): ReconciledPayment[] {
+  const scheduled = expandPaymentPlan({ plan, principal, startDate });
+  const ordered = [...payments].sort((a, b) => a.date.localeCompare(b.date));
+
+  const rows: ReconciledPayment[] = scheduled.map((payment, index) => {
+    const actual = ordered[index] ?? null;
+    const deviationCents = actual ? toCents(actual.amount) - toCents(payment.amount) : 0;
+    return {
+      ...payment,
+      paid: actual ? actual.amount : null,
+      paidDate: actual ? actual.date : null,
+      deviation: actual && deviationCents !== 0 ? fromCents(deviationCents) : null,
+      adjustedFrom: null,
+    };
+  });
+
+  // La desviación acumulada de lo ya pagado baja al último pago calculado que siga pendiente.
+  const netDeviationCents = rows.reduce(
+    (sum, row) => sum + (row.paid != null ? toCents(row.paid) - toCents(row.amount) : 0),
+    0,
+  );
+  if (netDeviationCents === 0) return rows;
+
+  const absorberIndex = rows.reduce(
+    (found, row, index) => (row.source === "calculated" && row.paid == null ? index : found),
+    -1,
+  );
+  if (absorberIndex < 0) return rows;
+
+  const absorber = rows[absorberIndex];
+  const adjustedCents = toCents(absorber.amount) - netDeviationCents;
+  rows[absorberIndex] = {
+    ...absorber,
+    amount: fromCents(Math.max(0, adjustedCents)),
+    adjustedFrom: absorber.amount,
+  };
+  return rows;
+}
+
+/** Lo que falta por cobrar o pagar según el plan cruzado con lo real. */
+export function remainingFromPlan(rows: readonly ReconciledPayment[]) {
+  return fromCents(
+    rows.reduce((sum, row) => (row.paid == null ? sum + toCents(row.amount) : sum), 0),
+  );
+}

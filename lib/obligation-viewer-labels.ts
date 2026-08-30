@@ -95,11 +95,19 @@ export function obligationProgressPaidAdjective(
 }
 
 /** Badge principal bajo el monto pendiente. */
+/**
+ * Lo que rotula la cifra grande del detalle.
+ *
+ * "Por cobrar" y "por pagar" son términos de contabilidad y describen la deuda, no lo que el
+ * usuario viene a preguntar. La cifra grande es **lo que falta**, así que se dice así.
+ */
 export function obligationPendingDirectionBadge(
   direction: ObligationDirection,
   isSharedViewer: boolean,
 ): string {
-  return obligationViewerActsAsCollector(direction, isSharedViewer) ? "Por cobrar" : "Por pagar";
+  return obligationViewerActsAsCollector(direction, isSharedViewer)
+    ? "Falta que te paguen"
+    : "Falta que pagues";
 }
 
 export function obligationRegisterMoneyActionTitle(

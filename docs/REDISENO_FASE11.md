@@ -130,3 +130,42 @@ campos que el usuario pueda contradecir.
   ningún mockup todavía. Mientras tanto se invita desde Editar, que es donde ya vivía.
 - **Comparar los pagos reales contra el plan.** El plan queda fijo por decisión, pero enseñar
   "pagó S/ 320 donde decía S/ 300" es una pantalla de detalle que esta revisión no dibuja.
+
+---
+
+## 7. Revisión 12 — los dos huecos, cerrados (30 ago)
+
+Los dos pendientes de la sección 6 ya tienen mockup: `AA · CREADA, E INVITAR` y `AB · PLAN
+CONTRA LO PAGADO`.
+
+### [x] Invitar después de crear, con el correo a la vista
+Lo que la hace distinta de la tarjeta que se retiró del formulario: **la obligación ya está
+guardada**, y eso se dice en la primera línea. El usuario puede irse por "Ver la obligación" sin
+invitar a nadie y no pierde nada; antes el mismo botón guardaba y mandaba un correo a la vez.
+"Nada se envía hasta que toques Enviar invitación" es la frase que hacía falta, y que la letra
+chica anterior decía al revés.
+
+El botón arranca apagado porque el correo está vacío. No hay pantalla de "¡Listo!" con palomita:
+el título ya dice "Obligación creada" y debajo están el nombre y el monto. El rótulo va en gris
+—no en menta—: sobre una obligación por cobrar, un verde se lee como plata que entró.
+
+### [x] Dos columnas: lo acordado y lo pagado
+Cada fila lleva las dos cifras: el plan en gris pequeño y lo que entró en hueso grande. Cuando
+coinciden la repetición no molesta; cuando no —300 acordado, 320 pagado— **la diferencia salta
+sin pintar nada de rojo ni de verde**. No hace falta color para mostrar una discrepancia si están
+los dos números juntos.
+
+### [x] El excedente cae en la cuota calculada, no en las acordadas
+Es lo que implica en pantalla la decisión de plan fijo. Los S/ 20 de más no corrigen diciembre y
+enero, que son montos pactados con otra persona: bajan a febrero, que era la cuota calculada y ya
+existía para absorber el saldo. Febrero pasa de 50 a 30 y la fila dice "era 50.00". Si paga de
+menos, el faltante sube a esa misma cuota final.
+
+La línea de explicación aparece **solo en la fila que se desvió**, no como aviso general. Y
+cuando el plan no tiene ninguna cuota calculada no hay dónde absorber: el plan se queda como
+está y la diferencia se ve en el saldo, en vez de reescribir lo que dos personas pactaron.
+
+### [x] "Falta que te paguen", no "saldo pendiente"
+La cifra grande es lo que falta —la pregunta con la que uno abre la pantalla—, y va en hueso. El
+total original baja a la línea de progreso: "Pagado S/ 570.00 de S/ 1,000.00 · 3 de 6 pagos", que
+es el único sitio donde la barra menta significa lo que debe significar.

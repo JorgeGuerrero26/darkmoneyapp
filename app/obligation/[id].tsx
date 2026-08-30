@@ -101,6 +101,7 @@ import { ViewerLinkAccountSheet } from "../../features/obligations/components/de
 import { OwnerRespondPaymentRequestSheet } from "../../features/obligations/components/detail/OwnerRespondPaymentRequestSheet";
 import { ObligationOverviewCards } from "../../features/obligations/components/detail/ObligationOverviewCards";
 import { ObligationDetailInfoCard } from "../../features/obligations/components/detail/ObligationDetailInfoCard";
+import { PlanVsPaymentsCard } from "../../features/obligations/components/detail/PlanVsPaymentsCard";
 import { OwnerRespondDeleteRequestSheet } from "../../features/obligations/components/detail/OwnerRespondDeleteRequestSheet";
 import { OwnerRespondEditRequestSheet } from "../../features/obligations/components/detail/OwnerRespondEditRequestSheet";
 import { ObligationDetailHeaderActions } from "../../features/obligations/components/detail/ObligationDetailHeaderActions";
@@ -1111,6 +1112,9 @@ function ObligationDetailScreen() {
           />
 
           <ObligationDetailInfoCard styles={styles} obligation={obligation} />
+
+          {/* El plan contra lo que de verdad entró. Solo aparece si la obligación tiene plan. */}
+          <PlanVsPaymentsCard obligation={obligation} />
 
           {isSharedViewer ? (
             <ViewerActivityTabs

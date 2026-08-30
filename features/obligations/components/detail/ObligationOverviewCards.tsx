@@ -10,6 +10,7 @@ import { Minus, Pencil, Plus } from "lucide-react-native";
 
 import { Card } from "../../../../components/ui/Card";
 import { ProgressBar } from "../../../../components/ui/ProgressBar";
+import { expandPaymentPlan, parsePaymentPlan } from "../../lib/payment-plan";
 import { formatCurrency } from "../../../../components/ui/AmountDisplay";
 import { COLORS } from "../../../../constants/theme";
 import {
@@ -58,6 +59,8 @@ export type ObligationOverviewCardsStyles = {
   detailActionDangerText: StyleProp<TextStyle>;
 };
 
+const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+
 type CapitalOverview = {
   openingAmount: number;
   increaseTotal: number;
@@ -95,6 +98,20 @@ export function ObligationOverviewCards({
   onPressCapitalIncreaseDetail,
   onPressCapitalDecreaseDetail,
 }: Props) {
+  /** "3 de 6 pagos", cuando la obligación tiene plan. */
+  const planProgressLabel = (() => {
+    const plan = parsePaymentPlan(obligation.paymentPlan);
+    if (!plan) return null;
+    const scheduled = expandPaymentPlan({
+      plan,
+      principal: obligation.principalAmount,
+      startDate: obligation.startDate,
+    });
+    if (scheduled.length === 0) return null;
+    const paid = obligation.events.filter((event) => event.eventType === "payment").length;
+    return `${Math.min(paid, scheduled.length)} de ${scheduled.length} pagos`;
+  })();
+
   return (
     <>
       <Card style={styles.heroCard}>
@@ -102,17 +119,23 @@ export function ObligationOverviewCards({
           {directionPerspectiveLabel}
         </Text>
         <Text style={styles.counterparty}>{obligation.counterparty || "Sin contacto"}</Text>
-        <Text style={[styles.pendingAmount, { color: dirColor }]}>
-          {formatCurrency(obligation.pendingAmount, obligation.currencyCode)}
-        </Text>
+        {/* La cifra grande es lo que FALTA, que es la pregunta con la que uno abre esta
+            pantalla — no lo prestado. Y va en hueso: la barra de abajo es el único sitio donde
+            la menta significa lo que debe significar, plata que entró. */}
         <Text style={styles.pendingLabel}>
-          {obligationPendingDirectionBadge(obligation.direction, isSharedViewer).toLowerCase()}
+          {obligationPendingDirectionBadge(obligation.direction, isSharedViewer)}
+        </Text>
+        <Text style={styles.pendingAmount}>
+          {formatCurrency(obligation.pendingAmount, obligation.currencyCode)}
         </Text>
         <ProgressBar percent={capitalOverview.progressPercent} alertPercent={100} style={styles.progress} />
         <Text style={styles.progressLabel}>
-          {Math.round(capitalOverview.progressPercent)}%{" "}
-          {obligationProgressPaidAdjective(obligation.direction, isSharedViewer)} sobre un capital vigente de{" "}
-          {formatCurrency(capitalOverview.currentPrincipal, obligation.currencyCode)}
+          {capitalize(obligationProgressPaidAdjective(obligation.direction, isSharedViewer))}{" "}
+          {formatCurrency(
+            Math.max(0, capitalOverview.currentPrincipal - obligation.pendingAmount),
+            obligation.currencyCode,
+          )} de {formatCurrency(capitalOverview.currentPrincipal, obligation.currencyCode)}
+          {planProgressLabel ? ` · ${planProgressLabel}` : ""}
         </Text>
       </Card>
 

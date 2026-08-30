@@ -6,6 +6,8 @@ import {
   parsePaymentPlan,
   planDifference,
   planTotal,
+  reconcilePlan,
+  remainingFromPlan,
 } from "../payment-plan";
 
 const START = "2026-08-30";
@@ -163,5 +165,78 @@ describe("guardado y lectura", () => {
       agreed: [100, 150],
       tail: 200,
     });
+  });
+});
+
+/**
+ * El caso del mockup AB: sobre el plan de 100 / 150 / 300 y 200 de ahí en adelante, en noviembre
+ * pagaron 320 en vez de 300. El plan queda FIJO —diciembre y enero siguen en 200, que es lo que
+ * se pactó con otra persona— y los S/ 20 de más bajan a febrero, que era la cuota calculada y ya
+ * existía para absorber el saldo: pasa de 50.00 a 30.00.
+ */
+describe("el plan contra lo pagado", () => {
+  const plan = { mode: "custom", agreed: [100, 150, 300], tail: 200 } as const;
+  const pagos = [
+    { amount: 100, date: "2026-09-02" },
+    { amount: 150, date: "2026-10-03" },
+    { amount: 320, date: "2026-11-01" },
+  ];
+
+  it("cada fila lleva lo acordado y lo pagado", () => {
+    const rows = reconcilePlan({ plan, principal: 1000, startDate: START, payments: pagos });
+    expect(rows.slice(0, 3).map((row) => [row.amount, row.paid])).toEqual([
+      [100, 100], [150, 150], [300, 320],
+    ]);
+    expect(rows[2].deviation).toBe(20);
+    expect(rows[0].deviation).toBeNull();
+  });
+
+  it("el excedente cae en la cuota calculada, no en las acordadas", () => {
+    const rows = reconcilePlan({ plan, principal: 1000, startDate: START, payments: pagos });
+    expect(rows[3].amount).toBe(200); // diciembre, acordado por la cola: no se toca
+    expect(rows[4].amount).toBe(200); // enero
+    expect(rows[5].amount).toBe(30);  // febrero: 50 - 20
+    expect(rows[5].adjustedFrom).toBe(50);
+  });
+
+  it("si paga de menos, el faltante sube a la cuota final", () => {
+    const rows = reconcilePlan({
+      plan,
+      principal: 1000,
+      startDate: START,
+      payments: [{ amount: 100, date: "2026-09-02" }, { amount: 120, date: "2026-10-03" }],
+    });
+    expect(rows[1].deviation).toBe(-30);
+    expect(rows[5].amount).toBe(80); // 50 + 30
+    expect(rows[5].adjustedFrom).toBe(50);
+  });
+
+  it("sin desviación no se toca nada", () => {
+    const rows = reconcilePlan({
+      plan,
+      principal: 1000,
+      startDate: START,
+      payments: [{ amount: 100, date: "2026-09-02" }],
+    });
+    expect(rows.every((row) => row.adjustedFrom === null)).toBe(true);
+    expect(rows[5].amount).toBe(50);
+  });
+
+  it("cuando todo es acordado no hay dónde absorber: el plan no se reescribe", () => {
+    const rows = reconcilePlan({
+      plan: { mode: "custom", agreed: [400, 600], tail: null },
+      principal: 1000,
+      startDate: START,
+      payments: [{ amount: 450, date: "2026-09-02" }],
+    });
+    expect(rows[0].deviation).toBe(50);
+    expect(rows[1].amount).toBe(600);
+    expect(rows.every((row) => row.adjustedFrom === null)).toBe(true);
+  });
+
+  it("lo que falta es la suma de lo que no se ha pagado", () => {
+    const rows = reconcilePlan({ plan, principal: 1000, startDate: START, payments: pagos });
+    // 200 + 200 + 30
+    expect(remainingFromPlan(rows)).toBe(430);
   });
 });
