@@ -12,7 +12,7 @@ import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { parseDisplayDate } from "../../lib/date";
 import { formatCurrency } from "../ui/AmountDisplay";
-import { TrendingUp, TrendingDown, Share2, Eye, AlertCircle } from "lucide-react-native";
+import { Share2, Eye, AlertCircle } from "lucide-react-native";
 
 import { useWorkspace } from "../../lib/workspace-context";
 import { useAuth } from "../../lib/auth-context";
@@ -1037,33 +1037,20 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
             <Text style={styles.shareHint}>Cargando estado de compartición…</Text>
           ) : activeShare?.status === "accepted" ? (
             <>
-              <View style={styles.shareStatusBadge}>
-                <Text style={styles.shareStatusBadgeText}>
-                  Ya compartido con{" "}
-                  {activeShare.invitedDisplayName || activeShare.invitedEmail}
-                </Text>
+              {/* Con quién está compartida es un estado, y estaba dibujado como una cápsula en
+                  menta —el color de la plata que entra— con forma de botón. Es una fila más del
+                  grupo, y al tocarla se cambia el correo. */}
+              <View style={styles.group}>
+                <FormOptionRow
+                  grouped
+                  last
+                  label="Compartido con"
+                  value={activeShare.invitedDisplayName || activeShare.invitedEmail}
+                  support="Cambiar correo"
+                  onPress={() => setReassignExpanded((open) => !open)}
+                />
               </View>
-              {!reassignExpanded ? (
-                <View style={styles.shareActionRow}>
-                  <TouchableOpacity
-                    style={styles.reassignBtn}
-                    onPress={() => setReassignExpanded(true)}
-                    activeOpacity={0.85}
-                  >
-                    <Text style={styles.reassignBtnText}>Reasignar / cambiar correo</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.reassignBtn, styles.unlinkShareBtn]}
-                    onPress={() => setUnlinkShareConfirmVisible(true)}
-                    activeOpacity={0.85}
-                    disabled={unlinkShareMutation.isPending}
-                  >
-                    <Text style={[styles.reassignBtnText, styles.unlinkShareBtnText]}>
-                      {unlinkShareMutation.isPending ? "Desvinculando..." : "Desvincular acceso"}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              ) : (
+              {reassignExpanded ? (
                 <>
                   <Text style={styles.shareHint}>
                     Un solo acceso activo a la vez. Enviar con otro correo reasigna al nuevo destinatario.
@@ -1095,18 +1082,34 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
                     style={styles.shareBtn}
                   />
                 </>
-              )}
+              ) : null}
+              {/* Quitarle el acceso a alguien y cambiarle el correo tenían el mismo peso, uno al
+                  lado del otro. La destructiva baja al final, en texto, separada del resto. */}
+              <TouchableOpacity
+                style={styles.unlinkLink}
+                onPress={() => setUnlinkShareConfirmVisible(true)}
+                activeOpacity={0.7}
+                disabled={unlinkShareMutation.isPending}
+              >
+                <Text style={styles.unlinkLinkText}>
+                  {unlinkShareMutation.isPending ? "Desvinculando..." : "Desvincular acceso"}
+                </Text>
+              </TouchableOpacity>
             </>
           ) : activeShare?.status === "pending" ? (
             <>
-              <View style={[styles.shareStatusBadge, styles.shareStatusPending]}>
-                <Text style={styles.shareStatusBadgeText}>
-                  Invitación pendiente para {activeShare.invitedEmail}
-                </Text>
+              <View style={styles.group}>
+                <FormOptionRow
+                  grouped
+                  last
+                  label="Invitación enviada a"
+                  value={activeShare.invitedEmail}
+                  support="Cambiar correo o reenviar"
+                  onPress={() => setReassignExpanded((open) => !open)}
+                />
               </View>
-              <Text style={styles.shareHint}>
-                Cambia el correo para reasignar. El botón envía siempre que haya correo (como el diálogo Compartir en web).
-              </Text>
+              {reassignExpanded ? (
+                <>
               <Input
                 label="Email"
                 value={shareEmail}
@@ -1133,13 +1136,15 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
                 disabled={!shareEmail.trim()}
                 style={styles.shareBtn}
               />
+                </>
+              ) : null}
               <TouchableOpacity
-                style={[styles.reassignBtn, styles.unlinkShareBtn]}
+                style={styles.unlinkLink}
                 onPress={() => setUnlinkShareConfirmVisible(true)}
-                activeOpacity={0.85}
+                activeOpacity={0.7}
                 disabled={unlinkShareMutation.isPending}
               >
-                <Text style={[styles.reassignBtnText, styles.unlinkShareBtnText]}>
+                <Text style={styles.unlinkLinkText}>
                   {unlinkShareMutation.isPending ? "Cancelando..." : "Cancelar invitación"}
                 </Text>
               </TouchableOpacity>
@@ -1181,23 +1186,21 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
         </View>
       ) : null}
 
-      {/* Principal adjustment — solo dueño */}
+      {/* Subir y bajar el monto son una sola hoja con un conmutador desde la Revisión 15, así que
+          aquí son una sola fila: dos botones en menta y en rojo prometían dos formularios que ya
+          no existen, y el color decía "plata que entra / plata que sale" sobre una acción que
+          todavía no tiene monto. */}
       {isEditing && onAdjust && editObligation && isOwnerObligation(editObligation) ? (
-        <View style={styles.adjustRow}>
-          <TouchableOpacity
-            style={[styles.adjustBtn, styles.adjustBtnIncrease]}
+        <View style={styles.group}>
+          <FormOptionRow
+            grouped
+            last
+            muted
+            label="Ajustar monto"
+            value={null}
+            placeholder="Le debe más o menos"
             onPress={() => { onClose(); onAdjust(editObligation, "increase"); }}
-          >
-            <TrendingUp size={14} color={COLORS.income} strokeWidth={2} />
-            <Text style={[styles.adjustBtnText, { color: COLORS.income }]}>Agregar monto</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.adjustBtn, styles.adjustBtnDecrease]}
-            onPress={() => { onClose(); onAdjust(editObligation, "decrease"); }}
-          >
-            <TrendingDown size={14} color={COLORS.expense} strokeWidth={2} />
-            <Text style={[styles.adjustBtnText, { color: COLORS.expense }]}>Reducir monto</Text>
-          </TouchableOpacity>
+          />
         </View>
       ) : null}
     </BottomSheet>
@@ -1355,70 +1358,21 @@ const styles = StyleSheet.create({
     color: COLORS.ink,
     lineHeight: 20,
   },
-  shareStatusBadge: {
+  unlinkLink: {
     alignSelf: "flex-start",
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs + 2,
-    borderRadius: RADIUS.full,
-    backgroundColor: COLORS.income + "22",
-    borderWidth: 1,
-    borderColor: COLORS.income + "44",
-  },
-  shareStatusPending: {
-    backgroundColor: COLORS.storm + "18",
-    borderColor: SURFACE.cardBorder,
-  },
-  shareStatusBadgeText: {
-    fontFamily: FONT_FAMILY.bodyMedium,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.ink,
-  },
-  reassignBtn: {
     paddingVertical: SPACING.sm,
-    paddingHorizontal: SPACING.md,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: SURFACE.cardBorder,
-    backgroundColor: SURFACE.card,
-    alignSelf: "flex-start",
+    marginTop: SPACING.xs,
   },
-  shareActionRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: SPACING.sm,
-  },
-  unlinkShareBtn: {
-    borderColor: COLORS.expense + "44",
-    backgroundColor: COLORS.expense + "12",
-  },
-  reassignBtnText: {
-    fontFamily: FONT_FAMILY.bodySemibold,
+  unlinkLinkText: {
+    fontFamily: FONT_FAMILY.bodyMedium,
     fontSize: FONT_SIZE.sm,
-    color: COLORS.pine,
-  },
-  unlinkShareBtnText: {
-    color: COLORS.expense,
+    color: COLORS.danger,
   },
   shareMessageInput: {
     minHeight: 80,
     textAlignVertical: "top",
     paddingTop: SPACING.sm,
   },
-  adjustRow: { flexDirection: "row", gap: SPACING.sm, marginTop: SPACING.xs },
-  adjustBtn: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: SPACING.xs,
-    paddingVertical: SPACING.sm,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    backgroundColor: SURFACE.card,
-  },
-  adjustBtnIncrease: { borderColor: COLORS.income + "44" },
-  adjustBtnDecrease: { borderColor: COLORS.expense + "44" },
-  adjustBtnText: { fontSize: FONT_SIZE.xs, fontFamily: FONT_FAMILY.bodyMedium },
   submitErrorBanner: {
     flexDirection: "row",
     alignItems: "flex-start",
