@@ -61,6 +61,11 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Las sugerencias de la app ya no anuncian que están pensando ni te dicen que no encontraron nada: aparecen solo cuando hay algo que proponer, pegadas al campo que van a cambiar, y te dan la razón en palabras —\"Porque corregiste esto antes\"— en vez de un porcentaje que no sabías con qué comparar.",
       "En los detalles del movimiento, elegir categoría o contraparte ya no es una fila de botones que se corta por el borde: es una lista que se abre y se puede buscar.",
       "La fecha y la hora ahora se ven de un vistazo —\"Hoy, 14:50\"— y se abren solo si quieres cambiarlas.",
+      "Registrar un cobro ya no te pide un \"N° de cuota\": venía con un número puesto que casi nunca era el correcto. Y la pantalla te dice lo que vas a ver después —\"Entra a: Cuenta Principal\", \"Sumar a esa cuenta\"— en vez de hablarte de abonos y de contabilidad.",
+      "Subir y bajar lo que alguien te debe eran dos pantallas idénticas. Ahora es una sola, con un botón para elegir: \"Le debe más\" o \"Le debe menos\".",
+      "Al ajustar el monto ahora es obligatorio decir por qué —\"Canon M50\", \"préstamo\"—, porque es justo el texto que aparece en el estado de cuenta que le mandas a la otra persona. Antes era opcional, y por eso salían líneas en blanco en el PDF.",
+      "Las dos pantallas que abres desde una deuda ya muestran el mismo número: lo que te debe hoy. Antes una decía 21,020 y la otra 23,455 en el mismo sitio, y parecía que una de las dos estaba mal.",
+      "Cuando compartes una deuda, con quién la compartiste se lee como un dato más y no como un botón, y \"Desvincular acceso\" bajó al final, separado del resto, para que no se toque por error.",
     ],
   },
   {
