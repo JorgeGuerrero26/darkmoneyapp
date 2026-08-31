@@ -68,6 +68,9 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Cuando compartes una deuda, con quién la compartiste se lee como un dato más y no como un botón, y \"Desvincular acceso\" bajó al final, separado del resto, para que no se toque por error.",
       "En el plan de pagos a medida ahora se ve de qué mes habla cada cuota —\"Set 2026\", con el año— y de dónde sale la lista: el primer pago arranca en el mes actual y de ahí va uno por mes. Antes salía de la fecha en que abriste la deuda, así que un plan pactado hoy podía empezar con cuatro meses ya vencidos.",
       "Y los meses se pueden cambiar: tocas el mes de un pago y eliges otro. La app solo te ofrece los que no rompen el orden, así que no puedes poner marzo antes de enero.",
+      "El detalle de un movimiento entra en una pantalla: eran siete tarjetas para seis datos, y dos de ellas existían solo para decirte que estaban vacías. Ahora es una lista, y cada línea abre justo el campo que quieres corregir.",
+      "En ese detalle ves con cuánto quedó la cuenta debajo del monto —\"Cuenta Principal · queda S/ 33.64\"— y la hora a la que registraste el movimiento, que antes había que ir a buscar.",
+      "\"Anular\" ya no está pegado a \"Duplicar\" con el mismo tamaño: es la única de las tres que no se deshace con otro toque, así que bajó al final, separada.",
     ],
   },
   {
