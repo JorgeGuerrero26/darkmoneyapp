@@ -93,3 +93,87 @@ describe("buildObligationReport", () => {
     expect(report.fileName.endsWith(".pdf")).toBe(true);
   });
 });
+
+/**
+ * La revisión 14, sobre el PDF real: 21 movimientos en dos páginas.
+ *
+ * El corte caía dentro de la tabla y la segunda hoja arrancaba sin encabezado y sin decir en
+ * cuánto venía el saldo. Suelta, esa hoja no se puede leer.
+ */
+describe("el estado de cuenta en dos páginas", () => {
+  const manyEvents = [
+    { id: 1, eventType: "opening" as const, eventDate: "2026-03-15", amount: 7175 },
+    ...Array.from({ length: 20 }, (_, i) => ({
+      id: i + 2,
+      eventType: "principal_increase" as const,
+      eventDate: `2026-04-${String((i % 28) + 1).padStart(2, "0")}`,
+      amount: 100,
+      description: `Producto ${i + 1}`,
+    })),
+  ];
+
+  const result = buildObligationReport({
+    obligation: { ...baseObligation, principalAmount: 7175, pendingAmount: 9175 },
+    events: manyEvents,
+    ownerName: "Adrian",
+    generatedAt: new Date(2026, 7, 30, 20, 33),
+  });
+
+  it("reparte las filas en hojas y numera cada una", () => {
+    expect(result.html).toContain("página 1 de 2");
+    expect(result.html).toContain("página 2 de 2");
+  });
+
+  it("el corte dice el saldo arrastrado, y la hoja siguiente arranca con el mismo número", () => {
+    expect(result.html).toMatch(/Continúa en la página 2 · saldo arrastrado <strong>[^<]+<\/strong>/);
+    expect(result.html).toMatch(/Viene de la página 1 · saldo arrastrado <strong>[^<]+<\/strong>/);
+  });
+
+  it("cada hoja repite el encabezado de la tabla", () => {
+    const heads = result.html.split("<th>Fecha</th>").length - 1;
+    expect(heads).toBe(2);
+  });
+});
+
+/**
+ * "Aumento de capital" ocupaba trece veces la columna más visible mientras el producto —lo único
+ * que distingue una fila de otra— iba en letra chica. Y una fila sin concepto, en un documento
+ * que se le envía a un cliente, es una pregunta esperando.
+ */
+describe("la fila dice qué se vendió, no de qué tipo es el evento", () => {
+  const result = buildObligationReport({
+    obligation: { ...baseObligation, originType: "sale_financed", principalAmount: 1000, pendingAmount: 1650 },
+    events: [
+      { id: 1, eventType: "opening", eventDate: "2026-03-15", amount: 1000 },
+      { id: 2, eventType: "principal_increase", eventDate: "2026-04-06", amount: 650, description: "Monitor Asus 260 Hz" },
+      { id: 3, eventType: "principal_increase", eventDate: "2026-04-11", amount: 30 },
+      { id: 4, eventType: "payment", eventDate: "2026-04-30", amount: 30, installmentNo: 2 },
+    ],
+    ownerName: "Adrian",
+    generatedAt: new Date(2026, 7, 30, 20, 33),
+  });
+
+  it("el producto es el título de la fila", () => {
+    expect(result.html).toContain('<span class="concept">Monitor Asus 260 Hz</span>');
+  });
+
+  it("una fila sin concepto se marca como dato faltante, no se omite", () => {
+    expect(result.html).toContain('class="missing">Venta sin descripción');
+  });
+
+  it("los pagos sí llevan su etiqueta, con la referencia debajo", () => {
+    expect(result.html).toContain('<span class="concept">Pago recibido</span>');
+    expect(result.html).toContain("Cuota 2");
+  });
+
+  it("una sola columna de movimiento, con el signo diciendo la dirección", () => {
+    expect(result.html).toContain("<th class=\"num\">Movimiento</th>");
+    expect(result.html).not.toContain(">Cargo<");
+    expect(result.html).not.toContain(">Abono<");
+  });
+
+  it("la moneda se dice en palabras y el total aparece en el resumen", () => {
+    expect(result.html).toContain("Soles");
+    expect(result.html).toContain("en total");
+  });
+});
