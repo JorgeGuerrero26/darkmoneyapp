@@ -12,8 +12,9 @@ import { ProgressBar } from "../../../../components/ui/ProgressBar";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { parseDisplayDate } from "../../../../lib/date";
+import { getObligationStatusLabel } from "../../../../lib/obligation-labels";
 import { expandPaymentPlan, parsePaymentPlan } from "../../lib/payment-plan";
-import { formatCurrency } from "../../../../components/ui/AmountDisplay";
+import { formatAmountPlain, formatCurrency } from "../../../../components/ui/AmountDisplay";
 import { COLORS } from "../../../../constants/theme";
 import {
   obligationPendingDirectionBadge,
@@ -25,7 +26,7 @@ import type {
 } from "../../../../types/domain";
 
 export type ObligationOverviewCardsStyles = {
-  heroCard: StyleProp<ViewStyle>;
+  heroBlock: StyleProp<ViewStyle>;
   pendingAmount: StyleProp<TextStyle>;
   pendingLabel: StyleProp<TextStyle>;
   progress: StyleProp<ViewStyle>;
@@ -65,8 +66,13 @@ type Props = {
 export function obligationTermsLine(
   obligation: ObligationSummary | SharedObligationSummary,
 ): string {
+  const since = format(parseDisplayDate(obligation.startDate), "d 'de' MMMM", { locale: es });
   return [
-    `Activa desde el ${format(parseDisplayDate(obligation.startDate), "d 'de' MMMM", { locale: es })}`,
+    /* "Activa desde el 15 de marzo" decía el estado de paso, pero solo era cierto para una
+       obligación activa: una liquidada leía "Activa" al pie. */
+    obligation.status === "active"
+      ? `Activa desde el ${since}`
+      : `${getObligationStatusLabel(obligation.status)} · desde el ${since}`,
     obligation.installmentAmount
       ? `cuota pactada ${formatCurrency(obligation.installmentAmount, obligation.currencyCode)}`
       : null,
@@ -97,6 +103,12 @@ export function ObligationOverviewCards({
     : (capitalOverview.decreaseCount === 1 ? "reducción" : "reducciones");
   const openingLabel = `${sellsOnCredit ? "Primera venta" : "Apertura"}, ${format(parseDisplayDate(obligation.startDate), "d MMM", { locale: es })}`;
 
+  /**
+   * Los sumandos van sin símbolo: la moneda la dicen la cifra grande de arriba y el total de
+   * abajo, y "S/" cuatro veces en una resta de cuatro líneas es ruido.
+   */
+  const plain = (amount: number) => formatAmountPlain(amount, obligation.currencyCode);
+
   /** "3 de 6 pagos", cuando la obligación tiene plan. */
   const planProgressLabel = (() => {
     const plan = parsePaymentPlan(obligation.paymentPlan);
@@ -117,7 +129,9 @@ export function ObligationOverviewCards({
           el nombre del contacto, el rótulo y la cifra. El nombre y la dirección pertenecen al
           encabezado, junto al título. Aquí quedan el rótulo y el número, alineados a la
           izquierda como el resto de las cifras de la app. */}
-      <Card style={styles.heroCard}>
+      {/* Sin tarjeta: la cifra con la que abre la pantalla no está dentro de nada, como en el
+          resto de la app. Encerrarla dibujaba una caja alrededor de lo primero que se lee. */}
+      <View style={styles.heroBlock}>
         {/* La cifra grande es lo que FALTA, que es la pregunta con la que uno abre esta
             pantalla — no lo prestado. Y va en hueso: la barra de abajo es el único sitio donde
             la menta significa lo que debe significar, plata que entró. */}
@@ -136,7 +150,7 @@ export function ObligationOverviewCards({
           )} de {formatCurrency(capitalOverview.currentPrincipal, obligation.currencyCode)}
           {planProgressLabel ? ` · ${planProgressLabel}` : ""}
         </Text>
-      </Card>
+      </View>
 
       {/* Cuatro cifras de una sola resta iban en cuatro cajas con borde y dos colores, como si
           fueran cuatro indicadores independientes. Es una operación: se lee de arriba abajo y
@@ -149,7 +163,7 @@ export function ObligationOverviewCards({
         <View style={styles.capitalMathRow}>
           <Text style={styles.capitalMathLabel} numberOfLines={1}>{openingLabel}</Text>
           <Text style={styles.capitalMathValue}>
-            {formatCurrency(capitalOverview.openingAmount, obligation.currencyCode)}
+            {plain(capitalOverview.openingAmount)}
           </Text>
         </View>
         {capitalOverview.increaseCount > 0 ? (
@@ -163,7 +177,7 @@ export function ObligationOverviewCards({
               {capitalOverview.increaseCount} {increaseWord}
             </Text>
             <Text style={styles.capitalMathValue}>
-              + {formatCurrency(capitalOverview.increaseTotal, obligation.currencyCode)}
+              + {plain(capitalOverview.increaseTotal)}
             </Text>
           </TouchableOpacity>
         ) : null}
@@ -178,7 +192,7 @@ export function ObligationOverviewCards({
               {capitalOverview.decreaseCount} {decreaseWord}
             </Text>
             <Text style={styles.capitalMathValue}>
-              − {formatCurrency(capitalOverview.decreaseTotal, obligation.currencyCode)}
+              − {plain(capitalOverview.decreaseTotal)}
             </Text>
           </TouchableOpacity>
         ) : null}

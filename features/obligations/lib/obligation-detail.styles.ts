@@ -53,7 +53,7 @@ export const styles = StyleSheet.create({
   shareSheetSub: { fontSize: FONT_SIZE.sm, color: COLORS.storm, textAlign: "center", marginTop: -SPACING.sm },
   // La cifra va a la izquierda, como el resto de los números de la app: la tarjeta apilaba
   // cuatro líneas centradas para decir uno solo.
-  heroCard: { alignItems: "flex-start", gap: SPACING.xs, paddingVertical: SPACING.lg },
+  heroBlock: { alignItems: "flex-start", gap: SPACING.xs, paddingBottom: SPACING.xs },
   // El color estaba inline y venía de la dirección de la deuda —verde o rojo—; sin él el texto
   // se iba a negro sobre la tarjeta oscura. La cifra es hueso, como todas.
   pendingAmount: {

@@ -6,14 +6,10 @@ import {
   type ViewStyle,
   type TextStyle,
 } from "react-native";
-import { format } from "date-fns";
-import { es } from "date-fns/locale";
 
 import { currencyPluralTitle } from "../../../../constants/currencies";
 import { Card } from "../../../../components/ui/Card";
 import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING } from "../../../../constants/theme";
-import { parseDisplayDate } from "../../../../lib/date";
-import { getObligationStatusLabel } from "../../../../lib/obligation-labels";
 import type {
   ObligationSummary,
   SharedObligationSummary,
@@ -74,43 +70,42 @@ type Props = {
   obligation: ObligationSummary | SharedObligationSummary;
 };
 
+/**
+ * Lo que se escribió a mano y no cabe en ninguna otra parte de la pantalla.
+ *
+ * La tarjeta abría con "Estado · Activa" y "Fecha inicio · 15 mar 2026", que es palabra por
+ * palabra lo que ya dice la línea del pie —"Activa desde el 15 de marzo"—. En una obligación sin
+ * interés, sin cuenta, sin descripción y sin notas la tarjeta entera era esa repetición, así que
+ * cuando no queda nada propio que decir, no se dibuja.
+ */
 export function ObligationDetailInfoCard({ styles, obligation }: Props) {
+  const rows: { label: string; value: string }[] = [];
+  if (obligation.interestRate) {
+    rows.push({ label: "Interés", value: `${obligation.interestRate}%` });
+  }
+  if (obligation.settlementAccountName) {
+    rows.push({ label: "Cuenta de liquidación", value: obligation.settlementAccountName });
+  }
+  if (obligation.description?.trim()) {
+    rows.push({ label: "Descripción", value: obligation.description.trim() });
+  }
+  if (obligation.notes?.trim()) {
+    rows.push({ label: "Notas", value: obligation.notes.trim() });
+  }
+  if (rows.length === 0) return null;
+
   return (
     <Card style={styles.detailInfoCard}>
       <View style={styles.detailInfoHeader}>
         <Text style={styles.sectionTitle}>Detalles</Text>
         <Text style={styles.detailInfoBadge}>{currencyPluralTitle(obligation.currencyCode)}</Text>
       </View>
-      <DetailRow label="Estado" value={getObligationStatusLabel(obligation.status)} />
-      <Divider />
-      <DetailRow
-        label="Fecha inicio"
-        value={format(parseDisplayDate(obligation.startDate), "d MMM yyyy", { locale: es })}
-      />
-      {obligation.interestRate ? (
-        <>
-          <Divider />
-          <DetailRow label="Interés" value={`${obligation.interestRate}%`} />
-        </>
-      ) : null}
-      {obligation.settlementAccountName ? (
-        <>
-          <Divider />
-          <DetailRow label="Cuenta de liquidación" value={obligation.settlementAccountName} />
-        </>
-      ) : null}
-      {obligation.description?.trim() ? (
-        <>
-          <Divider />
-          <DetailRow label="Descripcion" value={obligation.description.trim()} />
-        </>
-      ) : null}
-      {obligation.notes?.trim() ? (
-        <>
-          <Divider />
-          <DetailRow label="Notas" value={obligation.notes.trim()} />
-        </>
-      ) : null}
+      {rows.map((row, index) => (
+        <View key={row.label}>
+          {index > 0 ? <Divider /> : null}
+          <DetailRow label={row.label} value={row.value} />
+        </View>
+      ))}
     </Card>
   );
 }

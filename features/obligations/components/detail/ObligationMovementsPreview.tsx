@@ -5,7 +5,7 @@ import { es } from "date-fns/locale";
 
 import { formatAmountPlain } from "../../../../components/ui/AmountDisplay";
 import { parseDisplayDate } from "../../../../lib/date";
-import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING, SURFACE } from "../../../../constants/theme";
 import { describeObligationEvent } from "../../lib/describe-event";
 import type { ObligationEventSummary, ObligationSummary, SharedObligationSummary } from "../../../../types/domain";
 
@@ -93,26 +93,25 @@ export function ObligationMovementsPreview({
           <Text style={styles.seeAllText}>Ver los {events.length} movimientos</Text>
           <ChevronRight size={16} color={COLORS.storm} />
         </TouchableOpacity>
-      ) : null}
+      ) : (
+        <View style={styles.bottomRule} />
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
-    borderRadius: RADIUS.lg,
-    borderWidth: 1,
-    borderColor: SURFACE.cardBorder,
-    backgroundColor: SURFACE.card,
-    overflow: "hidden",
-  },
+  /**
+   * Sin caja: los movimientos son la lista de la pantalla, no una tarjeta más apilada entre
+   * otras. El rótulo arranca en el margen de la pantalla, igual que el de la cifra de arriba, y
+   * lo que separa una fila de la siguiente es una línea fina.
+   */
+  card: {},
   header: {
     flexDirection: "row",
     alignItems: "baseline",
     justifyContent: "space-between",
     gap: SPACING.md,
-    paddingHorizontal: SPACING.md,
-    paddingTop: SPACING.md,
     paddingBottom: SPACING.sm,
   },
   title: {
@@ -127,7 +126,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: SPACING.md,
-    paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm + 2,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: SURFACE.separator,
@@ -144,7 +142,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: SPACING.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: SURFACE.separator,
+  },
+  /** Cierra la lista contra la línea de condiciones del pie. */
+  bottomRule: {
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: SURFACE.separator,
   },
