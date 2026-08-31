@@ -169,3 +169,39 @@ está y la diferencia se ve en el saldo, en vez de reescribir lo que dos persona
 La cifra grande es lo que falta —la pregunta con la que uno abre la pantalla—, y va en hueso. El
 total original baja a la línea de progreso: "Pagado S/ 570.00 de S/ 1,000.00 · 3 de 6 pagos", que
 es el único sitio donde la barra menta significa lo que debe significar.
+
+---
+
+## 8. Fase 13 del plan — un solo bloque para el origen y su impacto (30 ago)
+
+El formulario preguntaba **dos veces lo mismo**: "¿cómo nació esta deuda?" y, debajo, "impacto
+inicial en cuenta". Y dejaba contestar distinto en cada una.
+
+Los tres impactos posibles —entra dinero, sale dinero, no se mueve nada— **son** los tres
+orígenes. No hay un cuarto caso. Así que:
+
+- **"Manual" desaparece de la lista.** No describía un caso: era un permiso para contestar la
+  otra pregunta, y su propio subtítulo lo admitía ("Tú decides si hay movimiento de cuenta"). Se
+  conserva en el tipo porque hay obligaciones creadas con él, y al editarlas la fila lo muestra.
+- **El bloque de radios se elimina.** Cada origen nombra su consecuencia en el subtítulo, y la
+  fila "Cómo nació" la repite como línea de confirmación. Una sola fuente.
+- **Falta el caso "sale dinero" en las deudas**, que hoy no existía: `paid_for_other`, "Pagué por
+  alguien". Valor nuevo del enum `obligation_origin_type`.
+
+Las listas quedan:
+
+| Yo debo | Impacto |
+|---|---|
+| Me prestaron dinero | Entra dinero a tu cuenta al crearla |
+| Compré a cuotas | No mueve dinero de tus cuentas al crearla |
+| Pagué por alguien | Sale dinero de tu cuenta al crearla |
+
+| Me deben | Impacto |
+|---|---|
+| Presté dinero | Sale dinero de tu cuenta al crearla |
+| Vendí a cuotas | No mueve dinero de tus cuentas al crearla |
+
+**Lo que no está resuelto:** el plan solo especifica la hoja de "Yo debo". En "Me deben" quedan
+dos orígenes, porque el tercer impacto —que entre dinero a tu cuenta *y* que alguien te deba— no
+corresponde a ningún caso real: si el dinero entró, la deuda es al revés. Si aparece uno, es una
+etiqueta que hay que escribir, no una que se pueda deducir.

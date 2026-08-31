@@ -2123,7 +2123,7 @@ export type ObligationFormInput = {
   clientDedupeKey?: string | null;
   title: string;
   direction: "receivable" | "payable";
-  originType: "cash_loan" | "sale_financed" | "purchase_financed" | "manual";
+  originType: ObligationOriginType;
   openingImpact?: "none" | "inflow" | "outflow";
   openingAccountId?: number | null;
   counterpartyId?: number | null;

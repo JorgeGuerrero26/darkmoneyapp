@@ -70,32 +70,31 @@ const DIRECTION_OPTIONS = [
 type OriginOption = {
   value: ObligationFormInput["originType"];
   label: string;
+  /** La consecuencia en la cuenta, dicha en el propio subtítulo. */
   description: string;
-  impactLabel: string;
-  impactColor: string;
+  impact: "none" | "inflow" | "outflow";
 };
 
+/**
+ * Los tres impactos posibles **son** los tres orígenes: entra dinero, sale dinero, o no se mueve
+ * nada. Por eso no hay una segunda pregunta de "impacto inicial en cuenta" — el formulario la
+ * hacía dos veces y dejaba contestar distinto en cada una.
+ *
+ * Y por eso tampoco hay "Manual": no describía un caso, era un permiso para contestar esa otra
+ * pregunta. Su propio subtítulo lo admitía ("Tú decides si hay movimiento de cuenta").
+ */
 const RECEIVABLE_ORIGINS: OriginOption[] = [
   {
     value: "cash_loan",
     label: "Presté dinero",
-    description: "Entregaste efectivo. Sale dinero de tu cuenta al registrar.",
-    impactLabel: "💸 Sale dinero al crear",
-    impactColor: COLORS.expense,
+    description: "Sale dinero de tu cuenta al crearla.",
+    impact: "outflow",
   },
   {
     value: "sale_financed",
     label: "Vendí a cuotas",
-    description: "Vendiste algo a crédito. El dinero llegará después, sin impacto inicial.",
-    impactLabel: "⏳ Sin impacto en cuenta",
-    impactColor: COLORS.storm,
-  },
-  {
-    value: "manual",
-    label: "Manual",
-    description: "Define el caso manualmente. Tú decides si hay movimiento de cuenta.",
-    impactLabel: "⚙️ Configurable",
-    impactColor: COLORS.storm,
+    description: "No mueve dinero de tus cuentas al crearla.",
+    impact: "none",
   },
 ];
 
@@ -103,40 +102,38 @@ const PAYABLE_ORIGINS: OriginOption[] = [
   {
     value: "cash_loan",
     label: "Me prestaron dinero",
-    description: "Recibiste efectivo. Entra dinero a tu cuenta al registrar.",
-    impactLabel: "💰 Entra dinero al crear",
-    impactColor: COLORS.income,
+    description: "Entra dinero a tu cuenta al crearla.",
+    impact: "inflow",
   },
   {
     value: "purchase_financed",
     label: "Compré a cuotas",
-    description: "Compraste sin pagar al inicio. Sin impacto en tu cuenta ahora.",
-    impactLabel: "⏳ Sin impacto en cuenta",
-    impactColor: COLORS.storm,
+    description: "No mueve dinero de tus cuentas al crearla.",
+    impact: "none",
   },
   {
-    value: "manual",
-    label: "Manual",
-    description: "Define el caso manualmente. Tú decides si hay movimiento de cuenta.",
-    impactLabel: "⚙️ Configurable",
-    impactColor: COLORS.storm,
+    value: "paid_for_other",
+    label: "Pagué por alguien",
+    description: "Sale dinero de tu cuenta al crearla.",
+    impact: "outflow",
   },
 ];
 
-const MANUAL_IMPACT_OPTIONS = [
-  { value: "none" as const,    label: "Sin impacto inicial",       desc: "No mueve dinero de ninguna cuenta al crear." },
-  { value: "outflow" as const, label: "Sale dinero de mi cuenta",  desc: "Registra una salida desde tu cuenta al inicio." },
-  { value: "inflow" as const,  label: "Entra dinero a mi cuenta",  desc: "Registra un ingreso hacia tu cuenta al inicio." },
-];
+/** Etiqueta de un origen que ya no se ofrece, para las obligaciones que lo tienen guardado. */
+const LEGACY_ORIGIN_LABELS: Record<string, string> = { manual: "Manual" };
 
+/**
+ * El impacto lo decide el origen, y solo el origen.
+ *
+ * Las obligaciones viejas con origen `manual` no llevan impacto determinado: se quedan sin
+ * movimiento de apertura, que es lo que hacía el valor por defecto de aquel bloque de radios.
+ */
 function getAutoOpeningImpact(
   direction: "receivable" | "payable",
   originType: ObligationFormInput["originType"],
-  manualImpact: "none" | "inflow" | "outflow",
 ): "none" | "inflow" | "outflow" {
-  if (originType === "cash_loan") return direction === "receivable" ? "outflow" : "inflow";
-  if (originType === "sale_financed" || originType === "purchase_financed") return "none";
-  return manualImpact;
+  const options = direction === "receivable" ? RECEIVABLE_ORIGINS : PAYABLE_ORIGINS;
+  return options.find((option) => option.value === originType)?.impact ?? "none";
 }
 
 type Props = {
@@ -186,7 +183,6 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
   const [counterpartyId, setCounterpartyId] = useState<number | null>(null);
   const [settlementAccountId, setSettlementAccountId] = useState<number | null>(null);
   const [openingAccountId, setOpeningAccountId] = useState<number | null>(null);
-  const [manualImpact, setManualImpact] = useState<"none" | "inflow" | "outflow">("none");
   const [installmentAmount, setInstallmentAmount] = useState("");
   const [installmentCount, setInstallmentCount] = useState("");
   const [paymentPlan, setPaymentPlan] = useState<PaymentPlan | null>(null);
@@ -255,7 +251,6 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
       setCounterpartyId(editObligation.counterpartyId ?? null);
       setSettlementAccountId(editObligation.settlementAccountId ?? null);
       setOpeningAccountId(null);
-      setManualImpact("none");
       setInstallmentAmount(editObligation.installmentAmount ? String(editObligation.installmentAmount) : "");
       setInstallmentCount(editObligation.installmentCount ? String(editObligation.installmentCount) : "");
       // El plan guardado manda; si la obligación es vieja, se reconstruye del número de cuotas.
@@ -277,7 +272,6 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
       setCounterpartyId(null);
       setSettlementAccountId(null);
       setOpeningAccountId(null);
-      setManualImpact("none");
       setInstallmentAmount("");
       setInstallmentCount("");
       setInterestRate("");
@@ -501,7 +495,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
         }
         showToast(successMsg, "success");
       } else {
-        const resolvedImpact = getAutoOpeningImpact(direction, originType, manualImpact);
+        const resolvedImpact = getAutoOpeningImpact(direction, originType);
         if (!submitDedupeKeyRef.current) submitDedupeKeyRef.current = newClientDedupeKey("obligation");
         const created = await createMutation.mutateAsync({
           userId: profile?.id ?? "",
@@ -606,20 +600,22 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
   const isLoading = createMutation.isPending || updateMutation.isPending;
 
   const originOptions = direction === "receivable" ? RECEIVABLE_ORIGINS : PAYABLE_ORIGINS;
-  const openingImpact = getAutoOpeningImpact(direction, originType, manualImpact);
-  const selectedOrigin = originOptions.find((o) => o.value === originType) ?? originOptions[0];
+  const openingImpact = getAutoOpeningImpact(direction, originType);
+  const selectedOrigin = originOptions.find((o) => o.value === originType) ?? null;
+  const selectedOriginLabel = selectedOrigin?.label
+    ?? LEGACY_ORIGIN_LABELS[originType]
+    ?? null;
 
   const counterpartyName = counterpartiesSorted.find((cp) => cp.id === counterpartyId)?.name ?? null;
   const settlementAccountName = activeAccountsSorted.find((acc) => acc.id === settlementAccountId)?.name ?? null;
   /** La moneda solo se enseña cuando NO es la del patrimonio: si coincide, no distingue nada. */
   const showCurrencyRow = currencyCode.toUpperCase() !== defaultCurrency.toUpperCase();
 
-  /** La consecuencia de lo elegido, en una línea, en vez de preguntarla otra vez más abajo. */
-  const impactLine = openingImpact === "none"
-    ? "No mueve dinero de tus cuentas al crearla."
-    : openingImpact === "outflow"
-      ? "Sale dinero de tu cuenta al crearla."
-      : "Entra dinero a tu cuenta al crearla.";
+  /**
+   * La consecuencia de lo elegido, en una línea. Sale del propio origen, que es donde ya está
+   * escrita: el formulario la preguntaba otra vez más abajo y dejaba contestar distinto.
+   */
+  const impactLine = selectedOrigin?.description ?? "No mueve dinero de tus cuentas al crearla.";
 
   const startDateLabel = (() => {
     const parsed = parseDisplayDate(startDate);
@@ -774,7 +770,6 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
               onChange={(value) => {
                 setOriginType(value as ObligationFormInput["originType"]);
                 setOpeningAccountId(null);
-                setManualImpact("none");
                 setOriginError("");
               }}
               onClose={() => setOriginOpen(false)}
@@ -941,7 +936,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
               <FormOptionRow
                 grouped
                 label="Cómo nació"
-                value={selectedOrigin.label}
+                value={selectedOriginLabel}
                 onPress={() => setOriginOpen(true)}
                 last={!showCurrencyRow}
               />
@@ -982,38 +977,9 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
       {/* La consecuencia de lo elegido, en una línea. El formulario preguntaba dos veces lo
           mismo —el origen y el "impacto inicial en cuenta"— y dejaba contestar distinto en cada
           una. Los radios salen solo en Manual, que es el único caso sin respuesta determinada. */}
-      {!isEditing && originType !== "manual" ? (
+      {!isEditing ? (
         <View style={styles.impactNote}>
           <Text style={styles.impactNoteText}>{impactLine}</Text>
-        </View>
-      ) : null}
-
-      {!isEditing && originType === "manual" ? (
-        <View style={styles.manualImpactSection}>
-          <Text style={styles.sectionLabel}>Impacto inicial en cuenta</Text>
-          {MANUAL_IMPACT_OPTIONS.map((opt) => {
-            const isSel = manualImpact === opt.value;
-            return (
-              <TouchableOpacity
-                key={opt.value}
-                style={[styles.manualImpactRow, isSel && styles.manualImpactRowSelected]}
-                onPress={() => { setManualImpact(opt.value); setOpeningAccountId(null); }}
-                activeOpacity={0.8}
-                accessibilityRole="radio"
-                accessibilityState={{ selected: isSel }}
-              >
-                <View style={styles.manualImpactRadio}>
-                  {isSel ? <View style={styles.manualImpactRadioInner} /> : null}
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.manualImpactLabel, isSel && styles.manualImpactLabelSelected]}>
-                    {opt.label}
-                  </Text>
-                  <Text style={styles.manualImpactDesc}>{opt.desc}</Text>
-                </View>
-              </TouchableOpacity>
-            );
-          })}
         </View>
       ) : null}
 
@@ -1472,57 +1438,5 @@ const styles = StyleSheet.create({
   },
   // ── Origin type section ──────────────────────────────────────────────────
   // ── Manual impact ────────────────────────────────────────────────────────
-  manualImpactSection: {
-    marginTop: SPACING.xs,
-    gap: SPACING.xs,
-    padding: SPACING.md,
-    borderRadius: RADIUS.lg,
-    backgroundColor: SURFACE.card,
-    borderWidth: 1,
-    borderColor: SURFACE.cardBorder,
-  },
-  manualImpactRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: SPACING.sm,
-    paddingVertical: SPACING.sm,
-    paddingHorizontal: SPACING.sm,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: "transparent",
-  },
-  manualImpactRowSelected: {
-    borderColor: COLORS.pine + "55",
-    backgroundColor: COLORS.pine + "10",
-  },
-  manualImpactRadio: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    borderWidth: 2,
-    borderColor: COLORS.storm,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 2,
-  },
-  manualImpactRadioInner: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: COLORS.pine,
-  },
-  manualImpactLabel: {
-    fontFamily: FONT_FAMILY.bodyMedium,
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.storm,
-  },
-  manualImpactLabelSelected: { color: COLORS.ink },
-  manualImpactDesc: {
-    fontFamily: FONT_FAMILY.body,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.storm,
-    lineHeight: 16,
-    marginTop: 2,
-  },
   // ── Opening account ──────────────────────────────────────────────────────
 });

@@ -12,7 +12,19 @@ export type MovementType =
   | "refund"
   | "adjustment";
 export type ObligationDirection = "receivable" | "payable";
-export type ObligationOriginType = "cash_loan" | "sale_financed" | "purchase_financed" | "manual";
+/**
+ * Cómo nació la obligación. **Cada origen determina el impacto en la cuenta**: entra dinero,
+ * sale dinero o no se mueve nada. No hay una pregunta aparte para eso.
+ *
+ * `manual` ya no se ofrece al crear —no describía un caso, era un permiso para contestar la otra
+ * pregunta— pero se conserva porque hay obligaciones creadas con él.
+ */
+export type ObligationOriginType =
+  | "cash_loan"
+  | "sale_financed"
+  | "purchase_financed"
+  | "paid_for_other"
+  | "manual";
 export type ObligationStatus = "draft" | "active" | "paid" | "cancelled" | "defaulted";
 export type ObligationEventType =
   | "opening"
