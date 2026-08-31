@@ -1229,8 +1229,10 @@ function ObligationDetailScreen() {
             isSharedViewer={isSharedViewer}
             onPressViewerRequest={() => setPaymentRequestFormVisible(true)}
             onPressOwnerRegister={() => setPaymentFormVisible(true)}
-            onPressIncrease={isSharedViewer ? undefined : () => {
+            onPressAdjust={isSharedViewer ? undefined : () => {
               setEditingAdjustmentEvent(null);
+              /* La hoja abre en "le debe más", que es lo que pasa doce de cada catorce veces, y
+                 el conmutador cambia el sentido sin salir de ella. */
               setAdjustmentMode("increase");
               setAdjustmentFormVisible(true);
             }}
@@ -1239,8 +1241,9 @@ function ObligationDetailScreen() {
       )}
 
       {/* Lo administrativo vive aquí: editar era el botón más llamativo de la pantalla —menta
-          plena, ancho completo— para cambiar datos que casi nunca cambian. Y reducir el monto
-          son correcciones, que no merecen la misma jerarquía que aumentar. */}
+          plena, ancho completo— para cambiar datos que casi nunca cambian. "Reducir monto"
+          estaba aquí y "Aumentar monto" al lado de "Registrar cobro": dos puertas al mismo
+          formulario desde que las dos hojas se unieron. Queda la de fuera, "Ajustar monto". */}
       <EntityActionSheet
         visible={detailMenuOpen}
         onClose={() => setDetailMenuOpen(false)}
@@ -1259,17 +1262,6 @@ function ObligationDetailScreen() {
             label: "Compartir",
             variant: "secondary",
             onPress: () => { setDetailMenuOpen(false); setShareEmail(""); setShareSheetOpen(true); },
-          },
-          {
-            key: "decrease",
-            label: "Reducir monto",
-            variant: "ghost",
-            onPress: () => {
-              setDetailMenuOpen(false);
-              setEditingAdjustmentEvent(null);
-              setAdjustmentMode("decrease");
-              setAdjustmentFormVisible(true);
-            },
           },
         ]}
       />
