@@ -30,6 +30,13 @@ type Props = {
   onClearSelection: () => void;
   onPreview: (attachment: MovementAttachmentFile) => void;
   onRequestDeleteSelected: () => void;
+  /**
+   * Colgada de su fila, sin tarjeta ni rótulo: el nombre ya lo dice la fila que la abre.
+   *
+   * La tarjeta "COMPROBANTES · Sin adjuntos · Este movimiento no tiene comprobantes visibles
+   * todavía" decía lo mismo tres veces en 90 px, y "todavía" insinuaba que aparecerían solos.
+   */
+  inline?: boolean;
   /** Ref de instancia para distinguir tap vs longPress en el mismo path. */
   onLongPressBegin: (filePath: string) => void;
   isLongPressActive: (filePath: string) => boolean;
@@ -44,15 +51,17 @@ export const MovementAttachmentsGallery = memo(function MovementAttachmentsGalle
   onClearSelection,
   onPreview,
   onRequestDeleteSelected,
+  inline = false,
   onLongPressBegin,
   isLongPressActive,
 }: Props) {
   const isSelecting = selectedPaths.length > 0;
+  const Shell = inline ? View : Card;
 
   return (
-    <Card>
-      <View style={styles.header}>
-        <Text style={styles.sectionTitle}>Comprobantes</Text>
+    <Shell style={inline ? styles.inlineShell : undefined}>
+      <View style={[styles.header, inline && !isSelecting && styles.headerHidden]}>
+        {inline ? null : <Text style={styles.sectionTitle}>Comprobantes</Text>}
         {isSelecting ? (
           <View style={styles.selectionHeader}>
             <Text style={styles.selectionCount}>
@@ -182,11 +191,13 @@ export const MovementAttachmentsGallery = memo(function MovementAttachmentsGalle
           </ScrollView>
         </>
       )}
-    </Card>
+    </Shell>
   );
 });
 
 const styles = StyleSheet.create({
+  inlineShell: { paddingBottom: SPACING.sm },
+  headerHidden: { display: "none" },
   sectionTitle: {
     fontSize: FONT_SIZE.xs,
     fontFamily: FONT_FAMILY.bodySemibold,

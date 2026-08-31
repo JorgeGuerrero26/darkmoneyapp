@@ -9,9 +9,7 @@ import {
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
-import { Ban, Copy, Pencil } from "lucide-react-native";
 
-import { DetailQuickActions } from "../../components/ui/DetailQuickActions";
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTemplate";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
@@ -45,11 +43,7 @@ import { MovementAuditLog } from "../../features/movements/components/detail/Mov
 import { MovementDetailHero } from "../../features/movements/components/detail/MovementDetailHero";
 import { MovementDetailFields } from "../../features/movements/components/detail/MovementDetailFields";
 import { MovementAttachmentsGallery } from "../../features/movements/components/detail/MovementAttachmentsGallery";
-import {
-  MovementAccountBlock,
-  MovementTransferBlock,
-} from "../../features/movements/components/detail/MovementAccountBlocks";
-import { MovementLinkedOriginCard } from "../../features/movements/components/detail/MovementLinkedOriginCard";
+import { MovementDetailActions } from "../../features/movements/components/detail/MovementDetailActions";
 import { LinkObligationModal } from "../../features/movements/components/detail/LinkObligationModal";
 import {
   VoidMovementConfirm,
@@ -102,6 +96,8 @@ function MovementDetailScreen() {
   const [deleteSelectedVisible, setDeleteSelectedVisible] = useState(false);
   const [deletingSelected, setDeletingSelected] = useState(false);
   const [voidConfirmVisible, setVoidConfirmVisible] = useState(false);
+  /** La galería vive plegada bajo su fila: sin comprobantes no ocupa una tarjeta entera. */
+  const [attachmentsOpen, setAttachmentsOpen] = useState(false);
   const longPressAttachmentPathRef = useRef<string | null>(null);
   const autoOpenedEditMovementIdRef = useRef<number | null>(null);
 
@@ -169,6 +165,15 @@ function MovementDetailScreen() {
     if (sourceAmount > 0 && destinationAmount > 0) return destinationAmount / sourceAmount;
     return null;
   }, [isTransfer, movement?.destinationAmount, movement?.fxRate, movement?.sourceAmount]);
+
+  /**
+   * La cuenta que sintió el movimiento y con cuánto quedó.
+   *
+   * El saldo resultante es lo que uno mira después de un gasto, y estaba tres tarjetas más abajo
+   * dicho como "CUENTA / Desde: Cuenta Principal": un rótulo de sección, una etiqueta de fila y
+   * un valor, tres niveles de jerarquía para un dato.
+   */
+  const heroAccount = isExpense || isTransfer ? sourceAccount : destinationAccount;
 
   const linkedEventId = useMemo(
     () => readMovementLinkedEventId(movement?.metadata),
@@ -385,7 +390,8 @@ function MovementDetailScreen() {
       header={
         <ScreenHeader
           title="Movimiento"
-          subtitle={activeWorkspace?.name}
+          /* El nombre que iba aquí es el del dueño de la cuenta, el único que ve esta pantalla:
+             no distingue nada de nada. */
           onBack={handleBack}
           rightAction={
             canTemplate ? (
@@ -412,84 +418,60 @@ function MovementDetailScreen() {
             <Text style={styles.errorText}>No se encontró el movimiento</Text>
           </View>
         ) : (
-          <ScrollView contentContainerStyle={styles.content}>
+          <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
             <MovementDetailHero
               movement={movement}
               isTransfer={Boolean(isTransfer)}
               isVoided={Boolean(isVoided)}
               transferSourceCurrencyCode={transferSourceCurrencyCode}
               baseCurrencyCode={baseCurrency}
-              onPressEdit={() => setEditFormVisible(true)}
+              accountName={heroAccount?.name ?? null}
+              accountBalance={heroAccount?.currentBalance ?? null}
+              accountCurrencyCode={heroAccount?.currencyCode ?? baseCurrency}
             />
 
-            {!isVoided ? (
-              <DetailQuickActions
-                actions={[
-                  {
-                    key: "edit",
-                    label: "Editar",
-                    icon: Pencil,
-                    color: COLORS.primary,
-                    onPress: () => setEditFormVisible(true),
-                    accessibilityLabel: "Editar movimiento",
-                  },
-                  {
-                    key: "duplicate",
-                    label: "Duplicar",
-                    icon: Copy,
-                    color: COLORS.storm,
-                    onPress: () => setDuplicateFormVisible(true),
-                    accessibilityLabel: "Duplicar movimiento",
-                  },
-                  {
-                    key: "void",
-                    label: "Anular",
-                    icon: Ban,
-                    color: COLORS.danger,
-                    onPress: () => setVoidConfirmVisible(true),
-                    accessibilityLabel: "Anular movimiento",
-                  },
-                ]}
-              />
-            ) : null}
-
-            <MovementDetailFields movement={movement} />
-
-            <MovementAttachmentsGallery
-              attachments={movementAttachments}
-              loading={attachmentsLoading}
-              selectedPaths={selectedAttachmentPaths}
-              deletingSelected={deletingSelected}
-              onTogglePath={toggleAttachmentSelection}
-              onClearSelection={() => setSelectedAttachmentPaths([])}
-              onPreview={setPreviewAttachment}
-              onRequestDeleteSelected={() => setDeleteSelectedVisible(true)}
-              onLongPressBegin={(path) => {
-                longPressAttachmentPathRef.current = path || null;
+            <MovementDetailFields
+              movement={movement}
+              isTransfer={Boolean(isTransfer)}
+              isExpense={isExpense}
+              transferSourceCurrencyCode={transferSourceCurrencyCode}
+              transferDestinationCurrencyCode={transferDestinationCurrencyCode}
+              fxRate={transferFxRate}
+              onPressField={!isVoided ? () => setEditFormVisible(true) : undefined}
+              attachmentsCount={movementAttachments.length}
+              attachmentsLoading={attachmentsLoading}
+              onPressAttachments={() => {
+                // Sin comprobantes no hay nada que desplegar: la fila lleva a donde se agregan.
+                if (movementAttachments.length === 0) {
+                  if (!isVoided) setEditFormVisible(true);
+                  return;
+                }
+                setAttachmentsOpen((open) => !open);
               }}
-              isLongPressActive={(path) => longPressAttachmentPathRef.current === path}
-            />
-
-            {isTransfer ? (
-              <MovementTransferBlock
-                movement={movement}
-                sourceCurrencyCode={transferSourceCurrencyCode}
-                destinationCurrencyCode={transferDestinationCurrencyCode}
-                fxRate={transferFxRate}
-              />
-            ) : (
-              <MovementAccountBlock movement={movement} isExpense={isExpense} />
-            )}
-
-            <MovementLinkedOriginCard
+              attachmentsSlot={attachmentsOpen && movementAttachments.length > 0 ? (
+                <MovementAttachmentsGallery
+                  inline
+                  attachments={movementAttachments}
+                  loading={attachmentsLoading}
+                  selectedPaths={selectedAttachmentPaths}
+                  deletingSelected={deletingSelected}
+                  onTogglePath={toggleAttachmentSelection}
+                  onClearSelection={() => setSelectedAttachmentPaths([])}
+                  onPreview={setPreviewAttachment}
+                  onRequestDeleteSelected={() => setDeleteSelectedVisible(true)}
+                  onLongPressBegin={(path) => {
+                    longPressAttachmentPathRef.current = path || null;
+                  }}
+                  isLongPressActive={(path) => longPressAttachmentPathRef.current === path}
+                />
+              ) : null}
               obligationId={movement.obligationId}
               obligationTitle={linkedObligationTitle}
               subscriptionId={movement.subscriptionId}
               subscriptionName={linkedSubscriptionName}
               canLink={canLink}
-              linking={linkMutation.isPending}
-              onOpenObligation={(oid) => router.push(`/obligation/${oid}`)}
-              onOpenSubscription={(sid) => router.push(`/subscription/${sid}`)}
+              onPressObligation={(oid) => router.push(`/obligation/${oid}`)}
+              onPressSubscription={(sid) => router.push(`/subscription/${sid}`)}
               onRequestLink={() => setLinkModalVisible(true)}
             />
 
@@ -499,11 +481,20 @@ function MovementDetailScreen() {
               createdByUserId={movement.createdByUserId}
               updatedByUserId={movement.updatedByUserId}
               status={movement.status}
+              currentUserId={profile?.id}
             />
-
-            <Text style={styles.metaId}>ID: {movement.id}</Text>
           </ScrollView>
         )}
+      fab={
+        movement && !isLoading && !isVoided ? (
+          <MovementDetailActions
+            bottomInset={insets.bottom}
+            onPressEdit={() => setEditFormVisible(true)}
+            onPressDuplicate={() => setDuplicateFormVisible(true)}
+            onPressVoid={() => setVoidConfirmVisible(true)}
+          />
+        ) : null
+      }
       overlays={
         <>
           {movement ? (
@@ -581,15 +572,10 @@ function MovementDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  content: { padding: SPACING.lg, gap: SPACING.md },
+  scroll: { flex: 1 },
+  content: { paddingHorizontal: SPACING.lg, paddingTop: SPACING.sm, paddingBottom: SPACING.lg },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   errorText: { color: COLORS.storm, fontSize: FONT_SIZE.md },
-  metaId: {
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.textDisabled,
-    textAlign: "center",
-    paddingBottom: SPACING.xl,
-  },
 });
 
 export default function MovementDetailScreenRoot() {

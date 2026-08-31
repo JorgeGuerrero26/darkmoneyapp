@@ -1,10 +1,10 @@
 import { memo } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text } from "react-native";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
-import { Card } from "../../../../components/ui/Card";
 import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING } from "../../../../constants/theme";
+import { isoToDateStr, isoToTimeStr, parseDisplayDate, todayPeru } from "../../../../lib/date";
 
 type Props = {
   createdAt?: string | null;
@@ -12,121 +12,58 @@ type Props = {
   createdByUserId?: string | null;
   updatedByUserId?: string | null;
   status?: string | null;
+  /** Quién está mirando la pantalla: decide si se dice "lo creaste" o "se creó". */
+  currentUserId?: string | null;
 };
 
-function formatTimestamp(iso?: string | null): string | null {
-  if (!iso) return null;
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return null;
-  return format(date, "d MMM yyyy · HH:mm", { locale: es });
+/** "hoy a las 12:21", "ayer a las 9:03", "el 15 jul a las 12:21". */
+function when(iso: string) {
+  const day = isoToDateStr(iso);
+  const time = isoToTimeStr(iso);
+  const today = todayPeru();
+  if (day === today) return `hoy a las ${time}`;
+  const yesterday = new Date(parseDisplayDate(today).getTime() - 86_400_000);
+  if (day === format(yesterday, "yyyy-MM-dd")) return `ayer a las ${time}`;
+  return `el ${format(parseDisplayDate(iso), "d MMM", { locale: es })} a las ${time}`;
 }
 
-function shortUserId(userId?: string | null): string {
-  if (!userId) return "Sistema";
-  // UUIDs son largos. Mostrar solo los primeros 8 chars + sufijo "..."
-  return `${userId.slice(0, 8)}…`;
+function isValid(iso?: string | null): iso is string {
+  return Boolean(iso) && !Number.isNaN(new Date(iso as string).getTime());
 }
 
 /**
- * Bloque de audit log para el detalle del movimiento.
- * Muestra creación, última actualización y (si aplica) anulación.
+ * Cuándo se registró el movimiento, en una línea gris.
  *
- * Renderiza solo si hay al menos un timestamp disponible — silencioso para
- * movimientos antiguos sin tracking de fechas.
+ * Era una tarjeta "HISTORIAL" con dos filas y un autor: **"por Sistema"**, que era falso —el
+ * chicle lo registró él— y sale de un `created_by` vacío en los movimientos que crea la propia
+ * app. Debajo iba "ID: 1078", la clave de la base de datos, centrada al pie de la pantalla.
+ *
+ * Queda lo único que un usuario puede querer de ahí: cuándo lo creó, y si lo editó después.
  */
 export const MovementAuditLog = memo(function MovementAuditLog({
   createdAt,
   updatedAt,
   createdByUserId,
-  updatedByUserId,
   status,
+  currentUserId,
 }: Props) {
-  const created = formatTimestamp(createdAt);
-  const updated = formatTimestamp(updatedAt);
-  const wasModified = Boolean(created && updated && createdAt !== updatedAt);
-  const isVoided = status === "voided";
+  if (!isValid(createdAt)) return null;
 
-  if (!created && !updated && !isVoided) return null;
+  const mine = Boolean(createdByUserId && currentUserId && createdByUserId === currentUserId);
+  const parts = [`${mine ? "Lo creaste" : "Se creó"} ${when(createdAt)}.`];
 
-  return (
-    <Card>
-      <Text style={styles.title}>Historial</Text>
-      <View style={styles.list}>
-        {created ? (
-          <View style={styles.row}>
-            <Text style={styles.label}>Creado</Text>
-            <View style={styles.values}>
-              <Text style={styles.value}>{created}</Text>
-              <Text style={styles.user}>por {shortUserId(createdByUserId)}</Text>
-            </View>
-          </View>
-        ) : null}
-        {wasModified && updated ? (
-          <View style={styles.row}>
-            <Text style={styles.label}>Actualizado</Text>
-            <View style={styles.values}>
-              <Text style={styles.value}>{updated}</Text>
-              <Text style={styles.user}>por {shortUserId(updatedByUserId)}</Text>
-            </View>
-          </View>
-        ) : null}
-        {isVoided && updated ? (
-          <View style={styles.row}>
-            <Text style={[styles.label, styles.labelDanger]}>Anulado</Text>
-            <View style={styles.values}>
-              <Text style={[styles.value, styles.valueDanger]}>{updated}</Text>
-              <Text style={styles.user}>por {shortUserId(updatedByUserId)}</Text>
-            </View>
-          </View>
-        ) : null}
-      </View>
-    </Card>
-  );
+  if (isValid(updatedAt) && updatedAt !== createdAt) {
+    parts.push(status === "voided" ? `Anulado ${when(updatedAt)}.` : `Editado ${when(updatedAt)}.`);
+  }
+
+  return <Text style={styles.line}>{parts.join(" ")}</Text>;
 });
 
 const styles = StyleSheet.create({
-  title: {
-    fontFamily: FONT_FAMILY.bodySemibold,
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.storm,
-    letterSpacing: 0.4,
-    textTransform: "uppercase",
-    marginBottom: SPACING.sm,
-  },
-  list: {
-    gap: SPACING.sm,
-  },
-  row: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: SPACING.md,
-  },
-  label: {
-    fontFamily: FONT_FAMILY.bodyMedium,
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.storm,
-    minWidth: 90,
-  },
-  labelDanger: {
-    color: COLORS.dangerSoft,
-  },
-  values: {
-    flex: 1,
-    alignItems: "flex-end",
-  },
-  value: {
-    fontFamily: FONT_FAMILY.body,
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.ink,
-  },
-  valueDanger: {
-    color: COLORS.dangerSoft,
-  },
-  user: {
+  line: {
+    marginTop: SPACING.md,
     fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.xs,
     color: COLORS.storm,
-    marginTop: 2,
   },
 });
