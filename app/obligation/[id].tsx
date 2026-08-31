@@ -1145,7 +1145,6 @@ function ObligationDetailScreen() {
           {showViewerHistoryTab && historyExpanded ? (
             <EventHistoryContainer
               styles={styles}
-              historyDateRangeNotice={historyDateRangeNotice}
               historyPreset={historyPreset}
               historyFrom={historyFrom}
               historyTo={historyTo}

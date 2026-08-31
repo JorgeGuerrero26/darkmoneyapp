@@ -29,8 +29,8 @@ const PREVIEW_COUNT = 3;
  * de un filtro que por defecto respondía "ningún evento en este rango". Aquí abre solo, con los
  * más recientes arriba.
  *
- * **Cada fila dice con cuánto quedó la cuenta** —"quedan 21,025.00"—, que es lo que reemplaza a
- * las dos cápsulas que explicaban el modelo de datos: enseña la mecánica sin instrucciones.
+ * **Cada fila dice con cuánto quedó la cuenta**, debajo del monto. Es lo que reemplaza a las dos
+ * cápsulas que explicaban el modelo de datos: enseña la mecánica sin instrucciones.
  */
 export function ObligationMovementsPreview({
   obligation,
@@ -59,8 +59,6 @@ export function ObligationMovementsPreview({
         const detail = [dateLabel, described.detail].filter(Boolean).join(" · ");
         return (
           <View key={event.id} style={styles.row}>
-            {/* Lleno cuando el movimiento baja lo que falta; hueco cuando lo sube. */}
-            <View style={[styles.dot, described.reduces && styles.dotFilled]} />
             <View style={styles.copy}>
               <Text
                 style={[styles.rowTitle, described.missingDescription && styles.rowTitleMissing]}
@@ -71,11 +69,13 @@ export function ObligationMovementsPreview({
               <Text style={styles.rowDetail} numberOfLines={1}>{detail}</Text>
             </View>
             <View style={styles.amounts}>
+              {/* El signo dice hacia dónde se movió la deuda; el saldo va debajo, sin la
+                  palabra "quedan" repetida en cada fila: la columna siempre significa lo mismo. */}
               <Text style={styles.amount} numberOfLines={1}>
-                {described.reduces ? "" : "+ "}{money(event.amount)}
+                {described.reduces ? "− " : "+ "}{money(event.amount)}
               </Text>
               {balance != null ? (
-                <Text style={styles.balance} numberOfLines={1}>quedan {money(balance)}</Text>
+                <Text style={styles.balance} numberOfLines={1}>{money(balance)}</Text>
               ) : null}
             </View>
           </View>
@@ -131,14 +131,6 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: SURFACE.separator,
   },
-  dot: {
-    width: 7,
-    height: 7,
-    borderRadius: RADIUS.full,
-    borderWidth: 1,
-    borderColor: SURFACE.inputBorder,
-  },
-  dotFilled: { backgroundColor: COLORS.fog, borderColor: COLORS.fog },
   copy: { flex: 1, gap: 2 },
   rowTitle: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.md, color: COLORS.ink },
   rowTitleMissing: { fontStyle: "italic", color: COLORS.storm },

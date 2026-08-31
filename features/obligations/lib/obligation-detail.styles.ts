@@ -30,96 +30,6 @@ export const styles = StyleSheet.create({
   unlinkHeaderBtnText: {
     color: COLORS.expense,
   },
-  detailActionsPanel: {
-    gap: SPACING.sm,
-    borderRadius: RADIUS.lg,
-    borderWidth: 1,
-    borderColor: SURFACE.cardBorder,
-    backgroundColor: SURFACE.card,
-    padding: SPACING.sm,
-  },
-  detailPrimaryAction: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: SPACING.sm,
-    borderRadius: RADIUS.md,
-    backgroundColor: COLORS.primary,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.md,
-  },
-  detailPrimaryIcon: {
-    width: 30,
-    height: 30,
-    borderRadius: RADIUS.full,
-    backgroundColor: "rgba(10,10,9,0.16)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  detailPrimaryTitle: {
-    fontSize: FONT_SIZE.md,
-    color: COLORS.bgVoid,
-    fontFamily: FONT_FAMILY.bodySemibold,
-  },
-  detailActionCopy: {
-    flex: 1,
-    minWidth: 0,
-    gap: 1,
-  },
-  detailActionMeta: {
-    fontSize: FONT_SIZE.xs,
-    color: "rgba(10,10,9,0.72)",
-    fontFamily: FONT_FAMILY.bodyMedium,
-  },
-  detailActionsRow: {
-    flexDirection: "row",
-    gap: SPACING.sm,
-  },
-  detailActionSecondaryBtn: {
-    flex: 1,
-    minHeight: 74,
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: SPACING.sm,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: SURFACE.cardBorder,
-    backgroundColor: SURFACE.separator,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: SPACING.xs,
-  },
-  detailActionIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: RADIUS.full,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  detailActionIncreaseBtn: {
-    borderColor: COLORS.income + "28",
-    backgroundColor: COLORS.income + "0E",
-  },
-  detailActionIncreaseIcon: {
-    backgroundColor: COLORS.income + "18",
-  },
-  detailActionIncreaseText: {
-    color: COLORS.income,
-  },
-  detailActionDangerBtn: {
-    borderColor: COLORS.danger + "28",
-    backgroundColor: COLORS.danger + "0E",
-  },
-  detailActionDangerIcon: {
-    backgroundColor: COLORS.danger + "18",
-  },
-  detailActionSecondaryText: {
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.ink,
-    fontFamily: FONT_FAMILY.bodySemibold,
-    textAlign: "center",
-  },
-  detailActionDangerText: {
-    color: COLORS.danger,
-  },
   detailInfoCard: {
     gap: 0,
   },
@@ -206,51 +116,6 @@ export const styles = StyleSheet.create({
     fontSize: FONT_SIZE.md,
     color: COLORS.ink,
   },
-  capitalSummaryGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: SPACING.sm,
-  },
-  capitalSummaryItem: {
-    flex: 1,
-    minWidth: "46%",
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: SURFACE.cardBorder,
-    backgroundColor: SURFACE.card,
-    padding: SPACING.sm,
-    gap: 4,
-  },
-  capitalSummaryAction: {
-    borderColor: COLORS.primary + "28",
-  },
-  capitalSummaryLabel: {
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.storm,
-    fontFamily: FONT_FAMILY.body,
-  },
-  capitalSummaryValue: {
-    fontSize: FONT_SIZE.md,
-    color: COLORS.ink,
-    fontFamily: FONT_FAMILY.bodySemibold,
-  },
-  capitalSummaryMeta: {
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.textDisabled,
-    fontFamily: FONT_FAMILY.body,
-  },
-  capitalSummaryLink: {
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.primary,
-    fontFamily: FONT_FAMILY.bodyMedium,
-    marginTop: 2,
-  },
-  capitalSummaryPositive: {
-    color: COLORS.income,
-  },
-  capitalSummaryNegative: {
-    color: COLORS.danger,
-  },
   section: { gap: SPACING.sm },
   sectionTitle: {
     fontSize: FONT_SIZE.xs, fontFamily: FONT_FAMILY.bodySemibold,
@@ -260,40 +125,6 @@ export const styles = StyleSheet.create({
     fontSize: FONT_SIZE.xs,
     color: COLORS.textDisabled,
     lineHeight: 18,
-  },
-  dateRangeCaption: {
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.storm,
-    fontFamily: FONT_FAMILY.bodyMedium,
-  },
-  historyLegendRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: SPACING.xs,
-  },
-  historyLegendChip: {
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 6,
-    borderRadius: RADIUS.full,
-    borderWidth: 1,
-  },
-  historyLegendChipCash: {
-    backgroundColor: COLORS.primary + "12",
-    borderColor: COLORS.primary + "30",
-  },
-  historyLegendChipCapital: {
-    backgroundColor: COLORS.secondary + "12",
-    borderColor: COLORS.secondary + "30",
-  },
-  historyLegendChipText: {
-    fontSize: FONT_SIZE.xs,
-    fontFamily: FONT_FAMILY.bodyMedium,
-  },
-  historyLegendChipTextCash: {
-    color: COLORS.primary,
-  },
-  historyLegendChipTextCapital: {
-    color: COLORS.secondary,
   },
   historyHeaderRow: {
     flexDirection: "row",
@@ -305,32 +136,6 @@ export const styles = StyleSheet.create({
     fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.xs,
     color: COLORS.storm,
-  },
-  historyPresetRow: {
-    flexDirection: "row",
-    gap: SPACING.xs,
-    paddingVertical: SPACING.xs,
-  },
-  filterPill: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: 6,
-    borderRadius: RADIUS.full,
-    backgroundColor: SURFACE.card,
-    borderWidth: 1,
-    borderColor: SURFACE.cardBorder,
-  },
-  filterPillActive: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
-  },
-  filterPillText: {
-    fontSize: FONT_SIZE.xs,
-    fontFamily: FONT_FAMILY.bodyMedium,
-    color: COLORS.storm,
-  },
-  filterPillTextActive: {
-    color: "#FFFFFF",
-    fontFamily: FONT_FAMILY.bodySemibold,
   },
   customRange: {
     gap: SPACING.sm,
@@ -409,23 +214,19 @@ export const styles = StyleSheet.create({
     height: 1,
     backgroundColor: SURFACE.separator,
   },
-  datePill: {
-    backgroundColor: SURFACE.separator,
-    borderRadius: 99,
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderWidth: 1,
-    borderColor: SURFACE.cardBorder,
-  },
+  // La cabecera es del mes, no del día, y va en gris: el neto tiene su signo, que es lo que
+  // dice hacia dónde se movió la deuda. En menta decía "entró plata" sobre pagos y descuentos.
   datePillText: {
-    fontSize: 10,
+    fontSize: FONT_SIZE.xs,
     fontFamily: FONT_FAMILY.bodySemibold,
     color: COLORS.storm,
-    letterSpacing: 0.4,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
   },
   dateDayTotal: {
-    fontSize: 10,
-    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+    fontFamily: FONT_FAMILY.heading,
+    color: COLORS.fog,
   },
   dateGroup: {
     gap: 1,
@@ -493,27 +294,6 @@ export const styles = StyleSheet.create({
     paddingHorizontal: 14,
     gap: 12,
   },
-  eventIconBox: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
-    flexShrink: 0,
-  },
-  eventDot: {
-    width: 7,
-    height: 7,
-    borderRadius: RADIUS.full,
-    borderWidth: 1,
-    borderColor: SURFACE.inputBorder,
-    marginTop: SPACING.sm,
-  },
-  eventDotFilled: { backgroundColor: COLORS.fog, borderColor: COLORS.fog },
-  eventIconText: {
-    fontSize: 16,
-    fontFamily: FONT_FAMILY.bodySemibold,
-  },
   eventCardBody: {
     flex: 1,
     minWidth: 0,
@@ -541,11 +321,6 @@ export const styles = StyleSheet.create({
     fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.xs,
     color: COLORS.storm,
-  },
-  eventInstallmentNote: {
-    fontSize: 10,
-    color: COLORS.storm,
-    fontFamily: FONT_FAMILY.body,
   },
   eventImpactNote: {
     fontSize: 10,
@@ -699,15 +474,6 @@ export const styles = StyleSheet.create({
     fontFamily: FONT_FAMILY.body,
     lineHeight: 17,
   },
-  movementChip: {
-    paddingHorizontal: SPACING.xs + 2,
-    paddingVertical: 2,
-    borderRadius: RADIUS.full,
-    backgroundColor: COLORS.ember + "22",
-    borderWidth: 1,
-    borderColor: COLORS.ember + "55",
-  },
-  movementChipText: { fontSize: 10, color: COLORS.ember, fontFamily: FONT_FAMILY.bodySemibold },
   eventAttachmentRow: {
     flexDirection: "row",
     alignItems: "center",

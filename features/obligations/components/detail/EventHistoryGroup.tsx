@@ -12,8 +12,7 @@ import { Minus, Plus } from "lucide-react-native";
 
 import { formatCurrency } from "../../../../components/ui/AmountDisplay";
 import { COLORS } from "../../../../constants/theme";
-import { eventDatePillLabel } from "../../../../lib/obligation-event-presentation";
-import { todayPeru } from "../../../../lib/date";
+import { signedNet } from "../../lib/describe-event";
 import { StaggeredItem } from "../../../../components/ui/StaggeredItem";
 import type { ObligationEventSummary } from "../../../../types/domain";
 
@@ -31,7 +30,6 @@ export type EventHistoryGroupStyles = {
   historyGroupEmpty: StyleProp<TextStyle>;
   dateSeparator: StyleProp<ViewStyle>;
   dateSepLine: StyleProp<ViewStyle>;
-  datePill: StyleProp<ViewStyle>;
   datePillText: StyleProp<TextStyle>;
   dateDayTotal: StyleProp<TextStyle>;
   dateGroup: StyleProp<ViewStyle>;
@@ -39,16 +37,31 @@ export type EventHistoryGroupStyles = {
 
 type CardPosition = "single" | "first" | "middle" | "last";
 
-function groupEventsByDate(events: ObligationEventSummary[]): Array<{ date: string; events: ObligationEventSummary[] }> {
+/**
+ * Los movimientos se agrupan por **mes**, no por día.
+ *
+ * Eran siete cabeceras para ocho filas —cinco encabezando un solo movimiento, cada una con su
+ * cápsula, su línea y su total— y la fecha se repetía dos renglones más abajo, dentro de la
+ * fila. El día vive donde ya estaba: en el subtítulo.
+ */
+function groupEventsByMonth(events: ObligationEventSummary[]): Array<{ month: string; events: ObligationEventSummary[] }> {
   const map = new Map<string, ObligationEventSummary[]>();
   for (const e of events) {
-    const date = e.eventDate.slice(0, 10);
-    if (!map.has(date)) map.set(date, []);
-    map.get(date)!.push(e);
+    const month = e.eventDate.slice(0, 7);
+    if (!map.has(month)) map.set(month, []);
+    map.get(month)!.push(e);
   }
   return Array.from(map.entries())
     .sort((a, b) => b[0].localeCompare(a[0]))
-    .map(([date, evs]) => ({ date, events: evs }));
+    .map(([month, evs]) => ({ month, events: evs }));
+}
+
+function monthLabel(month: string): string {
+  const [year, m] = month.split("-").map(Number);
+  if (!year || !m) return month;
+  const label = new Intl.DateTimeFormat("es-PE", { month: "long", year: "numeric" })
+    .format(new Date(year, m - 1, 1));
+  return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
 type Props = {
@@ -75,8 +88,7 @@ export function EventHistoryGroup({
   styles,
   renderEventRow,
 }: Props) {
-  const dateGroups = groupEventsByDate(events);
-  const todayStr = todayPeru();
+  const monthGroups = groupEventsByMonth(events);
 
   return (
     <View key={groupKey} style={styles.historyGroupCard}>
@@ -112,33 +124,31 @@ export function EventHistoryGroup({
           {events.length === 0 ? (
             <Text style={styles.historyGroupEmpty}>{emptyText}</Text>
           ) : (
-            dateGroups.map(({ date, events: dayEvents }) => {
-              const pillLabel = eventDatePillLabel(date, todayStr);
-              const dayTotal = dayEvents.reduce((sum, e) => sum + e.amount, 0);
+            monthGroups.map(({ month, events: monthEvents }) => {
+              /**
+               * El neto del mes, con signo. La cabecera sumaba magnitudes: un pago y dos
+               * reducciones que bajaban la deuda salían como "+ S/ 35.00" mientras el saldo de
+               * la derecha, en la misma fila, bajaba. El signo dice hacia dónde se movió.
+               */
+              const net = signedNet(monthEvents);
               return (
-                <View key={date}>
+                <View key={month}>
                   <View style={styles.dateSeparator}>
+                    <Text style={styles.datePillText}>{monthLabel(month)}</Text>
                     <View style={styles.dateSepLine} />
-                    <View style={styles.datePill}>
-                      <Text style={styles.datePillText}>{pillLabel}</Text>
-                    </View>
-                    <View style={styles.dateSepLine} />
-                    <Text style={[
-                      styles.dateDayTotal,
-                      { color: dayTotal >= 0 ? COLORS.income : COLORS.danger },
-                    ]}>
-                      {dayTotal >= 0 ? "+" : ""}{formatCurrency(Math.abs(dayTotal), currencyCode)}
+                    <Text style={styles.dateDayTotal}>
+                      {net >= 0 ? "+ " : "− "}{formatCurrency(Math.abs(net), currencyCode)}
                     </Text>
                   </View>
 
                   <View style={styles.dateGroup}>
-                    {dayEvents.map((event, idx) => {
+                    {monthEvents.map((event, idx) => {
                       const position: CardPosition =
-                        dayEvents.length === 1
+                        monthEvents.length === 1
                           ? "single"
                           : idx === 0
                             ? "first"
-                            : idx === dayEvents.length - 1
+                            : idx === monthEvents.length - 1
                               ? "last"
                               : "middle";
                       return (

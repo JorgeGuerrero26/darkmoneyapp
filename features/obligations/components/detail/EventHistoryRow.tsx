@@ -40,20 +40,15 @@ export type EventHistoryRowStyles = {
   eventRowHighlighted: StyleProp<ViewStyle>;
   eventRowHighlightedPulse: StyleProp<ViewStyle>;
   eventCardInner: StyleProp<ViewStyle>;
-  eventDot: StyleProp<ViewStyle>;
-  eventDotFilled: StyleProp<ViewStyle>;
   eventCardBody: StyleProp<ViewStyle>;
   eventTypeLabel: StyleProp<TextStyle>;
   eventDescription: StyleProp<TextStyle>;
   eventDescriptionMuted: StyleProp<TextStyle>;
-  eventInstallmentNote: StyleProp<TextStyle>;
   eventImpactNote: StyleProp<TextStyle>;
   eventCardAmount: StyleProp<TextStyle>;
   eventAmountColumn: StyleProp<ViewStyle>;
   eventBalanceAfter: StyleProp<TextStyle>;
   eventChipsRow: StyleProp<ViewStyle>;
-  movementChip: StyleProp<ViewStyle>;
-  movementChipText: StyleProp<TextStyle>;
   eventAttachmentLoadingChip: StyleProp<ViewStyle>;
   eventAttachmentLoadingText: StyleProp<TextStyle>;
   eventAttachmentChip: StyleProp<ViewStyle>;
@@ -234,11 +229,8 @@ export function EventHistoryRow({
         onPress={isTappable ? () => onTapEvent(ev) : undefined}
         activeOpacity={isTappable ? 0.7 : 1}
       >
-        {/* Misma anatomía que la lista de arriba: un punto en vez de la caja con el ícono del
-            tipo, el producto como título —el tipo lo dice el signo— y la fecha con su dato al
-            lado. La caja de color repetía el tipo por tercera vez en la misma fila. */}
-        <View style={[styles.eventDot, described.reduces && styles.eventDotFilled]} />
-
+        {/* Sin punto ni ícono de tipo: el signo del monto ya dice hacia dónde se movió la
+            deuda, y dos señales para lo mismo es una de más. */}
         <View style={styles.eventCardBody}>
           <Text
             style={[styles.eventTypeLabel, described.missingDescription && styles.eventDescriptionMuted]}
@@ -267,13 +259,13 @@ export function EventHistoryRow({
 
         <View style={styles.eventAmountColumn}>
           <Text style={styles.eventCardAmount} numberOfLines={1}>
-            {described.reduces ? "" : "+ "}{formatCurrency(ev.amount, obligation.currencyCode)}
+            {described.reduces ? "− " : "+ "}{formatCurrency(ev.amount, obligation.currencyCode)}
           </Text>
           {/* El saldo que quedó tras este movimiento. Es lo que enseña la mecánica —qué reduce
               y qué aumenta— sin las dos cápsulas de vocabulario interno que había arriba. */}
           {balanceAfter != null ? (
             <Text style={styles.eventBalanceAfter} numberOfLines={1}>
-              quedan {formatCurrency(balanceAfter, obligation.currencyCode)}
+              {formatCurrency(balanceAfter, obligation.currencyCode)}
             </Text>
           ) : null}
         </View>
@@ -281,15 +273,6 @@ export function EventHistoryRow({
 
       {hasChipsRow ? (
         <View style={styles.eventChipsRow}>
-          {ev.movementId && !isSharedViewer ? (
-            <TouchableOpacity
-              style={styles.movementChip}
-              onPress={() => ev.movementId != null && onPressMovement(ev.movementId)}
-              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-            >
-              <Text style={styles.movementChipText}>Mov.</Text>
-            </TouchableOpacity>
-          ) : null}
           {showAttachmentLoading ? (
             <View style={styles.eventAttachmentLoadingChip}>
               <ActivityIndicator size="small" color={COLORS.storm} />

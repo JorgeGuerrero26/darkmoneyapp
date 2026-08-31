@@ -1,14 +1,13 @@
 import { type ReactNode } from "react";
 import {
-  ScrollView,
   Text,
-  TouchableOpacity,
   View,
   type StyleProp,
   type ViewStyle,
   type TextStyle,
 } from "react-native";
 
+import { SegmentedControl } from "../../../../components/ui/SegmentedControl";
 import { DatePickerInput } from "../../../../components/ui/DatePickerInput";
 import type { HistoryPreset } from "../../../../hooks/useObligationNotificationDeepLink";
 import { ymdToLocalDate } from "../../../../lib/obligation-date-range";
@@ -17,21 +16,8 @@ import type { ObligationEventSummary } from "../../../../types/domain";
 export type EventHistoryContainerStyles = {
   section: StyleProp<ViewStyle>;
   sectionTitle: StyleProp<TextStyle>;
-  dateRangeCaption: StyleProp<TextStyle>;
-  historyLegendRow: StyleProp<ViewStyle>;
-  historyLegendChip: StyleProp<ViewStyle>;
-  historyLegendChipCash: StyleProp<ViewStyle>;
-  historyLegendChipCapital: StyleProp<ViewStyle>;
-  historyLegendChipText: StyleProp<TextStyle>;
-  historyLegendChipTextCash: StyleProp<TextStyle>;
-  historyLegendChipTextCapital: StyleProp<TextStyle>;
-  historyPresetRow: StyleProp<ViewStyle>;
   historyHeaderRow: StyleProp<ViewStyle>;
   historyScopeLabel: StyleProp<TextStyle>;
-  filterPill: StyleProp<ViewStyle>;
-  filterPillActive: StyleProp<ViewStyle>;
-  filterPillText: StyleProp<TextStyle>;
-  filterPillTextActive: StyleProp<TextStyle>;
   customRange: StyleProp<ViewStyle>;
   eventFocusNotice: StyleProp<ViewStyle>;
   eventFocusNoticeSuccess: StyleProp<ViewStyle>;
@@ -63,12 +49,11 @@ const PRESET_OPTIONS = [
   { id: "3m" as HistoryPreset, label: "3 meses" },
   { id: "year" as HistoryPreset, label: "Este año" },
   { id: "all" as HistoryPreset, label: "Todo" },
-  { id: "custom" as HistoryPreset, label: "Rango..." },
+  { id: "custom" as HistoryPreset, label: "Rango" },
 ] as const;
 
 type Props = {
   styles: EventHistoryContainerStyles;
-  historyDateRangeNotice: string;
   historyPreset: HistoryPreset;
   historyFrom: string;
   historyTo: string;
@@ -94,7 +79,6 @@ type Props = {
 
 export function EventHistoryContainer({
   styles,
-  historyDateRangeNotice,
   historyPreset,
   historyFrom,
   historyTo,
@@ -129,23 +113,15 @@ export function EventHistoryContainer({
           {PRESET_LABELS[historyPreset]} · {filteredHistoryEvents.length}
         </Text>
       </View>
+      {/* Los cinco filtros van en una sola pista, con lo elegido en hueso. Iban como cápsulas
+          sueltas con la elegida en menta —tercera vez—, y encima una línea que decía "Mostrando
+          todos los eventos del historial", que es exactamente lo que ya dice el filtro marcado. */}
       {showFilters ? (
-        <>
-          <Text style={styles.dateRangeCaption}>{historyDateRangeNotice}</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.historyPresetRow}>
-            {PRESET_OPTIONS.map((opt) => (
-              <TouchableOpacity
-                key={opt.id}
-                style={[styles.filterPill, historyPreset === opt.id && styles.filterPillActive]}
-                onPress={() => onApplyPreset(opt.id)}
-              >
-                <Text style={[styles.filterPillText, historyPreset === opt.id && styles.filterPillTextActive]}>
-                  {opt.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </>
+        <SegmentedControl
+          options={PRESET_OPTIONS.map((opt) => ({ value: opt.id, label: opt.label }))}
+          value={historyPreset}
+          onChange={onApplyPreset}
+        />
       ) : null}
       {historyPreset === "custom" ? (
         <View style={styles.customRange}>

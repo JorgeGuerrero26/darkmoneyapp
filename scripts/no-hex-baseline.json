@@ -7,11 +7,7 @@
   ],
   "features/obligations/lib/obligation-detail.styles.ts": [
     {
-      "line": 332,
-      "match": "\"#FFFFFF\""
-    },
-    {
-      "line": 825,
+      "line": 591,
       "match": "\"#FFF\""
     }
   ],
