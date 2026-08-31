@@ -19,6 +19,15 @@ type Props = {
   color?: string;
   /** Idem con el signo. "" fuerza sin signo; undefined deja el derivado del tipo. */
   prefix?: string;
+  /**
+   * La cifra entera a un solo tamaño, con el símbolo y el signo en gris a un cuerpo menor.
+   *
+   * Para la cifra protagonista de una pantalla de detalle, donde no compite con nada. La
+   * jerarquía de tres escalas —símbolo al 43 %, céntimos al 48 %— está pensada para una columna
+   * de cifras que se comparan de un vistazo; sola y en grande hace que "S/ 1.50" se lea como
+   * "S/ 1", que es el recurso de los precios de tienda.
+   */
+  flat?: boolean;
 };
 
 import {
@@ -65,6 +74,7 @@ export function AmountDisplay({
   style,
   color: colorOverride,
   prefix: prefixOverride,
+  flat = false,
 }: Props) {
   let color = COLORS.text;
   let prefix = "";
@@ -112,6 +122,17 @@ export function AmountDisplay({
 
   const { symbol, integer, fraction } = formatCurrencyParts(displayAmount, currencyCode);
 
+  if (flat) {
+    const quietSize = Math.round(fontSize * 0.5);
+    return (
+      <Text style={[styles.base, { fontSize, color }, style]}>
+        {prefix ? <Text style={[styles.quiet, { fontSize: quietSize }]}>{prefix} </Text> : null}
+        <Text style={[styles.quiet, { fontSize: quietSize }]}>{symbol} </Text>
+        <Text style={[styles.integer, { letterSpacing: -0.03 * fontSize }]}>{integer}{fraction}</Text>
+      </Text>
+    );
+  }
+
   return (
     <Text style={[styles.base, { fontSize, color }, style]}>
       {/* El signo va a tamaño completo a propósito: es información, no puntuación. */}
@@ -145,6 +166,8 @@ const styles = StyleSheet.create({
   },
   sign:    { fontFamily: FONT_FAMILY.heading },
   symbol:  { fontFamily: FONT_FAMILY.headingMedium, color: COLORS.storm },
+  /** Signo y símbolo de la variante `flat`: dicen qué es la cifra, no son la cifra. */
+  quiet:   { fontFamily: FONT_FAMILY.headingMedium, color: COLORS.storm },
   integer: { fontFamily: FONT_FAMILY.heading },
   fraction:{ fontFamily: FONT_FAMILY.heading },
 });
