@@ -672,17 +672,13 @@ function ObligationDetailScreen() {
   });
 
 
-  function renderHistoryEventRow(
-    ev: ObligationEventSummary,
-    cardPosition: "single" | "first" | "middle" | "last",
-  ) {
+  function renderHistoryEventRow(ev: ObligationEventSummary) {
     if (!obligation) return null;
     return (
       <EventHistoryRow
         key={ev.id}
         event={ev}
         balanceAfter={balancesByEventId.get(ev.id) ?? null}
-        cardPosition={cardPosition}
         obligation={obligation}
         isSharedViewer={isSharedViewer}
         viewerLinkByEventId={viewerLinkByEventId}

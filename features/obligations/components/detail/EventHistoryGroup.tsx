@@ -35,8 +35,6 @@ export type EventHistoryGroupStyles = {
   dateGroup: StyleProp<ViewStyle>;
 };
 
-type CardPosition = "single" | "first" | "middle" | "last";
-
 /**
  * Los movimientos se agrupan por **mes**, no por día.
  *
@@ -59,9 +57,8 @@ function groupEventsByMonth(events: ObligationEventSummary[]): Array<{ month: st
 function monthLabel(month: string): string {
   const [year, m] = month.split("-").map(Number);
   if (!year || !m) return month;
-  const label = new Intl.DateTimeFormat("es-PE", { month: "long", year: "numeric" })
-    .format(new Date(year, m - 1, 1));
-  return label.charAt(0).toUpperCase() + label.slice(1);
+  const name = new Intl.DateTimeFormat("es-PE", { month: "long" }).format(new Date(year, m - 1, 1));
+  return `${name.charAt(0).toUpperCase()}${name.slice(1)} ${year}`;
 }
 
 type Props = {
@@ -74,7 +71,7 @@ type Props = {
   onToggleCollapsed: () => void;
   currencyCode: string;
   styles: EventHistoryGroupStyles;
-  renderEventRow: (event: ObligationEventSummary, position: CardPosition) => ReactNode;
+  renderEventRow: (event: ObligationEventSummary) => ReactNode;
 };
 
 export function EventHistoryGroup({
@@ -142,21 +139,11 @@ export function EventHistoryGroup({
                   </View>
 
                   <View style={styles.dateGroup}>
-                    {monthEvents.map((event, idx) => {
-                      const position: CardPosition =
-                        monthEvents.length === 1
-                          ? "single"
-                          : idx === 0
-                            ? "first"
-                            : idx === monthEvents.length - 1
-                              ? "last"
-                              : "middle";
-                      return (
-                        <StaggeredItem key={event.id} index={idx} maxStagger={6}>
-                          {renderEventRow(event, position)}
-                        </StaggeredItem>
-                      );
-                    })}
+                    {monthEvents.map((event, idx) => (
+                      <StaggeredItem key={event.id} index={idx} maxStagger={6}>
+                        {renderEventRow(event)}
+                      </StaggeredItem>
+                    ))}
                   </View>
                 </View>
               );

@@ -228,9 +228,7 @@ export const styles = StyleSheet.create({
     fontFamily: FONT_FAMILY.heading,
     color: COLORS.fog,
   },
-  dateGroup: {
-    gap: 1,
-  },
+  dateGroup: {},
   viewerTabsRow: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -281,18 +279,18 @@ export const styles = StyleSheet.create({
   eventFocusNoticeTextSuccess: {
     color: COLORS.income,
   },
+  // Sin caja: cada movimiento era una tarjeta con fondo, borde y esquinas, y la lista quedaba
+  // en bloques apilados. Una lista de movimientos son filas separadas por una línea, como en
+  // Movimientos y en Cuentas.
   eventCard: {
-    backgroundColor: "rgba(244,241,236,0.03)",
-    borderWidth: 1,
-    borderColor: "rgba(244,241,236,0.07)",
-    overflow: "hidden",
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: SURFACE.separator,
   },
   eventCardInner: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 12,
-    paddingHorizontal: 14,
-    gap: 12,
+    paddingVertical: SPACING.md,
+    gap: SPACING.md,
   },
   eventCardBody: {
     flex: 1,

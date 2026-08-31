@@ -3,7 +3,7 @@ import { ChevronRight } from "lucide-react-native";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
-import { formatCurrency } from "../../../../components/ui/AmountDisplay";
+import { formatAmountPlain } from "../../../../components/ui/AmountDisplay";
 import { parseDisplayDate } from "../../../../lib/date";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../../../constants/theme";
 import { describeObligationEvent } from "../../lib/describe-event";
@@ -43,7 +43,8 @@ export function ObligationMovementsPreview({
 
   const sellsOnCredit = obligation.originType === "sale_financed";
   const preview = events.slice(0, PREVIEW_COUNT);
-  const money = (amount: number) => formatCurrency(amount, obligation.currencyCode);
+  /** Sin símbolo en cada fila: la moneda ya la dice la cifra grande de arriba. */
+  const money = (amount: number) => formatAmountPlain(amount, obligation.currencyCode);
 
   return (
     <View style={styles.card}>

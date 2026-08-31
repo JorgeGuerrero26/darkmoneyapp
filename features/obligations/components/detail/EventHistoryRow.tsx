@@ -10,7 +10,7 @@ import {
 } from "react-native";
 import { Images } from "lucide-react-native";
 
-import { formatCurrency } from "../../../../components/ui/AmountDisplay";
+import { formatAmountPlain, formatCurrency } from "../../../../components/ui/AmountDisplay";
 import { COLORS, RADIUS } from "../../../../constants/theme";
 import { EVENT_TYPE_ICON } from "../../../../lib/obligation-event-presentation";
 import {
@@ -77,7 +77,6 @@ type Props = {
   event: ObligationEventSummary;
   /** El saldo pendiente que quedó después de este movimiento. */
   balanceAfter?: number | null;
-  cardPosition: CardPosition;
   obligation: ObligationSummary | SharedObligationSummary;
   isSharedViewer: boolean;
   viewerLinkByEventId: Map<number, ObligationEventViewerLink>;
@@ -105,7 +104,6 @@ type Props = {
 export function EventHistoryRow({
   event: ev,
   balanceAfter,
-  cardPosition,
   obligation,
   isSharedViewer,
   viewerLinkByEventId,
@@ -178,14 +176,13 @@ export function EventHistoryRow({
     ? viewerEventAccountImpactCopy(ev, obligation, viewerLinkedAccountId != null)
     : null;
 
-  const cardRadius =
-    cardPosition === "single"
-      ? { borderRadius: RADIUS.xl }
-      : cardPosition === "first"
-        ? { borderTopLeftRadius: RADIUS.xl, borderTopRightRadius: RADIUS.xl, borderBottomLeftRadius: RADIUS.sm, borderBottomRightRadius: RADIUS.sm }
-        : cardPosition === "last"
-          ? { borderTopLeftRadius: RADIUS.sm, borderTopRightRadius: RADIUS.sm, borderBottomLeftRadius: RADIUS.xl, borderBottomRightRadius: RADIUS.xl }
-          : { borderRadius: RADIUS.sm };
+  /**
+   * La fila es plana: no lleva caja.
+   *
+   * Cada movimiento se pintaba como una tarjeta con su fondo, su borde y sus esquinas, y la
+   * lista quedaba en bloques apilados. Una lista de movimientos son filas separadas por una
+   * línea, como en Movimientos y en Cuentas — la caja no aporta nada y parte la lectura.
+   */
 
   const hasChipsRow =
     showAttachmentLoading ||
@@ -207,7 +204,6 @@ export function EventHistoryRow({
     <View
       style={[
         styles.eventCard,
-        cardRadius,
         isHighlighted && styles.eventRowHighlighted,
         isHighlighted && highlightPulseOn && styles.eventRowHighlightedPulse,
       ]}
@@ -259,13 +255,13 @@ export function EventHistoryRow({
 
         <View style={styles.eventAmountColumn}>
           <Text style={styles.eventCardAmount} numberOfLines={1}>
-            {described.reduces ? "− " : "+ "}{formatCurrency(ev.amount, obligation.currencyCode)}
+            {described.reduces ? "− " : "+ "}{formatAmountPlain(ev.amount, obligation.currencyCode)}
           </Text>
           {/* El saldo que quedó tras este movimiento. Es lo que enseña la mecánica —qué reduce
               y qué aumenta— sin las dos cápsulas de vocabulario interno que había arriba. */}
           {balanceAfter != null ? (
             <Text style={styles.eventBalanceAfter} numberOfLines={1}>
-              {formatCurrency(balanceAfter, obligation.currencyCode)}
+              {formatAmountPlain(balanceAfter, obligation.currencyCode)}
             </Text>
           ) : null}
         </View>
