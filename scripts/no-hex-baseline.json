@@ -7,7 +7,7 @@
   ],
   "features/obligations/lib/obligation-detail.styles.ts": [
     {
-      "line": 591,
+      "line": 589,
       "match": "\"#FFF\""
     }
   ],
@@ -164,12 +164,6 @@
   "components/forms/PaymentForm.tsx": [
     {
       "line": 544,
-      "match": "\"#FFFFFF\""
-    }
-  ],
-  "components/forms/PrincipalAdjustmentForm.tsx": [
-    {
-      "line": 318,
       "match": "\"#FFFFFF\""
     }
   ],
