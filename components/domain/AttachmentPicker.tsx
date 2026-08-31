@@ -438,11 +438,10 @@ export function AttachmentPicker({
                 <Text style={styles.addTitle}>
                   {isCheckingProAccess ? "Comprobando..." : isUploadLocked ? "Solo Pro" : hasUploadingItems ? "Subiendo..." : "Agregar"}
                 </Text>
-                <Text style={styles.addCaption}>
-                  {isUploadLocked
-                    ? "Desbloquea comprobantes"
-                    : "Agregar"}
-                </Text>
+                {/* Solo cuando dice algo distinto al titulo: la caja pintaba "Agregar" dos veces. */}
+                {isUploadLocked ? (
+                  <Text style={styles.addCaption}>Desbloquea comprobantes</Text>
+                ) : null}
               </TouchableOpacity>
             ) : null}
             {attachments.length === 0 ? (
