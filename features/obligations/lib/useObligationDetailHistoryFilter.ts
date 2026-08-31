@@ -15,8 +15,15 @@ type Args = {
   events: ObligationEventSummary[];
 };
 
+/**
+ * El historial abre **completo**.
+ *
+ * Abría en "Mes actual" y respondía "Ningún evento en este rango de fechas" sobre una obligación
+ * con catorce eventos guardados: el contenido más útil de la pantalla, vacío por una decisión de
+ * filtro y no por falta de datos.
+ */
 export function useObligationDetailHistoryFilter({ obligationId, events }: Args) {
-  const [historyPreset, setHistoryPreset] = useState<HistoryPreset>("month");
+  const [historyPreset, setHistoryPreset] = useState<HistoryPreset>("all");
   const [historyGroupsCollapsed, setHistoryGroupsCollapsed] = useState<HistoryGroupsCollapsed>({
     payments: false,
     capital: false,
@@ -27,7 +34,7 @@ export function useObligationDetailHistoryFilter({ obligationId, events }: Args)
   // Reset when obligation changes
   useEffect(() => {
     const { from, to } = currentMonthRangeYmd();
-    setHistoryPreset("month");
+    setHistoryPreset("all");
     setHistoryFrom(from);
     setHistoryTo(to);
     setHistoryGroupsCollapsed({ payments: false, capital: false });

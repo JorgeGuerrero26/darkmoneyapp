@@ -26,6 +26,8 @@ export type EventHistoryContainerStyles = {
   historyLegendChipTextCash: StyleProp<TextStyle>;
   historyLegendChipTextCapital: StyleProp<TextStyle>;
   historyPresetRow: StyleProp<ViewStyle>;
+  historyHeaderRow: StyleProp<ViewStyle>;
+  historyScopeLabel: StyleProp<TextStyle>;
   filterPill: StyleProp<ViewStyle>;
   filterPillActive: StyleProp<ViewStyle>;
   filterPillText: StyleProp<TextStyle>;
@@ -40,10 +42,26 @@ export type EventHistoryContainerStyles = {
   emptyHistory: StyleProp<TextStyle>;
 };
 
+/**
+ * A partir de cuántos eventos aparecen los filtros.
+ *
+ * Con pocos, la lista se ve entera de un vistazo y el filtro solo ocupa sitio — misma regla que
+ * el buscador de Cuentas.
+ */
+const FILTERS_MIN_EVENTS = 12;
+
+const PRESET_LABELS: Record<HistoryPreset, string> = {
+  month: "Mes actual",
+  "3m": "3 meses",
+  year: "Este año",
+  all: "Todos",
+  custom: "Rango",
+};
+
 const PRESET_OPTIONS = [
   { id: "month" as HistoryPreset, label: "Mes actual" },
   { id: "3m" as HistoryPreset, label: "3 meses" },
-  { id: "year" as HistoryPreset, label: "Este ano" },
+  { id: "year" as HistoryPreset, label: "Este año" },
   { id: "all" as HistoryPreset, label: "Todo" },
   { id: "custom" as HistoryPreset, label: "Rango..." },
 ] as const;
@@ -101,38 +119,42 @@ export function EventHistoryContainer({
   onSectionLayoutY,
   renderHistoryGroup,
 }: Props) {
+  const showFilters = eventsForDetail.length >= FILTERS_MIN_EVENTS;
+
   return (
     <View
       style={styles.section}
       onLayout={(event) => onSectionLayoutY(event.nativeEvent.layout.y)}
     >
-      <Text style={styles.sectionTitle}>Historial de eventos</Text>
-      <Text style={styles.dateRangeCaption}>{historyDateRangeNotice}</Text>
-      <View style={styles.historyLegendRow}>
-        <View style={[styles.historyLegendChip, styles.historyLegendChipCash]}>
-          <Text style={[styles.historyLegendChipText, styles.historyLegendChipTextCash]}>
-            {paymentWordPlural} reducen el saldo pendiente
-          </Text>
-        </View>
-        <View style={[styles.historyLegendChip, styles.historyLegendChipCapital]}>
-          <Text style={[styles.historyLegendChipText, styles.historyLegendChipTextCapital]}>
-            Capital cambia el monto prestado o debido
-          </Text>
-        </View>
+      {/* El rótulo dice qué se está viendo —"Todos · 21"—, que es lo que un filtro debe decir.
+          Las dos cápsulas que estaban aquí ("Los cobros reducen el saldo pendiente", "Capital
+          cambia el monto prestado o debido") eran notas al pie disfrazadas de filtro: enseñaban
+          vocabulario interno. La lista lo explica sola mostrando el saldo que quedó tras cada
+          movimiento. */}
+      <View style={styles.historyHeaderRow}>
+        <Text style={styles.sectionTitle}>Movimientos</Text>
+        <Text style={styles.historyScopeLabel}>
+          {PRESET_LABELS[historyPreset]} · {filteredHistoryEvents.length}
+        </Text>
       </View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.historyPresetRow}>
-        {PRESET_OPTIONS.map((opt) => (
-          <TouchableOpacity
-            key={opt.id}
-            style={[styles.filterPill, historyPreset === opt.id && styles.filterPillActive]}
-            onPress={() => onApplyPreset(opt.id)}
-          >
-            <Text style={[styles.filterPillText, historyPreset === opt.id && styles.filterPillTextActive]}>
-              {opt.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+      {showFilters ? (
+        <>
+          <Text style={styles.dateRangeCaption}>{historyDateRangeNotice}</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.historyPresetRow}>
+            {PRESET_OPTIONS.map((opt) => (
+              <TouchableOpacity
+                key={opt.id}
+                style={[styles.filterPill, historyPreset === opt.id && styles.filterPillActive]}
+                onPress={() => onApplyPreset(opt.id)}
+              >
+                <Text style={[styles.filterPillText, historyPreset === opt.id && styles.filterPillTextActive]}>
+                  {opt.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </>
+      ) : null}
       {historyPreset === "custom" ? (
         <View style={styles.customRange}>
           <DatePickerInput
@@ -180,8 +202,8 @@ export function EventHistoryContainer({
       ) : filteredHistoryEvents.length === 0 ? (
         <Text style={styles.emptyHistory}>
           {eventsForDetail.length === 0
-            ? "Sin eventos registrados aun."
-            : "Ningun evento en este rango de fechas."}
+            ? "Sin movimientos registrados aún."
+            : "Ningún movimiento en este rango de fechas."}
         </Text>
       ) : (
         <>

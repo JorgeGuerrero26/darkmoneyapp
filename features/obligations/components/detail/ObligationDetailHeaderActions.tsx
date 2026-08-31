@@ -1,3 +1,4 @@
+import { Download, MoreVertical } from "lucide-react-native";
 import {
   Text,
   TouchableOpacity,
@@ -7,12 +8,15 @@ import {
   type TextStyle,
 } from "react-native";
 
+import { COLORS } from "../../../../constants/theme";
+
 export type ObligationDetailHeaderActionsStyles = {
   headerActions: StyleProp<ViewStyle>;
   requestBadgeWrap: StyleProp<ViewStyle>;
   requestBadge: StyleProp<ViewStyle>;
   requestBadgeText: StyleProp<TextStyle>;
   shareBtn: StyleProp<ViewStyle>;
+  headerIconBtn: StyleProp<ViewStyle>;
   shareBtnText: StyleProp<TextStyle>;
   unlinkHeaderBtn: StyleProp<ViewStyle>;
   unlinkHeaderBtnText: StyleProp<TextStyle>;
@@ -25,6 +29,7 @@ type Props = {
   pendingRequestCount: number;
   onPressShare: () => void;
   onPressReport: () => void;
+  onPressMenu: () => void;
   onPressUnlink: () => void;
 };
 
@@ -35,6 +40,7 @@ export function ObligationDetailHeaderActions({
   pendingRequestCount,
   onPressShare,
   onPressReport,
+  onPressMenu,
   onPressUnlink,
 }: Props) {
   return (
@@ -48,11 +54,24 @@ export function ObligationDetailHeaderActions({
               </View>
             </View>
           ) : null}
-          <TouchableOpacity style={styles.shareBtn} onPress={onPressReport}>
-            <Text style={styles.shareBtnText}>Reporte</Text>
+          {/* El reporte es la acción que se usa de verdad desde aquí; lo demás —editar los datos
+              administrativos, compartir, corregir el monto— vive en el menú, que es donde va lo
+              que no se hace todos los días. */}
+          <TouchableOpacity
+            style={styles.headerIconBtn}
+            onPress={onPressReport}
+            accessibilityRole="button"
+            accessibilityLabel="Generar reporte"
+          >
+            <Download size={16} color={COLORS.fog} strokeWidth={2} />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.shareBtn} onPress={onPressShare}>
-            <Text style={styles.shareBtnText}>Compartir</Text>
+          <TouchableOpacity
+            style={styles.headerIconBtn}
+            onPress={onPressMenu}
+            accessibilityRole="button"
+            accessibilityLabel="Más acciones"
+          >
+            <MoreVertical size={16} color={COLORS.fog} strokeWidth={2} />
           </TouchableOpacity>
         </>
       ) : null}

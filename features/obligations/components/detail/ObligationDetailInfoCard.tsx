@@ -9,8 +9,8 @@ import {
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
+import { currencyPluralTitle } from "../../../../constants/currencies";
 import { Card } from "../../../../components/ui/Card";
-import { formatCurrency } from "../../../../components/ui/AmountDisplay";
 import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING } from "../../../../constants/theme";
 import { parseDisplayDate } from "../../../../lib/date";
 import { getObligationStatusLabel } from "../../../../lib/obligation-labels";
@@ -79,7 +79,7 @@ export function ObligationDetailInfoCard({ styles, obligation }: Props) {
     <Card style={styles.detailInfoCard}>
       <View style={styles.detailInfoHeader}>
         <Text style={styles.sectionTitle}>Detalles</Text>
-        <Text style={styles.detailInfoBadge}>{obligation.currencyCode}</Text>
+        <Text style={styles.detailInfoBadge}>{currencyPluralTitle(obligation.currencyCode)}</Text>
       </View>
       <DetailRow label="Estado" value={getObligationStatusLabel(obligation.status)} />
       <Divider />
@@ -87,34 +87,16 @@ export function ObligationDetailInfoCard({ styles, obligation }: Props) {
         label="Fecha inicio"
         value={format(parseDisplayDate(obligation.startDate), "d MMM yyyy", { locale: es })}
       />
-      {obligation.dueDate ? (
-        <>
-          <Divider />
-          <DetailRow
-            label="Vencimiento"
-            value={format(parseDisplayDate(obligation.dueDate), "d MMM yyyy", { locale: es })}
-          />
-        </>
-      ) : null}
-      {obligation.installmentAmount ? (
-        <>
-          <Divider />
-          <DetailRow
-            label="Cuota"
-            value={`${formatCurrency(obligation.installmentAmount, obligation.currencyCode)}${obligation.installmentCount ? ` x ${obligation.installmentCount}` : ""}`}
-          />
-        </>
-      ) : null}
       {obligation.interestRate ? (
         <>
           <Divider />
-          <DetailRow label="Interes" value={`${obligation.interestRate}%`} />
+          <DetailRow label="Interés" value={`${obligation.interestRate}%`} />
         </>
       ) : null}
       {obligation.settlementAccountName ? (
         <>
           <Divider />
-          <DetailRow label="Cuenta de liquidacion" value={obligation.settlementAccountName} />
+          <DetailRow label="Cuenta de liquidación" value={obligation.settlementAccountName} />
         </>
       ) : null}
       {obligation.description?.trim() ? (

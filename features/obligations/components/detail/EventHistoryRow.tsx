@@ -45,6 +45,8 @@ export type EventHistoryRowStyles = {
   eventInstallmentNote: StyleProp<TextStyle>;
   eventImpactNote: StyleProp<TextStyle>;
   eventCardAmount: StyleProp<TextStyle>;
+  eventAmountColumn: StyleProp<ViewStyle>;
+  eventBalanceAfter: StyleProp<TextStyle>;
   eventChipsRow: StyleProp<ViewStyle>;
   movementChip: StyleProp<ViewStyle>;
   movementChipText: StyleProp<TextStyle>;
@@ -74,6 +76,8 @@ type CardPosition = "single" | "first" | "middle" | "last";
 
 type Props = {
   event: ObligationEventSummary;
+  /** El saldo pendiente que quedó después de este movimiento. */
+  balanceAfter?: number | null;
   cardPosition: CardPosition;
   obligation: ObligationSummary | SharedObligationSummary;
   isSharedViewer: boolean;
@@ -101,6 +105,7 @@ type Props = {
 
 export function EventHistoryRow({
   event: ev,
+  balanceAfter,
   cardPosition,
   obligation,
   isSharedViewer,
@@ -255,9 +260,18 @@ export function EventHistoryRow({
           ) : null}
         </View>
 
-        <Text style={[styles.eventCardAmount, { color: evTint }]} numberOfLines={1}>
-          {evAmountPrefix}{formatCurrency(ev.amount, obligation.currencyCode)}
-        </Text>
+        <View style={styles.eventAmountColumn}>
+          <Text style={[styles.eventCardAmount, { color: evTint }]} numberOfLines={1}>
+            {evAmountPrefix}{formatCurrency(ev.amount, obligation.currencyCode)}
+          </Text>
+          {/* El saldo que quedó tras este movimiento. Es lo que enseña la mecánica —qué reduce
+              y qué aumenta— sin las dos cápsulas de vocabulario interno que había arriba. */}
+          {balanceAfter != null ? (
+            <Text style={styles.eventBalanceAfter} numberOfLines={1}>
+              quedan {formatCurrency(balanceAfter, obligation.currencyCode)}
+            </Text>
+          ) : null}
+        </View>
       </TouchableOpacity>
 
       {hasChipsRow ? (

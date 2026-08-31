@@ -80,6 +80,7 @@ import { PaymentRequestForm } from "../../components/forms/PaymentRequestForm";
 import { PrincipalAdjustmentForm } from "../../components/forms/PrincipalAdjustmentForm";
 import { ObligationEventEditRequestForm } from "../../components/forms/ObligationEventEditRequestForm";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
+import { EntityActionSheet } from "../../components/ui/EntityActionSheet";
 import { Button } from "../../components/ui/Button";
 import { AttachmentPreviewModal } from "../../components/domain/AttachmentPreviewModal";
 import { ObligationEventDeleteImpact } from "../../components/domain/ObligationEventDeleteImpact";
@@ -102,6 +103,7 @@ import { OwnerRespondPaymentRequestSheet } from "../../features/obligations/comp
 import { ObligationOverviewCards } from "../../features/obligations/components/detail/ObligationOverviewCards";
 import { ObligationDetailInfoCard } from "../../features/obligations/components/detail/ObligationDetailInfoCard";
 import { PlanVsPaymentsCard } from "../../features/obligations/components/detail/PlanVsPaymentsCard";
+import { balancesAfterEvents } from "../../features/obligations/lib/running-balance";
 import { OwnerRespondDeleteRequestSheet } from "../../features/obligations/components/detail/OwnerRespondDeleteRequestSheet";
 import { OwnerRespondEditRequestSheet } from "../../features/obligations/components/detail/OwnerRespondEditRequestSheet";
 import { ObligationDetailHeaderActions } from "../../features/obligations/components/detail/ObligationDetailHeaderActions";
@@ -165,6 +167,7 @@ function ObligationDetailScreen() {
 
   const { showToast, showRichToast } = useToast();
   const [editFormVisible, setEditFormVisible] = useState(false);
+  const [detailMenuOpen, setDetailMenuOpen] = useState(false);
   const [paymentFormVisible, setPaymentFormVisible] = useState(false);
   const [paymentRequestFormVisible, setPaymentRequestFormVisible] = useState(false);
   const [editRequestFormVisible, setEditRequestFormVisible] = useState(false);
@@ -675,6 +678,7 @@ function ObligationDetailScreen() {
       <EventHistoryRow
         key={ev.id}
         event={ev}
+        balanceAfter={balancesByEventId.get(ev.id) ?? null}
         cardPosition={cardPosition}
         obligation={obligation}
         isSharedViewer={isSharedViewer}
@@ -984,6 +988,12 @@ function ObligationDetailScreen() {
 
   const pageLoading = isLoading || (!obligation && sharedLoading);
 
+  /** El saldo que quedó tras cada movimiento: es lo que enseña la mecánica en la lista. */
+  const balancesByEventId = useMemo(
+    () => balancesAfterEvents(eventsForDetail),
+    [eventsForDetail],
+  );
+
   const isReceivable = obligation?.direction === "receivable";
   const viewerActsAsCollector = obligation
     ? obligationViewerActsAsCollector(obligation.direction, isSharedViewer)
@@ -1052,11 +1062,16 @@ function ObligationDetailScreen() {
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
       <ScreenHeader
-        title={obligation?.title ?? "Obligacion"}
+        title={obligation?.title ?? "Obligación"}
+        /* El contacto y la dirección de la deuda viven aquí, junto al título, en vez de apilarse
+           centrados sobre la cifra. */
         subtitle={
           isSharedViewer && obligation && "share" in obligation
-            ? `Compartido - ${(obligation as SharedObligationSummary).share.ownerDisplayName?.trim() || "Otro usuario"}`
-            : activeWorkspace?.name
+            ? `Compartido · ${(obligation as SharedObligationSummary).share.ownerDisplayName?.trim() || "Otro usuario"}`
+            : obligation
+              ? [obligation.counterparty || "Sin contacto", directionPerspectiveLabel.toLowerCase()]
+                  .filter(Boolean).join(" · ")
+              : activeWorkspace?.name
         }
         onBack={handleBack}
         rightAction={
@@ -1067,6 +1082,7 @@ function ObligationDetailScreen() {
             pendingRequestCount={pendingRequests.length}
             onPressShare={() => { setShareEmail(""); setShareSheetOpen(true); }}
             onPressReport={handleOpenReport}
+            onPressMenu={() => setDetailMenuOpen(true)}
             onPressUnlink={() => setUnlinkShareConfirmVisible(true)}
           />
         }
@@ -1087,20 +1103,7 @@ function ObligationDetailScreen() {
             styles={styles}
             obligation={obligation}
             isSharedViewer={isSharedViewer}
-            dirColor={dirColor}
-            directionPerspectiveLabel={directionPerspectiveLabel}
             capitalOverview={capitalOverview}
-            onPressEditObligation={() => setEditFormVisible(true)}
-            onPressIncreaseCapital={() => {
-              setEditingAdjustmentEvent(null);
-              setAdjustmentMode("increase");
-              setAdjustmentFormVisible(true);
-            }}
-            onPressDecreaseCapital={() => {
-              setEditingAdjustmentEvent(null);
-              setAdjustmentMode("decrease");
-              setAdjustmentFormVisible(true);
-            }}
             onPressCapitalIncreaseDetail={() => {
               setCapitalChangesTab("increase");
               setCapitalChangesVisible(true);
@@ -1215,9 +1218,50 @@ function ObligationDetailScreen() {
             isSharedViewer={isSharedViewer}
             onPressViewerRequest={() => setPaymentRequestFormVisible(true)}
             onPressOwnerRegister={() => setPaymentFormVisible(true)}
+            onPressIncrease={isSharedViewer ? undefined : () => {
+              setEditingAdjustmentEvent(null);
+              setAdjustmentMode("increase");
+              setAdjustmentFormVisible(true);
+            }}
           />
         </ScrollView>
       )}
+
+      {/* Lo administrativo vive aquí: editar era el botón más llamativo de la pantalla —menta
+          plena, ancho completo— para cambiar datos que casi nunca cambian. Y reducir el monto
+          son correcciones, que no merecen la misma jerarquía que aumentar. */}
+      <EntityActionSheet
+        visible={detailMenuOpen}
+        onClose={() => setDetailMenuOpen(false)}
+        sheetTitle="Más acciones"
+        summaryTitle={obligation?.title ?? "Obligación"}
+        meta={[obligation?.counterparty]}
+        actions={[
+          {
+            key: "edit",
+            label: "Editar obligación",
+            variant: "secondary",
+            onPress: () => { setDetailMenuOpen(false); setEditFormVisible(true); },
+          },
+          {
+            key: "share",
+            label: "Compartir",
+            variant: "secondary",
+            onPress: () => { setDetailMenuOpen(false); setShareEmail(""); setShareSheetOpen(true); },
+          },
+          {
+            key: "decrease",
+            label: "Reducir monto",
+            variant: "ghost",
+            onPress: () => {
+              setDetailMenuOpen(false);
+              setEditingAdjustmentEvent(null);
+              setAdjustmentMode("decrease");
+              setAdjustmentFormVisible(true);
+            },
+          },
+        ]}
+      />
 
       <ObligationForm
         visible={editFormVisible}

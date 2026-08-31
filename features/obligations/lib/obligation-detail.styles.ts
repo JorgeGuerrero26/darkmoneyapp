@@ -12,6 +12,16 @@ export const styles = StyleSheet.create({
     paddingHorizontal: SPACING.sm, paddingVertical: 4,
     borderRadius: RADIUS.full, borderWidth: 1, borderColor: COLORS.income + "88",
   },
+  headerIconBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: RADIUS.full,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: SURFACE.cardBorder,
+    backgroundColor: SURFACE.card,
+  },
   shareBtnText: { fontSize: FONT_SIZE.xs, color: COLORS.income, fontFamily: FONT_FAMILY.bodyMedium },
   unlinkHeaderBtn: {
     borderColor: COLORS.expense + "66",
@@ -119,16 +129,12 @@ export const styles = StyleSheet.create({
     justifyContent: "space-between",
     marginBottom: SPACING.sm,
   },
+  // La moneda iba en una cápsula violeta: un color que no está en el sistema —y donde sí está,
+  // significa IA— para un dato que es una etiqueta más.
   detailInfoBadge: {
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 4,
-    borderRadius: RADIUS.full,
-    borderWidth: 1,
-    borderColor: COLORS.secondary + "38",
-    backgroundColor: COLORS.secondary + "12",
-    color: COLORS.secondary,
+    color: COLORS.storm,
     fontSize: FONT_SIZE.xs,
-    fontFamily: FONT_FAMILY.bodySemibold,
+    fontFamily: FONT_FAMILY.body,
   },
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
   shareSheet: {
@@ -144,6 +150,48 @@ export const styles = StyleSheet.create({
   progressLabel: { fontSize: FONT_SIZE.xs, color: COLORS.storm },
   capitalSummaryCard: {
     gap: SPACING.sm,
+  },
+  heroTerms: {
+    marginTop: SPACING.sm,
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    lineHeight: 17,
+  },
+  capitalMathRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    justifyContent: "space-between",
+    gap: SPACING.md,
+    paddingVertical: SPACING.xs + 2,
+  },
+  capitalMathLabel: {
+    flex: 1,
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.fog,
+  },
+  capitalMathValue: {
+    fontFamily: FONT_FAMILY.heading,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.ink,
+  },
+  capitalMathTotalRow: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: SURFACE.separator,
+    marginTop: SPACING.xs,
+    paddingTop: SPACING.sm,
+  },
+  capitalMathTotalLabel: {
+    flex: 1,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.ink,
+  },
+  capitalMathTotalValue: {
+    fontFamily: FONT_FAMILY.heading,
+    fontSize: FONT_SIZE.md,
+    color: COLORS.ink,
   },
   capitalSummaryGrid: {
     flexDirection: "row",
@@ -233,6 +281,17 @@ export const styles = StyleSheet.create({
   },
   historyLegendChipTextCapital: {
     color: COLORS.secondary,
+  },
+  historyHeaderRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    justifyContent: "space-between",
+    gap: SPACING.md,
+  },
+  historyScopeLabel: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
   },
   historyPresetRow: {
     flexDirection: "row",
@@ -447,6 +506,15 @@ export const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: FONT_FAMILY.bodySemibold,
     flexShrink: 0,
+  },
+  eventAmountColumn: {
+    alignItems: "flex-end",
+    gap: 2,
+  },
+  eventBalanceAfter: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
   },
   eventInstallmentNote: {
     fontSize: 10,
@@ -684,11 +752,32 @@ export const styles = StyleSheet.create({
   eventMenuStatusNote: { fontSize: FONT_SIZE.xs, color: COLORS.danger, textAlign: "center" },
   eventMenuDeleteBtn: { borderColor: COLORS.expense + "66" },
   payBtn: {
+    flex: 1,
     backgroundColor: COLORS.primary,
     borderRadius: RADIUS.md,
     paddingVertical: SPACING.md,
     alignItems: "center",
     marginTop: SPACING.sm,
+  },
+  payRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+  },
+  paySecondaryBtn: {
+    minHeight: 48,
+    paddingHorizontal: SPACING.lg,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: SURFACE.cardBorder,
+    backgroundColor: SURFACE.card,
+  },
+  paySecondaryBtnText: {
+    fontFamily: FONT_FAMILY.bodyMedium,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.fog,
   },
   payBtnText: { color: "#FFFFFF", fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.bodySemibold },
   requestBadgeWrap: { position: "relative" },
