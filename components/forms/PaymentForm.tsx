@@ -32,6 +32,8 @@ import { formatCurrency } from "../ui/AmountDisplay";
 import { sortByName } from "../../lib/sort-locale";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { TextField } from "../ui/TextField";
+import { FormOptionRow } from "../ui/FormOptionRow";
+import { SearchableSelectSheet } from "../ui/SearchableSelectSheet";
 
 type Props = {
   visible: boolean;
@@ -80,6 +82,8 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent
   const today = todayPeru();
   const [amount, setAmount] = useState("");
   const [paymentDate, setPaymentDate] = useState(today);
+  const [dateOpen, setDateOpen] = useState(false);
+  const [accountPickerOpen, setAccountPickerOpen] = useState(false);
   const [accountId, setAccountId] = useState<number | null>(null);
   const [createMovement, setCreateMovement] = useState(true);
   const [installmentNo, setInstallmentNo] = useState("");
@@ -100,18 +104,12 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent
     accountId: null as number | null,
   });
   const lastSuggestedInstallmentNoRef = useRef("");
-  const suggestedInstallmentNo = useMemo(
-    () => {
-      const eventsForInstallment = [...(latestObligation?.events ?? []), ...liveEvents];
-      const maxInstallment = eventsForInstallment.reduce((max, event) => {
-        if (event.eventType !== "payment") return max;
-        const installmentNo = event.installmentNo ?? 0;
-        return installmentNo > max ? installmentNo : max;
-      }, 0);
-      return String(maxInstallment + 1);
-    },
-    [latestObligation?.events, liveEvents],
-  );
+  /**
+   * Ya no se numera. El campo venía con un 8 precargado en una cuenta que registra seis pagos, y
+   * numerar cuotas exige que existan cuotas: acá se paga 330, 580, 30, 350, 450 y 690. Al editar
+   * un evento viejo su número se conserva, para no borrar lo que alguien escribió.
+   */
+  const suggestedInstallmentNo = "";
 
   const attachmentSignature = useMemo(() => {
     const persisted = attachments
@@ -285,10 +283,19 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent
     ? (actsAsCollector ? "Editar cobro" : "Editar pago")
     : (actsAsCollector ? "Registrar cobro" : "Registrar pago");
   const dateLabel = actsAsCollector ? "Fecha de cobro" : "Fecha de pago";
+  const paymentWord = actsAsCollector ? "cobro" : "pago";
   const movementDesc = actsAsCollector
-    ? "Registra también un ingreso en tu contabilidad"
-    : "Registra también un egreso en tu contabilidad";
-  const accountLabel = actsAsCollector ? "Cuenta de abono" : "Cuenta de débito";
+    ? "Aparece como ingreso en tus movimientos"
+    : "Aparece como gasto en tus movimientos";
+  /**
+   * "Cuenta de abono" y "registra también un ingreso en tu contabilidad" son palabras de libro
+   * mayor. La fila dice a dónde va la plata y el interruptor, qué vas a ver después.
+   */
+  const accountLabel = actsAsCollector ? "Entra a" : "Sale de";
+  const movementToggleTitle = actsAsCollector ? "Sumar a esa cuenta" : "Restar de esa cuenta";
+  const amountQuestion = actsAsCollector ? "Cuánto te pagó" : "Cuánto le pagaste";
+  const owedNowLabel = actsAsCollector ? "Le faltaba" : "Le debías";
+  const owedNextLabel = actsAsCollector ? "Le faltará" : "Le deberás";
   const discardBody = actsAsCollector
     ? "Se perderán los datos del cobro."
     : "Se perderán los datos del pago.";
@@ -462,6 +469,16 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent
         scrollRef={scrollRef}
         // Dentro del sheet: iOS solo presenta un Modal a la vez y como hermano no aparecía.
         overlay={
+          <>
+          <SearchableSelectSheet
+            inline
+            visible={accountPickerOpen}
+            title={accountLabel}
+            options={activeAccounts.map((acc) => ({ value: acc.id as number | null, label: acc.name }))}
+            value={accountId}
+            onChange={(id) => { setAccountId(id); setAccountError(""); }}
+            onClose={() => setAccountPickerOpen(false)}
+          />
           <ConfirmDialog
             inline
             visible={showDiscard}
@@ -472,66 +489,59 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent
             onCancel={() => setShowDiscard(false)}
             onConfirm={() => { setShowDiscard(false); onClose(); }}
           />
+          </>
         }
       >
       {/* Obligation summary + balance preview — solo en modo crear */}
+      {/* El número de cuota se retira: venía precargado con un 8 en una cuenta que registra seis
+          pagos, y numerar cuotas exige que existan cuotas — acá se paga 330, 580, 30, 350, 450 y
+          690. Si hace falta una referencia, es texto libre, y ya lo hay más abajo. */}
+      <View style={styles.field}>
+        <Text style={styles.sectionLabel}>{amountQuestion}</Text>
+        <CurrencyInput
+          ref={amountRef}
+          value={amount}
+          onChangeText={(t) => { setAmount(t); setAmountError(""); }}
+          currencyCode={currencyCode}
+          error={amountError}
+        />
+      </View>
+
+      {/* La proyección aparece cuando hay algo que proyectar: "Quedará —" con un guion en el
+          lugar de la cifra se lee como dato roto, y era lo primero que se veía al abrir. */}
       {obligation && !isEditMode ? (
-        <View style={styles.obligationInfo}>
-          <Text style={styles.obligationTitle}>{obligation.title}</Text>
-          <View style={styles.balanceRow}>
-            <View style={styles.balanceBlock}>
-              <Text style={styles.balanceLabel}>Pendiente</Text>
-              <Text style={styles.balanceValue}>{formatCurrency(pendingAmount, currencyCode)}</Text>
-            </View>
-            <ArrowRight size={14} color={COLORS.storm} />
-            <View style={styles.balanceBlock}>
-              <Text style={styles.balanceLabel}>Quedará</Text>
-              <Text style={[styles.balanceValue, remainingAfter !== null && { color: COLORS.pine }]}>
-                {remainingAfter !== null ? formatCurrency(remainingAfter, currencyCode) : "—"}
-              </Text>
-            </View>
+        <View style={styles.contextCard}>
+          <View style={styles.contextRow}>
+            <Text style={styles.contextLabel}>{owedNowLabel}</Text>
+            <Text style={styles.contextValue}>{formatCurrency(pendingAmount, currencyCode)}</Text>
           </View>
+          {remainingAfter !== null ? (
+            <View style={styles.contextRow}>
+              <Text style={styles.contextLabel}>{owedNextLabel}</Text>
+              <Text style={styles.contextValue}>{formatCurrency(remainingAfter, currencyCode)}</Text>
+            </View>
+          ) : null}
         </View>
       ) : null}
 
-      {/* Amount + Installment No in a row */}
-      <View style={styles.twoCol}>
-        <View style={{ flex: 2 }}>
-          <CurrencyInput
-            ref={amountRef}
-            label="Monto *"
-            value={amount}
-            onChangeText={(t) => { setAmount(t); setAmountError(""); }}
-            currencyCode={currencyCode}
-            error={amountError}
-          />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.label}>N° cuota</Text>
-          <TextField
-            style={styles.textInput}
-            value={installmentNo}
-            onChangeText={(t) => setInstallmentNo(t.replace(/[^0-9]/g, ""))}
-            placeholder="—"
-            placeholderTextColor={COLORS.storm}
-            keyboardType="number-pad"
-            returnKeyType="done"
-          />
-        </View>
+      <View style={styles.group}>
+        <FormOptionRow
+          grouped
+          last
+          label="Cuándo"
+          value={paymentDate === today ? "Hoy" : paymentDate}
+          onPress={() => setDateOpen((open) => !open)}
+        />
       </View>
-
-      {/* Payment date */}
-      <DatePickerInput
-        label={dateLabel}
-        value={paymentDate}
-        onChange={setPaymentDate}
-      />
+      {dateOpen ? (
+        <DatePickerInput label={dateLabel} value={paymentDate} onChange={setPaymentDate} />
+      ) : null}
 
       {/* Create movement toggle + account selector — solo en modo crear */}
       <>
           <View style={styles.switchRow}>
             <View style={styles.switchInfo}>
-              <Text style={styles.switchLabel}>Crear movimiento en cuenta</Text>
+              <Text style={styles.switchLabel}>{movementToggleTitle}</Text>
               <Text style={styles.switchDesc}>{movementDesc}</Text>
             </View>
             <Switch
@@ -546,23 +556,15 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent
           </View>
           {createMovement && activeAccounts.length > 0 ? (
             <View onLayout={(event) => { accountSectionYRef.current = event.nativeEvent.layout.y; }}>
-              <Text style={styles.label}>{accountLabel}</Text>
-              <View style={[styles.pillWrap, accountError ? styles.pillWrapError : null]}>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  <View style={styles.pillRow}>
-                    {activeAccounts.map((acc) => (
-                      <TouchableOpacity
-                        key={acc.id}
-                        style={[styles.pill, accountId === acc.id && styles.pillActive]}
-                        onPress={() => { setAccountId(acc.id); setAccountError(""); }}
-                      >
-                        <Text style={[styles.pillText, accountId === acc.id && styles.pillTextActive]}>
-                          {acc.name}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </ScrollView>
+              <View style={[styles.group, accountError ? styles.pillWrapError : null]}>
+                <FormOptionRow
+                  grouped
+                  last
+                  label={accountLabel}
+                  value={selectedAccount?.name ?? null}
+                  placeholder="Elegir cuenta"
+                  onPress={() => setAccountPickerOpen(true)}
+                />
               </View>
               {accountError ? <Text style={styles.fieldError}>{accountError}</Text> : null}
               {selectedAccount && projectedAccountBalance != null ? (
@@ -631,9 +633,11 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent
         {isEditMode && editEventAttachmentsLoading ? (
           <Text style={styles.attachmentSyncNote}>Cargando comprobantes...</Text>
         ) : null}
-        {!isEditMode && createMovement ? (
+        {!isEditMode ? (
           <Text style={styles.attachmentSyncNote}>
-            Si este evento crea un movimiento, el comprobante se copiara tambien a ese movimiento.
+            {createMovement
+              ? `Se guardan con el ${paymentWord.toLowerCase()}, y con el ${actsAsCollector ? "ingreso" : "gasto"} si lo ${actsAsCollector ? "sumas a" : "restas de"} la cuenta.`
+              : `Se guardan con el ${paymentWord.toLowerCase()}.`}
           </Text>
         ) : null}
         {isEditMode && editEvent?.movementId ? (
@@ -679,29 +683,38 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent
 }
 
 const styles = StyleSheet.create({
-  obligationInfo: {
-    backgroundColor: SURFACE.card,
-    borderRadius: RADIUS.md,
-    padding: SPACING.md,
+  field: { gap: SPACING.sm },
+  sectionLabel: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+  },
+  group: {
+    borderRadius: RADIUS.lg,
     borderWidth: 1,
     borderColor: SURFACE.cardBorder,
-    gap: SPACING.sm,
+    backgroundColor: SURFACE.card,
+    overflow: "hidden",
   },
-  obligationTitle: { fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.ink },
-  balanceRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: SPACING.sm,
-    backgroundColor: "rgba(244,241,236,0.04)",
-    borderRadius: RADIUS.sm,
+  contextCard: {
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: SURFACE.cardBorder,
+    backgroundColor: SURFACE.card,
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
+    gap: SPACING.xs,
   },
-  balanceBlock: { flex: 1, alignItems: "center", gap: 2 },
-  balanceLabel: { fontSize: FONT_SIZE.xs, color: COLORS.storm, fontFamily: FONT_FAMILY.bodyMedium },
-  balanceValue: { fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.heading, color: COLORS.ink },
-  twoCol: { flexDirection: "row", gap: SPACING.sm, alignItems: "flex-start" },
+  contextRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    justifyContent: "space-between",
+    gap: SPACING.md,
+  },
+  contextLabel: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.storm },
+  contextValue: { fontFamily: FONT_FAMILY.heading, fontSize: FONT_SIZE.md, color: COLORS.ink },
   label: {
     fontSize: FONT_SIZE.xs,
     fontFamily: FONT_FAMILY.bodySemibold,
@@ -739,7 +752,6 @@ const styles = StyleSheet.create({
     borderColor: COLORS.danger,
     padding: SPACING.xs,
   },
-  pillRow: { flexDirection: "row", gap: SPACING.sm },
   pill: {
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.xs + 2,
@@ -748,9 +760,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: SURFACE.cardBorder,
   },
-  pillActive: { backgroundColor: COLORS.pine, borderColor: COLORS.pine },
-  pillText: { fontSize: FONT_SIZE.sm, color: COLORS.storm, fontFamily: FONT_FAMILY.bodyMedium },
-  pillTextActive: { color: COLORS.textInverse },
   fieldError: {
     fontSize: FONT_SIZE.xs,
     color: COLORS.danger,
