@@ -1145,8 +1145,6 @@ function ObligationDetailScreen() {
           {showViewerHistoryTab && historyExpanded ? (
             <EventHistoryContainer
               styles={styles}
-              paymentWordPlural={paymentWordPlural}
-              paymentWord={paymentWord}
               historyDateRangeNotice={historyDateRangeNotice}
               historyPreset={historyPreset}
               historyFrom={historyFrom}
@@ -1161,8 +1159,6 @@ function ObligationDetailScreen() {
               remoteEventsPending={remoteEventsPending}
               eventsForDetail={eventsForDetail}
               filteredHistoryEvents={filteredHistoryEvents}
-              paymentHistoryEvents={paymentHistoryEvents}
-              capitalHistoryEvents={capitalHistoryEvents}
               onSectionLayoutY={(y) => { historySectionYRef.current = y; }}
               renderHistoryGroup={renderHistoryGroup}
             />

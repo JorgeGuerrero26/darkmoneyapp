@@ -68,8 +68,6 @@ const PRESET_OPTIONS = [
 
 type Props = {
   styles: EventHistoryContainerStyles;
-  paymentWordPlural: string;
-  paymentWord: string;
   historyDateRangeNotice: string;
   historyPreset: HistoryPreset;
   historyFrom: string;
@@ -84,8 +82,6 @@ type Props = {
   remoteEventsPending: boolean;
   eventsForDetail: ObligationEventSummary[];
   filteredHistoryEvents: ObligationEventSummary[];
-  paymentHistoryEvents: ObligationEventSummary[];
-  capitalHistoryEvents: ObligationEventSummary[];
   onSectionLayoutY: (y: number) => void;
   renderHistoryGroup: (params: {
     key: "payments" | "capital";
@@ -98,8 +94,6 @@ type Props = {
 
 export function EventHistoryContainer({
   styles,
-  paymentWordPlural,
-  paymentWord,
   historyDateRangeNotice,
   historyPreset,
   historyFrom,
@@ -114,8 +108,6 @@ export function EventHistoryContainer({
   remoteEventsPending,
   eventsForDetail,
   filteredHistoryEvents,
-  paymentHistoryEvents,
-  capitalHistoryEvents,
   onSectionLayoutY,
   renderHistoryGroup,
 }: Props) {
@@ -207,19 +199,15 @@ export function EventHistoryContainer({
         </Text>
       ) : (
         <>
+          {/* Una sola lista cronológica. Eran dos grupos —"Cobros" y "Capital"— que obligaban a
+              saber de qué lado cae cada movimiento, que es justo lo que explicaban las dos
+              cápsulas que se retiraron. */}
           {renderHistoryGroup({
             key: "payments",
-            title: paymentWordPlural,
-            subtitle: `Eventos que registran ${paymentWord.toLowerCase()}s y reducen el saldo pendiente.`,
-            events: paymentHistoryEvents,
-            emptyText: `Sin ${paymentWord.toLowerCase()}s en este rango.`,
-          })}
-          {renderHistoryGroup({
-            key: "capital",
-            title: "Capital",
-            subtitle: "Apertura, aumentos, reducciones y otros ajustes del principal.",
-            events: capitalHistoryEvents,
-            emptyText: "Sin cambios de capital en este rango.",
+            title: "",
+            subtitle: "",
+            events: filteredHistoryEvents,
+            emptyText: "Sin movimientos en este rango.",
           })}
         </>
       )}

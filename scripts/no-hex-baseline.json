@@ -7,41 +7,37 @@
   ],
   "features/obligations/lib/obligation-detail.styles.ts": [
     {
-      "line": 260,
+      "line": 332,
       "match": "\"#FFFFFF\""
     },
     {
-      "line": 693,
-      "match": "\"#FFFFFF\""
-    },
-    {
-      "line": 704,
+      "line": 825,
       "match": "\"#FFF\""
     }
   ],
   "features/obligations/lib/obligationReport.ts": [
     {
-      "line": 15,
+      "line": 16,
       "match": "\"#15202B\""
     },
     {
-      "line": 16,
+      "line": 17,
       "match": "\"#5B6B7B\""
     },
     {
-      "line": 17,
+      "line": 18,
       "match": "\"#0E8C6D\""
     },
     {
-      "line": 18,
+      "line": 19,
       "match": "\"#B23A52\""
     },
     {
-      "line": 19,
+      "line": 20,
       "match": "\"#D9E0E7\""
     },
     {
-      "line": 20,
+      "line": 21,
       "match": "\"#F2F6F5\""
     }
   ],
@@ -323,7 +319,7 @@
   ],
   "services/queries/workspace-data.ts": [
     {
-      "line": 781,
+      "line": 785,
       "match": "\"#6366F1\""
     }
   ]

@@ -80,6 +80,9 @@ export function EventHistoryGroup({
 
   return (
     <View key={groupKey} style={styles.historyGroupCard}>
+      {/* Sin título no hay cabecera: cuando la lista es una sola, el rótulo y el conteo ya
+          están arriba y repetirlos aquí sería decir dos veces lo mismo. */}
+      {title ? (
       <TouchableOpacity
         style={styles.historyGroupHeader}
         onPress={() => {
@@ -102,6 +105,7 @@ export function EventHistoryGroup({
           )}
         </View>
       </TouchableOpacity>
+      ) : null}
 
       {!collapsed ? (
         <View style={styles.historyGroupBody}>

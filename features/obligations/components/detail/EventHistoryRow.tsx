@@ -19,6 +19,10 @@ import {
 } from "../../../../lib/obligation-viewer-labels";
 import { viewerEventAccountImpactCopy } from "../../../../lib/obligation-viewer-account-impact";
 import { firstMeaningfulText } from "../../../../lib/text-utils";
+import { parseDisplayDate } from "../../../../lib/date";
+import { describeObligationEvent } from "../../lib/describe-event";
+import { format } from "date-fns";
+import { es } from "date-fns/locale";
 import type {
   EventDeleteStatus,
   EventEditStatus,
@@ -36,8 +40,8 @@ export type EventHistoryRowStyles = {
   eventRowHighlighted: StyleProp<ViewStyle>;
   eventRowHighlightedPulse: StyleProp<ViewStyle>;
   eventCardInner: StyleProp<ViewStyle>;
-  eventIconBox: StyleProp<ViewStyle>;
-  eventIconText: StyleProp<TextStyle>;
+  eventDot: StyleProp<ViewStyle>;
+  eventDotFilled: StyleProp<ViewStyle>;
   eventCardBody: StyleProp<ViewStyle>;
   eventTypeLabel: StyleProp<TextStyle>;
   eventDescription: StyleProp<TextStyle>;
@@ -169,6 +173,12 @@ export function EventHistoryRow({
   const ownerDeleteRequest = !isSharedViewer ? ownerDeleteRequestByEventId.get(ev.id) ?? null : null;
   const isHighlighted = highlightedEventId === ev.id;
   const eventInlineDescription = firstMeaningfulText(ev.description, ev.reason);
+  /** La misma regla que la lista de arriba y el PDF: el producto manda, el signo dice el tipo. */
+  const described = describeObligationEvent(ev, {
+    sellsOnCredit: obligation.originType === "sale_financed",
+    isReceivable: obligation.direction === "receivable",
+  });
+  const eventDateLabel = format(parseDisplayDate(ev.eventDate), "d MMM", { locale: es });
   const viewerImpactCopy = isSharedViewer
     ? viewerEventAccountImpactCopy(ev, obligation, viewerLinkedAccountId != null)
     : null;
@@ -224,26 +234,21 @@ export function EventHistoryRow({
         onPress={isTappable ? () => onTapEvent(ev) : undefined}
         activeOpacity={isTappable ? 0.7 : 1}
       >
-        <View style={[styles.eventIconBox, { backgroundColor: evTint + "18" }]}>
-          <Text style={[styles.eventIconText, { color: evTint }]}>
-            {EVENT_TYPE_ICON[ev.eventType] ?? "·"}
-          </Text>
-        </View>
+        {/* Misma anatomía que la lista de arriba: un punto en vez de la caja con el ícono del
+            tipo, el producto como título —el tipo lo dice el signo— y la fecha con su dato al
+            lado. La caja de color repetía el tipo por tercera vez en la misma fila. */}
+        <View style={[styles.eventDot, described.reduces && styles.eventDotFilled]} />
 
         <View style={styles.eventCardBody}>
-          <Text style={[styles.eventTypeLabel, { color: evTint }]} numberOfLines={1}>
-            {eventLabels[ev.eventType] ?? ev.eventType}
+          <Text
+            style={[styles.eventTypeLabel, described.missingDescription && styles.eventDescriptionMuted]}
+            numberOfLines={1}
+          >
+            {described.title}
           </Text>
-          {eventInlineDescription ? (
-            <Text style={styles.eventDescription} numberOfLines={1}>
-              {eventInlineDescription}
-            </Text>
-          ) : (
-            <Text style={styles.eventDescriptionMuted}>Sin descripción</Text>
-          )}
-          {ev.installmentNo ? (
-            <Text style={styles.eventInstallmentNote}>Cuota {ev.installmentNo}</Text>
-          ) : null}
+          <Text style={styles.eventDescription} numberOfLines={1}>
+            {[eventDateLabel, described.detail].filter(Boolean).join(" · ")}
+          </Text>
           {viewerImpactCopy ? (
             <Text
               style={[
@@ -261,8 +266,8 @@ export function EventHistoryRow({
         </View>
 
         <View style={styles.eventAmountColumn}>
-          <Text style={[styles.eventCardAmount, { color: evTint }]} numberOfLines={1}>
-            {evAmountPrefix}{formatCurrency(ev.amount, obligation.currencyCode)}
+          <Text style={styles.eventCardAmount} numberOfLines={1}>
+            {described.reduces ? "" : "+ "}{formatCurrency(ev.amount, obligation.currencyCode)}
           </Text>
           {/* El saldo que quedó tras este movimiento. Es lo que enseña la mecánica —qué reduce
               y qué aumenta— sin las dos cápsulas de vocabulario interno que había arriba. */}

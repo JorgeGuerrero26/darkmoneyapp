@@ -501,6 +501,15 @@ export const styles = StyleSheet.create({
     justifyContent: "center",
     flexShrink: 0,
   },
+  eventDot: {
+    width: 7,
+    height: 7,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    borderColor: SURFACE.inputBorder,
+    marginTop: SPACING.sm,
+  },
+  eventDotFilled: { backgroundColor: COLORS.fog, borderColor: COLORS.fog },
   eventIconText: {
     fontSize: 16,
     fontFamily: FONT_FAMILY.bodySemibold,
@@ -510,14 +519,18 @@ export const styles = StyleSheet.create({
     minWidth: 0,
     gap: 1,
   },
+  // El color venía inline, del tipo de evento. Ahora el título es el producto y el monto lleva
+  // su signo, así que los dos van en hueso — y con color propio, que sin él se van a negro.
   eventTypeLabel: {
-    fontSize: FONT_SIZE.xs,
-    fontFamily: FONT_FAMILY.bodySemibold,
-    lineHeight: 16,
+    fontSize: FONT_SIZE.md,
+    fontFamily: FONT_FAMILY.bodyMedium,
+    color: COLORS.ink,
+    lineHeight: 20,
   },
   eventCardAmount: {
-    fontSize: 14,
-    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.md,
+    fontFamily: FONT_FAMILY.heading,
+    color: COLORS.ink,
     flexShrink: 0,
   },
   eventAmountColumn: {
@@ -764,18 +777,22 @@ export const styles = StyleSheet.create({
   eventMenuBtn: { marginTop: SPACING.xs },
   eventMenuStatusNote: { fontSize: FONT_SIZE.xs, color: COLORS.danger, textAlign: "center" },
   eventMenuDeleteBtn: { borderColor: COLORS.expense + "66" },
+  // Los dos botones comparten alto y línea base: el primario arrastraba un marginTop de cuando
+  // vivía solo, y su alto salía del padding mientras el otro lo fijaba, así que ninguno de los
+  // dos empezaba donde el otro.
   payBtn: {
     flex: 1,
-    backgroundColor: COLORS.primary,
+    minHeight: 48,
+    backgroundColor: COLORS.ink,
     borderRadius: RADIUS.md,
-    paddingVertical: SPACING.md,
     alignItems: "center",
-    marginTop: SPACING.sm,
+    justifyContent: "center",
   },
   payRow: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "stretch",
     gap: SPACING.sm,
+    marginTop: SPACING.sm,
   },
   paySecondaryBtn: {
     minHeight: 48,
@@ -792,7 +809,9 @@ export const styles = StyleSheet.create({
     fontSize: FONT_SIZE.sm,
     color: COLORS.fog,
   },
-  payBtnText: { color: "#FFFFFF", fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.bodySemibold },
+  // Sobre hueso el texto va en el fondo de la app, como en el botón principal del resto de las
+  // pantallas. Era blanco sobre menta: el color que significa plata que entra, en un botón.
+  payBtnText: { color: COLORS.bgVoid, fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.bodySemibold },
   requestBadgeWrap: { position: "relative" },
   requestBadge: {
     backgroundColor: COLORS.danger,
