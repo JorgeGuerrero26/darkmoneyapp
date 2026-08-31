@@ -1,4 +1,6 @@
 import {
+  addMonthsIso,
+  defaultFirstDueDate,
   describePlan,
   expandPaymentPlan,
   isPlanComplete,
@@ -19,7 +21,7 @@ const money = (amount: number) => `S/ ${amount.toFixed(2)}`;
  * saldo que queda. Ese es el número que un plan a medida suele calcular mal.
  */
 describe("plan a medida", () => {
-  const plan = { mode: "custom", agreed: [100, 150, 300], tail: 200 } as const;
+  const plan = { mode: "custom", agreed: [{ amount: 100 }, { amount: 150 }, { amount: 300 }], tail: 200 } as const;
 
   it("los acordados se escriben y el resto se calcula hasta terminar el saldo", () => {
     const payments = expandPaymentPlan({ plan, principal: 1000, startDate: START });
@@ -45,7 +47,7 @@ describe("plan a medida", () => {
 
   it("nunca programa de más: si lo acordado ya cubre el monto, la cola no genera nada", () => {
     const payments = expandPaymentPlan({
-      plan: { mode: "custom", agreed: [600, 400], tail: 200 },
+      plan: { mode: "custom", agreed: [{ amount: 600 }, { amount: 400 }], tail: 200 },
       principal: 1000,
       startDate: START,
     });
@@ -55,7 +57,7 @@ describe("plan a medida", () => {
 
   it("sin cola, lo acordado puede no llegar al monto y el pie lo dice", () => {
     const payments = expandPaymentPlan({
-      plan: { mode: "custom", agreed: [100, 150, 300], tail: null },
+      plan: { mode: "custom", agreed: [{ amount: 100 }, { amount: 150 }, { amount: 300 }], tail: null },
       principal: 1000,
       startDate: START,
     });
@@ -67,7 +69,7 @@ describe("plan a medida", () => {
 
   it("lo acordado de más deja diferencia negativa: sobra", () => {
     const payments = expandPaymentPlan({
-      plan: { mode: "custom", agreed: [700, 500], tail: null },
+      plan: { mode: "custom", agreed: [{ amount: 700 }, { amount: 500 }], tail: null },
       principal: 1000,
       startDate: START,
     });
@@ -128,7 +130,7 @@ describe("resumen para la fila que abre el plan", () => {
 
   it("describe el plan a medida por su cantidad de pagos", () => {
     expect(describePlan({
-      plan: { mode: "custom", agreed: [100, 150, 300], tail: 200 },
+      plan: { mode: "custom", agreed: [{ amount: 100 }, { amount: 150 }, { amount: 300 }], tail: 200 },
       principal: 1000,
       startDate: START,
       formatAmount: money,
@@ -140,6 +142,77 @@ describe("resumen para la fila que abre el plan", () => {
   });
 });
 
+/**
+ * De dónde salen los meses (2026-08-31).
+ *
+ * El usuario abrió el plan de una deuda de marzo en agosto y la lista arrancaba en abril: cuatro
+ * meses ya vencidos, sin año, y sin forma de moverlos.
+ */
+describe("los meses del plan", () => {
+  it("un plan nuevo empieza en el mes actual, con el día de la fecha de inicio", () => {
+    expect(defaultFirstDueDate("2026-03-15", new Date(2026, 7, 31))).toBe("2026-08-15");
+  });
+
+  it("si la obligación empieza después, manda su fecha: no se cobra antes de prestar", () => {
+    expect(defaultFirstDueDate("2026-11-05", new Date(2026, 7, 31))).toBe("2026-11-05");
+  });
+
+  it("los pagos salen del primer pago del plan, uno por mes", () => {
+    const payments = expandPaymentPlan({
+      plan: { mode: "equal", count: 3, firstDueDate: "2026-08-15" },
+      principal: 300,
+      startDate: "2026-03-15",
+    });
+    expect(payments.map((payment) => payment.dueDate)).toEqual([
+      "2026-08-15", "2026-09-15", "2026-10-15",
+    ]);
+  });
+
+  it("un plan guardado antes de esto conserva sus fechas", () => {
+    const payments = expandPaymentPlan({
+      plan: { mode: "equal", count: 2 },
+      principal: 200,
+      startDate: "2026-03-15",
+    });
+    expect(payments.map((payment) => payment.dueDate)).toEqual(["2026-04-15", "2026-05-15"]);
+  });
+
+  it("un pago acordado puede llevar su propio mes, y la cola sigue desde ahí", () => {
+    const payments = expandPaymentPlan({
+      plan: {
+        mode: "custom",
+        agreed: [{ amount: 100, dueDate: "2026-09-15" }, { amount: 100, dueDate: "2026-12-15" }],
+        tail: 100,
+        firstDueDate: "2026-09-15",
+      },
+      principal: 400,
+      startDate: "2026-03-15",
+    });
+    expect(payments.map((payment) => payment.dueDate)).toEqual([
+      "2026-09-15", "2026-12-15", "2027-01-15", "2027-02-15",
+    ]);
+  });
+
+  it("un pago nunca cae antes que el anterior: marzo detrás de abril se corre a mayo", () => {
+    const payments = expandPaymentPlan({
+      plan: {
+        mode: "custom",
+        agreed: [{ amount: 100, dueDate: "2026-04-15" }, { amount: 100, dueDate: "2026-03-15" }],
+        tail: null,
+        firstDueDate: "2026-04-15",
+      },
+      principal: 200,
+      startDate: "2026-03-15",
+    });
+    expect(payments.map((payment) => payment.dueDate)).toEqual(["2026-04-15", "2026-05-15"]);
+  });
+
+  it("el mes siguiente es el mes siguiente, y el día se conserva", () => {
+    expect(addMonthsIso("2026-08-31", 1)).toBe("2026-09-30");
+    expect(addMonthsIso("2026-12-15", 2)).toBe("2027-02-15");
+  });
+});
+
 describe("guardado y lectura", () => {
   it("descarta un plan que no dice nada", () => {
     expect(normalizePaymentPlan({ mode: "equal", count: 0 })).toBeNull();
@@ -148,9 +221,9 @@ describe("guardado y lectura", () => {
   });
 
   it("limpia los montos vacíos de lo acordado", () => {
-    expect(normalizePaymentPlan({ mode: "custom", agreed: [100, 0, 150], tail: 0 })).toEqual({
+    expect(normalizePaymentPlan({ mode: "custom", agreed: [{ amount: 100 }, { amount: 0 }, { amount: 150 }], tail: 0 })).toEqual({
       mode: "custom",
-      agreed: [100, 150],
+      agreed: [{ amount: 100 }, { amount: 150 }],
       tail: null,
     });
   });
@@ -162,8 +235,22 @@ describe("guardado y lectura", () => {
     expect(parsePaymentPlan({ mode: "equal", count: "6" })).toEqual({ mode: "equal", count: 6 });
     expect(parsePaymentPlan({ mode: "custom", agreed: [100, "150", null], tail: 200 })).toEqual({
       mode: "custom",
-      agreed: [100, 150],
+      agreed: [{ amount: 100 }, { amount: 150 }],
       tail: 200,
+    });
+  });
+
+  it("guarda y devuelve el mes de cada pago, y descarta una fecha que no lo es", () => {
+    expect(parsePaymentPlan({
+      mode: "custom",
+      agreed: [{ amount: 100, dueDate: "2026-09-15" }, { amount: 50, dueDate: "el jueves" }],
+      tail: null,
+      firstDueDate: "2026-09-15",
+    })).toEqual({
+      mode: "custom",
+      agreed: [{ amount: 100, dueDate: "2026-09-15" }, { amount: 50 }],
+      tail: null,
+      firstDueDate: "2026-09-15",
     });
   });
 });
@@ -175,7 +262,7 @@ describe("guardado y lectura", () => {
  * existía para absorber el saldo: pasa de 50.00 a 30.00.
  */
 describe("el plan contra lo pagado", () => {
-  const plan = { mode: "custom", agreed: [100, 150, 300], tail: 200 } as const;
+  const plan = { mode: "custom", agreed: [{ amount: 100 }, { amount: 150 }, { amount: 300 }], tail: 200 } as const;
   const pagos = [
     { amount: 100, date: "2026-09-02" },
     { amount: 150, date: "2026-10-03" },
@@ -224,7 +311,7 @@ describe("el plan contra lo pagado", () => {
 
   it("cuando todo es acordado no hay dónde absorber: el plan no se reescribe", () => {
     const rows = reconcilePlan({
-      plan: { mode: "custom", agreed: [400, 600], tail: null },
+      plan: { mode: "custom", agreed: [{ amount: 400 }, { amount: 600 }], tail: null },
       principal: 1000,
       startDate: START,
       payments: [{ amount: 450, date: "2026-09-02" }],
