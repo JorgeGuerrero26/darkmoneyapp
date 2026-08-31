@@ -71,3 +71,33 @@ El diseñador lo marca aparte, y sigue abierto:
   descuento.
 
 Eso lo resuelve quien conoce el acuerdo, no el documento.
+
+---
+
+## 3. Segunda pasada contra el mockup (31 ago)
+
+La estructura de la Revisión 14 estaba, pero el documento no se veía como `AD`.
+
+### [x] "S/" veintiún veces en la columna de movimientos
+La moneda ya está dicha tres veces arriba —la fila meta, el saldo sobre tinta, el "de … en
+total"—. En las dos tablas las cifras van **sin símbolo**: lo que se compara ahí son los números
+entre sí.
+
+### [x] La apertura llevaba un "+"
+No es un aumento, es el punto de partida. Va sin signo, en la tabla y en el resumen.
+
+### [x] El verde de marca en un estado de cuenta
+El filete de 3 px bajo el encabezado, el wordmark y los rótulos de sección iban en el teal de
+DarkMoney. El documento del diseñador es **tinta, gris y papel**, sin un solo trazo de color: en
+una hoja que se manda a un cliente el color solo compite con las cifras.
+
+### [x] Detalles de papel
+Esquinas rectas en el bloque del saldo —una tarjeta redondeada es de pantalla, no de impreso—;
+el símbolo "S/" a menor cuerpo que la cifra; el folio y la fecha de emisión en monoespaciada;
+las fechas sin el punto de "15 mar."; sin filas cebra; y el pie dice "Generado con DarkMoney ·
+folio …" en vez de "Folio …".
+
+### [x] El corte de página no alineaba
+"Continúa en la página 2 · saldo arrastrado" llevaba el número pegado al texto. Va a la derecha,
+bajo la columna SALDO, y sobre una regla en tinta.
+

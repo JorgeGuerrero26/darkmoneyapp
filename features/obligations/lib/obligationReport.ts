@@ -1,5 +1,5 @@
 import type { ObligationEventSummary, ObligationSummary } from "../../../types/domain";
-import { formatCurrency } from "../../../lib/format-currency";
+import { formatCurrency, formatCurrencyParts } from "../../../lib/format-currency";
 import { ANALYTICS_EVENT_LABELS } from "./obligationEventLabels";
 import { currencyPluralTitle } from "../../../constants/currencies";
 
@@ -11,11 +11,12 @@ import { currencyPluralTitle } from "../../../constants/currencies";
  *             + ajustes(con signo) - descuentos - castigos - pagos
  */
 
-// Paleta clara para papel/PDF: el tema dark de la app no imprime bien; acentos
-// derivados de la marca (pine #6BE4C5 → teal oscuro legible sobre blanco).
+// Paleta clara para papel/PDF: el tema dark de la app no imprime bien. El documento del
+// diseñador no tiene un solo trazo de color: tinta, gris y papel. El verde de marca que pintaba
+// el filete del encabezado y los rótulos de sección se retiró — en un estado de cuenta el color
+// solo distraería de las cifras, que es lo único que se compara.
 const REPORT_INK = "#15202B";
 const REPORT_MUTED = "#5B6B7B";
-const REPORT_ACCENT = "#0E8C6D";
 const REPORT_DEBIT = "#B23A52";
 const REPORT_LINE = "#D9E0E7";
 const REPORT_SOFT_BG = "#F2F6F5";
@@ -136,7 +137,9 @@ function formatReportDate(isoDate: string | null | undefined): string {
   const parts = isoDate.slice(0, 10).split("-").map(Number);
   if (parts.length !== 3 || parts.some((n) => Number.isNaN(n))) return isoDate;
   const date = new Date(parts[0], parts[1] - 1, parts[2]);
-  return new Intl.DateTimeFormat("es-PE", { day: "numeric", month: "short", year: "numeric" }).format(date);
+  return new Intl.DateTimeFormat("es-PE", { day: "numeric", month: "short", year: "numeric" })
+    .format(date)
+    .replace(/\./g, "");
 }
 
 const STATUS_LABELS: Record<ObligationSummary["status"], string> = {
@@ -175,7 +178,7 @@ function formatShortDate(isoDate: string): string {
   const parts = isoDate.slice(0, 10).split("-").map(Number);
   if (parts.length !== 3 || parts.some((n) => Number.isNaN(n))) return isoDate;
   const date = new Date(parts[0], parts[1] - 1, parts[2]);
-  return new Intl.DateTimeFormat("es-PE", { day: "numeric", month: "short" }).format(date);
+  return new Intl.DateTimeFormat("es-PE", { day: "numeric", month: "short" }).format(date).replace(/\./g, "");
 }
 
 /** "31 de julio", para la fecha de corte del saldo. */
@@ -199,6 +202,17 @@ export function buildObligationReport(input: ObligationReportInput): ObligationR
   const folio = buildObligationReportFolio(obligation.id, generatedAt);
   const currency = obligation.currencyCode;
   const money = (amount: number) => formatCurrency(amount, currency);
+  /**
+   * La cifra sin el símbolo, para las dos tablas.
+   *
+   * En una columna de veintiún números, "S/" repetido veintiuna veces es ruido: la moneda ya
+   * está dicha tres veces arriba —en la fila meta, en el saldo sobre tinta y en el "de … en
+   * total"— y en la tabla lo que se compara son las cifras entre sí.
+   */
+  const plain = (amount: number) => {
+    const parts = formatCurrencyParts(amount, currency);
+    return `${parts.integer}${parts.fraction}`;
+  };
 
   const rows = computeObligationReportRows(input.events, obligation.principalAmount);
   const openingAmount = rows.find((row) => row.label === ANALYTICS_EVENT_LABELS.opening)?.charge
@@ -254,6 +268,8 @@ export function buildObligationReport(input: ObligationReportInput): ObligationR
     minute: "2-digit",
   }).format(generatedAt);
 
+  const pendingParts = formatCurrencyParts(obligation.pendingAmount, currency);
+
   const firstDate = rows[0]?.date ?? obligation.startDate;
   const lastDate = rows[rows.length - 1]?.date ?? obligation.startDate;
   const periodLabel = rows.length > 0
@@ -261,18 +277,19 @@ export function buildObligationReport(input: ObligationReportInput): ObligationR
     : formatReportDate(obligation.startDate);
 
   const summaryRows: Array<[string, string]> = [
-    [`Apertura, ${formatLongDay(obligation.startDate)}`, money(openingAmount)],
+    // La apertura no es un aumento: es el punto de partida, y por eso va sin signo.
+    [`Apertura, ${formatLongDay(obligation.startDate)}`, plain(openingAmount)],
     ...(increasesCount > 0
-      ? [[`${increasesCount} ${increaseWord}`, `+ ${money(increasesTotal)}`] as [string, string]]
+      ? [[`${increasesCount} ${increaseWord}`, `+ ${plain(increasesTotal)}`] as [string, string]]
       : []),
     ...(interestFeesTotal > 0
-      ? [["Intereses y cargos", `+ ${money(interestFeesTotal)}`] as [string, string]]
+      ? [["Intereses y cargos", `+ ${plain(interestFeesTotal)}`] as [string, string]]
       : []),
     ...(paymentsCount > 0
-      ? [[`${paymentsCount} ${paymentWord}`, `− ${money(paymentsTotal)}`] as [string, string]]
+      ? [[`${paymentsCount} ${paymentWord}`, `− ${plain(paymentsTotal)}`] as [string, string]]
       : []),
     ...(reliefCount > 0
-      ? [[`${reliefCount} ${reliefWord}`, `− ${money(reliefTotal)}`] as [string, string]]
+      ? [[`${reliefCount} ${reliefWord}`, `− ${plain(reliefTotal)}`] as [string, string]]
       : []),
   ];
 
@@ -347,13 +364,18 @@ export function buildObligationReport(input: ObligationReportInput): ObligationR
   function renderRows(pageRows: ObligationReportRow[]): string {
     return pageRows
       .map((row) => {
-        const signed = row.charge != null ? `+ ${money(row.charge)}` : `− ${money(row.credit ?? 0)}`;
+        const isOpening = row.label === ANALYTICS_EVENT_LABELS.opening;
+        const signed = isOpening
+          ? plain(row.charge ?? 0)
+          : row.charge != null
+            ? `+ ${plain(row.charge)}`
+            : `− ${plain(row.credit ?? 0)}`;
         const subtitle = rowSubtitle(row);
         return `<tr>
         <td class="date">${formatShortDate(row.date)}</td>
         <td><span class="concept">${rowTitle(row)}</span>${subtitle ? `<div class="muted">${subtitle}</div>` : ""}</td>
         <td class="num">${signed}</td>
-        <td class="num balance">${money(row.balance)}</td>
+        <td class="num balance">${plain(row.balance)}</td>
       </tr>`;
       })
       .join("\n");
@@ -365,7 +387,7 @@ export function buildObligationReport(input: ObligationReportInput): ObligationR
       const carriedIn = index > 0 ? pages[index - 1][pages[index - 1].length - 1]?.balance ?? null : null;
       const carriedOut = !isLast ? pageRows[pageRows.length - 1]?.balance ?? null : null;
       return `<section class="sheet${isLast ? "" : " sheet-break"}">
-    ${index > 0 ? `<div class="continues">Viene de la página ${index} · saldo arrastrado <strong>${money(carriedIn ?? 0)}</strong></div>` : ""}
+    ${index > 0 ? `<div class="continues"><span>Viene de la página ${index} · saldo arrastrado</span><strong>${plain(carriedIn ?? 0)}</strong></div>` : ""}
     <div class="table-head">
       <h2>Movimientos</h2>
       <span class="table-meta">${rows.length} en total · página ${index + 1} de ${pageCount}</span>
@@ -378,8 +400,8 @@ export function buildObligationReport(input: ObligationReportInput): ObligationR
         ${renderRows(pageRows) || `<tr><td colspan="4" class="muted">Sin movimientos registrados.</td></tr>`}
       </tbody>
     </table>
-    ${carriedOut != null ? `<div class="continues">Continúa en la página ${index + 2} · saldo arrastrado <strong>${money(carriedOut)}</strong></div>` : ""}
-    <footer><span>Folio ${folio}</span><span>${index + 1} / ${pageCount}</span></footer>
+    ${carriedOut != null ? `<div class="continues carried-out"><span>Continúa en la página ${index + 2} · saldo arrastrado</span><strong>${plain(carriedOut)}</strong></div>` : ""}
+    <footer><span>Generado con DarkMoney · folio ${folio}</span><span>${index + 1} / ${pageCount}</span></footer>
   </section>`;
     })
     .join("\n");
@@ -393,20 +415,25 @@ export function buildObligationReport(input: ObligationReportInput): ObligationR
   * { box-sizing: border-box; }
   body { font-family: -apple-system, "Helvetica Neue", Helvetica, Arial, sans-serif; color: ${REPORT_INK}; font-size: 12px; margin: 0; }
   .sheet-break { page-break-after: always; }
-  .brand { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid ${REPORT_ACCENT}; padding-bottom: 10px; }
+  .brand { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid ${REPORT_INK}; padding-bottom: 10px; }
   .brand h1 { font-size: 20px; margin: 0; letter-spacing: 0.4px; }
   .brand .kind { color: ${REPORT_MUTED}; font-size: 12px; margin-top: 3px; }
-  .brand .app { color: ${REPORT_ACCENT}; font-weight: 700; font-size: 13px; text-align: right; }
-  .brand .stamp { color: ${REPORT_MUTED}; font-size: 10px; margin-top: 3px; text-align: right; }
+  .brand .app { color: ${REPORT_INK}; font-weight: 700; font-size: 13px; text-align: right; }
+  .brand .stamp {
+    color: ${REPORT_MUTED}; font-size: 10px; margin-top: 3px; text-align: right;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: 0.2px;
+  }
   .parties { display: flex; gap: 18px; margin: 14px 0 4px; }
   .parties div { flex: 1; }
   .parties .role { color: ${REPORT_MUTED}; font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.6px; }
   .parties .name { font-weight: 700; font-size: 12.5px; margin-top: 2px; }
-  .pending-block { background: ${REPORT_INK}; color: ${REPORT_PAPER}; border-radius: 10px; padding: 14px 18px; margin: 14px 0 6px; display: flex; justify-content: space-between; align-items: flex-end; }
+  .pending-block { background: ${REPORT_INK}; color: ${REPORT_PAPER}; padding: 16px 18px; margin: 16px 0 6px; display: flex; justify-content: space-between; align-items: flex-end; }
   .pending-block .k { font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.8px; opacity: 0.75; }
   .pending-block .v { font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 4px; }
+  /* El símbolo no compite con la cifra: es la unidad, no el importe. */
+  .pending-block .v .sym { font-size: 17px; font-weight: 600; opacity: 0.9; margin-right: 4px; }
   .pending-block .side { text-align: right; font-size: 11px; opacity: 0.85; line-height: 1.5; }
-  h2 { font-size: 12px; margin: 16px 0 6px; color: ${REPORT_ACCENT}; text-transform: uppercase; letter-spacing: 0.8px; }
+  h2 { font-size: 10px; margin: 16px 0 6px; color: ${REPORT_MUTED}; text-transform: uppercase; letter-spacing: 0.8px; font-weight: 600; }
   .summary { width: 100%; border-collapse: collapse; }
   .summary td { padding: 5px 2px; border-bottom: 1px solid ${REPORT_LINE}; }
   .summary td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
@@ -414,16 +441,20 @@ export function buildObligationReport(input: ObligationReportInput): ObligationR
   .table-head { display: flex; justify-content: space-between; align-items: baseline; }
   .table-meta { color: ${REPORT_MUTED}; font-size: 10px; }
   table.events { width: 100%; border-collapse: collapse; }
-  table.events th { text-align: left; font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.6px; color: ${REPORT_MUTED}; border-bottom: 2px solid ${REPORT_INK}; padding: 6px 4px; }
-  table.events td { padding: 6px 4px; border-bottom: 1px solid ${REPORT_LINE}; vertical-align: top; }
-  table.events tr:nth-child(even) td { background: #FAFCFB; }
+  table.events th { text-align: left; font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.6px; color: ${REPORT_MUTED}; border-bottom: 1px solid ${REPORT_INK}; padding: 6px 4px; }
+  table.events td { padding: 8px 4px; border-bottom: 1px solid ${REPORT_LINE}; vertical-align: top; }
   .date { color: ${REPORT_MUTED}; white-space: nowrap; }
   .concept { font-weight: 600; }
   .missing { font-style: italic; color: ${REPORT_MUTED}; font-weight: 400; }
   .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .balance { font-weight: 700; }
   .muted { color: ${REPORT_MUTED}; font-size: 10.5px; margin-top: 2px; font-weight: 400; }
-  .continues { color: ${REPORT_MUTED}; font-size: 10.5px; padding: 6px 2px; }
+  .continues {
+    color: ${REPORT_MUTED}; font-size: 10.5px; padding: 7px 2px;
+    display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+  }
+  .continues strong { color: ${REPORT_INK}; font-variant-numeric: tabular-nums; }
+  .carried-out { border-top: 1px solid ${REPORT_INK}; }
   .conditions { display: flex; flex-wrap: wrap; gap: 6px 24px; margin-top: 4px; }
   .conditions div { min-width: 30%; }
   .conditions .k { color: ${REPORT_MUTED}; font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.6px; }
@@ -454,7 +485,7 @@ export function buildObligationReport(input: ObligationReportInput): ObligationR
   <div class="pending-block">
     <div>
       <div class="k">Saldo pendiente al ${escapeHtml(formatLongDay(lastDate))}</div>
-      <div class="v">${money(obligation.pendingAmount)}</div>
+      <div class="v"><span class="sym">${escapeHtml(pendingParts.symbol)}</span>${pendingParts.integer}${pendingParts.fraction}</div>
     </div>
     <div class="side">
       ${isReceivable ? "Cobrado" : "Pagado"} ${money(collected)}<br />de ${money(grossTotal)} en total
@@ -464,7 +495,7 @@ export function buildObligationReport(input: ObligationReportInput): ObligationR
   <h2>Cómo se formó el saldo</h2>
   <table class="summary">
     ${summaryRows.map(([label, value]) => `<tr><td>${escapeHtml(label)}</td><td>${escapeHtml(value)}</td></tr>`).join("\n    ")}
-    <tr class="total"><td>Saldo pendiente</td><td>${money(obligation.pendingAmount)}</td></tr>
+    <tr class="total"><td>Saldo pendiente</td><td>${plain(obligation.pendingAmount)}</td></tr>
   </table>
 
   ${tablePages}

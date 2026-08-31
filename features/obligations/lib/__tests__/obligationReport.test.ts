@@ -125,8 +125,8 @@ describe("el estado de cuenta en dos páginas", () => {
   });
 
   it("el corte dice el saldo arrastrado, y la hoja siguiente arranca con el mismo número", () => {
-    expect(result.html).toMatch(/Continúa en la página 2 · saldo arrastrado <strong>[^<]+<\/strong>/);
-    expect(result.html).toMatch(/Viene de la página 1 · saldo arrastrado <strong>[^<]+<\/strong>/);
+    expect(result.html).toMatch(/Continúa en la página 2 · saldo arrastrado<\/span><strong>[^<]+<\/strong>/);
+    expect(result.html).toMatch(/Viene de la página 1 · saldo arrastrado<\/span><strong>[^<]+<\/strong>/);
   });
 
   it("cada hoja repite el encabezado de la tabla", () => {
@@ -175,5 +175,17 @@ describe("la fila dice qué se vendió, no de qué tipo es el evento", () => {
   it("la moneda se dice en palabras y el total aparece en el resumen", () => {
     expect(result.html).toContain("Soles");
     expect(result.html).toContain("en total");
+  });
+
+  it("las tablas no repiten el símbolo de la moneda en cada cifra", () => {
+    const tables = result.html.slice(
+      result.html.indexOf('<table class="summary">'),
+      result.html.indexOf("<h2>Condiciones</h2>"),
+    );
+    expect(tables).not.toMatch(/S\/\s*\d/);
+  });
+
+  it("la apertura va sin signo: es el punto de partida, no un aumento", () => {
+    expect(result.html).toMatch(/Apertura del registro<\/span><\/td>\s*<td class="num">1,000\.00</);
   });
 });
