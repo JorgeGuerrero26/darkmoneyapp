@@ -66,6 +66,8 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Al ajustar el monto ahora es obligatorio decir por qué —\"Canon M50\", \"préstamo\"—, porque es justo el texto que aparece en el estado de cuenta que le mandas a la otra persona. Antes era opcional, y por eso salían líneas en blanco en el PDF.",
       "Las dos pantallas que abres desde una deuda ya muestran el mismo número: lo que te debe hoy. Antes una decía 21,020 y la otra 23,455 en el mismo sitio, y parecía que una de las dos estaba mal.",
       "Cuando compartes una deuda, con quién la compartiste se lee como un dato más y no como un botón, y \"Desvincular acceso\" bajó al final, separado del resto, para que no se toque por error.",
+      "En el plan de pagos a medida ahora se ve de qué mes habla cada cuota —\"Set 2026\", con el año— y de dónde sale la lista: el primer pago arranca en el mes actual y de ahí va uno por mes. Antes salía de la fecha en que abriste la deuda, así que un plan pactado hoy podía empezar con cuatro meses ya vencidos.",
+      "Y los meses se pueden cambiar: tocas el mes de un pago y eliges otro. La app solo te ofrece los que no rompen el orden, así que no puedes poner marzo antes de enero.",
     ],
   },
   {
