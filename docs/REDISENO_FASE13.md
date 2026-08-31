@@ -108,3 +108,34 @@ Los cinco filtros pasan a **una sola pista segmentada** con lo elegido en hueso,
 ### [x] G · Títulos cortados y "quedan" ocho veces
 El saldo va **debajo del monto**, así que el título gana el ancho que le faltaba. Y "quedan" no
 se repite en cada fila: la columna siempre significa lo mismo.
+
+---
+
+## 4. Corrección posterior (31 ago) — el detalle seguía siendo una pila de cajas
+
+El mockup `AC` dibuja **una sola tarjeta**, "Cómo llegó a S/ 23,455.00", y todo lo demás plano
+sobre el fondo. La app tenía cuatro cajas con borde apiladas.
+
+### [x] La cifra de arriba sale de su tarjeta
+Es lo primero que se lee al abrir; encerrarla dibujaba una caja alrededor de la respuesta.
+
+### [x] Movimientos deja de ser un bloque
+El rótulo arranca en el margen de la pantalla —igual que el de la cifra— y lo que separa una fila
+de la siguiente es una línea fina. Con esto el resumen y la lista completa se ven iguales, que
+era la otra queja.
+
+### [x] "S/" cuatro veces en una resta de cuatro líneas
+Los sumandos van sin símbolo. La moneda la dicen la cifra grande de arriba y el total de abajo.
+
+### [x] "Detalles" repetía la línea del pie
+Abría con "Estado · Activa" y "Fecha inicio · 15 mar 2026", que es palabra por palabra lo que
+dice "Activa desde el 15 de marzo" al pie. La tarjeta solo se dibuja cuando queda algo propio:
+interés, cuenta de liquidación, descripción o notas.
+
+### [x] La línea del pie decía "Activa" siempre
+Incluso en una obligación liquidada. Ahora el estado sale del estado.
+
+> **Los puntos de color y el "quedan" de cada fila** que muestra el mockup `AC` no vuelven: la
+> Revisión 16 (§3) los retiró para la lista completa —"el signo ya dice la dirección", "«quedan»
+> no se repite en cada fila"— y las dos listas comparten anatomía.
+
