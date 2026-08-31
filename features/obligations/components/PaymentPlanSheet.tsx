@@ -11,8 +11,11 @@ import { TextField } from "../../../components/ui/TextField";
 import { formatCurrency } from "../../../components/ui/AmountDisplay";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../../constants/theme";
 import {
+  addMonthsIso,
+  defaultFirstDueDate,
   expandPaymentPlan,
   isPlanComplete,
+  monthKey,
   planDifference,
   planTotal,
   type PaymentPlan,
@@ -31,21 +34,53 @@ type Props = {
 
 const EQUAL_DEFAULT_COUNT = 6;
 
+/**
+ * "Setiembre 2026", no "Setiembre".
+ *
+ * El mes solo decía el nombre, así que un plan de catorce pagos enseñaba dos veces "marzo" sin
+ * que se supiera cuál era cuál, ni si el primero era de este año o del pasado.
+ */
 function monthLabel(dueDate: string) {
   const date = parseISO(dueDate);
   if (Number.isNaN(date.getTime())) return dueDate;
-  return format(date, "LLLL", { locale: es });
+  return format(date, "LLL yyyy", { locale: es });
 }
+
+/** Cuántos meses se ofrecen hacia adelante al elegir el mes de un pago. */
+const MONTH_CHOICES = 24;
 
 function capitalize(text: string) {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 /** Lo que se escribe en una fila de pago acordado, antes de ser un número. */
-type AgreedDraft = { key: string; amount: string };
+type AgreedDraft = { key: string; amount: string; dueDate?: string };
 
 let draftSeq = 0;
-const newDraft = (amount = ""): AgreedDraft => ({ key: `agreed-${(draftSeq += 1)}`, amount });
+const newDraft = (amount = "", dueDate?: string): AgreedDraft => ({
+  key: `agreed-${(draftSeq += 1)}`,
+  amount,
+  dueDate,
+});
+
+/**
+ * Los meses que se pueden elegir para un pago, entre el anterior y el siguiente.
+ *
+ * La regla que pidió el usuario —"no se puede poner un marzo antes de enero"— no se comprueba
+ * después de escribir: **los meses que romperían el orden no se ofrecen**. Un límite que no se
+ * puede cruzar no necesita mensaje de error.
+ */
+function monthChoices(from: string, until: string | null, value: string) {
+  // La ventana se corre para que el mes elegido siempre se vea, con algo de contexto detrás.
+  const start = monthKey(value) > monthKey(addMonthsIso(from, 6)) ? addMonthsIso(value, -6) : from;
+  const options: string[] = [];
+  for (let i = 0; i < MONTH_CHOICES; i += 1) {
+    const candidate = addMonthsIso(start, i);
+    if (until && monthKey(candidate) >= monthKey(until)) break;
+    options.push(candidate);
+  }
+  return options;
+}
 
 /**
  * El plan de pagos de una obligación.
@@ -74,31 +109,50 @@ export function PaymentPlanSheet({
     plan?.mode === "custom" ? plan.agreed.map((amount) => newDraft(String(amount))) : [],
   );
   const [tail, setTail] = useState(plan?.mode === "custom" && plan.tail != null ? String(plan.tail) : "");
+  /**
+   * El mes del primer pago. En un plan nuevo es **el mes actual**: antes salía de la fecha de
+   * inicio de la obligación, así que una deuda de marzo proponía su primer pago en abril aunque
+   * el plan se estuviera pactando en agosto.
+   */
+  const [firstDueDate, setFirstDueDate] = useState(
+    plan?.firstDueDate ?? defaultFirstDueDate(startDate),
+  );
+  /** Qué selector de mes está abierto: "first" o la clave de una fila. */
+  const [monthPickerFor, setMonthPickerFor] = useState<string | null>(null);
 
   // Al abrir se parte de lo que ya hay guardado: la hoja edita el plan vigente, no uno en blanco.
   useEffect(() => {
     if (!visible) return;
     setMode(plan?.mode ?? "equal");
     setCount(String(plan?.mode === "equal" ? plan.count : EQUAL_DEFAULT_COUNT));
-    setAgreed(plan?.mode === "custom" ? plan.agreed.map((amount) => newDraft(String(amount))) : []);
+    setAgreed(
+      plan?.mode === "custom"
+        ? plan.agreed.map((payment) => newDraft(String(payment.amount), payment.dueDate))
+        : [],
+    );
     setTail(plan?.mode === "custom" && plan.tail != null ? String(plan.tail) : "");
-  }, [plan, visible]);
+    setFirstDueDate(plan?.firstDueDate ?? defaultFirstDueDate(startDate));
+    setMonthPickerFor(null);
+  }, [plan, startDate, visible]);
 
   const draftPlan = useMemo<PaymentPlan | null>(() => {
     if (mode === "equal") {
       const parsed = Number(count);
-      return Number.isFinite(parsed) && parsed > 0 ? { mode: "equal", count: Math.floor(parsed) } : null;
+      return Number.isFinite(parsed) && parsed > 0
+        ? { mode: "equal", count: Math.floor(parsed), firstDueDate }
+        : null;
     }
-    const amounts = agreed
-      .map((draft) => Number(draft.amount))
-      .filter((amount) => Number.isFinite(amount) && amount > 0);
+    const payments = agreed
+      .map((draft) => ({ amount: Number(draft.amount), dueDate: draft.dueDate }))
+      .filter((payment) => Number.isFinite(payment.amount) && payment.amount > 0);
     const tailAmount = Number(tail);
     return {
       mode: "custom",
-      agreed: amounts,
+      agreed: payments,
       tail: Number.isFinite(tailAmount) && tailAmount > 0 ? tailAmount : null,
+      firstDueDate,
     };
-  }, [agreed, count, mode, tail]);
+  }, [agreed, count, firstDueDate, mode, tail]);
 
   const payments = useMemo(
     () => (draftPlan ? expandPaymentPlan({ plan: draftPlan, principal, startDate }) : []),
@@ -109,6 +163,35 @@ export function PaymentPlanSheet({
   const difference = planDifference(principal, payments);
   const money = (amount: number) => formatCurrency(amount, currencyCode);
   const lastPayment = payments[payments.length - 1];
+
+  /** El mes que le toca a una fila hoy: el suyo si lo eligió, o el que le da la posición. */
+  const monthOf = (index: number) => agreed[index]?.dueDate ?? addMonthsIso(firstDueDate, index);
+
+  const setMonthAt = (key: string, dueDate: string) => {
+    setAgreed((current) => current.map((item) => (item.key === key ? { ...item, dueDate } : item)));
+    setMonthPickerFor(null);
+  };
+
+  const renderMonthPicker = (value: string, from: string, until: string | null, onPick: (month: string) => void) => (
+    <View style={styles.monthPicker}>
+      {monthChoices(from, until, value).map((month) => {
+        const selected = monthKey(month) === monthKey(value);
+        return (
+          <TouchableOpacity
+            key={month}
+            style={[styles.monthChip, selected && styles.monthChipSelected]}
+            onPress={() => onPick(month)}
+            activeOpacity={0.72}
+            accessibilityRole="button"
+          >
+            <Text style={[styles.monthChipText, selected && styles.monthChipTextSelected]}>
+              {capitalize(monthLabel(month))}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
 
   return (
     <InlineFormSheet visible={visible} title="Plan de pagos" onBack={onClose}>
@@ -134,6 +217,21 @@ export function PaymentPlanSheet({
               maxLength={3}
             />
           </View>
+          <TouchableOpacity
+            style={styles.equalRow}
+            onPress={() => setMonthPickerFor((open) => (open === "first" ? null : "first"))}
+            activeOpacity={0.72}
+            accessibilityRole="button"
+          >
+            <Text style={styles.equalLabel}>Primer pago</Text>
+            <Text style={styles.monthValue}>{capitalize(monthLabel(firstDueDate))}</Text>
+          </TouchableOpacity>
+          {monthPickerFor === "first"
+            ? renderMonthPicker(firstDueDate, defaultFirstDueDate(startDate, new Date(0)), null, (month) => {
+                setFirstDueDate(month);
+                setMonthPickerFor(null);
+              })
+            : null}
           {/* La cuota se calcula, no se escribe: la fila muestra la operación. */}
           <Text style={styles.equalHint}>
             {payments.length > 0
@@ -149,11 +247,20 @@ export function PaymentPlanSheet({
               <Text style={styles.groupHint}>Tocar para editar</Text>
             </View>
             {agreed.map((draft, index) => (
-              <View key={draft.key} style={styles.agreedRow}>
+              <View key={draft.key}>
+              <View style={styles.agreedRow}>
                 <Text style={styles.seq}>{index + 1}</Text>
-                <Text style={styles.month}>
-                  {capitalize(monthLabel(payments[index]?.dueDate ?? startDate))}
-                </Text>
+                <TouchableOpacity
+                  style={styles.month}
+                  onPress={() => setMonthPickerFor((open) => (open === draft.key ? null : draft.key))}
+                  activeOpacity={0.72}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Mes del pago ${index + 1}`}
+                >
+                  <Text style={styles.monthValue}>
+                    {capitalize(monthLabel(monthOf(index)))}
+                  </Text>
+                </TouchableOpacity>
                 <TextField
                   value={draft.amount}
                   onChangeText={(value) => setAgreed((current) => current.map(
@@ -174,10 +281,24 @@ export function PaymentPlanSheet({
                   <Trash2 size={15} color={COLORS.storm} />
                 </TouchableOpacity>
               </View>
+              {monthPickerFor === draft.key
+                ? renderMonthPicker(
+                    monthOf(index),
+                    // Nunca antes del pago anterior; el primero, nunca antes del primer pago.
+                    index === 0 ? firstDueDate : addMonthsIso(monthOf(index - 1), 1),
+                    index + 1 < agreed.length ? monthOf(index + 1) : null,
+                    (month) => setMonthAt(draft.key, month),
+                  )
+                : null}
+              </View>
             ))}
             <TouchableOpacity
               style={styles.addRow}
-              onPress={() => setAgreed((current) => [...current, newDraft()])}
+              onPress={() => setAgreed((current) => {
+                const last = current[current.length - 1];
+                const lastMonth = last ? monthOf(current.length - 1) : null;
+                return [...current, newDraft("", lastMonth ? addMonthsIso(lastMonth, 1) : firstDueDate)];
+              })}
               activeOpacity={0.72}
               accessibilityRole="button"
             >
@@ -226,7 +347,7 @@ export function PaymentPlanSheet({
         <View style={styles.footerRecap}>
           <Text style={styles.footerCount}>
             {payments.length > 0
-              ? `${payments.length} ${payments.length === 1 ? "pago" : "pagos"}${lastPayment ? ` · hasta ${format(parseISO(lastPayment.dueDate), "LLL yyyy", { locale: es })}` : ""}`
+              ? `${payments.length} ${payments.length === 1 ? "pago" : "pagos"}${lastPayment ? ` · ${capitalize(monthLabel(payments[0].dueDate))} a ${monthLabel(lastPayment.dueDate)}` : ""}`
               : "Sin pagos programados"}
           </Text>
           <Text style={[styles.footerTotal, !complete && styles.footerTotalOff]}>
@@ -290,12 +411,34 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.xs,
     color: COLORS.storm,
   },
-  month: {
-    flex: 1,
+  month: { flex: 1 },
+  monthValue: {
     fontFamily: FONT_FAMILY.bodyMedium,
     fontSize: FONT_SIZE.sm,
     color: COLORS.ink,
   },
+  // Los meses se eligen dentro de la misma hoja: una capa más de modal encima de un sheet que ya
+  // vive dentro de otro no se presenta en iOS.
+  monthPicker: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: SPACING.xs,
+    paddingHorizontal: SPACING.md,
+    paddingBottom: SPACING.sm,
+    backgroundColor: SURFACE.input,
+    paddingTop: SPACING.sm,
+  },
+  monthChip: {
+    paddingHorizontal: SPACING.sm + 2,
+    paddingVertical: SPACING.xs + 2,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    borderColor: SURFACE.cardBorder,
+  },
+  // Elegido se ve igual en toda la app: hueso, sin color.
+  monthChipSelected: { borderColor: COLORS.ink, backgroundColor: SURFACE.cardActive },
+  monthChipText: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.fog },
+  monthChipTextSelected: { color: COLORS.ink, fontFamily: FONT_FAMILY.bodyMedium },
   agreedInput: {
     minWidth: 96,
     textAlign: "right",

@@ -75,7 +75,8 @@ export function PlanVsPaymentsCard({ obligation }: Props) {
             <View style={styles.rowMain}>
               <View style={[styles.dot, isPaid && styles.dotPaid]} />
               <View style={styles.rowCopy}>
-                <Text style={styles.month}>{capitalize(format(parseISO(row.dueDate), "LLLL", { locale: es }))}</Text>
+                {/* Con el año: un plan de catorce pagos enseña dos veces "marzo". */}
+                <Text style={styles.month}>{capitalize(format(parseISO(row.dueDate), "LLL yyyy", { locale: es }))}</Text>
                 {support ? <Text style={styles.support}>{support}</Text> : null}
               </View>
               <View style={styles.amounts}>
