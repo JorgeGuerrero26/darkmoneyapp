@@ -100,9 +100,10 @@ import { ViewerRequestsSection } from "../../features/obligations/components/det
 import { EventHistoryContainer } from "../../features/obligations/components/detail/EventHistoryContainer";
 import { ViewerLinkAccountSheet } from "../../features/obligations/components/detail/ViewerLinkAccountSheet";
 import { OwnerRespondPaymentRequestSheet } from "../../features/obligations/components/detail/OwnerRespondPaymentRequestSheet";
-import { ObligationOverviewCards } from "../../features/obligations/components/detail/ObligationOverviewCards";
+import { ObligationOverviewCards, obligationTermsLine } from "../../features/obligations/components/detail/ObligationOverviewCards";
 import { ObligationDetailInfoCard } from "../../features/obligations/components/detail/ObligationDetailInfoCard";
 import { PlanVsPaymentsCard } from "../../features/obligations/components/detail/PlanVsPaymentsCard";
+import { ObligationMovementsPreview } from "../../features/obligations/components/detail/ObligationMovementsPreview";
 import { balancesAfterEvents } from "../../features/obligations/lib/running-balance";
 import { OwnerRespondDeleteRequestSheet } from "../../features/obligations/components/detail/OwnerRespondDeleteRequestSheet";
 import { OwnerRespondEditRequestSheet } from "../../features/obligations/components/detail/OwnerRespondEditRequestSheet";
@@ -168,6 +169,8 @@ function ObligationDetailScreen() {
   const { showToast, showRichToast } = useToast();
   const [editFormVisible, setEditFormVisible] = useState(false);
   const [detailMenuOpen, setDetailMenuOpen] = useState(false);
+  /** El historial completo se abre desde "Ver los N movimientos". */
+  const [historyExpanded, setHistoryExpanded] = useState(false);
   const [paymentFormVisible, setPaymentFormVisible] = useState(false);
   const [paymentRequestFormVisible, setPaymentRequestFormVisible] = useState(false);
   const [editRequestFormVisible, setEditRequestFormVisible] = useState(false);
@@ -1129,7 +1132,17 @@ function ObligationDetailScreen() {
             />
           ) : null}
 
-          {showViewerHistoryTab ? (
+          {showViewerHistoryTab && !historyExpanded && obligation ? (
+            <ObligationMovementsPreview
+              obligation={obligation}
+              events={eventsForDetail}
+              balances={balancesByEventId}
+              isReceivable={isReceivable}
+              onSeeAll={() => setHistoryExpanded(true)}
+            />
+          ) : null}
+
+          {showViewerHistoryTab && historyExpanded ? (
             <EventHistoryContainer
               styles={styles}
               paymentWordPlural={paymentWordPlural}
@@ -1210,6 +1223,13 @@ function ObligationDetailScreen() {
               eventLabels={eventLabels}
               styles={styles}
             />
+          ) : null}
+
+          {/* La cuota y el vencimiento se contradicen —a esa cuota, el saldo actual toma años—,
+              así que van como contexto al pie y con "pactada" diciendo que es lo acordado, no lo
+              que está pasando. */}
+          {obligation ? (
+            <Text style={styles.heroTerms}>{obligationTermsLine(obligation)}</Text>
           ) : null}
 
           <RegisterPaymentButton

@@ -62,6 +62,20 @@ type Props = {
   onPressCapitalDecreaseDetail: () => void;
 };
 
+export function obligationTermsLine(
+  obligation: ObligationSummary | SharedObligationSummary,
+): string {
+  return [
+    `Activa desde el ${format(parseDisplayDate(obligation.startDate), "d 'de' MMMM", { locale: es })}`,
+    obligation.installmentAmount
+      ? `cuota pactada ${formatCurrency(obligation.installmentAmount, obligation.currencyCode)}`
+      : null,
+    obligation.dueDate
+      ? `vence ${format(parseDisplayDate(obligation.dueDate), "d MMM yyyy", { locale: es })}`
+      : null,
+  ].filter(Boolean).join(" · ");
+}
+
 export function ObligationOverviewCards({
   styles,
   obligation,
@@ -82,16 +96,6 @@ export function ObligationOverviewCards({
     ? (capitalOverview.decreaseCount === 1 ? "descuento" : "descuentos")
     : (capitalOverview.decreaseCount === 1 ? "reducción" : "reducciones");
   const openingLabel = `${sellsOnCredit ? "Primera venta" : "Apertura"}, ${format(parseDisplayDate(obligation.startDate), "d MMM", { locale: es })}`;
-
-  const termsLine = [
-    `Activa desde el ${format(parseDisplayDate(obligation.startDate), "d 'de' MMMM", { locale: es })}`,
-    obligation.installmentAmount
-      ? `cuota pactada ${formatCurrency(obligation.installmentAmount, obligation.currencyCode)}`
-      : null,
-    obligation.dueDate
-      ? `vence ${format(parseDisplayDate(obligation.dueDate), "d MMM yyyy", { locale: es })}`
-      : null,
-  ].filter(Boolean).join(" · ");
 
   /** "3 de 6 pagos", cuando la obligación tiene plan. */
   const planProgressLabel = (() => {
@@ -132,10 +136,6 @@ export function ObligationOverviewCards({
           )} de {formatCurrency(capitalOverview.currentPrincipal, obligation.currencyCode)}
           {planProgressLabel ? ` · ${planProgressLabel}` : ""}
         </Text>
-        {/* La cuota y el vencimiento eran datos firmes en su propia sección, y se contradicen:
-            a la cuota pactada, el saldo actual toma cinco años. Bajan a una línea de contexto,
-            con "pactada" diciendo que es lo acordado, no lo que está pasando. */}
-        {termsLine ? <Text style={styles.heroTerms}>{termsLine}</Text> : null}
       </Card>
 
       {/* Cuatro cifras de una sola resta iban en cuatro cajas con borde y dos colores, como si

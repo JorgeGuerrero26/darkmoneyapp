@@ -141,12 +141,25 @@ export const styles = StyleSheet.create({
     gap: SPACING.md,
   },
   shareSheetSub: { fontSize: FONT_SIZE.sm, color: COLORS.storm, textAlign: "center", marginTop: -SPACING.sm },
-  heroCard: { alignItems: "center", gap: SPACING.xs, paddingVertical: SPACING.xl },
-  directionBadge: { fontSize: FONT_SIZE.sm, fontFamily: FONT_FAMILY.bodySemibold, textTransform: "uppercase", letterSpacing: 0.5 },
-  counterparty: { fontSize: FONT_SIZE.md, color: COLORS.storm },
-  pendingAmount: { fontSize: 36, fontFamily: FONT_FAMILY.heading, marginTop: SPACING.sm },
-  pendingLabel: { fontSize: FONT_SIZE.sm, color: COLORS.storm },
-  progress: { width: "100%", marginTop: SPACING.md },
+  // La cifra va a la izquierda, como el resto de los números de la app: la tarjeta apilaba
+  // cuatro líneas centradas para decir uno solo.
+  heroCard: { alignItems: "flex-start", gap: SPACING.xs, paddingVertical: SPACING.lg },
+  // El color estaba inline y venía de la dirección de la deuda —verde o rojo—; sin él el texto
+  // se iba a negro sobre la tarjeta oscura. La cifra es hueso, como todas.
+  pendingAmount: {
+    fontSize: 36,
+    fontFamily: FONT_FAMILY.heading,
+    color: COLORS.ink,
+    letterSpacing: -0.5,
+  },
+  pendingLabel: {
+    fontSize: FONT_SIZE.xs,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    color: COLORS.storm,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+  },
+  progress: { width: "100%", marginTop: SPACING.sm },
   progressLabel: { fontSize: FONT_SIZE.xs, color: COLORS.storm },
   capitalSummaryCard: {
     gap: SPACING.sm,
