@@ -389,23 +389,30 @@ function MovementsScreen() {
    * mismo cálculo, así que no salta al llegar la buena — solo se completa.
    */
   const { data: serverSummary } = useMovementsFilteredSummaryQuery(activeWorkspaceId, filters);
+  /**
+   * El total y la lista son dos cosas independientes, y aquí se nota: **este cálculo no mira
+   * `allMovements`**. Sale entero de la suma del servidor sobre el filtro, así que no puede
+   * moverse mientras uno hace scroll.
+   *
+   * Mientras esa suma viaja no se enseña un número provisional: enseñar el parcial y luego
+   * corregirlo es justo el defecto que se vino a arreglar —una cifra que cambia sola—, solo que
+   * más rápido. Hasta que llega, la cinta muestra rayas.
+   */
   const filterSummary = useMemo(() => {
+    if (!serverSummary) return null;
     const baseUpper = baseCurrency.toUpperCase();
     // Resumen legacy fuera del contrato de paridad: si no hay tasa, muestra en base (1:1).
     const baseToActiveRate = resolveRate(exchangeRateMap, baseUpper, activeCurrency, baseUpper) ?? 1;
-    if (serverSummary) {
-      const incomeTotal = serverSummary.incomeTotal * baseToActiveRate;
-      const expenseTotal = serverSummary.expenseTotal * baseToActiveRate;
-      return {
-        incomeTotal,
-        expenseTotal,
-        incomeCount: serverSummary.incomeCount,
-        expenseCount: serverSummary.expenseCount,
-        net: incomeTotal - expenseTotal,
-      };
-    }
-    return summarizeMovements(allMovements, baseToActiveRate);
-  }, [allMovements, exchangeRateMap, baseCurrency, activeCurrency, serverSummary]);
+    const incomeTotal = serverSummary.incomeTotal * baseToActiveRate;
+    const expenseTotal = serverSummary.expenseTotal * baseToActiveRate;
+    return {
+      incomeTotal,
+      expenseTotal,
+      incomeCount: serverSummary.incomeCount,
+      expenseCount: serverSummary.expenseCount,
+      net: incomeTotal - expenseTotal,
+    };
+  }, [exchangeRateMap, baseCurrency, activeCurrency, serverSummary]);
 
   const extraFiltersCount = [
     activeDatePreset,

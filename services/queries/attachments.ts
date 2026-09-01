@@ -131,7 +131,7 @@ export function useObligationEventAttachmentCountsQuery(
 ) {
   const normalizedIds = (eventIds ?? []).filter((value) => Number.isFinite(value) && value > 0);
   return useQuery({
-    queryKey: ["entity-attachment-counts", workspaceId ?? null, "obligation-event", normalizedIds.join(",")],
+    queryKey: ["entity-attachment-counts", workspaceId ?? null, "obligation-event"],
     queryFn: async (): Promise<EntityAttachmentCounts> => {
       if (!workspaceId || normalizedIds.length === 0) return {};
       return fetchEntityAttachmentCounts(workspaceId, "obligation-event");
@@ -148,9 +148,17 @@ export function useMovementAttachmentCountsQuery(
 ) {
   const normalizedIds = (movementIds ?? []).filter((value) => Number.isFinite(value) && value > 0);
   return useQuery({
-    // Mantener los ids en la key conserva el refresco al agregar una entidad;
-    // cada cambio ahora cuesta un solo listado plano, no una llamada por fila.
-    queryKey: ["entity-attachment-counts", workspaceId ?? null, "movement", normalizedIds.join(",")],
+    /**
+     * **Los ids no van en la clave.** La consulta no los usa: pide de una vez los conteos del
+     * workspace entero y de ahí sale el número de cada fila.
+     *
+     * Metidos en la clave —unidos en un string— cada página de la lista infinita inventaba una
+     * clave nueva: 30 ids más, otra entrada de caché, y **otra descarga completa de lo mismo**.
+     * Desplazándose por Movimientos eso son veinte copias del mismo resultado, veinte listados
+     * al servidor y un string de claves que crece con cada página. El refresco al adjuntar un
+     * comprobante lo dan las invalidaciones, que ya apuntan a esta clave por prefijo.
+     */
+    queryKey: ["entity-attachment-counts", workspaceId ?? null, "movement"],
     meta: { uxBlocking: false },
     queryFn: async (): Promise<EntityAttachmentCounts> => {
       if (!workspaceId || normalizedIds.length === 0) return {};

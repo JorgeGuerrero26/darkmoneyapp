@@ -13,7 +13,8 @@ type MovementFilterSummary = {
 };
 
 type Props = {
-  summary: MovementFilterSummary;
+  /** `null` mientras la suma del servidor viaja: la cinta enseña rayas, no un número provisional. */
+  summary: MovementFilterSummary | null;
   baseCurrency: string;
   /** Currencies disponibles en el workspace (≥1). Solo se renderiza el selector si hay >1. */
   currencyOptions?: string[];
@@ -61,12 +62,18 @@ export function MovementSummaryBar({
       ) : null}
       <MetricSummaryBar
         label={`Neto ${activeCurrency}`}
-        value={formatAmountPlain(summary.net, activeCurrency, true)}
-        valueColor={summary.net >= 0 ? COLORS.income : COLORS.expense}
-        support={[
-          `Entró ${formatCurrency(summary.incomeTotal, activeCurrency)}`,
-          `salió ${formatCurrency(summary.expenseTotal, activeCurrency)}`,
-        ].join(" · ")}
+        value={summary ? formatAmountPlain(summary.net, activeCurrency, true) : "—"}
+        valueColor={
+          summary ? (summary.net >= 0 ? COLORS.income : COLORS.expense) : COLORS.storm
+        }
+        support={
+          summary
+            ? [
+                `Entró ${formatCurrency(summary.incomeTotal, activeCurrency)}`,
+                `salió ${formatCurrency(summary.expenseTotal, activeCurrency)}`,
+              ].join(" · ")
+            : "Sumando el periodo…"
+        }
         /* Aquí iba "Totales de los movimientos cargados hasta ahora. Sigue bajando para incluir
            el resto": una nota que existía para desmentir a la cifra de arriba, a diez píxeles de
            un rótulo que decía "del 1 al 31 de agosto". El total ya sale de una suma del servidor
