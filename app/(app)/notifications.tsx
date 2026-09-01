@@ -44,6 +44,7 @@ import {
   useMarkNotificationReadMutation,
   useMarkNotificationsReadMutation,
   useMarkNotificationsUnreadMutation,
+  useNotificationCountsQuery,
   useNotificationsQuery,
 } from "../../services/queries/workspace-data";
 import { usePendingObligationShareInvitesQuery } from "../../services/queries/obligations";
@@ -153,8 +154,22 @@ function NotificationsScreen() {
   const deleteNotification = useDeleteNotificationMutation(user?.id ?? null);
   const deleteSelectedNotifications = useDeleteNotificationsMutation(user?.id ?? null);
 
-  const unreadCount = notificationList.filter((notification) => notification.status !== "read").length;
-  const readCount = notificationList.length - unreadCount;
+  /**
+   * Los conteos de la cinta salen de un COUNT del servidor, **no de las filas cargadas**. El
+   * listado tiene tope y la cinta no debe heredarlo: con 202 notificaciones y tope de 100,
+   * decia "100 sin leer" habiendo 200. Es el mismo arreglo que el neto de Movimientos.
+   *
+   * Mientras el conteo viaja se usa el de la lista. Aqui si vale, a diferencia de Movimientos:
+   * alla el parcial estaba SESGADO -la lista viene de lo mas reciente, asi que el total se
+   * inclinaba hacia los ultimos dias y cambiaba al bajar-. Aqui, mientras el tope no recorte,
+   * lo cargado ES todo; y cuando recorta, el aviso de abajo lo dice en vez de callarlo.
+   */
+  const { data: notificationCounts } = useNotificationCountsQuery(user?.id ?? null);
+  const localUnreadCount = notificationList.filter((notification) => notification.status !== "read").length;
+  const unreadCount = notificationCounts?.unread ?? localUnreadCount;
+  const readCount = notificationCounts?.read ?? notificationList.length - localUnreadCount;
+  /** El tope recorto: hay mas en el servidor que en la lista. Se avisa, no se esconde. */
+  const hiddenByLimit = Math.max((notificationCounts?.total ?? 0) - notificationList.length, 0);
   const selectionMode = selectedNotificationIds.length > 0;
   // Refs espejo para que los handlers de fila (handleTap/longPress) sean estables y no se
   // recreen al cambiar la selección — junto con NotificationCard memoizado evita re-render
@@ -257,11 +272,14 @@ function NotificationsScreen() {
     };
   }, [notificationList.length, notificationsQuery.isError, pendingInvites.length, refetch, showUnreadOnly, unreadCount, activeFilter]);
 
+  const truncationNote = hiddenByLimit > 0
+    ? ` Se muestran las ${notificationList.length} más recientes de ${notificationCounts?.total ?? 0}.`
+    : "";
   const contextNote = selectionMode
     ? "Elige qué hacer con la selección."
     : activeFilter === "all" && !showUnreadOnly
-      ? "Mantén presionada una notificación para seleccionar varias."
-      : `Mostrando ${filteredNotificationCount} notificación${filteredNotificationCount !== 1 ? "es" : ""}${showUnreadOnly ? " sin leer" : ""}${activeFilter !== "all" ? ` · ${getNotificationFilterLabel(activeFilter).toLowerCase()}` : ""}.`;
+      ? `Mantén presionada una notificación para seleccionar varias.${truncationNote}`
+      : `Mostrando ${filteredNotificationCount} notificación${filteredNotificationCount !== 1 ? "es" : ""}${showUnreadOnly ? " sin leer" : ""}${activeFilter !== "all" ? ` · ${getNotificationFilterLabel(activeFilter).toLowerCase()}` : ""}.${truncationNote}`;
 
   useEffect(() => {
     setSelectedNotificationIds((current) =>

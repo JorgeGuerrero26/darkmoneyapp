@@ -3116,6 +3116,8 @@ export {
 
 export {
   useNotificationsQuery,
+  type NotificationCounts,
+  useNotificationCountsQuery,
   type NotificationPreferenceSummary,
   useNotificationPreferencesQuery,
   useUpdateNotificationPreferencesMutation,

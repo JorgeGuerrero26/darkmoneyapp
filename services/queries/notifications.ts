@@ -46,6 +46,63 @@ function rollbackNotifications(queryClient: QueryClient, userId: string | null, 
   if (ctx?.previous) queryClient.setQueryData(["notifications", userId], ctx.previous);
 }
 
+/**
+ * Tope de filas del listado. Estaba en 100 sin nada que lo dijera: con 202 notificaciones,
+ * 102 no existian para la app —no habia "cargar mas" ni aviso—, y la cinta de arriba contaba
+ * sobre las cargadas, asi que decia 100 sin leer donde habia 200. El mismo defecto que tenia
+ * el neto de Movimientos: un numero que contradice a lo que hay, sin decirlo.
+ *
+ * Los conteos ya no dependen de esto (`useNotificationCountsQuery` los pide al servidor) y la
+ * pantalla avisa cuando el tope recorta. 500 cubre de sobra al usuario mas cargado; el dia que
+ * alguien lo pase, el aviso lo dira en vez de esconderlo.
+ */
+const NOTIFICATIONS_LIST_LIMIT = 500;
+
+export type NotificationCounts = {
+  total: number;
+  unread: number;
+  read: number;
+};
+
+/**
+ * Cuantas notificaciones hay, **contadas por el servidor**, no sumando las filas cargadas.
+ *
+ * Listar y contar son dos consultas distintas: la lista tiene tope y la cinta de arriba no
+ * debe heredarlo. Son dos COUNT con `head: true`, asi que no viaja ni una fila.
+ *
+ * La clave cuelga de `["notifications", userId]` a proposito: las invalidaciones de las
+ * mutaciones apuntan ahi por prefijo, asi que marcar leidas o borrar refresca tambien esto.
+ */
+export function useNotificationCountsQuery(userId: string | null) {
+  return useQuery({
+    queryKey: ["notifications", userId, "counts"],
+    meta: { uxBlocking: false },
+    queryFn: async (): Promise<NotificationCounts> => {
+      if (!supabase || !userId) return { total: 0, unread: 0, read: 0 };
+      const [totalResult, unreadResult] = await Promise.all([
+        supabase
+          .from("notifications")
+          .select("id", { count: "exact", head: true })
+          .eq("user_id", userId),
+        // Espejo de la regla del cliente (`status !== "read"`), que es la que pinta la fila.
+        supabase
+          .from("notifications")
+          .select("id", { count: "exact", head: true })
+          .eq("user_id", userId)
+          .neq("status", "read"),
+      ]);
+      if (totalResult.error) throw new Error(totalResult.error.message ?? "Error de base de datos");
+      if (unreadResult.error) throw new Error(unreadResult.error.message ?? "Error de base de datos");
+      const total = totalResult.count ?? 0;
+      const unread = unreadResult.count ?? 0;
+      return { total, unread, read: Math.max(total - unread, 0) };
+    },
+    enabled: Boolean(userId),
+    staleTime: STALE.short,
+    refetchOnReconnect: true,
+  });
+}
+
 export function useNotificationsQuery(userId: string | null) {
   return useQuery({
     queryKey: ["notifications", userId],
@@ -57,7 +114,7 @@ export function useNotificationsQuery(userId: string | null) {
         .select("id, title, body, status, scheduled_for, kind, channel, read_at, related_entity_type, related_entity_id, payload")
         .eq("user_id", userId)
         .order("scheduled_for", { ascending: false })
-        .limit(100);
+        .limit(NOTIFICATIONS_LIST_LIMIT);
       if (error) throw new Error(error.message ?? "Error de base de datos");
       return (data ?? []).map((row: any) => ({
         id: row.id,
