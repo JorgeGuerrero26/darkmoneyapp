@@ -32,9 +32,10 @@ import { DatePickerInput } from "../ui/DatePickerInput";
 import { formatCurrency } from "../ui/AmountDisplay";
 import { describeOverpayment } from "../../features/obligations/lib/settlement";
 import {
+  coverPlan,
+  describeCoverage,
+  nextUncoveredPayment,
   parsePaymentPlan,
-  planRowForPayment,
-  reconcilePlan,
   type ActualPayment,
 } from "../../features/obligations/lib/payment-plan";
 import { sortByName } from "../../lib/sort-locale";
@@ -495,30 +496,52 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent
    * pedirse. Lo que importa es la cuota, no la fecha en que la otra persona pague: si la de
    * setiembre se paga en noviembre, sigue siendo la de setiembre.
    */
-  const planRow = useMemo(() => {
+  const planRows = useMemo(() => {
     if (!obligation) return null;
     const plan = parsePaymentPlan(obligation.paymentPlan);
     if (!plan) return null;
-    const paymentEvents = obligation.events.filter((event) => event.eventType === "payment");
-    const actual: ActualPayment[] = paymentEvents.map((event) => ({
-      amount: event.amount,
-      date: event.eventDate,
-    }));
-    const rows = reconcilePlan({
+    const actual: ActualPayment[] = obligation.events
+      .filter((event) => event.eventType === "payment")
+      // Al editar, su propio importe no cuenta como cubierto: si contara, la cuota que este
+      // cobro llenó saldría cerrada y la tarjeta apuntaría a la siguiente.
+      .filter((event) => !(isEditMode && editEvent && event.id === editEvent.id))
+      .map((event) => ({ amount: event.amount, date: event.eventDate }));
+    const rows = coverPlan({
       plan,
-      principal: obligation.principalAmount,
+      openingPrincipal: obligation.principalAmount,
+      currentDebt:
+        obligation.currentPrincipalAmount && obligation.currentPrincipalAmount > 0
+          ? obligation.currentPrincipalAmount
+          : obligation.principalAmount,
       startDate: obligation.startDate,
       payments: actual,
     });
     if (rows.length === 0) return null;
-    const editingIndex = isEditMode && editEvent
-      ? [...paymentEvents]
-          .sort((a, b) => a.eventDate.localeCompare(b.eventDate))
-          .findIndex((event) => event.id === editEvent.id)
-      : -1;
-    const row = planRowForPayment(rows, editingIndex >= 0 ? editingIndex : null);
-    return row ? { row, total: rows.length } : null;
+    const next = nextUncoveredPayment(rows);
+    return next ? { rows, next, total: rows.length } : null;
   }, [editEvent, isEditMode, obligation]);
+
+  /**
+   * Qué va a pasar con el monto que se está escribiendo.
+   *
+   * Un cobro puede cerrar una cuota y adelantar parte de la siguiente, así que nombrar una sola no
+   * basta. Es la misma idea que "Quedará S/ X" del saldo, aplicada a la cuota: escribe el monto y
+   * la app le dice dónde cae.
+   */
+  const coverageNote = useMemo(() => {
+    if (!planRows || parsedAmount == null) return null;
+    const { settles, overflow, shortfall } = describeCoverage(planRows.rows, parsedAmount);
+    if (shortfall > 0) {
+      return `Quedarán ${formatCurrency(shortfall, currencyCode)} pendientes de esta cuota`;
+    }
+    if (settles === 0) return null;
+    const closed = settles === 1 ? "Completa esta cuota" : `Completa ${settles} cuotas`;
+    return overflow > 0
+      ? `${closed} y adelanta ${formatCurrency(overflow, currencyCode)} de la siguiente`
+      : settles === 1
+        ? "Completa esta cuota exacta"
+        : `${closed} exactas`;
+  }, [currencyCode, parsedAmount, planRows]);
 
   const remainingAfter = useMemo(() => {
     if (parsedAmount == null) return null;
@@ -584,16 +607,26 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent
       {/* A qué cuota va, antes que nada: es lo que el usuario no podía saber al registrar, y no
           depende de cuándo le paguen —si la de setiembre se paga en noviembre, sigue siendo la de
           setiembre—. Va también al editar, donde saber qué cuota se está tocando importa igual. */}
-      {planRow ? (
+      {planRows ? (
         <View style={styles.contextCard}>
           <View style={styles.contextRow}>
             <Text style={styles.contextLabel}>
-              Cuota {planRow.row.seq} de {planRow.total}
+              Cuota {planRows.next.seq} de {planRows.total}
             </Text>
             <Text style={styles.contextValue}>
-              {capitalizeMonth(planRow.row.dueDate)} · {formatCurrency(planRow.row.amount, currencyCode)}
+              {capitalizeMonth(planRows.next.dueDate)} ·{" "}
+              {/* Lo que FALTA, no el importe entero: con la cascada la cuota puede venir a medias
+                  de cobros anteriores, y lo que el usuario necesita es el número que la cierra. */}
+              {formatCurrency(planRows.next.remaining, currencyCode)}
             </Text>
           </View>
+          {planRows.next.covered > 0 ? (
+            <Text style={styles.contextHint}>
+              Ya tiene {formatCurrency(planRows.next.covered, currencyCode)} de{" "}
+              {formatCurrency(planRows.next.amount, currencyCode)}
+            </Text>
+          ) : null}
+          {coverageNote ? <Text style={styles.contextHint}>{coverageNote}</Text> : null}
         </View>
       ) : null}
 
@@ -804,6 +837,13 @@ const styles = StyleSheet.create({
     gap: SPACING.md,
   },
   contextLabel: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.storm },
+  contextHint: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    lineHeight: 18,
+    color: COLORS.storm,
+    marginTop: 2,
+  },
   contextValue: { fontFamily: FONT_FAMILY.heading, fontSize: FONT_SIZE.md, color: COLORS.ink },
   label: {
     fontSize: FONT_SIZE.xs,

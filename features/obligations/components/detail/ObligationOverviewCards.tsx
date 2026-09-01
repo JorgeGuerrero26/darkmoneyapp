@@ -13,7 +13,7 @@ import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { parseDisplayDate } from "../../../../lib/date";
 import { getObligationStatusLabel } from "../../../../lib/obligation-labels";
-import { expandPaymentPlan, parsePaymentPlan } from "../../lib/payment-plan";
+import { coverPlan, parsePaymentPlan, type ActualPayment } from "../../lib/payment-plan";
 import { formatAmountPlain, formatCurrency } from "../../../../components/ui/AmountDisplay";
 import { COLORS } from "../../../../constants/theme";
 import {
@@ -109,18 +109,32 @@ export function ObligationOverviewCards({
    */
   const plain = (amount: number) => formatAmountPlain(amount, obligation.currencyCode);
 
-  /** "3 de 6 pagos", cuando la obligación tiene plan. */
+  /**
+   * "3 de 6 cuotas", cuando la obligación tiene plan.
+   *
+   * Contaba PAGOS, no cuotas, y por eso se contradecía con su propia barra: nueve cobros que
+   * cubrían un tercio del plan salían como "9 de 12" —75%— al lado de una barra al 12%. Ahora
+   * cuenta cuotas cerradas, que es lo que la barra mide.
+   */
   const planProgressLabel = (() => {
     const plan = parsePaymentPlan(obligation.paymentPlan);
     if (!plan) return null;
-    const scheduled = expandPaymentPlan({
+    const payments: ActualPayment[] = obligation.events
+      .filter((event) => event.eventType === "payment")
+      .map((event) => ({ amount: event.amount, date: event.eventDate }));
+    const rows = coverPlan({
       plan,
-      principal: obligation.principalAmount,
+      openingPrincipal: obligation.principalAmount,
+      currentDebt:
+        obligation.currentPrincipalAmount && obligation.currentPrincipalAmount > 0
+          ? obligation.currentPrincipalAmount
+          : obligation.principalAmount,
       startDate: obligation.startDate,
+      payments,
     });
-    if (scheduled.length === 0) return null;
-    const paid = obligation.events.filter((event) => event.eventType === "payment").length;
-    return `${Math.min(paid, scheduled.length)} de ${scheduled.length} pagos`;
+    if (rows.length === 0) return null;
+    const covered = rows.filter((row) => row.status === "covered").length;
+    return `${covered} de ${rows.length} cuotas`;
   })();
 
   return (

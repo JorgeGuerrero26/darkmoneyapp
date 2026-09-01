@@ -1,16 +1,20 @@
-import { useMemo } from "react";
-import { StyleSheet, Text, View } from "react-native";
-import { differenceInCalendarDays, format, parseISO } from "date-fns";
+import { useMemo, useState } from "react";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { ChevronRight } from "lucide-react-native";
+import { differenceInCalendarDays as daysBetween, format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 
 import { formatCurrency } from "../../../../components/ui/AmountDisplay";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../../../constants/theme";
-import { parsePaymentPlan, reconcilePlan, type ActualPayment } from "../../lib/payment-plan";
+import { coverPlan, parsePaymentPlan, type ActualPayment, type PlanCoverage } from "../../lib/payment-plan";
 import type { ObligationSummary } from "../../../../types/domain";
 
 type Props = {
   obligation: ObligationSummary;
 };
+
+/** Cuántas cuotas por venir se ven junto a la que toca. */
+const AHEAD = 2;
 
 function capitalize(text: string) {
   return text.charAt(0).toUpperCase() + text.slice(1);
@@ -19,88 +23,158 @@ function capitalize(text: string) {
 /**
  * El plan de pagos contra lo que de verdad entró.
  *
- * **Cada fila lleva las dos cifras**: el monto acordado en gris pequeño y lo pagado en hueso
- * grande. Cuando coinciden, la repetición no molesta porque se lee de un golpe; cuando no
- * —300 acordado, 320 pagado— la diferencia salta **sin pintar nada de rojo ni de verde**. No
- * hace falta color para mostrar una discrepancia si están los dos números juntos.
+ * **Filas, no bloques.** Cada pago ocupaba tres líneas —mes, fecha, y una explicación de la
+ * desviación repetida en todas— y se pintaban las doce: casi tres pantallas para un dato que se
+ * mira de reojo. Ahora es una fila por cuota, como en Movimientos, sobre el lienzo y sin recuadro
+ * propio.
  *
- * Y el excedente no corrige los pagos siguientes, que son montos pactados con otra persona:
- * baja al último pago calculado, que ya existía para absorber el saldo. La explicación aparece
- * **solo en la fila que se desvió**, no como aviso general.
+ * **Una ventana, no la lista entera.** La tarjeta de justo debajo ya enseñaba tres movimientos y
+ * ofrecía "Ver los 26"; esta era la única que no lo hacía. Pero un plan mira al futuro, así que no
+ * se corta por el final —eso escondería justo la cuota que toca—: lo ya cubierto se pliega en una
+ * línea con su total, y se ven la que toca y las dos siguientes.
+ *
+ * **Y desaparecieron las nueve notas al pie.** "Se suma al final; el plan no cambia" salía en cada
+ * fila pagada porque cada pago se emparejaba con una cuota y casi ninguno coincidía. Con la
+ * cascada no hay desviación que explicar: el dinero llena cuotas en orden y lo que sobra pasa a la
+ * siguiente.
  */
 export function PlanVsPaymentsCard({ obligation }: Props) {
   const plan = parsePaymentPlan(obligation.paymentPlan);
+  const [expanded, setExpanded] = useState(false);
 
   const rows = useMemo(() => {
     if (!plan) return [];
     const payments: ActualPayment[] = obligation.events
       .filter((event) => event.eventType === "payment")
       .map((event) => ({ amount: event.amount, date: event.eventDate }));
-    return reconcilePlan({
+    return coverPlan({
       plan,
-      principal: obligation.principalAmount,
+      openingPrincipal: obligation.principalAmount,
+      // La deuda de hoy: apertura + aumentos − reducciones. Es la misma cifra que enseña la
+      // tarjeta "Cómo llegó a S/ …" justo arriba.
+      currentDebt:
+        obligation.currentPrincipalAmount && obligation.currentPrincipalAmount > 0
+          ? obligation.currentPrincipalAmount
+          : obligation.principalAmount,
       startDate: obligation.startDate,
       payments,
     });
-  }, [obligation.events, obligation.principalAmount, obligation.startDate, plan]);
+  }, [obligation, plan]);
 
   if (!plan || rows.length === 0) return null;
 
   const money = (amount: number) => formatCurrency(amount, obligation.currencyCode);
-  const firstPendingSeq = rows.find((row) => row.paid == null)?.seq ?? null;
-  const lastSeq = rows[rows.length - 1].seq;
+
+  const coveredRows = rows.filter((row) => row.status === "covered");
+  const openIndex = rows.findIndex((row) => row.status !== "covered");
+  const visible = expanded
+    ? rows
+    : openIndex < 0
+      ? []
+      : rows.slice(openIndex, openIndex + 1 + AHEAD);
+  const hiddenAhead = expanded ? 0 : Math.max(0, rows.length - (openIndex < 0 ? rows.length : openIndex + 1 + AHEAD));
+  const coveredTotal = coveredRows.reduce((sum, row) => sum + row.covered, 0);
 
   return (
     <View style={styles.card}>
       <View style={styles.header}>
         <Text style={styles.title}>Plan y pagos</Text>
-        <Text style={styles.columns}>Acordado · pagado</Text>
+        <Text style={styles.columns}>
+          {coveredRows.length} de {rows.length} cubiertas
+        </Text>
       </View>
 
-      {rows.map((row) => {
-        const isPaid = row.paid != null;
-        const isLast = row.seq === lastSeq;
-        const support = isPaid
-          ? `Pagó el ${format(parseISO(row.paidDate ?? row.dueDate), "d 'de' MMM", { locale: es })}`
-          : isLast && row.source === "calculated"
-            ? row.adjustedFrom != null
-              ? `Cierra el saldo · era ${money(row.adjustedFrom)}`
-              : "Cierra el saldo"
-            : row.seq === firstPendingSeq
-              ? dueLabel(row.dueDate)
-              : null;
+      {/* Lo cubierto se pliega: son cuotas cerradas, no hay nada que hacer con ellas. */}
+      {!expanded && coveredRows.length > 0 ? (
+        <TouchableOpacity
+          style={styles.folded}
+          onPress={() => setExpanded(true)}
+          activeOpacity={0.72}
+          accessibilityRole="button"
+          accessibilityLabel={`Ver las ${coveredRows.length} cuotas cubiertas`}
+        >
+          <Text style={styles.foldedText}>
+            {coveredRows.length} {coveredRows.length === 1 ? "cuota cubierta" : "cuotas cubiertas"}
+          </Text>
+          <Text style={styles.foldedAmount}>{money(coveredTotal)}</Text>
+        </TouchableOpacity>
+      ) : null}
 
-        return (
-          <View key={row.seq} style={styles.row}>
-            <View style={styles.rowMain}>
-              <View style={[styles.dot, isPaid && styles.dotPaid]} />
-              <View style={styles.rowCopy}>
-                {/* Con el año: un plan de catorce pagos enseña dos veces "marzo". */}
-                <Text style={styles.month}>{capitalize(format(parseISO(row.dueDate), "LLL yyyy", { locale: es }))}</Text>
-                {support ? <Text style={styles.support}>{support}</Text> : null}
-              </View>
-              <View style={styles.amounts}>
-                {isPaid ? <Text style={styles.agreed}>{money(row.amount)}</Text> : null}
-                <Text style={styles.amount}>{money(isPaid ? row.paid! : row.amount)}</Text>
-              </View>
-            </View>
-            {row.deviation != null ? (
-              <Text style={styles.deviation}>
-                {row.deviation > 0
-                  ? `Pagó ${money(row.deviation)} más de lo acordado. Se descuenta del final; el plan no cambia.`
-                  : `Pagó ${money(Math.abs(row.deviation))} menos de lo acordado. Se suma al final; el plan no cambia.`}
-              </Text>
-            ) : null}
-          </View>
-        );
-      })}
+      {visible.map((row) => (
+        <PlanRow
+          key={row.seq}
+          row={row}
+          money={money}
+          isNext={openIndex >= 0 && row.seq === rows[openIndex].seq}
+        />
+      ))}
+
+      {hiddenAhead > 0 ? (
+        <TouchableOpacity
+          style={styles.seeAll}
+          onPress={() => setExpanded(true)}
+          activeOpacity={0.72}
+          accessibilityRole="button"
+        >
+          <Text style={styles.seeAllText}>Ver el plan completo ({rows.length} pagos)</Text>
+          <ChevronRight size={15} color={COLORS.storm} />
+        </TouchableOpacity>
+      ) : null}
+
+      {expanded ? (
+        <TouchableOpacity
+          style={styles.seeAll}
+          onPress={() => setExpanded(false)}
+          activeOpacity={0.72}
+          accessibilityRole="button"
+        >
+          <Text style={styles.seeAllText}>Ver menos</Text>
+        </TouchableOpacity>
+      ) : null}
+    </View>
+  );
+}
+
+function PlanRow({
+  row,
+  money,
+  isNext,
+}: {
+  row: PlanCoverage;
+  money: (amount: number) => string;
+  isNext: boolean;
+}) {
+  /* Una sola línea de apoyo, y solo cuando dice algo: la cubierta dice cuándo se cerró, la que
+     toca cuánto le falta, y las de más adelante no dicen nada porque no hay nada que decir. */
+  const support =
+    row.status === "covered"
+      ? row.coveredAt
+        ? `Cubierta el ${format(parseISO(row.coveredAt), "d 'de' MMM", { locale: es })}`
+        : "Cubierta"
+      : row.status === "partial"
+        ? `Cubierta ${money(row.covered)} · faltan ${money(row.remaining)}`
+        : isNext
+          ? dueLabel(row.dueDate)
+          : null;
+
+  return (
+    <View style={[styles.row, isNext && styles.rowNext]}>
+      <View style={[styles.dot, row.status === "covered" && styles.dotCovered, row.status === "partial" && styles.dotPartial]} />
+      <View style={styles.rowCopy}>
+        {/* Con el año: un plan largo enseña dos veces "marzo". */}
+        <Text style={styles.month}>{capitalize(format(parseISO(row.dueDate), "LLL yyyy", { locale: es }))}</Text>
+        {support ? <Text style={styles.support}>{support}</Text> : null}
+      </View>
+      <Text style={[styles.amount, row.status === "covered" && styles.amountCovered]}>
+        {money(row.amount)}
+      </Text>
     </View>
   );
 }
 
 /** Lo que importa es cuánto falta, no el día exacto. */
 function dueLabel(dueDate: string) {
-  const days = differenceInCalendarDays(parseISO(dueDate), new Date());
+  const days = daysBetween(parseISO(dueDate), new Date());
   if (days > 1) return `Toca en ${days} días`;
   if (days === 1) return "Toca mañana";
   if (days === 0) return "Toca hoy";
@@ -127,38 +201,48 @@ const styles = StyleSheet.create({
   },
   title: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.md, color: COLORS.ink },
   columns: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
-  row: {
+
+  folded: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: SPACING.md,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: SURFACE.separator,
-    paddingVertical: SPACING.sm,
   },
-  rowMain: {
+  foldedText: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.storm },
+  foldedAmount: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.storm },
+
+  // La fila del plan es la fila de Movimientos: 56px, sobre el lienzo, sin recuadro propio.
+  row: {
+    minHeight: 56,
     flexDirection: "row",
     alignItems: "center",
     gap: SPACING.md,
     paddingHorizontal: SPACING.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: SURFACE.separator,
   },
-  // Los puntos distinguen pagado de pendiente sin repetir el color en cada fila.
-  dot: {
-    width: 7,
-    height: 7,
-    borderRadius: RADIUS.full,
-    backgroundColor: SURFACE.track,
-  },
-  dotPaid: { backgroundColor: COLORS.fog },
+  rowNext: { backgroundColor: "rgba(244,241,236,0.03)" },
+  dot: { width: 7, height: 7, borderRadius: RADIUS.full, backgroundColor: SURFACE.track },
+  dotCovered: { backgroundColor: COLORS.fog },
+  dotPartial: { backgroundColor: COLORS.storm },
   rowCopy: { flex: 1, gap: 2 },
   month: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.sm, color: COLORS.ink },
   support: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
-  amounts: { alignItems: "flex-end", gap: 1 },
-  agreed: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
   amount: { fontFamily: FONT_FAMILY.heading, fontSize: FONT_SIZE.md, color: COLORS.ink },
-  deviation: {
+  amountCovered: { color: COLORS.storm },
+
+  seeAll: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: SPACING.md,
-    paddingTop: SPACING.xs,
-    paddingLeft: SPACING.md + 7 + SPACING.md,
-    fontFamily: FONT_FAMILY.body,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.storm,
-    lineHeight: 17,
+    paddingVertical: SPACING.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: SURFACE.separator,
   },
+  seeAllText: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.sm, color: COLORS.storm },
 });
