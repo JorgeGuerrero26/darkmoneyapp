@@ -50,6 +50,18 @@ type Props = {
   attachments: Attachment[];
   onChange: (attachments: Attachment[]) => void;
   isHydratingExisting?: boolean;
+  /**
+   * Tocar una miniatura para verla en grande. Sin esto la miniatura solo se puede borrar, que es
+   * lo contrario de para qué se guarda un comprobante.
+   */
+  onPressAttachment?: (attachment: Attachment) => void;
+  /**
+   * Cómo se borra el archivo, cuando borrarlo es más que quitarlo de su carpeta.
+   *
+   * Un movimiento vinculado a un evento de una obligación tiene el comprobante espejado en la
+   * carpeta del evento: quitarlo solo de un lado deja al otro con una copia huérfana.
+   */
+  onRemoveStoragePath?: (storagePath: string) => Promise<void>;
 };
 
 const MAX_ATTACHMENTS = 5;
@@ -103,6 +115,8 @@ export function AttachmentPicker({
   attachments,
   onChange,
   isHydratingExisting = false,
+  onPressAttachment,
+  onRemoveStoragePath,
 }: Props) {
   const { activeWorkspaceId } = useWorkspace();
   const { profile } = useAuth();
@@ -321,8 +335,9 @@ export function AttachmentPicker({
     if (!attachment || attachment.isUploading) return;
 
     try {
-      if (attachment.storagePath && supabase) {
-        await supabase.storage.from("receipts").remove([attachment.storagePath]);
+      if (attachment.storagePath) {
+        if (onRemoveStoragePath) await onRemoveStoragePath(attachment.storagePath);
+        else if (supabase) await supabase.storage.from("receipts").remove([attachment.storagePath]);
       }
       onChange(attachments.filter((_, attachmentIndex) => attachmentIndex !== index));
       if (activeWorkspaceId && resolvedEntityId) {
@@ -386,7 +401,18 @@ export function AttachmentPicker({
           >
             {attachments.map((attachment, index) => (
               <View key={`${attachment.uri}-${index}`} style={styles.thumbCard}>
-                <Image source={{ uri: attachment.uri }} style={styles.thumbImage} />
+                {onPressAttachment && !attachment.isUploading ? (
+                  <TouchableOpacity
+                    onPress={() => onPressAttachment(attachment)}
+                    activeOpacity={0.85}
+                    accessibilityRole="imagebutton"
+                    accessibilityLabel="Ver el comprobante"
+                  >
+                    <Image source={{ uri: attachment.uri }} style={styles.thumbImage} />
+                  </TouchableOpacity>
+                ) : (
+                  <Image source={{ uri: attachment.uri }} style={styles.thumbImage} />
+                )}
                 <View style={styles.thumbMeta}>
                   <Text style={styles.thumbStatus} numberOfLines={1}>
                     {attachment.isUploading

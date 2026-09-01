@@ -13,13 +13,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTemplate";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
-import { AttachmentPreviewModal } from "../../components/domain/AttachmentPreviewModal";
 import { MovementForm } from "../../components/forms/MovementForm";
 
 import {
   useMovementAttachmentsQuery,
   useMovementQuery,
-  type MovementAttachmentFile,
 } from "../../services/queries/movements";
 import {
   useVoidMovementMutation,
@@ -42,14 +40,13 @@ import { COLORS, FONT_SIZE, SPACING } from "../../constants/theme";
 import { movementAuditLine } from "../../features/movements/lib/audit-line";
 import { MovementDetailHero } from "../../features/movements/components/detail/MovementDetailHero";
 import { MovementDetailFields } from "../../features/movements/components/detail/MovementDetailFields";
-import { MovementAttachmentsGallery } from "../../features/movements/components/detail/MovementAttachmentsGallery";
+import { MovementAttachmentsSheet } from "../../features/movements/components/detail/MovementAttachmentsSheet";
 import { MovementDetailActions } from "../../features/movements/components/detail/MovementDetailActions";
 import { LinkObligationModal } from "../../features/movements/components/detail/LinkObligationModal";
 import {
   VoidMovementConfirm,
   type VoidAccountImpact,
 } from "../../features/movements/components/detail/VoidMovementConfirm";
-import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 
 function readMovementLinkedEventId(metadata: unknown): number | null {
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
@@ -90,15 +87,9 @@ function MovementDetailScreen() {
   const [linkModalVisible, setLinkModalVisible] = useState(false);
   const [editFormVisible, setEditFormVisible] = useState(false);
   const [duplicateFormVisible, setDuplicateFormVisible] = useState(false);
-  const [previewAttachment, setPreviewAttachment] = useState<MovementAttachmentFile | null>(null);
-  const [deletingAttachmentPath, setDeletingAttachmentPath] = useState<string | null>(null);
-  const [selectedAttachmentPaths, setSelectedAttachmentPaths] = useState<string[]>([]);
-  const [deleteSelectedVisible, setDeleteSelectedVisible] = useState(false);
-  const [deletingSelected, setDeletingSelected] = useState(false);
   const [voidConfirmVisible, setVoidConfirmVisible] = useState(false);
-  /** La galería vive plegada bajo su fila: sin comprobantes no ocupa una tarjeta entera. */
-  const [attachmentsOpen, setAttachmentsOpen] = useState(false);
-  const longPressAttachmentPathRef = useRef<string | null>(null);
+  /** Los comprobantes tienen su propia hoja: adjuntar una foto no es editar el movimiento. */
+  const [attachmentsSheetOpen, setAttachmentsSheetOpen] = useState(false);
   const autoOpenedEditMovementIdRef = useRef<number | null>(null);
 
   const { data: movement, isLoading, error } = useMovementQuery(id ? parseInt(id) : null);
@@ -179,26 +170,6 @@ function MovementDetailScreen() {
     () => readMovementLinkedEventId(movement?.metadata),
     [movement?.metadata],
   );
-  const selectedAttachments = useMemo(
-    () => movementAttachments.filter((attachment) => selectedAttachmentPaths.includes(attachment.filePath)),
-    [movementAttachments, selectedAttachmentPaths],
-  );
-
-  useEffect(() => {
-    setSelectedAttachmentPaths((current) => {
-      const next = current.filter((filePath) =>
-        movementAttachments.some((attachment) => attachment.filePath === filePath),
-      );
-      if (
-        next.length === current.length &&
-        next.every((filePath, index) => filePath === current[index])
-      ) {
-        return current;
-      }
-      return next;
-    });
-  }, [movementAttachments]);
-
   const compatibleObligations = useMemo(() => {
     if (!movement || !snapshot) return [];
     const isIncome = movementActsAsIncome(movement);
@@ -312,71 +283,6 @@ function MovementDetailScreen() {
     }
   }
 
-  function toggleAttachmentSelection(filePath: string) {
-    if (!filePath) return;
-    setSelectedAttachmentPaths((current) =>
-      current.includes(filePath)
-        ? current.filter((path) => path !== filePath)
-        : [...current, filePath],
-    );
-  }
-
-  async function handleDeleteAttachment(attachment: MovementAttachmentFile) {
-    if (!movement) return;
-    try {
-      setDeletingAttachmentPath(attachment.filePath);
-      await removeAttachmentFile({
-        filePath: attachment.filePath,
-        mirrorTargets: attachmentMirrorTargets(),
-      });
-      invalidateAttachmentQueries();
-      showToast("Comprobante eliminado", "success");
-      if (previewAttachment?.filePath === attachment.filePath) {
-        const remaining = movementAttachments.filter((item) => item.filePath !== attachment.filePath);
-        setPreviewAttachment(remaining[0] ?? null);
-      }
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : "No pudimos eliminar el comprobante.", "error");
-    } finally {
-      setDeletingAttachmentPath(null);
-    }
-  }
-
-  async function handleDeleteSelectedAttachments() {
-    if (!movement || selectedAttachments.length === 0 || deletingSelected) return;
-    try {
-      setDeletingSelected(true);
-      const mirrorTargets = attachmentMirrorTargets();
-      await Promise.all(
-        selectedAttachments.map((attachment) =>
-          removeAttachmentFile({
-            filePath: attachment.filePath,
-            mirrorTargets,
-          }),
-        ),
-      );
-      invalidateAttachmentQueries();
-      if (
-        previewAttachment &&
-        selectedAttachments.some((attachment) => attachment.filePath === previewAttachment.filePath)
-      ) {
-        setPreviewAttachment(null);
-      }
-      setSelectedAttachmentPaths([]);
-      setDeleteSelectedVisible(false);
-      showToast(
-        selectedAttachments.length === 1
-          ? "Comprobante eliminado"
-          : `${selectedAttachments.length} comprobantes eliminados`,
-        "success",
-      );
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : "No pudimos eliminar los comprobantes.", "error");
-    } finally {
-      setDeletingSelected(false);
-    }
-  }
-
   const linkedObligationTitle = movement?.obligationId
     ? snapshot?.obligations?.find((o) => o.id === movement.obligationId)?.title ?? null
     : null;
@@ -439,31 +345,7 @@ function MovementDetailScreen() {
               fxRate={transferFxRate}
               attachmentsCount={movementAttachments.length}
               attachmentsLoading={attachmentsLoading}
-              onPressAttachments={() => {
-                // Sin comprobantes no hay nada que desplegar: la fila lleva a donde se agregan.
-                if (movementAttachments.length === 0) {
-                  if (!isVoided) setEditFormVisible(true);
-                  return;
-                }
-                setAttachmentsOpen((open) => !open);
-              }}
-              attachmentsSlot={attachmentsOpen && movementAttachments.length > 0 ? (
-                <MovementAttachmentsGallery
-                  inline
-                  attachments={movementAttachments}
-                  loading={attachmentsLoading}
-                  selectedPaths={selectedAttachmentPaths}
-                  deletingSelected={deletingSelected}
-                  onTogglePath={toggleAttachmentSelection}
-                  onClearSelection={() => setSelectedAttachmentPaths([])}
-                  onPreview={setPreviewAttachment}
-                  onRequestDeleteSelected={() => setDeleteSelectedVisible(true)}
-                  onLongPressBegin={(path) => {
-                    longPressAttachmentPathRef.current = path || null;
-                  }}
-                  isLongPressActive={(path) => longPressAttachmentPathRef.current === path}
-                />
-              ) : null}
+              onPressAttachments={() => setAttachmentsSheetOpen(true)}
               obligationId={movement.obligationId}
               obligationTitle={linkedObligationTitle}
               subscriptionId={movement.subscriptionId}
@@ -495,6 +377,20 @@ function MovementDetailScreen() {
       }
       overlays={
         <>
+          {movement ? (
+            <MovementAttachmentsSheet
+              visible={attachmentsSheetOpen}
+              onClose={() => setAttachmentsSheetOpen(false)}
+              movementId={movement.id}
+              workspaceId={movement.workspaceId}
+              existing={movementAttachments}
+              loading={attachmentsLoading}
+              onRemoveStoragePath={async (filePath) => {
+                await removeAttachmentFile({ filePath, mirrorTargets: attachmentMirrorTargets() });
+                invalidateAttachmentQueries();
+              }}
+            />
+          ) : null}
           {movement ? (
             <MovementForm
               visible={editFormVisible}
@@ -530,17 +426,6 @@ function MovementDetailScreen() {
             onPick={handleLink}
           />
 
-          <AttachmentPreviewModal
-            visible={Boolean(previewAttachment)}
-            attachments={movementAttachments}
-            initialPath={previewAttachment?.filePath ?? null}
-            onClose={() => setPreviewAttachment(null)}
-            onDeleteAttachment={handleDeleteAttachment}
-            deletingAttachmentPath={deletingAttachmentPath}
-            insets={insets}
-            title="Comprobantes del movimiento"
-          />
-
           <VoidMovementConfirm
             visible={voidConfirmVisible}
             impacts={voidAccountImpacts}
@@ -548,21 +433,6 @@ function MovementDetailScreen() {
             onConfirm={confirmVoid}
           />
 
-          <ConfirmDialog
-            visible={deleteSelectedVisible}
-            title="Eliminar comprobantes"
-            body={
-              selectedAttachmentPaths.length === 1
-                ? "Este comprobante se eliminará del movimiento."
-                : `Se eliminarán ${selectedAttachmentPaths.length} comprobantes del movimiento.`
-            }
-            confirmLabel="Eliminar"
-            cancelLabel="Cancelar"
-            onCancel={() => setDeleteSelectedVisible(false)}
-            onConfirm={() => {
-              void handleDeleteSelectedAttachments();
-            }}
-          />
         </>
       }
     />
