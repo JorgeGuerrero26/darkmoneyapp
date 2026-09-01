@@ -39,7 +39,7 @@ import { useOriginBackNavigation } from "../../hooks/useOriginBackNavigation";
 import { removeAttachmentFile } from "../../lib/entity-attachments";
 import { COLORS, FONT_SIZE, SPACING } from "../../constants/theme";
 
-import { MovementAuditLog } from "../../features/movements/components/detail/MovementAuditLog";
+import { movementAuditLine } from "../../features/movements/lib/audit-line";
 import { MovementDetailHero } from "../../features/movements/components/detail/MovementDetailHero";
 import { MovementDetailFields } from "../../features/movements/components/detail/MovementDetailFields";
 import { MovementAttachmentsGallery } from "../../features/movements/components/detail/MovementAttachmentsGallery";
@@ -437,7 +437,6 @@ function MovementDetailScreen() {
               transferSourceCurrencyCode={transferSourceCurrencyCode}
               transferDestinationCurrencyCode={transferDestinationCurrencyCode}
               fxRate={transferFxRate}
-              onPressField={!isVoided ? () => setEditFormVisible(true) : undefined}
               attachmentsCount={movementAttachments.length}
               attachmentsLoading={attachmentsLoading}
               onPressAttachments={() => {
@@ -475,23 +474,22 @@ function MovementDetailScreen() {
               onRequestLink={() => setLinkModalVisible(true)}
             />
 
-            <MovementAuditLog
-              createdAt={movement.createdAt}
-              updatedAt={movement.updatedAt}
-              createdByUserId={movement.createdByUserId}
-              updatedByUserId={movement.updatedByUserId}
-              status={movement.status}
-              currentUserId={profile?.id}
-            />
           </ScrollView>
         )}
       fab={
-        movement && !isLoading && !isVoided ? (
+        movement && !isLoading ? (
           <MovementDetailActions
             bottomInset={insets.bottom}
-            onPressEdit={() => setEditFormVisible(true)}
-            onPressDuplicate={() => setDuplicateFormVisible(true)}
-            onPressVoid={() => setVoidConfirmVisible(true)}
+            auditLine={movementAuditLine({
+              createdAt: movement.createdAt,
+              updatedAt: movement.updatedAt,
+              createdByUserId: movement.createdByUserId,
+              status: movement.status,
+              currentUserId: profile?.id,
+            })}
+            onPressEdit={!isVoided ? () => setEditFormVisible(true) : undefined}
+            onPressDuplicate={!isVoided ? () => setDuplicateFormVisible(true) : undefined}
+            onPressVoid={!isVoided ? () => setVoidConfirmVisible(true) : undefined}
           />
         ) : null
       }

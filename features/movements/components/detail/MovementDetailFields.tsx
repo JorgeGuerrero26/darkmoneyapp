@@ -1,11 +1,11 @@
 import { memo, type ReactNode } from "react";
-import { StyleSheet, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
 import { formatCurrency } from "../../../../components/ui/AmountDisplay";
 import { isoToDateStr, isoToTimeStr, parseDisplayDate, todayPeru } from "../../../../lib/date";
-import { SPACING } from "../../../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING } from "../../../../constants/theme";
 import type { MovementRecord } from "../../../../types/domain";
 import { MovementDetailRow } from "./MovementDetailRow";
 
@@ -16,8 +16,6 @@ type Props = {
   transferSourceCurrencyCode: string;
   transferDestinationCurrencyCode: string;
   fxRate: number | null;
-  /** Abre el formulario de edición. `undefined` en un movimiento anulado: ya no se toca. */
-  onPressField?: () => void;
   attachmentsCount: number;
   attachmentsLoading: boolean;
   onPressAttachments: () => void;
@@ -72,7 +70,6 @@ export const MovementDetailFields = memo(function MovementDetailFields({
   transferSourceCurrencyCode,
   transferDestinationCurrencyCode,
   fxRate,
-  onPressField,
   attachmentsCount,
   attachmentsLoading,
   onPressAttachments,
@@ -109,18 +106,16 @@ export const MovementDetailFields = memo(function MovementDetailFields({
     ? {
         label: "Parte de un crédito",
         value: obligationTitle ?? `#${obligationId}`,
-        muted: false,
         onPress: () => onPressObligation(obligationId),
       }
     : subscriptionId
       ? {
           label: "Parte de una suscripción",
           value: subscriptionName ?? `#${subscriptionId}`,
-          muted: false,
           onPress: () => onPressSubscription(subscriptionId),
         }
       : canLink
-        ? { label: "Parte de un crédito", value: "No", muted: true, onPress: onRequestLink }
+        ? { label: "Parte de un crédito", value: "No", onPress: onRequestLink }
         : null;
 
   return (
@@ -129,15 +124,13 @@ export const MovementDetailFields = memo(function MovementDetailFields({
         label="Descripción"
         value={movement.description?.trim() || "Sin descripción"}
         muted={!movement.description?.trim()}
-        onPress={onPressField}
       />
       <MovementDetailRow
         label="Categoría"
         value={movement.category || "Sin categoría"}
         muted={!movement.category}
-        onPress={onPressField}
       />
-      <MovementDetailRow label="Fecha" value={formatWhen(movement.occurredAt)} onPress={onPressField} />
+      <MovementDetailRow label="Fecha" value={formatWhen(movement.occurredAt)} />
 
       {isTransfer ? (
         <>
@@ -145,13 +138,11 @@ export const MovementDetailFields = memo(function MovementDetailFields({
             label="Sale de"
             value={sourceAccount ?? "—"}
             muted={!sourceAccount}
-            onPress={onPressField}
           />
           <MovementDetailRow
             label="Entra a"
             value={destinationAccount ?? "—"}
             muted={!destinationAccount}
-            onPress={onPressField}
           />
           {movement.destinationAmount != null && currenciesDiffer ? (
             <MovementDetailRow
@@ -166,21 +157,20 @@ export const MovementDetailFields = memo(function MovementDetailFields({
           label="Cuenta"
           value={(isExpense ? sourceAccount : destinationAccount) ?? "—"}
           muted={!(isExpense ? sourceAccount : destinationAccount)}
-          onPress={onPressField}
         />
       )}
 
       {movement.counterparty ? (
-        <MovementDetailRow label="Contacto" value={movement.counterparty} onPress={onPressField} />
+        <MovementDetailRow label="Contacto" value={movement.counterparty} />
       ) : null}
       {movement.notes?.trim() ? (
-        <MovementDetailRow label="Notas" value={movement.notes.trim()} onPress={onPressField} />
+        <MovementDetailRow label="Notas" value={movement.notes.trim()} />
       ) : null}
 
       <MovementDetailRow
+        action
         label="Comprobante"
         value={attachmentsValue}
-        muted={attachmentsCount === 0}
         onPress={onPressAttachments}
         last={!linkRow && !attachmentsSlot}
       />
@@ -188,17 +178,30 @@ export const MovementDetailFields = memo(function MovementDetailFields({
 
       {linkRow ? (
         <MovementDetailRow
+          action
           label={linkRow.label}
           value={linkRow.value}
-          muted={linkRow.muted}
           onPress={linkRow.onPress}
           last
         />
       ) : null}
+
+      {/* Qué se toca y qué no, dicho una vez. Las filas de dato ya no llevan chevrón, así que la
+          pregunta "¿y esto dónde se cambia?" se responde aquí y no probando. */}
+      <Text style={styles.note}>
+        Los cuatro primeros datos se cambian en Editar. Comprobante y crédito abren su propia hoja.
+      </Text>
     </View>
   );
 });
 
 const styles = StyleSheet.create({
   list: { paddingTop: SPACING.xs },
+  note: {
+    marginTop: SPACING.md,
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    lineHeight: 17,
+  },
 });

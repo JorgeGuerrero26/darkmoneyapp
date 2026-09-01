@@ -7,9 +7,12 @@ import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../
 type Props = {
   /** El borde inferior del teléfono: la barra se apoya encima, no debajo. */
   bottomInset?: number;
-  onPressEdit: () => void;
-  onPressDuplicate: () => void;
-  onPressVoid: () => void;
+  /** "Lo creaste hoy, 12:21". Comparte línea con "Anular movimiento". */
+  auditLine?: string | null;
+  /** Faltan en un movimiento anulado: ya no hay nada que editar, duplicar ni anular. */
+  onPressEdit?: () => void;
+  onPressDuplicate?: () => void;
+  onPressVoid?: () => void;
 };
 
 /**
@@ -24,12 +27,14 @@ type Props = {
  */
 export const MovementDetailActions = memo(function MovementDetailActions({
   bottomInset = 0,
+  auditLine,
   onPressEdit,
   onPressDuplicate,
   onPressVoid,
 }: Props) {
   return (
     <View style={[styles.bar, { paddingBottom: bottomInset + SPACING.xs }]}>
+      {onPressEdit && onPressDuplicate ? (
       <View style={styles.row}>
         <TouchableOpacity
           style={[styles.btn, styles.primary]}
@@ -52,15 +57,23 @@ export const MovementDetailActions = memo(function MovementDetailActions({
           <Text style={[styles.btnLabel, styles.secondaryLabel]}>Duplicar</Text>
         </TouchableOpacity>
       </View>
-      <TouchableOpacity
-        style={styles.void}
-        onPress={onPressVoid}
-        activeOpacity={0.7}
-        accessibilityRole="button"
-        accessibilityLabel="Anular movimiento"
-      >
-        <Text style={styles.voidLabel}>Anular movimiento</Text>
-      </TouchableOpacity>
+      ) : null}
+      {/* Cuándo se creó y cómo deshacerlo comparten renglón: los dos son notas al pie de la
+          pantalla, no acciones que compitan con Editar. */}
+      <View style={styles.footRow}>
+        <Text style={styles.footNote}>{auditLine ?? ""}</Text>
+        {onPressVoid ? (
+          <TouchableOpacity
+            style={styles.void}
+            onPress={onPressVoid}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Anular movimiento"
+          >
+            <Text style={styles.voidLabel}>Anular movimiento</Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
     </View>
   );
 });
@@ -86,6 +99,14 @@ const styles = StyleSheet.create({
   btnLabel: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.md },
   primaryLabel: { color: COLORS.actionText },
   secondaryLabel: { color: COLORS.fog },
-  void: { minHeight: 44, alignItems: "center", justifyContent: "center" },
+  footRow: {
+    minHeight: 40,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: SPACING.md,
+  },
+  footNote: { flexShrink: 1, fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
+  void: { minHeight: 40, alignItems: "center", justifyContent: "center" },
   voidLabel: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.storm },
 });

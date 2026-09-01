@@ -8,6 +8,12 @@ type Props = {
   value: string;
   /** El valor es un hueco, no un dato: "Agregar", "No", "Sin categoría". Va en gris. */
   muted?: boolean;
+  /**
+   * La fila hace algo que el formulario de edición no hace: adjuntar un comprobante, asociar el
+   * movimiento a un crédito. Ahí el peso lo lleva la etiqueta, que es la acción, y el valor dice
+   * en qué estado está.
+   */
+  action?: boolean;
   /** Si falta, la fila no se toca y no lleva chevron. */
   onPress?: () => void;
   /** Última de la lista: sin línea debajo. */
@@ -20,15 +26,24 @@ type Props = {
  * Al revés que en un formulario, donde el nombre del campo manda y el valor lo acompaña: aquí lo
  * que se viene a leer es el dato, así que el rótulo va en gris y el valor en hueso.
  *
- * Cada fila abre su propio campo. Antes había tres maneras de editar lo mismo —"Toca para
- * editar" bajo el monto, el botón "Editar" de Acciones rápidas y las filas—; queda esta, que es
- * la que uno busca cuando entra a corregir la categoría.
+ * **Sin chevrón y sin toque**, porque no son botones. Había tres maneras de llegar al mismo
+ * formulario —"Toca para editar" bajo el monto, el botón "Editar" y la tarjeta de datos— y
+ * ninguna llevaba al campo que tocaste: las tres abrían el formulario completo. El chevrón se
+ * reserva para las dos filas que sí hacen algo distinto: adjuntar un comprobante y asociar el
+ * movimiento a un crédito, que abren su propia hoja y no están en la edición.
  */
-export function MovementDetailRow({ label, value, muted = false, onPress, last = false }: Props) {
+export function MovementDetailRow({
+  label,
+  value,
+  muted = false,
+  action = false,
+  onPress,
+  last = false,
+}: Props) {
   const body = (
     <>
-      <Text style={styles.label}>{label}</Text>
-      <Text style={[styles.value, muted && styles.valueMuted]} numberOfLines={2}>
+      <Text style={[styles.label, action && styles.labelAction]}>{label}</Text>
+      <Text style={[styles.value, (muted || action) && styles.valueMuted]} numberOfLines={2}>
         {value}
       </Text>
       {onPress ? <ChevronRight size={16} color={COLORS.storm} /> : null}
@@ -78,5 +93,6 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.md,
     color: COLORS.ink,
   },
+  labelAction: { fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.ink },
   valueMuted: { fontFamily: FONT_FAMILY.body, color: COLORS.storm },
 });
