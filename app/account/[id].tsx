@@ -1,6 +1,5 @@
-import { Archive, ArchiveRestore, ArrowLeftRight, BarChart2, Pencil, Plus } from "lucide-react-native";
-import { FAB } from "../../components/ui/FAB";
-import { DetailQuickActions } from "../../components/ui/DetailQuickActions";
+import { ArrowDown, ArrowLeftRight, MoreVertical } from "lucide-react-native";
+import { EntityActionSheet } from "../../components/ui/EntityActionSheet";
 import { HeaderActionGroup } from "../../components/ui/HeaderActionGroup";
 import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTemplate";
 import { ResourceSectionList } from "../../components/ui/ResourceSectionList";
@@ -8,6 +7,7 @@ import { useCallback, useMemo, useState } from "react";
 import {
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -22,26 +22,24 @@ import { useUiStore } from "../../store/ui-store";
 import { useWorkspaceSnapshotQuery, useArchiveAccountMutation, useDeleteMovementMutation } from "../../services/queries/workspace-data";
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { usePaginatedMovements } from "../../services/queries/movements";
-import { useMovementAttachmentCountsQuery } from "../../services/queries/attachments";
-import { SwipeableMovementRow } from "../../components/domain/SwipeableMovementRow";
+import { AccountMovementRow } from "../../features/accounts/components/AccountMovementRow";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { SkeletonAccountSummary } from "../../components/ui/Skeleton";
 import { BalanceEvolutionChart } from "../../features/accounts/components/BalanceEvolutionChart";
 import { AccountAnalyticsModal } from "../../components/domain/AccountAnalyticsModal";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
+import { currencyPluralTitle } from "../../constants/currencies";
+import type { MovementRecord } from "../../types/domain";
 import { NotificationReasonBanner } from "../../components/ui/NotificationReasonBanner";
 import { AccountForm } from "../../components/forms/AccountForm";
 import { MovementForm } from "../../components/forms/MovementForm";
-import { formatCurrency } from "../../components/ui/AmountDisplay";
+import { AmountDisplay, formatCurrency } from "../../components/ui/AmountDisplay";
 import { useToast } from "../../hooks/useToast";
 import { humanizeError } from "../../lib/errors";
-import { getAccountIcon } from "../../lib/account-icons";
 import { findInstitution } from "../../lib/account-institutions";
 import { parseDisplayDate } from "../../lib/date";
-import { InstitutionAvatar } from "../../features/accounts/components/InstitutionAvatar";
 import { useAccountsRealtimeSync } from "../../features/accounts/hooks/useAccountsRealtimeSync";
-import { COLORS, FONT_SIZE, FONT_WEIGHT, RADIUS, SPACING } from "../../constants/theme";
-import { formatDistanceToNow } from "date-fns";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { es } from "date-fns/locale";
 import { buildRateMap, hasConversionRate, resolveConversion } from "../../lib/exchange-rate-map";
 import { useDisplayCurrency } from "../../features/accounts/lib/display-currency-context";
@@ -79,6 +77,7 @@ function AccountDetailScreen() {
 
   const [editFormVisible, setEditFormVisible] = useState(false);
   const [analyticsVisible, setAnalyticsVisible] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [movementFormVisible, setMovementFormVisible] = useState(false);
   const [movementFormType, setMovementFormType] = useState<"expense" | "transfer">("expense");
   const [archiveConfirmVisible, setArchiveConfirmVisible] = useState(false);
@@ -162,20 +161,23 @@ function AccountDetailScreen() {
     account && effectiveDisplayCurrency !== account.currencyCode,
   );
 
-  // Header subtitle: type + relative last activity (no longer the redundant workspace name).
+  /**
+   * Lo que identifica la cuenta: banco, tipo y moneda. "BCP · Banco · soles".
+   *
+   * Decía además "actividad hace 3 meses" sobre una cuenta con un movimiento de hoy cuatrocientos
+   * píxeles más abajo. Una de las dos cosas era falsa y no había manera de saber cuál: si el dato
+   * medía otra cosa estaba mal etiquetado, y si medía actividad estaba mal calculado. En cualquier
+   * caso no puede convivir con una lista que lo contradice — **la actividad la cuenta la lista**.
+   *
+   * Y la moneda va en palabras, como en el resto de la app, no en código ISO.
+   */
   const headerSubtitle = useMemo(() => {
     if (!account) return undefined;
+    const institution = findInstitution(account.institutionCode)?.label ?? null;
     const typeLabel = ACCOUNT_TYPE_LABEL[account.type] ?? account.type;
-    if (!account.lastActivity) return typeLabel;
-    try {
-      const rel = formatDistanceToNow(parseDisplayDate(account.lastActivity), {
-        addSuffix: true,
-        locale: es,
-      });
-      return `${typeLabel} · actividad ${rel}`;
-    } catch {
-      return typeLabel;
-    }
+    return [institution, typeLabel, currencyPluralTitle(account.currencyCode).toLowerCase()]
+      .filter(Boolean)
+      .join(" · ");
   }, [account]);
 
   // Enriched archive-confirmation body: when the account contributes to net worth,
@@ -196,20 +198,16 @@ function AccountDetailScreen() {
     return `Esta cuenta aporta ${formatted} a tu patrimonio neto. Al archivarla, tu patrimonio ${verb} en esa cantidad. Sus movimientos se conservarán intactos.`;
   }, [account, baseCurrency]);
 
-  const movementIds = useMemo(() => movements.map((m) => m.id), [movements]);
-  const { data: movementAttachmentCounts = {} } = useMovementAttachmentCountsQuery(activeWorkspaceId, movementIds);
-
-  const renderMovementItem = useCallback(({ item }: { item: Parameters<typeof SwipeableMovementRow>[0]["movement"] }) => (
-    <SwipeableMovementRow
+  const renderMovementItem = useCallback(({ item }: { item: MovementRecord }) => (
+    <AccountMovementRow
       movement={item}
       baseCurrencyCode={baseCurrency}
-      perspectiveAccountId={accountId}
-      perspectiveCurrencyCode={account?.currencyCode}
-      attachmentCount={movementAttachmentCounts[item.id] ?? 0}
+      accountId={accountId ?? 0}
+      accountCurrencyCode={account?.currencyCode}
       onPress={() => router.push(`/movement/${item.id}`)}
       onDelete={() => setDeleteMovementTarget({ id: item.id, description: item.description })}
     />
-  ), [account?.currencyCode, accountId, baseCurrency, movementAttachmentCounts, router]);
+  ), [account?.currencyCode, accountId, baseCurrency, router]);
 
   return (
     <ResourceModuleTemplate
@@ -220,25 +218,18 @@ function AccountDetailScreen() {
             title={account?.name ?? "Cuenta"}
             subtitle={headerSubtitle}
             onBack={handleBack}
+            /* Editar y archivar estaban aquí Y otra vez como botones grandes abajo. Lo
+               administrativo vive en el menú, donde archivar —que retira la cuenta de la app—
+               deja de estar al alcance del pulgar y del mismo tamaño que "Nuevo gasto". */
             rightAction={
               account ? (
                 <HeaderActionGroup
-                  actions={[
-                    {
-                      key: account.isArchived ? "restore" : "archive",
-                      icon: account.isArchived ? ArchiveRestore : Archive,
-                      inactiveColor: account.isArchived ? COLORS.pine : COLORS.ember,
-                      onPress: () => setArchiveConfirmVisible(true),
-                      accessibilityLabel: account.isArchived ? "Restaurar cuenta" : "Archivar cuenta",
-                    },
-                    {
-                      key: "edit",
-                      icon: Pencil,
-                      inactiveColor: COLORS.primary,
-                      onPress: () => setEditFormVisible(true),
-                      accessibilityLabel: "Editar cuenta",
-                    },
-                  ]}
+                  actions={[{
+                    key: "menu",
+                    icon: MoreVertical,
+                    onPress: () => setMenuOpen(true),
+                    accessibilityLabel: "Más acciones",
+                  }]}
                 />
               ) : null
             }
@@ -248,48 +239,49 @@ function AccountDetailScreen() {
       }
       summary={
         account ? (
-          <View style={styles.summaryCard}>
-            <View style={styles.summaryRow}>
-              <View style={[styles.iconContainer, { backgroundColor: account.color + "33" }]}>
-                {(() => {
-                  const Icon = getAccountIcon(account.icon, account.type);
-                  return <Icon size={22} color={account.color} />;
-                })()}
-              </View>
-              <View style={styles.summaryInfo}>
-                <Text style={styles.accountName}>{account.name}</Text>
-                <View style={styles.metaRow}>
-                  {findInstitution(account.institutionCode) ? (
-                    <>
-                      <InstitutionAvatar code={account.institutionCode} size={16} />
-                      <Text style={styles.accountMeta}>
-                        {findInstitution(account.institutionCode)!.label} ·{" "}
-                      </Text>
-                    </>
-                  ) : null}
-                  <Text style={styles.accountMeta}>
-                    {ACCOUNT_TYPE_LABEL[account.type] ?? account.type} · {account.currencyCode}
-                    {account.isArchived ? " · Archivada" : ""}
-                  </Text>
-                </View>
-              </View>
-              <View style={styles.balanceContainer}>
-                <Text style={styles.balanceLabel}>Saldo</Text>
-                <Text style={[
-                  styles.balanceAmount,
-                  displayBalance < 0 ? styles.negative : styles.positive,
-                ]}>
-                  {formatCurrency(displayBalance, effectiveDisplayCurrency)}
-                </Text>
-                {showSecondaryBalance ? (
-                  <Text style={styles.balanceNative}>
-                    {formatCurrency(account.currentBalance, account.currencyCode)} nativo
-                  </Text>
-                ) : null}
-              </View>
-            </View>
+          <View style={styles.hero}>
+            {/* La tarjeta de identidad repetía el nombre entero de la cuenta —que ya está en el
+                título, dos centímetros más arriba— para añadir un solo dato nuevo, el banco. Ese
+                dato subió al subtítulo del encabezado. */}
+            <Text style={styles.balanceLabel}>Saldo</Text>
+            <AmountDisplay
+              flat
+              amount={displayBalance}
+              currencyCode={effectiveDisplayCurrency}
+              size="display"
+              color={displayBalance < 0 ? COLORS.expense : COLORS.ink}
+              prefix=""
+            />
+            {showSecondaryBalance ? (
+              <Text style={styles.balanceNative}>
+                {formatCurrency(account.currentBalance, account.currencyCode)} nativo
+              </Text>
+            ) : null}
             {!account.includeInNetWorth ? (
               <Text style={styles.notInNetWorthNote}>No incluida en patrimonio neto</Text>
+            ) : null}
+
+            {!account.isArchived ? (
+              <View style={styles.heroActions}>
+                <TouchableOpacity
+                  style={[styles.heroBtn, styles.heroBtnPrimary]}
+                  onPress={() => { setMovementFormType("expense"); setMovementFormVisible(true); }}
+                  activeOpacity={0.85}
+                  accessibilityRole="button"
+                >
+                  <ArrowDown size={16} color={COLORS.actionText} />
+                  <Text style={[styles.heroBtnText, styles.heroBtnTextPrimary]}>Nuevo gasto</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.heroBtn, styles.heroBtnSecondary]}
+                  onPress={() => { setMovementFormType("transfer"); setMovementFormVisible(true); }}
+                  activeOpacity={0.85}
+                  accessibilityRole="button"
+                >
+                  <ArrowLeftRight size={16} color={COLORS.fog} />
+                  <Text style={[styles.heroBtnText, styles.heroBtnTextSecondary]}>Transferir</Text>
+                </TouchableOpacity>
+              </View>
             ) : null}
           </View>
         ) : (
@@ -304,65 +296,26 @@ function AccountDetailScreen() {
           listHeaderComponent={
             account ? (
               <>
-                <DetailQuickActions
-                  style={styles.quickActions}
-                  actions={[
-                    ...(!account.isArchived
-                      ? [
-                          {
-                            key: "transfer",
-                            label: "Transferir",
-                            icon: ArrowLeftRight,
-                            color: COLORS.pine,
-                            onPress: () => {
-                              setMovementFormType("transfer");
-                              setMovementFormVisible(true);
-                            },
-                          },
-                          {
-                            key: "expense",
-                            label: "Nuevo gasto",
-                            icon: Plus,
-                            color: COLORS.primary,
-                            onPress: () => {
-                              setMovementFormType("expense");
-                              setMovementFormVisible(true);
-                            },
-                          },
-                        ]
-                      : []),
-                    {
-                      // La analítica vivía detrás de un ícono en cada fila de la lista, pegado
-                      // al saldo. Las filas de Movimientos no llevan botones, y esta acción es
-                      // del detalle de la cuenta.
-                      key: "analytics",
-                      label: "Analítica",
-                      icon: BarChart2,
-                      color: COLORS.fog,
-                      onPress: () => setAnalyticsVisible(true),
-                    },
-                    {
-                      key: "edit",
-                      label: "Editar",
-                      icon: Pencil,
-                      color: COLORS.primary,
-                      onPress: () => setEditFormVisible(true),
-                    },
-                    {
-                      key: account.isArchived ? "restore" : "archive",
-                      label: account.isArchived ? "Restaurar" : "Archivar",
-                      icon: account.isArchived ? ArchiveRestore : Archive,
-                      color: account.isArchived ? COLORS.pine : COLORS.ember,
-                      onPress: () => setArchiveConfirmVisible(true),
-                    },
-                  ]}
-                />
                 <BalanceEvolutionChart
                   accountId={account.id}
                   currentBalance={account.currentBalance}
                   currencyCode={account.currencyCode}
                   movements={movements}
                 />
+                {/* La lista arrancaba sin rótulo justo después del gráfico, así que sus primeras
+                    filas parecían parte de él. */}
+                <View style={styles.listHeader}>
+                  <Text style={styles.listHeaderLabel}>Movimientos</Text>
+                  <TouchableOpacity
+                    onPress={() => router.push(
+                      `/(app)/movements?quickScope=account&quickAccountId=${account.id}&quickToken=${Date.now()}`,
+                    )}
+                    activeOpacity={0.7}
+                    accessibilityRole="button"
+                  >
+                    <Text style={styles.listHeaderLink}>Ver todos</Text>
+                  </TouchableOpacity>
+                </View>
               </>
             ) : null
           }
@@ -376,17 +329,41 @@ function AccountDetailScreen() {
           empty={{ variant: "empty", title: "Sin movimientos", description: "Registra el primer movimiento con el botón +" }}
         />
       }
-      fab={
-        <FAB
-          onPress={() => {
-            setMovementFormType("expense");
-            setMovementFormVisible(true);
-          }}
-          bottom={insets.bottom + 16}
-        />
-      }
+      /* Sin botón flotante: tapaba el monto de la cuarta fila y media quinta, y lo que se crea
+         desde una cuenta —un gasto, una transferencia— ya está arriba, a la vista y sin cubrir
+         nada. */
       overlays={
         <>
+          {account ? (
+            <EntityActionSheet
+              visible={menuOpen}
+              onClose={() => setMenuOpen(false)}
+              sheetTitle="Más acciones"
+              summaryTitle={account.name}
+              meta={[headerSubtitle]}
+              actions={[
+                {
+                  key: "edit",
+                  label: "Editar cuenta",
+                  variant: "secondary",
+                  onPress: () => { setMenuOpen(false); setEditFormVisible(true); },
+                },
+                {
+                  key: "analytics",
+                  label: "Analítica",
+                  variant: "secondary",
+                  onPress: () => { setMenuOpen(false); setAnalyticsVisible(true); },
+                },
+                {
+                  key: account.isArchived ? "restore" : "archive",
+                  label: account.isArchived ? "Restaurar cuenta" : "Archivar cuenta",
+                  variant: "ghost",
+                  onPress: () => { setMenuOpen(false); setArchiveConfirmVisible(true); },
+                },
+              ]}
+            />
+          ) : null}
+
           <AccountAnalyticsModal
             visible={analyticsVisible && Boolean(account)}
             account={account ?? null}
@@ -453,36 +430,56 @@ function AccountDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  summaryCard: {
-    backgroundColor: COLORS.bgCard,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
-    padding: SPACING.lg,
-    gap: SPACING.sm,
+  // La cifra con la que abre la pantalla, sin tarjeta, y debajo lo único que uno hace desde una
+  // cuenta: registrar un gasto y transferir.
+  hero: {
+    paddingHorizontal: SPACING.lg,
+    paddingTop: SPACING.sm,
+    paddingBottom: SPACING.md,
+    gap: SPACING.xs,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: SURFACE.separator,
   },
-  summaryRow: { flexDirection: "row", alignItems: "center", gap: SPACING.md },
-  iconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: RADIUS.md,
-    backgroundColor: COLORS.bg,
+  balanceLabel: {
+    fontFamily: FONT_FAMILY.bodyMedium,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    textTransform: "uppercase",
+    letterSpacing: 1,
+  },
+  balanceNative: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
+  notInNetWorthNote: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
+  heroActions: { flexDirection: "row", gap: SPACING.sm, marginTop: SPACING.sm },
+  heroBtn: {
+    flex: 1,
+    minHeight: 48,
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
+    gap: SPACING.sm,
+    borderRadius: RADIUS.md,
   },
-  summaryInfo: { flex: 1, gap: 2 },
-  metaRow: { flexDirection: "row", alignItems: "center", gap: 4, flexWrap: "wrap" },
-  accountName: { fontSize: FONT_SIZE.md, fontWeight: FONT_WEIGHT.semibold, color: COLORS.text },
-  accountMeta: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted },
-  balanceContainer: { alignItems: "flex-end", gap: 2 },
-  balanceLabel: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted },
-  balanceAmount: { fontSize: FONT_SIZE.lg, fontWeight: FONT_WEIGHT.bold },
-  balanceNative: { fontSize: FONT_SIZE.xs, color: COLORS.textMuted, marginTop: 2 },
-  positive: { color: COLORS.text },
-  negative: { color: COLORS.danger },
-  notInNetWorthNote: { fontSize: FONT_SIZE.xs, color: COLORS.textDisabled },
-  quickActions: {
-    marginTop: SPACING.md,
+  heroBtnPrimary: { backgroundColor: COLORS.action },
+  heroBtnSecondary: { borderWidth: 1, borderColor: SURFACE.cardBorder, backgroundColor: SURFACE.card },
+  heroBtnText: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.md },
+  heroBtnTextPrimary: { color: COLORS.actionText },
+  heroBtnTextSecondary: { color: COLORS.fog },
+  listHeader: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    justifyContent: "space-between",
+    paddingHorizontal: SPACING.lg,
+    paddingTop: SPACING.md,
+    paddingBottom: SPACING.xs,
   },
+  listHeaderLabel: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    textTransform: "uppercase",
+    letterSpacing: 1,
+  },
+  listHeaderLink: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.fog },
 });
 
 export default function AccountDetailScreenRoot() {

@@ -149,6 +149,8 @@ function MovementsScreen() {
     quickSearch?: string | string[];
     quickMovementIds?: string | string[];
     quickLabel?: string | string[];
+    /** "Ver todos" desde el detalle de una cuenta llega con la cuenta ya filtrada. */
+    quickAccountId?: string | string[];
   }>();
   const queryClient = useQueryClient();
   const { profile } = useAuth();
@@ -451,6 +453,7 @@ function MovementsScreen() {
     search: boolean;
     movementIds: boolean;
     quickLabel: boolean;
+    accountId: boolean;
   }>({
     categoryScope: null,
     categoryId: null,
@@ -460,6 +463,7 @@ function MovementsScreen() {
     search: false,
     movementIds: false,
     quickLabel: false,
+    accountId: false,
   });
 
   const clearScopedQuickFilters = useCallback(() => {
@@ -490,7 +494,10 @@ function MovementsScreen() {
     if (scopedQuickFiltersRef.current.quickLabel) {
       setActiveQuickLabel(null);
     }
-    scopedQuickFiltersRef.current = { categoryScope: null, categoryId: null, status: null, type: null, dateRange: false, search: false, movementIds: false, quickLabel: false };
+    if (scopedQuickFiltersRef.current.accountId) {
+      setActiveAccountId(null);
+    }
+    scopedQuickFiltersRef.current = { categoryScope: null, categoryId: null, status: null, type: null, dateRange: false, search: false, movementIds: false, quickLabel: false, accountId: false };
   }, []);
   const onRefresh = useCallback(async () => {
     refreshTriggeredRef.current = true;
@@ -516,6 +523,8 @@ function MovementsScreen() {
       const quickSearch = Array.isArray(params.quickSearch) ? params.quickSearch[0] : params.quickSearch;
       const quickMovementIds = Array.isArray(params.quickMovementIds) ? params.quickMovementIds[0] : params.quickMovementIds;
       const quickLabel = Array.isArray(params.quickLabel) ? params.quickLabel[0] : params.quickLabel;
+      const quickAccountId = Array.isArray(params.quickAccountId) ? params.quickAccountId[0] : params.quickAccountId;
+      const parsedQuickAccountId = quickAccountId ? Number(quickAccountId) : null;
       const parsedQuickCategoryId = quickCategoryId ? Number(quickCategoryId) : null;
       const parsedQuickMovementIds = (quickMovementIds ?? "")
         .split(",")
@@ -543,6 +552,7 @@ function MovementsScreen() {
         quickSearch ?? "",
         quickMovementIds ?? "",
         quickLabel ?? "",
+        quickAccountId ?? "",
         quickToken ?? "",
       ].join("|");
 
@@ -560,9 +570,12 @@ function MovementsScreen() {
           search: Boolean(quickSearch),
           movementIds: parsedQuickMovementIds.length > 0,
           quickLabel: Boolean(quickLabel),
+          accountId: Boolean(parsedQuickAccountId && Number.isFinite(parsedQuickAccountId)),
         };
 
-        setActiveAccountId(null);
+        setActiveAccountId(
+          parsedQuickAccountId && Number.isFinite(parsedQuickAccountId) ? parsedQuickAccountId : null,
+        );
         if (!quickFilter && !(parsedQuickCategoryId && Number.isFinite(parsedQuickCategoryId))) {
           setActiveCategoryScope(null);
           setActiveCategoryId(null);
@@ -659,7 +672,7 @@ function MovementsScreen() {
     setDebouncedSearch("");
     setCustomDateFrom("");
     setCustomDateTo("");
-    scopedQuickFiltersRef.current = { categoryScope: null, categoryId: null, status: null, type: null, dateRange: false, search: false, movementIds: false, quickLabel: false };
+    scopedQuickFiltersRef.current = { categoryScope: null, categoryId: null, status: null, type: null, dateRange: false, search: false, movementIds: false, quickLabel: false, accountId: false };
   }
 
   // ── CSV Export ────────────────────────────────────────────────────────────

@@ -54,6 +54,7 @@ export function BalanceEvolutionChart({
   );
 
   const trend = summarizeTrend(points);
+  const startLabel = points.length >= 2 ? formatCurrency(points[0].value, currencyCode) : "";
 
   const { linePath, areaPath, minLabel, maxLabel } = useMemo(() => {
     if (width === 0 || points.length < 2) {
@@ -89,10 +90,16 @@ export function BalanceEvolutionChart({
     };
   }, [points, width, height, currencyCode]);
 
-  const stroke =
-    trend.direction === "up" ? COLORS.pine
-    : trend.direction === "down" ? COLORS.dangerSoft
-    : COLORS.storm;
+  /**
+   * La curva va en hueso, sobre un relleno tenue.
+   *
+   * Estaba en menta de punta a punta, incluidos los treinta días en que el saldo cayó de 4,000 a
+   * 1,600: la menta significa plata que entra, así que pintaba un descenso con el color de lo
+   * contrario. Y pintarla por tramos tampoco ayudaría — **el saldo de una cuenta no es un
+   * ingreso ni un gasto, es una posición**. El eje ya dice si sube o baja, y el color queda
+   * libre para las dos cifras que sí lo necesitan.
+   */
+  const stroke = COLORS.ink;
   const gradientId = `balanceArea-${accountId}-${range}`;
 
   function onLayout(e: LayoutChangeEvent) {
@@ -101,9 +108,10 @@ export function BalanceEvolutionChart({
 
   return (
     <View style={styles.card}>
-      {/* Header: title + range pills */}
+      {/* El rótulo dice el periodo, que es lo que cambian las cápsulas de al lado; "Evolución del
+          saldo" nombraba lo que el dibujo ya enseña. */}
       <View style={styles.header}>
-        <Text style={styles.title}>Evolución del saldo</Text>
+        <Text style={styles.title}>Últimos {range} días</Text>
         <View style={styles.pillRow}>
           {RANGE_OPTIONS.map((r) => {
             const active = range === r.value;
@@ -123,19 +131,26 @@ export function BalanceEvolutionChart({
         </View>
       </View>
 
-      {/* Trend summary */}
+      {/*
+        * El porcentaje se va: comparaba el primer día con el último y salía "+12.8%" en una
+        * cuenta cuyo saldo, en esos mismos 90 días, cayó a un tercio y volvió a subir. Correcto
+        * y engañoso a la vez, porque se lee como "esta cuenta creció poco" mientras el dibujo de
+        * al lado cuenta otra cosa.
+        *
+        * Queda la cifra con su punto de partida: dos números que se pueden restar y verificar.
+        */}
       <View style={styles.summaryRow}>
-        <Text style={styles.summaryDelta}>
-          {trend.delta >= 0 ? "+" : ""}
-          {formatCurrency(trend.delta, currencyCode)}
+        <Text
+          style={[
+            styles.summaryDelta,
+            trend.direction === "up" && styles.summaryDeltaUp,
+            trend.direction === "down" && styles.summaryDeltaDown,
+          ]}
+        >
+          {trend.delta >= 0 ? "+ " : "− "}
+          {formatCurrency(Math.abs(trend.delta), currencyCode)}
         </Text>
-        {trend.pct !== null ? (
-          <Text style={[styles.summaryPct, trend.direction === "up" && styles.summaryPctUp, trend.direction === "down" && styles.summaryPctDown]}>
-            {trend.pct >= 0 ? "+" : ""}
-            {trend.pct.toFixed(1)}%
-          </Text>
-        ) : null}
-        <Text style={styles.summaryRange}>· últimos {range} días</Text>
+        {startLabel ? <Text style={styles.summaryFrom}>desde {startLabel}</Text> : null}
       </View>
 
       {/* Chart */}
@@ -171,14 +186,13 @@ export function BalanceEvolutionChart({
 }
 
 const styles = StyleSheet.create({
+  // Sin tarjeta: la pantalla es una pila de bandas separadas por una línea fina, no de cajas
+  // dentro de cajas.
   card: {
-    backgroundColor: SURFACE.card,
-    borderWidth: 1,
-    borderColor: SURFACE.cardBorder,
-    borderRadius: RADIUS.xl,
-    padding: SPACING.lg,
-    marginTop: SPACING.md,
+    paddingVertical: SPACING.md,
     gap: SPACING.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: SURFACE.separator,
   },
   header: {
     flexDirection: "row",
@@ -213,6 +227,14 @@ const styles = StyleSheet.create({
     gap: SPACING.xs,
     flexWrap: "wrap",
   },
+  summaryFrom: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.storm,
+    flexShrink: 1,
+  },
+  summaryDeltaUp: { color: COLORS.income },
+  summaryDeltaDown: { color: COLORS.expense },
   summaryDelta: {
     fontFamily: FONT_FAMILY.heading,
     fontSize: FONT_SIZE.lg,
