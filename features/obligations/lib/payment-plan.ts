@@ -389,3 +389,198 @@ export function remainingFromPlan(rows: readonly ReconciledPayment[]) {
     rows.reduce((sum, row) => (row.paid == null ? sum + toCents(row.amount) : sum), 0),
   );
 }
+
+// ─── Fase 24: la cascada ──────────────────────────────────────────────────────
+
+export type PlanCoverage = ScheduledPayment & {
+  /** Cuánto de esta cuota cubre el dinero que ya entró. */
+  covered: number;
+  /** Lo que le falta para cerrarse. `0` si está cubierta. */
+  remaining: number;
+  status: "covered" | "partial" | "pending";
+  /** La fecha del pago que terminó de cubrirla. `null` si sigue abierta. */
+  coveredAt: string | null;
+};
+
+/**
+ * El plan expandido sobre **la deuda de hoy**, no sobre la de apertura.
+ *
+ * `principalAmount` conserva por diseño el monto con el que se abrió la obligación, y los
+ * aumentos viven como eventos. Expandir el plan sobre él dejaba planes que repartían 7.175 de una
+ * deuda de 25.355 —y hacía que "Ajustar monto" no moviera nada del plan—.
+ *
+ * Qué se mueve al crecer la deuda depende de lo que el usuario fijó al crear el plan:
+ *
+ * - **`custom`**: fijó los MONTOS. Las cuotas acordadas no se tocan nunca —son cifras pactadas con
+ *   otra persona— y la cola crece o se acorta. Es para lo que la cola existía.
+ * - **`equal`**: fijó CUÁNTAS. Se mueve el monto de cada una, pero **solo el de las que aún no
+ *   están cubiertas** (opción B): repreciar hacia atrás lo que ya se cobró al precio acordado
+ *   haría retroceder el avance de 3/6 a 2/6 por prestar más dinero.
+ */
+function expandOverCurrentDebt({
+  plan,
+  openingPrincipal,
+  currentDebt,
+  startDate,
+  paidToDate,
+}: {
+  plan: PaymentPlan;
+  openingPrincipal: number;
+  currentDebt: number;
+  startDate: string;
+  paidToDate: number;
+}): ScheduledPayment[] {
+  if (plan.mode === "custom") {
+    return expandPaymentPlan({ plan, principal: currentDebt, startDate });
+  }
+
+  // `equal`, opción B: se parte de las cuotas tal como se pactaron…
+  const original = expandPaymentPlan({ plan, principal: openingPrincipal, startDate });
+  if (original.length === 0) return [];
+  if (toCents(currentDebt) === toCents(openingPrincipal)) return original;
+
+  // …se cuenta cuántas quedaron cubiertas del todo con lo ya cobrado…
+  let budget = toCents(paidToDate);
+  let settled = 0;
+  for (const payment of original) {
+    const cost = toCents(payment.amount);
+    if (budget < cost) break;
+    budget -= cost;
+    settled += 1;
+  }
+  if (settled >= original.length) return original;
+
+  // …y lo que falta se reparte entre las que quedan.
+  const settledCents = original
+    .slice(0, settled)
+    .reduce((sum, payment) => sum + toCents(payment.amount), 0);
+  const pendingCents = Math.max(0, toCents(currentDebt) - settledCents);
+  const rest = original.length - settled;
+  const share = Math.round(pendingCents / rest);
+
+  let assigned = 0;
+  return original.map((payment, index) => {
+    if (index < settled) return payment;
+    const isLast = index === original.length - 1;
+    const cents = isLast ? pendingCents - assigned : share;
+    assigned += cents;
+    return { ...payment, amount: fromCents(Math.max(0, cents)) };
+  });
+}
+
+/**
+ * El plan cruzado con lo que de verdad entró, **en cascada**.
+ *
+ * Sustituye a `reconcilePlan`, que emparejaba 1 a 1 por orden: el enésimo pago cubría la enésima
+ * cuota, sin mirar los importes. Con eso, dos cobros del mismo día de 30 y 690 ocupaban dos cuotas
+ * distintas y las dos quedaban marcadas como pagadas y desviadas; y nueve pagos de marzo a agosto
+ * "cubrían" nueve cuotas de setiembre a mayo del año siguiente.
+ *
+ * Aquí manda **una sola cifra: el total acumulado**. El dinero llena cuotas en orden, venga en un
+ * pago o en veinte, y un cobro puede cerrar una cuota y adelantar parte de la siguiente. Lo
+ * acordado no se reescribe: lo que fluye es lo cubierto.
+ */
+export function coverPlan({
+  plan,
+  openingPrincipal,
+  currentDebt,
+  startDate,
+  payments,
+}: {
+  plan: PaymentPlan;
+  /** El monto de apertura: con él se pactaron las cuotas que ya están cubiertas. */
+  openingPrincipal: number;
+  /** Lo que se debe hoy en total: apertura + aumentos − reducciones. */
+  currentDebt: number;
+  startDate: string;
+  payments: readonly ActualPayment[];
+}): PlanCoverage[] {
+  const ordered = [...payments].sort((a, b) => a.date.localeCompare(b.date));
+  const paidToDate = fromCents(ordered.reduce((sum, payment) => sum + toCents(payment.amount), 0));
+  const scheduled = expandOverCurrentDebt({
+    plan,
+    openingPrincipal,
+    currentDebt,
+    startDate,
+    paidToDate,
+  });
+
+  let budget = toCents(paidToDate);
+  /** Se recorre el dinero en paralelo para saber QUÉ pago cerró cada cuota, no solo cuánto. */
+  let cursor = 0;
+  let spentFromCursor = 0;
+
+  return scheduled.map((payment) => {
+    const cost = toCents(payment.amount);
+    const coveredCents = Math.max(0, Math.min(cost, budget));
+    budget -= coveredCents;
+
+    let coveredAt: string | null = null;
+    if (coveredCents >= cost && cost > 0) {
+      // El pago con el que se completó: se avanza por la lista consumiendo el coste de la cuota.
+      let left = cost;
+      while (left > 0 && cursor < ordered.length) {
+        const available = toCents(ordered[cursor].amount) - spentFromCursor;
+        const taken = Math.min(available, left);
+        left -= taken;
+        spentFromCursor += taken;
+        coveredAt = ordered[cursor].date;
+        if (spentFromCursor >= toCents(ordered[cursor].amount)) {
+          cursor += 1;
+          spentFromCursor = 0;
+        }
+      }
+    }
+
+    const remainingCents = cost - coveredCents;
+    return {
+      ...payment,
+      covered: fromCents(coveredCents),
+      remaining: fromCents(Math.max(0, remainingCents)),
+      status: coveredCents >= cost && cost > 0 ? "covered" : coveredCents > 0 ? "partial" : "pending",
+      coveredAt,
+    };
+  });
+}
+
+/**
+ * La cuota a la que va el cobro que se está registrando: la primera que no está cerrada.
+ *
+ * Sustituye a `planRowForPayment`, que devolvía la primera sin emparejar. La diferencia importa:
+ * con cascada, la primera abierta puede estar ya cubierta a medias, y lo que el usuario necesita
+ * saber es cuánto le falta —no el importe entero de la cuota—.
+ */
+export function nextUncoveredPayment(rows: readonly PlanCoverage[]): PlanCoverage | null {
+  return rows.find((row) => row.status !== "covered") ?? null;
+}
+
+/**
+ * Cuántas cuotas cierra el monto que se está escribiendo, y qué queda.
+ *
+ * Es lo que permite decir "completa esta cuota y adelanta S/ 50.00 de la siguiente" antes de
+ * guardar, en lugar de dejar que el usuario lo descubra después.
+ */
+export function describeCoverage(
+  rows: readonly PlanCoverage[],
+  amount: number,
+): { settles: number; overflow: number; shortfall: number } {
+  const next = nextUncoveredPayment(rows);
+  if (!next || !Number.isFinite(amount) || amount <= 0) {
+    return { settles: 0, overflow: 0, shortfall: 0 };
+  }
+  let budget = toCents(amount);
+  let settles = 0;
+  for (const row of rows) {
+    if (row.status === "covered") continue;
+    const missing = toCents(row.remaining);
+    if (budget < missing) break;
+    budget -= missing;
+    settles += 1;
+  }
+  // `shortfall` solo cuando el monto no alcanza a cerrar NI la cuota en la que cae. Si cierra al
+  // menos una, lo que sobra no es un faltante de la siguiente: es un adelanto, y así se dice.
+  if (settles === 0) {
+    return { settles: 0, overflow: 0, shortfall: fromCents(toCents(next.remaining) - budget) };
+  }
+  return { settles, overflow: fromCents(budget), shortfall: 0 };
+}
