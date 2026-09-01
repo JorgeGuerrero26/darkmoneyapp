@@ -1,4 +1,4 @@
-import { Archive, ArchiveRestore, Trash2, Clock, Wallet } from "lucide-react-native";
+import { Clock, Wallet } from "lucide-react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -21,8 +21,6 @@ import { parseDisplayDate } from "../../lib/date";
 import {
   useCreateAccountMutation,
   useUpdateAccountMutation,
-  useDeleteAccountMutation,
-  useArchiveAccountMutation,
   type AccountFormInput,
 } from "../../services/queries/workspace-data";
 import type { AccountSummary } from "../../types/domain";
@@ -56,8 +54,6 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
   const haptics = useHaptics();
   const createMutation = useCreateAccountMutation(activeWorkspaceId);
   const updateMutation = useUpdateAccountMutation(activeWorkspaceId);
-  const deleteMutation = useDeleteAccountMutation(activeWorkspaceId);
-  const archiveMutation = useArchiveAccountMutation(activeWorkspaceId);
 
   const defaultCurrency = activeWorkspace?.baseCurrencyCode ?? "PEN";
 
@@ -81,8 +77,6 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
   const [currencyOpen, setCurrencyOpen] = useState(false);
   const [typeOpen, setTypeOpen] = useState(false);
   const [institutionOpen, setInstitutionOpen] = useState(false);
-  const [deleteConfirm, setDeleteConfirm] = useState(false);
-  const [archiveConfirm, setArchiveConfirm] = useState(false);
 
   // ── Draft key ────────────────────────────────────────────────────────────
   const draftKey = `account_form_draft_${activeWorkspaceId}_${user?.id ?? ""}`;
@@ -249,18 +243,6 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
     }
   }
 
-  async function handleArchiveToggle() {
-    if (!editAccount) return;
-    try {
-      await archiveMutation.mutateAsync({ id: editAccount.id, archived: !editAccount.isArchived });
-      showToast(editAccount.isArchived ? "Cuenta restaurada ✓" : "Cuenta archivada ✓", "success");
-      setArchiveConfirm(false);
-      onClose();
-    } catch (err: unknown) {
-      showToast(humanizeError(err), "error");
-    }
-  }
-
   const SelectedIcon = getAccountIcon(icon, type);
   const accountIconOptions = useMemo(
     () => ACCOUNT_ICON_OPTIONS.map((option) => ({ key: option.value, Icon: option.Icon })),
@@ -296,21 +278,6 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
             cancelLabel="Continuar editando"
             onCancel={() => setDiscardVisible(false)}
             onConfirm={() => { setDiscardVisible(false); onClose(); }}
-          />
-
-          <ConfirmDialog
-            inline
-            visible={archiveConfirm}
-            title={editAccount?.isArchived ? "¿Restaurar cuenta?" : "¿Archivar cuenta?"}
-            body={
-              editAccount?.isArchived
-                ? "La cuenta volverá a aparecer en tu lista activa y en el patrimonio neto."
-                : "La cuenta quedará oculta. Sus movimientos históricos se conservarán intactos y podrás restaurarla después."
-            }
-            confirmLabel={editAccount?.isArchived ? "Sí, restaurar" : "Sí, archivar"}
-            cancelLabel="Cancelar"
-            onCancel={() => setArchiveConfirm(false)}
-            onConfirm={handleArchiveToggle}
           />
 
           <SearchableSelectSheet
@@ -356,57 +323,17 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
             iconOptions={accountIconOptions}
           />
 
-          <ConfirmDialog
-            inline
-            visible={deleteConfirm}
-            title="Eliminar cuenta"
-            body="Esta acción es irreversible. Si tiene movimientos vinculados, la eliminación fallará y los datos se conservarán."
-            confirmLabel="Eliminar"
-            cancelLabel="Cancelar"
-            onCancel={() => setDeleteConfirm(false)}
-            onConfirm={async () => {
-              if (!editAccount) return;
-              setDeleteConfirm(false);
-              try {
-                await deleteMutation.mutateAsync(editAccount.id);
-                showToast("Cuenta eliminada", "success");
-                onClose();
-              } catch (err: unknown) {
-                showToast(humanizeError(err), "error");
-              }
-            }}
-          />
         </>
       }
-      footer={
-        editAccount ? (
-          <>
-            <TouchableOpacity
-              style={[styles.secondaryBtn, editAccount.isArchived && styles.secondaryBtnActive]}
-              onPress={() => setArchiveConfirm(true)}
-              activeOpacity={0.8}
-            >
-              {editAccount.isArchived
-                ? <ArchiveRestore size={14} color={COLORS.pine} strokeWidth={2} />
-                : <Archive size={14} color={COLORS.storm} strokeWidth={2} />}
-              <Text style={[styles.secondaryBtnText, editAccount.isArchived && { color: COLORS.pine }]}>
-                {editAccount.isArchived ? "Restaurar cuenta" : "Archivar cuenta"}
-              </Text>
-            </TouchableOpacity>
-
-            {editAccount.isArchived ? (
-              <TouchableOpacity
-                style={styles.dangerBtn}
-                onPress={() => setDeleteConfirm(true)}
-                activeOpacity={0.8}
-              >
-                <Trash2 size={14} color={COLORS.danger} strokeWidth={2} />
-                <Text style={styles.dangerBtnText}>Eliminar permanentemente</Text>
-              </TouchableOpacity>
-            ) : null}
-          </>
-        ) : null
-      }
+      /*
+       * Archivar y eliminar NO viven aquí.
+       *
+       * En toda la app se archiva y se elimina de una sola manera: manteniendo pulsada la fila o
+       * deslizándola. Tener además dos botones al pie de este formulario era una segunda puerta
+       * a lo mismo —y la única del módulo—, de modo que la respuesta a "¿cómo borro esto?"
+       * dependía de dónde estuvieras parado. Este formulario edita la cuenta; lo que le pasa a
+       * la cuenta se decide en la lista.
+       */
     >
       {/* Sin vista previa: repetía el título "Nueva cuenta" y los dos datos que estás por
           elegir, 120 px antes del primer campo. Al editar sí quedan los dos datos que el
@@ -593,42 +520,4 @@ const styles = StyleSheet.create({
   switchInfo: { flex: 1, gap: 2, marginRight: SPACING.md },
   switchLabel: { fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.bodyMedium, color: COLORS.ink },
   switchDesc: { fontSize: FONT_SIZE.xs, color: COLORS.storm },
-  secondaryBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: SPACING.xs,
-    marginTop: SPACING.xs,
-    paddingVertical: SPACING.sm + 2,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: SURFACE.cardBorder,
-    backgroundColor: SURFACE.separator,
-  },
-  secondaryBtnActive: {
-    borderColor: COLORS.pine + "55",
-    backgroundColor: COLORS.pine + "12",
-  },
-  secondaryBtnText: {
-    fontFamily: FONT_FAMILY.bodyMedium,
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.storm,
-  },
-  dangerBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: SPACING.xs,
-    marginTop: SPACING.xs,
-    paddingVertical: SPACING.sm + 2,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: COLORS.danger + "44",
-    backgroundColor: COLORS.danger + "10",
-  },
-  dangerBtnText: {
-    fontFamily: FONT_FAMILY.bodyMedium,
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.danger,
-  },
 });

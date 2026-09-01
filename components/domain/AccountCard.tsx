@@ -1,6 +1,6 @@
 import { memo } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import { Archive, ArchiveRestore } from "lucide-react-native";
+import { Archive, ArchiveRestore, Trash2 } from "lucide-react-native";
 
 import {
   ResourceCard,
@@ -24,6 +24,14 @@ type Props = {
   onPress?: () => void;
   onArchive?: () => void;
   onRestore?: () => void;
+  /**
+   * Solo en una cuenta archivada, y en el lado contrario a restaurar.
+   *
+   * Borrar para siempre no puede compartir gesto con archivar —que se deshace con otro toque—
+   * ni quedar a un centímetro de él: es la misma vecindad peligrosa que se corrigió entre
+   * "Duplicar" y "Anular" en el detalle de un movimiento.
+   */
+  onDelete?: () => void;
   onLongPress?: () => void;
   selected?: boolean;
   selectMode?: boolean;
@@ -107,13 +115,23 @@ function AccountCardBase({
   onPress,
   onArchive,
   onRestore,
+  onDelete,
   onLongPress,
   selected,
 }: Props) {
   // Suscripción propia: invalida el memo cuando cambia el modo privacidad
   // (los props no cambian al alternar, sin esto la fila mostraría el monto viejo).
   useUiStore((state) => state.privacyMode);
-  const isSwipeable = Boolean(onArchive || onRestore);
+  const isSwipeable = Boolean(onArchive || onRestore || onDelete);
+  const leftAction = account.isArchived && onDelete
+    ? {
+        label: "Eliminar",
+        icon: Trash2,
+        onPress: onDelete,
+        color: COLORS.danger,
+        backgroundColor: COLORS.danger + "28",
+      }
+    : null;
   const rightAction = account.isArchived
     ? {
         label: "Restaurar",
@@ -143,7 +161,7 @@ function AccountCardBase({
   }
 
   return (
-    <SwipeActionRow rightAction={rightAction} borderRadius={0}>
+    <SwipeActionRow leftAction={leftAction} rightAction={rightAction} borderRadius={0}>
       {({ close, isOpen }) => (
         <AccountCardContent
           account={account}
