@@ -12,8 +12,19 @@ import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../
 /**
  * A partir de aqui la fila deja de servir: para llegar a la ultima hay que desplazar a ciegas,
  * sin saber cuantas quedan. Se cambia por un control que abre la lista entera.
+ *
+ * Se mide por los dos lados porque lo que se acaba es el ANCHO, no el numero de opciones.
+ * Contando solo cuantas son, Movimientos era el unico modulo que se colaba: seis opciones
+ * -justo en el tope- pero mas texto que Cuentas con ocho ("Transferencias", "Obligaciones",
+ * "Suscripciones" son 58 caracteres contra 52). Resultado: el modulo con MAS etiqueta que
+ * caber era el unico que la enseñaba en una fila donde entran dos capsulas y media, mientras
+ * que Cuentas y Creditos y deudas -que caben mejor- si abrian la lista.
+ *
+ * El corte en 40 deja en fila a lo que de verdad entra (los cuatro estados de Ingresos
+ * recurrentes son 30) y manda a la lista a todo lo que hoy se desplaza a ciegas.
  */
 const MAX_INLINE_OPTIONS = 6;
+const MAX_INLINE_LABEL_CHARS = 40;
 
 export type FilterToolbarOption<T extends string> = {
   value: T;
@@ -59,7 +70,9 @@ export function FilterToolbar<T extends string>({
   const multiSelect = Boolean(selectedValues && onSelectedValuesChange);
   const activeValues = selectedValues ?? [];
   const [selectorOpen, setSelectorOpen] = useState(false);
-  const useSelector = options.length > MAX_INLINE_OPTIONS;
+  const useSelector =
+    options.length > MAX_INLINE_OPTIONS ||
+    options.reduce((total, option) => total + option.label.length, 0) > MAX_INLINE_LABEL_CHARS;
 
   function isActive(optionValue: T) {
     if (!multiSelect) return value === optionValue;
