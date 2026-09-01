@@ -47,6 +47,33 @@ function capitalize(value: string) {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
+/**
+ * El monto redondeado, para las frases: "S/ 9,870", no "S/ 9,870.00". En prosa los centavos
+ * solo estorban, y la cifra exacta está a diez píxeles, en la tarjeta. Delega en
+ * `formatCurrency`, así que respeta el modo privacidad.
+ */
+function formatRounded(amount: number, currency: string) {
+  return formatCurrency(Math.round(amount), currency).replace(/[.,]00$/, "");
+}
+
+/**
+ * La proporción como la diría una persona: "un tercio", no "el 33%". Solo cuando cae lo bastante
+ * cerca de una fracción que se dice sola; si no, el porcentaje, que nunca es falso.
+ */
+const SHARE_PHRASES: Array<[number, string]> = [
+  [1 / 4, "un cuarto"],
+  [1 / 3, "un tercio"],
+  [1 / 2, "la mitad"],
+  [2 / 3, "dos tercios"],
+  [3 / 4, "tres cuartos"],
+];
+
+function shareLabel(part: number, whole: number) {
+  const ratio = whole > 0 ? part / whole : 0;
+  const match = SHARE_PHRASES.find(([value]) => Math.abs(ratio - value) <= 0.02);
+  return match ? match[1] : `el ${Math.round(ratio * 100)}%`;
+}
+
 export function AccountAnalyticsModal({ visible, account, onClose }: Props) {
   const router = useRouter();
   const { activeWorkspaceId } = useWorkspace();
@@ -89,7 +116,6 @@ export function AccountAnalyticsModal({ visible, account, onClose }: Props) {
     for (const m of movements) {
       if (m.occurredAt < oldest) oldest = m.occurredAt;
       if (m.occurredAt > newest) newest = m.occurredAt;
-      if (m.movementType === "transfer") transferCount += 1;
 
       // El mes sale de la fecha LOCAL, no del string UTC: `occurredAt.slice(0, 7)` metia en el
       // mes siguiente todo lo registrado despues de las 19:00 del ultimo dia (Lima es UTC-5).
@@ -104,7 +130,10 @@ export function AccountAnalyticsModal({ visible, account, onClose }: Props) {
         totalOut += m.sourceAmount;
         month.expense += m.sourceAmount;
         if (m.movementType === "transfer") {
+          // Solo los que SALEN: la frase dice "traspasos a tus otras cuentas", que es
+          // direccional, y es el conteo que se corresponde con `transferOut`.
           transferOut += m.sourceAmount;
+          transferCount += 1;
         } else if (m.categoryName) {
           byCategory.set(m.categoryName, (byCategory.get(m.categoryName) ?? 0) + m.sourceAmount);
         } else {
@@ -119,10 +148,10 @@ export function AccountAnalyticsModal({ visible, account, onClose }: Props) {
     const visible = ranked.slice(0, VISIBLE_CATEGORIES);
     const rest = ranked.slice(VISIBLE_CATEGORIES);
     const restTotal = rest.reduce((sum, [, amount]) => sum + amount, 0);
-    /* La barra se mide contra la fila más alta que SE VE. Anclarla a "Sin categoría" -que sale
-       del ranking y no lleva barra- dejaba la primera barra al 76% de su carril con un cuarto
-       vacío que nada explicaba: una escala cuyo máximo no está en pantalla. */
-    const maxVisible = visible[0]?.[1] ?? 1;
+    /* La escala es el mayor gasto del período, y ese suele ser "Sin categoría" —que sale del
+       ranking—. Por eso la primera barra no llena su carril: el hueco ES el argumento de la
+       sección, y lo que falta para completarla está en la fila de acción de abajo. */
+    const maxSpend = Math.max(uncategorized, visible[0]?.[1] ?? 0, 1);
 
     const months = [...byMonth.entries()]
       .sort((a, b) => a[0].localeCompare(b[0]))
@@ -164,7 +193,7 @@ export function AccountAnalyticsModal({ visible, account, onClose }: Props) {
       visible,
       restTotal,
       restCount: rest.length,
-      maxVisible,
+      maxSpend,
       months,
       maxMonthly,
       worstMonth,
@@ -237,10 +266,10 @@ export function AccountAnalyticsModal({ visible, account, onClose }: Props) {
               <Text style={styles.lead}>
                 En {spellMonths(analysis.monthSpan)} {analysis.monthSpan === 1 ? "mes" : "meses"} pasaron{" "}
                 {analysis.count} movimientos por esta cuenta y terminó con{" "}
-                {formatCurrency(Math.abs(analysis.netFlow), currency)}{" "}
+                {formatRounded(Math.abs(analysis.netFlow), currency)}{" "}
                 {analysis.netFlow < 0 ? "menos" : "más"} que al empezar.
                 {analysis.transferOut > analysis.totalOut / 2
-                  ? ` Es una cuenta de paso: ${analysis.transferCount} de esos movimientos son traspasos entre tus cuentas.`
+                  ? ` Es una cuenta de paso: ${analysis.transferCount} de esos movimientos son traspasos a tus otras cuentas.`
                   : ""}
               </Text>
 
@@ -290,7 +319,7 @@ export function AccountAnalyticsModal({ visible, account, onClose }: Props) {
                         <Text style={styles.catAmount}>{formatCurrency(amount, currency)}</Text>
                       </View>
                       <View style={styles.catTrack}>
-                        <View style={[styles.catFill, { width: `${(amount / analysis.maxVisible) * 100}%` }]} />
+                        <View style={[styles.catFill, { width: `${(amount / analysis.maxSpend) * 100}%` }]} />
                       </View>
                     </View>
                   ))}
@@ -324,9 +353,9 @@ export function AccountAnalyticsModal({ visible, account, onClose }: Props) {
                       <View style={styles.resolveText}>
                         <Text style={styles.resolveTitle}>Sin categoría</Text>
                         <Text style={styles.resolveHint}>
-                          {formatCurrency(analysis.uncategorized, currency)} —{" "}
-                          {Math.round((analysis.uncategorized / analysis.spent) * 100)}% de tu gasto
-                          {analysis.uncategorized >= analysis.maxVisible ? ", y es el mayor" : ""}
+                          {formatRounded(analysis.uncategorized, currency)} —{" "}
+                          {shareLabel(analysis.uncategorized, analysis.spent)} de tu gasto
+                          {analysis.uncategorized >= (analysis.visible[0]?.[1] ?? 0) ? ", y es el mayor" : ""}
                         </Text>
                       </View>
                       <Text style={styles.resolveAction}>Resolver</Text>
@@ -342,13 +371,16 @@ export function AccountAnalyticsModal({ visible, account, onClose }: Props) {
                   <Text style={styles.sectionAside}>entró / salió</Text>
                 </View>
                 <View style={styles.chart}>
-                  {analysis.months.map((m) => (
+                  {analysis.months.map((m, index) => (
                     <View key={m.key} style={styles.chartGroup}>
                       <View style={styles.barTracks}>
                         <View style={[styles.bar, { height: `${(m.income / analysis.maxMonthly) * 100}%`, backgroundColor: COLORS.income }]} />
                         <View style={[styles.bar, { height: `${(m.expense / analysis.maxMonthly) * 100}%`, backgroundColor: COLORS.expense }]} />
                       </View>
-                      <Text style={styles.barLabel}>{m.label}</Text>
+                      {/* El mes en curso en hueso: es el que se está viviendo. */}
+                      <Text style={[styles.barLabel, index === analysis.months.length - 1 && styles.barLabelCurrent]}>
+                        {m.label}
+                      </Text>
                     </View>
                   ))}
                 </View>
@@ -356,8 +388,8 @@ export function AccountAnalyticsModal({ visible, account, onClose }: Props) {
                 {analysis.worstMonth ? (
                   <Text style={styles.chartNote}>
                     {capitalize(analysis.worstMonth.longLabel)} es el mes que cerró más abajo: salieron{" "}
-                    {formatCurrency(analysis.worstMonth.expense, currency)} contra{" "}
-                    {formatCurrency(analysis.worstMonth.income, currency)} que entraron.
+                    {formatRounded(analysis.worstMonth.expense, currency)} contra{" "}
+                    {formatRounded(analysis.worstMonth.income, currency)} que entraron.
                     {analysis.alsoNegative.length > 0
                       ? ` ${analysis.alsoNegative.join(" y ")} también ${analysis.alsoNegative.length === 1 ? "cerró" : "cerraron"} negativo.`
                       : ""}
@@ -418,6 +450,8 @@ const styles = StyleSheet.create({
     gap: SPACING.sm,
     paddingHorizontal: SPACING.lg,
     paddingVertical: SPACING.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: SURFACE.separator,
   },
   headerText: { flex: 1 },
   title: { fontFamily: FONT_FAMILY.heading, fontSize: FONT_SIZE.lg, color: COLORS.ink },
@@ -524,12 +558,16 @@ const styles = StyleSheet.create({
     color: COLORS.storm,
     textTransform: "capitalize",
   },
+  barLabelCurrent: { fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.ink },
   chartNote: {
     fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.sm,
     lineHeight: 20,
     color: COLORS.storm,
     marginTop: SPACING.xs,
+    paddingTop: SPACING.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: SURFACE.separator,
   },
 
   truncationNote: {
