@@ -2,6 +2,7 @@ import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 
 import { STALE } from "../../lib/query-client";
 import { supabase } from "../../lib/supabase";
+import { filterDateFrom, filterDateTo } from "../../lib/date";
 import { MOVEMENTS_PAGE_SIZE, SUPABASE_STORAGE_BUCKET } from "../../constants/config";
 import type { MovementRecord } from "../../types/domain";
 import {
@@ -145,6 +146,78 @@ export function useMovementQuery(movementId?: number | null) {
     },
     enabled: Boolean(movementId),
     staleTime: STALE.short,
+  });
+}
+
+export type MovementsFilteredSummary = {
+  incomeTotal: number;
+  expenseTotal: number;
+  incomeCount: number;
+  expenseCount: number;
+};
+
+/**
+ * Lo que entró y lo que salió **en todo el filtro**, no en las filas cargadas.
+ *
+ * Paginar la lista y sumar el periodo son dos consultas distintas. Sumar lo cargado obligaba a
+ * poner debajo un aviso —"Totales de los movimientos cargados hasta ahora"— que desmentía a la
+ * cifra de arriba, y el sesgo no era aleatorio: la lista trae lo más reciente primero, así que
+ * el neto parcial siempre se inclinaba hacia los últimos días. Con el sueldo entrando el 30, el
+ * primer número que veías estaba inflado.
+ *
+ * Es un solo `SUM` con el mismo filtro, así que el número es correcto desde el primer render y
+ * no se mueve mientras lees.
+ */
+export function useMovementsFilteredSummaryQuery(
+  workspaceId?: number | null,
+  filters: MovementFilters = {},
+) {
+  return useQuery({
+    // Cuelga de ["movements"] a propósito: todo lo que invalida la lista invalida también el
+    // total, que si no se quedaría contando un movimiento recién borrado.
+    queryKey: ["movements", "summary", workspaceId ?? null, filters],
+    enabled: Boolean(workspaceId),
+    staleTime: STALE.short,
+    queryFn: async (): Promise<MovementsFilteredSummary> => {
+      if (!supabase) throw new Error("Supabase no está configurado.");
+      if (!workspaceId) {
+        return { incomeTotal: 0, expenseTotal: 0, incomeCount: 0, expenseCount: 0 };
+      }
+
+      const types = filters.types?.length
+        ? filters.types
+        : filters.type
+          ? [filters.type]
+          : null;
+
+      const { data, error } = await supabase.rpc("movements_filtered_summary", {
+        p_workspace_id: workspaceId,
+        p_types: types,
+        p_status: filters.status ?? null,
+        p_account_id: filters.accountId ?? null,
+        p_category_id: filters.categoryId ?? null,
+        p_uncategorized: Boolean(filters.uncategorized),
+        p_date_from: filters.dateFrom ? filterDateFrom(filters.dateFrom) : null,
+        p_date_to: filters.dateTo ? filterDateTo(filters.dateTo) : null,
+        p_search: filters.search?.trim() ? filters.search.trim() : null,
+        p_movement_ids: filters.movementIds?.length ? filters.movementIds : null,
+      });
+      if (error) throw error;
+
+      const row = (Array.isArray(data) ? data[0] : data) as {
+        income_total?: number | string | null;
+        expense_total?: number | string | null;
+        income_count?: number | string | null;
+        expense_count?: number | string | null;
+      } | null;
+
+      return {
+        incomeTotal: Number(row?.income_total ?? 0),
+        expenseTotal: Number(row?.expense_total ?? 0),
+        incomeCount: Number(row?.income_count ?? 0),
+        expenseCount: Number(row?.expense_count ?? 0),
+      };
+    },
   });
 }
 

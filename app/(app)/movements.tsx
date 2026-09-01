@@ -59,6 +59,7 @@ type FilterType = MovementType | "all";
 type FilterStatus = MovementStatus | "all";
 import { groupMovementsByDate, type MovementListSection } from "../../features/movements/lib/group-by-date";
 import { summarizeMovements } from "../../features/movements/lib/summary";
+import { useMovementsFilteredSummaryQuery } from "../../services/queries/movements";
 import { useMovementsRealtimeSync } from "../../features/movements/hooks/useMovementsRealtimeSync";
 import { buildExchangeRateMap, resolveRate } from "../../features/dashboard/lib/aggregations";
 import { COLORS, SPACING } from "../../constants/theme";
@@ -379,12 +380,30 @@ function MovementsScreen() {
     void AsyncStorage.setItem(MOVEMENTS_CURRENCY_KEY, code);
   }, []);
 
+  /**
+   * El neto sale de una suma del servidor sobre TODO el filtro, no de las filas cargadas.
+   *
+   * Mientras esa suma viaja se enseña la de lo cargado, para no dejar la cinta en blanco: es el
+   * mismo cálculo, así que no salta al llegar la buena — solo se completa.
+   */
+  const { data: serverSummary } = useMovementsFilteredSummaryQuery(activeWorkspaceId, filters);
   const filterSummary = useMemo(() => {
     const baseUpper = baseCurrency.toUpperCase();
     // Resumen legacy fuera del contrato de paridad: si no hay tasa, muestra en base (1:1).
     const baseToActiveRate = resolveRate(exchangeRateMap, baseUpper, activeCurrency, baseUpper) ?? 1;
+    if (serverSummary) {
+      const incomeTotal = serverSummary.incomeTotal * baseToActiveRate;
+      const expenseTotal = serverSummary.expenseTotal * baseToActiveRate;
+      return {
+        incomeTotal,
+        expenseTotal,
+        incomeCount: serverSummary.incomeCount,
+        expenseCount: serverSummary.expenseCount,
+        net: incomeTotal - expenseTotal,
+      };
+    }
     return summarizeMovements(allMovements, baseToActiveRate);
-  }, [allMovements, exchangeRateMap, baseCurrency, activeCurrency]);
+  }, [allMovements, exchangeRateMap, baseCurrency, activeCurrency, serverSummary]);
 
   const extraFiltersCount = [
     activeDatePreset,
@@ -912,7 +931,6 @@ function MovementsScreen() {
             <MovementSummaryBar
               summary={filterSummary}
               baseCurrency={baseCurrency}
-              partial={hasNextPage}
               currencyOptions={currencyOptions}
               displayCurrency={activeCurrency}
               onCurrencyChange={handleCurrencyChange}

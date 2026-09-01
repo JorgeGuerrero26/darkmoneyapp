@@ -15,7 +15,6 @@ type MovementFilterSummary = {
 type Props = {
   summary: MovementFilterSummary;
   baseCurrency: string;
-  partial?: boolean;
   /** Currencies disponibles en el workspace (≥1). Solo se renderiza el selector si hay >1. */
   currencyOptions?: string[];
   /** Currency seleccionado actualmente para mostrar los totales. Default: baseCurrency. */
@@ -27,7 +26,6 @@ type Props = {
 export function MovementSummaryBar({
   summary,
   baseCurrency,
-  partial,
   currencyOptions,
   displayCurrency,
   onCurrencyChange,
@@ -69,10 +67,13 @@ export function MovementSummaryBar({
           `Entró ${formatCurrency(summary.incomeTotal, activeCurrency)}`,
           `salió ${formatCurrency(summary.expenseTotal, activeCurrency)}`,
         ].join(" · ")}
-        footnote={partial ? "Totales de los movimientos cargados hasta ahora. Sigue bajando para incluir el resto." : null}
+        /* Aquí iba "Totales de los movimientos cargados hasta ahora. Sigue bajando para incluir
+           el resto": una nota que existía para desmentir a la cifra de arriba, a diez píxeles de
+           un rótulo que decía "del 1 al 31 de agosto". El total ya sale de una suma del servidor
+           sobre todo el filtro, así que no hay nada que desmentir. */
         help={{
           title: "Neto del filtro",
-          description: "Diferencia entre ingresos y gastos visibles. Si es positivo entró más dinero del que salió.",
+          description: "Diferencia entre lo que entró y lo que salió en todo el periodo filtrado, no solo en lo que se ve.",
         }}
       />
     </View>
