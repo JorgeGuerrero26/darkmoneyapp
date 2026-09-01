@@ -7,6 +7,7 @@ import {
   normalizePaymentPlan,
   parsePaymentPlan,
   planDifference,
+  planRowForPayment,
   planTotal,
   reconcilePlan,
   remainingFromPlan,
@@ -325,5 +326,32 @@ describe("el plan contra lo pagado", () => {
     const rows = reconcilePlan({ plan, principal: 1000, startDate: START, payments: pagos });
     // 200 + 200 + 30
     expect(remainingFromPlan(rows)).toBe(430);
+  });
+});
+
+describe("planRowForPayment", () => {
+  const plan = { mode: "equal", count: 4, firstDueDate: "2026-09-15" } as const;
+  const rows = (paid: number[]) =>
+    reconcilePlan({
+      plan,
+      principal: 400,
+      startDate: START,
+      payments: paid.map((amount, i) => ({ amount, date: `2026-0${9 + i}-15` })),
+    });
+
+  it("sin pagos, va a la primera cuota", () => {
+    expect(planRowForPayment(rows([]))?.seq).toBe(1);
+  });
+
+  it("con dos pagos hechos, va a la tercera", () => {
+    expect(planRowForPayment(rows([100, 100]))?.seq).toBe(3);
+  });
+
+  it("editando el segundo pago, apunta a la segunda cuota y no a la siguiente libre", () => {
+    expect(planRowForPayment(rows([100, 100]), 1)?.seq).toBe(2);
+  });
+
+  it("con el plan entero pagado no queda ninguna", () => {
+    expect(planRowForPayment(rows([100, 100, 100, 100]))).toBeNull();
   });
 });

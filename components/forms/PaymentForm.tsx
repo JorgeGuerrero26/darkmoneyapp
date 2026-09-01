@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { ArrowRight, Info, AlertCircle } from "lucide-react-native";
-import { format } from "date-fns";
+import { format, parseISO } from "date-fns";
+import { es } from "date-fns/locale";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { useWorkspace } from "../../lib/workspace-context";
@@ -30,6 +31,12 @@ import { CurrencyInput } from "../ui/CurrencyInput";
 import { DatePickerInput } from "../ui/DatePickerInput";
 import { formatCurrency } from "../ui/AmountDisplay";
 import { describeOverpayment } from "../../features/obligations/lib/settlement";
+import {
+  parsePaymentPlan,
+  planRowForPayment,
+  reconcilePlan,
+  type ActualPayment,
+} from "../../features/obligations/lib/payment-plan";
 import { sortByName } from "../../lib/sort-locale";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { TextField } from "../ui/TextField";
@@ -44,6 +51,14 @@ type Props = {
   /** Presente cuando se edita un evento existente en lugar de crear uno nuevo */
   editEvent?: ObligationEventSummary;
 };
+
+/** "Nov 2026" — el mes de la cuota, como se lee en el plan. */
+function capitalizeMonth(isoDate: string) {
+  const date = parseISO(isoDate);
+  if (Number.isNaN(date.getTime())) return isoDate;
+  const label = format(date, "LLL yyyy", { locale: es });
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
 
 export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent }: Props) {
   const { activeWorkspaceId } = useWorkspace();
@@ -471,6 +486,40 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent
     return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
   }, [amount]);
 
+  /**
+   * A qué cuota va este cobro.
+   *
+   * El campo "N° de cuota" se quitó porque venía con un número puesto que casi nunca acertaba,
+   * pero al quitarlo la pantalla dejó de decir a qué pago del acuerdo iba lo que se registra. Se
+   * deduce igual que en el detalle —`reconcilePlan` empareja por orden— y se enseña; sigue sin
+   * pedirse. Lo que importa es la cuota, no la fecha en que la otra persona pague: si la de
+   * setiembre se paga en noviembre, sigue siendo la de setiembre.
+   */
+  const planRow = useMemo(() => {
+    if (!obligation) return null;
+    const plan = parsePaymentPlan(obligation.paymentPlan);
+    if (!plan) return null;
+    const paymentEvents = obligation.events.filter((event) => event.eventType === "payment");
+    const actual: ActualPayment[] = paymentEvents.map((event) => ({
+      amount: event.amount,
+      date: event.eventDate,
+    }));
+    const rows = reconcilePlan({
+      plan,
+      principal: obligation.principalAmount,
+      startDate: obligation.startDate,
+      payments: actual,
+    });
+    if (rows.length === 0) return null;
+    const editingIndex = isEditMode && editEvent
+      ? [...paymentEvents]
+          .sort((a, b) => a.eventDate.localeCompare(b.eventDate))
+          .findIndex((event) => event.id === editEvent.id)
+      : -1;
+    const row = planRowForPayment(rows, editingIndex >= 0 ? editingIndex : null);
+    return row ? { row, total: rows.length } : null;
+  }, [editEvent, isEditMode, obligation]);
+
   const remainingAfter = useMemo(() => {
     if (parsedAmount == null) return null;
     return Math.max(0, pendingAmount - parsedAmount);
@@ -531,6 +580,22 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent
           error={amountError}
         />
       </View>
+
+      {/* A qué cuota va, antes que nada: es lo que el usuario no podía saber al registrar, y no
+          depende de cuándo le paguen —si la de setiembre se paga en noviembre, sigue siendo la de
+          setiembre—. Va también al editar, donde saber qué cuota se está tocando importa igual. */}
+      {planRow ? (
+        <View style={styles.contextCard}>
+          <View style={styles.contextRow}>
+            <Text style={styles.contextLabel}>
+              Cuota {planRow.row.seq} de {planRow.total}
+            </Text>
+            <Text style={styles.contextValue}>
+              {capitalizeMonth(planRow.row.dueDate)} · {formatCurrency(planRow.row.amount, currencyCode)}
+            </Text>
+          </View>
+        </View>
+      ) : null}
 
       {/* La proyección aparece cuando hay algo que proyectar: "Quedará —" con un guion en el
           lugar de la cifra se lee como dato roto, y era lo primero que se veía al abrir. */}

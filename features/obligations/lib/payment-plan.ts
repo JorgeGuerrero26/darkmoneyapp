@@ -364,6 +364,25 @@ export function reconcilePlan({
   return rows;
 }
 
+/**
+ * A qué pago del plan va el cobro que se está registrando ahora mismo.
+ *
+ * No hace falta preguntarlo —y por eso se quitó el campo "N° de cuota", que venía con un número
+ * puesto que casi nunca acertaba—: `reconcilePlan` empareja por orden, el enésimo pago real cubre
+ * la enésima cuota. Así que el que se está registrando es **el primero que sigue sin pagarse**,
+ * independientemente de la fecha en que la otra persona pague. Y si se está EDITANDO uno ya
+ * registrado, el que ocupa su misma posición.
+ *
+ * Se deduce y se enseña; no se pide.
+ */
+export function planRowForPayment(
+  rows: readonly ReconciledPayment[],
+  editingIndex: number | null = null,
+): ReconciledPayment | null {
+  if (editingIndex != null) return rows[editingIndex] ?? null;
+  return rows.find((row) => row.paid == null) ?? null;
+}
+
 /** Lo que falta por cobrar o pagar según el plan cruzado con lo real. */
 export function remainingFromPlan(rows: readonly ReconciledPayment[]) {
   return fromCents(
