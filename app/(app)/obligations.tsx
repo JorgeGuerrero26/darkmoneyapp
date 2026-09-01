@@ -5,6 +5,7 @@ import { FAB } from "../../components/ui/FAB";
 import { UndoBanner } from "../../components/ui/UndoBanner";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Archive, CheckSquare, Download, Trash2, X } from "lucide-react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { format } from "date-fns";
@@ -21,6 +22,7 @@ import { useWorkspaceSnapshotQuery } from "../../services/queries/workspace-data
 import {
   useDeleteObligationMutation,
   useArchiveObligationMutation,
+  useUnlinkObligationShareMutation,
   useObligationSharesQuery,
   useSharedObligationsQuery,
   usePendingPaymentRequestCountsQuery,
@@ -84,6 +86,8 @@ const UNDO_DELETE_MS = 5000;
 
 // ─── Screen ──────────────────────────────────────────────────────────────────
 
+const OBLIGATIONS_GROUPING_KEY = "darkmoney.obligations.groupByDirection";
+
 function ObligationsScreen() {
   // Fuerza el re-render de la pantalla al alternar modo privacidad (la máscara
   // vive en formatCurrency, que lee el store imperativamente).
@@ -97,6 +101,7 @@ function ObligationsScreen() {
   const { reason: notificationReason } = useNotificationReason();
   const deleteMutation = useDeleteObligationMutation(activeWorkspaceId);
   const archiveMutation = useArchiveObligationMutation(activeWorkspaceId);
+  const unlinkShareMutation = useUnlinkObligationShareMutation(activeWorkspaceId);
 
   // Las obligaciones llegan en la query diferida: sin sumar `deferredLoading` la
   // lista pintaría "sin obligaciones" durante ese hueco en vez del skeleton.
@@ -131,6 +136,7 @@ function ObligationsScreen() {
 
   const [activeFilters, setActiveFilters] = useState<ObligationFilterValue[]>([]);
   const [showArchived, setShowArchived] = useState(false);
+  const [groupByDirection, setGroupByDirection] = useState(false);
   const [searchText, setSearchText] = useState("");
   const [createFormVisible, setCreateFormVisible] = useState(false);
   const [paymentObligation, setPaymentObligation] = useState<ObligationSummary | null>(null);
@@ -138,6 +144,7 @@ function ObligationsScreen() {
   const [adjustObligation, setAdjustObligation] = useState<ObligationSummary | null>(null);
   const [adjustMode, setAdjustMode] = useState<"increase" | "decrease">("increase");
   const [archiveTarget, setArchiveTarget] = useState<ObligationSummary | null>(null);
+  const [unlinkTarget, setUnlinkTarget] = useState<SharedObligationSummary | null>(null);
   const [analyticsObligation, setAnalyticsObligation] = useState<
     ObligationSummary | SharedObligationSummary | null
   >(null);
@@ -362,9 +369,26 @@ function ObligationsScreen() {
         workspaceObligations: workspaceData,
         sharedObligations: filteredShared,
         showArchived,
+        groupByDirection,
       }),
-    [filteredShared, showArchived, workspaceData],
+    [filteredShared, groupByDirection, showArchived, workspaceData],
   );
+
+  // Se recuerda entre sesiones, igual que el agrupado de Cuentas: es una preferencia de cómo
+  // mirar la lista, no un filtro que uno pone y quita.
+  useEffect(() => {
+    void AsyncStorage.getItem(OBLIGATIONS_GROUPING_KEY).then((stored) => {
+      if (stored === "1") setGroupByDirection(true);
+    });
+  }, []);
+
+  const toggleGroupByDirection = useCallback(() => {
+    setGroupByDirection((previous) => {
+      const next = !previous;
+      void AsyncStorage.setItem(OBLIGATIONS_GROUPING_KEY, next ? "1" : "0");
+      return next;
+    });
+  }, []);
 
   const activeFilterItems = useMemo<ActiveFilterItem[]>(() => {
     const items = activeFilters.map((filter) => ({
@@ -381,6 +405,14 @@ function ObligationsScreen() {
       });
     }
 
+    if (groupByDirection) {
+      items.push({
+        key: "grouped",
+        label: "Agrupado por tipo",
+        onRemove: toggleGroupByDirection,
+      });
+    }
+
     if (searchText.trim()) {
       items.push({
         key: "search",
@@ -390,7 +422,7 @@ function ObligationsScreen() {
     }
 
     return items;
-  }, [activeFilters, searchText, showArchived]);
+  }, [activeFilters, groupByDirection, searchText, showArchived, toggleGroupByDirection]);
 
   function clearObligationFilters() {
     setActiveFilters([]);
@@ -495,9 +527,35 @@ function ObligationsScreen() {
     }
   }
 
+  /**
+   * Quitar de tu lista una obligación que otro compartió contigo.
+   *
+   * No es archivar ni eliminar: la obligación es de la otra persona y sigue siendo suya. Lo que
+   * se deshace es tu acceso, que es lo único tuyo que hay ahí. La fila no ofrecía nada —deslizar
+   * llamaba a una función vacía— así que una cuenta compartida se quedaba en la lista para
+   * siempre aunque ya no tuviera nada que ver contigo.
+   */
+  async function confirmUnlinkShared() {
+    const target = unlinkTarget;
+    if (!target) return;
+    setUnlinkTarget(null);
+    try {
+      await unlinkShareMutation.mutateAsync({
+        shareId: target.share.id,
+        workspaceId: target.share.workspaceId,
+        obligationId: target.id,
+      });
+      showToast("Ya no verás esta cuenta", "success");
+    } catch (error) {
+      showToast(humanizeError(error), "error");
+    }
+  }
+
   const renderObligationItem = useCallback(
     ({ item, section }: { item: ObligationSummary | SharedObligationSummary; section: ObligationListSection }) => {
-      if (section.key === "shared" || section.key === "shared-archived") {
+      // Agrupadas por tipo, las tuyas y las compartidas comparten sección: de quién es la cuenta
+      // lo dice el dato, no en qué sección cayó la fila.
+      if ("viewerMode" in item && item.viewerMode === "shared_viewer") {
         const ob = item as SharedObligationSummary;
         return (
           <ObligationSwipeRow
@@ -506,8 +564,13 @@ function ObligationsScreen() {
             isSharedWithMe
             onOpenDetail={() => router.push(`/obligation/${ob.id}`)}
             onPayment={() => setPaymentRequestObligation(ob)}
-            onDelete={() => {}}
+            onLongPress={() => setUnlinkTarget(ob)}
+            onDelete={() => setUnlinkTarget(ob)}
             onAnalytics={() => setAnalyticsObligation(ob)}
+            deleteActionLabel="Quitar"
+            deleteActionColor={COLORS.storm}
+            deleteActionBg={COLORS.storm + "22"}
+            deleteActionIcon={ObligationArchiveIcon}
           />
         );
       }
@@ -583,6 +646,8 @@ function ObligationsScreen() {
               onSearchChange={setSearchText}
               onFiltersChange={setActiveFilters}
               onToggleArchived={() => setShowArchived((value) => !value)}
+              groupByDirection={groupByDirection}
+              onToggleGrouping={toggleGroupByDirection}
             />
           ) : null
         }
@@ -781,6 +846,16 @@ function ObligationsScreen() {
               isLoading={selectedAnalyticsPreviewAttachmentsLoading}
               insets={insets}
               title="Comprobantes del evento"
+            />
+
+            <ConfirmDialog
+              visible={Boolean(unlinkTarget)}
+              title="¿Quitar de tu lista?"
+              body={`Dejarás de ver "${unlinkTarget?.title ?? ""}". La cuenta es de ${unlinkTarget?.share.ownerDisplayName?.trim() || "la otra persona"} y sigue siendo suya: si la quieres de vuelta, tiene que volver a compartírtela.`}
+              confirmLabel="Quitar"
+              cancelLabel="Cancelar"
+              onCancel={() => setUnlinkTarget(null)}
+              onConfirm={() => { void confirmUnlinkShared(); }}
             />
 
             <ConfirmDialog

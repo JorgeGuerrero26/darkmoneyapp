@@ -18,6 +18,7 @@ import { useUiStore } from "../../store/ui-store";
 import {
   useWorkspaceSnapshotQuery,
   useArchiveAccountMutation,
+  useDeleteAccountMutation,
   useSyncExchangeRatePairMutation,
 } from "../../services/queries/workspace-data";
 import { AccountCard } from "../../components/domain/AccountCard";
@@ -93,6 +94,7 @@ function AccountsScreen() {
   const { data: snapshot, isLoading, isRefetching, refetch, dataUpdatedAt } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   useAccountsRealtimeSync({ workspaceId: activeWorkspaceId });
   const archiveAccount = useArchiveAccountMutation(activeWorkspaceId);
+  const deleteAccount = useDeleteAccountMutation(activeWorkspaceId);
   const syncExchangeRatePair = useSyncExchangeRatePairMutation();
   const syncPairRequestRef = useRef<string | null>(null);
 
@@ -206,6 +208,14 @@ function AccountsScreen() {
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [bulkArchiveConfirm, setBulkArchiveConfirm] = useState(false);
+  /**
+   * Borrar para siempre vive donde vive archivar: en la fila.
+   *
+   * Estaba al pie del formulario de edición, que era la única puerta del módulo a esa acción y
+   * además una segunda manera de hacer lo que la lista ya hacía. Solo se ofrece en una cuenta
+   * archivada, y del lado contrario al de restaurar.
+   */
+  const [deleteTarget, setDeleteTarget] = useState<AccountSummary | null>(null);
 
   const toggleSelect = useCallback((id: number) => {
     setSelectedIds((prev) => {
@@ -390,6 +400,18 @@ function AccountsScreen() {
     }
   }, [archiveAccount, showToast]);
 
+  async function confirmDeleteAccount() {
+    const target = deleteTarget;
+    if (!target) return;
+    setDeleteTarget(null);
+    try {
+      await deleteAccount.mutateAsync(target.id);
+      showToast("Cuenta eliminada", "success");
+    } catch (err: unknown) {
+      showToast(humanizeError(err), "error");
+    }
+  }
+
   async function executeBulkArchive() {
     for (const id of selectedIds) {
       const acc = allAccounts.find((a) => a.id === id);
@@ -450,6 +472,7 @@ function AccountsScreen() {
           }
         }}
         onRestore={() => handleArchive(account)}
+        onDelete={() => setDeleteTarget(account)}
       />
     )
   ), [baseCurrency, handleArchive, router, selectMode, selectedIds, toggleSelect]);
@@ -539,16 +562,6 @@ function AccountsScreen() {
                       onPress: () => exportCSV(filtered),
                       accessibilityLabel: "Exportar CSV",
                     },
-                    {
-                      // Con etiqueta y en el encabezado, igual que "Filtros" en Movimientos:
-                      // un botón redondo sin texto no se adivina.
-                      key: "archived",
-                      icon: Archive,
-                      label: "Archivadas",
-                      active: showArchived,
-                      onPress: () => setShowArchived((v) => !v),
-                      accessibilityLabel: "Mostrar cuentas archivadas",
-                    },
                   ]}
                 />
               )
@@ -564,6 +577,11 @@ function AccountsScreen() {
             searchValue={searchText}
             onSearchChange={setSearchText}
             searchPlaceholder="Buscar cuentas..."
+            /* Las dos palancas que cambian CÓMO se ve la lista viven juntas, aquí y en Créditos
+               y deudas: agrupar y ver archivadas. Archivadas estaba en el encabezado con
+               etiqueta y en el otro módulo era un icono al lado de los filtros; dos sitios para
+               lo mismo obliga a buscarla dos veces. Lo que está activo lo dice la barra de
+               filtros de abajo, que es donde se quita. */
             actions={[
               {
                 key: "group-by-type",
@@ -571,6 +589,13 @@ function AccountsScreen() {
                 onPress: toggleGroupByType,
                 active: groupByType,
                 accessibilityLabel: "Agrupar por tipo de cuenta",
+              },
+              {
+                key: "archived",
+                icon: Archive,
+                onPress: () => setShowArchived((v) => !v),
+                active: showArchived,
+                accessibilityLabel: showArchived ? "Ocultar archivadas" : "Mostrar cuentas archivadas",
               },
             ]}
           />
@@ -645,6 +670,16 @@ function AccountsScreen() {
               editAccount={editAccount ?? undefined}
               onClose={() => { setFormVisible(false); setEditAccount(null); }}
               onSuccess={() => { setFormVisible(false); setEditAccount(null); }}
+            />
+
+            <ConfirmDialog
+              visible={Boolean(deleteTarget)}
+              title="Eliminar cuenta"
+              body={`"${deleteTarget?.name ?? ""}" se borra para siempre. Si tiene movimientos vinculados, la eliminación falla y no se pierde nada.`}
+              confirmLabel="Eliminar"
+              cancelLabel="Cancelar"
+              onCancel={() => setDeleteTarget(null)}
+              onConfirm={() => { void confirmDeleteAccount(); }}
             />
 
             <ConfirmDialog

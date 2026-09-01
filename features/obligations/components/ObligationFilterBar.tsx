@@ -1,4 +1,4 @@
-import { Archive } from "lucide-react-native";
+import { Archive, Layers } from "lucide-react-native";
 
 import { FilterToolbar } from "../../../components/ui/FilterToolbar";
 import {
@@ -13,6 +13,9 @@ type Props = {
   onSearchChange?: (value: string) => void;
   onFiltersChange: (filters: ObligationFilterValue[]) => void;
   onToggleArchived: () => void;
+  /** Separa la lista en "Me deben" y "Yo debo", como Cuentas separa por tipo. */
+  groupByDirection: boolean;
+  onToggleGrouping: () => void;
 };
 
 export function ObligationFilterBar({
@@ -22,6 +25,8 @@ export function ObligationFilterBar({
   onSearchChange,
   onFiltersChange,
   onToggleArchived,
+  groupByDirection,
+  onToggleGrouping,
 }: Props) {
   return (
     <FilterToolbar
@@ -34,7 +39,15 @@ export function ObligationFilterBar({
       searchValue={searchValue}
       onSearchChange={onSearchChange}
       searchPlaceholder="Buscar créditos o deudas..."
+      /* Los mismos dos controles que en Cuentas y en el mismo sitio: agrupar y archivadas. */
       actions={[
+        {
+          key: "group-by-direction",
+          icon: Layers,
+          active: groupByDirection,
+          onPress: onToggleGrouping,
+          accessibilityLabel: groupByDirection ? "No agrupar" : "Agrupar por tipo",
+        },
         {
           key: "archived",
           icon: Archive,
