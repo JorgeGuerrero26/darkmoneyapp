@@ -150,18 +150,17 @@ export function ObligationSwipeRow({
         haptic: "medium",
         onPress: onPayment,
       }}
-      rightAction={
-        isSharedWithMe
-          ? null
-          : {
-              label: deleteActionLabel,
-              icon: DeleteActionIcon,
-              color: deleteActionColor,
-              backgroundColor: deleteActionBg,
-              haptic: "warning",
-              onPress: onDelete,
-            }
-      }
+      /* Una cuenta compartida contigo también se desliza: la acción no es eliminarla —no es
+         tuya— sino quitarla de tu lista, y el rótulo lo dice. Antes aquí iba `null` porque el
+         manejador era una función vacía, así que la fila no ofrecía nada. */
+      rightAction={{
+        label: deleteActionLabel,
+        icon: DeleteActionIcon,
+        color: deleteActionColor,
+        backgroundColor: deleteActionBg,
+        haptic: "warning",
+        onPress: onDelete,
+      }}
     >
       {({ close, isOpen }) => (
         <ResourceCard

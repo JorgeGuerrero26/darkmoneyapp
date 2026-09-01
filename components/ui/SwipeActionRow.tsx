@@ -3,6 +3,7 @@ import { Animated, PanResponder, StyleSheet, Text, TouchableOpacity, View, type 
 import * as Haptics from "expo-haptics";
 
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS } from "../../constants/theme";
+import { resolveSwipeTarget } from "../../lib/swipe-row-target";
 
 type SwipeActionIcon = ComponentType<{
   size?: number;
@@ -45,6 +46,23 @@ export function SwipeActionRow({
 }: Props) {
   const translateX = useRef(new Animated.Value(0)).current;
   const openDir = useRef<"right" | "left" | null>(null);
+  /**
+   * Dónde está la fila de verdad, en píxeles.
+   *
+   * Antes la posición se deducía de `openDir` —0 o ±revealWidth—, que es el **destino** de la
+   * última animación, no dónde está el dedo. Agarrar una fila a mitad de la animación partía de
+   * un número que no era el real.
+   */
+  const currentX = useRef(0);
+  /**
+   * Las acciones de ESTE render.
+   *
+   * El PanResponder se crea una sola vez, así que su closure se quedaba con las acciones del
+   * primer render: una fila que gana o pierde una acción —una cuenta que se archiva y estrena
+   * "Eliminar"— seguía calculando los topes con las de antes.
+   */
+  const actions = useRef({ leftAction, rightAction });
+  actions.current = { leftAction, rightAction };
 
   const leftOpacity = translateX.interpolate({
     inputRange: [0, 16, revealWidth],
@@ -61,6 +79,7 @@ export function SwipeActionRow({
     if (toValue === 0) openDir.current = null;
     else if (toValue > 0) openDir.current = "right";
     else openDir.current = "left";
+    currentX.current = toValue;
     Animated.spring(translateX, {
       toValue,
       useNativeDriver: true,
@@ -84,32 +103,42 @@ export function SwipeActionRow({
     );
   }
 
+  /** Dónde estaba la fila cuando el dedo la agarró. Todo el gesto se mide desde ahí. */
+  const grabbedAt = useRef(0);
+
   const panResponder = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponder: (_, { dx, dy }) =>
         Math.abs(dx) > Math.abs(dy) * 1.5 && Math.abs(dx) > 10,
       onPanResponderGrant: () => {
-        translateX.stopAnimation();
+        // El valor exacto en el que se quedó: si estaba animando, ahí es donde arranca el dedo.
+        translateX.stopAnimation((value) => { currentX.current = value; });
+        grabbedAt.current = currentX.current;
       },
       onPanResponderMove: (_, { dx }) => {
-        const base = openDir.current === "right" ? revealWidth : openDir.current === "left" ? -revealWidth : 0;
-        const raw = base + dx;
-        const minX = rightAction ? -revealWidth * 1.4 : Math.min(0, base);
-        const maxX = leftAction ? revealWidth * 1.4 : Math.max(0, base);
-        translateX.setValue(Math.min(maxX, Math.max(minX, raw)));
+        const { leftAction: left, rightAction: right } = actions.current;
+        const raw = grabbedAt.current + dx;
+        const minX = right ? -revealWidth * 1.4 : Math.min(0, grabbedAt.current);
+        const maxX = left ? revealWidth * 1.4 : Math.max(0, grabbedAt.current);
+        const next = Math.min(maxX, Math.max(minX, raw));
+        currentX.current = next;
+        translateX.setValue(next);
       },
+      // Dónde se queda al soltar lo decide `resolveSwipeTarget`, que es puro y tiene sus tests:
+      // es la regla que estaba mal y la que no puede volver a romperse en silencio.
       onPanResponderRelease: (_, { dx, vx }) => {
-        const base = openDir.current === "right" ? revealWidth : openDir.current === "left" ? -revealWidth : 0;
-        const finalX = base + dx;
-        if (leftAction && (finalX > revealWidth / 2 || vx > 0.4)) {
-          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          snapTo(revealWidth);
-        } else if (rightAction && (finalX < -revealWidth / 2 || vx < -0.4)) {
-          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          snapTo(-revealWidth);
-        } else {
-          snapTo(0);
-        }
+        const { leftAction: left, rightAction: right } = actions.current;
+        const target = resolveSwipeTarget({
+          grabbedAt: grabbedAt.current,
+          dx,
+          vx,
+          openDir: openDir.current,
+          hasLeftAction: Boolean(left),
+          hasRightAction: Boolean(right),
+          revealWidth,
+        });
+        if (target !== 0) void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        snapTo(target);
       },
     }),
   ).current;
