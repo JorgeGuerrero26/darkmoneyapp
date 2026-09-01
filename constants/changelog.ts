@@ -72,6 +72,10 @@ export const CHANGELOG: ChangelogEntry[] = [
       "En ese detalle ves con cuánto quedó la cuenta debajo del monto —\"Cuenta Principal · queda S/ 33.64\"— y la hora a la que registraste el movimiento, que antes había que ir a buscar.",
       "\"Anular\" ya no está pegado a \"Duplicar\" con el mismo tamaño: es la única de las tres que no se deshace con otro toque, así que bajó al final, separada.",
       "El neto de Movimientos ya es el del mes entero desde que abres la pantalla. Antes solo sumaba los movimientos que se habían cargado, así que el número cambiaba mientras bajabas y había un aviso avisándote de que no era el de verdad. Ese aviso ya no hace falta.",
+      "Ver archivadas está ahora en el mismo sitio en Cuentas y en Créditos y deudas: junto al botón de agrupar, al lado de los filtros. Antes en cada módulo estaba en un lugar distinto.",
+      "Créditos y deudas también se pueden agrupar: separados en \"Me deben\" y \"Yo debo\".",
+      "Una deuda o crédito que alguien compartió contigo ya se puede quitar de tu lista, deslizándola o manteniéndola pulsada. Antes se quedaba ahí para siempre. La cuenta sigue siendo de la otra persona: lo que se quita es tu acceso, así que para recuperarla tendría que volver a compartírtela.",
+      "Archivar y eliminar una cuenta se hace solo desde la lista —deslizando o manteniendo pulsado—, como en el resto de la app. Los botones que había dentro del formulario de la cuenta se fueron, y eliminar (que solo se puede en una cuenta archivada) está ahora al deslizar hacia el otro lado, para que no se toque por error.",
     ],
   },
   {
