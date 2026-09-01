@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import {
   ActivityIndicator,
   RefreshControl,
@@ -86,9 +87,16 @@ export function ResourceSectionList<T, S extends ResourceSection<T> = ResourceSe
   animateItems = true,
   itemAnimationMaxStagger = 10,
   onEndReached,
-  onEndReachedThreshold,
+  // Sin valor propio, VirtualizedList usa 2: pide la pagina siguiente cuando aun faltan DOS
+  // pantallas de contenido por recorrer. Como la pagina nueva vuelve a dejar el final a menos
+  // de dos pantallas, la carga se encadena sola y la lista entera aparece de golpe sin que
+  // uno haya llegado abajo. Movimientos traia 0.3 antes de mudarse a esta plantilla y lo
+  // perdio en el camino (24e3db54); el detalle de cuenta lo conservo. Este es aquel valor.
+  onEndReachedThreshold = 0.3,
   stickyHeaders = false,
 }: Props<T, S>) {
+  const entranceDeadlineRef = useRef(Date.now() + 700);
+
   return (
     <SectionList<T, S>
       sections={sections}
@@ -96,6 +104,13 @@ export function ResourceSectionList<T, S extends ResourceSection<T> = ResourceSe
       renderItem={(info) => {
         const content = renderItem(info);
         if (!animateItems || !content) return content;
+        // La entrada escalonada es para el primer dibujo de la lista, no para cada celda que
+        // la virtualizacion monta al bajar. En Movimientos las secciones son de un dia, asi
+        // que casi toda fila cae bajo `maxStagger` y se deslizaba 14px al entrar: bajando, un
+        // temblor continuo; al llegar una pagina, treinta filas moviendose a la vez. Pasada la
+        // ventana, la fila se dibuja quieta. Leer el reloj en render evita el re-render que
+        // costaria guardarlo en estado.
+        if (Date.now() > entranceDeadlineRef.current) return content;
         return (
           <StaggeredItem index={info.index} maxStagger={itemAnimationMaxStagger}>
             {content}
