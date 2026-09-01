@@ -71,6 +71,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       "El detalle de un movimiento entra en una pantalla: eran siete tarjetas para seis datos, y dos de ellas existían solo para decirte que estaban vacías. Ahora es una lista, y cada línea abre justo el campo que quieres corregir.",
       "En ese detalle ves con cuánto quedó la cuenta debajo del monto —\"Cuenta Principal · queda S/ 33.64\"— y la hora a la que registraste el movimiento, que antes había que ir a buscar.",
       "\"Anular\" ya no está pegado a \"Duplicar\" con el mismo tamaño: es la única de las tres que no se deshace con otro toque, así que bajó al final, separada.",
+      "El neto de Movimientos ya es el del mes entero desde que abres la pantalla. Antes solo sumaba los movimientos que se habían cargado, así que el número cambiaba mientras bajabas y había un aviso avisándote de que no era el de verdad. Ese aviso ya no hace falta.",
     ],
   },
   {
