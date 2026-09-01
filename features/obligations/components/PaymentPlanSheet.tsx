@@ -6,6 +6,7 @@ import { es } from "date-fns/locale";
 
 import { Button } from "../../../components/ui/Button";
 import { InlineFormSheet } from "../../../components/ui/InlineFormSheet";
+import { PaymentMonthSheet, shortMonthLabel } from "./PaymentMonthSheet";
 import { SegmentedControl } from "../../../components/ui/SegmentedControl";
 import { TextField } from "../../../components/ui/TextField";
 import { formatCurrency } from "../../../components/ui/AmountDisplay";
@@ -46,9 +47,6 @@ function monthLabel(dueDate: string) {
   return format(date, "LLL yyyy", { locale: es });
 }
 
-/** Cuántos meses se ofrecen hacia adelante al elegir el mes de un pago. */
-const MONTH_CHOICES = 24;
-
 function capitalize(text: string) {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
@@ -64,23 +62,11 @@ const newDraft = (amount = "", dueDate?: string): AgreedDraft => ({
 });
 
 /**
- * Los meses que se pueden elegir para un pago, entre el anterior y el siguiente.
- *
  * La regla que pidió el usuario —"no se puede poner un marzo antes de enero"— no se comprueba
- * después de escribir: **los meses que romperían el orden no se ofrecen**. Un límite que no se
- * puede cruzar no necesita mensaje de error.
+ * después de escribir: los meses que romperían el orden **no se pueden tocar**. Un límite que no
+ * se puede cruzar no necesita mensaje de error. Quien los apaga es `PaymentMonthSheet`, con estos
+ * dos topes.
  */
-function monthChoices(from: string, until: string | null, value: string) {
-  // La ventana se corre para que el mes elegido siempre se vea, con algo de contexto detrás.
-  const start = monthKey(value) > monthKey(addMonthsIso(from, 6)) ? addMonthsIso(value, -6) : from;
-  const options: string[] = [];
-  for (let i = 0; i < MONTH_CHOICES; i += 1) {
-    const candidate = addMonthsIso(start, i);
-    if (until && monthKey(candidate) >= monthKey(until)) break;
-    options.push(candidate);
-  }
-  return options;
-}
 
 /**
  * El plan de pagos de una obligación.
@@ -172,28 +158,58 @@ export function PaymentPlanSheet({
     setMonthPickerFor(null);
   };
 
-  const renderMonthPicker = (value: string, from: string, until: string | null, onPick: (month: string) => void) => (
-    <View style={styles.monthPicker}>
-      {monthChoices(from, until, value).map((month) => {
-        const selected = monthKey(month) === monthKey(value);
-        return (
-          <TouchableOpacity
-            key={month}
-            style={[styles.monthChip, selected && styles.monthChipSelected]}
-            onPress={() => onPick(month)}
-            activeOpacity={0.72}
-            accessibilityRole="button"
-          >
-            <Text style={[styles.monthChipText, selected && styles.monthChipTextSelected]}>
-              {capitalize(monthLabel(month))}
-            </Text>
-          </TouchableOpacity>
-        );
-      })}
-    </View>
-  );
+  /**
+   * Los meses que ya tiene otro pago, para que la hoja los apague con su etiqueta. Se excluye la
+   * fila que se está editando: su propio mes no es un conflicto consigo misma.
+   */
+  const takenMonths = (exceptKey: string | null) => {
+    const map: Record<string, string> = {};
+    agreed.forEach((draft, index) => {
+      if (draft.key === exceptKey) return;
+      map[monthKey(monthOf(index))] = `pago ${index + 1}`;
+    });
+    return map;
+  };
+
+  /** La fila abierta ahora mismo, con todo lo que la hoja necesita saber de ella. */
+  const openRow = (() => {
+    if (monthPickerFor == null) return null;
+    if (monthPickerFor === "first") {
+      return {
+        title: "Mes del primer pago",
+        contextLabel: "Primer pago · hoy en",
+        contextValue: shortMonthLabel(firstDueDate),
+        value: firstDueDate,
+        min: defaultFirstDueDate(startDate, new Date(0)),
+        maxExclusive: null,
+        taken: {},
+        apply: (month: string) => {
+          setFirstDueDate(month);
+          setMonthPickerFor(null);
+        },
+      };
+    }
+    const index = agreed.findIndex((item) => item.key === monthPickerFor);
+    if (index < 0) return null;
+    const amount = Number(agreed[index].amount);
+    const month = monthOf(index);
+    return {
+      title: `Mes del pago ${index + 1}`,
+      contextLabel: `Pago ${index + 1} · hoy en`,
+      contextValue: Number.isFinite(amount) && amount > 0
+        ? `${shortMonthLabel(month)} · ${money(amount)}`
+        : shortMonthLabel(month),
+      value: month,
+      // Nunca antes del pago anterior; el primero, nunca antes del primer pago.
+      min: index === 0 ? firstDueDate : addMonthsIso(monthOf(index - 1), 1),
+      maxExclusive: index + 1 < agreed.length ? monthOf(index + 1) : null,
+      taken: takenMonths(monthPickerFor),
+      apply: (month: string) => setMonthAt(monthPickerFor, month),
+    };
+  })();
 
   return (
+    <>
     <InlineFormSheet visible={visible} title="Plan de pagos" onBack={onClose}>
       <SegmentedControl
         options={[
@@ -219,19 +235,13 @@ export function PaymentPlanSheet({
           </View>
           <TouchableOpacity
             style={styles.equalRow}
-            onPress={() => setMonthPickerFor((open) => (open === "first" ? null : "first"))}
+            onPress={() => setMonthPickerFor("first")}
             activeOpacity={0.72}
             accessibilityRole="button"
           >
             <Text style={styles.equalLabel}>Primer pago</Text>
             <Text style={styles.monthValue}>{capitalize(monthLabel(firstDueDate))}</Text>
           </TouchableOpacity>
-          {monthPickerFor === "first"
-            ? renderMonthPicker(firstDueDate, defaultFirstDueDate(startDate, new Date(0)), null, (month) => {
-                setFirstDueDate(month);
-                setMonthPickerFor(null);
-              })
-            : null}
           {/* La cuota se calcula, no se escribe: la fila muestra la operación. */}
           <Text style={styles.equalHint}>
             {payments.length > 0
@@ -252,7 +262,7 @@ export function PaymentPlanSheet({
                 <Text style={styles.seq}>{index + 1}</Text>
                 <TouchableOpacity
                   style={styles.month}
-                  onPress={() => setMonthPickerFor((open) => (open === draft.key ? null : draft.key))}
+                  onPress={() => setMonthPickerFor(draft.key)}
                   activeOpacity={0.72}
                   accessibilityRole="button"
                   accessibilityLabel={`Mes del pago ${index + 1}`}
@@ -281,15 +291,6 @@ export function PaymentPlanSheet({
                   <Trash2 size={15} color={COLORS.storm} />
                 </TouchableOpacity>
               </View>
-              {monthPickerFor === draft.key
-                ? renderMonthPicker(
-                    monthOf(index),
-                    // Nunca antes del pago anterior; el primero, nunca antes del primer pago.
-                    index === 0 ? firstDueDate : addMonthsIso(monthOf(index - 1), 1),
-                    index + 1 < agreed.length ? monthOf(index + 1) : null,
-                    (month) => setMonthAt(draft.key, month),
-                  )
-                : null}
               </View>
             ))}
             <TouchableOpacity
@@ -369,6 +370,23 @@ export function PaymentPlanSheet({
         />
       </View>
     </InlineFormSheet>
+
+    {/* Hermana, no hija: se pinta encima del plan y lo deja intacto detrás. */}
+    {openRow ? (
+      <PaymentMonthSheet
+        visible
+        title={openRow.title}
+        contextLabel={openRow.contextLabel}
+        contextValue={openRow.contextValue}
+        value={openRow.value}
+        min={openRow.min}
+        maxExclusive={openRow.maxExclusive}
+        taken={openRow.taken}
+        onPick={openRow.apply}
+        onBack={() => setMonthPickerFor(null)}
+      />
+    ) : null}
+    </>
   );
 }
 
@@ -419,26 +437,7 @@ const styles = StyleSheet.create({
   },
   // Los meses se eligen dentro de la misma hoja: una capa más de modal encima de un sheet que ya
   // vive dentro de otro no se presenta en iOS.
-  monthPicker: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: SPACING.xs,
-    paddingHorizontal: SPACING.md,
-    paddingBottom: SPACING.sm,
-    backgroundColor: SURFACE.input,
-    paddingTop: SPACING.sm,
-  },
-  monthChip: {
-    paddingHorizontal: SPACING.sm + 2,
-    paddingVertical: SPACING.xs + 2,
-    borderRadius: RADIUS.full,
-    borderWidth: 1,
-    borderColor: SURFACE.cardBorder,
-  },
   // Elegido se ve igual en toda la app: hueso, sin color.
-  monthChipSelected: { borderColor: COLORS.ink, backgroundColor: SURFACE.cardActive },
-  monthChipText: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.fog },
-  monthChipTextSelected: { color: COLORS.ink, fontFamily: FONT_FAMILY.bodyMedium },
   agreedInput: {
     minWidth: 96,
     textAlign: "right",
