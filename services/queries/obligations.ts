@@ -5,8 +5,7 @@
  * audit (Fase 4) called out that file as a 6,500-line "megafile" — but
  * lifting the obligation code out is risky because the mutations share
  * private helpers (`insertObligationPaymentEventWithFallback`,
- * `syncViewerLinkedMovementsForEvent`, `notifyAcceptedViewersObligationEventUpdated`,
- * etc.).
+ * `syncViewerLinkedMovementsForEvent`, `notifyObligationViewers`, etc.).
  *
  * The path forward is to make every caller import obligation symbols from
  * THIS file, so a later physical move of the underlying implementation can

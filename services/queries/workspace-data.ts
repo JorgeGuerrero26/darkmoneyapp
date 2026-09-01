@@ -80,7 +80,6 @@ import {
   mapObligation,
   mapObligationEventRowsToSummaries,
   movementTypeForObligationEvent,
-  notifyAcceptedViewersObligationEventUpdated,
   readMovementMetadataEventId,
   resolveMovementAccountId,
   resolveOwnerDeleteRequestNotification,

@@ -1681,9 +1681,8 @@ export async function syncViewerLinkedMovementsForEvent(input: {
  * **Incidente del 2026-09-01.** El usuario cambió la cuenta de un cobro y la app le devolvió
  * *"new row violates row-level security policy for table notifications"*. El evento y su
  * movimiento ya estaban guardados: lo que falló fue el último paso —escribirle la notificación
- * al invitado—, que la política de la base no permite hacer desde el teléfono: solo se pueden
- * escribir notificaciones para uno mismo. Le dio a guardar cuatro veces, las cuatro se guardó
- * bien, y las cuatro vio el mismo error.
+ * al invitado—. Le dio a guardar cuatro veces, las cuatro se guardó bien, y las cuatro vio el
+ * mismo error.
  *
  * Estos pasos se quedan donde están, pero su fallo se registra y no se propaga: lo que el
  * usuario pidió ya está hecho, y volver a intentarlo no arregla lo que falló.
@@ -1699,74 +1698,52 @@ async function courtesy<T>(step: string, run: () => Promise<T>, fallback: T): Pr
   }
 }
 
-export async function notifyAcceptedViewersObligationEventUpdated(input: {
+/**
+ * Le pide a la edge function que avise a quien mira la obligación.
+ *
+ * El teléfono ya no puede escribir esa notificación: desde la auditoría de RLS del 2026-06-10
+ * `notifications` es una tabla personal —`user_id = auth.uid()`— y solo se puede escribir para
+ * uno mismo. La función corre con service role, valida que quien avisa sea dueño y que el
+ * destinatario comparta de verdad la obligación, **y compone ella el título y el cuerpo**: desde
+ * aquí solo viajan los hechos, nunca el texto que el otro va a leer.
+ */
+async function notifyObligationViewers(input: {
   obligationId: number;
   eventId: number;
-  amount: number;
-  eventDate: string;
-  installmentNo?: number | null;
-  description?: string | null;
-  notes?: string | null;
-  currencyCode?: string | null;
-  eventType?: string | null;
-  obligationTitle?: string | null;
-  currentAmount?: number | null;
-  currentEventDate?: string | null;
-  currentInstallmentNo?: number | null;
-  currentDescription?: string | null;
-  currentNotes?: string | null;
+  kind:
+    | "obligation_event_updated"
+    | "obligation_event_deleted"
+    | "obligation_event_delete_accepted"
+    | "obligation_event_delete_rejected"
+    | "obligation_event_delete_request"
+    | "obligation_event_edit_request";
+  viewerUserId?: string | null;
+  rejectionReason?: string | null;
+  /** Lo que el evento decía ANTES del cambio, para que el invitado vea el diff. */
+  previous?: {
+    amount?: number | null;
+    eventDate?: string | null;
+    installmentNo?: number | null;
+    description?: string | null;
+    notes?: string | null;
+  };
+  /** Lo que el invitado propone, cuando el aviso es una solicitud suya. */
+  proposed?: {
+    amount?: number | null;
+    eventDate?: string | null;
+    installmentNo?: number | null;
+    description?: string | null;
+    notes?: string | null;
+  };
+  /** Los hechos de un evento que ya no está en la base. */
+  deleted?: { amount?: number | null; eventType?: string | null; eventDate?: string | null };
 }) {
-  if (!supabase) throw new Error("Supabase no disponible.");
-
-  const { data: shareRows, error: shareRowsError } = await supabase
-    .from("obligation_shares")
-    .select("invited_user_id")
-    .eq("obligation_id", input.obligationId)
-    .eq("status", "accepted");
-  if (shareRowsError) {
-    throw new Error(shareRowsError.message ?? "Error al cargar viewers de la obligacion");
-  }
-
-  const viewerIds = (shareRows ?? [])
-    .map((row) => (row as { invited_user_id?: string | null }).invited_user_id ?? null)
-    .filter((value): value is string => typeof value === "string" && value.trim().length > 0);
-  if (viewerIds.length === 0) return;
-
-  const amountLabel = formatNotificationCurrency(input.amount, input.currencyCode);
-  const payload = eventEditPayload({
-    obligationId: input.obligationId,
-    eventId: input.eventId,
-    currencyCode: input.currencyCode,
-    eventType: input.eventType,
-    obligationTitle: input.obligationTitle,
-    currentAmount: input.currentAmount,
-    currentEventDate: input.currentEventDate,
-    currentInstallmentNo: input.currentInstallmentNo,
-    currentDescription: input.currentDescription,
-    currentNotes: input.currentNotes,
-    proposedAmount: input.amount,
-    proposedEventDate: input.eventDate,
-    proposedInstallmentNo: input.installmentNo ?? null,
-    proposedDescription: input.description?.trim() || null,
-    proposedNotes: input.notes?.trim() || null,
-  });
-
-  await Promise.all(
-    viewerIds.map((viewerUserId) =>
-      createOrRefreshNotificationRow({
-        user_id: viewerUserId,
-        channel: "in_app",
-        status: "pending",
-        kind: "obligation_event_updated",
-        title: "Evento actualizado",
-        body: `Se actualizo un evento${amountLabel}${input.obligationTitle ? ` en "${input.obligationTitle}"` : ""}.`,
-        scheduled_for: new Date().toISOString(),
-        related_entity_type: "obligation_event",
-        related_entity_id: input.eventId,
-        payload,
-      }),
-    ),
+  const response = await invokeEdgeFunction<{ ok: boolean; error?: string; notified?: number }>(
+    "notify-obligation-viewers",
+    { ...input },
   );
+  if (!response.ok) throw new Error(response.error ?? "No se pudo avisar al invitado.");
+  return response.notified ?? 0;
 }
 
 export function movementTypeForObligationEvent(eventType: string | null | undefined): MovementType | null {
@@ -2747,23 +2724,18 @@ export async function updateObligationEventAndSyncMovements(
     [] as number[],
   );
 
-  await courtesy("avisar al invitado del evento actualizado", () => notifyAcceptedViewersObligationEventUpdated({
+  await courtesy("avisar al invitado del evento actualizado", () => notifyObligationViewers({
     obligationId: input.obligationId,
     eventId: input.eventId,
-    amount: input.amount,
-    eventDate: input.eventDate,
-    installmentNo: input.installmentNo ?? null,
-    description: input.description ?? null,
-    notes: input.notes ?? null,
-    currencyCode: input.currencyCode ?? null,
-    eventType: input.eventType ?? currentEvent?.event_type ?? null,
-    obligationTitle: input.obligationTitle ?? null,
-    currentAmount: toNum(currentEvent?.amount ?? null),
-    currentEventDate: currentEvent?.event_date ?? null,
-    currentInstallmentNo: toNum(currentEvent?.installment_no ?? null),
-    currentDescription: currentEvent?.description ?? null,
-    currentNotes: currentEvent?.notes ?? null,
-  }), undefined);
+    kind: "obligation_event_updated",
+    previous: {
+      amount: toNum(currentEvent?.amount ?? null),
+      eventDate: currentEvent?.event_date ?? null,
+      installmentNo: toNum(currentEvent?.installment_no ?? null),
+      description: currentEvent?.description ?? null,
+      notes: currentEvent?.notes ?? null,
+    },
+  }), 0);
 
   return {
     movementId,
@@ -2906,24 +2878,21 @@ export function useDeleteObligationEventMutation() {
         obligationTitle: input.obligationTitle,
       });
 
-      const amountLabel = formatNotificationCurrency(input.amount ?? null, input.currencyCode ?? null);
-
-      const acceptedNotifs: NotificationRefreshInput[] = [...requestViewerIds].map((viewerUserId) => ({
-        user_id: viewerUserId,
-        channel: "in_app",
-        status: "pending",
-        kind: "obligation_event_delete_accepted",
-        title: "Eliminación aprobada",
-        body: `Se eliminó el evento${amountLabel}${input.obligationTitle ? ` en "${input.obligationTitle}"` : ""}.`,
-        scheduled_for: new Date().toISOString(),
-        related_entity_type: "obligation_event",
-        related_entity_id: input.eventId,
-        payload,
-      }));
-      if (acceptedNotifs.length > 0) {
+      const deletedFacts = {
+        amount: input.amount ?? null,
+        eventType: input.eventType ?? null,
+        eventDate: input.eventDate ?? null,
+      };
+      if (requestViewerIds.size > 0) {
         await courtesy(
           "avisar de la eliminación aprobada",
-          () => Promise.all(acceptedNotifs.map((notification) => createOrRefreshNotificationRow(notification))),
+          () => Promise.all([...requestViewerIds].map((viewerUserId) => notifyObligationViewers({
+            obligationId: input.obligationId,
+            eventId: input.eventId,
+            kind: "obligation_event_delete_accepted",
+            viewerUserId,
+            deleted: deletedFacts,
+          }))),
           [],
         );
       }
@@ -2932,22 +2901,13 @@ export function useDeleteObligationEventMutation() {
       if (otherViewerIds.length > 0) {
         await courtesy(
           "avisar al invitado del evento eliminado",
-          () => Promise.all(
-            otherViewerIds.map((viewerUserId) =>
-              createOrRefreshNotificationRow({
-                user_id: viewerUserId,
-                channel: "in_app",
-                status: "pending",
-                kind: "obligation_event_deleted",
-                title: "Evento eliminado",
-                body: `Se eliminó un evento${amountLabel}${input.obligationTitle ? ` en "${input.obligationTitle}"` : ""}.`,
-                scheduled_for: new Date().toISOString(),
-                related_entity_type: "obligation_event",
-                related_entity_id: input.eventId,
-                payload,
-              }),
-            ),
-          ),
+          () => Promise.all(otherViewerIds.map((viewerUserId) => notifyObligationViewers({
+            obligationId: input.obligationId,
+            eventId: input.eventId,
+            kind: "obligation_event_deleted",
+            viewerUserId,
+            deleted: deletedFacts,
+          }))),
           [],
         );
       }
@@ -3003,9 +2963,7 @@ export function useCreateObligationEventDeleteRequestMutation() {
         requestedByUserId: input.viewerUserId,
         requestedByDisplayName: input.viewerDisplayName,
       });
-      const ownerName = input.viewerDisplayName?.trim() || "El visualizador";
       const now = new Date().toISOString();
-      const amountLabel = formatNotificationCurrency(input.amount, input.currencyCode);
 
       async function createOrRefreshNotification(row: {
         user_id: string;
@@ -3055,18 +3013,18 @@ export function useCreateObligationEventDeleteRequestMutation() {
         if (insertErr) throw new Error(insertErr.message ?? "Error al crear la notificación");
       }
 
-      await createOrRefreshNotification({
-        user_id: input.ownerUserId,
-        channel: "in_app",
-        status: "pending",
+      // Al dueño le escribe la edge function: desde el teléfono no se le puede escribir a otro
+      // usuario, y que el aviso falle no puede tumbar la solicitud, que ya está registrada.
+      await courtesy("avisar al dueño de la solicitud", () => notifyObligationViewers({
+        obligationId: input.obligationId,
+        eventId: input.eventId,
         kind: "obligation_event_delete_request",
-        title: "Solicitud de Eliminación",
-        body: `${ownerName} solicitó eliminar un evento${amountLabel}${input.obligationTitle ? ` en "${input.obligationTitle}"` : ""}.`,
-        scheduled_for: now,
-        related_entity_type: "obligation_event",
-        related_entity_id: input.eventId,
-        payload,
-      });
+        deleted: {
+          amount: input.amount ?? null,
+          eventType: input.eventType ?? null,
+          eventDate: input.eventDate ?? null,
+        },
+      }), 0);
 
       await createOrRefreshNotification({
         user_id: input.viewerUserId,
@@ -3136,18 +3094,18 @@ export function useRejectObligationEventDeleteRequestMutation() {
         rejectionReason: input.rejectionReason,
       });
 
-      await courtesy("avisar al invitado del rechazo", () => createOrRefreshNotificationRow({
-        user_id: input.viewerUserId,
-        channel: "in_app",
-        status: "pending",
+      await courtesy("avisar al invitado del rechazo", () => notifyObligationViewers({
+        obligationId: input.obligationId,
+        eventId: input.eventId,
         kind: "obligation_event_delete_rejected",
-        title: "Solicitud rechazada",
-        body: `No se aprobó la Eliminación del evento${input.rejectionReason?.trim() ? `. Motivo: ${input.rejectionReason.trim()}` : ""}.`,
-        scheduled_for: now,
-        related_entity_type: "obligation_event",
-        related_entity_id: input.eventId,
-        payload,
-      }), undefined);
+        viewerUserId: input.viewerUserId,
+        rejectionReason: input.rejectionReason ?? null,
+        deleted: {
+          amount: input.amount ?? null,
+          eventType: input.eventType ?? null,
+          eventDate: input.eventDate ?? null,
+        },
+      }), 0);
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["notifications"] });
@@ -3225,8 +3183,6 @@ export function useCreateObligationEventEditRequestMutation() {
     mutationFn: async (input: CreateObligationEventEditRequestInput) => {
       if (!supabase) throw new Error("Supabase no disponible.");
       const now = new Date().toISOString();
-      const amountLabel = formatNotificationCurrency(input.proposedAmount, input.currencyCode);
-      const ownerName = input.viewerDisplayName?.trim() || "El visualizador";
       const payload = eventEditPayload({
         obligationId: input.obligationId,
         eventId: input.eventId,
@@ -3247,18 +3203,25 @@ export function useCreateObligationEventEditRequestMutation() {
         proposedNotes: input.proposedNotes,
       });
 
-      await createOrRefreshNotificationRow({
-        user_id: input.ownerUserId,
-        channel: "in_app",
-        status: "pending",
+      await courtesy("avisar al dueño de la propuesta", () => notifyObligationViewers({
+        obligationId: input.obligationId,
+        eventId: input.eventId,
         kind: "obligation_event_edit_request",
-        title: "Solicitud de edicion",
-        body: `${ownerName} solicito editar un evento${amountLabel}${input.obligationTitle ? ` en "${input.obligationTitle}"` : ""}.`,
-        scheduled_for: now,
-        related_entity_type: "obligation_event",
-        related_entity_id: input.eventId,
-        payload,
-      });
+        proposed: {
+          amount: input.proposedAmount ?? null,
+          eventDate: input.proposedEventDate ?? null,
+          installmentNo: input.proposedInstallmentNo ?? null,
+          description: input.proposedDescription ?? null,
+          notes: input.proposedNotes ?? null,
+        },
+        previous: {
+          amount: input.currentAmount ?? null,
+          eventDate: input.currentEventDate ?? null,
+          installmentNo: input.currentInstallmentNo ?? null,
+          description: input.currentDescription ?? null,
+          notes: input.currentNotes ?? null,
+        },
+      }), 0);
 
       await createOrRefreshNotificationRow({
         user_id: input.viewerUserId,
