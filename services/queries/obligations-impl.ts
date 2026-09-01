@@ -18,6 +18,7 @@ import { UNIVERSAL_LINK_HOST } from "../../constants/config";
 import { supabase } from "../../lib/supabase";
 import { STALE } from "../../lib/query-client";
 import { warmAuthToken } from "../../lib/auth-warmup";
+import { logWarn } from "../../lib/error-logger";
 import { withTimeout } from "../../lib/promise-utils";
 import { dateStrToISO, filterDateFrom, filterDateTo } from "../../lib/date";
 import { patchSnapshotObligationPayment, patchSnapshotWithCreatedMovement } from "./snapshot-cache";
@@ -1674,6 +1675,30 @@ export async function syncViewerLinkedMovementsForEvent(input: {
   return syncedMovementIds;
 }
 
+/**
+ * Avisar al otro no es parte de guardar.
+ *
+ * **Incidente del 2026-09-01.** El usuario cambió la cuenta de un cobro y la app le devolvió
+ * *"new row violates row-level security policy for table notifications"*. El evento y su
+ * movimiento ya estaban guardados: lo que falló fue el último paso —escribirle la notificación
+ * al invitado—, que la política de la base no permite hacer desde el teléfono: solo se pueden
+ * escribir notificaciones para uno mismo. Le dio a guardar cuatro veces, las cuatro se guardó
+ * bien, y las cuatro vio el mismo error.
+ *
+ * Estos pasos se quedan donde están, pero su fallo se registra y no se propaga: lo que el
+ * usuario pidió ya está hecho, y volver a intentarlo no arregla lo que falló.
+ */
+async function courtesy<T>(step: string, run: () => Promise<T>, fallback: T): Promise<T> {
+  try {
+    return await run();
+  } catch (error) {
+    logWarn("obligations", `${step} no se completó`, {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return fallback;
+  }
+}
+
 export async function notifyAcceptedViewersObligationEventUpdated(input: {
   obligationId: number;
   eventId: number;
@@ -2706,19 +2731,23 @@ export async function updateObligationEventAndSyncMovements(
     movementId = null;
   }
 
-  const syncedViewerMovementIds = await syncViewerLinkedMovementsForEvent({
-    eventId: input.eventId,
-    obligationId: input.obligationId,
-    obligationWorkspaceId: workspaceId,
-    eventType: input.eventType as "payment" | "principal_increase" | "principal_decrease",
-    amount: input.amount,
-    eventDate: input.eventDate,
-    description: input.description,
-    direction: input.direction as ObligationDirection,
-    obligationTitle: input.obligationTitle ?? undefined,
-  });
+  const syncedViewerMovementIds = await courtesy(
+    "espejar el evento en los movimientos del invitado",
+    () => syncViewerLinkedMovementsForEvent({
+      eventId: input.eventId,
+      obligationId: input.obligationId,
+      obligationWorkspaceId: workspaceId,
+      eventType: input.eventType as "payment" | "principal_increase" | "principal_decrease",
+      amount: input.amount,
+      eventDate: input.eventDate,
+      description: input.description,
+      direction: input.direction as ObligationDirection,
+      obligationTitle: input.obligationTitle ?? undefined,
+    }),
+    [] as number[],
+  );
 
-  await notifyAcceptedViewersObligationEventUpdated({
+  await courtesy("avisar al invitado del evento actualizado", () => notifyAcceptedViewersObligationEventUpdated({
     obligationId: input.obligationId,
     eventId: input.eventId,
     amount: input.amount,
@@ -2734,7 +2763,7 @@ export async function updateObligationEventAndSyncMovements(
     currentInstallmentNo: toNum(currentEvent?.installment_no ?? null),
     currentDescription: currentEvent?.description ?? null,
     currentNotes: currentEvent?.notes ?? null,
-  });
+  }), undefined);
 
   return {
     movementId,
@@ -2892,28 +2921,34 @@ export function useDeleteObligationEventMutation() {
         payload,
       }));
       if (acceptedNotifs.length > 0) {
-        await Promise.all(
-          acceptedNotifs.map((notification) => createOrRefreshNotificationRow(notification)),
+        await courtesy(
+          "avisar de la eliminación aprobada",
+          () => Promise.all(acceptedNotifs.map((notification) => createOrRefreshNotificationRow(notification))),
+          [],
         );
       }
 
       const otherViewerIds = [...allViewerIds].filter((viewerUserId) => !requestViewerIds.has(viewerUserId));
       if (otherViewerIds.length > 0) {
-        await Promise.all(
-          otherViewerIds.map((viewerUserId) =>
-            createOrRefreshNotificationRow({
-              user_id: viewerUserId,
-              channel: "in_app",
-              status: "pending",
-              kind: "obligation_event_deleted",
-              title: "Evento eliminado",
-              body: `Se eliminó un evento${amountLabel}${input.obligationTitle ? ` en "${input.obligationTitle}"` : ""}.`,
-              scheduled_for: new Date().toISOString(),
-              related_entity_type: "obligation_event",
-              related_entity_id: input.eventId,
-              payload,
-            }),
+        await courtesy(
+          "avisar al invitado del evento eliminado",
+          () => Promise.all(
+            otherViewerIds.map((viewerUserId) =>
+              createOrRefreshNotificationRow({
+                user_id: viewerUserId,
+                channel: "in_app",
+                status: "pending",
+                kind: "obligation_event_deleted",
+                title: "Evento eliminado",
+                body: `Se eliminó un evento${amountLabel}${input.obligationTitle ? ` en "${input.obligationTitle}"` : ""}.`,
+                scheduled_for: new Date().toISOString(),
+                related_entity_type: "obligation_event",
+                related_entity_id: input.eventId,
+                payload,
+              }),
+            ),
           ),
+          [],
         );
       }
       return { deletedOwnerMovementId: ownerMovementId };
@@ -3101,7 +3136,7 @@ export function useRejectObligationEventDeleteRequestMutation() {
         rejectionReason: input.rejectionReason,
       });
 
-      await createOrRefreshNotificationRow({
+      await courtesy("avisar al invitado del rechazo", () => createOrRefreshNotificationRow({
         user_id: input.viewerUserId,
         channel: "in_app",
         status: "pending",
@@ -3112,7 +3147,7 @@ export function useRejectObligationEventDeleteRequestMutation() {
         related_entity_type: "obligation_event",
         related_entity_id: input.eventId,
         payload,
-      });
+      }), undefined);
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["notifications"] });
