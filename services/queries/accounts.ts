@@ -174,6 +174,15 @@ export type AccountMovementAnalytics = {
   categoryName: string | null;
 };
 
+/**
+ * Tope de movimientos que entran al analisis de una cuenta.
+ *
+ * Lo exporta el modal para poder DECIR que topo. Un analisis que promete un periodo en el
+ * encabezado y por dentro sumo solo las ultimas N filas es el mismo defecto que tenia el neto
+ * de Movimientos: un rotulo que no describe lo que hay debajo.
+ */
+export const ACCOUNT_ANALYTICS_LIMIT = 300;
+
 export function useAccountAnalyticsQuery(
   workspaceId: number | null,
   accountId: number | null,
@@ -192,7 +201,7 @@ export function useAccountAnalyticsQuery(
         .or(`source_account_id.eq.${accountId},destination_account_id.eq.${accountId}`)
         .eq("status", "posted")
         .order("occurred_at", { ascending: false })
-        .limit(300);
+        .limit(ACCOUNT_ANALYTICS_LIMIT);
       if (error) throw error;
       return ((data ?? []) as any[]).map((r) => ({
         id: r.id,

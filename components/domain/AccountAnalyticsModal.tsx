@@ -10,20 +10,16 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import {
-  X, TrendingUp, TrendingDown, ArrowLeftRight,
-  Layers, CheckCircle2, AlertTriangle, Clock,
-} from "lucide-react-native";
+import { ChevronRight, X } from "lucide-react-native";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
+import { useRouter } from "expo-router";
 
 import { formatCurrency } from "../ui/AmountDisplay";
-import { ProgressBar } from "../ui/ProgressBar";
-import { RingChart, type RingSegment } from "../ui/RingChart";
-import { SparkLine } from "../ui/SparkLine";
 import { parseDisplayDate } from "../../lib/date";
-import { useAccountAnalyticsQuery } from "../../services/queries/workspace-data";
+import { ACCOUNT_ANALYTICS_LIMIT, useAccountAnalyticsQuery } from "../../services/queries/workspace-data";
 import { useWorkspace } from "../../lib/workspace-context";
+import { currencyPluralName } from "../../constants/currencies";
 import { COLORS, ELEVATION, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import type { AccountSummary } from "../../types/domain";
 import { SafeBlurView } from "../ui/SafeBlurView";
@@ -35,19 +31,25 @@ type Props = {
   onClose: () => void;
 };
 
-const STATUS_ICON: Record<string, typeof CheckCircle2> = {
-  posted:  CheckCircle2,
-  pending: Clock,
-  planned: AlertTriangle,
-};
-const STATUS_COLOR: Record<string, string> = {
-  posted:  COLORS.income,
-  pending: COLORS.warning,
-  planned: COLORS.storm,
-};
+/** Cuántas categorías se listan antes de agrupar el resto. */
+const VISIBLE_CATEGORIES = 4;
+
+const SPELLED_MONTHS = [
+  "cero", "un", "dos", "tres", "cuatro", "cinco", "seis",
+  "siete", "ocho", "nueve", "diez", "once", "doce",
+];
+
+function spellMonths(count: number) {
+  return count <= 12 ? SPELLED_MONTHS[count] : String(count);
+}
+
+function capitalize(value: string) {
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
 
 export function AccountAnalyticsModal({ visible, account, onClose }: Props) {
-  const { activeWorkspaceId, activeWorkspace } = useWorkspace();
+  const router = useRouter();
+  const { activeWorkspaceId } = useWorkspace();
   const { backdropStyle, panHandlers, sheetStyle } = useDismissibleSheet({ visible, onClose });
   const { data: movements = [], isLoading } = useAccountAnalyticsQuery(
     activeWorkspaceId,
@@ -55,112 +57,141 @@ export function AccountAnalyticsModal({ visible, account, onClose }: Props) {
   );
 
   const currency = account?.currencyCode ?? "PEN";
-  const baseCurrency = activeWorkspace?.baseCurrencyCode ?? "PEN";
 
-  // ── Core metrics ────────────────────────────────────────────────────────
-  const metrics = useMemo(() => {
+  /**
+   * Todo el análisis sale de una sola pasada.
+   *
+   * Dos reglas que rigen la pantalla entera:
+   *
+   * 1. **El período lo dicta lo que se sumó, no al revés.** El rótulo de arriba se calcula del
+   *    primer y último movimiento de ESTOS datos, así que no puede prometer un rango que los
+   *    totales no cubran. Si la consulta topó (`ACCOUNT_ANALYTICS_LIMIT`), se dice; callarlo es
+   *    el defecto que se arregló en Movimientos y en Notificaciones.
+   *
+   * 2. **Traspaso no es gasto.** Lo que sale hacia otra cuenta tuya sigue siendo tuyo. Se separa
+   *    de entrada, porque en una cuenta de uso diario es casi todo lo que sale y mezclarlo
+   *    convierte la cifra grande en la menos informativa de la pantalla.
+   */
+  const analysis = useMemo(() => {
+    if (!account || movements.length === 0) return null;
+    const accountId = account.id;
+
     let totalIn = 0;
     let totalOut = 0;
+    let transferOut = 0;
+    let transferCount = 0;
+    let uncategorized = 0;
+    const byCategory = new Map<string, number>();
+    const byMonth = new Map<string, { income: number; expense: number }>();
+    let oldest = movements[0].occurredAt;
+    let newest = movements[0].occurredAt;
+
     for (const m of movements) {
-      if (m.destinationAccountId === account?.id && m.destinationAmount != null) {
+      if (m.occurredAt < oldest) oldest = m.occurredAt;
+      if (m.occurredAt > newest) newest = m.occurredAt;
+      if (m.movementType === "transfer") transferCount += 1;
+
+      // El mes sale de la fecha LOCAL, no del string UTC: `occurredAt.slice(0, 7)` metia en el
+      // mes siguiente todo lo registrado despues de las 19:00 del ultimo dia (Lima es UTC-5).
+      const monthKey = format(parseDisplayDate(m.occurredAt), "yyyy-MM");
+      const month = byMonth.get(monthKey) ?? { income: 0, expense: 0 };
+
+      if (m.destinationAccountId === accountId && m.destinationAmount != null) {
         totalIn += m.destinationAmount;
+        month.income += m.destinationAmount;
       }
-      if (m.sourceAccountId === account?.id && m.sourceAmount != null) {
+      if (m.sourceAccountId === accountId && m.sourceAmount != null) {
         totalOut += m.sourceAmount;
+        month.expense += m.sourceAmount;
+        if (m.movementType === "transfer") {
+          transferOut += m.sourceAmount;
+        } else if (m.categoryName) {
+          byCategory.set(m.categoryName, (byCategory.get(m.categoryName) ?? 0) + m.sourceAmount);
+        } else {
+          uncategorized += m.sourceAmount;
+        }
       }
+      byMonth.set(monthKey, month);
     }
+
+    const spent = totalOut - transferOut;
+    const ranked = [...byCategory.entries()].sort((a, b) => b[1] - a[1]);
+    const visible = ranked.slice(0, VISIBLE_CATEGORIES);
+    const rest = ranked.slice(VISIBLE_CATEGORIES);
+    const restTotal = rest.reduce((sum, [, amount]) => sum + amount, 0);
+    /* La barra se mide contra la fila más alta que SE VE. Anclarla a "Sin categoría" -que sale
+       del ranking y no lleva barra- dejaba la primera barra al 76% de su carril con un cuarto
+       vacío que nada explicaba: una escala cuyo máximo no está en pantalla. */
+    const maxVisible = visible[0]?.[1] ?? 1;
+
+    const months = [...byMonth.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .slice(-6)
+      .map(([key, value]) => {
+        const [year, month] = key.split("-").map(Number);
+        const date = new Date(year, month - 1, 1);
+        return {
+          key,
+          // Abreviado bajo la barra, entero en la frase: "Jul" no se lee como se habla.
+          label: format(date, "MMM", { locale: es }),
+          longLabel: format(date, "MMMM", { locale: es }),
+          ...value,
+          net: value.income - value.expense,
+        };
+      });
+    const maxMonthly = Math.max(...months.flatMap((m) => [m.income, m.expense]), 1);
+    const negativeMonths = months.filter((m) => m.net < 0);
+    const worstMonth = negativeMonths.length > 0
+      ? negativeMonths.reduce((worst, m) => (m.net < worst.net ? m : worst))
+      : null;
+    const alsoNegative = worstMonth
+      ? negativeMonths.filter((m) => m.key !== worstMonth.key).map((m) => capitalize(m.longLabel))
+      : [];
+
+    const from = parseDisplayDate(oldest);
+    const to = parseDisplayDate(newest);
+    const monthSpan = (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth()) + 1;
+
     return {
       totalIn,
       totalOut,
+      spent,
+      transferOut,
+      transferCount,
       netFlow: totalIn - totalOut,
       count: movements.length,
+      uncategorized,
+      visible,
+      restTotal,
+      restCount: rest.length,
+      maxVisible,
+      months,
+      maxMonthly,
+      worstMonth,
+      alsoNegative,
+      from,
+      to,
+      monthSpan,
+      // La consulta topa en ACCOUNT_ANALYTICS_LIMIT: si vinieron justo esas, puede faltar historia.
+      truncated: movements.length >= ACCOUNT_ANALYTICS_LIMIT,
     };
-  }, [movements, account]);
-
-  // ── Monthly flow (last 6 months) ─────────────────────────────────────
-  const monthlyFlow = useMemo(() => {
-    const now = new Date();
-    return Array.from({ length: 6 }, (_, i) => {
-      const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
-      const key = format(d, "yyyy-MM");
-      const label = format(d, "MMM", { locale: es });
-      let income = 0;
-      let expense = 0;
-      for (const m of movements) {
-        if (m.occurredAt.slice(0, 7) !== key) continue;
-        if (m.destinationAccountId === account?.id && m.destinationAmount != null) income += m.destinationAmount;
-        if (m.sourceAccountId === account?.id && m.sourceAmount != null) expense += m.sourceAmount;
-      }
-      return { label, key, income, expense };
-    });
-  }, [movements, account]);
-
-  const maxMonthly = Math.max(...monthlyFlow.flatMap((m) => [m.income, m.expense]), 1);
-
-  // ── Top 5 expense categories ─────────────────────────────────────────
-  const topCategories = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const m of movements) {
-      if (m.sourceAccountId !== account?.id || m.sourceAmount == null) continue;
-      if (m.movementType === "transfer") continue;
-      const cat = m.categoryName ?? "Sin categoría";
-      map.set(cat, (map.get(cat) ?? 0) + m.sourceAmount);
-    }
-    return [...map.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5);
-  }, [movements, account]);
-
-  const maxCategoryAmount = topCategories[0]?.[1] ?? 1;
-
-  // ── 8 most recent movements ──────────────────────────────────────────
-  const recentMovements = useMemo(() => movements.slice(0, 8), [movements]);
-
-  // ── Historical balance (running total, oldest→newest) ───────────────
-  const balanceHistory = useMemo(() => {
-    if (!account || movements.length === 0) return [];
-    // movements come newest-first (DESC). Reconstruct balance going backwards.
-    let bal = account.currentBalance;
-    const points: number[] = [bal];
-    for (const m of movements) {
-      if (m.destinationAccountId === account.id && m.destinationAmount != null) {
-        bal -= m.destinationAmount; // undo income
-      }
-      if (m.sourceAccountId === account.id && m.sourceAmount != null) {
-        bal += m.sourceAmount; // undo expense
-      }
-      points.push(bal);
-    }
-    return points.reverse(); // oldest to newest
-  }, [movements, account]);
-
-  // ── Income/expense ring segments ────────────────────────────────────
-  const ratioSegments = useMemo<RingSegment[]>(() => {
-    if (metrics.totalIn <= 0 && metrics.totalOut <= 0) return [];
-    return [
-      { key: "in",  value: metrics.totalIn,  color: COLORS.income },
-      { key: "out", value: metrics.totalOut, color: COLORS.expense },
-    ];
-  }, [metrics.totalIn, metrics.totalOut]);
-
-  // ── Day-of-week spending pattern ────────────────────────────────────
-  const { dowSpending, maxDowSpend } = useMemo(() => {
-    const sums = new Array(7).fill(0) as number[];
-    for (const m of movements) {
-      if (m.sourceAccountId !== account?.id || m.sourceAmount == null) continue;
-      if (m.movementType === "transfer") continue;
-      sums[parseDisplayDate(m.occurredAt).getDay()] += m.sourceAmount;
-    }
-    // Mon–Sun order (getDay: 0=Sun, 1=Mon…6=Sat)
-    const order = [1, 2, 3, 4, 5, 6, 0];
-    const labels = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
-    const dowSpending = order.map((i, idx) => ({ label: labels[idx], total: sums[i] }));
-    return { dowSpending, maxDowSpend: Math.max(...sums, 1) };
   }, [movements, account]);
 
   if (!account) return null;
 
-  const isPositiveFlow = metrics.netFlow >= 0;
+  const periodLabel = analysis
+    ? analysis.from.getFullYear() === analysis.to.getFullYear()
+      ? `${capitalize(format(analysis.from, "MMM", { locale: es }))} – ${format(analysis.to, "MMM yyyy", { locale: es })}`
+      : `${capitalize(format(analysis.from, "MMM yyyy", { locale: es }))} – ${format(analysis.to, "MMM yyyy", { locale: es })}`
+    : null;
+
+  function openUncategorized() {
+    if (!account) return;
+    onClose();
+    router.push(
+      `/(app)/movements?quickScope=account&quickAccountId=${account.id}&quickFilter=uncategorized&quickToken=${Date.now()}`,
+    );
+  }
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -175,235 +206,173 @@ export function AccountAnalyticsModal({ visible, account, onClose }: Props) {
           <View {...panHandlers}>
             <View style={styles.handle} />
 
-          {/* Header */}
-          <View style={styles.header}>
-            <View style={[styles.accentDot, { backgroundColor: account.color + "33", borderColor: account.color + "55" }]}>
-              <View style={[styles.accentDotInner, { backgroundColor: account.color }]} />
+            {/* La moneda se dice UNA vez y en palabras. Antes aparecía once veces —subtítulo,
+                una tarjeta dedicada a explicarla, entre paréntesis en cada cifra y de sufijo en
+                los seis rótulos de sección— para una cuenta que solo tiene una. */}
+            <View style={styles.header}>
+              <View style={styles.headerText}>
+                <Text style={styles.title} numberOfLines={1}>Análisis · {account.name}</Text>
+                {periodLabel ? (
+                  <Text style={styles.subtitle}>
+                    {periodLabel} · en {currencyPluralName(currency)}
+                  </Text>
+                ) : null}
+              </View>
+              <TouchableOpacity onPress={onClose} style={styles.closeBtn} accessibilityRole="button" accessibilityLabel="Cerrar">
+                <X size={18} color={COLORS.storm} />
+              </TouchableOpacity>
             </View>
-            <View style={styles.headerText}>
-              <Text style={styles.title} numberOfLines={1}>{account.name}</Text>
-              <Text style={styles.subtitle}>
-                {formatCurrency(account.currentBalance, currency)} · {account.currencyCode}
-              </Text>
-            </View>
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-              <X size={18} color={COLORS.storm} />
-            </TouchableOpacity>
-          </View>
           </View>
 
           {isLoading ? (
             <View style={styles.loadingWrap}>
               <ActivityIndicator color={COLORS.primary} size="large" />
-              <Text style={styles.loadingText}>Calculando métricas…</Text>
+              <Text style={styles.loadingText}>Calculando…</Text>
             </View>
+          ) : !analysis ? (
+            <Text style={styles.emptyText}>Sin movimientos registrados.</Text>
           ) : (
-            <ScrollView
-              contentContainerStyle={styles.content}
-              showsVerticalScrollIndicator={false}
-            >
-              {/* 4 Key metrics */}
-              <View style={styles.currencyHintCard}>
-                <Text style={styles.currencyHintTitle}>Moneda del análisis</Text>
-                <Text style={styles.currencyHintBody}>
-                  Este análisis usa la moneda propia de la cuenta ({currency}) para que entradas, salidas y saldo no mezclen divisas.
-                </Text>
-                {account.currentBalanceInBaseCurrency != null && currency !== baseCurrency ? (
-                  <Text style={styles.currencyHintSub}>
-                    Saldo actual equivalente: {formatCurrency(account.currentBalanceInBaseCurrency, baseCurrency)} en {baseCurrency}.
-                  </Text>
+            <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+              {/* La frase que antes había que deducir de cuatro recuadros. */}
+              <Text style={styles.lead}>
+                En {spellMonths(analysis.monthSpan)} {analysis.monthSpan === 1 ? "mes" : "meses"} pasaron{" "}
+                {analysis.count} movimientos por esta cuenta y terminó con{" "}
+                {formatCurrency(Math.abs(analysis.netFlow), currency)}{" "}
+                {analysis.netFlow < 0 ? "menos" : "más"} que al empezar.
+                {analysis.transferOut > analysis.totalOut / 2
+                  ? ` Es una cuenta de paso: ${analysis.transferCount} de esos movimientos son traspasos entre tus cuentas.`
+                  : ""}
+              </Text>
+
+              <View style={styles.flowCard}>
+                <View style={styles.flowSplit}>
+                  <View style={styles.flowHalf}>
+                    <Text style={styles.flowLabel}>Entró</Text>
+                    <Text style={[styles.flowValue, { color: COLORS.income }]}>
+                      {formatCurrency(analysis.totalIn, currency)}
+                    </Text>
+                  </View>
+                  <View style={[styles.flowHalf, styles.flowHalfRight]}>
+                    <Text style={styles.flowLabel}>Salió</Text>
+                    <Text style={[styles.flowValue, { color: COLORS.expense }]}>
+                      {formatCurrency(analysis.totalOut, currency)}
+                    </Text>
+                  </View>
+                </View>
+
+                {analysis.transferOut > 0 ? (
+                  <View style={styles.flowFooter}>
+                    <View style={styles.flowFooterRow}>
+                      <Text style={styles.flowFooterLabel}>De lo que salió, gasto real</Text>
+                      <Text style={styles.flowFooterValue}>{formatCurrency(analysis.spent, currency)}</Text>
+                    </View>
+                    <Text style={styles.flowFooterHint}>
+                      Los otros {formatCurrency(analysis.transferOut, currency)} se movieron a cuentas
+                      tuyas: no son gasto.
+                    </Text>
+                  </View>
                 ) : null}
               </View>
 
-              {/* 4 Key metrics */}
-              <View style={styles.metricsGrid}>
-                {[
-                  { label: `Total entradas (${currency})`, value: formatCurrency(metrics.totalIn, currency), color: COLORS.income, Icon: TrendingUp },
-                  { label: `Total salidas (${currency})`,  value: formatCurrency(metrics.totalOut, currency), color: COLORS.expense, Icon: TrendingDown },
-                  { label: `Flujo neto (${currency})`,     value: formatCurrency(Math.abs(metrics.netFlow), currency), color: isPositiveFlow ? COLORS.income : COLORS.expense, Icon: ArrowLeftRight, prefix: isPositiveFlow ? "+" : "−" },
-                  { label: "Movimientos",    value: String(metrics.count), color: COLORS.storm, Icon: Layers },
-                ].map((m) => (
-                  <View key={m.label} style={styles.metricCard}>
-                    <m.Icon size={15} color={m.color} strokeWidth={2} />
-                    <Text style={[styles.metricValue, { color: m.color }]}>
-                      {m.prefix ?? ""}{m.value}
+              {analysis.spent > 0 ? (
+                <View style={styles.section}>
+                  <View style={styles.sectionHead}>
+                    <Text style={styles.sectionTitle}>En qué se gastó</Text>
+                    <Text style={styles.sectionAside}>
+                      {formatCurrency(analysis.spent, currency)} en total
                     </Text>
-                    <Text style={styles.metricLabel}>{m.label}</Text>
                   </View>
-                ))}
-              </View>
 
-              {/* Income / expense ratio ring */}
-              {ratioSegments.length > 0 ? (
-                <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>Distribución entradas/salidas · {currency}</Text>
-                  <View style={styles.ratioRow}>
-                    <RingChart segments={ratioSegments} size={96} thickness={16} />
-                    <View style={styles.ratioStats}>
-                      {[
-                        { label: "Entradas", value: metrics.totalIn, color: COLORS.income },
-                        { label: "Salidas",  value: metrics.totalOut, color: COLORS.expense },
-                      ].map((item) => {
-                        const total = metrics.totalIn + metrics.totalOut;
-                        const pct = total > 0 ? Math.round((item.value / total) * 100) : 0;
-                        return (
-                          <View key={item.label} style={styles.ratioStatRow}>
-                            <View style={[styles.ratioDot, { backgroundColor: item.color }]} />
-                            <View style={styles.ratioStatText}>
-                              <Text style={[styles.ratioStatValue, { color: item.color }]}>
-                                {pct}%
-                              </Text>
-                              <Text style={styles.ratioStatLabel}>{item.label}</Text>
-                            </View>
-                          </View>
-                        );
-                      })}
-                    </View>
-                  </View>
-                </View>
-              ) : null}
-
-              {/* Historical balance sparkline */}
-              {balanceHistory.length > 1 ? (
-                <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>Evolución del saldo · {currency}</Text>
-                  <View style={styles.balanceSparkCard}>
-                    <View style={styles.balanceSparkRow}>
-                      <View>
-                        <Text style={styles.balanceSparkLabel}>Primer registro</Text>
-                        <Text style={[styles.balanceSparkValue, { color: balanceHistory[0] >= 0 ? COLORS.income : COLORS.expense }]}>
-                          {formatCurrency(balanceHistory[0], currency)}
-                        </Text>
+                  {analysis.visible.map(([name, amount]) => (
+                    <View key={name} style={styles.catRow}>
+                      <View style={styles.catHead}>
+                        <Text style={styles.catName} numberOfLines={1}>{name}</Text>
+                        <Text style={styles.catAmount}>{formatCurrency(amount, currency)}</Text>
                       </View>
-                      <SparkLine
-                        values={balanceHistory}
-                        width={140}
-                        height={52}
-                        positiveColor={COLORS.income}
-                        negativeColor={COLORS.expense}
-                      />
-                      <View style={{ alignItems: "flex-end" }}>
-                        <Text style={styles.balanceSparkLabel}>Actual</Text>
-                        <Text style={[styles.balanceSparkValue, { color: account.currentBalance >= 0 ? COLORS.income : COLORS.expense }]}>
-                          {formatCurrency(account.currentBalance, currency)}
+                      <View style={styles.catTrack}>
+                        <View style={[styles.catFill, { width: `${(amount / analysis.maxVisible) * 100}%` }]} />
+                      </View>
+                    </View>
+                  ))}
+
+                  {/* Sin esta fila, lo listado no suma el total de arriba y la pantalla se
+                      contradice sola por unos pocos soles. */}
+                  {analysis.restCount > 0 ? (
+                    <View style={styles.catRow}>
+                      <View style={styles.catHead}>
+                        <Text style={styles.catRestName} numberOfLines={1}>
+                          Resto de categorías ({analysis.restCount})
+                        </Text>
+                        <Text style={styles.catRestAmount}>
+                          {formatCurrency(analysis.restTotal, currency)}
                         </Text>
                       </View>
                     </View>
-                    <Text style={styles.balanceSparkHint}>
-                      Basado en los últimos {movements.length} movimientos registrados
-                    </Text>
-                  </View>
+                  ) : null}
+
+                  {/* "Sin categoría" no es una categoría: es el dato que falta. Sale del ranking
+                      -donde suele encabezarlo- y se convierte en lo único accionable. "Otros" NO
+                      viene aquí: es una categoría que el usuario eligió, y mandarla al mismo botón
+                      haría recategorizar movimientos que ya lo están. */}
+                  {analysis.uncategorized > 0 ? (
+                    <TouchableOpacity
+                      style={styles.resolveRow}
+                      onPress={openUncategorized}
+                      accessibilityRole="button"
+                      accessibilityLabel="Ver movimientos sin categoría de esta cuenta"
+                    >
+                      <View style={styles.resolveText}>
+                        <Text style={styles.resolveTitle}>Sin categoría</Text>
+                        <Text style={styles.resolveHint}>
+                          {formatCurrency(analysis.uncategorized, currency)} —{" "}
+                          {Math.round((analysis.uncategorized / analysis.spent) * 100)}% de tu gasto
+                          {analysis.uncategorized >= analysis.maxVisible ? ", y es el mayor" : ""}
+                        </Text>
+                      </View>
+                      <Text style={styles.resolveAction}>Resolver</Text>
+                      <ChevronRight size={16} color={COLORS.storm} />
+                    </TouchableOpacity>
+                  ) : null}
                 </View>
               ) : null}
 
-              {/* Monthly flow chart */}
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Flujo mensual (últimos 6 meses) · {currency}</Text>
+                <View style={styles.sectionHead}>
+                  <Text style={styles.sectionTitle}>Mes a mes</Text>
+                  <Text style={styles.sectionAside}>entró / salió</Text>
+                </View>
                 <View style={styles.chart}>
-                  {monthlyFlow.map((m) => (
+                  {analysis.months.map((m) => (
                     <View key={m.key} style={styles.chartGroup}>
                       <View style={styles.barTracks}>
-                        {/* Income bar */}
-                        <View style={styles.barTrack}>
-                          <View style={[styles.barFill, { height: `${Math.round((m.income / maxMonthly) * 100)}%` as any, backgroundColor: COLORS.income }]} />
-                        </View>
-                        {/* Expense bar */}
-                        <View style={styles.barTrack}>
-                          <View style={[styles.barFill, { height: `${Math.round((m.expense / maxMonthly) * 100)}%` as any, backgroundColor: COLORS.expense + "CC" }]} />
-                        </View>
+                        <View style={[styles.bar, { height: `${(m.income / analysis.maxMonthly) * 100}%`, backgroundColor: COLORS.income }]} />
+                        <View style={[styles.bar, { height: `${(m.expense / analysis.maxMonthly) * 100}%`, backgroundColor: COLORS.expense }]} />
                       </View>
                       <Text style={styles.barLabel}>{m.label}</Text>
                     </View>
                   ))}
                 </View>
-                <View style={styles.chartLegend}>
-                  <View style={styles.legendItem}>
-                    <View style={[styles.legendDot, { backgroundColor: COLORS.income }]} />
-                    <Text style={styles.legendText}>Entradas</Text>
-                  </View>
-                  <View style={styles.legendItem}>
-                    <View style={[styles.legendDot, { backgroundColor: COLORS.expense }]} />
-                    <Text style={styles.legendText}>Salidas</Text>
-                  </View>
-                </View>
+                {/* La lectura escrita: la barra sola no dice cuál importa ni por qué. */}
+                {analysis.worstMonth ? (
+                  <Text style={styles.chartNote}>
+                    {capitalize(analysis.worstMonth.longLabel)} es el mes que cerró más abajo: salieron{" "}
+                    {formatCurrency(analysis.worstMonth.expense, currency)} contra{" "}
+                    {formatCurrency(analysis.worstMonth.income, currency)} que entraron.
+                    {analysis.alsoNegative.length > 0
+                      ? ` ${analysis.alsoNegative.join(" y ")} también ${analysis.alsoNegative.length === 1 ? "cerró" : "cerraron"} negativo.`
+                      : ""}
+                  </Text>
+                ) : (
+                  <Text style={styles.chartNote}>Ningún mes del período cerró en negativo.</Text>
+                )}
               </View>
 
-              {/* Top 5 categories */}
-              {topCategories.length > 0 ? (
-                <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>Top categorías de gasto · {currency}</Text>
-                  {topCategories.map(([name, total]) => (
-                    <View key={name} style={styles.catRow}>
-                      <Text style={styles.catName} numberOfLines={1}>{name}</Text>
-                      <View style={styles.catBarWrap}>
-                        <View
-                          style={[
-                            styles.catBarFill,
-                            { width: `${Math.round((total / maxCategoryAmount) * 100)}%` as any },
-                          ]}
-                        />
-                      </View>
-                      <Text style={styles.catAmount}>{formatCurrency(total, currency)}</Text>
-                    </View>
-                  ))}
-                </View>
+              {analysis.truncated ? (
+                <Text style={styles.truncationNote}>
+                  La cuenta tiene más movimientos de los que caben en un análisis: estas cifras
+                  cubren los {analysis.count} más recientes, desde {format(analysis.from, "d MMM yyyy", { locale: es })}.
+                </Text>
               ) : null}
-
-              {/* Day-of-week spending pattern */}
-              {dowSpending.some((d) => d.total > 0) ? (
-                <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>Gasto por día de semana · {currency}</Text>
-                  <View style={styles.dowChart}>
-                    {dowSpending.map((d) => {
-                      const pct = Math.round((d.total / maxDowSpend) * 100);
-                      return (
-                        <View key={d.label} style={styles.dowBar}>
-                          <View style={styles.dowTrack}>
-                            <View
-                              style={[
-                                styles.dowFill,
-                                { height: `${pct}%` as any },
-                                pct === 100 && styles.dowFillPeak,
-                              ]}
-                            />
-                          </View>
-                          <Text style={styles.dowLabel}>{d.label}</Text>
-                        </View>
-                      );
-                    })}
-                  </View>
-                </View>
-              ) : null}
-
-              {/* Recent movements */}
-              {recentMovements.length > 0 ? (
-                <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>Movimientos recientes · {currency}</Text>
-                  {recentMovements.map((m) => {
-                    const isIncoming = m.destinationAccountId === account.id;
-                    const amount = isIncoming ? (m.destinationAmount ?? 0) : (m.sourceAmount ?? 0);
-                    const StatusIcon = STATUS_ICON[m.status] ?? CheckCircle2;
-                    return (
-                      <View key={m.id} style={styles.recentRow}>
-                        <StatusIcon size={14} color={STATUS_COLOR[m.status] ?? COLORS.storm} />
-                        <View style={styles.recentInfo}>
-                          <Text style={styles.recentDesc} numberOfLines={1}>
-                            {m.description ?? m.movementType}
-                          </Text>
-                          <Text style={styles.recentMeta}>
-                            {m.categoryName ?? "Sin categoría"} · {format(parseDisplayDate(m.occurredAt), "d MMM", { locale: es })}
-                          </Text>
-                        </View>
-                        <Text style={[styles.recentAmount, { color: isIncoming ? COLORS.income : COLORS.expense }]}>
-                          {isIncoming ? "+" : "−"}{formatCurrency(amount, currency)}
-                        </Text>
-                      </View>
-                    );
-                  })}
-                </View>
-              ) : (
-                <Text style={styles.emptyText}>Sin movimientos registrados.</Text>
-              )}
             </ScrollView>
           )}
         </Animated.View>
@@ -449,269 +418,131 @@ const styles = StyleSheet.create({
     gap: SPACING.sm,
     paddingHorizontal: SPACING.lg,
     paddingVertical: SPACING.md,
-    borderBottomWidth: 0.5,
-    borderBottomColor: "rgba(244,241,236,0.10)",
   },
-  accentDot: {
-    width: 22,
-    height: 22,
-    borderRadius: RADIUS.full,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  accentDotInner: { width: 8, height: 8, borderRadius: RADIUS.full },
   headerText: { flex: 1 },
   title: { fontFamily: FONT_FAMILY.heading, fontSize: FONT_SIZE.lg, color: COLORS.ink },
-  subtitle: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm, marginTop: 1 },
+  subtitle: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm, marginTop: 2 },
   closeBtn: {
     padding: SPACING.xs,
     backgroundColor: "rgba(244,241,236,0.07)",
-    borderRadius: RADIUS.sm,
+    borderRadius: RADIUS.full,
   },
-  loadingWrap: {
-    padding: SPACING.xxxl,
-    alignItems: "center",
-    gap: SPACING.md,
-  },
+  loadingWrap: { padding: SPACING.xxxl, alignItems: "center", gap: SPACING.md },
   loadingText: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.storm },
   content: {
-    padding: SPACING.lg,
-    gap: SPACING.lg,
+    paddingHorizontal: SPACING.lg,
+    paddingTop: SPACING.xs,
     paddingBottom: SPACING.xxxl,
+    gap: SPACING.lg,
   },
-  currencyHintCard: {
-    backgroundColor: SURFACE.card,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: SURFACE.cardBorder,
-    padding: SPACING.md,
-    gap: 6,
-  },
-  currencyHintTitle: {
-    fontFamily: FONT_FAMILY.bodySemibold,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.primary,
-    textTransform: "uppercase",
-    letterSpacing: 0.4,
-  },
-  currencyHintBody: {
+
+  lead: {
     fontFamily: FONT_FAMILY.body,
-    fontSize: FONT_SIZE.sm,
+    fontSize: FONT_SIZE.md,
+    lineHeight: 24,
     color: COLORS.ink,
-    lineHeight: 20,
-  },
-  currencyHintSub: {
-    fontFamily: FONT_FAMILY.body,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.storm,
-    lineHeight: 18,
   },
 
-  // Metrics
-  metricsGrid: { flexDirection: "row", flexWrap: "wrap", gap: SPACING.sm },
-  metricCard: {
-    flex: 1,
-    minWidth: "45%",
+  // Entró / salió / gasto real
+  flowCard: {
     backgroundColor: SURFACE.card,
     borderRadius: RADIUS.md,
     borderWidth: 1,
     borderColor: SURFACE.cardBorder,
-    padding: SPACING.md,
-    gap: 4,
-    alignItems: "flex-start",
+    overflow: "hidden",
   },
-  metricValue: { fontFamily: FONT_FAMILY.heading, fontSize: FONT_SIZE.md },
-  metricLabel: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
+  flowSplit: { flexDirection: "row" },
+  flowHalf: { flex: 1, padding: SPACING.md, gap: 2 },
+  flowHalfRight: {
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    borderLeftColor: SURFACE.separator,
+  },
+  flowLabel: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
+  flowValue: { fontFamily: FONT_FAMILY.heading, fontSize: FONT_SIZE.lg },
+  flowFooter: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: SURFACE.separator,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    gap: 4,
+  },
+  flowFooterRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: SPACING.sm },
+  flowFooterLabel: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.ink },
+  flowFooterValue: { fontFamily: FONT_FAMILY.heading, fontSize: FONT_SIZE.md, color: COLORS.ink },
+  flowFooterHint: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm, lineHeight: 18 },
 
-  // Section
   section: { gap: SPACING.sm },
+  sectionHead: { flexDirection: "row", alignItems: "baseline", justifyContent: "space-between", gap: SPACING.sm },
   sectionTitle: {
     fontFamily: FONT_FAMILY.bodySemibold,
-    fontSize: FONT_SIZE.sm,
+    fontSize: FONT_SIZE.xs,
     color: COLORS.storm,
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
+  sectionAside: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
 
-  // Monthly chart
-  chart: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    gap: SPACING.xs,
-    height: 80,
-  },
-  chartGroup: {
-    flex: 1,
-    alignItems: "center",
-    gap: 4,
-  },
-  barTracks: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "flex-end",
-    gap: 2,
-    width: "100%",
-  },
-  barTrack: {
-    flex: 1,
-    height: "100%",
-    justifyContent: "flex-end",
-    backgroundColor: "rgba(244,241,236,0.05)",
-    borderRadius: 4,
-    overflow: "hidden",
-  },
-  barFill: {
-    width: "100%",
-    borderRadius: 4,
-    minHeight: 2,
-  },
-  barLabel: {
-    fontFamily: FONT_FAMILY.body,
-    fontSize: 10,
-    color: COLORS.storm,
-    textTransform: "capitalize",
-  },
-  chartLegend: {
-    flexDirection: "row",
-    gap: SPACING.md,
-    justifyContent: "center",
-    marginTop: 4,
-  },
-  legendItem: { flexDirection: "row", alignItems: "center", gap: 5 },
-  legendDot: { width: 8, height: 8, borderRadius: 4 },
-  legendText: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
-
-  // Top categories
-  catRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: SPACING.sm,
-  },
-  catName: {
-    fontFamily: FONT_FAMILY.bodyMedium,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.ink,
-    width: 90,
-  },
-  catBarWrap: {
-    flex: 1,
-    height: 6,
+  // Ranking de gasto
+  catRow: { gap: 6 },
+  catHead: { flexDirection: "row", alignItems: "baseline", justifyContent: "space-between", gap: SPACING.sm },
+  catName: { flex: 1, fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.md, color: COLORS.ink },
+  catAmount: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.md, color: COLORS.ink },
+  catTrack: {
+    height: 4,
     backgroundColor: "rgba(244,241,236,0.07)",
     borderRadius: RADIUS.full,
     overflow: "hidden",
   },
-  catBarFill: {
-    height: "100%",
-    backgroundColor: COLORS.expense + "CC",
-    borderRadius: RADIUS.full,
-  },
-  catAmount: {
-    fontFamily: FONT_FAMILY.bodyMedium,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.expense,
-    width: 70,
-    textAlign: "right",
-  },
+  catFill: { height: "100%", backgroundColor: COLORS.ink, borderRadius: RADIUS.full },
+  catRestName: { flex: 1, fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.storm },
+  catRestAmount: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.storm },
 
-  // Recent movements
-  recentRow: {
+  resolveRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: SPACING.sm,
-    paddingVertical: SPACING.xs,
-    borderBottomWidth: 0.5,
-    borderBottomColor: "rgba(244,241,236,0.06)",
+    marginTop: SPACING.xs,
+    padding: SPACING.md,
+    backgroundColor: SURFACE.card,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: SURFACE.cardBorder,
   },
-  recentInfo: { flex: 1 },
-  recentDesc: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.sm, color: COLORS.ink },
-  recentMeta: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm, marginTop: 1 },
-  recentAmount: { fontFamily: FONT_FAMILY.heading, fontSize: FONT_SIZE.sm },
+  resolveText: { flex: 1, gap: 2 },
+  resolveTitle: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.md, color: COLORS.ink },
+  resolveHint: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm, lineHeight: 18 },
+  resolveAction: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.sm, color: COLORS.primary },
+
+  // Mes a mes
+  chart: { flexDirection: "row", alignItems: "flex-end", gap: SPACING.sm, height: 88 },
+  chartGroup: { flex: 1, alignItems: "center", gap: 6, height: "100%" },
+  barTracks: { flex: 1, flexDirection: "row", alignItems: "flex-end", justifyContent: "center", gap: 3 },
+  bar: { width: 9, borderRadius: 3, minHeight: 3 },
+  barLabel: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    textTransform: "capitalize",
+  },
+  chartNote: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.sm,
+    lineHeight: 20,
+    color: COLORS.storm,
+    marginTop: SPACING.xs,
+  },
+
+  truncationNote: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    lineHeight: 18,
+    color: COLORS.textDisabled,
+  },
   emptyText: {
     fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.sm,
     color: COLORS.storm,
     textAlign: "center",
-    paddingVertical: SPACING.lg,
-  },
-
-  // Balance history sparkline
-  balanceSparkCard: {
-    backgroundColor: SURFACE.card,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: SURFACE.cardBorder,
-    padding: SPACING.md,
-    gap: SPACING.xs,
-  },
-  balanceSparkRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  balanceSparkLabel: {
-    fontFamily: FONT_FAMILY.body,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.storm,
-    marginBottom: 2,
-  },
-  balanceSparkValue: {
-    fontFamily: FONT_FAMILY.heading,
-    fontSize: FONT_SIZE.sm,
-  },
-  balanceSparkHint: {
-    fontFamily: FONT_FAMILY.body,
-    fontSize: 10,
-    color: COLORS.textDisabled,
-    textAlign: "center",
-  },
-
-  // Ratio ring
-  ratioRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: SPACING.lg,
-  },
-  ratioStats: { flex: 1, gap: SPACING.sm },
-  ratioStatRow: { flexDirection: "row", alignItems: "center", gap: SPACING.sm },
-  ratioDot: { width: 10, height: 10, borderRadius: RADIUS.full },
-  ratioStatText: { flex: 1 },
-  ratioStatValue: { fontFamily: FONT_FAMILY.heading, fontSize: FONT_SIZE.lg },
-  ratioStatLabel: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm, marginTop: 1 },
-
-  // Day-of-week chart
-  dowChart: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    gap: SPACING.xs,
-    height: 64,
-  },
-  dowBar: {
-    flex: 1,
-    alignItems: "center",
-    gap: 4,
-    height: "100%",
-    justifyContent: "flex-end",
-  },
-  dowTrack: {
-    flex: 1,
-    width: "100%",
-    justifyContent: "flex-end",
-    backgroundColor: "rgba(244,241,236,0.05)",
-    borderRadius: 4,
-    overflow: "hidden",
-  },
-  dowFill: {
-    width: "100%",
-    backgroundColor: COLORS.expense + "99",
-    borderRadius: 4,
-    minHeight: 2,
-  },
-  dowFillPeak: { backgroundColor: COLORS.expense },
-  dowLabel: {
-    fontFamily: FONT_FAMILY.body,
-    fontSize: 9,
-    color: COLORS.storm,
-    textTransform: "capitalize",
+    paddingVertical: SPACING.xxxl,
   },
 });
