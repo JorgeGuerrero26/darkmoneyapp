@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { FlatList, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import { FlatList, Keyboard, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Check, Search, X } from "lucide-react-native";
 
 import { BottomSheet } from "./BottomSheet";
@@ -41,6 +41,17 @@ export function SearchableSelectSheet<T = number | null>({
   inline = false,
 }: Props<T>) {
   const [query, setQuery] = useState("");
+
+  /**
+   * Al abrirse, se cierra el teclado que dejó abierto el campo anterior.
+   *
+   * Se reportaba en Movimientos: escribes el monto y tocas "seleccionar cuenta" sin cerrar el
+   * teclado antes; el selector se abre DEBAJO del teclado y las cuentas no se ven. Tocar el
+   * campo de búsqueda de aquí lo vuelve a abrir, que es cuando de verdad hace falta.
+   */
+  useEffect(() => {
+    if (visible) Keyboard.dismiss();
+  }, [visible]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
