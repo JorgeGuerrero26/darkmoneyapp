@@ -58,6 +58,7 @@ import type { MovementRecord, MovementType, MovementStatus } from "../../types/d
 type FilterType = MovementType | "all";
 type FilterStatus = MovementStatus | "all";
 import { groupMovementsByDate, type MovementListSection } from "../../features/movements/lib/group-by-date";
+import { summarizeMovements } from "../../features/movements/lib/summary";
 import { useMovementsRealtimeSync } from "../../features/movements/hooks/useMovementsRealtimeSync";
 import { buildExchangeRateMap, resolveRate } from "../../features/dashboard/lib/aggregations";
 import { COLORS, SPACING } from "../../constants/theme";
@@ -379,29 +380,10 @@ function MovementsScreen() {
   }, []);
 
   const filterSummary = useMemo(() => {
-    let incomeTotal = 0;
-    let expenseTotal = 0;
-    let incomeCount = 0;
-    let expenseCount = 0;
     const baseUpper = baseCurrency.toUpperCase();
     // Resumen legacy fuera del contrato de paridad: si no hay tasa, muestra en base (1:1).
     const baseToActiveRate = resolveRate(exchangeRateMap, baseUpper, activeCurrency, baseUpper) ?? 1;
-    for (const m of allMovements) {
-      if (m.movementType === "income") {
-        const amount = m.destinationAmountInBaseCurrency ?? m.destinationAmount ?? 0;
-        incomeTotal += amount * baseToActiveRate;
-        incomeCount++;
-      } else if (
-        m.movementType === "expense" ||
-        m.movementType === "obligation_payment" ||
-        m.movementType === "subscription_payment"
-      ) {
-        const amount = m.sourceAmountInBaseCurrency ?? m.sourceAmount ?? 0;
-        expenseTotal += amount * baseToActiveRate;
-        expenseCount++;
-      }
-    }
-    return { incomeTotal, expenseTotal, incomeCount, expenseCount, net: incomeTotal - expenseTotal };
+    return summarizeMovements(allMovements, baseToActiveRate);
   }, [allMovements, exchangeRateMap, baseCurrency, activeCurrency]);
 
   const extraFiltersCount = [
