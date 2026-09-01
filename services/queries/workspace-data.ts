@@ -3420,6 +3420,28 @@ export async function invokeEdgeFunction<T>(name: string, body: Record<string, u
       }
     }
 
+    /**
+     * La función no existe en el proyecto: no está desplegada.
+     *
+     * El cuerpo que devuelve la plataforma es `{"code":"NOT_FOUND","message":"Requested function
+     * was not found"}`, y `humanizeError` lo convertía en "No se encontró el recurso solicitado"
+     * —porque contiene "not found"—, que suena a que el usuario tocó algo que ya no existe. Eso
+     * es exactamente lo contrario de lo que pasa, y mando dos horas a buscar el bug en la
+     * obligación en vez de en el despliegue (incidente 2026-09-01: `unlink-obligation-share`
+     * llevaba desplegado cero días mientras la app ya la llamaba).
+     */
+    if (response.status === 404 && /requested function was not found/i.test(message)) {
+      logEdgeFunctionDebug(name, {
+        stage: "function-not-deployed",
+        message,
+        responseStatus: response.status ?? null,
+        userId: activeSession?.user?.id ?? null,
+      });
+      throw new Error(
+        `Esta función del servidor todavía no está publicada (${name}). No es un problema de tus datos.`,
+      );
+    }
+
     if (response.status === 401 && isEdgeFunctionAuthSessionError(message)) {
       logEdgeFunctionDebug(name, {
         stage: "invoke-auth-session-error",
