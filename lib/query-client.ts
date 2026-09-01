@@ -123,6 +123,27 @@ const PERSISTED_QUERY_ROOTS = new Set([
   "notifications",
 ]);
 
+/**
+ * De una lista infinita se persiste **solo la primera pagina**.
+ *
+ * React Query guarda `{ pages, pageParams }` entero, asi que Movimientos escribia a disco
+ * todas las paginas a las que el usuario hubiera bajado alguna vez. Al abrir la app se
+ * hidrataban de golpe: el mes entero en pantalla antes de tocar nada, y despues un refetch
+ * de las ocho paginas a la vez. La lista se veia paginada solo la primera vez que se abria;
+ * a partir de ahi, nunca mas —que es justo lo que se reportaba como "carga todo de golpe".
+ *
+ * Con una sola pagina el arranque sigue siendo instantaneo (30 filas ya estan ahi) y el resto
+ * vuelve a pedirse al bajar. `hasNextPage` se recalcula solo desde `getNextPageParam` sobre la
+ * pagina guardada, asi que la paginacion sigue viva tras hidratar.
+ */
+function persistFirstPageOnly(data: unknown) {
+  if (!data || typeof data !== "object") return data;
+  const page = data as { pages?: unknown; pageParams?: unknown };
+  if (!Array.isArray(page.pages) || !Array.isArray(page.pageParams)) return data;
+  if (page.pages.length <= 1) return data;
+  return { ...page, pages: page.pages.slice(0, 1), pageParams: page.pageParams.slice(0, 1) };
+}
+
 const asyncStoragePersister = createAsyncStoragePersister({
   storage: AsyncStorage,
   key: "darkmoney/query-cache/v1",
@@ -140,8 +161,13 @@ export const queryPersistOptions: Omit<PersistQueryClientOptions, "queryClient">
   // Bump 2026-07-30: el snapshot ya no lleva budgets/obligations dentro (viven en
   // una entrada aparte). Un caché viejo los traería embebidos y el generador de
   // notificaciones los daría por cargados, emitiendo un ciclo con datos rancios.
-  buster: "2026-07-30-v1",
+  //
+  // Bump 2026-09-01: el cache guardado en los telefonos trae TODAS las paginas de Movimientos
+  // que se hayan cargado alguna vez. Sin bump, esas entradas viejas se seguirian hidratando
+  // enteras y el arreglo no se notaria hasta que caduquen a las 24 h.
+  buster: "2026-09-01-v1",
   dehydrateOptions: {
+    serializeData: persistFirstPageOnly,
     shouldDehydrateQuery: (query) => {
       if (query.state.status !== "success") return false;
       const rootKey = query.queryKey[0];
