@@ -29,6 +29,7 @@ import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { CurrencyInput } from "../ui/CurrencyInput";
 import { DatePickerInput } from "../ui/DatePickerInput";
 import { formatCurrency } from "../ui/AmountDisplay";
+import { describeOverpayment } from "../../features/obligations/lib/settlement";
 import { sortByName } from "../../lib/sort-locale";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { TextField } from "../ui/TextField";
@@ -331,6 +332,30 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent
       scrollRef.current?.scrollTo({ y: 0, animated: true });
       setTimeout(() => amountRef.current?.focus(), 250);
       return;
+    }
+    /* El límite lo impone el trigger de la base, que cubre también las solicitudes aceptadas y
+       los cobros que registra el otro usuario desde su teléfono. Aquí se dice antes, para no
+       llevar a nadie hasta el botón y devolverle un error del servidor.
+
+       Al EDITAR, el saldo pendiente ya descuenta el importe actual del evento, así que se le
+       suma de vuelta: sin eso, cambiar 300 por 310 en el único pago de una deuda saldada se
+       leería como sobrepago cuando en realidad solo caben 10 más. */
+    if (obligation) {
+      const headroom =
+        pendingAmount + (isEditMode && editEvent?.eventType === "payment" ? editEvent.amount : 0);
+      const overpayment = describeOverpayment({
+        amount: parsed,
+        pendingAmount: headroom,
+        formatAmount: (value) => formatCurrency(value, obligation.currencyCode),
+        noun: actsAsCollector ? "cobro" : "pago",
+      });
+      if (overpayment) {
+        haptics.error();
+        setAmountError(overpayment);
+        scrollRef.current?.scrollTo({ y: 0, animated: true });
+        setTimeout(() => amountRef.current?.focus(), 250);
+        return;
+      }
     }
     if (createMovement && activeAccounts.length > 0 && accountId == null) {
       haptics.error();

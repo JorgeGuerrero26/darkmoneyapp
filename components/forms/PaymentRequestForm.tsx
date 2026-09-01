@@ -19,6 +19,8 @@ import type { SharedObligationSummary } from "../../types/domain";
 import { BottomSheet } from "../ui/BottomSheet";
 import { Button } from "../ui/Button";
 import { CurrencyInput } from "../ui/CurrencyInput";
+import { formatCurrency } from "../ui/AmountDisplay";
+import { describeOverpayment } from "../../features/obligations/lib/settlement";
 import { DatePickerInput } from "../ui/DatePickerInput";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING } from "../../constants/theme";
 import { TextField } from "../ui/TextField";
@@ -83,6 +85,24 @@ export function PaymentRequestForm({ visible, onClose, onSuccess, obligation }: 
     if (!amount.trim() || isNaN(numAmount) || numAmount <= 0) {
       haptics.error();
       setAmountError(`Ingresa el monto del ${verb}`);
+      scrollRef.current?.scrollTo({ y: 0, animated: true });
+      setTimeout(() => amountRef.current?.focus(), 250);
+      return;
+    }
+
+    /* Mismo límite que al registrar el pago directamente. Importa MÁS aquí: la solicitud la
+       manda el usuario con quien la deuda está compartida, y quien se comería el rechazo del
+       servidor sería el dueño al aceptarla —días después, sin saber por qué—. Se frena en el
+       teléfono de quien la escribe. */
+    const overpayment = describeOverpayment({
+      amount: numAmount,
+      pendingAmount: obligation.pendingAmount,
+      formatAmount: (value) => formatCurrency(value, obligation.currencyCode),
+      noun: verb,
+    });
+    if (overpayment) {
+      haptics.error();
+      setAmountError(overpayment);
       scrollRef.current?.scrollTo({ y: 0, animated: true });
       setTimeout(() => amountRef.current?.focus(), 250);
       return;

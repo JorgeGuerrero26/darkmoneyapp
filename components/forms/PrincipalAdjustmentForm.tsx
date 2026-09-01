@@ -17,6 +17,7 @@ import type { ObligationEventSummary, ObligationSummary } from "../../types/doma
 import { BottomSheet } from "../ui/BottomSheet";
 import { Button } from "../ui/Button";
 import { CurrencyInput } from "../ui/CurrencyInput";
+import { describeOverpayment } from "../../features/obligations/lib/settlement";
 import { DatePickerInput } from "../ui/DatePickerInput";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { formatCurrency } from "../ui/AmountDisplay";
@@ -171,6 +172,26 @@ export function PrincipalAdjustmentForm({ visible, mode: initialMode, obligation
       scrollRef.current?.scrollTo({ y: 0, animated: true });
       setTimeout(() => amountRef.current?.focus(), 250);
       return;
+    }
+    /* Bajar la deuda por debajo de cero es la misma regla que sobrepagarla: el trigger de la
+       base rechaza las dos. Solo aplica al modo "le debe menos"; subirla no tiene techo.
+       Al editar, el pendiente ya descuenta el importe actual del evento, así que se le suma. */
+    if (!isIncrease && obligation) {
+      const headroom =
+        currentPrincipal + (isEditMode && editEvent?.eventType === "principal_decrease" ? editEvent.amount : 0);
+      const excess = describeOverpayment({
+        amount: parsed,
+        pendingAmount: headroom,
+        formatAmount: (value) => formatCurrency(value, obligation.currencyCode),
+        noun: "descuento",
+      });
+      if (excess) {
+        haptics.error();
+        setAmountError(excess);
+        scrollRef.current?.scrollTo({ y: 0, animated: true });
+        setTimeout(() => amountRef.current?.focus(), 250);
+        return;
+      }
     }
     if (!isEditMode && createMovement && activeAccounts.length > 0 && accountId == null) {
       haptics.error();
