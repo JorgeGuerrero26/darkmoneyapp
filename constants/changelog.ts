@@ -95,6 +95,12 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Créditos y deudas también se pueden agrupar: separados en \"Me deben\" y \"Yo debo\".",
       "Una deuda o crédito que alguien compartió contigo ya se puede quitar de tu lista, deslizándola o manteniéndola pulsada. Antes se quedaba ahí para siempre. La cuenta sigue siendo de la otra persona: lo que se quita es tu acceso, así que para recuperarla tendría que volver a compartírtela.",
       "Archivar y eliminar una cuenta se hace solo desde la lista —deslizando o manteniendo pulsado—, como en el resto de la app. Los botones que había dentro del formulario de la cuenta se fueron, y eliminar (que solo se puede en una cuenta archivada) está ahora al deslizar hacia el otro lado, para que no se toque por error.",
+      "Crear una suscripción vuelve a caber en una pantalla. \"Opcionales\" desplegaba ocho campos dentro del mismo formulario y empujaba el botón de crear fuera de vista; ahora abre su propia hoja y al volver el botón sigue donde estaba.",
+      "Y esos opcionales están ordenados: proveedor, cuenta, categoría y moneda en un bloque, las dos fechas bajo \"Vigencia\" y las notas al final. Antes eran ocho recuadros sueltos, cada uno rotulado de una manera distinta. De paso, \"Cuenta de débito\" ahora dice \"Se paga con\", la moneda dice \"Soles\" en vez de \"PEN\", y \"Notas internas\" es simplemente \"Notas\": no hay notas externas.",
+      "Las explicaciones del formulario se mudaron a la fila que les toca. \"Solo referencia, no afecta los cobros\" se lee junto a la fecha de inicio, en vez de en un párrafo al principio que describía campos que en ese momento no se veían.",
+      "El interruptor para que el cobro se anote solo ya no te pide una cuenta escondida: al activarlo, la cuenta con la que se paga sube al formulario principal.",
+      "Y cuando ya está todo lo obligatorio, el pie del botón deja de repetir \"Falta el nombre\" y te dice qué vas a crear: \"Se cobrará hoy y cada mes\".",
+      "Las últimas filas que en vez de abrir el calendario desplegaban un campo debajo —la fecha de un pago, de un ajuste de monto y de una deuda nueva— ahora lo abren de una vez. Eran dos toques para ver un día.",
     ],
   },
   {
