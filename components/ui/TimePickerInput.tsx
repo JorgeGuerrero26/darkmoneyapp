@@ -3,6 +3,7 @@ import { Modal, Platform, StyleSheet, Text, TouchableOpacity, View } from "react
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { ChevronRight, Clock } from "lucide-react-native";
 
+import { Button } from "./Button";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 
 type Props = {
@@ -61,7 +62,7 @@ export function TimePickerInput({ label, value, onChange, hideLabel = false, var
         accessibilityHint="Toca para abrir el selector de hora"
       >
         <View style={styles.triggerIconWrap}>
-          <Clock size={18} color={value ? COLORS.pine : COLORS.storm} strokeWidth={2} />
+          <Clock size={18} color={value ? COLORS.fog : COLORS.storm} strokeWidth={2} />
         </View>
         <Text style={[styles.triggerText, !value && styles.triggerPlaceholder]} numberOfLines={1}>
           {value || "Seleccionar hora"}
@@ -80,23 +81,23 @@ export function TimePickerInput({ label, value, onChange, hideLabel = false, var
               <DateTimePicker
                 value={tempDate}
                 mode="time"
+                is24Hour
                 display="spinner"
+                themeVariant="dark"
                 onChange={(_, date) => date && setTempDate(date)}
               />
-              <View style={styles.iosActions}>
-                <TouchableOpacity onPress={() => setOpen(false)} style={styles.iosAction}>
-                  <Text style={styles.iosActionText}>Cancelar</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => {
-                    onChange(dateToValue(tempDate));
-                    setOpen(false);
-                  }}
-                  style={styles.iosAction}
-                >
-                  <Text style={[styles.iosActionText, styles.iosActionConfirm]}>Confirmar</Text>
-                </TouchableOpacity>
-              </View>
+              {/* Un solo botón, y dice el resultado. "Cancelar / Confirmar" era el segundo
+                  patrón de cierre entre campos hermanos —fecha cerraba con "✓ Listo" arriba— y
+                  "Confirmar" iba en menta, que en esta app significa plata que entra. Para salir
+                  sin cambiar nada está el fondo, como en el resto de las hojas. */}
+              <Button
+                label={`Usar ${dateToValue(tempDate)}`}
+                size="lg"
+                onPress={() => {
+                  onChange(dateToValue(tempDate));
+                  setOpen(false);
+                }}
+              />
             </View>
           </View>
         </Modal>
@@ -161,16 +162,4 @@ const styles = StyleSheet.create({
     borderTopRightRadius: RADIUS.xl,
     paddingBottom: SPACING.xl,
   },
-  iosActions: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingHorizontal: SPACING.lg,
-  },
-  iosAction: { padding: SPACING.md },
-  iosActionText: {
-    color: COLORS.textMuted,
-    fontFamily: FONT_FAMILY.bodySemibold,
-    fontSize: FONT_SIZE.sm,
-  },
-  iosActionConfirm: { color: COLORS.primary },
 });

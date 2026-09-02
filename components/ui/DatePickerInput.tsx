@@ -11,13 +11,14 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BlurView } from "expo-blur";
-import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { format, isValid } from "date-fns";
-import { es } from "date-fns/locale";
-import { CalendarDays, ChevronRight, Check, X } from "lucide-react-native";
+import { CalendarDays, ChevronRight, X } from "lucide-react-native";
 import { COLORS, ELEVATION, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
-import { AndroidDarkDatePickerModal } from "./AndroidDarkDatePickerModal";
+import { Button } from "./Button";
+import { DateTimeCalendar } from "./DateTimeCalendar";
 import { useDismissibleSheet } from "./useDismissibleSheet";
+import { relativeDateLabel } from "../../lib/calendar";
+import { todayPeru } from "../../lib/date";
 
 type Props = {
   label: string;
@@ -79,9 +80,9 @@ export function DatePickerInput({
   });
   const [tempDate, setTempDate] = useState<Date>(() => initialPickerDate(value, minimumDate));
 
-  const displayText = value
-    ? format(parseLocalDate(value), "d 'de' MMMM yyyy", { locale: es })
-    : "";
+  /* Formato corto. "1 de septiembre 2…" no cabía en medio ancho con un icono de 44px delante:
+     el formato largo existe para ser legible y terminaba truncado. */
+  const displayText = value ? relativeDateLabel(value, todayPeru()) : "";
 
   function handleOpen() {
     const initial = initialPickerDate(value, minimumDate);
@@ -89,9 +90,6 @@ export function DatePickerInput({
     setOpen(true);
   }
 
-  function handleChange(_: DateTimePickerEvent, date?: Date) {
-    if (date) setTempDate(date);
-  }
 
   function handleConfirm() {
     onChange(format(tempDate, "yyyy-MM-dd"));
@@ -120,7 +118,7 @@ export function DatePickerInput({
           accessibilityHint="Toca para abrir el selector de fecha"
         >
           <View style={styles.triggerIconWrap}>
-            <CalendarDays size={18} color={value ? COLORS.pine : COLORS.storm} strokeWidth={2} />
+            <CalendarDays size={18} color={value ? COLORS.fog : COLORS.storm} strokeWidth={2} />
           </View>
           <Text style={[styles.triggerText, !value && styles.triggerPlaceholder]} numberOfLines={1}>
             {displayText || placeholder}
@@ -140,99 +138,66 @@ export function DatePickerInput({
         ) : null}
       </View>
 
-      {/* Android: calendario oscuro propio (el nativo Material sale blanco) */}
-      {Platform.OS === "android" ? (
-        <AndroidDarkDatePickerModal
-          visible={open}
-          onClose={() => setOpen(false)}
-          label={label}
-          initialDate={tempDate}
-          minimumDate={minimumDate}
-          maximumDate={maximumDate}
-          optional={optional}
-          onConfirm={(ymd) => {
-            onChange(ymd);
-            setOpen(false);
-          }}
-          onClear={() => {
-            onChange("");
-            setOpen(false);
-          }}
-        />
-      ) : null}
+      {/* Un solo calendario para las dos plataformas. Antes iOS abría un modal con el picker
+          nativo `inline` y Android su propio `AndroidDarkDatePickerModal`: dos calendarios que se
+          veían distinto, y el de iOS decía el mes cuatro veces —subtítulo, título grande, dentro
+          del calendario y otra vez en las flechas— con un "Martes, 1 De Septiembre" en title case
+          inglés encima. */}
+      <Modal
+        visible={open}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setOpen(false)}
+      >
+        <Animated.View style={[styles.overlay, iosSheetDismiss.backdropStyle]}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setOpen(false)} />
+          <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFill} />
+          <Animated.View
+            style={[
+              styles.iosSheet,
+              { paddingBottom: Math.max(SPACING.lg, insets.bottom + SPACING.md) },
+              iosSheetDismiss.sheetStyle,
+            ]}
+            onStartShouldSetResponder={() => true}
+            {...iosSheetDismiss.panHandlers}
+          >
+            <View style={styles.handle} />
 
-      {/* iOS: glass premium bottom sheet */}
-      {Platform.OS === "ios" && (
-        <Modal
-          visible={open}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setOpen(false)}
-        >
-          <Animated.View style={[styles.overlay, iosSheetDismiss.backdropStyle]}>
-            <Pressable style={StyleSheet.absoluteFill} onPress={() => setOpen(false)} />
-            <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFill} />
-            <Animated.View
-              style={[styles.iosSheet, { paddingBottom: Math.max(SPACING.lg, insets.bottom + SPACING.md) }, iosSheetDismiss.sheetStyle]}
-              onStartShouldSetResponder={() => true}
-              {...iosSheetDismiss.panHandlers}
-            >
-              {/* Drag handle */}
-              <View style={styles.handle} />
-
-              {/* Header */}
-              <View style={styles.sheetHeader}>
-                {optional ? (
-                  <TouchableOpacity onPress={handleClear} style={styles.iosClearHeaderBtn}>
-                    <Text style={styles.iosClearHeaderText}>Quitar</Text>
-                  </TouchableOpacity>
-                ) : (
-                  <View style={styles.headerSide} />
-                )}
-                <Text style={styles.sheetTitle}>{label}</Text>
-                <TouchableOpacity onPress={handleConfirm} style={styles.confirmBtn}>
-                  <Check size={16} color={COLORS.pine} strokeWidth={2.5} />
-                  <Text style={styles.confirmBtnText}>Listo</Text>
+            <View style={styles.sheetHeader}>
+              {/* "Quitar" se queda: no es otra forma de cerrar, es otra cosa que hacer. */}
+              {optional ? (
+                <TouchableOpacity onPress={handleClear} style={styles.iosClearHeaderBtn}>
+                  <Text style={styles.iosClearHeaderText}>Quitar</Text>
                 </TouchableOpacity>
-              </View>
+              ) : (
+                <View style={styles.headerSide} />
+              )}
+              <Text style={styles.sheetTitle}>{label}</Text>
+              <View style={styles.headerSide} />
+            </View>
 
-              {/* Divider */}
-              <View style={styles.divider} />
+            <View style={styles.divider} />
 
-              {/* Date preview */}
-              <View style={styles.datePreview}>
-                <Text style={styles.datePreviewMonth}>
-                  {format(tempDate, "MMMM yyyy", { locale: es })}
-                </Text>
-                <Text style={styles.datePreviewText}>
-                  {format(tempDate, "EEEE, d 'de' MMMM", { locale: es })}
-                </Text>
-                {optional ? (
-                  <TouchableOpacity onPress={handleClear} style={styles.iosClearSubtle}>
-                    <Text style={styles.iosClearSubtleText}>Quitar fecha y dejar vacío</Text>
-                  </TouchableOpacity>
-                ) : null}
-              </View>
+            <View style={styles.iosCalendarFrame}>
+              <DateTimeCalendar
+                value={format(tempDate, "yyyy-MM-dd")}
+                onChange={(next) => setTempDate(parseLocalDate(next))}
+                minimumDate={minimumDate}
+                maximumDate={maximumDate}
+              />
+            </View>
 
-              {/* Calendario nativo (iOS 14+); antes era solo ruletas — mucho más claro */}
-              <View style={styles.iosCalendarFrame}>
-                <DateTimePicker
-                  value={tempDate}
-                  mode="date"
-                  display="inline"
-                  onChange={handleChange}
-                  minimumDate={minimumDate}
-                  maximumDate={maximumDate}
-                  locale="es-ES"
-                  themeVariant="dark"
-                  accentColor={COLORS.primary}
-                  style={styles.iosInlinePicker}
-                />
-              </View>
-            </Animated.View>
+            {/* Un solo botón, y dice el resultado. Antes: "✓ Listo" en menta arriba a la derecha
+                en fecha, y "Cancelar / Confirmar" abajo en hora — dos patrones entre hermanos. */}
+            <Button
+              label={`Usar ${relativeDateLabel(format(tempDate, "yyyy-MM-dd"), todayPeru()).toLowerCase()}`}
+              size="lg"
+              onPress={handleConfirm}
+            />
           </Animated.View>
-        </Modal>
-      )}
+        </Animated.View>
+      </Modal>
+
     </View>
   );
 }
@@ -369,19 +334,7 @@ const styles = StyleSheet.create({
     color: COLORS.danger,
   },
 
-  confirmBtn: {
-    width: 64,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "flex-end",
-    gap: 4,
-  },
 
-  confirmBtnText: {
-    fontFamily: FONT_FAMILY.bodySemibold,
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.pine,
-  },
 
   divider: {
     height: 0.5,
@@ -389,39 +342,9 @@ const styles = StyleSheet.create({
     marginHorizontal: SPACING.lg,
   },
 
-  datePreview: {
-    alignItems: "center",
-    paddingVertical: SPACING.sm,
-    gap: 4,
-  },
 
-  datePreviewMonth: {
-    fontFamily: FONT_FAMILY.bodySemibold,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.storm,
-    textTransform: "capitalize",
-    letterSpacing: 0.8,
-  },
 
-  datePreviewText: {
-    fontFamily: FONT_FAMILY.heading,
-    fontSize: FONT_SIZE.lg,
-    color: COLORS.ink,
-    textTransform: "capitalize",
-    textAlign: "center",
-    paddingHorizontal: SPACING.md,
-  },
 
-  iosClearSubtle: {
-    paddingVertical: SPACING.xs,
-    paddingHorizontal: SPACING.md,
-  },
-  iosClearSubtleText: {
-    fontFamily: FONT_FAMILY.bodyMedium,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.storm,
-    textDecorationLine: "underline",
-  },
 
   /** Contenedor del UIDatePicker estilo calendario (inline) */
   iosCalendarFrame: {
@@ -434,8 +357,4 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(10,10,9,0.65)",
   },
 
-  iosInlinePicker: {
-    width: "100%",
-    minHeight: 320,
-  },
 });
