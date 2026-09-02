@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
-import { AlertCircle } from "lucide-react-native";
+import { AlertCircle, HelpCircle } from "lucide-react-native";
 import { format } from "date-fns";
 import { useWorkspace } from "../../lib/workspace-context";
 import { useAuth } from "../../lib/auth-context";
@@ -23,7 +23,7 @@ import {
 import { subscriptionFrequencyListLabel } from "../../lib/subscription-helpers";
 import type { SubscriptionSummary } from "../../types/domain";
 import { BottomSheet } from "../ui/BottomSheet";
-import { DatePickerInput } from "../ui/DatePickerInput";
+import { FormDateRow } from "../ui/FormDateRow";
 import { FormOptionRow } from "../ui/FormOptionRow";
 import { FormFirstRunHelp, useFormFirstRunHelp } from "./FormFirstRunHelp";
 import { SearchableSelectSheet } from "../ui/SearchableSelectSheet";
@@ -33,19 +33,33 @@ import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { CurrencyInput } from "../ui/CurrencyInput";
 import { BusinessDateNotice } from "../ui/BusinessDateNotice";
 import { SmartSuggestion } from "../ui/SmartSuggestion";
+import { SubscriptionOptionalsSheet } from "../../features/subscriptions/components/SubscriptionOptionalsSheet";
+import { currencyPluralTitle } from "../../constants/currencies";
+import { relativeDateLabel } from "../../lib/calendar";
 import { sortByName } from "../../lib/sort-locale";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { TextField } from "../ui/TextField";
 
 
+// "Cada mes" y no "Mensual": la fila dice cada cuánto se cobra, y así se dice. El adjetivo
+// vuelve solo cuando el intervalo pasa de uno ("Cada 3 meses"), donde ya no cabe la forma corta.
 const FREQUENCY_OPTIONS: { value: SubscriptionFormInput["frequency"]; label: string }[] = [
-  { value: "weekly",    label: "Semanal" },
-  { value: "monthly",   label: "Mensual" },
-  { value: "quarterly", label: "Trimestral" },
-  { value: "yearly",    label: "Anual" },
-  { value: "daily",     label: "Diario" },
+  { value: "weekly",    label: "Cada semana" },
+  { value: "monthly",   label: "Cada mes" },
+  { value: "quarterly", label: "Cada trimestre" },
+  { value: "yearly",    label: "Cada año" },
+  { value: "daily",     label: "Cada día" },
   { value: "custom",    label: "Personalizado" },
 ];
+
+const RECURRENCE_PHRASES: Record<SubscriptionFormInput["frequency"], string> = {
+  daily: "Cada día",
+  weekly: "Cada semana",
+  monthly: "Cada mes",
+  quarterly: "Cada trimestre",
+  yearly: "Cada año",
+  custom: "Cada día",
+};
 
 const REMIND_OPTIONS = [
   { label: "1 día", value: 1 },
@@ -108,7 +122,7 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
   const [vendorOpen, setVendorOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [categoryOpen, setCategoryOpen] = useState(false);
-  const [showOptional, setShowOptional] = useState(false);
+  const [optionalsOpen, setOptionalsOpen] = useState(false);
   const { open: helpOpen, dismiss: dismissHelp, show: showHelp } = useFormFirstRunHelp(
     "dm_help_subscription_form",
     visible,
@@ -145,7 +159,6 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
   const [showDiscard, setShowDiscard] = useState(false);
 
   const nameRef = useRef<TextInput>(null);
-  const descriptionRef = useRef<TextInput>(null);
 
   useEffect(() => {
     if (!visible) return;
@@ -302,7 +315,7 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
       return;
     }
     if (autoCreateMovement && accountId === null) {
-      setSubmitError("Para crear el movimiento automáticamente debes elegir una cuenta de débito.");
+      setSubmitError("Elige la cuenta con la que se paga: el cobro se anota en ella.");
       return;
     }
 
@@ -375,12 +388,21 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
       : !nextDueDate.trim()
         ? "Falta el próximo cobro"
         : autoCreateMovement && accountId === null
-          ? "Falta la cuenta de débito"
+          ? "Falta la cuenta con la que se paga"
           : null;
 
   const isLoading = createMutation.isPending || updateMutation.isPending;
   const intervalValue = Math.max(1, parseInt(intervalCount, 10) || 1);
-  const recurrenceLabel = subscriptionFrequencyListLabel(intervalValue, frequency, FREQUENCY_LABELS);
+  const recurrenceLabel = intervalValue <= 1
+    ? RECURRENCE_PHRASES[frequency]
+    : subscriptionFrequencyListLabel(intervalValue, frequency, FREQUENCY_LABELS);
+
+  /* Con lo obligatorio completo, el pie deja de nombrar lo que falta y dice qué se va a crear:
+     "Se cobrará hoy y cada mes". Repetir "Falta el nombre" con el nombre puesto era ruido. */
+  const nextChargeWord = nextDueDate ? relativeDateLabel(nextDueDate, today).toLowerCase() : "";
+  const summaryLine = nextChargeWord
+    ? `Se cobrará ${/^(hoy|ayer|anteayer|mañana)$/.test(nextChargeWord) ? nextChargeWord : `el ${nextChargeWord}`} y ${recurrenceLabel.toLowerCase()}`
+    : null;
   const selectedAccountName = accountId !== null
     ? activeAccounts.find((account) => account.id === accountId)?.name ?? null
     : null;
@@ -424,6 +446,32 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
         onClose={handleClose}
         title={isEditing ? "Editar suscripción" : "Nueva suscripción"}
         snapHeight={0.95}
+        headerAction={
+          <TouchableOpacity
+            onPress={showHelp}
+            style={styles.helpBtn}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel="Cómo funciona este formulario"
+          >
+            <HelpCircle size={15} color={COLORS.storm} />
+          </TouchableOpacity>
+        }
+        footer={
+          <View style={styles.submitBar}>
+            {missingLabel ? (
+              <Text style={styles.submitNote}>{missingLabel}</Text>
+            ) : summaryLine ? (
+              <Text style={styles.submitNote}>{summaryLine}</Text>
+            ) : null}
+            <Button
+              label={isEditing ? "Guardar cambios" : "Crear suscripción"}
+              onPress={handleSubmit}
+              loading={isLoading}
+              size="lg"
+            />
+          </View>
+        }
         // Dentro del sheet: iOS solo presenta un Modal a la vez y como hermano no aparecía.
         overlay={
           <>
@@ -436,6 +484,52 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
               cancelLabel="Continuar"
               onCancel={() => setShowDiscard(false)}
               onConfirm={() => { setShowDiscard(false); onClose(); }}
+            />
+            {/* Las hojas van primero: los selectores que se abren DESDE ellas se pintan
+                después y quedan por encima. */}
+            <SubscriptionOptionalsSheet
+              visible={optionalsOpen}
+              onClose={() => setOptionalsOpen(false)}
+              showVendor={counterparties.length > 0}
+              vendorLabel={counterparties.find((cp) => cp.id === vendorPartyId)?.name ?? null}
+              onOpenVendor={() => setVendorOpen(true)}
+              showAccount={activeAccounts.length > 0 && !autoCreateMovement}
+              accountLabel={selectedAccountName}
+              onOpenAccount={() => setAccountOpen(true)}
+              accountSuggestion={accSuggestionId !== null ? (() => {
+                const acc = activeAccounts.find((a) => a.id === accSuggestionId);
+                return acc ? (
+                  <SmartSuggestion
+                    label={acc.name}
+                    detail="Cuenta aprendida por pagos parecidos a este proveedor"
+                    onApply={() => setAccountId(acc.id)}
+                  />
+                ) : null;
+              })() : null}
+              showCategory={expenseCategories.length > 0}
+              categoryLabel={expenseCategories.find((c) => c.id === categoryId)?.name ?? null}
+              onOpenCategory={() => setCategoryOpen(true)}
+              categorySuggestion={catSuggestionId !== null ? (() => {
+                const cat = expenseCategories.find((c) => c.id === catSuggestionId);
+                return cat ? (
+                  <SmartSuggestion
+                    label={cat.name}
+                    detail="Categoría sugerida por nombre y proveedor"
+                    onApply={() => setCategoryId(cat.id)}
+                  />
+                ) : null;
+              })() : null}
+              currencyLabel={currencyPluralTitle(currencyCode) || currencyCode}
+              onOpenCurrency={() => setCurrencyOpen(true)}
+              startDate={startDate}
+              onChangeStartDate={setStartDate}
+              endDate={endDate}
+              onChangeEndDate={setEndDate}
+              minimumEndDate={startDate ? parseLocalYmd(startDate) : undefined}
+              description={description}
+              onChangeDescription={setDescription}
+              notes={notes}
+              onChangeNotes={setNotes}
             />
             <SearchableSelectSheet
             inline
@@ -475,7 +569,7 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
           <SearchableSelectSheet
             inline
             visible={accountOpen}
-            title="Cuenta de débito"
+            title="Se paga con"
             options={[
               { value: null as number | null, label: "Ninguna" },
               ...activeAccounts.map((acc) => ({ value: acc.id as number | null, label: acc.name })),
@@ -505,50 +599,74 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
           </>
         }
       >
-      {/* Name */}
+      {/* La explicación entera vivía aquí arriba en tres párrafos, y dos de ellos hablaban de
+          campos que en ese momento no se veían. Los dos bajaron a la fila que los usa; queda el
+          que explica el modelo de fechas, una vez, y después detrás del "?" de la cabecera. */}
       <FormFirstRunHelp
         open={helpOpen}
         onDismiss={dismissHelp}
         onShow={showHelp}
+        showTrigger={false}
         title="Cómo funciona"
         lines={[
           "El sistema no adivina las fechas: toma el próximo cobro que elijas y desde ahí repite según cada cuánto se cobre.",
-          "Inicio y Fin están en Opcionales. Inicio es solo referencia y Fin puede quedar vacío si no hay fecha de baja.",
-          "Si activas «Registrar el gasto solo», ese día se anota el gasto en la cuenta que elijas y la fecha pasa al siguiente ciclo.",
         ]}
       />
 
-      {/* Cuatro decisiones en una pantalla, sin desplazarse: nombre, monto, cada cuánto y
-          cuándo. Lo demás vive en Opcionales, que la mayoría va a pasar de largo. */}
+      {/* Sin rótulo: el ejemplo va de placeholder. Había dos maneras de marcar lo obligatorio
+          —"NOMBRE *" en mayúsculas fuera del campo y "Monto *" en minúsculas dentro— más un
+          asterisco que hay que interpretar. Lo obligatorio son los dos primeros campos y son los
+          dos primeros: el orden ya lo dice, y el pie del botón nombra lo que falte. */}
       <View>
-        <Text style={styles.label}>Nombre *</Text>
         <TextField
           ref={nameRef}
           style={[styles.textInput, nameError ? styles.inputError : null]}
           value={name}
           onChangeText={(t) => { setName(t); setNameError(""); }}
           placeholder="Netflix, Spotify, Adobe…"
-          placeholderTextColor={COLORS.textDisabled}
+          placeholderTextColor={COLORS.storm}
           returnKeyType="next"
+          accessibilityLabel="Nombre de la suscripción"
         />
         {nameError ? <Text style={styles.fieldError}>{nameError}</Text> : null}
       </View>
 
       <CurrencyInput
-        label="Monto *"
         value={amount}
         onChangeText={(t) => { setAmount(t); setAmountError(""); }}
         currencyCode={currencyCode}
         error={amountError}
       />
 
-      {/* Antes eran tres controles para una pregunta: seis cápsulas de frecuencia, un campo
-          numérico y la línea "Cadencia resultante" que traducía lo recién elegido. */}
-      <FormOptionRow
-        label="Se repite"
-        value={recurrenceLabel}
-        onPress={() => setFrequencyOpen(true)}
-      />
+      {/* Cada cuánto y desde cuándo, en una tarjeta. Antes eran tres controles para la primera
+          pregunta —seis cápsulas, un campo numérico y una línea que traducía lo recién elegido—. */}
+      <View style={styles.group}>
+        <FormOptionRow
+          grouped
+          label="Se repite"
+          value={recurrenceLabel}
+          onPress={() => setFrequencyOpen(true)}
+        />
+        <FormDateRow
+          grouped
+          label="Próximo cobro"
+          support="Desde esta fecha se cuenta el ciclo"
+          value={nextDueDate}
+          onChange={setNextDueDate}
+          placeholder="Elegir fecha"
+          minimumDate={startDate ? parseLocalYmd(startDate) : undefined}
+        />
+        <FormOptionRow
+          grouped
+          last
+          label="Avisarme antes"
+          value={REMIND_OPTIONS.find((option) => option.value === remindDaysBefore)?.label ?? "Sin aviso"}
+          onPress={() => setRemindOpen(true)}
+        />
+      </View>
+
+      {/* Personalizado es el único que necesita un número; se pide justo después, no como campo
+          permanente para los otros cinco. */}
       {frequency === "custom" ? (
         <View>
           <Text style={styles.label}>Cada cuántos días</Text>
@@ -557,39 +675,20 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
             value={intervalCount}
             onChangeText={setIntervalCount}
             placeholder="1"
-            placeholderTextColor={COLORS.textDisabled}
+            placeholderTextColor={COLORS.storm}
             keyboardType="number-pad"
           />
         </View>
       ) : null}
 
-      {/* La única fecha que hace algo. Inicio y fin bajaron a Opcionales: el propio texto del
-          formulario admitía que Inicio "no mueve por sí sola el próximo cobro". */}
-      <DatePickerInput
-        label="Próximo cobro"
-        value={nextDueDate}
-        onChange={setNextDueDate}
-        placeholder="Elegir fecha"
-        variant="formRow"
-        minimumDate={startDate ? parseLocalYmd(startDate) : undefined}
-      />
-      <Text style={styles.helperText}>Desde esta fecha se calcula el ciclo.</Text>
       <BusinessDateNotice dateValue={nextDueDate} onApplySuggestedDate={setNextDueDate} />
-
-      <FormOptionRow
-        label="Avisarme antes"
-        value={REMIND_OPTIONS.find((option) => option.value === remindDaysBefore)?.label ?? "Sin aviso"}
-        onPress={() => setRemindOpen(true)}
-      />
 
       <View style={styles.switchRow}>
         <View style={styles.switchInfo}>
-          <Text style={styles.switchLabel}>Registrar el gasto solo</Text>
-          <Text style={styles.switchDesc}>
-            {autoCreateMovement && !accountId
-              ? "Necesita una cuenta de débito — elígela en Opcionales"
-              : "Necesita una cuenta de débito"}
-          </Text>
+          {/* "Registrar el gasto solo" se lee de dos maneras: *solamente el gasto* o *el gasto
+              por sí solo*. Y su subtítulo pedía una cuenta que estaba escondida en Opcionales. */}
+          <Text style={styles.switchLabel}>Anotar el gasto solo</Text>
+          <Text style={styles.switchDesc}>Cada cobro entra como gasto, sin que lo registres</Text>
         </View>
         <Switch
           value={autoCreateMovement}
@@ -599,121 +698,30 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
         />
       </View>
 
-      {/* Ocho campos marcados "(opcional)" sumaban 700 px que la mayoría pasa de largo. */}
-      <FormOptionRow
-        label="Opcionales"
-        support="Proveedor, moneda, cuenta, categoría, fechas y notas"
-        value={null}
-        placeholder={showOptional ? "Ocultar" : "Abrir"}
-        onPress={() => setShowOptional((open) => !open)}
-      />
-
-      {showOptional ? (
-        <View style={styles.optionalBlock}>
-          {counterparties.length > 0 ? (
-            <FormOptionRow
-              label="Proveedor"
-              value={counterparties.find((cp) => cp.id === vendorPartyId)?.name ?? null}
-              placeholder="Ninguno"
-              onPress={() => setVendorOpen(true)}
-            />
-          ) : null}
-
+      {/* Con el gasto automático la cuenta deja de ser opcional, así que sube aquí: el toggle no
+          puede pedir algo que solo se responde saliendo del formulario. */}
+      {autoCreateMovement && activeAccounts.length > 0 ? (
+        <View style={[styles.group, !accountId ? styles.groupError : null]}>
           <FormOptionRow
-            label="Moneda"
-            value={currencyCode}
-            onPress={() => setCurrencyOpen(true)}
+            grouped
+            last
+            label="Se paga con"
+            value={selectedAccountName}
+            placeholder="Elegir cuenta"
+            onPress={() => setAccountOpen(true)}
           />
-
-          {activeAccounts.length > 0 ? (
-            <>
-              <FormOptionRow
-                label="Cuenta de débito"
-                value={selectedAccountName}
-                placeholder="Ninguna"
-                onPress={() => setAccountOpen(true)}
-              />
-              {accSuggestionId !== null ? (() => {
-                const acc = activeAccounts.find((a) => a.id === accSuggestionId);
-                return acc ? (
-                  <SmartSuggestion
-                    label={acc.name}
-                    detail="Cuenta aprendida por pagos parecidos a este proveedor"
-                    onApply={() => setAccountId(acc.id)}
-                  />
-                ) : null;
-              })() : null}
-            </>
-          ) : null}
-
-          {expenseCategories.length > 0 ? (
-            <>
-              <FormOptionRow
-                label="Categoría"
-                value={expenseCategories.find((c) => c.id === categoryId)?.name ?? null}
-                placeholder="Ninguna"
-                onPress={() => setCategoryOpen(true)}
-              />
-              {catSuggestionId !== null ? (() => {
-                const cat = expenseCategories.find((c) => c.id === catSuggestionId);
-                return cat ? (
-                  <SmartSuggestion
-                    label={cat.name}
-                    detail="Categoría sugerida por nombre y proveedor"
-                    onApply={() => setCategoryId(cat.id)}
-                  />
-                ) : null;
-              })() : null}
-            </>
-          ) : null}
-
-          <DatePickerInput
-            label="Inicio"
-            value={startDate}
-            onChange={setStartDate}
-            placeholder="Elegir fecha"
-            variant="formRow"
-          />
-
-          <DatePickerInput
-            label="Fin"
-            value={endDate}
-            onChange={setEndDate}
-            placeholder="Sin fecha de fin"
-            optional
-            showInlineClear
-            variant="formRow"
-            minimumDate={startDate ? parseLocalYmd(startDate) : undefined}
-          />
-
-          <View>
-            <Text style={styles.label}>Descripción</Text>
-            <TextField
-              ref={descriptionRef}
-              style={styles.textInput}
-              value={description}
-              onChangeText={setDescription}
-              placeholder="Resumen visible en listados"
-              placeholderTextColor={COLORS.textDisabled}
-              returnKeyType="next"
-              blurOnSubmit
-            />
-          </View>
-
-          <View>
-            <Text style={styles.label}>Notas internas</Text>
-            <TextField
-              style={[styles.textInput, styles.notesInput]}
-              value={notes}
-              onChangeText={setNotes}
-              placeholder="Notas adicionales"
-              placeholderTextColor={COLORS.textDisabled}
-              multiline
-              textAlignVertical="top"
-            />
-          </View>
         </View>
       ) : null}
+
+      {/* Ocho campos marcados "(opcional)" sumaban 700 px que la mayoría pasa de largo, y
+          desplegarlos aquí dejaba el botón de crear fuera de vista. */}
+      <FormOptionRow
+        label="Opcionales"
+        support="Proveedor, cuenta, categoría, fechas y notas"
+        value=""
+        placeholder=""
+        onPress={() => setOptionalsOpen(true)}
+      />
 
       {submitError ? (
         <View style={styles.submitErrorBanner}>
@@ -721,16 +729,6 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
           <Text style={styles.submitErrorText}>{submitError}</Text>
         </View>
       ) : null}
-
-      <View style={styles.submitBar}>
-        {missingLabel ? <Text style={styles.missingLabel}>{missingLabel}</Text> : null}
-        <Button
-          label={isEditing ? "Guardar cambios" : "Crear suscripción"}
-          onPress={handleSubmit}
-          loading={isLoading}
-          size="lg"
-        />
-      </View>
     </BottomSheet>
   </>
   );
@@ -755,43 +753,42 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.md,
     color: COLORS.ink,
   },
-  helperText: {
-    marginTop: SPACING.xs,
-    fontSize: FONT_SIZE.xs,
-    fontFamily: FONT_FAMILY.body,
-    color: COLORS.storm,
-    lineHeight: 18,
-  },
   inputError: { borderColor: COLORS.danger },
   fieldError: { fontSize: FONT_SIZE.xs, color: COLORS.danger, marginTop: SPACING.xs },
-  optionalBlock: {
-    gap: SPACING.md,
+  /** Filas hermanas dentro de UNA caja: apiladas con su propio borde dibujaban tres cajas. */
+  group: {
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: SURFACE.cardBorder,
+    backgroundColor: SURFACE.card,
+    overflow: "hidden",
+  },
+  groupError: { borderColor: COLORS.danger },
+  helpBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    marginRight: SPACING.xs,
+    backgroundColor: SURFACE.cardBorder,
+    borderWidth: 1,
+    borderColor: SURFACE.sheetBorder,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  submitBar: {
+    gap: SPACING.xs,
+    paddingHorizontal: SPACING.lg,
     paddingTop: SPACING.md,
+    backgroundColor: SURFACE.sheet,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: SURFACE.separator,
   },
-  submitBar: { gap: SPACING.xs, marginTop: SPACING.sm },
-  missingLabel: {
+  submitNote: {
     fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.xs,
     color: COLORS.storm,
     textAlign: "center",
   },
-  pillRow: { flexDirection: "row", gap: SPACING.sm },
-  pillWrap: { flexDirection: "row", flexWrap: "wrap", gap: SPACING.sm },
-  pill: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs + 2,
-    borderRadius: RADIUS.full,
-    backgroundColor: SURFACE.card,
-    borderWidth: 1,
-    borderColor: SURFACE.cardBorder,
-  },
-  pillActive: { backgroundColor: COLORS.pine, borderColor: COLORS.pine },
-  pillText: { fontSize: FONT_SIZE.sm, color: COLORS.storm, fontFamily: FONT_FAMILY.bodyMedium },
-  pillTextActive: { color: COLORS.textInverse },
-  twoCol: { flexDirection: "row", gap: SPACING.md },
-  colHalf: { flex: 1 },
   switchRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -822,5 +819,4 @@ const styles = StyleSheet.create({
     color: COLORS.danger,
     lineHeight: 20,
   },
-  notesInput: { minHeight: 88, paddingTop: SPACING.sm },
 });

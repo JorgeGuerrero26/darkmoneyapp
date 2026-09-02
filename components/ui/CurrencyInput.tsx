@@ -75,7 +75,7 @@ export const CurrencyInput = forwardRef<TextInput, Props>(function CurrencyInput
           onChangeText={handleChange}
           keyboardType="decimal-pad"
           placeholder={placeholder}
-          placeholderTextColor={COLORS.textDisabled}
+          placeholderTextColor={COLORS.storm}
           returnKeyType="done"
           onBlur={handleBlur}
           accessibilityLabel={label ? `${label} en ${currencyCode}` : `Monto en ${currencyCode}`}
@@ -112,10 +112,12 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   row: { flexDirection: "row", alignItems: "center", gap: SPACING.sm },
+  /* "S/ 0.00" en gris sobre una caja gris parecía un dato ya puesto, no un campo esperando.
+     El símbolo va en la misma Archivo tabular que la cifra y sube a hueso apagado. */
   currency: {
     fontSize: FONT_SIZE.lg,
-    fontWeight: FONT_WEIGHT.semibold,
-    color: COLORS.textMuted,
+    fontFamily: FONT_FAMILY.heading,
+    color: COLORS.fog,
     minWidth: 40,
   },
   input: {

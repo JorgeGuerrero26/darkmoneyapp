@@ -26,6 +26,13 @@ type Props = {
   visible: boolean;
   onClose: () => void;
   title?: string;
+  /**
+   * Acción a la izquierda de la "×", en la cabecera.
+   *
+   * Para lo que acompaña al formulario entero y no es un campo: el "?" que vuelve a mostrar la
+   * explicación. Dentro del contenido competía con los campos por el mismo sitio.
+   */
+  headerAction?: React.ReactNode;
   children: React.ReactNode;
   snapHeight?: number;
   scrollRef?: React.RefObject<ScrollView | null>;
@@ -59,6 +66,7 @@ export function BottomSheet({
   visible,
   onClose,
   title,
+  headerAction,
   children,
   snapHeight = 0.75,
   scrollRef,
@@ -227,6 +235,7 @@ export function BottomSheet({
           {title ? (
             <View style={styles.header}>
               <Text style={styles.title}>{title}</Text>
+              {headerAction}
               <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={12}>
                 <View style={styles.closeBtnInner}>
                   <X size={16} color={COLORS.storm} />

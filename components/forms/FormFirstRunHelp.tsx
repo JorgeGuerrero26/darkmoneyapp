@@ -57,10 +57,18 @@ type Props = {
   onShow: () => void;
   title: string;
   lines: string[];
+  /**
+   * Con la explicación cerrada, el enlace para volver a abrirla.
+   *
+   * Se apaga cuando el formulario ya ofrece un "?" en su cabecera: dos puertas a lo mismo, una
+   * de ellas ocupando sitio entre los campos.
+   */
+  showTrigger?: boolean;
 };
 
-export function FormFirstRunHelp({ open, onDismiss, onShow, title, lines }: Props) {
+export function FormFirstRunHelp({ open, onDismiss, onShow, title, lines, showTrigger = true }: Props) {
   if (!open) {
+    if (!showTrigger) return null;
     return (
       <TouchableOpacity
         style={styles.trigger}
