@@ -264,12 +264,14 @@ export const StepDetails = memo(function StepDetails({
           onPress={() => setDateTimeOpen(true)}
           last={!showSplitRow}
         />
+        {/* Sin `muted`: es una fila de la tarjeta como las otras tres, y en gris se leía como una
+            nota al pie en medio de la lista. El valor dice qué hace al tocarla. */}
         {showSplitRow ? (
           <FormOptionRow
             grouped
             last
-            muted
             label="Repartir entre varias categorías"
+            value="Elegir"
             onPress={() => onChangeSplitLines?.([
               { categoryId: null, amount: "" },
               { categoryId: null, amount: "" },
