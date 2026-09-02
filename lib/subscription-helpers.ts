@@ -33,6 +33,60 @@ export function convertAmountToWorkspaceBase(
   return null;
 }
 
+/**
+ * Cada cuánto se cobra, dicho como se dice: "Cada mes", no "Mensual".
+ *
+ * El adjetivo describe la suscripción; la frase responde la pregunta de la fila ("Se repite").
+ * Pasado el intervalo de uno ya no cabe la forma corta y vuelve "Cada 2 meses".
+ */
+const RECURRENCE_PHRASES: Record<SubscriptionFrequency, string> = {
+  daily: "Cada día",
+  weekly: "Cada semana",
+  monthly: "Cada mes",
+  quarterly: "Cada trimestre",
+  yearly: "Cada año",
+  custom: "Cada día",
+};
+
+/** La misma cadencia pegada a un monto: "S/ 60.07 **al mes**". */
+const CADENCE_SUFFIXES: Record<SubscriptionFrequency, string> = {
+  daily: "al día",
+  weekly: "a la semana",
+  monthly: "al mes",
+  quarterly: "al trimestre",
+  yearly: "al año",
+  custom: "al día",
+};
+
+const FREQUENCY_ADJECTIVES: Record<SubscriptionFrequency, string> = {
+  daily: "Diario",
+  weekly: "Semanal",
+  monthly: "Mensual",
+  quarterly: "Trimestral",
+  yearly: "Anual",
+  custom: "Personalizado",
+};
+
+export function subscriptionRecurrencePhrase(
+  intervalCount: number,
+  frequency: SubscriptionFrequency,
+): string {
+  const n = Math.max(1, Math.floor(intervalCount) || 1);
+  return n <= 1
+    ? RECURRENCE_PHRASES[frequency] ?? frequency
+    : subscriptionFrequencyListLabel(n, frequency, FREQUENCY_ADJECTIVES);
+}
+
+export function subscriptionCadenceSuffix(
+  intervalCount: number,
+  frequency: SubscriptionFrequency,
+): string {
+  const n = Math.max(1, Math.floor(intervalCount) || 1);
+  return n <= 1
+    ? CADENCE_SUFFIXES[frequency] ?? ""
+    : subscriptionFrequencyListLabel(n, frequency, FREQUENCY_ADJECTIVES).toLowerCase();
+}
+
 /** Etiqueta legible para frecuencia: "Mensual", "Cada 14 días", etc. */
 export function subscriptionFrequencyListLabel(
   intervalCount: number,

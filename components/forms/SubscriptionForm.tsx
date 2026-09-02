@@ -20,7 +20,7 @@ import {
   suggestCategoryFromCounterparty,
   suggestCategoryFromDescription,
 } from "../../lib/movement-patterns";
-import { subscriptionFrequencyListLabel } from "../../lib/subscription-helpers";
+import { subscriptionRecurrencePhrase } from "../../lib/subscription-helpers";
 import type { SubscriptionSummary } from "../../types/domain";
 import { BottomSheet } from "../ui/BottomSheet";
 import { FormDateRow } from "../ui/FormDateRow";
@@ -52,30 +52,12 @@ const FREQUENCY_OPTIONS: { value: SubscriptionFormInput["frequency"]; label: str
   { value: "custom",    label: "Personalizado" },
 ];
 
-const RECURRENCE_PHRASES: Record<SubscriptionFormInput["frequency"], string> = {
-  daily: "Cada día",
-  weekly: "Cada semana",
-  monthly: "Cada mes",
-  quarterly: "Cada trimestre",
-  yearly: "Cada año",
-  custom: "Cada día",
-};
-
 const REMIND_OPTIONS = [
   { label: "1 día", value: 1 },
   { label: "3 días", value: 3 },
   { label: "7 días", value: 7 },
   { label: "Sin aviso", value: 0 },
 ];
-
-const FREQUENCY_LABELS: Record<SubscriptionFormInput["frequency"], string> = {
-  daily: "Diario",
-  weekly: "Semanal",
-  monthly: "Mensual",
-  quarterly: "Trimestral",
-  yearly: "Anual",
-  custom: "Personalizado",
-};
 
 function parseLocalYmd(ymd: string): Date {
   const parts = ymd.trim().split("-").map(Number);
@@ -393,9 +375,7 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
 
   const isLoading = createMutation.isPending || updateMutation.isPending;
   const intervalValue = Math.max(1, parseInt(intervalCount, 10) || 1);
-  const recurrenceLabel = intervalValue <= 1
-    ? RECURRENCE_PHRASES[frequency]
-    : subscriptionFrequencyListLabel(intervalValue, frequency, FREQUENCY_LABELS);
+  const recurrenceLabel = subscriptionRecurrencePhrase(intervalValue, frequency);
 
   /* Con lo obligatorio completo, el pie deja de nombrar lo que falta y dice qué se va a crear:
      "Se cobrará hoy y cada mes". Repetir "Falta el nombre" con el nombre puesto era ruido. */
