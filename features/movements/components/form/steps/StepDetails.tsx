@@ -4,8 +4,9 @@ import { AlertCircle } from "lucide-react-native";
 
 import { AttachmentPicker, type Attachment } from "../../../../../components/domain/AttachmentPicker";
 import { Button } from "../../../../../components/ui/Button";
-import { DatePickerInput } from "../../../../../components/ui/DatePickerInput";
-import { TimePickerInput } from "../../../../../components/ui/TimePickerInput";
+import { DateTimeSheet } from "../../../../../components/ui/DateTimeSheet";
+import { dateTimeLabel } from "../../../../../lib/calendar";
+import { todayPeru } from "../../../../../lib/date";
 import { FormOptionRow } from "../../../../../components/ui/FormOptionRow";
 import { Input } from "../../../../../components/ui/Input";
 import { TextField } from "../../../../../components/ui/TextField";
@@ -128,18 +129,6 @@ type Props = {
 };
 
 /** Hoy / Ayer / 12 sep — como se escribe una fecha cuando se habla, no en ISO. */
-function describeDay(ymd: string): string {
-  const parts = ymd.split("-").map(Number);
-  if (parts.length !== 3 || parts.some(Number.isNaN)) return ymd;
-  const date = new Date(parts[0], parts[1] - 1, parts[2]);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const diff = Math.round((date.getTime() - today.getTime()) / 86_400_000);
-  if (diff === 0) return "Hoy";
-  if (diff === -1) return "Ayer";
-  if (diff === 1) return "Mañana";
-  return date.toLocaleDateString("es-PE", { day: "numeric", month: "short" });
-}
 
 export const StepDetails = memo(function StepDetails({
   isEditing,
@@ -200,7 +189,7 @@ export const StepDetails = memo(function StepDetails({
     counterpartiesSorted.find((counterparty) => counterparty.id === counterpartyId)?.name ?? null;
 
   // "Hoy, 14:50": la fecha en palabras cuando es hoy o ayer, que es el 90 % de los casos.
-  const dateTimeLabel = `${describeDay(occurredAt)}, ${occurredTime}`;
+  const dateTimeRowLabel = dateTimeLabel(occurredAt, occurredTime, todayPeru());
 
   // Cada sugerencia va pegada a la fila que cambia, dentro de la misma tarjeta. La fila de
   // arriba cede su línea divisoria: la sugerencia trae la suya.
@@ -271,8 +260,8 @@ export const StepDetails = memo(function StepDetails({
         <FormOptionRow
           grouped
           label="Fecha y hora"
-          value={dateTimeLabel}
-          onPress={() => setDateTimeOpen((open) => !open)}
+          value={dateTimeRowLabel}
+          onPress={() => setDateTimeOpen(true)}
           last={!showSplitRow}
         />
         {showSplitRow ? (
@@ -289,16 +278,19 @@ export const StepDetails = memo(function StepDetails({
         ) : null}
       </View>
 
-      {dateTimeOpen ? (
-        <View style={styles.dateTimeRow}>
-          <View style={styles.dateTimeDate}>
-            <DatePickerInput label="Fecha" value={occurredAt} onChange={onChangeOccurredAt} />
-          </View>
-          <View style={styles.dateTimeTime}>
-            <TimePickerInput label="Hora" value={occurredTime} onChange={onChangeOccurredTime} />
-          </View>
-        </View>
-      ) : null}
+      {/* Hoja propia, no un acordeón: el chevrón prometía llevar a algún sitio y desplegaba dos
+          campos aquí mismo, reacomodando el formulario bajo el dedo. */}
+      <DateTimeSheet
+        visible={dateTimeOpen}
+        date={occurredAt}
+        time={occurredTime}
+        onBack={() => setDateTimeOpen(false)}
+        onConfirm={({ date, time }) => {
+          onChangeOccurredAt(date);
+          if (time) onChangeOccurredTime(time);
+          setDateTimeOpen(false);
+        }}
+      />
       {warnings.occurredAt ? (
         <Text
           style={styles.warningHint}
@@ -399,13 +391,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
     marginBottom: -SPACING.xs,
   },
-  dateTimeRow: {
-    flexDirection: "row",
-    gap: SPACING.sm,
-    alignItems: "flex-end",
-  },
-  dateTimeDate: { flex: 1.4, minWidth: 0 },
-  dateTimeTime: { flex: 1, minWidth: 0 },
   section: { gap: SPACING.md },
   warningHint: {
     color: COLORS.warning,

@@ -1,4 +1,7 @@
-# Fase 24 — El plan de pagos contra lo que de verdad entró
+# El plan de pagos contra lo que de verdad entró
+
+> No es una fase del `PLAN-REDISENO.md` del diseñador: salió de revisar el detalle en uso.
+> Su Fase 24 es otra cosa —fecha y hora—, así que este documento va por nombre y no por número.
 
 Origen: revisión del detalle de "Diversas Ventas de Productos" (obligación 3), 1 sep 2026.
 La pantalla mostraba doce cuotas con nueve marcadas como pagadas mientras la barra decía 12%.
