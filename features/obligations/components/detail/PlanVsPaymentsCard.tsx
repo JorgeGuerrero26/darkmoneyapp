@@ -5,7 +5,7 @@ import { differenceInCalendarDays as daysBetween, format, parseISO } from "date-
 import { es } from "date-fns/locale";
 
 import { formatCurrency } from "../../../../components/ui/AmountDisplay";
-import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING, SURFACE } from "../../../../constants/theme";
 import { coverPlan, parsePaymentPlan, type ActualPayment, type PlanCoverage } from "../../lib/payment-plan";
 import type { ObligationSummary } from "../../../../types/domain";
 
@@ -79,7 +79,7 @@ export function PlanVsPaymentsCard({ obligation }: Props) {
     <View style={styles.card}>
       <View style={styles.header}>
         <Text style={styles.title}>Plan y pagos</Text>
-        <Text style={styles.columns}>
+        <Text style={styles.scope}>
           {coveredRows.length} de {rows.length} cubiertas
         </Text>
       </View>
@@ -87,16 +87,18 @@ export function PlanVsPaymentsCard({ obligation }: Props) {
       {/* Lo cubierto se pliega: son cuotas cerradas, no hay nada que hacer con ellas. */}
       {!expanded && coveredRows.length > 0 ? (
         <TouchableOpacity
-          style={styles.folded}
+          style={styles.row}
           onPress={() => setExpanded(true)}
           activeOpacity={0.72}
           accessibilityRole="button"
           accessibilityLabel={`Ver las ${coveredRows.length} cuotas cubiertas`}
         >
-          <Text style={styles.foldedText}>
-            {coveredRows.length} {coveredRows.length === 1 ? "cuota cubierta" : "cuotas cubiertas"}
-          </Text>
-          <Text style={styles.foldedAmount}>{money(coveredTotal)}</Text>
+          <View style={styles.rowCopy}>
+            <Text style={styles.support}>
+              {coveredRows.length} {coveredRows.length === 1 ? "cuota cubierta" : "cuotas cubiertas"}
+            </Text>
+          </View>
+          <Text style={[styles.amount, styles.amountCovered]}>{money(coveredTotal)}</Text>
         </TouchableOpacity>
       ) : null}
 
@@ -130,6 +132,8 @@ export function PlanVsPaymentsCard({ obligation }: Props) {
         >
           <Text style={styles.seeAllText}>Ver menos</Text>
         </TouchableOpacity>
+      ) : hiddenAhead === 0 ? (
+        <View style={styles.bottomRule} />
       ) : null}
     </View>
   );
@@ -158,16 +162,17 @@ function PlanRow({
           : null;
 
   return (
-    <View style={[styles.row, isNext && styles.rowNext]}>
-      <View style={[styles.dot, row.status === "covered" && styles.dotCovered, row.status === "partial" && styles.dotPartial]} />
+    <View style={styles.row}>
       <View style={styles.rowCopy}>
         {/* Con el año: un plan largo enseña dos veces "marzo". */}
         <Text style={styles.month}>{capitalize(format(parseISO(row.dueDate), "LLL yyyy", { locale: es }))}</Text>
         {support ? <Text style={styles.support}>{support}</Text> : null}
       </View>
-      <Text style={[styles.amount, row.status === "covered" && styles.amountCovered]}>
-        {money(row.amount)}
-      </Text>
+      <View style={styles.amounts}>
+        <Text style={[styles.amount, row.status === "covered" && styles.amountCovered]} numberOfLines={1}>
+          {money(row.amount)}
+        </Text>
+      </View>
     </View>
   );
 }
@@ -183,66 +188,58 @@ function dueLabel(dueDate: string) {
 }
 
 const styles = StyleSheet.create({
-  card: {
-    borderRadius: RADIUS.lg,
-    borderWidth: 1,
-    borderColor: SURFACE.cardBorder,
-    backgroundColor: SURFACE.card,
-    overflow: "hidden",
-  },
+  /**
+   * Sin caja, igual que la lista de Movimientos de esta misma pantalla.
+   *
+   * Tenía borde, fondo propio y esquinas redondeadas: una tarjeta apilada entre tarjetas, con las
+   * filas metidas dentro. El plan es **la otra lista** de la pantalla, así que se lee igual que
+   * aquélla — rótulo en el margen, filas sobre el lienzo, y una línea fina entre una y otra.
+   */
+  card: {},
   header: {
     flexDirection: "row",
     alignItems: "baseline",
     justifyContent: "space-between",
     gap: SPACING.md,
-    paddingHorizontal: SPACING.md,
-    paddingTop: SPACING.md,
     paddingBottom: SPACING.sm,
   },
-  title: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.md, color: COLORS.ink },
-  columns: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
-
-  folded: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: SPACING.md,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: SURFACE.separator,
+  title: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
   },
-  foldedText: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.storm },
-  foldedAmount: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.storm },
+  scope: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
 
-  // La fila del plan es la fila de Movimientos: 56px, sobre el lienzo, sin recuadro propio.
   row: {
-    minHeight: 56,
     flexDirection: "row",
     alignItems: "center",
     gap: SPACING.md,
-    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm + 2,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: SURFACE.separator,
   },
-  rowNext: { backgroundColor: "rgba(244,241,236,0.03)" },
-  dot: { width: 7, height: 7, borderRadius: RADIUS.full, backgroundColor: SURFACE.track },
-  dotCovered: { backgroundColor: COLORS.fog },
-  dotPartial: { backgroundColor: COLORS.storm },
   rowCopy: { flex: 1, gap: 2 },
-  month: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.sm, color: COLORS.ink },
+  month: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.md, color: COLORS.ink },
   support: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
+  amounts: { alignItems: "flex-end", gap: 2 },
   amount: { fontFamily: FONT_FAMILY.heading, fontSize: FONT_SIZE.md, color: COLORS.ink },
+  /** Lo cubierto ya no reclama nada: baja a gris y deja el hueso para lo que falta. */
   amountCovered: { color: COLORS.storm },
 
   seeAll: {
+    minHeight: 52,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.md,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: SURFACE.separator,
   },
-  seeAllText: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.sm, color: COLORS.storm },
+  seeAllText: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.sm, color: COLORS.fog },
+  /** Cierra la lista cuando no hay nada que desplegar. */
+  bottomRule: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: SURFACE.separator,
+  },
 });
