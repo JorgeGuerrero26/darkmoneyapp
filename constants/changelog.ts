@@ -101,6 +101,9 @@ export const CHANGELOG: ChangelogEntry[] = [
       "El interruptor para que el cobro se anote solo ya no te pide una cuenta escondida: al activarlo, la cuenta con la que se paga sube al formulario principal.",
       "Y cuando ya está todo lo obligatorio, el pie del botón deja de repetir \"Falta el nombre\" y te dice qué vas a crear: \"Se cobrará hoy y cada mes\".",
       "Las últimas filas que en vez de abrir el calendario desplegaban un campo debajo —la fecha de un pago, de un ajuste de monto y de una deuda nueva— ahora lo abren de una vez. Eran dos toques para ver un día.",
+      "Marcar una suscripción como pagada es ahora un solo toque. La cuenta era obligatoria, llegaba vacía y estaba al final de la hoja, así que \"Confirmar pago\" se veía listo cuando faltaba justo el único dato que había que dar. Ahora viene puesta la cuenta que la suscripción ya tiene guardada, y si no tiene ninguna el botón lo dice: \"Elige la cuenta\".",
+      "Y la hoja te dice qué va a pasar antes de que confirmes: además del gasto, mueve el próximo cobro al mes siguiente. Ahora se lee \"Estaba programado 4 jun · S/ 60.07\" y debajo \"Siguiente cobro 4 jul 2026\", con el gasto nombrado al pie.",
+      "El título de esa hoja dice qué suscripción abriste —\"Yt Premium · pago de junio\"— en vez de \"Marcar como pagada\". Con doce suscripciones, eso es lo primero que uno confirma.",
     ],
   },
   {
