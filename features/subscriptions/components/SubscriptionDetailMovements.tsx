@@ -40,9 +40,11 @@ export function SubscriptionDetailMovements({
   if (movements.length === 0) {
     return (
       <Card>
-        <Text style={styles.title}>Movimientos generados</Text>
+        {/* "Movimientos generados" es lenguaje de sistema; el usuario los llama pagos. Y el
+            texto vacío decía cómo funciona el mecanismo en vez de qué hacer para llenarlo. */}
+        <Text style={styles.title}>Pagos anotados</Text>
         <Text style={styles.empty}>
-          Aún no hay movimientos vinculados a esta suscripción. Cuando se registre uno, aparecerá aquí.
+          Ninguno todavía. Cada vez que la marques como pagada, el gasto aparece acá.
         </Text>
       </Card>
     );
@@ -53,7 +55,7 @@ export function SubscriptionDetailMovements({
 
   return (
     <Card>
-      <Text style={styles.title}>Movimientos generados · {movements.length}</Text>
+      <Text style={styles.title}>Pagos anotados · {movements.length}</Text>
       {visible.map((m) => {
         const amount = pickAmount(m);
         const code = m.amountCurrencyCode ?? currencyCode;
@@ -96,8 +98,8 @@ const styles = StyleSheet.create({
   empty: {
     fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.sm,
-    color: COLORS.textMuted,
-    fontStyle: "italic",
+    color: COLORS.storm,
+    lineHeight: 20,
   },
   row: {
     flexDirection: "row",
