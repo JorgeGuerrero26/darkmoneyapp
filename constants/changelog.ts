@@ -104,6 +104,10 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Marcar una suscripción como pagada es ahora un solo toque. La cuenta era obligatoria, llegaba vacía y estaba al final de la hoja, así que \"Confirmar pago\" se veía listo cuando faltaba justo el único dato que había que dar. Ahora viene puesta la cuenta que la suscripción ya tiene guardada, y si no tiene ninguna el botón lo dice: \"Elige la cuenta\".",
       "Y la hoja te dice qué va a pasar antes de que confirmes: además del gasto, mueve el próximo cobro al mes siguiente. Ahora se lee \"Estaba programado 4 jun · S/ 60.07\" y debajo \"Siguiente cobro 4 jul 2026\", con el gasto nombrado al pie.",
       "El título de esa hoja dice qué suscripción abriste —\"Yt Premium · pago de junio\"— en vez de \"Marcar como pagada\". Con doce suscripciones, eso es lo primero que uno confirma.",
+      "Una suscripción vencida ya no se ve saludable. Decía \"Activa\" en verde con el cobro de hace tres meses todavía sin anotar, y la única señal era un \"Hace 90 días\" en letra chica. Ahora dice \"Atrasada\" y debajo la cuenta entera: \"Debía cobrarse el 4 jun, hace 90 días. Van 3 cobros sin anotar, S/ 180.21\".",
+      "Y ponerla al día es un botón grande, no una de cuatro acciones idénticas. Pausar y Cancelar bajaron al final en letra normal, y \"Análisis\" salió de ahí porque ya estaba arriba: era la misma acción dos veces en la misma pantalla.",
+      "Arriba había cuatro íconos sin nombre, uno de ellos un alfiler tachado que lo mismo podía significar \"está fijada\" que \"tócame para fijarla\". Quedan dos: análisis y un menú de tres puntos donde editar, fijar y eliminar se leen con su nombre. El nombre de la suscripción gana el espacio, y se fue tu propio nombre de debajo, que salía en todas y nunca cambiaba.",
+      "Los datos de la suscripción pasan de una cuadrícula que se leía en zigzag a cuatro filas. Y si le falta la cuenta o la categoría, se eligen ahí mismo tocando la fila — sin cuenta, lo de \"anotar el gasto solo\" no puede funcionar.",
     ],
   },
   {
