@@ -1,8 +1,7 @@
-import { useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
 import { Button } from "../../../components/ui/Button";
-import { DatePickerInput } from "../../../components/ui/DatePickerInput";
+import { FormDateRow } from "../../../components/ui/FormDateRow";
 import { FormOptionRow } from "../../../components/ui/FormOptionRow";
 import { InlineFormSheet } from "../../../components/ui/InlineFormSheet";
 import { TextField } from "../../../components/ui/TextField";
@@ -63,12 +62,6 @@ export function ObligationDetailsSheet({
   onClose,
   onDone,
 }: Props) {
-  const [dueOpen, setDueOpen] = useState(false);
-  const [rateOpen, setRateOpen] = useState(false);
-
-  const rateValue = interestRate.trim();
-  const rateLabel = rateValue && Number(rateValue) > 0 ? `${rateValue} %` : "Sin interés";
-
   return (
     <InlineFormSheet
       visible={visible}
@@ -95,18 +88,13 @@ export function ObligationDetailsSheet({
           onPress={onOpenPlan}
         />
         {planHint ? <Text style={styles.planHint}>{planHint}</Text> : null}
-        <FormOptionRow
+        <FormDateRow
           grouped
           label="Vence"
-          value={dueDate ? dueDate : null}
+          value={dueDate}
+          onChange={onChangeDueDate}
           placeholder="Sin fecha"
-          onPress={() => setDueOpen((open) => !open)}
-        />
-        <FormOptionRow
-          grouped
-          label="Tasa de interés"
-          value={rateLabel}
-          onPress={() => setRateOpen((open) => !open)}
+          optional
         />
         <FormOptionRow
           grouped
@@ -118,23 +106,20 @@ export function ObligationDetailsSheet({
         />
       </View>
 
-      {dueOpen ? (
-        <DatePickerInput label="Vence" value={dueDate} onChange={onChangeDueDate} />
-      ) : null}
-      {rateOpen ? (
-        <View style={styles.field}>
-          <Text style={styles.fieldLabel}>Tasa de interés</Text>
-          <TextField
-            style={styles.input}
-            value={interestRate}
-            onChangeText={onChangeInterestRate}
-            keyboardType="decimal-pad"
-            placeholder="0.00"
-            placeholderTextColor={COLORS.storm}
-            accessibilityLabel="Tasa de interés en porcentaje"
-          />
-        </View>
-      ) : null}
+      {/* La tasa se escribe, no se elige: una fila con chevrón prometía llevar a algún sitio y
+          lo que hacía era desplegar este mismo campo debajo (revisión 21). */}
+      <View style={styles.field}>
+        <Text style={styles.fieldLabel}>Tasa de interés</Text>
+        <TextField
+          style={styles.input}
+          value={interestRate}
+          onChangeText={onChangeInterestRate}
+          keyboardType="decimal-pad"
+          placeholder="Sin interés"
+          placeholderTextColor={COLORS.storm}
+          accessibilityLabel="Tasa de interés en porcentaje"
+        />
+      </View>
 
       <View style={styles.field}>
         <Text style={styles.fieldLabel}>Descripción</Text>

@@ -1,22 +1,9 @@
 import { useState } from "react";
-import {
-  Animated,
-  Modal,
-  Platform,
-  Pressable,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { BlurView } from "expo-blur";
-import { format, isValid } from "date-fns";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { CalendarDays, ChevronRight, X } from "lucide-react-native";
-import { COLORS, ELEVATION, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
-import { Button } from "./Button";
-import { DateTimeCalendar } from "./DateTimeCalendar";
-import { useDismissibleSheet } from "./useDismissibleSheet";
+
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
+import { DatePickerModal } from "./DatePickerModal";
 import { relativeDateLabel } from "../../lib/calendar";
 import { todayPeru } from "../../lib/date";
 
@@ -36,30 +23,12 @@ type Props = {
   variant?: "default" | "formRow";
 };
 
-/** Fecha inicial del picker cuando aún no hay valor (respeta mínimo si existe) */
-function initialPickerDate(value: string, minimumDate?: Date): Date {
-  if (value?.trim()) {
-    const [y, m, d] = value.split("-").map(Number);
-    const date = new Date(y, m - 1, d);
-    return isValid(date) ? date : new Date();
-  }
-  if (minimumDate) {
-    return new Date(
-      minimumDate.getFullYear(),
-      minimumDate.getMonth(),
-      minimumDate.getDate(),
-    );
-  }
-  return new Date();
-}
-
-function parseLocalDate(value: string): Date {
-  if (!value) return new Date();
-  const [y, m, d] = value.split("-").map(Number);
-  const date = new Date(y, m - 1, d);
-  return isValid(date) ? date : new Date();
-}
-
+/**
+ * El campo de fecha con su ícono y su valor, que abre el calendario de `DatePickerModal`.
+ *
+ * Para una fila dentro de una tarjeta agrupada existe `FormDateRow`, que enseña lo mismo con la
+ * tipografía de las filas hermanas y sin ícono propio.
+ */
 export function DatePickerInput({
   label,
   value,
@@ -72,36 +41,11 @@ export function DatePickerInput({
   hideLabel = false,
   variant = "default",
 }: Props) {
-  const insets = useSafeAreaInsets();
   const [open, setOpen] = useState(false);
-  const iosSheetDismiss = useDismissibleSheet({
-    visible: open && Platform.OS === "ios",
-    onClose: () => setOpen(false),
-  });
-  const [tempDate, setTempDate] = useState<Date>(() => initialPickerDate(value, minimumDate));
 
   /* Formato corto. "1 de septiembre 2…" no cabía en medio ancho con un icono de 44px delante:
      el formato largo existe para ser legible y terminaba truncado. */
   const displayText = value ? relativeDateLabel(value, todayPeru()) : "";
-
-  function handleOpen() {
-    const initial = initialPickerDate(value, minimumDate);
-    setTempDate(initial);
-    setOpen(true);
-  }
-
-
-  function handleConfirm() {
-    onChange(format(tempDate, "yyyy-MM-dd"));
-    setOpen(false);
-  }
-
-  function handleClear() {
-    onChange("");
-    setOpen(false);
-  }
-
-  const triggerStyles = [styles.trigger, variant === "formRow" && styles.triggerFormRow];
   const showClear = optional && showInlineClear && Boolean(value?.trim());
 
   return (
@@ -110,8 +54,8 @@ export function DatePickerInput({
 
       <View style={styles.triggerRow}>
         <TouchableOpacity
-          style={[triggerStyles, styles.triggerFlex]}
-          onPress={handleOpen}
+          style={[styles.trigger, variant === "formRow" && styles.triggerFormRow, styles.triggerFlex]}
+          onPress={() => setOpen(true)}
           activeOpacity={0.75}
           accessibilityRole="button"
           accessibilityLabel={`${label}: ${displayText || placeholder}`}
@@ -128,7 +72,7 @@ export function DatePickerInput({
         {showClear ? (
           <TouchableOpacity
             style={styles.inlineClearBtn}
-            onPress={handleClear}
+            onPress={() => onChange("")}
             hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
             accessibilityLabel="Quitar fecha"
             accessibilityRole="button"
@@ -138,66 +82,16 @@ export function DatePickerInput({
         ) : null}
       </View>
 
-      {/* Un solo calendario para las dos plataformas. Antes iOS abría un modal con el picker
-          nativo `inline` y Android su propio `AndroidDarkDatePickerModal`: dos calendarios que se
-          veían distinto, y el de iOS decía el mes cuatro veces —subtítulo, título grande, dentro
-          del calendario y otra vez en las flechas— con un "Martes, 1 De Septiembre" en title case
-          inglés encima. */}
-      <Modal
+      <DatePickerModal
         visible={open}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setOpen(false)}
-      >
-        <Animated.View style={[styles.overlay, iosSheetDismiss.backdropStyle]}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setOpen(false)} />
-          <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFill} />
-          <Animated.View
-            style={[
-              styles.iosSheet,
-              { paddingBottom: Math.max(SPACING.lg, insets.bottom + SPACING.md) },
-              iosSheetDismiss.sheetStyle,
-            ]}
-            onStartShouldSetResponder={() => true}
-            {...iosSheetDismiss.panHandlers}
-          >
-            <View style={styles.handle} />
-
-            <View style={styles.sheetHeader}>
-              {/* "Quitar" se queda: no es otra forma de cerrar, es otra cosa que hacer. */}
-              {optional ? (
-                <TouchableOpacity onPress={handleClear} style={styles.iosClearHeaderBtn}>
-                  <Text style={styles.iosClearHeaderText}>Quitar</Text>
-                </TouchableOpacity>
-              ) : (
-                <View style={styles.headerSide} />
-              )}
-              <Text style={styles.sheetTitle}>{label}</Text>
-              <View style={styles.headerSide} />
-            </View>
-
-            <View style={styles.divider} />
-
-            <View style={styles.iosCalendarFrame}>
-              <DateTimeCalendar
-                value={format(tempDate, "yyyy-MM-dd")}
-                onChange={(next) => setTempDate(parseLocalDate(next))}
-                minimumDate={minimumDate}
-                maximumDate={maximumDate}
-              />
-            </View>
-
-            {/* Un solo botón, y dice el resultado. Antes: "✓ Listo" en menta arriba a la derecha
-                en fecha, y "Cancelar / Confirmar" abajo en hora — dos patrones entre hermanos. */}
-            <Button
-              label={`Usar ${relativeDateLabel(format(tempDate, "yyyy-MM-dd"), todayPeru()).toLowerCase()}`}
-              size="lg"
-              onPress={handleConfirm}
-            />
-          </Animated.View>
-        </Animated.View>
-      </Modal>
-
+        label={label}
+        value={value}
+        onChange={onChange}
+        onClose={() => setOpen(false)}
+        optional={optional}
+        minimumDate={minimumDate}
+        maximumDate={maximumDate}
+      />
     </View>
   );
 }
@@ -205,15 +99,8 @@ export function DatePickerInput({
 const styles = StyleSheet.create({
   container: { gap: SPACING.xs },
 
-  triggerRow: {
-    flexDirection: "row",
-    alignItems: "stretch",
-    gap: SPACING.xs,
-  },
-  triggerFlex: {
-    flex: 1,
-    minWidth: 0,
-  },
+  triggerRow: { flexDirection: "row", alignItems: "stretch", gap: SPACING.xs },
+  triggerFlex: { flex: 1, minWidth: 0 },
   inlineClearBtn: {
     width: 48,
     borderRadius: RADIUS.md,
@@ -238,13 +125,14 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.xs,
   },
 
+  /** Sin tinte menta: una fecha no es plata que entra (revisión 21). */
   triggerIconWrap: {
     width: 36,
     height: 36,
     borderRadius: RADIUS.md,
-    backgroundColor: "rgba(134,206,150,0.10)",
+    backgroundColor: SURFACE.card,
     borderWidth: 1,
-    borderColor: "rgba(134,206,150,0.22)",
+    borderColor: SURFACE.cardBorder,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -269,92 +157,5 @@ const styles = StyleSheet.create({
     color: COLORS.ink,
   },
 
-  triggerPlaceholder: {
-    color: COLORS.textDisabled,
-  },
-
-  // ─── iOS bottom sheet ─────────────────────────────────────────────────────────
-  overlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.50)",
-    justifyContent: "flex-end",
-  },
-
-  iosSheet: {
-    backgroundColor: SURFACE.sheet,
-    borderTopLeftRadius: RADIUS.xl,
-    borderTopRightRadius: RADIUS.xl,
-    borderTopWidth: 1,
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
-    borderTopColor: SURFACE.separator,
-    borderLeftColor: SURFACE.separator,
-    borderRightColor: SURFACE.separator,
-    paddingBottom: SPACING.lg,
-    maxHeight: "92%",
-    ...ELEVATION[4],
-  },
-
-  handle: {
-    alignSelf: "center",
-    width: 36,
-    height: 4,
-    borderRadius: RADIUS.full,
-    backgroundColor: "rgba(244,241,236,0.22)",
-    marginTop: SPACING.md,
-    marginBottom: SPACING.sm,
-  },
-
-  sheetHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.md,
-  },
-
-  headerSide: { width: 64, alignItems: "flex-start" },
-
-  sheetTitle: {
-    fontFamily: FONT_FAMILY.bodySemibold,
-    fontSize: FONT_SIZE.md,
-    color: COLORS.ink,
-    flex: 1,
-    textAlign: "center",
-  },
-
-  iosClearHeaderBtn: {
-    width: 64,
-    paddingVertical: 6,
-    alignItems: "flex-start",
-  },
-  iosClearHeaderText: {
-    fontFamily: FONT_FAMILY.bodySemibold,
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.danger,
-  },
-
-
-
-  divider: {
-    height: 0.5,
-    backgroundColor: "rgba(244,241,236,0.10)",
-    marginHorizontal: SPACING.lg,
-  },
-
-
-
-
-
-  /** Contenedor del UIDatePicker estilo calendario (inline) */
-  iosCalendarFrame: {
-    marginHorizontal: SPACING.md,
-    marginBottom: SPACING.sm,
-    borderRadius: RADIUS.lg,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: "rgba(134,206,150,0.18)",
-    backgroundColor: "rgba(10,10,9,0.65)",
-  },
-
+  triggerPlaceholder: { color: COLORS.textDisabled },
 });

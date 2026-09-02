@@ -28,7 +28,6 @@ import { BottomSheet } from "../ui/BottomSheet";
 import { Button } from "../ui/Button";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { CurrencyInput } from "../ui/CurrencyInput";
-import { DatePickerInput } from "../ui/DatePickerInput";
 import { formatCurrency } from "../ui/AmountDisplay";
 import { describeOverpayment } from "../../features/obligations/lib/settlement";
 import {
@@ -41,6 +40,7 @@ import {
 import { sortByName } from "../../lib/sort-locale";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { TextField } from "../ui/TextField";
+import { FormDateRow } from "../ui/FormDateRow";
 import { FormOptionRow } from "../ui/FormOptionRow";
 import { SearchableSelectSheet } from "../ui/SearchableSelectSheet";
 
@@ -99,7 +99,6 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent
   const today = todayPeru();
   const [amount, setAmount] = useState("");
   const [paymentDate, setPaymentDate] = useState(today);
-  const [dateOpen, setDateOpen] = useState(false);
   const [accountPickerOpen, setAccountPickerOpen] = useState(false);
   const [accountId, setAccountId] = useState<number | null>(null);
   const [createMovement, setCreateMovement] = useState(true);
@@ -299,7 +298,6 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent
   const actionTitle = isEditMode
     ? (actsAsCollector ? "Editar cobro" : "Editar pago")
     : (actsAsCollector ? "Registrar cobro" : "Registrar pago");
-  const dateLabel = actsAsCollector ? "Fecha de cobro" : "Fecha de pago";
   const paymentWord = actsAsCollector ? "cobro" : "pago";
   const movementDesc = actsAsCollector
     ? "Aparece como ingreso en tus movimientos"
@@ -648,17 +646,8 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent
       ) : null}
 
       <View style={styles.group}>
-        <FormOptionRow
-          grouped
-          last
-          label="Cuándo"
-          value={paymentDate === today ? "Hoy" : paymentDate}
-          onPress={() => setDateOpen((open) => !open)}
-        />
+        <FormDateRow grouped last label="Cuándo" value={paymentDate} onChange={setPaymentDate} />
       </View>
-      {dateOpen ? (
-        <DatePickerInput label={dateLabel} value={paymentDate} onChange={setPaymentDate} />
-      ) : null}
 
       {/* Create movement toggle + account selector — solo en modo crear */}
       <>

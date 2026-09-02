@@ -34,6 +34,7 @@ import { sortByName } from "../../lib/sort-locale";
 import type { ObligationSummary, SharedObligationSummary } from "../../types/domain";
 import { BottomSheet } from "../ui/BottomSheet";
 import { ArrowDown, ArrowUp } from "lucide-react-native";
+import { FormDateRow } from "../ui/FormDateRow";
 import { FormOptionRow } from "../ui/FormOptionRow";
 import { ObligationCreatedSheet } from "../../features/obligations/components/ObligationCreatedSheet";
 import { ObligationDetailsSheet } from "../../features/obligations/components/ObligationDetailsSheet";
@@ -53,7 +54,6 @@ import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { Input } from "../ui/Input";
 import { CurrencyInput } from "../ui/CurrencyInput";
 import { BusinessDateNotice } from "../ui/BusinessDateNotice";
-import { DatePickerInput } from "../ui/DatePickerInput";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { TextField } from "../ui/TextField";
 
@@ -189,7 +189,6 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [planOpen, setPlanOpen] = useState(false);
   const [originOpen, setOriginOpen] = useState(false);
-  const [startDateOpen, setStartDateOpen] = useState(false);
   /** La obligación recién creada, mientras se ofrece invitar. */
   const [createdObligation, setCreatedObligation] = useState<{
     id: number;
@@ -617,13 +616,6 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
    */
   const impactLine = selectedOrigin?.description ?? "No mueve dinero de tus cuentas al crearla.";
 
-  const startDateLabel = (() => {
-    const parsed = parseDisplayDate(startDate);
-    if (Number.isNaN(parsed.getTime())) return startDate;
-    const label = format(parsed, "d MMM", { locale: es });
-    return startDate === today ? `Hoy, ${label}` : label;
-  })();
-
   const principalNumber = Number(principalAmount) || 0;
   const planLabel = describePlan({
     plan: paymentPlan,
@@ -995,11 +987,11 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
       {/* Desde, y la puerta a los catorce campos opcionales. */}
       <View style={styles.group} onLayout={(event) => { startDateSectionYRef.current = event.nativeEvent.layout.y; }}>
         {!isEditing ? (
-          <FormOptionRow
+          <FormDateRow
             grouped
             label="Desde"
-            value={startDateLabel}
-            onPress={() => setStartDateOpen((open) => !open)}
+            value={startDate}
+            onChange={(value) => { setStartDate(value); setStartDateError(""); }}
           />
         ) : null}
         <FormOptionRow
@@ -1012,13 +1004,6 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
           onPress={() => setDetailsOpen(true)}
         />
       </View>
-      {startDateOpen && !isEditing ? (
-        <DatePickerInput
-          label="Desde"
-          value={startDate}
-          onChange={(value) => { setStartDate(value); setStartDateError(""); }}
-        />
-      ) : null}
       {startDateError ? <Text style={styles.fieldError}>{startDateError}</Text> : null}
 
 

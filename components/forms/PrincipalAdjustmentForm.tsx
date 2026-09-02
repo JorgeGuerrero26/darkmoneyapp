@@ -18,13 +18,13 @@ import { BottomSheet } from "../ui/BottomSheet";
 import { Button } from "../ui/Button";
 import { CurrencyInput } from "../ui/CurrencyInput";
 import { describeOverpayment } from "../../features/obligations/lib/settlement";
-import { DatePickerInput } from "../ui/DatePickerInput";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { formatCurrency } from "../ui/AmountDisplay";
 import { BalanceImpactPreview } from "../domain/BalanceImpactPreview";
 import { sortByName } from "../../lib/sort-locale";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { TextField } from "../ui/TextField";
+import { FormDateRow } from "../ui/FormDateRow";
 import { FormOptionRow } from "../ui/FormOptionRow";
 import { SegmentedControl } from "../ui/SegmentedControl";
 import { SearchableSelectSheet } from "../ui/SearchableSelectSheet";
@@ -66,7 +66,6 @@ export function PrincipalAdjustmentForm({ visible, mode: initialMode, obligation
   const [submitError, setSubmitError] = useState("");
   const [showDiscard, setShowDiscard] = useState(false);
   const [reasonError, setReasonError] = useState("");
-  const [dateOpen, setDateOpen] = useState(false);
   const [accountPickerOpen, setAccountPickerOpen] = useState(false);
   const initialRef = useRef({ amount: "", reason: "" });
 
@@ -372,17 +371,8 @@ export function PrincipalAdjustmentForm({ visible, mode: initialMode, obligation
         ) : null}
 
         <View style={styles.group}>
-          <FormOptionRow
-            grouped
-            last
-            label="Cuándo"
-            value={eventDate === today ? `Hoy, ${eventDate.slice(8)} ${eventDate.slice(5, 7)}` : eventDate}
-            onPress={() => setDateOpen((open) => !open)}
-          />
+          <FormDateRow grouped last label="Cuándo" value={eventDate} onChange={setEventDate} />
         </View>
-        {dateOpen ? (
-          <DatePickerInput label="Cuándo" value={eventDate} onChange={setEventDate} />
-        ) : null}
 
         {!isEditMode ? (
           <>
