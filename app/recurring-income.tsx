@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SectionListRenderItem } from "react-native";
-import { CheckSquare, Download, Pause, SlidersHorizontal, Trash2, TrendingUp } from "lucide-react-native";
+import { CheckSquare, Download, MoreVertical, Pause, Trash2, TrendingUp } from "lucide-react-native";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ErrorBoundary } from "../components/ui/ErrorBoundary";
 import { UndoBanner } from "../components/ui/UndoBanner";
 import { ScreenHeader } from "../components/layout/ScreenHeader";
+import { EntityActionSheet } from "../components/ui/EntityActionSheet";
 import { HeaderActionGroup } from "../components/ui/HeaderActionGroup";
 import { FilterToolbar, type FilterToolbarOption } from "../components/ui/FilterToolbar";
 import { ActiveFilterBar, type ActiveFilterItem } from "../components/ui/ActiveFilterBar";
@@ -21,6 +22,9 @@ import { RecurringIncomeForm } from "../components/forms/RecurringIncomeForm";
 import { RecurringIncomeArrivalSheet } from "../features/recurring-income/components/RecurringIncomeArrivalSheet";
 import { RecurringIncomeFilterSheet } from "../features/recurring-income/components/RecurringIncomeFilterSheet";
 import { RecurringIncomeSummaryBar } from "../features/recurring-income/components/RecurringIncomeSummaryBar";
+import { recurringIncomeStanding } from "../features/recurring-income/lib/recurringIncomeStanding";
+import { formatCurrency } from "../components/ui/AmountDisplay";
+import { todayPeru } from "../lib/date";
 import { RecurringIncomeSwipeRow } from "../features/recurring-income/components/RecurringIncomeSwipeRow";
 import {
   buildRecurringIncomeSections,
@@ -50,6 +54,7 @@ import {
 } from "../services/queries/subscriptions-recurring-income";
 import { useToast } from "../hooks/useToast";
 import { useNotificationReason } from "../hooks/useNotificationReason";
+import { useFormFirstRunHelp } from "../components/forms/FormFirstRunHelp";
 import { useOriginBackNavigation } from "../hooks/useOriginBackNavigation";
 import type { RecurringIncomeFrequency, RecurringIncomeSummary } from "../types/domain";
 
@@ -81,6 +86,9 @@ function RecurringIncomeScreen() {
 
   const [createFormVisible, setCreateFormVisible] = useState(false);
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  // Los cancelados son historial: llegan plegados para no competir con lo que pide acción.
+  const [cancelledExpanded, setCancelledExpanded] = useState(false);
   const [searchText, setSearchText] = useState("");
   const [activeFilters, setActiveFilters] = useState<ActiveRecurringIncomeFilter[]>([]);
   const [frequencyFilter, setFrequencyFilter] = useState<"all" | RecurringIncomeFrequency>("all");
@@ -148,9 +156,33 @@ function RecurringIncomeScreen() {
     () => filterRecurringIncome(recurringIncome, effectiveFilters, searchText, advancedFilters),
     [advancedFilters, effectiveFilters, recurringIncome, searchText],
   );
+  /* Lo que está en juego: lo que suman las llegadas que nadie ha confirmado. Es el único total
+     de la pantalla que pide una acción, así que va al encabezado de su sección. */
+  const unconfirmedTotal = useMemo(() => {
+    const today = todayPeru();
+    return filteredRecurringIncome.reduce((total, item) => {
+      if (item.status !== "active" || item.nextExpectedDate >= today) return total;
+      const standing = recurringIncomeStanding({
+        item,
+        today,
+        formatAmount: (value) => formatCurrency(value, item.currencyCode),
+        formatDate: (ymd) => ymd,
+      });
+      return total + standing.missedAmount;
+    }, 0);
+  }, [filteredRecurringIncome]);
+
   const sections = useMemo(
-    () => buildRecurringIncomeSections(filteredRecurringIncome),
-    [filteredRecurringIncome],
+    () => buildRecurringIncomeSections({
+      items: filteredRecurringIncome,
+      today: todayPeru(),
+      cancelledExpanded,
+      onToggleCancelled: () => setCancelledExpanded((open: boolean) => !open),
+      unconfirmedTotalLabel: unconfirmedTotal > 0
+        ? formatCurrency(unconfirmedTotal, baseCurrencyCode)
+        : null,
+    }),
+    [baseCurrencyCode, cancelledExpanded, filteredRecurringIncome, unconfirmedTotal],
   );
 
   const activeFilterItems = useMemo<ActiveFilterItem[]>(() => {
@@ -228,6 +260,23 @@ function RecurringIncomeScreen() {
     categoryFilter != null,
     upcomingOnly,
   ].filter(Boolean).length;
+
+  /* El manual de gestos se muestra UNA vez: fijo en pantalla era una instrucción permanente
+     para algo que se aprende a la primera. */
+  const { open: gestureHintOpen, dismiss: dismissGestureHint } = useFormFirstRunHelp(
+    "dm_help_recurring_income_gestures",
+    true,
+  );
+  const dismissHintRef = useRef(dismissGestureHint);
+  dismissHintRef.current = dismissGestureHint;
+  useEffect(() => () => dismissHintRef.current(), []);
+
+  const filterEntranceLabel = (() => {
+    const applied = activeFilters.length + extraFiltersCount;
+    if (applied === 0) return "Filtros";
+    if (applied === 1 && activeFilters.length === 1) return recurringIncomeFilterLabel(activeFilters[0]);
+    return `${applied} filtros`;
+  })();
   const hasFilters = activeFilterItems.length > 0;
   const contextNote = buildRecurringIncomeContextNote({
     visibleCount: filteredRecurringIncome.length,
@@ -404,19 +453,10 @@ function RecurringIncomeScreen() {
               <HeaderActionGroup
                 actions={[
                   {
-                    key: "export",
-                    icon: Download,
-                    onPress: () => exportCSV(filteredRecurringIncome),
-                    disabled: filteredRecurringIncome.length === 0,
-                    accessibilityLabel: "Exportar ingresos fijos en CSV",
-                  },
-                  {
-                    key: "filters",
-                    icon: SlidersHorizontal,
-                    label: extraFiltersCount > 0 ? `Filtros (${extraFiltersCount})` : "Filtros",
-                    active: extraFiltersCount > 0,
-                    onPress: () => setFilterSheetOpen(true),
-                    accessibilityLabel: "Abrir filtros avanzados de ingresos fijos",
+                    key: "menu",
+                    icon: MoreVertical,
+                    onPress: () => setMenuOpen(true),
+                    accessibilityLabel: "Más acciones",
                   },
                 ]}
               />
@@ -426,21 +466,28 @@ function RecurringIncomeScreen() {
       }
       toolbar={selectMode ? null : (
         <FilterToolbar
-          options={QUICK_FILTERS}
-          selectedValues={activeFilters}
-          onSelectedValuesChange={(values) =>
-            setActiveFilters(values.filter((value): value is ActiveRecurringIncomeFilter => value !== "all"))
-          }
-          allValue="all"
+          options={[]}
           searchValue={searchText}
           onSearchChange={setSearchText}
           searchPlaceholder="Buscar ingresos fijos..."
+          /* Las cuatro pestañas de estado se fueron: ocupaban una fila entera y contradecían la
+             agrupación —si filtran por estado, las secciones no se ven nunca—. */
+          extraAction={{
+            label: filterEntranceLabel,
+            active: activeFilters.length > 0 || extraFiltersCount > 0,
+            onPress: () => setFilterSheetOpen(true),
+          }}
         />
       )}
       activeFilters={selectMode ? null : <ActiveFilterBar items={activeFilterItems} onClear={clearFilters} />}
       context={
         !selectMode && (notificationReason || recurringIncome.length > 0) ? (
-          <ResourceContextNote>{notificationReason ?? contextNote}</ResourceContextNote>
+          <ResourceContextNote>
+            {notificationReason ??
+              (filteredRecurringIncome.length === recurringIncome.length && !gestureHintOpen
+                ? null
+                : contextNote)}
+          </ResourceContextNote>
         ) : null
       }
       summary={
@@ -522,8 +569,39 @@ function RecurringIncomeScreen() {
       fab={!selectMode ? <FAB onPress={() => setCreateFormVisible(true)} bottom={insets.bottom + 16} /> : null}
       overlays={
         <>
+          <EntityActionSheet
+            visible={menuOpen}
+            onClose={() => setMenuOpen(false)}
+            sheetTitle="Más acciones"
+            summaryTitle="Ingresos fijos"
+            actions={[
+              {
+                key: "export",
+                label: "Exportar a CSV",
+                variant: "secondary",
+                disabled: filteredRecurringIncome.length === 0,
+                onPress: () => { setMenuOpen(false); void exportCSV(filteredRecurringIncome); },
+              },
+              {
+                key: "select",
+                label: "Seleccionar varios",
+                variant: "ghost",
+                disabled: filteredRecurringIncome.length === 0,
+                onPress: () => { setMenuOpen(false); setSelectMode(true); },
+              },
+            ]}
+          />
           <RecurringIncomeFilterSheet
             visible={filterSheetOpen}
+            statusOptions={QUICK_FILTERS.filter((option) => option.value !== "all")}
+            activeStatusFilters={activeFilters}
+            onToggleStatusFilter={(value: string) =>
+              setActiveFilters((current) =>
+                current.includes(value as ActiveRecurringIncomeFilter)
+                  ? current.filter((filter) => filter !== value)
+                  : [...current, value as ActiveRecurringIncomeFilter],
+              )
+            }
             onClose={() => setFilterSheetOpen(false)}
             frequencyFilter={frequencyFilter}
             onFrequencyFilterChange={setFrequencyFilter}

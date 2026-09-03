@@ -12,6 +12,10 @@ import type {
 
 type Props = {
   visible: boolean;
+  /** Estado: vivía fuera, en cuatro pestañas que ocupaban una fila entera de la pantalla. */
+  statusOptions: { label: string; value: string }[];
+  activeStatusFilters: string[];
+  onToggleStatusFilter: (value: string) => void;
   onClose: () => void;
   frequencyFilter: "all" | RecurringIncomeFrequency;
   onFrequencyFilterChange: (value: "all" | RecurringIncomeFrequency) => void;
@@ -51,6 +55,9 @@ function idOptions<T extends { id: number; name: string }>(
 
 export function RecurringIncomeFilterSheet({
   visible,
+  statusOptions,
+  activeStatusFilters,
+  onToggleStatusFilter,
   onClose,
   frequencyFilter,
   onFrequencyFilterChange,
@@ -69,6 +76,27 @@ export function RecurringIncomeFilterSheet({
 }: Props) {
   return (
     <BottomSheet visible={visible} onClose={onClose} title="Filtros" snapHeight={0.72}>
+      <View style={styles.statusBlock}>
+        <Text style={styles.statusLabel}>Estado</Text>
+        <View style={styles.statusChips}>
+          {statusOptions.map((option) => {
+            const active = activeStatusFilters.includes(option.value);
+            return (
+              <TouchableOpacity
+                key={option.value}
+                style={[styles.statusChip, active && styles.statusChipActive]}
+                onPress={() => onToggleStatusFilter(option.value)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
+              >
+                <Text style={[styles.statusChipText, active && styles.statusChipTextActive]}>
+                  {option.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </View>
       <View style={styles.content}>
         <FilterSection
           label="Frecuencia"
@@ -161,6 +189,25 @@ function FilterSection({
 }
 
 const styles = StyleSheet.create({
+  statusBlock: { gap: SPACING.sm, marginBottom: SPACING.md },
+  statusLabel: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  statusChips: { flexDirection: "row", flexWrap: "wrap", gap: SPACING.sm },
+  statusChip: {
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs + 2,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    borderColor: GLASS.cardBorder,
+  },
+  statusChipActive: { borderColor: COLORS.ink, borderWidth: 1.5 },
+  statusChipText: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.storm },
+  statusChipTextActive: { fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.ink },
   content: {
     gap: SPACING.lg,
   },

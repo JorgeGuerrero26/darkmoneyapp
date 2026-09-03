@@ -19,19 +19,25 @@ export function RecurringIncomeSummaryBar({
   pausedCount,
   currencyCode,
 }: Props) {
-  const partes = [`${activeCount} activo${activeCount === 1 ? "" : "s"}`];
-  if (upcomingCount > 0) partes.push(`${upcomingCount} por llegar`);
-  if (pausedCount > 0) partes.push(`${pausedCount} pausado${pausedCount === 1 ? "" : "s"}`);
+  const activos = activeCount === 1 ? "Uno activo" : `${activeCount} activos`;
+  const pausados = pausedCount === 0
+    ? null
+    : pausedCount === 1
+      ? "El pausado no suma."
+      : "Los pausados no suman.";
 
   return (
     <MetricSummaryBar
-      label="Al mes"
+      /* "Al mes" en menta sonaba a plata que entró. Esto es lo que se ESPERA, y hasta que no
+         llega no es un ingreso: va en hueso y el rótulo lo dice. La menta se reserva para el
+         ingreso ya confirmado, en Movimientos, que es donde significa algo. */
+      label="Esperado al mes"
       value={formatCurrency(monthlyTotal, currencyCode)}
-      valueColor={COLORS.income}
-      support={partes.join(" · ")}
+      valueColor={COLORS.ink}
+      support={[`${activos}.`, pausados].filter(Boolean).join(" ")}
       help={{
-        title: "Ingreso mensual recurrente",
-        description: "Suma de tus ingresos fijos activos llevada a su equivalente mensual.",
+        title: "Ingreso mensual esperado",
+        description: "Suma de tus ingresos fijos activos llevada a su equivalente mensual. No incluye los pausados ni confirma que hayan llegado.",
       }}
     />
   );
