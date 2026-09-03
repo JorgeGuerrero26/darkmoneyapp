@@ -3,7 +3,7 @@ import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { BottomSheet } from "../../../components/ui/BottomSheet";
 import { DatePickerInput } from "../../../components/ui/DatePickerInput";
 import { PillSelector } from "../../../components/ui/PillSelector";
-import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING } from "../../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../../constants/theme";
 import { parseDisplayDate, todayPeru } from "../../../lib/date";
 import {
   SUBSCRIPTION_DUE_DATE_FILTERS,
@@ -13,6 +13,10 @@ import {
 type Props = {
   visible: boolean;
   onClose: () => void;
+  /** Estado y frecuencia. Vivían fuera, en una fila de cápsulas que era la segunda puerta. */
+  filterOptions: { label: string; value: string }[];
+  activeFilters: string[];
+  onToggleFilter: (value: string) => void;
   dueDateFilter: SubscriptionDueDateFilter;
   onDueDateFilterChange: (value: SubscriptionDueDateFilter) => void;
   customDueDateFrom: string;
@@ -28,6 +32,9 @@ function ymdToDate(value: string) {
 export function SubscriptionFilterSheet({
   visible,
   onClose,
+  filterOptions,
+  activeFilters,
+  onToggleFilter,
   dueDateFilter,
   onDueDateFilterChange,
   customDueDateFrom,
@@ -38,6 +45,29 @@ export function SubscriptionFilterSheet({
   return (
     <BottomSheet visible={visible} onClose={onClose} title="Filtros" snapHeight={0.58}>
       <View style={styles.content}>
+        {/* Estado y frecuencia entran aquí: eran once cápsulas en una fila que se desplazaba de
+            lado, con un desplegable que anunciaba "Filtrar · 11 opciones" — la interfaz
+            contándose a sí misma. */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionLabel}>Estado y frecuencia</Text>
+        </View>
+        <View style={styles.chipsWrap}>
+          {filterOptions.map((option) => {
+            const active = activeFilters.includes(option.value);
+            return (
+              <TouchableOpacity
+                key={option.value}
+                style={[styles.chip, active && styles.chipActive]}
+                onPress={() => onToggleFilter(option.value)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
+              >
+                <Text style={[styles.chipText, active && styles.chipTextActive]}>{option.label}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionLabel}>Próximo pago</Text>
           <Text style={styles.sectionHint}>Filtra por el día en que toca pagar la suscripción.</Text>
@@ -108,6 +138,18 @@ const styles = StyleSheet.create({
   customRangeRow: {
     gap: SPACING.sm,
   },
+  chipsWrap: { flexDirection: "row", flexWrap: "wrap", gap: SPACING.sm },
+  chip: {
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs + 2,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    borderColor: SURFACE.cardBorder,
+    backgroundColor: SURFACE.card,
+  },
+  chipActive: { borderColor: COLORS.ink, borderWidth: 1.5 },
+  chipText: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.storm },
+  chipTextActive: { fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.ink },
   applyBtn: {
     marginTop: SPACING.sm,
     minHeight: 46,

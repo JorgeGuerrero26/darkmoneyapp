@@ -16,15 +16,22 @@ export function SubscriptionSummaryBar({
   pausedCount,
   currencyCode,
 }: Props) {
-  const partes = [`${activeCount} activa${activeCount === 1 ? "" : "s"}`];
-  if (pausedCount > 0) partes.push(`${pausedCount} pausada${pausedCount === 1 ? "" : "s"}, no suma al mes`);
+  /* "1 activa · 1 pausada, no suma al mes" era una lista de datos con una aclaración pegada.
+     Dicho en frases, se lee de un vistazo. */
+  const activas = activeCount === 1 ? "Una activa" : `${activeCount} activas`;
+  const pausadas = pausedCount === 0
+    ? null
+    : pausedCount === 1
+      ? "La pausada no suma."
+      : "Las pausadas no suman.";
 
   return (
     <MetricSummaryBar
       label="Al mes"
       value={formatCurrency(monthlyTotal, currencyCode)}
-      valueColor={COLORS.expense}
-      support={partes.join(" · ")}
+      /* Hueso, no clay: es lo que se VA a gastar, no lo que ya se gastó. */
+      valueColor={COLORS.ink}
+      support={[`${activas}.`, pausadas].filter(Boolean).join(" ")}
       help={{
         title: "Gasto mensual en suscripciones",
         description: "Suma de tus suscripciones activas llevada a su equivalente mensual.",

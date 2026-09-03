@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SectionListRenderItem } from "react-native";
-import { CheckSquare, Download, Pause, SlidersHorizontal, Trash2 } from "lucide-react-native";
+import { CheckSquare, Download, MoreVertical, Pause, Trash2 } from "lucide-react-native";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ErrorBoundary } from "../components/ui/ErrorBoundary";
 import { UndoBanner } from "../components/ui/UndoBanner";
 import { ScreenHeader } from "../components/layout/ScreenHeader";
+import { EntityActionSheet } from "../components/ui/EntityActionSheet";
 import { HeaderActionGroup } from "../components/ui/HeaderActionGroup";
 import { FilterToolbar } from "../components/ui/FilterToolbar";
 import { ActiveFilterBar, type ActiveFilterItem } from "../components/ui/ActiveFilterBar";
@@ -39,6 +40,7 @@ import {
   type ActiveSubscriptionFilter,
 } from "../features/subscriptions/lib/subscriptionFilters";
 import { buildSubscriptionsContextNote } from "../features/subscriptions/lib/buildSubscriptionsContextNote";
+import { useFormFirstRunHelp } from "../components/forms/FormFirstRunHelp";
 import { useAuth } from "../lib/auth-context";
 import { todayPeru } from "../lib/date";
 import { formatSubscriptionYmd, rollDueDateForward } from "../lib/subscription-helpers";
@@ -82,6 +84,9 @@ function SubscriptionsScreen() {
   const [createFormVisible, setCreateFormVisible] = useState(false);
   const [markPaidTarget, setMarkPaidTarget] = useState<SubscriptionSummary | null>(null);
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  // Las canceladas son historial: llegan plegadas para no competir con lo que pide acción.
+  const [cancelledExpanded, setCancelledExpanded] = useState(false);
   const [searchText, setSearchText] = useState("");
   const [activeFilters, setActiveFilters] = useState<ActiveSubscriptionFilter[]>([]);
   const [dueDateFilter, setDueDateFilter] = useState<SubscriptionDueDateFilter>("all");
@@ -135,8 +140,13 @@ function SubscriptionsScreen() {
     [activeFilters, dueDateRange, searchText, subscriptions],
   );
   const subscriptionSections = useMemo(
-    () => buildSubscriptionSections(filteredSubscriptions),
-    [filteredSubscriptions],
+    () => buildSubscriptionSections({
+      subscriptions: filteredSubscriptions,
+      today: todayPeru(),
+      cancelledExpanded,
+      onToggleCancelled: () => setCancelledExpanded((open: boolean) => !open),
+    }),
+    [cancelledExpanded, filteredSubscriptions],
   );
 
   const activeFilterItems = useMemo<ActiveFilterItem[]>(() => {
@@ -339,7 +349,29 @@ function SubscriptionsScreen() {
   ), [handleTogglePause, handleTogglePin, router, selectMode, selectedIds, startUndoDelete, toggleSelect]);
 
   const extraFiltersCount = dueDateRange ? 1 : 0;
+  const filterEntranceLabel = (() => {
+    const applied = activeFilters.length + extraFiltersCount;
+    if (applied === 0) return "Filtros";
+    if (applied === 1) {
+      return activeFilters.length === 1
+        ? subscriptionFilterLabel(activeFilters[0])
+        : dueDateRange?.label ?? "Filtros";
+    }
+    return `${applied} filtros`;
+  })();
   const hasFilters = activeFilters.length > 0 || Boolean(searchText.trim()) || extraFiltersCount > 0;
+  /* El manual de gestos se muestra UNA vez y se marca como visto: fijo en pantalla era una
+     instrucción permanente para algo que se aprende a la primera. Lo que sí cambia —"mostrando
+     3 de 12"— se sigue enseñando siempre, porque describe el estado de ahora. */
+  const { open: gestureHintOpen, dismiss: dismissGestureHint } = useFormFirstRunHelp(
+    "dm_help_subscriptions_gestures",
+    true,
+  );
+  // Se marca como visto al SALIR: si se marcara al entrar, el aviso parpadearía y no se leería.
+  const dismissHintRef = useRef(dismissGestureHint);
+  dismissHintRef.current = dismissGestureHint;
+  useEffect(() => () => dismissHintRef.current(), []);
+
   const contextNote = buildSubscriptionsContextNote({
     visibleCount: filteredSubscriptions.length,
     totalCount: subscriptions.length,
@@ -355,22 +387,16 @@ function SubscriptionsScreen() {
           onBack={selectMode ? exitSelectMode : handleBack}
           rightAction={
             selectMode ? null : (
+              /* El ícono de descarga no decía qué hacía. Baja al menú con su nombre, como en
+                 el detalle; y los filtros dejan de tener dos puertas: la de aquí se va y queda
+                 la del buscador. */
               <HeaderActionGroup
                 actions={[
                   {
-                    key: "export",
-                    icon: Download,
-                    onPress: () => exportCSV(filteredSubscriptions),
-                    disabled: filteredSubscriptions.length === 0,
-                    accessibilityLabel: "Exportar suscripciones en CSV",
-                  },
-                  {
-                    key: "filters",
-                    icon: SlidersHorizontal,
-                    label: extraFiltersCount > 0 ? `Filtros (${extraFiltersCount})` : "Filtros",
-                    active: extraFiltersCount > 0,
-                    onPress: () => setFilterSheetOpen(true),
-                    accessibilityLabel: "Abrir filtros avanzados de suscripciones",
+                    key: "menu",
+                    icon: MoreVertical,
+                    onPress: () => setMenuOpen(true),
+                    accessibilityLabel: "Más acciones",
                   },
                 ]}
               />
@@ -380,21 +406,28 @@ function SubscriptionsScreen() {
       }
       toolbar={selectMode ? null : (
         <FilterToolbar
-          options={SUBSCRIPTION_FILTERS}
-          selectedValues={activeFilters}
-          onSelectedValuesChange={(values) =>
-            setActiveFilters(values.filter((value): value is ActiveSubscriptionFilter => value !== "all"))
-          }
-          allValue="all"
+          options={[]}
           searchValue={searchText}
           onSearchChange={setSearchText}
           searchPlaceholder="Buscar suscripciones..."
+          /* Una sola entrada: dice "Filtros" cuando no hay nada aplicado y nombra el filtro
+             cuando lo hay. */
+          extraAction={{
+            label: filterEntranceLabel,
+            active: activeFilters.length > 0 || extraFiltersCount > 0,
+            onPress: () => setFilterSheetOpen(true),
+          }}
         />
       )}
       activeFilters={selectMode ? null : <ActiveFilterBar items={activeFilterItems} onClear={clearFilters} />}
       context={
         !selectMode && (notificationReason || subscriptions.length > 0) ? (
-          <ResourceContextNote>{notificationReason ?? contextNote}</ResourceContextNote>
+          <ResourceContextNote>
+            {notificationReason ??
+              (filteredSubscriptions.length === subscriptions.length && !gestureHintOpen
+                ? null
+                : contextNote)}
+          </ResourceContextNote>
         ) : null
       }
       summary={
@@ -473,8 +506,39 @@ function SubscriptionsScreen() {
       fab={!selectMode ? <FAB onPress={() => setCreateFormVisible(true)} bottom={insets.bottom + 16} /> : null}
       overlays={
         <>
+          <EntityActionSheet
+            visible={menuOpen}
+            onClose={() => setMenuOpen(false)}
+            sheetTitle="Más acciones"
+            summaryTitle="Suscripciones"
+            actions={[
+              {
+                key: "export",
+                label: "Exportar a CSV",
+                variant: "secondary",
+                disabled: filteredSubscriptions.length === 0,
+                onPress: () => { setMenuOpen(false); void exportCSV(filteredSubscriptions); },
+              },
+              {
+                key: "select",
+                label: "Seleccionar varias",
+                variant: "ghost",
+                disabled: filteredSubscriptions.length === 0,
+                onPress: () => { setMenuOpen(false); setSelectMode(true); },
+              },
+            ]}
+          />
           <SubscriptionFilterSheet
             visible={filterSheetOpen}
+            filterOptions={SUBSCRIPTION_FILTERS.filter((option) => option.value !== "all")}
+            activeFilters={activeFilters}
+            onToggleFilter={(value) =>
+              setActiveFilters((current) =>
+                current.includes(value as ActiveSubscriptionFilter)
+                  ? current.filter((filter) => filter !== value)
+                  : [...current, value as ActiveSubscriptionFilter],
+              )
+            }
             onClose={() => setFilterSheetOpen(false)}
             dueDateFilter={dueDateFilter}
             onDueDateFilterChange={setDueDateFilter}
