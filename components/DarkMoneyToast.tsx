@@ -6,439 +6,308 @@ import React, {
   useMemo,
   useRef,
   useState,
-} from 'react'
-import {
-  Animated,
-  PanResponder,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native'
-import Svg, { Rect, Path } from 'react-native-svg'
-import { useSafeAreaInsets } from 'react-native-safe-area-context'
+} from "react";
+import { Animated, PanResponder, Pressable, StyleSheet, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { RADIUS } from '../constants/theme'
+import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING } from "../constants/theme";
+import { TAB_BAR_CONTENT_HEIGHT } from "../constants/floating-tab-bar";
+import { useUiStore } from "../store/ui-store";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+/**
+ * El aviso de confirmación: el componente más repetido de la app.
+ *
+ * **Borrar un movimiento no es un error, y guardarlo no es un ingreso.** El aviso salía en rojo
+ * después de que el usuario deslizara y confirmara —hizo exactamente lo que quería— y en verde
+ * al guardar un gasto, diciendo con el color "entró plata". Ninguno de los dos tonos era su
+ * significado.
+ *
+ * Y el color no estaba en un sitio: estaba en **cinco** —borde, fondo tintado, recuadro del
+ * ícono, título y texto del botón— para comunicar un solo bit. Es la misma acumulación que se
+ * quitó del botón principal y de las cápsulas de estado.
+ *
+ * Un aviso tiene dos trabajos: decir qué pasó y ofrecer deshacerlo. **Los dos son texto.** El
+ * color se reserva para el único caso en que el usuario tiene que reaccionar: que la operación
+ * falle. Así, ver color en un aviso significa una sola cosa.
+ */
 
-export type ToastType = 'success' | 'update' | 'transfer' | 'delete' | 'info'
+export type ToastType = "success" | "update" | "transfer" | "delete" | "info" | "error";
 
 export interface ToastConfig {
-  type: ToastType
-  title: string
-  subtitle?: string
-  amount?: string
-  duration?: number
-  onUndo?: () => void
+  type: ToastType;
+  title: string;
+  /** La consecuencia: "S/ 1.50 · devuelto a Cuenta Principal". */
+  subtitle?: string;
+  amount?: string;
+  duration?: number;
+  onUndo?: () => void;
+  /** Solo para el caso que falló. */
+  onRetry?: () => void;
 }
 
-// ─── Palette ──────────────────────────────────────────────────────────────────
+/** Los cuatro casos. Idénticos salvo el alto y quién lleva botón. */
+type ToastKind = "notice" | "undo" | "detail" | "failed";
 
-const THEME: Record<ToastType, {
-  bg: string
-  iconBg: string
-  accent: string
-  subtitleColor: string
-  undoBorder: string
-}> = {
-  success:  { bg: '#0A1E14', iconBg: '#16281A', accent: '#86CE96', subtitleColor: '#86CE96', undoBorder: 'rgba(134,206,150,0.35)' },
-  update:   { bg: '#1C1700', iconBg: '#302700', accent: '#E8C44A', subtitleColor: '#A08830', undoBorder: 'rgba(232,196,74,0.35)' },
-  transfer: { bg: '#17131C', iconBg: '#241C30', accent: '#C0A6D8', subtitleColor: '#8E7AA8', undoBorder: 'rgba(192,166,216,0.35)' },
-  delete:   { bg: '#200A0A', iconBg: '#381212', accent: '#E85A5A', subtitleColor: '#A04040', undoBorder: 'rgba(232,90,90,0.35)' },
-  info:     { bg: '#191D26', iconBg: '#232935', accent: '#9DB2DE', subtitleColor: '#9DB2DE', undoBorder: 'rgba(157,178,222,0.35)' },
+const HEIGHT: Record<ToastKind, number> = {
+  notice: 46,
+  undo: 56,
+  detail: 60,
+  failed: 60,
+};
+
+function kindOf(config: ToastConfig): ToastKind {
+  if (config.type === "error") return "failed";
+  if (config.onUndo) return "undo";
+  if (config.subtitle || config.amount) return "detail";
+  return "notice";
 }
 
-// ─── Dimensions ───────────────────────────────────────────────────────────────
+const SURFACE_BG = "#2A2825";
+const UNDO_BG = "#3A3733";
 
-const TOAST_W = 320
-const TOAST_H = 64
-const TOAST_EXPANDED_H = 128
-const EXPANDED_TOAST_DURATION_MS = 8000
-const TOAST_RADIUS = RADIUS.xl
-
-function roundedRectPerimeter(width: number, height: number, radius: number) {
-  return (
-    2 * (width - 2 * radius) +
-    2 * (height - 2 * radius) +
-    2 * Math.PI * radius
-  )
-}
-
-// ─── Icons ────────────────────────────────────────────────────────────────────
-
-function ToastIcon({ type, color }: { type: ToastType; color: string }) {
-  const p = { stroke: color, strokeWidth: 1.5, fill: 'none' as const }
-  switch (type) {
-    case 'success':
-      return (
-        <Svg width={16} height={16} viewBox="0 0 16 16">
-          <Rect x={1} y={1} width={14} height={14} rx={7} {...p} />
-          <Path d="M5 8.5l2 2 4-4" strokeLinecap="round" strokeLinejoin="round" {...p} />
-        </Svg>
-      )
-    case 'update':
-      return (
-        <Svg width={16} height={16} viewBox="0 0 16 16">
-          <Path d="M11 2.5l2.5 2.5L5 13.5H2.5V11L11 2.5z" strokeLinejoin="round" {...p} />
-          <Path d="M9 4.5l2.5 2.5" strokeLinecap="round" {...p} />
-        </Svg>
-      )
-    case 'transfer':
-      return (
-        <Svg width={16} height={16} viewBox="0 0 16 16">
-          <Path
-            d="M3 5h10M10 2l3 3-3 3M13 11H3M6 8l-3 3 3 3"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            {...p}
-          />
-        </Svg>
-      )
-    case 'delete':
-      return (
-        <Svg width={16} height={16} viewBox="0 0 16 16">
-          <Path d="M3 5h10l-1 8H4L3 5z" strokeLinejoin="round" {...p} />
-          <Path
-            d="M6 5V3.5a.5.5 0 01.5-.5h3a.5.5 0 01.5.5V5M1.5 5h13"
-            strokeLinecap="round"
-            {...p}
-          />
-        </Svg>
-      )
-    case 'info':
-      return (
-        <Svg width={16} height={16} viewBox="0 0 16 16">
-          <Rect x={1.5} y={1.5} width={13} height={13} rx={6.5} {...p} />
-          <Path d="M8 7.2v4.1M8 4.7h.01" strokeLinecap="round" {...p} />
-        </Svg>
-      )
-  }
-}
-
-// ─── Border progress ──────────────────────────────────────────────────────────
-
-const AnimatedRect = Animated.createAnimatedComponent(Rect)
-
-function BorderProgress({
-  progress,
-  color,
-  height,
+export function DarkMoneyToast({
+  config,
+  onHide,
 }: {
-  progress: Animated.Value
-  color: string
-  height: number
+  config: ToastConfig | null;
+  onHide: () => void;
 }) {
-  const perimeter = roundedRectPerimeter(TOAST_W, height, TOAST_RADIUS)
-  const dashOffset = progress.interpolate({
-    inputRange:  [0, 1],
-    outputRange: [0, perimeter],
-  })
-
-  return (
-    <Svg
-      width={TOAST_W}
-      height={height}
-      style={StyleSheet.absoluteFill}
-      pointerEvents="none"
-    >
-      <Rect
-        x={1} y={1}
-        width={TOAST_W - 2} height={height - 2}
-        rx={TOAST_RADIUS - 1}
-        fill="none"
-        stroke={color}
-        strokeWidth={1.5}
-        strokeOpacity={0.15}
-      />
-      <AnimatedRect
-        x={1} y={1}
-        width={TOAST_W - 2} height={height - 2}
-        rx={TOAST_RADIUS - 1}
-        fill="none"
-        stroke={color}
-        strokeWidth={1.5}
-        strokeLinecap="round"
-        strokeDasharray={perimeter}
-        strokeDashoffset={dashOffset}
-      />
-    </Svg>
-  )
-}
-
-// ─── Toast component ──────────────────────────────────────────────────────────
-
-interface ToastProps {
-  config: ToastConfig | null
-  onHide: () => void
-}
-
-export function DarkMoneyToast({ config, onHide }: ToastProps) {
-  const insets        = useSafeAreaInsets()
-  const opacity       = useRef(new Animated.Value(0)).current
-  const translateY    = useRef(new Animated.Value(20)).current
-  const scale         = useRef(new Animated.Value(0.96)).current
-  const dragY         = useRef(new Animated.Value(0)).current
-  const progress      = useRef(new Animated.Value(0)).current
-  const timerRef      = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const dismissingRef = useRef(false)
-  const [expanded, setExpanded] = useState(false)
+  const insets = useSafeAreaInsets();
+  const opacity = useRef(new Animated.Value(0)).current;
+  const translateY = useRef(new Animated.Value(20)).current;
+  const dragY = useRef(new Animated.Value(0)).current;
+  const progress = useRef(new Animated.Value(1)).current;
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dismissingRef = useRef(false);
 
   const runHide = useCallback(() => {
-    if (dismissingRef.current) return
-    dismissingRef.current = true
-    if (timerRef.current) clearTimeout(timerRef.current)
+    if (dismissingRef.current) return;
+    dismissingRef.current = true;
+    if (timerRef.current) clearTimeout(timerRef.current);
     Animated.parallel([
-      Animated.timing(opacity,    { toValue: 0,    duration: 200, useNativeDriver: true }),
-      Animated.timing(translateY, { toValue: 30,   duration: 200, useNativeDriver: true }),
-      Animated.timing(scale,      { toValue: 0.94, duration: 200, useNativeDriver: true }),
-      Animated.timing(dragY,      { toValue: 0,    duration: 200, useNativeDriver: true }),
-    ]).start(() => { dismissingRef.current = false; onHide() })
-  }, [opacity, translateY, scale, dragY, onHide])
+      Animated.timing(opacity, { toValue: 0, duration: 180, useNativeDriver: true }),
+      Animated.timing(translateY, { toValue: 24, duration: 180, useNativeDriver: true }),
+      Animated.timing(dragY, { toValue: 0, duration: 180, useNativeDriver: true }),
+    ]).start(() => {
+      dismissingRef.current = false;
+      onHide();
+    });
+  }, [opacity, translateY, dragY, onHide]);
 
-  const panResponder = useMemo(() => PanResponder.create({
-    onMoveShouldSetPanResponder: (_e, gs) =>
-      gs.dy > 6 && Math.abs(gs.dy) > Math.abs(gs.dx),
-    onPanResponderMove: (_e, gs) => {
-      dragY.setValue(Math.max(0, gs.dy))
-    },
-    onPanResponderRelease: (_e, gs) => {
-      if (gs.dy > 40 || gs.vy > 0.6) {
-        runHide()
-      } else {
-        Animated.spring(dragY, { toValue: 0, useNativeDriver: true, tension: 80, friction: 10 }).start()
-      }
-    },
-    onPanResponderTerminate: () => {
-      Animated.spring(dragY, { toValue: 0, useNativeDriver: true, tension: 80, friction: 10 }).start()
-    },
-  }), [dragY, runHide])
-
-  const handleUndo = useCallback(() => {
-    config?.onUndo?.()
-    runHide()
-  }, [config, runHide])
-
-  const titleLength = config?.title.length ?? 0
-  const subtitleLength = config?.subtitle?.length ?? 0
-  const hasExpandableText = titleLength > 28 || subtitleLength > 28
-  const toastHeight = expanded ? TOAST_EXPANDED_H : TOAST_H
-  const titleLines = expanded ? 5 : 1
-  const subtitleLines = expanded ? 3 : 1
-
-  const restartAutoHide = useCallback((duration: number) => {
-    if (timerRef.current) clearTimeout(timerRef.current)
-    progress.stopAnimation(() => {
-      progress.setValue(0)
-      Animated.timing(progress, {
-        toValue: 1,
-        duration,
-        useNativeDriver: false,
-      }).start()
-    })
-    timerRef.current = setTimeout(runHide, duration)
-  }, [progress, runHide])
-
-  const toggleExpanded = useCallback(() => {
-    if (!hasExpandableText) return
-    setExpanded((current) => {
-      const next = !current
-      const baseDuration = config?.duration ?? 3500
-      restartAutoHide(next ? Math.max(baseDuration, EXPANDED_TOAST_DURATION_MS) : baseDuration)
-      return next
-    })
-  }, [config?.duration, hasExpandableText, restartAutoHide])
-
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_e, gs) => gs.dy > 6 && Math.abs(gs.dy) > Math.abs(gs.dx),
+        onPanResponderMove: (_e, gs) => dragY.setValue(Math.max(0, gs.dy)),
+        onPanResponderRelease: (_e, gs) => {
+          if (gs.dy > 40 || gs.vy > 0.6) runHide();
+          else Animated.spring(dragY, { toValue: 0, useNativeDriver: true, tension: 80, friction: 10 }).start();
+        },
+        onPanResponderTerminate: () =>
+          Animated.spring(dragY, { toValue: 0, useNativeDriver: true, tension: 80, friction: 10 }).start(),
+      }),
+    [dragY, runHide],
+  );
 
   useEffect(() => {
-    if (!config) return
+    if (!config) return;
 
-    dismissingRef.current = false
-    setExpanded(false)
-    opacity.setValue(0)
-    translateY.setValue(20)
-    scale.setValue(0.96)
-    dragY.setValue(0)
-    progress.setValue(0)
+    dismissingRef.current = false;
+    opacity.setValue(0);
+    translateY.setValue(20);
+    dragY.setValue(0);
+    progress.setValue(1);
 
-    const dur = config.duration ?? 3500
+    const duration = config.duration ?? (config.onUndo ? 5000 : 3500);
 
     Animated.parallel([
-      Animated.spring(opacity,    { toValue: 1, useNativeDriver: true, tension: 120, friction: 10 }),
+      Animated.spring(opacity, { toValue: 1, useNativeDriver: true, tension: 120, friction: 10 }),
       Animated.spring(translateY, { toValue: 0, useNativeDriver: true, tension: 120, friction: 10 }),
-      Animated.spring(scale,      { toValue: 1, useNativeDriver: true, tension: 120, friction: 10 }),
-    ]).start()
+    ]).start();
 
-    Animated.timing(progress, {
-      toValue: 1,
-      duration: dur,
-      useNativeDriver: false,
-    }).start()
-
-    timerRef.current = setTimeout(runHide, dur)
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current)
+    // El plazo de deshacer se agota a la vista: sin esto, el aviso y la posibilidad de
+    // deshacer desaparecen a la vez y sin previo aviso.
+    if (config.onUndo) {
+      Animated.timing(progress, { toValue: 0, duration, useNativeDriver: false }).start();
     }
-  }, [config]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!config) return null
+    timerRef.current = setTimeout(runHide, duration);
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [config]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const theme = THEME[config.type]
+  if (!config) return null;
+
+  const kind = kindOf(config);
+  const failed = kind === "failed";
+  const detail = config.subtitle ?? config.amount ?? null;
+
+  const handleUndo = () => {
+    config.onUndo?.();
+    runHide();
+  };
+  const handleRetry = () => {
+    config.onRetry?.();
+    runHide();
+  };
 
   return (
     <Animated.View
       {...panResponder.panHandlers}
+      accessibilityLiveRegion="polite"
       style={[
         styles.toast,
         {
-          backgroundColor: theme.bg,
-          height: toastHeight,
-          bottom: insets.bottom + 24,
+          minHeight: HEIGHT[kind],
+          /* Sobre la barra: antes tapaba dos íconos de navegación y, por arriba, la fila que
+             acababa de cambiar — justo la que uno quiere mirar. */
+          bottom: insets.bottom + TAB_BAR_CONTENT_HEIGHT + SPACING.sm,
           opacity,
-          transform: [{ translateY: Animated.add(translateY, dragY) }, { scale }],
+          transform: [{ translateY: Animated.add(translateY, dragY) }],
         },
-        expanded && styles.toastExpanded,
+        failed && styles.toastFailed,
       ]}
     >
-      <BorderProgress progress={progress} color={theme.accent} height={toastHeight} />
-
-      <Pressable
-        onPress={toggleExpanded}
-        disabled={!hasExpandableText}
-        accessibilityRole={hasExpandableText ? "button" : undefined}
-        accessibilityLabel={config.title}
-        accessibilityHint={hasExpandableText ? "Toca para alternar el mensaje completo" : undefined}
-        style={({ pressed }) => [
-          styles.messageArea,
-          expanded && styles.messageAreaExpanded,
-          pressed && hasExpandableText && styles.messageAreaPressed,
-        ]}
-      >
-        <View style={[styles.iconBox, expanded && styles.iconBoxExpanded, { backgroundColor: theme.iconBg }]}>
-          <ToastIcon type={config.type} color={theme.accent} />
-        </View>
-
-        <View style={styles.body}>
-          <Text style={[styles.title, { color: theme.accent }]} numberOfLines={titleLines}>
-            {config.title}
+      <View style={styles.body}>
+        {/* Sin ícono: una papelera al lado de "se eliminó" repite la palabra en dibujo, y el
+            espacio que ocupaba lo gana el texto. */}
+        <Text style={[styles.title, failed && styles.titleFailed]} numberOfLines={2}>
+          {config.title}
+        </Text>
+        {detail ? (
+          <Text style={styles.detail} numberOfLines={2}>
+            {detail}
           </Text>
-          {config.subtitle ? (
-            <Text style={[styles.subtitle, { color: theme.subtitleColor }]} numberOfLines={subtitleLines}>
-              {config.subtitle}
-            </Text>
-          ) : null}
-        </View>
-      </Pressable>
+        ) : null}
+      </View>
 
       {config.onUndo ? (
         <Pressable
           onPress={handleUndo}
-          style={({ pressed }) => [
-            styles.undoBtn,
-            { borderColor: theme.undoBorder, opacity: pressed ? 0.6 : 1 },
-          ]}
+          style={({ pressed }) => [styles.action, pressed && styles.actionPressed]}
+          accessibilityRole="button"
         >
-          <Text style={[styles.undoText, { color: theme.accent }]}>Deshacer</Text>
+          <Text style={styles.actionText}>Deshacer</Text>
         </Pressable>
-      ) : config.amount ? (
-        <Text style={[styles.amount, { color: theme.accent }]}>
-          {config.amount}
-        </Text>
+      ) : failed && config.onRetry ? (
+        <Pressable
+          onPress={handleRetry}
+          style={({ pressed }) => [styles.action, pressed && styles.actionPressed]}
+          accessibilityRole="button"
+        >
+          <Text style={styles.actionText}>Reintentar</Text>
+        </Pressable>
+      ) : null}
+
+      {config.onUndo ? (
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.progress,
+            {
+              width: progress.interpolate({
+                inputRange: [0, 1],
+                outputRange: ["0%", "100%"],
+              }),
+            },
+          ]}
+        />
       ) : null}
     </Animated.View>
-  )
+  );
 }
-
-// ─── Context ──────────────────────────────────────────────────────────────────
 
 interface ToastContextValue {
-  show: (config: ToastConfig) => void
+  show: (config: ToastConfig) => void;
 }
 
-const ToastContext = createContext<ToastContextValue>({ show: () => {} })
+const ToastContext = createContext<ToastContextValue>({ show: () => {} });
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
-  const [config, setConfig] = useState<ToastConfig | null>(null)
+  const [config, setConfig] = useState<ToastConfig | null>(null);
+  const setToastVisible = useUiStore((state) => state.setToastVisible);
 
   const show = useCallback((cfg: ToastConfig) => {
-    setConfig(null)
-    requestAnimationFrame(() => setConfig(cfg))
-  }, [])
+    setConfig(null);
+    requestAnimationFrame(() => setConfig(cfg));
+  }, []);
 
-  const hide = useCallback(() => setConfig(null), [])
+  const hide = useCallback(() => setConfig(null), []);
+
+  // El botón flotante sube mientras el aviso está en pantalla, en vez de quedar solapado.
+  useEffect(() => {
+    setToastVisible(config != null);
+  }, [config, setToastVisible]);
 
   return (
     <ToastContext.Provider value={{ show }}>
       {children}
       <DarkMoneyToast config={config} onHide={hide} />
     </ToastContext.Provider>
-  )
+  );
 }
 
 export function useDarkMoneyToast() {
-  return useContext(ToastContext)
+  return useContext(ToastContext);
 }
-
-// ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   toast: {
-    position: 'absolute',
-    alignSelf: 'center',
-    width: TOAST_W,
-    borderRadius: TOAST_RADIUS,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    gap: 10,
-    overflow: 'hidden',
+    position: "absolute",
+    left: 14,
+    right: 14,
+    borderRadius: 13,
+    backgroundColor: SURFACE_BG,
+    borderWidth: 1,
+    borderColor: "rgba(244,241,236,0.10)",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.md,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    overflow: "hidden",
     zIndex: 9999,
     elevation: 20,
+    shadowColor: "#000",
+    shadowOpacity: 0.5,
+    shadowRadius: 28,
+    shadowOffset: { width: 0, height: 10 },
   },
-  toastExpanded: {
-    alignItems: 'flex-start',
-    paddingTop: 12,
-    paddingBottom: 12,
+  /** El único caso con color: hay algo que el usuario tiene que hacer. */
+  toastFailed: { borderColor: "rgba(226,160,126,0.35)" },
+  body: { flex: 1, minWidth: 0 },
+  title: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.ink,
   },
-  messageArea: {
-    flex: 1,
-    minWidth: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    borderRadius: RADIUS.md,
-  },
-  messageAreaExpanded: {
-    alignItems: 'flex-start',
-  },
-  messageAreaPressed: {
-    opacity: 0.82,
-  },
-  iconBox: {
-    width: 36,
-    height: 36,
-    borderRadius: RADIUS.lg,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  iconBoxExpanded: {
+  titleFailed: { color: COLORS.rosewood },
+  detail: {
     marginTop: 2,
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
   },
-  body:     { flex: 1 },
-  title:    { fontSize: 12, fontWeight: '700', letterSpacing: 0.1 },
-  subtitle: { fontSize: 10, marginTop: 2, opacity: 0.85 },
-  amount:   { fontSize: 13, fontWeight: '700', letterSpacing: -0.2, flexShrink: 0 },
-  undoBtn: {
+  action: {
     flexShrink: 0,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    minHeight: 34,
+    paddingHorizontal: SPACING.md,
+    justifyContent: "center",
     borderRadius: 8,
-    borderWidth: 1,
+    backgroundColor: UNDO_BG,
   },
-  undoText: {
-    fontSize: 11,
-    fontWeight: '600',
-    letterSpacing: 0.1,
+  actionPressed: { opacity: 0.7 },
+  actionText: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.ink,
   },
-})
+  progress: {
+    position: "absolute",
+    left: 0,
+    bottom: 0,
+    height: 2,
+    backgroundColor: "rgba(244,241,236,0.35)",
+  },
+});

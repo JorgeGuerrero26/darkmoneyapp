@@ -5,9 +5,11 @@ import type { ToastVariant } from "../store/ui-store";
 import { useDarkMoneyToast } from "../components/DarkMoneyToast";
 import type { ToastConfig, ToastType } from "../components/DarkMoneyToast";
 
+/* "error" ya no se mapea a "delete": borrar es algo que el usuario pidió y sale neutro; el
+   color queda para lo que falló, que es lo único a lo que hay que reaccionar. */
 const VARIANT_TO_TYPE: Record<string, ToastType> = {
   success: "success",
-  error: "delete",
+  error: "error",
   warning: "update",
   info: "info",
 };

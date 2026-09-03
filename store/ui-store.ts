@@ -43,6 +43,9 @@ type UiState = {
   /** Incrementing token — each new value triggers the SuccessGlow animation. */
   successGlowToken: number;
   showToast: (message: string, variant?: ToastVariant) => void;
+  /** Hay un aviso de confirmación en pantalla: el botón flotante se aparta. */
+  toastVisible: boolean;
+  setToastVisible: (visible: boolean) => void;
   dismissToast: (id: string) => void;
   showActivityNotice: (message: string, description?: string) => string;
   dismissActivityNotice: (id?: string) => void;
@@ -58,6 +61,7 @@ export const useUiStore = create<UiState>()(
   persist(
     (set) => ({
       toasts: [],
+      toastVisible: false,
       activityNotice: null,
       isBiometricLocked: false,
       biometricEnabled: false,
@@ -69,6 +73,7 @@ export const useUiStore = create<UiState>()(
       togglePrivacyMode: () => set((state) => ({ privacyMode: !state.privacyMode })),
       successGlowToken: 0,
 
+      setToastVisible: (visible) => set({ toastVisible: visible }),
       showToast: (message, variant = "success") =>
         set((state) => ({
           toasts: [
