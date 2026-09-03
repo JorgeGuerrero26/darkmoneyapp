@@ -508,7 +508,7 @@ function ExchangeRatesScreen() {
               if (pendingDeleteIds.size === 1) {
                 const [onlyId] = pendingDeleteIds;
                 const label = pendingDeleteLabels.current.get(onlyId) ?? "";
-                return label ? `Tipo de cambio "${label}" eliminado` : "Tipo de cambio eliminado";
+                return label ? `Se eliminó «${label}»` : "Tipo de cambio eliminado";
               }
               return `${pendingDeleteIds.size} tipos de cambio eliminados`;
             })()}

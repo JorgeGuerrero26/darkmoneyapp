@@ -1,203 +1,63 @@
-import { useEffect, useRef, useState } from "react";
-import { Animated, Image, Pressable, StyleSheet, Text, View } from "react-native";
-import { COLORS, ELEVATION, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
+import { useEffect, useRef } from "react";
 
-const UNDO_LOGO = require("../../assets/images/logo-sin-fondo.png");
+import { useToast } from "../../hooks/useToast";
 
 type Props = {
   visible: boolean;
   message: string;
   onUndo: () => void;
-  /** Duration of the auto-dismiss countdown in ms — must match the caller's delete timer */
+  /** Debe coincidir con el temporizador de borrado de quien lo llama. */
   durationMs?: number;
-  /** Distance from the screen bottom in px */
+  /**
+   * @deprecated Lo ignora: el aviso se coloca solo, encima de la barra de pestañas.
+   *
+   * Se conserva para no tocar las siete pantallas que lo pasan. Cada una calculaba su propia
+   * distancia al borde —80, 90, `insets.bottom + 80`— y por eso el aviso caía a distinta altura
+   * según dónde estuvieras.
+   */
   bottomOffset?: number;
 };
 
 /**
- * Floating undo snackbar.
- * - Springs up from below with a subtle bounce when visible becomes true.
- * - Progress bar depletes over durationMs so the user knows when it auto-dismisses.
- * - Slides back down + fades when visible becomes false.
- * - Always mounted so the exit animation can play.
+ * El aviso de "eliminado · Deshacer" de las listas, ahora dibujado por el **único** aviso de
+ * la app.
+ *
+ * Había dos componentes haciendo el mismo trabajo: Movimientos usaba el aviso de confirmación
+ * y las otras siete listas este, con su propia superficie, el logo de la app metido en un
+ * círculo, "Deshacer" en menta y su barra de plazo. La revisión 26 aterrizó en uno solo, así
+ * que al borrar una suscripción seguía saliendo el de antes — con los colores y el ícono que
+ * acabábamos de retirar.
+ *
+ * Este componente ya no dibuja nada: traduce su forma declarativa (`visible`) a la imperativa
+ * del aviso (`showRichToast`). Las siete pantallas se quedan como estaban y el aspecto lo
+ * decide un solo sitio.
  */
-export function UndoBanner({
-  visible,
-  message,
-  onUndo,
-  durationMs = 5000,
-  bottomOffset = 80,
-}: Props) {
-  const translateY = useRef(new Animated.Value(100)).current;
-  const opacity = useRef(new Animated.Value(0)).current;
-  const progress = useRef(new Animated.Value(1)).current;
-  const progressAnimRef = useRef<Animated.CompositeAnimation | null>(null);
-  const [trackWidth, setTrackWidth] = useState(0);
+export function UndoBanner({ visible, message, onUndo, durationMs = 5000 }: Props) {
+  const { showRichToast } = useToast();
+
+  // Refs para que el aviso use SIEMPRE el callback y el texto de ahora, sin re-dispararse
+  // cada vez que la pantalla vuelve a renderizar.
+  const onUndoRef = useRef(onUndo);
+  onUndoRef.current = onUndo;
+  const shownMessageRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (visible) {
-      progress.setValue(1);
-      progressAnimRef.current?.stop();
-      progressAnimRef.current = Animated.timing(progress, {
-        toValue: 0,
-        duration: durationMs,
-        useNativeDriver: true,
-      });
-      progressAnimRef.current.start();
-
-      Animated.parallel([
-        Animated.spring(translateY, {
-          toValue: 0,
-          useNativeDriver: true,
-          tension: 70,
-          friction: 9,
-        }),
-        Animated.timing(opacity, {
-          toValue: 1,
-          duration: 160,
-          useNativeDriver: true,
-        }),
-      ]).start();
-    } else {
-      progressAnimRef.current?.stop();
-      Animated.parallel([
-        Animated.timing(translateY, {
-          toValue: 100,
-          duration: 240,
-          useNativeDriver: true,
-        }),
-        Animated.timing(opacity, {
-          toValue: 0,
-          duration: 180,
-          useNativeDriver: true,
-        }),
-      ]).start();
+    if (!visible || !message) {
+      shownMessageRef.current = null;
+      return;
     }
-  // durationMs intentionally excluded — only reset when visibility toggles
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible]);
+    // Si se borra otra fila mientras el aviso sigue en pantalla, el texto cambia ("2
+    // eliminadas") y toca reemplazarlo, reiniciando el plazo con él.
+    if (shownMessageRef.current === message) return;
+    shownMessageRef.current = message;
 
-  return (
-    <Animated.View
-      pointerEvents={visible ? "auto" : "none"}
-      style={[styles.banner, { bottom: bottomOffset, opacity, transform: [{ translateY }] }]}
-    >
-      {/* Glass tint */}
-      <View style={styles.tint} />
+    showRichToast({
+      type: "delete",
+      title: message,
+      duration: durationMs,
+      onUndo: () => onUndoRef.current(),
+    });
+  }, [visible, message, durationMs, showRichToast]);
 
-      {/* Main row */}
-      <View style={styles.row}>
-        <View style={styles.logoBubble}>
-          <Image source={UNDO_LOGO} style={styles.logo} resizeMode="contain" />
-        </View>
-        <Text style={styles.message} numberOfLines={1}>{message}</Text>
-        <Pressable
-          onPress={onUndo}
-          style={({ pressed }) => [styles.undoBtn, pressed && styles.undoBtnPressed]}
-          hitSlop={8}
-        >
-          <Text style={styles.undoBtnText}>Deshacer</Text>
-        </Pressable>
-      </View>
-
-      {/* Progress bar */}
-      <View
-        style={styles.progressTrack}
-        onLayout={(e) => {
-          const w = e.nativeEvent.layout.width;
-          if (w > 0 && w !== trackWidth) setTrackWidth(w);
-        }}
-      >
-        <Animated.View
-          style={[
-            styles.progressFill,
-            {
-              transform: [
-                {
-                  translateX: progress.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [-trackWidth / 2, 0],
-                  }),
-                },
-                { scaleX: progress },
-              ],
-            },
-          ]}
-        />
-      </View>
-    </Animated.View>
-  );
+  return null;
 }
-
-const styles = StyleSheet.create({
-  banner: {
-    position: "absolute",
-    left: SPACING.lg,
-    right: SPACING.lg,
-    backgroundColor: COLORS.mist,
-    borderRadius: RADIUS.xl,
-    borderWidth: 1,
-    borderColor: SURFACE.cardBorder,
-    overflow: "hidden",
-    zIndex: 50,
-    ...ELEVATION[3],
-  },
-  tint: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: SURFACE.separator,
-  },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: SPACING.sm,
-    gap: SPACING.sm,
-  },
-  logoBubble: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: SURFACE.card,
-    borderWidth: 1,
-    borderColor: SURFACE.cardBorder,
-    alignItems: "center",
-    justifyContent: "center",
-    ...ELEVATION[2],
-  },
-  logo: {
-    width: 26,
-    height: 26,
-  },
-  message: {
-    fontFamily: FONT_FAMILY.bodyMedium,
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.ink,
-    flex: 1,
-  },
-  undoBtn: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: 6,
-    borderRadius: RADIUS.full,
-    backgroundColor: COLORS.primary + "14",
-    borderWidth: 1,
-    borderColor: COLORS.primary + "40",
-  },
-  undoBtnPressed: {
-    backgroundColor: COLORS.primary + "40",
-  },
-  undoBtnText: {
-    fontFamily: FONT_FAMILY.bodySemibold,
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.primary,
-  },
-  progressTrack: {
-    height: 2,
-    backgroundColor: SURFACE.separator,
-  },
-  progressFill: {
-    height: "100%",
-    width: "100%",
-    backgroundColor: COLORS.primary,
-    opacity: 0.85,
-  },
-});

@@ -575,7 +575,7 @@ function SubscriptionsScreen() {
               if (pendingDeleteIds.size === 1) {
                 const [onlyId] = pendingDeleteIds;
                 const label = pendingDeleteLabels.current.get(onlyId) ?? "";
-                return label ? `Suscripción "${label}" eliminada` : "Suscripción eliminada";
+                return label ? `Se eliminó «${label}»` : "Suscripción eliminada";
               }
               return `${pendingDeleteIds.size} suscripciones eliminadas`;
             })()}

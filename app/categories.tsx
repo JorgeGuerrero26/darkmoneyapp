@@ -466,7 +466,7 @@ function CategoriesScreen() {
               if (pendingDeleteIds.size === 1) {
                 const [onlyId] = pendingDeleteIds;
                 const label = pendingDeleteLabels.current.get(onlyId) ?? "";
-                return label ? `Categoría "${label}" eliminada` : "Categoría eliminada";
+                return label ? `Se eliminó «${label}»` : "Categoría eliminada";
               }
               return `${pendingDeleteIds.size} categorías eliminadas`;
             })()}

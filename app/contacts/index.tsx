@@ -580,7 +580,12 @@ function ContactsScreen() {
 
           <UndoBanner
             visible={pendingDeleteIds.size > 0}
-            message={pendingDeleteIds.size === 1 ? "Contacto eliminado" : `${pendingDeleteIds.size} contactos eliminados`}
+            message={(() => {
+              if (pendingDeleteIds.size !== 1) return `Se eliminaron ${pendingDeleteIds.size} contactos`;
+              const [onlyId] = pendingDeleteIds;
+              const name = pendingDeleteItems.current.get(onlyId)?.name;
+              return name ? `Se eliminó «${name}»` : "Contacto eliminado";
+            })()}
             durationMs={UNDO_DELETE_MS}
             onUndo={() => pendingDeleteIds.forEach((id) => undoDelete(id))}
           />

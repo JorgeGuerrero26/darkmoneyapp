@@ -768,7 +768,12 @@ function ObligationsScreen() {
 
             <UndoBanner
               visible={pendingDeleteIds.size > 0}
-              message={pendingDeleteIds.size === 1 ? "Obligación eliminada" : `${pendingDeleteIds.size} obligaciones eliminadas`}
+              message={(() => {
+                if (pendingDeleteIds.size !== 1) return `Se eliminaron ${pendingDeleteIds.size} obligaciones`;
+                const [onlyId] = pendingDeleteIds;
+                const label = pendingDeleteItems.current.get(onlyId)?.counterparty;
+                return label ? `Se eliminó la de «${label}»` : "Obligación eliminada";
+              })()}
               onUndo={() => pendingDeleteIds.forEach((id) => undoDelete(id))}
               durationMs={5000}
               bottomOffset={90}

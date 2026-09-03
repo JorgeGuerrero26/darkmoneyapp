@@ -556,7 +556,7 @@ function RecurringIncomeScreen() {
               if (pendingDeleteIds.size === 1) {
                 const [onlyId] = pendingDeleteIds;
                 const label = pendingDeleteLabels.current.get(onlyId) ?? "";
-                return label ? `Ingreso fijo "${label}" eliminado` : "Ingreso fijo eliminado";
+                return label ? `Se eliminó «${label}»` : "Ingreso fijo eliminado";
               }
               return `${pendingDeleteIds.size} ingresos fijos eliminados`;
             })()}

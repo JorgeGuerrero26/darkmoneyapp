@@ -37,13 +37,15 @@ export function useToast() {
 
   // Para casos ricos (delete con undo, transfer con amount, etc.)
   function showRichToast(config: ToastConfig) {
-    if (config.type === "success") {
+    /* El mismo argumento que el color, en el tacto: borrar lo pidió el usuario y no es un
+       error, así que no vibra como uno. El aviso de fallo es el único que lo hace. */
+    if (config.type === "error") {
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } else if (config.type === "success") {
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       triggerSuccessGlow();
-    } else if (config.type === "delete") {
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-    } else if (config.type === "update") {
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    } else {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
     InteractionManager.runAfterInteractions(() => {
       show(config);

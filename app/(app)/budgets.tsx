@@ -564,7 +564,7 @@ function BudgetsScreen() {
               if (pendingDeleteIds.size === 1) {
                 const [onlyId] = pendingDeleteIds;
                 const label = pendingDeleteLabels.current.get(onlyId) ?? "";
-                return label ? `Presupuesto "${label}" eliminado` : "Presupuesto eliminado";
+                return label ? `Se eliminó «${label}»` : "Presupuesto eliminado";
               }
               return `${pendingDeleteIds.size} presupuestos eliminados`;
             })()}
