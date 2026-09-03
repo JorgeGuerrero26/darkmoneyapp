@@ -117,6 +117,10 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Una suscripción pausada dice \"el cobro quedó en el 12 may\" en vez de \"Próximo: 12 may\", que anunciaba un cobro que no va a ocurrir. Y su monto va en gris, porque no suma al total.",
       "Arreglado un fallo silencioso al eliminar: si deslizabas para borrar y salías de la pantalla antes de que el aviso de \"Deshacer\" terminara, el borrado no llegaba a ocurrir. Sin error y sin aviso — la fila volvía a estar ahí al regresar. Pasaba en las ocho listas que borran así: movimientos, suscripciones, deudas, presupuestos, categorías, contactos, ingresos fijos y tipos de cambio. Ahora salir de la pantalla confirma el borrado; \"Deshacer\" lo sigue cancelando.",
       "Y arreglado el que de verdad rompía eliminar un movimiento: desde que el neto pasó a calcularse aparte, borrar fallaba por dentro y el movimiento nunca se iba de la base. La fila desaparecía igual —queda oculta mientras corre el aviso de Deshacer—, así que parecía borrado y volvía al recargar la app.",
+      "Los avisos de \"listo\" dejaron de tener colores que no significaban nada. Borrar un movimiento salía en rojo —cuando es justo lo que acabas de pedir— y guardar un gasto salía en verde, el color de la plata que entra. Ahora todos se ven igual, y el color queda para lo único a lo que hay que reaccionar: que algo falle.",
+      "Al eliminar, el aviso te dice qué borraste y qué pasa con tu plata: \"Se eliminó «Chicle» · S/ 1.50 devuelto a Cuenta Principal\". Antes decía \"1 movimiento eliminado\", justo cuando la fila ya no está y el nombre es lo único que te queda para comprobar.",
+      "Y ahora se ve cuánto tiempo te queda para deshacer: una línea fina que se agota. Antes el aviso se iba sin avisar y con él la posibilidad de deshacer.",
+      "El aviso ya no tapa la barra de abajo ni la fila que acabas de cambiar: se coloca encima de la barra, y el botón de agregar se aparta mientras dura.",
     ],
   },
   {
