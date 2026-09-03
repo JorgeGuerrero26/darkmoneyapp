@@ -71,7 +71,6 @@ import {
   scheduleRecurringIncomeReminders,
   scheduleBudgetEndedReminders,
 } from "../hooks/usePushNotifications";
-import { useAutoSubscriptionMovements } from "../hooks/useAutoSubscriptionMovements";
 import { useNotificationGenerator } from "../hooks/useNotificationGenerator";
 import { useNotificationsRealtimeSync } from "../hooks/useNotificationsRealtimeSync";
 import { BiometricLock } from "../components/ui/BiometricLock";
@@ -442,12 +441,6 @@ function NotificationSetup() {
     inputRange: [0, 1],
     outputRange: [0.72, 1],
   });
-  useAutoSubscriptionMovements({
-    userId: profile?.id,
-    workspaceId: activeWorkspaceId,
-    snapshot,
-  });
-
   useNotificationGenerator(profile?.id, snapshot);
 
   // Pedir permisos al iniciar la app (cuando el usuario ya está logueado)
