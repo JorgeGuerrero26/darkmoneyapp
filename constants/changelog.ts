@@ -122,6 +122,8 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Y ahora se ve cuánto tiempo te queda para deshacer: una línea fina que se agota. Antes el aviso se iba sin avisar y con él la posibilidad de deshacer.",
       "El aviso ya no tapa la barra de abajo ni la fila que acabas de cambiar: se coloca encima de la barra, y el botón de agregar se aparta mientras dura.",
       "Y ese mismo aviso es ahora el de toda la app. Al borrar una suscripción, una categoría o un contacto salía otro distinto —con el logo metido en un círculo, \"Deshacer\" en verde y a distinta altura según la pantalla—. Ahora es uno solo, y te dice qué borraste: \"Se eliminó «Fitrex barras energéticas»\".",
+      "Arreglado: una suscripción que se cobra a fin de mes ya no se queda atrás en febrero. Si la pusiste el 31, pasaba al 28 de febrero —correcto— pero después seguía cobrando el 28 de marzo, el 28 de abril y así para siempre: el 31 no volvía nunca. Lo mismo con el 29 y el 30. Ahora el día se recuerda y solo se recorta donde el mes no llega: 31 ene, 28 feb, 31 mar, 30 abr.",
+      "Y \"Se repite\" tiene una opción nueva: \"Cada mes, el último día\". Antes había que poner 31 y esperar que la app lo entendiera.",
     ],
   },
   {
