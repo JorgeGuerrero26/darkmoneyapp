@@ -226,11 +226,11 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
     try {
       if (editAccount) {
         await updateMutation.mutateAsync({ id: editAccount.id, input });
-        showToast("Cuenta actualizada ✓", "success");
+        showToast("Cuenta actualizada", "success");
       } else {
         await createMutation.mutateAsync(input);
         await clearDraft();
-        showToast("Cuenta creada ✓", "success");
+        showToast("Cuenta creada", "success");
       }
       haptics.success();
       onSuccess?.();

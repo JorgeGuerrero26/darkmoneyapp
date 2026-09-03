@@ -413,7 +413,7 @@ function AssistantScreen() {
         const created = await createMovement.mutateAsync(draftToMovementInput(draft, ids));
         setDraftStatus(item.id, "saved", created.id);
       }
-      showToast("Movimiento guardado ✓", "success");
+      showToast("Movimiento guardado", "success");
     } catch (error) {
       showToast(humanizeError(error), "error");
     } finally {
@@ -437,7 +437,7 @@ function AssistantScreen() {
         categoryId: category?.id ?? null,
       });
       setDraftStatus(item.id, "saved");
-      showToast("Presupuesto creado ✓", "success");
+      showToast("Presupuesto creado", "success");
     } catch (error) {
       showToast(humanizeError(error), "error");
     } finally {
@@ -469,7 +469,7 @@ function AssistantScreen() {
         description: ob.description,
       });
       setDraftStatus(item.id, "saved");
-      showToast(ob.direction === "receivable" ? "Crédito registrado ✓" : "Deuda registrada ✓", "success");
+      showToast(ob.direction === "receivable" ? "Crédito registrado" : "Deuda registrada", "success");
     } catch (error) {
       showToast(humanizeError(error), "error");
     } finally {
@@ -517,7 +517,7 @@ function AssistantScreen() {
         });
       }
       setDraftStatus(item.id, "saved");
-      showToast(r.kind === "subscription" ? "Suscripción creada ✓" : "Ingreso fijo creado ✓", "success");
+      showToast(r.kind === "subscription" ? "Suscripción creada" : "Ingreso fijo creado", "success");
     } catch (error) {
       showToast(humanizeError(error), "error");
     } finally {
@@ -859,7 +859,7 @@ function AssistantScreen() {
       <MovementForm
         visible={editDuplicate != null}
         onClose={() => setEditDuplicate(null)}
-        onSuccess={() => showToast("Movimiento guardado ✓", "success")}
+        onSuccess={() => showToast("Movimiento guardado", "success")}
         duplicateMovement={editDuplicate}
       />
 

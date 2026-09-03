@@ -394,7 +394,7 @@ function AccountsScreen() {
   const handleArchive = useCallback(async (account: AccountSummary) => {
     try {
       await archiveAccount.mutateAsync({ id: account.id, archived: !account.isArchived });
-      showToast(account.isArchived ? "Cuenta restaurada ✓" : "Cuenta archivada ✓", "success");
+      showToast(account.isArchived ? "Cuenta restaurada" : "Cuenta archivada", "success");
     } catch (err: unknown) {
       showToast(humanizeError(err), "error");
     }

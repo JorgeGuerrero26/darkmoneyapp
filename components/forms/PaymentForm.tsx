@@ -405,7 +405,7 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent
           movementId: updated.movementId ?? null,
           workspaceId: updated.workspaceId,
         };
-        showToast(actsAsCollector ? "Cobro actualizado ✓" : "Pago actualizado ✓", "warning");
+        showToast(actsAsCollector ? "Cobro actualizado" : "Pago actualizado", "warning");
       } else {
         const created = await createPaymentMutation.mutateAsync({
           obligationId: obligation.id,
@@ -419,7 +419,7 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent
           direction: obligation.direction,
         });
         createdPaymentResult = created;
-        showToast(actsAsCollector ? "Cobro registrado ✓" : "Pago registrado ✓", "success");
+        showToast(actsAsCollector ? "Cobro registrado" : "Pago registrado", "success");
       }
       const attachmentsChangedFromInitial = attachmentSignature !== initialAttachmentSignatureRef.current;
       if (createdPaymentResult && attachments.length > 0 && (!isEditMode || attachmentsChangedFromInitial)) {

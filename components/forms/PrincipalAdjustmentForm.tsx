@@ -212,7 +212,7 @@ export function PrincipalAdjustmentForm({ visible, mode: initialMode, obligation
           currencyCode: obligation.currencyCode,
           obligationTitle: obligation.title,
         });
-        showToast(isIncrease ? "Aumento actualizado ✓" : "Reducción actualizada ✓", "warning");
+        showToast(isIncrease ? "Aumento actualizado" : "Reducción actualizada", "warning");
       } else {
         await mutation.mutateAsync({
           obligationId: obligation.id,

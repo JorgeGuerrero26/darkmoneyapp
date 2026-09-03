@@ -117,7 +117,7 @@ function AccountDetailScreen() {
     if (!account) return;
     try {
       await archiveAccount.mutateAsync({ id: account.id, archived: !account.isArchived });
-      showToast(account.isArchived ? "Cuenta restaurada ✓" : "Cuenta archivada ✓", "success");
+      showToast(account.isArchived ? "Cuenta restaurada" : "Cuenta archivada", "success");
       setArchiveConfirmVisible(false);
       if (!account.isArchived) {
         router.back();

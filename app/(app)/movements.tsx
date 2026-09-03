@@ -65,6 +65,10 @@ import { buildExchangeRateMap, resolveRate } from "../../features/dashboard/lib/
 import { COLORS, SPACING } from "../../constants/theme";
 import { maskedCurrencyLabel } from "../../lib/format-currency";
 import { formatCurrency } from "../../components/ui/AmountDisplay";
+import {
+  describeDeletedMovement,
+  describeDeletedMovements,
+} from "../../features/movements/lib/describeDeletedMovement";
 import { IOS_FLOATING_TAB_BAR_SPACE } from "../../constants/floating-tab-bar";
 
 const MOVEMENTS_CURRENCY_KEY = "darkmoney.movements.displayCurrency";
@@ -268,9 +272,15 @@ function MovementsScreen() {
     const item = deleteTarget;
     setDeleteTarget(null);
     startUndoDelete(item);
+    const described = describeDeletedMovement({
+      movement: item,
+      accountName: (id) => snapshot?.accounts.find((account) => account.id === id)?.name ?? null,
+      formatAmount: (value) => formatCurrency(value, baseCurrency),
+    });
     showRichToast({
       type: 'delete',
-      title: 'Movimiento eliminado',
+      title: described.title,
+      subtitle: described.subtitle ?? undefined,
       duration: 5000,
       onUndo: () => undoDelete(item.id),
     });
@@ -720,7 +730,7 @@ function MovementsScreen() {
     const ids = toDelete.map((m) => m.id);
     showRichToast({
       type: 'delete',
-      title: `${toDelete.length} movimiento${toDelete.length === 1 ? '' : 's'} eliminado${toDelete.length === 1 ? '' : 's'}`,
+      title: describeDeletedMovements(toDelete.length),
       duration: 5000,
       onUndo: () => ids.forEach((id) => undoDelete(id)),
     });
