@@ -441,6 +441,10 @@ export function useMarkSubscriptionPaidMutation(workspaceId: number | null) {
           });
         }
         patchSnapshotSubscriptionNextDue(queryClient, workspaceId, variables.subscription.id, result.nextDueDate);
+        // El historial mes a mes lo reescribe el trigger de la base al insertar el movimiento.
+        void queryClient.invalidateQueries({
+          queryKey: ["subscription-occurrences", variables.subscription.id],
+        });
         // Fase 3: refetch selectivo de los dominios afectados (saldos exactos y
         // presupuestos) en vez del snapshot completo. Import dinámico: este
         // módulo es re-exportado por workspace-data y un import estático de

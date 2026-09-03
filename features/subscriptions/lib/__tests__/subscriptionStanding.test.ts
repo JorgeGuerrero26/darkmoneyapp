@@ -95,6 +95,59 @@ describe("subscriptionStanding", () => {
     expect(result.missedAmount).toBeCloseTo(900, 2);
   });
 
+  describe("con el historial real (fase 1)", () => {
+    it("suma lo que costaba cada mes, no el precio de hoy tres veces", () => {
+      // Netflix subio de 44.90 a 60.07: el historial no se reescribe hacia atras.
+      const result = subscriptionStanding({
+        subscription: build({ amount: 60.07 }),
+        today: "2026-09-02",
+        formatAmount: money,
+        formatDate: day,
+        occurrences: [
+          { dueDate: "2026-06-04", status: "scheduled", expectedAmount: 44.9 },
+          { dueDate: "2026-07-04", status: "scheduled", expectedAmount: 44.9 },
+          { dueDate: "2026-08-04", status: "scheduled", expectedAmount: 60.07 },
+          { dueDate: "2026-09-04", status: "scheduled", expectedAmount: 60.07 },
+        ],
+      });
+      expect(result.missedCharges).toBe(3); // el de setiembre todavia no vence
+      expect(result.missedAmount).toBeCloseTo(149.87, 2);
+      expect(result.detail).toContain("S/ 149.87");
+    });
+
+    it("un mes saltado no es deuda", () => {
+      const result = subscriptionStanding({
+        subscription: build(),
+        today: "2026-09-02",
+        formatAmount: money,
+        formatDate: day,
+        occurrences: [
+          { dueDate: "2026-06-04", status: "skipped", expectedAmount: 60.07 },
+          { dueDate: "2026-07-04", status: "paid", expectedAmount: 60.07 },
+          { dueDate: "2026-08-04", status: "scheduled", expectedAmount: 60.07 },
+        ],
+      });
+      expect(result.missedCharges).toBe(1);
+      expect(result.missedAmount).toBeCloseTo(60.07, 2);
+    });
+
+    it("si el historial dice que no debe nada, no esta atrasada aunque el puntero se quedara atras", () => {
+      const result = subscriptionStanding({
+        subscription: build(),
+        today: "2026-09-02",
+        formatAmount: money,
+        formatDate: day,
+        occurrences: [
+          { dueDate: "2026-06-04", status: "paid", expectedAmount: 60.07 },
+          { dueDate: "2026-07-04", status: "paid", expectedAmount: 60.07 },
+          { dueDate: "2026-08-04", status: "paid", expectedAmount: 60.07 },
+        ],
+      });
+      expect(result.tone).toBe("later");
+      expect(result.missedCharges).toBe(0);
+    });
+  });
+
   it("no se cuelga con una cadencia diaria abandonada", () => {
     const result = standing(
       build({ frequency: "daily", intervalCount: 1, nextDueDate: "2020-01-01", amount: 1 }),

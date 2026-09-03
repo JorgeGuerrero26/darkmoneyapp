@@ -17,6 +17,13 @@ export type SubscriptionStanding = {
   daysUntilDue: number;
 };
 
+/** Lo mínimo que hace falta de una ocurrencia; evita arrastrar la capa de queries hasta aquí. */
+export type StandingOccurrence = {
+  dueDate: string;
+  status: string;
+  expectedAmount: number;
+};
+
 type Args = {
   subscription: SubscriptionSummary;
   /** `yyyy-MM-dd`. */
@@ -24,6 +31,15 @@ type Args = {
   formatAmount: (amount: number) => string;
   /** De `yyyy-MM-dd` a como se lee: "4 jun". */
   formatDate: (ymd: string) => string;
+  /**
+   * El historial real. Cuando llega, manda: los meses saltados no cuentan como deuda y cada
+   * uno aporta lo que se esperaba **ese** mes.
+   *
+   * Sin él se cae a contar períodos multiplicando el precio de hoy, que es lo que hacía antes
+   * de la fase 1 y miente en cuanto el precio cambia. Se mantiene como respaldo porque la
+   * pantalla puede pintar antes de que llegue la query.
+   */
+  occurrences?: StandingOccurrence[];
 };
 
 function parseYmd(ymd: string): Date {
@@ -74,6 +90,7 @@ export function subscriptionStanding({
   today,
   formatAmount,
   formatDate,
+  occurrences,
 }: Args): SubscriptionStanding {
   const daysUntilDue = daysBetween(subscription.nextDueDate, today);
 
@@ -100,8 +117,24 @@ export function subscriptionStanding({
   }
 
   if (daysUntilDue < 0) {
-    const missedCharges = countMissedCharges(subscription, today);
-    const missedAmount = missedCharges * subscription.amount;
+    const pending = occurrences?.filter(
+      (occurrence) => occurrence.status === "scheduled" && daysBetween(occurrence.dueDate, today) < 0,
+    );
+    const missedCharges = pending ? pending.length : countMissedCharges(subscription, today);
+    const missedAmount = pending
+      ? pending.reduce((total, occurrence) => total + occurrence.expectedAmount, 0)
+      : missedCharges * subscription.amount;
+    if (missedCharges === 0) {
+      // El historial dice que no debe nada aunque el puntero se haya quedado atrás.
+      return {
+        tone: "later",
+        label: "Al día",
+        detail: `Próximo cobro el ${formatDate(subscription.nextDueDate)}, ${formatAmount(subscription.amount)}.`,
+        missedCharges: 0,
+        missedAmount: 0,
+        daysUntilDue,
+      };
+    }
     const late = Math.abs(daysUntilDue);
     const charges = missedCharges === 1
       ? "Va 1 cobro sin anotar"

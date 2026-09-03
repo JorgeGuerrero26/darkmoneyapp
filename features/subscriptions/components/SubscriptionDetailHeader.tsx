@@ -8,11 +8,17 @@ import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING } from "../../../consta
 import { todayPeru } from "../../../lib/date";
 import { subscriptionCadenceSuffix } from "../../../lib/subscription-helpers";
 import { getMonthlySubscriptionAmount } from "../lib/subscriptionFilters";
-import { subscriptionStanding, type SubscriptionStandingTone } from "../lib/subscriptionStanding";
+import {
+  subscriptionStanding,
+  type StandingOccurrence,
+  type SubscriptionStandingTone,
+} from "../lib/subscriptionStanding";
 import type { SubscriptionSummary } from "../../../types/domain";
 
 type Props = {
   subscription: SubscriptionSummary;
+  /** El historial mes a mes. Llega despues del primer pintado; sin el se estima. */
+  occurrences?: StandingOccurrence[];
 };
 
 /** Clay solo para lo vencido, amarillo solo para lo que aún no pasa (regla 4 de la plantilla). */
@@ -44,7 +50,7 @@ function parseYmd(ymd: string): Date {
  * Y la cápsula decía "Activa" en menta con tres cobros sin anotar debajo. El estado que hace
  * falta lo calcula [[subscriptionStanding]]; aquí solo se pinta.
  */
-export function SubscriptionDetailHeader({ subscription }: Props) {
+export function SubscriptionDetailHeader({ subscription, occurrences }: Props) {
   const monthly = getMonthlySubscriptionAmount(subscription);
   /* "al mes", no "Mensual": el monto y su cadencia se leen como una frase, en una línea en vez
      de dos. */
@@ -57,6 +63,7 @@ export function SubscriptionDetailHeader({ subscription }: Props) {
     today: todayPeru(),
     formatAmount: (amount) => formatCurrency(amount, subscription.currencyCode),
     formatDate: (ymd) => format(parseYmd(ymd), "d MMM", { locale: es }),
+    occurrences,
   });
   const color = toneColor(standing.tone);
 

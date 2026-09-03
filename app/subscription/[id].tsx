@@ -30,6 +30,7 @@ import { sortByName } from "../../lib/sort-locale";
 import { useWorkspace } from "../../lib/workspace-context";
 import { useUiStore } from "../../store/ui-store";
 import { useWorkspaceSnapshotQuery } from "../../services/queries/workspace-data";
+import { useSubscriptionOccurrencesQuery } from "../../services/queries/subscription-occurrences";
 import {
   useDeleteSubscriptionMutation,
   useMarkSubscriptionPaidMutation,
@@ -78,6 +79,7 @@ function SubscriptionDetailScreen() {
   const deleteMutation = useDeleteSubscriptionMutation(activeWorkspaceId);
   const togglePinMutation = useToggleSubscriptionPinMutation(activeWorkspaceId);
   const markPaidMutation = useMarkSubscriptionPaidMutation(activeWorkspaceId);
+  const { data: occurrences } = useSubscriptionOccurrencesQuery(parseSubscriptionId(id));
 
   const subscriptionId = parseSubscriptionId(id);
   const subscription: SubscriptionSummary | null = useMemo(() => {
@@ -246,7 +248,7 @@ function SubscriptionDetailScreen() {
           </View>
         ) : (
           <ScrollView contentContainerStyle={styles.content}>
-            <SubscriptionDetailHeader subscription={subscription} />
+            <SubscriptionDetailHeader subscription={subscription} occurrences={occurrences} />
 
             {/* Eran cuatro acciones del mismo tamaño y color: una es a lo que se viene, dos son
                 administrativas y una es irreversible. Y "Análisis" estaba dos veces en la misma
