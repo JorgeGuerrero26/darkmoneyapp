@@ -77,6 +77,7 @@ function CategoriesScreen() {
   const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<number>>(new Set());
   const pendingDeleteLabels = useRef<Map<number, string>>(new Map());
   const deleteTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+  const pendingDeleteRuns = useRef<Map<number, () => void>>(new Map());
 
   // Bulk selection
   const [selectMode, setSelectMode] = useState(false);
@@ -157,6 +158,13 @@ function CategoriesScreen() {
   useEffect(() => () => {
     deleteTimers.current.forEach(clearTimeout);
     deleteTimers.current.clear();
+    /* Salir de la pantalla CONFIRMA lo pendiente, no lo cancela: el usuario ya pidio
+       borrar y el aviso solo ofrecia deshacerlo. Cancelarlo aqui hacia que la fila
+       reapareciera sin que nadie dijera nada. */
+    const pendingRuns = [...pendingDeleteRuns.current.values()];
+    pendingDeleteRuns.current.clear();
+    pendingRuns.forEach((run) => run());
+    deleteTimers.current.clear();
     pendingDeleteLabels.current.clear();
   }, []);
 
@@ -174,7 +182,7 @@ function CategoriesScreen() {
   const startUndoDelete = useCallback((category: CategoryOverview) => {
     setPendingDeleteIds((prev) => new Set(prev).add(category.id));
     pendingDeleteLabels.current.set(category.id, category.name);
-    const timer = setTimeout(() => {
+    const run = () => {
       deleteMutation.mutate(category.id, {
         onError: (error) => showToast(error.message, "error"),
       });
@@ -185,14 +193,22 @@ function CategoriesScreen() {
       });
       pendingDeleteLabels.current.delete(category.id);
       deleteTimers.current.delete(category.id);
+    };
+    const timer = setTimeout(() => {
+      // Al disparar, la accion deja de estar pendiente: si no, salir de la pantalla
+      // la ejecutaria por segunda vez.
+      pendingDeleteRuns.current.delete(category.id);
+      run();
     }, 5000);
     deleteTimers.current.set(category.id, timer);
+    pendingDeleteRuns.current.set(category.id, run);
   }, [deleteMutation, showToast]);
 
   const undoDelete = useCallback((id: number) => {
     const timer = deleteTimers.current.get(id);
     if (timer) clearTimeout(timer);
     deleteTimers.current.delete(id);
+    pendingDeleteRuns.current.delete(id);
     pendingDeleteLabels.current.delete(id);
     setPendingDeleteIds((prev) => {
       const next = new Set(prev);

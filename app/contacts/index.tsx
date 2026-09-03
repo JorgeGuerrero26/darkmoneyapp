@@ -97,6 +97,7 @@ function ContactsScreen() {
   const UNDO_DELETE_MS = 5000;
   const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<number>>(new Set());
   const deleteTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+  const pendingDeleteRuns = useRef<Map<number, () => void>>(new Map());
   const pendingDeleteItems = useRef<Map<number, CounterpartyOverview>>(new Map());
 
   const finalizeDelete = useCallback((id: number) => {
@@ -104,6 +105,7 @@ function ContactsScreen() {
     const timer = deleteTimers.current.get(id);
     if (timer) clearTimeout(timer);
     deleteTimers.current.delete(id);
+    pendingDeleteRuns.current.delete(id);
     pendingDeleteItems.current.delete(id);
     setPendingDeleteIds((prev) => {
       if (!prev.has(id)) return prev;
@@ -120,14 +122,22 @@ function ContactsScreen() {
   const startUndoDelete = useCallback((contact: CounterpartyOverview) => {
     pendingDeleteItems.current.set(contact.id, contact);
     setPendingDeleteIds((prev) => new Set(prev).add(contact.id));
-    const timer = setTimeout(() => finalizeDelete(contact.id), UNDO_DELETE_MS);
+    const run = () => finalizeDelete(contact.id);
+    const timer = setTimeout(() => {
+      // Al disparar, la accion deja de estar pendiente: si no, salir de la pantalla
+      // la ejecutaria por segunda vez.
+      pendingDeleteRuns.current.delete(contact.id);
+      run();
+    }, UNDO_DELETE_MS);
     deleteTimers.current.set(contact.id, timer);
+    pendingDeleteRuns.current.set(contact.id, run);
   }, [finalizeDelete]);
 
   const undoDelete = useCallback((id: number) => {
     const timer = deleteTimers.current.get(id);
     if (timer) clearTimeout(timer);
     deleteTimers.current.delete(id);
+    pendingDeleteRuns.current.delete(id);
     pendingDeleteItems.current.delete(id);
     setPendingDeleteIds((prev) => {
       const next = new Set(prev);
@@ -137,7 +147,14 @@ function ContactsScreen() {
   }, []);
 
   useEffect(() => {
-    return () => { deleteTimers.current.forEach(clearTimeout); };
+    return () => { deleteTimers.current.forEach(clearTimeout);
+    deleteTimers.current.clear();
+    /* Salir de la pantalla CONFIRMA lo pendiente, no lo cancela: el usuario ya pidio
+       borrar y el aviso solo ofrecia deshacerlo. Cancelarlo aqui hacia que la fila
+       reapareciera sin que nadie dijera nada. */
+    const pendingRuns = [...pendingDeleteRuns.current.values()];
+    pendingDeleteRuns.current.clear();
+    pendingRuns.forEach((run) => run()); };
   }, []);
 
   const counterparties = snapshot?.counterparties ?? [];

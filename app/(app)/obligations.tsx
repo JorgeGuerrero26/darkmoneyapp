@@ -180,6 +180,7 @@ function ObligationsScreen() {
   const [pendingDeleteDeadlines, setPendingDeleteDeadlines] = useState<Record<number, number>>({});
   const [undoNow, setUndoNow] = useState(() => Date.now());
   const deleteTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+  const pendingDeleteRuns = useRef<Map<number, () => void>>(new Map());
   const pendingDeleteItems = useRef<Map<number, ObligationSummary>>(new Map());
 
   async function handleArchiveObligation(ob: ObligationSummary) {
@@ -200,6 +201,7 @@ function ObligationsScreen() {
     const timer = deleteTimers.current.get(id);
     if (timer) clearTimeout(timer);
     deleteTimers.current.delete(id);
+    pendingDeleteRuns.current.delete(id);
     pendingDeleteItems.current.delete(id);
     setPendingDeleteDeadlines((prev) => {
       if (!(id in prev)) return prev;
@@ -225,16 +227,24 @@ function ObligationsScreen() {
     pendingDeleteItems.current.set(ob.id, ob);
     setPendingDeleteIds((prev) => new Set(prev).add(ob.id));
     setPendingDeleteDeadlines((prev) => ({ ...prev, [ob.id]: deadline }));
-    const timer = setTimeout(() => {
+    const run = () => {
       finalizeDelete(ob.id);
+    };
+    const timer = setTimeout(() => {
+      // Al disparar, la accion deja de estar pendiente: si no, salir de la pantalla
+      // la ejecutaria por segunda vez.
+      pendingDeleteRuns.current.delete(ob.id);
+      run();
     }, UNDO_DELETE_MS);
     deleteTimers.current.set(ob.id, timer);
+    pendingDeleteRuns.current.set(ob.id, run);
   }
 
   function undoDelete(id: number) {
     const timer = deleteTimers.current.get(id);
     if (timer) clearTimeout(timer);
     deleteTimers.current.delete(id);
+    pendingDeleteRuns.current.delete(id);
     pendingDeleteItems.current.delete(id);
     setPendingDeleteDeadlines((prev) => {
       if (!(id in prev)) return prev;
@@ -251,7 +261,14 @@ function ObligationsScreen() {
 
   // Clear timers on unmount
   useEffect(() => {
-    return () => { deleteTimers.current.forEach(clearTimeout); };
+    return () => { deleteTimers.current.forEach(clearTimeout);
+    deleteTimers.current.clear();
+    /* Salir de la pantalla CONFIRMA lo pendiente, no lo cancela: el usuario ya pidio
+       borrar y el aviso solo ofrecia deshacerlo. Cancelarlo aqui hacia que la fila
+       reapareciera sin que nadie dijera nada. */
+    const pendingRuns = [...pendingDeleteRuns.current.values()];
+    pendingDeleteRuns.current.clear();
+    pendingRuns.forEach((run) => run()); };
   }, []);
 
   useEffect(() => {

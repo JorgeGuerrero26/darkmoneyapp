@@ -190,10 +190,11 @@ function MovementsScreen() {
   const deleteMutation = useDeleteMovementMutation(activeWorkspaceId);
   const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<number>>(new Set());
   const deleteTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+  const pendingDeleteRuns = useRef<Map<number, () => void>>(new Map());
 
   function startUndoDelete(item: MovementRecord) {
     setPendingDeleteIds((prev) => new Set(prev).add(item.id));
-    const timer = setTimeout(() => {
+    const run = () => {
       deleteMutation.mutate(item.id, {
         onError: (e) => showToast(e.message, "error"),
       });
@@ -203,14 +204,22 @@ function MovementsScreen() {
         return next;
       });
       deleteTimers.current.delete(item.id);
+    };
+    const timer = setTimeout(() => {
+      // Al disparar, la accion deja de estar pendiente: si no, salir de la pantalla
+      // la ejecutaria por segunda vez.
+      pendingDeleteRuns.current.delete(item.id);
+      run();
     }, 5000);
     deleteTimers.current.set(item.id, timer);
+    pendingDeleteRuns.current.set(item.id, run);
   }
 
   function undoDelete(id: number) {
     const timer = deleteTimers.current.get(id);
     if (timer) clearTimeout(timer);
     deleteTimers.current.delete(id);
+    pendingDeleteRuns.current.delete(id);
     setPendingDeleteIds((prev) => {
       const next = new Set(prev);
       next.delete(id);
@@ -218,7 +227,14 @@ function MovementsScreen() {
     });
   }
 
-  useEffect(() => () => { deleteTimers.current.forEach(clearTimeout); }, []);
+  useEffect(() => () => { deleteTimers.current.forEach(clearTimeout);
+    deleteTimers.current.clear();
+    /* Salir de la pantalla CONFIRMA lo pendiente, no lo cancela: el usuario ya pidio
+       borrar y el aviso solo ofrecia deshacerlo. Cancelarlo aqui hacia que la fila
+       reapareciera sin que nadie dijera nada. */
+    const pendingRuns = [...pendingDeleteRuns.current.values()];
+    pendingDeleteRuns.current.clear();
+    pendingRuns.forEach((run) => run()); }, []);
 
   // ── FAB / formulario (igual que en el dashboard) ───────────────────────────
   const [formVisible, setFormVisible] = useState(false);

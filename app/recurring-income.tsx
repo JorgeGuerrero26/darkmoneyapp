@@ -91,6 +91,7 @@ function RecurringIncomeScreen() {
   const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<number>>(new Set());
   const pendingDeleteLabels = useRef<Map<number, string>>(new Map());
   const deleteTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+  const pendingDeleteRuns = useRef<Map<number, () => void>>(new Map());
 
   // Bulk selection
   const [selectMode, setSelectMode] = useState(false);
@@ -236,6 +237,13 @@ function RecurringIncomeScreen() {
   useEffect(() => () => {
     deleteTimers.current.forEach(clearTimeout);
     deleteTimers.current.clear();
+    /* Salir de la pantalla CONFIRMA lo pendiente, no lo cancela: el usuario ya pidio
+       borrar y el aviso solo ofrecia deshacerlo. Cancelarlo aqui hacia que la fila
+       reapareciera sin que nadie dijera nada. */
+    const pendingRuns = [...pendingDeleteRuns.current.values()];
+    pendingDeleteRuns.current.clear();
+    pendingRuns.forEach((run) => run());
+    deleteTimers.current.clear();
     pendingDeleteLabels.current.clear();
   }, []);
 
@@ -264,7 +272,7 @@ function RecurringIncomeScreen() {
   const startUndoDelete = useCallback((item: RecurringIncomeSummary) => {
     setPendingDeleteIds((prev) => new Set(prev).add(item.id));
     pendingDeleteLabels.current.set(item.id, item.name);
-    const timer = setTimeout(() => {
+    const run = () => {
       deleteMutation.mutate(item.id, {
         onError: (error) => showToast(error.message, "error"),
       });
@@ -275,14 +283,22 @@ function RecurringIncomeScreen() {
       });
       pendingDeleteLabels.current.delete(item.id);
       deleteTimers.current.delete(item.id);
+    };
+    const timer = setTimeout(() => {
+      // Al disparar, la accion deja de estar pendiente: si no, salir de la pantalla
+      // la ejecutaria por segunda vez.
+      pendingDeleteRuns.current.delete(item.id);
+      run();
     }, 5000);
     deleteTimers.current.set(item.id, timer);
+    pendingDeleteRuns.current.set(item.id, run);
   }, [deleteMutation, showToast]);
 
   const undoDelete = useCallback((id: number) => {
     const timer = deleteTimers.current.get(id);
     if (timer) clearTimeout(timer);
     deleteTimers.current.delete(id);
+    pendingDeleteRuns.current.delete(id);
     pendingDeleteLabels.current.delete(id);
     setPendingDeleteIds((prev) => {
       const next = new Set(prev);
