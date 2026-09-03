@@ -2,7 +2,7 @@ import { useState } from "react";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
-import { Check, ChevronDown, Search, X, type LucideIcon } from "lucide-react-native";
+import { Check, ChevronDown, Search, SlidersHorizontal, X, type LucideIcon } from "lucide-react-native";
 
 import { BottomSheet } from "./BottomSheet";
 import { TextField } from "./TextField";
@@ -52,6 +52,15 @@ type Props<T extends string> = {
   onSearchChange?: (value: string) => void;
   searchPlaceholder?: string;
   actions?: FilterToolbarAction[];
+  /**
+   * La entrada a los filtros, junto al buscador.
+   *
+   * Existe para que haya **una sola**: la pastilla del encabezado y el desplegable de aquí
+   * abajo eran dos puertas al mismo sitio, y la de abajo decía "Filtrar · 11 opciones", que
+   * cuenta la interfaz en vez de los datos. Con esto, `options` puede ir vacío y la fila de
+   * cápsulas desaparece.
+   */
+  extraAction?: { label: string; active?: boolean; onPress: () => void };
 };
 
 export function FilterToolbar<T extends string>({
@@ -65,6 +74,7 @@ export function FilterToolbar<T extends string>({
   onSearchChange,
   searchPlaceholder = "Buscar",
   actions = [],
+  extraAction,
 }: Props<T>) {
   const hasSearch = Boolean(onSearchChange);
   const multiSelect = Boolean(selectedValues && onSelectedValuesChange);
@@ -114,8 +124,10 @@ export function FilterToolbar<T extends string>({
   return (
     <>
     <View style={styles.root}>
+      {hasSearch || extraAction ? (
+        <View style={styles.searchRow}>
       {hasSearch ? (
-        <View style={styles.searchBox}>
+        <View style={[styles.searchBox, styles.searchBoxFlex]}>
           <Search size={16} color={COLORS.storm} strokeWidth={2} />
           <TextField
             value={searchValue ?? ""}
@@ -136,7 +148,30 @@ export function FilterToolbar<T extends string>({
           ) : null}
         </View>
       ) : null}
+          {extraAction ? (
+            <TouchableOpacity
+              style={[styles.extraTrigger, extraAction.active && styles.extraTriggerActive]}
+              onPress={extraAction.onPress}
+              accessibilityRole="button"
+              accessibilityLabel="Abrir filtros"
+            >
+              <SlidersHorizontal
+                size={14}
+                color={extraAction.active ? COLORS.ink : COLORS.storm}
+                strokeWidth={2}
+              />
+              <Text
+                style={[styles.extraTriggerText, extraAction.active && styles.extraTriggerTextActive]}
+                numberOfLines={1}
+              >
+                {extraAction.label}
+              </Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      ) : null}
 
+      {options.length === 0 && actions.length === 0 ? null : (
       <View style={styles.controlsRow}>
         {useSelector ? (
           <TouchableOpacity
@@ -198,6 +233,7 @@ export function FilterToolbar<T extends string>({
           );
         })}
       </View>
+      )}
     </View>
 
       {/* Pasadas seis opciones, la fila se cambia por esta lista: se ven todas de una vez en
@@ -277,6 +313,32 @@ const styles = StyleSheet.create({
     gap: SPACING.sm,
     paddingTop: SPACING.md,
   },
+  searchRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+    marginHorizontal: SPACING.lg,
+  },
+  searchBoxFlex: { flex: 1, marginHorizontal: 0 },
+  extraTrigger: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.xs,
+    minHeight: 42,
+    paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    borderColor: SURFACE.cardBorder,
+    backgroundColor: SURFACE.card,
+  },
+  extraTriggerActive: { borderColor: COLORS.ink },
+  extraTriggerText: {
+    fontFamily: FONT_FAMILY.bodyMedium,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.fog,
+    maxWidth: 120,
+  },
+  extraTriggerTextActive: { color: COLORS.ink },
   searchBox: {
     marginHorizontal: SPACING.lg,
     minHeight: 42,

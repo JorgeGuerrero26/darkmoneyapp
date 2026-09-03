@@ -1,6 +1,7 @@
 import { useRef } from "react";
 import {
   ActivityIndicator,
+  Pressable,
   RefreshControl,
   SectionList,
   StyleSheet,
@@ -10,7 +11,7 @@ import {
   type StyleProp,
   type ViewStyle,
 } from "react-native";
-import type { LucideIcon } from "lucide-react-native";
+import { ChevronDown, ChevronRight, type LucideIcon } from "lucide-react-native";
 
 import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING, SURFACE } from "../../constants/theme";
 import { IOS_FLOATING_TAB_BAR_SPACE } from "../../constants/floating-tab-bar";
@@ -26,6 +27,15 @@ export type ResourceSection<T, K extends string = string> = {
   headerIcon?: LucideIcon;
   /** Valor alineado a la derecha del titulo. En movimientos, el neto del dia. */
   trailing?: string;
+  /**
+   * La seccion se puede plegar desde su encabezado.
+   *
+   * Para lo que es historial y no compite con lo que pide accion: las suscripciones canceladas
+   * llegan plegadas, con su conteo, y se abren si alguien las busca. Sin `data`, un encabezado
+   * suelto ya ES la seccion plegada; esto solo le pone el gesto y la flecha.
+   */
+  collapsed?: boolean;
+  onPressHeader?: () => void;
   trailingColor?: string;
 };
 
@@ -190,8 +200,9 @@ function ResourceSectionHeader<T>({ section }: { section: ResourceSection<T> }) 
 
   if (section.headerVariant === "divider") {
     const Icon = section.headerIcon;
-    return (
-      <View style={styles.dividerHeader}>
+    const Chevron = section.collapsed ? ChevronRight : ChevronDown;
+    const body = (
+      <>
         {Icon ? <Icon size={13} color={COLORS.storm} strokeWidth={2} /> : null}
         <Text style={styles.dividerLabel}>{section.label}</Text>
         {/* El total del dia da la orientacion que antes pretendia dar la tarjeta. */}
@@ -203,8 +214,25 @@ function ResourceSectionHeader<T>({ section }: { section: ResourceSection<T> }) 
             {section.trailing}
           </Text>
         ) : null}
-      </View>
+        {section.onPressHeader ? <Chevron size={14} color={COLORS.storm} strokeWidth={2} /> : null}
+      </>
     );
+
+    if (section.onPressHeader) {
+      return (
+        <Pressable
+          style={({ pressed }) => [styles.dividerHeader, pressed && styles.dividerHeaderPressed]}
+          onPress={section.onPressHeader}
+          accessibilityRole="button"
+          accessibilityState={{ expanded: !section.collapsed }}
+          accessibilityLabel={`${section.label}. Toca para ${section.collapsed ? "ver" : "ocultar"}`}
+        >
+          {body}
+        </Pressable>
+      );
+    }
+
+    return <View style={styles.dividerHeader}>{body}</View>;
   }
 
   return (
@@ -258,6 +286,7 @@ const styles = StyleSheet.create({
     // una cabecera que tapa. Un paso por encima del lienzo, como una tarjeta.
     backgroundColor: SURFACE.card,
   },
+  dividerHeaderPressed: { opacity: 0.6 },
   dividerLabel: {
     fontSize: FONT_SIZE.xs,
     color: COLORS.storm,

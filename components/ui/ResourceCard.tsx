@@ -34,8 +34,29 @@ type Props = {
    * propio: texto sobre lienzo con un separador sangrado. Con cientos de filas cada tarjeta
    * cobra un peaje de 16px de aire y dos bordes; asi caben 4 filas mas por pantalla sin bajar
    * ningun tamaño de letra. El area tactil se queda en 56 > 44.
+   *
+   * "line" es la fila de los tres modulos de lista —Movimientos (AG), Cuentas (AI) y
+   * Suscripciones (AQ)—: 64px, **sin recuadro de icono, sin capsula y sin chevron**. El icono
+   * era identico en todas las filas de una misma lista, asi que no distinguia nada; la capsula
+   * repetia lo que ya dice el subtitulo o la seccion que agrupa; y la flecha anuncia algo que
+   * ya se sabe, porque la fila entera es el objetivo. Queda titulo + contexto a la izquierda y
+   * la cifra a la derecha con su unidad debajo en gris.
    */
-  variant?: "card" | "row";
+  variant?: "card" | "row" | "line";
+  /**
+   * El subtitulo lleva tono: `alert` es clay, para lo que ya ocurrio mal —un cobro vencido—.
+   *
+   * Es la unica senal de estado que queda en la fila: sin capsula, el color del subtitulo hace
+   * ese trabajo sin gastar una linea suelta de ancho completo.
+   */
+  subtitleTone?: "muted" | "alert";
+  /**
+   * La fila no pide nada: titulo en gris.
+   *
+   * Una suscripcion pausada no suma al total ni va a cobrarse, asi que no compite con las que
+   * si. El color de la cifra lo decide quien la pinta, en `trailing`.
+   */
+  muted?: boolean;
   /**
    * La fila está fijada.
    *
@@ -62,13 +83,16 @@ function ResourceCardBase({
   style,
   contentStyle,
   variant = "card",
+  subtitleTone = "muted",
+  muted,
   pinned,
 }: Props) {
-  const isRow = variant === "row";
+  const isLine = variant === "line";
+  const isRow = variant === "row" || isLine;
   return (
     <Pressable
       style={({ pressed }) => [
-        isRow ? styles.row : styles.card,
+        isLine ? styles.line : isRow ? styles.row : styles.card,
         selected && styles.selected,
         archived && styles.archived,
         disabled && styles.disabled,
@@ -94,12 +118,15 @@ function ResourceCardBase({
         <View style={styles.body}>
           <View style={styles.titleRow}>
             {pinned ? <Star size={12} color={COLORS.fog} fill={COLORS.fog} /> : null}
-            <Text style={styles.title} numberOfLines={1}>
+            <Text style={[styles.title, muted && styles.titleMuted]} numberOfLines={1}>
               {title}
             </Text>
           </View>
           {subtitle ? (
-            <Text style={styles.subtitle} numberOfLines={1}>
+            <Text
+              style={[styles.subtitle, subtitleTone === "alert" && styles.subtitleAlert]}
+              numberOfLines={1}
+            >
               {subtitle}
             </Text>
           ) : null}
@@ -108,7 +135,7 @@ function ResourceCardBase({
 
         {/* Chevron: la fila ENTERA es tocable, y hay que verlo. Solo en variante fila y solo
             si de verdad lleva a algun sitio. */}
-        {isRow && onPress && actions.length === 0 ? (
+        {isRow && !isLine && onPress && actions.length === 0 ? (
           <ChevronRight size={18} color={COLORS.textDisabled} />
         ) : null}
 
@@ -218,6 +245,12 @@ const styles = StyleSheet.create({
     gap: 5,
     minWidth: 0,
   },
+  line: {
+    minHeight: 64,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.xl,
+    justifyContent: "center",
+  },
   row: {
     minHeight: 56,
     paddingVertical: SPACING.sm,
@@ -277,6 +310,8 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.xs,
     color: COLORS.storm,
   },
+  subtitleAlert: { color: COLORS.rosewood },
+  titleMuted: { color: COLORS.storm },
   meta: {
     flexDirection: "row",
     alignItems: "center",
