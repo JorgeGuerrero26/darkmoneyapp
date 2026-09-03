@@ -121,6 +121,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Al eliminar, el aviso te dice qué borraste y qué pasa con tu plata: \"Se eliminó «Chicle» · S/ 1.50 devuelto a Cuenta Principal\". Antes decía \"1 movimiento eliminado\", justo cuando la fila ya no está y el nombre es lo único que te queda para comprobar.",
       "Y ahora se ve cuánto tiempo te queda para deshacer: una línea fina que se agota. Antes el aviso se iba sin avisar y con él la posibilidad de deshacer.",
       "El aviso ya no tapa la barra de abajo ni la fila que acabas de cambiar: se coloca encima de la barra, y el botón de agregar se aparta mientras dura.",
+      "Y ese mismo aviso es ahora el de toda la app. Al borrar una suscripción, una categoría o un contacto salía otro distinto —con el logo metido en un círculo, \"Deshacer\" en verde y a distinta altura según la pantalla—. Ahora es uno solo, y te dice qué borraste: \"Se eliminó «Fitrex barras energéticas»\".",
     ],
   },
   {
