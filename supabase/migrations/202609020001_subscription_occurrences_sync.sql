@@ -29,27 +29,47 @@ create unique index if not exists subscription_occurrences_movement_unique
   where movement_id is not null;
 
 -- ── La cadencia, igual que en TS (lib/subscription-helpers.ts) ────────────────
--- Postgres recorta igual que date-fns al sumar meses: 31 ene + 1 mes = 28 feb en los dos.
+--
+-- El ANCLA importa: sin ella cada fecha se calcula desde la anterior y un mes corto contamina
+-- todos los siguientes. Una suscripcion del 31 de enero pasaba al 28 de febrero -- correcto --
+-- y desde ahi seguia al 28 de marzo, al 28 de abril y asi para siempre: el 31 no volvia nunca.
+-- Con el ancla el recorte es cosa de cada mes: 31 ene, 28 feb, 31 mar, 30 abr.
+--
+-- `p_anchor` sale de subscriptions.day_of_month. 31 significa "el ultimo dia": en un mes de 31
+-- es el 31 y en los cortos el 30 o el 28, que es la misma cosa.
 create or replace function public.next_subscription_due(
   p_from date,
   p_frequency public.subscription_frequency,
-  p_interval integer
+  p_interval integer,
+  p_anchor integer default null
 ) returns date
 language sql
 immutable
 as $$
-  select (p_from + case p_frequency
-    when 'daily'     then (greatest(coalesce(p_interval, 1), 1) || ' days')::interval
-    when 'weekly'    then (greatest(coalesce(p_interval, 1), 1) || ' weeks')::interval
-    when 'monthly'   then (greatest(coalesce(p_interval, 1), 1) || ' months')::interval
-    when 'quarterly' then (greatest(coalesce(p_interval, 1), 1) * 3 || ' months')::interval
-    when 'yearly'    then (greatest(coalesce(p_interval, 1), 1) || ' years')::interval
-    else                  (greatest(coalesce(p_interval, 1), 1) || ' days')::interval
-  end)::date
+  with paso as (
+    select (p_from + case p_frequency
+      when 'daily'     then (greatest(coalesce(p_interval, 1), 1) || ' days')::interval
+      when 'weekly'    then (greatest(coalesce(p_interval, 1), 1) || ' weeks')::interval
+      when 'monthly'   then (greatest(coalesce(p_interval, 1), 1) || ' months')::interval
+      when 'quarterly' then (greatest(coalesce(p_interval, 1), 1) * 3 || ' months')::interval
+      when 'yearly'    then (greatest(coalesce(p_interval, 1), 1) || ' years')::interval
+      else                  (greatest(coalesce(p_interval, 1), 1) || ' days')::interval
+    end)::date as d
+  )
+  select case
+    when p_frequency in ('monthly', 'quarterly', 'yearly')
+      then date_trunc('month', d)::date
+           + (least(
+               greatest(coalesce(p_anchor, extract(day from p_from)::integer), 1),
+               extract(day from (date_trunc('month', d) + interval '1 month - 1 day'))::integer
+             ) - 1)
+    else d
+  end
+  from paso
 $$;
 
-comment on function public.next_subscription_due(date, public.subscription_frequency, integer)
-  is 'Siguiente vencimiento de una cadencia. Espejo de computeNextRecurringDate en TS.';
+comment on function public.next_subscription_due(date, public.subscription_frequency, integer, integer)
+  is 'Siguiente vencimiento de una cadencia, anclado al dia del mes. Espejo de computeNextRecurringDate en TS.';
 
 -- ── Materializar, emparejar y recalcular el puntero ───────────────────────────
 create or replace function public.sync_subscription_occurrences(
@@ -120,13 +140,13 @@ begin
     )
     on conflict (subscription_id, due_date) do nothing;
 
-    cur := public.next_subscription_due(cur, s.frequency, s.interval_count);
+    cur := public.next_subscription_due(cur, s.frequency, s.interval_count, s.day_of_month);
     exit when cur <= last_due; -- salvaguarda: una cadencia rota no cuelga la transaccion
   end loop;
 
   -- 3. Emparejar. Se recorre por MOVIMIENTO, no por mes: la pregunta real es "esta plata, ¿que
   --    mes cubre?", y asi un pago con retraso encuentra su mes en vez de quedarse suelto.
-  period_days := public.next_subscription_due(pointer, s.frequency, s.interval_count) - pointer;
+  period_days := public.next_subscription_due(pointer, s.frequency, s.interval_count, s.day_of_month) - pointer;
   tolerance := greatest(3, period_days / 2); -- medio periodo: mas alla ya es del mes siguiente
 
   for mv in
@@ -188,7 +208,7 @@ begin
       from public.subscription_occurrences o where o.subscription_id = s.id;
     next_open := case
       when last_due is null then pointer
-      else public.next_subscription_due(last_due, s.frequency, s.interval_count)
+      else public.next_subscription_due(last_due, s.frequency, s.interval_count, s.day_of_month)
     end;
   end if;
 

@@ -79,7 +79,12 @@ export function MarkSubscriptionPaidSheet({
   const selectedAccount = eligibleAccounts.find((account) => account.id === accountId) ?? null;
   const dueDate = parseYmd(subscription.nextDueDate);
   const nextDueDate = parseYmd(
-    computeNextRecurringDate(subscription.nextDueDate, subscription.frequency, subscription.intervalCount),
+    computeNextRecurringDate(
+      subscription.nextDueDate,
+      subscription.frequency,
+      subscription.intervalCount,
+      subscription.dayOfMonth,
+    ),
   );
   const parsedAmount = Number(amount.replace(/,/g, "."));
   const amountForCopy = Number.isFinite(parsedAmount) && parsedAmount > 0 ? parsedAmount : subscription.amount;

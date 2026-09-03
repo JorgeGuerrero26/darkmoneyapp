@@ -263,7 +263,13 @@ function SubscriptionsScreen() {
     // Al reactivar, la fecha stale del pasado se rueda a la primera ocurrencia >= hoy
     // según la cadencia registrada (spec 2026-07-16-suscripciones).
     const nextDueDate = newStatus === "active"
-      ? rollDueDateForward(subscription.nextDueDate, subscription.frequency, subscription.intervalCount, todayPeru())
+      ? rollDueDateForward(
+          subscription.nextDueDate,
+          subscription.frequency,
+          subscription.intervalCount,
+          todayPeru(),
+          subscription.dayOfMonth,
+        )
       : undefined;
     updateMutation.mutate(
       { id: subscription.id, input: { status: newStatus, ...(nextDueDate ? { nextDueDate } : {}) } },

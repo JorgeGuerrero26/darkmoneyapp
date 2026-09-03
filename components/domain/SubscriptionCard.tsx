@@ -77,7 +77,11 @@ function SubscriptionCardBase({
             {formatCurrency(subscription.amount, subscription.currencyCode)}
           </Text>
           <Text style={styles.cadence}>
-            {subscriptionRecurrencePhrase(subscription.intervalCount, subscription.frequency).toLowerCase()}
+            {subscriptionRecurrencePhrase(
+              subscription.intervalCount,
+              subscription.frequency,
+              subscription.dayOfMonth,
+            ).toLowerCase()}
           </Text>
         </>
       }

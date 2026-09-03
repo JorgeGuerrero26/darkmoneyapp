@@ -109,7 +109,13 @@ function SubscriptionDetailScreen() {
     // Al reactivar (desde pausada o cancelada), rodar la fecha vencida a la
     // primera ocurrencia >= hoy según la cadencia registrada.
     const nextDueDate = newStatus === "active"
-      ? rollDueDateForward(subscription.nextDueDate, subscription.frequency, subscription.intervalCount, todayPeru())
+      ? rollDueDateForward(
+          subscription.nextDueDate,
+          subscription.frequency,
+          subscription.intervalCount,
+          todayPeru(),
+          subscription.dayOfMonth,
+        )
       : undefined;
     updateMutation.mutate(
       { id: subscription.id, input: { status: newStatus, ...(nextDueDate ? { nextDueDate } : {}) } },

@@ -20,7 +20,7 @@ import {
   suggestCategoryFromCounterparty,
   suggestCategoryFromDescription,
 } from "../../lib/movement-patterns";
-import { subscriptionRecurrencePhrase } from "../../lib/subscription-helpers";
+import { LAST_DAY_ANCHOR, subscriptionRecurrencePhrase } from "../../lib/subscription-helpers";
 import type { SubscriptionSummary } from "../../types/domain";
 import { BottomSheet } from "../ui/BottomSheet";
 import { FormDateRow } from "../ui/FormDateRow";
@@ -43,13 +43,23 @@ import { TextField } from "../ui/TextField";
 
 // "Cada mes" y no "Mensual": la fila dice cada cuánto se cobra, y así se dice. El adjetivo
 // vuelve solo cuando el intervalo pasa de uno ("Cada 3 meses"), donde ya no cabe la forma corta.
-const FREQUENCY_OPTIONS: { value: SubscriptionFormInput["frequency"]; label: string }[] = [
-  { value: "weekly",    label: "Cada semana" },
-  { value: "monthly",   label: "Cada mes" },
-  { value: "quarterly", label: "Cada trimestre" },
-  { value: "yearly",    label: "Cada año" },
-  { value: "daily",     label: "Cada día" },
-  { value: "custom",    label: "Personalizado" },
+/**
+ * `monthly_last` no es una frecuencia nueva: es mensual con el ancla en el último día.
+ *
+ * Existe porque "el 31" y "el último día" dan lo mismo en la práctica —no hay mes donde
+ * difieran— pero no significan lo mismo al editarlas: si alguien elige el 30 pensando en "el
+ * último", en marzo se cobraría el 30. Dicho aquí, la app sabe cuál de las dos pediste.
+ */
+type FrequencyChoice = SubscriptionFormInput["frequency"] | "monthly_last";
+
+const FREQUENCY_OPTIONS: { value: FrequencyChoice; label: string }[] = [
+  { value: "weekly",       label: "Cada semana" },
+  { value: "monthly",      label: "Cada mes" },
+  { value: "monthly_last", label: "Cada mes, el último día" },
+  { value: "quarterly",    label: "Cada trimestre" },
+  { value: "yearly",       label: "Cada año" },
+  { value: "daily",        label: "Cada día" },
+  { value: "custom",       label: "Personalizado" },
 ];
 
 const REMIND_OPTIONS = [
@@ -274,6 +284,11 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
           return;
         }
         resolvedDayOfMonth = dom;
+      } else {
+        /* Sin ancla explícita, la del propio cobro elegido. Guardarla siempre es lo que evita
+           el desvío: una suscripción del 31 sin ancla se queda en el 28 tras el primer
+           febrero, y no vuelve. */
+        resolvedDayOfMonth = parseLocalYmd(nextDueDate).getDate();
       }
     }
 
@@ -375,7 +390,10 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
 
   const isLoading = createMutation.isPending || updateMutation.isPending;
   const intervalValue = Math.max(1, parseInt(intervalCount, 10) || 1);
-  const recurrenceLabel = subscriptionRecurrencePhrase(intervalValue, frequency);
+  const anchorDay = dayOfMonth.trim() ? parseInt(dayOfMonth, 10) : null;
+  const frequencyChoice: FrequencyChoice =
+    frequency === "monthly" && anchorDay === LAST_DAY_ANCHOR ? "monthly_last" : frequency;
+  const recurrenceLabel = subscriptionRecurrencePhrase(intervalValue, frequency, anchorDay);
 
   /* Con lo obligatorio completo, el pie deja de nombrar lo que falta y dice qué se va a crear:
      "Se cobrará hoy y cada mes". Repetir "Falta el nombre" con el nombre puesto era ruido. */
@@ -516,9 +534,22 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
             visible={frequencyOpen}
             title="Se repite"
             options={FREQUENCY_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
-            value={frequency}
-            onChange={(next: SubscriptionFormInput["frequency"]) => {
-              setFrequency(next);
+            value={frequencyChoice}
+            onChange={(next: FrequencyChoice) => {
+              if (next === "monthly_last") {
+                setFrequency("monthly");
+                setDayOfMonth(String(LAST_DAY_ANCHOR));
+              } else {
+                setFrequency(next);
+                /* El ancla es el día del cobro que acabas de elegir. Sin ella cada fecha se
+                   calculaba desde la anterior y un febrero dejaba la suscripción en el 28 para
+                   siempre. Las cadencias por días no la usan. */
+                setDayOfMonth(
+                  ["monthly", "quarterly", "yearly"].includes(next)
+                    ? String(parseLocalYmd(nextDueDate).getDate())
+                    : "",
+                );
+              }
               // Personalizado es el único que necesita un número; se pide justo después,
               // no como campo permanente para los otros cinco.
               if (next !== "custom") setIntervalCount("1");
@@ -632,7 +663,13 @@ export function SubscriptionForm({ visible, onClose, onSuccess, editSubscription
           label="Próximo cobro"
           support="Desde esta fecha se cuenta el ciclo"
           value={nextDueDate}
-          onChange={setNextDueDate}
+          onChange={(value) => {
+            setNextDueDate(value);
+            // El ancla sigue a la fecha elegida, salvo si ya pediste "el último día".
+            if (anchorDay !== LAST_DAY_ANCHOR && ["monthly", "quarterly", "yearly"].includes(frequency)) {
+              setDayOfMonth(String(parseLocalYmd(value).getDate()));
+            }
+          }}
           placeholder="Elegir fecha"
           minimumDate={startDate ? parseLocalYmd(startDate) : undefined}
         />

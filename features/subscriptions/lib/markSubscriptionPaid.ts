@@ -35,6 +35,7 @@ export async function markSubscriptionPaid({
     subscription.nextDueDate,
     subscription.frequency,
     subscription.intervalCount,
+    subscription.dayOfMonth,
   );
   const { error: updateError } = await supabase
     .from("subscriptions")

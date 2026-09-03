@@ -30,7 +30,11 @@ export function SubscriptionDetailFacts({ subscription, onPickAccount, onPickCat
     <View style={styles.group}>
       <Fact
         label="Se repite"
-        value={subscriptionRecurrencePhrase(subscription.intervalCount, subscription.frequency)}
+        value={subscriptionRecurrencePhrase(
+          subscription.intervalCount,
+          subscription.frequency,
+          subscription.dayOfMonth,
+        )}
       />
       <Fact
         label="Avisarme antes"

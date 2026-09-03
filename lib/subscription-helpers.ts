@@ -67,11 +67,20 @@ const FREQUENCY_ADJECTIVES: Record<SubscriptionFrequency, string> = {
   custom: "Personalizado",
 };
 
+/** El ancla 31 es "el último día": no hay mes donde las dos cosas difieran. */
+export const LAST_DAY_ANCHOR = 31;
+
 export function subscriptionRecurrencePhrase(
   intervalCount: number,
   frequency: SubscriptionFrequency,
+  dayOfMonth?: number | null,
 ): string {
   const n = Math.max(1, Math.floor(intervalCount) || 1);
+  if (n <= 1 && dayOfMonth === LAST_DAY_ANCHOR) {
+    if (frequency === "monthly") return "Cada mes, el último día";
+    if (frequency === "quarterly") return "Cada trimestre, el último día";
+    if (frequency === "yearly") return "Cada año, el último día del mes";
+  }
   return n <= 1
     ? RECURRENCE_PHRASES[frequency] ?? frequency
     : subscriptionFrequencyListLabel(n, frequency, FREQUENCY_ADJECTIVES);
@@ -176,13 +185,46 @@ function toLocalYmd(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
+/** Días que tiene el mes de esa fecha. */
+function daysInMonthOf(date: Date): number {
+  return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+}
+
+/**
+ * El día del mes al que vuelve cada cobro.
+ *
+ * **31 significa "el último día"**: en un mes de 31 es el 31, y en los cortos es el 30 o el 28.
+ * No hace falta una columna nueva porque las dos cosas son la misma — quien elige el 31 quiere
+ * el último día, y no existe un mes donde eso difiera.
+ */
+export function clampDayOfMonth(date: Date, anchor: number): Date {
+  const days = daysInMonthOf(date);
+  const day = Math.min(Math.max(1, Math.floor(anchor)), days);
+  return new Date(date.getFullYear(), date.getMonth(), day);
+}
+
+/**
+ * El siguiente cobro de una cadencia.
+ *
+ * **El ancla importa.** Sin ella, cada fecha se calculaba desde la anterior y un mes corto
+ * contaminaba todos los siguientes: una suscripción del 31 de enero pasaba al 28 de febrero
+ * —correcto— y desde ahí seguía al **28 de marzo**, al 28 de abril y así para siempre. El 31
+ * no volvía nunca. Con el ancla, el recorte es cosa de cada mes y no una herida permanente:
+ * 31 ene → 28 feb → 31 mar → 30 abr.
+ *
+ * `anchor` sale de `subscriptions.day_of_month`, una columna que ya existía y que **nadie
+ * leía**: el formulario la guardaba y el cálculo la ignoraba. Sin ancla se usa el día de la
+ * fecha de partida, que es el comportamiento de antes para todo lo que no cruce un mes corto.
+ */
 export function computeNextRecurringDate(
   currentYmd: string,
   frequency: SubscriptionFrequency,
   intervalCount: number,
+  anchor?: number | null,
 ): string {
   const base = parseLocalYmd(currentYmd);
   const n = Math.max(1, Math.floor(intervalCount) || 1);
+  const day = anchor && anchor >= 1 ? Math.floor(anchor) : base.getDate();
   let next: Date;
   switch (frequency) {
     case "daily":
@@ -192,13 +234,13 @@ export function computeNextRecurringDate(
       next = addWeeks(base, n);
       break;
     case "monthly":
-      next = addMonths(base, n);
+      next = clampDayOfMonth(addMonths(base, n), day);
       break;
     case "quarterly":
-      next = addMonths(base, n * 3);
+      next = clampDayOfMonth(addMonths(base, n * 3), day);
       break;
     case "yearly":
-      next = addYears(base, n);
+      next = clampDayOfMonth(addYears(base, n), day);
       break;
     case "custom":
     default:
@@ -224,11 +266,12 @@ export function rollDueDateForward(
   frequency: SubscriptionFrequency,
   intervalCount: number,
   todayYmd: string,
+  anchor?: number | null,
 ): string {
   let next = currentYmd;
   // Tope defensivo: ~11 años de cadencia diaria; evita loop infinito ante datos corruptos.
   for (let i = 0; next < todayYmd && i < 4000; i++) {
-    next = computeNextRecurringDate(next, frequency, intervalCount);
+    next = computeNextRecurringDate(next, frequency, intervalCount, anchor);
   }
   return next;
 }

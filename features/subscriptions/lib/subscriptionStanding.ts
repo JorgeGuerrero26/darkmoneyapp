@@ -66,7 +66,12 @@ function countMissedCharges(subscription: SubscriptionSummary, today: string): n
   // el número exacto pasado ese punto.
   while (count < 400 && daysBetween(cursor, today) <= 0) {
     count += 1;
-    const next = computeNextRecurringDate(cursor, subscription.frequency, subscription.intervalCount);
+    const next = computeNextRecurringDate(
+      cursor,
+      subscription.frequency,
+      subscription.intervalCount,
+      subscription.dayOfMonth,
+    );
     if (next === cursor) break; // salvaguarda: una cadencia rota no cuelga la pantalla
     cursor = next;
   }
