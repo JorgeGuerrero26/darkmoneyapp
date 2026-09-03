@@ -2828,18 +2828,11 @@ export function useDeleteMovementMutation(workspaceId: number | null) {
     onMutate: async (id) => {
       await queryClient.cancelQueries({ queryKey: ["movements"] });
       const previousPages = queryClient.getQueriesData<{ pages: { data: { id: number }[] }[] }>({ queryKey: ["movements"] });
-      queryClient.setQueriesData<{ pages: { data: { id: number }[] }[]; pageParams: unknown[] }>(
+      /* Bajo ["movements"] no solo cuelga la lista paginada: tambien el total del filtro
+         (["movements","summary",…]), que no tiene `pages`. Ver dropMovementFromPages. */
+      queryClient.setQueriesData<unknown>(
         { queryKey: ["movements"] },
-        (old) => {
-          if (!old) return old;
-          return {
-            ...old,
-            pages: old.pages.map((page) => ({
-              ...page,
-              data: page.data.filter((m) => m.id !== id),
-            })),
-          };
-        },
+        (old: unknown) => dropMovementFromPages(old, id),
       );
       return { previousPages };
     },
