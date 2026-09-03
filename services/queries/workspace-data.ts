@@ -8,6 +8,7 @@ import { supabase, supabaseAnonKey, supabaseUrl } from "../../lib/supabase";
 import { SAVE_CEILING_MS } from "../../lib/fetch-timeout-budget";
 import { withTimeout } from "../../lib/promise-utils";
 import { STALE, queryClient } from "../../lib/query-client";
+import { dropMovementFromPages } from "./drop-movement-from-pages";
 import { isCoreSnapshot, patchSnapshotWithCreatedMovement } from "./snapshot-cache";
 import {
   ASSISTANT_CHAT_TIMEOUT_MS,
