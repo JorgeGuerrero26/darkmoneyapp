@@ -124,6 +124,11 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Y ese mismo aviso es ahora el de toda la app. Al borrar una suscripción, una categoría o un contacto salía otro distinto —con el logo metido en un círculo, \"Deshacer\" en verde y a distinta altura según la pantalla—. Ahora es uno solo, y te dice qué borraste: \"Se eliminó «Fitrex barras energéticas»\".",
       "Arreglado: una suscripción que se cobra a fin de mes ya no se queda atrás en febrero. Si la pusiste el 31, pasaba al 28 de febrero —correcto— pero después seguía cobrando el 28 de marzo, el 28 de abril y así para siempre: el 31 no volvía nunca. Lo mismo con el 29 y el 30. Ahora el día se recuerda y solo se recorta donde el mes no llega: 31 ene, 28 feb, 31 mar, 30 abr.",
       "Y \"Se repite\" tiene una opción nueva: \"Cada mes, el último día\". Antes había que poner 31 y esperar que la app lo entendiera.",
+      "Los ingresos fijos ya te avisan de lo que no ha llegado. Un sueldo esperado el 29 de julio seguía diciendo \"Activo\" en verde el 3 de setiembre, con la fecha vencida en gris como un dato cualquiera. Ahora hay un grupo \"Sin confirmar\" arriba del todo, cada línea dice \"Se esperaba el 29 jul · 2 llegadas sin anotar\", y al lado del título del grupo ves cuánto está en juego.",
+      "Se llama \"sin confirmar\" y no \"atrasado\" a propósito: el dinero pudo llegar y faltar anotarlo, o no haber llegado. Las dos cosas piden lo mismo, que lo revises.",
+      "El total de arriba ya no va en verde: es lo que esperas cobrar, no lo que cobraste. Ahora dice \"Esperado al mes\", y el verde queda para el ingreso que ya entró, en Movimientos.",
+      "Se fue el \"~S/ 2,630.50/mes\" que salía debajo de cada ingreso mensual: era el mismo número tres veces en la misma pantalla. Solo aparece cuando el ingreso no es mensual —un quincenal, uno anual—, que es cuando dice algo.",
+      "Y las cuatro pestañas de estado se fueron: ocupaban una fila entera y contradecían a los grupos de abajo. Los filtros están en un solo sitio, junto al buscador, como en Suscripciones.",
     ],
   },
   {
