@@ -116,6 +116,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       "La línea que explicaba los gestos —\"desliza para pagar o eliminar\"— se muestra una vez y se va, en vez de ocupar sitio para siempre contándote algo que ya sabes.",
       "Una suscripción pausada dice \"el cobro quedó en el 12 may\" en vez de \"Próximo: 12 may\", que anunciaba un cobro que no va a ocurrir. Y su monto va en gris, porque no suma al total.",
       "Arreglado un fallo silencioso al eliminar: si deslizabas para borrar y salías de la pantalla antes de que el aviso de \"Deshacer\" terminara, el borrado no llegaba a ocurrir. Sin error y sin aviso — la fila volvía a estar ahí al regresar. Pasaba en las ocho listas que borran así: movimientos, suscripciones, deudas, presupuestos, categorías, contactos, ingresos fijos y tipos de cambio. Ahora salir de la pantalla confirma el borrado; \"Deshacer\" lo sigue cancelando.",
+      "Y arreglado el que de verdad rompía eliminar un movimiento: desde que el neto pasó a calcularse aparte, borrar fallaba por dentro y el movimiento nunca se iba de la base. La fila desaparecía igual —queda oculta mientras corre el aviso de Deshacer—, así que parecía borrado y volvía al recargar la app.",
     ],
   },
   {
