@@ -108,6 +108,13 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Y ponerla al día es un botón grande, no una de cuatro acciones idénticas. Pausar y Cancelar bajaron al final en letra normal, y \"Análisis\" salió de ahí porque ya estaba arriba: era la misma acción dos veces en la misma pantalla.",
       "Arriba había cuatro íconos sin nombre, uno de ellos un alfiler tachado que lo mismo podía significar \"está fijada\" que \"tócame para fijarla\". Quedan dos: análisis y un menú de tres puntos donde editar, fijar y eliminar se leen con su nombre. El nombre de la suscripción gana el espacio, y se fue tu propio nombre de debajo, que salía en todas y nunca cambiaba.",
       "Los datos de la suscripción pasan de una cuadrícula que se leía en zigzag a cuatro filas. Y si le falta la cuenta o la categoría, se eligen ahí mismo tocando la fila — sin cuenta, lo de \"anotar el gasto solo\" no puede funcionar.",
+      "En la lista de suscripciones, una fila ya no se contradice a sí misma. Decía \"Activa\" en verde y justo debajo \"Venció el 4 jun\" en rojo, las dos cosas a la vez. Se fue la etiqueta verde: si venció lo dice la línea de abajo, y si está pausada lo dice el grupo donde está.",
+      "Y la fila se lee como las de Movimientos: nombre y fecha a la izquierda, monto y cada cuánto a la derecha. Se fueron el cuadrito del ícono —era el mismo en todas, así que no distinguía nada—, la palabra \"Suscripción\" debajo de cada nombre y la flechita del final.",
+      "Ahora se agrupan por lo que hay que hacer y no por lo que marcaste: Atrasadas primero, luego Próximas, luego Pausadas, y las Canceladas plegadas al final porque son historial. Las que fijas siguen subiendo, con su estrella, dentro de su grupo.",
+      "Había dos sitios para filtrar lo mismo, y uno decía \"Filtrar · 11 opciones\" — te contaba los botones, no tus datos. Queda uno solo junto al buscador, que dice \"Filtros\" y nombra el filtro cuando lo pones.",
+      "El total del mes va en blanco y no en rojo: es lo que vas a gastar, no lo que ya gastaste. Y lo de abajo se lee como una frase: \"Una activa. La pausada no suma.\"",
+      "La línea que explicaba los gestos —\"desliza para pagar o eliminar\"— se muestra una vez y se va, en vez de ocupar sitio para siempre contándote algo que ya sabes.",
+      "Una suscripción pausada dice \"el cobro quedó en el 12 may\" en vez de \"Próximo: 12 may\", que anunciaba un cobro que no va a ocurrir. Y su monto va en gris, porque no suma al total.",
     ],
   },
   {
