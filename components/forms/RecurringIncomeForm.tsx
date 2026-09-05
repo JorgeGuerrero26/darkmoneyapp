@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
-import { CalendarClock, CalendarPlus, CalendarX2, AlertCircle } from "lucide-react-native";
+import { StyleSheet, Text, TextInput, View } from "react-native";
+import { AlertCircle } from "lucide-react-native";
 import { format } from "date-fns";
 
 import { useWorkspace } from "../../lib/workspace-context";
@@ -23,35 +23,36 @@ import {
 } from "../../lib/movement-patterns";
 import type { RecurringIncomeSummary } from "../../types/domain";
 import { BottomSheet } from "../ui/BottomSheet";
+import { FormDateRow } from "../ui/FormDateRow";
 import { FormOptionRow } from "../ui/FormOptionRow";
+import { RecurringIncomeOptionalsSheet } from "../../features/recurring-income/components/RecurringIncomeOptionalsSheet";
+import { describeRecurringCadence } from "../../features/recurring-income/lib/recurringIncomeSchedule";
+import { LAST_DAY_ANCHOR, subscriptionRecurrencePhrase } from "../../lib/subscription-helpers";
+import { currencyPluralTitle } from "../../constants/currencies";
 import { SearchableSelectSheet } from "../ui/SearchableSelectSheet";
 import { CurrencySelectOverlay } from "./CurrencySelectOverlay";
 import { Button } from "../ui/Button";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { CurrencyInput } from "../ui/CurrencyInput";
 import { BusinessDateNotice } from "../ui/BusinessDateNotice";
-import { FormDateField } from "./FormDateField";
 import { SmartSuggestion } from "../ui/SmartSuggestion";
 import { sortByName } from "../../lib/sort-locale";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { TextField } from "../ui/TextField";
 
-const FREQUENCY_OPTIONS: { value: RecurringIncomeFormInput["frequency"]; label: string }[] = [
-  { value: "weekly", label: "Semanal" },
-  { value: "monthly", label: "Mensual" },
-  { value: "quarterly", label: "Trimestral" },
-  { value: "yearly", label: "Anual" },
-  { value: "daily", label: "Diario" },
-  { value: "custom", label: "Personalizado" },
-];
-const WEEKDAY_OPTIONS: { value: number; label: string }[] = [
-  { value: 1, label: "Lun" },
-  { value: 2, label: "Mar" },
-  { value: 3, label: "Mié" },
-  { value: 4, label: "Jue" },
-  { value: 5, label: "Vie" },
-  { value: 6, label: "Sáb" },
-  { value: 0, label: "Dom" },
+/** Mensual con el ancla en el último día. No es una frecuencia nueva. */
+type FrequencyChoice = RecurringIncomeFormInput["frequency"] | "monthly_last";
+
+/* Un selector que dice el RESULTADO. Eran seis cápsulas cortadas por el borde —con una séptima
+   asomando— más un campo "Repetir cada N periodos" y una línea que traducía lo recién elegido. */
+const FREQUENCY_CHOICES: { value: FrequencyChoice; label: string }[] = [
+  { value: "weekly",       label: "Cada semana" },
+  { value: "monthly",      label: "Cada mes" },
+  { value: "monthly_last", label: "Cada mes, el último día" },
+  { value: "quarterly",    label: "Cada trimestre" },
+  { value: "yearly",       label: "Cada año" },
+  { value: "daily",        label: "Cada día" },
+  { value: "custom",       label: "Personalizado" },
 ];
 const REMIND_OPTIONS = [
   { label: "1 día", value: 1 },
@@ -66,6 +67,12 @@ type Props = {
   onSuccess?: () => void;
   editRecurringIncome?: RecurringIncomeSummary;
 };
+
+function parseLocalYmd(ymd: string): Date {
+  const parts = ymd.trim().split("-").map(Number);
+  if (parts.length !== 3 || parts.some((value) => Number.isNaN(value))) return new Date(ymd);
+  return new Date(parts[0], parts[1] - 1, parts[2]);
+}
 
 export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurringIncome }: Props) {
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
@@ -87,6 +94,9 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
   const isEditing = Boolean(editRecurringIncome);
 
   const [currencyOpen, setCurrencyOpen] = useState(false);
+  const [frequencyOpen, setFrequencyOpen] = useState(false);
+  const [remindOpen, setRemindOpen] = useState(false);
+  const [optionalsOpen, setOptionalsOpen] = useState(false);
   const [payerOpen, setPayerOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [categoryOpen, setCategoryOpen] = useState(false);
@@ -142,10 +152,15 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
       setIntervalCount("1");
       setDayOfMonth("");
       setDayOfWeek(null);
-      setStartDate(today);
-      setNextExpectedDate(today);
+      /* "Desde" es solo referencia y se deduce de la primera llegada: pedirla obligatoria y con
+         el mismo valor que la próxima llegada hacía que el formulario trajera el mismo dato dos
+         veces sin decir cuál mandaba. */
+      setStartDate("");
+      /* Y la próxima llegada no puede venir en "Hoy": un ingreso fijo que llega hoy es la
+         excepción, no la norma. Se pide. */
+      setNextExpectedDate("");
       setEndDate("");
-      setAccountId(null);
+      setAccountId(topIncomeAccountId);
       setCategoryId(null);
       setRemindDaysBefore(3);
       setNotes("");
@@ -166,6 +181,59 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
   const counterparties = useMemo(() => sortByName(snapshot?.counterparties ?? []), [snapshot?.counterparties]);
   const isLoading = createMutation.isPending || updateMutation.isPending;
   const intervalValue = Math.max(1, parseInt(intervalCount, 10) || 1);
+  const anchorDay = dayOfMonth.trim() ? parseInt(dayOfMonth, 10) : null;
+  const frequencyChoice: FrequencyChoice =
+    frequency === "monthly" && anchorDay === LAST_DAY_ANCHOR ? "monthly_last" : frequency;
+  /* La moneda solo se pregunta si hay más de una en juego: era el tercer campo de la pantalla
+     para un dato que casi nunca cambia. */
+  /* "Entra a" llega precargada con la cuenta que más ingresos recibe: sin cuenta, confirmar
+     una llegada no le suma el dinero a ningún saldo. Sale de los movimientos que el formulario
+     ya tiene cargados para las sugerencias, sin pedir nada nuevo. */
+  const topIncomeAccountId = useMemo(() => {
+    const counts = new Map<number, number>();
+    for (const movement of patternMovements ?? []) {
+      if (movement.movement_type !== "income" || !movement.destination_account_id) continue;
+      counts.set(movement.destination_account_id, (counts.get(movement.destination_account_id) ?? 0) + 1);
+    }
+    let best: number | null = null;
+    let bestCount = 0;
+    for (const [id, count] of counts) {
+      if (count > bestCount) { best = id; bestCount = count; }
+    }
+    return best ?? (activeAccounts.length === 1 ? activeAccounts[0].id : null);
+  }, [activeAccounts, patternMovements]);
+
+  /* La sugerencia llega con los movimientos, que tardan un momento más que el formulario. Si
+     para entonces el usuario no eligió cuenta, se pone la sugerida. */
+  useEffect(() => {
+    if (!visible || isEditing) return;
+    setAccountId((current) => current ?? topIncomeAccountId);
+  }, [visible, isEditing, topIncomeAccountId]);
+
+  const workspaceCurrencies = useMemo(() => {
+    const codes = new Set<string>([defaultCurrency.toUpperCase()]);
+    for (const account of snapshot?.accounts ?? []) codes.add(account.currencyCode.toUpperCase());
+    return [...codes];
+  }, [defaultCurrency, snapshot?.accounts]);
+
+  /* El botón nombra lo que falta mientras falte, en vez de esperar a que lo toques. */
+  const missingLabel = !name.trim()
+    ? "Falta el nombre"
+    : !amount.trim() || Number(amount) <= 0
+      ? "Falta el monto"
+      : !nextExpectedDate.trim()
+        ? "Falta la próxima llegada"
+        : accountId === null
+          ? "Falta la cuenta donde entra"
+          : null;
+  const recurrenceLabel = subscriptionRecurrencePhrase(intervalValue, frequency, anchorDay);
+  /* Lo que va a pasar, no cómo lo hace la app. Antes: "La app usa la próxima llegada como fecha
+     base y desde ahí repite según esta frecuencia" y, aparte, "Cadencia actual: cada 1 mes". */
+  const cadenceSentence = describeRecurringCadence({
+    frequency,
+    intervalCount: intervalValue,
+    anchorDay: ["monthly", "quarterly", "yearly"].includes(frequency) ? anchorDay : null,
+  });
 
   useEffect(() => {
     if (suggestionDebounceRef.current) clearTimeout(suggestionDebounceRef.current);
@@ -242,14 +310,19 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
       setAmountError("Ingresa un monto mayor a 0");
       return;
     }
-    if (!startDate.trim() || !nextExpectedDate.trim()) {
+    if (!nextExpectedDate.trim()) {
       haptics.error();
-      setSubmitError("Inicio y próxima llegada son obligatorios");
+      setSubmitError("Elige cuándo llega la próxima vez");
       return;
     }
-    if (nextExpectedDate < startDate) {
+    if (accountId === null) {
       haptics.error();
-      setSubmitError("La próxima llegada debe ser igual o posterior al inicio");
+      setSubmitError("Elige la cuenta donde entra: sin ella no se le puede sumar a ningún saldo");
+      return;
+    }
+    if (startDate.trim() && nextExpectedDate < startDate) {
+      haptics.error();
+      setSubmitError("La próxima llegada no puede ser anterior al inicio");
       return;
     }
     if (!Number.isFinite(intervalValue) || intervalValue < 1) {
@@ -284,7 +357,8 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
         ? parseInt(dayOfMonth, 10)
         : null,
       dayOfWeek: frequency === "weekly" ? dayOfWeek : null,
-      startDate,
+      // La columna no admite nulo, y sin "Desde" el inicio ES la primera llegada.
+      startDate: startDate.trim() ? startDate : nextExpectedDate,
       nextExpectedDate,
       endDate: endDate.trim() ? endDate : null,
       remindDaysBefore,
@@ -318,6 +392,20 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
         onClose={handleClose}
         title={isEditing ? "Editar ingreso fijo" : "Nuevo ingreso fijo"}
         snapHeight={0.88}
+        /* Estaban al final del scroll, después de las notas: en un formulario de tres pantallas
+           no se veían hasta llegar al fondo. Y "Cancelar" se retira — la hoja ya tiene la X del
+           encabezado, y dos maneras de abandonar compiten entre sí. */
+        footer={
+          <View style={styles.submitBar}>
+            {missingLabel ? <Text style={styles.submitNote}>{missingLabel}</Text> : null}
+            <Button
+              label={isEditing ? "Guardar cambios" : "Crear ingreso"}
+              onPress={handleSubmit}
+              loading={isLoading}
+              size="lg"
+            />
+          </View>
+        }
         // Dentro del sheet: iOS solo presenta un Modal a la vez y como hermano no aparecía.
         overlay={
           <>
@@ -346,11 +434,10 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
           <SearchableSelectSheet
             inline
             visible={accountOpen}
-            title="Cuenta destino"
-            options={[
-              { value: null as number | null, label: "Sin cuenta" },
-              ...activeAccounts.map((acc) => ({ value: acc.id as number | null, label: acc.name })),
-            ]}
+            title="Entra a"
+            /* Sin "Sin cuenta": ahora es obligatoria, y ofrecer la opción de dejarla vacía
+               contradice al botón que la pide. */
+            options={activeAccounts.map((acc) => ({ value: acc.id as number | null, label: acc.name }))}
             value={accountId}
             onChange={setAccountId}
             onClose={() => setAccountOpen(false)}
@@ -367,6 +454,69 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
             onChange={setCategoryId}
             onClose={() => setCategoryOpen(false)}
           />
+            {/* Las hojas van primero: los selectores que se abren DESDE ellas se pintan
+                después y quedan por encima. */}
+            <RecurringIncomeOptionalsSheet
+              visible={optionalsOpen}
+              onClose={() => setOptionalsOpen(false)}
+              showPayer={counterparties.length > 0}
+              payerLabel={counterparties.find((cp) => cp.id === payerPartyId)?.name ?? null}
+              onOpenPayer={() => setPayerOpen(true)}
+              showCategory={incomeCategories.length > 0}
+              categoryLabel={incomeCategories.find((c) => c.id === categoryId)?.name ?? null}
+              onOpenCategory={() => setCategoryOpen(true)}
+              categorySuggestion={catSuggestionId !== null && categoryId === null ? (() => {
+                const category = incomeCategories.find((item) => item.id === catSuggestionId);
+                return category ? (
+                  <SmartSuggestion
+                    label={category.name}
+                    detail="Categoría sugerida por nombre y pagador"
+                    onApply={() => setCategoryId(category.id)}
+                  />
+                ) : null;
+              })() : null}
+              showCurrency={workspaceCurrencies.length > 1}
+              currencyLabel={currencyPluralTitle(currencyCode) || currencyCode}
+              onOpenCurrency={() => setCurrencyOpen(true)}
+              startDate={startDate}
+              onChangeStartDate={setStartDate}
+              endDate={endDate}
+              onChangeEndDate={setEndDate}
+              minimumEndDate={startDate ? parseLocalYmd(startDate) : undefined}
+              notes={notes}
+              onChangeNotes={setNotes}
+            />
+            <SearchableSelectSheet
+              inline
+              visible={frequencyOpen}
+              title="Se repite"
+              options={FREQUENCY_CHOICES.map((option) => ({ value: option.value, label: option.label }))}
+              value={frequencyChoice}
+              onChange={(next: FrequencyChoice) => {
+                if (next === "monthly_last") {
+                  setFrequency("monthly");
+                  setDayOfMonth(String(LAST_DAY_ANCHOR));
+                } else {
+                  setFrequency(next);
+                  setDayOfMonth(
+                    ["monthly", "quarterly", "yearly"].includes(next) && nextExpectedDate
+                      ? String(parseLocalYmd(nextExpectedDate).getDate())
+                      : "",
+                  );
+                }
+                if (next !== "custom") setIntervalCount("1");
+              }}
+              onClose={() => setFrequencyOpen(false)}
+            />
+            <SearchableSelectSheet
+              inline
+              visible={remindOpen}
+              title="Avisarme antes"
+              options={REMIND_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
+              value={remindDaysBefore}
+              onChange={setRemindDaysBefore}
+              onClose={() => setRemindOpen(false)}
+            />
           <CurrencySelectOverlay
               visible={currencyOpen}
               onClose={() => setCurrencyOpen(false)}
@@ -377,179 +527,86 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
         }
       >
         <View style={styles.section}>
-          <Text style={styles.label}>Nombre *</Text>
+          {/* Sin rótulo: el ejemplo va de placeholder, como en los otros seis formularios. */}
           <TextField
             ref={nameRef}
-            style={styles.input}
+            style={[styles.input, nameError ? styles.inputError : null]}
             value={name}
             onChangeText={(value) => { setName(value); setNameError(""); }}
-            placeholder="ej. Sueldo mensual"
-            placeholderTextColor={COLORS.textDisabled}
+            placeholder="Sueldo, alquiler, clases…"
+            placeholderTextColor={COLORS.storm}
+            accessibilityLabel="Nombre del ingreso fijo"
           />
           {nameError ? <Text style={styles.fieldError}>{nameError}</Text> : null}
 
+          {/* "S/ 0.00" gris sobre caja gris se leía como un dato ya puesto, no como el campo
+              donde va la cifra más importante del formulario. */}
+          <Text style={styles.fieldLabel}>Cuánto llega</Text>
           <CurrencyInput
-            label="Monto *"
             value={amount}
             onChangeText={(value) => { setAmount(value); setAmountError(""); }}
             currencyCode={currencyCode}
             error={amountError}
+            style={styles.amountField}
           />
 
-          <FormOptionRow
-            label="Moneda"
-            value={currencyCode}
-            onPress={() => setCurrencyOpen(true)}
-          />
-
-          <Text style={styles.label}>Frecuencia</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View style={styles.pillRow}>
-              {FREQUENCY_OPTIONS.map((option) => (
-                <TouchableOpacity
-                  key={option.value}
-                  style={[styles.pill, frequency === option.value && styles.pillActive]}
-                  onPress={() => setFrequency(option.value)}
-                >
-                  <Text style={[styles.pillText, frequency === option.value && styles.pillTextActive]}>{option.label}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </ScrollView>
-          <Text style={styles.helperText}>
-            La app usa la próxima llegada como fecha base y desde ahí repite según esta frecuencia.
-          </Text>
-
-          <Text style={styles.label}>
-            {frequency === "custom" ? "Repetir cada N días" : "Repetir cada N periodos"}
-          </Text>
-          <TextField
-            style={styles.input}
-            value={intervalCount}
-            onChangeText={setIntervalCount}
-            placeholder="1"
-            placeholderTextColor={COLORS.textDisabled}
-            keyboardType="number-pad"
-          />
-          <Text style={styles.helperText}>
-            {frequency === "custom"
-              ? `Personalizado siempre se interpreta en días. ${intervalValue} significa repetir cada ${intervalValue} día${intervalValue === 1 ? "" : "s"}.`
-              : `Cadencia actual: cada ${intervalValue} ${frequency === "weekly" ? `semana${intervalValue === 1 ? "" : "s"}` : frequency === "monthly" ? `mes${intervalValue === 1 ? "" : "es"}` : frequency === "quarterly" ? `trimestre${intervalValue === 1 ? "" : "s"}` : frequency === "yearly" ? `año${intervalValue === 1 ? "" : "s"}` : `día${intervalValue === 1 ? "" : "s"}`}.`}
-          </Text>
-
-          {(frequency === "monthly" || frequency === "quarterly" || frequency === "yearly") ? (
-            <>
-              <Text style={styles.label}>Día habitual del mes</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                <View style={styles.pillRow}>
-                  {[1, 5, 10, 15, 20, 25, 28, 30].map((day) => (
-                    <TouchableOpacity
-                      key={day}
-                      style={[styles.pill, dayOfMonth === String(day) && styles.pillActive]}
-                      onPress={() => setDayOfMonth(String(day))}
-                    >
-                      <Text style={[styles.pillText, dayOfMonth === String(day) && styles.pillTextActive]}>{day}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </ScrollView>
-              <Text style={styles.helperText}>
-                Úsalo para dejar claro qué día suele caer este ingreso dentro del ciclo.
-              </Text>
-            </>
-          ) : null}
-
-          {frequency === "weekly" ? (
-            <>
-              <Text style={styles.label}>Día habitual de la semana</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                <View style={styles.pillRow}>
-                  <TouchableOpacity
-                    style={[styles.pill, dayOfWeek == null && styles.pillActive]}
-                    onPress={() => setDayOfWeek(null)}
-                  >
-                    <Text style={[styles.pillText, dayOfWeek == null && styles.pillTextActive]}>Sin día fijo</Text>
-                  </TouchableOpacity>
-                  {WEEKDAY_OPTIONS.map((option) => (
-                    <TouchableOpacity
-                      key={option.value}
-                      style={[styles.pill, dayOfWeek === option.value && styles.pillActive]}
-                      onPress={() => setDayOfWeek(option.value)}
-                    >
-                      <Text style={[styles.pillText, dayOfWeek === option.value && styles.pillTextActive]}>
-                        {option.label}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </ScrollView>
-              <Text style={styles.helperText}>
-                Esto deja registrado el día semanal habitual de cobro para que la configuración no quede ambigua.
-              </Text>
-            </>
-          ) : null}
-
-          <FormDateField
-            title="Próxima llegada esperada"
-            description="Es la fecha principal que el sistema usa para recordatorios y flujo futuro."
-            value={nextExpectedDate}
-            onChange={setNextExpectedDate}
-            required
-            Icon={CalendarClock}
-            accentColor={COLORS.primary}
-          />
+          {/* Lo obligatorio, en una tarjeta. "Entra a" sube aquí: sin cuenta, confirmar una
+              llegada no le suma el dinero a ningún saldo. */}
+          <View style={styles.group}>
+            <FormOptionRow
+              grouped
+              label="Se repite"
+              value={recurrenceLabel}
+              onPress={() => setFrequencyOpen(true)}
+            />
+            <FormDateRow
+              grouped
+              label="Próxima llegada"
+              value={nextExpectedDate}
+              onChange={(value) => {
+                setNextExpectedDate(value);
+                // El día del mes sale de la fecha elegida: preguntarlo aparte era preguntar dos
+                // veces el mismo dato, y ninguna de las ocho cápsulas que ofrecía era el 29.
+                if (["monthly", "quarterly", "yearly"].includes(frequency)) {
+                  setDayOfMonth(String(parseLocalYmd(value).getDate()));
+                }
+                if (frequency === "weekly") setDayOfWeek(parseLocalYmd(value).getDay());
+              }}
+              placeholder="Elegir fecha"
+            />
+            <FormOptionRow
+              grouped
+              label="Entra a"
+              value={activeAccounts.find((account) => account.id === accountId)?.name ?? null}
+              placeholder="Elegir cuenta"
+              onPress={() => setAccountOpen(true)}
+            />
+            <FormOptionRow
+              grouped
+              last
+              label="Avisarme antes"
+              value={REMIND_OPTIONS.find((option) => option.value === remindDaysBefore)?.label ?? "Sin aviso"}
+              onPress={() => setRemindOpen(true)}
+            />
+          </View>
+          <Text style={styles.helperText}>{cadenceSentence}</Text>
           <BusinessDateNotice dateValue={nextExpectedDate} onApplySuggestedDate={setNextExpectedDate} />
 
-          <FormDateField
-            title="Fecha de inicio"
-            description="Ayuda a entender desde cuándo existe este ingreso."
-            value={startDate}
-            onChange={setStartDate}
-            required
-            Icon={CalendarPlus}
-            accentColor={COLORS.ember}
-          />
-
-          <FormDateField
-            title="Fecha de fin"
-            description="Déjala vacía si este ingreso no tiene fecha de cierre."
-            value={endDate}
-            onChange={setEndDate}
-            optional
-            placeholder="Sin fecha de fin"
-            Icon={CalendarX2}
-            accentColor={COLORS.gold}
-          />
-
-          <Text style={styles.label}>Avisar con anticipación</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View style={styles.pillRow}>
-              {REMIND_OPTIONS.map((option) => (
-                <TouchableOpacity
-                  key={option.label}
-                  style={[styles.pill, remindDaysBefore === option.value && styles.pillActive]}
-                  onPress={() => setRemindDaysBefore(option.value)}
-                >
-                  <Text style={[styles.pillText, remindDaysBefore === option.value && styles.pillTextActive]}>{option.label}</Text>
-                </TouchableOpacity>
-              ))}
+          {frequency === "custom" ? (
+            <View>
+              <Text style={styles.label}>Cada cuántos días</Text>
+              <TextField
+                style={styles.input}
+                value={intervalCount}
+                onChangeText={setIntervalCount}
+                placeholder="1"
+                placeholderTextColor={COLORS.storm}
+                keyboardType="number-pad"
+              />
             </View>
-          </ScrollView>
+          ) : null}
 
-          <FormOptionRow
-            label="Pagador"
-            value={counterparties.find((cp) => cp.id === payerPartyId)?.name ?? null}
-            placeholder="Ninguno"
-            onPress={() => setPayerOpen(true)}
-          />
-
-          <FormOptionRow
-            label="Cuenta destino"
-            value={activeAccounts.find((account) => account.id === accountId)?.name ?? null}
-            placeholder="Sin cuenta"
-            onPress={() => setAccountOpen(true)}
-          />
-          {accSuggestionId !== null ? (() => {
+          {accSuggestionId !== null && accountId === null ? (() => {
             const account = activeAccounts.find((item) => item.id === accSuggestionId);
             return account ? (
               <SmartSuggestion
@@ -561,30 +618,11 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
           })() : null}
 
           <FormOptionRow
-            label="Categoría"
-            value={incomeCategories.find((category) => category.id === categoryId)?.name ?? null}
-            placeholder="Sin categoría"
-            onPress={() => setCategoryOpen(true)}
-          />
-          {catSuggestionId !== null ? (() => {
-            const category = incomeCategories.find((item) => item.id === catSuggestionId);
-            return category ? (
-              <SmartSuggestion
-                label={category.name}
-                detail="Categoría sugerida por nombre y pagador"
-                onApply={() => setCategoryId(category.id)}
-              />
-            ) : null;
-          })() : null}
-
-          <Text style={styles.label}>Notas (opcional)</Text>
-          <TextField
-            style={styles.notesInput}
-            multiline
-            value={notes}
-            onChangeText={setNotes}
-            placeholder="Notas adicionales..."
-            placeholderTextColor={COLORS.textDisabled}
+            label="Opcionales"
+            support="Pagador, categoría, desde, hasta, notas"
+            value=""
+            placeholder=""
+            onPress={() => setOptionalsOpen(true)}
           />
 
           {submitError ? (
@@ -593,16 +631,6 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
               <Text style={styles.errorBannerText}>{submitError}</Text>
             </View>
           ) : null}
-
-          <View style={styles.actionsRow}>
-            <Button label="Cancelar" variant="ghost" onPress={handleClose} style={styles.cancelBtn} />
-            <Button
-              label={isEditing ? "Guardar cambios" : "Crear ingreso"}
-              onPress={handleSubmit}
-              loading={isLoading}
-              style={styles.submitBtn}
-            />
-          </View>
         </View>
       </BottomSheet>
     </>
@@ -610,6 +638,38 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
 }
 
 const styles = StyleSheet.create({
+  fieldLabel: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+    marginBottom: -SPACING.xs,
+  },
+  /** Borde de campo activo: tiene que verse que se puede tocar. */
+  amountField: { borderColor: SURFACE.inputBorder, paddingVertical: SPACING.md },
+  inputError: { borderColor: COLORS.danger },
+  submitBar: {
+    gap: SPACING.xs,
+    paddingHorizontal: SPACING.lg,
+    paddingTop: SPACING.md,
+    backgroundColor: SURFACE.sheet,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: SURFACE.separator,
+  },
+  submitNote: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    textAlign: "center",
+  },
+  group: {
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: SURFACE.cardBorder,
+    backgroundColor: SURFACE.card,
+    overflow: "hidden",
+  },
   section: { gap: SPACING.md },
   label: {
     fontSize: FONT_SIZE.xs,

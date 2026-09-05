@@ -15,7 +15,7 @@ import { join } from "node:path";
 const FORMS_DIR = join(__dirname, "..", "components", "forms");
 
 /** Archivos que no son formularios con submit (campos/piezas reutilizables). */
-const NOT_A_FORM = new Set(["FormDateField.tsx"]);
+const NOT_A_FORM = new Set<string>([]);
 
 function formFiles(): string[] {
   return readdirSync(FORMS_DIR)
