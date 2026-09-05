@@ -2706,6 +2706,9 @@ export function useUpdateMovementMutation(workspaceId: number | null) {
     mutationFn: ({ id, input }: { id: number; input: MovementUpdateInput }) => withTimeout((async () => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const payload: Record<string, unknown> = {};
+      // Sin esto, corregir un gasto que en realidad era un ingreso cambiaba las cuentas y los
+      // montos pero dejaba el tipo viejo.
+      if (input.movementType !== undefined) payload.movement_type = input.movementType;
       if (input.description !== undefined) payload.description = input.description;
       if (input.notes !== undefined) payload.notes = input.notes;
       if (input.categoryId !== undefined) payload.category_id = input.categoryId;

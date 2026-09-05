@@ -37,14 +37,28 @@ export type MovementFormInput = {
  * — solo se persisten los que están definidos (patrón "partial update").
  */
 export type MovementUpdateInput = {
+  /**
+   * Cambiar de gasto a ingreso es corregir una equivocación, no crear otro movimiento.
+   *
+   * Faltaba: la edición nunca enviaba el tipo, así que el movimiento se quedaba con el que
+   * tenía mientras sus cuentas y montos cambiaban de lado.
+   */
+  movementType?: MovementType;
   description?: string;
   notes?: string | null;
   categoryId?: number | null;
   counterpartyId?: number | null;
   occurredAt?: string;
   status?: MovementStatus;
-  sourceAmount?: number;
-  destinationAmount?: number;
+  /**
+   * `null` VACÍA el campo; `undefined` lo deja como está.
+   *
+   * Era `number | undefined`, así que al pasar de gasto a ingreso el monto de origen no se
+   * podía borrar: la cuenta de origen se ponía en null y el monto se quedaba, y la base
+   * rechazaba la fila entera (`movements_source_pair_check`: las dos cosas o ninguna).
+   */
+  sourceAmount?: number | null;
+  destinationAmount?: number | null;
   fxRate?: number | null;
   sourceAccountId?: number | null;
   destinationAccountId?: number | null;

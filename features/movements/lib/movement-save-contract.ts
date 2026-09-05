@@ -61,9 +61,19 @@ export function buildMovementCreateInput(input: BuildMovementInput): MovementFor
   };
 }
 
+/**
+ * Lo que se manda al editar.
+ *
+ * Sale del MISMO builder que la creación a propósito: un gasto convertido en ingreso tiene que
+ * quedar igual que si se hubiera creado como ingreso. Y los montos se mandan como `null` y no
+ * como `undefined` — `undefined` significa "no lo toques", y ahí estaba el fallo: al cambiar de
+ * gasto a ingreso, la cuenta de origen se vaciaba y su monto se quedaba puesto, así que la base
+ * rechazaba la fila entera y el usuario solo notaba una vibración.
+ */
 export function buildMovementUpdateInput(input: BuildMovementInput): MovementUpdateInput {
   const createInput = buildMovementCreateInput(input);
   return {
+    movementType: createInput.movementType,
     status: createInput.status,
     description: createInput.description,
     notes: createInput.notes,
@@ -72,8 +82,8 @@ export function buildMovementUpdateInput(input: BuildMovementInput): MovementUpd
     occurredAt: createInput.occurredAt,
     sourceAccountId: createInput.sourceAccountId,
     destinationAccountId: createInput.destinationAccountId,
-    sourceAmount: createInput.sourceAmount ?? undefined,
-    destinationAmount: createInput.destinationAmount ?? undefined,
+    sourceAmount: createInput.sourceAmount ?? null,
+    destinationAmount: createInput.destinationAmount ?? null,
     fxRate: createInput.fxRate,
   };
 }
