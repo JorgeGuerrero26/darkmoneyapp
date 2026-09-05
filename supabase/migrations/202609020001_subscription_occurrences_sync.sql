@@ -204,12 +204,21 @@ begin
    where o.subscription_id = s.id and o.status = 'scheduled';
 
   if next_open is null then
-    select max(o.due_date) into last_due
-      from public.subscription_occurrences o where o.subscription_id = s.id;
-    next_open := case
-      when last_due is null then pointer
-      else public.next_subscription_due(last_due, s.frequency, s.interval_count, s.day_of_month)
-    end;
+    /* El puntero que todavia no ha vencido NO se recalcula: las ocurrencias solo se
+       materializan hasta hoy, asi que un cobro futuro aun no tiene fila y calcular "el
+       siguiente al ultimo materializado" se lo saltaria. Paso de verdad al aplicar esto: cuatro
+       suscripciones creadas el 3 de setiembre con su primer cobro el 30 saltaron al 31 de
+       octubre, perdiendo el de setiembre. */
+    if pointer > horizon then
+      next_open := pointer;
+    else
+      select max(o.due_date) into last_due
+        from public.subscription_occurrences o where o.subscription_id = s.id;
+      next_open := case
+        when last_due is null then pointer
+        else public.next_subscription_due(last_due, s.frequency, s.interval_count, s.day_of_month)
+      end;
+    end if;
   end if;
 
   if next_open is distinct from s.next_due_date then
