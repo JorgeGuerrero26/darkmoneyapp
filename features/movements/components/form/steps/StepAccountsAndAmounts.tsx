@@ -175,26 +175,28 @@ export const StepAccountsAndAmounts = memo(function StepAccountsAndAmounts({
         })}
       </View>
 
-      {/* Monto: en un gasto y en una transferencia sale de la cuenta origen. */}
-      {!isIncome ? (
-        <>
-          <CurrencyInput
-            label="Monto"
-            value={sourceAmount}
-            onChangeText={onChangeSourceAmount}
-            currencyCode={sourceAccount?.currencyCode ?? baseCurrencyCode}
-            error={errors.sourceAmount}
-          />
-          {warnings.sourceAmount ? (
-            <Text
-              style={styles.warningHint}
-              accessibilityLiveRegion="polite"
-              accessibilityRole="alert"
-            >
-              {warnings.sourceAmount}
-            </Text>
-          ) : null}
-        </>
+      {/* El monto SIEMPRE primero, sea gasto, ingreso o traspaso.
+          Estaba antes de las cuentas en el gasto y después en el ingreso, así que los dos
+          formularios se leían en orden distinto y al cambiar de tipo los campos se
+          intercambiaban de sitio bajo el dedo. En un ingreso el monto es el que entra; en los
+          demás, el que sale. */}
+      <CurrencyInput
+        label="Monto"
+        value={isIncome ? destinationAmount : sourceAmount}
+        onChangeText={isIncome ? onChangeDestinationAmount : onChangeSourceAmount}
+        currencyCode={
+          (isIncome ? destinationAccount?.currencyCode : sourceAccount?.currencyCode) ?? baseCurrencyCode
+        }
+        error={isIncome ? errors.destinationAmount : errors.sourceAmount}
+      />
+      {!isIncome && warnings.sourceAmount ? (
+        <Text
+          style={styles.warningHint}
+          accessibilityLiveRegion="polite"
+          accessibilityRole="alert"
+        >
+          {warnings.sourceAmount}
+        </Text>
       ) : null}
 
       {/* Las cuentas son filas, no cápsulas: con seis cuentas las últimas se cortaban por el
@@ -233,17 +235,8 @@ export const StepAccountsAndAmounts = memo(function StepAccountsAndAmounts({
         </Text>
       ) : null}
 
-      {isIncome || isTransfer ? (
+      {isTransfer ? (
         <>
-          {isIncome ? (
-            <CurrencyInput
-              label="Monto"
-              value={destinationAmount}
-              onChangeText={onChangeDestinationAmount}
-              currencyCode={destinationAccount?.currencyCode ?? baseCurrencyCode}
-              error={errors.destinationAmount}
-            />
-          ) : null}
           {isTransfer && transferCurrenciesDiffer ? (
             <CurrencyInput
               label={`Monto destino (${destinationAccount?.currencyCode ?? ""})`}
