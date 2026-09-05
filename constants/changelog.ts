@@ -132,6 +132,11 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Arreglado: si te equivocaste y registraste un gasto que en realidad era un ingreso, ahora puedes corregirlo. Antes le dabas a guardar, el teléfono vibraba y no pasaba nada — la app cambiaba las cuentas pero nunca el tipo, y la base de datos rechazaba el movimiento entero sin decir por qué.",
       "El monto va primero en gasto, ingreso y traspaso. En el ingreso estaba debajo de la cuenta y en el gasto encima, así que al cambiar de tipo los campos se movían de sitio bajo el dedo.",
       "Y al buscar una categoría, el teclado ya no tapa el buscador: la lista sube con él y ves lo que estás escribiendo.",
+      "Crear un ingreso fijo ya no te pregunta dos veces lo mismo. Te pedía \"el día habitual del mes\" —con ocho botones donde, si tu sueldo llega el 29, ninguno era el 29— y aparte la fecha de la próxima llegada, que ya dice el día. Ahora solo eliges la fecha.",
+      "Y ya no te pide tres fechas en tres tarjetas de colores. Queda la que manda —cuándo llega la próxima vez— y las otras dos viven en \"Opcionales\", bajo \"Vigencia\", por si el ingreso empezó antes o termina en una fecha conocida.",
+      "La cuenta donde entra el dinero pasa a ser obligatoria y llega puesta con la que más ingresos recibe. Estaba entre los opcionales, y sin ella confirmar una llegada no le sumaba el dinero a ningún saldo.",
+      "Cada cuánto se repite se elige de una lista que dice el resultado —\"Cada mes\", \"Cada 14 días\", \"Cada mes, el último día\"— en vez de cápsulas cortadas más un campo de \"repetir cada N periodos\". Y debajo te dice qué va a pasar: \"Se repite el 29 cada mes. Si el mes no tiene 29, cae el último día.\"",
+      "El botón de crear está fijo abajo y te dice qué falta mientras falte, en vez de esperar al final del formulario.",
     ],
   },
   {
