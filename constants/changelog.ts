@@ -129,6 +129,9 @@ export const CHANGELOG: ChangelogEntry[] = [
       "El total de arriba ya no va en verde: es lo que esperas cobrar, no lo que cobraste. Ahora dice \"Esperado al mes\", y el verde queda para el ingreso que ya entró, en Movimientos.",
       "Se fue el \"~S/ 2,630.50/mes\" que salía debajo de cada ingreso mensual: era el mismo número tres veces en la misma pantalla. Solo aparece cuando el ingreso no es mensual —un quincenal, uno anual—, que es cuando dice algo.",
       "Y las cuatro pestañas de estado se fueron: ocupaban una fila entera y contradecían a los grupos de abajo. Los filtros están en un solo sitio, junto al buscador, como en Suscripciones.",
+      "Arreglado: si te equivocaste y registraste un gasto que en realidad era un ingreso, ahora puedes corregirlo. Antes le dabas a guardar, el teléfono vibraba y no pasaba nada — la app cambiaba las cuentas pero nunca el tipo, y la base de datos rechazaba el movimiento entero sin decir por qué.",
+      "El monto va primero en gasto, ingreso y traspaso. En el ingreso estaba debajo de la cuenta y en el gasto encima, así que al cambiar de tipo los campos se movían de sitio bajo el dedo.",
+      "Y al buscar una categoría, el teclado ya no tapa el buscador: la lista sube con él y ves lo que estás escribiendo.",
     ],
   },
   {
