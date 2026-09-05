@@ -1,20 +1,11 @@
-import { useEffect, useState, type ReactNode } from "react";
-import {
-  Dimensions,
-  Keyboard,
-  LayoutAnimation,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import type { ReactNode } from "react";
+import { Dimensions, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChevronLeft } from "lucide-react-native";
 
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { SafeBlurView } from "./SafeBlurView";
+import { useKeyboardHeight } from "../../hooks/useKeyboardHeight";
 
 const SCREEN_HEIGHT = Dimensions.get("window").height;
 
@@ -55,43 +46,9 @@ export function InlineFormSheet({
   height = "92%",
 }: Props) {
   const insets = useSafeAreaInsets();
-  /**
-   * El teclado, medido a mano y en las dos plataformas — el mismo tratamiento que ya tenía
-   * `BottomSheet` y que esta hoja nunca recibió.
-   *
-   * Sin esto pasaban las dos cosas que se reportaron a la vez: el botón del pie quedaba pegado
-   * al borde inferior del teléfono (faltaba el área segura, que en un iPhone con gesto son 34px
-   * de barra), y al escribir un monto el teclado tapaba el campo en lugar de empujar la hoja,
-   * porque la capa es `position: absolute` y el padding del padre no la mueve.
-   */
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
-
-  useEffect(() => {
-    // iOS avisa con los *Will*, antes de animar; Android solo emite los *Did* de forma fiable.
-    const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
-    const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
-    const animateWithKeyboard = (duration?: number) => {
-      if (Platform.OS !== "ios") return;
-      // Copia la curva y la duración reales del teclado, así el alto y el desplazamiento van
-      // juntos y no se ve el corte.
-      LayoutAnimation.configureNext({
-        duration: duration && duration > 0 ? duration : 250,
-        update: { type: "keyboard" },
-      });
-    };
-    const showSub = Keyboard.addListener(showEvent, (event) => {
-      animateWithKeyboard(event.duration);
-      setKeyboardHeight(event.endCoordinates?.height ?? 0);
-    });
-    const hideSub = Keyboard.addListener(hideEvent, (event) => {
-      animateWithKeyboard(event?.duration);
-      setKeyboardHeight(0);
-    });
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
-  }, []);
+  /* Sin esto, el pie quedaba pegado al borde del teléfono y el teclado tapaba el campo en vez
+     de empujar la hoja: la capa es `position: absolute` y el padding del padre no la mueve. */
+  const keyboardHeight = useKeyboardHeight();
 
   if (!visible) return null;
 

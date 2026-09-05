@@ -1,11 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
-import { FlatList, Keyboard, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Dimensions, FlatList, Keyboard, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Check, Search, X } from "lucide-react-native";
 
 import { BottomSheet } from "./BottomSheet";
 import { SafeBlurView } from "./SafeBlurView";
 import { TextField } from "./TextField";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
+import { useKeyboardHeight } from "../../hooks/useKeyboardHeight";
+
+const SCREEN_HEIGHT = Dimensions.get("window").height;
 
 export type SelectOption<T = number | null> = {
   value: T;
@@ -40,6 +44,8 @@ export function SearchableSelectSheet<T = number | null>({
   onClose,
   inline = false,
 }: Props<T>) {
+  const insets = useSafeAreaInsets();
+  const keyboardHeight = useKeyboardHeight();
   const [query, setQuery] = useState("");
 
   /**
@@ -126,7 +132,18 @@ export function SearchableSelectSheet<T = number | null>({
       <View style={styles.inlineRoot}>
         <SafeBlurView intensity={45} tint="dark" style={StyleSheet.absoluteFillObject} />
         <TouchableOpacity style={styles.inlineBackdrop} onPress={handleClose} activeOpacity={1} />
-        <View style={styles.inlineCard}>
+        {/* La capa sube con el teclado. Sin esto, al escribir para buscar una categoría el
+            teclado tapaba el propio buscador y no se veía lo que se estaba escribiendo. */}
+        <View
+          style={[
+            styles.inlineCard,
+            {
+              bottom: keyboardHeight,
+              maxHeight: SCREEN_HEIGHT - keyboardHeight - insets.top - SPACING.xl,
+              paddingBottom: keyboardHeight > 0 ? SPACING.lg : SPACING.xxxl,
+            },
+          ]}
+        >
           <View style={styles.inlineHeader}>
             <Text style={styles.inlineTitle}>{title}</Text>
             <TouchableOpacity onPress={handleClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
@@ -155,6 +172,10 @@ const styles = StyleSheet.create({
   },
   inlineBackdrop: { ...StyleSheet.absoluteFillObject },
   inlineCard: {
+    // `bottom` se controla desde el render para subir la hoja con el teclado.
+    position: "absolute",
+    left: 0,
+    right: 0,
     backgroundColor: SURFACE.sheet,
     borderTopLeftRadius: RADIUS.sheet,
     borderTopRightRadius: RADIUS.sheet,
