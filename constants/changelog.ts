@@ -141,6 +141,9 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Nuevo: \"Lo de siempre\" en el inicio. La app se fija en los gastos que repites igual —mismo concepto, mismo monto, misma hora— y te los deja a un toque cuando toca. Si todos los días de semana a las 7 pagas S/ 2 de moto, a esa hora te aparece el botón y queda registrado con su categoría y su cuenta.",
       "Solo aparece cuando encaja: la moto de entre semana no se te ofrece un domingo, y lo que dejaste de hacer hace un mes deja de proponerse. Si el gasto varía de monto —un taxi que a veces son 7 soles y a veces 9— no se propone, porque entonces no se puede registrar de un toque.",
       "Y tú puedes fijar los tuyos: desde cualquier movimiento, guárdalo como atajo y aparece en esa misma fila. Los que fijas salen siempre, sin depender de la hora. Esa función existía desde hace meses, pero se usaba manteniendo pulsado el botón + de otra pantalla — nadie iba a encontrarla ahí.",
+      "Arriba de cada pantalla ya no hay una hilera de íconos que haya que adivinar. En un presupuesto llegaron a ser cuatro —un alfiler, dos hojas, un lápiz y un tacho— sin una palabra, y uno de ellos borra. Ahora queda como mucho el que se usa al entrar, y lo demás está en el menú de tres puntos, cada cosa con su nombre.",
+      "Filtrar movimientos o tipos de cambio se hace en un solo sitio, junto al buscador, como en Suscripciones. Antes había dos botones para lo mismo, uno arriba y otro al lado de la búsqueda.",
+      "Y el marcador del detalle de un movimiento, que no decía para qué servía, ahora se llama \"Guardar como atajo\": es lo que hace desde que los atajos salen en el inicio.",
     ],
   },
   {
