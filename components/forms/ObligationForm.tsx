@@ -984,27 +984,29 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
         />
       ) : null}
 
-      {/* Desde, y la puerta a los catorce campos opcionales. */}
-      <View style={styles.group} onLayout={(event) => { startDateSectionYRef.current = event.nativeEvent.layout.y; }}>
-        {!isEditing ? (
+      {!isEditing ? (
+        <View style={styles.group} onLayout={(event) => { startDateSectionYRef.current = event.nativeEvent.layout.y; }}>
           <FormDateRow
             grouped
+            last
             label="Desde"
             value={startDate}
             onChange={(value) => { setStartDate(value); setStartDateError(""); }}
           />
-        ) : null}
-        <FormOptionRow
-          grouped
-          last
-          label="Más detalles"
-          support="Cuotas, tasa, vencimiento, notas"
-          value=""
-          placeholder=""
-          onPress={() => setDetailsOpen(true)}
-        />
-      </View>
+        </View>
+      ) : null}
       {startDateError ? <Text style={styles.fieldError}>{startDateError}</Text> : null}
+
+      {/* La puerta a lo opcional va suelta y al final de los campos, no dentro de la tarjeta de
+          "Desde": agrupada se leía como un campo más de esa tarjeta, cuando es la entrada a otra
+          pantalla. Misma posición que en los otros seis formularios. */}
+      <FormOptionRow
+        label="Más detalles"
+        support="Cuotas, tasa, vencimiento, notas"
+        value=""
+        placeholder=""
+        onPress={() => setDetailsOpen(true)}
+      />
 
 
       {/* Invitar por correo salía del formulario de creación: convertía el botón de guardar en

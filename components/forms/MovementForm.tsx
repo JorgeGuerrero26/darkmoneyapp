@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { TextInput } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { ChevronRight } from "lucide-react-native";
 
 import { useUiStore } from "../../store/ui-store";
 import { useWorkspace } from "../../lib/workspace-context";
@@ -49,6 +48,7 @@ import {
 import type { MovementRiskItem } from "../../lib/movement-risk-analysis";
 import { BottomSheet } from "../ui/BottomSheet";
 import { Button } from "../ui/Button";
+import { FormOptionRow } from "../ui/FormOptionRow";
 import { SearchableSelectSheet } from "../ui/SearchableSelectSheet";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { type Attachment } from "../domain/AttachmentPicker";
@@ -1118,25 +1118,6 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
               style={styles.btnSubmit}
             />
           </View>
-          {/* Con el monto y la cuenta elegidos el movimiento YA es válido, así que el botón es
-              Guardar y los detalles quedan como un destino al que se entra a propósito. Por eso
-              el enlace va DEBAJO del botón, como lo dibuja el mockup: al final del scroll el
-              orden de lectura era "detalles primero, guardar después". */}
-          {step === 1 ? (
-            <TouchableOpacity
-              style={styles.detailsLink}
-              onPress={goNext}
-              activeOpacity={0.72}
-              accessibilityRole="button"
-            >
-              <Text style={styles.detailsLinkText}>
-                {form.movementType === "transfer"
-                  ? "Añadir nota o comprobante"
-                  : "Añadir categoría, nota o comprobante"}
-              </Text>
-              <ChevronRight size={15} color={COLORS.storm} />
-            </TouchableOpacity>
-          ) : null}
         </View>
       }
       // Dentro del sheet y no como hermano: iOS solo presenta un Modal a la vez y el diálogo
@@ -1275,6 +1256,24 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         />
       ) : null}
 
+      {/* La puerta a lo opcional va al final del contenido y ENCIMA del botón, como en los
+          otros seis formularios.
+          Estaba debajo del botón: cuando se dibujó, el botón vivía al final del scroll y
+          ponerla arriba dejaba leer "detalles primero, guardar después". Con la barra anclada
+          esa razón caducó — el botón ya no forma parte del scroll—, y debajo del botón la fila
+          decía lo contrario de lo que hace: ahí se lee como algo posterior a guardar, cuando
+          son campos que se llenan antes. */}
+      {step === 1 ? (
+        <FormOptionRow
+          label={form.movementType === "transfer"
+            ? "Añadir nota o comprobante"
+            : "Añadir categoría, nota o comprobante"}
+          value=""
+          placeholder=""
+          onPress={goNext}
+        />
+      ) : null}
+
       {/* -- PASO 2: detalles, todos opcionales -- */}
       {step === 2 ? (() => {
         const catSuggestion = catSuggestionId !== null
@@ -1410,18 +1409,6 @@ const styles = StyleSheet.create({
   },
   btnBack: { flex: 1 },
   btnSubmit: { flex: 2 },
-  detailsLink: {
-    minHeight: 44,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: SPACING.xs,
-  },
-  detailsLinkText: {
-    fontFamily: FONT_FAMILY.bodyMedium,
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.storm,
-  },
   stepRow: {
     flexDirection: "row",
     gap: SPACING.sm,
