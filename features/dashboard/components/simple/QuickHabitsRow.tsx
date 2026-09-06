@@ -4,14 +4,14 @@ import { Plus } from "lucide-react-native";
 
 import { formatCurrency } from "../../../../components/ui/AmountDisplay";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../../../constants/theme";
-import type { SpendingHabit } from "../../../movements/lib/spendingHabits";
+import type { QuickEntry } from "../../../movements/lib/quickEntries";
 
 type Props = {
-  habits: SpendingHabit[];
+  entries: QuickEntry[];
   currencyCode: string;
   /** El que se está guardando ahora mismo, para no dejar el toque sin respuesta. */
   savingKey: string | null;
-  onRegister: (habit: SpendingHabit) => void;
+  onRegister: (entry: QuickEntry) => void;
 };
 
 /**
@@ -25,12 +25,16 @@ type Props = {
  * día correcto —la moto es de lunes a viernes— y dentro de su franja habitual. Una fila fija
  * con todo lo que sueles gastar sería otro menú; esto es una sugerencia que pasa.
  *
+ * **Los que fijas tú salen siempre**, los deducidos solo cuando encajan. Las plantillas ya
+ * existían y tenían cero uso: se creaban desde un ícono sin etiqueta y se usaban manteniendo
+ * pulsado el botón +, en otra pantalla. Un atajo escondido tras un gesto no lo usa nadie.
+ *
  * **Y por qué no hay IA aquí.** Es contar repeticiones y mirar la hora. Así es instantáneo,
  * gratis y funciona sin señal: tres cosas que una llamada a un modelo no da. Un atajo que tarda
  * dos segundos en aparecer ya no es un atajo.
  */
-function QuickHabitsRowBase({ habits, currencyCode, savingKey, onRegister }: Props) {
-  if (habits.length === 0) return null;
+function QuickHabitsRowBase({ entries, currencyCode, savingKey, onRegister }: Props) {
+  if (entries.length === 0) return null;
 
   return (
     <View style={styles.root}>
@@ -40,7 +44,7 @@ function QuickHabitsRowBase({ habits, currencyCode, savingKey, onRegister }: Pro
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.row}
       >
-        {habits.map((habit) => {
+        {entries.map((habit) => {
           const saving = savingKey === habit.key;
           return (
             <TouchableOpacity

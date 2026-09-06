@@ -114,7 +114,9 @@ function MovementDetailScreen() {
         notes: movement.notes ?? null,
       },
       {
-        onSuccess: () => showToast("Plantilla guardada. Úsala desde el botón + (mantener presionado).", "success"),
+        // El aviso mandaba a "el botón + (mantener presionado)", un gesto escondido y en otra
+        // pantalla: por eso la tabla de plantillas llevaba meses vacía. Ahora salen solas.
+        onSuccess: () => showToast("Guardado como atajo. Aparece en el inicio, en «Lo de siempre».", "success"),
         onError: (err) => showToast(err instanceof Error ? err.message : "No se pudo guardar la plantilla", "error"),
       },
     );

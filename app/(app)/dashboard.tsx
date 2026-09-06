@@ -200,11 +200,9 @@ import { HeroCard } from "../../features/dashboard/components/simple/HeroCard";
 import { QuickHabitsRow } from "../../features/dashboard/components/simple/QuickHabitsRow";
 import { useMovementPatternsQuery } from "../../services/queries/movement-patterns";
 import { useCreateMovementMutation } from "../../services/queries/workspace-data";
-import {
-  detectSpendingHabits,
-  habitsForNow,
-  type SpendingHabit,
-} from "../../features/movements/lib/spendingHabits";
+import { detectSpendingHabits, habitsForNow } from "../../features/movements/lib/spendingHabits";
+import { buildQuickEntries, type QuickEntry } from "../../features/movements/lib/quickEntries";
+import { useMovementTemplatesQuery } from "../../services/queries/movement-templates";
 import { buildMovementCreateInput } from "../../features/movements/lib/movement-save-contract";
 import { newClientDedupeKey } from "../../lib/idempotency";
 import { MiniBarChart } from "../../features/dashboard/components/simple/MiniBarChart";
@@ -573,26 +571,31 @@ function DashboardScreen() {
   const { data: patternMovements } = useMovementPatternsQuery(activeWorkspaceId);
   const [savingHabitKey, setSavingHabitKey] = useState<string | null>(null);
   const createMovementForHabit = useCreateMovementMutation(activeWorkspaceId);
-  const habitsNow = useMemo(() => {
-    if (!patternMovements?.length) return [];
-    return habitsForNow(detectSpendingHabits(patternMovements));
+  const { data: quickTemplates } = useMovementTemplatesQuery(activeWorkspaceId);
+  const quickEntries = useMemo(() => {
+    const habits = patternMovements?.length
+      ? habitsForNow(detectSpendingHabits(patternMovements))
+      : [];
+    return buildQuickEntries(quickTemplates ?? [], habits);
     // `habitsClock` entra a propósito: la franja horaria cambia con el reloj, no con los datos.
-  }, [patternMovements, habitsClock]);
+  }, [patternMovements, quickTemplates, habitsClock]);
 
-  const registerHabit = useCallback((habit: SpendingHabit) => {
+  const registerHabit = useCallback((habit: QuickEntry) => {
     if (!activeWorkspaceId || savingHabitKey) return;
     setSavingHabitKey(habit.key);
     createMovementForHabit.mutate(
       buildMovementCreateInput({
-        movementType: "expense",
+        movementType: habit.movementType,
         status: "posted",
         occurredAt: new Date().toISOString(),
         description: habit.label,
-        sourceAccountId: habit.accountId,
+        sourceAccountId: habit.sourceAccountId,
         sourceAmount: habit.amount,
-        destinationAccountId: null,
-        destinationAmount: 0,
+        destinationAccountId: habit.destinationAccountId,
+        destinationAmount: habit.amount,
         categoryId: habit.categoryId,
+        counterpartyId: habit.counterpartyId,
+        notes: habit.notes,
         dedupeKey: newClientDedupeKey("habit"),
       }),
       {
@@ -894,7 +897,7 @@ function DashboardScreen() {
                 hay que desplazarse. */}
             <DashboardSectionBoundary sectionLabel="Lo de siempre">
               <QuickHabitsRow
-                habits={habitsNow}
+                entries={quickEntries}
                 currencyCode={baseCurrency}
                 savingKey={savingHabitKey}
                 onRegister={registerHabit}
