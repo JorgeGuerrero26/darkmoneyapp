@@ -137,6 +137,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       "La cuenta donde entra el dinero pasa a ser obligatoria y llega puesta con la que más ingresos recibe. Estaba entre los opcionales, y sin ella confirmar una llegada no le sumaba el dinero a ningún saldo.",
       "Cada cuánto se repite se elige de una lista que dice el resultado —\"Cada mes\", \"Cada 14 días\", \"Cada mes, el último día\"— en vez de cápsulas cortadas más un campo de \"repetir cada N periodos\". Y debajo te dice qué va a pasar: \"Se repite el 29 cada mes. Si el mes no tiene 29, cae el último día.\"",
       "El botón de crear está fijo abajo y te dice qué falta mientras falte, en vez de esperar al final del formulario.",
+      "Y \"añadir más detalles\" está ahora en el mismo sitio en todos los formularios: la última línea antes del botón. En movimientos estaba debajo del botón de guardar, donde se leía como algo que pasa después de guardar — y son campos que se llenan antes. En deudas estaba metida dentro de otra tarjeta, como si fuera un campo más.",
     ],
   },
   {
