@@ -6,9 +6,7 @@ import { IOS_FLOATING_TAB_BAR_SPACE } from "../../constants/floating-tab-bar";
 import { useRouter } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import {
-  Archive, CheckSquare, ChevronDown, ChevronUp, Download, Layers, PieChart, X,
-} from "lucide-react-native";
+import { Archive, CheckSquare, ChevronDown, ChevronUp, Download, Layers, MoreVertical, PieChart, X } from "lucide-react-native";
 import { format } from "date-fns";
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -28,6 +26,7 @@ import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { FAB } from "../../components/ui/FAB";
 import { FilterToolbar } from "../../components/ui/FilterToolbar";
 import { ActiveFilterBar, type ActiveFilterItem } from "../../components/ui/ActiveFilterBar";
+import { EntityActionSheet } from "../../components/ui/EntityActionSheet";
 import { HeaderActionGroup } from "../../components/ui/HeaderActionGroup";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { ResourceContextNote } from "../../components/ui/ResourceContextNote";
@@ -206,6 +205,7 @@ function AccountsScreen() {
 
   // ── Multi-select ──────────────────────────────────────────────────────────
   const [selectMode, setSelectMode] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [bulkArchiveConfirm, setBulkArchiveConfirm] = useState(false);
   /**
@@ -554,15 +554,15 @@ function AccountsScreen() {
                   }]}
                 />
               ) : (
+                /* Exportar baja al menú con su nombre, y "seleccionar varios" deja de
+                   depender de un mantener pulsado que nadie descubre. */
                 <HeaderActionGroup
-                  actions={[
-                    {
-                      key: "export",
-                      icon: Download,
-                      onPress: () => exportCSV(filtered),
-                      accessibilityLabel: "Exportar CSV",
-                    },
-                  ]}
+                  actions={[{
+                    key: "menu",
+                    icon: MoreVertical,
+                    onPress: () => setMenuOpen(true),
+                    accessibilityLabel: "Más acciones",
+                  }]}
                 />
               )
             }
@@ -665,6 +665,28 @@ function AccountsScreen() {
         }
         overlays={
           <>
+            <EntityActionSheet
+              visible={menuOpen}
+              onClose={() => setMenuOpen(false)}
+              sheetTitle="Más acciones"
+              summaryTitle="Cuentas"
+              actions={[
+                {
+                  key: "export",
+                  label: "Exportar a CSV",
+                  variant: "secondary" as const,
+                  disabled: filtered.length === 0,
+                  onPress: () => { setMenuOpen(false); void exportCSV(filtered); },
+                },
+                {
+                  key: "select",
+                  label: "Seleccionar varios",
+                  variant: "ghost" as const,
+                  disabled: filtered.length === 0,
+                  onPress: () => { setMenuOpen(false); setSelectMode(true); },
+                },
+              ]}
+            />
             <AccountForm
               visible={formVisible}
               editAccount={editAccount ?? undefined}

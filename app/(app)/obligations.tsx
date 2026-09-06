@@ -4,7 +4,7 @@ import * as Haptics from "expo-haptics";
 import { FAB } from "../../components/ui/FAB";
 import { UndoBanner } from "../../components/ui/UndoBanner";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Archive, CheckSquare, Download, Trash2, X } from "lucide-react-native";
+import { Archive, CheckSquare, Download, MoreVertical, Trash2, X } from "lucide-react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -48,6 +48,7 @@ import { formatCurrency } from "../../components/ui/AmountDisplay";
 import { ActiveFilterBar, type ActiveFilterItem } from "../../components/ui/ActiveFilterBar";
 import { BulkActionBar } from "../../components/ui/BulkActionBar";
 import { ResourceContextNote } from "../../components/ui/ResourceContextNote";
+import { EntityActionSheet } from "../../components/ui/EntityActionSheet";
 import { HeaderActionGroup } from "../../components/ui/HeaderActionGroup";
 import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTemplate";
 import { COLORS } from "../../constants/theme";
@@ -151,6 +152,7 @@ function ObligationsScreen() {
 
   // Bulk selection
   const [selectMode, setSelectMode] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [bulkArchiveConfirm, setBulkArchiveConfirm] = useState(false);
   const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
@@ -634,20 +636,23 @@ function ObligationsScreen() {
             title={selectMode ? `${selectedIds.size} seleccionadas` : "Créditos y Deudas"}
             subtitle={selectMode ? undefined : lastUpdateLabel || undefined}
             rightAction={
+              /* Exportar baja al menú con su nombre, y "seleccionar varios" deja de
+                 depender de un mantener pulsado que nadie descubre. */
               <HeaderActionGroup
                 actions={
                   selectMode
                     ? [{
                         key: "cancel",
                         icon: X,
+                        label: "Cancelar",
                         onPress: exitSelectMode,
                         accessibilityLabel: "Cancelar selección",
                       }]
                     : [{
-                        key: "export",
-                        icon: Download,
-                        onPress: () => exportCSV(exportableObligations),
-                        accessibilityLabel: "Exportar CSV",
+                        key: "menu",
+                        icon: MoreVertical,
+                        onPress: () => setMenuOpen(true),
+                        accessibilityLabel: "Más acciones",
                       }]
                 }
               />
@@ -737,6 +742,28 @@ function ObligationsScreen() {
         fab={!selectMode ? <FAB onPress={() => setCreateFormVisible(true)} bottom={insets.bottom + 16 + IOS_FLOATING_TAB_BAR_SPACE} /> : null}
         overlays={
           <>
+            <EntityActionSheet
+              visible={menuOpen}
+              onClose={() => setMenuOpen(false)}
+              sheetTitle="Más acciones"
+              summaryTitle="Créditos y deudas"
+              actions={[
+                {
+                  key: "export",
+                  label: "Exportar a CSV",
+                  variant: "secondary" as const,
+                  disabled: exportableObligations.length === 0,
+                  onPress: () => { setMenuOpen(false); void exportCSV(exportableObligations); },
+                },
+                {
+                  key: "select",
+                  label: "Seleccionar varios",
+                  variant: "ghost" as const,
+                  disabled: exportableObligations.length === 0,
+                  onPress: () => { setMenuOpen(false); setSelectMode(true); },
+                },
+              ]}
+            />
             <ObligationForm
               visible={createFormVisible}
               onClose={() => setCreateFormVisible(false)}

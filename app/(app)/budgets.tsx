@@ -2,7 +2,7 @@ import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SectionListRenderItem } from "react-native";
 import * as Haptics from "expo-haptics";
-import { CheckSquare, Copy, Download, Target, Trash2, X } from "lucide-react-native";
+import { CheckSquare, Copy, Download, MoreVertical, Target, Trash2, X } from "lucide-react-native";
 import { format } from "date-fns";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
@@ -15,6 +15,7 @@ import { ActiveFilterBar, type ActiveFilterItem } from "../../components/ui/Acti
 import { BulkActionBar } from "../../components/ui/BulkActionBar";
 import { FAB } from "../../components/ui/FAB";
 import { FilterToolbar } from "../../components/ui/FilterToolbar";
+import { EntityActionSheet } from "../../components/ui/EntityActionSheet";
 import { HeaderActionGroup } from "../../components/ui/HeaderActionGroup";
 import { ResourceContextNote } from "../../components/ui/ResourceContextNote";
 import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTemplate";
@@ -83,6 +84,7 @@ function BudgetsScreen() {
   const [searchText, setSearchText] = useState("");
   const [activeFilters, setActiveFilters] = useState<ActiveBudgetFilter[]>([]);
   const [selectMode, setSelectMode] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<number>>(new Set());
   const pendingDeleteLabels = useRef<Map<number, string>>(new Map());
@@ -408,13 +410,14 @@ function BudgetsScreen() {
                 }]}
               />
             ) : (
+                /* Exportar baja al menú con su nombre, y "seleccionar varios" deja de
+                   depender de un mantener pulsado que nadie descubre. */
               <HeaderActionGroup
                 actions={[{
-                  key: "export",
-                  icon: Download,
-                  onPress: () => exportCSV(filteredBudgets),
-                  disabled: filteredBudgets.length === 0,
-                  accessibilityLabel: "Exportar presupuestos en CSV",
+                  key: "menu",
+                  icon: MoreVertical,
+                  onPress: () => setMenuOpen(true),
+                  accessibilityLabel: "Más acciones",
                 }]}
               />
             )
@@ -529,6 +532,28 @@ function BudgetsScreen() {
       }
       overlays={
         <>
+          <EntityActionSheet
+            visible={menuOpen}
+            onClose={() => setMenuOpen(false)}
+            sheetTitle="Más acciones"
+            summaryTitle="Presupuestos"
+            actions={[
+              {
+                key: "export",
+                label: "Exportar a CSV",
+                variant: "secondary" as const,
+                disabled: filteredBudgets.length === 0,
+                onPress: () => { setMenuOpen(false); void exportCSV(filteredBudgets); },
+              },
+              {
+                key: "select",
+                label: "Seleccionar varios",
+                variant: "ghost" as const,
+                disabled: filteredBudgets.length === 0,
+                onPress: () => { setMenuOpen(false); setSelectMode(true); },
+              },
+            ]}
+          />
           <BudgetForm
             visible={formVisible}
             onClose={() => setFormVisible(false)}

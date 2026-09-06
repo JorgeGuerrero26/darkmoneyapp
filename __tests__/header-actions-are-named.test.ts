@@ -46,6 +46,58 @@ function rightActionBlock(source: string): string | null {
 
 const MAX_ICONS_IN_HEADER = 2;
 
+/**
+ * Íconos que en un encabezado no dicen lo que hacen, aunque el dibujo se entienda.
+ *
+ * No es que sean malos dibujos: es que la acción es rara —exportar, duplicar, fijar— y nadie
+ * llega a esta pantalla a hacerla, así que la flecha hacia abajo lo mismo baja un archivo que
+ * ordena la lista. Van al menú, donde se leen. Refrescar o ver la analítica sí pueden ir
+ * sueltos: es a lo que se entra.
+ */
+const ICONS_THAT_MUST_BE_READ = [
+  "Download", "Copy", "Pin", "PinOff", "BookmarkPlus", "Pencil", "Trash2", "Archive", "Power",
+];
+
+/**
+ * Cada acción del bloque, como el trozo de texto que la define.
+ *
+ * Se busca el `icon:` y se abre hacia los lados hasta las llaves que lo encierran, en vez de
+ * trocear el bloque por llaves: una acción puede llevar llaves dentro —`label: `${n} filtros``—
+ * y trocear se saltaba justo esas.
+ */
+function headerActions(block: string): string[] {
+  const actions: string[] = [];
+  for (const match of block.matchAll(/icon:\s/g)) {
+    const at = match.index ?? 0;
+
+    let depth = 0;
+    let start = -1;
+    for (let i = at; i >= 0; i -= 1) {
+      if (block[i] === "}") depth += 1;
+      else if (block[i] === "{") {
+        if (depth === 0) { start = i; break; }
+        depth -= 1;
+      }
+    }
+    if (start < 0) continue;
+
+    depth = 0;
+    for (let i = start; i < block.length; i += 1) {
+      if (block[i] === "{") depth += 1;
+      else if (block[i] === "}") {
+        depth -= 1;
+        if (depth === 0) { actions.push(block.slice(start, i + 1)); break; }
+      }
+    }
+  }
+  return actions;
+}
+
+/** El menú de tres puntos se entiende sin etiqueta: lo que hay dentro viene escrito. */
+function isNamed(action: string): boolean {
+  return /label:/.test(action) || /icon:\s*MoreVertical/.test(action);
+}
+
 describe("las acciones del encabezado se leen", () => {
   const offenders: string[] = [];
 

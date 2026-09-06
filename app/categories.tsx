@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SectionListRenderItem } from "react-native";
-import { CheckSquare, Download, Power, SlidersHorizontal, Trash2 } from "lucide-react-native";
+import { CheckSquare, Download, MoreVertical, Power, Trash2 } from "lucide-react-native";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -8,6 +8,7 @@ import { ErrorBoundary } from "../components/ui/ErrorBoundary";
 import { UndoBanner } from "../components/ui/UndoBanner";
 import { BulkActionBar } from "../components/ui/BulkActionBar";
 import { ScreenHeader } from "../components/layout/ScreenHeader";
+import { EntityActionSheet } from "../components/ui/EntityActionSheet";
 import { HeaderActionGroup } from "../components/ui/HeaderActionGroup";
 import { FilterToolbar } from "../components/ui/FilterToolbar";
 import { ActiveFilterBar, type ActiveFilterItem } from "../components/ui/ActiveFilterBar";
@@ -81,6 +82,7 @@ function CategoriesScreen() {
 
   // Bulk selection
   const [selectMode, setSelectMode] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
   const toggleSelect = useCallback((id: number) => {
@@ -332,24 +334,15 @@ function CategoriesScreen() {
           onBack={selectMode ? exitSelectMode : handleBack}
           rightAction={
             selectMode ? null : (
+                /* Exportar baja al menú con su nombre, y "seleccionar varios" deja de
+                   depender de un mantener pulsado que nadie descubre. */
               <HeaderActionGroup
-                actions={[
-                  {
-                    key: "export",
-                    icon: Download,
-                    onPress: () => void exportCSV(filteredCategories),
-                    disabled: filteredCategories.length === 0,
-                    accessibilityLabel: "Descargar categorías en CSV",
-                  },
-                  {
-                    key: "filters",
-                    icon: SlidersHorizontal,
-                    label: extraFiltersCount > 0 ? `Filtros (${extraFiltersCount})` : "Filtros",
-                    active: extraFiltersCount > 0,
-                    onPress: () => setFilterSheetOpen(true),
-                    accessibilityLabel: "Abrir filtros avanzados de categorías",
-                  },
-                ]}
+                actions={[{
+                  key: "menu",
+                  icon: MoreVertical,
+                  onPress: () => setMenuOpen(true),
+                  accessibilityLabel: "Más acciones",
+                }]}
               />
             )
           }
@@ -362,6 +355,11 @@ function CategoriesScreen() {
           onChange={setKindFilter}
           searchValue={searchText}
           onSearchChange={setSearchText}
+          extraAction={{
+            label: extraFiltersCount > 0 ? `${extraFiltersCount} filtros` : "Filtros",
+            active: extraFiltersCount > 0,
+            onPress: () => setFilterSheetOpen(true),
+          }}
           searchPlaceholder="Buscar categorías..."
         />
       )}
@@ -442,6 +440,28 @@ function CategoriesScreen() {
       fab={!selectMode ? <FAB onPress={() => setCreateFormVisible(true)} bottom={insets.bottom + 16} /> : null}
       overlays={
         <>
+          <EntityActionSheet
+            visible={menuOpen}
+            onClose={() => setMenuOpen(false)}
+            sheetTitle="Más acciones"
+            summaryTitle="Categorías"
+            actions={[
+              {
+                key: "export",
+                label: "Exportar a CSV",
+                variant: "secondary" as const,
+                disabled: filteredCategories.length === 0,
+                onPress: () => { setMenuOpen(false); void exportCSV(filteredCategories); },
+              },
+              {
+                key: "select",
+                label: "Seleccionar varios",
+                variant: "ghost" as const,
+                disabled: filteredCategories.length === 0,
+                onPress: () => { setMenuOpen(false); setSelectMode(true); },
+              },
+            ]}
+          />
           <CategoryFilterSheet
             visible={filterSheetOpen}
             onClose={() => setFilterSheetOpen(false)}
