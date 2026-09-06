@@ -7,6 +7,7 @@
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { recordAiUsage } from "../_shared/ai-usage.ts";
 
 import {
   authenticatedUser,
@@ -839,6 +840,7 @@ Deno.serve(async (req) => {
     const toolsUsed: string[] = [];
     let reply = "";
     let modelUsed = "";
+    const aiStartedAt = Date.now();
     let pendingDraft: ReturnType<typeof normalizeDraft> = null;
     let pendingBudgetDraft: ReturnType<typeof normalizeBudgetDraft> = null;
     let pendingObligationDraft: ReturnType<typeof normalizeObligationDraft> = null;
@@ -1003,6 +1005,20 @@ Deno.serve(async (req) => {
       usage_date: usageDate,
       workspace_id: workspaceId,
       model: modelUsed || null,
+    });
+
+    /* Y en la tabla común, la misma que usan las funciones de DeepSeek: solo así se pueden
+       comparar los dos proveedores en una consulta. `modelUsed` es el que DE VERDAD respondió
+       -- el asistente cae a DeepSeek cuando Gemini falla dos veces, y esa caída era invisible. */
+    await recordAiUsage({
+      client: admin,
+      userId: user.id,
+      workspaceId,
+      featureKey: FEATURE_KEY,
+      model: modelUsed || "desconocido",
+      surface: "assistant",
+      status: "success",
+      latencyMs: Date.now() - aiStartedAt,
     });
 
     // Auditoría minimizada (logs de la función, retención de Supabase).

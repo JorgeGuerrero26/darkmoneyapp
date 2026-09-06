@@ -20,6 +20,7 @@ import {
   serviceClient,
 } from "../_shared/obligation-share-utils.ts";
 import { isDashboardAdminEmail } from "../_shared/admin-emails.ts";
+import { recordAiUsage } from "../_shared/ai-usage.ts";
 import { readDashboardAiCache, writeDashboardAiCache } from "../_shared/dashboard-ai-cache.ts";
 
 function sanitizeSummary(value: unknown): Record<string, unknown> {
@@ -404,6 +405,7 @@ Deno.serve(async (req) => {
       }
     }
 
+    const aiStartedAt = Date.now();
     let structuredReply = await requestGeminiReply(geminiApiKey, model, buildPrompt(summary, tone, "normal"));
     let reply = ensureRecommendationLine(structuredReply.reply, summary);
     let complexTerms = ensureMinimumComplexTerms(reply, sanitizeComplexTerms(structuredReply.complexTerms, reply));
@@ -425,6 +427,20 @@ Deno.serve(async (req) => {
     if (!reply) {
       return jsonResponse({ ok: false, error: "La IA no devolvio contenido util." }, 502);
     }
+
+    /* Se registra SIEMPRE, tambien para los admin. El limite diario los exime, y por eso la
+       tabla de uso no tenia ni una fila del dueño: de la mitad Gemini no habia forma de saber
+       que modelo corria ni cuanto costaba. */
+    await recordAiUsage({
+      client,
+      userId: user.id,
+      workspaceId,
+      featureKey: DASHBOARD_AI_FEATURE_KEY,
+      model,
+      surface: "dashboard_advanced",
+      status: "success",
+      latencyMs: Date.now() - aiStartedAt,
+    });
 
     if (!isAdminUser) {
       const { error: usageInsertError } = await client
