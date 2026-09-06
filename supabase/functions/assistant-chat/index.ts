@@ -111,7 +111,18 @@ async function callGemini(
   withTools: boolean,
   timeoutMs: number,
 ) {
-  const body: Record<string, unknown> = { model, messages, temperature: 0.2, max_tokens: 1100 };
+  /* Los modelos 3.x razonan siempre y descuentan ese pensamiento del MISMO presupuesto, así
+     que con 1100 se lo gastan pensando y devuelven texto vacío, sin error. Las funciones del
+     dashboard ya lo preveían (subían maxOutputTokens de 420 a 2048); el asistente no, y al
+     pasar de gemini-2.5 a 3.5 se habría quedado mudo.
+     Y `temperature` deja de estar recomendada en 3.5: se manda solo a los que la usan. */
+  const isReasoning = model.startsWith("gemini-3");
+  const body: Record<string, unknown> = {
+    model,
+    messages,
+    max_tokens: isReasoning ? 4096 : 1100,
+  };
+  if (!isReasoning) body.temperature = 0.2;
   if (withTools) {
     body.tools = ASSISTANT_TOOLS;
     body.tool_choice = "auto";
