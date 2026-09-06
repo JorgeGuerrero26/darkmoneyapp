@@ -138,6 +138,8 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Cada cuánto se repite se elige de una lista que dice el resultado —\"Cada mes\", \"Cada 14 días\", \"Cada mes, el último día\"— en vez de cápsulas cortadas más un campo de \"repetir cada N periodos\". Y debajo te dice qué va a pasar: \"Se repite el 29 cada mes. Si el mes no tiene 29, cae el último día.\"",
       "El botón de crear está fijo abajo y te dice qué falta mientras falte, en vez de esperar al final del formulario.",
       "Y \"añadir más detalles\" está ahora en el mismo sitio en todos los formularios: la última línea antes del botón. En movimientos estaba debajo del botón de guardar, donde se leía como algo que pasa después de guardar — y son campos que se llenan antes. En deudas estaba metida dentro de otra tarjeta, como si fuera un campo más.",
+      "Nuevo: \"Lo de siempre\" en el inicio. La app se fija en los gastos que repites igual —mismo concepto, mismo monto, misma hora— y te los deja a un toque cuando toca. Si todos los días de semana a las 7 pagas S/ 2 de moto, a esa hora te aparece el botón y queda registrado con su categoría y su cuenta.",
+      "Solo aparece cuando encaja: la moto de entre semana no se te ofrece un domingo, y lo que dejaste de hacer hace un mes deja de proponerse. Si el gasto varía de monto —un taxi que a veces son 7 soles y a veces 9— no se propone, porque entonces no se puede registrar de un toque.",
     ],
   },
   {
