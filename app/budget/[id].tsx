@@ -3,13 +3,14 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
-import { Copy, Pencil, Pin, PinOff, Sliders, Trash2 } from "lucide-react-native";
+import { MoreVertical, Copy, Pin, PinOff, Sliders, Trash2 } from "lucide-react-native";
 
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { Card } from "../../components/ui/Card";
 import { SkeletonCard, SkeletonList } from "../../components/ui/Skeleton";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { NotificationReasonBanner } from "../../components/ui/NotificationReasonBanner";
+import { EntityActionSheet } from "../../components/ui/EntityActionSheet";
 import { HeaderActionGroup } from "../../components/ui/HeaderActionGroup";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTemplate";
@@ -65,6 +66,7 @@ function BudgetDetailScreen() {
   const { showToast } = useToast();
 
   const [editVisible, setEditVisible] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [quickEditVisible, setQuickEditVisible] = useState(false);
   const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
 
@@ -150,33 +152,16 @@ function BudgetDetailScreen() {
             onBack={handleBack}
             rightAction={
               budget ? (
+                /* Cuatro íconos sin etiqueta —alfiler, copia, lápiz y papelera— piden
+                   adivinar, y uno de ellos borra. Lo administrativo baja al menú, donde cada
+                   acción se lee. Mismo patrón que cuenta, suscripción e ingreso fijo. */
                 <HeaderActionGroup
-                  actions={[
-                    {
-                      key: "pin",
-                      icon: budget.isPinned ? PinOff : Pin,
-                      onPress: handleTogglePin,
-                      accessibilityLabel: budget.isPinned ? "Desfijar" : "Fijar",
-                    },
-                    {
-                      key: "duplicate",
-                      icon: Copy,
-                      onPress: () => void handleDuplicate(),
-                      accessibilityLabel: "Duplicar al próximo período",
-                    },
-                    {
-                      key: "edit",
-                      icon: Pencil,
-                      onPress: () => setEditVisible(true),
-                      accessibilityLabel: "Editar presupuesto",
-                    },
-                    {
-                      key: "delete",
-                      icon: Trash2,
-                      onPress: () => setDeleteConfirmVisible(true),
-                      accessibilityLabel: "Eliminar presupuesto",
-                    },
-                  ]}
+                  actions={[{
+                    key: "menu",
+                    icon: MoreVertical,
+                    onPress: () => setMenuOpen(true),
+                    accessibilityLabel: "Más acciones",
+                  }]}
                 />
               ) : null
             }
@@ -258,6 +243,41 @@ function BudgetDetailScreen() {
             budget={budget}
             onClose={() => setQuickEditVisible(false)}
           />
+          {budget ? (
+            <EntityActionSheet
+              visible={menuOpen}
+              onClose={() => setMenuOpen(false)}
+              sheetTitle="Más acciones"
+              summaryTitle={budget.name}
+              actions={[
+                {
+                  key: "edit",
+                  label: "Editar presupuesto",
+                  variant: "secondary" as const,
+                  onPress: () => { setMenuOpen(false); setEditVisible(true); },
+                },
+                {
+                  key: "duplicate",
+                  label: "Duplicar al próximo período",
+                  variant: "secondary" as const,
+                  onPress: () => { setMenuOpen(false); void handleDuplicate(); },
+                },
+                {
+                  key: "pin",
+                  label: budget.isPinned ? "Quitar de fijados" : "Fijar en la lista",
+                  variant: "ghost" as const,
+                  onPress: () => { setMenuOpen(false); handleTogglePin(); },
+                },
+                {
+                  key: "delete",
+                  label: "Eliminar presupuesto",
+                  variant: "ghost" as const,
+                  onPress: () => { setMenuOpen(false); setDeleteConfirmVisible(true); },
+                },
+              ]}
+            />
+          ) : null}
+
           <ConfirmDialog
             visible={deleteConfirmVisible}
             title="¿Eliminar presupuesto?"

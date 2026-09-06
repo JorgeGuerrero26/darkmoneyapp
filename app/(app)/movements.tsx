@@ -1,5 +1,5 @@
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
-import { Download, SlidersHorizontal, Trash2, X } from "lucide-react-native";
+import { MoreVertical, Download, Trash2, X } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -27,6 +27,7 @@ import { SwipeableMovementRow } from "../../components/domain/SwipeableMovementR
 import { BulkActionBar } from "../../components/ui/BulkActionBar";
 import { FilterToolbar } from "../../components/ui/FilterToolbar";
 import { ActiveFilterBar, type ActiveFilterItem } from "../../components/ui/ActiveFilterBar";
+import { EntityActionSheet } from "../../components/ui/EntityActionSheet";
 import { HeaderActionGroup } from "../../components/ui/HeaderActionGroup";
 import { ResourceContextNote } from "../../components/ui/ResourceContextNote";
 import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTemplate";
@@ -184,6 +185,7 @@ function MovementsScreen() {
   const [activeMovementIds, setActiveMovementIds] = useState<number[] | null>(null);
   const [activeQuickLabel, setActiveQuickLabel] = useState<string | null>(null);
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [customDateFrom, setCustomDateFrom] = useState("");
   const [customDateTo, setCustomDateTo] = useState("");
   const [amountMin, setAmountMin] = useState("");
@@ -915,23 +917,15 @@ function MovementsScreen() {
                   }]}
                 />
               ) : (
+                /* Exportar baja al menú con su nombre, y los filtros dejan de tener dos
+                   puertas: la del encabezado se va y queda la del buscador. */
                 <HeaderActionGroup
-                  actions={[
-                    {
-                      key: "export",
-                      icon: Download,
-                      onPress: () => exportCSV(allMovements),
-                      accessibilityLabel: "Exportar CSV",
-                    },
-                    {
-                      key: "filters",
-                      icon: SlidersHorizontal,
-                      label: extraFiltersCount > 0 ? `Filtros (${extraFiltersCount})` : "Filtros",
-                      active: extraFiltersCount > 0,
-                      onPress: () => setFilterSheetOpen(true),
-                      accessibilityLabel: "Abrir filtros avanzados",
-                    },
-                  ]}
+                  actions={[{
+                    key: "menu",
+                    icon: MoreVertical,
+                    onPress: () => setMenuOpen(true),
+                    accessibilityLabel: "Más acciones",
+                  }]}
                 />
               )
             }
@@ -949,6 +943,11 @@ function MovementsScreen() {
               searchValue={searchText}
               onSearchChange={setSearchText}
               searchPlaceholder="Buscar movimientos..."
+              extraAction={{
+                label: extraFiltersCount > 0 ? `${extraFiltersCount} filtros` : "Filtros",
+                active: extraFiltersCount > 0,
+                onPress: () => setFilterSheetOpen(true),
+              }}
             />
           ) : null
         }
@@ -1074,6 +1073,28 @@ function MovementsScreen() {
         }
         overlays={
           <>
+            <EntityActionSheet
+              visible={menuOpen}
+              onClose={() => setMenuOpen(false)}
+              sheetTitle="Más acciones"
+              summaryTitle="Movimientos"
+              actions={[
+                {
+                  key: "export",
+                  label: "Exportar a CSV",
+                  variant: "secondary" as const,
+                  disabled: allMovements.length === 0,
+                  onPress: () => { setMenuOpen(false); void exportCSV(allMovements); },
+                },
+                {
+                  key: "select",
+                  label: "Seleccionar varios",
+                  variant: "ghost" as const,
+                  disabled: allMovements.length === 0,
+                  onPress: () => { setMenuOpen(false); setSelectMode(true); },
+                },
+              ]}
+            />
             <MovementFilterSheet
               visible={filterSheetOpen}
               onClose={() => setFilterSheetOpen(false)}

@@ -3,11 +3,12 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { format } from "date-fns";
-import { BarChart3, CheckCircle2, Pause, Pencil, Pin, PinOff, Play, Trash2 } from "lucide-react-native";
+import { MoreVertical, BarChart3, CheckCircle2, Pause, Pin, Play, Trash2 } from "lucide-react-native";
 
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { Card } from "../../components/ui/Card";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
+import { EntityActionSheet } from "../../components/ui/EntityActionSheet";
 import { HeaderActionGroup } from "../../components/ui/HeaderActionGroup";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTemplate";
@@ -62,6 +63,7 @@ function RecurringIncomeDetailScreen() {
   const [editFormVisible, setEditFormVisible] = useState(false);
   const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   // Arrival sheet state (replica del route principal porque el sheet es controlado)
   const [arrivalVisible, setArrivalVisible] = useState(false);
@@ -228,14 +230,10 @@ function RecurringIncomeDetailScreen() {
           onBack={handleBack}
           rightAction={
             item ? (
+              /* Analítica se queda como ícono —es a lo que se entra a mirar— y lo
+                 administrativo baja al menú, donde se lee. Igual que en suscripción. */
               <HeaderActionGroup
                 actions={[
-                  {
-                    key: "pin",
-                    icon: item.isPinned ? PinOff : Pin,
-                    onPress: handleTogglePin,
-                    accessibilityLabel: item.isPinned ? "Desfijar" : "Fijar",
-                  },
                   {
                     key: "analytics",
                     icon: BarChart3,
@@ -243,16 +241,10 @@ function RecurringIncomeDetailScreen() {
                     accessibilityLabel: "Ver analítica",
                   },
                   {
-                    key: "edit",
-                    icon: Pencil,
-                    onPress: () => setEditFormVisible(true),
-                    accessibilityLabel: "Editar ingreso fijo",
-                  },
-                  {
-                    key: "delete",
-                    icon: Trash2,
-                    onPress: () => setDeleteConfirmVisible(true),
-                    accessibilityLabel: "Eliminar ingreso fijo",
+                    key: "menu",
+                    icon: MoreVertical,
+                    onPress: () => setMenuOpen(true),
+                    accessibilityLabel: "Más acciones",
                   },
                 ]}
               />
@@ -369,6 +361,35 @@ function RecurringIncomeDetailScreen() {
             onClose={closeArrival}
             onSubmit={() => void handleConfirmArrival()}
           />
+          {item ? (
+            <EntityActionSheet
+              visible={menuOpen}
+              onClose={() => setMenuOpen(false)}
+              sheetTitle="Más acciones"
+              summaryTitle={item.name}
+              actions={[
+                {
+                  key: "edit",
+                  label: "Editar ingreso fijo",
+                  variant: "secondary" as const,
+                  onPress: () => { setMenuOpen(false); setEditFormVisible(true); },
+                },
+                {
+                  key: "pin",
+                  label: item.isPinned ? "Quitar de fijados" : "Fijar en la lista",
+                  variant: "secondary" as const,
+                  onPress: () => { setMenuOpen(false); handleTogglePin(); },
+                },
+                {
+                  key: "delete",
+                  label: "Eliminar ingreso fijo",
+                  variant: "ghost" as const,
+                  onPress: () => { setMenuOpen(false); setDeleteConfirmVisible(true); },
+                },
+              ]}
+            />
+          ) : null}
+
           <ConfirmDialog
             visible={deleteConfirmVisible && Boolean(item)}
             title="¿Eliminar ingreso fijo?"

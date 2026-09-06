@@ -31,8 +31,9 @@ import { isoToDateStr } from "../../lib/date";
 import { movementActsAsExpense, movementActsAsIncome } from "../../lib/movement-display";
 import { useToast } from "../../hooks/useToast";
 import { useCreateMovementTemplateMutation } from "../../services/queries/movement-templates";
+import { EntityActionSheet } from "../../components/ui/EntityActionSheet";
 import { HeaderActionGroup } from "../../components/ui/HeaderActionGroup";
-import { BookmarkPlus } from "lucide-react-native";
+import { MoreVertical } from "lucide-react-native";
 import { useOriginBackNavigation } from "../../hooks/useOriginBackNavigation";
 import { removeAttachmentFile } from "../../lib/entity-attachments";
 import { COLORS, FONT_SIZE, SPACING } from "../../constants/theme";
@@ -83,6 +84,7 @@ function MovementDetailScreen() {
   const voidMutation = useVoidMovementMutation(activeWorkspaceId);
   const linkMutation = useLinkMovementToObligationMutation(activeWorkspaceId);
   const { data: snapshot } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const [linkModalVisible, setLinkModalVisible] = useState(false);
   const [editFormVisible, setEditFormVisible] = useState(false);
@@ -303,13 +305,14 @@ function MovementDetailScreen() {
           onBack={handleBack}
           rightAction={
             canTemplate ? (
+              /* Un marcador suelto no dice qué hace. Con nombre, en el menú: es la puerta
+                 a los atajos del inicio, y merece llamarse por su nombre. */
               <HeaderActionGroup
                 actions={[{
-                  key: "template",
-                  icon: BookmarkPlus,
-                  onPress: saveAsTemplate,
-                  disabled: createTemplate.isPending,
-                  accessibilityLabel: "Guardar como plantilla",
+                  key: "menu",
+                  icon: MoreVertical,
+                  onPress: () => setMenuOpen(true),
+                  accessibilityLabel: "Más acciones",
                 }]}
               />
             ) : null
@@ -379,7 +382,23 @@ function MovementDetailScreen() {
       }
       overlays={
         <>
+          {movement && canTemplate ? (
+            <EntityActionSheet
+              visible={menuOpen}
+              onClose={() => setMenuOpen(false)}
+              sheetTitle="Más acciones"
+              summaryTitle={movement.description || "Movimiento"}
+              actions={[{
+                key: "template",
+                label: "Guardar como atajo",
+                variant: "secondary" as const,
+                disabled: createTemplate.isPending,
+                onPress: () => { setMenuOpen(false); saveAsTemplate(); },
+              }]}
+            />
+          ) : null}
           {movement ? (
+
             <MovementAttachmentsSheet
               visible={attachmentsSheetOpen}
               onClose={() => setAttachmentsSheetOpen(false)}

@@ -3,7 +3,7 @@ import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
-import { Pin, PinOff } from "lucide-react-native";
+import { MoreVertical } from "lucide-react-native";
 
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { useOriginBackNavigation } from "../../hooks/useOriginBackNavigation";
@@ -21,6 +21,7 @@ import { Card } from "../../components/ui/Card";
 import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTemplate";
 import { SkeletonCard, SkeletonList } from "../../components/ui/Skeleton";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
+import { EntityActionSheet } from "../../components/ui/EntityActionSheet";
 import { HeaderActionGroup } from "../../components/ui/HeaderActionGroup";
 import { ContactForm } from "../../components/forms/ContactForm";
 import { COLORS, FONT_FAMILY, FONT_SIZE, FONT_WEIGHT, SPACING } from "../../constants/theme";
@@ -46,6 +47,7 @@ function ContactDetailScreen() {
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
   const { showToast } = useToast();
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const [editFormVisible, setEditFormVisible] = useState(false);
 
@@ -114,12 +116,14 @@ function ContactDetailScreen() {
           onBack={handleBack}
           rightAction={
             contact ? (
+              /* Un alfiler tachado dice lo mismo que un alfiler: no se sabe si está fijado o
+                 si al tocarlo lo fijas. Con nombre, en el menú. */
               <HeaderActionGroup
                 actions={[{
-                  key: "pin",
-                  icon: contact.isPinned ? PinOff : Pin,
-                  onPress: handleTogglePin,
-                  accessibilityLabel: contact.isPinned ? "Desfijar contacto" : "Fijar contacto",
+                  key: "menu",
+                  icon: MoreVertical,
+                  onPress: () => setMenuOpen(true),
+                  accessibilityLabel: "Más acciones",
                 }]}
               />
             ) : null
@@ -190,12 +194,34 @@ function ContactDetailScreen() {
       }
       overlays={
         contact ? (
-          <ContactForm
-            visible={editFormVisible}
-            onClose={() => setEditFormVisible(false)}
-            onSuccess={() => setEditFormVisible(false)}
-            editContact={contact}
-          />
+          <>
+            <EntityActionSheet
+              visible={menuOpen}
+              onClose={() => setMenuOpen(false)}
+              sheetTitle="Más acciones"
+              summaryTitle={contact.name}
+              actions={[
+                {
+                  key: "edit",
+                  label: "Editar contacto",
+                  variant: "secondary",
+                  onPress: () => { setMenuOpen(false); setEditFormVisible(true); },
+                },
+                {
+                  key: "pin",
+                  label: contact.isPinned ? "Quitar de fijados" : "Fijar en la lista",
+                  variant: "ghost",
+                  onPress: () => { setMenuOpen(false); handleTogglePin(); },
+                },
+              ]}
+            />
+            <ContactForm
+              visible={editFormVisible}
+              onClose={() => setEditFormVisible(false)}
+              onSuccess={() => setEditFormVisible(false)}
+              editContact={contact}
+            />
+          </>
         ) : null
       }
     />

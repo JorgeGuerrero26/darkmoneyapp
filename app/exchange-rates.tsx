@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SectionListRenderItem } from "react-native";
-import { CheckSquare, Download, RefreshCw, SlidersHorizontal, Trash2 } from "lucide-react-native";
+import { MoreVertical, CheckSquare, Download, RefreshCw, Trash2 } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "../components/ui/ErrorBoundary";
 import { UndoBanner } from "../components/ui/UndoBanner";
 import { ScreenHeader } from "../components/layout/ScreenHeader";
+import { EntityActionSheet } from "../components/ui/EntityActionSheet";
 import { HeaderActionGroup } from "../components/ui/HeaderActionGroup";
 import { FilterToolbar } from "../components/ui/FilterToolbar";
 import { ActiveFilterBar, type ActiveFilterItem } from "../components/ui/ActiveFilterBar";
@@ -61,6 +62,7 @@ function ExchangeRatesScreen() {
   const [showForm, setShowForm] = useState(false);
   const [editItem, setEditItem] = useState<ExchangeRateRecord | null>(null);
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [searchText, setSearchText] = useState("");
   const [currencyFilter, setCurrencyFilter] = useState<CurrencyFilter>("all");
   const [advancedFilter, setAdvancedFilter] = useState<ExchangeRateAdvancedFilter>("all");
@@ -367,6 +369,8 @@ function ExchangeRatesScreen() {
           onBack={selectMode ? exitSelectMode : handleBack}
           rightAction={
             selectMode ? null : (
+              /* Actualizar se queda: es a lo que se viene a esta pantalla. Exportar baja al
+                 menú con su nombre y los filtros a su única puerta, junto al buscador. */
               <HeaderActionGroup
                 actions={[{
                   key: "refresh",
@@ -375,17 +379,10 @@ function ExchangeRatesScreen() {
                   disabled: syncRatePair.isPending,
                   accessibilityLabel: "Actualizar tipos de cambio",
                 }, {
-                  key: "export",
-                  icon: Download,
-                  onPress: () => void exportCSV(filteredRates),
-                  accessibilityLabel: "Exportar tipos de cambio en CSV",
-                }, {
-                  key: "filters",
-                  icon: SlidersHorizontal,
-                  label: extraFiltersCount > 0 ? `Filtros (${extraFiltersCount})` : "Filtros",
-                  active: extraFiltersCount > 0,
-                  onPress: () => setFilterSheetOpen(true),
-                  accessibilityLabel: "Abrir filtros avanzados de tipos de cambio",
+                  key: "menu",
+                  icon: MoreVertical,
+                  onPress: () => setMenuOpen(true),
+                  accessibilityLabel: "Más acciones",
                 }]}
               />
             )
@@ -477,6 +474,19 @@ function ExchangeRatesScreen() {
       fab={!selectMode ? <FAB onPress={openNew} bottom={insets.bottom + 16} /> : null}
       overlays={
         <>
+          <EntityActionSheet
+            visible={menuOpen}
+            onClose={() => setMenuOpen(false)}
+            sheetTitle="Más acciones"
+            summaryTitle="Tipos de cambio"
+            actions={[{
+              key: "export",
+              label: "Exportar a CSV",
+              variant: "secondary" as const,
+              disabled: filteredRates.length === 0,
+              onPress: () => { setMenuOpen(false); void exportCSV(filteredRates); },
+            }]}
+          />
           <ExchangeRateFilterSheet
             visible={filterSheetOpen}
             onClose={() => setFilterSheetOpen(false)}
