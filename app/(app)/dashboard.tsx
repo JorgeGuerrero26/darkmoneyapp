@@ -197,6 +197,16 @@ import {
 import { SectionTitle } from "../../features/dashboard/components/simple/SectionTitle";
 import { MacroContextCard } from "../../features/dashboard/components/simple/MacroContextCard";
 import { HeroCard } from "../../features/dashboard/components/simple/HeroCard";
+import { QuickHabitsRow } from "../../features/dashboard/components/simple/QuickHabitsRow";
+import { useMovementPatternsQuery } from "../../services/queries/movement-patterns";
+import { useCreateMovementMutation } from "../../services/queries/workspace-data";
+import {
+  detectSpendingHabits,
+  habitsForNow,
+  type SpendingHabit,
+} from "../../features/movements/lib/spendingHabits";
+import { buildMovementCreateInput } from "../../features/movements/lib/movement-save-contract";
+import { newClientDedupeKey } from "../../lib/idempotency";
 import { MiniBarChart } from "../../features/dashboard/components/simple/MiniBarChart";
 import { AccountsScroll } from "../../features/dashboard/components/simple/AccountsScroll";
 import { UpcomingSection } from "../../features/dashboard/components/simple/UpcomingSection";
@@ -393,6 +403,7 @@ function DashboardScreen() {
   // el saludo es justamente lo que abre la pantalla.
   const isAdvancedCollapsedHeader = dashboardMode === "advanced" && advancedTab !== "Resumen";
   const scrollRef = useRef<import("react-native").ScrollView>(null);
+
   const scrollSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const advancedSectionY = useRef(0);
   // Lee dashboardScrollY desde una ref para evitar que el useFocusEffect se
@@ -548,6 +559,54 @@ function DashboardScreen() {
 
   const resolvedActiveWorkspace = activeWorkspace ?? snapshotActiveWorkspace;
   const baseCurrency = resolvedActiveWorkspace?.baseCurrencyCode ?? profile?.baseCurrencyCode ?? "PEN";
+
+  /* El reloj: sin esto la fila se quedaría con la franja del momento en que se abrió la app.
+     Cinco minutos basta para una ventana de dos horas. */
+  const [habitsClock, setHabitsClock] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => setHabitsClock((tick) => tick + 1), 5 * 60_000);
+    return () => clearInterval(timer);
+  }, []);
+
+  /* Los gastos que repites, a un toque. La consulta de patrones ya trae los 300 movimientos
+     recientes con fecha, monto, categoría y cuenta: no hace falta pedir nada nuevo. */
+  const { data: patternMovements } = useMovementPatternsQuery(activeWorkspaceId);
+  const [savingHabitKey, setSavingHabitKey] = useState<string | null>(null);
+  const createMovementForHabit = useCreateMovementMutation(activeWorkspaceId);
+  const habitsNow = useMemo(() => {
+    if (!patternMovements?.length) return [];
+    return habitsForNow(detectSpendingHabits(patternMovements));
+    // `habitsClock` entra a propósito: la franja horaria cambia con el reloj, no con los datos.
+  }, [patternMovements, habitsClock]);
+
+  const registerHabit = useCallback((habit: SpendingHabit) => {
+    if (!activeWorkspaceId || savingHabitKey) return;
+    setSavingHabitKey(habit.key);
+    createMovementForHabit.mutate(
+      buildMovementCreateInput({
+        movementType: "expense",
+        status: "posted",
+        occurredAt: new Date().toISOString(),
+        description: habit.label,
+        sourceAccountId: habit.accountId,
+        sourceAmount: habit.amount,
+        destinationAccountId: null,
+        destinationAmount: 0,
+        categoryId: habit.categoryId,
+        dedupeKey: newClientDedupeKey("habit"),
+      }),
+      {
+        onSuccess: () => {
+          setSavingHabitKey(null);
+          showToast(`${habit.label} · ${formatCurrency(habit.amount, baseCurrency)}`, "success");
+        },
+        onError: (error: Error) => {
+          setSavingHabitKey(null);
+          showToast(error.message, "error");
+        },
+      },
+    );
+  }, [activeWorkspaceId, baseCurrency, createMovementForHabit, savingHabitKey, showToast]);
   const workspaceDisplayName = resolvedActiveWorkspace?.name ?? "Tu workspace";
   const snapshotBudgets = useMemo(() => snapshot?.budgets ?? [], [snapshot?.budgets]);
 
@@ -830,6 +889,17 @@ function DashboardScreen() {
                 />
               </DashboardSectionBoundary>
             ) : null}
+
+            {/* Justo bajo el balance: es lo que se viene a hacer, y a esta altura todavía no
+                hay que desplazarse. */}
+            <DashboardSectionBoundary sectionLabel="Lo de siempre">
+              <QuickHabitsRow
+                habits={habitsNow}
+                currencyCode={baseCurrency}
+                savingKey={savingHabitKey}
+                onRegister={registerHabit}
+              />
+            </DashboardSectionBoundary>
 
             <DashboardSectionBoundary sectionLabel="Alertas urgentes">
               <UrgentAlertsCard
