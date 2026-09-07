@@ -7,12 +7,14 @@ import { UNIVERSAL_LINK_HOST } from "../../constants/config";
 import { supabase, supabaseAnonKey, supabaseUrl } from "../../lib/supabase";
 import { SAVE_CEILING_MS } from "../../lib/fetch-timeout-budget";
 import { withTimeout } from "../../lib/promise-utils";
-import { STALE, queryClient } from "../../lib/query-client";
+import { STALE, queryClient, recoverSession } from "../../lib/query-client";
 import { dropMovementFromPages } from "./drop-movement-from-pages";
 import { isCoreSnapshot, patchSnapshotWithCreatedMovement } from "./snapshot-cache";
 import {
   resolveAiEdgeTimeoutMs,
 } from "../../lib/ai-request-utils";
+import { logWarn } from "../../lib/error-logger";
+import { retryOnceIfSessionStale } from "../../lib/session-retry";
 import { dateStrToISO, filterDateFrom, filterDateTo } from "../../lib/date";
 import { notificationDetection } from "../../lib/notification-detection-native";
 import { scheduleCoalescedTask } from "../../lib/query-refresh-coalescer";
@@ -2520,7 +2522,9 @@ export async function createMovement(
   // Idempotencia: un 23505 confirma que este intento ya existía. Un timeout/error de
   // transporte es ambiguo: el servidor pudo confirmar el POST y perderse solo la
   // respuesta. En ambos casos consultamos la MISMA key antes de mostrar un fallo;
-  // nunca repetimos automáticamente writes sin key ni errores SQL/RLS/validación.
+  // nunca repetimos automáticamente writes sin key ni errores SQL o de validación.
+  // (El rechazo por sesión a medio renovar sí se repite una vez, con la clave delante y el
+  // token ya renovado: ver retryOnceIfSessionStale en useCreateMovementMutation.)
   const shouldFindExisting = Boolean(
     error && dedupeKey && (
       (error as { code?: string }).code === "23505" ||
@@ -2625,7 +2629,21 @@ export function useCreateMovementMutation(workspaceId: number | null) {
     // Techo de punta a punta: sin él, una espera de turno dentro de supabase-js deja el botón
     // girando para siempre. Ver SAVE_CEILING_MS.
     mutationFn: (input: MovementFormInput) =>
-      withTimeout(createMovement(workspaceId!, input), SAVE_CEILING_MS, "guardar movimiento"),
+      withTimeout(
+        /* Guardar en el primer minuto tras abrir la app caia por RLS con el token a medio
+           renovar, y el formulario le pedia al usuario que volviera a tocar Guardar. Se repite
+           solo, una vez, y SOLO con clave de dedupe: si el rechazo llegara con la fila ya
+           escrita, el segundo intento la recupera por la clave en vez de duplicarla. */
+        input.dedupeKey
+          ? retryOnceIfSessionStale(
+              () => createMovement(workspaceId!, input),
+              () => recoverSession({ force: true }),
+              (message) => logWarn("mutation", `create-movement rehecho tras renovar sesion | ${message}`),
+            )
+          : createMovement(workspaceId!, input),
+        SAVE_CEILING_MS,
+        "guardar movimiento",
+      ),
     onSuccess: (_data, variables) => {
       // Primero el parche quirúrgico del cache: saldo y listas cambian en este
       // frame; el refetch de abajo confirma/corrige en segundo plano.
@@ -2701,7 +2719,10 @@ export function useUpdateMovementMutation(workspaceId: number | null) {
   return useMutation({
     mutationKey: ["update-movement"],
     // Mismo techo que al crear: ver SAVE_CEILING_MS.
-    mutationFn: ({ id, input }: { id: number; input: MovementUpdateInput }) => withTimeout((async () => {
+    /* Editar manda el registro entero, así que repetirlo deja lo mismo que hacerlo una vez:
+       el rechazo por sesión a medio renovar se reintenta sin necesidad de clave. */
+    mutationFn: ({ id, input }: { id: number; input: MovementUpdateInput }) => withTimeout(
+      retryOnceIfSessionStale(async () => {
       if (!supabase || !workspaceId) throw new Error("Workspace no disponible.");
       const payload: Record<string, unknown> = {};
       // Sin esto, corregir un gasto que en realidad era un ingreso cambiaba las cuentas y los
@@ -2725,7 +2746,13 @@ export function useUpdateMovementMutation(workspaceId: number | null) {
         .eq("id", id)
         .eq("workspace_id", workspaceId);
       if (error) throw new Error(error.message ?? "Error de base de datos");
-    })(), SAVE_CEILING_MS, "actualizar movimiento"),
+      },
+      () => recoverSession({ force: true }),
+      (message) => logWarn("mutation", `update-movement rehecho tras renovar sesion | ${message}`),
+    ),
+      SAVE_CEILING_MS,
+      "actualizar movimiento",
+    ),
     onMutate: async ({ id, input }) => {
       await queryClient.cancelQueries({ queryKey: ["movement", id] });
       const previous = queryClient.getQueryData(["movement", id]);
