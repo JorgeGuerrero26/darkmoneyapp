@@ -37,6 +37,13 @@ Thumbs.db
 # TypeScript
 *.tsbuildinfo
 .tmp/
+# Scripts de un rato, en la raiz: se escriben para mirar algo y se quedan ahi.
+*.tmp.mjs
+
+# Deno
+# Lo genera el typecheck de las edge functions en local. No se sube: el deploy
+# resuelve sus imports contra la red, asi que un lock aqui solo anade ruido al diff.
+deno.lock
 
 # Logs
 *.log
