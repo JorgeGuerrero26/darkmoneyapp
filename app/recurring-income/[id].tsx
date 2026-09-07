@@ -1,12 +1,14 @@
 import { useCallback, useMemo, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { format } from "date-fns";
-import { MoreVertical, BarChart3, CheckCircle2, Pause, Pin, Play, Trash2 } from "lucide-react-native";
+import { MoreVertical, BarChart3 } from "lucide-react-native";
 
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { Card } from "../../components/ui/Card";
+import { Button } from "../../components/ui/Button";
+import { SearchableSelectSheet } from "../../components/ui/SearchableSelectSheet";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { EntityActionSheet } from "../../components/ui/EntityActionSheet";
 import { HeaderActionGroup } from "../../components/ui/HeaderActionGroup";
@@ -17,8 +19,13 @@ import { RecurringIncomeForm } from "../../components/forms/RecurringIncomeForm"
 import { RecurringIncomeAnalyticsModal } from "../../components/domain/RecurringIncomeAnalyticsModal";
 import { RecurringIncomeArrivalSheet, type RecurringIncomeBaseChangeMode } from "../../features/recurring-income/components/RecurringIncomeArrivalSheet";
 import { RecurringIncomeDetailHeader } from "../../features/recurring-income/components/RecurringIncomeDetailHeader";
-import { RecurringIncomeDetailQuickStats } from "../../features/recurring-income/components/RecurringIncomeDetailQuickStats";
+import { RecurringIncomeDetailFacts } from "../../features/recurring-income/components/RecurringIncomeDetailFacts";
 import { RecurringIncomeDetailHistory } from "../../features/recurring-income/components/RecurringIncomeDetailHistory";
+import { recurringIncomeStanding } from "../../features/recurring-income/lib/recurringIncomeStanding";
+import { formatCurrency } from "../../components/ui/AmountDisplay";
+import { todayPeru } from "../../lib/date";
+import { formatSubscriptionYmd } from "../../lib/subscription-helpers";
+import { sortByName } from "../../lib/sort-locale";
 import { useOriginBackNavigation } from "../../hooks/useOriginBackNavigation";
 import { useAuth } from "../../lib/auth-context";
 import { useWorkspace } from "../../lib/workspace-context";
@@ -64,6 +71,7 @@ function RecurringIncomeDetailScreen() {
   const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [payerPickerOpen, setPayerPickerOpen] = useState(false);
 
   // Arrival sheet state (replica del route principal porque el sheet es controlado)
   const [arrivalVisible, setArrivalVisible] = useState(false);
@@ -91,6 +99,32 @@ function RecurringIncomeDetailScreen() {
     () => snapshot?.accounts.filter((account) => !account.isArchived) ?? [],
     [snapshot?.accounts],
   );
+
+  const counterparties = useMemo(
+    () => sortByName((snapshot?.counterparties ?? []).filter((party) => !party.isArchived)),
+    [snapshot?.counterparties],
+  );
+
+  /* El mismo cálculo que pinta la cápsula: qué llegadas vencieron sin confirmar. La pantalla no
+     recalcula nada — sale entero de recurringIncomeStanding, que tiene sus tests. */
+  const standing = useMemo(() => {
+    if (!item) return null;
+    return recurringIncomeStanding({
+      item,
+      today: todayPeru(),
+      formatAmount: (amount) => formatCurrency(amount, item.currencyCode),
+      formatDate: (ymd) => formatSubscriptionYmd(ymd),
+    });
+  }, [item]);
+  const pendingDates = standing?.pendingDates ?? [];
+
+  const handlePickPayer = useCallback((payerPartyId: number | null) => {
+    if (!item) return;
+    updateMutation.mutate(
+      { id: item.id, input: { payerPartyId } },
+      { onError: (err) => showToast(err.message, "error") },
+    );
+  }, [item, showToast, updateMutation]);
 
   const handleTogglePause = useCallback(() => {
     if (!item) return;
@@ -124,9 +158,15 @@ function RecurringIncomeDetailScreen() {
     }
   }, [item, deleteMutation, handleBack, showToast]);
 
-  const openArrival = useCallback(() => {
+  /**
+   * `date` es la llegada que se está anotando.
+   *
+   * Con dos sueldos sin confirmar, abrir siempre en "hoy" obligaba a corregir la fecha a mano
+   * cada vez — y equivocarse ahí desplaza el calendario entero.
+   */
+  const openArrival = useCallback((date?: string) => {
     if (!item) return;
-    setArrivalDate(format(new Date(), "yyyy-MM-dd"));
+    setArrivalDate(date ?? format(new Date(), "yyyy-MM-dd"));
     setArrivalAmount(String(item.amount));
     setArrivalAccountId(item.accountId ?? null);
     setArrivalBaseChangeMode("none");
@@ -226,7 +266,6 @@ function RecurringIncomeDetailScreen() {
       header={
         <ScreenHeader
           title={item?.name ?? "Ingreso fijo"}
-          subtitle={activeWorkspace?.name}
           onBack={handleBack}
           rightAction={
             item ? (
@@ -272,35 +311,36 @@ function RecurringIncomeDetailScreen() {
           <ScrollView contentContainerStyle={styles.content}>
             <RecurringIncomeDetailHeader item={item} />
 
-            <Card style={styles.quickActions}>
-              <Text style={styles.quickActionsHint}>Acciones rápidas</Text>
-              <View style={styles.quickActionsRow}>
-                {item.status === "active" ? (
-                  <QuickActionButton
-                    icon={CheckCircle2}
-                    label="Marcar recibido"
-                    onPress={openArrival}
-                  />
-                ) : null}
-                <QuickActionButton
-                  icon={isPaused ? Play : Pause}
-                  label={isPaused ? "Reactivar" : "Pausar"}
-                  onPress={handleTogglePause}
-                />
-                <QuickActionButton
-                  icon={BarChart3}
-                  label="Análisis"
-                  onPress={() => setAnalyticsOpen(true)}
-                />
-              </View>
-            </Card>
+            {/* Eran tres cajas iguales para tres cosas distintas: una es a lo que se viene, otra
+                es administrativa y "Análisis" ya estaba como ícono en el encabezado. Con dos
+                llegadas sin confirmar, "Marcar recibido" tampoco decía cuál: ahora lo dice. */}
+            {item.status === "active" ? (
+              <Button
+                label={
+                  pendingDates.length > 1
+                    ? `Anotar las ${pendingDates.length} llegadas`
+                    : "Anotar la llegada"
+                }
+                size="lg"
+                onPress={() => openArrival(pendingDates[0])}
+              />
+            ) : (
+              <Button label="Reactivar" size="lg" onPress={handleTogglePause} />
+            )}
 
-            <RecurringIncomeDetailQuickStats item={item} />
+            <RecurringIncomeDetailFacts
+              item={item}
+              onPickPayer={() => setPayerPickerOpen(true)}
+            />
 
             <RecurringIncomeDetailHistory
               workspaceId={activeWorkspaceId}
               recurringIncomeId={item.id}
               fallbackCurrencyCode={item.currencyCode}
+              expectedAmount={item.amount}
+              pendingDates={pendingDates}
+              remindDaysBefore={item.remindDaysBefore}
+              onAnnotate={(date) => openArrival(date)}
             />
 
             {item.description || item.notes ? (
@@ -337,6 +377,17 @@ function RecurringIncomeDetailScreen() {
             item={item}
             baseCurrencyCode={activeWorkspace?.baseCurrencyCode ?? "PEN"}
             exchangeRates={snapshot?.exchangeRates ?? []}
+          />
+          <SearchableSelectSheet
+            visible={payerPickerOpen}
+            title="Quién paga"
+            options={[
+              { value: null as number | null, label: "Nadie elegido" },
+              ...counterparties.map((party) => ({ value: party.id as number | null, label: party.name })),
+            ]}
+            value={item?.payerPartyId ?? null}
+            onChange={handlePickPayer}
+            onClose={() => setPayerPickerOpen(false)}
           />
           <RecurringIncomeArrivalSheet
             visible={arrivalVisible}
@@ -375,6 +426,12 @@ function RecurringIncomeDetailScreen() {
                   onPress: () => { setMenuOpen(false); setEditFormVisible(true); },
                 },
                 {
+                  key: "pause",
+                  label: isPaused ? "Reactivar ingreso fijo" : "Pausar ingreso fijo",
+                  variant: "secondary" as const,
+                  onPress: () => { setMenuOpen(false); handleTogglePause(); },
+                },
+                {
                   key: "pin",
                   label: item.isPinned ? "Quitar de fijados" : "Fijar en la lista",
                   variant: "secondary" as const,
@@ -410,27 +467,6 @@ function RecurringIncomeDetailScreen() {
   );
 }
 
-function QuickActionButton({
-  icon: Icon,
-  label,
-  onPress,
-}: {
-  icon: typeof Pin;
-  label: string;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [styles.quickAction, pressed && styles.quickActionPressed]}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-    >
-      <Icon size={16} color={COLORS.primary} strokeWidth={2} />
-      <Text style={styles.quickActionLabel}>{label}</Text>
-    </Pressable>
-  );
-}
 
 const styles = StyleSheet.create({
   content: {
@@ -454,31 +490,6 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
     fontSize: FONT_SIZE.sm,
     textAlign: "center",
-  },
-  quickActions: { gap: SPACING.sm },
-  quickActionsHint: {
-    fontFamily: FONT_FAMILY.bodySemibold,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.textMuted,
-    textTransform: "uppercase",
-  },
-  quickActionsRow: { flexDirection: "row", gap: SPACING.sm },
-  quickAction: {
-    flex: 1,
-    paddingVertical: SPACING.sm,
-    paddingHorizontal: SPACING.xs,
-    alignItems: "center",
-    gap: SPACING.xs,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: RADIUS.md,
-    backgroundColor: COLORS.bgCard,
-  },
-  quickActionPressed: { opacity: 0.6 },
-  quickActionLabel: {
-    fontFamily: FONT_FAMILY.bodySemibold,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.primary,
   },
   sectionTitle: {
     fontSize: FONT_SIZE.xs,
