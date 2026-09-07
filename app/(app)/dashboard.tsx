@@ -802,6 +802,19 @@ function DashboardScreen() {
     );
   }
 
+  /* Una definición, dos sitios: bajo el balance en la vista simple y arriba del todo en la
+     avanzada. La fila se pinta sola solo cuando hay algo que ofrecer. */
+  const quickHabitsRow = (
+    <DashboardSectionBoundary sectionLabel="Lo de siempre">
+      <QuickHabitsRow
+        entries={quickEntries}
+        currencyCode={baseCurrency}
+        savingKey={savingHabitKey}
+        onRegister={registerHabit}
+      />
+    </DashboardSectionBoundary>
+  );
+
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
       {isAdvancedCollapsedHeader ? (
@@ -895,14 +908,7 @@ function DashboardScreen() {
 
             {/* Justo bajo el balance: es lo que se viene a hacer, y a esta altura todavía no
                 hay que desplazarse. */}
-            <DashboardSectionBoundary sectionLabel="Lo de siempre">
-              <QuickHabitsRow
-                entries={quickEntries}
-                currencyCode={baseCurrency}
-                savingKey={savingHabitKey}
-                onRegister={registerHabit}
-              />
-            </DashboardSectionBoundary>
+            {quickHabitsRow}
 
             <DashboardSectionBoundary sectionLabel="Alertas urgentes">
               <UrgentAlertsCard
@@ -975,6 +981,11 @@ function DashboardScreen() {
             ) : null}
           </>
         ) : null}
+
+        {/* Y también arriba del panel avanzado: la fila estaba SOLO en la rama simple, así que
+            quien usa la vista avanzada —la que trae las pestañas— no la vio nunca. Registrar de
+            un toque no es análisis; no pertenece a ninguna pestaña, va antes que todas. */}
+        {isAdvanced && hasAdvancedDashboardAccess ? quickHabitsRow : null}
 
         {/* -- Advanced section -- */}
         {isAdvanced && hasAdvancedDashboardAccess && (
