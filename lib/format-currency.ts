@@ -86,3 +86,23 @@ export function maskedCurrencyLabel(currencyCode: string): string {
   }
   return `${currencyCode} ••••`;
 }
+
+/**
+ * Le pone separador de miles a lo que hay escrito en un campo de monto.
+ *
+ * Es para **enseñar**, no para guardar: el estado sigue siendo el número tal cual se escribe. Se
+ * usa mientras el campo no tiene el cursor, que es cuando el valor se lee en vez de teclearse —
+ * con el cursor dentro, meter comas entre dígitos mueve el punto de inserción y editar el medio
+ * de una cifra se vuelve una pelea.
+ *
+ * Lo que no sea un número se devuelve intacto: el campo no es quién para corregir lo que el
+ * usuario está a medio escribir.
+ */
+export function groupAmountDigits(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return "";
+  const [integer = "", fraction] = trimmed.split(".");
+  if (!/^\d+$/.test(integer)) return raw;
+  const grouped = integer.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return fraction === undefined ? grouped : `${grouped}.${fraction}`;
+}

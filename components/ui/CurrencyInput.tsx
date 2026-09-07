@@ -1,4 +1,4 @@
-import { forwardRef, useImperativeHandle, useRef } from "react";
+import { forwardRef, useImperativeHandle, useRef, useState } from "react";
 import {
   StyleSheet,
   Text,
@@ -9,7 +9,7 @@ import {
   type ViewStyle,
 } from "react-native";
 import { TextField } from "./TextField";
-import { formatCurrencyParts } from "../../lib/format-currency";
+import { formatCurrencyParts, groupAmountDigits } from "../../lib/format-currency";
 import { COLORS, FONT_FAMILY, FONT_SIZE, FONT_WEIGHT, RADIUS, SPACING } from "../../constants/theme";
 
 type Props = {
@@ -33,6 +33,15 @@ export const CurrencyInput = forwardRef<TextInput, Props>(function CurrencyInput
 }, ref) {
   const inputRef = useRef<TextInput>(null);
   useImperativeHandle(ref, () => inputRef.current as TextInput, []);
+  /**
+   * El separador de miles solo mientras nadie escribe.
+   *
+   * Un monto precargado se lee, no se teclea: "2630.5" al lado de una tarjeta que dice
+   * "S/ 2,630.50" hace ver el campo como dato en bruto justo cuando se está confirmando plata.
+   * Con el cursor dentro se muestra tal cual, porque meter comas entre dígitos desplaza el
+   * punto de inserción y corregir el medio de una cifra se vuelve una pelea.
+   */
+  const [focused, setFocused] = useState(false);
 
   function handleChange(text: string) {
     // Allow digits and a single decimal point
@@ -71,13 +80,14 @@ export const CurrencyInput = forwardRef<TextInput, Props>(function CurrencyInput
         <TextField
           ref={inputRef}
           style={styles.input}
-          value={value}
+          value={focused ? value : groupAmountDigits(value)}
           onChangeText={handleChange}
+          onFocus={() => setFocused(true)}
           keyboardType="decimal-pad"
           placeholder={placeholder}
           placeholderTextColor={COLORS.storm}
           returnKeyType="done"
-          onBlur={handleBlur}
+          onBlur={() => { setFocused(false); handleBlur(); }}
           accessibilityLabel={label ? `${label} en ${currencyCode}` : `Monto en ${currencyCode}`}
           accessibilityHint={error ? `Error: ${error}` : undefined}
         />
