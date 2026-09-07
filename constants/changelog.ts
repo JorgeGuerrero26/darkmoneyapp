@@ -148,6 +148,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Nuevo: los movimientos sin categoría ya se pueden arreglar en tanda. Antes tocabas \"Sin categoría\" en el inicio y salía la lista entera: abrir uno, elegir, volver, y otra vez, ciento dieciocho veces. Ahora se agrupan por lo que son, así que esos ciento dieciocho son setenta y cuatro decisiones — y las veinte de \"Cuenta Principal\" se resuelven de una sola vez.",
       "Cada grupo llega con su categoría propuesta cuando tus propios movimientos ya la dejan clara: un toque en \"Poner Transporte\" se la pone a los veinte, y el aviso te dice a qué y a cuántos, con deshacer. Si la propuesta no está clara no se ofrece de un toque, pero se ve marcada al abrir la lista de categorías.",
       "Los traspasos entre tus propias cuentas ya no cuentan como \"sin categoría\": no llevan, porque es tu plata cambiando de bolsillo. Estaban inflando el número con filas que no había nada que arreglar.",
+      "Arreglado: las sugerencias del formulario llegan ahora casi siempre. La app dejaba de esperar a los 6 segundos y medio, y el servidor tardaba más que eso en el 45% de los casos — o sea que casi la mitad de las sugerencias se calculaban y no llegabas a verlas. No se notaba, porque una que no aparece se ve igual que si no hubiera nada que proponer.",
       "Y el marcador del detalle de un movimiento, que no decía para qué servía, ahora se llama \"Guardar como atajo\": es lo que hace desde que los atajos salen en el inicio.",
     ],
   },
