@@ -149,6 +149,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       "Cada grupo llega con su categoría propuesta cuando tus propios movimientos ya la dejan clara: un toque en \"Poner Transporte\" se la pone a los veinte, y el aviso te dice a qué y a cuántos, con deshacer. Si la propuesta no está clara no se ofrece de un toque, pero se ve marcada al abrir la lista de categorías.",
       "Los traspasos entre tus propias cuentas ya no cuentan como \"sin categoría\": no llevan, porque es tu plata cambiando de bolsillo. Estaban inflando el número con filas que no había nada que arreglar.",
       "Arreglado: las sugerencias del formulario llegan ahora casi siempre. La app dejaba de esperar a los 6 segundos y medio, y el servidor tardaba más que eso en el 45% de los casos — o sea que casi la mitad de las sugerencias se calculaban y no llegabas a verlas. No se notaba, porque una que no aparece se ve igual que si no hubiera nada que proponer.",
+      "Arreglado: guardar recién abierta la app ya no te obliga a tocar dos veces. Mientras la app renueva tu sesión al arrancar, el servidor rechazaba lo que intentabas guardar y salía un aviso pidiéndote que volvieras a darle. Ahora renueva y lo reintenta sola, una vez. Nunca se guarda por duplicado: si el primer intento hubiera llegado, el segundo recupera ese mismo movimiento en vez de crear otro.",
       "Y el marcador del detalle de un movimiento, que no decía para qué servía, ahora se llama \"Guardar como atajo\": es lo que hace desde que los atajos salen en el inicio.",
     ],
   },
