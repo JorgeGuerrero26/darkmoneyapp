@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -6,13 +7,21 @@ import { formatCurrency } from "../../../components/ui/AmountDisplay";
 import { BottomSheet } from "../../../components/ui/BottomSheet";
 import { Button } from "../../../components/ui/Button";
 import { CurrencyInput } from "../../../components/ui/CurrencyInput";
-import { DatePickerInput } from "../../../components/ui/DatePickerInput";
-import { PillSelector } from "../../../components/ui/PillSelector";
-import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../../constants/theme";
-import type { AccountSummary, RecurringIncomeSummary } from "../../../types/domain";
+import { FormDateRow } from "../../../components/ui/FormDateRow";
+import { FormOptionRow } from "../../../components/ui/FormOptionRow";
+import { InlineFormSheet } from "../../../components/ui/InlineFormSheet";
+import { SearchableSelectSheet } from "../../../components/ui/SearchableSelectSheet";
 import { TextField } from "../../../components/ui/TextField";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../../constants/theme";
+import {
+  arrivalConfirmLabel,
+  arrivalConfirmSentence,
+  arrivalDiffSentence,
+} from "../lib/arrivalCopy";
+import { parseMoneyInput, type RecurringIncomeBaseChangeMode } from "../lib/arrival-validation";
+import type { AccountSummary, RecurringIncomeSummary } from "../../../types/domain";
 
-export type RecurringIncomeBaseChangeMode = "none" | "bonus" | "discount";
+export type { RecurringIncomeBaseChangeMode };
 
 type Props = {
   item: RecurringIncomeSummary | null;
@@ -26,24 +35,33 @@ type Props = {
   onAccountIdChange: (value: number | null) => void;
   baseChangeMode: RecurringIncomeBaseChangeMode;
   onBaseChangeModeChange: (value: RecurringIncomeBaseChangeMode) => void;
-  newBaseAmount: string;
-  onNewBaseAmountChange: (value: string) => void;
   notes: string;
   onNotesChange: (value: string) => void;
   error: string;
-  parsedNewBaseAmount: number | null;
-  baseDelta: number | null;
   loading?: boolean;
   onClose: () => void;
   onSubmit: () => void;
 };
 
-function formatYmdLocal(ymd: string) {
+function formatYmdShort(ymd: string) {
   const p = ymd.split("-").map(Number);
   if (p.length !== 3 || p.some((n) => Number.isNaN(n))) return ymd;
-  return format(new Date(p[0], p[1] - 1, p[2]), "d MMM yyyy", { locale: es });
+  // Sin el año: la llegada que se confirma es de hace semanas, no de hace años.
+  return format(new Date(p[0], p[1] - 1, p[2]), "d MMM", { locale: es });
 }
 
+/**
+ * "¿Llegó tu ingreso?" — la hoja que afirma lo que va a hacer.
+ *
+ * **Preguntaba cuatro cosas y en el caso frecuente la respuesta a todas era "lo que ya dice".**
+ * Fecha precargada con el día esperado, monto con el monto pactado, cuenta con la cuenta del
+ * ingreso y cambio de base con "Sin cambio": confirmar una llegada normal —llegó lo esperado, el
+ * día esperado— obligaba a leer cuatro campos para no tocar ninguno.
+ *
+ * Ahora es una frase y un botón. Lo excepcional —otro monto, otra fecha, otra cuenta— entra por
+ * "Llegó distinto", que es la misma plantilla del formulario de suscripción: lo obligatorio
+ * arriba, lo raro detrás de una fila.
+ */
 export function RecurringIncomeArrivalSheet({
   item,
   visible,
@@ -56,222 +74,299 @@ export function RecurringIncomeArrivalSheet({
   onAccountIdChange,
   baseChangeMode,
   onBaseChangeModeChange,
-  newBaseAmount,
-  onNewBaseAmountChange,
   notes,
   onNotesChange,
   error,
-  parsedNewBaseAmount,
-  baseDelta,
   loading,
   onClose,
   onSubmit,
 }: Props) {
+  const [differentOpen, setDifferentOpen] = useState(false);
+  const [notesOpen, setNotesOpen] = useState(false);
+  const [accountPickerOpen, setAccountPickerOpen] = useState(false);
+
+  if (!item) {
+    return (
+      <BottomSheet visible={visible} onClose={onClose} title="Confirmar llegada" snapHeight={0.86}>
+        <View />
+      </BottomSheet>
+    );
+  }
+
+  const money = (value: number) => formatCurrency(value, item.currencyCode);
+  const parsedAmount = parseMoneyInput(amount);
+  const accountName =
+    accounts.find((account) => account.id === accountId)?.name ?? item.accountName ?? null;
+  const diff = parsedAmount != null ? arrivalDiffSentence(parsedAmount, item.amount, money) : "";
+  const changed = diff !== "";
+
   return (
-    <BottomSheet visible={visible} onClose={onClose} title="Confirmar llegada" snapHeight={0.86}>
-      {item ? (
-        <View style={styles.content}>
-          <Text style={styles.subtitle}>
-            {item.name} · Programado para {formatYmdLocal(item.nextExpectedDate)}
-          </Text>
-
-          <View style={styles.summaryCard}>
-            <Text style={styles.summaryTitle}>Monto base actual</Text>
-            <Text style={styles.summaryAmount}>{formatCurrency(item.amount, item.currencyCode)}</Text>
-            <Text style={styles.summaryBody}>
-              Este monto se usa como base para calcular las próximas llegadas.
-            </Text>
-          </View>
-
-          <DatePickerInput label="Fecha real de llegada" value={date} onChange={onDateChange} />
-
-          <CurrencyInput
-            label="Monto real recibido"
-            value={amount}
-            onChangeText={onAmountChange}
-            currencyCode={item.currencyCode}
+    <BottomSheet
+      visible={visible}
+      onClose={onClose}
+      title="Confirmar llegada"
+      snapHeight={0.86}
+      footer={
+        <View style={styles.footer}>
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
+          {/* "Cancelar" se retira: la hoja ya tiene su ×, y dos salidas compiten entre sí. El
+              botón gana el ancho completo y deja de partirse en dos líneas. */}
+          <Button
+            label={arrivalConfirmLabel(parsedAmount, item.amount, money)}
+            onPress={onSubmit}
+            loading={loading}
+            size="lg"
           />
-
-          <View style={styles.section}>
-            <Text style={styles.sectionLabel}>Cuenta destino del movimiento</Text>
-            {item.accountId ? (
-              <View style={styles.infoCard}>
-                <Text style={styles.infoBody}>
-                  El movimiento se registrará en {item.accountName ?? "la cuenta configurada"}.
-                </Text>
-              </View>
-            ) : accounts.length > 0 ? (
-              <>
-                <Text style={styles.helper}>
-                  Este ingreso fijo no tiene cuenta base. Elige una ahora para registrar el movimiento y guardarla.
-                </Text>
-                <PillSelector
-                  options={accounts.map((account) => ({ label: account.name, value: account.id }))}
-                  value={accountId}
-                  onChange={onAccountIdChange}
-                  horizontal={false}
-                  wrap
+        </View>
+      }
+      overlay={
+        <>
+          <InlineFormSheet
+            visible={differentOpen}
+            title="Llegó distinto"
+            onBack={() => setDifferentOpen(false)}
+            footer={
+              <View style={styles.footer}>
+                <Button
+                  label={arrivalConfirmLabel(parsedAmount, item.amount, money)}
+                  onPress={() => { setDifferentOpen(false); onSubmit(); }}
+                  loading={loading}
+                  size="lg"
                 />
-              </>
-            ) : (
-              <View style={styles.infoCard}>
-                <Text style={styles.infoBody}>
-                  No hay cuentas activas disponibles. Primero crea o reactiva una cuenta para registrar este ingreso.
-                </Text>
               </View>
-            )}
-          </View>
-
-          <View style={styles.section}>
-            <Text style={styles.sectionLabel}>Cambio de monto base desde ahora</Text>
-            <Text style={styles.helper}>
-              Si este ingreso cambió de forma permanente, define el nuevo monto para futuras llegadas.
-            </Text>
-            <PillSelector
-              options={[
-                { value: "none", label: "Sin cambio" },
-                { value: "bonus", label: "Bonificación" },
-                { value: "discount", label: "Descuento" },
-              ]}
-              value={baseChangeMode}
-              onChange={onBaseChangeModeChange}
-              horizontal={false}
-              wrap
-            />
-
-            {baseChangeMode !== "none" ? (
-              <>
+            }
+          >
+            <View style={styles.differentContent}>
+              <View style={styles.field}>
+                <Text style={styles.fieldLabel}>Cuánto llegó</Text>
                 <CurrencyInput
-                  label="Nuevo monto base"
-                  value={newBaseAmount}
-                  onChangeText={onNewBaseAmountChange}
+                  value={amount}
+                  onChangeText={onAmountChange}
                   currencyCode={item.currencyCode}
                 />
-                <View style={styles.infoCard}>
-                  <Text style={styles.infoBody}>Base actual: {formatCurrency(item.amount, item.currencyCode)}</Text>
-                  <Text style={styles.infoBody}>
-                    Nuevo base: {parsedNewBaseAmount != null
-                      ? formatCurrency(parsedNewBaseAmount, item.currencyCode)
-                      : "Pendiente"}
+                {diff ? (
+                  <Text
+                    style={[
+                      styles.diff,
+                      { color: (parsedAmount ?? 0) > item.amount ? COLORS.income : COLORS.expense },
+                    ]}
+                  >
+                    {diff}
                   </Text>
-                  <Text style={styles.infoBody}>
-                    Cambio: {baseDelta == null
-                      ? "Pendiente"
-                      : `${baseDelta >= 0 ? "+" : "-"}${formatCurrency(Math.abs(baseDelta), item.currencyCode)}`}
-                  </Text>
-                </View>
-              </>
-            ) : null}
-          </View>
+                ) : null}
+              </View>
 
-          <TextField
-            style={styles.notesInput}
-            multiline
-            value={notes}
-            onChangeText={onNotesChange}
-            placeholder="Notas (opcional)"
-            placeholderTextColor={COLORS.textDisabled}
+              <View style={styles.group}>
+                <FormDateRow label="Cuándo llegó" value={date} onChange={onDateChange} grouped />
+                <FormOptionRow
+                  label="Entró a"
+                  value={accountName}
+                  placeholder="Elige la cuenta"
+                  onPress={() => setAccountPickerOpen(true)}
+                  grouped
+                  last
+                />
+              </View>
+
+              {/* Solo cuando hay diferencia: si llegó lo mismo, no hay nada que decidir. */}
+              {changed ? (
+                <View style={styles.baseCard}>
+                  <Text style={styles.baseTitle}>¿Es así de ahora en adelante?</Text>
+                  <Text style={styles.baseBody}>Cambia lo que se espera en las próximas llegadas.</Text>
+                  <View style={styles.segmented}>
+                    {(["once", "forever"] as const).map((mode) => {
+                      const active = baseChangeMode === mode;
+                      return (
+                        <Text
+                          key={mode}
+                          style={[styles.segment, active && styles.segmentActive]}
+                          onPress={() => onBaseChangeModeChange(mode)}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected: active }}
+                        >
+                          {mode === "once" ? "Solo esta vez" : "Desde ahora"}
+                        </Text>
+                      );
+                    })}
+                  </View>
+                </View>
+              ) : null}
+
+              <View style={styles.field}>
+                <Text style={styles.fieldLabel}>Notas</Text>
+                <TextField
+                  style={styles.notesInput}
+                  multiline
+                  value={notes}
+                  onChangeText={onNotesChange}
+                  placeholder="Bonificación de julio"
+                  placeholderTextColor={COLORS.textDisabled}
+                />
+              </View>
+            </View>
+          </InlineFormSheet>
+
+          {/* El selector va DESPUÉS de la hoja que lo abre: se pinta encima. Al revés queda
+              por debajo de "Llegó distinto" y no se ve (mismo fallo que en el formulario). */}
+          <SearchableSelectSheet
+            inline
+            visible={accountPickerOpen}
+            title="Entró a"
+            options={accounts.map((account) => ({ value: account.id as number | null, label: account.name }))}
+            value={accountId}
+            onChange={onAccountIdChange}
+            onClose={() => setAccountPickerOpen(false)}
           />
 
-          {error ? <Text style={styles.errorText}>{error}</Text> : null}
-
-          <View style={styles.actions}>
-            <Button label="Cancelar" variant="ghost" onPress={onClose} style={styles.actionButton} />
-            <Button
-              label="Confirmar y crear movimiento"
-              onPress={onSubmit}
-              loading={loading}
-              style={styles.actionButton}
+          <InlineFormSheet
+            visible={notesOpen}
+            title="Notas"
+            onBack={() => setNotesOpen(false)}
+            doneLabel="Listo"
+            onDone={() => setNotesOpen(false)}
+          >
+            <TextField
+              style={styles.notesInput}
+              multiline
+              autoFocus
+              value={notes}
+              onChangeText={onNotesChange}
+              placeholder="Bonificación de julio"
+              placeholderTextColor={COLORS.textDisabled}
             />
-          </View>
+          </InlineFormSheet>
+        </>
+      }
+    >
+      <View style={styles.content}>
+        <Text style={styles.lead}>
+          La llegada del <Text style={styles.leadStrong}>{formatYmdShort(item.nextExpectedDate)}</Text>{" "}
+          de {item.name}.
+        </Text>
+        <Text style={styles.amount}>{money(parsedAmount ?? item.amount)}</Text>
+        <Text style={styles.lead}>
+          {arrivalConfirmSentence({ accountName, dateLabel: formatYmdShort(date) })}
+        </Text>
+
+        <View style={styles.group}>
+          <FormOptionRow
+            label="Llegó distinto"
+            support="Otro monto, otra fecha u otra cuenta"
+            value={changed ? money(parsedAmount ?? item.amount) : null}
+            placeholder=""
+            onPress={() => setDifferentOpen(true)}
+            grouped
+          />
+          <FormOptionRow
+            label="Notas"
+            value={notes.trim() || null}
+            placeholder="Ninguna"
+            onPress={() => setNotesOpen(true)}
+            grouped
+            last
+          />
         </View>
-      ) : null}
+
+        <Text style={styles.footnote}>
+          El monto esperado de las próximas llegadas no cambia. Si este ingreso subió o bajó para
+          siempre, se cambia en Editar.
+        </Text>
+      </View>
     </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  content: {
-    gap: SPACING.md,
-  },
-  subtitle: {
-    color: COLORS.storm,
+  content: { gap: SPACING.md },
+  lead: {
+    color: COLORS.fog,
     fontSize: FONT_SIZE.sm,
     fontFamily: FONT_FAMILY.body,
+    lineHeight: 21,
   },
-  summaryCard: {
+  leadStrong: { color: COLORS.ink, fontFamily: FONT_FAMILY.bodySemibold },
+  amount: {
+    color: COLORS.ink,
+    fontFamily: FONT_FAMILY.heading,
+    fontSize: FONT_SIZE.xxxl,
+    letterSpacing: -0.5,
+    marginTop: -SPACING.xs,
+  },
+  group: {
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: SURFACE.cardBorder,
+    backgroundColor: SURFACE.card,
+    overflow: "hidden",
+  },
+  footnote: {
+    color: COLORS.storm,
+    fontSize: FONT_SIZE.xs,
+    fontFamily: FONT_FAMILY.body,
+    lineHeight: 18,
+  },
+  differentContent: { gap: SPACING.lg },
+  field: { gap: SPACING.sm },
+  fieldLabel: {
+    color: COLORS.storm,
+    fontSize: FONT_SIZE.xs,
+    fontFamily: FONT_FAMILY.bodySemibold,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+  },
+  diff: { fontSize: FONT_SIZE.sm, fontFamily: FONT_FAMILY.bodyMedium },
+  baseCard: {
     gap: SPACING.xs,
     padding: SPACING.md,
     borderRadius: RADIUS.lg,
-    backgroundColor: COLORS.primary + "12",
     borderWidth: 1,
-    borderColor: COLORS.primary + "32",
+    borderColor: SURFACE.cardBorder,
+    backgroundColor: SURFACE.card,
   },
-  summaryTitle: {
-    color: COLORS.storm,
-    fontSize: FONT_SIZE.xs,
-    fontFamily: FONT_FAMILY.bodyMedium,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  summaryAmount: {
-    color: COLORS.primary,
-    fontFamily: FONT_FAMILY.heading,
-    fontSize: FONT_SIZE.xl,
-  },
-  summaryBody: {
-    color: COLORS.storm,
-    fontSize: FONT_SIZE.xs,
-    lineHeight: 18,
-  },
-  section: {
-    gap: SPACING.sm,
-  },
-  sectionLabel: {
+  baseTitle: {
     color: COLORS.ink,
-    fontSize: FONT_SIZE.sm,
+    fontSize: FONT_SIZE.md,
     fontFamily: FONT_FAMILY.bodySemibold,
   },
-  helper: {
-    color: COLORS.storm,
-    fontSize: FONT_SIZE.xs,
-    lineHeight: 18,
-  },
-  infoCard: {
+  baseBody: { color: COLORS.storm, fontSize: FONT_SIZE.sm, fontFamily: FONT_FAMILY.body },
+  segmented: {
+    flexDirection: "row",
     gap: SPACING.xs,
-    padding: SPACING.md,
-    borderRadius: RADIUS.lg,
-    backgroundColor: GLASS.card,
-    borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    marginTop: SPACING.sm,
+    padding: 3,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.bgInput,
   },
-  infoBody: {
+  segment: {
+    flex: 1,
+    textAlign: "center",
+    paddingVertical: SPACING.sm,
+    borderRadius: RADIUS.sm,
     color: COLORS.storm,
-    fontSize: FONT_SIZE.xs,
-    lineHeight: 18,
+    fontSize: FONT_SIZE.sm,
+    fontFamily: FONT_FAMILY.bodyMedium,
+  },
+  segmentActive: {
+    backgroundColor: COLORS.action,
+    color: COLORS.actionText,
+    fontFamily: FONT_FAMILY.bodySemibold,
   },
   notesInput: {
-    minHeight: 86,
+    minHeight: 110,
     borderRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
-    backgroundColor: GLASS.card,
+    borderColor: SURFACE.cardBorder,
+    backgroundColor: SURFACE.card,
     padding: SPACING.md,
     color: COLORS.ink,
     fontSize: FONT_SIZE.sm,
     fontFamily: FONT_FAMILY.body,
     textAlignVertical: "top",
   },
+  footer: { gap: SPACING.sm },
   errorText: {
     color: COLORS.danger,
     fontSize: FONT_SIZE.xs,
     fontFamily: FONT_FAMILY.bodyMedium,
-  },
-  actions: {
-    flexDirection: "row",
-    gap: SPACING.sm,
-  },
-  actionButton: {
-    flex: 1,
   },
 });

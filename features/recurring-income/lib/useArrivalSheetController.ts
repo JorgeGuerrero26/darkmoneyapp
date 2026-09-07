@@ -4,8 +4,11 @@ import { format } from "date-fns";
 import { useConfirmRecurringIncomeArrivalMutation } from "../../../services/queries/workspace-data";
 import { useToast } from "../../../hooks/useToast";
 import type { RecurringIncomeSummary } from "../../../types/domain";
-import type { RecurringIncomeBaseChangeMode } from "../components/RecurringIncomeArrivalSheet";
-import { parseMoneyInput, validateArrivalDraft } from "./arrival-validation";
+import {
+  parseMoneyInput,
+  validateArrivalDraft,
+  type RecurringIncomeBaseChangeMode,
+} from "./arrival-validation";
 
 /**
  * Estado + validación + submit del sheet "¿Llegó tu ingreso?" — compartido por
@@ -20,18 +23,25 @@ export function useArrivalSheetController(workspaceId: number | null) {
   const [date, setDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [amount, setAmount] = useState("");
   const [accountId, setAccountId] = useState<number | null>(null);
-  const [baseChangeMode, setBaseChangeMode] = useState<RecurringIncomeBaseChangeMode>("none");
-  const [newBaseAmount, setNewBaseAmount] = useState("");
+  const [baseChangeMode, setBaseChangeMode] = useState<RecurringIncomeBaseChangeMode>("once");
   const [notes, setNotes] = useState("");
   const [error, setError] = useState("");
 
-  const open = useCallback((item: RecurringIncomeSummary) => {
+  /**
+   * `arrivalDate` es la llegada que se está anotando.
+   *
+   * Desde el detalle se anotan las que quedaron sin confirmar, y abrir siempre en "hoy" obligaba
+   * a corregir la fecha a mano — equivocarse ahí desplaza el calendario entero. Desde la lista y
+   * el dashboard no se pasa: ahí se anota la de hoy.
+   */
+  const open = useCallback((item: RecurringIncomeSummary, arrivalDate?: string) => {
     setTarget(item);
-    setDate(format(new Date(), "yyyy-MM-dd"));
-    setAmount(String(item.amount));
+    setDate(arrivalDate ?? format(new Date(), "yyyy-MM-dd"));
+    // Con dos decimales: "2630.5" al lado de una tarjeta que dice "S/ 2,630.50" hacía ver el
+    // campo como dato en bruto justo al confirmar plata.
+    setAmount(item.amount.toFixed(2));
     setAccountId(item.accountId ?? null);
-    setBaseChangeMode("none");
-    setNewBaseAmount(String(item.amount));
+    setBaseChangeMode("once");
     setNotes("");
     setError("");
   }, []);
@@ -41,9 +51,6 @@ export function useArrivalSheetController(workspaceId: number | null) {
     setError("");
   }, []);
 
-  const parsedNewBaseAmount = parseMoneyInput(newBaseAmount);
-  const baseDelta = target && parsedNewBaseAmount != null ? parsedNewBaseAmount - target.amount : null;
-
   const submit = useCallback(async () => {
     if (!target) return;
     const validation = validateArrivalDraft({
@@ -51,7 +58,6 @@ export function useArrivalSheetController(workspaceId: number | null) {
       actualAmount: parseMoneyInput(amount),
       accountId,
       baseChangeMode,
-      parsedNewBaseAmount: parseMoneyInput(newBaseAmount),
       currentBaseAmount: target.amount,
     });
     if (!validation.ok) {
@@ -76,7 +82,14 @@ export function useArrivalSheetController(workspaceId: number | null) {
         intervalCount: target.intervalCount,
         currentBaseAmount: target.amount,
         newBaseAmount: validation.nextBaseAmount,
-        baseChangeKind: baseChangeMode === "none" ? null : baseChangeMode,
+        /* La dirección sale de los montos, no de una cápsula: el usuario ya no declara un
+           motivo, declara que de ahora en adelante llega esto. */
+        baseChangeKind:
+          validation.nextBaseAmount == null
+            ? null
+            : validation.nextBaseAmount > target.amount
+              ? "bonus"
+              : "discount",
         notes: notes.trim() || null,
       });
       setTarget(null);
@@ -86,7 +99,7 @@ export function useArrivalSheetController(workspaceId: number | null) {
       setError(message);
       showToast(message, "error");
     }
-  }, [accountId, amount, baseChangeMode, confirmArrivalMutation, date, newBaseAmount, notes, showToast, target]);
+  }, [accountId, amount, baseChangeMode, confirmArrivalMutation, date, notes, showToast, target]);
 
   return {
     target,
@@ -105,13 +118,9 @@ export function useArrivalSheetController(workspaceId: number | null) {
       onAccountIdChange: setAccountId,
       baseChangeMode,
       onBaseChangeModeChange: setBaseChangeMode,
-      newBaseAmount,
-      onNewBaseAmountChange: setNewBaseAmount,
       notes,
       onNotesChange: setNotes,
       error,
-      parsedNewBaseAmount,
-      baseDelta,
       loading: confirmArrivalMutation.isPending,
       onClose: close,
       onSubmit: submit,

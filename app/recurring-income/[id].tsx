@@ -17,7 +17,8 @@ import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTempla
 import { SkeletonCard, SkeletonList } from "../../components/ui/Skeleton";
 import { RecurringIncomeForm } from "../../components/forms/RecurringIncomeForm";
 import { RecurringIncomeAnalyticsModal } from "../../components/domain/RecurringIncomeAnalyticsModal";
-import { RecurringIncomeArrivalSheet, type RecurringIncomeBaseChangeMode } from "../../features/recurring-income/components/RecurringIncomeArrivalSheet";
+import { RecurringIncomeArrivalSheet } from "../../features/recurring-income/components/RecurringIncomeArrivalSheet";
+import { useArrivalSheetController } from "../../features/recurring-income/lib/useArrivalSheetController";
 import { RecurringIncomeDetailHeader } from "../../features/recurring-income/components/RecurringIncomeDetailHeader";
 import { RecurringIncomeDetailFacts } from "../../features/recurring-income/components/RecurringIncomeDetailFacts";
 import { RecurringIncomeDetailHistory } from "../../features/recurring-income/components/RecurringIncomeDetailHistory";
@@ -73,15 +74,9 @@ function RecurringIncomeDetailScreen() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [payerPickerOpen, setPayerPickerOpen] = useState(false);
 
-  // Arrival sheet state (replica del route principal porque el sheet es controlado)
-  const [arrivalVisible, setArrivalVisible] = useState(false);
-  const [arrivalDate, setArrivalDate] = useState(format(new Date(), "yyyy-MM-dd"));
-  const [arrivalAmount, setArrivalAmount] = useState("");
-  const [arrivalAccountId, setArrivalAccountId] = useState<number | null>(null);
-  const [arrivalBaseChangeMode, setArrivalBaseChangeMode] = useState<RecurringIncomeBaseChangeMode>("none");
-  const [arrivalNewBaseAmount, setArrivalNewBaseAmount] = useState("");
-  const [arrivalNotes, setArrivalNotes] = useState("");
-  const [arrivalError, setArrivalError] = useState("");
+  /* El estado, la validación y el envío del sheet viven en useArrivalSheetController, que ya
+     usan la lista y el dashboard. Aquí vivía una réplica con su propia validación. */
+  const arrival = useArrivalSheetController(activeWorkspaceId);
 
   const { data: snapshot, isLoading } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const updateMutation = useUpdateRecurringIncomeMutation(activeWorkspaceId);
@@ -158,105 +153,9 @@ function RecurringIncomeDetailScreen() {
     }
   }, [item, deleteMutation, handleBack, showToast]);
 
-  /**
-   * `date` es la llegada que se está anotando.
-   *
-   * Con dos sueldos sin confirmar, abrir siempre en "hoy" obligaba a corregir la fecha a mano
-   * cada vez — y equivocarse ahí desplaza el calendario entero.
-   */
   const openArrival = useCallback((date?: string) => {
-    if (!item) return;
-    setArrivalDate(date ?? format(new Date(), "yyyy-MM-dd"));
-    setArrivalAmount(String(item.amount));
-    setArrivalAccountId(item.accountId ?? null);
-    setArrivalBaseChangeMode("none");
-    setArrivalNewBaseAmount(String(item.amount));
-    setArrivalNotes("");
-    setArrivalError("");
-    setArrivalVisible(true);
-  }, [item]);
-
-  const closeArrival = useCallback(() => {
-    setArrivalVisible(false);
-    setArrivalError("");
-  }, []);
-
-  const parsedArrivalNewBaseAmount = parseMoneyInput(arrivalNewBaseAmount);
-  const arrivalBaseDelta = item && parsedArrivalNewBaseAmount != null
-    ? parsedArrivalNewBaseAmount - item.amount
-    : null;
-
-  const handleConfirmArrival = useCallback(async () => {
-    if (!item) return;
-    const actualAmount = parseMoneyInput(arrivalAmount);
-    if (!arrivalDate.trim()) {
-      setArrivalError("La fecha real de llegada es obligatoria.");
-      return;
-    }
-    if (actualAmount == null) {
-      setArrivalError("Ingresa un monto real mayor a 0.");
-      return;
-    }
-    if (arrivalAccountId == null) {
-      setArrivalError("Elige la cuenta destino para registrar el movimiento.");
-      return;
-    }
-
-    let nextBaseAmount: number | null = null;
-    if (arrivalBaseChangeMode !== "none") {
-      nextBaseAmount = parseMoneyInput(arrivalNewBaseAmount);
-      if (nextBaseAmount == null) {
-        setArrivalError("Ingresa el nuevo monto base para las próximas llegadas.");
-        return;
-      }
-      if (arrivalBaseChangeMode === "bonus" && nextBaseAmount <= item.amount) {
-        setArrivalError("Si hubo bonificación permanente, el nuevo monto base debe ser mayor al actual.");
-        return;
-      }
-      if (arrivalBaseChangeMode === "discount" && nextBaseAmount >= item.amount) {
-        setArrivalError("Si hubo descuento permanente, el nuevo monto base debe ser menor al actual.");
-        return;
-      }
-    }
-
-    try {
-      setArrivalError("");
-      await confirmArrivalMutation.mutateAsync({
-        recurringIncomeId: item.id,
-        recurringIncomeName: item.name,
-        expectedDate: item.nextExpectedDate,
-        actualDate: arrivalDate,
-        amount: actualAmount,
-        accountId: arrivalAccountId,
-        currentAccountId: item.accountId ?? null,
-        categoryId: item.categoryId ?? null,
-        payerPartyId: item.payerPartyId ?? null,
-        description: item.description ?? null,
-        notes: arrivalNotes.trim() || null,
-        currencyCode: item.currencyCode,
-        frequency: item.frequency,
-        intervalCount: item.intervalCount,
-        currentBaseAmount: item.amount,
-        newBaseAmount: nextBaseAmount,
-        baseChangeKind: arrivalBaseChangeMode === "none" ? null : arrivalBaseChangeMode,
-      });
-      showToast("Llegada confirmada", "success");
-      closeArrival();
-    } catch (err: unknown) {
-      setArrivalError(err instanceof Error ? err.message : "No se pudo confirmar la llegada.");
-    }
-  }, [
-    arrivalAccountId,
-    arrivalAmount,
-    arrivalBaseChangeMode,
-    arrivalDate,
-    arrivalNewBaseAmount,
-    arrivalNotes,
-    closeArrival,
-    confirmArrivalMutation,
-    item,
-    showToast,
-  ]);
+    if (item) arrival.open(item, date);
+  }, [arrival, item]);
 
   const isPaused = item?.status === "paused";
 
@@ -390,27 +289,8 @@ function RecurringIncomeDetailScreen() {
             onClose={() => setPayerPickerOpen(false)}
           />
           <RecurringIncomeArrivalSheet
-            visible={arrivalVisible}
-            item={item}
+            {...arrival.sheetProps}
             accounts={accounts}
-            date={arrivalDate}
-            onDateChange={setArrivalDate}
-            amount={arrivalAmount}
-            onAmountChange={setArrivalAmount}
-            accountId={arrivalAccountId}
-            onAccountIdChange={setArrivalAccountId}
-            baseChangeMode={arrivalBaseChangeMode}
-            onBaseChangeModeChange={setArrivalBaseChangeMode}
-            newBaseAmount={arrivalNewBaseAmount}
-            onNewBaseAmountChange={setArrivalNewBaseAmount}
-            notes={arrivalNotes}
-            onNotesChange={setArrivalNotes}
-            error={arrivalError}
-            parsedNewBaseAmount={parsedArrivalNewBaseAmount}
-            baseDelta={arrivalBaseDelta}
-            loading={confirmArrivalMutation.isPending}
-            onClose={closeArrival}
-            onSubmit={() => void handleConfirmArrival()}
           />
           {item ? (
             <EntityActionSheet
