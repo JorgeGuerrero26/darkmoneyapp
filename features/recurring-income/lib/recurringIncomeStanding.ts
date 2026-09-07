@@ -6,11 +6,25 @@ export type RecurringIncomeStandingTone = "unconfirmed" | "soon" | "later" | "pa
 
 export type RecurringIncomeStanding = {
   tone: RecurringIncomeStandingTone;
+  /** El estado en dos palabras, para la cápsula: "2 sin confirmar", "Al día". */
+  label: string;
   /** La línea de la fila: "Se esperaba el 29 jul · 2 llegadas sin anotar". */
   detail: string;
+  /**
+   * La cuenta entera, para la tarjeta del detalle: "Debió llegar el 29 jul y el 29 ago. Son
+   * S/ 5,261.00 sin anotar." Ahí cabe una frase; en una fila de lista, no.
+   */
+  summary: string;
   /** Llegadas que ya vencieron y nadie confirmó. */
   missedArrivals: number;
   missedAmount: number;
+  /**
+   * Las fechas de esas llegadas, de la más vieja a la más nueva.
+   *
+   * Son las que faltaban en la pantalla: el historial solo listaba lo anotado, así que las que
+   * nadie confirmó no aparecían en ninguna parte — justo las que hay que resolver.
+   */
+  pendingDates: string[];
   daysUntilExpected: number;
 };
 
@@ -39,16 +53,28 @@ function daysBetween(from: string, to: string): number {
   );
 }
 
-function countMissedArrivals(item: RecurringIncomeSummary, today: string): number {
+/** Las llegadas que ya vencieron sin que nadie las confirmara, de la más vieja a la más nueva. */
+function missedArrivalDates(item: RecurringIncomeSummary, today: string): string[] {
+  const dates: string[] = [];
   let cursor = item.nextExpectedDate;
-  let count = 0;
-  while (count < 400 && daysBetween(cursor, today) < 0) {
-    count += 1;
+  while (dates.length < 400 && daysBetween(cursor, today) < 0) {
+    dates.push(cursor);
     const next = computeNextRecurringDate(cursor, item.frequency, item.intervalCount, item.dayOfMonth);
     if (next === cursor) break;
     cursor = next;
   }
-  return count;
+  return dates;
+}
+
+/**
+ * "el 29 jul y el 29 ago". A partir de cuatro se dice el número y la primera: enumerar ocho
+ * fechas en la tarjeta ocupa tres líneas para decir lo que ya dice "8 veces".
+ */
+function listDates(dates: string[], formatDate: (ymd: string) => string): string {
+  const shown = dates.map((ymd) => `el ${formatDate(ymd)}`);
+  if (shown.length === 1) return shown[0];
+  if (shown.length <= 3) return `${shown.slice(0, -1).join(", ")} y ${shown[shown.length - 1]}`;
+  return `${dates.length} veces desde ${shown[0]}`;
 }
 
 /**
@@ -74,9 +100,12 @@ export function recurringIncomeStanding({
   if (item.status === "cancelled") {
     return {
       tone: "cancelled",
+      label: "Cancelado",
       detail: "Cancelado · ya no se espera",
+      summary: "Cancelado: ya no se espera ninguna llegada.",
       missedArrivals: 0,
       missedAmount: 0,
+      pendingDates: [],
       daysUntilExpected,
     };
   }
@@ -84,22 +113,30 @@ export function recurringIncomeStanding({
   if (item.status === "paused") {
     return {
       tone: "paused",
+      label: "Pausado",
       detail: `Pausado · la llegada quedó en el ${formatDate(item.nextExpectedDate)}`,
+      summary: `En pausa. La llegada quedó en el ${formatDate(item.nextExpectedDate)} y no se espera hasta que lo reactives.`,
       missedArrivals: 0,
       missedAmount: 0,
+      pendingDates: [],
       daysUntilExpected,
     };
   }
 
   if (daysUntilExpected < 0) {
-    const missedArrivals = countMissedArrivals(item, today);
+    const pendingDates = missedArrivalDates(item, today);
+    const missedArrivals = pendingDates.length;
     const missedAmount = missedArrivals * item.amount;
     const arrivals = missedArrivals === 1 ? "1 llegada sin anotar" : `${missedArrivals} llegadas sin anotar`;
     return {
       tone: "unconfirmed",
+      label: `${missedArrivals} sin confirmar`,
       detail: `Se esperaba el ${formatDate(item.nextExpectedDate)} · ${arrivals}`,
+      // El monto es lo que la pantalla no decía en ninguna parte: cuánta plata hay sin anotar.
+      summary: `Debió llegar ${listDates(pendingDates, formatDate)}. Son ${formatAmount(missedAmount)} sin anotar.`,
       missedArrivals,
       missedAmount,
+      pendingDates,
       daysUntilExpected,
     };
   }
@@ -108,18 +145,24 @@ export function recurringIncomeStanding({
   if (daysUntilExpected === 0) {
     return {
       tone: "soon",
+      label: "Llega hoy",
       detail: `Llega hoy${account}`,
+      summary: `Llega hoy${account}.`,
       missedArrivals: 0,
       missedAmount: 0,
+      pendingDates: [],
       daysUntilExpected,
     };
   }
 
   return {
     tone: daysUntilExpected <= DUE_SOON_DAYS ? "soon" : "later",
+    label: "Al día",
     detail: `Llega el ${formatDate(item.nextExpectedDate)}${account}`,
+    summary: `La próxima llega el ${formatDate(item.nextExpectedDate)}${account}.`,
     missedArrivals: 0,
     missedAmount: 0,
+    pendingDates: [],
     daysUntilExpected,
   };
 }

@@ -87,3 +87,60 @@ describe("recurringIncomeStanding", () => {
     expect(result.missedArrivals).toBe(3);
   });
 });
+
+describe("las llegadas que faltan, en fechas", () => {
+  it("devuelve las fechas exactas, no solo cuantas: son las filas que hay que pintar", () => {
+    // El caso reportado: ultima anotada 26 jun, proxima esperada 29 jul, hoy 6 sep.
+    const standing = recurringIncomeStanding({
+      item: build({ nextExpectedDate: "2026-07-29", amount: 2630.5 }),
+      today: "2026-09-06",
+      formatAmount: (n) => `S/ ${n.toFixed(2)}`,
+      formatDate: (ymd) => ymd.slice(8) + " " + ymd.slice(5, 7),
+    });
+    expect(standing.pendingDates).toEqual(["2026-07-29", "2026-08-29"]);
+    expect(standing.missedArrivals).toBe(2);
+    expect(standing.missedAmount).toBeCloseTo(5261);
+  });
+
+  it("la capsula dice el numero, que es lo que la pantalla escondia", () => {
+    const standing = recurringIncomeStanding({
+      item: build({ nextExpectedDate: "2026-07-29" }),
+      today: "2026-09-06",
+      formatAmount: (n) => `S/ ${n.toFixed(2)}`,
+      formatDate: () => "29 jul",
+    });
+    expect(standing.label).toBe("2 sin confirmar");
+  });
+
+  it("la tarjeta enumera las dos fechas y la plata sin anotar", () => {
+    const standing = recurringIncomeStanding({
+      item: build({ nextExpectedDate: "2026-07-29", amount: 2630.5 }),
+      today: "2026-09-06",
+      formatAmount: (n) => `S/ ${n.toFixed(2)}`,
+      formatDate: (ymd) => (ymd === "2026-07-29" ? "29 jul" : "29 ago"),
+    });
+    expect(standing.summary).toBe("Debió llegar el 29 jul y el 29 ago. Son S/ 5261.00 sin anotar.");
+  });
+
+  it("con muchas atrasadas dice el numero y no enumera ocho fechas", () => {
+    const standing = recurringIncomeStanding({
+      item: build({ nextExpectedDate: "2026-01-29" }),
+      today: "2026-09-06",
+      formatAmount: (n) => `S/ ${n.toFixed(2)}`,
+      formatDate: (ymd) => ymd,
+    });
+    expect(standing.missedArrivals).toBe(8);
+    expect(standing.summary).toContain("8 veces desde el 2026-01-29");
+  });
+
+  it("al dia no inventa fechas pendientes ni una capsula de alarma", () => {
+    const standing = recurringIncomeStanding({
+      item: build({ nextExpectedDate: "2026-09-29" }),
+      today: "2026-09-06",
+      formatAmount: (n) => `S/ ${n.toFixed(2)}`,
+      formatDate: () => "29 sep",
+    });
+    expect(standing.pendingDates).toEqual([]);
+    expect(standing.label).toBe("Al día");
+  });
+});
