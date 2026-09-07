@@ -103,6 +103,31 @@ describe("habitsForNow", () => {
     expect(habitsForNow(habitosMoto, domingo)).toHaveLength(0);
   });
 
+  it("uno sin patron de dia se propone si la hora encaja", () => {
+    // El caso real: un taxi de S/ 8 tomado 25 veces, mitad entre semana y mitad en finde. Es
+    // rutina, solo que no de lunes a viernes; descartarlo lo dejaba fuera para siempre.
+    const cualquierDia = [
+      ...DIAS_SEMANA.map((d) => gasto("Taxi", 8, d, 15)),
+      gasto("Taxi", 8, "2026-09-05", 15),
+      gasto("Taxi", 8, "2026-09-06", 15),
+      gasto("Taxi", 8, "2026-08-30", 15),
+    ];
+    const habitos = detectSpendingHabits(cualquierDia, NOW);
+    expect(habitos[0].when).toBe("any");
+    const tarde = new Date("2026-09-08T20:00:00.000Z"); // 15:00 del martes en Lima
+    expect(habitsForNow(habitos, tarde).map((h) => h.label)).toEqual(["Taxi"]);
+  });
+
+  it("y sigue sin proponerse fuera de su franja, que es el filtro que acota", () => {
+    const cualquierDia = [
+      ...DIAS_SEMANA.map((d) => gasto("Taxi", 8, d, 15)),
+      gasto("Taxi", 8, "2026-09-05", 15),
+      gasto("Taxi", 8, "2026-09-06", 15),
+    ];
+    const madrugada = new Date("2026-09-08T08:00:00.000Z"); // 03:00 del martes en Lima
+    expect(habitsForNow(detectSpendingHabits(cualquierDia, NOW), madrugada)).toHaveLength(0);
+  });
+
   it("como mucho tres, para no llenar la pantalla", () => {
     const muchos = [
       ...DIAS_SEMANA.map((d) => gasto("Moto", 2, d, 11)),

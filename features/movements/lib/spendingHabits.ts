@@ -195,8 +195,15 @@ export function detectSpendingHabits(
 /**
  * Los que encajan con este momento: el día correcto y dentro de su franja.
  *
- * Un hábito `any` —el que hace igual entre semana que en finde— no se propone por franja: sin
- * un patrón de día claro, ofrecerlo es adivinar.
+ * **Un hábito sin patrón de día también cuenta.** Antes se descartaba: sin día claro, ofrecerlo
+ * parecía adivinar. Medido contra los datos reales el 2026-09-07, esa regla dejaba fuera el
+ * segundo hábito más repetido —un taxi de S/ 8, 25 veces en 22 días distintos— para siempre,
+ * porque se toma cualquier día de la semana. Y de eso justamente se trata: es rutina, solo que
+ * no de lunes a viernes.
+ *
+ * La franja horaria sigue filtrando, que es el filtro que de verdad acota: el taxi se propone
+ * de 13 a 17, no a las tres de la mañana. El día solo descarta cuando SÍ hay patrón — la moto
+ * de entre semana no se ofrece un domingo.
  */
 export function habitsForNow(habits: SpendingHabit[], now: Date = new Date(), max = 3): SpendingHabit[] {
   const when = partsInLima(now.toISOString());
@@ -205,7 +212,6 @@ export function habitsForNow(habits: SpendingHabit[], now: Date = new Date(), ma
 
   return habits
     .filter((habit) => {
-      if (habit.when === "any") return false;
       if (habit.when === "weekday" && isWeekend) return false;
       if (habit.when === "weekend" && !isWeekend) return false;
       return when.hour >= habit.fromHour && when.hour <= habit.toHour;
