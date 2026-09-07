@@ -11,9 +11,7 @@ import { STALE, queryClient } from "../../lib/query-client";
 import { dropMovementFromPages } from "./drop-movement-from-pages";
 import { isCoreSnapshot, patchSnapshotWithCreatedMovement } from "./snapshot-cache";
 import {
-  ASSISTANT_CHAT_TIMEOUT_MS,
-  INTERACTIVE_AI_TIMEOUT_MS,
-  isInteractiveAiEdgeFunction,
+  resolveAiEdgeTimeoutMs,
 } from "../../lib/ai-request-utils";
 import { dateStrToISO, filterDateFrom, filterDateTo } from "../../lib/date";
 import { notificationDetection } from "../../lib/notification-detection-native";
@@ -3307,12 +3305,7 @@ export async function invokeEdgeFunction<T>(name: string, body: Record<string, u
   const endpoint = `${supabaseUrl.replace(/\/+$/, "")}/functions/v1/${name}`;
   const fetchEdgeResponse = async (token: string) => {
     const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
-    const timeoutMs =
-      name === "assistant-chat"
-        ? ASSISTANT_CHAT_TIMEOUT_MS
-        : isInteractiveAiEdgeFunction(name)
-          ? INTERACTIVE_AI_TIMEOUT_MS
-          : 15_000;
+    const timeoutMs = resolveAiEdgeTimeoutMs(name);
     const timeoutId = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
 
     try {
