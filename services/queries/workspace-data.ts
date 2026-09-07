@@ -3043,8 +3043,11 @@ export function useConfirmRecurringIncomeArrivalMutation(workspaceId: number | n
         requestedBaseAmount > 0 &&
         Math.abs(requestedBaseAmount - input.currentBaseAmount) > 0.000001;
 
+      /* Decía "Bonificación permanente" o "Descuento permanente" — el motivo, que el usuario
+         nunca dio: solo dijo que de ahora en adelante llega esto. El motivo, si importa, lo
+         escribe él en la nota. Aquí se cuenta lo que de verdad cambió. */
       const baseChangeSummary = shouldUpdateBaseAmount
-        ? `${input.baseChangeKind === "discount" ? "Descuento" : "Bonificación"} permanente: base ${formatAmountWithCurrency(input.currentBaseAmount, input.currencyCode)} -> ${formatAmountWithCurrency(requestedBaseAmount!, input.currencyCode)}.`
+        ? `El monto esperado de las próximas llegadas pasa de ${formatAmountWithCurrency(input.currentBaseAmount, input.currencyCode)} a ${formatAmountWithCurrency(requestedBaseAmount!, input.currencyCode)}.`
         : null;
 
       const movementNotes = joinNotes(
