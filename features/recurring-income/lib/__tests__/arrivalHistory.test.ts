@@ -6,6 +6,8 @@ import {
 import type { RecurringIncomeOccurrenceSummary } from "../../../../types/domain";
 
 const money = (amount: number) => `S/ ${amount.toFixed(2)}`;
+const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+const day = (ymd: string) => `${Number(ymd.slice(8))} ${MESES[Number(ymd.slice(5, 7)) - 1]}`;
 
 function occurrence(
   over: Partial<RecurringIncomeOccurrenceSummary> = {},
@@ -65,6 +67,7 @@ describe("buildArrivalRows", () => {
     expectedAmount: 2630.5,
     fallbackCurrencyCode: "PEN",
     formatAmount: money,
+    formatDate: day,
   };
 
   it("lo que falta va primero, de la mas vieja a la mas nueva: es la cola de trabajo", () => {
@@ -85,6 +88,19 @@ describe("buildArrivalRows", () => {
       .toEqual([true, false]);
   });
 
+  it("la fila que espera dice por que: nombra la que va delante", () => {
+    const rows = buildArrivalRows({ ...args, pendingDates: ["2026-08-29", "2026-07-29"] });
+    expect(rows.slice(0, 2).map((row) => row.support)).toEqual([
+      "Sin confirmar · la más antigua",
+      "Sin confirmar · después del 29 jul",
+    ]);
+  });
+
+  it("con una sola pendiente no hay orden que explicar", () => {
+    const [row] = buildArrivalRows({ ...args, pendingDates: ["2026-07-29"] });
+    expect(row.support).toBe("Sin confirmar");
+  });
+
   it("cada llegada anotada lleva su desfase y su diferencia en palabras", () => {
     const rows = buildArrivalRows({ ...args, pendingDates: [] });
     expect(rows[0]).toMatchObject({ support: "Llegó 3 días antes" });
@@ -98,7 +114,13 @@ describe("buildArrivalRows", () => {
   it("sin historial, las que faltan ya son la lista: eran las invisibles", () => {
     const rows = buildArrivalRows({ ...args, occurrences: [], pendingDates: ["2026-07-29"] });
     expect(rows).toEqual([
-      { kind: "pending", key: "pending-2026-07-29", date: "2026-07-29", actionable: true },
+      {
+        kind: "pending",
+        key: "pending-2026-07-29",
+        date: "2026-07-29",
+        actionable: true,
+        support: "Sin confirmar",
+      },
     ]);
   });
 

@@ -14,6 +14,13 @@ export type ArrivalRow =
        * exactamente el fallo que esta pantalla viene a arreglar.
        */
       actionable: boolean;
+      /**
+       * Por qué esta fila espera: "Sin confirmar · después del 29 jul".
+       *
+       * Una fila sin acción y sin explicación se lee como una fila rota. Nombrar la que va
+       * delante dice a la vez que hay un orden y cuál es el siguiente paso.
+       */
+      support: string;
     }
   | {
       kind: "confirmed";
@@ -80,6 +87,8 @@ type Args = {
   expectedAmount: number;
   fallbackCurrencyCode: string;
   formatAmount: (value: number) => string;
+  /** De `yyyy-MM-dd` a como se lee: "29 jul". */
+  formatDate: (ymd: string) => string;
 };
 
 /**
@@ -99,16 +108,22 @@ export function buildArrivalRows({
   expectedAmount,
   fallbackCurrencyCode,
   formatAmount,
+  formatDate,
 }: Args): ArrivalRow[] {
   // De la más vieja a la más nueva: es una cola de trabajo, no historial, y se vacía por orden.
-  const pending: ArrivalRow[] = [...pendingDates]
-    .sort((a, b) => a.localeCompare(b))
-    .map((date, index) => ({
-      kind: "pending" as const,
-      key: `pending-${date}`,
-      date,
-      actionable: index === 0,
-    }));
+  const ordered = [...pendingDates].sort((a, b) => a.localeCompare(b));
+  const pending: ArrivalRow[] = ordered.map((date, index) => ({
+    kind: "pending" as const,
+    key: `pending-${date}`,
+    date,
+    actionable: index === 0,
+    support:
+      index === 0
+        ? ordered.length > 1
+          ? "Sin confirmar · la más antigua"
+          : "Sin confirmar"
+        : `Sin confirmar · después del ${formatDate(ordered[index - 1])}`,
+  }));
 
   const confirmed: ArrivalRow[] = [...occurrences]
     .sort((a, b) => (b.actualDate ?? "").localeCompare(a.actualDate ?? ""))

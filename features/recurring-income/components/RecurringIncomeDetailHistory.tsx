@@ -67,6 +67,7 @@ export function RecurringIncomeDetailHistory({
     expectedAmount,
     fallbackCurrencyCode,
     formatAmount: (amount) => formatCurrency(amount, fallbackCurrencyCode),
+    formatDate: shortDate,
   });
   const visible = expanded ? rows : rows.slice(0, COLLAPSED_LIMIT);
   const remaining = rows.length - visible.length;
@@ -106,7 +107,9 @@ export function RecurringIncomeDetailHistory({
             >
               <View style={styles.left}>
                 <Text style={styles.date}>{shortDate(row.date)}</Text>
-                <Text style={styles.pending}>Sin confirmar</Text>
+                {/* La que espera nombra la que va delante: una fila sin acción y sin
+                    explicación se lee como una fila rota. */}
+                <Text style={styles.pending}>{row.support}</Text>
               </View>
               {/* Solo la más vieja lleva acción: anotar la de agosto antes que la de julio
                   movería el calendario y julio se perdería. Se vacía en orden. */}
