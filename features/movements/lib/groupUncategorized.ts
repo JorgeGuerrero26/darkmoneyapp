@@ -41,10 +41,10 @@ export function groupKeyOf(description: string | null | undefined): string {
 /**
  * Los movimientos sin categoría, agrupados por lo que son y ordenados por lo que pesan.
  *
- * **Por qué agrupar.** Categorizar de uno en uno no escala: 401 movimientos sin categoría son
- * 401 decisiones, y por eso nadie lo hace nunca. Pero no son 401 cosas distintas — son unas
- * pocas repetidas: "Moto" veintitrés veces, "Chicle" quince. Agrupados, la misma limpieza son
- * quince decisiones.
+ * **Por qué agrupar.** Categorizar de uno en uno no escala, y por eso nadie lo hace nunca. Pero
+ * la lista no son cosas distintas: son unas pocas repetidas. Medido sobre los datos reales el
+ * 2026-09-06, 118 movimientos sin categoría caen en 74 grupos, y los 11 grupos que se repiten
+ * cubren 55 de esos movimientos — el mayor, veinte filas que se resuelven con una decisión.
  *
  * **Por qué se ordenan por monto y no por cantidad.** Lo que arregla tus cifras es la plata que
  * está sin clasificar, no el número de filas: un grupo de dos cenas de S/ 300 corrige más el

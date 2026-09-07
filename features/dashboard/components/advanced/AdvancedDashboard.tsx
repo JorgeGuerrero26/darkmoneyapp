@@ -741,7 +741,8 @@ export function AdvancedDashboard({
     if (chips.length === 0)
       chips.push({ icon: Sparkles, color: COLORS.income, label: "Base sana · sin fricción fuerte hoy", weight: "low" });
     return chips.slice(0, 4);
-  }, [cashCushion.days, review.overdueObligationsCount, review.uncategorizedCount, spendingTrend.expenseTrendPct, weekWindow.expectedInflow, weekWindow.expectedOutflow]);
+  }, [cashCushion.days, review.overdueObligationsCount, review.uncategorizedCount, spendingTrend.expenseTrendPct, weekWindow.expectedInflow, weekWindow.expectedOutflow]);
+
   const [executiveDetail, setExecutiveDetail] = useState<"focus" | "risk" | "month" | null>(null);
   const [advancedDetail, setAdvancedDetail] = useState<"focusCenter" | "projection" | "review" | "advancedMetrics" | "quality" | "categoryConcentration" | "savingsRate" | "incomeStability" | "seasonalComparison" | "collectionEfficiency" | null>(null);
   const [projectionDetail, setProjectionDetail] = useState<"conservative" | "expected" | "included" | null>(null);
@@ -752,14 +753,6 @@ export function AdvancedDashboard({
   const updateMovementMutation = useUpdateMovementMutation(workspaceId);
   const persistDashboardAnalyticsMutation = usePersistDashboardAnalyticsMutation(workspaceId);
   const persistLearningFeedbackMutation = usePersistLearningFeedbackMutation(workspaceId, userId);
-
-  const summaryUncategorizedMovements = useMemo(() => (
-    movements
-      .filter((movement) => movement.status === "posted")
-      .filter(isCategorizedCashflow)
-      .filter((movement) => movement.categoryId == null)
-      .sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime() || b.id - a.id)
-  ), [movements]);
 
   const currentMonthMovements = useMemo(() => {
     const now = new Date();
@@ -822,16 +815,16 @@ export function AdvancedDashboard({
     setMovementPreview(preview);
   }, []);
 
+  /**
+   * Los sin categoría abren la bandeja, no una vista previa.
+   *
+   * La hoja los enseñaba en fila y para arreglar cada uno había que salir de ella, abrir el
+   * movimiento, elegir y volver: doscientas veces. La bandeja los agrupa por lo que son —"Moto"
+   * veintitrés veces— y los resuelve de grupo en grupo, con la categoría ya propuesta.
+   */
   const openSummaryUncategorizedPreview = useCallback(() => {
-    openMovementPreview({
-      title: "Movimientos sin categoría",
-      subtitle: `${summaryUncategorizedMovements.length} movimiento${summaryUncategorizedMovements.length === 1 ? "" : "s"} confirmado${summaryUncategorizedMovements.length === 1 ? "" : "s"} todavía no tiene${summaryUncategorizedMovements.length === 1 ? "" : "n"} categoría. Al ordenarlos, el dashboard compara mejor tus gastos e ingresos.`,
-      scopeLabel: "Alcance: todos los movimientos confirmados sin categoría cargados en el dashboard.",
-      emptyTitle: "No quedan movimientos sin categoría",
-      emptyBody: "La lectura de Resumen ya no tiene esta tarea pendiente.",
-      movements: summaryUncategorizedMovements,
-    });
-  }, [openMovementPreview, summaryUncategorizedMovements]);
+    router.push("/categorize" as never);
+  }, [router]);
 
   const openCurrentMonthMovementsPreview = useCallback(() => {
     const monthLabel = format(new Date(), "MMMM yyyy", { locale: es });

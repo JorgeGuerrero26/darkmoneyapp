@@ -47,7 +47,9 @@ export function ReviewInbox({ movements, subscriptions, obligations, router, onO
         review.uncategorizedExpenseShare > 0
           ? `Pesan ${review.uncategorizedExpenseShare}% de tu gasto.`
           : "Movimientos aplicados que aún no clasificas.",
-      route: "/movements",
+      // La vista previa de 225 filas sueltas no se podia terminar: cada una pedia abrir,
+      // elegir y volver. La bandeja las agrupa por lo que son y decide de una en una.
+      route: "/categorize",
       icon: Tag,
       tone: COLORS.expense,
     },
@@ -71,8 +73,7 @@ export function ReviewInbox({ movements, subscriptions, obligations, router, onO
           <TouchableOpacity
             onPress={() => {
               if (
-              (firstItem.key === "uncategorized" ||
-                firstItem.key === "pending" ||
+              (firstItem.key === "pending" ||
                 firstItem.key === "duplicates" ||
                 firstItem.key === "no-counterparty") &&
                 onOpenMovementIssue
@@ -104,8 +105,7 @@ export function ReviewInbox({ movements, subscriptions, obligations, router, onO
               style={subStyles.reviewItem}
               onPress={() => {
                 if (
-                  (item.key === "uncategorized" ||
-                    item.key === "pending" ||
+                  (item.key === "pending" ||
                     item.key === "duplicates" ||
                     item.key === "no-counterparty") &&
                   onOpenMovementIssue
