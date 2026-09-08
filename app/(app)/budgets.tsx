@@ -25,11 +25,13 @@ import { UndoBanner } from "../../components/ui/UndoBanner";
 import { BudgetQuickEditSheet } from "../../features/budgets/components/BudgetQuickEditSheet";
 import { BudgetSummaryBar } from "../../features/budgets/components/BudgetSummaryBar";
 import { BudgetSwipeRow } from "../../features/budgets/components/BudgetSwipeRow";
+import { buildBudgetsEmptyState } from "../../features/budgets/lib/budgetsEmptyState";
 import { buildBudgetSections, type BudgetListSection } from "../../features/budgets/lib/buildBudgetSections";
 import {
   BUDGET_FILTERS,
   budgetFilterLabel,
   filterBudgets,
+  isBudgetExpired,
   type ActiveBudgetFilter,
 } from "../../features/budgets/lib/budgetFilters";
 import { buildBudgetCSV } from "../../features/budgets/lib/budgetsCsv";
@@ -38,6 +40,7 @@ import { buildRateMap, convertAmount } from "../../features/budgets/lib/budgetCu
 import { buildBudgetsContextNote } from "../../features/budgets/lib/buildBudgetsContextNote";
 import { useAuth } from "../../lib/auth-context";
 import { todayPeru } from "../../lib/date";
+import { formatSubscriptionYmd } from "../../lib/subscription-helpers";
 import {
   applyBudgetComputedMetrics,
   buildBudgetMetricsMap,
@@ -151,6 +154,28 @@ function BudgetsScreen() {
   const filteredBudgets = useMemo(
     () => filterBudgets(correctedBudgets, activeFilters, searchText, todayYmd),
     [activeFilters, correctedBudgets, searchText, todayYmd],
+  );
+
+  /* Los vencidos se ocultan por una regla por defecto, no por un filtro que el usuario puso: sin
+     esto, la lista vacía le ofrecía "Limpiar filtros" y no pasaba nada porque no había ninguno.
+     Ver buildBudgetsEmptyState. */
+  const expiredCount = useMemo(
+    () => correctedBudgets.filter((budget) => isBudgetExpired(budget, todayYmd)).length,
+    [correctedBudgets, todayYmd],
+  );
+  const lastPeriodEnd = useMemo(() => {
+    const ends = correctedBudgets.map((budget) => budget.periodEnd).filter(Boolean).sort();
+    const last = ends[ends.length - 1];
+    return last ? formatSubscriptionYmd(last) : null;
+  }, [correctedBudgets]);
+  const emptyState = useMemo(
+    () => buildBudgetsEmptyState({
+      total: correctedBudgets.length,
+      expired: expiredCount,
+      hasFilters: activeFilters.length > 0 || searchText.trim().length > 0,
+      lastPeriodEnd,
+    }),
+    [activeFilters.length, correctedBudgets.length, expiredCount, lastPeriodEnd, searchText],
   );
 
   // Tap en la notificación "presupuesto finalizado": abre el form de crear
@@ -508,19 +533,19 @@ function BudgetsScreen() {
               </SkeletonList>
             ),
           }}
-          empty={
-            correctedBudgets.length === 0 ? {
-              icon: Target,
-              title: "Sin presupuestos activos",
-              description: "Pon un límite de gasto por categoría y recibe una alerta cuando estés cerca de alcanzarlo.",
-              action: { label: "Crear primer presupuesto", onPress: () => setFormVisible(true) },
-            } : {
-              variant: "no-results",
-              // Nombrar los que SI tienes: "sin resultados" hacia pensar que no habia ninguno.
-              description: `Tus ${correctedBudgets.length} presupuesto${correctedBudgets.length === 1 ? "" : "s"} están fuera de este filtro.`,
-              action: { label: "Limpiar filtros", onPress: clearFilters },
-            }
-          }
+          empty={{
+            ...emptyState,
+            ...(emptyState.action.kind === "create" ? { icon: Target } : {}),
+            action: {
+              label: emptyState.action.label,
+              onPress:
+                emptyState.action.kind === "create"
+                  ? () => setFormVisible(true)
+                  : emptyState.action.kind === "expired"
+                    ? () => setActiveFilters(["expired"])
+                    : clearFilters,
+            },
+          }}
           refreshing={snapshotRefetching || movementsLoading}
           onRefresh={onRefresh}
         />
