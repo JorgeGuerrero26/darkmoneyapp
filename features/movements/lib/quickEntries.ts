@@ -104,3 +104,29 @@ export function buildQuickEntries(
 
   return [...pinned, ...detected];
 }
+
+/** Los tercios de la fila. `more` es el que cede su sitio a "Ver todos". */
+export type QuickRow = {
+  tiles: QuickEntry[];
+  showAll: boolean;
+};
+
+/**
+ * Cuántos mosaicos caben en la fila, y si el último cede su sitio a "Ver todos".
+ *
+ * **Tres o ninguno.** La fila son tres tercios de ancho fijo: con uno solo, un rótulo y una
+ * tarjeta ocupaban 130px del sitio más caro de la app para ahorrar un toque una vez — y una
+ * sección de patrones que encontró un patrón está anunciando su propia falta de datos. Si no se
+ * llena, no se pinta.
+ *
+ * **Y nunca más de tres.** Con cinco, la fila se convertía en un desplazamiento horizontal
+ * cortado en el borde: la misma cápsula recortada que se sacó de siete formularios y cuatro
+ * listas. Cuando hay más de los que caben, el tercer sitio es la puerta al resto.
+ */
+export function buildQuickRow(now: QuickEntry[], pool: QuickEntry[], size = 3): QuickRow {
+  const hayMas = pool.length > now.length || now.length > size;
+  const tiles = now.slice(0, hayMas ? size - 1 : size);
+  const showAll = hayMas && pool.length > tiles.length;
+  const total = tiles.length + (showAll ? 1 : 0);
+  return total < size ? { tiles: [], showAll: false } : { tiles, showAll };
+}

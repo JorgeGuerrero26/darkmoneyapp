@@ -197,9 +197,9 @@ import {
 import { SectionTitle } from "../../features/dashboard/components/simple/SectionTitle";
 import { MacroContextCard } from "../../features/dashboard/components/simple/MacroContextCard";
 import { HeroCard } from "../../features/dashboard/components/simple/HeroCard";
-import { QuickHabitsRow } from "../../features/dashboard/components/simple/QuickHabitsRow";
+import { QuickShortcutsRow } from "../../features/dashboard/components/QuickShortcutsRow";
 import { useMovementPatternsQuery } from "../../services/queries/movement-patterns";
-import { useCreateMovementMutation } from "../../services/queries/workspace-data";
+import { useCreateMovementMutation, useDeleteMovementMutation } from "../../services/queries/workspace-data";
 import { detectSpendingHabits, habitsForNow } from "../../features/movements/lib/spendingHabits";
 import { buildQuickEntries, type QuickEntry } from "../../features/movements/lib/quickEntries";
 import { useMovementTemplatesQuery } from "../../services/queries/movement-templates";
@@ -358,7 +358,7 @@ function DashboardScreen() {
 
   useDashboardRealtimeSync({ workspaceId: activeWorkspaceId });
 
-  const { showToast } = useToast();
+  const { showToast, showRichToast } = useToast();
   const markPaidMutation = useMarkSubscriptionPaidMutation(activeWorkspaceId);
   const [dashboardPayTarget, setDashboardPayTarget] = useState<SubscriptionSummary | null>(null);
   const arrival = useArrivalSheetController(activeWorkspaceId);
@@ -571,14 +571,23 @@ function DashboardScreen() {
   const { data: patternMovements } = useMovementPatternsQuery(activeWorkspaceId);
   const [savingHabitKey, setSavingHabitKey] = useState<string | null>(null);
   const createMovementForHabit = useCreateMovementMutation(activeWorkspaceId);
+  const deleteMovementForHabit = useDeleteMovementMutation(activeWorkspaceId);
   const { data: quickTemplates } = useMovementTemplatesQuery(activeWorkspaceId);
+  const [savedHabitKey, setSavedHabitKey] = useState<string | null>(null);
+  const allHabits = useMemo(
+    () => (patternMovements?.length ? detectSpendingHabits(patternMovements) : []),
+    [patternMovements],
+  );
   const quickEntries = useMemo(() => {
-    const habits = patternMovements?.length
-      ? habitsForNow(detectSpendingHabits(patternMovements))
-      : [];
-    return buildQuickEntries(quickTemplates ?? [], habits);
+    return buildQuickEntries(quickTemplates ?? [], habitsForNow(allHabits));
     // `habitsClock` entra a propósito: la franja horaria cambia con el reloj, no con los datos.
-  }, [patternMovements, quickTemplates, habitsClock]);
+  }, [allHabits, quickTemplates, habitsClock]);
+  /* Todos los que existen, sin filtrar por hora: es lo que hay detrás de "Ver todos". A las 6
+     de la mañana la moto encaja y el taxi no, pero el taxi sigue siendo un atajo tuyo. */
+  const quickPool = useMemo(
+    () => buildQuickEntries(quickTemplates ?? [], allHabits),
+    [allHabits, quickTemplates],
+  );
 
   const registerHabit = useCallback((habit: QuickEntry) => {
     if (!activeWorkspaceId || savingHabitKey) return;
@@ -599,9 +608,20 @@ function DashboardScreen() {
         dedupeKey: newClientDedupeKey("habit"),
       }),
       {
-        onSuccess: () => {
+        onSuccess: (created) => {
           setSavingHabitKey(null);
-          showToast(`${habit.label} · ${formatCurrency(habit.amount, baseCurrency)}`, "success");
+          /* La marca vuelve sola: confirma el toque sin convertirse en un estado permanente. */
+          setSavedHabitKey(habit.key);
+          setTimeout(() => setSavedHabitKey((key) => (key === habit.key ? null : key)), 2200);
+          /* El aviso dice qué se anotó, cuánto y de dónde salió, con deshacer: es lo que hace
+             seguro que un toque escriba directo. Si el taxi costó 6 y no 4, se deshace. */
+          const cuenta = snapshot?.accounts.find((account) => account.id === habit.sourceAccountId)?.name;
+          showRichToast({
+            type: "success",
+            title: `Se anotó «${habit.label}»`,
+            subtitle: `${formatCurrency(habit.amount, baseCurrency)}${cuenta ? ` · restado de ${cuenta}` : ""}`,
+            onUndo: () => deleteMovementForHabit.mutate(created.id),
+          });
         },
         onError: (error: Error) => {
           setSavingHabitKey(null);
@@ -609,7 +629,7 @@ function DashboardScreen() {
         },
       },
     );
-  }, [activeWorkspaceId, baseCurrency, createMovementForHabit, savingHabitKey, showToast]);
+  }, [activeWorkspaceId, baseCurrency, createMovementForHabit, deleteMovementForHabit, savingHabitKey, showRichToast, showToast, snapshot?.accounts]);
   const workspaceDisplayName = resolvedActiveWorkspace?.name ?? "Tu workspace";
   const snapshotBudgets = useMemo(() => snapshot?.budgets ?? [], [snapshot?.budgets]);
 
@@ -802,14 +822,16 @@ function DashboardScreen() {
     );
   }
 
-  /* Una definición, dos sitios: bajo el balance en la vista simple y arriba del todo en la
-     avanzada. La fila se pinta sola solo cuando hay algo que ofrecer. */
+  /* Una definición, dos sitios: bajo el balance en la vista simple y como primer bloque de
+     Resumen en la avanzada. La fila se pinta sola solo cuando llena sus tres tercios. */
   const quickHabitsRow = (
-    <DashboardSectionBoundary sectionLabel="Lo de siempre">
-      <QuickHabitsRow
+    <DashboardSectionBoundary sectionLabel="Atajos">
+      <QuickShortcutsRow
         entries={quickEntries}
+        pool={quickPool}
         currencyCode={baseCurrency}
         savingKey={savingHabitKey}
+        savedKey={savedHabitKey}
         onRegister={registerHabit}
       />
     </DashboardSectionBoundary>
@@ -982,15 +1004,11 @@ function DashboardScreen() {
           </>
         ) : null}
 
-        {/* Y también arriba del panel avanzado: la fila estaba SOLO en la rama simple, así que
-            quien usa la vista avanzada —la que trae las pestañas— no la vio nunca. Registrar de
-            un toque no es análisis; no pertenece a ninguna pestaña, va antes que todas. */}
-        {isAdvanced && hasAdvancedDashboardAccess ? quickHabitsRow : null}
-
         {/* -- Advanced section -- */}
         {isAdvanced && hasAdvancedDashboardAccess && (
           <View onLayout={(e) => { advancedSectionY.current = e.nativeEvent.layout.y; }}>
           <AdvancedDashboard
+            shortcuts={quickHabitsRow}
             onActiveTabChange={setAdvancedTab}
             movements={movements}
             obligations={obligationsMerged}

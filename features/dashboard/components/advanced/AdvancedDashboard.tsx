@@ -176,6 +176,7 @@ export function AdvancedDashboard({
   showAdvancedGift,
   analytics,
   router,
+  shortcuts,
   accountCurrencyMap,
   onRequestPrecisionFocus,
   onScrollToTop,
@@ -197,6 +198,8 @@ export function AdvancedDashboard({
   showAdvancedGift?: boolean;
   analytics: DashboardAnalyticsBundle | null | undefined;
   router: ReturnType<typeof useRouter>;
+  /** Los atajos de un toque. Se pintan como primer bloque de Resumen; ver el comentario allí. */
+  shortcuts?: React.ReactNode;
   accountCurrencyMap: Map<number, string>;
   /** Avisa a la PANTALLA en que pestaña estamos, para que colapse su encabezado. */
   onActiveTabChange?: (tab: AdvancedTab) => void;
@@ -3122,6 +3125,12 @@ export function AdvancedDashboard({
       {activeTab === 'Resumen' && (
         <DashboardSectionBoundary sectionLabel="Resumen">
         <>
+      {/* Primer bloque de Resumen, no cromo entre el encabezado y las pestañas: ahí se leía
+          como si perteneciera a las pestañas y las despegaba del título. Dentro de una pestaña
+          es contenido, y desaparecer en Patrones o Flujo es correcto — cuando analizas no
+          estás anotando. */}
+      {shortcuts ? <View style={{ height: SPACING.sm }} /> : null}
+      {shortcuts}
       <View style={{ height: SPACING.sm }} />
       <Card>
         <SectionTitle>Resumen ejecutivo</SectionTitle>

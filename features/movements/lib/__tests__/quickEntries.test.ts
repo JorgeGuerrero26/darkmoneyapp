@@ -1,4 +1,4 @@
-import { buildQuickEntries } from "../quickEntries";
+import { buildQuickEntries, buildQuickRow } from "../quickEntries";
 import type { SpendingHabit } from "../spendingHabits";
 
 const plantilla = (over: Partial<Parameters<typeof buildQuickEntries>[0][number]> = {}) => ({
@@ -78,5 +78,53 @@ describe("buildQuickEntries", () => {
 
   it("sin nada que mostrar devuelve vacio, no una fila con titulo suelto", () => {
     expect(buildQuickEntries([], [])).toEqual([]);
+  });
+});
+
+describe("buildQuickRow", () => {
+  const entrada = (n: number): Parameters<typeof buildQuickRow>[0][number] => ({
+    key: `k${n}`,
+    label: `Gasto ${n}`,
+    amount: n,
+    movementType: "expense",
+    sourceAccountId: 2,
+    destinationAccountId: null,
+    categoryId: 7,
+    counterpartyId: null,
+    notes: null,
+    origin: "habit",
+  });
+
+  it("con tres justos se pintan los tres, sin puerta al resto", () => {
+    const tres = [entrada(1), entrada(2), entrada(3)];
+    expect(buildQuickRow(tres, tres)).toEqual({ tiles: tres, showAll: false });
+  });
+
+  it("con mas de los que caben, el tercer sitio es la puerta al resto", () => {
+    const pool = [entrada(1), entrada(2), entrada(3), entrada(4), entrada(5)];
+    const row = buildQuickRow(pool.slice(0, 3), pool);
+    expect(row.tiles.map((t) => t.key)).toEqual(["k1", "k2"]);
+    expect(row.showAll).toBe(true);
+  });
+
+  it("dos que encajan ahora y mas en el resto: se llena con la puerta", () => {
+    const pool = [entrada(1), entrada(2), entrada(3), entrada(4)];
+    const row = buildQuickRow(pool.slice(0, 2), pool);
+    expect(row.tiles).toHaveLength(2);
+    expect(row.showAll).toBe(true);
+  });
+
+  it("dos y nada mas no llena la fila: no se pinta", () => {
+    const dos = [entrada(1), entrada(2)];
+    expect(buildQuickRow(dos, dos)).toEqual({ tiles: [], showAll: false });
+  });
+
+  it("uno solo tampoco: una seccion con un dato anuncia su falta de datos", () => {
+    const uno = [entrada(1)];
+    expect(buildQuickRow(uno, uno)).toEqual({ tiles: [], showAll: false });
+  });
+
+  it("sin nada, vacia", () => {
+    expect(buildQuickRow([], [])).toEqual({ tiles: [], showAll: false });
   });
 });
