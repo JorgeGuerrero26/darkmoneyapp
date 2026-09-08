@@ -76,9 +76,14 @@ export function expectedPace(budget: Pick<BudgetOverview, "periodStart" | "perio
   const end = Date.parse(`${budget.periodEnd}T00:00:00Z`);
   const today = Date.parse(`${todayYmd}T00:00:00Z`);
   if (!Number.isFinite(start) || !Number.isFinite(end) || !Number.isFinite(today)) return 0;
-  const total = end - start;
-  if (total <= 0) return 1;
-  return Math.max(0, Math.min(1, (today - start) / total));
+  /* Días transcurridos ÷ días del período, contando ambos extremos.
+     Restar las fechas a secas dejaba fuera el día de hoy: el 8 de septiembre daba 7/29 = 24% y
+     por tanto S/ 96.55 esperados, cuando lo correcto es 8/30 = 27% y S/ 107. Un día de 30 es
+     poco, pero se traducía en diez soles de diferencia en la frase que el usuario lee. */
+  const totalDays = (end - start) / 86_400_000 + 1;
+  const elapsedDays = (today - start) / 86_400_000 + 1;
+  if (totalDays <= 0) return 1;
+  return Math.max(0, Math.min(1, elapsedDays / totalDays));
 }
 
 /** Días que faltan para que cierre el período. 0 el último día. */

@@ -90,12 +90,21 @@ describe("groupBudgetsIntoRules", () => {
 
 describe("expectedPace y daysLeft", () => {
   it("a mitad de mes se espera la mitad", () => {
-    expect(expectedPace({ periodStart: "2026-09-01", periodEnd: "2026-09-30" }, "2026-09-15")).toBeCloseTo(0.48, 1);
+    expect(expectedPace({ periodStart: "2026-09-01", periodEnd: "2026-09-30" }, "2026-09-15")).toBeCloseTo(0.5, 1);
   });
 
-  it("el dia 8 de septiembre se espera un 24%, no un 81%", () => {
+  it("dias transcurridos entre dias del periodo, contando ambos extremos", () => {
+    // El 8 de septiembre son 8 de 30, no 7 de 29: restar las fechas a secas dejaba fuera hoy y
+    // daba 24%, o sea S/ 96.55 esperados donde lo correcto es S/ 107.
     const pace = expectedPace({ periodStart: "2026-09-01", periodEnd: "2026-09-30" }, "2026-09-08");
-    expect(Math.round(pace * 100)).toBe(24);
+    expect(Math.round(pace * 100)).toBe(27);
+    expect(Math.round(400 * pace)).toBe(107);
+  });
+
+  it("el primer dia ya cuenta como transcurrido, y el ultimo cierra el periodo", () => {
+    const mes = { periodStart: "2026-09-01", periodEnd: "2026-09-30" };
+    expect(expectedPace(mes, "2026-09-01")).toBeCloseTo(1 / 30, 3);
+    expect(expectedPace(mes, "2026-09-30")).toBe(1);
   });
 
   it("cuenta los dias que faltan, nunca negativos", () => {
@@ -111,8 +120,10 @@ describe("budgetRowNote", () => {
   });
 
   it("por encima del ritmo: lo dice en soles, no en color", () => {
-    // 24% del mes transcurrido sobre 400 son 96 esperados; gastados 322.12.
-    expect(budgetRowNote(budget(), "2026-09-08", money)).toContain("por encima del ritmo");
+    // 27% del mes sobre 400 son 107 esperados; gastados 322.12 -> 215 por delante.
+    const nota = budgetRowNote(budget(), "2026-09-08", money);
+    expect(nota).toContain("S/ 215.45");
+    expect(nota).toContain("por encima del ritmo");
   });
 
   it("dentro del ritmo no dice nada: una fila sin problema no necesita frase", () => {
