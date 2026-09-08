@@ -1,9 +1,9 @@
 import { useCallback, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { useLocalSearchParams } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
-import { MoreVertical, Copy, Pin, PinOff, Sliders, Trash2 } from "lucide-react-native";
+import { MoreVertical } from "lucide-react-native";
 
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { Card } from "../../components/ui/Card";
@@ -17,7 +17,6 @@ import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTempla
 import { BudgetForm } from "../../components/forms/BudgetForm";
 import { BudgetQuickEditSheet } from "../../features/budgets/components/BudgetQuickEditSheet";
 import { BudgetDetailHeader } from "../../features/budgets/components/BudgetDetailHeader";
-import { BudgetDetailQuickStats } from "../../features/budgets/components/BudgetDetailQuickStats";
 import { BudgetDetailContributions } from "../../features/budgets/components/BudgetDetailContributions";
 import { BudgetDetailHistory } from "../../features/budgets/components/BudgetDetailHistory";
 import { useOriginBackNavigation } from "../../hooks/useOriginBackNavigation";
@@ -51,6 +50,7 @@ function BudgetDetailScreen() {
   // vive en formatCurrency, que lee el store imperativamente).
   useUiStore((state) => state.privacyMode);
   const { id } = useLocalSearchParams<{ id: string }>();
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
   const { handleBack } = useOriginBackNavigation({
@@ -148,7 +148,6 @@ function BudgetDetailScreen() {
         <>
           <ScreenHeader
             title={budget?.name ?? "Presupuesto"}
-            subtitle={activeWorkspace?.name}
             onBack={handleBack}
             rightAction={
               budget ? (
@@ -187,30 +186,22 @@ function BudgetDetailScreen() {
           </View>
         ) : (
           <ScrollView contentContainerStyle={styles.content}>
-            <BudgetDetailHeader budget={budget} />
-
-            <Card style={styles.quickActions}>
-              <Text style={styles.quickActionsHint}>Acciones rápidas</Text>
-              <View style={styles.quickActionsRow}>
-                <QuickActionButton
-                  icon={Sliders}
-                  label="Ajuste rápido"
-                  onPress={() => setQuickEditVisible(true)}
-                />
-                <QuickActionButton
-                  icon={Copy}
-                  label="Duplicar"
-                  onPress={() => void handleDuplicate()}
-                />
-                <QuickActionButton
-                  icon={budget.isPinned ? PinOff : Pin}
-                  label={budget.isPinned ? "Desfijar" : "Fijar"}
-                  onPress={handleTogglePin}
-                />
-              </View>
-            </Card>
-
-            <BudgetDetailQuickStats budget={budget} />
+            {/* Ajuste rápido, Duplicar y Fijar ocupaban una tarjeta entera con rótulo propio
+                para tres cosas que se hacen una vez en la vida del presupuesto. Y "Duplicar"
+                perdió su razón de ser con la cadencia: se duplicaba para tener el mes siguiente,
+                y ahora lo abre el sistema. Las tres bajan al menú, que estaba vacío. */}
+            <BudgetDetailHeader
+              budget={budget}
+              onReviewMovements={() => router.push({
+                pathname: "/(app)/movements",
+                params: {
+                  quickCategoryId: budget.categoryId ? String(budget.categoryId) : undefined,
+                  quickDateFrom: budget.periodStart,
+                  quickDateTo: budget.periodEnd,
+                  quickLabel: budget.name,
+                },
+              })}
+            />
 
             <BudgetDetailContributions
               contributions={analytics?.contributions ?? []}
@@ -257,15 +248,15 @@ function BudgetDetailScreen() {
                   onPress: () => { setMenuOpen(false); setEditVisible(true); },
                 },
                 {
-                  key: "duplicate",
-                  label: "Duplicar al próximo período",
+                  key: "quick",
+                  label: "Ajustar el límite",
                   variant: "secondary" as const,
-                  onPress: () => { setMenuOpen(false); void handleDuplicate(); },
+                  onPress: () => { setMenuOpen(false); setQuickEditVisible(true); },
                 },
                 {
                   key: "pin",
-                  label: budget.isPinned ? "Quitar de fijados" : "Fijar en la lista",
-                  variant: "ghost" as const,
+                  label: budget?.isPinned ? "Quitar de fijados" : "Fijar en la lista",
+                  variant: "secondary" as const,
                   onPress: () => { setMenuOpen(false); handleTogglePin(); },
                 },
                 {
@@ -293,27 +284,6 @@ function BudgetDetailScreen() {
   );
 }
 
-function QuickActionButton({
-  icon: Icon,
-  label,
-  onPress,
-}: {
-  icon: typeof Pin;
-  label: string;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [styles.quickAction, pressed && styles.quickActionPressed]}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-    >
-      <Icon size={16} color={COLORS.primary} strokeWidth={2} />
-      <Text style={styles.quickActionLabel}>{label}</Text>
-    </Pressable>
-  );
-}
 
 const styles = StyleSheet.create({
   content: {
@@ -337,38 +307,6 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
     fontSize: FONT_SIZE.sm,
     textAlign: "center",
-  },
-  quickActions: {
-    gap: SPACING.sm,
-  },
-  quickActionsHint: {
-    fontFamily: FONT_FAMILY.bodySemibold,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.textMuted,
-    textTransform: "uppercase",
-  },
-  quickActionsRow: {
-    flexDirection: "row",
-    gap: SPACING.sm,
-  },
-  quickAction: {
-    flex: 1,
-    paddingVertical: SPACING.sm,
-    paddingHorizontal: SPACING.xs,
-    alignItems: "center",
-    gap: SPACING.xs,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: SPACING.md,
-    backgroundColor: COLORS.bgCard,
-  },
-  quickActionPressed: {
-    opacity: 0.6,
-  },
-  quickActionLabel: {
-    fontFamily: FONT_FAMILY.bodySemibold,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.primary,
   },
   sectionTitle: {
     fontSize: FONT_SIZE.xs,

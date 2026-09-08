@@ -25,8 +25,10 @@ export function BudgetDetailContributions({ contributions, currencyCode }: Props
     return (
       <Card>
         <Text style={styles.title}>Movimientos del período</Text>
+        {/* "Imputados" es vocabulario de contabilidad, y el vacío no decía qué hacer. */}
         <Text style={styles.empty}>
-          Aún no hay movimientos imputados a este presupuesto en el período actual.
+          Todavía no has anotado ningún gasto de esta categoría en este período. Los que registres
+          irán descontando del límite.
         </Text>
       </Card>
     );
