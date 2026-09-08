@@ -21,7 +21,7 @@ type Props = {
 };
 
 /**
- * Los gastos que repites, a un toque, en tres mosaicos.
+ * Los gastos que repites, a un toque, en mosaicos de un tercio.
  *
  * **Por qué existe.** Registrar los S/ 2 de la moto al trabajo son cinco pasos —abrir el
  * formulario, tipo, monto, cuenta, categoría— para un dato que se repite veintiocho veces al mes
@@ -37,6 +37,11 @@ type Props = {
  * se sacó de siete formularios y cuatro listas. Tres tercios no saltan de línea ni se cortan:
  * un nombre largo se recorta con puntos suspensivos dentro de su tercio. Cuando hay más de los
  * que caben, el tercer sitio es la puerta al resto.
+ *
+ * **Y la fila no tiene que estar llena.** Con uno se pinta uno, del mismo ancho de tercio. Entre
+ * las 5 y las 9 de la mañana solo encaja la moto —el atajo con más repeticiones de los nueve— y
+ * esconderla por no tener compañía era tapar el mejor dato en el momento exacto en que se usa.
+ * Ver [[buildQuickRow]].
  *
  * **Y por qué no hay IA aquí.** Es contar repeticiones y mirar la hora. Así es instantáneo,
  * gratis y funciona sin señal: tres cosas que una llamada a un modelo no da.
@@ -147,9 +152,16 @@ function Tile({
 const styles = StyleSheet.create({
   row: { flexDirection: "row", gap: SPACING.sm },
   tile: {
-    /* Tercios: `flex: 1` con `minWidth: 0` para que el nombre largo se recorte DENTRO de su
-       tercio en vez de empujar al siguiente y desbordar la fila. */
-    flex: 1,
+    /* Un tercio SIEMPRE, haya uno o tres.
+       `flexBasis` en vez de `flex: 1` porque la fila ya no tiene que estar llena: con `flex: 1`
+       un atajo solo se estiraría a lo ancho y volvería a ser la tarjeta pesada que quitamos —
+       un chip suelto son 44px, no una barra. Con tres, `flexShrink` los encoge lo justo para
+       que quepan los huecos, así que siguen siendo tercios iguales.
+       `minWidth: 0` es lo que hace que un nombre largo se recorte DENTRO de su tercio en vez de
+       empujar al siguiente y desbordar la fila. */
+    flexBasis: "33.33%",
+    flexGrow: 0,
+    flexShrink: 1,
     minWidth: 0,
     minHeight: 52,
     justifyContent: "center",

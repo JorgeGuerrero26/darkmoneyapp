@@ -114,14 +114,25 @@ describe("buildQuickRow", () => {
     expect(row.showAll).toBe(true);
   });
 
-  it("dos y nada mas no llena la fila: no se pinta", () => {
+  it("dos se pintan como dos: la fila no tiene que estar llena", () => {
     const dos = [entrada(1), entrada(2)];
-    expect(buildQuickRow(dos, dos)).toEqual({ tiles: [], showAll: false });
+    expect(buildQuickRow(dos, dos)).toEqual({ tiles: dos, showAll: false });
   });
 
-  it("uno solo tampoco: una seccion con un dato anuncia su falta de datos", () => {
+  it("uno solo tambien: a las 6 de la mañana es el unico que encaja, y es el mas repetido", () => {
     const uno = [entrada(1)];
-    expect(buildQuickRow(uno, uno)).toEqual({ tiles: [], showAll: false });
+    expect(buildQuickRow(uno, uno)).toEqual({ tiles: uno, showAll: false });
+  });
+
+  it("uno vigente con mas en el resto: el chip y la puerta", () => {
+    const pool = [entrada(1), entrada(2), entrada(3), entrada(4)];
+    const row = buildQuickRow([entrada(1)], pool);
+    expect(row.tiles.map((t) => t.key)).toEqual(["k1"]);
+    expect(row.showAll).toBe(true);
+  });
+
+  it("nada vigente a esta hora: ni siquiera la puerta, que sola no es un atajo", () => {
+    expect(buildQuickRow([], [entrada(1), entrada(2)])).toEqual({ tiles: [], showAll: false });
   });
 
   it("sin nada, vacia", () => {

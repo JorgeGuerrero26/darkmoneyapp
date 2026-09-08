@@ -114,19 +114,24 @@ export type QuickRow = {
 /**
  * Cuántos mosaicos caben en la fila, y si el último cede su sitio a "Ver todos".
  *
- * **Tres o ninguno.** La fila son tres tercios de ancho fijo: con uno solo, un rótulo y una
- * tarjeta ocupaban 130px del sitio más caro de la app para ahorrar un toque una vez — y una
- * sección de patrones que encontró un patrón está anunciando su propia falta de datos. Si no se
- * llena, no se pinta.
+ * **Basta con uno.** Hubo una regla de "tres o ninguno" que venía de cuando el bloque llevaba
+ * rótulo de sección: ahí, un atajo suelto costaba ~130px de cromo para una acción. Al quitar el
+ * rótulo la premisa desapareció, pero la regla se quedó — y medida contra los datos reales
+ * escondía justo el mejor atajo: entre las 5 y las 9 de la mañana solo encaja la moto, que es la
+ * que más veces se ha repetido de las nueve. Ocultar el dato más sólido en el momento exacto en
+ * que se usa, por no tener compañía.
  *
- * **Y nunca más de tres.** Con cinco, la fila se convertía en un desplazamiento horizontal
- * cortado en el borde: la misma cápsula recortada que se sacó de siete formularios y cuatro
- * listas. Cuando hay más de los que caben, el tercer sitio es la puerta al resto.
+ * El umbral que evita la fila vacía ya lo pone el detector —5 repeticiones en 4 días distintos
+ * con el mismo monto exacto—; un segundo filtro encima solo tapaba.
+ *
+ * **Nunca más de tres.** Con cinco, la fila se convertía en un desplazamiento horizontal cortado
+ * en el borde: la misma cápsula recortada que se sacó de siete formularios y cuatro listas.
+ * Cuando hay más de los que caben, el tercer sitio es la puerta al resto.
  */
 export function buildQuickRow(now: QuickEntry[], pool: QuickEntry[], size = 3): QuickRow {
+  // Sin nada vigente a esta hora no hay fila: una puerta a "Ver todos" sola no es un atajo.
+  if (now.length === 0) return { tiles: [], showAll: false };
   const hayMas = pool.length > now.length || now.length > size;
   const tiles = now.slice(0, hayMas ? size - 1 : size);
-  const showAll = hayMas && pool.length > tiles.length;
-  const total = tiles.length + (showAll ? 1 : 0);
-  return total < size ? { tiles: [], showAll: false } : { tiles, showAll };
+  return { tiles, showAll: hayMas && pool.length > tiles.length };
 }
