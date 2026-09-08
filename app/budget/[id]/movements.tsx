@@ -177,7 +177,14 @@ function capitalizeFirst(text: string): string {
 }
 
 const styles = StyleSheet.create({
-  content: { paddingHorizontal: SPACING.xl, paddingBottom: SPACING.xxl, gap: 0 },
+  /* El aire de arriba lo pone el contenido: la cifra arrancaba pegada al filete del encabezado.
+     20 a los lados es el margen lateral único de la app; 16 arriba, como los otros detalles. */
+  content: {
+    paddingHorizontal: SPACING.xl,
+    paddingTop: SPACING.lg,
+    paddingBottom: SPACING.xxl,
+    gap: 0,
+  },
   head: { gap: SPACING.sm, paddingBottom: SPACING.md },
   amountRow: { flexDirection: "row", alignItems: "baseline", gap: SPACING.sm, flexWrap: "wrap" },
   spent: {
