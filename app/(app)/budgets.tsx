@@ -26,6 +26,7 @@ import { UndoBanner } from "../../components/ui/UndoBanner";
 import { BudgetQuickEditSheet } from "../../features/budgets/components/BudgetQuickEditSheet";
 import { MetricSummaryBar } from "../../components/ui/MetricSummaryBar";
 import { BudgetSwipeRow } from "../../features/budgets/components/BudgetSwipeRow";
+import { useEnsureBudgetPeriodsMutation } from "../../services/queries/budgets";
 import { buildBudgetsEmptyState } from "../../features/budgets/lib/budgetsEmptyState";
 import { groupBudgetsIntoRules } from "../../features/budgets/lib/budgetRules";
 import { formatCurrency } from "../../components/ui/AmountDisplay";
@@ -209,6 +210,23 @@ function BudgetsScreen() {
 
   /** "septiembre" -> "Septiembre": el mes abre la frase del encabezado. */
   const capitalizeFirst = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+
+  /**
+   * Abre el período que toca en los presupuestos que se renuevan, al entrar a la pantalla.
+   *
+   * Es lo que hace verdad la pregunta "cada cuánto se renueva": sin esto, el usuario volvería a
+   * crearlo el día 1 y la lista volvería a llenarse de un presupuesto por mes. Corre una vez por
+   * carga de datos y es idempotente — el índice único hace que el segundo intento choque.
+   */
+  const ensurePeriods = useEnsureBudgetPeriodsMutation(activeWorkspaceId);
+  const ensuredRef = useRef("");
+  useEffect(() => {
+    if (!activeWorkspaceId || correctedBudgets.length === 0) return;
+    const marca = `${activeWorkspaceId}:${todayYmd}:${correctedBudgets.length}`;
+    if (ensuredRef.current === marca || ensurePeriods.isPending) return;
+    ensuredRef.current = marca;
+    ensurePeriods.mutate({ budgets: correctedBudgets, todayYmd });
+  }, [activeWorkspaceId, correctedBudgets, ensurePeriods, todayYmd]);
 
   const budgetSections = useMemo(
     () => buildBudgetSections(filteredBudgets, todayYmd),

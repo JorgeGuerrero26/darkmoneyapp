@@ -272,6 +272,8 @@ export type BudgetOverview = {
   alertPercent: number;
   movementCount: number;
   rolloverEnabled: boolean;
+  /** Cada cuánto se renueva. Los creados antes de la fase 36 traen la cadencia deducida. */
+  recurrence?: "weekly" | "biweekly" | "monthly" | "quarterly" | "yearly" | "none";
   notes?: string | null;
   isActive: boolean;
   isNearLimit: boolean;
