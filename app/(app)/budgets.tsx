@@ -4,6 +4,7 @@ import type { SectionListRenderItem } from "react-native";
 import * as Haptics from "expo-haptics";
 import { CheckSquare, Copy, Download, MoreVertical, Target, Trash2, X } from "lucide-react-native";
 import { format } from "date-fns";
+import { es } from "date-fns/locale";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -23,17 +24,16 @@ import { ResourceSectionList } from "../../components/ui/ResourceSectionList";
 import { SkeletonCard, SkeletonList } from "../../components/ui/Skeleton";
 import { UndoBanner } from "../../components/ui/UndoBanner";
 import { BudgetQuickEditSheet } from "../../features/budgets/components/BudgetQuickEditSheet";
-import { BudgetSummaryBar } from "../../features/budgets/components/BudgetSummaryBar";
+import { MetricSummaryBar } from "../../components/ui/MetricSummaryBar";
 import { BudgetSwipeRow } from "../../features/budgets/components/BudgetSwipeRow";
 import { buildBudgetsEmptyState } from "../../features/budgets/lib/budgetsEmptyState";
-import { buildBudgetSections, type BudgetListSection } from "../../features/budgets/lib/buildBudgetSections";
-import {
-  BUDGET_FILTERS,
-  budgetFilterLabel,
-  filterBudgets,
-  isBudgetExpired,
-  type ActiveBudgetFilter,
-} from "../../features/budgets/lib/budgetFilters";
+import { groupBudgetsIntoRules } from "../../features/budgets/lib/budgetRules";
+import { formatCurrency } from "../../components/ui/AmountDisplay";
+import { COLORS } from "../../constants/theme";
+import { buildBudgetSections, type BudgetListItem, type BudgetListSection } from "../../features/budgets/lib/buildBudgetSections";
+import { buildBudgetsHeadline, closedMonthsSummary } from "../../features/budgets/lib/budgetsHeadline";
+import { ResourceCard } from "../../components/ui/ResourceCard";
+import { isBudgetExpired } from "../../features/budgets/lib/budgetFilters";
 import { buildBudgetCSV } from "../../features/budgets/lib/budgetsCsv";
 import { nextPeriodFor } from "../../features/budgets/lib/duplicateBudgetToNextPeriod";
 import { buildRateMap, convertAmount } from "../../features/budgets/lib/budgetCurrency";
@@ -61,6 +61,9 @@ import {
 } from "../../services/queries/budgets";
 import type { BudgetOverview } from "../../types/domain";
 
+/** A partir de cuántos presupuestos aparece el buscador. Con tres, buscar es más lento que mirar. */
+const SEARCH_FROM = 8;
+
 function BudgetsScreen() {
   // Fuerza el re-render de la pantalla al alternar modo privacidad (la máscara
   // vive en formatCurrency, que lee el store imperativamente).
@@ -85,7 +88,6 @@ function BudgetsScreen() {
   const [analyticsBudgetId, setAnalyticsBudgetId] = useState<number | null>(null);
   const [quickEditBudget, setQuickEditBudget] = useState<BudgetOverview | null>(null);
   const [searchText, setSearchText] = useState("");
-  const [activeFilters, setActiveFilters] = useState<ActiveBudgetFilter[]>([]);
   const [selectMode, setSelectMode] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -151,10 +153,24 @@ function BudgetsScreen() {
   }, [activeBudgets, budgetMovementsError, metricsMap]);
 
   const todayYmd = todayPeru();
-  const filteredBudgets = useMemo(
-    () => filterBudgets(correctedBudgets, activeFilters, searchText, todayYmd),
-    [activeFilters, correctedBudgets, searchText, todayYmd],
-  );
+  /**
+   * Solo la búsqueda filtra ya.
+   *
+   * `filterBudgets` escondía los vencidos salvo bajo su propio filtro, y esa regla ahora sería
+   * al revés de lo que hace falta: los meses cerrados son la sección "Meses cerrados", así que
+   * tienen que llegar hasta aquí para poder agruparse. Quien los separa es el constructor de
+   * secciones, no un filtro.
+   */
+  const filteredBudgets = useMemo(() => {
+    const query = searchText.trim().toLowerCase();
+    if (!query) return correctedBudgets;
+    return correctedBudgets.filter((budget) =>
+      [budget.name, budget.categoryName ?? "", budget.accountName ?? "", budget.notes ?? ""]
+        .join(" ")
+        .toLowerCase()
+        .includes(query),
+    );
+  }, [correctedBudgets, searchText]);
 
   /* Los vencidos se ocultan por una regla por defecto, no por un filtro que el usuario puso: sin
      esto, la lista vacía le ofrecía "Limpiar filtros" y no pasaba nada porque no había ninguno.
@@ -172,10 +188,10 @@ function BudgetsScreen() {
     () => buildBudgetsEmptyState({
       total: correctedBudgets.length,
       expired: expiredCount,
-      hasFilters: activeFilters.length > 0 || searchText.trim().length > 0,
+      hasFilters: searchText.trim().length > 0,
       lastPeriodEnd,
     }),
-    [activeFilters.length, correctedBudgets.length, expiredCount, lastPeriodEnd, searchText],
+    [correctedBudgets.length, expiredCount, lastPeriodEnd, searchText],
   );
 
   // Tap en la notificación "presupuesto finalizado": abre el form de crear
@@ -191,20 +207,44 @@ function BudgetsScreen() {
     setDuplicateBudget({ ...source, ...nextPeriodFor(source.periodStart, source.periodEnd) });
   }, [duplicateFrom, snapshot, router]);
 
-  const budgetSections = useMemo(() => buildBudgetSections(filteredBudgets), [filteredBudgets]);
+  /** "septiembre" -> "Septiembre": el mes abre la frase del encabezado. */
+  const capitalizeFirst = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+
+  const budgetSections = useMemo(
+    () => buildBudgetSections(filteredBudgets, todayYmd),
+    [filteredBudgets, todayYmd],
+  );
   const rateMap = useMemo(() => buildRateMap(snapshot?.exchangeRates ?? []), [snapshot?.exchangeRates]);
-  const summary = useMemo(() => {
-    return filteredBudgets.reduce(
-      (acc, budget) => {
-        acc.limitTotal += convertAmount(budget.limitAmount, budget.currencyCode, baseCurrencyCode, rateMap);
-        acc.spentTotal += convertAmount(budget.spentAmount, budget.currencyCode, baseCurrencyCode, rateMap);
-        acc.remainingTotal += convertAmount(budget.remainingAmount, budget.currencyCode, baseCurrencyCode, rateMap);
-        if (budget.isNearLimit || budget.isOverLimit) acc.attentionCount += 1;
-        return acc;
-      },
-      { limitTotal: 0, spentTotal: 0, remainingTotal: 0, attentionCount: 0 },
-    );
-  }, [baseCurrencyCode, filteredBudgets, rateMap]);
+
+  /**
+   * El encabezado suma SOLO los presupuestos que corren a la vez.
+   *
+   * Sumaba todo lo que hubiera en la lista, y la lista traía el mismo presupuesto una vez por
+   * mes: salía "S/ 1,752.32 de S/ 1,200.00" — tres límites de 400 apilados, un presupuesto que
+   * nunca existió. Alimentación y Transporte sí coexisten en septiembre, así que su suma
+   * describe un mes real.
+   */
+  const activeNow = useMemo(
+    () => groupBudgetsIntoRules(correctedBudgets, todayYmd)
+      .map((rule) => rule.current)
+      .filter((budget): budget is BudgetOverview => budget !== null)
+      // A moneda base antes de sumar: dos presupuestos en monedas distintas no se suman crudos.
+      .map((budget) => ({
+        ...budget,
+        spentAmount: convertAmount(budget.spentAmount, budget.currencyCode, baseCurrencyCode, rateMap),
+        limitAmount: convertAmount(budget.limitAmount, budget.currencyCode, baseCurrencyCode, rateMap),
+        currencyCode: baseCurrencyCode,
+      })),
+    [baseCurrencyCode, correctedBudgets, rateMap, todayYmd],
+  );
+  const headline = useMemo(
+    () => buildBudgetsHeadline({
+      active: activeNow,
+      periodLabel: capitalizeFirst(format(new Date(), "LLLL", { locale: es })),
+      formatAmount: (value) => formatCurrency(value, baseCurrencyCode),
+    }),
+    [activeNow, baseCurrencyCode],
+  );
 
   const isMetricsLoading =
     activeBudgets.length > 0 &&
@@ -223,22 +263,10 @@ function BudgetsScreen() {
   );
 
   const activeFilterItems = useMemo<ActiveFilterItem[]>(() => {
-    const items = activeFilters.map((filter) => ({
-      key: `filter-${filter}`,
-      label: budgetFilterLabel(filter),
-      onRemove: () => setActiveFilters((current) => current.filter((item) => item !== filter)),
-    }));
-
-    if (searchText.trim()) {
-      items.push({
-        key: "search",
-        label: `Búsqueda: ${searchText.trim()}`,
-        onRemove: () => setSearchText(""),
-      });
-    }
-
-    return items;
-  }, [activeFilters, searchText]);
+    const query = searchText.trim();
+    if (!query) return [];
+    return [{ key: "search", label: `Búsqueda: ${query}`, onRemove: () => setSearchText("") }];
+  }, [searchText]);
 
   const onRefresh = useCallback(async () => {
     refreshTriggeredRef.current = true;
@@ -274,7 +302,6 @@ function BudgetsScreen() {
   );
 
   const clearFilters = useCallback(() => {
-    setActiveFilters([]);
     setSearchText("");
   }, []);
 
@@ -388,28 +415,45 @@ function BudgetsScreen() {
     }
   }, [showToast]);
 
-  const renderBudget: SectionListRenderItem<BudgetOverview, BudgetListSection> = useCallback(({ item: budget }) => (
-    <BudgetSwipeRow
-      budget={budget}
-      selected={selectedIds.has(budget.id)}
-      onPress={() => {
-        if (selectMode) {
+  const renderBudget: SectionListRenderItem<BudgetListItem, BudgetListSection> = useCallback(({ item }) => {
+    /* Los meses cerrados son historial: una línea que resume el presupuesto entero y lo abre.
+       Antes eran una fila por mes, y verlos apilados fue lo que llevó a sumarlos. */
+    if (item.kind === "closed") {
+      return (
+        <ResourceCard
+          variant="line"
+          title={item.rule.name}
+          subtitle={closedMonthsSummary(item.rule.closed)}
+          onPress={() => router.push({
+            pathname: "/budget/[id]",
+            params: { id: String(item.rule.latest.id), from: "budgets" },
+          })}
+        />
+      );
+    }
+
+    const budget = item.budget;
+    return (
+      <BudgetSwipeRow
+        budget={budget}
+        selected={selectedIds.has(budget.id)}
+        onPress={() => {
+          if (selectMode) {
+            toggleSelect(budget.id);
+            return;
+          }
+          router.push({ pathname: "/budget/[id]", params: { id: String(budget.id), from: "budgets" } });
+        }}
+        onLongPress={() => {
+          if (!selectMode) setSelectMode(true);
           toggleSelect(budget.id);
-          return;
-        }
-        router.push({ pathname: "/budget/[id]", params: { id: String(budget.id), from: "budgets" } });
-      }}
-      onLongPress={() => {
-        if (!selectMode) setSelectMode(true);
-        toggleSelect(budget.id);
-      }}
-      onDelete={() => handleDelete(budget)}
-      onDuplicate={() => void handleDuplicate(budget)}
-      onAnalytics={() => setAnalyticsBudgetId(budget.id)}
-      onQuickEdit={selectMode ? undefined : () => setQuickEditBudget(budget)}
-      onTogglePin={selectMode ? undefined : () => handleTogglePin(budget)}
-    />
-  ), [handleDelete, handleDuplicate, handleTogglePin, selectMode, selectedIds, toggleSelect]);
+        }}
+        onDelete={() => handleDelete(budget)}
+        onDuplicate={() => void handleDuplicate(budget)}
+        onTogglePin={selectMode ? undefined : () => handleTogglePin(budget)}
+      />
+    );
+  }, [handleDelete, handleDuplicate, handleTogglePin, router, selectMode, selectedIds, toggleSelect]);
 
   const contextNote = buildBudgetsContextNote({
     visibleCount: filteredBudgets.length,
@@ -449,15 +493,14 @@ function BudgetsScreen() {
           }
         />
       }
+      /* Buscador, desplegable, cápsula "Vencidos ×" y "Limpiar": ~180px de filtros antes del
+         primer dato, para tres filas. Con una fila por presupuesto los meses cerrados ya no
+         compiten —están en su sección— así que el filtro se queda sin trabajo. El buscador
+         vuelve cuando de verdad haga falta buscar. */
       toolbar={
-        !selectMode ? (
+        !selectMode && correctedBudgets.length > SEARCH_FROM ? (
           <FilterToolbar
-            options={BUDGET_FILTERS}
-            selectedValues={activeFilters}
-            onSelectedValuesChange={(values) =>
-              setActiveFilters(values.filter((value): value is ActiveBudgetFilter => value !== "all"))
-            }
-            allValue="all"
+            options={[]}
             searchValue={searchText}
             onSearchChange={setSearchText}
             searchPlaceholder="Buscar presupuestos..."
@@ -465,19 +508,18 @@ function BudgetsScreen() {
         ) : null
       }
       activeFilters={
-        !selectMode ? (
+        !selectMode && searchText.trim() ? (
           <ActiveFilterBar items={activeFilterItems} onClear={clearFilters} />
         ) : null
       }
       context={!selectMode ? <ResourceContextNote>{notificationReason ?? contextNote}</ResourceContextNote> : null}
       summary={
-        !selectMode && filteredBudgets.length > 0 ? (
-          <BudgetSummaryBar
-            limitTotal={summary.limitTotal}
-            spentTotal={summary.spentTotal}
-            remainingTotal={summary.remainingTotal}
-            attentionCount={summary.attentionCount}
-            currencyCode={baseCurrencyCode}
+        !selectMode && activeNow.length > 0 ? (
+          <MetricSummaryBar
+            value={formatCurrency(headline.spent, baseCurrencyCode)}
+            valueColor={headline.hasOverspend ? COLORS.expense : undefined}
+            support={`de ${formatCurrency(headline.limit, baseCurrencyCode)}`}
+            footnote={headline.support}
           />
         ) : null
       }
@@ -521,7 +563,7 @@ function BudgetsScreen() {
       list={
         <ResourceSectionList
           sections={budgetSections}
-          keyExtractor={(budget) => String(budget.id)}
+          keyExtractor={(item) => (item.kind === "closed" ? `closed-${item.rule.key}` : String(item.budget.id))}
           renderItem={renderBudget}
           loading={{
             isLoading: snapshotLoading || isMetricsLoading,
@@ -541,9 +583,7 @@ function BudgetsScreen() {
               onPress:
                 emptyState.action.kind === "create"
                   ? () => setFormVisible(true)
-                  : emptyState.action.kind === "expired"
-                    ? () => setActiveFilters(["expired"])
-                    : clearFilters,
+                  : clearFilters,
             },
           }}
           refreshing={snapshotRefetching || movementsLoading}

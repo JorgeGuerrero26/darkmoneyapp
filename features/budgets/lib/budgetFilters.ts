@@ -23,37 +23,8 @@ export function isBudgetExpired(budget: Pick<BudgetOverview, "periodEnd">, today
   return budget.periodEnd < todayYmd;
 }
 
-export function filterBudgets(
-  budgets: BudgetOverview[],
-  filters: ActiveBudgetFilter[],
-  searchText: string,
-  todayYmd: string,
-) {
-  const query = searchText.trim().toLowerCase();
-  const scopeFilters = filters.filter(
-    (filter): filter is BudgetScopeKind =>
-      filter !== "attention" && filter !== "pinned" && filter !== "expired",
-  );
-  const attentionOnly = filters.includes("attention");
-  const pinnedOnly = filters.includes("pinned");
-  const expiredOnly = filters.includes("expired");
-
-  return budgets.filter((budget) => {
-    // Los vencidos son el histórico: solo aparecen bajo el filtro "Vencidos";
-    // por defecto la lista muestra únicamente presupuestos vigentes o futuros.
-    if (expiredOnly !== isBudgetExpired(budget, todayYmd)) return false;
-    if (pinnedOnly && !budget.isPinned) return false;
-    if (attentionOnly && !budget.isNearLimit && !budget.isOverLimit) return false;
-    if (scopeFilters.length > 0 && !scopeFilters.includes(budget.scopeKind)) return false;
-
-    if (!query) return true;
-    const haystack = [
-      budget.name,
-      budget.scopeLabel,
-      budget.categoryName ?? "",
-      budget.accountName ?? "",
-      budget.notes ?? "",
-    ].join(" ").toLowerCase();
-    return haystack.includes(query);
-  });
-}
+/* `filterBudgets` se fue en la fase 35. Escondía los vencidos salvo bajo su propio filtro, y al
+   pasar a una fila por presupuesto esa regla quedó al revés de lo que hace falta: los meses
+   cerrados tienen que llegar a la lista para agruparse en su sección. Quien los separa ahora es
+   buildBudgetSections. Los filtros por ámbito y estado tampoco volvieron: con una fila por
+   presupuesto no había nada que filtrar. */
