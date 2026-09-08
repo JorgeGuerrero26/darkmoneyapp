@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Tag } from "lucide-react-native";
+import { Sparkles, Tag } from "lucide-react-native";
 
 import { ErrorBoundary } from "../components/ui/ErrorBoundary";
 import { ScreenHeader } from "../components/layout/ScreenHeader";
@@ -32,9 +32,12 @@ import { useWorkspace } from "../lib/workspace-context";
 import { useMovementPatternsQuery } from "../services/queries/movement-patterns";
 import {
   useAssignCategoryToMovementsMutation,
+  useCategorizeInboxAiMutation,
   useUncategorizedMovementsQuery,
+  type InboxAiSuggestion,
   type UncategorizedRow,
 } from "../services/queries/uncategorized-movements";
+import { useDashboardEntitlement } from "../features/dashboard/hooks/useDashboardEntitlement";
 import { useCategoriesOverviewQuery } from "../services/queries/workspace-data";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../constants/theme";
 import { useToast } from "../hooks/useToast";
@@ -77,6 +80,11 @@ function CategorizeScreen() {
   const assignMutation = useAssignCategoryToMovementsMutation(activeWorkspaceId);
 
   const [pickerGroup, setPickerGroup] = useState<UncategorizedGroup | null>(null);
+  /* Lo que propuso la IA, por clave de grupo. Vive en la pantalla y no en caché: es una opinión
+     sobre lo que hay ahora, y en cuanto clasificas un grupo deja de aplicar. */
+  const [aiSuggestions, setAiSuggestions] = useState<Record<string, InboxAiSuggestion>>({});
+  const entitlement = useDashboardEntitlement({ userId: profile?.id, email: profile?.email });
+  const askAi = useCategorizeInboxAiMutation();
 
   const baseCurrencyCode = activeWorkspace?.baseCurrencyCode ?? profile?.baseCurrencyCode ?? "PEN";
 
@@ -94,6 +102,52 @@ function CategorizeScreen() {
   }, [rows, patternMaps]);
 
   const summary = useMemo(() => summarizeInbox(groups), [groups]);
+
+  /* Solo lo que el teléfono no supo resolver: lo que ya está en tus patrones se propone gratis,
+     al instante y sin señal. Preguntar por eso sería pagar por lo que ya sabemos. */
+  const sinPropuesta = useMemo(
+    () => groups.filter((group) => !hasConfidentSuggestion(group) && !aiSuggestions[group.key]),
+    [groups, aiSuggestions],
+  );
+
+  const handleAskAi = useCallback(() => {
+    if (!activeWorkspaceId || askAi.isPending || sinPropuesta.length === 0) return;
+    askAi.mutate(
+      {
+        workspaceId: activeWorkspaceId,
+        // Los más pesados primero: la lista ya viene ordenada por lo que suman.
+        groups: sinPropuesta.slice(0, 25).map((group) => ({
+          key: group.key,
+          label: group.label,
+          count: group.movements.length,
+          total: group.total,
+        })),
+        categories: categories
+          .filter((category) => category.isActive)
+          .map((category) => ({ id: category.id, name: category.name, kind: category.kind })),
+      },
+      {
+        onSuccess: (suggestions) => {
+          if (suggestions.length === 0) {
+            showToast("La IA no supo proponer nada para estos grupos.", "info");
+            return;
+          }
+          setAiSuggestions((previous) => {
+            const next = { ...previous };
+            for (const suggestion of suggestions) next[suggestion.key] = suggestion;
+            return next;
+          });
+          showToast(
+            suggestions.length === 1
+              ? "1 propuesta nueva. Revísala antes de aplicarla."
+              : `${suggestions.length} propuestas nuevas. Revísalas antes de aplicarlas.`,
+            "success",
+          );
+        },
+        onError: (error: Error) => showToast(error.message, "error"),
+      },
+    );
+  }, [activeWorkspaceId, askAi, categories, showToast, sinPropuesta]);
 
   const categoryName = useCallback(
     (id: number | null) => categories.find((category) => category.id === id)?.name ?? null,
@@ -157,7 +211,15 @@ function CategorizeScreen() {
 
   const renderGroup = useCallback(
     ({ item }: { item: UncategorizedGroup }) => {
-      const suggestion = hasConfidentSuggestion(item) ? categoryName(item.suggestedCategoryId) : null;
+      const ai = aiSuggestions[item.key];
+      /* La propuesta propia gana a la de la IA: sale de lo que TÚ ya clasificaste, así que no
+         hay razón para preguntar ni para pintarla como opinión. */
+      const local = hasConfidentSuggestion(item) ? categoryName(item.suggestedCategoryId) : null;
+      const suggestion = local ?? (ai ? categoryName(ai.categoryId) : null);
+      const suggestedId = local ? item.suggestedCategoryId : ai?.categoryId ?? null;
+      /* Color propio para lo que dice la IA: es una opinión, y lo que dice un saldo es un hecho.
+         Con el mismo color no se sabe qué se puede auditar. */
+      const esIa = !local && Boolean(ai);
       // La fecha pasa por hora de Lima antes de recortarse: un gasto de las nueve de la noche
       // se guarda en el UTC del dia siguiente y se leia como "Hoy" siendo de ayer.
       const last = item.movements.reduce(
@@ -175,17 +237,27 @@ function CategorizeScreen() {
           meta={
             suggestion ? (
               <Pressable
-                style={({ pressed }) => [styles.suggestion, pressed && styles.suggestionPressed]}
+                style={({ pressed }) => [
+                  styles.suggestion,
+                  esIa && styles.suggestionAi,
+                  pressed && styles.suggestionPressed,
+                ]}
                 onPress={(event) => {
                   event.stopPropagation();
-                  assign(item, item.suggestedCategoryId);
+                  assign(item, suggestedId);
                 }}
                 hitSlop={6}
                 accessibilityRole="button"
-                accessibilityLabel={`Poner ${suggestion} a ${movementCountLabel(item.movements.length)} de ${item.label}`}
+                accessibilityLabel={`${esIa ? "Propuesta de la IA: poner" : "Poner"} ${suggestion} a ${movementCountLabel(item.movements.length)} de ${item.label}`}
               >
-                <Tag size={12} color={COLORS.fog} strokeWidth={2} />
-                <Text style={styles.suggestionText}>Poner {suggestion}</Text>
+                {esIa ? (
+                  <Sparkles size={12} color={COLORS.pro} strokeWidth={2} />
+                ) : (
+                  <Tag size={12} color={COLORS.fog} strokeWidth={2} />
+                )}
+                <Text style={[styles.suggestionText, esIa && styles.suggestionTextAi]}>
+                  Poner {suggestion}
+                </Text>
               </Pressable>
             ) : null
           }
@@ -193,7 +265,7 @@ function CategorizeScreen() {
         />
       );
     },
-    [assign, baseCurrencyCode, categoryName, today],
+    [aiSuggestions, assign, baseCurrencyCode, categoryName, today],
   );
 
   return (
@@ -207,6 +279,20 @@ function CategorizeScreen() {
             value={formatCurrency(summary.total, baseCurrencyCode)}
             support={inboxSupportPhrase(summary)}
             footnote="Al elegir la categoría de un grupo se le pone a todos sus movimientos."
+            /* Solo Pro y solo si queda algo que preguntar: cada llamada cuesta, y lo que los
+               patrones ya resuelven no se pregunta. */
+            actions={
+              entitlement.features.aiInsights && sinPropuesta.length > 0
+                ? [{
+                    key: "ai",
+                    label: askAi.isPending
+                      ? "Preguntando…"
+                      : `Proponer ${sinPropuesta.length > 25 ? 25 : sinPropuesta.length} con IA`,
+                    disabled: askAi.isPending,
+                    onPress: handleAskAi,
+                  }]
+                : undefined
+            }
           />
         ) : null
       }
@@ -278,12 +364,17 @@ const styles = StyleSheet.create({
     borderColor: SURFACE.cardBorder,
     backgroundColor: SURFACE.card,
   },
+  /* La opinión de la IA lleva el color reservado para ella, el mismo de la app entera: lo que
+     dice un modelo es una opinión; lo que dice un saldo es un hecho, y con el mismo color el
+     usuario no sabe qué puede auditar. */
+  suggestionAi: { borderColor: "rgba(192,166,216,0.32)", backgroundColor: COLORS.proMuted },
   suggestionPressed: { opacity: 0.7 },
   suggestionText: {
     fontFamily: FONT_FAMILY.bodyMedium,
     fontSize: FONT_SIZE.xs,
     color: COLORS.fog,
   },
+  suggestionTextAi: { color: COLORS.pro },
 });
 
 export default function CategorizeScreenWithBoundary() {

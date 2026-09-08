@@ -1,7 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+
 import { STALE } from "../../lib/query-client";
 import { supabase } from "../../lib/supabase";
+import { invokeEdgeFunction } from "./workspace-data";
 
 export type UncategorizedRow = {
   id: number;
@@ -75,6 +77,45 @@ export function useAssignCategoryToMovementsMutation(workspaceId: number | null)
       void queryClient.invalidateQueries({ queryKey: ["categories-overview"] });
       // Lo que acabas de clasificar es justo lo que mejora las sugerencias siguientes.
       void queryClient.invalidateQueries({ queryKey: ["movement-patterns"] });
+    },
+  });
+}
+
+export type InboxAiSuggestion = {
+  key: string;
+  categoryId: number;
+  confidence: number;
+  reason: string;
+};
+
+type InboxAiInput = {
+  workspaceId: number | null;
+  groups: Array<{ key: string; label: string; count: number; total: number }>;
+  categories: Array<{ id: number; name: string; kind: string }>;
+};
+
+/**
+ * Le pregunta a la IA por los grupos que los patrones no supieron resolver.
+ *
+ * **Una llamada para todos, no una por grupo.** La bandeja agrupa más de cien movimientos en
+ * decenas de grupos: preguntar uno a uno serían decenas de esperas de siete segundos y decenas
+ * de usos gastados para una sola limpieza. El lote es la misma idea que agrupar la pantalla.
+ *
+ * Solo llegan aquí los que el teléfono no sabe resolver solo: lo que ya está en tus patrones se
+ * propone gratis, sin señal y al instante.
+ */
+export function useCategorizeInboxAiMutation() {
+  return useMutation({
+    mutationKey: ["categorize-inbox-ai"],
+    mutationFn: async (input: InboxAiInput): Promise<InboxAiSuggestion[]> => {
+      if (!input.workspaceId) throw new Error("No se encontró el workspace activo.");
+      if (input.groups.length === 0) return [];
+      const response = await invokeEdgeFunction<{ ok: boolean; suggestions?: InboxAiSuggestion[]; error?: string }>(
+        "categorize-inbox-ai",
+        { workspaceId: input.workspaceId, groups: input.groups, categories: input.categories },
+      );
+      if (!response.ok) throw new Error(response.error ?? "No se pudieron calcular las sugerencias.");
+      return response.suggestions ?? [];
     },
   });
 }
