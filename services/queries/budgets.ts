@@ -75,6 +75,10 @@ export function useUpdateBudgetMutation(workspaceId: number | null) {
       if (input.categoryId !== undefined) payload.category_id = input.categoryId;
       if (input.accountId !== undefined) payload.account_id = input.accountId;
       if (input.rolloverEnabled !== undefined) payload.rollover_enabled = input.rolloverEnabled;
+      /* Faltaba: el formulario mandaba la cadencia al editar y aquí se tiraba en silencio, así
+         que cambiar "Se renueva" de mensual a semanal no cambiaba nada. Se guardaba solo al
+         crear, porque la fase 36 la añadió al insert y no al update. */
+      if (input.recurrence !== undefined) payload.recurrence = input.recurrence;
       if (input.notes !== undefined) payload.notes = input.notes;
       const { error } = await supabase
         .from("budgets")
