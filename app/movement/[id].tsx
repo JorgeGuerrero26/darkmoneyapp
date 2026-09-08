@@ -116,9 +116,12 @@ function MovementDetailScreen() {
         notes: movement.notes ?? null,
       },
       {
-        // El aviso mandaba a "el botón + (mantener presionado)", un gesto escondido y en otra
-        // pantalla: por eso la tabla de plantillas llevaba meses vacía. Ahora salen solas.
-        onSuccess: () => showToast("Guardado como atajo. Aparece en el inicio, en «Lo de siempre».", "success"),
+        /* El aviso mandaba a "el botón + (mantener presionado)", un gesto escondido y en otra
+           pantalla: por eso la tabla de plantillas llevaba meses vacía. Después señalaba a «Lo
+           de siempre», que era el rótulo de la fila — y ese rótulo se quitó en la revisión 31,
+           así que mandaba a un sitio que ya no se llama así. Ahora dice dónde aparece y qué
+           hace, que es lo único que no cambia con el diseño. */
+        onSuccess: () => showToast("Guardado como atajo. Aparece en el inicio, listo para anotar de un toque.", "success"),
         onError: (err) => showToast(err instanceof Error ? err.message : "No se pudo guardar la plantilla", "error"),
       },
     );
