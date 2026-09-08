@@ -7,40 +7,40 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
 import { MoreVertical } from "lucide-react-native";
 
-import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
-import { Card } from "../../components/ui/Card";
-import { SkeletonCard, SkeletonList } from "../../components/ui/Skeleton";
-import { ScreenHeader } from "../../components/layout/ScreenHeader";
-import { NotificationReasonBanner } from "../../components/ui/NotificationReasonBanner";
-import { EntityActionSheet } from "../../components/ui/EntityActionSheet";
-import { HeaderActionGroup } from "../../components/ui/HeaderActionGroup";
-import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
-import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTemplate";
-import { BudgetForm } from "../../components/forms/BudgetForm";
-import { BudgetQuickEditSheet } from "../../features/budgets/components/BudgetQuickEditSheet";
-import { BudgetDetailHeader } from "../../features/budgets/components/BudgetDetailHeader";
-import { BudgetDetailContributions } from "../../features/budgets/components/BudgetDetailContributions";
-import { BudgetDetailHistory } from "../../features/budgets/components/BudgetDetailHistory";
-import { useOriginBackNavigation } from "../../hooks/useOriginBackNavigation";
-import { useNotificationReason } from "../../hooks/useNotificationReason";
-import { useToast } from "../../hooks/useToast";
-import { parseDisplayDate } from "../../lib/date";
-import { useAuth } from "../../lib/auth-context";
-import { useWorkspace } from "../../lib/workspace-context";
-import { useUiStore } from "../../store/ui-store";
-import { useWorkspaceSnapshotQuery } from "../../services/queries/workspace-data";
+import { ErrorBoundary } from "../../../components/ui/ErrorBoundary";
+import { Card } from "../../../components/ui/Card";
+import { SkeletonCard, SkeletonList } from "../../../components/ui/Skeleton";
+import { ScreenHeader } from "../../../components/layout/ScreenHeader";
+import { NotificationReasonBanner } from "../../../components/ui/NotificationReasonBanner";
+import { EntityActionSheet } from "../../../components/ui/EntityActionSheet";
+import { HeaderActionGroup } from "../../../components/ui/HeaderActionGroup";
+import { ConfirmDialog } from "../../../components/ui/ConfirmDialog";
+import { ResourceModuleTemplate } from "../../../components/ui/ResourceModuleTemplate";
+import { BudgetForm } from "../../../components/forms/BudgetForm";
+import { BudgetQuickEditSheet } from "../../../features/budgets/components/BudgetQuickEditSheet";
+import { BudgetDetailHeader } from "../../../features/budgets/components/BudgetDetailHeader";
+import { BudgetDetailContributions } from "../../../features/budgets/components/BudgetDetailContributions";
+import { BudgetDetailHistory } from "../../../features/budgets/components/BudgetDetailHistory";
+import { useOriginBackNavigation } from "../../../hooks/useOriginBackNavigation";
+import { useNotificationReason } from "../../../hooks/useNotificationReason";
+import { useToast } from "../../../hooks/useToast";
+import { parseDisplayDate } from "../../../lib/date";
+import { useAuth } from "../../../lib/auth-context";
+import { useWorkspace } from "../../../lib/workspace-context";
+import { useUiStore } from "../../../store/ui-store";
+import { useWorkspaceSnapshotQuery } from "../../../services/queries/workspace-data";
 import {
   useDeleteBudgetMutation,
   useDuplicateBudgetMutation,
   useTogglePinBudgetMutation,
-} from "../../services/queries/budgets";
-import { useBudgetScopeMovementsQuery } from "../../services/queries/budget-analytics";
+} from "../../../services/queries/budgets";
+import { useBudgetScopeMovementsQuery } from "../../../services/queries/budget-analytics";
 import {
   applyBudgetComputedMetrics,
   buildBudgetMetricsMap,
-} from "../../lib/budget-metrics";
-import { COLORS, FONT_FAMILY, FONT_SIZE, FONT_WEIGHT, SPACING } from "../../constants/theme";
-import type { BudgetOverview } from "../../types/domain";
+} from "../../../lib/budget-metrics";
+import { COLORS, FONT_FAMILY, FONT_SIZE, FONT_WEIGHT, SPACING } from "../../../constants/theme";
+import type { BudgetOverview } from "../../../types/domain";
 
 function parseBudgetId(raw: string | undefined): number | null {
   if (!raw) return null;
@@ -206,13 +206,8 @@ function BudgetDetailScreen() {
             <BudgetDetailHeader
               budget={budget}
               onReviewMovements={() => router.push({
-                pathname: "/(app)/movements",
-                params: {
-                  quickCategoryId: budget.categoryId ? String(budget.categoryId) : undefined,
-                  quickDateFrom: budget.periodStart,
-                  quickDateTo: budget.periodEnd,
-                  quickLabel: budget.name,
-                },
+                pathname: "/budget/[id]/movements",
+                params: { id: String(budget.id), from: "budget" },
               })}
             />
 
@@ -220,14 +215,13 @@ function BudgetDetailScreen() {
               contributions={analytics?.contributions ?? []}
               currencyCode={budget.currencyCode}
               periodLabel={periodLabel}
+              /* Dentro del presupuesto, no en Movimientos: allí el filtro no viajaba con la
+                 vista — de hecho ni se aplicaba, porque el bloque de filtros rápidos solo corre
+                 si llega `quickScope`, que no se mandaba. Y aunque llegara, en dos scrolls la
+                 pantalla se lee como la lista general. */
               onSeeAll={() => router.push({
-                pathname: "/(app)/movements",
-                params: {
-                  quickCategoryId: budget.categoryId ? String(budget.categoryId) : undefined,
-                  quickDateFrom: budget.periodStart,
-                  quickDateTo: budget.periodEnd,
-                  quickLabel: budget.name,
-                },
+                pathname: "/budget/[id]/movements",
+                params: { id: String(budget.id), from: "budget" },
               })}
             />
 

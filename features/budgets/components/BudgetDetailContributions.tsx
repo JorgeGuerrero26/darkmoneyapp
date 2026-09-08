@@ -1,4 +1,5 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import { ChevronRight } from "lucide-react-native";
 import { useRouter } from "expo-router";
 
 import { formatCurrency } from "../../../components/ui/AmountDisplay";
@@ -93,6 +94,7 @@ export function BudgetDetailContributions({ contributions, currencyCode, periodL
           accessibilityRole="button"
         >
           <Text style={styles.seeAllLabel}>Ver los {contributions.length}</Text>
+          <ChevronRight size={18} color={COLORS.storm} />
         </Pressable>
       ) : null}
     </View>
@@ -141,5 +143,7 @@ const styles = StyleSheet.create({
   meta: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
   amount: { fontFamily: FONT_FAMILY.heading, fontSize: FONT_SIZE.md, color: COLORS.ink },
   seeAll: { justifyContent: "space-between" },
-  seeAllLabel: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.md, color: COLORS.ink },
+  /* En gris y con chevrón: es una puerta a otra pantalla, no un dato de la lista. En hueso
+     competía con las descripciones de los movimientos, que sí son datos. */
+  seeAllLabel: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.md, color: COLORS.fog },
 });
