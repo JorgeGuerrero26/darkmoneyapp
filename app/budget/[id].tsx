@@ -1,6 +1,8 @@
 import { useCallback, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
+import { format } from "date-fns";
+import { es } from "date-fns/locale";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
 import { MoreVertical } from "lucide-react-native";
@@ -22,6 +24,7 @@ import { BudgetDetailHistory } from "../../features/budgets/components/BudgetDet
 import { useOriginBackNavigation } from "../../hooks/useOriginBackNavigation";
 import { useNotificationReason } from "../../hooks/useNotificationReason";
 import { useToast } from "../../hooks/useToast";
+import { parseDisplayDate } from "../../lib/date";
 import { useAuth } from "../../lib/auth-context";
 import { useWorkspace } from "../../lib/workspace-context";
 import { useUiStore } from "../../store/ui-store";
@@ -43,6 +46,11 @@ function parseBudgetId(raw: string | undefined): number | null {
   if (!raw) return null;
   const parsed = parseInt(raw, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+/** "septiembre" -> "Septiembre". */
+function capitalizeFirst(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 function BudgetDetailScreen() {
@@ -103,6 +111,11 @@ function BudgetDetailScreen() {
     if (!metrics) return rawBudget;
     return applyBudgetComputedMetrics(rawBudget, metrics);
   }, [metricsMap, rawBudget]);
+
+  /* El mes que nombra la pantalla, dicho una vez: lo usan el encabezado y los movimientos. */
+  const periodLabel = budget
+    ? capitalizeFirst(format(parseDisplayDate(budget.periodStart), "LLLL", { locale: es }))
+    : "";
 
   const analytics = budget ? metricsMap.get(budget.id) ?? null : null;
 
@@ -206,6 +219,16 @@ function BudgetDetailScreen() {
             <BudgetDetailContributions
               contributions={analytics?.contributions ?? []}
               currencyCode={budget.currencyCode}
+              periodLabel={periodLabel}
+              onSeeAll={() => router.push({
+                pathname: "/(app)/movements",
+                params: {
+                  quickCategoryId: budget.categoryId ? String(budget.categoryId) : undefined,
+                  quickDateFrom: budget.periodStart,
+                  quickDateTo: budget.periodEnd,
+                  quickLabel: budget.name,
+                },
+              })}
             />
 
             <BudgetDetailHistory current={budget} allBudgets={allBudgets} />

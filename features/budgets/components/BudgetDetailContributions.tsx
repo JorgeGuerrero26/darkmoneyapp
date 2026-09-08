@@ -1,143 +1,145 @@
-import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
-import { format } from "date-fns";
-import { es } from "date-fns/locale";
 
-import { Card } from "../../../components/ui/Card";
 import { formatCurrency } from "../../../components/ui/AmountDisplay";
-import { parseDisplayDate } from "../../../lib/date";
-import { COLORS, FONT_FAMILY, FONT_SIZE, FONT_WEIGHT, SPACING } from "../../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING, SURFACE } from "../../../constants/theme";
+import { relativeDateLabel } from "../../../lib/calendar";
+import { isoToDateStr, todayPeru } from "../../../lib/date";
 import type { BudgetContribution } from "../../../lib/budget-metrics";
 
-const COLLAPSED_LIMIT = 10;
+/**
+ * Cuántos se ven sin pedirlo.
+ *
+ * Eran diez, y con veintiocho movimientos la pantalla se volvía una lista de gastos que hay que
+ * leer entera para llegar a lo de abajo — que es donde está el historial, o sea lo que juzga el
+ * presupuesto. Tres bastan para reconocer qué se está contando; el resto se pide.
+ */
+const COLLAPSED_LIMIT = 3;
 
 type Props = {
   contributions: BudgetContribution[];
   currencyCode: string;
+  /** "Septiembre": el encabezado nombra el mes en vez de decir "del período". */
+  periodLabel: string;
+  /** Abre la lista completa filtrada, en lugar de crecer dentro del detalle. */
+  onSeeAll: () => void;
 };
 
-export function BudgetDetailContributions({ contributions, currencyCode }: Props) {
+/**
+ * Los movimientos que van contra el presupuesto.
+ *
+ * **Filas sobre lienzo, no una tarjeta.** Metidos en una caja con borde, veintiocho movimientos
+ * formaban un bloque que hay que atravesar para llegar al historial. Las filas con separador
+ * sangrado son como se leen las listas en el resto de la app desde el rediseño.
+ *
+ * Y cada fila decía tres cosas de más: el porcentaje del límite —que para un chicle de S/ 1.50
+ * es "0.4%", un dato que no cambia ninguna decisión—, la categoría, que es la misma en las
+ * veintiocho porque es la del presupuesto, y el monto en clay, cuando gastar dentro de tu
+ * presupuesto no es un error. Queda qué fue, cuándo y de qué cuenta salió.
+ */
+export function BudgetDetailContributions({ contributions, currencyCode, periodLabel, onSeeAll }: Props) {
   const router = useRouter();
-  const [expanded, setExpanded] = useState(false);
+  const today = todayPeru();
 
   if (contributions.length === 0) {
     return (
-      <Card>
-        <Text style={styles.title}>Movimientos del período</Text>
+      <View style={styles.group}>
+        <Text style={styles.title}>Movimientos de {periodLabel.toLowerCase()}</Text>
         {/* "Imputados" es vocabulario de contabilidad, y el vacío no decía qué hacer. */}
         <Text style={styles.empty}>
           Todavía no has anotado ningún gasto de esta categoría en este período. Los que registres
           irán descontando del límite.
         </Text>
-      </Card>
+      </View>
     );
   }
 
-  const visible = expanded ? contributions : contributions.slice(0, COLLAPSED_LIMIT);
-  const remaining = contributions.length - visible.length;
+  const visible = contributions.slice(0, COLLAPSED_LIMIT);
 
   return (
-    <Card>
-      <Text style={styles.title}>
-        Movimientos del período · {contributions.length}
-      </Text>
-      {visible.map((c) => (
+    <View style={styles.group}>
+      <View style={styles.header}>
+        <Text style={styles.title}>Movimientos de {periodLabel.toLowerCase()}</Text>
+        <Text style={styles.count}>{contributions.length}</Text>
+      </View>
+
+      {visible.map((contribution) => (
         <Pressable
-          key={c.movementId}
-          onPress={() => router.push(`/movement/${c.movementId}?from=budget`)}
+          key={contribution.movementId}
+          onPress={() => router.push(`/movement/${contribution.movementId}?from=budget`)}
           style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
         >
           <View style={styles.left}>
             <Text style={styles.description} numberOfLines={1}>
-              {c.description || "Sin descripción"}
+              {contribution.description || "Sin descripción"}
             </Text>
             <Text style={styles.meta} numberOfLines={1}>
-              {format(parseDisplayDate(c.occurredAt), "d MMM yyyy", { locale: es })}
-              {c.categoryName ? ` · ${c.categoryName}` : ""}
-              {c.accountName ? ` · ${c.accountName}` : ""}
+              {relativeDateLabel(isoToDateStr(contribution.occurredAt), today)}
+              {contribution.accountName ? ` · ${contribution.accountName}` : ""}
             </Text>
           </View>
-          <View style={styles.right}>
-            <Text style={styles.amount}>{formatCurrency(c.amountInBudgetCurrency, currencyCode)}</Text>
-            <Text style={styles.share}>{c.shareOfBudget.toFixed(1)}% del límite</Text>
-          </View>
+          <Text style={styles.amount}>
+            {formatCurrency(contribution.amountInBudgetCurrency, currencyCode)}
+          </Text>
         </Pressable>
       ))}
-      {remaining > 0 ? (
-        <Pressable onPress={() => setExpanded(true)} style={styles.toggle}>
-          <Text style={styles.toggleText}>Ver los {remaining} restantes</Text>
-        </Pressable>
-      ) : expanded && contributions.length > COLLAPSED_LIMIT ? (
-        <Pressable onPress={() => setExpanded(false)} style={styles.toggle}>
-          <Text style={styles.toggleText}>Mostrar menos</Text>
+
+      {contributions.length > COLLAPSED_LIMIT ? (
+        /* Ver todos abre la lista de movimientos ya filtrada, en vez de estirar el detalle: ahí
+           están la búsqueda y los filtros, y esta pantalla no es una lista de gastos. */
+        <Pressable
+          onPress={onSeeAll}
+          style={({ pressed }) => [styles.row, styles.seeAll, pressed && styles.rowPressed]}
+          accessibilityRole="button"
+        >
+          <Text style={styles.seeAllLabel}>Ver los {contributions.length}</Text>
         </Pressable>
       ) : null}
-    </Card>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  group: { gap: 0 },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: SPACING.sm,
+    paddingBottom: SPACING.sm,
+  },
   title: {
     fontFamily: FONT_FAMILY.bodySemibold,
     fontSize: FONT_SIZE.xs,
-    color: COLORS.textMuted,
+    color: COLORS.storm,
     textTransform: "uppercase",
-    marginBottom: SPACING.sm,
+    letterSpacing: 0.8,
   },
+  count: { fontFamily: FONT_FAMILY.heading, fontSize: FONT_SIZE.xs, color: COLORS.storm },
   empty: {
     fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.sm,
-    color: COLORS.textMuted,
-    fontStyle: "italic",
+    color: COLORS.storm,
+    lineHeight: 21,
   },
   row: {
     flexDirection: "row",
-    paddingVertical: SPACING.sm,
-    gap: SPACING.md,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
-  },
-  rowPressed: {
-    opacity: 0.6,
-  },
-  left: {
-    flex: 1,
-    gap: SPACING.xs,
-  },
-  description: {
-    fontFamily: FONT_FAMILY.bodyMedium,
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.text,
-  },
-  meta: {
-    fontFamily: FONT_FAMILY.body,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.textMuted,
-  },
-  right: {
-    alignItems: "flex-end",
-    gap: SPACING.xs,
-  },
-  amount: {
-    fontFamily: FONT_FAMILY.heading,
-    fontSize: FONT_SIZE.sm,
-    fontWeight: FONT_WEIGHT.semibold,
-    color: COLORS.expense,
-  },
-  share: {
-    fontFamily: FONT_FAMILY.body,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.textMuted,
-  },
-  toggle: {
     alignItems: "center",
+    gap: SPACING.md,
+    minHeight: 56,
     paddingVertical: SPACING.sm,
-    marginTop: SPACING.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: SURFACE.separator,
   },
-  toggleText: {
+  rowPressed: { opacity: 0.6 },
+  left: { flex: 1, gap: 2 },
+  description: {
     fontFamily: FONT_FAMILY.bodySemibold,
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.primary,
+    fontSize: FONT_SIZE.md,
+    color: COLORS.ink,
   },
+  meta: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
+  amount: { fontFamily: FONT_FAMILY.heading, fontSize: FONT_SIZE.md, color: COLORS.ink },
+  seeAll: { justifyContent: "space-between" },
+  seeAllLabel: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.md, color: COLORS.ink },
 });
