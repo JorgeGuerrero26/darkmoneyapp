@@ -7,7 +7,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { format, startOfMonth, endOfMonth, addMonths } from "date-fns";
+import { format, startOfMonth, endOfMonth } from "date-fns";
 import { useWorkspace } from "../../lib/workspace-context";
 import { useAuth } from "../../lib/auth-context";
 import { useToast } from "../../hooks/useToast";
@@ -20,9 +20,21 @@ import {
 } from "../../services/queries/workspace-data";
 import type { BudgetOverview } from "../../types/domain";
 import { BottomSheet } from "../ui/BottomSheet";
+import { FormDateRow } from "../ui/FormDateRow";
 import { FormOptionRow } from "../ui/FormOptionRow";
 import { SearchableSelectSheet } from "../ui/SearchableSelectSheet";
 import { CurrencySelectOverlay } from "./CurrencySelectOverlay";
+import {
+  budgetRecurrenceLabel,
+  budgetRecurrenceSentence,
+  firstBudgetPeriod,
+  inferRecurrence,
+  BUDGET_RECURRENCE_OPTIONS,
+  type BudgetRecurrence,
+} from "../../features/budgets/lib/budgetRecurrence";
+import { todayPeru } from "../../lib/date";
+import { Check } from "lucide-react-native";
+import { InlineFormSheet } from "../ui/InlineFormSheet";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { Button } from "../ui/Button";
 import { CurrencyInput } from "../ui/CurrencyInput";
@@ -39,7 +51,6 @@ const ALERT_PRESETS = [
   { label: "100%", value: 100 },
 ];
 
-type BudgetPeriodPreset = "current" | "next" | "custom";
 
 type Props = {
   visible: boolean;
@@ -75,10 +86,15 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
   const [rolloverEnabled, setRolloverEnabled] = useState(false);
   const [periodStart, setPeriodStart] = useState(format(startOfMonth(now), "yyyy-MM-dd"));
   const [periodEnd, setPeriodEnd] = useState(format(endOfMonth(now), "yyyy-MM-dd"));
-  const [periodPreset, setPeriodPreset] = useState<BudgetPeriodPreset>("current");
+  const [recurrence, setRecurrence] = useState<BudgetRecurrence>("monthly");
+  const [recurrenceOpen, setRecurrenceOpen] = useState(false);
+  const [alertOpen, setAlertOpen] = useState(false);
+  const [optionalsOpen, setOptionalsOpen] = useState(false);
+  /* "Todas" es una elección válida, pero tiene que ser elegida: por defecto no hay valor, para
+     que el nombre del presupuesto no acabe describiendo algo que la regla no hace. */
+  const [categoryTouched, setCategoryTouched] = useState(false);
   const [notes, setNotes] = useState("");
 
-  const [nameError, setNameError] = useState("");
   const [amountError, setAmountError] = useState("");
   const [discardVisible, setDiscardVisible] = useState(false);
 
@@ -95,18 +111,13 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
       setRolloverEnabled(source.rolloverEnabled);
       setPeriodStart(source.periodStart);
       setPeriodEnd(source.periodEnd);
-      const currentMonthStart = format(startOfMonth(now), "yyyy-MM-dd");
-      const currentMonthEnd = format(endOfMonth(now), "yyyy-MM-dd");
-      const nextMonth = addMonths(now, 1);
-      const nextMonthStart = format(startOfMonth(nextMonth), "yyyy-MM-dd");
-      const nextMonthEnd = format(endOfMonth(nextMonth), "yyyy-MM-dd");
-      if (source.periodStart === currentMonthStart && source.periodEnd === currentMonthEnd) {
-        setPeriodPreset("current");
-      } else if (source.periodStart === nextMonthStart && source.periodEnd === nextMonthEnd) {
-        setPeriodPreset("next");
-      } else {
-        setPeriodPreset("custom");
-      }
+      /* Los presupuestos creados antes de la fase 36 no traen cadencia: se deduce de lo que
+         duran. Precargar "Entre dos fechas" en uno que el usuario venía recreando cada mes sería
+         devolverle justo el trabajo que esta pantalla le quita. */
+      setRecurrence(source.recurrence && source.recurrence !== "none"
+        ? source.recurrence
+        : inferRecurrence({ periodStart: source.periodStart, periodEnd: source.periodEnd }));
+      setCategoryTouched(true);
       setNotes(source.notes ?? "");
     } else {
       const m = new Date();
@@ -117,31 +128,18 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
       setCategoryId(null);
       setAccountId(null);
       setRolloverEnabled(false);
-      setPeriodStart(format(startOfMonth(m), "yyyy-MM-dd"));
-      setPeriodEnd(format(endOfMonth(m), "yyyy-MM-dd"));
-      setPeriodPreset("current");
+      const inicial = firstBudgetPeriod(todayPeru(), "monthly");
+      setPeriodStart(inicial.periodStart);
+      setPeriodEnd(inicial.periodEnd);
+      setRecurrence("monthly");
+      setCategoryTouched(false);
       setNotes("");
     }
-    setNameError("");
     setAmountError("");
   }, [visible, editBudget, duplicateBudget, defaultCurrency]);
 
-  function setNextMonth() {
-    const next = addMonths(now, 1);
-    setPeriodStart(format(startOfMonth(next), "yyyy-MM-dd"));
-    setPeriodEnd(format(endOfMonth(next), "yyyy-MM-dd"));
-    setPeriodPreset("next");
-  }
 
-  function setCurrentMonth() {
-    setPeriodStart(format(startOfMonth(now), "yyyy-MM-dd"));
-    setPeriodEnd(format(endOfMonth(now), "yyyy-MM-dd"));
-    setPeriodPreset("current");
-  }
 
-  function setCustomPeriod() {
-    setPeriodPreset("custom");
-  }
 
   function handleClose() {
     const isDirty = isEditing && editBudget
@@ -167,11 +165,9 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
 
   async function handleSubmit() {
     if (submittingRef.current) return; // guard anti-doble-tap: evita duplicados
-    setNameError("");
     setAmountError("");
     let valid = true;
 
-    if (!name.trim()) { setNameError("El nombre es obligatorio"); valid = false; }
     const amount = parseFloat(limitAmount);
     if (!limitAmount || isNaN(amount) || amount <= 0) {
       setAmountError("Ingresa un monto válido mayor a 0");
@@ -183,10 +179,25 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
     }
     if (!valid) { haptics.error(); return; }
 
+    /* El nombre se propone solo con lo que ya elegiste. Se pedía primero y obligatorio, con el
+       ejemplo "Ej. Alimentación mensual" — que es literalmente categoría + cadencia, las dos
+       cosas que el formulario pregunta después. Nadie debería teclearlo para poder avanzar; y
+       sigue siendo editable en Opcionales, porque el nombre es dato del usuario. */
+    const categoria = expenseCategories.find((cat) => cat.id === categoryId)?.name;
+    const propuesto = [categoria ?? "Presupuesto", budgetRecurrenceLabel(recurrence).toLowerCase()]
+      .join(" · ");
+
+    /* Con cadencia, las fechas las pone el sistema: el primer período arranca hoy y cierra con
+       el período. Solo "Entre dos fechas" conserva las que el usuario eligió. */
+    const periodo = recurrence === "none"
+      ? { periodStart, periodEnd }
+      : firstBudgetPeriod(todayYmd, recurrence);
+
     const input: BudgetFormInput = {
-      name: name.trim(),
-      periodStart,
-      periodEnd,
+      name: name.trim() || propuesto,
+      recurrence,
+      periodStart: isEditing ? periodStart : periodo.periodStart,
+      periodEnd: isEditing ? periodEnd : periodo.periodEnd,
       limitAmount: amount,
       alertPercent,
       currencyCode,
@@ -230,6 +241,17 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
     [snapshot?.accounts],
   );
 
+  const todayYmd = todayPeru();
+  const multiCurrency = (snapshot?.accounts ?? []).some(
+    (account) => account.currencyCode !== defaultCurrency,
+  );
+  /* El botón dice qué falta en vez de quedarse apagado sin explicar por qué. */
+  const missingLabel = !limitAmount.trim()
+    ? "Falta cuánto"
+    : !categoryTouched && categoryId === null
+      ? "Falta qué limitas"
+      : "";
+
   return (
     <>
     <BottomSheet
@@ -237,6 +259,17 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
       onClose={handleClose}
       title={isEditing ? "Editar presupuesto" : "Nuevo presupuesto"}
       snapHeight={0.92}
+      footer={
+        <View style={styles.footer}>
+          {missingLabel ? <Text style={styles.submitNote}>{missingLabel}</Text> : null}
+          <Button
+            label={isEditing ? "Guardar cambios" : "Crear presupuesto"}
+            onPress={handleSubmit}
+            loading={createMutation.isPending || updateMutation.isPending}
+            size="lg"
+          />
+        </View>
+      }
       // Dentro del sheet: iOS solo presenta un Modal a la vez y como hermano no aparecía.
       overlay={
         <>
@@ -259,7 +292,7 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
               ...expenseCategories.map((cat) => ({ value: cat.id as number | null, label: cat.name })),
             ]}
             value={categoryId}
-            onChange={setCategoryId}
+            onChange={(value) => { setCategoryId(value); setCategoryTouched(true); }}
             onClose={() => setCategoryOpen(false)}
           />
           <SearchableSelectSheet
@@ -274,6 +307,118 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
             onChange={setAccountId}
             onClose={() => setAccountOpen(false)}
           />
+          {/* Se renueva (mockup BE). Las cinco cadencias juntas y, aparte, el caso que sí
+              justifica fechas sueltas: un viaje, un proyecto que termina. */}
+          <InlineFormSheet
+            visible={recurrenceOpen}
+            title="Se renueva"
+            onBack={() => setRecurrenceOpen(false)}
+            footer={
+              <Button label="Listo" size="lg" onPress={() => setRecurrenceOpen(false)} />
+            }
+          >
+            <View style={styles.group}>
+              {BUDGET_RECURRENCE_OPTIONS.map((option, index) => (
+                <TouchableOpacity
+                  key={option.value}
+                  style={[styles.optionRow, index < BUDGET_RECURRENCE_OPTIONS.length - 1 && styles.optionDivided]}
+                  onPress={() => { setRecurrence(option.value); setRecurrenceOpen(false); }}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: recurrence === option.value }}
+                >
+                  <Text style={styles.optionLabel}>{option.label}</Text>
+                  {recurrence === option.value ? <Check size={18} color={COLORS.ink} /> : null}
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text style={styles.sectionLabel}>No se repite</Text>
+            <View style={styles.group}>
+              <TouchableOpacity
+                style={styles.optionRow}
+                onPress={() => { setRecurrence("none"); setRecurrenceOpen(false); }}
+                accessibilityRole="button"
+                accessibilityState={{ selected: recurrence === "none" }}
+              >
+                <View style={styles.optionCopy}>
+                  <Text style={styles.optionLabel}>Entre dos fechas</Text>
+                  <Text style={styles.optionSupport}>Para un viaje o un proyecto que termina</Text>
+                </View>
+                {recurrence === "none" ? <Check size={18} color={COLORS.ink} /> : null}
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.hint}>
+              Un presupuesto que se renueva no hay que volver a crearlo: cada período cerrado pasa
+              al historial y el nuevo empieza en cero.
+            </Text>
+          </InlineFormSheet>
+
+          {/* Cuatro opciones fijas no necesitan cuatro botones ocupando una línea entera. */}
+          <SearchableSelectSheet
+            inline
+            visible={alertOpen}
+            title="Avisarme al"
+            options={ALERT_PRESETS.map((preset) => ({ value: preset.value, label: preset.label }))}
+            value={alertPercent}
+            onChange={setAlertPercent}
+            onClose={() => setAlertOpen(false)}
+          />
+
+          <InlineFormSheet
+            visible={optionalsOpen}
+            title="Opcionales"
+            onBack={() => setOptionalsOpen(false)}
+            footer={<Button label="Listo" size="lg" onPress={() => setOptionalsOpen(false)} />}
+          >
+            <View style={styles.amountField}>
+              <Text style={styles.label}>Nombre</Text>
+              <TextField
+                style={styles.textInput}
+                value={name}
+                onChangeText={setName}
+                placeholder={`${expenseCategories.find((cat) => cat.id === categoryId)?.name ?? "Presupuesto"} · ${budgetRecurrenceLabel(recurrence).toLowerCase()}`}
+                placeholderTextColor={COLORS.textDisabled}
+              />
+            </View>
+
+            <View style={styles.group}>
+              <FormOptionRow
+                label="Cuenta"
+                value={activeAccounts.find((acc) => acc.id === accountId)?.name ?? null}
+                placeholder="Todas"
+                onPress={() => setAccountOpen(true)}
+                grouped
+                last={!multiCurrency}
+              />
+              {/* La moneda sube solo si hay más de una en el espacio de trabajo: para un dato que
+                  casi nunca cambia, ocupaba el sitio anterior al monto. */}
+              {multiCurrency ? (
+                <FormOptionRow
+                  label="Moneda"
+                  value={currencyCode}
+                  onPress={() => setCurrencyOpen(true)}
+                  grouped
+                  last
+                />
+              ) : null}
+            </View>
+
+            <View style={styles.amountField}>
+              <Text style={styles.label}>Notas</Text>
+              <TextField
+                style={[styles.textInput, styles.textArea]}
+                value={notes}
+                onChangeText={setNotes}
+                placeholder="Observaciones adicionales"
+                placeholderTextColor={COLORS.textDisabled}
+                multiline
+                numberOfLines={3}
+                textAlignVertical="top"
+              />
+            </View>
+          </InlineFormSheet>
+
           <CurrencySelectOverlay
             visible={currencyOpen}
             onClose={() => setCurrencyOpen(false)}
@@ -283,180 +428,131 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
         </>
       }
     >
-      {/* Name */}
-      <View>
-        <Text style={styles.label}>Nombre *</Text>
-        <TextField
-          style={[styles.textInput, nameError ? styles.inputError : null]}
-          value={name}
-          onChangeText={(t) => { setName(t); setNameError(""); }}
-          placeholder="Ej. Alimentación mensual"
-          placeholderTextColor={COLORS.textDisabled}
-        />
-        {nameError ? <Text style={styles.fieldError}>{nameError}</Text> : null}
-      </View>
-
-      {/* Period */}
-      <View>
-        <Text style={styles.label}>Período del presupuesto</Text>
-        <View style={styles.pillRow}>
-          <TouchableOpacity
-            style={[styles.pill, periodPreset === "current" && styles.pillActive]}
-            onPress={setCurrentMonth}
-          >
-            <Text style={[styles.pillText, periodPreset === "current" && styles.pillTextActive]}>
-              Este mes
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.pill, periodPreset === "next" && styles.pillActive]}
-            onPress={setNextMonth}
-          >
-            <Text style={[styles.pillText, periodPreset === "next" && styles.pillTextActive]}>
-              Próximo mes
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.pill, periodPreset === "custom" && styles.pillActive]}
-            onPress={setCustomPeriod}
-          >
-            <Text style={[styles.pillText, periodPreset === "custom" && styles.pillTextActive]}>
-              Personalizado
-            </Text>
-          </TouchableOpacity>
-        </View>
-        <Text style={styles.periodRange}>
-          {periodStart} → {periodEnd}
-        </Text>
-        <Text style={styles.periodHint}>
-          Define desde qué fecha hasta qué fecha quieres controlar este presupuesto.
-        </Text>
-        {periodPreset === "custom" ? (
-          <View style={styles.customRange}>
-            <DatePickerInput
-              label="Desde"
-              value={periodStart}
-              onChange={(value) => {
-                setPeriodPreset("custom");
-                setPeriodStart(value);
-                if (periodEnd < value) setPeriodEnd(value);
-              }}
-              hideLabel
-              variant="formRow"
-            />
-            <DatePickerInput
-              label="Hasta"
-              value={periodEnd}
-              onChange={(value) => {
-                setPeriodPreset("custom");
-                setPeriodEnd(value);
-              }}
-              hideLabel
-              variant="formRow"
-              minimumDate={new Date(`${periodStart}T00:00:00`)}
-            />
-          </View>
-        ) : null}
-      </View>
-
-      {/* Currency */}
-        <FormOptionRow
-          label="Moneda"
-          value={currencyCode}
-          onPress={() => setCurrencyOpen(true)}
-        />
-
-      {/* Limit amount */}
-      <CurrencyInput
-        label="Monto límite *"
-        value={limitAmount}
-        onChangeText={(t) => { setLimitAmount(t); setAmountError(""); }}
-        currencyCode={currencyCode}
-        error={amountError}
+      {/* La categoría ES el presupuesto: lo que estás limitando. Venía en "Todas" por defecto y
+          en el puesto seis, así que un presupuesto llamado "Alimentación mensual" contaba también
+          gasolina y alquiler — el nombre decía una cosa y la regla hacía otra, sin que nada
+          avisara. Va primera y sin valor puesto; "Todas" sigue elegible, pero como elección. */}
+      <FormOptionRow
+        label="Qué limitas"
+        value={expenseCategories.find((cat) => cat.id === categoryId)?.name ?? (categoryTouched ? "Todas" : null)}
+        placeholder="Elige una categoría"
+        onPress={() => setCategoryOpen(true)}
       />
 
-      {/* Alert percent */}
-      <View>
-        <Text style={styles.label}>Alerta en</Text>
-        <View style={styles.pillRow}>
-          {ALERT_PRESETS.map((p) => (
-            <TouchableOpacity
-              key={p.value}
-              style={[styles.pill, alertPercent === p.value && styles.pillActive]}
-              onPress={() => setAlertPercent(p.value)}
-            >
-              <Text style={[styles.pillText, alertPercent === p.value && styles.pillTextActive]}>
-                {p.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+      {/* El único número que hace que un presupuesto sea un presupuesto. Estaba en gris sobre
+          caja gris, con la etiqueta dentro y sin cursor: se leía como un dato ya puesto que
+          valía cero. La etiqueta dice además que el límite se renueva. */}
+      <View style={styles.amountField}>
+        <Text style={styles.label}>Cuánto por período</Text>
+        <CurrencyInput
+          value={limitAmount}
+          onChangeText={(t) => { setLimitAmount(t); setAmountError(""); }}
+          currencyCode={currencyCode}
+          error={amountError || undefined}
+        />
       </View>
 
-      {/* Category filter (optional) */}
-      {expenseCategories.length > 0 ? (
+      <View style={styles.group}>
         <FormOptionRow
-          label="Categoría"
-          value={expenseCategories.find((cat) => cat.id === categoryId)?.name ?? null}
-          placeholder="Todas"
-          onPress={() => setCategoryOpen(true)}
+          label="Se renueva"
+          value={budgetRecurrenceLabel(recurrence)}
+          onPress={() => setRecurrenceOpen(true)}
+          grouped
         />
-      ) : null}
-
-      {/* Account filter (optional) */}
-      {activeAccounts.length > 0 ? (
         <FormOptionRow
-          label="Cuenta"
-          value={activeAccounts.find((acc) => acc.id === accountId)?.name ?? null}
-          placeholder="Todas"
-          onPress={() => setAccountOpen(true)}
+          label="Avisarme al"
+          value={`${alertPercent}%`}
+          onPress={() => setAlertOpen(true)}
+          grouped
+          last
         />
-      ) : null}
+      </View>
 
-      {/* Rollover */}
+      {recurrence === "none" ? (
+        <View style={styles.group}>
+          <FormDateRow label="Desde" value={periodStart} onChange={setPeriodStart} grouped />
+          <FormDateRow label="Hasta" value={periodEnd} onChange={setPeriodEnd} grouped last />
+        </View>
+      ) : (
+        <Text style={styles.hint}>{budgetRecurrenceSentence(recurrence, todayYmd)}</Text>
+      )}
+
+      {/* "Arrastrar saldo al siguiente período" era jerga contable, y por eso necesitaba un
+          párrafo de cinco líneas —el texto más largo de la pantalla— que incluso aclaraba lo que
+          NO hace. Con un nombre que se entiende, la explicación cabe en el subtítulo. */}
       <View style={styles.switchRow}>
         <View style={styles.switchInfo}>
-          <Text style={styles.switchLabel}>Arrastrar saldo al siguiente período</Text>
-          <Text style={styles.switchDesc}>
-            Si te sobra parte del límite al cerrar este período, ese saldo disponible se suma al próximo presupuesto equivalente.
-            No mueve dinero entre cuentas: solo aumenta el monto que podrás usar en el siguiente período.
-          </Text>
+          <Text style={styles.switchLabel}>Guardar lo que sobre</Text>
+          <Text style={styles.switchDesc}>Lo no gastado se suma al mes siguiente</Text>
         </View>
         <Switch
           value={rolloverEnabled}
           onValueChange={setRolloverEnabled}
-          trackColor={{ false: COLORS.border, true: COLORS.primary }}
+          trackColor={{ false: COLORS.border, true: COLORS.action }}
           thumbColor="#FFFFFF"
         />
       </View>
 
-      {/* Notes */}
-      <View>
-        <Text style={styles.label}>Notas (opcional)</Text>
-        <TextField
-          style={[styles.textInput, styles.textArea]}
-          value={notes}
-          onChangeText={setNotes}
-          placeholder="Observaciones adicionales"
-          placeholderTextColor={COLORS.textDisabled}
-          multiline
-          numberOfLines={3}
-          textAlignVertical="top"
-        />
-      </View>
-
-      <Button
-        label={isEditing ? "Guardar cambios" : "Crear presupuesto"}
-        onPress={handleSubmit}
-        loading={createMutation.isPending || updateMutation.isPending}
-        style={styles.submitBtn}
+      <FormOptionRow
+        label="Opcionales"
+        support={multiCurrency ? "Nombre, cuenta, moneda, notas" : "Nombre, cuenta, notas"}
+        value={null}
+        placeholder=""
+        onPress={() => setOptionalsOpen(true)}
       />
+
     </BottomSheet>
     </>
   );
 }
 
 const styles = StyleSheet.create({
+  optionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: SPACING.md,
+    minHeight: 56,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+  },
+  optionDivided: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: SURFACE.separator,
+  },
+  optionCopy: { flex: 1, gap: 2 },
+  optionLabel: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.md, color: COLORS.ink },
+  optionSupport: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
+  sectionLabel: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+    marginTop: SPACING.md,
+    marginBottom: SPACING.xs,
+  },
+  footer: { gap: SPACING.sm },
+  submitNote: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    textAlign: "center",
+  },
+  amountField: { gap: SPACING.xs },
+  group: {
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: SURFACE.cardBorder,
+    backgroundColor: SURFACE.card,
+    overflow: "hidden",
+  },
+  hint: {
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    lineHeight: 18,
+  },
   label: {
     fontSize: FONT_SIZE.xs,
     fontFamily: FONT_FAMILY.bodySemibold,
@@ -476,22 +572,6 @@ const styles = StyleSheet.create({
     color: COLORS.ink,
   },
   textArea: { minHeight: 80 },
-  inputError: { borderColor: COLORS.danger },
-  fieldError: { fontSize: FONT_SIZE.xs, color: COLORS.danger, marginTop: 4 },
-  pillRow: { flexDirection: "row", gap: SPACING.sm, flexWrap: "wrap" },
-  pill: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs + 2,
-    borderRadius: RADIUS.full,
-    backgroundColor: SURFACE.card,
-    borderWidth: 1,
-    borderColor: SURFACE.cardBorder,
-  },
-  pillActive: { backgroundColor: COLORS.pine, borderColor: COLORS.pine },
-  pillText: { fontSize: FONT_SIZE.sm, color: COLORS.storm, fontFamily: FONT_FAMILY.bodyMedium },
-  pillTextActive: { color: COLORS.textInverse },
-  periodRange: { fontSize: FONT_SIZE.xs, color: COLORS.storm, marginTop: SPACING.xs },
-  periodHint: { fontSize: FONT_SIZE.xs, color: COLORS.storm, marginTop: 4, lineHeight: 18 },
   customRange: { gap: SPACING.sm, marginTop: SPACING.sm },
   switchRow: {
     flexDirection: "row",
@@ -506,5 +586,4 @@ const styles = StyleSheet.create({
   switchInfo: { flex: 1, gap: 2, marginRight: SPACING.md },
   switchLabel: { fontSize: FONT_SIZE.sm, fontFamily: FONT_FAMILY.bodyMedium, color: COLORS.ink },
   switchDesc: { fontSize: FONT_SIZE.xs, color: COLORS.storm },
-  submitBtn: { marginTop: SPACING.sm },
 });
