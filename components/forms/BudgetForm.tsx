@@ -283,30 +283,6 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
             onCancel={() => setDiscardVisible(false)}
             onConfirm={() => { setDiscardVisible(false); onClose(); }}
           />
-          <SearchableSelectSheet
-            inline
-            visible={categoryOpen}
-            title="Categoría"
-            options={[
-              { value: null as number | null, label: "Todas" },
-              ...expenseCategories.map((cat) => ({ value: cat.id as number | null, label: cat.name })),
-            ]}
-            value={categoryId}
-            onChange={(value) => { setCategoryId(value); setCategoryTouched(true); }}
-            onClose={() => setCategoryOpen(false)}
-          />
-          <SearchableSelectSheet
-            inline
-            visible={accountOpen}
-            title="Cuenta"
-            options={[
-              { value: null as number | null, label: "Todas" },
-              ...activeAccounts.map((acc) => ({ value: acc.id as number | null, label: acc.name })),
-            ]}
-            value={accountId}
-            onChange={setAccountId}
-            onClose={() => setAccountOpen(false)}
-          />
           {/* Se renueva (mockup BE). Las cinco cadencias juntas y, aparte, el caso que sí
               justifica fechas sueltas: un viaje, un proyecto que termina. */}
           <InlineFormSheet
@@ -354,16 +330,6 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
             </Text>
           </InlineFormSheet>
 
-          {/* Cuatro opciones fijas no necesitan cuatro botones ocupando una línea entera. */}
-          <SearchableSelectSheet
-            inline
-            visible={alertOpen}
-            title="Avisarme al"
-            options={ALERT_PRESETS.map((preset) => ({ value: preset.value, label: preset.label }))}
-            value={alertPercent}
-            onChange={setAlertPercent}
-            onClose={() => setAlertOpen(false)}
-          />
 
           <InlineFormSheet
             visible={optionalsOpen}
@@ -418,6 +384,46 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
               />
             </View>
           </InlineFormSheet>
+
+          {/* Los selectores van DESPUÉS de las hojas que los abren.
+              La cuenta se elige desde "Opcionales", que es una hoja: pintada antes, el selector
+              quedaba por debajo y al tocar "Cuenta" no aparecía nada — así que un presupuesto
+              por cuenta parecía imposible cuando solo estaba tapado. Mismo fallo que el del
+              2026-08-13 con los diálogos en iOS. */}
+          {/* Cuatro opciones fijas no necesitan cuatro botones ocupando una línea entera. */}
+          <SearchableSelectSheet
+            inline
+            visible={alertOpen}
+            title="Avisarme al"
+            options={ALERT_PRESETS.map((preset) => ({ value: preset.value, label: preset.label }))}
+            value={alertPercent}
+            onChange={setAlertPercent}
+            onClose={() => setAlertOpen(false)}
+          />
+          <SearchableSelectSheet
+            inline
+            visible={categoryOpen}
+            title="Categoría"
+            options={[
+              { value: null as number | null, label: "Todas" },
+              ...expenseCategories.map((cat) => ({ value: cat.id as number | null, label: cat.name })),
+            ]}
+            value={categoryId}
+            onChange={(value) => { setCategoryId(value); setCategoryTouched(true); }}
+            onClose={() => setCategoryOpen(false)}
+          />
+          <SearchableSelectSheet
+            inline
+            visible={accountOpen}
+            title="Cuenta"
+            options={[
+              { value: null as number | null, label: "Todas" },
+              ...activeAccounts.map((acc) => ({ value: acc.id as number | null, label: acc.name })),
+            ]}
+            value={accountId}
+            onChange={setAccountId}
+            onClose={() => setAccountOpen(false)}
+          />
 
           <CurrencySelectOverlay
             visible={currencyOpen}
