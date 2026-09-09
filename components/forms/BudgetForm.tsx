@@ -168,6 +168,14 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
     setAmountError("");
     let valid = true;
 
+    /* "Todas" es una elección válida, pero tiene que ser elegida: el pie decía "Falta qué
+       limitas" y el botón dejaba crear igual, así que se colaba un presupuesto general con
+       nombre de categoría — que es el fallo que esta pantalla vino a arreglar. */
+    if (!categoryTouched && categoryId === null) {
+      haptics.error();
+      showToast("Elige qué limita este presupuesto. Puede ser «Todas» si es un tope general.", "error");
+      return;
+    }
     const amount = parseFloat(limitAmount);
     if (!limitAmount || isNaN(amount) || amount <= 0) {
       setAmountError("Ingresa un monto válido mayor a 0");
