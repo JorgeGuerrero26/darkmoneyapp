@@ -19,9 +19,15 @@ export type SpendingHabit = {
   /** Cuántas veces, y en cuántos días distintos. */
   times: number;
   distinctDays: number;
-  /** Franja horaria habitual, en horas locales. */
-  fromHour: number;
-  toHour: number;
+  /**
+   * Las franjas horarias habituales, en horas locales.
+   *
+   * En plural porque un mismo gasto puede tener **dos horas punta**: la moto al trabajo son 14
+   * viajes a las 6 y 11 a las 19 — ida y vuelta. Con una sola franja calculada sobre la mediana,
+   * los once regresos quedaban fuera de su propia franja y a las 7 de la tarde no se proponía
+   * nada.
+   */
+  windows: Array<{ from: number; to: number }>;
   /** `weekday` = solo de lunes a viernes; `weekend` = solo fines de semana. */
   when: "weekday" | "weekend" | "any";
   /** Días desde la última vez. Un hábito abandonado no se propone. */
@@ -164,8 +170,7 @@ export function detectSpendingHabits(
     const daysSinceLast = Math.floor((now.getTime() - bucket.lastAt) / 86_400_000);
     if (daysSinceLast > MAX_DAYS_SINCE_LAST) continue;
 
-    const sortedHours = [...bucket.hours].sort((a, b) => a - b);
-    const median = sortedHours[Math.floor(sortedHours.length / 2)];
+    const windows = habitWindows(bucket.hours);
 
     let label = bucket.label;
     let bestLabel = 0;
@@ -182,14 +187,52 @@ export function detectSpendingHabits(
       accountId: mostFrequent(bucket.accounts),
       times,
       distinctDays: bucket.days.size,
-      fromHour: Math.max(0, median - HOUR_SLACK),
-      toHour: Math.min(23, median + HOUR_SLACK),
+      windows,
       when: weekdayShare >= 0.8 ? "weekday" : weekdayShare <= 0.2 ? "weekend" : "any",
       daysSinceLast,
     });
   }
 
   return habits.sort((a, b) => b.times - a.times);
+}
+
+/** Un pico necesita repetirse de verdad: con siete registros, dos a la misma hora es azar. */
+const MIN_PEAK_TIMES = 3;
+/** Y pesar dentro del hábito: por debajo de esto es una hora suelta, no una rutina. */
+const MIN_PEAK_SHARE = 0.2;
+/** Como mucho dos: ida y vuelta. Tres franjas ya son "a cualquier hora". */
+const MAX_PEAKS = 2;
+
+/**
+ * Las franjas en las que de verdad ocurre el gasto.
+ *
+ * Antes era una sola, la mediana ±2. Para un gasto de dos picos —la moto de las 6 y la de las
+ * 19— la mediana cae en uno de los dos y el otro se queda fuera: once regresos sin proponerse
+ * nunca, a la hora exacta en que se hacen.
+ *
+ * Cuando no hay un pico claro se vuelve a la mediana, que es lo que había: medido contra los
+ * datos reales, de los nueve hábitos vivos **solo la moto cambia de franja**. Un cambio que
+ * mueve todo lo demás no estaría arreglando esto, estaría cambiando otra cosa.
+ */
+function habitWindows(hours: number[]): Array<{ from: number; to: number }> {
+  const counts = new Map<number, number>();
+  for (const hour of hours) counts.set(hour, (counts.get(hour) ?? 0) + 1);
+
+  const peaks = [...counts.entries()]
+    .filter(([, count]) => count >= MIN_PEAK_TIMES && count >= hours.length * MIN_PEAK_SHARE)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, MAX_PEAKS)
+    .map(([hour]) => hour)
+    .sort((a, b) => a - b);
+
+  const centers = peaks.length > 0
+    ? peaks
+    : [[...hours].sort((a, b) => a - b)[Math.floor(hours.length / 2)]];
+
+  return centers.map((center) => ({
+    from: Math.max(0, center - HOUR_SLACK),
+    to: Math.min(23, center + HOUR_SLACK),
+  }));
 }
 
 /**
@@ -214,7 +257,7 @@ export function habitsForNow(habits: SpendingHabit[], now: Date = new Date(), ma
     .filter((habit) => {
       if (habit.when === "weekday" && isWeekend) return false;
       if (habit.when === "weekend" && !isWeekend) return false;
-      return when.hour >= habit.fromHour && when.hour <= habit.toHour;
+      return habit.windows.some((window) => when.hour >= window.from && when.hour <= window.to);
     })
     .slice(0, max);
 }

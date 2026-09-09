@@ -128,6 +128,46 @@ describe("habitsForNow", () => {
     expect(habitsForNow(detectSpendingHabits(cualquierDia, NOW), madrugada)).toHaveLength(0);
   });
 
+  it("ida y vuelta: la moto de las 6 y la de las 19 son DOS franjas", () => {
+    /* El caso reportado el 2026-09-08. En los datos reales la moto de S/ 2 tiene 14 registros a
+       las 6 y 11 a las 19; con una sola franja sobre la mediana (7 -> 5-9h), los once regresos
+       quedaban fuera de su propia franja y a las 7 de la tarde no se proponia nada. */
+    const idaYVuelta = [
+      ...DIAS_SEMANA.map((d) => gasto("Moto", 2, d, 6)),
+      ...DIAS_SEMANA.map((d) => gasto("Moto", 2, d, 6)),
+      ...DIAS_SEMANA.map((d) => gasto("Moto", 2, d, 19)),
+    ];
+    const [habito] = detectSpendingHabits(idaYVuelta, NOW);
+    expect(habito.windows).toEqual([{ from: 4, to: 8 }, { from: 17, to: 21 }]);
+
+    const tarde = new Date("2026-09-09T00:20:00.000Z"); // 19:20 del martes en Lima
+    expect(habitsForNow([habito], tarde).map((h) => h.label)).toEqual(["Moto"]);
+    const manana = new Date("2026-09-08T11:00:00.000Z"); // 06:00 del martes en Lima
+    expect(habitsForNow([habito], manana).map((h) => h.label)).toEqual(["Moto"]);
+  });
+
+  it("una hora suelta no es un pico: sin pico claro se vuelve a la mediana", () => {
+    // Repartido entre las 11 y las 13, sin ninguna hora que llegue al 20% con 3 registros.
+    const disperso = [
+      gasto("Café", 5, DIAS_SEMANA[0], 11),
+      gasto("Café", 5, DIAS_SEMANA[1], 12),
+      gasto("Café", 5, DIAS_SEMANA[2], 13),
+      gasto("Café", 5, DIAS_SEMANA[3], 11),
+      gasto("Café", 5, DIAS_SEMANA[4], 13),
+    ];
+    const [habito] = detectSpendingHabits(disperso, NOW);
+    expect(habito.windows).toHaveLength(1);
+  });
+
+  it("como mucho dos franjas: tres ya es 'a cualquier hora'", () => {
+    const tresPicos = [
+      ...DIAS_SEMANA.map((d) => gasto("Agua", 2, d, 8)),
+      ...DIAS_SEMANA.map((d) => gasto("Agua", 2, d, 14)),
+      ...DIAS_SEMANA.map((d) => gasto("Agua", 2, d, 20)),
+    ];
+    expect(detectSpendingHabits(tresPicos, NOW)[0].windows).toHaveLength(2);
+  });
+
   it("como mucho tres, para no llenar la pantalla", () => {
     const muchos = [
       ...DIAS_SEMANA.map((d) => gasto("Moto", 2, d, 11)),
