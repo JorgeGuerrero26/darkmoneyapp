@@ -102,6 +102,7 @@ type Props = {
   counterpartyId: number | null;
   onSelectCounterparty: (id: number | null) => void;
   counterpartySuggestionToShow: CounterpartySuggestionResult | null;
+  counterpartySuggestionLoading: boolean;
   onApplyCounterpartySuggestion: (sug: CounterpartySuggestionResult) => void;
 
   // Recurring
@@ -177,6 +178,7 @@ export const StepDetails = memo(function StepDetails({
   counterpartyId,
   onSelectCounterparty,
   counterpartySuggestionToShow,
+  counterpartySuggestionLoading,
   onApplyCounterpartySuggestion,
   recurringAlreadyLinked,
   recurringSuggestion,
@@ -286,6 +288,7 @@ export const StepDetails = memo(function StepDetails({
           last={Boolean(counterpartySuggestion)}
         />
         <CounterpartyAiBlock
+          loading={counterpartySuggestionLoading}
           hasSelectedCounterparty={counterpartyId != null}
           suggestion={counterpartySuggestionToShow}
           onApply={onApplyCounterpartySuggestion}

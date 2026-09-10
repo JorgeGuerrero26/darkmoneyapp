@@ -124,15 +124,27 @@ export const CategoryAiBlock = memo(function CategoryAiBlock({
 type CounterpartyAiBlockProps = {
   hasSelectedCounterparty: boolean;
   suggestion: CounterpartySuggestionResult | null;
+  loading?: boolean;
   onApply: (suggestion: CounterpartySuggestionResult) => void;
 };
 
+/**
+ * Igual que la categoría, y por la misma razón: **es un campo que ibas a llenar tú**.
+ *
+ * La limpieza de la descripción y la detección de recurrencia siguen calladas mientras piensan,
+ * porque ahí no esperas nada — la primera mejora un texto que ya escribiste y la segunda ofrece
+ * algo que no habías pedido. Anunciar esas dos es lo que sobraba en las tarjetas que se quitaron.
+ */
 export const CounterpartyAiBlock = memo(function CounterpartyAiBlock({
   hasSelectedCounterparty,
   suggestion,
+  loading = false,
   onApply,
 }: CounterpartyAiBlockProps) {
-  if (hasSelectedCounterparty || !suggestion) return null;
+  if (hasSelectedCounterparty) return null;
+  if (!suggestion) {
+    return loading ? <SmartSuggestionPending grouped label="Buscando una contraparte…" /> : null;
+  }
   const label =
     suggestion.type === "new_counterparty" && suggestion.newCounterpartyName
       ? `Crear contraparte "${suggestion.newCounterpartyName}"`

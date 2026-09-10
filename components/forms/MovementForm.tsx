@@ -351,7 +351,10 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     workspaceBaseCurrencyCode: baseCurrency,
     proAccessEnabled: entitlementQuery.data?.proAccessEnabled,
   });
-  const { suggestion: aiCounterpartySuggestion } = useMovementCounterpartyAiSuggestion({
+  const {
+    suggestion: aiCounterpartySuggestion,
+    isLoading: aiCounterpartySuggestionLoading,
+  } = useMovementCounterpartyAiSuggestion({
     enabled: Boolean(visible && form.counterpartyId == null && form.movementType !== "transfer"),
     workspaceId: activeWorkspaceId,
     surface: "movement_form",
@@ -1408,6 +1411,9 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
             counterpartyId={form.counterpartyId}
             onSelectCounterparty={(id) => patch({ counterpartyId: id })}
             counterpartySuggestionToShow={counterpartySuggestionToShow}
+            counterpartySuggestionLoading={
+              aiCounterpartySuggestionLoading && !counterpartySuggestionToShow
+            }
             onApplyCounterpartySuggestion={(sug) => void applyCounterpartySuggestion(sug)}
             recurringAlreadyLinked={Boolean(linkedSubscriptionId || linkedRecurringIncomeId)}
             recurringSuggestion={recurringSuggestion}
