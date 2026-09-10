@@ -78,3 +78,39 @@ describe("buildMovementUpdateInput", () => {
     expect(result.destinationAmount).toBe(100);
   });
 });
+
+describe("el tipo de gasto", () => {
+  /**
+   * Necesidad, deseo y ahorro solo tienen sentido en un gasto. El formulario esconde la fila al
+   * cambiar de gasto a ingreso, pero esconder no es borrar: sin esta regla el tipo se quedaba
+   * puesto en el estado del formulario y se guardaba en un ingreso, donde nadie lo ve y donde
+   * seguiria contando en las metricas del inicio.
+   */
+  it("viaja en un gasto", () => {
+    const result = buildMovementCreateInput({ ...base, movementType: "expense", spendTypeId: 3 });
+    expect(result.spendTypeId).toBe(3);
+  });
+
+  it("se cae al convertir el gasto en ingreso", () => {
+    const result = buildMovementUpdateInput({
+      ...base,
+      movementType: "income",
+      sourceAccountId: null,
+      destinationAccountId: 2,
+      sourceAmount: 0,
+      destinationAmount: 9.4,
+      spendTypeId: 3,
+    });
+    expect(result.spendTypeId).toBeNull();
+  });
+
+  it("y en una transferencia, que no gasta nada", () => {
+    const result = buildMovementCreateInput({
+      ...base,
+      movementType: "transfer",
+      destinationAccountId: 5,
+      spendTypeId: 3,
+    });
+    expect(result.spendTypeId).toBeNull();
+  });
+});

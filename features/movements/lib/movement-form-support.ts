@@ -24,6 +24,8 @@ export type MovementFormState = {
   destinationAmount: string;
   description: string;
   categoryId: number | null;
+  /** Necesidad, deseo, ahorro. Lo propone la categoría; el movimiento manda. */
+  spendTypeId: number | null;
   counterpartyId: number | null;
   occurredAt: string;
   /** "HH:mm" en hora Perú; se combina con occurredAt al guardar. */
@@ -167,6 +169,7 @@ export function isMovementFormDirty(params: {
       form.destinationAmount !== (editMovement.destinationAmount ? String(editMovement.destinationAmount) : "") ||
       form.status !== editMovement.status ||
       form.categoryId !== (editMovement.categoryId ?? null) ||
+      form.spendTypeId !== (editMovement.spendTypeId ?? null) ||
       form.counterpartyId !== (editMovement.counterpartyId ?? null) ||
       form.notes !== (editMovement.notes ?? "") ||
       form.occurredAt !== origOccurredAt ||
@@ -191,6 +194,7 @@ export function getInitialMovementForm(defaultType: MovementType): MovementFormS
     destinationAmount: "",
     description: "",
     categoryId: null,
+    spendTypeId: null,
     counterpartyId: null,
     occurredAt: todayPeru(),
     occurredTime: nowTimePeru(),

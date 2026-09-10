@@ -2488,7 +2488,7 @@ import {
 export type { MovementFormInput };
 
 const MOVEMENT_RECORD_COLUMNS =
-  "id, workspace_id, movement_type, status, occurred_at, description, notes, source_account_id, source_amount, destination_account_id, destination_amount, fx_rate, category_id, counterparty_id, obligation_id, subscription_id, metadata";
+  "id, workspace_id, movement_type, status, occurred_at, description, notes, source_account_id, source_amount, destination_account_id, destination_amount, fx_rate, category_id, spend_type_id, counterparty_id, obligation_id, subscription_id, metadata";
 
 export async function createMovement(
   workspaceId: number,
@@ -2510,6 +2510,7 @@ export async function createMovement(
     destination_amount: input.destinationAmount,
     fx_rate: input.fxRate ?? null,
     category_id: input.categoryId ?? null,
+    spend_type_id: input.spendTypeId ?? null,
     counterparty_id: input.counterpartyId ?? null,
     obligation_id: input.obligationId ?? null,
     subscription_id: input.subscriptionId ?? null,
@@ -2735,6 +2736,7 @@ export function useUpdateMovementMutation(workspaceId: number | null) {
       if (input.description !== undefined) payload.description = input.description;
       if (input.notes !== undefined) payload.notes = input.notes;
       if (input.categoryId !== undefined) payload.category_id = input.categoryId;
+      if (input.spendTypeId !== undefined) payload.spend_type_id = input.spendTypeId;
       if (input.counterpartyId !== undefined) payload.counterparty_id = input.counterpartyId;
       if (input.occurredAt !== undefined) payload.occurred_at = input.occurredAt;
       if (input.status !== undefined) payload.status = input.status;
@@ -2767,6 +2769,7 @@ export function useUpdateMovementMutation(workspaceId: number | null) {
           ...(input.description !== undefined && { description: input.description }),
           ...(input.notes !== undefined && { notes: input.notes }),
           ...(input.categoryId !== undefined && { categoryId: input.categoryId }),
+          ...(input.spendTypeId !== undefined && { spendTypeId: input.spendTypeId }),
           ...(input.counterpartyId !== undefined && { counterpartyId: input.counterpartyId }),
           ...(input.occurredAt !== undefined && { occurredAt: input.occurredAt }),
           ...(input.status !== undefined && { status: input.status }),

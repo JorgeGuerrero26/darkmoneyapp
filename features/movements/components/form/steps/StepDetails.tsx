@@ -88,6 +88,11 @@ type Props = {
   splitMovementType?: "expense" | "income";
   splitSheetOpen?: boolean;
   onSplitSheetOpenChange?: (open: boolean) => void;
+  /** El tipo que se ve en la fila: el propio del movimiento o, si no tiene, el de su categoría. */
+  spendTypeName: string | null;
+  spendTypeIsInherited: boolean;
+  showSpendTypeRow: boolean;
+  onOpenSpendType: () => void;
   categorySuggestionToShow: CategorySuggestionState | null;
   onApplyCategorySuggestion: (sug: CategorySuggestionState) => void;
 
@@ -160,6 +165,10 @@ export const StepDetails = memo(function StepDetails({
   splitMovementType,
   splitSheetOpen = false,
   onSplitSheetOpenChange,
+  spendTypeName,
+  spendTypeIsInherited,
+  showSpendTypeRow,
+  onOpenSpendType,
   categorySuggestionToShow,
   onApplyCategorySuggestion,
   counterpartiesSorted,
@@ -253,6 +262,18 @@ export const StepDetails = memo(function StepDetails({
           suggestion={categorySuggestion}
           onApply={onApplyCategorySuggestion}
         />
+        {/* La categoría dice en qué se fue; el tipo, si hacía falta. Va pegada a la categoría
+            porque es la que lo propone, y el valor dice cuándo viene de ella. */}
+        {showSpendTypeRow ? (
+          <FormOptionRow
+            grouped
+            label="Tipo de gasto"
+            value={spendTypeName}
+            support={spendTypeIsInherited && spendTypeName ? "Lo trae su categoría" : undefined}
+            placeholder="Sin tipo"
+            onPress={onOpenSpendType}
+          />
+        ) : null}
         <FormOptionRow
           grouped
           label="Contraparte"

@@ -325,6 +325,8 @@ export type MovementRecord = {
   notes?: string | null;
   category: string;
   categoryId?: number | null;
+  /** El tipo de gasto de ESTE movimiento. Vacío = hereda el de su categoría. */
+  spendTypeId?: number | null;
   counterparty: string;
   counterpartyId?: number | null;
   occurredAt: string;

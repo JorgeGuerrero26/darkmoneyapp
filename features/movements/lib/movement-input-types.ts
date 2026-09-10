@@ -19,6 +19,11 @@ export type MovementFormInput = {
   destinationAmount: number | null;
   fxRate?: number | null;
   categoryId?: number | null;
+  /**
+   * Necesidad, deseo, ahorro. Se rellena con el defecto de la categoría y se puede cambiar aquí:
+   * la misma "Alimentación" es el mercado del martes y la cena del viernes.
+   */
+  spendTypeId?: number | null;
   counterpartyId?: number | null;
   obligationId?: number | null;
   subscriptionId?: number | null;
@@ -47,6 +52,7 @@ export type MovementUpdateInput = {
   description?: string;
   notes?: string | null;
   categoryId?: number | null;
+  spendTypeId?: number | null;
   counterpartyId?: number | null;
   occurredAt?: string;
   status?: MovementStatus;

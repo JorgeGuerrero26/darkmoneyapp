@@ -13,6 +13,8 @@ type Props = {
   movement: MovementRecord;
   isTransfer: boolean;
   isExpense: boolean;
+  /** Necesidad, deseo, ahorro — el propio o el heredado de su categoría. `null` = no aplica. */
+  spendTypeLabel: string | null;
   transferSourceCurrencyCode: string;
   transferDestinationCurrencyCode: string;
   fxRate: number | null;
@@ -67,6 +69,7 @@ export const MovementDetailFields = memo(function MovementDetailFields({
   movement,
   isTransfer,
   isExpense,
+  spendTypeLabel,
   transferSourceCurrencyCode,
   transferDestinationCurrencyCode,
   fxRate,
@@ -130,6 +133,9 @@ export const MovementDetailFields = memo(function MovementDetailFields({
         value={movement.category || "Sin categoría"}
         muted={!movement.category}
       />
+      {spendTypeLabel ? (
+        <MovementDetailRow label="Tipo de gasto" value={spendTypeLabel} />
+      ) : null}
       <MovementDetailRow label="Fecha" value={formatWhen(movement.occurredAt)} />
 
       {isTransfer ? (

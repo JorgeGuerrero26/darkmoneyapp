@@ -41,6 +41,8 @@ import { COLORS, FONT_SIZE, SPACING } from "../../constants/theme";
 import { movementAuditLine } from "../../features/movements/lib/audit-line";
 import { MovementDetailHero } from "../../features/movements/components/detail/MovementDetailHero";
 import { MovementDetailFields } from "../../features/movements/components/detail/MovementDetailFields";
+import { useSpendTypesQuery } from "../../services/queries/spend-types";
+import { effectiveSpendTypeId } from "../../features/movements/lib/effectiveSpendType";
 import { MovementAttachmentsSheet } from "../../features/movements/components/detail/MovementAttachmentsSheet";
 import { MovementDetailActions } from "../../features/movements/components/detail/MovementDetailActions";
 import { LinkObligationModal } from "../../features/movements/components/detail/LinkObligationModal";
@@ -142,6 +144,18 @@ function MovementDetailScreen() {
   const isTransfer = movement?.movementType === "transfer";
   const isExpense = movement ? movementActsAsExpense(movement) : false;
   const isVoided = movement?.status === "voided";
+  const { data: spendTypes = [] } = useSpendTypesQuery(activeWorkspaceId);
+  /* El movimiento manda; si no trae tipo propio, el que dice su categoría. Es la misma regla que
+     usan las métricas (`effectiveSpendTypeId`), y por eso aquí se ve lo mismo que se va a contar. */
+  const spendTypeLabel = useMemo(() => {
+    if (!movement || !isExpense) return null;
+    const category = snapshot?.categories.find((item) => item.id === movement.categoryId);
+    const id = effectiveSpendTypeId(
+      { spendTypeId: movement.spendTypeId, categoryId: movement.categoryId },
+      new Map(category?.defaultSpendTypeId != null ? [[category.id, category.defaultSpendTypeId]] : []),
+    );
+    return spendTypes.find((type) => type.id === id)?.name ?? null;
+  }, [movement, isExpense, snapshot?.categories, spendTypes]);
   const sourceAccount = useMemo(
     () => snapshot?.accounts.find((item) => item.id === movement?.sourceAccountId) ?? null,
     [movement?.sourceAccountId, snapshot?.accounts],
@@ -346,6 +360,7 @@ function MovementDetailScreen() {
 
             <MovementDetailFields
               movement={movement}
+              spendTypeLabel={spendTypeLabel}
               isTransfer={Boolean(isTransfer)}
               isExpense={isExpense}
               transferSourceCurrencyCode={transferSourceCurrencyCode}

@@ -44,7 +44,7 @@ async function fetchMovementsPage(
     .select(
       `id, workspace_id, movement_type, status, occurred_at, description, notes,
        source_account_id, source_amount, destination_account_id, destination_amount,
-       fx_rate, category_id, counterparty_id, obligation_id, subscription_id, metadata,
+       fx_rate, category_id, spend_type_id, counterparty_id, obligation_id, subscription_id, metadata,
        source_account:accounts!movements_source_account_id_fkey(name,currency_code),
        destination_account:accounts!movements_destination_account_id_fkey(name,currency_code)`,
     )
@@ -69,6 +69,7 @@ async function fetchMovementsPage(
     notes: row.notes,
     category: "",
     categoryId: row.category_id,
+    spendTypeId: row.spend_type_id ?? null,
     counterparty: "",
     counterpartyId: row.counterparty_id,
     occurredAt: row.occurred_at,
@@ -103,7 +104,7 @@ export function useMovementQuery(movementId?: number | null) {
         .select(
           `id, workspace_id, movement_type, status, occurred_at, description, notes,
            source_account_id, source_amount, destination_account_id, destination_amount,
-           fx_rate, category_id, counterparty_id, obligation_id, subscription_id, metadata,
+           fx_rate, category_id, spend_type_id, counterparty_id, obligation_id, subscription_id, metadata,
            created_at, updated_at, created_by_user_id, updated_by_user_id,
            source_account:accounts!movements_source_account_id_fkey(name,currency_code),
            destination_account:accounts!movements_destination_account_id_fkey(name,currency_code),
@@ -123,6 +124,7 @@ export function useMovementQuery(movementId?: number | null) {
         notes: row.notes,
         category: row.category?.name ?? "",
         categoryId: row.category_id,
+        spendTypeId: row.spend_type_id ?? null,
         counterparty: row.counterparty?.name ?? "",
         counterpartyId: row.counterparty_id,
         occurredAt: row.occurred_at,

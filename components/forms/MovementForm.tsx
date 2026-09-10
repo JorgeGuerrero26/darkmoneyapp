@@ -31,6 +31,7 @@ import {
   suggestAccountFromCounterparty,
 } from "../../lib/movement-patterns";
 import { useAuth } from "../../lib/auth-context";
+import { useSpendTypesQuery } from "../../services/queries/spend-types";
 import { useToast } from "../../hooks/useToast";
 import { useHaptics } from "../../hooks/useHaptics";
 import { useMovementCategoryAiSuggestion } from "../../hooks/useMovementCategoryAiSuggestion";
@@ -121,6 +122,7 @@ export type MovementDuplicateSource = Pick<
   | "destinationAmount"
   | "description"
   | "categoryId"
+  | "spendTypeId"
   | "counterpartyId"
   | "notes"
 >;
@@ -191,6 +193,8 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   const [discardVisible, setDiscardVisible] = useState(false);
   const [categoryPickerOpen, setCategoryPickerOpen] = useState(false);
   const [counterpartyPickerOpen, setCounterpartyPickerOpen] = useState(false);
+  const [spendTypePickerOpen, setSpendTypePickerOpen] = useState(false);
+  const { data: spendTypes = [] } = useSpendTypesQuery(activeWorkspaceId);
   const [sourceAccountPickerOpen, setSourceAccountPickerOpen] = useState(false);
   const [destinationAccountPickerOpen, setDestinationAccountPickerOpen] = useState(false);
   const [form, setForm] = useState<FormState>(() => getInitialForm(defaultType));
@@ -463,6 +467,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         destinationAmount: editMovement.destinationAmount ? String(editMovement.destinationAmount) : "",
         description: editMovement.description ?? "",
         categoryId: editMovement.categoryId ?? null,
+        spendTypeId: editMovement.spendTypeId ?? null,
         counterpartyId: null,
         occurredAt: occurredDate,
         occurredTime: editMovement.occurredAt ? isoToTimeStr(editMovement.occurredAt) : nowTimePeru(),
@@ -481,6 +486,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         destinationAmount: duplicateMovement.destinationAmount ? String(duplicateMovement.destinationAmount) : "",
         description: duplicateMovement.description ?? "",
         categoryId: duplicateMovement.categoryId ?? null,
+        spendTypeId: duplicateMovement.spendTypeId ?? null,
         counterpartyId: duplicateMovement.counterpartyId ?? null,
         occurredAt: todayPeru(),
         occurredTime: nowTimePeru(),
@@ -562,6 +568,18 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
       return { ...prev, sourceAccountId: source.id, destinationAccountId: dest.id };
     });
   }
+
+  /* Lo que se ve en la fila cuando el movimiento no trae tipo propio: el de su categoría. No se
+     copia al estado — se muestra y se hereda al calcular, así el historial sigue al defecto. */
+  const inheritedSpendType = (() => {
+    if (form.categoryId == null) return null;
+    const category = categoriesForPicker.find((item) => item.id === form.categoryId);
+    if (category?.defaultSpendTypeId == null) return null;
+    return spendTypes.find((type) => type.id === category.defaultSpendTypeId) ?? null;
+  })();
+  const shownSpendType = form.spendTypeId != null
+    ? spendTypes.find((type) => type.id === form.spendTypeId) ?? null
+    : inheritedSpendType;
 
   function selectCategoryManually(id: number | null) {
     patch({ categoryId: id });
@@ -916,6 +934,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         transferCurrenciesDiffer,
         fxRate: effectiveFxRate,
         categoryId: form.categoryId,
+        spendTypeId: form.spendTypeId,
         counterpartyId: form.counterpartyId,
         subscriptionId: linkedSubscriptionId,
       };
@@ -1154,6 +1173,24 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         />
         <SearchableSelectSheet
           inline
+          visible={spendTypePickerOpen}
+          title="Tipo de gasto"
+          options={[
+            {
+              value: null as number | null,
+              /* `null` no es "ninguno": es "el de su categoría". Guardar el defecto copiado
+                 congelaría el historial —cambiar el defecto de Alimentación no arreglaría los
+                 movimientos viejos— y por eso solo se guarda lo que el usuario cambia a mano. */
+              label: inheritedSpendType ? `Como su categoría (${inheritedSpendType.name})` : "Sin tipo",
+            },
+            ...spendTypes.map((type) => ({ value: type.id as number | null, label: type.name })),
+          ]}
+          value={form.spendTypeId}
+          onChange={(id) => patch({ spendTypeId: id })}
+          onClose={() => setSpendTypePickerOpen(false)}
+        />
+        <SearchableSelectSheet
+          inline
           visible={counterpartyPickerOpen}
           title="Contraparte"
           options={[
@@ -1359,6 +1396,10 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
             categoriesForPicker={categoriesForPicker}
             categoryId={form.categoryId}
             onSelectCategory={selectCategoryManually}
+            spendTypeName={shownSpendType?.name ?? null}
+            spendTypeIsInherited={form.spendTypeId == null && inheritedSpendType != null}
+            showSpendTypeRow={form.movementType === "expense" && spendTypes.length > 0}
+            onOpenSpendType={() => setSpendTypePickerOpen(true)}
             categorySuggestionToShow={categorySuggestionToShow}
             onApplyCategorySuggestion={(sug) => void applyCategorySuggestion(sug)}
             counterpartiesSorted={counterpartiesSorted}

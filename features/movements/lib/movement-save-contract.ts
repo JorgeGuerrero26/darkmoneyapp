@@ -14,6 +14,7 @@ type BuildMovementInput = {
   transferCurrenciesDiffer?: boolean;
   fxRate?: number | null;
   categoryId?: number | null;
+  spendTypeId?: number | null;
   counterpartyId?: number | null;
   obligationId?: number | null;
   subscriptionId?: number | null;
@@ -53,6 +54,10 @@ export function buildMovementCreateInput(input: BuildMovementInput): MovementFor
     destinationAmount: isIncome ? validAmount(input.destinationAmount) : transferDestinationAmount(input),
     fxRate: isTransfer ? transferFxRate(input) : null,
     categoryId: isTransfer ? null : input.categoryId ?? null,
+    /* Solo el gasto lleva tipo. Un ingreso no es necesidad ni deseo, y una transferencia mueve
+       plata entre cuentas tuyas sin gastarla: el que quede puesto al cambiar de tipo de
+       movimiento es un dato que nadie escribió y que contaría en las métricas. */
+    spendTypeId: input.movementType === "expense" ? input.spendTypeId ?? null : null,
     counterpartyId: isTransfer ? null : input.counterpartyId ?? null,
     obligationId: input.obligationId ?? null,
     subscriptionId: isTransfer ? null : input.subscriptionId ?? null,
@@ -78,6 +83,7 @@ export function buildMovementUpdateInput(input: BuildMovementInput): MovementUpd
     description: createInput.description,
     notes: createInput.notes,
     categoryId: createInput.categoryId,
+    spendTypeId: createInput.spendTypeId,
     counterpartyId: createInput.counterpartyId,
     occurredAt: createInput.occurredAt,
     sourceAccountId: createInput.sourceAccountId,
