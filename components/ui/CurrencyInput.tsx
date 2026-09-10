@@ -20,6 +20,15 @@ type Props = {
   error?: string;
   placeholder?: string;
   style?: StyleProp<ViewStyle>;
+  /**
+   * `hero` es el monto del paso 1: ocupa el ancho de la hoja y se escribe a 46 px.
+   *
+   * `compact` es el mismo campo metido en una fila —el reparto entre categorías— donde solo hay
+   * 132 px. A 46 px ahí no entran ni dos dígitos: lo que se veía era el "0.00" recortado, tres
+   * puntos, y al teclear la cifra quedaba fuera de la caja. Se escribía a ciegas, y de ahí salió
+   * un reparto de 22,233 sobre un movimiento de 10 (reportado el 2026-09-10).
+   */
+  size?: "hero" | "compact";
 };
 
 export const CurrencyInput = forwardRef<TextInput, Props>(function CurrencyInput({
@@ -30,7 +39,9 @@ export const CurrencyInput = forwardRef<TextInput, Props>(function CurrencyInput
   error,
   placeholder = "0.00",
   style,
+  size = "hero",
 }, ref) {
+  const compact = size === "compact";
   const inputRef = useRef<TextInput>(null);
   useImperativeHandle(ref, () => inputRef.current as TextInput, []);
   /**
@@ -76,10 +87,10 @@ export const CurrencyInput = forwardRef<TextInput, Props>(function CurrencyInput
     >
       {label ? <Text style={styles.label}>{label}</Text> : null}
       <View style={styles.row}>
-        <Text style={styles.currency}>{currencySymbol}</Text>
+        <Text style={[styles.currency, compact && styles.currencyCompact]}>{currencySymbol}</Text>
         <TextField
           ref={inputRef}
-          style={styles.input}
+          style={[styles.input, compact && styles.inputCompact]}
           value={focused ? value : groupAmountDigits(value)}
           onChangeText={handleChange}
           onFocus={() => setFocused(true)}
@@ -138,6 +149,12 @@ const styles = StyleSheet.create({
     letterSpacing: -0.035 * FONT_SIZE.amountInput,
     color: COLORS.text,
     padding: 0,
+  },
+  currencyCompact: { fontSize: FONT_SIZE.sm, minWidth: 0 },
+  inputCompact: {
+    fontSize: FONT_SIZE.xl,
+    letterSpacing: -0.02 * FONT_SIZE.xl,
+    textAlign: "right",
   },
   error: { fontSize: FONT_SIZE.xs, color: COLORS.danger },
 });
