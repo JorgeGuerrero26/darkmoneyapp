@@ -33,7 +33,7 @@ import {
   RiskWarningBlock,
   type CategorySuggestionState,
 } from "../MovementFormBlocks";
-import { SplitAmountEditor } from "../SplitAmountEditor";
+import { SplitCategoriesSheet } from "../SplitCategoriesSheet";
 import type { SplitLine } from "../../../lib/split-movement";
 import type { MovementRiskExplanation } from "../../../../../lib/movement-risk-analysis";
 import type { MovementBudgetImpact } from "../../../../../lib/movement-budget-impact";
@@ -82,6 +82,12 @@ type Props = {
   onChangeSplitLines?: (lines: SplitLine[] | null) => void;
   splitTotalAmount?: number;
   splitCurrencyCode?: string;
+  /** Cómo se llama el movimiento que se reparte, para el encabezado de la pantalla. */
+  splitMovementLabel?: string;
+  /** Un ingreso también se reparte; la transferencia no tiene categoría, así que no aparece. */
+  splitMovementType?: "expense" | "income";
+  splitSheetOpen?: boolean;
+  onSplitSheetOpenChange?: (open: boolean) => void;
   categorySuggestionToShow: CategorySuggestionState | null;
   onApplyCategorySuggestion: (sug: CategorySuggestionState) => void;
 
@@ -150,6 +156,10 @@ export const StepDetails = memo(function StepDetails({
   onChangeSplitLines,
   splitTotalAmount,
   splitCurrencyCode,
+  splitMovementLabel,
+  splitMovementType,
+  splitSheetOpen = false,
+  onSplitSheetOpenChange,
   categorySuggestionToShow,
   onApplyCategorySuggestion,
   counterpartiesSorted,
@@ -196,7 +206,6 @@ export const StepDetails = memo(function StepDetails({
   const showCategoryRow = splitLines == null;
   const categorySuggestion = showCategoryRow ? categorySuggestionToShow : null;
   const counterpartySuggestion = counterpartyId == null ? counterpartySuggestionToShow : null;
-  const showSplitRow = onChangeSplitLines != null && splitLines == null;
 
   return (
     <View style={styles.section}>
@@ -262,20 +271,25 @@ export const StepDetails = memo(function StepDetails({
           label="Fecha y hora"
           value={dateTimeRowLabel}
           onPress={() => setDateTimeOpen(true)}
-          last={!showSplitRow}
+          last={onChangeSplitLines == null}
         />
         {/* Sin `muted`: es una fila de la tarjeta como las otras tres, y en gris se leía como una
             nota al pie en medio de la lista. El valor dice qué hace al tocarla. */}
-        {showSplitRow ? (
+        {onChangeSplitLines ? (
           <FormOptionRow
             grouped
             last
-            label="Repartir entre varias categorías"
-            value="Elegir"
-            onPress={() => onChangeSplitLines?.([
-              { categoryId: null, amount: "" },
-              { categoryId: null, amount: "" },
-            ])}
+            label="Dividir en categorías"
+            value={splitLines ? `${splitLines.length} categorías` : "Elegir"}
+            onPress={() => {
+              if (!splitLines) {
+                onChangeSplitLines([
+                  { categoryId: null, amount: "" },
+                  { categoryId: null, amount: "" },
+                ]);
+              }
+              onSplitSheetOpenChange?.(true);
+            }}
           />
         ) : null}
       </View>
@@ -303,13 +317,20 @@ export const StepDetails = memo(function StepDetails({
         </Text>
       ) : null}
 
-      {onChangeSplitLines ? (
-        <SplitAmountEditor
-          lines={splitLines ?? null}
+      {/* La división ya no crece dentro de este scroll: abre su propia pantalla. Dos superficies
+          con desplazamiento anidadas siempre pelean, y el panel traía su × a ocho píxeles de la
+          × de la hoja con un significado distinto. */}
+      {onChangeSplitLines && splitLines ? (
+        <SplitCategoriesSheet
+          visible={splitSheetOpen}
+          onClose={() => onSplitSheetOpenChange?.(false)}
+          lines={splitLines}
           onChangeLines={onChangeSplitLines}
           categories={categoriesForPicker}
           totalAmount={splitTotalAmount ?? 0}
           currencyCode={splitCurrencyCode ?? ""}
+          movementLabel={splitMovementLabel ?? "Este movimiento"}
+          movementType={splitMovementType ?? "expense"}
         />
       ) : null}
       {/* Las dos que no cambian ninguna fila: proponen crear algo, así que van sueltas. */}

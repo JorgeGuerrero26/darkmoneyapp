@@ -71,7 +71,8 @@ import { dateTimeStrToISO, isoToTimeStr, nowTimePeru, todayPeru } from "../../li
 import { validateMovementForm } from "../../features/movements/lib/form-validation";
 import { patternMovementAmount } from "../../features/movements/lib/pattern-heuristics";
 import { CategoryPicker } from "../../features/movements/components/form/MovementChipPickers";
-import { SplitAmountEditor } from "../../features/movements/components/form/SplitAmountEditor";
+import { FormOptionRow } from "../ui/FormOptionRow";
+import { SplitCategoriesSheet } from "../../features/movements/components/form/SplitCategoriesSheet";
 import {
   deriveLearnedCategoryMatch,
   mapAiCategoryRecommendation,
@@ -153,6 +154,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
   const [transferFxRate, setTransferFxRate] = useState("");
   const [categoryId, setCategoryId] = useState<number | null>(null);
   const [splitLines, setSplitLines] = useState<SplitLine[] | null>(null);
+  const [splitSheetOpen, setSplitSheetOpen] = useState(false);
   const [counterpartyId, setCounterpartyId] = useState<number | null>(null);
   const [description, setDescription] = useState("");
   const [notes, setNotes] = useState("");
@@ -170,7 +172,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
   const [linkedRecurringIncomeId, setLinkedRecurringIncomeId] = useState<number | null>(null);
 
   useEffect(() => {
-    if (movementType !== "expense" && splitLines) setSplitLines(null);
+    if (movementType !== "expense" && movementType !== "income" && splitLines) setSplitLines(null);
   }, [movementType, splitLines]);
 
   const {
@@ -881,7 +883,9 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
       budgetAi: budgetImpact?.source === "deepseek" ? budgetImpact : null,
     };
 
-    if (movementType === "expense" && splitLines) {
+    /* También para ingresos desde la fase 38: el builder pone el monto en el lado que
+       corresponde según el tipo, y aquí ya se le pasan los dos. */
+    if (splitLines) {
       const splitValidation = validateSplit(splitLines, parsedAmount);
       if (!splitValidation.valid) {
         showToast(splitValidation.error ?? "Revisa la división de montos", "error");
@@ -893,7 +897,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
         for (let index = 0; index < splitLines.length; index++) {
           const line = splitLines[index];
           const created = await createMovement.mutateAsync(buildMovementCreateInput({
-            movementType: "expense",
+            movementType,
             status: "posted",
             occurredAt,
             description: splitLineDescription(description.trim() || suggestion.description, index, splitLines.length),
@@ -1095,7 +1099,25 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
   }
 
   return (
-    <BottomSheet visible={visible} onClose={onClose} title="Registrar movimiento" snapHeight={0.88}>
+    <BottomSheet
+      visible={visible}
+      onClose={onClose}
+      title="Registrar movimiento"
+      snapHeight={0.88}
+      overlay={splitLines ? (
+        <SplitCategoriesSheet
+          visible={splitSheetOpen}
+          onClose={() => setSplitSheetOpen(false)}
+          lines={splitLines}
+          onChangeLines={setSplitLines}
+          categories={categories}
+          totalAmount={parsePositiveAmountInput(amount) ?? 0}
+          currencyCode={selectedBudgetAccount?.currencyCode ?? ""}
+          movementLabel={description.trim() || "Movimiento detectado"}
+          movementType={movementType === "income" ? "income" : "expense"}
+        />
+      ) : null}
+    >
       {/* BottomSheet ya provee el ScrollView; anidar otro rompía el scroll y el teclado. */}
       <View style={styles.content}>
         <AiQuotaWarningBanner usage={aiUsageQuery.data} />
@@ -1189,15 +1211,21 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
             onSelect={selectCategoryManually}
           />
         ) : null}
-        {movementType === "expense" ? (
-          <SplitAmountEditor
-            lines={splitLines}
-            onChangeLines={setSplitLines}
-            categories={categories}
-            totalAmount={parsePositiveAmountInput(amount) ?? 0}
-            currencyCode={selectedBudgetAccount?.currencyCode ?? ""}
-          />
-        ) : null}
+        {/* Misma pantalla que en el formulario de movimientos: el panel crecía dentro de este
+            scroll, que ya es el de la hoja. Ver SplitCategoriesSheet. */}
+        <FormOptionRow
+            label="Dividir en categorías"
+            value={splitLines ? `${splitLines.length} categorías` : "Elegir"}
+            onPress={() => {
+              if (!splitLines) {
+                setSplitLines([
+                  { categoryId: null, amount: "" },
+                  { categoryId: null, amount: "" },
+                ]);
+              }
+              setSplitSheetOpen(true);
+            }}
+        />
         <CategorySuggestionBlock
           suggestion={categorySuggestion ? { categoryName: categorySuggestion.categoryName, detail: categorySuggestion.detail } : null}
           onApply={() => categorySuggestion && void applyCategorySuggestion(categorySuggestion)}

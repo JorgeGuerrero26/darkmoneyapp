@@ -208,6 +208,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   const [linkedRecurringIncomeId, setLinkedRecurringIncomeId] = useState<number | null>(null);
   // Split de montos: null = apagado; activo solo para gasto en creación.
   const [splitLines, setSplitLines] = useState<SplitLine[] | null>(null);
+  const [splitSheetOpen, setSplitSheetOpen] = useState(false);
   const attachmentsHydratedRef = useRef<string | null>(null);
   const initialAttachmentSignatureRef = useRef("::ready");
   // Anti-doble-tap síncrono: evita crear el movimiento 2-3 veces si el usuario toca Guardar
@@ -738,7 +739,10 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
 
   // El split solo aplica a gastos: cambiar de tipo lo apaga.
   useEffect(() => {
-    if (form.movementType !== "expense" && splitLines) setSplitLines(null);
+    /* Un ingreso también se reparte —parte venta, parte reembolso— y lo único que cambia es de
+       qué lado suma en los informes, que el movimiento ya sabe. La transferencia no tiene
+       categoría: mover plata entre cuentas propias no es gasto ni ingreso. */
+    if (form.movementType === "transfer" && splitLines) setSplitLines(null);
   }, [form.movementType, splitLines]);
 
 
@@ -887,6 +891,18 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
       const effectiveFxRate = isTransfer && transferCurrenciesDiffer && sourceAmountNum > 0
         ? effectiveDestAmount / sourceAmountNum
         : null;
+      /* El total que se reparte y el lado en el que va cada línea dependen del tipo: un gasto
+         sale de la cuenta de origen y un ingreso entra en la de destino. Sin esto, habilitar la
+         división para ingresos la habría guardado entera y en silencio. */
+      const isIncomeSplit = form.movementType === "income";
+      const splitTotal = isIncomeSplit ? effectiveDestAmount : sourceAmountNum;
+      /* Solo se toca el lado que corresponde: el builder ya anula el otro según el tipo, así
+         que pasarle `sourceAmount: null` en un ingreso sería repetir su trabajo con un tipo que
+         no acepta. */
+      const splitAmountPatch = (amount: number) => (isIncomeSplit
+        ? { destinationAmount: amount }
+        : { sourceAmount: amount });
+
       const movementContract = {
         movementType: form.movementType,
         status: form.status,
@@ -904,10 +920,10 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         subscriptionId: linkedSubscriptionId,
       };
       if (isEditing && editMovement) {
-        if (splitLines && form.movementType === "expense" && linkedEventId == null && !hasSplitGroup(editMovement.metadata)) {
+        if (splitLines && form.movementType !== "transfer" && linkedEventId == null && !hasSplitGroup(editMovement.metadata)) {
           // Conversión simple→split: el movimiento original se vuelve la línea 1
           // (conserva id, adjuntos y dedupe); las demás líneas se crean como hermanas.
-          const splitValidation = validateSplit(splitLines, sourceAmountNum);
+          const splitValidation = validateSplit(splitLines, splitTotal ?? 0);
           if (!splitValidation.valid) {
             isClosingAfterSubmitRef.current = false;
             haptics.error();
@@ -921,7 +937,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
             input: {
               ...buildMovementUpdateInput({
                 ...movementContract,
-                sourceAmount: parsePositiveAmountInput(firstLine.amount)!,
+                ...splitAmountPatch(parsePositiveAmountInput(firstLine.amount)!),
                 description: splitLineDescription(autoDesc, 0, splitLines.length),
                 categoryId: firstLine.categoryId,
               }),
@@ -932,7 +948,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
             const line = splitLines[index];
             await createMovement.mutateAsync(buildMovementCreateInput({
               ...movementContract,
-              sourceAmount: parsePositiveAmountInput(line.amount)!,
+              ...splitAmountPatch(parsePositiveAmountInput(line.amount)!),
               description: splitLineDescription(autoDesc, index, splitLines.length),
               categoryId: line.categoryId,
               metadata: splitLineMetadata(null, splitGroup, index, splitLines.length),
@@ -941,7 +957,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
           }
           showRichToast({
             type: "success",
-            title: `Gasto dividido en ${splitLines.length} movimientos`,
+            title: `${isIncomeSplit ? "Ingreso" : "Gasto"} dividido en ${splitLines.length} movimientos`,
             subtitle: autoDesc,
           });
           haptics.success();
@@ -966,11 +982,11 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         if (!submitDedupeKeyRef.current) {
           submitDedupeKeyRef.current = newClientDedupeKey("form");
         }
-        if (splitLines && form.movementType === "expense") {
+        if (splitLines && form.movementType !== "transfer") {
           // Split: un movimiento por línea, enlazados por metadata.split_group.
           // Idempotencia por línea: `${base}:split-N` — un retry tras fallo parcial
           // recupera las líneas ya insertadas en vez de duplicarlas.
-          const splitValidation = validateSplit(splitLines, sourceAmountNum);
+          const splitValidation = validateSplit(splitLines, splitTotal ?? 0);
           if (!splitValidation.valid) {
             isClosingAfterSubmitRef.current = false;
             haptics.error();
@@ -984,7 +1000,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
             const lineAmount = parsePositiveAmountInput(line.amount)!;
             const linePayload = buildMovementCreateInput({
               ...movementContract,
-              sourceAmount: lineAmount,
+              ...splitAmountPatch(lineAmount),
               description: splitLineDescription(autoDesc, index, splitLines.length),
               categoryId: line.categoryId,
               metadata: {
@@ -1001,7 +1017,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
           setSavedMovementId(firstCreatedId);
           showRichToast({
             type: "success",
-            title: `Gasto dividido en ${splitLines.length} movimientos`,
+            title: `${isIncomeSplit ? "Ingreso" : "Gasto"} dividido en ${splitLines.length} movimientos`,
             subtitle: autoDesc,
           });
           setLastMovementAccountId(form.sourceAccountId);
@@ -1310,15 +1326,19 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
             : null
         );
         const splitUiEnabled = isEditing
-          ? form.movementType === "expense" && linkedEventId == null && !hasSplitGroup(editMovement?.metadata)
-          : true; // creación: comportamiento actual sin cambios
+          ? form.movementType !== "transfer" && linkedEventId == null && !hasSplitGroup(editMovement?.metadata)
+          : true;
         return (
           <StepDetails
             scrollRef={sheetScrollRef}
             splitLines={splitUiEnabled ? splitLines : null}
-            onChangeSplitLines={splitUiEnabled && form.movementType === "expense" ? setSplitLines : undefined}
-            splitTotalAmount={sourceAmountNum}
+            onChangeSplitLines={splitUiEnabled && form.movementType !== "transfer" ? setSplitLines : undefined}
+            splitTotalAmount={form.movementType === "income" ? destinationAmountNum : sourceAmountNum}
             splitCurrencyCode={sourceAccount?.currencyCode ?? baseCurrency}
+            splitMovementLabel={form.description.trim() || buildDescription()}
+            splitMovementType={form.movementType === "income" ? "income" : "expense"}
+            splitSheetOpen={splitSheetOpen}
+            onSplitSheetOpenChange={setSplitSheetOpen}
             isEditing={isEditing}
             descriptionRef={descriptionRef}
             notesRef={notesRef}
