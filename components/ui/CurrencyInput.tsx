@@ -29,6 +29,8 @@ type Props = {
    * un reparto de 22,233 sobre un movimiento de 10 (reportado el 2026-09-10).
    */
   size?: "hero" | "compact";
+  onFocus?: () => void;
+  onBlur?: () => void;
 };
 
 export const CurrencyInput = forwardRef<TextInput, Props>(function CurrencyInput({
@@ -40,6 +42,8 @@ export const CurrencyInput = forwardRef<TextInput, Props>(function CurrencyInput
   placeholder = "0.00",
   style,
   size = "hero",
+  onFocus,
+  onBlur,
 }, ref) {
   const compact = size === "compact";
   const inputRef = useRef<TextInput>(null);
@@ -93,12 +97,12 @@ export const CurrencyInput = forwardRef<TextInput, Props>(function CurrencyInput
           style={[styles.input, compact && styles.inputCompact]}
           value={focused ? value : groupAmountDigits(value)}
           onChangeText={handleChange}
-          onFocus={() => setFocused(true)}
+          onFocus={() => { setFocused(true); onFocus?.(); }}
           keyboardType="decimal-pad"
           placeholder={placeholder}
           placeholderTextColor={COLORS.storm}
           returnKeyType="done"
-          onBlur={() => { setFocused(false); handleBlur(); }}
+          onBlur={() => { setFocused(false); handleBlur(); onBlur?.(); }}
           accessibilityLabel={label ? `${label} en ${currencyCode}` : `Monto en ${currencyCode}`}
           accessibilityHint={error ? `Error: ${error}` : undefined}
         />

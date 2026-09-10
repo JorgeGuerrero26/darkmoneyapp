@@ -56,6 +56,11 @@ export function SplitCategoriesSheet({
 }: Props) {
   const [pickerIndex, setPickerIndex] = useState<number | null>(null);
   const [typePickerIndex, setTypePickerIndex] = useState<number | null>(null);
+  /* La fila que se está escribiendo ahora mismo.
+     Sin esto, borrar dígito a dígito hasta dejarla vacía la convertía otra vez en "propuesta":
+     el campo se desmontaba en mitad del borrado, el teclado se cerraba y volvía a aparecer el
+     monto propuesto — justo cuando el usuario estaba vaciándola para escribir el suyo. */
+  const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
   const [triedToSave, setTriedToSave] = useState(false);
 
   const money = (value: number) => formatCurrency(value, currencyCode);
@@ -128,7 +133,7 @@ export function SplitCategoriesSheet({
         <View style={styles.group}>
           {lines.map((line, index) => {
             const category = categories.find((item) => item.id === line.categoryId);
-            const proposed = allocation.proposalIndex === index;
+            const proposed = allocation.proposalIndex === index && focusedIndex !== index;
             return (
               <View key={index} style={[styles.line, index < lines.length - 1 && styles.lineDivided]}>
                 {/* Cada renglón se llama por su categoría: "los 62.40 de Alimentación" es como
@@ -185,6 +190,8 @@ export function SplitCategoriesSheet({
                       value={line.amount}
                       onChangeText={(value) => patchLine(index, { amount: value })}
                       currencyCode={currencyCode}
+                      onFocus={() => setFocusedIndex(index)}
+                      onBlur={() => setFocusedIndex((prev) => (prev === index ? null : prev))}
                     />
                   </View>
                 )}
