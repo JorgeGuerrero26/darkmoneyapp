@@ -20,6 +20,7 @@ import { SearchableSelectSheet, type SelectOption } from "../ui/SearchableSelect
 import { SegmentedControl } from "../ui/SegmentedControl";
 import { AppearancePickerOverlay, CATEGORY_COLOR_CHOICES } from "./AppearancePickerOverlay";
 import { sortByName } from "../../lib/sort-locale";
+import { useSpendTypesQuery } from "../../services/queries/spend-types";
 import {
   CATEGORY_ICON_PICKER_KEYS,
   DEFAULT_CATEGORY_ICON_KEY,
@@ -69,12 +70,15 @@ export function CategoryForm({ visible, onClose, onSuccess, editCategory }: Prop
   const [color, setColor] = useState(KIND_DEFAULT_COLORS.expense);
   const [icon, setIcon] = useState(DEFAULT_CATEGORY_ICON_KEY);
   const [parentId, setParentId] = useState<number | null>(null);
+  const [defaultSpendTypeId, setDefaultSpendTypeId] = useState<number | null>(null);
   const [isActive, setIsActive] = useState(true);
 
   const [nameError, setNameError] = useState("");
   const [showDiscard, setShowDiscard] = useState(false);
   const [appearanceOpen, setAppearanceOpen] = useState(false);
   const [parentOpen, setParentOpen] = useState(false);
+  const [spendTypeOpen, setSpendTypeOpen] = useState(false);
+  const { data: spendTypes = [] } = useSpendTypesQuery(activeWorkspaceId);
 
   useEffect(() => {
     if (!visible) return;
@@ -84,6 +88,7 @@ export function CategoryForm({ visible, onClose, onSuccess, editCategory }: Prop
       setColor(editCategory.color ?? KIND_DEFAULT_COLORS[editCategory.kind]);
       setIcon(iconKeyForFormState(editCategory.icon));
       setParentId(editCategory.parentId ?? null);
+      setDefaultSpendTypeId(editCategory.defaultSpendTypeId ?? null);
       setIsActive(editCategory.isActive);
     } else {
       setName("");
@@ -91,6 +96,7 @@ export function CategoryForm({ visible, onClose, onSuccess, editCategory }: Prop
       setColor(KIND_DEFAULT_COLORS.expense);
       setIcon(DEFAULT_CATEGORY_ICON_KEY);
       setParentId(null);
+      setDefaultSpendTypeId(null);
       setIsActive(true);
     }
     setNameError("");
@@ -114,6 +120,7 @@ export function CategoryForm({ visible, onClose, onSuccess, editCategory }: Prop
       color !== (ec.color ?? KIND_DEFAULT_COLORS[ec.kind]) ||
       normalizeIconLookupKey(icon) !== normalizeIconLookupKey(ec.icon ?? DEFAULT_CATEGORY_ICON_KEY) ||
       parentId !== (ec.parentId ?? null) ||
+      defaultSpendTypeId !== (ec.defaultSpendTypeId ?? null) ||
       isActive !== ec.isActive
     );
   }
@@ -158,6 +165,9 @@ export function CategoryForm({ visible, onClose, onSuccess, editCategory }: Prop
             color: color.trim() || null,
             icon: icon.trim() || null,
             parentId,
+            // Un ingreso no es necesidad ni deseo: si la categoría deja de ser de gasto, su tipo
+            // por defecto se va con ella en vez de quedarse invisible pero guardado.
+            defaultSpendTypeId: kind === "income" ? null : defaultSpendTypeId,
             // El orden no se edita aquí: se conserva el que ya tenía.
             isActive,
           },
@@ -170,6 +180,7 @@ export function CategoryForm({ visible, onClose, onSuccess, editCategory }: Prop
           color: color.trim() || null,
           icon: icon.trim() || null,
           parentId,
+          defaultSpendTypeId: kind === "income" ? null : defaultSpendTypeId,
           // Al crear lo resuelve el servidor con max(sort_order)+10; nadie elige 280 a conciencia.
           isActive: true,
         });
@@ -205,6 +216,12 @@ export function CategoryForm({ visible, onClose, onSuccess, editCategory }: Prop
 
   const parentName = parentOptions.find((option) => option.id === parentId)?.name ?? null;
   const SelectedIcon = getLucideIconForCategory(icon);
+
+  const spendTypeName = spendTypes.find((type) => type.id === defaultSpendTypeId)?.name ?? null;
+  const spendTypeSelectOptions: SelectOption<number | null>[] = [
+    { value: null, label: "Sin tipo", meta: "Se pregunta en cada movimiento" },
+    ...spendTypes.map((type) => ({ value: type.id as number | null, label: type.name })),
+  ];
 
   const parentSelectOptions: SelectOption<number | null>[] = [
     { value: null, label: "Ninguna", meta: "Categoría de primer nivel" },
@@ -243,6 +260,15 @@ export function CategoryForm({ visible, onClose, onSuccess, editCategory }: Prop
             value={parentId}
             onChange={setParentId}
             onClose={() => setParentOpen(false)}
+          />
+          <SearchableSelectSheet
+            inline
+            visible={spendTypeOpen}
+            title="Tipo por defecto"
+            options={spendTypeSelectOptions}
+            value={defaultSpendTypeId}
+            onChange={setDefaultSpendTypeId}
+            onClose={() => setSpendTypeOpen(false)}
           />
           {/* Dentro del sheet: iOS solo presenta un Modal a la vez. */}
           <ConfirmDialog
@@ -301,6 +327,19 @@ export function CategoryForm({ visible, onClose, onSuccess, editCategory }: Prop
           value={parentName}
           placeholder="Ninguna"
           onPress={() => setParentOpen(true)}
+        />
+      ) : null}
+
+      {/* Solo para gastos, y solo si hay tipos creados: una fila que abre una lista vacía es una
+          fila que no sirve. Es un DEFECTO —el movimiento puede cambiarlo— y por eso vive aquí y
+          no como un campo obligatorio más del formulario de movimiento. */}
+      {kind !== "income" && spendTypes.length > 0 ? (
+        <FormOptionRow
+          label="Tipo de gasto por defecto"
+          support="Se rellena solo al elegir esta categoría"
+          value={spendTypeName}
+          placeholder="Sin tipo"
+          onPress={() => setSpendTypeOpen(true)}
         />
       ) : null}
 

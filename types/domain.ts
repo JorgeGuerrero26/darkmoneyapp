@@ -220,6 +220,8 @@ export type CategorySummary = {
   sortOrder?: number;
   isSystem?: boolean;
   isPinned?: boolean;
+  /** El tipo de gasto que esta categoría PROPONE al elegirla. El movimiento puede cambiarlo. */
+  defaultSpendTypeId?: number | null;
 };
 
 /** Movimientos publicados con categoría (analíticas desde snapshot). */

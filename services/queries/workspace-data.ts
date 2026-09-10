@@ -890,7 +890,7 @@ export async function fetchWorkspaceSnapshot(
       .eq("workspace_id", activeWorkspaceId),
     supabase
       .from("categories")
-      .select("id, workspace_id, name, kind, parent_id, color, icon, sort_order, is_system, is_active, is_pinned, created_at, updated_at")
+      .select("id, workspace_id, name, kind, parent_id, color, icon, sort_order, is_system, is_active, is_pinned, default_spend_type_id, created_at, updated_at")
       .eq("workspace_id", activeWorkspaceId)
       .order("sort_order", { ascending: true })
       .order("name", { ascending: true }),
@@ -989,6 +989,7 @@ export async function fetchWorkspaceSnapshot(
     isActive: row.is_active,
     workspaceId: row.workspace_id,
     parentId: row.parent_id,
+    defaultSpendTypeId: (row as { default_spend_type_id?: number | null }).default_spend_type_id ?? null,
     parentName: row.parent_id != null ? categoryIdToName.get(row.parent_id) ?? null : null,
     color: row.color,
     icon: row.icon,
@@ -1197,7 +1198,7 @@ async function fetchCategoriesOverview(workspaceId: number): Promise<CategoryOve
   const [catRes, movRes, subRes] = await Promise.all([
     supabase
       .from("categories")
-      .select("id, workspace_id, name, kind, parent_id, color, icon, sort_order, is_system, is_active, is_pinned, created_at, updated_at")
+      .select("id, workspace_id, name, kind, parent_id, color, icon, sort_order, is_system, is_active, is_pinned, default_spend_type_id, created_at, updated_at")
       .eq("workspace_id", workspaceId)
       .order("sort_order", { ascending: true })
       .order("name", { ascending: true }),
@@ -1271,6 +1272,7 @@ async function fetchCategoriesOverview(workspaceId: number): Promise<CategoryOve
       isActive: row.is_active,
       workspaceId: row.workspace_id,
       parentId: row.parent_id,
+    defaultSpendTypeId: (row as { default_spend_type_id?: number | null }).default_spend_type_id ?? null,
       parentName: row.parent_id != null ? idToName.get(row.parent_id) ?? null : null,
       color: row.color,
       icon: row.icon,

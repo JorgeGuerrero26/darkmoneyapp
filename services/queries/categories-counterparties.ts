@@ -29,6 +29,8 @@ export type CategoryFormInput = {
   icon?: string | null;
   sortOrder?: number;
   isActive?: boolean;
+  /** El tipo de gasto que esta categoría propone al elegirla. `null` = ninguno. */
+  defaultSpendTypeId?: number | null;
 };
 
 export function useCreateCategoryMutation(workspaceId: number | null) {
@@ -72,6 +74,7 @@ export function useCreateCategoryMutation(workspaceId: number | null) {
           is_active: input.isActive !== false,
           is_system: false,
           sort_order: sortOrder,
+          default_spend_type_id: input.defaultSpendTypeId ?? null,
         })
         .select("id")
         .single();
@@ -106,6 +109,11 @@ export function useUpdateCategoryMutation(workspaceId: number | null) {
       if (input.icon !== undefined) payload.icon = input.icon?.trim() ? input.icon.trim() : null;
       if (input.sortOrder !== undefined) payload.sort_order = input.sortOrder;
       if (input.isActive !== undefined) payload.is_active = input.isActive;
+      /* `!== undefined` y no `??`: quitar el tipo por defecto manda `null` a propósito, y con
+         `??` ese "ninguno" se perdía y la categoría se quedaba con el tipo viejo. */
+      if (input.defaultSpendTypeId !== undefined) {
+        payload.default_spend_type_id = input.defaultSpendTypeId;
+      }
 
       const { error } = await supabase
         .from("categories")
