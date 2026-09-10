@@ -35,6 +35,8 @@ import { useSpendTypesQuery } from "../../services/queries/spend-types";
 import { useToast } from "../../hooks/useToast";
 import { useHaptics } from "../../hooks/useHaptics";
 import { useMovementCategoryAiSuggestion } from "../../hooks/useMovementCategoryAiSuggestion";
+import { SplitCategoriesSheet } from "../../features/movements/components/form/SplitCategoriesSheet";
+import { DateTimeSheet } from "../ui/DateTimeSheet";
 import { useMovementDescriptionCleanup } from "../../hooks/useMovementDescriptionCleanup";
 import { useMovementCounterpartyAiSuggestion } from "../../hooks/useMovementCounterpartyAiSuggestion";
 import type { CounterpartySuggestionResult } from "../../lib/movement-counterparty-suggestions";
@@ -213,6 +215,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   // Split de montos: null = apagado; activo solo para gasto en creación.
   const [splitLines, setSplitLines] = useState<SplitLine[] | null>(null);
   const [splitSheetOpen, setSplitSheetOpen] = useState(false);
+  const [dateTimeOpen, setDateTimeOpen] = useState(false);
   const attachmentsHydratedRef = useRef<string | null>(null);
   const initialAttachmentSignatureRef = useRef("::ready");
   // Anti-doble-tap síncrono: evita crear el movimiento 2-3 veces si el usuario toca Guardar
@@ -963,6 +966,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
                 ...splitAmountPatch(parsePositiveAmountInput(firstLine.amount)!),
                 description: splitLineDescription(autoDesc, 0, splitLines.length),
                 categoryId: firstLine.categoryId,
+                spendTypeId: firstLine.spendTypeId ?? null,
               }),
               metadata: splitLineMetadata(editMovement.metadata, splitGroup, 0, splitLines.length),
             },
@@ -974,6 +978,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
               ...splitAmountPatch(parsePositiveAmountInput(line.amount)!),
               description: splitLineDescription(autoDesc, index, splitLines.length),
               categoryId: line.categoryId,
+              spendTypeId: line.spendTypeId ?? null,
               metadata: splitLineMetadata(null, splitGroup, index, splitLines.length),
               dedupeKey: `${splitGroup}:split-${index + 1}`,
             }));
@@ -1026,6 +1031,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
               ...splitAmountPatch(lineAmount),
               description: splitLineDescription(autoDesc, index, splitLines.length),
               categoryId: line.categoryId,
+              spendTypeId: line.spendTypeId ?? null,
               metadata: {
                 split_group: splitGroup,
                 split_index: index + 1,
@@ -1163,6 +1169,37 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
       // no llegaba a aparecer, dejando el formulario sin poder cerrarse (reportado 2026-08-13).
       overlay={
         <>
+        {/* Las hojas van primero: los selectores que se abren DESDE ellas se pintan después y
+            quedan por encima.
+
+            Y van AQUÍ y no dentro del paso: `InlineFormSheet` se posiciona en absoluto, así que
+            metida en el scroll del formulario se ancla al contenido en vez de a la pantalla. Se
+            veía como una hoja a medio subir, con las filas del formulario asomando por debajo y
+            sin poder desplazarse a su propia cabecera (reportado el 2026-09-10). */}
+        {splitLines ? (
+          <SplitCategoriesSheet
+            visible={splitSheetOpen}
+            onClose={() => setSplitSheetOpen(false)}
+            lines={splitLines}
+            onChangeLines={setSplitLines}
+            categories={categoriesForPicker}
+            totalAmount={form.movementType === "income" ? destinationAmountNum : sourceAmountNum}
+            currencyCode={sourceAccount?.currencyCode ?? baseCurrency}
+            movementLabel={form.description.trim() || buildDescription()}
+            movementType={form.movementType === "income" ? "income" : "expense"}
+            spendTypes={spendTypes}
+          />
+        ) : null}
+        <DateTimeSheet
+          visible={dateTimeOpen}
+          date={form.occurredAt}
+          time={form.occurredTime}
+          onBack={() => setDateTimeOpen(false)}
+          onConfirm={({ date, time }) => {
+            patch({ occurredAt: date, ...(time ? { occurredTime: time } : {}) });
+            setDateTimeOpen(false);
+          }}
+        />
         <SearchableSelectSheet
           inline
           visible={categoryPickerOpen}
@@ -1380,6 +1417,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
             splitMovementType={form.movementType === "income" ? "income" : "expense"}
             splitSheetOpen={splitSheetOpen}
             onSplitSheetOpenChange={setSplitSheetOpen}
+            onOpenDateTime={() => setDateTimeOpen(true)}
             isEditing={isEditing}
             descriptionRef={descriptionRef}
             notesRef={notesRef}

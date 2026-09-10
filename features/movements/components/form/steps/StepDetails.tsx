@@ -4,7 +4,6 @@ import { AlertCircle } from "lucide-react-native";
 
 import { AttachmentPicker, type Attachment } from "../../../../../components/domain/AttachmentPicker";
 import { Button } from "../../../../../components/ui/Button";
-import { DateTimeSheet } from "../../../../../components/ui/DateTimeSheet";
 import { dateTimeLabel } from "../../../../../lib/calendar";
 import { todayPeru } from "../../../../../lib/date";
 import { FormOptionRow } from "../../../../../components/ui/FormOptionRow";
@@ -33,7 +32,6 @@ import {
   RiskWarningBlock,
   type CategorySuggestionState,
 } from "../MovementFormBlocks";
-import { SplitCategoriesSheet } from "../SplitCategoriesSheet";
 import type { SplitLine } from "../../../lib/split-movement";
 import type { MovementRiskExplanation } from "../../../../../lib/movement-risk-analysis";
 import type { MovementBudgetImpact } from "../../../../../lib/movement-budget-impact";
@@ -133,6 +131,7 @@ type Props = {
   // ir en la ranura `overlay` del sheet (iOS presenta un Modal a la vez).
   onOpenCategory: () => void;
   onOpenCounterparty: () => void;
+  onOpenDateTime: () => void;
 
   // Submit
   submitError: string;
@@ -197,12 +196,12 @@ export const StepDetails = memo(function StepDetails({
   isHydratingExistingAttachments,
   onOpenCategory,
   onOpenCounterparty,
+  onOpenDateTime,
   submitError,
   submitLoading,
   onBack,
   onSubmit,
 }: Props) {
-  const [dateTimeOpen, setDateTimeOpen] = useState(false);
   const [descriptionFocused, setDescriptionFocused] = useState(false);
   const notesTop = useRef(0);
 
@@ -297,7 +296,7 @@ export const StepDetails = memo(function StepDetails({
           grouped
           label="Fecha y hora"
           value={dateTimeRowLabel}
-          onPress={() => setDateTimeOpen(true)}
+          onPress={onOpenDateTime}
           last={onChangeSplitLines == null}
         />
         {/* Sin `muted`: es una fila de la tarjeta como las otras tres, y en gris se leía como una
@@ -321,19 +320,6 @@ export const StepDetails = memo(function StepDetails({
         ) : null}
       </View>
 
-      {/* Hoja propia, no un acordeón: el chevrón prometía llevar a algún sitio y desplegaba dos
-          campos aquí mismo, reacomodando el formulario bajo el dedo. */}
-      <DateTimeSheet
-        visible={dateTimeOpen}
-        date={occurredAt}
-        time={occurredTime}
-        onBack={() => setDateTimeOpen(false)}
-        onConfirm={({ date, time }) => {
-          onChangeOccurredAt(date);
-          if (time) onChangeOccurredTime(time);
-          setDateTimeOpen(false);
-        }}
-      />
       {warnings.occurredAt ? (
         <Text
           style={styles.warningHint}
@@ -344,22 +330,6 @@ export const StepDetails = memo(function StepDetails({
         </Text>
       ) : null}
 
-      {/* La división ya no crece dentro de este scroll: abre su propia pantalla. Dos superficies
-          con desplazamiento anidadas siempre pelean, y el panel traía su × a ocho píxeles de la
-          × de la hoja con un significado distinto. */}
-      {onChangeSplitLines && splitLines ? (
-        <SplitCategoriesSheet
-          visible={splitSheetOpen}
-          onClose={() => onSplitSheetOpenChange?.(false)}
-          lines={splitLines}
-          onChangeLines={onChangeSplitLines}
-          categories={categoriesForPicker}
-          totalAmount={splitTotalAmount ?? 0}
-          currencyCode={splitCurrencyCode ?? ""}
-          movementLabel={splitMovementLabel ?? "Este movimiento"}
-          movementType={splitMovementType ?? "expense"}
-        />
-      ) : null}
       {/* Las dos que no cambian ninguna fila: proponen crear algo, así que van sueltas. */}
       <RecurringAiBlock
         alreadyLinked={recurringAlreadyLinked}
