@@ -166,7 +166,14 @@ function BudgetsScreen() {
     const query = searchText.trim().toLowerCase();
     if (!query) return correctedBudgets;
     return correctedBudgets.filter((budget) =>
-      [budget.name, budget.categoryName ?? "", budget.accountName ?? "", budget.notes ?? ""]
+      [
+        budget.name,
+        budget.categoryName ?? "",
+        budget.accountName ?? "",
+        // Buscar "deseos" tiene que encontrar el presupuesto que limita los deseos.
+        budget.spendTypeName ?? "",
+        budget.notes ?? "",
+      ]
         .join(" ")
         .toLowerCase()
         .includes(query),

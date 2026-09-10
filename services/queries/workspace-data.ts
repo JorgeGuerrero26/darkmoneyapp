@@ -401,6 +401,8 @@ type BudgetProgressRow = {
   category_name: string | null;
   account_id: number | null;
   account_name: string | null;
+  spend_type_id?: number | null;
+  spend_type_name?: string | null;
   scope_kind: BudgetOverview["scopeKind"];
   scope_label: string;
   limit_amount: NumericLike;
@@ -559,6 +561,8 @@ function mapBudget(row: BudgetProgressRow): BudgetOverview {
     categoryName: row.category_name,
     accountId: row.account_id,
     accountName: row.account_name,
+    spendTypeId: row.spend_type_id ?? null,
+    spendTypeName: row.spend_type_name ?? null,
     scopeKind: row.scope_kind,
     scopeLabel: row.scope_label,
     limitAmount: toNum(row.limit_amount),
@@ -1113,7 +1117,7 @@ export async function fetchWorkspaceDeferred(
   const [budgetsResult, obligationsResult, obligationTextMetaResult] = await Promise.all([
     supabase
       .from("v_budget_progress")
-      .select("id, workspace_id, created_by_user_id, updated_by_user_id, name, period_start, period_end, currency_code, category_id, category_name, account_id, account_name, scope_kind, scope_label, limit_amount, spent_amount, remaining_amount, used_percent, alert_percent, movement_count, rollover_enabled, recurrence, notes, is_active, is_near_limit, is_over_limit, is_pinned, created_at, updated_at")
+      .select("id, workspace_id, created_by_user_id, updated_by_user_id, name, period_start, period_end, currency_code, category_id, category_name, account_id, account_name, spend_type_id, spend_type_name, scope_kind, scope_label, limit_amount, spent_amount, remaining_amount, used_percent, alert_percent, movement_count, rollover_enabled, recurrence, notes, is_active, is_near_limit, is_over_limit, is_pinned, created_at, updated_at")
       .eq("workspace_id", activeWorkspaceId)
       .eq("is_active", true),
     supabase
@@ -1486,7 +1490,7 @@ export async function refreshSnapshotDomains(
       wantsBudgets
         ? supabase
             .from("v_budget_progress")
-            .select("id, workspace_id, created_by_user_id, updated_by_user_id, name, period_start, period_end, currency_code, category_id, category_name, account_id, account_name, scope_kind, scope_label, limit_amount, spent_amount, remaining_amount, used_percent, alert_percent, movement_count, rollover_enabled, recurrence, notes, is_active, is_near_limit, is_over_limit, is_pinned, created_at, updated_at")
+            .select("id, workspace_id, created_by_user_id, updated_by_user_id, name, period_start, period_end, currency_code, category_id, category_name, account_id, account_name, spend_type_id, spend_type_name, scope_kind, scope_label, limit_amount, spent_amount, remaining_amount, used_percent, alert_percent, movement_count, rollover_enabled, recurrence, notes, is_active, is_near_limit, is_over_limit, is_pinned, created_at, updated_at")
             .eq("workspace_id", workspaceId)
             .eq("is_active", true)
         : Promise.resolve(null),

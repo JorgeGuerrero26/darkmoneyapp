@@ -20,6 +20,8 @@ export type BudgetFormInput = {
   currencyCode: string;
   categoryId?: number | null;
   accountId?: number | null;
+  /** Limita solo el gasto de este tipo: necesidad, deseo, ahorro. */
+  spendTypeId?: number | null;
   rolloverEnabled?: boolean;
   notes?: string | null;
 };
@@ -44,6 +46,7 @@ export function useCreateBudgetMutation(workspaceId: number | null) {
           currency_code: input.currencyCode,
           category_id: input.categoryId ?? null,
           account_id: input.accountId ?? null,
+          spend_type_id: input.spendTypeId ?? null,
           rollover_enabled: input.rolloverEnabled ?? false,
           recurrence: input.recurrence ?? "none",
           notes: input.notes ?? null,
@@ -74,6 +77,7 @@ export function useUpdateBudgetMutation(workspaceId: number | null) {
       if (input.currencyCode !== undefined) payload.currency_code = input.currencyCode;
       if (input.categoryId !== undefined) payload.category_id = input.categoryId;
       if (input.accountId !== undefined) payload.account_id = input.accountId;
+      if (input.spendTypeId !== undefined) payload.spend_type_id = input.spendTypeId;
       if (input.rolloverEnabled !== undefined) payload.rollover_enabled = input.rolloverEnabled;
       /* Faltaba: el formulario mandaba la cadencia al editar y aquí se tiraba en silencio, así
          que cambiar "Se renueva" de mensual a semanal no cambiaba nada. Se guardaba solo al
@@ -247,6 +251,10 @@ export function useEnsureBudgetPeriodsMutation(workspaceId: number | null) {
           currency_code: ultimo.currencyCode,
           category_id: ultimo.categoryId ?? null,
           account_id: ultimo.accountId ?? null,
+          /* El ámbito viaja al período nuevo entero. Sin el tipo, el mes siguiente de "máximo en
+             deseos" nacía contando TODO el gasto — y con el mismo nombre y límite, así que nada
+             en pantalla decía que la regla había cambiado. */
+          spend_type_id: ultimo.spendTypeId ?? null,
           rollover_enabled: ultimo.rolloverEnabled,
           recurrence,
           notes: ultimo.notes ?? null,

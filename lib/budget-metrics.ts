@@ -9,6 +9,10 @@ export type BudgetScopedMovement = {
   description: string | null;
   categoryId: number | null;
   categoryName: string | null;
+  /** El tipo propio del movimiento, si lo cambió a mano. */
+  spendTypeId?: number | null;
+  /** El de su categoría, que es el que hereda cuando no tiene propio. */
+  categoryDefaultSpendTypeId?: number | null;
   sourceAccountId: number | null;
   sourceAccountName: string | null;
   sourceCurrencyCode: string | null;
@@ -144,6 +148,13 @@ function movementMatchesBudget(
   if (occurredOn < budget.periodStart || occurredOn > budget.periodEnd) return false;
   if (budget.categoryId != null && movement.categoryId !== budget.categoryId) return false;
   if (budget.accountId != null && expenseSide.accountId !== budget.accountId) return false;
+  /* El tipo EFECTIVO, igual que en `v_budget_progress`: el del movimiento y, si no tiene, el de
+     su categoría. Estas dos reglas viven en dos sitios —aquí y en la vista— y tienen que decir
+     lo mismo: si se separan, el detalle enseña unos movimientos y la barra cuenta otros. */
+  if (budget.spendTypeId != null) {
+    const efectivo = movement.spendTypeId ?? movement.categoryDefaultSpendTypeId ?? null;
+    if (efectivo !== budget.spendTypeId) return false;
+  }
   return true;
 }
 

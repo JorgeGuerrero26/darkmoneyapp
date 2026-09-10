@@ -9,7 +9,7 @@ import type { BudgetOverview } from "../../../types/domain";
  * tres límites de 400 apilados, un presupuesto que nunca existió.
  *
  * La clave agrupa por lo que hace que dos períodos sean **el mismo presupuesto**: el mismo
- * ámbito (categoría y cuenta) y el mismo nombre. El nombre entra normalizado porque "Alimentacion"
+ * ámbito (categoría, cuenta y tipo de gasto) y el mismo nombre. El nombre entra normalizado porque "Alimentacion"
  * y "Alimentación" son la misma regla escrita con y sin tilde, y separarlas rompería el historial
  * justo donde el usuario no ve ninguna diferencia.
  */
@@ -20,7 +20,7 @@ export function budgetRuleKey(budget: BudgetOverview): string {
     .replace(/[̀-ͯ]/g, "")
     .replace(/\s+/g, " ")
     .trim();
-  return `${budget.categoryId ?? "-"}|${budget.accountId ?? "-"}|${name}`;
+  return `${budget.categoryId ?? "-"}|${budget.accountId ?? "-"}|${budget.spendTypeId ?? "-"}|${name}`;
 }
 
 export type BudgetRule = {

@@ -248,7 +248,13 @@ export type CategoryOverview = CategorySummary & {
   lastActivityAt?: string | null;
 };
 
-export type BudgetScopeKind = "general" | "category" | "account" | "category_account";
+export type BudgetScopeKind =
+  | "general"
+  | "category"
+  | "account"
+  | "category_account"
+  | "spend_type"
+  | "spend_type_account";
 
 export type AttachmentEntityType = "movement" | "obligation" | "subscription";
 
@@ -265,6 +271,9 @@ export type BudgetOverview = {
   categoryName?: string | null;
   accountId?: number | null;
   accountName?: string | null;
+  /** Limita el gasto de este tipo (necesidad, deseo, ahorro). */
+  spendTypeId?: number | null;
+  spendTypeName?: string | null;
   scopeKind: BudgetScopeKind;
   scopeLabel: string;
   limitAmount: number;

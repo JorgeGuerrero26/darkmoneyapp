@@ -18,6 +18,7 @@ function buildBudgetScopeKey(budgets: BudgetOverview[]) {
         budget.periodEnd,
         budget.categoryId ?? "all",
         budget.accountId ?? "all",
+        budget.spendTypeId ?? "all",
       ].join(":"),
     )
     .sort()
@@ -40,9 +41,9 @@ async function fetchBudgetScopeMovements(
     const { data, error } = await supabase
       .from("movements")
       .select(
-        `id, movement_type, occurred_at, description, category_id,
+        `id, movement_type, occurred_at, description, category_id, spend_type_id,
          source_account_id, source_amount, destination_account_id, destination_amount,
-         category:categories(name),
+         category:categories(name, default_spend_type_id),
          source_account:accounts!movements_source_account_id_fkey(name,currency_code),
          destination_account:accounts!movements_destination_account_id_fkey(name,currency_code)`,
       )
@@ -63,6 +64,8 @@ async function fetchBudgetScopeMovements(
       description: typeof row.description === "string" ? row.description : null,
       categoryId: row.category_id ?? null,
       categoryName: row.category?.name ?? null,
+      spendTypeId: row.spend_type_id ?? null,
+      categoryDefaultSpendTypeId: row.category?.default_spend_type_id ?? null,
       sourceAccountId: row.source_account_id ?? null,
       sourceAccountName: row.source_account?.name ?? null,
       sourceCurrencyCode: row.source_account?.currency_code ?? null,

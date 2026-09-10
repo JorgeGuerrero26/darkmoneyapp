@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import { format, startOfMonth, endOfMonth } from "date-fns";
 import { useWorkspace } from "../../lib/workspace-context";
+import { useSpendTypesQuery } from "../../services/queries/spend-types";
 import { useAuth } from "../../lib/auth-context";
 import { useToast } from "../../hooks/useToast";
 import { useHaptics } from "../../hooks/useHaptics";
@@ -35,7 +36,11 @@ import {
 import { todayPeru } from "../../lib/date";
 import { Check } from "lucide-react-native";
 import { InlineFormSheet } from "../ui/InlineFormSheet";
-import { BUDGET_SCOPE_PLACEHOLDER, budgetScopeSummary } from "../../features/budgets/lib/budgetScopeSummary";
+import {
+  budgetScopeHint,
+  budgetScopeSummary,
+  BUDGET_SCOPE_PLACEHOLDER,
+} from "../../features/budgets/lib/budgetScopeSummary";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { Button } from "../ui/Button";
 import { CurrencyInput } from "../ui/CurrencyInput";
@@ -69,6 +74,7 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
   const haptics = useHaptics();
   const createMutation = useCreateBudgetMutation(activeWorkspaceId);
   const updateMutation = useUpdateBudgetMutation(activeWorkspaceId);
+  const { data: spendTypes = [] } = useSpendTypesQuery(activeWorkspaceId);
   const { data: snapshot } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const isEditing = Boolean(editBudget);
 
@@ -84,6 +90,7 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
   const [alertPercent, setAlertPercent] = useState(80);
   const [categoryId, setCategoryId] = useState<number | null>(null);
   const [accountId, setAccountId] = useState<number | null>(null);
+  const [spendTypeId, setSpendTypeId] = useState<number | null>(null);
   const [rolloverEnabled, setRolloverEnabled] = useState(false);
   const [periodStart, setPeriodStart] = useState(format(startOfMonth(now), "yyyy-MM-dd"));
   const [periodEnd, setPeriodEnd] = useState(format(endOfMonth(now), "yyyy-MM-dd"));
@@ -94,6 +101,7 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
   /* "Todas" es una elección válida, pero tiene que ser elegida: por defecto no hay valor, para
      que el nombre del presupuesto no acabe describiendo algo que la regla no hace. */
   const [scopeTouched, setScopeTouched] = useState(false);
+  const [spendTypeOpen, setSpendTypeOpen] = useState(false);
   const [scopeOpen, setScopeOpen] = useState(false);
   const [notes, setNotes] = useState("");
 
@@ -110,6 +118,7 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
       setAlertPercent(source.alertPercent);
       setCategoryId(source.categoryId ?? null);
       setAccountId(source.accountId ?? null);
+      setSpendTypeId(source.spendTypeId ?? null);
       setRolloverEnabled(source.rolloverEnabled);
       setPeriodStart(source.periodStart);
       setPeriodEnd(source.periodEnd);
@@ -151,6 +160,7 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
         alertPercent !== editBudget.alertPercent ||
         categoryId !== (editBudget.categoryId ?? null) ||
         accountId !== (editBudget.accountId ?? null) ||
+        spendTypeId !== (editBudget.spendTypeId ?? null) ||
         rolloverEnabled !== editBudget.rolloverEnabled ||
         periodStart !== editBudget.periodStart ||
         periodEnd !== editBudget.periodEnd ||
@@ -173,7 +183,7 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
     /* "Todas" es una elección válida, pero tiene que ser elegida: el pie decía "Falta qué
        limitas" y el botón dejaba crear igual, así que se colaba un presupuesto general con
        nombre de categoría — que es el fallo que esta pantalla vino a arreglar. */
-    if (!scopeTouched && categoryId === null && accountId === null) {
+    if (!scopeTouched && categoryId === null && accountId === null && spendTypeId === null) {
       haptics.error();
       showToast("Elige qué limita este presupuesto. Puede ser todo el gasto, si es un tope general.", "error");
       return;
@@ -193,7 +203,8 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
        ejemplo "Ej. Alimentación mensual" — que es literalmente categoría + cadencia, las dos
        cosas que el formulario pregunta después. Nadie debería teclearlo para poder avanzar; y
        sigue siendo editable en Opcionales, porque el nombre es dato del usuario. */
-    const categoria = expenseCategories.find((cat) => cat.id === categoryId)?.name;
+    const categoria = expenseCategories.find((cat) => cat.id === categoryId)?.name
+      ?? spendTypes.find((type) => type.id === spendTypeId)?.name;
     const propuesto = [categoria ?? "Presupuesto", budgetRecurrenceLabel(recurrence).toLowerCase()]
       .join(" · ");
 
@@ -213,6 +224,7 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
       currencyCode,
       categoryId,
       accountId,
+      spendTypeId,
       rolloverEnabled,
       notes: notes.trim() || null,
     };
@@ -253,6 +265,7 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
 
   const scopeCategoryName = expenseCategories.find((cat) => cat.id === categoryId)?.name ?? null;
   const scopeAccountName = activeAccounts.find((acc) => acc.id === accountId)?.name ?? null;
+  const scopeSpendTypeName = spendTypes.find((type) => type.id === spendTypeId)?.name ?? null;
 
   const todayYmd = todayPeru();
   const multiCurrency = (snapshot?.accounts ?? []).some(
@@ -261,7 +274,7 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
   /* El botón dice qué falta en vez de quedarse apagado sin explicar por qué. */
   const missingLabel = !limitAmount.trim()
     ? "Falta cuánto"
-    : !scopeTouched && categoryId === null
+    : !scopeTouched && categoryId === null && spendTypeId === null
       ? "Falta qué limitas"
       : "";
 
@@ -413,6 +426,17 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
                 onPress={() => setCategoryOpen(true)}
                 grouped
               />
+              {/* Entre la categoría y la cuenta: responde a "qué", igual que la categoría, y
+                  las dos juntas acotan de verdad — "Alimentación · Deseo" son las cenas caras. */}
+              {spendTypes.length > 0 ? (
+                <FormOptionRow
+                  label="Solo si es"
+                  value={scopeSpendTypeName}
+                  placeholder="De cualquier tipo"
+                  onPress={() => setSpendTypeOpen(true)}
+                  grouped
+                />
+              ) : null}
               <FormOptionRow
                 label="Solo en la cuenta"
                 value={scopeAccountName}
@@ -424,13 +448,7 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
             </View>
 
             <Text style={styles.hint}>
-              {scopeCategoryName && scopeAccountName
-                ? `Cuenta lo que gastes en ${scopeCategoryName}, y solo desde ${scopeAccountName}.`
-                : scopeCategoryName
-                  ? `Cuenta lo que gastes en ${scopeCategoryName}, salga de la cuenta que salga.`
-                  : scopeAccountName
-                    ? `Cuenta todo lo que salga de ${scopeAccountName}, sea de la categoría que sea.`
-                    : "Cuenta todo tu gasto. Elige una categoría o una cuenta si quieres acotarlo."}
+              {budgetScopeHint(scopeCategoryName, scopeSpendTypeName, scopeAccountName)}
             </Text>
           </InlineFormSheet>
 
@@ -474,6 +492,19 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
             onClose={() => setAccountOpen(false)}
           />
 
+          <SearchableSelectSheet
+            inline
+            visible={spendTypeOpen}
+            title="Tipo de gasto"
+            options={[
+              { value: null as number | null, label: "De cualquier tipo" },
+              ...spendTypes.map((type) => ({ value: type.id as number | null, label: type.name })),
+            ]}
+            value={spendTypeId}
+            onChange={setSpendTypeId}
+            onClose={() => setSpendTypeOpen(false)}
+          />
+
           <CurrencySelectOverlay
             visible={currencyOpen}
             onClose={() => setCurrencyOpen(false)}
@@ -489,7 +520,11 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
           avisara. Va primera y sin valor puesto; "Todas" sigue elegible, pero como elección. */}
       <FormOptionRow
         label="Qué limitas"
-        value={scopeTouched ? budgetScopeSummary(scopeCategoryName, scopeAccountName) : null}
+        value={
+          scopeTouched
+            ? budgetScopeSummary(scopeCategoryName, scopeAccountName, scopeSpendTypeName)
+            : null
+        }
         placeholder={BUDGET_SCOPE_PLACEHOLDER}
         onPress={() => setScopeOpen(true)}
       />
