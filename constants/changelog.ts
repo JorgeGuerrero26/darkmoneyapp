@@ -13,6 +13,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "1.0.10",
     title: "DarkMoney estrena look",
     changes: [
+      "Un presupuesto ya no se limita a una categoría: puedes ponerle tope a lo que sea un gusto sin castigar el mercado. \"Máximo 300 al mes en deseos\" cuenta desde el primer día, con lo que ya tienes registrado.",
       "El inicio te dice ahora cuánto de tu gasto del mes hacía falta y cuánto no, con lo que aún no has clasificado dicho aparte en vez de escondido.",
       "Nuevo: además de en qué gastas, ahora puedes decir si hacía falta. Creas tus tipos —necesidades, deseos, ahorros— y le pones a cada categoría el suyo: desde ahí, cada gasto llega con el tipo puesto y lo cambias solo cuando toca. El mercado es necesidad; esa cena del viernes, no.",
       "DarkMoney estrena look. El fondo pasa de azulado a un gris cálido, los montos se leen de un vistazo porque los céntimos ya no compiten con la cifra, y en la lista de movimientos caben cuatro filas más por pantalla sin que la letra se haga más chica.",
