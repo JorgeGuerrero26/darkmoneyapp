@@ -213,6 +213,9 @@ import { useDismissedDashboardAlerts } from "../../hooks/useDismissedDashboardAl
 import { BudgetsSection } from "../../features/dashboard/components/simple/BudgetsSection";
 import { LeadersRow } from "../../features/dashboard/components/simple/LeadersRow";
 import { CategoryComparison } from "../../features/dashboard/components/simple/CategoryComparison";
+import { SpendTypeMixCard } from "../../features/dashboard/components/simple/SpendTypeMixCard";
+import { buildSpendTypeMix } from "../../features/dashboard/lib/spendTypeMix";
+import { useSpendTypesQuery } from "../../services/queries/spend-types";
 import { AccountsBreakdown } from "../../features/dashboard/components/simple/AccountsBreakdown";
 import { SavingsTrendCard } from "../../features/dashboard/components/simple/SavingsTrendCard";
 import { ReviewInbox } from "../../features/dashboard/components/simple/ReviewInbox";
@@ -734,6 +737,19 @@ function DashboardScreen() {
   }, [snapshot, baseCurrency, activeCurrency, exchangeRateMap]);
 
   const stats = useDashboardStats(movements, period, conversionCtx);
+
+  const { data: spendTypes = [] } = useSpendTypesQuery(activeWorkspaceId);
+  const spendTypeMix = useMemo(() => {
+    const defaults = new Map<number, number | null>(
+      (snapshot?.categories ?? []).map((category) => [category.id, category.defaultSpendTypeId ?? null]),
+    );
+    return buildSpendTypeMix(
+      stats.spendCarriers,
+      defaults,
+      spendTypes,
+      (value) => formatCurrency(value, activeCurrency),
+    );
+  }, [stats.spendCarriers, snapshot?.categories, spendTypes, activeCurrency]);
   const hasAnyMovement = movements.length > 0;
   const hasPeriodActivity = stats.chartDays.some(
     (day) => day.income > 0 || day.expense > 0 || day.transferTotal > 0,
@@ -991,6 +1007,11 @@ function DashboardScreen() {
                   prevCatTotals={stats.prevCatTotals}
                   categories={snapshot?.categories ?? []}
                   currency={activeCurrency}
+                />
+                <SpendTypeMixCard
+                  mix={spendTypeMix}
+                  currency={activeCurrency}
+                  onPressClassify={() => router.push("/spend-types?from=more")}
                 />
                 <SavingsTrendCard monthlyPulse={stats.monthlyPulse} currency={activeCurrency} />
               </DashboardSectionBoundary>

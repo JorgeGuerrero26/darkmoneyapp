@@ -9,6 +9,7 @@ import {
   selectDailyBreakdown,
   selectMonthlyPulse,
   selectPeriodTotals,
+  selectSpendTypeCarriers,
 } from "../selectors/dashboard-stats-selectors";
 
 export function useDashboardStats(
@@ -30,6 +31,7 @@ export function useDashboardStats(
     const monthlyPulse = selectMonthlyPulse(index, now, ctx, 6);
     const catTotals = selectCategoryTotals(index, curStart, curEnd, ctx);
     const prevCatTotals = selectCategoryTotals(index, prevStart, prevEnd, ctx);
+    const spendCarriers = selectSpendTypeCarriers(index, curStart, curEnd, ctx);
 
     return {
       curStart,
@@ -43,6 +45,7 @@ export function useDashboardStats(
       monthlyPulse,
       catTotals,
       prevCatTotals,
+      spendCarriers,
     };
   }, [index, period, ctx]);
 }

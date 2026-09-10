@@ -20,6 +20,8 @@ export type DashboardMovementRow = {
   sourceAccountId: number | null;
   destinationAccountId: number | null;
   categoryId: number | null;
+  /** El tipo propio del movimiento. `null` = el de su categoría, ver `effectiveSpendTypeId`. */
+  spendTypeId: number | null;
   counterpartyId: number | null;
   description: string;
 };

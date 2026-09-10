@@ -1637,7 +1637,7 @@ export function useDashboardMovementsQuery(
       since.setDate(since.getDate() - 90);
       const { data, error } = await supabase
         .from("movements")
-        .select("id, movement_type, status, occurred_at, source_amount, destination_amount, source_account_id, destination_account_id, category_id, counterparty_id, description")
+        .select("id, movement_type, status, occurred_at, source_amount, destination_amount, source_account_id, destination_account_id, category_id, spend_type_id, counterparty_id, description")
         .eq("workspace_id", workspaceId)
         .gte("occurred_at", since.toISOString())
         .order("occurred_at", { ascending: false })
@@ -1653,6 +1653,7 @@ export function useDashboardMovementsQuery(
         sourceAccountId: row.source_account_id ?? null,
         destinationAccountId: row.destination_account_id ?? null,
         categoryId: row.category_id ?? null,
+        spendTypeId: row.spend_type_id ?? null,
         counterpartyId: row.counterparty_id ?? null,
         description: typeof row.description === "string" ? row.description : "",
       }));
@@ -1690,7 +1691,7 @@ export function useDashboardYearMovementsQuery(
       const to = `${year + 1}-01-01T00:00:00.000Z`;
       const { data, error } = await supabase
         .from("movements")
-        .select("id, movement_type, status, occurred_at, source_amount, destination_amount, source_account_id, destination_account_id, category_id, counterparty_id, description")
+        .select("id, movement_type, status, occurred_at, source_amount, destination_amount, source_account_id, destination_account_id, category_id, spend_type_id, counterparty_id, description")
         .eq("workspace_id", workspaceId)
         .gte("occurred_at", from)
         .lt("occurred_at", to)
@@ -1707,6 +1708,7 @@ export function useDashboardYearMovementsQuery(
         sourceAccountId: row.source_account_id ?? null,
         destinationAccountId: row.destination_account_id ?? null,
         categoryId: row.category_id ?? null,
+        spendTypeId: row.spend_type_id ?? null,
         counterpartyId: row.counterparty_id ?? null,
         description: typeof row.description === "string" ? row.description : "",
       }));

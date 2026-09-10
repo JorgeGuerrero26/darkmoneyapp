@@ -84,6 +84,31 @@ export function selectMonthlyPulse(
 }
 
 /** Sum expense by categoryId (null = uncategorized) for the given range. */
+/**
+ * Los gastos del período, ya convertidos, con lo justo para saber de qué tipo fueron.
+ *
+ * Se saca aparte de `selectCategoryTotals` porque el tipo no se puede agrupar por categoría: un
+ * movimiento puede traer el suyo propio y ganarle al de su categoría, y esa es justo la razón de
+ * existir del tipo — "Alimentación" es el mercado del martes y la cena del viernes.
+ */
+export function selectSpendTypeCarriers(
+  index: MovementsIndex,
+  start: Date,
+  end: Date,
+  ctx: ConversionCtx,
+): Array<{ amount: number; categoryId: number | null; spendTypeId: number | null }> {
+  const carriers: Array<{ amount: number; categoryId: number | null; spendTypeId: number | null }> = [];
+  forEachInRange(index, start, end, (indexed) => {
+    if (!indexed.isExpense) return;
+    carriers.push({
+      amount: expenseAmt(indexed.movement, ctx),
+      categoryId: indexed.movement.categoryId,
+      spendTypeId: indexed.movement.spendTypeId,
+    });
+  });
+  return carriers;
+}
+
 export function selectCategoryTotals(
   index: MovementsIndex,
   start: Date,
