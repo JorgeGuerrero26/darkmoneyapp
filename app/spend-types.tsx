@@ -64,6 +64,18 @@ function SpendTypesScreen() {
     [snapshot?.categories],
   );
   const expenseCategories = gastoCategorias.length;
+
+  /* El peso real de cada categoría, de lo que la app ya tiene cargado para sus analíticas.
+     Sirve para poner delante lo que decide el resultado: cinco categorías se llevan el 90 %. */
+  const spendByCategory = useMemo(() => {
+    const totals = new Map<number, number>();
+    for (const movement of snapshot?.categoryPostedMovements ?? []) {
+      const amount = movement.amountInBaseCurrency ?? movement.sourceAmount ?? 0;
+      if (!Number.isFinite(amount) || amount <= 0) continue;
+      totals.set(movement.categoryId, (totals.get(movement.categoryId) ?? 0) + amount);
+    }
+    return totals;
+  }, [snapshot?.categoryPostedMovements]);
   const categoriesWithType = gastoCategorias.filter(
     (category) => category.defaultSpendTypeId != null,
   ).length;
@@ -211,6 +223,7 @@ function SpendTypesScreen() {
             visible={classifyOpen}
             onClose={() => setClassifyOpen(false)}
             categories={gastoCategorias}
+            spendByCategory={spendByCategory}
             spendTypes={spendTypes}
             workspaceId={activeWorkspaceId}
           />
