@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Sparkles } from "lucide-react-native";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
@@ -55,6 +56,45 @@ export function SmartSuggestion({ label, detail, onApply, grouped = false }: Pro
   );
 }
 
+/**
+ * Que la sugerencia **viene**, cuando tarda lo suficiente como para que dudes.
+ *
+ * No contradice la regla de arriba —nada de tarjetas de 76 px anunciando procesos internos— sino
+ * que resuelve el caso que esa regla dejaba abierto: el modelo tarda entre 2 y 9 segundos, y en
+ * silencio absoluto no hay forma de distinguir "todavia no llega" de "no supo". El 2026-09-10 un
+ * gasto de 2 soles espero 7 segundos, se guardo a mano y la respuesta —correcta— llego 460 ms
+ * despues; el usuario lo conto como "nunca me recomendo la categoria".
+ *
+ * Una linea, en la misma tarjeta del campo, sin boton. **Aparece solo si la espera pasa de
+ * `delayMs`**, asi que una respuesta rapida —o la que ya estaba en cache, que ahora es
+ * instantanea— no la enseña nunca. Y al terminar desaparece: si no dejo sugerencia, es que no
+ * encontro ninguna. Eso se lee sin necesidad de una segunda linea gris diciendolo.
+ */
+export function SmartSuggestionPending({
+  label,
+  grouped = false,
+  delayMs = 1200,
+}: {
+  label: string;
+  grouped?: boolean;
+  delayMs?: number;
+}) {
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setVisible(true), delayMs);
+    return () => clearTimeout(timer);
+  }, [delayMs]);
+
+  if (!visible) return null;
+  return (
+    <View style={[styles.row, grouped ? styles.rowGrouped : styles.rowStandalone]}>
+      <Sparkles size={14} color={COLORS.storm} strokeWidth={1.6} />
+      <Text style={styles.pendingLabel} numberOfLines={1}>{label}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   row: {
     minHeight: 48,
@@ -79,6 +119,12 @@ const styles = StyleSheet.create({
     fontFamily: FONT_FAMILY.bodyMedium,
     fontSize: FONT_SIZE.sm,
     color: COLORS.ink,
+  },
+  pendingLabel: {
+    flex: 1,
+    fontFamily: FONT_FAMILY.body,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.storm,
   },
   detail: {
     fontFamily: FONT_FAMILY.body,

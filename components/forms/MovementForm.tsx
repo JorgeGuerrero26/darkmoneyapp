@@ -367,6 +367,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   // (fase 4 del refactor R7).
   const {
     bestCategorySuggestion,
+    aiCategorySuggestionLoading,
     movementRisk,
     accountSuggestionId,
   } = useMovementFormSuggestions({
@@ -1401,6 +1402,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
             showSpendTypeRow={form.movementType === "expense" && spendTypes.length > 0}
             onOpenSpendType={() => setSpendTypePickerOpen(true)}
             categorySuggestionToShow={categorySuggestionToShow}
+            categorySuggestionLoading={aiCategorySuggestionLoading && !categorySuggestionToShow}
             onApplyCategorySuggestion={(sug) => void applyCategorySuggestion(sug)}
             counterpartiesSorted={counterpartiesSorted}
             counterpartyId={form.counterpartyId}

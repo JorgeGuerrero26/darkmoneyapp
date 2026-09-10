@@ -7,6 +7,7 @@ import {
 } from "../services/queries/workspace-data";
 import { waitForMinimumVisibleTime } from "../lib/ai-request-utils";
 import { withTimeout } from "../lib/promise-utils";
+import { categorySuggestionCacheKey } from "../features/movements/lib/categorySuggestionKey";
 
 /**
  * Estado terminal observable de la IA de categoría, para que la UI sea
@@ -44,20 +45,6 @@ type CachedResult = {
 
 const responseCache = new Map<string, CachedResult>();
 
-function cacheKey(input: MovementCategoryAiSuggestionInput) {
-  return JSON.stringify({
-    workspaceId: input.workspaceId,
-    surface: input.surface,
-    movementType: input.movementType,
-    amount: input.amount ?? null,
-    currencyCode: input.currencyCode ?? null,
-    description: input.description.trim().toLowerCase(),
-    occurredAt: input.occurredAt ?? null,
-    categories: input.categories.map((category) => [category.id, category.name, category.kind]),
-    localSuggestion: input.localSuggestion,
-  });
-}
-
 export function useMovementCategoryAiSuggestion({
   enabled,
   input,
@@ -73,7 +60,7 @@ export function useMovementCategoryAiSuggestion({
   // Using a string dep in the effect prevents re-runs caused by input reference instability.
   const key = useMemo(() => {
     if (!input || input.description.trim().length < 3 || input.categories.length === 0) return null;
-    return cacheKey(input);
+    return categorySuggestionCacheKey(input);
   }, [input]);
 
   // Keep input in a ref so the async callback always uses the latest value

@@ -94,6 +94,7 @@ type Props = {
   showSpendTypeRow: boolean;
   onOpenSpendType: () => void;
   categorySuggestionToShow: CategorySuggestionState | null;
+  categorySuggestionLoading: boolean;
   onApplyCategorySuggestion: (sug: CategorySuggestionState) => void;
 
   // Counterparty
@@ -170,6 +171,7 @@ export const StepDetails = memo(function StepDetails({
   showSpendTypeRow,
   onOpenSpendType,
   categorySuggestionToShow,
+  categorySuggestionLoading,
   onApplyCategorySuggestion,
   counterpartiesSorted,
   counterpartyId,
@@ -260,6 +262,7 @@ export const StepDetails = memo(function StepDetails({
         ) : null}
         <CategoryAiBlock
           suggestion={categorySuggestion}
+          loading={showCategoryRow && categorySuggestionLoading}
           onApply={onApplyCategorySuggestion}
         />
         {/* La categoría dice en qué se fue; el tipo, si hacía falta. Va pegada a la categoría

@@ -2,7 +2,7 @@ import { memo } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { AlertCircle } from "lucide-react-native";
 
-import { SmartSuggestion } from "../../../../components/ui/SmartSuggestion";
+import { SmartSuggestion, SmartSuggestionPending } from "../../../../components/ui/SmartSuggestion";
 import { suggestionReason } from "../../../../lib/suggestion-reason";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING } from "../../../../constants/theme";
 import {
@@ -98,14 +98,19 @@ export const DescriptionCleanupBlock = memo(function DescriptionCleanupBlock({
 
 type CategoryAiBlockProps = {
   suggestion: CategorySuggestionState | null;
+  /** La IA está pensando. Mientras no haya sugerencia, la fila dice que viene. */
+  loading?: boolean;
   onApply: (suggestion: CategorySuggestionState) => void;
 };
 
 export const CategoryAiBlock = memo(function CategoryAiBlock({
   suggestion,
+  loading = false,
   onApply,
 }: CategoryAiBlockProps) {
-  if (!suggestion) return null;
+  if (!suggestion) {
+    return loading ? <SmartSuggestionPending grouped label="Buscando una categoría…" /> : null;
+  }
   return (
     <SmartSuggestion
       grouped
