@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
-import { Dimensions, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Dimensions, Keyboard, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ChevronLeft } from "lucide-react-native";
+import { ChevronDown, ChevronLeft } from "lucide-react-native";
 
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { SafeBlurView } from "./SafeBlurView";
@@ -83,6 +83,19 @@ export function InlineFormSheet({
             <ChevronLeft size={20} color={COLORS.fog} />
           </TouchableOpacity>
           <Text style={styles.title} numberOfLines={1}>{title}</Text>
+          {/* Mismo botón que en la hoja madre: cerrar el teclado desde la cabecera. */}
+          {keyboardHeight > 0 ? (
+            <TouchableOpacity
+              onPress={() => Keyboard.dismiss()}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              accessibilityRole="button"
+              accessibilityLabel="Cerrar el teclado"
+            >
+              <View style={styles.keyboardBtn}>
+                <ChevronDown size={16} color={COLORS.storm} />
+              </View>
+            </TouchableOpacity>
+          ) : null}
           {doneLabel && onDone ? (
             <TouchableOpacity
               onPress={onDone}
@@ -143,6 +156,16 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.lg,
     color: COLORS.ink,
     letterSpacing: -0.3,
+  },
+  keyboardBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: SURFACE.cardBorder,
+    borderWidth: 1,
+    borderColor: SURFACE.sheetBorder,
+    alignItems: "center",
+    justifyContent: "center",
   },
   done: {
     fontFamily: FONT_FAMILY.bodyMedium,

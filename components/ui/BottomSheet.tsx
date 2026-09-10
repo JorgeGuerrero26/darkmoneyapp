@@ -15,7 +15,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { X } from "lucide-react-native";
+import { ChevronDown, X } from "lucide-react-native";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SHADOW, SPACING, SURFACE } from "../../constants/theme";
 import { SafeBlurView } from "./SafeBlurView";
 
@@ -232,10 +232,28 @@ export function BottomSheet({
           </View>
 
           {/* Header */}
-          {title ? (
+          {title || keyboardHeight > 0 ? (
             <View style={styles.header}>
               <Text style={styles.title}>{title}</Text>
               {headerAction}
+              {/* Cerrar el teclado, junto a la × y con su mismo tratamiento.
+                  Antes era una franja con "Listo" sobre el teclado —la barra de accesorios de
+                  iOS—, que solo existía en los teclados numéricos, tenía su propio color y
+                  aparecía y desaparecía por debajo del formulario. Aquí es un botón más de la
+                  cabecera, en el sitio donde ya se busca cómo salir de algo. */}
+              {keyboardHeight > 0 ? (
+                <TouchableOpacity
+                  onPress={() => Keyboard.dismiss()}
+                  style={styles.closeBtn}
+                  hitSlop={12}
+                  accessibilityRole="button"
+                  accessibilityLabel="Cerrar el teclado"
+                >
+                  <View style={styles.closeBtnInner}>
+                    <ChevronDown size={16} color={COLORS.storm} />
+                  </View>
+                </TouchableOpacity>
+              ) : null}
               <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={12}>
                 <View style={styles.closeBtnInner}>
                   <X size={16} color={COLORS.storm} />

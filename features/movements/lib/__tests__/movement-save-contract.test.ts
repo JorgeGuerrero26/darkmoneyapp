@@ -122,14 +122,12 @@ describe("el tipo de una parte de la division", () => {
    * puede llevar un tipo puesto a mano, y la parte tiene que poder decir otra cosa.
    */
   it("le gana al del movimiento entero", () => {
-    const result = buildMovementCreateInput({
-      ...base,
-      movementType: "expense",
-      spendTypeId: 1,
-      // lo que hace el guardado del split: sobreescribe con el de la linea
-      ...{ spendTypeId: 3 },
-    });
-    expect(result.spendTypeId).toBe(3);
+    // Lo que hace el guardado del split: parte del contrato del movimiento y pisa el tipo con
+    // el de la linea.
+    const contrato = { ...base, movementType: "expense" as const, spendTypeId: 1 };
+    const linea = { spendTypeId: 3 };
+    expect(buildMovementCreateInput({ ...contrato, ...linea }).spendTypeId).toBe(3);
+    expect(buildMovementCreateInput(contrato).spendTypeId).toBe(1);
   });
 
   it("vacio hereda el de SU categoria, no el del movimiento original", () => {
