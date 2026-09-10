@@ -35,6 +35,7 @@ import {
 import { todayPeru } from "../../lib/date";
 import { Check } from "lucide-react-native";
 import { InlineFormSheet } from "../ui/InlineFormSheet";
+import { BUDGET_SCOPE_PLACEHOLDER, budgetScopeSummary } from "../../features/budgets/lib/budgetScopeSummary";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { Button } from "../ui/Button";
 import { CurrencyInput } from "../ui/CurrencyInput";
@@ -92,7 +93,8 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
   const [optionalsOpen, setOptionalsOpen] = useState(false);
   /* "Todas" es una elección válida, pero tiene que ser elegida: por defecto no hay valor, para
      que el nombre del presupuesto no acabe describiendo algo que la regla no hace. */
-  const [categoryTouched, setCategoryTouched] = useState(false);
+  const [scopeTouched, setScopeTouched] = useState(false);
+  const [scopeOpen, setScopeOpen] = useState(false);
   const [notes, setNotes] = useState("");
 
   const [amountError, setAmountError] = useState("");
@@ -117,7 +119,7 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
       setRecurrence(source.recurrence && source.recurrence !== "none"
         ? source.recurrence
         : inferRecurrence({ periodStart: source.periodStart, periodEnd: source.periodEnd }));
-      setCategoryTouched(true);
+      setScopeTouched(true);
       setNotes(source.notes ?? "");
     } else {
       const m = new Date();
@@ -132,7 +134,7 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
       setPeriodStart(inicial.periodStart);
       setPeriodEnd(inicial.periodEnd);
       setRecurrence("monthly");
-      setCategoryTouched(false);
+      setScopeTouched(false);
       setNotes("");
     }
     setAmountError("");
@@ -171,9 +173,9 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
     /* "Todas" es una elección válida, pero tiene que ser elegida: el pie decía "Falta qué
        limitas" y el botón dejaba crear igual, así que se colaba un presupuesto general con
        nombre de categoría — que es el fallo que esta pantalla vino a arreglar. */
-    if (!categoryTouched && categoryId === null) {
+    if (!scopeTouched && categoryId === null && accountId === null) {
       haptics.error();
-      showToast("Elige qué limita este presupuesto. Puede ser «Todas» si es un tope general.", "error");
+      showToast("Elige qué limita este presupuesto. Puede ser todo el gasto, si es un tope general.", "error");
       return;
     }
     const amount = parseFloat(limitAmount);
@@ -249,6 +251,9 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
     [snapshot?.accounts],
   );
 
+  const scopeCategoryName = expenseCategories.find((cat) => cat.id === categoryId)?.name ?? null;
+  const scopeAccountName = activeAccounts.find((acc) => acc.id === accountId)?.name ?? null;
+
   const todayYmd = todayPeru();
   const multiCurrency = (snapshot?.accounts ?? []).some(
     (account) => account.currencyCode !== defaultCurrency,
@@ -256,7 +261,7 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
   /* El botón dice qué falta en vez de quedarse apagado sin explicar por qué. */
   const missingLabel = !limitAmount.trim()
     ? "Falta cuánto"
-    : !categoryTouched && categoryId === null
+    : !scopeTouched && categoryId === null
       ? "Falta qué limitas"
       : "";
 
@@ -357,14 +362,6 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
             </View>
 
             <View style={styles.group}>
-              <FormOptionRow
-                label="Cuenta"
-                value={activeAccounts.find((acc) => acc.id === accountId)?.name ?? null}
-                placeholder="Todas"
-                onPress={() => setAccountOpen(true)}
-                grouped
-                last={!multiCurrency}
-              />
               {/* La moneda sube solo si hay más de una en el espacio de trabajo: para un dato que
                   casi nunca cambia, ocupaba el sitio anterior al monto. */}
               {multiCurrency ? (
@@ -393,6 +390,50 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
             </View>
           </InlineFormSheet>
 
+          {/* Las dos mitades del ámbito, juntas: QUÉ se limita y DÓNDE. La cuenta vivía en
+              "Opcionales", dos niveles adentro, así que esta fila prometía responder al ámbito
+              y solo preguntaba la mitad — y un presupuesto por cuenta parecía imposible. */}
+          <InlineFormSheet
+            visible={scopeOpen}
+            title="Qué limitas"
+            onBack={() => setScopeOpen(false)}
+            footer={
+              <Button
+                label="Listo"
+                size="lg"
+                onPress={() => { setScopeTouched(true); setScopeOpen(false); }}
+              />
+            }
+          >
+            <View style={styles.group}>
+              <FormOptionRow
+                label="Categoría"
+                value={scopeCategoryName}
+                placeholder="Todo el gasto"
+                onPress={() => setCategoryOpen(true)}
+                grouped
+              />
+              <FormOptionRow
+                label="Solo en la cuenta"
+                value={scopeAccountName}
+                placeholder="Todas"
+                onPress={() => setAccountOpen(true)}
+                grouped
+                last
+              />
+            </View>
+
+            <Text style={styles.hint}>
+              {scopeCategoryName && scopeAccountName
+                ? `Cuenta lo que gastes en ${scopeCategoryName}, y solo desde ${scopeAccountName}.`
+                : scopeCategoryName
+                  ? `Cuenta lo que gastes en ${scopeCategoryName}, salga de la cuenta que salga.`
+                  : scopeAccountName
+                    ? `Cuenta todo lo que salga de ${scopeAccountName}, sea de la categoría que sea.`
+                    : "Cuenta todo tu gasto. Elige una categoría o una cuenta si quieres acotarlo."}
+            </Text>
+          </InlineFormSheet>
+
           {/* Los selectores van DESPUÉS de las hojas que los abren.
               La cuenta se elige desde "Opcionales", que es una hoja: pintada antes, el selector
               quedaba por debajo y al tocar "Cuenta" no aparecía nada — así que un presupuesto
@@ -417,7 +458,7 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
               ...expenseCategories.map((cat) => ({ value: cat.id as number | null, label: cat.name })),
             ]}
             value={categoryId}
-            onChange={(value) => { setCategoryId(value); setCategoryTouched(true); }}
+            onChange={setCategoryId}
             onClose={() => setCategoryOpen(false)}
           />
           <SearchableSelectSheet
@@ -448,9 +489,9 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
           avisara. Va primera y sin valor puesto; "Todas" sigue elegible, pero como elección. */}
       <FormOptionRow
         label="Qué limitas"
-        value={expenseCategories.find((cat) => cat.id === categoryId)?.name ?? (categoryTouched ? "Todas" : null)}
-        placeholder="Elige una categoría"
-        onPress={() => setCategoryOpen(true)}
+        value={scopeTouched ? budgetScopeSummary(scopeCategoryName, scopeAccountName) : null}
+        placeholder={BUDGET_SCOPE_PLACEHOLDER}
+        onPress={() => setScopeOpen(true)}
       />
 
       {/* El único número que hace que un presupuesto sea un presupuesto. Estaba en gris sobre
@@ -509,7 +550,7 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
 
       <FormOptionRow
         label="Opcionales"
-        support={multiCurrency ? "Nombre, cuenta, moneda, notas" : "Nombre, cuenta, notas"}
+        support={multiCurrency ? "Nombre, moneda, notas" : "Nombre, notas"}
         value={null}
         placeholder=""
         onPress={() => setOptionalsOpen(true)}
