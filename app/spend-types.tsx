@@ -12,7 +12,6 @@ import { SwipeActionRow } from "../components/ui/SwipeActionRow";
 import { SkeletonCard, SkeletonList } from "../components/ui/Skeleton";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { FAB } from "../components/ui/FAB";
-import { Button } from "../components/ui/Button";
 import { SpendTypeForm } from "../components/forms/SpendTypeForm";
 import {
   useCreateSpendTypeMutation,
@@ -24,6 +23,10 @@ import { useAuth } from "../lib/auth-context";
 import { useWorkspace } from "../lib/workspace-context";
 import { useToast } from "../hooks/useToast";
 import { useOriginBackNavigation } from "../hooks/useOriginBackNavigation";
+import { MetricSummaryBar } from "../components/ui/MetricSummaryBar";
+import { useWorkspaceSnapshotQuery } from "../services/queries/workspace-data";
+import { buildSpendTypesSummary } from "../features/spend-types/lib/spendTypesSummary";
+import { ClassifyCategoriesSheet } from "../features/spend-types/components/ClassifyCategoriesSheet";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING } from "../constants/theme";
 
 /** Los tres del modelo clásico. Se ofrecen; no se escriben sin que nadie los pida. */
@@ -55,16 +58,31 @@ function SpendTypesScreen() {
   const { showToast } = useToast();
 
   const { data: spendTypes = [], isLoading } = useSpendTypesQuery(activeWorkspaceId);
+  const { data: snapshot } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
+  const gastoCategorias = useMemo(
+    () => (snapshot?.categories ?? []).filter((category) => category.kind !== "income"),
+    [snapshot?.categories],
+  );
+  const expenseCategories = gastoCategorias.length;
+  const categoriesWithType = gastoCategorias.filter(
+    (category) => category.defaultSpendTypeId != null,
+  ).length;
   const createMutation = useCreateSpendTypeMutation(activeWorkspaceId, profile?.id);
   const deleteMutation = useDeleteSpendTypeMutation(activeWorkspaceId);
 
   const [formVisible, setFormVisible] = useState(false);
   const [editTarget, setEditTarget] = useState<SpendType | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<SpendType | null>(null);
+  const [classifyOpen, setClassifyOpen] = useState(false);
+
+  const summary = useMemo(
+    () => buildSpendTypesSummary(spendTypes.length, categoriesWithType, expenseCategories),
+    [categoriesWithType, expenseCategories, spendTypes.length],
+  );
 
   const sections = useMemo<Section[]>(
     () => (spendTypes.length > 0
-      ? [{ key: "all", label: "", data: spendTypes, headerVariant: "hidden" as const }]
+      ? [{ key: "all", label: "Tus tipos", data: spendTypes, headerVariant: "divider" as const }]
       : []),
     [spendTypes],
   );
@@ -96,6 +114,39 @@ function SpendTypesScreen() {
     <ResourceModuleTemplate
       topInset={insets.top}
       header={<ScreenHeader title="Tipos de gasto" onBack={handleBack} />}
+      summary={
+        spendTypes.length > 0 ? (
+          /* La cifra no es cuántos tipos hay —eso se ve contando las filas— sino cuánto de tu
+             gasto van a poder explicar: un tipo que ninguna categoría usa no clasifica nada. */
+          <MetricSummaryBar
+            label="Categorías con tipo"
+            value={`${summary.covered} de ${summary.total}`}
+            support={summary.support}
+            actions={[
+              {
+                key: "classify",
+                label:
+                  summary.covered === 0
+                    ? "Clasificar categorías"
+                    : summary.coverage < 1
+                      ? "Seguir clasificando"
+                      : "Revisar clasificación",
+                onPress: () => setClassifyOpen(true),
+              },
+            ]}
+            help={{
+              title: "¿Para qué sirve el tipo?",
+              description:
+                "La categoría dice en qué se fue la plata: Alimentación, Transporte. El tipo dice si hacía falta: necesidad, deseo, ahorro. Son dos preguntas distintas, y por eso la misma categoría puede cambiar de tipo — el mercado es necesidad y la cena del viernes no.",
+            }}
+            footnote={
+              summary.coverage < 1
+                ? "Ponle su tipo a cada categoría y el inicio podrá decirte cuánto de tu gasto es necesidad."
+                : undefined
+            }
+          />
+        ) : null
+      }
       list={
         <ResourceSectionList<SpendType, Section>
           sections={sections}
@@ -155,6 +206,13 @@ function SpendTypesScreen() {
             visible={formVisible}
             onClose={() => { setFormVisible(false); setEditTarget(null); }}
             editSpendType={editTarget}
+          />
+          <ClassifyCategoriesSheet
+            visible={classifyOpen}
+            onClose={() => setClassifyOpen(false)}
+            categories={gastoCategorias}
+            spendTypes={spendTypes}
+            workspaceId={activeWorkspaceId}
           />
           <ConfirmDialog
             visible={deleteTarget !== null}
