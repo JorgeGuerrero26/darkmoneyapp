@@ -309,8 +309,12 @@ export const StepDetails = memo(function StepDetails({
             value={splitLines ? `${splitLines.length} categorías` : "Elegir"}
             onPress={() => {
               if (!splitLines) {
+                /* La categoría que ya elegiste entra como la primera parte.
+                   Al repartir, la categoría del movimiento deja de usarse: manda la de cada
+                   parte. Sin esto se descartaba en silencio y la pantalla abría con dos filas
+                   vacías, como si no hubieras elegido nada. */
                 onChangeSplitLines([
-                  { categoryId: null, amount: "" },
+                  { categoryId, amount: "" },
                   { categoryId: null, amount: "" },
                 ]);
               }
