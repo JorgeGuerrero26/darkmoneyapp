@@ -80,6 +80,7 @@ import {
 import { splitLineMetadata, splitLineDescription, validateSplit, type SplitLine } from "../../features/movements/lib/split-movement";
 import { LOCAL_CATEGORY_AI_CONFIDENCE_THRESHOLD } from "../../lib/movement-ai-orchestrator";
 import { TextField } from "../ui/TextField";
+import { useSpendTypesQuery } from "../../services/queries/spend-types";
 
 // Heurísticas compartidas con MovementForm y el runtime sync (features/movements/lib).
 
@@ -124,6 +125,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
   const suggestionQuery = useDetectedMovementSuggestionQuery(suggestionId);
   const suggestion = suggestionQuery.data;
   const { data: snapshot } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
+  const { data: spendTypes = [] } = useSpendTypesQuery(activeWorkspaceId);
   const settingsQuery = useNotificationDetectionSettingsQuery(profile?.id, activeWorkspaceId);
   const settings = settingsQuery.data ?? [];
   const frequentTransferPair = useFrequentTransferPairQuery(visible ? activeWorkspaceId : null).data ?? null;
@@ -909,6 +911,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
             transferCurrenciesDiffer: false,
             fxRate: null,
             categoryId: line.categoryId,
+              spendTypeId: line.spendTypeId ?? null,
             counterpartyId,
             subscriptionId: linkedSubscriptionId,
             metadata: splitLineMetadata(detectionMetadata, splitGroup, index, splitLines.length),
@@ -1115,6 +1118,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
           currencyCode={selectedBudgetAccount?.currencyCode ?? ""}
           movementLabel={description.trim() || "Movimiento detectado"}
           movementType={movementType === "income" ? "income" : "expense"}
+          spendTypes={spendTypes}
         />
       ) : null}
     >

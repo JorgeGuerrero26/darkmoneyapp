@@ -11,6 +11,13 @@ import { parsePositiveAmountInput } from "../../../lib/amount-parsing";
 export type SplitLine = {
   categoryId: number | null;
   amount: string;
+  /**
+   * El tipo de gasto de ESTA parte. Vacío = el que traiga su categoría.
+   *
+   * Cada parte tiene su propia categoría, así que también su propio tipo: repartir una compra
+   * entre "Mercado" y "Antojos" es justo el caso en que una mitad hacía falta y la otra no.
+   */
+  spendTypeId?: number | null;
 };
 
 export type SplitValidation = {

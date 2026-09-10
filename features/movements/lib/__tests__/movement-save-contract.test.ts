@@ -114,3 +114,31 @@ describe("el tipo de gasto", () => {
     expect(result.spendTypeId).toBeNull();
   });
 });
+
+describe("el tipo de una parte de la division", () => {
+  /**
+   * Cada parte tiene su categoria, asi que tambien su tipo: repartir una compra entre "Mercado" y
+   * "Antojos" es justo el caso en que una mitad hacia falta y la otra no. El movimiento original
+   * puede llevar un tipo puesto a mano, y la parte tiene que poder decir otra cosa.
+   */
+  it("le gana al del movimiento entero", () => {
+    const result = buildMovementCreateInput({
+      ...base,
+      movementType: "expense",
+      spendTypeId: 1,
+      // lo que hace el guardado del split: sobreescribe con el de la linea
+      ...{ spendTypeId: 3 },
+    });
+    expect(result.spendTypeId).toBe(3);
+  });
+
+  it("vacio hereda el de SU categoria, no el del movimiento original", () => {
+    const result = buildMovementCreateInput({
+      ...base,
+      movementType: "expense",
+      categoryId: 9,
+      spendTypeId: null,
+    });
+    expect(result.spendTypeId).toBeNull();
+  });
+});
