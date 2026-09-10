@@ -84,3 +84,27 @@ describe("splitBlockingReason", () => {
     expect(splitBlockingReason(lines, allocateSplit(lines, 86.4))).toBeNull();
   });
 });
+
+describe("dos partes con la misma categoria", () => {
+  /**
+   * "Alimentacion 5 + Alimentacion 5" es "Alimentacion 10" escrito en dos renglones: no reparte
+   * nada. Y no es inofensivo — crea dos movimientos donde habia uno, asi que el historial pasa a
+   * tener el doble de filas para decir lo mismo.
+   */
+  it("no se puede guardar, y el motivo dice que hacer", () => {
+    const lineas = [linea("5.00", 1), linea("5.00", 1)];
+    const motivo = splitBlockingReason(lineas, allocateSplit(lineas, 10));
+    expect(motivo).toBe("Hay dos partes con la misma categoria. Juntalas en una sola.".replace("categoria", "categoría").replace("Juntalas", "Júntalas"));
+  });
+
+  it("dos categorias distintas si", () => {
+    const lineas = [linea("5.00", 1), linea("5.00", 2)];
+    expect(splitBlockingReason(lineas, allocateSplit(lineas, 10))).toBeNull();
+  });
+
+  it("las que todavia no tienen categoria no cuentan como repetidas", () => {
+    const lineas = [linea("5.00", null), linea("5.00", null)];
+    const motivo = splitBlockingReason(lineas, allocateSplit(lineas, 10));
+    expect(motivo).toBe("Elige la categoría de cada parte.");
+  });
+});

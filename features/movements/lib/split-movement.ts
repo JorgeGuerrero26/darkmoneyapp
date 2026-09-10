@@ -34,6 +34,17 @@ export function emptySplitLines(): SplitLine[] {
   ];
 }
 
+/** El id de la primera categoría que aparece dos veces, o `null` si no se repite ninguna. */
+export function duplicateCategoryId(lines: SplitLine[]): number | null {
+  const vistas = new Set<number>();
+  for (const line of lines) {
+    if (line.categoryId == null) continue;
+    if (vistas.has(line.categoryId)) return line.categoryId;
+    vistas.add(line.categoryId);
+  }
+  return null;
+}
+
 export function validateSplit(lines: SplitLine[], totalAmount: number): SplitValidation {
   if (!Number.isFinite(totalAmount) || totalAmount <= 0) {
     return { valid: false, remaining: 0, error: "Ingresa primero el monto total del gasto" };
@@ -51,6 +62,18 @@ export function validateSplit(lines: SplitLine[], totalAmount: number): SplitVal
       return { valid: false, remaining: round2(totalAmount - sum - amount), error: "Cada línea necesita una categoría" };
     }
     sum += amount;
+  }
+
+  /* Dos partes con la misma categoría no reparten nada: "Alimentación 5 + Alimentación 5" es
+     "Alimentación 10" escrito en dos renglones. Y no es inofensivo — crea dos movimientos donde
+     había uno, así que el historial pasa a tener el doble de filas para decir lo mismo. */
+  const repetida = duplicateCategoryId(lines);
+  if (repetida != null) {
+    return {
+      valid: false,
+      remaining: round2(totalAmount - sum),
+      error: "Hay dos partes con la misma categoría. Júntalas en una sola.",
+    };
   }
   const remaining = round2(totalAmount - sum);
   if (Math.abs(remaining) > 0.009) {

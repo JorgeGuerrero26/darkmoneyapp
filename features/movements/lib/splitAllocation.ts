@@ -1,5 +1,5 @@
 import { parsePositiveAmountInput } from "../../../lib/amount-parsing";
-import type { SplitLine } from "./split-movement";
+import { duplicateCategoryId, type SplitLine } from "./split-movement";
 
 export type SplitAllocation = {
   /** Lo repartido hasta ahora. */
@@ -91,6 +91,8 @@ export function splitBlockingReason(lines: SplitLine[], allocation: SplitAllocat
     return "Ponle un monto a cada categoría.";
   }
   if (lines.some((line) => line.categoryId == null)) return "Elige la categoría de cada parte.";
+  const repetida = duplicateCategoryId(lines);
+  if (repetida != null) return "Hay dos partes con la misma categoría. Júntalas en una sola.";
   if (allocation.remaining > 0.009) {
     return `Falta repartir ${allocation.remaining.toFixed(2)}.`;
   }
