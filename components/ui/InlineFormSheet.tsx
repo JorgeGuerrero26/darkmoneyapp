@@ -20,6 +20,15 @@ type Props = {
   children: ReactNode;
   /** Barra fija al pie, hermana del scroll. */
   footer?: ReactNode;
+  /**
+   * Capa que se pinta SOBRE esta hoja y fuera de su scroll.
+   *
+   * Misma razón que la ranura del mismo nombre en `BottomSheet`: un selector o un diálogo
+   * escritos entre los hijos van a parar dentro del `ScrollView`, y ahí su `position: absolute`
+   * se ancla al contenido desplazado en vez de a la pantalla. Funciona mientras el contenido
+   * quepa, y deja de funcionar justo cuando la hoja se llena — que es cuando hace falta.
+   */
+  overlay?: ReactNode;
   /** Alto máximo como fracción de la pantalla. */
   height?: `${number}%`;
 };
@@ -43,6 +52,7 @@ export function InlineFormSheet({
   onDone,
   children,
   footer,
+  overlay,
   height = "92%",
 }: Props) {
   const insets = useSafeAreaInsets();
@@ -120,6 +130,8 @@ export function InlineFormSheet({
 
         {footer}
       </View>
+
+      {overlay}
     </View>
   );
 }

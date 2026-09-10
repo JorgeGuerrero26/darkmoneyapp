@@ -98,3 +98,31 @@ describe("las hojas inline se pintan en la capa, no en el scroll", () => {
     expect(culpables.join("\n")).toBe("");
   });
 });
+
+/**
+ * Y lo mismo un nivel mas adentro: los selectores y dialogos `inline` que se abren DESDE una hoja
+ * inline tienen que ir en su ranura `overlay`, no entre sus hijos.
+ *
+ * Escritos como hijos van a parar dentro del `ScrollView` de la hoja, y ahi su `position:
+ * absolute` deja de referirse a la pantalla para referirse al contenido desplazado. Funciona
+ * mientras el contenido quepa —por eso paso desapercibido en "Dividir en categorias" hasta que la
+ * hoja crecio con la fila del tipo de gasto— y deja de funcionar justo cuando la hoja se llena.
+ */
+const CAPAS = ["ConfirmDialog", "SearchableSelectSheet", "CurrencySelectOverlay"];
+
+describe("las capas inline de una hoja inline", () => {
+  it("van en su overlay, no entre sus hijos", () => {
+    const culpables: string[] = [];
+    for (const ruta of TSX) {
+      const fuente = readFileSync(ruta, "utf8");
+      if (!fuente.includes("<InlineFormSheet")) continue;
+      const overlay = bloquesOverlay(fuente);
+      for (const capa of CAPAS) {
+        const usos = fuente.split(`<${capa}`).length - 1;
+        const enOverlay = overlay.split(`<${capa}`).length - 1;
+        if (usos > enOverlay) culpables.push(`${ruta.slice(ROOT.length + 1)} -> ${capa}`);
+      }
+    }
+    expect(culpables.join(" | ")).toBe("");
+  });
+});

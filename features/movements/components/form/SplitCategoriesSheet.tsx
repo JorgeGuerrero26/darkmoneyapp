@@ -4,6 +4,7 @@ import { Plus } from "lucide-react-native";
 
 import { Button } from "../../../../components/ui/Button";
 import { CurrencyInput } from "../../../../components/ui/CurrencyInput";
+import { ConfirmDialog } from "../../../../components/ui/ConfirmDialog";
 import { InlineFormSheet } from "../../../../components/ui/InlineFormSheet";
 import { SearchableSelectSheet } from "../../../../components/ui/SearchableSelectSheet";
 import { formatCurrency } from "../../../../components/ui/AmountDisplay";
@@ -61,12 +62,19 @@ export function SplitCategoriesSheet({
      el campo se desmontaba en mitad del borrado, el teclado se cerraba y volvía a aparecer el
      monto propuesto — justo cuando el usuario estaba vaciándola para escribir el suyo. */
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState(false);
   const [triedToSave, setTriedToSave] = useState(false);
 
   const money = (value: number) => formatCurrency(value, currencyCode);
   const allocation = allocateSplit(lines, totalAmount);
   const status = splitStatusLabel(allocation, money);
   const blocking = splitBlockingReason(lines, allocation);
+  /* "Algo que perder" es un monto escrito o una segunda categoría elegida.
+     La primera categoría NO cuenta: viene puesta al abrir, heredada de la que ya habías elegido
+     en el formulario, así que preguntar por ella sería preguntar por algo que no hiciste aquí. */
+  const hasWork =
+    lines.some((line) => line.amount.trim() !== "")
+    || lines.filter((line) => line.categoryId != null).length > 1;
 
   /* El mismo criterio que en el formulario y en las métricas: manda el de la parte y, si no
      tiene, el que traiga su categoría. Solo gastos — un ingreso no es necesidad ni deseo. */
@@ -95,6 +103,55 @@ export function SplitCategoriesSheet({
       visible={visible}
       title="Dividir en categorías"
       onBack={onClose}
+      overlay={
+        <>
+        <ConfirmDialog
+          inline
+          visible={confirmRemove}
+          title="¿Quitar la división?"
+          body={`Se pierden las ${lines.length} partes que armaste. El gasto vuelve a ser uno solo, con la categoría que tenía.`}
+          confirmLabel="Quitar"
+          cancelLabel="Seguir editando"
+          onCancel={() => setConfirmRemove(false)}
+          onConfirm={() => {
+            setConfirmRemove(false);
+            onChangeLines(null);
+            onClose();
+          }}
+        />
+
+        <SearchableSelectSheet
+          inline
+          visible={pickerIndex !== null}
+          title="Categoría de esta parte"
+          options={categories.map((category) => ({ value: category.id as number | null, label: category.name }))}
+          value={pickerIndex !== null ? lines[pickerIndex]?.categoryId ?? null : null}
+          onChange={(value) => {
+            if (pickerIndex !== null) patchLine(pickerIndex, { categoryId: value });
+          }}
+          onClose={() => setPickerIndex(null)}
+        />
+
+        <SearchableSelectSheet
+          inline
+          visible={typePickerIndex !== null}
+          title="Tipo de esta parte"
+          options={[
+            {
+              value: null as number | null,
+              label: "Como su categoría",
+              meta: "Cambia solo si esta parte fue distinta",
+            },
+            ...spendTypes.map((type) => ({ value: type.id as number | null, label: type.name })),
+          ]}
+          value={typePickerIndex !== null ? lines[typePickerIndex]?.spendTypeId ?? null : null}
+          onChange={(value) => {
+            if (typePickerIndex !== null) patchLine(typePickerIndex, { spendTypeId: value });
+          }}
+          onClose={() => setTypePickerIndex(null)}
+        />
+        </>
+      }
       footer={
         <View style={styles.footer}>
           {triedToSave && blocking ? <Text style={styles.blocking}>{blocking}</Text> : null}
@@ -216,45 +273,22 @@ export function SplitCategoriesSheet({
           para los presupuestos y los informes.
         </Text>
 
+        {/* Se pregunta solo si hay algo que perder. Un toque aquí borraba las partes ya armadas
+            sin avisar, y el enlace vive a un dedo del botón de guardar. Con las filas todavía
+            vacías no hay nada que confirmar: preguntar ahí sería un trámite. */}
         <Pressable
           style={styles.removeRow}
-          onPress={() => { onChangeLines(null); onClose(); }}
+          onPress={() => {
+            if (hasWork) { setConfirmRemove(true); return; }
+            onChangeLines(null);
+            onClose();
+          }}
           accessibilityRole="button"
         >
           <Text style={styles.removeLabel}>Quitar la división</Text>
         </Pressable>
       </View>
 
-      <SearchableSelectSheet
-        inline
-        visible={pickerIndex !== null}
-        title="Categoría de esta parte"
-        options={categories.map((category) => ({ value: category.id as number | null, label: category.name }))}
-        value={pickerIndex !== null ? lines[pickerIndex]?.categoryId ?? null : null}
-        onChange={(value) => {
-          if (pickerIndex !== null) patchLine(pickerIndex, { categoryId: value });
-        }}
-        onClose={() => setPickerIndex(null)}
-      />
-
-      <SearchableSelectSheet
-        inline
-        visible={typePickerIndex !== null}
-        title="Tipo de esta parte"
-        options={[
-          {
-            value: null as number | null,
-            label: "Como su categoría",
-            meta: "Cambia solo si esta parte fue distinta",
-          },
-          ...spendTypes.map((type) => ({ value: type.id as number | null, label: type.name })),
-        ]}
-        value={typePickerIndex !== null ? lines[typePickerIndex]?.spendTypeId ?? null : null}
-        onChange={(value) => {
-          if (typePickerIndex !== null) patchLine(typePickerIndex, { spendTypeId: value });
-        }}
-        onClose={() => setTypePickerIndex(null)}
-      />
     </InlineFormSheet>
   );
 }
