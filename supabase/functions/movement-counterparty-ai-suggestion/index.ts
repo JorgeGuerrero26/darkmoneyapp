@@ -268,7 +268,9 @@ async function usageCount(client: ReturnType<typeof serviceClient>, userId: stri
     .select("id", { count: "exact", head: true })
     .eq("feature_key", FEATURE_KEY)
     .eq("user_id", userId)
-    .eq("usage_date", usageDate);
+    .eq("usage_date", usageDate)
+    // Un timeout no gasta cupo: el usuario no recibio nada.
+    .eq("status", "success");
   if (error) {
     if (isMissingRelationError(error, "ai_feature_usage_events")) return 0;
     throw error;
@@ -284,6 +286,9 @@ async function recordUsage(input: {
   model: string;
   surface: Surface;
   latencyMs: number;
+  /* Un fallo tambien es uso: si no se apunta, la unica senal de que el modelo se atasca es que
+     alguien lo cuente. Ver `usageCount`, que solo suma los que sirvieron. */
+  status?: "success" | "error";
 }) {
   const { error } = await input.client
     .from("ai_feature_usage_events")
@@ -294,30 +299,54 @@ async function recordUsage(input: {
       usage_date: input.usageDate,
       model: input.model,
       surface: input.surface,
-      status: "success",
+      status: input.status ?? "success",
       latency_ms: input.latencyMs,
     });
   if (error && !isMissingRelationError(error, "ai_feature_usage_events")) throw error;
 }
 
+/**
+ * Cuanto esperamos al modelo antes de rendirnos.
+ *
+ * Por debajo de los 20 s que aguanta el cliente: sin esto, la peticion seguia viva despues de que
+ * el telefono ya se habia rendido, y trabajaba para nadie. Registradas en 30 dias: 43 llamadas
+ * por encima de 20 s, dos de ellas de 60 s exactos. Y como el resultado llegaba igual, se
+ * apuntaba como `success`, asi que la tabla decia 765 de 765 correctas mientras el usuario veia
+ * fallos.
+ */
+const MODEL_TIMEOUT_MS = 18_000;
+
 async function requestDeepSeek(apiKey: string, model: string, prompt: string) {
-  const response = await fetch("https://api.deepseek.com/chat/completions", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: "system", content: "Responde siempre como JSON valido y nada mas." },
-        { role: "user", content: prompt },
-      ],
-      temperature: 0,
-      max_tokens: 280,
-      response_format: { type: "json_object" },
-    }),
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), MODEL_TIMEOUT_MS);
+  let response: Response;
+  try {
+    response = await fetch("https://api.deepseek.com/chat/completions", {
+      signal: controller.signal,
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: "system", content: "Responde siempre como JSON valido y nada mas." },
+          { role: "user", content: prompt },
+        ],
+        temperature: 0,
+        max_tokens: 280,
+        response_format: { type: "json_object" },
+      }),
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error(`El modelo tardo mas de ${MODEL_TIMEOUT_MS / 1000} segundos.`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -377,7 +406,25 @@ Deno.serve(async (req) => {
       counterparties,
       localSuggestion: body.localSuggestion ?? null,
     });
-    const rawReply = await requestDeepSeek(apiKey, model, prompt);
+    let rawReply: string;
+    /* Un fallo del modelo —o el corte por tardar demasiado— se apunta igual que un acierto.
+       Sin esto la tabla de uso solo sabia de los que salieron bien, y no habia forma de ver
+       desde fuera que algo se estaba atascando. */
+    try {
+      rawReply = await requestDeepSeek(apiKey, model, prompt);
+    } catch (modelError) {
+      await recordUsage({
+        client,
+        userId: user.id,
+        workspaceId,
+        usageDate,
+        model,
+        surface,
+        latencyMs: Date.now() - startedAt,
+        status: "error",
+      }).catch(() => undefined);
+      throw modelError;
+    }
     const recommendation = normalizeRecommendation(rawReply, counterparties);
     await recordUsage({
       client,
