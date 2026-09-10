@@ -1,4 +1,7 @@
-import { categorySuggestionCacheKey } from "../categorySuggestionKey";
+import {
+  categorySuggestionCacheKey,
+  counterpartySuggestionCacheKey,
+} from "../aiSuggestionKeys";
 
 const BASE = {
   workspaceId: 1,
@@ -50,5 +53,38 @@ describe("categorySuggestionCacheKey", () => {
         categories: [...BASE.categories, { id: 2, name: "Antojos", kind: "expense" }],
       }),
     ).not.toBe(categorySuggestionCacheKey(BASE));
+  });
+});
+
+const CONTRAPARTE = {
+  workspaceId: 1,
+  surface: "movement_form" as const,
+  movementType: "expense" as const,
+  description: "YAPE ***123 KEVIN",
+  amount: 10,
+  currencyCode: "PEN",
+  counterparties: [{ id: 4, name: "Kevin", type: "person" }],
+};
+
+describe("counterpartySuggestionCacheKey", () => {
+  it("el monto no cambia de quien es el gasto", () => {
+    expect(counterpartySuggestionCacheKey({ ...CONTRAPARTE, amount: 200 })).toBe(
+      counterpartySuggestionCacheKey(CONTRAPARTE),
+    );
+  });
+
+  it("otro nombre en el texto SI", () => {
+    expect(
+      counterpartySuggestionCacheKey({ ...CONTRAPARTE, description: "YAPE ***123 ANA" }),
+    ).not.toBe(counterpartySuggestionCacheKey(CONTRAPARTE));
+  });
+
+  it("una contraparte nueva en el catalogo tambien", () => {
+    expect(
+      counterpartySuggestionCacheKey({
+        ...CONTRAPARTE,
+        counterparties: [...CONTRAPARTE.counterparties, { id: 9, name: "Ana", type: "person" }],
+      }),
+    ).not.toBe(counterpartySuggestionCacheKey(CONTRAPARTE));
   });
 });

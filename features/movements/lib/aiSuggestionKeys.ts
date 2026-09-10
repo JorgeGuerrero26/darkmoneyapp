@@ -35,3 +35,34 @@ export function categorySuggestionCacheKey(input: CategorySuggestionKeyInput): s
     localSuggestion: input.localSuggestion ?? null,
   });
 }
+
+export type CounterpartySuggestionKeyInput = {
+  workspaceId: number;
+  surface: string;
+  movementType: string;
+  description: string;
+  counterparties: Array<{ id: number; name: string; type: string }>;
+  amount?: number | null;
+  currencyCode?: string | null;
+};
+
+/**
+ * Lo mismo para la contraparte, y aquí el monto pinta todavía menos.
+ *
+ * El prompt de contrapartes es entero sobre el texto —"YAPE ***123 KEVIN" es Kevin, "CONSUMO
+ * PLAZA VEA" es Plaza Vea— y ninguna de sus reglas mira cuánto costó. Con el monto dentro, tocarlo
+ * tiraba una respuesta ya pagada y volvía a preguntar contra un modelo cuya mediana son 6.4 s.
+ */
+export function counterpartySuggestionCacheKey(input: CounterpartySuggestionKeyInput): string {
+  return JSON.stringify({
+    workspaceId: input.workspaceId,
+    surface: input.surface,
+    description: input.description.trim().toLowerCase(),
+    movementType: input.movementType,
+    counterparties: input.counterparties.map((counterparty) => [
+      counterparty.id,
+      counterparty.name,
+      counterparty.type,
+    ]),
+  });
+}

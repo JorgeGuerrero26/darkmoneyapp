@@ -96,10 +96,15 @@ export function useMovementRecurringAiSuggestion({
       workspaceId,
       surface,
       movementType,
+      /* El monto SÍ se queda: "¿esto se repite?" se responde en buena parte con que sea siempre
+         la misma cifra. Lo que se va es la hora —un gasto no es más ni menos recurrente a las
+         19:15 que a las 19:16, y la hora viene del reloj, así que cambiaba sola— y las
+         mayúsculas, que tampoco son otra pregunta. La categoría y la contraparte se quedan
+         porque entran en el prompt de verdad. */
       amount,
       currencyCode: currencyCode ?? null,
-      description: description.trim(),
-      occurredAt,
+      description: description.trim().toLowerCase(),
+      occurredOn: occurredAt ? occurredAt.slice(0, 10) : null,
       categoryId,
       counterpartyId,
     });

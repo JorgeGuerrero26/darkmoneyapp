@@ -5,9 +5,9 @@ import {
   type MovementCategoryAiRecommendation,
   type MovementCategoryAiSuggestionInput,
 } from "../services/queries/workspace-data";
-import { waitForMinimumVisibleTime } from "../lib/ai-request-utils";
+import { INTERACTIVE_AI_TIMEOUT_MS, waitForMinimumVisibleTime } from "../lib/ai-request-utils";
 import { withTimeout } from "../lib/promise-utils";
-import { categorySuggestionCacheKey } from "../features/movements/lib/categorySuggestionKey";
+import { categorySuggestionCacheKey } from "../features/movements/lib/aiSuggestionKeys";
 
 /**
  * Estado terminal observable de la IA de categoría, para que la UI sea
@@ -27,7 +27,16 @@ type Params = {
   proAccessEnabled?: boolean;
   minConfidence?: number;
   debounceMs?: number;
-  /** Tiempo máximo antes de resolver a `error`. Alineado con la ventana de staleness del runtime sync (~12s). */
+  /**
+   * Tiempo máximo antes de resolver a `error`.
+   *
+   * Estaba en 12 s "alineado con la ventana de staleness del runtime sync", que no tiene nada que
+   * ver con lo que tarda un modelo. Medido sobre 30 días: el **p90 de esta misma función es de
+   * 12.4 s**, así que una de cada diez respuestas —ya pagada, ya calculada y correcta— se tiraba
+   * por 400 ms, y encima se guardaba en caché como `error`, de modo que esa descripción no se
+   * volvía a preguntar en toda la sesión. Ahora es el mismo plazo que usan las otras tres IAs del
+   * formulario, que es el que ya aplica el transporte.
+   */
   timeoutMs?: number;
 };
 
@@ -51,7 +60,7 @@ export function useMovementCategoryAiSuggestion({
   proAccessEnabled,
   minConfidence = 0.65,
   debounceMs = 700,
-  timeoutMs = 12_000,
+  timeoutMs = INTERACTIVE_AI_TIMEOUT_MS,
 }: Params): State {
   const [state, setState] = useState<State>({ recommendation: null, isLoading: false, aiAttempted: false, outcome: "idle" });
   const latestKeyRef = useRef<string | null>(null);

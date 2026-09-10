@@ -11,6 +11,7 @@ import {
 } from "../services/queries/workspace-data";
 import { waitForMinimumVisibleTime } from "../lib/ai-request-utils";
 import type { CounterpartySummary } from "../types/domain";
+import { counterpartySuggestionCacheKey as cacheKey } from "../features/movements/lib/aiSuggestionKeys";
 
 type Params = {
   enabled: boolean;
@@ -35,17 +36,6 @@ type State = {
 
 const responseCache = new Map<string, CounterpartySuggestionResult | null>();
 
-function cacheKey(input: MovementCounterpartyAiInput) {
-  return JSON.stringify({
-    workspaceId: input.workspaceId,
-    surface: input.surface,
-    description: input.description.trim().toLowerCase(),
-    movementType: input.movementType,
-    amount: input.amount ?? null,
-    currencyCode: input.currencyCode ?? null,
-    counterparties: input.counterparties.map((counterparty) => [counterparty.id, counterparty.name, counterparty.type]),
-  });
-}
 
 export function useMovementCounterpartyAiSuggestion({
   enabled,
