@@ -13,6 +13,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "1.0.10",
     title: "DarkMoney estrena look",
     changes: [
+      "Dividir un gasto entre varias categorías vuelve a funcionar bien: ahora se ve lo que escribes en cada monto, la pantalla se abre entera en vez de quedarse a medias con el teclado encima, y cada parte puede decir si fue una necesidad o un gusto.",
       "Las sugerencias del formulario (categoría, contraparte, si el gasto se repite) dejaron de repetir el mismo trabajo mientras llenas los campos, así que llegan antes y aciertan igual. Y cuando el asistente se cuelga, deja de esperar en vez de tenerte esperando a ti.",
       "Al registrar un gasto, la categoría sugerida llega antes: cambiar el monto ya no hace que la app vuelva a preguntar desde cero. Y mientras la busca te lo dice, así que ya no te quedas sin saber si viene o si no supo cuál era.",
       "Un presupuesto ya no se limita a una categoría: puedes ponerle tope a lo que sea un gusto sin castigar el mercado. \"Máximo 300 al mes en deseos\" cuenta desde el primer día, con lo que ya tienes registrado.",
