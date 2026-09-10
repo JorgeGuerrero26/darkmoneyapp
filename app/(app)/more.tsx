@@ -8,6 +8,7 @@ import {
 
 import { useAuth } from "../../lib/auth-context";
 import { useNotificationsQuery, useUserEntitlementQuery, useWorkspaceSnapshotQuery } from "../../services/queries/workspace-data";
+import { useSpendTypesQuery } from "../../services/queries/spend-types";
 import { useWorkspace } from "../../lib/workspace-context";
 import { getNotificationPriority } from "../../lib/notification-priority";
 import { formatCurrency } from "../../components/ui/AmountDisplay";
@@ -69,6 +70,7 @@ export default function MoreScreen() {
   const baseCurrency = profile?.baseCurrencyCode ?? "PEN";
   const contactCount = (snapshot?.counterparties ?? []).filter((c) => !c.isArchived).length;
   const categoryCount = (snapshot?.categories ?? []).length;
+  const spendTypeCount = useSpendTypesQuery(activeWorkspaceId).data?.length ?? 0;
   const budgetCount = (snapshot?.budgets ?? []).length;
   const usdRate = (snapshot?.exchangeRates ?? []).find(
     (rate) => rate.fromCurrencyCode === "USD" && rate.toCurrencyCode === baseCurrency,
@@ -131,6 +133,13 @@ export default function MoreScreen() {
           title: "Categorías",
           subtitle: `${categoryCount} categoría${categoryCount === 1 ? "" : "s"}`,
           route: "/(app)/categories?from=more",
+        },
+        {
+          title: "Tipos de gasto",
+          subtitle: spendTypeCount > 0
+            ? `${spendTypeCount} tipo${spendTypeCount === 1 ? "" : "s"}`
+            : "Necesidades, deseos, ahorros",
+          route: "/spend-types?from=more",
         },
         {
           title: "Tipos de cambio",
