@@ -21,6 +21,20 @@
 export const READ_TIMEOUT_MS = 12_000;
 export const WRITE_TIMEOUT_MS = 25_000;
 
+/**
+ * Plazo de CADA consulta de "¿se guardó?" tras abortar una escritura.
+ *
+ * No puede ser el de una lectura normal. Es un SELECT por clave única —una fila o ninguna— y se
+ * hace hasta cuatro veces; a 12 s cada una, el peor caso de la confirmación entera son 55 s que,
+ * sumados a los 25 s de la escritura, se pasan del techo de 60 s. O sea: el mecanismo que existe
+ * para responder "sí se guardó" se quedaba sin tiempo antes de poder responder.
+ *
+ * Pasó el 2026-09-11 con Supabase degradado: el movimiento quedó guardado en el segundo 26 y en
+ * el 60 el techo lo dio por perdido. Con 4 s por consulta el peor caso baja a ~49 s y cabe
+ * entero, y en la práctica la respuesta llega en la primera o la segunda.
+ */
+export const CONFIRM_LOOKUP_TIMEOUT_MS = 4_000;
+
 const WRITE_METHODS = new Set(["POST", "PATCH", "PUT", "DELETE"]);
 
 export function resolveFetchTimeoutMs(url: string, method: string | undefined): number {
@@ -47,7 +61,9 @@ export function resolveFetchTimeoutMs(url: string, method: string | undefined): 
  * servidor pudo haberlo guardado— y el formulario dice "no pudimos confirmar si se guardó" en
  * vez de "no se guardó". La clave de dedupe hace que reintentar sea seguro.
  *
- * Va por encima de WRITE_TIMEOUT_MS + la confirmación idempotente para no cortar un guardado
- * que todavía está haciendo su trabajo.
+ * Va por encima de WRITE_TIMEOUT_MS + la confirmación idempotente ENTERA —sus esperas y sus
+ * consultas— para no cortar un guardado que todavía está haciendo su trabajo. Esa cuenta la
+ * vigila `write-timeout-budget.test.ts`: durante un tiempo solo sumó las esperas, y con las
+ * consultas colgadas el techo cortaba la confirmación a media pregunta.
  */
 export const SAVE_CEILING_MS = 60_000;

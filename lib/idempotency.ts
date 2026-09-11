@@ -1,3 +1,6 @@
+import { CONFIRM_LOOKUP_TIMEOUT_MS } from "./fetch-timeout-budget";
+import { withTimeout } from "./promise-utils";
+
 /**
  * Claves de idempotencia para inserts (movements.client_dedupe_key).
  *
@@ -115,12 +118,27 @@ const sleepMs = (ms: number) => new Promise<void>((resolve) => setTimeout(resolv
  */
 export async function confirmIdempotentWrite<T>(
   lookup: () => PromiseLike<{ data: T | null; error: IdempotentWriteError | null }>,
-  opts?: { sleep?: (ms: number) => Promise<void>; schedule?: readonly number[] },
+  opts?: {
+    sleep?: (ms: number) => Promise<void>;
+    schedule?: readonly number[];
+    lookupTimeoutMs?: number;
+  },
 ): Promise<T | null> {
   const sleep = opts?.sleep ?? sleepMs;
+  const lookupTimeoutMs = opts?.lookupTimeoutMs ?? CONFIRM_LOOKUP_TIMEOUT_MS;
   for (const wait of opts?.schedule ?? IDEMPOTENT_CONFIRM_BACKOFF_MS) {
     if (wait > 0) await sleep(wait);
-    const found = await lookup();
+    let found: { data: T | null; error: IdempotentWriteError | null };
+    try {
+      /* Cada pregunta tiene su propio plazo, corto. Sin él heredaba el de una lectura normal
+         —12 s— y con el servidor caído las cuatro preguntas se comían el techo del guardado
+         entero: el mecanismo que existe para responder "sí se guardó" se quedaba sin tiempo
+         antes de poder responder (2026-09-11). */
+      found = await withTimeout(Promise.resolve(lookup()), lookupTimeoutMs, "confirmar el guardado");
+    } catch {
+      // Una pregunta que se cuelga no dice nada. Se vuelve a preguntar.
+      continue;
+    }
     if (found.data) return found.data;
     if (found.error && !isAmbiguousTransportError(found.error)) return null;
   }

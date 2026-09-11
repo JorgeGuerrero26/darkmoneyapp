@@ -69,4 +69,31 @@ describe("confirmIdempotentWrite", () => {
     expect(waits).toEqual(IDEMPOTENT_CONFIRM_BACKOFF_MS.filter((ms) => ms > 0));
     expect(IDEMPOTENT_CONFIRM_BACKOFF_MS[0]).toBe(0);
   });
+
+  /**
+   * El caso del 2026-09-11: con el servidor degradado, la primera pregunta se cuelga. Antes eso
+   * consumia 12 s del techo del guardado y, encadenadas, lo agotaban antes de poder contestar.
+   * Una pregunta colgada no dice nada: se vuelve a preguntar, con su propio plazo corto.
+   */
+  it("una pregunta que se cuelga no cuenta como respuesta: se reintenta", async () => {
+    const row = { id: 7 };
+    let intento = 0;
+    const lookup = () => {
+      intento += 1;
+      // La primera no responde nunca; la segunda encuentra la fila ya guardada.
+      if (intento === 1) return new Promise<never>(() => {});
+      return Promise.resolve({ data: row, error: null });
+    };
+    await expect(
+      confirmIdempotentWrite(lookup, { sleep: noSleep, lookupTimeoutMs: 10 }),
+    ).resolves.toBe(row);
+    expect(intento).toBe(2);
+  });
+
+  it("si todas se cuelgan, se rinde sin inventarse una respuesta", async () => {
+    const lookup = () => new Promise<never>(() => {});
+    await expect(
+      confirmIdempotentWrite(lookup, { sleep: noSleep, lookupTimeoutMs: 5 }),
+    ).resolves.toBeNull();
+  });
 });

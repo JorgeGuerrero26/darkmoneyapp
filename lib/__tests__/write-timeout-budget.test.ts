@@ -7,6 +7,7 @@
  * guardó" sobre un registro que existía.
  */
 import {
+  CONFIRM_LOOKUP_TIMEOUT_MS,
   READ_TIMEOUT_MS,
   SAVE_CEILING_MS,
   WRITE_TIMEOUT_MS,
@@ -53,9 +54,30 @@ describe("resolveFetchTimeoutMs", () => {
  * a las 11:02: diez minutos de botón girando y ni una línea en los logs.
  */
 describe("techo de un guardado completo", () => {
-  it("da margen a la escritura y a su confirmación antes de rendirse", () => {
-    const confirmBudget = IDEMPOTENT_CONFIRM_BACKOFF_MS.reduce((a, b) => a + b, 0);
-    expect(SAVE_CEILING_MS).toBeGreaterThan(WRITE_TIMEOUT_MS + confirmBudget);
+  /**
+   * Esta cuenta antes sumaba solo las ESPERAS entre intentos (7,7 s) y daba el techo por bueno.
+   * Faltaba lo que tarda cada pregunta: son consultas de red, y con el servidor caído se cuelgan
+   * hasta su propio plazo. Con el de una lectura normal —12 s— el peor caso real era
+   * 25 + 4x12 + 7,7 = 80,7 s contra un techo de 60: el techo cortaba la confirmación a media
+   * pregunta y el guardado se daba por perdido. Paso el 2026-09-11 con Supabase degradado, sobre
+   * un movimiento que estaba guardado desde el segundo 26.
+   */
+  it("el peor caso REAL de la confirmacion cabe dentro del techo", () => {
+    const esperas = IDEMPOTENT_CONFIRM_BACKOFF_MS.reduce((a, b) => a + b, 0);
+    const preguntas = IDEMPOTENT_CONFIRM_BACKOFF_MS.length * CONFIRM_LOOKUP_TIMEOUT_MS;
+    expect(WRITE_TIMEOUT_MS + esperas + preguntas).toBeLessThan(SAVE_CEILING_MS);
+  });
+
+  it("y preguntar es mas barato que leer: es una fila por clave unica", () => {
+    expect(CONFIRM_LOOKUP_TIMEOUT_MS).toBeLessThan(READ_TIMEOUT_MS);
+  });
+
+  it("con el plazo de antes la cuenta NO cerraba", () => {
+    // La aritmetica del incidente, escrita: si las preguntas heredan el plazo de una lectura
+    // normal, la confirmacion se pasa del techo y muere sin poder contestar.
+    const esperas = IDEMPOTENT_CONFIRM_BACKOFF_MS.reduce((a, b) => a + b, 0);
+    const conPlazoDeLectura = IDEMPOTENT_CONFIRM_BACKOFF_MS.length * READ_TIMEOUT_MS;
+    expect(WRITE_TIMEOUT_MS + esperas + conPlazoDeLectura).toBeGreaterThan(SAVE_CEILING_MS);
   });
 
   it("el mensaje al vencer se lee como ambiguo, no como un fallo", () => {
