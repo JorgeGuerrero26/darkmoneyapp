@@ -15,6 +15,90 @@ type Params = {
   bindings: Binding[];
 };
 
+const EPISODE_WINDOW_MS = 60_000;
+
+type EpisodeSummary = {
+  events: number;
+  channels: string[];
+  statuses: string[];
+  durationMs: number;
+};
+
+type Episode = {
+  startedAt: number;
+  lastAt: number;
+  events: number;
+  channels: Set<string>;
+  statuses: Set<string>;
+};
+
+/** Compartido por TODOS los canales a propósito: el socket que se cae también lo es. */
+let episode: Episode | null = null;
+
+/**
+ * Olvida el episodio en curso. Solo para los tests: al vivir en el módulo, el estado sobrevive
+ * de un caso al siguiente y el recuento de uno se colaría en la fila del otro.
+ */
+export function resetRealtimeEpisodeState(): void {
+  episode = null;
+}
+
+function closeEpisode(): EpisodeSummary | null {
+  if (!episode) return null;
+  const closed = episode;
+  episode = null;
+  // Con un solo evento no hay nada que resumir: la fila que abrió el episodio ya lo contó todo.
+  if (closed.events <= 1) return null;
+  return {
+    events: closed.events,
+    channels: [...closed.channels].sort(),
+    statuses: [...closed.statuses].sort(),
+    durationMs: closed.lastAt - closed.startedAt,
+  };
+}
+
+/**
+ * Colapsa en UNA fila la caída de socket que los cuatro canales reportan a la vez.
+ *
+ * El filtro por canal (`lastLoggedStatus`) ya evitaba que un canal repitiera su estado, pero
+ * seguía escribiendo una fila POR CANAL: cuando el teléfono se duerme o cambia de red, el socket
+ * compartido muere y dashboard/notifications/movements/accounts avisan cada uno por su lado del
+ * mismo hecho. Medido sobre los 4.707 avisos de 60 días (todos de un iPhone): 2.028 segundos
+ * distintos, y 988 de ellos traían 3 canales a la vez. Agrupando por ventana de 60 s quedan 608
+ * filas —87% menos— y la curva se aplana ahí: 5 minutos solo ahorra un 3% más y ya no se
+ * distinguen dos episodios seguidos.
+ *
+ * El recuento del episodio no se escribe con un temporizador —el teléfono puede quedarse sin
+ * proceso antes de que dispare, justo en el caso que lo provoca— sino que viaja en la fila del
+ * episodio SIGUIENTE. Llega tarde, pero llega, y nunca cuesta una fila extra.
+ */
+function admitEpisodeEvent(
+  channelName: string,
+  status: string,
+  /** Un motivo concreto del servidor se escribe siempre: son 3 en dos semanas y son los que valen. */
+  force: boolean,
+): { admit: boolean; previousEpisode: EpisodeSummary | null } {
+  const now = Date.now();
+  // Ventana fija desde el primer evento, no deslizante: un canal que parpadea sin parar no puede
+  // mantener el episodio abierto para siempre y dejar de avisar.
+  if (episode && now - episode.startedAt <= EPISODE_WINDOW_MS) {
+    episode.lastAt = now;
+    episode.events += 1;
+    episode.channels.add(channelName);
+    episode.statuses.add(status);
+    return { admit: force, previousEpisode: null };
+  }
+  const previousEpisode = closeEpisode();
+  episode = {
+    startedAt: now,
+    lastAt: now,
+    events: 1,
+    channels: new Set([channelName]),
+    statuses: new Set([status]),
+  };
+  return { admit: true, previousEpisode };
+}
+
 /**
  * Suscripción realtime robusta, compartida por los hooks de sync (diagnóstico
  * app_error_logs 2026-07-06: ~350 warnings de canal en 14 días y canales que
@@ -26,6 +110,8 @@ type Params = {
  * - Consciente del desmontaje: el CLOSED que dispara el propio removeChannel
  *   del cleanup ya no se registra como error (era gran parte del spam).
  * - Log deduplicado: una línea por racha de fallo, no una por reintento.
+ * - Log colapsado por episodio: la caída del socket compartido deja UNA fila,
+ *   no una por canal (ver admitEpisodeEvent).
  */
 export function subscribeRealtimeChannel({ source, channelName, bindings }: Params): () => void {
   if (!supabase) return () => {};
@@ -75,14 +161,21 @@ export function subscribeRealtimeChannel({ source, channelName, bindings }: Para
         // manda un motivo concreto: esos son los que valen ("mismatch between server and client
         // bindings", "InvalidJWTToken"), y son 3 en dos semanas frente a cientos de blips.
         // Mismo criterio que MIN_BLOCKED_FOR_NETWORK_WARNING: un solo síntoma no es una avería.
-        const worthLogging = attempt >= 1 || Boolean(err?.message);
+        const reason = err?.message ?? null;
+        const worthLogging = attempt >= 1 || Boolean(reason);
         if (worthLogging && lastLoggedStatus !== status) {
-          lastLoggedStatus = status;
-          logWarn("realtime", `${source} channel ${status}`, {
-            channelName,
-            attempt,
-            error: err?.message ?? null,
-          });
+          // Dos filtros, cada uno para un ruido distinto: este canal repitiendo su estado, y los
+          // demás canales avisando del mismo socket muerto.
+          const { admit, previousEpisode } = admitEpisodeEvent(channelName, status, Boolean(reason));
+          if (admit) {
+            lastLoggedStatus = status;
+            logWarn("realtime", `${source} channel ${status}`, {
+              channelName,
+              attempt,
+              error: reason,
+              previousEpisode,
+            });
+          }
         }
         scheduleResubscribe();
       }

@@ -32,24 +32,28 @@ jest.mock("../supabase", () => ({
   },
 }));
 
-import { subscribeRealtimeChannel } from "../realtime-channel";
+import { resetRealtimeEpisodeState, subscribeRealtimeChannel } from "../realtime-channel";
 import { logWarn } from "../error-logger";
 
 const logWarnMock = logWarn as jest.Mock;
 
-function subscribe() {
+function subscribe(source = "test", channelName = "test:ws-1") {
   return subscribeRealtimeChannel({
-    source: "test",
-    channelName: "test:ws-1",
+    source,
+    channelName,
     bindings: [{ table: "movements", onChange: () => {} }],
   });
 }
+
+/** Los cuatro canales que la app monta sobre el MISMO socket. */
+const SOCKET_CHANNELS = ["dashboard", "notifications", "movements", "accounts"];
 
 describe("subscribeRealtimeChannel", () => {
   beforeEach(() => {
     jest.useFakeTimers();
     mockChannels.length = 0;
     logWarnMock.mockClear();
+    resetRealtimeEpisodeState();
   });
 
   afterEach(() => {
@@ -126,6 +130,74 @@ describe("subscribeRealtimeChannel", () => {
     });
 
     dispose();
+  });
+
+  /**
+   * El caso que domina los datos reales: 4.707 avisos en 60 días, todos de un iPhone, y 988 de
+   * los 2.028 segundos con fallo traían 3 canales a la vez. No son cuatro canales rotos: es un
+   * socket muerto contado cuatro veces.
+   */
+  it("un socket caído deja UNA fila, no una por canal", () => {
+    const disposers = SOCKET_CHANNELS.map((name) => subscribe(name, `${name}:ws-1`));
+    expect(mockChannels).toHaveLength(4);
+
+    // Primera ronda: attempt=0, ninguno se registra (el blip se rehace solo).
+    for (const ch of mockChannels.slice(0, 4)) ch.cb?.("CHANNEL_ERROR");
+    expect(logWarnMock).not.toHaveBeenCalled();
+
+    // Sale el reintento de los cuatro y vuelve a fallar: ahora sí son dignos de registrar.
+    jest.advanceTimersByTime(5_000);
+    expect(mockChannels).toHaveLength(8);
+    for (const ch of mockChannels.slice(4, 8)) ch.cb?.("CHANNEL_ERROR");
+
+    expect(logWarnMock).toHaveBeenCalledTimes(1);
+    expect(logWarnMock.mock.calls[0][2]).toMatchObject({ channelName: "dashboard:ws-1" });
+
+    for (const dispose of disposers) dispose();
+  });
+
+  it("pasada la ventana vuelve a avisar, y arrastra el recuento del episodio anterior", () => {
+    const disposers = SOCKET_CHANNELS.map((name) => subscribe(name, `${name}:ws-1`));
+
+    for (const ch of mockChannels.slice(0, 4)) ch.cb?.("CHANNEL_ERROR");
+    jest.advanceTimersByTime(5_000);
+    for (const ch of mockChannels.slice(4, 8)) ch.cb?.("CHANNEL_ERROR");
+    expect(logWarnMock).toHaveBeenCalledTimes(1);
+
+    // Más allá de los 60 s de la ventana: lo que pase ya es otro episodio.
+    jest.advanceTimersByTime(61_000);
+    const fresh = mockChannels[mockChannels.length - 1];
+    fresh.cb?.("TIMED_OUT");
+
+    expect(logWarnMock).toHaveBeenCalledTimes(2);
+    // El recuento de los 4 eventos del episodio anterior viaja aquí: sin temporizador, así que
+    // un teléfono que se queda sin proceso a mitad no se lo lleva.
+    expect(logWarnMock.mock.calls[1][2]).toMatchObject({
+      previousEpisode: {
+        events: 4,
+        channels: ["accounts:ws-1", "dashboard:ws-1", "movements:ws-1", "notifications:ws-1"],
+        statuses: ["CHANNEL_ERROR"],
+      },
+    });
+
+    for (const dispose of disposers) dispose();
+  });
+
+  it("un motivo del servidor atraviesa el colapso: es raro y es el que hay que ver", () => {
+    const disposers = SOCKET_CHANNELS.map((name) => subscribe(name, `${name}:ws-1`));
+
+    for (const ch of mockChannels.slice(0, 4)) ch.cb?.("CHANNEL_ERROR");
+    jest.advanceTimersByTime(5_000);
+    for (const ch of mockChannels.slice(4, 8)) ch.cb?.("CHANNEL_ERROR");
+    expect(logWarnMock).toHaveBeenCalledTimes(1);
+
+    // Mismo episodio abierto, pero este trae motivo: no se suprime.
+    mockChannels[5].cb?.("TIMED_OUT", new Error("InvalidJWTToken"));
+
+    expect(logWarnMock).toHaveBeenCalledTimes(2);
+    expect(logWarnMock.mock.calls[1][2]).toMatchObject({ error: "InvalidJWTToken" });
+
+    for (const dispose of disposers) dispose();
   });
 
   it("el dispose no dispara re-suscripciones", () => {
