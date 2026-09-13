@@ -11,6 +11,7 @@ import { isAuthLikeError } from "./auth-error";
 import { isBackendWarmingUp } from "./idempotency";
 import { errorLogMessage } from "./errors";
 import { resolveNetworkTransport } from "./network-transport";
+import { runBounded } from "./bounded-concurrency";
 
 /**
  * Tiers estandarizados de staleTime para React Query.
@@ -74,6 +75,39 @@ let lastRecoveryAt = 0;
 const RECOVERY_COOLDOWN_MS = 30_000;
 
 /**
+ * Cuántas revalidaciones salen a la vez tras recuperar la sesión.
+ *
+ * Las ráfagas de fallo medidas en app_error_logs (60 días) llegan de 3 a 12 en el mismo segundo.
+ * Con tope 4 la punta baja a un tercio sin serializar la recuperación entera.
+ */
+const RECOVERY_REFETCH_CONCURRENCY = 4;
+
+let draining = false;
+
+/**
+ * Revalida las queries activas de a pocas en vez de todas de golpe.
+ *
+ * `invalidateQueries()` sin filtro hace dos cosas: marcar obsoleto y refetchear. Aquí se separan
+ * —`refetchType: "none"` solo marca— para gobernar nosotros cuántas peticiones salen a la vez.
+ * El diagnóstico está en runBounded; el número, en RECOVERY_REFETCH_CONCURRENCY.
+ */
+async function drainRecoveryRefetch(): Promise<void> {
+  // Dos recuperaciones seguidas no deben duplicar la avalancha que esto viene a evitar.
+  if (draining) return;
+  draining = true;
+  try {
+    await queryClient.invalidateQueries({ refetchType: "none" });
+    const tasks = queryClient
+      .getQueryCache()
+      .findAll({ type: "active", stale: true })
+      .map((query) => () => queryClient.refetchQueries({ queryKey: query.queryKey, exact: true }));
+    await runBounded(tasks, RECOVERY_REFETCH_CONCURRENCY);
+  } finally {
+    draining = false;
+  }
+}
+
+/**
  * Recupera una sesión Supabase degradada (token stale tras horas en foreground o
  * red inestable) y refetchea las queries activas. Coalesce + cooldown para no
  * tormentear en fallos persistentes; `force` lo salta (reintento manual). Incidente
@@ -96,7 +130,12 @@ export async function recoverSession(opts?: { force?: boolean }): Promise<void> 
         const { data } = await supabase.auth.getSession();
         if (data.session) await supabase.auth.refreshSession();
       }
-      await queryClient.invalidateQueries();
+      /* La promesa se resuelve con el TOKEN fresco, sin esperar a los datos. Los tres que la
+         esperan lo hacen para reintentar con sesión sana —el retry de crear/actualizar
+         movimiento, que corre DENTRO de SAVE_CEILING_MS, y el reconcile de detección—, no para
+         leer queries. Hacerles esperar además la revalidación escalonada solo acercaba el
+         guardado a su propio techo. Las revalidaciones se drenan aparte. */
+      void drainRecoveryRefetch().catch(() => undefined);
     } catch (error) {
       logWarn("session-recovery", error instanceof Error ? error.message : String(error));
     } finally {

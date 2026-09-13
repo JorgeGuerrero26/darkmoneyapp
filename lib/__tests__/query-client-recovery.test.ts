@@ -32,4 +32,32 @@ describe("recuperación al volver a foreground", () => {
     expect(foregroundListener).toContain("NetInfo.refresh()");
     expect(foregroundListener).not.toContain("recoverSession(");
   });
+
+  /**
+   * Los tres que esperan recoverSession lo hacen por el TOKEN: el retry de crear/actualizar
+   * movimiento (dentro de SAVE_CEILING_MS) y el reconcile de detección. Si la promesa esperara
+   * además a la revalidación escalonada, el guardado se acercaría a su propio techo — que es el
+   * fallo que esto viene a evitar, no a causar.
+   */
+  it("recoverSession no espera a la revalidación: resuelve con el token", () => {
+    const source = readFileSync(join(__dirname, "..", "query-client.ts"), "utf8");
+    const bodyStart = source.indexOf("export async function recoverSession");
+    const body = source.slice(bodyStart, source.indexOf("const PERSIST_MAX_AGE_MS", bodyStart));
+
+    expect(bodyStart).toBeGreaterThanOrEqual(0);
+    expect(body).toContain("void drainRecoveryRefetch()");
+    // El invalidate global sin filtro era la avalancha: 3-12 peticiones en el mismo segundo.
+    expect(body).not.toContain("await queryClient.invalidateQueries()");
+  });
+
+  it("la revalidación sale con tope de concurrencia, no toda de golpe", () => {
+    const source = readFileSync(join(__dirname, "..", "query-client.ts"), "utf8");
+    const drainStart = source.indexOf("async function drainRecoveryRefetch");
+    const drain = source.slice(drainStart, source.indexOf("export async function recoverSession", drainStart));
+
+    expect(drainStart).toBeGreaterThanOrEqual(0);
+    // refetchType "none" separa "marcar obsoleto" de "pedir": sin eso el tope no sirve de nada.
+    expect(drain).toContain('refetchType: "none"');
+    expect(drain).toContain("runBounded(tasks, RECOVERY_REFETCH_CONCURRENCY)");
+  });
 });
