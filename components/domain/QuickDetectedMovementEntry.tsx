@@ -1127,7 +1127,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
         <AiQuotaWarningBanner usage={aiUsageQuery.data} />
         <View style={styles.appRow}>
           <View style={styles.logoWrap}>
-            <Image source={require("../../assets/images/logo-sin-fondo.png")} style={styles.heroLogo} resizeMode="contain" />
+            <Image source={require("../../assets/images/logo-darkmoney.png")} style={styles.heroLogo} resizeMode="contain" />
           </View>
           <Text style={styles.appSourceLabel}>Detectado desde {displayAppLabel}</Text>
         </View>

@@ -35,7 +35,7 @@
     "web": {
       "bundler": "metro",
       "output": "static",
-      "favicon": "./assets/images/logo-sin-fondo.png"
+      "favicon": "./assets/images/logo-darkmoney.png"
     },
     "plugins": [
       "expo-router",
@@ -43,7 +43,7 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/logo-sin-fondo.png",
+          "image": "./assets/images/logo-darkmoney.png",
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#0E0D0C"

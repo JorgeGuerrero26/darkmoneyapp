@@ -205,7 +205,7 @@ function AppSplash() {
       <Animated.View style={{ opacity: logoOpacity, transform: [{ scale: logoScale }] }}>
         <Animated.View style={{ opacity: pulseAnim }}>
           <Image
-            source={require("../assets/images/logo-sin-fondo.png")}
+            source={require("../assets/images/logo-darkmoney.png")}
             style={styles.splashLogo}
             resizeMode="contain"
           />
@@ -810,7 +810,7 @@ function NotificationSetup() {
             style={{ opacity: workspaceBootstrapLogoOpacity, transform: [{ scale: workspaceBootstrapLogoScale }] }}
           >
             <Image
-              source={require("../assets/images/logo-sin-fondo.png")}
+              source={require("../assets/images/logo-darkmoney.png")}
               style={styles.workspaceBootstrapFrontLogo}
               resizeMode="contain"
             />
