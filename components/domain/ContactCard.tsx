@@ -70,12 +70,17 @@ function ContactCardContent({
       onPress={onPress}
       onLongPress={onLongPress}
       selected={selected}
-      leading={<ResourceCardIcon icon={ContactIcon} color={COLORS.primary} />}
+      /* Chrome neutro, no color de dinero.
+         "Persona" iba en el color de marca y "Cobra"/"Debe" en el verde y el rojo que en esta
+         app significan plata entrando y saliendo — sobre un badge que no es un monto. Un
+         contacto se distingue por su nombre, no por su color; el color queda libre para lo que
+         de verdad es dinero. La deuda sigue dicha, con palabras, en la sección que la agrupa. */
+      leading={<ResourceCardIcon icon={ContactIcon} color={COLORS.storm} />}
       meta={
         <>
-          {primaryDetail ? <ResourceCardBadge label={typeLabel} color={COLORS.primary} /> : null}
-          {metrics?.receivablePendingTotal ? <ResourceCardBadge label="Cobra" color={COLORS.pine} /> : null}
-          {metrics?.payablePendingTotal ? <ResourceCardBadge label="Debe" color={COLORS.rosewood} /> : null}
+          {primaryDetail ? <ResourceCardBadge label={typeLabel} color={COLORS.storm} /> : null}
+          {metrics?.receivablePendingTotal ? <ResourceCardBadge label="Cobra" color={COLORS.storm} /> : null}
+          {metrics?.payablePendingTotal ? <ResourceCardBadge label="Debe" color={COLORS.storm} /> : null}
           {movementCount > 0 ? <ResourceCardMetaText>{movementCount} mov.</ResourceCardMetaText> : null}
           {metrics?.subscriptionCount ? <ResourceCardMetaText>{metrics.subscriptionCount} subs.</ResourceCardMetaText> : null}
           {metrics?.recurringIncomeCount ? <ResourceCardMetaText>{metrics.recurringIncomeCount} ingresos</ResourceCardMetaText> : null}

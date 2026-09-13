@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Trash2 } from "lucide-react-native";
+import { Tag, Trash2 } from "lucide-react-native";
 
 import { ErrorBoundary } from "../components/ui/ErrorBoundary";
 import { ScreenHeader } from "../components/layout/ScreenHeader";
@@ -27,7 +27,7 @@ import { MetricSummaryBar } from "../components/ui/MetricSummaryBar";
 import { useWorkspaceSnapshotQuery } from "../services/queries/workspace-data";
 import { buildSpendTypesSummary } from "../features/spend-types/lib/spendTypesSummary";
 import { ClassifyCategoriesSheet } from "../features/spend-types/components/ClassifyCategoriesSheet";
-import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING } from "../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../constants/theme";
 
 /** Los tres del modelo clásico. Se ofrecen; no se escriben sin que nadie los pida. */
 const STARTERS = [
@@ -90,6 +90,15 @@ function SpendTypesScreen() {
   const summary = useMemo(
     () => buildSpendTypesSummary(spendTypes.length, categoriesWithType, expenseCategories),
     [categoriesWithType, expenseCategories, spendTypes.length],
+  );
+
+  /** Cuántas categorías traen este tipo por defecto. Es lo que hace que el tipo sirva o no. */
+  const categoriasPorTipo = useCallback(
+    (spendTypeId: number) => {
+      const n = gastoCategorias.filter((category) => category.defaultSpendTypeId === spendTypeId).length;
+      return n === 1 ? "1 categoría" : `${n} categorías`;
+    },
+    [gastoCategorias],
   );
 
   const sections = useMemo<Section[]>(
@@ -177,10 +186,19 @@ function SpendTypesScreen() {
               }}
             >
               {() => (
+                /* Fila de lista de verdad: el mismo patrón que Categorías —ícono neutro en su
+                   recuadro, lo que hay dentro, y chevron porque lleva a algún sitio—. Era una
+                   línea con un punto de color y nada más: rompía el patrón y, encima, el punto
+                   usaba la paleta reservada para dinero. Un tipo se distingue por su nombre. */
                 <ResourceCard
-                  variant="line"
+                  variant="row"
                   title={item.name}
-                  leading={<View style={[styles.dot, { backgroundColor: item.color ?? COLORS.fog }]} />}
+                  subtitle={categoriasPorTipo(item.id)}
+                  leading={
+                    <View style={styles.iconWrap}>
+                      <Tag size={20} color={COLORS.storm} strokeWidth={2} />
+                    </View>
+                  }
                   onPress={() => { setEditTarget(item); setFormVisible(true); }}
                 />
               )}
@@ -247,7 +265,14 @@ function SpendTypesScreen() {
 }
 
 const styles = StyleSheet.create({
-  dot: { width: 10, height: 10, borderRadius: RADIUS.full },
+  iconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: RADIUS.lg,
+    backgroundColor: SURFACE.card,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   footnote: {
     fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.xs,

@@ -10,7 +10,7 @@ import {
   ResourceCardMetaText,
 } from "../ui/ResourceCard";
 import { CategoryGlyph } from "./CategoryGlyph";
-import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import type { CategoryOverview } from "../../types/domain";
 
 type Props = {
@@ -50,10 +50,15 @@ function CategoryCardBase({
       selected={selected}
       onPress={onPress}
       onLongPress={onLongPress}
+      /* Chrome neutro.
+         El ícono y el punto iban del color de la categoría, y la etiqueta "Gasto" del mismo
+         verde que en esta app significa dinero entrando: una categoría de GASTO pintada como un
+         ingreso. Es la contradicción más directa posible de la regla de color.
+         El color que elige el usuario no se pierde: sigue siendo el suyo en los gráficos, que es
+         donde el color distingue datos. Aquí las categorías se distinguen por su nombre. */
       leading={
-        <View style={[styles.iconWrap, { backgroundColor: color + "18" }]}>
-          <View style={[styles.colorDot, { backgroundColor: color }]} />
-          {category.icon ? <CategoryGlyph icon={category.icon} color={color} size={20} /> : null}
+        <View style={styles.iconWrap}>
+          {category.icon ? <CategoryGlyph icon={category.icon} color={COLORS.storm} size={20} /> : null}
         </View>
       }
       actions={[
@@ -66,7 +71,7 @@ function CategoryCardBase({
       ]}
       meta={
         <>
-          <ResourceCardBadge label={kindLabel} color={color} />
+          <ResourceCardBadge label={kindLabel} color={COLORS.storm} />
           {category.isSystem ? <ResourceCardBadge label="Sistema" color={COLORS.info} /> : null}
           {!category.isActive ? <ResourceCardBadge label="Inactiva" color={COLORS.warning} /> : null}
           <ResourceCardMetaText>{category.movementCount} mov. · {category.subscriptionCount} suscr.</ResourceCardMetaText>
@@ -87,6 +92,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: RADIUS.lg,
+    backgroundColor: SURFACE.card,
     alignItems: "center",
     justifyContent: "center",
   },
