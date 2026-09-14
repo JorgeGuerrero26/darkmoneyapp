@@ -13,6 +13,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "1.0.10",
     title: "DarkMoney estrena look",
     changes: [
+      "Si la conexión falla al traer tus créditos, deudas o presupuestos, la app te lo dice y te deja reintentar con un toque. Antes se quedaba cargando sin fin y solo se arreglaba saliendo de la pantalla y volviendo a entrar.",
       "Al repartir un gasto entre categorías, borrar el monto sugerido ya no te cierra el teclado ni te devuelve la cifra de antes; la categoría que ya habías elegido aparece como la primera parte; y la app te avisa si pusiste dos veces la misma categoría.",
       "Para cerrar el teclado ya no hay que buscar la barra que salía encima: ahora hay una flecha hacia abajo al lado de la X, siempre en el mismo sitio, en todos los formularios.",
       "Dividir un gasto entre varias categorías vuelve a funcionar bien: ahora se ve lo que escribes en cada monto, la pantalla se abre entera en vez de quedarse a medias con el teclado encima, y cada parte puede decir si fue una necesidad o un gusto.",

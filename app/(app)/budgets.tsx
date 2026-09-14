@@ -2,7 +2,7 @@ import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SectionListRenderItem } from "react-native";
 import * as Haptics from "expo-haptics";
-import { CheckSquare, Copy, Download, MoreVertical, Target, Trash2, X } from "lucide-react-native";
+import { CheckSquare, CloudOff, Copy, Download, MoreVertical, Target, Trash2, X } from "lucide-react-native";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { useQueryClient } from "@tanstack/react-query";
@@ -107,6 +107,8 @@ function BudgetsScreen() {
     // Los presupuestos llegan en la query diferida: sin esto la lista pintaría
     // "sin presupuestos" durante ese hueco en vez del skeleton.
     deferredLoading,
+    deferredFailed,
+    retryDeferred,
     isRefetching: snapshotRefetching,
     refetch: refetchSnapshot,
     dataUpdatedAt,
@@ -600,17 +602,29 @@ function BudgetsScreen() {
               </SkeletonList>
             ),
           }}
-          empty={{
-            ...emptyState,
-            ...(emptyState.action.kind === "create" ? { icon: Target } : {}),
-            action: {
-              label: emptyState.action.label,
-              onPress:
-                emptyState.action.kind === "create"
-                  ? () => setFormVisible(true)
-                  : clearFilters,
-            },
-          }}
+          empty={
+            /* Un "no tienes presupuestos" cuando lo que falló fue la carga manda al usuario a
+               crear uno que ya existe. Si la consulta diferida se rindió, se dice eso. */
+            deferredFailed
+              ? {
+                  icon: CloudOff,
+                  title: "No se pudieron cargar",
+                  description:
+                    "Tus presupuestos siguen guardados; es la conexión la que falló al traerlos.",
+                  action: { label: "Reintentar", onPress: retryDeferred },
+                }
+              : {
+                  ...emptyState,
+                  ...(emptyState.action.kind === "create" ? { icon: Target } : {}),
+                  action: {
+                    label: emptyState.action.label,
+                    onPress:
+                      emptyState.action.kind === "create"
+                        ? () => setFormVisible(true)
+                        : clearFilters,
+                  },
+                }
+          }
           refreshing={snapshotRefetching || movementsLoading}
           onRefresh={onRefresh}
         />

@@ -244,6 +244,59 @@ describe("useWorkspaceSnapshotQuery", () => {
     expect(deferredOptions.enabled).toBe(false);
   });
 
+  /**
+   * `deferredLoading` decía "cargando" mientras no hubiera datos, sin mirar por qué. Con
+   * `retry: 1`, dos intentos fallidos dejaban la consulta en error y quieta, y la pantalla de
+   * créditos y deudas pintaba el skeleton para siempre: solo se salía yendo a otra pantalla y
+   * volviendo. En app_error_logs esa consulta falla 1-2 veces por día, todos los días.
+   */
+  it("si la diferida se rindió, deja de decir que carga y avisa del fallo", () => {
+    mockUseQuery
+      .mockReturnValueOnce({ data: { accounts: [] } })
+      .mockReturnValueOnce({ data: undefined, isError: true });
+
+    const result = useWorkspaceSnapshotQuery(perfil, 7);
+
+    expect(result.deferredLoading).toBe(false);
+    expect(result.deferredFailed).toBe(true);
+  });
+
+  it("mientras la diferida sigue viva, carga y NO se marca como fallo", () => {
+    mockUseQuery
+      .mockReturnValueOnce({ data: { accounts: [] } })
+      .mockReturnValueOnce({ data: undefined, isError: false });
+
+    const result = useWorkspaceSnapshotQuery(perfil, 7);
+
+    expect(result.deferredLoading).toBe(true);
+    expect(result.deferredFailed).toBe(false);
+  });
+
+  it("con datos diferidos no hay ni carga ni fallo", () => {
+    mockUseQuery
+      .mockReturnValueOnce({ data: { accounts: [] } })
+      .mockReturnValueOnce({ data: { budgets: [], obligations: [] }, isError: false });
+
+    const result = useWorkspaceSnapshotQuery(perfil, 7);
+
+    expect(result.deferredLoading).toBe(false);
+    expect(result.deferredFailed).toBe(false);
+  });
+
+  /** El botón "Reintentar" del estado de error solo debe repetir la diferida, no el núcleo. */
+  it("retryDeferred refetchea solo la parte diferida", () => {
+    const coreRefetch = jest.fn();
+    const deferredRefetch = jest.fn();
+    mockUseQuery
+      .mockReturnValueOnce({ data: { accounts: [] }, refetch: coreRefetch })
+      .mockReturnValueOnce({ data: undefined, isError: true, refetch: deferredRefetch });
+
+    useWorkspaceSnapshotQuery(perfil, 7).retryDeferred();
+
+    expect(deferredRefetch).toHaveBeenCalledTimes(1);
+    expect(coreRefetch).not.toHaveBeenCalled();
+  });
+
   it("hace como máximo dos intentos totales", () => {
     useWorkspaceSnapshotQuery(
       {

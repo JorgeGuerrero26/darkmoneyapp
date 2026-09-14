@@ -1417,11 +1417,34 @@ export function useWorkspaceSnapshotQuery(
     return coreResult;
   }, [core, deferred, deferredEnabled]);
 
+  /** Reintento manual de SOLO la parte diferida, para el botón del estado de error. */
+  const retryDeferred = useCallback(() => {
+    void deferred.refetch();
+  }, [deferred]);
+
+  /**
+   * `deferredLoading` decía "cargando" mientras NO hubiera datos — incluyera o no la causa un
+   * fallo definitivo. Con `retry: 1`, dos intentos fallidos dejaban la consulta en error y
+   * quieta, pero la pantalla seguía viendo "sin datos" y pintaba el skeleton para siempre: el
+   * usuario se quedaba mirando girar la lista de créditos y deudas hasta salir y volver a entrar.
+   *
+   * Medido en app_error_logs: la consulta diferida falla 1-2 veces por día, todos los días, desde
+   * hace semanas (AbortError sobre la key `workspace-snapshot … deferred`).
+   *
+   * Apagar el skeleton a secas no valía: la pantalla habría dicho "Sin créditos ni deudas"
+   * teniéndolos, que en una app de finanzas es peor que una espera. De ahí `deferredFailed`, que
+   * deja a la pantalla distinguir "no hay nada" de "no se pudo cargar" y ofrecer reintentar.
+   */
+  const deferredSettledEmpty = deferredEnabled && !deferredData;
+
   return {
     data,
     isLoading: core.isLoading,
     /** Obligaciones y presupuestos todavía en vuelo: gatear skeletons con esto. */
-    deferredLoading: deferredEnabled && !deferredData,
+    deferredLoading: deferredSettledEmpty && !deferred.isError,
+    /** Se intentó, se agotaron los reintentos y no hay datos: pintar error con reintentar. */
+    deferredFailed: deferredSettledEmpty && deferred.isError,
+    retryDeferred,
     isFetching: core.isFetching || deferred.isFetching,
     isRefetching: core.isRefetching || deferred.isRefetching,
     isError: core.isError,

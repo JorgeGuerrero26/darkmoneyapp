@@ -110,6 +110,8 @@ function ObligationsScreen() {
     data: snapshot,
     isLoading: coreLoading,
     deferredLoading,
+    deferredFailed,
+    retryDeferred,
     dataUpdatedAt,
   } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const isLoading = coreLoading || deferredLoading;
@@ -732,6 +734,8 @@ function ObligationsScreen() {
             renderItem={renderObligationItem}
             activeFilters={activeFilters}
             loading={isLoading}
+            failed={deferredFailed}
+            onRetry={retryDeferred}
             sharedLoading={sharedLoading}
             hasActiveSharedItems={activeSharedData.length > 0}
             refreshing={listRefreshing}
