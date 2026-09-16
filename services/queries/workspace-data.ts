@@ -1649,6 +1649,15 @@ export type PersistLearningFeedbackInput = {
   metadata?: JsonValue | null;
 };
 
+/**
+ * Ventana de la query base del dashboard.
+ *
+ * Se exporta porque quien mide promedios o medianas sobre estos movimientos necesita saber
+ * hasta dónde llegan: un mes anterior a la ventana no es un mes sin gasto, es un mes que no se
+ * cargó, y tratarlos igual hunde cualquier estadística en silencio.
+ */
+export const DASHBOARD_MOVEMENTS_WINDOW_DAYS = 90;
+
 export function useDashboardMovementsQuery(
   workspaceId: number | null,
   // Obligatorio a proposito, aunque acepte undefined: forma parte de la queryKey, asi que un
@@ -1661,7 +1670,7 @@ export function useDashboardMovementsQuery(
     queryFn: async (): Promise<DashboardMovementRow[]> => {
       if (!supabase || !workspaceId) return [];
       const since = new Date();
-      since.setDate(since.getDate() - 90);
+      since.setDate(since.getDate() - DASHBOARD_MOVEMENTS_WINDOW_DAYS);
       const { data, error } = await supabase
         .from("movements")
         .select("id, movement_type, status, occurred_at, source_amount, destination_amount, source_account_id, destination_account_id, category_id, spend_type_id, counterparty_id, description")

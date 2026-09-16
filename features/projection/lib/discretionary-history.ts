@@ -37,6 +37,15 @@ export type MonthlyDiscretionarySpendInput<TMovement extends SpendHistoryMovemen
   months: number;
   /** Monto de gasto ya convertido; 0 si el movimiento no es un gasto. */
   expenseAmountOf: (movement: TMovement) => number;
+  /**
+   * Desde cuándo están cargados los movimientos. Un mes que empieza antes de esta fecha se
+   * descarta entero en vez de valer 0.
+   *
+   * Importa mucho más de lo que parece: el dashboard trae 90 días, así que pedirle seis meses
+   * devolvería tres meses reales y tres ceros. La mediana de [0, 0, 0, 800, 850, 900] es 400 —
+   * la mitad de lo que el usuario gasta— y nada en pantalla delataría de dónde salió.
+   */
+  earliestCoveredDate?: Date | null;
   now?: Date;
 };
 
@@ -49,6 +58,7 @@ export function monthlyDiscretionarySpend<TMovement extends SpendHistoryMovement
   movements,
   months,
   expenseAmountOf,
+  earliestCoveredDate = null,
   now = new Date(),
 }: MonthlyDiscretionarySpendInput<TMovement>): number[] {
   const monthCount = Math.max(0, Math.floor(months));
@@ -57,10 +67,13 @@ export function monthlyDiscretionarySpend<TMovement extends SpendHistoryMovement
   const totals = new Map<string, number>();
   const orderedKeys: string[] = [];
   for (let i = monthCount; i >= 1; i -= 1) {
-    const key = format(subMonths(now, i), "yyyy-MM");
+    const monthDate = subMonths(now, i);
+    if (earliestCoveredDate && startOfMonth(monthDate) < earliestCoveredDate) continue;
+    const key = format(monthDate, "yyyy-MM");
     orderedKeys.push(key);
     totals.set(key, 0);
   }
+  if (orderedKeys.length === 0) return [];
 
   const oldest = startOfMonth(subMonths(now, monthCount));
   const newest = endOfMonth(subMonths(now, 1));

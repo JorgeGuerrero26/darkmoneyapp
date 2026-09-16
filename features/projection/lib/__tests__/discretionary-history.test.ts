@@ -75,4 +75,30 @@ describe("monthlyDiscretionarySpend", () => {
   it("sin meses pedidos devuelve una lista vacía, no una división por cero", () => {
     expect(run([movement("2026-08-10T12:00:00.000Z", 900)], 0)).toEqual([]);
   });
+
+  it("descarta los meses que empiezan antes de lo cargado en vez de darles un cero", () => {
+    // El dashboard trae 90 días: junio no está completo y contarlo como 0 partiría la mediana.
+    const totals = monthlyDiscretionarySpend({
+      movements: [movement("2026-07-10T12:00:00.000Z", 800), movement("2026-08-10T12:00:00.000Z", 900)],
+      months: 6,
+      expenseAmountOf: amountOf,
+      earliestCoveredDate: new Date("2026-06-18T00:00:00.000Z"),
+      now: NOW,
+    });
+
+    // Solo julio y agosto: junio empieza el 1 y los datos arrancan el 18.
+    expect(totals).toEqual([800, 900]);
+  });
+
+  it("si nada está cubierto devuelve vacío, no una mediana inventada", () => {
+    const totals = monthlyDiscretionarySpend({
+      movements: [movement("2026-08-10T12:00:00.000Z", 900)],
+      months: 6,
+      expenseAmountOf: amountOf,
+      earliestCoveredDate: new Date("2027-01-01T00:00:00.000Z"),
+      now: NOW,
+    });
+
+    expect(totals).toEqual([]);
+  });
 });
