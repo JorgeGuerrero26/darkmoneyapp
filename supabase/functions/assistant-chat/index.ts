@@ -536,8 +536,10 @@ async function runListObligations(
   let query = client
     .from("v_obligation_summary")
     .select(
-      "title, direction, status, counterparty_id, currency_code, pending_amount, due_date, progress_percent, payment_count, " +
-        "principal_current_amount, payment_total, start_date, installment_amount, installment_count, payment_plan",
+      // Una sola cadena literal, sin concatenar: los tipos de supabase-js parsean el select EN
+      // TIEMPO DE TIPO y necesitan un literal. Un `"a" + "b"` se ensancha a `string`, el parser
+      // se rinde y devuelve GenericStringError, que revienta en cuanto alguien lee una columna.
+      "title, direction, status, counterparty_id, currency_code, pending_amount, due_date, progress_percent, payment_count, principal_current_amount, payment_total, start_date, installment_amount, installment_count, payment_plan",
     )
     .eq("workspace_id", workspaceId)
     .order("pending_amount", { ascending: false })
@@ -588,8 +590,8 @@ async function runListRecurringIncome(
   const { data, error } = await client
     .from("recurring_income")
     .select(
-      "name, amount, currency_code, frequency, interval_count, day_of_month, next_expected_date, end_date, status, " +
-        "payer_party_id, description",
+      // Literal única, no concatenada. Ver el comentario en runListObligations.
+      "name, amount, currency_code, frequency, interval_count, day_of_month, next_expected_date, end_date, status, payer_party_id, description",
     )
     .eq("workspace_id", workspaceId)
     .eq("status", "active")
@@ -625,8 +627,9 @@ async function runListBudgets(
   const { data, error } = await client
     .from("v_budget_progress")
     .select(
-      "name, scope_label, scope_kind, spend_type_name, recurrence, period_start, period_end, currency_code, " +
-        "limit_amount, spent_amount, remaining_amount, used_percent",
+      // Literal única, no concatenada. Aquí el fallo no daba error porque nadie lee columnas de
+      // estas filas, pero el tipo ya estaba roto igual: el primero que las lea lo descubre.
+      "name, scope_label, scope_kind, spend_type_name, recurrence, period_start, period_end, currency_code, limit_amount, spent_amount, remaining_amount, used_percent",
     )
     .eq("workspace_id", workspaceId)
     .eq("is_active", true)
