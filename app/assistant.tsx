@@ -26,7 +26,7 @@ import { ScreenHeader } from "../components/layout/ScreenHeader";
 import { HeaderActionGroup } from "../components/ui/HeaderActionGroup";
 import { MovementForm, type MovementDuplicateSource } from "../components/forms/MovementForm";
 import { AssistantDraftCard } from "../features/assistant/components/AssistantDraftCard";
-import { draftToMovementInput, draftDedupeKey, type ResolvedIds } from "../features/assistant/lib/draft-to-input";
+import { draftToMovementInput, draftDedupeKey, draftMovementStatus, type ResolvedIds } from "../features/assistant/lib/draft-to-input";
 import { useOriginBackNavigation } from "../hooks/useOriginBackNavigation";
 import { useToast } from "../hooks/useToast";
 import { useAuth } from "../lib/auth-context";
@@ -576,6 +576,11 @@ function AssistantScreen() {
     }
     if (draft.description) lines.push({ label: "Detalle", value: draft.description });
     lines.push({ label: "Fecha", value: draft.occurredAt ?? "hoy" });
+    // Con fecha futura se guarda planificado: no mueve el saldo hoy y entra en la proyección del
+    // mes que le toca. Sin decirlo, el usuario guarda y no ve el dinero salir de su cuenta.
+    if (draftMovementStatus(draft, new Date().toISOString()) === "planned") {
+      lines.push({ label: "Estado", value: "Planificado — aún no mueve tu saldo" });
+    }
     const canEdit = draft.operation === "expense" || draft.operation === "income" || draft.operation === "transfer";
     return { title: titleByOp[draft.operation], amountLabel: `${sign} ${money}`.trim(), lines, canEdit };
   }

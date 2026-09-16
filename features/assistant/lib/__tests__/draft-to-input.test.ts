@@ -1,4 +1,4 @@
-import { draftDedupeKey, draftToMovementInput } from "../draft-to-input";
+import { draftDedupeKey, draftMovementStatus, draftToMovementInput } from "../draft-to-input";
 import type { AssistantDraft } from "../../../../services/queries/assistant";
 
 const base: AssistantDraft = {
@@ -59,5 +59,19 @@ describe("draftToMovementInput", () => {
 
   it("dedupeKey es estable para el mismo draft", () => {
     expect(draftDedupeKey(base)).toBe(draftDedupeKey({ ...base }));
+  });
+
+  describe("un gasto con fecha futura se anota, no se aplica", () => {
+    it("fecha futura queda planificada y no toca el saldo de hoy", () => {
+      const input = draftToMovementInput({ ...base, occurredAt: "2027-04-10" }, ids);
+      expect(input.status).toBe("planned");
+      expect(draftMovementStatus({ ...base, occurredAt: "2027-04-10" }, ids.todayIso)).toBe("planned");
+    });
+
+    it("hoy y el pasado siguen aplicándose", () => {
+      expect(draftToMovementInput({ ...base, occurredAt: "2026-07-21" }, ids).status).toBe("posted");
+      expect(draftToMovementInput({ ...base, occurredAt: "2026-06-01" }, ids).status).toBe("posted");
+      expect(draftToMovementInput(base, ids).status).toBe("posted");
+    });
   });
 });

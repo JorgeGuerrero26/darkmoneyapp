@@ -23,10 +23,22 @@ export function draftDedupeKey(draft: AssistantDraft): string {
  * Convierte un borrador de gasto/ingreso/transferencia en MovementFormInput.
  * Los pagos de suscripción/deuda NO pasan por aquí: usan sus mutations propias.
  */
+/**
+ * Un gasto con fecha futura no ha pasado: se anota, no se aplica.
+ *
+ * Antes todo salía `posted`, así que anotar la matrícula de abril restaba el dinero de la cuenta
+ * hoy. Con `planned` no toca el saldo y sí entra en la proyección del mes que le toca, que es lo
+ * que el usuario quería al poner esa fecha.
+ */
+export function draftMovementStatus(draft: AssistantDraft, todayIso: string): "posted" | "planned" {
+  if (!draft.occurredAt) return "posted";
+  return draft.occurredAt > todayIso.slice(0, 10) ? "planned" : "posted";
+}
+
 export function draftToMovementInput(draft: AssistantDraft, ids: ResolvedIds): MovementFormInput {
   const occurredAt = draft.occurredAt ? `${draft.occurredAt}T12:00:00.000Z` : ids.todayIso;
   const common = {
-    status: "posted" as const,
+    status: draftMovementStatus(draft, ids.todayIso),
     occurredAt,
     description: draft.description ?? "",
     categoryId: ids.categoryId,
