@@ -13,6 +13,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "1.0.10",
     title: "DarkMoney estrena look",
     changes: [
+      "El asistente ya puede contestar en qué vas a terminar: \"¿cuánto voy a tener en abril?\", \"¿me alcanza para la maestría?\". Y usa exactamente el mismo cálculo que la proyección del inicio, así que el número que te dice en el chat y el que ves en la pantalla son el mismo — antes se lo inventaba de cero cada vez y te podía dar dos respuestas distintas a la misma pregunta.",
       "Nuevo: la app ya te dice en qué vas a terminar. En la pestaña de Flujo hay una proyección mes a mes —3, 6 o 12 meses— que toma tu saldo de hoy, le suma tus sueldos y las cuotas que te van a pagar, le resta tus suscripciones y lo que sueles gastar, y te dice con cuánto cierras. Tocas un mes y ves de dónde sale cada número. Antes la app solo miraba hasta fin de mes.",
       "El gasto que la proyección supone para los meses que vienen no es tu promedio, es tu mes típico. La diferencia importa: si un mes te compraste un teléfono, el promedio te lo cobraría otra vez todos los meses siguientes. Así no.",
       "La proyección te dice qué parte de cada mes está pactada de verdad —un sueldo, una cuota acordada— y qué parte es una estimación suya. Un número a doce meses y uno a treinta días no merecen la misma confianza, y ahora se nota.",
