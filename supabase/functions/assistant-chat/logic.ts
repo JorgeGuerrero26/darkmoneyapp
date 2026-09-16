@@ -607,9 +607,21 @@ export const ASSISTANT_TOOLS = [
   {
     type: "function",
     function: {
+      name: "projection_gaps",
+      description:
+        "Revisa qué le falta al workspace para que la proyección sea creíble y devuelve cada hueco con lo que le hace al número. Úsala cuando el usuario pregunte '¿por qué me sale tan bajo/alto?', '¿qué me falta registrar?', '¿puedo confiar en esta proyección?', y también por tu cuenta ANTES de dar una proyección si sospechas que falta información. " +
+        "Los huecos que detecta son todos invisibles en pantalla: un ingreso fijo con la fecha esperada vencida no da error, simplemente deja de sumar. Cuando encuentres alguno, dile al usuario QUÉ le hace a la cifra (usa el campo `impact`) y ofrécele arreglarlo — si el arreglo es registrar algo, propónselo con draft_recurring, draft_obligation o draft_movement en vez de mandarlo a buscar la pantalla. " +
+        "No la llames en cada mensaje: una vez por conversación basta salvo que el usuario registre algo nuevo.",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "draft_movement",
       description:
-        "PROPONE (no registra) un movimiento a partir de lo que el usuario dijo. Úsala cuando el usuario quiere anotar un gasto/ingreso/transferencia o pagar una suscripción o deuda. Resuelve nombres de cuenta/categoría/suscripción/deuda contra el CONTEXTO DEL WORKSPACE. Si falta un dato obligatorio o hay ambigüedad (varias suscripciones/deudas coinciden), NO llames esta tool: pregunta al usuario en texto con las opciones concretas.",
+        "PROPONE (no registra) un movimiento a partir de lo que el usuario dijo. Úsala cuando el usuario quiere anotar un gasto/ingreso/transferencia o pagar una suscripción o deuda. Resuelve nombres de cuenta/categoría/suscripción/deuda contra el CONTEXTO DEL WORKSPACE. Si falta un dato obligatorio o hay ambigüedad (varias suscripciones/deudas coinciden), NO llames esta tool: pregunta al usuario en texto con las opciones concretas. " +
+        "FECHA FUTURA: sirve, y es la forma de anotar un gasto que aún no ocurre ('en abril pago la maestría', 'el mes que viene me toca el seguro'). Pon esa fecha en occurredAt: se guarda como PLANIFICADO, no toca el saldo de hoy y entra en la proyección del mes que le toca. Dile al usuario justo eso al proponerlo. Un gasto ya hecho lleva su fecha real o ninguna.",
       parameters: {
         type: "object",
         properties: {

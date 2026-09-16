@@ -826,6 +826,125 @@ async function runProjectCashflow(
   };
 }
 
+/**
+ * Qué le falta a la proyección para ser creíble.
+ *
+ * Todos los huecos de aquí comparten una propiedad: **no se ven**. Un ingreso fijo cuya fecha
+ * esperada quedó en el pasado no da error y no aparece en rojo — simplemente deja de sumar, y el
+ * mes sale más pobre sin que nada lo explique. Una deuda sin cronograma tampoco falla: aporta
+ * cero. El usuario mira una tabla completa y no tiene forma de saber que le faltan mil soles.
+ *
+ * Por eso cada hueco dice qué le hace al número, no solo que existe. "Te falta el plan de pagos"
+ * no mueve a nadie; "esta deuda no está sumando nada en ningún mes" sí.
+ */
+async function runProjectionGaps(
+  client: ReturnType<typeof userClient>,
+  workspaceId: number,
+): Promise<Record<string, unknown>> {
+  const todayIso = new Date().toISOString().slice(0, 10);
+
+  const [balances, income, subs, obligations] = await Promise.all([
+    client.from("v_account_balances").select("name, type, currency_code, current_balance").eq("workspace_id", workspaceId),
+    client
+      .from("recurring_income")
+      .select("name, amount, currency_code, next_expected_date, payer_party_id, status")
+      .eq("workspace_id", workspaceId)
+      .eq("status", "active"),
+    client
+      .from("subscriptions")
+      .select("name, amount, currency_code, next_due_date, status")
+      .eq("workspace_id", workspaceId)
+      .eq("status", "active"),
+    client
+      .from("v_obligation_summary")
+      .select("title, direction, status, currency_code, pending_amount, due_date, payment_plan, installment_amount")
+      .eq("workspace_id", workspaceId)
+      .eq("status", "active"),
+  ]);
+
+  const gaps: Array<Record<string, unknown>> = [];
+
+  const LIQUID = new Set(["bank", "cash", "savings"]);
+  const liquidAccounts = (balances.data ?? []).filter((account) => LIQUID.has(String(account.type ?? "")));
+  if (liquidAccounts.length === 0) {
+    gaps.push({
+      gap: "sin_cuentas_liquidas",
+      impact: "La proyección arranca de cero: no hay ninguna cuenta de banco, efectivo o ahorros de donde sacar el saldo de partida.",
+      fix: "Crear la cuenta donde recibe su dinero.",
+    });
+  }
+
+  const incomeRows = income.data ?? [];
+  if (incomeRows.length === 0) {
+    gaps.push({
+      gap: "sin_ingresos_fijos",
+      impact: "Todos los meses de la proyección salen solo con gastos, así que el saldo cae en picado y la cifra final no significa nada.",
+      fix: "Registrar el sueldo o el cobro mensual con draft_recurring (kind='recurring_income').",
+    });
+  }
+
+  // Una fecha esperada vencida no da error: el compromiso deja de sumar, sin más.
+  const staleIncome = incomeRows.filter((row) => String(row.next_expected_date ?? "") < todayIso);
+  if (staleIncome.length > 0) {
+    gaps.push({
+      gap: "ingresos_con_fecha_vencida",
+      items: staleIncome.map((row) => ({ name: row.name, expectedOn: row.next_expected_date, amount: Number(row.amount ?? 0) })),
+      impact: "Su próxima llegada quedó en el pasado porque nunca se confirmó, así que NO están sumando en ningún mes de la proyección y el saldo sale más bajo de lo real.",
+      fix: "Confirmar la llegada en la pantalla de Ingresos fijos; eso mueve la fecha al siguiente período.",
+    });
+  }
+
+  const staleSubs = (subs.data ?? []).filter((row) => String(row.next_due_date ?? "") < todayIso);
+  if (staleSubs.length > 0) {
+    gaps.push({
+      gap: "suscripciones_con_fecha_vencida",
+      items: staleSubs.map((row) => ({ name: row.name, dueOn: row.next_due_date, amount: Number(row.amount ?? 0) })),
+      impact: "Su próximo cobro quedó en el pasado, así que no están restando en ningún mes y el saldo sale más alto de lo real.",
+      fix: "Registrar el pago pendiente, o corregir la fecha del próximo cobro.",
+    });
+  }
+
+  // Sin plan, sin cuota y sin vencimiento una deuda no tiene dónde caer: aporta cero.
+  const mute = (obligations.data ?? []).filter(
+    (row) =>
+      Number(row.pending_amount ?? 0) > 0.009 &&
+      !row.payment_plan &&
+      !(row.installment_amount && Number(row.installment_amount) > 0.009) &&
+      !row.due_date,
+  );
+  if (mute.length > 0) {
+    gaps.push({
+      gap: "deudas_sin_cronograma",
+      items: mute.map((row) => ({ title: row.title, direction: row.direction, pending: Number(row.pending_amount ?? 0) })),
+      impact: "No tienen plan de pagos, ni cuota, ni fecha de vencimiento, así que la proyección no sabe en qué mes ponerlas y NO las está contando en absoluto.",
+      fix: "Acordar el cronograma en la pantalla de la deuda: cuotas iguales, o montos a medida mes por mes.",
+    });
+  }
+
+  const currencies = new Set<string>();
+  for (const row of [...incomeRows, ...(subs.data ?? []), ...(obligations.data ?? [])]) {
+    const code = String((row as Record<string, unknown>).currency_code ?? "");
+    if (code) currencies.add(code);
+  }
+  if (currencies.size > 1) {
+    gaps.push({
+      gap: "varias_monedas",
+      items: [...currencies],
+      impact: "Si falta el tipo de cambio de alguna, esos compromisos no se suman. project_cashflow lo dice en unconvertedCount.",
+      fix: "Revisar Tipos de cambio.",
+    });
+  }
+
+  return {
+    checkedOn: todayIso,
+    gapCount: gaps.length,
+    gaps,
+    ...(gaps.length === 0
+      ? { note: "No hay huecos evidentes: lo registrado alcanza para que la proyección tenga sentido." }
+      : {}),
+  };
+}
+
 // ─── Búsqueda semántica (Gemini embeddings + pgvector, indexado lazy) ────────
 
 async function embedTexts(texts: string[], taskType: "RETRIEVAL_DOCUMENT" | "RETRIEVAL_QUERY"): Promise<number[][]> {
@@ -1144,6 +1263,8 @@ Deno.serve(async (req) => {
             output = { result: await runListRecurringIncome(rls, workspaceId), movementIds: [] };
           } else if (name === "project_cashflow") {
             output = { result: await runProjectCashflow(rls, workspaceId, args), movementIds: [] };
+          } else if (name === "projection_gaps") {
+            output = { result: await runProjectionGaps(rls, workspaceId), movementIds: [] };
           } else if (name === "remember_fact") {
             output = { result: await runRememberFact(rls, workspaceId, user.id, args), movementIds: [] };
           } else if (name === "forget_fact") {
