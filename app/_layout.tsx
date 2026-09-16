@@ -22,7 +22,7 @@ import {
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SURFACE } from "../constants/theme";
 import { AuthProvider, useAuth } from "../lib/auth-context";
 import { logWarn } from "../lib/error-logger";
-import { markStartupReady } from "../lib/startup-timing";
+import { markStartupPhase, markStartupReady } from "../lib/startup-timing";
 import { queryClient, queryPersistOptions } from "../lib/query-client";
 import { supabase } from "../lib/supabase";
 import { WorkspaceProvider, useWorkspace } from "../lib/workspace-context";
@@ -378,6 +378,33 @@ function NotificationSetup() {
     if (showWorkspaceBootstrapOverlayRaw || !hasSignedInSession) return;
     markStartupReady("ready", { online: onlineManager.isOnline() });
   }, [showWorkspaceBootstrapOverlayRaw, hasSignedInSession]);
+
+  /**
+   * Los hitos del arranque, juntos y en orden.
+   *
+   * Van en un solo efecto a propósito: lo que se quiere leer después es la SECUENCIA —qué tramo
+   * se come la mitad de los 6,5 s— y repartidos por el archivo sería imposible seguirla. Cada
+   * condición es la misma que retiene el overlay en `bootstrapGateRef`, así que el desglose
+   * explica exactamente el número que se registra al final.
+   *
+   * markStartupPhase es idempotente y solo guarda la primera marca, así que los re-render no
+   * mueven los valores.
+   */
+  useEffect(() => {
+    if (!isCheckingSession) markStartupPhase("sessionResolved");
+    if (profile?.id) markStartupPhase("profileReady");
+    if (workspaces !== undefined) markStartupPhase("workspacesResolved");
+    if (activeWorkspaceId) markStartupPhase("workspaceActive");
+    if (snapshot) markStartupPhase("snapshotReady");
+    if (initialWorkspaceQueriesSettled) markStartupPhase("initialQueriesSettled");
+  }, [
+    isCheckingSession,
+    profile?.id,
+    workspaces,
+    activeWorkspaceId,
+    snapshot,
+    initialWorkspaceQueriesSettled,
+  ]);
 
   // Válvula de escape: el overlay bloquea TODO el touch (pointerEvents="auto"). Si una
   // query se cuelga (red lenta/caída) el usuario quedaba encerrado sin poder tocar nada
@@ -1068,7 +1095,13 @@ export default function RootLayout() {
       <View style={styles.overlay} />
       <SafeAreaProvider>
         <FontLoader>
-          <PersistQueryClientProvider client={queryClient} persistOptions={queryPersistOptions}>
+          <PersistQueryClientProvider
+            client={queryClient}
+            persistOptions={queryPersistOptions}
+            /* Cuánto cuesta leer y parsear el caché del disco. Es el primer tramo sospechoso:
+               el blob trae snapshot, primera página de movimientos y notificaciones. */
+            onSuccess={() => markStartupPhase("cacheHydrated")}
+          >
             <AuthProvider>
               <WorkspaceProvider>
                 <DisplayCurrencyProvider>

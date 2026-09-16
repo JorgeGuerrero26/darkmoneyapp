@@ -16,6 +16,29 @@ const JS_START = Date.now();
 
 let reported = false;
 
+/** Hitos del arranque, en ms desde JS_START. */
+const phases: Record<string, number> = {};
+
+/**
+ * Marca un hito del arranque.
+ *
+ * El total ya se medía, pero un solo número no dice DÓNDE se van los 6,5 s: no se puede
+ * optimizar lo que no está partido. Y el reparto importa porque los tramos se arreglan de
+ * formas opuestas —el bundle adelgazando código, el disco cargando menos, la red pidiendo
+ * menos— así que apuntar sin saber es tirar una moneda.
+ *
+ * NO escribe nada por su cuenta: los hitos se acumulan y viajan TODOS dentro de la única línea
+ * que escribe markStartupReady. Una fila por arranque, igual que antes; el 75 % de
+ * app_error_logs ya era ruido de una sola fuente y no vamos a añadir otra.
+ *
+ * Solo cuenta la PRIMERA vez que se marca cada hito: los efectos de React se re-ejecutan y la
+ * segunda pasada mediría el re-render, no el arranque.
+ */
+export function markStartupPhase(name: string): void {
+  if (reported || phases[name] !== undefined) return;
+  phases[name] = Date.now() - JS_START;
+}
+
 /**
  * ¿Ya terminó el arranque? Durante el arranque en frío hay muchas queries sin datos por
  * definición, y la app ya muestra su propia pantalla de carga: avisar ahí de "red lenta" es
@@ -56,6 +79,10 @@ export function markStartupReady(outcome: "ready" | "timeout", extra?: Record<st
     // varíe entre 545 y 2255 ms con la misma red. Se mide antes de tocarlo porque el arreglo
     // obvio —cachear en memoria— arriesga usar un refresh token viejo y perder la sesión.
     sessionReads: sessionStorageReadStats(),
+    /* El desglose de `ms`. Cada valor es "ms desde que arrancó el JS", así que las diferencias
+       entre hitos consecutivos son la duración de cada tramo. Un hito ausente es un tramo que
+       nunca se alcanzó — en un arranque con `timeout`, eso señala exactamente dónde se atascó. */
+    phases,
     ...extra,
   });
 }
