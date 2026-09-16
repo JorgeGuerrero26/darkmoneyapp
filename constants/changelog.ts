@@ -13,6 +13,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "1.0.10",
     title: "DarkMoney estrena look",
     changes: [
+      "La pantalla del asistente ahora se ve como el resto de la app: los botones de arriba son las mismas pastillas que en las demás pantallas, y las burbujas del chat tienen las esquinas igual de redondeadas que las tarjetas. Antes parecía una pantalla de otra aplicación.",
       "El asistente ya sabe leer los acuerdos de pago. Si pactaste \"350 en mayo, 550 en junio y 610 de ahí en adelante\", ahora puedes preguntarle cuánto te toca cobrar en noviembre y te contesta con la cuota de ese mes, en vez del total de la deuda. También sabe de quién viene cada ingreso fijo, así que puedes preguntarle quién te paga qué.",
       "El color que le pones a cada categoría por fin sirve para algo: el mapa de gasto por categoría del inicio ahora se pinta con tus colores en vez de unos fijos. Si dos categorías comparten color, la que más gastó se queda con el suyo y la otra toma otro tono, para que no salgan dos pedazos iguales.",
       "Al editar un crédito o una deuda, la fila del plan de pagos ya no dice \"Sin plan\" cuando sí tienes uno acordado: ahora muestra el que hay, como \"A medida · 12 pagos\".",

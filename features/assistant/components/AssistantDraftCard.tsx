@@ -72,7 +72,9 @@ export function AssistantDraftCard({
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: RADIUS.lg,
+    /* xl, el radio de Card y ResourceCard. Es una tarjeta: estaba en lg (10) y salía más
+       cuadrada que cualquier otra superficie de la app. */
+    borderRadius: RADIUS.xl,
     borderWidth: 1,
     borderColor: SURFACE.cardActiveBorder,
     backgroundColor: SURFACE.card,

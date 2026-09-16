@@ -23,6 +23,7 @@ import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { ErrorBoundary } from "../components/ui/ErrorBoundary";
 import { TextField } from "../components/ui/TextField";
 import { ScreenHeader } from "../components/layout/ScreenHeader";
+import { HeaderActionGroup } from "../components/ui/HeaderActionGroup";
 import { MovementForm, type MovementDuplicateSource } from "../components/forms/MovementForm";
 import { AssistantDraftCard } from "../features/assistant/components/AssistantDraftCard";
 import { draftToMovementInput, draftDedupeKey, type ResolvedIds } from "../features/assistant/lib/draft-to-input";
@@ -759,24 +760,28 @@ function AssistantScreen() {
         onBack={handleBack}
         withSafeArea
         rightAction={
-          <View style={styles.headerActions}>
-            {items.length > 1 ? (
-              <TouchableOpacity
-                onPress={() => setClearVisible(true)}
-                accessibilityLabel="Borrar la conversación"
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <Trash2 size={20} color={COLORS.storm} />
-              </TouchableOpacity>
-            ) : null}
-          <TouchableOpacity
-            onPress={toggleSpeakMode}
-            accessibilityLabel={speakMode ? "Desactivar modo hablante" : "Activar modo hablante"}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            {speakMode ? <Volume2 size={20} color={COLORS.primary} /> : <VolumeX size={20} color={COLORS.storm} />}
-            </TouchableOpacity>
-          </View>
+          /* Las mismas pastillas que las otras 16 pantallas. Aquí eran iconos pelados de 20 px
+             sin fondo ni háptica: la cabecera del asistente se leía como de otra app. El estado
+             activo del modo hablante lo pinta el propio componente. */
+          <HeaderActionGroup
+            actions={[
+              ...(items.length > 1
+                ? [{
+                    key: "clear",
+                    icon: Trash2,
+                    accessibilityLabel: "Borrar la conversación",
+                    onPress: () => setClearVisible(true),
+                  }]
+                : []),
+              {
+                key: "speak",
+                icon: speakMode ? Volume2 : VolumeX,
+                active: speakMode,
+                accessibilityLabel: speakMode ? "Desactivar modo hablante" : "Activar modo hablante",
+                onPress: toggleSpeakMode,
+              },
+            ]}
+          />
         }
       />
       <View style={styles.flex}>
@@ -879,9 +884,13 @@ function AssistantScreen() {
   );
 }
 
+/** Lado del avatar del asistente. Nombrado porque la sangría de las sugerencias depende de él. */
+const AVATAR_SIZE = 26;
+/** Tope del campo de escribir: ~4 líneas antes de que empiece a desplazarse. */
+const INPUT_MAX_HEIGHT = 110;
+
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: COLORS.canvas },
-  headerActions: { flexDirection: "row", alignItems: "center", gap: SPACING.md },
   flex: { flex: 1 },
   listContent: {
     padding: SPACING.md,
@@ -889,7 +898,9 @@ const styles = StyleSheet.create({
   },
   bubble: {
     maxWidth: "86%",
-    borderRadius: RADIUS.lg,
+    /* xl, igual que Card y ResourceCard. Estaba en lg (10) y las burbujas salían más cuadradas
+       que cualquier otra superficie de la app. */
+    borderRadius: RADIUS.xl,
     borderWidth: 1,
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
@@ -899,14 +910,14 @@ const styles = StyleSheet.create({
     alignSelf: "flex-end",
     backgroundColor: SURFACE.cardActive,
     borderColor: SURFACE.cardActiveBorder,
-    borderBottomRightRadius: 6,
+    borderBottomRightRadius: RADIUS.sm,
   },
   bubbleAssistant: {
     alignSelf: "flex-start",
     flexShrink: 1,
     backgroundColor: SURFACE.card,
     borderColor: SURFACE.cardBorder,
-    borderTopLeftRadius: 6,
+    borderTopLeftRadius: RADIUS.sm,
   },
   assistantRow: {
     flexDirection: "row",
@@ -915,25 +926,25 @@ const styles = StyleSheet.create({
     maxWidth: "94%",
   },
   avatar: {
-    width: 26,
-    height: 26,
+    width: AVATAR_SIZE,
+    height: AVATAR_SIZE,
     borderRadius: RADIUS.full,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: SURFACE.cardActive,
     borderWidth: 1,
     borderColor: SURFACE.cardActiveBorder,
-    marginTop: 2,
+    marginTop: SPACING.xs / 2,
   },
   suggestions: {
     gap: SPACING.xs,
     marginTop: SPACING.xs,
-    marginLeft: 26 + SPACING.xs,
+    marginLeft: AVATAR_SIZE + SPACING.xs,
   },
   suggestionChip: {
     alignSelf: "flex-start",
     paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs + 2,
+    paddingVertical: SPACING.sm,
     borderRadius: RADIUS.full,
     borderWidth: 1,
     borderColor: SURFACE.cardActiveBorder,
@@ -992,7 +1003,7 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    maxHeight: 110,
+    maxHeight: INPUT_MAX_HEIGHT,
     color: COLORS.text,
     fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.sm,
