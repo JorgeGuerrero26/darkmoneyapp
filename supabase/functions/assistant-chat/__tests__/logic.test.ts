@@ -251,6 +251,77 @@ describe("normalizeObligationDraft", () => {
     expect(d.startDate).toBe("2026-07-01");
     expect(d.dueDate).toBe("2026-08-01");
   });
+
+  describe("cronograma", () => {
+    it("sin cronograma el plan queda en null y se nota en el resumen", () => {
+      const d = normalizeObligationDraft({ direction: "receivable", principalAmount: 200 }, "2026-07-23")!;
+      expect(d.paymentPlan).toBeNull();
+      expect(d.planSummary).toBeNull();
+    });
+
+    it("montos distintos por mes con cola: el caso que el usuario dicta hablando", () => {
+      const d = normalizeObligationDraft(
+        {
+          direction: "receivable",
+          principalAmount: 22610,
+          counterpartyName: "Kevin",
+          installments: [
+            { amount: 500, dueDate: "2026-10-15" },
+            { amount: 750, dueDate: "2026-11-15" },
+          ],
+          tailAmount: 610,
+        },
+        "2026-09-16",
+      )!;
+
+      expect(d.paymentPlan).toEqual({
+        mode: "custom",
+        agreed: [
+          { amount: 500, dueDate: "2026-10-15" },
+          { amount: 750, dueDate: "2026-11-15" },
+        ],
+        tail: 610,
+      });
+      expect(d.planSummary).toContain("2 cuotas pactadas");
+      expect(d.planSummary).toContain("610");
+    });
+
+    it("una cola sola ya es un plan: 'me paga 200 al mes hasta que termine'", () => {
+      const d = normalizeObligationDraft(
+        { direction: "receivable", principalAmount: 1000, tailAmount: 200 },
+        "2026-09-16",
+      )!;
+      expect(d.paymentPlan).toEqual({ mode: "custom", agreed: [], tail: 200 });
+    });
+
+    it("cuotas iguales, con su primer vencimiento", () => {
+      const d = normalizeObligationDraft(
+        { direction: "payable", principalAmount: 900, equalInstallments: 3, firstDueDate: "2026-10-01" },
+        "2026-09-16",
+      )!;
+      expect(d.paymentPlan).toEqual({ mode: "equal", count: 3, firstDueDate: "2026-10-01" });
+    });
+
+    it("descarta cuotas sin monto usable en vez de guardar un plan torcido", () => {
+      const d = normalizeObligationDraft(
+        {
+          direction: "receivable",
+          principalAmount: 500,
+          installments: [{ amount: 100 }, { amount: 0 }, { amount: -50 }, { dueDate: "2026-11-01" }, { amount: 200 }],
+        },
+        "2026-09-16",
+      )!;
+      expect(d.paymentPlan).toEqual({ mode: "custom", agreed: [{ amount: 100 }, { amount: 200 }], tail: null });
+    });
+
+    it("una fecha de cuota ilegible no invalida la cuota, solo su fecha", () => {
+      const d = normalizeObligationDraft(
+        { direction: "receivable", principalAmount: 500, installments: [{ amount: 100, dueDate: "octubre" }] },
+        "2026-09-16",
+      )!;
+      expect(d.paymentPlan).toEqual({ mode: "custom", agreed: [{ amount: 100 }], tail: null });
+    });
+  });
 });
 
 describe("normalizeRecurringDraft", () => {

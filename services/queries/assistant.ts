@@ -44,6 +44,11 @@ export type BudgetDraft = {
   alertPercent: number;
 };
 
+/** Mismo shape que `features/obligations/lib/payment-plan.ts`; se guarda tal cual. */
+export type ObligationPlanDraft =
+  | { mode: "equal"; count: number; firstDueDate?: string }
+  | { mode: "custom"; agreed: Array<{ amount: number; dueDate?: string }>; tail: number | null; firstDueDate?: string };
+
 export type ObligationDraft = {
   direction: "receivable" | "payable";
   title: string;
@@ -53,6 +58,8 @@ export type ObligationDraft = {
   startDate: string;
   dueDate: string | null;
   description: string | null;
+  paymentPlan: ObligationPlanDraft | null;
+  planSummary: string | null;
 };
 
 export type RecurringDraft = {
@@ -146,7 +153,42 @@ function parseObligationDraft(raw: unknown): ObligationDraft | null {
     startDate: d.startDate,
     dueDate: due,
     description: str(d.description),
+    // El plan llega tal cual y se vuelve a validar aquí: es lo que decide en qué mes cae cada
+    // cuota, y viene de un modelo. Si no cuadra, la deuda se registra sin él en vez de guardar
+    // un cronograma torcido.
+    paymentPlan: parseObligationPlan(d.paymentPlan),
+    planSummary: str(d.planSummary),
   };
+}
+
+function parseObligationPlan(raw: unknown): ObligationPlanDraft | null {
+  if (!raw || typeof raw !== "object") return null;
+  const d = raw as Record<string, unknown>;
+  const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+  const first = typeof d.firstDueDate === "string" && DATE_RE.test(d.firstDueDate) ? { firstDueDate: d.firstDueDate } : {};
+
+  if (d.mode === "equal") {
+    const count = Math.floor(Number(d.count));
+    if (!Number.isFinite(count) || count <= 0) return null;
+    return { mode: "equal", count, ...first };
+  }
+  if (d.mode === "custom") {
+    const agreed = (Array.isArray(d.agreed) ? d.agreed : [])
+      .map((entry) => {
+        if (!entry || typeof entry !== "object") return null;
+        const row = entry as Record<string, unknown>;
+        const amount = Number(row.amount);
+        if (!Number.isFinite(amount) || amount <= 0) return null;
+        const dueDate = typeof row.dueDate === "string" && DATE_RE.test(row.dueDate) ? row.dueDate : undefined;
+        return dueDate ? { amount, dueDate } : { amount };
+      })
+      .filter((entry): entry is { amount: number; dueDate?: string } => entry != null);
+    const tailRaw = Number(d.tail);
+    const tail = Number.isFinite(tailRaw) && tailRaw > 0 ? tailRaw : null;
+    if (agreed.length === 0 && tail == null) return null;
+    return { mode: "custom", agreed, tail, ...first };
+  }
+  return null;
 }
 
 function parseRecurringDraft(raw: unknown): RecurringDraft | null {

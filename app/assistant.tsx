@@ -468,6 +468,8 @@ function AssistantScreen() {
         startDate: ob.startDate,
         dueDate: ob.dueDate,
         description: ob.description,
+        // Sin plan la deuda queda muda para la proyección: no hay mes donde ponerla.
+        paymentPlan: ob.paymentPlan,
       });
       setDraftStatus(item.id, "saved");
       showToast(ob.direction === "receivable" ? "Crédito registrado" : "Deuda registrada", "success");
@@ -604,6 +606,12 @@ function AssistantScreen() {
       { label: "Contraparte", value: o.counterpartyName ?? "—" },
     ];
     if (o.dueDate) lines.push({ label: "Vence", value: o.dueDate });
+    // El plan es lo que decide si esta deuda aparecerá en la proyección o no dirá nada. Se
+    // muestra antes de guardar —incluida su ausencia— porque después hay que ir a buscarlo.
+    lines.push({
+      label: "Plan de pagos",
+      value: o.planSummary ?? "Sin plan — no entrará en la proyección",
+    });
     if (o.description) lines.push({ label: "Detalle", value: o.description });
     return {
       title: o.direction === "receivable" ? "Registrar crédito" : "Registrar deuda",

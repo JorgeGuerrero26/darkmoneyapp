@@ -329,6 +329,11 @@ export function normalizeBudgetDraft(raw: Record<string, unknown>, nowLimaYmd: s
 }
 
 // ─── Draft de deuda/crédito (acción con confirmación) ────────────────────────
+/** Mismo shape que `features/obligations/lib/payment-plan.ts` guarda en `obligations.payment_plan`. */
+export type ObligationPlanDraft =
+  | { mode: "equal"; count: number; firstDueDate?: string }
+  | { mode: "custom"; agreed: Array<{ amount: number; dueDate?: string }>; tail: number | null; firstDueDate?: string };
+
 export type ObligationDraft = {
   direction: "receivable" | "payable";
   title: string;
@@ -338,7 +343,60 @@ export type ObligationDraft = {
   startDate: string;
   dueDate: string | null;
   description: string | null;
+  /** El cronograma pactado, si el usuario lo dijo. Sin él la deuda no entra en la proyección. */
+  paymentPlan: ObligationPlanDraft | null;
+  /** Cómo se lee ese plan, para la tarjeta de confirmación. */
+  planSummary: string | null;
 };
+
+/** Tope de cuotas escritas a mano. Un acuerdo real no lista cincuenta. */
+const MAX_AGREED = 48;
+
+/**
+ * El cronograma que dictó el usuario.
+ *
+ * Es la diferencia entre una deuda que la proyección puede colocar mes a mes y una que aporta
+ * cero: sin plan, sin cuota y sin vencimiento, el calendario no sabe dónde ponerla.
+ *
+ * Una cola (`tailAmount`) sin cuotas pactadas también vale: "me paga 200 al mes hasta que
+ * termine" es un plan completo.
+ */
+function normalizeObligationPlan(
+  raw: Record<string, unknown>,
+  startDate: string,
+): { plan: ObligationPlanDraft; summary: string } | null {
+  const firstDueDate = asDate(raw.firstDueDate) ?? undefined;
+  const anchor = firstDueDate ? { firstDueDate } : {};
+
+  const equalCount = Math.floor(Number(raw.equalInstallments));
+  if (Number.isFinite(equalCount) && equalCount > 0) {
+    const count = Math.min(equalCount, MAX_AGREED * 4);
+    return {
+      plan: { mode: "equal", count, ...anchor },
+      summary: `${count} cuotas iguales desde ${firstDueDate ?? `un mes después de ${startDate}`}`,
+    };
+  }
+
+  const rawList = Array.isArray(raw.installments) ? raw.installments : [];
+  const agreed: Array<{ amount: number; dueDate?: string }> = [];
+  for (const entry of rawList.slice(0, MAX_AGREED)) {
+    if (!entry || typeof entry !== "object") continue;
+    const row = entry as Record<string, unknown>;
+    const amount = Number(row.amount);
+    if (!Number.isFinite(amount) || amount <= 0) continue;
+    const dueDate = asDate(row.dueDate);
+    agreed.push(dueDate ? { amount: Number(amount.toFixed(2)), dueDate } : { amount: Number(amount.toFixed(2)) });
+  }
+
+  const tailRaw = Number(raw.tailAmount);
+  const tail = Number.isFinite(tailRaw) && tailRaw > 0 ? Number(tailRaw.toFixed(2)) : null;
+  if (agreed.length === 0 && tail == null) return null;
+
+  const parts: string[] = [];
+  if (agreed.length > 0) parts.push(`${agreed.length} ${agreed.length === 1 ? "cuota pactada" : "cuotas pactadas"}`);
+  if (tail != null) parts.push(`luego ${tail} al mes hasta cerrar`);
+  return { plan: { mode: "custom", agreed, tail, ...anchor }, summary: `A medida · ${parts.join(", ")}` };
+}
 
 /**
  * Normaliza la deuda/crédito propuesta vía draft_obligation. NO crea nada ni mueve
@@ -366,6 +424,7 @@ export function normalizeObligationDraft(raw: Record<string, unknown>, nowLimaYm
         ? `Deuda con ${counterpartyName}`
         : "Deuda";
   const title = (str(raw.title) ?? defaultTitle).slice(0, 80);
+  const planned = normalizeObligationPlan(raw, startDate);
 
   return {
     direction,
@@ -376,6 +435,8 @@ export function normalizeObligationDraft(raw: Record<string, unknown>, nowLimaYm
     startDate,
     dueDate,
     description,
+    paymentPlan: planned?.plan ?? null,
+    planSummary: planned?.summary ?? null,
   };
 }
 
@@ -756,7 +817,8 @@ export const ASSISTANT_TOOLS = [
     function: {
       name: "draft_obligation",
       description:
-        "PROPONE registrar una deuda o crédito (dinero que te deben o que debes). Úsala para 'anota que le presté 200 a Juan' (direction=receivable), 'le debo 500 a mi hermano' (direction=payable), 'me deben...'. NUNCA lo creas tú: la app muestra una tarjeta y el usuario confirma. Pon el nombre en counterpartyName. Solo registra la deuda; NO mueve dinero de ninguna cuenta. Si falta el monto o no queda claro si te deben o debes, pregúntalo.",
+        "PROPONE registrar una deuda o crédito (dinero que te deben o que debes). Úsala para 'anota que le presté 200 a Juan' (direction=receivable), 'le debo 500 a mi hermano' (direction=payable), 'me deben...'. NUNCA lo creas tú: la app muestra una tarjeta y el usuario confirma. Pon el nombre en counterpartyName. Solo registra la deuda; NO mueve dinero de ninguna cuenta. Si falta el monto o no queda claro si te deben o debes, pregúntalo. " +
+        "EL CRONOGRAMA IMPORTA: una deuda sin plan, sin cuota y sin vencimiento NO entra en la proyección de flujo — no aporta nada a ningún mes. Si el usuario dice cómo le van a pagar, recógelo: montos distintos por mes van en `installments` en orden, lo que se repite después en `tailAmount`, y un acuerdo simple en `equalInstallments`. 'Me paga 500 en octubre, 750 en noviembre y 610 de ahí en adelante' es installments=[{500,2026-10-15},{750,2026-11-15}] con tailAmount=610. Si no lo dijo, pregúntale cómo se va a pagar antes de dar por buena la deuda: es un dato que se pierde para siempre si no se recoge ahora.",
       parameters: {
         type: "object",
         properties: {
@@ -768,6 +830,29 @@ export const ASSISTANT_TOOLS = [
           startDate: { type: "string", description: "YYYY-MM-DD; por defecto hoy." },
           dueDate: { type: "string", description: "YYYY-MM-DD de vencimiento, opcional." },
           description: { type: "string", description: "Detalle opcional." },
+          installments: {
+            type: "array",
+            description:
+              "Cuotas pactadas EN ORDEN, cuando el usuario dicta montos distintos por mes ('350 en mayo, 550 en junio…'). Cada una con su monto y, si lo dijo, su fecha.",
+            items: {
+              type: "object",
+              properties: {
+                amount: { type: "number", description: "Monto de esa cuota." },
+                dueDate: { type: "string", description: "YYYY-MM-DD de esa cuota, si el usuario la dijo." },
+              },
+              required: ["amount"],
+            },
+          },
+          tailAmount: {
+            type: "number",
+            description:
+              "Monto que se repite cada mes DESPUÉS de las pactadas, hasta cerrar el saldo ('…y 610 de ahí en adelante'). Vale solo, sin installments: 'me paga 200 al mes hasta que termine'.",
+          },
+          equalInstallments: {
+            type: "number",
+            description: "Número de cuotas IGUALES, si el acuerdo es simple ('en 6 cuotas'). No lo mezcles con installments.",
+          },
+          firstDueDate: { type: "string", description: "YYYY-MM-DD del primer pago. Por defecto, un mes después del inicio." },
         },
         required: ["direction", "principalAmount"],
       },
