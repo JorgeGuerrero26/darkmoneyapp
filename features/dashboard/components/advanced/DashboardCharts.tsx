@@ -7,6 +7,7 @@ import { RingChart, type RingSegment } from "../../../../components/ui/RingChart
 import { SparkLine } from "../../../../components/ui/SparkLine";
 import { formatCurrency } from "../../../../components/ui/AmountDisplay";
 import { COLORS, EXTENDED_PALETTE } from "../../../../constants/theme";
+import { resolveCategorySliceColors } from "../../lib/categorySliceColors";
 import { useUiStore } from "../../../../store/ui-store";
 import { SectionTitle } from "../simple/SectionTitle";
 import { dashboardSimpleStyles as subStyles } from "../simple/styles";
@@ -186,27 +187,39 @@ export function CategoryDonutChart({
   onOpenCategory,
 }: {
   catTotals: Map<number | null, number>;
-  categories: { id: number; name: string }[];
+  categories: { id: number; name: string; color?: string | null }[];
   currency: string;
   onOpenCategory: (categoryId: number | null) => void;
 }) {
   const privacyMode = useUiStore((state) => state.privacyMode);
   const catMap = new Map(categories.map((category) => [category.id, category.name]));
+  const catColorMap = new Map(categories.map((category) => [category.id, category.color ?? null]));
   const allEntries = Array.from(catTotals.entries())
-    .map(([id, total]) => ({ id, key: `${id ?? "none"}`, name: catMap.get(id ?? -1) ?? "Sin categoría", total }))
+    .map(([id, total]) => ({
+      id,
+      key: `${id ?? "none"}`,
+      name: catMap.get(id ?? -1) ?? "Sin categoría",
+      color: id === null ? null : catColorMap.get(id) ?? null,
+      total,
+    }))
     .filter((entry) => entry.total > 0)
     .sort((a, b) => b.total - a.total);
   const total = allEntries.reduce((sum, entry) => sum + entry.total, 0);
   if (total <= 0) return null;
 
-  const palette = [COLORS.expense, COLORS.expense, COLORS.primary, COLORS.secondary, EXTENDED_PALETTE.skySoft];
   const topEntries = allEntries.slice(0, 5);
   const rest = allEntries.slice(5).reduce((sum, entry) => sum + entry.total, 0);
-  const visibleEntries = rest > 0 ? [...topEntries, { id: undefined, key: "rest", name: "Otros", total: rest }] : topEntries;
+  const visibleEntries = rest > 0
+    ? [...topEntries, { id: undefined, key: "rest", name: "Otros", color: null, total: rest }]
+    : topEntries;
+  /* El color que el usuario eligió para cada categoría, que hasta ahora no se veía en ninguna
+     parte de la app. La paleta cubre los tramos sin color y los choques. Ver
+     features/dashboard/lib/categorySliceColors.ts. */
+  const sliceColors = resolveCategorySliceColors(visibleEntries);
   const segments: RingSegment[] = visibleEntries.map((entry, index) => ({
     key: entry.key,
     value: entry.total,
-    color: palette[index % palette.length] + "dd",
+    color: sliceColors[index] + "dd",
   }));
   const leader = visibleEntries[0];
   const leaderPct = Math.round((leader.total / total) * 100);
@@ -234,7 +247,7 @@ export function CategoryDonutChart({
               onPress={entry.id === undefined ? undefined : () => onOpenCategory(entry.id ?? null)}
               activeOpacity={entry.id === undefined ? 1 : 0.84}
             >
-              <View style={[subStyles.donutLegendDot, { backgroundColor: palette[index % palette.length] }]} />
+              <View style={[subStyles.donutLegendDot, { backgroundColor: sliceColors[index] }]} />
               <View style={{ flex: 1 }}>
                 <Text style={subStyles.donutLegendName} numberOfLines={1}>{entry.name}</Text>
                 <Text style={subStyles.donutLegendPct}>{Math.round((entry.total / total) * 100)}% del gasto</Text>

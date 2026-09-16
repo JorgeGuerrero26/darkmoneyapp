@@ -13,6 +13,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "1.0.10",
     title: "DarkMoney estrena look",
     changes: [
+      "El color que le pones a cada categoría por fin sirve para algo: el mapa de gasto por categoría del inicio ahora se pinta con tus colores en vez de unos fijos. Si dos categorías comparten color, la que más gastó se queda con el suyo y la otra toma otro tono, para que no salgan dos pedazos iguales.",
       "Al editar un crédito o una deuda, la fila del plan de pagos ya no dice \"Sin plan\" cuando sí tienes uno acordado: ahora muestra el que hay, como \"A medida · 12 pagos\".",
       "Si la conexión falla al traer tus créditos, deudas o presupuestos, la app te lo dice y te deja reintentar con un toque. Antes se quedaba cargando sin fin y solo se arreglaba saliendo de la pantalla y volviendo a entrar.",
       "Al repartir un gasto entre categorías, borrar el monto sugerido ya no te cierra el teclado ni te devuelve la cifra de antes; la categoría que ya habías elegido aparece como la primera parte; y la app te avisa si pusiste dos veces la misma categoría.",
