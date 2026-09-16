@@ -13,6 +13,10 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "1.0.10",
     title: "DarkMoney estrena look",
     changes: [
+      "Nuevo: la app ya te dice en qué vas a terminar. En la pestaña de Flujo hay una proyección mes a mes —3, 6 o 12 meses— que toma tu saldo de hoy, le suma tus sueldos y las cuotas que te van a pagar, le resta tus suscripciones y lo que sueles gastar, y te dice con cuánto cierras. Tocas un mes y ves de dónde sale cada número. Antes la app solo miraba hasta fin de mes.",
+      "El gasto que la proyección supone para los meses que vienen no es tu promedio, es tu mes típico. La diferencia importa: si un mes te compraste un teléfono, el promedio te lo cobraría otra vez todos los meses siguientes. Así no.",
+      "La proyección te dice qué parte de cada mes está pactada de verdad —un sueldo, una cuota acordada— y qué parte es una estimación suya. Un número a doce meses y uno a treinta días no merecen la misma confianza, y ahora se nota.",
+      "Los gastos que anotas con fecha futura por fin sirven para algo: se podían registrar desde hace tiempo, pero no aparecían en ningún lado. Ahora entran en la proyección del mes que les toca.",
       "La pantalla del asistente ahora se ve como el resto de la app: los botones de arriba son las mismas pastillas que en las demás pantallas, y las burbujas del chat tienen las esquinas igual de redondeadas que las tarjetas. Antes parecía una pantalla de otra aplicación.",
       "El asistente ya sabe leer los acuerdos de pago. Si pactaste \"350 en mayo, 550 en junio y 610 de ahí en adelante\", ahora puedes preguntarle cuánto te toca cobrar en noviembre y te contesta con la cuota de ese mes, en vez del total de la deuda. También sabe de quién viene cada ingreso fijo, así que puedes preguntarle quién te paga qué.",
       "El color que le pones a cada categoría por fin sirve para algo: el mapa de gasto por categoría del inicio ahora se pinta con tus colores en vez de unos fijos. Si dos categorías comparten color, la que más gastó se queda con el suyo y la otra toma otro tono, para que no salgan dos pedazos iguales.",

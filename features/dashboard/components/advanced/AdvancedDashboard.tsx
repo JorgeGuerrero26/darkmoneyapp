@@ -116,6 +116,7 @@ import { useDashboardStats } from "../../hooks/useDashboardStats";
 import { movementPreviewActionLabel } from "../../lib/aggregations";
 
 import { SectionTitle } from "../simple/SectionTitle";
+import { CashflowProjectionSection } from "../simple/CashflowProjectionSection";
 import { FutureFlowPreview } from "../simple/FutureFlowPreview";
 import { ReviewInbox } from "../simple/ReviewInbox";
 import { dashboardSimpleStyles as subStyles } from "../simple/styles";
@@ -183,9 +184,11 @@ export function AdvancedDashboard({
   onActiveTabChange,
 }: {
   movements: DashboardMovementRow[];
-  obligations: Array<{ id: number; title: string; direction: string; pendingAmount: number; installmentAmount?: number | null; currencyCode: string; dueDate: string | null; status: string; lastPaymentDate?: string | null; startDate?: string; counterparty: string }>;
-  subscriptions: Array<{ id: number; name: string; amount: number; currencyCode: string; nextDueDate: string; accountId?: number | null; status: string; frequency: string; intervalCount: number }>;
-  recurringIncome: Array<{ id: number; name: string; amount: number; currencyCode: string; nextExpectedDate: string; status: string }>;
+  // `paymentPlan`, `principalAmount` y las cadencias las pide la proyección mes a mes: sin el
+  // cronograma solo puede repartir el saldo a ojo, que es justo lo que no debe hacer.
+  obligations: Array<{ id: number; title: string; direction: string; pendingAmount: number; principalAmount?: number; currentPrincipalAmount?: number | null; paymentPlan?: unknown; installmentAmount?: number | null; currencyCode: string; dueDate: string | null; status: string; lastPaymentDate?: string | null; startDate?: string; counterparty: string }>;
+  subscriptions: Array<{ id: number; name: string; amount: number; currencyCode: string; nextDueDate: string; endDate?: string | null; accountId?: number | null; status: string; frequency: string; intervalCount: number }>;
+  recurringIncome: Array<{ id: number; name: string; amount: number; currencyCode: string; nextExpectedDate: string; endDate?: string | null; frequency?: string; intervalCount?: number | null; status: string }>;
   snapshot: any;
   activeAccounts: { id: number; name: string; currentBalance: number; currentBalanceInBaseCurrency?: number | null; currencyCode: string; includeInNetWorth: boolean; isArchived: boolean }[];
   activeCurrency: string;
@@ -4148,6 +4151,27 @@ export function AdvancedDashboard({
         displayCurrency={activeCurrency}
         baseCurrency={baseCurrency}
         exchangeRateMap={exchangeRateMap}
+        currentVisibleBalance={currentVisibleBalance}
+      />
+      <View style={{ height: SPACING.sm }} />
+      <CashflowProjectionSection
+        movements={movements}
+        obligations={obligations.map((obligation) => ({
+          ...obligation,
+          principalAmount: obligation.principalAmount ?? obligation.pendingAmount,
+          startDate: obligation.startDate ?? "",
+        }))}
+        subscriptions={subscriptions}
+        recurringIncome={recurringIncome.map((income) => ({
+          ...income,
+          // Un ingreso fijo sin cadencia declarada es mensual: es lo que son casi todos, y
+          // dejarlo fuera de la proyección sería peor que asumirlo.
+          frequency: income.frequency ?? "monthly",
+        }))}
+        displayCurrency={activeCurrency}
+        baseCurrency={baseCurrency}
+        exchangeRateMap={exchangeRateMap}
+        accountCurrencyMap={accountCurrencyMap}
         currentVisibleBalance={currentVisibleBalance}
       />
       <View style={{ height: SPACING.sm }} />
