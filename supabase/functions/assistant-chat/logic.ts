@@ -587,6 +587,26 @@ export const ASSISTANT_TOOLS = [
   {
     type: "function",
     function: {
+      name: "project_cashflow",
+      description:
+        "Proyecta el flujo de caja MES A MES hacia adelante y devuelve, por mes, saldo inicial, entradas, salidas, neto y saldo final, con las líneas que componen cada uno. Es LA herramienta para '¿cuánto voy a tener en abril?', '¿me alcanza para X en marzo?', '¿cómo cierro el año?', '¿cuánto me queda después de pagar la maestría?'. " +
+        "Usa el MISMO motor que la sección Proyección del dashboard, así que tus cifras y las de la pantalla coinciden: no rehagas la suma por tu cuenta ni 'corrijas' el resultado. " +
+        "CÓMO LEERLO: cada línea trae `source`. `scheduled` = pactado (un sueldo, una cuota acordada, una suscripción); `estimated` = lo dedujo del historial. `scheduledShare` dice qué parte del mes está pactada: cuanto más lejos el mes, más baja, y conviene decírselo al usuario. `typicalMonthlySpend` es la MEDIANA de los últimos meses (el mes típico, no el promedio: así una compra grande no se cobra todos los meses) y `typicalSpendMonthsMeasured` sobre cuántos meses se midió — si es 0 o 1, avisa de que la estimación de gasto es floja. " +
+        "El primer mes es PARCIAL (`isPartial`): va desde hoy, no desde el día 1. Si `unconvertedCount` es mayor que 0, hay compromisos en otra moneda sin tipo de cambio que NO están sumados: dilo. El saldo inicial cuenta solo cuentas líquidas (banco, efectivo, ahorros).",
+      parameters: {
+        type: "object",
+        properties: {
+          months: {
+            type: "number",
+            description: "Meses a proyectar contando el actual, 1 a 12. Por defecto 6.",
+          },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "draft_movement",
       description:
         "PROPONE (no registra) un movimiento a partir de lo que el usuario dijo. Úsala cuando el usuario quiere anotar un gasto/ingreso/transferencia o pagar una suscripción o deuda. Resuelve nombres de cuenta/categoría/suscripción/deuda contra el CONTEXTO DEL WORKSPACE. Si falta un dato obligatorio o hay ambigüedad (varias suscripciones/deudas coinciden), NO llames esta tool: pregunta al usuario en texto con las opciones concretas.",

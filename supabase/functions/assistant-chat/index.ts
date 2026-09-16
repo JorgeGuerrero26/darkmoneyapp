@@ -8,6 +8,14 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { recordAiUsage } from "../_shared/ai-usage.ts";
+import {
+  buildCashflowCalendar,
+  monthlyDiscretionarySpend,
+  movementActsAsExpense,
+  movementDisplayAccountId,
+  movementDisplayAmount,
+  typicalMonthlySpend,
+} from "../_shared/cashflow-calendar.ts";
 
 import {
   authenticatedUser,
@@ -42,6 +50,8 @@ const DAILY_LIMIT = 30;
 const FEATURE_KEY = "assistant_chat";
 // 4 rondas: los análisis compra/venta suelen necesitar búsqueda + contexto extra.
 const MAX_TOOL_ROUNDS = 4;
+/** Meses TERMINADOS que se miran para la mediana del gasto tipico de la proyeccion. */
+const PROJECTION_HISTORY_MONTHS = 6;
 /**
  * Cuánto contexto conserva una conversación.
  *
@@ -639,6 +649,183 @@ async function runListBudgets(
   return { count: (data ?? []).length, budgets: data ?? [] };
 }
 
+/**
+ * La proyección mes a mes, con EL MISMO motor que dibuja el dashboard.
+ *
+ * Que sea el mismo motor no es un lujo: si el asistente calculara por su cuenta, el usuario
+ * podría ver un cierre de diciembre en la pantalla y oír otro en el chat, y no tendría forma de
+ * saber cuál vale. `_shared/cashflow-calendar.ts` es el espejo Deno del de `features/`, y un
+ * test de paridad exige que den lo mismo.
+ */
+async function runProjectCashflow(
+  client: ReturnType<typeof userClient>,
+  workspaceId: number,
+  rawArgs: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const requested = Number(rawArgs.months);
+  const months = Number.isFinite(requested) ? Math.min(12, Math.max(1, Math.floor(requested))) : 6;
+
+  const [workspace, rates, balances, accounts, income, subs, obligations] = await Promise.all([
+    client.from("workspaces").select("base_currency_code").eq("id", workspaceId).maybeSingle(),
+    client.from("v_latest_exchange_rates").select("from_currency_code, to_currency_code, rate"),
+    client
+      .from("v_account_balances")
+      .select("name, type, currency_code, current_balance")
+      .eq("workspace_id", workspaceId),
+    client.from("accounts").select("id, currency_code").eq("workspace_id", workspaceId),
+    client
+      .from("recurring_income")
+      .select("name, amount, currency_code, frequency, interval_count, next_expected_date, end_date, status")
+      .eq("workspace_id", workspaceId)
+      .eq("status", "active"),
+    client
+      .from("subscriptions")
+      .select("name, amount, currency_code, frequency, interval_count, next_due_date, end_date, status")
+      .eq("workspace_id", workspaceId)
+      .eq("status", "active"),
+    client
+      .from("v_obligation_summary")
+      .select("title, direction, status, currency_code, pending_amount, principal_current_amount, start_date, due_date, payment_plan, installment_amount")
+      .eq("workspace_id", workspaceId),
+  ]);
+
+  const base = String(workspace.data?.base_currency_code ?? "PEN");
+  const rateRows = rates.data ?? [];
+  /** Sin tasa devuelve null: el motor lo cuenta aparte en vez de asumir 1:1. */
+  const convert = (amount: number, currency: string): number | null => {
+    if (!currency || currency === base) return amount;
+    const direct = rateRows.find((r) => r.from_currency_code === currency && r.to_currency_code === base);
+    if (direct) return amount * Number(direct.rate);
+    const inverse = rateRows.find((r) => r.from_currency_code === base && r.to_currency_code === currency);
+    if (inverse && Number(inverse.rate) !== 0) return amount / Number(inverse.rate);
+    return null;
+  };
+
+  // Solo lo gastable. Inversión y préstamos no son caja, igual que en el contexto del workspace.
+  const LIQUID = new Set(["bank", "cash", "savings"]);
+  let startingBalance = 0;
+  for (const account of balances.data ?? []) {
+    if (!LIQUID.has(String(account.type ?? ""))) continue;
+    const value = convert(Number(account.current_balance ?? 0), String(account.currency_code ?? base));
+    if (value !== null) startingBalance += value;
+  }
+
+  // Historial para la mediana: seis meses terminados, que aquí sí se pueden pedir enteros.
+  const historyStart = new Date();
+  historyStart.setMonth(historyStart.getMonth() - (PROJECTION_HISTORY_MONTHS + 1));
+  historyStart.setDate(1);
+  const { data: historyRows } = await client
+    .from("movements")
+    .select("movement_type, status, occurred_at, source_amount, destination_amount, source_account_id, destination_account_id")
+    .eq("workspace_id", workspaceId)
+    .gte("occurred_at", historyStart.toISOString())
+    .limit(4000);
+
+  const currencyByAccount = new Map<number, string>();
+  for (const account of accounts.data ?? []) currencyByAccount.set(Number(account.id), String(account.currency_code));
+
+  const historyMovements = (historyRows ?? []).map((row) => ({
+    movementType: String(row.movement_type ?? ""),
+    status: String(row.status ?? ""),
+    occurredAt: String(row.occurred_at ?? ""),
+    sourceAmount: row.source_amount == null ? null : Number(row.source_amount),
+    destinationAmount: row.destination_amount == null ? null : Number(row.destination_amount),
+    sourceAccountId: row.source_account_id == null ? null : Number(row.source_account_id),
+    destinationAccountId: row.destination_account_id == null ? null : Number(row.destination_account_id),
+  }));
+
+  const monthlyTotals = monthlyDiscretionarySpend({
+    movements: historyMovements,
+    months: PROJECTION_HISTORY_MONTHS,
+    expenseAmountOf: (movement) => {
+      if (!movementActsAsExpense(movement)) return 0;
+      const accountId = movementDisplayAccountId(movement);
+      const currency = accountId != null ? currencyByAccount.get(accountId) : undefined;
+      return convert(movementDisplayAmount(movement), currency ?? base) ?? 0;
+    },
+  });
+  const typicalDiscretionarySpend = typicalMonthlySpend(monthlyTotals);
+
+  const today = new Date();
+  const fromDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+
+  const projection = buildCashflowCalendar({
+    startingBalance,
+    fromDate,
+    months,
+    typicalDiscretionarySpend,
+    convert,
+    recurringIncome: (income.data ?? []).map((row) => ({
+      name: String(row.name ?? "Ingreso"),
+      amount: Number(row.amount ?? 0),
+      currencyCode: String(row.currency_code ?? base),
+      frequency: String(row.frequency ?? "monthly"),
+      intervalCount: row.interval_count == null ? null : Number(row.interval_count),
+      nextExpectedDate: String(row.next_expected_date ?? ""),
+      endDate: row.end_date == null ? null : String(row.end_date),
+      status: String(row.status ?? ""),
+    })),
+    subscriptions: (subs.data ?? []).map((row) => ({
+      name: String(row.name ?? "Suscripción"),
+      amount: Number(row.amount ?? 0),
+      currencyCode: String(row.currency_code ?? base),
+      frequency: String(row.frequency ?? "monthly"),
+      intervalCount: row.interval_count == null ? null : Number(row.interval_count),
+      nextDueDate: String(row.next_due_date ?? ""),
+      endDate: row.end_date == null ? null : String(row.end_date),
+      status: String(row.status ?? ""),
+    })),
+    obligations: (obligations.data ?? []).map((row) => ({
+      title: String(row.title ?? "Deuda"),
+      direction: String(row.direction ?? ""),
+      status: String(row.status ?? ""),
+      currencyCode: String(row.currency_code ?? base),
+      pendingAmount: Number(row.pending_amount ?? 0),
+      principalCurrentAmount: Number(row.principal_current_amount ?? 0),
+      startDate: row.start_date == null ? null : String(row.start_date),
+      dueDate: row.due_date == null ? null : String(row.due_date),
+      paymentPlan: row.payment_plan,
+      installmentAmount: row.installment_amount == null ? null : Number(row.installment_amount),
+    })),
+    plannedMovements: historyMovements
+      .filter((movement) => movement.status === "planned" && new Date(movement.occurredAt) > today)
+      .map((movement) => {
+        const accountId = movementDisplayAccountId(movement);
+        return {
+          description: "Movimiento planificado",
+          signedAmount: movementDisplayAmount(movement) * (movementActsAsExpense(movement) ? -1 : 1),
+          currencyCode: (accountId != null ? currencyByAccount.get(accountId) : undefined) ?? base,
+          occurredAt: movement.occurredAt,
+        };
+      }),
+  });
+
+  const round = (value: number) => Math.round(value * 100) / 100;
+  return {
+    currency: base,
+    startingBalance: round(startingBalance),
+    endingBalance: round(projection.endingBalance),
+    typicalMonthlySpend: round(typicalDiscretionarySpend),
+    typicalSpendMonthsMeasured: monthlyTotals.length,
+    scheduledShare: Math.round(projection.overallScheduledShare * 100) / 100,
+    unconvertedCount: projection.unconvertedCount,
+    months: projection.months.map((month) => ({
+      month: month.monthKey,
+      isPartial: month.isPartial,
+      opening: round(month.openingBalance),
+      inflow: round(month.inflowTotal),
+      outflow: round(month.outflowTotal),
+      net: round(month.netFlow),
+      closing: round(month.closingBalance),
+      scheduledShare: Math.round(month.scheduledShare * 100) / 100,
+      lines: [
+        ...month.inflows.map((line) => ({ label: line.label, amount: round(line.amount), source: line.source })),
+        ...month.outflows.map((line) => ({ label: line.label, amount: -round(line.amount), source: line.source })),
+      ],
+    })),
+  };
+}
+
 // ─── Búsqueda semántica (Gemini embeddings + pgvector, indexado lazy) ────────
 
 async function embedTexts(texts: string[], taskType: "RETRIEVAL_DOCUMENT" | "RETRIEVAL_QUERY"): Promise<number[][]> {
@@ -955,6 +1142,8 @@ Deno.serve(async (req) => {
             output = { result: await runListBudgets(rls, workspaceId), movementIds: [] };
           } else if (name === "list_recurring_income") {
             output = { result: await runListRecurringIncome(rls, workspaceId), movementIds: [] };
+          } else if (name === "project_cashflow") {
+            output = { result: await runProjectCashflow(rls, workspaceId, args), movementIds: [] };
           } else if (name === "remember_fact") {
             output = { result: await runRememberFact(rls, workspaceId, user.id, args), movementIds: [] };
           } else if (name === "forget_fact") {
