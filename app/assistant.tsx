@@ -108,11 +108,19 @@ const MAX_STORED_ITEMS = 40;
 const WELCOME =
   "Hola, soy tu asistente. Pregúntame lo que quieras sobre tus movimientos — o toca una sugerencia para empezar:";
 
+/**
+ * Lo primero que ve alguien que abre el asistente sin saber qué preguntarle.
+ *
+ * Las cuatro anteriores eran variaciones de "cuánto gasté": enseñaban una sola de las cosas que
+ * sabe hacer y dejaban invisibles las otras tres. Ahora hay una por capacidad —consultar,
+ * proyectar, registrar hablando y revisar qué falta—, en el orden en que le sirven a alguien
+ * nuevo.
+ */
 const SUGGESTIONS = [
+  "¿Qué puedes hacer?",
   "¿Cuánto gasté este mes?",
-  "¿Cuál fue mi mayor gasto del mes?",
-  "¿Cuánto gasté en comida el mes pasado?",
-  "¿Gasté más que el mes anterior?",
+  "¿Cuánto voy a tener en 6 meses?",
+  "¿Qué me falta registrar?",
 ];
 
 function AssistantScreen() {
