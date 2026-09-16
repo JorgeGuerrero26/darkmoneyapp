@@ -535,7 +535,10 @@ async function runListObligations(
 ): Promise<Record<string, unknown>> {
   let query = client
     .from("v_obligation_summary")
-    .select("title, direction, status, counterparty_id, currency_code, pending_amount, due_date, progress_percent, payment_count")
+    .select(
+      "title, direction, status, counterparty_id, currency_code, pending_amount, due_date, progress_percent, payment_count, " +
+        "principal_current_amount, payment_total, start_date, installment_amount, installment_count, payment_plan",
+    )
     .eq("workspace_id", workspaceId)
     .order("pending_amount", { ascending: false })
     .limit(30);
@@ -551,8 +554,15 @@ async function runListObligations(
   const { data: cps } = await client.from("counterparties").select("id, name").eq("workspace_id", workspaceId);
   const nameById = new Map((cps ?? []).map((c) => [Number(c.id), String(c.name)]));
   const obligations = (data ?? []).map((row) => {
-    const { counterparty_id, ...rest } = row as Record<string, unknown>;
-    return { ...rest, counterparty: nameById.get(Number(counterparty_id)) ?? null };
+    const { counterparty_id, payment_plan, ...rest } = row as Record<string, unknown>;
+    return {
+      ...rest,
+      counterparty: nameById.get(Number(counterparty_id)) ?? null,
+      // Sin el cronograma el modelo solo ve el saldo total: sabe que Kevin debe 5.400 pero no
+      // que en noviembre tocan 750. Va crudo a propósito; quien lo expande es el modelo,
+      // siguiendo la regla que describe la tool.
+      ...(payment_plan ? { paymentPlan: payment_plan } : {}),
+    };
   });
   return { count: obligations.length, obligations };
 }
@@ -577,13 +587,35 @@ async function runListRecurringIncome(
 ): Promise<Record<string, unknown>> {
   const { data, error } = await client
     .from("recurring_income")
-    .select("name, amount, currency_code, frequency, next_expected_date, status")
+    .select(
+      "name, amount, currency_code, frequency, interval_count, day_of_month, next_expected_date, end_date, status, " +
+        "payer_party_id, description",
+    )
     .eq("workspace_id", workspaceId)
     .eq("status", "active")
     .order("next_expected_date", { ascending: true })
     .limit(30);
   if (error) throw error;
-  return { count: (data ?? []).length, recurringIncome: data ?? [] };
+  const rows = data ?? [];
+  // El pagador vive como id; sin resolverlo el modelo no puede responder de quién viene cada
+  // ingreso, que es la mitad de las preguntas sobre ingresos fijos.
+  const payerIds = [
+    ...new Set(rows.map((row) => Number(row.payer_party_id)).filter((id) => Number.isFinite(id) && id > 0)),
+  ];
+  const payerById = new Map<number, string>();
+  if (payerIds.length > 0) {
+    const { data: payers } = await client
+      .from("counterparties")
+      .select("id, name")
+      .eq("workspace_id", workspaceId)
+      .in("id", payerIds);
+    for (const payer of payers ?? []) payerById.set(Number(payer.id), String(payer.name));
+  }
+  const recurringIncome = rows.map((row) => {
+    const { payer_party_id, ...rest } = row as Record<string, unknown>;
+    return { ...rest, payer: payerById.get(Number(payer_party_id)) ?? null };
+  });
+  return { count: recurringIncome.length, recurringIncome };
 }
 
 async function runListBudgets(
@@ -592,7 +624,10 @@ async function runListBudgets(
 ): Promise<Record<string, unknown>> {
   const { data, error } = await client
     .from("v_budget_progress")
-    .select("name, scope_label, period_start, period_end, currency_code, limit_amount, spent_amount, remaining_amount, used_percent")
+    .select(
+      "name, scope_label, scope_kind, spend_type_name, recurrence, period_start, period_end, currency_code, " +
+        "limit_amount, spent_amount, remaining_amount, used_percent",
+    )
     .eq("workspace_id", workspaceId)
     .eq("is_active", true)
     .order("used_percent", { ascending: false })

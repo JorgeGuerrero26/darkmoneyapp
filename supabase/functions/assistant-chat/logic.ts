@@ -543,7 +543,9 @@ export const ASSISTANT_TOOLS = [
     function: {
       name: "list_obligations",
       description:
-        "Lista los créditos y deudas del usuario (obligations): por cobrar (receivable) o por pagar (payable), con saldo pendiente, contraparte, vencimiento y progreso. Úsala para '¿cuánto me deben?', '¿cuánto debo?', '¿quién está atrasado?'.",
+        "Lista los créditos y deudas del usuario (obligations): por cobrar (receivable) o por pagar (payable), con saldo pendiente, contraparte, vencimiento, progreso y CRONOGRAMA pactado. Úsala para '¿cuánto me deben?', '¿cuánto debo?', '¿quién está atrasado?' y también para '¿cuánto me paga X en noviembre?'. " +
+        "CÓMO LEER paymentPlan (viene crudo, solo si hay plan): mode='equal' → `count` cuotas iguales de principal_current_amount/count, mensuales. mode='custom' → `agreed` son las cuotas pactadas EN ORDEN (cada una con su `amount`; si trae `dueDate` esa manda, si no le toca un mes por posición), y `tail` es el monto que se repite cada mes después de las pactadas hasta cubrir el saldo. El primer vencimiento es `firstDueDate` del plan si existe; si no, start_date. Las cuotas van de mes en mes, una por mes, sin saltos. " +
+        "Para saber qué queda por cobrar/pagar no restes cuotas a ojo: payment_total es lo ya abonado y pending_amount el saldo real. Si el cronograma y el saldo no cuadran, manda pending_amount y dilo.",
       parameters: {
         type: "object",
         properties: {
@@ -567,7 +569,8 @@ export const ASSISTANT_TOOLS = [
     function: {
       name: "list_recurring_income",
       description:
-        "Lista los ingresos recurrentes esperados del usuario (sueldo, cobros mensuales fijos): nombre, monto, frecuencia y próxima fecha esperada. Úsala para proyecciones de fin de mes y '¿cuánto voy a recibir?'.",
+        "Lista los ingresos recurrentes ACTIVOS del usuario (sueldo, cobros mensuales fijos): nombre, monto, moneda, frecuencia (con interval_count y day_of_month), próxima fecha esperada, fecha de cierre si la tiene, y `payer` = quién paga. Úsala para proyecciones y para '¿cuánto voy a recibir?', '¿quién me paga esto?'. " +
+        "OJO: el `amount` es lo que LLEGA a la cuenta (neto). La app no guarda sueldo bruto ni descuentos, así que nunca afirmes cuánto le retienen ni cuánto gana en bruto a partir de este dato. Tampoco lista los pausados ni los cancelados: si el usuario pregunta por un ingreso que ya no recibe, di que aquí solo salen los activos.",
       parameters: { type: "object", properties: {} },
     },
   },
@@ -576,7 +579,8 @@ export const ASSISTANT_TOOLS = [
     function: {
       name: "list_budgets",
       description:
-        "Lista los presupuestos activos con límite, gastado, restante y % usado por período. Úsala para '¿cómo voy con mi presupuesto de X?', '¿me queda presupuesto este mes?'.",
+        "Lista los presupuestos activos con límite, gastado, restante, % usado, período, alcance (scope_kind/scope_label/spend_type_name) y `recurrence` = cada cuánto se renueva. Úsala para '¿cómo voy con mi presupuesto de X?', '¿me queda presupuesto este mes?'. " +
+        "OJO al proyectar: limit_amount es lo que el usuario QUIERE gastar, no lo que suele gastar, y solo cubre el alcance del presupuesto — el gasto fuera de él no aparece aquí. Para estimar gasto futuro apóyate en el historial real (summarize_movements), y si usas el límite dilo explícitamente.",
       parameters: { type: "object", properties: {} },
     },
   },
