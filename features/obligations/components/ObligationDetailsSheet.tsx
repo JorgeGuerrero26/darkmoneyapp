@@ -79,11 +79,19 @@ export function ObligationDetailsSheet({
     >
       <Text style={styles.sectionLabel}>Cómo se paga</Text>
       <View style={styles.group}>
+        {/*
+          La fila decía "Sin plan" justo cuando SÍ había uno.
+
+          FormOptionRow pinta `value || placeholder`, y aquí se le pasaba `value=""` en el caso
+          con plan, dejando el plan real relegado a la línea de apoyo en gris. Resultado: arriba
+          "A medida · 12 pagos" en letra chica y debajo "Sin plan" en grande, contradiciéndose;
+          al abrir la hoja el plan aparecía bien configurado. El placeholder ya cubre el caso sin
+          plan, que es para lo que existe.
+        */}
         <FormOptionRow
           grouped
           label="Plan de pagos"
-          support={planLabel ?? undefined}
-          value={planLabel ? "" : "Sin plan"}
+          value={planLabel}
           placeholder="Sin plan"
           onPress={onOpenPlan}
         />
