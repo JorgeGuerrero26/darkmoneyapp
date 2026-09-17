@@ -10,6 +10,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { recordAiUsage } from "../_shared/ai-usage.ts";
 import {
   buildCashflowCalendar,
+  liquidBalance,
   monthlyDiscretionarySpend,
   movementActsAsExpense,
   movementDisplayAccountId,
@@ -701,14 +702,15 @@ async function runProjectCashflow(
     return null;
   };
 
-  // Solo lo gastable. Inversión y préstamos no son caja, igual que en el contexto del workspace.
-  const LIQUID = new Set(["bank", "cash", "savings"]);
-  let startingBalance = 0;
-  for (const account of balances.data ?? []) {
-    if (!LIQUID.has(String(account.type ?? ""))) continue;
-    const value = convert(Number(account.current_balance ?? 0), String(account.currency_code ?? base));
-    if (value !== null) startingBalance += value;
-  }
+  // Solo lo gastable, con la MISMA definición que usa el dashboard.
+  const { total: startingBalance } = liquidBalance(
+    (balances.data ?? []).map((account) => ({
+      type: String(account.type ?? ""),
+      currencyCode: String(account.currency_code ?? base),
+      currentBalance: Number(account.current_balance ?? 0),
+    })),
+    convert,
+  );
 
   // Historial para la mediana: seis meses terminados, que aquí sí se pueden pedir enteros.
   const historyStart = new Date();

@@ -10,6 +10,7 @@
  */
 import { buildCashflowCalendar as appEngine } from "../cashflow-calendar";
 import { monthlyDiscretionarySpend as appHistory } from "../discretionary-history";
+import { liquidBalance as appLiquid } from "../liquid-balance";
 import {
   movementActsAsExpense as appActsAsExpense,
   movementActsAsIncome as appActsAsIncome,
@@ -18,6 +19,7 @@ import {
 } from "../../../../lib/movement-amounts";
 import {
   buildCashflowCalendar as denoEngine,
+  liquidBalance as denoLiquid,
   monthlyDiscretionarySpend as denoHistory,
   movementActsAsExpense as denoActsAsExpense,
   movementActsAsIncome as denoActsAsIncome,
@@ -435,4 +437,39 @@ describe("paridad de qué cuenta como gasto", () => {
     expect(denoDisplayAmount(movement)).toBe(appDisplayAmount(movement));
     expect(denoDisplayAccountId(movement)).toBe(appDisplayAccountId(movement));
   });
+});
+
+describe("paridad del saldo de partida", () => {
+  // La divergencia que motivo este espejo: el dashboard partia del patrimonio neto y el
+  // asistente del liquido, asi que la misma proyeccion cerraba en dos cifras distintas.
+  const onlyPen = (amount: number, currency: string) => (currency === "PEN" ? amount : null);
+  const CASES: Array<Array<Record<string, unknown>>> = [
+    [],
+    [{ type: "bank", currentBalance: 3200, currencyCode: "PEN" }],
+    [
+      { type: "bank", currentBalance: 3200, currencyCode: "PEN" },
+      { type: "cash", currentBalance: 150, currencyCode: "PEN" },
+      { type: "savings", currentBalance: 800, currencyCode: "PEN" },
+      { type: "investment", currentBalance: 9000, currencyCode: "PEN" },
+      { type: "credit_card", currentBalance: -872, currencyCode: "PEN" },
+      { type: "loan_wallet", currentBalance: 500, currencyCode: "PEN" },
+      { type: "other", currentBalance: 40, currencyCode: "PEN" },
+    ],
+    [
+      { type: "bank", currentBalance: 3200, currencyCode: "PEN" },
+      { type: "savings", currentBalance: 200, currencyCode: "USD" },
+    ],
+    [
+      { type: "bank", currentBalance: 3200, currencyCode: "PEN", isArchived: true },
+      { type: "bank", currentBalance: 100, currencyCode: "PEN" },
+    ],
+    [{ type: null, currentBalance: 500, currencyCode: "PEN" }, { currencyCode: "PEN" }],
+  ];
+
+  it.each(CASES.map((accounts, index) => [index, accounts] as const))(
+    "coinciden en el caso %i",
+    (_index, accounts) => {
+      expect(denoLiquid(accounts, onlyPen)).toEqual(appLiquid(accounts, onlyPen));
+    },
+  );
 });

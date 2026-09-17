@@ -11,6 +11,7 @@ import {
   type ProjectionLine,
 } from "../../../projection/lib/cashflow-calendar";
 import { monthlyDiscretionarySpend } from "../../../projection/lib/discretionary-history";
+import { liquidBalance } from "../../../projection/lib/liquid-balance";
 import { convertAmt, expenseAmt, isExpense } from "../../lib/aggregations";
 import type { DashboardMovementRow } from "../../lib/dashboard-row";
 import { movementActsAsIncome, movementDisplayAccountId, movementDisplayAmount } from "../../../../lib/movement-amounts";
@@ -63,7 +64,11 @@ type CashflowProjectionSectionProps = {
   baseCurrency: string;
   exchangeRateMap: Map<string, number>;
   accountCurrencyMap: Map<number, string>;
-  currentVisibleBalance: number;
+  /**
+   * Las cuentas con su tipo. La proyección arranca del saldo LÍQUIDO, no del patrimonio neto:
+   * lo que está en una cuenta de inversión no es plata gastable el mes que viene.
+   */
+  accounts: Array<{ type?: string | null; currencyCode?: string | null; currentBalance?: number | null; isArchived?: boolean | null }>;
 };
 
 function monthLabel(monthKey: string): string {
@@ -194,10 +199,18 @@ export function CashflowProjectionSection({
   baseCurrency,
   exchangeRateMap,
   accountCurrencyMap,
-  currentVisibleBalance,
+  accounts,
 }: CashflowProjectionSectionProps) {
   const [horizon, setHorizon] = useState<number>(6);
   const [openMonth, setOpenMonth] = useState<string | null>(null);
+
+  const liquid = useMemo(
+    () =>
+      liquidBalance(accounts, (amount, currency) =>
+        convertAmt(amount, currency, displayCurrency, exchangeRateMap, baseCurrency),
+      ),
+    [accounts, displayCurrency, exchangeRateMap, baseCurrency],
+  );
 
   const conversionCtx = useMemo<ConversionCtx>(
     () => ({ accountCurrencyMap, exchangeRateMap, displayCurrency, baseCurrency }),
@@ -248,7 +261,7 @@ export function CashflowProjectionSection({
     ).padStart(2, "0")}`;
 
     return buildCashflowCalendar({
-      startingBalance: currentVisibleBalance,
+      startingBalance: liquid.total,
       fromDate,
       months: horizon,
       typicalDiscretionarySpend: typicalSpend.typical,
@@ -274,7 +287,7 @@ export function CashflowProjectionSection({
     });
   }, [
     baseCurrency,
-    currentVisibleBalance,
+    liquid.total,
     displayCurrency,
     exchangeRateMap,
     horizon,
@@ -287,7 +300,7 @@ export function CashflowProjectionSection({
 
   const lastMonth = projection.months[projection.months.length - 1];
   const scheduledPercent = Math.round(projection.overallScheduledShare * 100);
-  const delta = projection.endingBalance - currentVisibleBalance;
+  const delta = projection.endingBalance - liquid.total;
 
   return (
     <Card>

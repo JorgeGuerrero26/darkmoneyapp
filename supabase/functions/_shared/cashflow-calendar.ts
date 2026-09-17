@@ -132,6 +132,43 @@ export function typicalMonthlySpend(monthlyTotals: readonly number[]): number {
 }
 
 /**
+ * Espejo de `features/projection/lib/liquid-balance.ts`.
+ *
+ * De que saldo arranca una proyeccion. Estaba respondido distinto en dos sitios —el dashboard
+ * partia del patrimonio neto y el asistente del liquido—, asi que la misma proyeccion daba dos
+ * cierres segun donde la miraras. Manda el liquido: lo que esta en una cuenta de inversion no es
+ * plata gastable el mes que viene, y el saldo de una tarjeta es deuda, no caja.
+ */
+export const LIQUID_ACCOUNT_TYPES: readonly string[] = ["bank", "cash", "savings"];
+
+export function isLiquidAccount(type: string | null | undefined): boolean {
+  return LIQUID_ACCOUNT_TYPES.includes(String(type ?? ""));
+}
+
+export type LiquidAccountLike = {
+  type?: string | null;
+  currencyCode?: string | null;
+  currentBalance?: number | null;
+  isArchived?: boolean | null;
+};
+
+export function liquidBalance(
+  accounts: readonly LiquidAccountLike[],
+  convert: (amount: number, fromCurrency: string) => number | null,
+): { total: number; unconvertedCount: number } {
+  let total = 0;
+  let unconvertedCount = 0;
+  for (const account of accounts) {
+    if (account.isArchived) continue;
+    if (!isLiquidAccount(account.type)) continue;
+    const converted = convert(Number(account.currentBalance ?? 0), String(account.currencyCode ?? ""));
+    if (converted === null) unconvertedCount += 1;
+    else total += converted;
+  }
+  return { total, unconvertedCount };
+}
+
+/**
  * Espejo de `lib/movement-amounts.ts`.
  *
  * Está aquí porque de esto depende qué cuenta como gasto al medir la mediana. Si el asistente

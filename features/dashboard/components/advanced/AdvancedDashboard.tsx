@@ -190,7 +190,8 @@ export function AdvancedDashboard({
   subscriptions: Array<{ id: number; name: string; amount: number; currencyCode: string; nextDueDate: string; endDate?: string | null; accountId?: number | null; status: string; frequency: string; intervalCount: number }>;
   recurringIncome: Array<{ id: number; name: string; amount: number; currencyCode: string; nextExpectedDate: string; endDate?: string | null; frequency?: string; intervalCount?: number | null; status: string }>;
   snapshot: any;
-  activeAccounts: { id: number; name: string; currentBalance: number; currentBalanceInBaseCurrency?: number | null; currencyCode: string; includeInNetWorth: boolean; isArchived: boolean }[];
+  // `type` lo pide la proyeccion: arranca del saldo liquido, no del patrimonio neto.
+  activeAccounts: { id: number; name: string; type?: string | null; currentBalance: number; currentBalanceInBaseCurrency?: number | null; currencyCode: string; includeInNetWorth: boolean; isArchived: boolean }[];
   activeCurrency: string;
   baseCurrency: string;
   exchangeRateMap: Map<string, number>;
@@ -4172,7 +4173,7 @@ export function AdvancedDashboard({
         baseCurrency={baseCurrency}
         exchangeRateMap={exchangeRateMap}
         accountCurrencyMap={accountCurrencyMap}
-        currentVisibleBalance={currentVisibleBalance}
+        accounts={activeAccounts}
       />
       <View style={{ height: SPACING.sm }} />
       <PaymentOptimizationCard
