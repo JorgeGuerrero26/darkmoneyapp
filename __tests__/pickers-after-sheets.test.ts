@@ -12,8 +12,39 @@ import { join } from "node:path";
  *
  * Pasó el 2026-09-09: el selector de cuenta de BudgetForm estaba antes de la hoja "Opcionales",
  * y el usuario concluyó que ya no se podían hacer presupuestos por cuenta.
+ *
+ * Y volvió a pasar el 2026-09-18, en RecurringIncomeForm, con "Quién paga" y "Categoría". Este
+ * test estaba y no lo vio: buscaba `<InlineFormSheet` LITERAL, y esa hoja se abre a través de un
+ * envoltorio (`RecurringIncomeOptionalsSheet`). Una hoja envuelta seguía siendo una hoja para iOS
+ * pero no para el test. Ahora los envoltorios se descubren solos: cualquier componente cuyo
+ * archivo contenga un `<InlineFormSheet` cuenta como hoja.
  */
-const FORMS = join(__dirname, "..", "components", "forms");
+const ROOT = join(__dirname, "..");
+const FORMS = join(ROOT, "components", "forms");
+
+/** Nombres de componentes que, por dentro, SON una hoja. Se buscan, no se listan a mano. */
+function sheetWrapperNames(): string[] {
+  const names = new Set<string>(["InlineFormSheet"]);
+  const roots = [join(ROOT, "components"), join(ROOT, "features")];
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name === "node_modules" || entry.name === "__tests__") continue;
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+        continue;
+      }
+      if (!entry.name.endsWith(".tsx")) continue;
+      const source = readFileSync(full, "utf8");
+      if (!source.includes("<InlineFormSheet")) continue;
+      for (const match of source.matchAll(/export function ([A-Z][A-Za-z0-9]*)/g)) {
+        names.add(match[1]);
+      }
+    }
+  };
+  for (const dir of roots) walk(dir);
+  return [...names];
+}
 
 function overlayBlock(source: string): string | null {
   const start = source.indexOf("overlay={");
@@ -30,23 +61,30 @@ function overlayBlock(source: string): string | null {
 }
 
 describe("los selectores se pintan sobre las hojas que los abren", () => {
+  const SHEETS = sheetWrapperNames();
   const offenders: string[] = [];
 
   for (const file of readdirSync(FORMS).filter((name) => name.endsWith(".tsx"))) {
     const block = overlayBlock(readFileSync(join(FORMS, file), "utf8"));
     if (!block) continue;
 
-    const lastSheet = block.lastIndexOf("<InlineFormSheet");
+    const lastSheet = Math.max(...SHEETS.map((name) => block.lastIndexOf(`<${name}`)));
     if (lastSheet < 0) continue;
 
     // Un selector escrito antes de la última hoja queda debajo de ella.
     const picker = /<SearchableSelectSheet|<CurrencySelectOverlay/g;
     for (const match of block.matchAll(picker)) {
       if ((match.index ?? 0) < lastSheet) {
-        offenders.push(`${file} — ${match[0].slice(1)} se pinta antes de una InlineFormSheet`);
+        offenders.push(`${file} — ${match[0].slice(1)} se pinta antes de una hoja que lo abre`);
       }
     }
   }
+
+  it("los envoltorios de hoja se descubren solos", () => {
+    // Si esta lista se queda en el literal, el test vuelve a tener el punto ciego de 2026-09-18.
+    expect(SHEETS).toContain("InlineFormSheet");
+    expect(SHEETS).toContain("RecurringIncomeOptionalsSheet");
+  });
 
   it("hay formularios con capas que revisar", () => {
     const conOverlay = readdirSync(FORMS)

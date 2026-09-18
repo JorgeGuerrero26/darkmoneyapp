@@ -440,41 +440,6 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
               onCancel={() => setShowDiscard(false)}
               onConfirm={() => { setShowDiscard(false); onClose(); }}
             />
-            <SearchableSelectSheet
-            inline
-            visible={payerOpen}
-            title="Pagador"
-            options={[
-              { value: null as number | null, label: "Ninguno" },
-              ...counterparties.map((cp) => ({ value: cp.id as number | null, label: cp.name })),
-            ]}
-            value={payerPartyId}
-            onChange={setPayerPartyId}
-            onClose={() => setPayerOpen(false)}
-          />
-          <SearchableSelectSheet
-            inline
-            visible={accountOpen}
-            title="Entra a"
-            /* Sin "Sin cuenta": ahora es obligatoria, y ofrecer la opción de dejarla vacía
-               contradice al botón que la pide. */
-            options={activeAccounts.map((acc) => ({ value: acc.id as number | null, label: acc.name }))}
-            value={accountId}
-            onChange={setAccountId}
-            onClose={() => setAccountOpen(false)}
-          />
-          <SearchableSelectSheet
-            inline
-            visible={categoryOpen}
-            title="Categoría"
-            options={[
-              { value: null as number | null, label: "Sin categoría" },
-              ...incomeCategories.map((cat) => ({ value: cat.id as number | null, label: cat.name })),
-            ]}
-            value={categoryId}
-            onChange={setCategoryId}
-            onClose={() => setCategoryOpen(false)}
-          />
             {/* Las hojas van primero: los selectores que se abren DESDE ellas se pintan
                 después y quedan por encima. */}
             <RecurringIncomeOptionalsSheet
@@ -507,6 +472,50 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
               notes={notes}
               onChangeNotes={setNotes}
             />
+            {/* Regla de esta capa: las hojas primero, los selectores al final.
+
+                iOS presenta una capa a la vez y la última escrita queda encima. Un selector
+                escrito ANTES de la hoja desde la que se abre no aparece al tocar la fila:
+                sin error, sin aviso, y con toda la pinta de que la opción ya no existe.
+
+                Pagador y Categoría se abren desde la hoja de Opcionales y estaban antes que
+                ella. "Entra a" se abre desde el formulario y funcionaba, pero va aquí igual:
+                la regla vale más si no tiene excepciones que recordar. */}
+            <SearchableSelectSheet
+            inline
+            visible={payerOpen}
+            title="Pagador"
+            options={[
+              { value: null as number | null, label: "Ninguno" },
+              ...counterparties.map((cp) => ({ value: cp.id as number | null, label: cp.name })),
+            ]}
+            value={payerPartyId}
+            onChange={setPayerPartyId}
+            onClose={() => setPayerOpen(false)}
+          />
+          <SearchableSelectSheet
+            inline
+            visible={categoryOpen}
+            title="Categoría"
+            options={[
+              { value: null as number | null, label: "Sin categoría" },
+              ...incomeCategories.map((cat) => ({ value: cat.id as number | null, label: cat.name })),
+            ]}
+            value={categoryId}
+            onChange={setCategoryId}
+            onClose={() => setCategoryOpen(false)}
+          />
+          <SearchableSelectSheet
+            inline
+            visible={accountOpen}
+            title="Entra a"
+            /* Sin "Sin cuenta": ahora es obligatoria, y ofrecer la opción de dejarla vacía
+               contradice al botón que la pide. */
+            options={activeAccounts.map((acc) => ({ value: acc.id as number | null, label: acc.name }))}
+            value={accountId}
+            onChange={setAccountId}
+            onClose={() => setAccountOpen(false)}
+          />
             <SearchableSelectSheet
               inline
               visible={frequencyOpen}

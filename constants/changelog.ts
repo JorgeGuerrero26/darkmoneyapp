@@ -13,6 +13,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "1.0.10",
     title: "DarkMoney estrena look",
     changes: [
+      "Arreglado: en Ingresos fijos, al tocar \"Quién paga\" o \"Categoría\" dentro de Opcionales no pasaba nada — la lista se abría por detrás de la ventana y no se veía. Parecía que esas opciones ya no existieran.",
       "El asistente puede decirte por qué tu proyección no cuadra. Hay cosas que no fallan ni salen en rojo pero dejan de contar en silencio: un ingreso fijo cuya llegada nunca confirmaste deja de sumar, y una deuda sin acuerdo de pago no aparece en ningún mes. Pregúntale \"¿qué me falta registrar?\" y te dice qué le está haciendo a la cifra, y se ofrece a arreglarlo ahí mismo.",
       "Ahora puedes acordar las cuotas hablando con el asistente: \"Kevin me paga 500 en octubre, 750 en noviembre y 610 de ahí en adelante\" queda registrado tal cual, con su cronograma. Antes solo guardaba el monto total, y esa deuda no aparecía en ninguna proyección.",
       "Un gasto que anotas por chat con fecha futura —\"en abril pago la maestría\"— ya no te descuenta la plata hoy: queda como planificado y aparece en el mes que le toca.",
