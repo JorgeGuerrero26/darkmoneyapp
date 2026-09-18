@@ -317,6 +317,37 @@ const SCENARIOS: Scenario[] = [
       ],
     }),
   },
+  {
+    name: "tarjeta con deuda y gasto tipico",
+    input: base({
+      months: 8,
+      creditCards: [
+        { name: "Visa BCP", currencyCode: "PEN", currentDebt: 872, paymentDay: 15, typicalMonthlySpend: 600 },
+      ],
+    }),
+  },
+  {
+    name: "tarjeta con dia 31 cruzando febrero",
+    input: base({
+      fromDate: "2027-01-01",
+      months: 5,
+      creditCards: [
+        { name: "Visa", currencyCode: "PEN", currentDebt: 100, paymentDay: 31, typicalMonthlySpend: 200 },
+      ],
+    }),
+  },
+  {
+    name: "tarjetas sin dia de pago, sin deuda y en otra moneda",
+    input: base({
+      months: 6,
+      convert: onlyPen,
+      creditCards: [
+        { name: "Sin ciclo", currencyCode: "PEN", currentDebt: 500, paymentDay: null, typicalMonthlySpend: 300 },
+        { name: "Saldada", currencyCode: "PEN", currentDebt: 0, paymentDay: 5, typicalMonthlySpend: 150 },
+        { name: "Amex USD", currencyCode: "USD", currentDebt: 200, paymentDay: 20, typicalMonthlySpend: 80 },
+      ],
+    }),
+  },
   { name: "fecha ilegible", input: base({ fromDate: "no es una fecha" }) },
   { name: "horizonte de un solo mes", input: base({ months: 1, recurringIncome: [sueldo] }) },
 ];

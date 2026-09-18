@@ -342,6 +342,71 @@ describe("buildCashflowCalendar", () => {
     expect(result.endingBalance).toBeCloseTo(result.months[3].closingBalance, 6);
   });
 
+  describe("tarjeta de crédito: se gasta en un mes y se paga en otro", () => {
+    const visa = {
+      name: "Visa BCP",
+      currencyCode: "PEN",
+      currentDebt: 872,
+      paymentDay: 15,
+      typicalMonthlySpend: 600,
+    };
+
+    it("lo que ya debes sale en el próximo día de pago, no hoy", () => {
+      // Hoy es 16 de setiembre: el 15 ya pasó, así que el próximo pago es el 15 de octubre.
+      const result = buildCashflowCalendar(baseInput({ creditCards: [visa] }));
+
+      expect(result.months[0].outflowTotal).toBe(0);
+      expect(result.months[1].monthKey).toBe("2026-10");
+      expect(result.months[1].outflowTotal).toBe(872);
+      expect(result.months[1].outflows[0]).toMatchObject({
+        kind: "credit_card_payment",
+        label: "Visa BCP",
+        source: "scheduled",
+      });
+    });
+
+    it("los pagos siguientes son el gasto típico de esa tarjeta, y van marcados como estimados", () => {
+      const result = buildCashflowCalendar(baseInput({ creditCards: [visa] }));
+
+      expect(result.months.map((m) => m.outflowTotal)).toEqual([0, 872, 600, 600]);
+      expect(result.months[2].outflows[0].source).toBe("estimated");
+    });
+
+    it("sin día de pago la tarjeta no se puede colocar y no aporta nada", () => {
+      const result = buildCashflowCalendar(
+        baseInput({ creditCards: [{ ...visa, paymentDay: null }] }),
+      );
+      expect(result.endingBalance).toBe(3200);
+    });
+
+    it("una tarjeta sin deuda no inventa un primer pago", () => {
+      const result = buildCashflowCalendar(baseInput({ creditCards: [{ ...visa, currentDebt: 0 }] }));
+      expect(result.months.map((m) => m.outflowTotal)).toEqual([0, 0, 600, 600]);
+    });
+
+    it("el día 31 se recorta en el mes corto y vuelve al 31 en el siguiente", () => {
+      const result = buildCashflowCalendar(
+        baseInput({
+          fromDate: "2027-01-01",
+          months: 4,
+          creditCards: [{ ...visa, paymentDay: 31, currentDebt: 100, typicalMonthlySpend: 200 }],
+        }),
+      );
+
+      // Enero 31, febrero 28, marzo 31, abril 30 — uno por mes, sin arrastrar el recorte.
+      expect(result.months.map((m) => m.monthKey)).toEqual(["2027-01", "2027-02", "2027-03", "2027-04"]);
+      expect(result.months.map((m) => m.outflowTotal)).toEqual([100, 200, 200, 200]);
+    });
+
+    it("si el día de pago aún no llegó este mes, el primer pago es este mes", () => {
+      const result = buildCashflowCalendar(
+        baseInput({ fromDate: "2026-09-10", creditCards: [visa] }),
+      );
+      expect(result.months[0].outflowTotal).toBe(872);
+      expect(result.months[0].outflows[0].source).toBe("scheduled");
+    });
+  });
+
   it("una fecha ilegible devuelve un calendario vacío en vez de reventar", () => {
     const result = buildCashflowCalendar(baseInput({ fromDate: "no es una fecha" }));
     expect(result.months).toEqual([]);

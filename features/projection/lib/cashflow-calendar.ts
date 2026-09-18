@@ -36,6 +36,7 @@ export type ProjectionLineKind =
   | "obligation_payable"
   | "subscription"
   | "planned_movement"
+  | "credit_card_payment"
   | "typical_spend";
 
 export type ProjectionLine = {
@@ -118,6 +119,35 @@ export type ProjectionPlannedMovement = {
   occurredAt: string;
 };
 
+/**
+ * Una tarjeta de crédito, que es lo único del calendario que gasta en un mes y cobra en otro.
+ *
+ * Sin esto, lo que compras con la tarjeta se resta **un mes antes de tiempo**: el gasto se
+ * registra el día de la compra, pero del banco no sale nada hasta el día de pago del mes
+ * siguiente. El saldo de la tarjeta tampoco entra en el saldo de partida —es deuda, no caja— así
+ * que la única forma de que aparezca es como pagos con fecha.
+ *
+ * El dato que coloca los pagos es `paymentDay`. `statementDay` no hace falta aquí: define qué
+ * compras caen en qué estado de cuenta, y esa precisión se aproxima (ver `currentDebt`). Vive en
+ * la cuenta para mostrárselo al usuario y para avisarle.
+ */
+export type ProjectionCreditCard = {
+  name: string;
+  currencyCode: string;
+  /**
+   * Lo que se debe hoy, en positivo. Es lo que sale en el PRÓXIMO día de pago, y por eso esa
+   * primera línea va como `scheduled`: el monto ya está gastado, no es una suposición.
+   *
+   * Aproxima por abajo: entre hoy y el corte todavía caben compras que también entrarán en ese
+   * estado de cuenta. Preferimos quedarnos cortos en la deuda antes que inventarla.
+   */
+  currentDebt: number;
+  /** Día del mes del pago (1-31). Sin él la tarjeta no se puede colocar en ningún mes. */
+  paymentDay: number | null;
+  /** Mediana de lo que se carga a ESTA tarjeta al mes. Es lo que sale en los pagos siguientes. */
+  typicalMonthlySpend: number;
+};
+
 export type ProjectionInput = {
   /** Saldo líquido de hoy, ya convertido a la moneda de la proyección. */
   startingBalance: number;
@@ -129,12 +159,18 @@ export type ProjectionInput = {
   subscriptions: readonly ProjectionSubscription[];
   obligations: readonly ProjectionObligation[];
   plannedMovements: readonly ProjectionPlannedMovement[];
+  /** Tarjetas de crédito con ciclo. Omitir equivale a no tener ninguna. */
+  creditCards?: readonly ProjectionCreditCard[];
   /**
    * Mediana del gasto mensual que NO está ya representado arriba.
    *
    * Quien lo calcula debe excluir los movimientos ligados a suscripciones y a deudas, o se
    * cuentan dos veces: una en su línea pactada y otra dentro de este bulto. `typicalMonthlySpend`
    * calcula la mediana; el filtrado es de quien reúne los meses.
+   *
+   * **También debe excluir lo que se carga a tarjetas de crédito**, que viaja por `creditCards`
+   * para salir en el mes en que se paga y no en el que se compró. Si se cuela aquí, se resta dos
+   * veces y además en el mes equivocado.
    */
   typicalDiscretionarySpend: number;
   /** Conversor. Devuelve null cuando no hay tasa; ese ítem suma 0 y se cuenta aparte. */
@@ -355,6 +391,49 @@ export function buildCashflowCalendar(input: ProjectionInput): ProjectionResult 
         source: "scheduled",
       };
       push(installment.dueDate, line, collects ? "inflows" : "outflows", converted);
+    }
+  }
+
+  /**
+   * Los pagos de tarjeta, uno por día de pago dentro del horizonte.
+   *
+   * El primero es lo que YA se debe —monto conocido, fecha conocida: `scheduled`—. Los
+   * siguientes son el gasto típico de esa tarjeta, que para entonces ya se habrá cargado:
+   * `estimated`. Esa es toda la corrección de mes que el brief pedía.
+   */
+  for (const card of input.creditCards ?? []) {
+    if (card.paymentDay == null) continue;
+    const day = Math.min(31, Math.max(1, Math.floor(card.paymentDay)));
+    // El primer pago posterior o igual a hoy. El día se recorta al mes corto en cada vuelta y
+    // NO se arrastra: con día 31, febrero paga el 28 y marzo vuelve al 31.
+    const firstMonth =
+      day >= fromDate.getDate()
+        ? { year: fromDate.getFullYear(), month: fromDate.getMonth() }
+        : (() => {
+            const next = addMonths(fromDate, 1);
+            return { year: next.getFullYear(), month: next.getMonth() };
+          })();
+
+    for (let i = 0; i < MAX_OCCURRENCES; i += 1) {
+      const anchor = addMonths(new Date(firstMonth.year, firstMonth.month, 1), i);
+      const due = new Date(anchor.getFullYear(), anchor.getMonth(), Math.min(day, getDaysInMonth(anchor)));
+      if (due > horizonDate) break;
+      const isFirst = i === 0;
+      const amount = isFirst ? card.currentDebt : card.typicalMonthlySpend;
+      if (amount > EPSILON) {
+        const converted = input.convert(amount, card.currencyCode);
+        push(
+          due,
+          {
+            kind: "credit_card_payment",
+            label: card.name,
+            amount: converted ?? 0,
+            source: isFirst ? "scheduled" : "estimated",
+          },
+          "outflows",
+          converted,
+        );
+      }
     }
   }
 

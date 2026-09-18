@@ -36,6 +36,7 @@ export type ProjectionLineKind =
   | "obligation_payable"
   | "subscription"
   | "planned_movement"
+  | "credit_card_payment"
   | "typical_spend";
 
 export type ProjectionLine = {
@@ -101,6 +102,21 @@ export type ProjectionPlannedMovement = {
   occurredAt: string;
 };
 
+/**
+ * Espejo de `ProjectionCreditCard`. Lo unico del calendario que gasta en un mes y cobra en otro:
+ * sin esto el gasto de la tarjeta se resta un mes antes de tiempo. Lo coloca `paymentDay`;
+ * `statementDay` no hace falta aqui y vive en la cuenta para mostrarlo y avisar.
+ */
+export type ProjectionCreditCard = {
+  name: string;
+  currencyCode: string;
+  /** Lo que se debe hoy, positivo. Sale en el PROXIMO dia de pago y va como `scheduled`. */
+  currentDebt: number;
+  paymentDay: number | null;
+  /** Mediana de lo que se carga a ESTA tarjeta al mes; sale en los pagos siguientes. */
+  typicalMonthlySpend: number;
+};
+
 export type ProjectionInput = {
   startingBalance: number;
   fromDate: string;
@@ -109,6 +125,8 @@ export type ProjectionInput = {
   subscriptions: readonly ProjectionSubscription[];
   obligations: readonly ProjectionObligation[];
   plannedMovements: readonly ProjectionPlannedMovement[];
+  creditCards?: readonly ProjectionCreditCard[];
+  /** Debe EXCLUIR lo cargado a tarjetas: eso viaja por `creditCards` y sale en su mes de pago. */
   typicalDiscretionarySpend: number;
   convert: (amount: number, fromCurrency: string) => number | null;
 };
@@ -614,6 +632,39 @@ export function buildCashflowCalendar(input: ProjectionInput): ProjectionResult 
         source: "scheduled",
       };
       push(installment.dueDate, line, collects ? "inflows" : "outflows", converted);
+    }
+  }
+
+  // El primer pago es lo que YA se debe (monto y fecha conocidos: scheduled); los siguientes son
+  // el gasto tipico de esa tarjeta, que para entonces ya estara cargado (estimated).
+  for (const card of input.creditCards ?? []) {
+    if (card.paymentDay == null) continue;
+    const day = Math.min(31, Math.max(1, Math.floor(card.paymentDay)));
+    // El dia se recorta al mes corto en cada vuelta y NO se arrastra: con dia 31, febrero paga el
+    // 28 y marzo vuelve al 31.
+    const firstAnchor: Ymd =
+      day >= fromDate.d ? { y: fromDate.y, m: fromDate.m, d: 1 } : addMonthsYmd({ ...fromDate, d: 1 }, 1);
+
+    for (let i = 0; i < MAX_OCCURRENCES; i += 1) {
+      const anchor = addMonthsYmd(firstAnchor, i);
+      const due: Ymd = { y: anchor.y, m: anchor.m, d: Math.min(day, daysInMonth(anchor.y, anchor.m)) };
+      if (compareYmd(due, horizonDate) > 0) break;
+      const isFirst = i === 0;
+      const amount = isFirst ? card.currentDebt : card.typicalMonthlySpend;
+      if (amount > EPSILON) {
+        const converted = input.convert(amount, card.currencyCode);
+        push(
+          due,
+          {
+            kind: "credit_card_payment",
+            label: card.name,
+            amount: converted ?? 0,
+            source: isFirst ? "scheduled" : "estimated",
+          },
+          "outflows",
+          converted,
+        );
+      }
     }
   }
 
