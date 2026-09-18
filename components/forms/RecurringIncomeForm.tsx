@@ -26,6 +26,9 @@ import { BottomSheet } from "../ui/BottomSheet";
 import { FormDateRow } from "../ui/FormDateRow";
 import { FormOptionRow } from "../ui/FormOptionRow";
 import { RecurringIncomeOptionalsSheet } from "../../features/recurring-income/components/RecurringIncomeOptionalsSheet";
+import { IncomeBreakdownSection } from "../../features/recurring-income/components/IncomeBreakdownSection";
+import { collectDeductions, parseMoney as parseBreakdownMoney, toDrafts, type DeductionDraft } from "../../features/recurring-income/lib/incomeBreakdown";
+import { formatCurrency } from "../../lib/format-currency";
 import { describeRecurringCadence } from "../../features/recurring-income/lib/recurringIncomeSchedule";
 import { LAST_DAY_ANCHOR, subscriptionRecurrencePhrase } from "../../lib/subscription-helpers";
 import { currencyPluralTitle } from "../../constants/currencies";
@@ -115,6 +118,11 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
   const [categoryId, setCategoryId] = useState<number | null>(null);
   const [remindDaysBefore, setRemindDaysBefore] = useState(3);
   const [notes, setNotes] = useState("");
+  /* El desglose del sueldo. Cerrado por defecto: la mayoria de ingresos fijos —un alquiler, unas
+     clases— no tiene descuentos y no deberia ver una fila que no necesita pedir. */
+  const [breakdownOpen, setBreakdownOpen] = useState(false);
+  const [grossAmount, setGrossAmount] = useState("");
+  const [deductions, setDeductions] = useState<DeductionDraft[]>([]);
   const [showDiscard, setShowDiscard] = useState(false);
   const [nameError, setNameError] = useState("");
   const [amountError, setAmountError] = useState("");
@@ -143,6 +151,12 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
       setCategoryId(editRecurringIncome.categoryId ?? null);
       setRemindDaysBefore(editRecurringIncome.remindDaysBefore);
       setNotes(editRecurringIncome.notes ?? "");
+      const storedGross = editRecurringIncome.grossAmount ?? null;
+      const storedDeductions = toDrafts(editRecurringIncome.deductions, (index) => `edit-${index}`);
+      setGrossAmount(storedGross == null ? "" : String(storedGross));
+      setDeductions(storedDeductions);
+      // Si ya hay desglose guardado se abre solo: el usuario entro a ver justo eso.
+      setBreakdownOpen(storedGross != null || storedDeductions.length > 0);
     } else {
       setName("");
       setPayerPartyId(null);
@@ -164,6 +178,9 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
       setCategoryId(null);
       setRemindDaysBefore(3);
       setNotes("");
+      setGrossAmount("");
+      setDeductions([]);
+      setBreakdownOpen(false);
     }
     setNameError("");
     setAmountError("");
@@ -363,6 +380,10 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
       endDate: endDate.trim() ? endDate : null,
       remindDaysBefore,
       notes: notes.trim() ? notes.trim() : null,
+      // El neto ya viajo en `amount` y es el que manda. Esto es el registro de donde sale.
+      // NO se valida que bruto - descuentos = amount: ver incomeBreakdown.ts.
+      grossAmount: parseBreakdownMoney(grossAmount),
+      deductions: collectDeductions(deductions),
     };
 
     submittingRef.current = true;
@@ -541,13 +562,25 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
 
           {/* "S/ 0.00" gris sobre caja gris se leía como un dato ya puesto, no como el campo
               donde va la cifra más importante del formulario. */}
-          <Text style={styles.fieldLabel}>Cuánto llega</Text>
+          <Text style={styles.fieldLabel}>Llega a tu cuenta</Text>
           <CurrencyInput
             value={amount}
             onChangeText={(value) => { setAmount(value); setAmountError(""); }}
             currencyCode={currencyCode}
             error={amountError}
             style={styles.amountField}
+          />
+
+          <IncomeBreakdownSection
+            open={breakdownOpen}
+            onToggle={() => setBreakdownOpen((current) => !current)}
+            grossAmount={grossAmount}
+            onChangeGross={setGrossAmount}
+            deductions={deductions}
+            onChangeDeductions={setDeductions}
+            netAmount={amount}
+            currencyCode={currencyCode}
+            formatAmount={(value) => formatCurrency(value, currencyCode)}
           />
 
           {/* Lo obligatorio, en una tarjeta. "Entra a" sube aquí: sin cuenta, confirmar una

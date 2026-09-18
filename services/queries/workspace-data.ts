@@ -509,6 +509,10 @@ type RecurringIncomeRow = {
   category_id: number | null;
   currency_code: string;
   amount: NumericLike;
+  /** Bruto en planilla, opcional. Informativo: manda `amount`, que es lo que LLEGA. */
+  gross_amount?: NumericLike | null;
+  /** Descuentos copiados de la boleta: `[{name, amount}]`. */
+  deductions?: { name: string; amount: number }[] | null;
   frequency: RecurringIncomeFrequency;
   interval_count: number;
   day_of_month: number | null;
@@ -917,7 +921,7 @@ export async function fetchWorkspaceSnapshot(
       .order("next_due_date", { ascending: true }),
     supabase
       .from("recurring_income")
-      .select("id, workspace_id, name, payer_party_id, account_id, category_id, currency_code, amount, frequency, interval_count, day_of_month, day_of_week, start_date, next_expected_date, end_date, status, remind_days_before, description, notes, is_pinned")
+      .select("id, workspace_id, name, payer_party_id, account_id, category_id, currency_code, amount, gross_amount, deductions, frequency, interval_count, day_of_month, day_of_week, start_date, next_expected_date, end_date, status, remind_days_before, description, notes, is_pinned")
       .eq("workspace_id", activeWorkspaceId)
       .order("next_expected_date", { ascending: true }),
     supabase
@@ -3755,6 +3759,9 @@ function mapRecurringIncome(
     dayOfWeek: row.day_of_week,
     startDate: row.start_date,
     nextExpectedDate: row.next_expected_date,
+    // El desglose del sueldo. `amount` sigue siendo el neto y el que manda.
+    grossAmount: row.gross_amount == null ? null : Number(row.gross_amount),
+    deductions: Array.isArray(row.deductions) ? row.deductions : [],
     endDate: row.end_date,
     remindDaysBefore: row.remind_days_before,
     description: row.description,

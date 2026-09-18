@@ -55,6 +55,10 @@ export type RecurringIncomeFormInput = {
   remindDaysBefore: number;
   description?: string | null;
   notes?: string | null;
+  /** Bruto en planilla. Informativo: quien manda es `amount`, lo que LLEGA. */
+  grossAmount?: number | null;
+  /** Descuentos copiados de la boleta. La app no calcula retenciones. */
+  deductions?: { name: string; amount: number }[];
 };
 
 export function useCreateRecurringIncomeMutation(workspaceId: number | null) {
@@ -87,6 +91,8 @@ export function useCreateRecurringIncomeMutation(workspaceId: number | null) {
           next_expected_date: input.nextExpectedDate,
           end_date: input.endDate ?? null,
           remind_days_before: input.remindDaysBefore,
+          gross_amount: input.grossAmount ?? null,
+          deductions: input.deductions ?? [],
           description: input.description ?? null,
           notes: input.notes ?? null,
           status: "active",
@@ -124,6 +130,9 @@ export function useUpdateRecurringIncomeMutation(workspaceId: number | null) {
       if (input.nextExpectedDate !== undefined) payload.next_expected_date = input.nextExpectedDate;
       if (input.endDate !== undefined) payload.end_date = input.endDate;
       if (input.remindDaysBefore !== undefined) payload.remind_days_before = input.remindDaysBefore;
+      // El desglose se borra igual que se pone: `null` y `[]` son valores validos, no "sin dato".
+      if (input.grossAmount !== undefined) payload.gross_amount = input.grossAmount;
+      if (input.deductions !== undefined) payload.deductions = input.deductions;
       if (input.description !== undefined) payload.description = input.description;
       if (input.notes !== undefined) payload.notes = input.notes;
       if (input.status !== undefined) payload.status = input.status;

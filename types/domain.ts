@@ -522,6 +522,10 @@ export type RecurringIncomeSummary = {
   amount: number;
   amountInBaseCurrency?: number | null;
   currencyCode: string;
+  /** Bruto en planilla, si el usuario lo declaro. Informativo: manda `amount`. */
+  grossAmount?: number | null;
+  /** Descuentos copiados de la boleta: `[{name, amount}]`. La app no calcula retenciones. */
+  deductions?: { name: string; amount: number }[];
   frequency: RecurringIncomeFrequency;
   frequencyLabel: string;
   intervalCount: number;
