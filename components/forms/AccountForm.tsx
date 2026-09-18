@@ -27,6 +27,7 @@ import type { AccountSummary } from "../../types/domain";
 import { FormOptionRow } from "../ui/FormOptionRow";
 import { FormSheetScaffold } from "../ui/FormSheetScaffold";
 import { SearchableSelectSheet } from "../ui/SearchableSelectSheet";
+import { DayOfMonthSheet } from "../../features/accounts/components/DayOfMonthSheet";
 import { AppearancePickerOverlay, CATEGORY_COLOR_CHOICES } from "./AppearancePickerOverlay";
 import { CurrencySelectOverlay, CustomCurrencyField } from "./CurrencySelectOverlay";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
@@ -46,6 +47,12 @@ type Props = {
   onSuccess?: () => void;
   editAccount?: AccountSummary;
 };
+
+/** La linea de credito es referencia para el usuario; no participa en ningun calculo. */
+function parseCreditLimit(value: string): number | null {
+  const parsed = Number(String(value).replace(",", "."));
+  return Number.isFinite(parsed) && parsed > 0 ? Number(parsed.toFixed(2)) : null;
+}
 
 export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props) {
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
@@ -76,6 +83,13 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
   const [appearanceOpen, setAppearanceOpen] = useState(false);
   const [currencyOpen, setCurrencyOpen] = useState(false);
   const [typeOpen, setTypeOpen] = useState(false);
+  /* El ciclo de la tarjeta. Solo existe para `credit_card`: las otras seis clases de cuenta no
+     gastan en un mes y cobran en otro. */
+  const [statementDay, setStatementDay] = useState<number | null>(null);
+  const [paymentDay, setPaymentDay] = useState<number | null>(null);
+  const [creditLimit, setCreditLimit] = useState("");
+  const [statementDayOpen, setStatementDayOpen] = useState(false);
+  const [paymentDayOpen, setPaymentDayOpen] = useState(false);
   const [institutionOpen, setInstitutionOpen] = useState(false);
 
   // ── Draft key ────────────────────────────────────────────────────────────
@@ -143,6 +157,9 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
     if (editAccount) {
       setName(editAccount.name);
       setType(editAccount.type);
+      setStatementDay(editAccount.statementDay ?? null);
+      setPaymentDay(editAccount.paymentDay ?? null);
+      setCreditLimit(editAccount.creditLimit == null ? "" : String(editAccount.creditLimit));
       setCurrencyCode(editAccount.currencyCode);
       setOpeningBalance((editAccount.openingBalance ?? 0).toFixed(2));
       setIncludeInNetWorth(editAccount.includeInNetWorth);
@@ -156,6 +173,9 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
       // Reset then try to load draft
       setName("");
       setType("bank");
+      setStatementDay(null);
+      setPaymentDay(null);
+      setCreditLimit("");
       setCurrencyCode(defaultCurrency);
       setOpeningBalance("0.00");
       setIncludeInNetWorth(true);
@@ -181,6 +201,13 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
     const prevPreset = TYPE_PRESETS[type] ?? TYPE_PRESETS["other"];
     const newPreset = TYPE_PRESETS[newType] ?? TYPE_PRESETS["other"];
     setType(newType);
+    // Dejar de ser tarjeta borra su ciclo. Un banco con dia de corte es un dato fantasma que la
+    // proyeccion podria leer, y es lo que permite que la base lo prohiba (ver la migracion).
+    if (newType !== "credit_card") {
+      setStatementDay(null);
+      setPaymentDay(null);
+      setCreditLimit("");
+    }
     // Only auto-apply if user hasn't manually customized
     if (!iconCustomized.current || icon === prevPreset.icon) {
       setIcon(newPreset.icon);
@@ -221,6 +248,11 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
       color,
       icon,
       institutionCode,
+      // Solo viajan si la cuenta ES una tarjeta: el formulario ya las limpio al cambiar de tipo,
+      // y esto lo vuelve a garantizar en el unico sitio por donde salen.
+      statementDay: type === "credit_card" ? statementDay : null,
+      paymentDay: type === "credit_card" ? paymentDay : null,
+      creditLimit: type === "credit_card" ? parseCreditLimit(creditLimit) : null,
     };
     submittingRef.current = true;
     try {
@@ -288,6 +320,22 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
             value={type}
             onChange={handleTypeChange}
             onClose={() => setTypeOpen(false)}
+          />
+
+          <DayOfMonthSheet
+            visible={statementDayOpen}
+            title="Día de corte"
+            value={statementDay}
+            onChange={setStatementDay}
+            onClose={() => setStatementDayOpen(false)}
+          />
+
+          <DayOfMonthSheet
+            visible={paymentDayOpen}
+            title="Día de pago"
+            value={paymentDay}
+            onChange={setPaymentDay}
+            onClose={() => setPaymentDayOpen(false)}
           />
 
           {/* La búsqueda vive DENTRO de la hoja que elige, no al costado del formulario:
@@ -387,6 +435,7 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
           label="Tipo"
           value={accountTypeLabel(type)}
           onPress={() => setTypeOpen(true)}
+          last={type === "credit_card"}
         />
         <FormOptionRow
           grouped
@@ -415,6 +464,43 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
           }
         />
       </View>
+
+      {/* Aparece al elegir "Tarjeta de crédito" y desaparece al dejar de serlo. Va aquí —bajo
+          Tipo, no al fondo— para no reordenar los campos que ya se llenaron debajo. */}
+      {type === "credit_card" ? (
+        <View style={styles.field}>
+          <Text style={styles.sectionLabel}>Ciclo de la tarjeta</Text>
+          <View style={styles.group}>
+            <FormOptionRow
+              grouped
+              label="Día de corte"
+              value={statementDay == null ? "" : String(statementDay)}
+              placeholder="Elegir"
+              onPress={() => setStatementDayOpen(true)}
+            />
+            <FormOptionRow
+              grouped
+              last
+              label="Día de pago"
+              value={paymentDay == null ? "" : String(paymentDay)}
+              placeholder="Elegir"
+              onPress={() => setPaymentDayOpen(true)}
+            />
+          </View>
+          <Text style={styles.fieldHint}>
+            Si el mes no tiene ese día, se usa el último día del mes.
+          </Text>
+
+          <Text style={styles.sectionLabel}>Línea de crédito</Text>
+          <CurrencyInput
+            value={creditLimit}
+            onChangeText={setCreditLimit}
+            currencyCode={resolvedCurrency}
+          />
+          <Text style={styles.fieldHint}>Opcional. Solo como referencia tuya.</Text>
+        </View>
+      ) : null}
+
       {customCurrency.trim() ? (
         <CustomCurrencyField value={customCurrency} onChange={setCustomCurrency} />
       ) : null}

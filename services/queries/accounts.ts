@@ -21,6 +21,11 @@ export type AccountFormInput = {
   icon: string;
   /** Optional institution slug (`bcp`, `interbank`, ...). Null/undefined clears it. */
   institutionCode?: string | null;
+  /** Ciclo de la tarjeta. Solo tiene sentido en `type = "credit_card"`; el formulario lo limpia
+   *  al dejar de serlo y estos tres viajan como null para el resto de tipos. */
+  statementDay?: number | null;
+  paymentDay?: number | null;
+  creditLimit?: number | null;
 };
 
 export function useCreateAccountMutation(workspaceId: number | null) {
@@ -44,6 +49,9 @@ export function useCreateAccountMutation(workspaceId: number | null) {
             sort_order: 0,
             is_archived: false,
             institution_code: input.institutionCode ?? null,
+            statement_day: input.statementDay ?? null,
+            payment_day: input.paymentDay ?? null,
+            credit_limit: input.creditLimit ?? null,
           })
           .select("id")
           .single(),
@@ -77,6 +85,11 @@ export function useUpdateAccountMutation(workspaceId: number | null) {
             color: input.color,
             icon: input.icon,
             ...("institutionCode" in input ? { institution_code: input.institutionCode ?? null } : {}),
+            // Cada uno con su propia condicion: `null` es un valor valido —limpiar el ciclo al
+            // dejar de ser tarjeta— y no puede confundirse con "no lo mandes".
+            ...("statementDay" in input ? { statement_day: input.statementDay ?? null } : {}),
+            ...("paymentDay" in input ? { payment_day: input.paymentDay ?? null } : {}),
+            ...("creditLimit" in input ? { credit_limit: input.creditLimit ?? null } : {}),
           })
           .eq("id", id)
           .eq("workspace_id", workspaceId),
