@@ -204,6 +204,12 @@ export type AccountSummary = {
   isArchived: boolean;
   /** Slug from `lib/account-institutions.ts` (e.g. "bcp", "interbank"). Null/undefined when none. */
   institutionCode?: string | null;
+  /** Dia del mes del corte (1-31). Solo aplica a `type = "credit_card"`. */
+  statementDay?: number | null;
+  /** Dia del mes del pago (1-31). Solo aplica a `type = "credit_card"`. */
+  paymentDay?: number | null;
+  /** Linea de credito, referencia para el usuario. Solo aplica a `type = "credit_card"`. */
+  creditLimit?: number | null;
 };
 
 /** Catálogo en snapshot (pickers); campos extra opcionales para compatibilidad. */

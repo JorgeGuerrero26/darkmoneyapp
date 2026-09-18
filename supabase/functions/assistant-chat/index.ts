@@ -671,9 +671,9 @@ async function runProjectCashflow(
     client.from("v_latest_exchange_rates").select("from_currency_code, to_currency_code, rate"),
     client
       .from("v_account_balances")
-      .select("name, type, currency_code, current_balance")
+      .select("id, name, type, currency_code, current_balance")
       .eq("workspace_id", workspaceId),
-    client.from("accounts").select("id, currency_code").eq("workspace_id", workspaceId),
+    client.from("accounts").select("id, name, type, currency_code, payment_day, is_archived").eq("workspace_id", workspaceId),
     client
       .from("recurring_income")
       .select("name, amount, currency_code, frequency, interval_count, next_expected_date, end_date, status")
@@ -736,17 +736,54 @@ async function runProjectCashflow(
     destinationAccountId: row.destination_account_id == null ? null : Number(row.destination_account_id),
   }));
 
+  // Las tarjetas se sacan del gasto tipico y viajan por su propia via: lo que se carga a una
+  // tarjeta sale del banco en el dia de pago, no el dia de la compra. Misma regla que el
+  // dashboard; si las dos se separan, las dos cifras dejan de coincidir.
+  const cardAccounts = (accounts.data ?? []).filter(
+    (account) => account.type === "credit_card" && !account.is_archived,
+  );
+  const cardIds = new Set(cardAccounts.map((account) => Number(account.id)));
+
+  const expenseIn = (movement: typeof historyMovements[number]) => {
+    const accountId = movementDisplayAccountId(movement);
+    const currency = accountId != null ? currencyByAccount.get(accountId) : undefined;
+    return convert(movementDisplayAmount(movement), currency ?? base) ?? 0;
+  };
+
   const monthlyTotals = monthlyDiscretionarySpend({
     movements: historyMovements,
     months: PROJECTION_HISTORY_MONTHS,
     expenseAmountOf: (movement) => {
       if (!movementActsAsExpense(movement)) return 0;
       const accountId = movementDisplayAccountId(movement);
-      const currency = accountId != null ? currencyByAccount.get(accountId) : undefined;
-      return convert(movementDisplayAmount(movement), currency ?? base) ?? 0;
+      if (accountId != null && cardIds.has(accountId)) return 0;
+      return expenseIn(movement);
     },
   });
   const typicalDiscretionarySpend = typicalMonthlySpend(monthlyTotals);
+
+  // Por id, no por nombre: dos cuentas pueden llamarse igual y el saldo iria a la equivocada.
+  const balanceByAccount = new Map<number, number>();
+  for (const row of balances.data ?? []) balanceByAccount.set(Number(row.id), Number(row.current_balance ?? 0));
+
+  const creditCards = cardAccounts.map((account) => {
+    const id = Number(account.id);
+    const perCard = monthlyDiscretionarySpend({
+      movements: historyMovements,
+      months: PROJECTION_HISTORY_MONTHS,
+      expenseAmountOf: (movement) =>
+        movementActsAsExpense(movement) && movementDisplayAccountId(movement) === id ? expenseIn(movement) : 0,
+    });
+    // El saldo de una tarjeta es negativo cuando se debe; un saldo a favor no es deuda.
+    const balance = balanceByAccount.get(id) ?? 0;
+    return {
+      name: String(account.name ?? "Tarjeta"),
+      currencyCode: String(account.currency_code ?? base),
+      currentDebt: Math.max(0, -balance),
+      paymentDay: account.payment_day == null ? null : Number(account.payment_day),
+      typicalMonthlySpend: typicalMonthlySpend(perCard),
+    };
+  });
 
   const today = new Date();
   const fromDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
@@ -789,6 +826,7 @@ async function runProjectCashflow(
       paymentPlan: row.payment_plan,
       installmentAmount: row.installment_amount == null ? null : Number(row.installment_amount),
     })),
+    creditCards,
     plannedMovements: historyMovements
       .filter((movement) => movement.status === "planned" && new Date(movement.occurredAt) > today)
       .map((movement) => {

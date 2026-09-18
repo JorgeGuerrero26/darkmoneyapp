@@ -68,7 +68,15 @@ type CashflowProjectionSectionProps = {
    * Las cuentas con su tipo. La proyección arranca del saldo LÍQUIDO, no del patrimonio neto:
    * lo que está en una cuenta de inversión no es plata gastable el mes que viene.
    */
-  accounts: Array<{ type?: string | null; currencyCode?: string | null; currentBalance?: number | null; isArchived?: boolean | null }>;
+  accounts: Array<{
+    id?: number;
+    name?: string;
+    type?: string | null;
+    currencyCode?: string | null;
+    currentBalance?: number | null;
+    isArchived?: boolean | null;
+    paymentDay?: number | null;
+  }>;
 };
 
 function monthLabel(monthKey: string): string {
@@ -217,20 +225,65 @@ export function CashflowProjectionSection({
     [accountCurrencyMap, exchangeRateMap, displayCurrency, baseCurrency],
   );
 
+  /** Tarjetas activas con ciclo. El resto de cuentas no gasta en un mes y cobra en otro. */
+  const cardAccounts = useMemo(
+    () => accounts.filter((account) => !account.isArchived && account.type === "credit_card"),
+    [accounts],
+  );
+  const cardIds = useMemo(
+    () => new Set(cardAccounts.map((account) => Number(account.id)).filter((id) => Number.isFinite(id))),
+    [cardAccounts],
+  );
+
   const typicalSpend = useMemo(() => {
     // La query base del dashboard trae una ventana fija. Pedirle seis meses devolvería los
     // cargados más ceros, y esos ceros partirían la mediana por la mitad sin que se note.
     const coveredFrom = new Date();
     coveredFrom.setDate(coveredFrom.getDate() - DASHBOARD_MOVEMENTS_WINDOW_DAYS);
 
+    // Lo cargado a una tarjeta NO entra aquí: sale por su propia línea, en el mes en que se
+    // paga. Si se colara, se restaría dos veces y además en el mes equivocado.
     const history = monthlyDiscretionarySpend({
       movements,
       months: HISTORY_MONTHS,
       earliestCoveredDate: coveredFrom,
-      expenseAmountOf: (movement) => (isExpense(movement) ? expenseAmt(movement, conversionCtx) : 0),
+      expenseAmountOf: (movement) => {
+        if (!isExpense(movement)) return 0;
+        const accountId = movementDisplayAccountId(movement);
+        if (accountId != null && cardIds.has(accountId)) return 0;
+        return expenseAmt(movement, conversionCtx);
+      },
     });
     return { typical: typicalMonthlySpend(history), monthsUsed: history.length };
-  }, [movements, conversionCtx]);
+  }, [movements, conversionCtx, cardIds]);
+
+  /** Una entrada por tarjeta: lo que ya se debe y lo que se le suele cargar al mes. */
+  const creditCards = useMemo(() => {
+    const coveredFrom = new Date();
+    coveredFrom.setDate(coveredFrom.getDate() - DASHBOARD_MOVEMENTS_WINDOW_DAYS);
+
+    return cardAccounts.map((account) => {
+      const id = Number(account.id);
+      const perCard = monthlyDiscretionarySpend({
+        movements,
+        months: HISTORY_MONTHS,
+        earliestCoveredDate: coveredFrom,
+        expenseAmountOf: (movement) => {
+          if (!isExpense(movement)) return 0;
+          return movementDisplayAccountId(movement) === id ? expenseAmt(movement, conversionCtx) : 0;
+        },
+      });
+      // El saldo de una tarjeta es negativo cuando se debe. Un saldo a favor no es una deuda.
+      const balance = Number(account.currentBalance ?? 0);
+      return {
+        name: account.name ?? "Tarjeta",
+        currencyCode: account.currencyCode ?? baseCurrency,
+        currentDebt: Math.max(0, -balance),
+        paymentDay: account.paymentDay ?? null,
+        typicalMonthlySpend: typicalMonthlySpend(perCard),
+      };
+    });
+  }, [cardAccounts, movements, conversionCtx, baseCurrency]);
 
   /**
    * Los gastos e ingresos que el usuario dejó anotados con fecha futura.
@@ -284,6 +337,7 @@ export function CashflowProjectionSection({
         installmentAmount: obligation.installmentAmount,
       })),
       plannedMovements,
+      creditCards,
     });
   }, [
     baseCurrency,
@@ -292,6 +346,7 @@ export function CashflowProjectionSection({
     exchangeRateMap,
     horizon,
     obligations,
+    creditCards,
     plannedMovements,
     recurringIncome,
     subscriptions,

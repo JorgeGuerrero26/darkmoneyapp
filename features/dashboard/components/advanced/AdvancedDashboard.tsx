@@ -190,8 +190,9 @@ export function AdvancedDashboard({
   subscriptions: Array<{ id: number; name: string; amount: number; currencyCode: string; nextDueDate: string; endDate?: string | null; accountId?: number | null; status: string; frequency: string; intervalCount: number }>;
   recurringIncome: Array<{ id: number; name: string; amount: number; currencyCode: string; nextExpectedDate: string; endDate?: string | null; frequency?: string; intervalCount?: number | null; status: string }>;
   snapshot: any;
-  // `type` lo pide la proyeccion: arranca del saldo liquido, no del patrimonio neto.
-  activeAccounts: { id: number; name: string; type?: string | null; currentBalance: number; currentBalanceInBaseCurrency?: number | null; currencyCode: string; includeInNetWorth: boolean; isArchived: boolean }[];
+  // `type` y `paymentDay` los pide la proyeccion: arranca del saldo liquido, no del patrimonio
+  // neto, y una tarjeta se paga en un mes distinto al que se gasta.
+  activeAccounts: { id: number; name: string; type?: string | null; paymentDay?: number | null; currentBalance: number; currentBalanceInBaseCurrency?: number | null; currencyCode: string; includeInNetWorth: boolean; isArchived: boolean }[];
   activeCurrency: string;
   baseCurrency: string;
   exchangeRateMap: Map<string, number>;

@@ -792,6 +792,11 @@ function buildAccountSummaries(
       icon: row.icon ?? "wallet",
       isArchived: row.is_archived,
       institutionCode: row.institution_code ?? null,
+      // Ciclo de la tarjeta. Solo tiene sentido en type = credit_card; quien lo lea comprueba
+      // el tipo, porque la restriccion en la base todavia no existe (ver la migracion).
+      statementDay: row.statement_day ?? null,
+      paymentDay: row.payment_day ?? null,
+      creditLimit: row.credit_limit ?? null,
     };
   });
 }
@@ -885,7 +890,7 @@ export async function fetchWorkspaceSnapshot(
     supabase.from("workspaces").select("id, owner_user_id, name, kind, base_currency_code, description, is_archived"),
     supabase
       .from("accounts")
-      .select("id, workspace_id, name, type, currency_code, opening_balance, include_in_net_worth, color, icon, is_archived, sort_order, institution_code, created_at, updated_at")
+      .select("id, workspace_id, name, type, currency_code, opening_balance, include_in_net_worth, color, icon, is_archived, sort_order, institution_code, statement_day, payment_day, credit_limit, created_at, updated_at")
       .eq("workspace_id", activeWorkspaceId)
       .order("sort_order", { ascending: true }),
     supabase
@@ -1500,7 +1505,7 @@ export async function refreshSnapshotDomains(
       wantsAccounts
         ? supabase
             .from("accounts")
-            .select("id, workspace_id, name, type, currency_code, opening_balance, include_in_net_worth, color, icon, is_archived, sort_order, institution_code, created_at, updated_at")
+            .select("id, workspace_id, name, type, currency_code, opening_balance, include_in_net_worth, color, icon, is_archived, sort_order, institution_code, statement_day, payment_day, credit_limit, created_at, updated_at")
             .eq("workspace_id", workspaceId)
             .order("sort_order", { ascending: true })
         : Promise.resolve(null),
