@@ -24,6 +24,7 @@ import { ErrorBoundary } from "../components/ui/ErrorBoundary";
 import { TextField } from "../components/ui/TextField";
 import { ScreenHeader } from "../components/layout/ScreenHeader";
 import { HeaderActionGroup } from "../components/ui/HeaderActionGroup";
+import { annotateAssistantTurn } from "../features/assistant/lib/draft-memory";
 import { MovementForm, type MovementDuplicateSource } from "../components/forms/MovementForm";
 import { AssistantDraftCard } from "../features/assistant/components/AssistantDraftCard";
 import { draftToMovementInput, draftDedupeKey, draftMovementStatus, type ResolvedIds } from "../features/assistant/lib/draft-to-input";
@@ -300,10 +301,17 @@ function AssistantScreen() {
       Speech.stop(); // corta cualquier respuesta hablada anterior al mandar una nueva
       idRef.current += 1;
       const userItem: ChatItem = { id: `u${idRef.current}`, role: "user", content: message };
-      // Historial para el server: solo turnos reales previos (sin welcome ni errores).
+      /* Historial para el server: solo turnos reales previos (sin welcome ni errores).
+         A los turnos del asistente se les añade QUÉ propuso y en qué quedó. Antes solo viajaban
+         `role` y `content`, así que el modelo no veía ni sus propios borradores ni si el usuario
+         los había guardado: tras registrar un gasto y pedirle lo que faltaba, volvía a ofrecer la
+         misma tarjeta. La anotación va solo aquí; lo que se ve en pantalla no cambia. */
       const history: AssistantChatMessage[] = items
         .filter((item) => item.id !== "welcome" && !item.error)
-        .map((item) => ({ role: item.role, content: item.content }));
+        .map((item) => ({
+          role: item.role,
+          content: item.role === "assistant" ? annotateAssistantTurn(item.content, item) : item.content,
+        }));
       setItems((current) => [...current, userItem]);
       setInput("");
       setIsThinking(true);
