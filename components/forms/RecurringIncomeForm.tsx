@@ -588,7 +588,6 @@ export function RecurringIncomeForm({ visible, onClose, onSuccess, editRecurring
             deductions={deductions}
             onChangeDeductions={setDeductions}
             netAmount={amount}
-            currencyCode={currencyCode}
             formatAmount={(value) => formatCurrency(value, currencyCode)}
           />
 

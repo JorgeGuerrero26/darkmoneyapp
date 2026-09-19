@@ -1,8 +1,7 @@
 import { Fragment } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { ChevronDown, ChevronUp, Check, Plus, X } from "lucide-react-native";
+import { ChevronDown, ChevronUp, Check, Plus, Trash2 } from "lucide-react-native";
 
-import { CurrencyInput } from "../../../components/ui/CurrencyInput";
 import { TextField } from "../../../components/ui/TextField";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../../constants/theme";
 import {
@@ -23,7 +22,6 @@ type Props = {
   onChangeDeductions: (next: DeductionDraft[]) => void;
   /** El neto tecleado arriba, para la línea de verificación. */
   netAmount: string;
-  currencyCode: string;
   formatAmount: (value: number) => string;
 };
 
@@ -49,7 +47,6 @@ export function IncomeBreakdownSection({
   deductions,
   onChangeDeductions,
   netAmount,
-  currencyCode,
   formatAmount,
 }: Props) {
   const verdict = verifyBreakdown(parseMoney(grossAmount), collectDeductions(deductions), parseMoney(netAmount));
@@ -94,16 +91,28 @@ export function IncomeBreakdownSection({
             Desglose
           </Text>
 
-          <View style={styles.field}>
+          {/* Filas, no campos de monto grandes: el campo grande es para la cifra principal de
+              una pantalla y aquí, en una celda estrecha, recortaba el número a "5…". Mismo
+              patrón que el plan a medida de créditos y deudas. */}
+          <View style={styles.row}>
             <Text style={styles.rowLabel} maxFontSizeMultiplier={1.4}>
               Bruto
             </Text>
-            <CurrencyInput value={grossAmount} onChangeText={onChangeGross} currencyCode={currencyCode} />
+            <TextField
+              value={grossAmount}
+              onChangeText={onChangeGross}
+              keyboardType="decimal-pad"
+              placeholder="0.00"
+              placeholderTextColor={COLORS.storm}
+              style={styles.amountInput}
+              accessibilityLabel="Monto bruto"
+            />
+            <View style={styles.trailingSpacer} />
           </View>
 
           {deductions.map((row) => (
             <Fragment key={row.key}>
-              <View style={styles.deductionRow}>
+              <View style={styles.row}>
                 <TextField
                   style={styles.nameInput}
                   value={row.name}
@@ -112,24 +121,28 @@ export function IncomeBreakdownSection({
                   placeholderTextColor={COLORS.storm}
                   accessibilityLabel="Nombre del descuento"
                 />
-                <View style={styles.amountCell}>
-                  <CurrencyInput
-                    value={row.amount}
-                    onChangeText={(value) => updateRow(row.key, { amount: value })}
-                    currencyCode={currencyCode}
-                  />
-                </View>
-                {/* Una equis visible, no un swipe: un desglose se llena una vez al empezar el
+                <Text style={styles.minus} maxFontSizeMultiplier={1.3}>
+                  −
+                </Text>
+                <TextField
+                  value={row.amount}
+                  onChangeText={(value) => updateRow(row.key, { amount: value })}
+                  keyboardType="decimal-pad"
+                  placeholder="0.00"
+                  placeholderTextColor={COLORS.storm}
+                  style={styles.amountInput}
+                  accessibilityLabel={`Monto de ${row.name || "el descuento"}`}
+                />
+                {/* Un icono visible, no un swipe: un desglose se llena una vez al empezar el
                     sueldo y se toca poco después, así que descubrirlo importa más que la
                     velocidad del gesto. */}
                 <Pressable
                   onPress={() => removeRow(row.key)}
                   accessibilityRole="button"
                   accessibilityLabel={`Quitar ${row.name || "el descuento"}`}
-                  hitSlop={8}
-                  style={styles.removeButton}
+                  hitSlop={10}
                 >
-                  <X size={15} color={COLORS.storm} strokeWidth={2} />
+                  <Trash2 size={15} color={COLORS.storm} strokeWidth={2} />
                 </Pressable>
               </View>
             </Fragment>
@@ -222,20 +235,42 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     color: COLORS.storm,
   },
-  field: { gap: SPACING.xs },
+  row: {
+    minHeight: 52,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: SURFACE.separator,
+  },
   rowLabel: {
+    flex: 1,
     fontFamily: FONT_FAMILY.bodyMedium,
     fontSize: FONT_SIZE.sm,
     color: COLORS.ink,
   },
-  deductionRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: SPACING.sm,
+  nameInput: {
+    flex: 1,
+    fontFamily: FONT_FAMILY.bodyMedium,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.ink,
+    paddingVertical: SPACING.sm,
   },
-  nameInput: { flex: 1.1 },
-  amountCell: { flex: 1 },
-  removeButton: { padding: SPACING.xs },
+  minus: {
+    fontFamily: FONT_FAMILY.heading,
+    fontSize: FONT_SIZE.md,
+    color: COLORS.storm,
+  },
+  amountInput: {
+    minWidth: 96,
+    textAlign: "right",
+    color: COLORS.ink,
+    fontFamily: FONT_FAMILY.heading,
+    fontSize: FONT_SIZE.md,
+    paddingVertical: SPACING.sm,
+  },
+  /* Alinea el bruto con las filas que llevan papelera, para que los montos queden en columna. */
+  trailingSpacer: { width: 15 },
   addRow: {
     flexDirection: "row",
     alignItems: "center",
