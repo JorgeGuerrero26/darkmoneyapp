@@ -13,6 +13,8 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "1.0.10",
     title: "DarkMoney estrena look",
     changes: [
+      "Tu tarjeta de crédito ya tiene calendario: le pones el día de corte y el de pago, y la app los usa. Aparecen en la fila de Cuentas, el pago entra en la agenda de lo que viene, y la proyección deja de restarte lo que gastas con ella un mes antes de tiempo — hasta ahora te lo descontaba el día de la compra, cuando del banco no sale nada hasta que la pagas.",
+      "Un ingreso fijo ya no es un solo número: puedes anotar el bruto y los descuentos de tu boleta —AFP, renta, lo que sea— y la app te dice si cuadra con lo que te llega. El desglose se ve después en el detalle del ingreso. Lo que sigue mandando para todas las cuentas es lo que entra a tu cuenta.",
       "Si le dictas dos cosas de una vez al asistente —\"me dieron 5 y gasté 28.50\"— ahora te propone las dos, cada una en su propia tarjeta para que guardes una y corrijas la otra si hace falta. Antes solo aparecía una y la otra se perdía sin avisar.",
       "El asistente ya no te vuelve a ofrecer algo que acabas de guardar. Ahora recuerda qué te propuso y en qué quedó —si lo guardaste, si lo descartaste o si sigue esperando—, así que cuando le dices que faltó algo, sabe de qué estás hablando.",
       "Arreglado: en Ingresos fijos, al tocar \"Quién paga\" o \"Categoría\" dentro de Opcionales no pasaba nada — la lista se abría por detrás de la ventana y no se veía. Parecía que esas opciones ya no existieran.",

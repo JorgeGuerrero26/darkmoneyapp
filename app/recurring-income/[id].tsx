@@ -21,6 +21,7 @@ import { RecurringIncomeArrivalSheet } from "../../features/recurring-income/com
 import { useArrivalSheetController } from "../../features/recurring-income/lib/useArrivalSheetController";
 import { RecurringIncomeDetailHeader } from "../../features/recurring-income/components/RecurringIncomeDetailHeader";
 import { RecurringIncomeDetailFacts } from "../../features/recurring-income/components/RecurringIncomeDetailFacts";
+import { RecurringIncomeBreakdownCard } from "../../features/recurring-income/components/RecurringIncomeBreakdownCard";
 import { RecurringIncomeDetailHistory } from "../../features/recurring-income/components/RecurringIncomeDetailHistory";
 import { recurringIncomeStanding } from "../../features/recurring-income/lib/recurringIncomeStanding";
 import { formatCurrency } from "../../components/ui/AmountDisplay";
@@ -230,6 +231,15 @@ function RecurringIncomeDetailScreen() {
             <RecurringIncomeDetailFacts
               item={item}
               onPickPayer={() => setPayerPickerOpen(true)}
+            />
+
+            {/* Justo debajo de los datos y antes del historial: quien entro a ver el sueldo
+                viene a esto, no a buscarlo detras de otro toque. */}
+            <RecurringIncomeBreakdownCard
+              grossAmount={item.grossAmount}
+              deductions={item.deductions}
+              netAmount={item.amount}
+              currencyCode={item.currencyCode}
             />
 
             <RecurringIncomeDetailHistory
