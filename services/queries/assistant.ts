@@ -78,7 +78,10 @@ export type RecurringDraft = {
 export type AssistantReply = {
   reply: string;
   evidence: AssistantEvidence[];
+  /** Primero de `drafts`, o null. Se conserva porque hay pantallas que solo leen uno. */
   draft: AssistantDraft | null;
+  /** Todos los movimientos propuestos en el turno: una frase puede traer varios. */
+  drafts: AssistantDraft[];
   budgetDraft: BudgetDraft | null;
   obligationDraft: ObligationDraft | null;
   recurringDraft: RecurringDraft | null;
@@ -247,10 +250,20 @@ export async function askAssistant(input: {
     throw new Error(String(response.error ?? "No se pudo responder. Inténtalo de nuevo."));
   }
 
+  /* El servidor manda `drafts` (lista) y `draft` (el primero, por compatibilidad). Se lee la
+     lista y se cae al campo suelto si la respuesta viene de una versión anterior del servidor:
+     así un cliente al día sigue funcionando contra un despliegue viejo. */
+  const drafts = Array.isArray(response.drafts)
+    ? response.drafts.map(parseDraft).filter((d): d is AssistantDraft => d !== null)
+    : [];
+  const primero = parseDraft(response.draft);
+  const todos = drafts.length > 0 ? drafts : primero ? [primero] : [];
+
   return {
     reply: String(response.reply ?? ""),
     evidence: parseEvidence(response.evidence),
-    draft: parseDraft(response.draft),
+    draft: todos[0] ?? null,
+    drafts: todos,
     budgetDraft: parseBudgetDraft(response.budgetDraft),
     obligationDraft: parseObligationDraft(response.obligationDraft),
     recurringDraft: parseRecurringDraft(response.recurringDraft),

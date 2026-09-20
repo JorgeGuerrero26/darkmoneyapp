@@ -317,20 +317,36 @@ function AssistantScreen() {
       setIsThinking(true);
       try {
         const response = await askAssistant({ message, history, workspaceId: activeWorkspaceId });
+        /* Un turno puede traer VARIOS movimientos ("me dieron 5 y gasté 28.50"). Cada uno va en su
+           propio mensaje para que tenga su propia tarjeta con Guardar, Editar y Cancelar: así se
+           puede guardar uno y corregir el otro. El componente de tarjeta no cambia — sigue siendo
+           un borrador por mensaje. */
+        const [primerMovimiento, ...movimientosExtra] = response.drafts;
         idRef.current += 1;
-        setItems((current) => [
-          ...current,
+        const nuevos: ChatItem[] = [
           {
             id: `a${idRef.current}`,
             role: "assistant",
             content: response.reply,
             evidence: response.evidence,
-            ...(response.draft ? { draft: response.draft, draftStatus: "pending" as const } : {}),
+            ...(primerMovimiento ? { draft: primerMovimiento, draftStatus: "pending" as const } : {}),
             ...(response.budgetDraft ? { budgetDraft: response.budgetDraft, draftStatus: "pending" as const } : {}),
             ...(response.obligationDraft ? { obligationDraft: response.obligationDraft, draftStatus: "pending" as const } : {}),
             ...(response.recurringDraft ? { recurringDraft: response.recurringDraft, draftStatus: "pending" as const } : {}),
           },
-        ]);
+        ];
+        for (const movimiento of movimientosExtra) {
+          idRef.current += 1;
+          nuevos.push({
+            id: `a${idRef.current}`,
+            role: "assistant",
+            // Sin texto: el turno ya lo dijo arriba y esta fila es solo la tarjeta.
+            content: "",
+            draft: movimiento,
+            draftStatus: "pending",
+          });
+        }
+        setItems((current) => [...current, ...nuevos]);
         setRemainingToday(response.remainingToday);
         if (speakModeRef.current) speakReply(response.reply);
       } catch (error) {

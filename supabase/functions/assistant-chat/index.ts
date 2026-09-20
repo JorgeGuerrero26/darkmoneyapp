@@ -1236,7 +1236,10 @@ Deno.serve(async (req) => {
     let reply = "";
     let modelUsed = "";
     const aiStartedAt = Date.now();
-    let pendingDraft: ReturnType<typeof normalizeDraft> = null;
+    /* Lista, no variable suelta: una frase puede traer dos movimientos ("me dieron 5 y gasté
+       28.50") y el modelo llama a draft_movement una vez por cada uno. Cuando esto era un solo
+       hueco, el segundo pisaba al primero y el usuario solo veía uno — sin que nada avisara. */
+    const pendingDrafts: NonNullable<ReturnType<typeof normalizeDraft>>[] = [];
     let pendingBudgetDraft: ReturnType<typeof normalizeBudgetDraft> = null;
     let pendingObligationDraft: ReturnType<typeof normalizeObligationDraft> = null;
     let pendingRecurringDraft: ReturnType<typeof normalizeRecurringDraft> = null;
@@ -1312,7 +1315,7 @@ Deno.serve(async (req) => {
           } else if (name === "draft_movement") {
             // Solo PROPONE: no toca la BD. El cliente confirma y guarda.
             const draft = normalizeDraft(args);
-            pendingDraft = draft;
+            if (draft) pendingDrafts.push(draft);
             output = {
               result: draft
                 ? { ok: true, draft, note: "Borrador propuesto. La app pedirá confirmación; NO está registrado." }
@@ -1371,7 +1374,7 @@ Deno.serve(async (req) => {
     // Una sola llamada extra, sin tools → profundidad sin el timeout del loop.
     const geminiKey = Deno.env.get("GEMINI_API_KEY")?.trim();
     const escalationOff = Deno.env.get("ASSISTANT_DISABLE_ESCALATION")?.trim() === "1";
-    if (geminiKey && !escalationOff && isDeepQuestion(message) && reply && !pendingDraft && !pendingBudgetDraft && !pendingObligationDraft && !pendingRecurringDraft) {
+    if (geminiKey && !escalationOff && isDeepQuestion(message) && reply && pendingDrafts.length === 0 && !pendingBudgetDraft && !pendingObligationDraft && !pendingRecurringDraft) {
       try {
         const proModel = Deno.env.get("ASSISTANT_GEMINI_PRO_MODEL")?.trim() || "gemini-2.5-pro";
         const synth = await callGemini(
@@ -1433,7 +1436,10 @@ Deno.serve(async (req) => {
       ok: true,
       reply,
       evidence,
-      draft: pendingDraft,
+      /* `draft` se mantiene por compatibilidad: un teléfono con JS viejo solo lee este campo,
+         y quitarlo lo dejaría sin poder registrar nada. Los clientes al día leen `drafts`. */
+      draft: pendingDrafts[0] ?? null,
+      drafts: pendingDrafts,
       budgetDraft: pendingBudgetDraft,
       obligationDraft: pendingObligationDraft,
       recurringDraft: pendingRecurringDraft,
