@@ -4,6 +4,7 @@ import type { useRouter } from "expo-router";
 import { addDays, differenceInDays, format } from "date-fns";
 import { es } from "date-fns/locale";
 import { CheckCircle2 } from "lucide-react-native";
+import { currentDebt, hasCycle, nextPaymentDate } from "../../../accounts/lib/creditCardCycle";
 
 import { Card } from "../../../../components/ui/Card";
 import { formatCurrency } from "../../../../components/ui/AmountDisplay";
@@ -23,12 +24,23 @@ type UpcomingSectionProps = {
   }[];
   subscriptions: { id: number; name: string; nextDueDate: string; amount: number; currencyCode: string }[];
   recurringIncome: { id: number; name: string; nextExpectedDate: string; amount: number; currencyCode: string }[];
+  /** Tarjetas con ciclo. El pago de una tarjeta es un compromiso con fecha como cualquier otro. */
+  creditCards?: {
+    id: number;
+    name: string;
+    type?: string | null;
+    currencyCode: string;
+    currentBalance?: number | null;
+    statementDay?: number | null;
+    paymentDay?: number | null;
+    isArchived?: boolean | null;
+  }[];
   router: ReturnType<typeof useRouter>;
   onPaySubscription?: (id: number) => void;
   onConfirmIncome?: (id: number) => void;
 };
 
-export function UpcomingSection({ obligations, subscriptions, recurringIncome, router, onPaySubscription, onConfirmIncome }: UpcomingSectionProps) {
+export function UpcomingSection({ obligations, subscriptions, recurringIncome, creditCards = [], router, onPaySubscription, onConfirmIncome }: UpcomingSectionProps) {
   const now = new Date();
   const limit = addDays(now, UPCOMING_DAYS);
 
@@ -38,7 +50,7 @@ export function UpcomingSection({ obligations, subscriptions, recurringIncome, r
     amount: number;
     currency: string;
     date: Date;
-    kind: "obligation" | "subscription" | "income";
+    kind: "obligation" | "subscription" | "income" | "card";
     flow: "in" | "out";
     badge: string;
     onPress: () => void;
@@ -99,6 +111,27 @@ export function UpcomingSection({ obligations, subscriptions, recurringIncome, r
         quickActionLabel: `Confirmar llegada de ${income.name}`,
       });
     }
+  }
+
+  // El pago de la tarjeta, junto a suscripciones e ingresos fijos: es el mismo patron y es lo
+  // que lo convierte en algo que se anticipa en vez de una sorpresa cada mes.
+  for (const card of creditCards) {
+    if (card.isArchived || !hasCycle(card)) continue;
+    const debt = currentDebt(card.currentBalance);
+    if (debt <= 0.009) continue;
+    const d = nextPaymentDate(card.paymentDay!, now);
+    if (!d || d < now || d > limit) continue;
+    items.push({
+      key: `card-${card.id}`,
+      label: `Tarjeta · ${card.name}`,
+      amount: debt,
+      currency: card.currencyCode,
+      date: d,
+      kind: "card",
+      flow: "out",
+      badge: "Tarjeta",
+      onPress: () => router.push("/(app)/accounts"),
+    });
   }
 
   items.sort((a, b) => a.date.getTime() - b.date.getTime());

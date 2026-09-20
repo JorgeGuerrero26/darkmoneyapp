@@ -14,6 +14,7 @@ import { useUiStore } from "../../store/ui-store";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING } from "../../constants/theme";
 import { getAccountIcon } from "../../lib/account-icons";
 import { findInstitution } from "../../lib/account-institutions";
+import { describeCycle } from "../../features/accounts/lib/creditCardCycle";
 import { pickAccountBadge } from "../../features/accounts/lib/badges";
 import type { AccountSummary } from "../../types/domain";
 
@@ -67,6 +68,9 @@ function AccountCardContent({
   const AccountIcon = getAccountIcon(account.icon, account.type);
   const badge = pickAccountBadge(account, baseCurrencyCode);
   const institution = findInstitution(account.institutionCode);
+  // El ciclo va como un metadato más, igual que la institución: es lo que convierte el pago de
+  // la tarjeta en algo que se anticipa en vez de un campo guardado y olvidado.
+  const cycle = describeCycle(account);
 
   return (
     <ResourceCard
@@ -86,6 +90,7 @@ function AccountCardContent({
         <>
           <ResourceCardBadge label={typeLabel} color={account.color} />
           {institution ? <ResourceCardMetaText>{institution.label}</ResourceCardMetaText> : null}
+          {cycle ? <ResourceCardMetaText>{cycle}</ResourceCardMetaText> : null}
           {badge ? (
             <View style={[styles.badge, badge.tone === "danger" && styles.badgeDanger, badge.tone === "muted" && styles.badgeMuted, badge.tone === "info" && styles.badgeInfo]}>
               <Text style={[styles.badgeText, badge.tone === "danger" && styles.badgeTextDanger, badge.tone === "muted" && styles.badgeTextMuted, badge.tone === "info" && styles.badgeTextInfo]}>

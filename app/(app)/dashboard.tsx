@@ -987,6 +987,7 @@ function DashboardScreen() {
                 obligations={obligationsMerged}
                 subscriptions={snapshot?.subscriptions ?? []}
                 recurringIncome={snapshot?.recurringIncome ?? []}
+                creditCards={activeAccounts}
                 router={router}
                 onPaySubscription={(id) => {
                   const sub = (snapshot?.subscriptions ?? []).find((s) => s.id === id);
