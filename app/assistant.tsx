@@ -27,7 +27,7 @@ import { HeaderActionGroup } from "../components/ui/HeaderActionGroup";
 import { annotateAssistantTurn } from "../features/assistant/lib/draft-memory";
 import { THINKING_SEARCH, thinkingLabel } from "../features/assistant/lib/thinking-label";
 import { MovementForm, type MovementDuplicateSource } from "../components/forms/MovementForm";
-import { AssistantDraftCard } from "../features/assistant/components/AssistantDraftCard";
+import { AssistantDraftCard, type DraftAmountTone } from "../features/assistant/components/AssistantDraftCard";
 import { draftToMovementInput, draftDedupeKey, draftMovementStatus, type ResolvedIds } from "../features/assistant/lib/draft-to-input";
 import { useOriginBackNavigation } from "../hooks/useOriginBackNavigation";
 import { useToast } from "../hooks/useToast";
@@ -620,7 +620,30 @@ function AssistantScreen() {
       lines.push({ label: "Estado", value: "Planificado — aún no mueve tu saldo" });
     }
     const canEdit = draft.operation === "expense" || draft.operation === "income" || draft.operation === "transfer";
-    return { title: titleByOp[draft.operation], amountLabel: `${sign} ${money}`.trim(), lines, canEdit };
+    /* El color de la cifra lo decide el dinero, no el tipo de tarjeta: una transferencia no
+       gana ni pierde nada, así que va neutra. */
+    const amountTone: DraftAmountTone =
+      draft.operation === "income" ? "income" : draft.operation === "transfer" ? "neutral" : "expense";
+    /* Lo que queda en pantalla una vez guardado: qué fue y de qué iba, en una línea. */
+    const savedTitleByOp: Record<AssistantDraft["operation"], string> = {
+      expense: "Gasto registrado",
+      income: "Ingreso registrado",
+      transfer: "Transferencia registrada",
+      pay_subscription: "Pago registrado",
+      pay_debt: "Abono registrado",
+    };
+    const savedSubtitle = [draft.description, draft.categoryName ?? draft.subscriptionName ?? draft.obligationCounterparty]
+      .filter((value): value is string => Boolean(value && value.trim()))
+      .join(" · ");
+    return {
+      title: titleByOp[draft.operation],
+      amountLabel: `${sign} ${money}`.trim(),
+      lines,
+      canEdit,
+      amountTone,
+      savedTitle: savedTitleByOp[draft.operation],
+      savedSubtitle: savedSubtitle || accountName,
+    };
   }
 
   function budgetCardProps(item: ChatItem) {
@@ -680,7 +703,7 @@ function AssistantScreen() {
         return (
           <View style={styles.assistantRow}>
             <View style={styles.avatar}>
-              <Sparkles size={13} color={COLORS.primary} strokeWidth={2.2} />
+              <Sparkles size={13} color={COLORS.pro} strokeWidth={2.2} />
             </View>
             <AssistantDraftCard
               title={title}
@@ -700,7 +723,7 @@ function AssistantScreen() {
         return (
           <View style={styles.assistantRow}>
             <View style={styles.avatar}>
-              <Sparkles size={13} color={COLORS.primary} strokeWidth={2.2} />
+              <Sparkles size={13} color={COLORS.pro} strokeWidth={2.2} />
             </View>
             <AssistantDraftCard
               title={title}
@@ -720,7 +743,7 @@ function AssistantScreen() {
         return (
           <View style={styles.assistantRow}>
             <View style={styles.avatar}>
-              <Sparkles size={13} color={COLORS.primary} strokeWidth={2.2} />
+              <Sparkles size={13} color={COLORS.pro} strokeWidth={2.2} />
             </View>
             <AssistantDraftCard
               title={title}
@@ -736,16 +759,19 @@ function AssistantScreen() {
         );
       }
       if (item.draft) {
-        const { title, amountLabel, lines, canEdit } = draftCardProps(item);
+        const { title, amountLabel, lines, canEdit, amountTone, savedTitle, savedSubtitle } = draftCardProps(item);
         return (
           <View style={styles.assistantRow}>
             <View style={styles.avatar}>
-              <Sparkles size={13} color={COLORS.primary} strokeWidth={2.2} />
+              <Sparkles size={13} color={COLORS.pro} strokeWidth={2.2} />
             </View>
             <AssistantDraftCard
               title={title}
               amountLabel={amountLabel}
+              amountTone={amountTone}
               lines={lines}
+              savedTitle={savedTitle}
+              savedSubtitle={savedSubtitle}
               status={item.draftStatus ?? "pending"}
               isSaving={savingDraftId === item.id}
               onSave={() => void saveDraft(item)}
@@ -793,7 +819,7 @@ function AssistantScreen() {
       return (
         <View style={styles.assistantRow}>
           <View style={styles.avatar}>
-            <Sparkles size={13} color={COLORS.primary} strokeWidth={2.2} />
+            <Sparkles size={13} color={COLORS.pro} strokeWidth={2.2} />
           </View>
           {bubble}
         </View>
@@ -858,10 +884,10 @@ function AssistantScreen() {
               {isThinking ? (
                 <View style={styles.assistantRow}>
                   <View style={styles.avatar}>
-                    <Sparkles size={13} color={COLORS.primary} strokeWidth={2.2} />
+                    <Sparkles size={13} color={COLORS.pro} strokeWidth={2.2} />
                   </View>
                   <View style={[styles.bubble, styles.bubbleAssistant, styles.thinkingRow]}>
-                    <ActivityIndicator size="small" color={COLORS.primary} />
+                    <ActivityIndicator size="small" color={COLORS.pro} />
                     <Text style={styles.thinkingText}>{thinkingText}</Text>
                   </View>
                 </View>
@@ -896,7 +922,7 @@ function AssistantScreen() {
               disabled={isThinking}
               accessibilityLabel="Mantén presionado para dictar"
             >
-              <Mic size={18} color={isListening ? COLORS.void : COLORS.primary} />
+              <Mic size={18} color={isListening ? COLORS.void : COLORS.pro} />
             </TouchableOpacity>
           ) : null}
           <TouchableOpacity
@@ -1063,6 +1089,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
   },
+  /* Violeta, como el avatar y el enviar: son el mismo grupo de controles del asistente. */
   micBtn: {
     width: 40,
     height: 40,
@@ -1070,11 +1097,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
-    borderColor: COLORS.primary,
+    borderColor: COLORS.pro,
     backgroundColor: "transparent",
   },
   micBtnActive: {
-    backgroundColor: COLORS.primary,
+    backgroundColor: COLORS.pro,
   },
   sendBtn: {
     width: 40,
@@ -1082,7 +1109,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.full,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: COLORS.primary,
+    backgroundColor: COLORS.pro,
   },
   sendBtnDisabled: {
     opacity: 0.4,
