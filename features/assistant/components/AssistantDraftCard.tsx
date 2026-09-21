@@ -111,7 +111,9 @@ const styles = StyleSheet.create({
        cuadrada que cualquier otra superficie de la app. */
     borderRadius: RADIUS.xl,
     borderWidth: 1,
-    borderColor: SURFACE.cardActiveBorder,
+    /* Neutro: cardActiveBorder es verde menta, y una tarjeta de GASTO con aro verde contradice
+       la cifra que lleva dentro. El color de esta tarjeta lo pone su monto, no su borde. */
+    borderColor: SURFACE.cardBorder,
     backgroundColor: SURFACE.card,
     padding: SPACING.md,
     gap: SPACING.xs,

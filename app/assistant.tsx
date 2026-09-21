@@ -981,10 +981,11 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.sm,
     gap: SPACING.xs,
   },
+  /* Lo que escribe el usuario no es un ingreso: el tinte verde lo hacía leerse como dinero. */
   bubbleUser: {
     alignSelf: "flex-end",
-    backgroundColor: SURFACE.cardActive,
-    borderColor: SURFACE.cardActiveBorder,
+    backgroundColor: SURFACE.card,
+    borderColor: SURFACE.cardBorder,
     borderBottomRightRadius: RADIUS.sm,
   },
   bubbleAssistant: {
@@ -1000,15 +1001,17 @@ const styles = StyleSheet.create({
     gap: SPACING.xs,
     maxWidth: "94%",
   },
+  /* El círculo del asistente es su marca: violeta. El relleno y el aro iban en verde menta
+     (SURFACE.cardActive es rgba(134,206,150,…)), así que cambiar solo el ícono no bastaba. */
   avatar: {
     width: AVATAR_SIZE,
     height: AVATAR_SIZE,
     borderRadius: RADIUS.full,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: SURFACE.cardActive,
+    backgroundColor: COLORS.proMuted,
     borderWidth: 1,
-    borderColor: SURFACE.cardActiveBorder,
+    borderColor: COLORS.pro + "44",
     marginTop: SPACING.xs / 2,
   },
   suggestions: {
@@ -1022,11 +1025,11 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.sm,
     borderRadius: RADIUS.full,
     borderWidth: 1,
-    borderColor: SURFACE.cardActiveBorder,
-    backgroundColor: SURFACE.cardActive,
+    borderColor: SURFACE.cardBorder,
+    backgroundColor: SURFACE.card,
   },
   suggestionChipText: {
-    color: COLORS.primary,
+    color: COLORS.fog,
     fontFamily: FONT_FAMILY.bodySemibold,
     fontSize: FONT_SIZE.xs,
   },
@@ -1049,10 +1052,10 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.xs,
     borderRadius: RADIUS.full,
     borderWidth: 1,
-    borderColor: COLORS.primary,
+    borderColor: SURFACE.cardBorder,
   },
   evidenceChipText: {
-    color: COLORS.primary,
+    color: COLORS.fog,
     fontFamily: FONT_FAMILY.bodySemibold,
     fontSize: FONT_SIZE.xs,
   },
