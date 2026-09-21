@@ -25,6 +25,7 @@ import { TextField } from "../components/ui/TextField";
 import { ScreenHeader } from "../components/layout/ScreenHeader";
 import { HeaderActionGroup } from "../components/ui/HeaderActionGroup";
 import { annotateAssistantTurn } from "../features/assistant/lib/draft-memory";
+import { THINKING_SEARCH, thinkingLabel } from "../features/assistant/lib/thinking-label";
 import { MovementForm, type MovementDuplicateSource } from "../components/forms/MovementForm";
 import { AssistantDraftCard } from "../features/assistant/components/AssistantDraftCard";
 import { draftToMovementInput, draftDedupeKey, draftMovementStatus, type ResolvedIds } from "../features/assistant/lib/draft-to-input";
@@ -137,6 +138,7 @@ function AssistantScreen() {
   const [clearVisible, setClearVisible] = useState(false);
   const [input, setInput] = useState("");
   const [isThinking, setIsThinking] = useState(false);
+  const [thinkingText, setThinkingText] = useState(THINKING_SEARCH);
   const [remainingToday, setRemainingToday] = useState<number | null>(null);
   const { profile } = useAuth();
   const { showToast } = useToast();
@@ -314,6 +316,8 @@ function AssistantScreen() {
         }));
       setItems((current) => [...current, userItem]);
       setInput("");
+      // Qué decir mientras responde: dictar un gasto no es buscar. Ver thinking-label.
+      setThinkingText(thinkingLabel(message));
       setIsThinking(true);
       try {
         const response = await askAssistant({ message, history, workspaceId: activeWorkspaceId });
@@ -858,7 +862,7 @@ function AssistantScreen() {
                   </View>
                   <View style={[styles.bubble, styles.bubbleAssistant, styles.thinkingRow]}>
                     <ActivityIndicator size="small" color={COLORS.primary} />
-                    <Text style={styles.thinkingText}>Buscando en tus movimientos…</Text>
+                    <Text style={styles.thinkingText}>{thinkingText}</Text>
                   </View>
                 </View>
               ) : null}
