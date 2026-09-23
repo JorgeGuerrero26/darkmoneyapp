@@ -10,6 +10,8 @@ import { clearSessionScopedClientState } from "./session-data-reset";
 import { uploadAvatar, deleteAvatarFile } from "./avatar-utils";
 import { logInfo, logWarn } from "./error-logger";
 import { clearLastTabRoute } from "../hooks/useTabPersistence";
+import { readCachedProfile, writeCachedProfile } from "./profile-cache";
+import { markStartupPhase } from "./startup-timing";
 
 type ProfileRow = {
   id: string;
@@ -98,7 +100,19 @@ function buildProfile(row: ProfileRow, user: User): AppProfile {
   };
 }
 
+/**
+ * Perfiles inventados cuando la red falla. Se marcan para NO guardarlos en disco: si no, un
+ * arranque sin red reemplazaría el perfil bueno guardado (con la moneda real) por uno genérico.
+ */
+const fallbackProfiles = new WeakSet<AppProfile>();
+
 function buildFallbackProfile(user: User): AppProfile {
+  const fallback = buildFallbackProfileBase(user);
+  fallbackProfiles.add(fallback);
+  return fallback;
+}
+
+function buildFallbackProfileBase(user: User): AppProfile {
   const metadata = getUserMetadata(user);
   const fullName =
     metadata.full_name || user.email?.split("@")[0] || "Usuario";
@@ -208,6 +222,12 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<AppProfile | null>(null);
+
+  // Un solo punto de guardado para los cinco sitios que fijan el perfil (arranque, login,
+  // registro, editar perfil, avatar). El de respaldo no se guarda: ver fallbackProfiles.
+  useEffect(() => {
+    if (profile && !fallbackProfiles.has(profile)) void writeCachedProfile(profile);
+  }, [profile]);
   const hasResolvedInitialSession = useRef(false);
   const hadSessionAtLaunchRef = useRef(false);
   /** Login/registro antes de que resuelva el primer `getSession()` (evita marcar "sesión al arranque" por carrera). */
@@ -243,13 +263,25 @@ export function AuthProvider({ children }: PropsWithChildren) {
         return;
       }
 
+      /* El perfil de la última vez, si es de este mismo usuario, libera la pantalla YA; el de red
+         llega por detrás y lo reemplaza. Medido: los datos salen del disco a los ~80 ms y el
+         arranque se quedaba 5–6.5 s esperando sesión + perfil. Sin perfil guardado (primer
+         arranque, otro usuario) se espera como antes. */
+      const cachedProfile = options.blockUi ? await readCachedProfile(nextSession.user.id) : null;
+      if (cachedProfile && !cancelled) {
+        setProfile(cachedProfile);
+        setIsLoading(false);
+      }
+
       try {
         const nextProfile = await withTimeout(ensureProfile(nextSession.user));
+        markStartupPhase("profileFetched");
         if (!cancelled) setProfile(nextProfile);
       } catch {
-        if (!cancelled) setProfile(buildFallbackProfile(nextSession.user));
+        // Con uno guardado se queda ese: el de respaldo es genérico y podría traer otra moneda.
+        if (!cancelled && !cachedProfile) setProfile(buildFallbackProfile(nextSession.user));
       } finally {
-        if (!cancelled && options.blockUi) setIsLoading(false);
+        if (!cancelled && options.blockUi && !cachedProfile) setIsLoading(false);
       }
     }
 
@@ -303,6 +335,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
     void withTimeout(supabase.auth.getSession())
       .then(async ({ data }) => {
         if (cancelled) return;
+        // Separa este tramo (llavero + renovar el token por red) del de traer el perfil.
+        markStartupPhase("sessionRead");
 
         hasResolvedInitialSession.current = true;
 

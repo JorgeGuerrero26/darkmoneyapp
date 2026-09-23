@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { queryClient } from "./query-client";
+import { clearCachedProfile } from "./profile-cache";
 import { useWorkspaceListStore } from "./workspace-context";
 import { useWorkspaceStore } from "../store/workspace-store";
 import { useUiStore } from "../store/ui-store";
@@ -16,6 +17,8 @@ export async function clearSessionScopedClientState() {
   // re-escribirá el estado vacío, pero borrarlo explícito cierra la ventana en
   // la que un login distinto podría hidratar datos ajenos.
   await AsyncStorage.removeItem("darkmoney/query-cache/v1").catch(() => null);
+  // El perfil guardado para arrancar rápido también es del usuario saliente.
+  await clearCachedProfile();
   useWorkspaceStore.getState().clearActiveWorkspaceId();
   useWorkspaceListStore.getState().setWorkspaces([]);
   useUiStore.getState().setLastMovementAccountId(null);
