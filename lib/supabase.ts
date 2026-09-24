@@ -2,7 +2,7 @@ import "react-native-url-polyfill/auto";
 import { createClient } from "@supabase/supabase-js";
 import { AppState } from "react-native";
 
-import { resolveFetchTimeoutMs } from "./fetch-timeout-budget";
+import { noteAppResumed, resolveFetchTimeoutMs } from "./fetch-timeout-budget";
 import { secureSessionStorage } from "./secure-session-storage";
 
 export const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL ?? "";
@@ -53,7 +53,12 @@ export const supabase = isSupabaseConfigured
   : null;
 
 // Keep token alive when app comes back to foreground
+let lastAppState = AppState.currentState;
 AppState.addEventListener("change", (state) => {
+  // Solo un regreso DESDE segundo plano deja conexiones muertas. "inactive" (centro de control,
+  // una llamada entrante) no congela el proceso, así que no abre la ventana de plazo corto.
+  if (state === "active" && lastAppState === "background") noteAppResumed();
+  lastAppState = state;
   if (!supabase) return;
   if (state === "active") {
     supabase.auth.startAutoRefresh();

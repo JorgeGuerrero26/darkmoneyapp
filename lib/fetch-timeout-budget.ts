@@ -35,15 +35,56 @@ export const WRITE_TIMEOUT_MS = 25_000;
  */
 export const CONFIRM_LOOKUP_TIMEOUT_MS = 4_000;
 
+/**
+ * Plazo corto para lecturas y sesión justo después de volver del segundo plano.
+ *
+ * iOS congela la app en segundo plano y mata sus conexiones sin avisar. Al volver, las primeras
+ * peticiones salen por esas conexiones muertas y cuelgan hasta el plazo entero. Medido en 30
+ * días de app_error_logs: de 350 fallos, 253 (72%) son abortos por plazo y solo 3 son de token.
+ * El 2026-09-24 a las 09:18: el usuario vuelve, la renovación de sesión sale por una conexión
+ * muerta, cuelga 12 s, y el movimiento que estaba guardando espera detrás — entra a los 16 s.
+ *
+ * Una conexión sana responde en menos de un segundo; 5 s bastan para dar una por muerta y que el
+ * reintento salga por una nueva. Solo dura la ventana del regreso: después vuelve el plazo normal,
+ * para no cortar consultas que de verdad son lentas.
+ *
+ * Las escrituras de tabla NO entran aquí: cortarlas pronto fabrica ambigüedad (ver arriba).
+ */
+export const RESUME_TIMEOUT_MS = 5_000;
+export const RESUME_WINDOW_MS = 20_000;
+
+let resumedAt: number | null = null;
+
+/** Lo llama el listener de AppState cuando la app vuelve DEL SEGUNDO PLANO (no de "inactive"). */
+export function noteAppResumed(now: number = Date.now()): void {
+  resumedAt = now;
+}
+
+/** Solo para tests. */
+export function resetResumeState(): void {
+  resumedAt = null;
+}
+
 const WRITE_METHODS = new Set(["POST", "PATCH", "PUT", "DELETE"]);
 
-export function resolveFetchTimeoutMs(url: string, method: string | undefined): number {
-  if (!WRITE_METHODS.has((method ?? "GET").toUpperCase())) return READ_TIMEOUT_MS;
+function isTableWrite(url: string, method: string | undefined): boolean {
+  if (!WRITE_METHODS.has((method ?? "GET").toUpperCase())) return false;
   // Solo escrituras de tabla. Los RPC viajan por POST pero son mayormente lecturas, y en
   // /auth/v1 un refresh colgado 25 s congelaría el arranque entero.
-  if (!url.includes("/rest/v1/")) return READ_TIMEOUT_MS;
-  if (url.includes("/rest/v1/rpc/")) return READ_TIMEOUT_MS;
-  return WRITE_TIMEOUT_MS;
+  if (!url.includes("/rest/v1/")) return false;
+  return !url.includes("/rest/v1/rpc/");
+}
+
+export function resolveFetchTimeoutMs(
+  url: string,
+  method: string | undefined,
+  now: number = Date.now(),
+): number {
+  if (isTableWrite(url, method)) return WRITE_TIMEOUT_MS;
+  if (resumedAt !== null && now - resumedAt >= 0 && now - resumedAt < RESUME_WINDOW_MS) {
+    return RESUME_TIMEOUT_MS;
+  }
+  return READ_TIMEOUT_MS;
 }
 
 /**
