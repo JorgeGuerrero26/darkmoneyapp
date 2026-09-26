@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../../lib/supabase";
 import { withTimeout } from "../../lib/promise-utils";
 import { formatSupabaseError, runBackgroundQueryRefresh } from "./_shared";
+import { isCoreSnapshot } from "./snapshot-cache";
 import type { WorkspaceSnapshot } from "./workspace-data";
 
 // Timeout para escrituras de cuenta: tras horas en foreground el socket puede
@@ -120,8 +121,10 @@ export function useArchiveAccountMutation(workspaceId: number | null) {
     onMutate: async ({ id, archived }) => {
       await queryClient.cancelQueries({ queryKey: ["workspace-snapshot"] });
       const previousEntries = queryClient.getQueriesData<WorkspaceSnapshot>({ queryKey: ["workspace-snapshot"] });
-      queryClient.setQueriesData<WorkspaceSnapshot>({ queryKey: ["workspace-snapshot"] }, (old) => {
-        if (!old) return old;
+      // Guardia de núcleo: el prefijo también alcanza la entrada diferida ({ budgets,
+      // obligations }), que no tiene este campo. Sin esto: "Cannot read property 'map' of undefined".
+      queryClient.setQueriesData<unknown>({ queryKey: ["workspace-snapshot"] }, (old: unknown) => {
+        if (!isCoreSnapshot(old)) return old;
         return {
           ...old,
           accounts: old.accounts.map((a) => a.id === id ? { ...a, isArchived: archived } : a),
@@ -156,8 +159,10 @@ export function useDeleteAccountMutation(workspaceId: number | null) {
     onMutate: async (id) => {
       await queryClient.cancelQueries({ queryKey: ["workspace-snapshot"] });
       const previousEntries = queryClient.getQueriesData<WorkspaceSnapshot>({ queryKey: ["workspace-snapshot"] });
-      queryClient.setQueriesData<WorkspaceSnapshot>({ queryKey: ["workspace-snapshot"] }, (old) => {
-        if (!old) return old;
+      // Guardia de núcleo: el prefijo también alcanza la entrada diferida ({ budgets,
+      // obligations }), que no tiene este campo. Sin esto: "Cannot read property 'map' of undefined".
+      queryClient.setQueriesData<unknown>({ queryKey: ["workspace-snapshot"] }, (old: unknown) => {
+        if (!isCoreSnapshot(old)) return old;
         return { ...old, accounts: old.accounts.filter((a) => a.id !== id) };
       });
       return { previousEntries };

@@ -392,8 +392,10 @@ export function useToggleSubscriptionPinMutation(workspaceId: number | null) {
     onMutate: async ({ id, isPinned }) => {
       await queryClient.cancelQueries({ queryKey: ["workspace-snapshot"] });
       const previousEntries = queryClient.getQueriesData<WorkspaceSnapshot>({ queryKey: ["workspace-snapshot"] });
-      queryClient.setQueriesData<WorkspaceSnapshot>({ queryKey: ["workspace-snapshot"] }, (old) => {
-        if (!old) return old;
+      // Guardia de núcleo: el prefijo también alcanza la entrada diferida ({ budgets,
+      // obligations }), que no tiene este campo. Sin esto: "Cannot read property 'map' of undefined".
+      queryClient.setQueriesData<unknown>({ queryKey: ["workspace-snapshot"] }, (old: unknown) => {
+        if (!isCoreSnapshot(old)) return old;
         return {
           ...old,
           subscriptions: old.subscriptions.map((s) => (s.id === id ? { ...s, isPinned } : s)),
@@ -488,8 +490,10 @@ export function useToggleRecurringIncomePinMutation(workspaceId: number | null) 
     onMutate: async ({ id, isPinned }) => {
       await queryClient.cancelQueries({ queryKey: ["workspace-snapshot"] });
       const previousEntries = queryClient.getQueriesData<WorkspaceSnapshot>({ queryKey: ["workspace-snapshot"] });
-      queryClient.setQueriesData<WorkspaceSnapshot>({ queryKey: ["workspace-snapshot"] }, (old) => {
-        if (!old) return old;
+      // Guardia de núcleo: el prefijo también alcanza la entrada diferida ({ budgets,
+      // obligations }), que no tiene este campo. Sin esto: "Cannot read property 'map' of undefined".
+      queryClient.setQueriesData<unknown>({ queryKey: ["workspace-snapshot"] }, (old: unknown) => {
+        if (!isCoreSnapshot(old)) return old;
         return {
           ...old,
           recurringIncome: old.recurringIncome.map((item) => (item.id === id ? { ...item, isPinned } : item)),

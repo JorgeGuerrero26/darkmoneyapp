@@ -13,6 +13,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "1.0.10",
     title: "DarkMoney estrena look",
     changes: [
+      "Archivar, desarchivar y eliminar cuentas vuelve a funcionar, igual que fijar una suscripción o un ingreso fijo arriba de la lista. Antes salía un mensaje de error y no pasaba nada.",
       "En el asistente, el color vuelve a significar una sola cosa. El violeta es suyo —su ícono y el botón de enviar—, y el verde y el terracota quedan para lo que de verdad es dinero: la cifra de cada tarjeta se pinta según entre o salga. \"Guardar\" pasa a ser un botón normal. Y al guardar, la tarjeta se encoge a una línea con el visto y el monto, en vez de quedarse ocupando media pantalla.",
       "Mientras el asistente trabaja ahora te dice lo que está haciendo de verdad: si le dictaste un gasto dice que lo está anotando, en vez de decir que busca en tus movimientos.",
       "Tu tarjeta de crédito ya tiene calendario: le pones el día de corte y el de pago, y la app los usa. Aparecen en la fila de Cuentas, el pago entra en la agenda de lo que viene, y la proyección deja de restarte lo que gastas con ella un mes antes de tiempo — hasta ahora te lo descontaba el día de la compra, cuando del banco no sale nada hasta que la pagas.",
