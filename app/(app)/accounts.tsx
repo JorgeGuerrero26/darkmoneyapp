@@ -6,7 +6,7 @@ import { IOS_FLOATING_TAB_BAR_SPACE } from "../../constants/floating-tab-bar";
 import { useRouter } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Archive, CheckSquare, ChevronDown, ChevronUp, Download, Layers, MoreVertical, PieChart, X } from "lucide-react-native";
+import { Archive, ArchiveRestore, CheckSquare, ChevronDown, ChevronUp, Download, Layers, MoreVertical, PieChart, X } from "lucide-react-native";
 import { format } from "date-fns";
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -207,7 +207,8 @@ function AccountsScreen() {
   const [selectMode, setSelectMode] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-  const [bulkArchiveConfirm, setBulkArchiveConfirm] = useState(false);
+  /** Qué confirma el diálogo masivo: archivar las activas o restaurar las archivadas. */
+  const [bulkArchiveConfirm, setBulkArchiveConfirm] = useState<"archive" | "restore" | null>(null);
   /**
    * Borrar para siempre vive donde vive archivar: en la fila.
    *
@@ -412,15 +413,30 @@ function AccountsScreen() {
     }
   }
 
+  /**
+   * Archiva las activas o restaura las archivadas de la selección — solo las que cambian.
+   *
+   * Antes la acción era siempre "Archivar" y mandaba `archived: true` a todas: seleccionar una
+   * cuenta ya archivada ofrecía archivarla otra vez, y el toast decía "archivadas" sin que nada
+   * hubiera cambiado.
+   */
   async function executeBulkArchive() {
-    for (const id of selectedIds) {
-      const acc = allAccounts.find((a) => a.id === id);
-      if (!acc) continue;
-      await archiveAccount.mutateAsync({ id, archived: true });
+    const mode = bulkArchiveConfirm;
+    if (!mode) return;
+    const archived = mode === "archive";
+    const targets = selectedAccounts.filter((a) => a.isArchived !== archived);
+    for (const acc of targets) {
+      await archiveAccount.mutateAsync({ id: acc.id, archived });
     }
     exitSelectMode();
-    setBulkArchiveConfirm(false);
-    showToast("Cuentas archivadas", "success");
+    setBulkArchiveConfirm(null);
+    const n = targets.length;
+    showToast(
+      archived
+        ? n === 1 ? "Cuenta archivada" : `${n} cuentas archivadas`
+        : n === 1 ? "Cuenta restaurada" : `${n} cuentas restauradas`,
+      "success",
+    );
   }
 
   async function exportCSV(accounts: AccountSummary[]) {
@@ -434,6 +450,8 @@ function AccountsScreen() {
   }
 
   const selectedAccounts = allAccounts.filter((a) => selectedIds.has(a.id));
+  const selectedActiveCount = selectedAccounts.filter((a) => !a.isArchived).length;
+  const selectedArchivedCount = selectedAccounts.length - selectedActiveCount;
 
   const renderAccount: SectionListRenderItem<AccountSummary, AccountListSection> = useCallback(({ item: account, section }) => (
     section.key === "active" ? (
@@ -626,13 +644,26 @@ function AccountsScreen() {
                   tone: "primary",
                   onPress: () => exportCSV(selectedAccounts),
                 },
-                {
-                  key: "archive",
-                  label: `Archivar (${selectedIds.size})`,
-                  icon: Archive,
-                  tone: "neutral",
-                  onPress: () => setBulkArchiveConfirm(true),
-                },
+                // La acción sigue a la selección: activas se archivan, archivadas se restauran.
+                // Con las dos mezcladas aparecen ambas, cada una con su propio conteo.
+                ...(selectedActiveCount > 0
+                  ? [{
+                      key: "archive",
+                      label: `Archivar (${selectedActiveCount})`,
+                      icon: Archive,
+                      tone: "neutral" as const,
+                      onPress: () => setBulkArchiveConfirm("archive"),
+                    }]
+                  : []),
+                ...(selectedArchivedCount > 0
+                  ? [{
+                      key: "restore",
+                      label: `Restaurar (${selectedArchivedCount})`,
+                      icon: ArchiveRestore,
+                      tone: "neutral" as const,
+                      onPress: () => setBulkArchiveConfirm("restore"),
+                    }]
+                  : []),
               ]}
             />
           ) : null
@@ -705,12 +736,20 @@ function AccountsScreen() {
             />
 
             <ConfirmDialog
-              visible={bulkArchiveConfirm}
-              title={`Archivar ${selectedIds.size} cuentas`}
-              body="Las cuentas dejarán de aparecer en la lista principal. Podrás restaurarlas después."
-              confirmLabel="Archivar"
+              visible={bulkArchiveConfirm !== null}
+              title={
+                bulkArchiveConfirm === "restore"
+                  ? selectedArchivedCount === 1 ? "Restaurar 1 cuenta" : `Restaurar ${selectedArchivedCount} cuentas`
+                  : selectedActiveCount === 1 ? "Archivar 1 cuenta" : `Archivar ${selectedActiveCount} cuentas`
+              }
+              body={
+                bulkArchiveConfirm === "restore"
+                  ? "Vuelven a la lista principal, tal como estaban antes de archivarlas."
+                  : "Las cuentas dejarán de aparecer en la lista principal. Podrás restaurarlas después."
+              }
+              confirmLabel={bulkArchiveConfirm === "restore" ? "Restaurar" : "Archivar"}
               cancelLabel="Cancelar"
-              onCancel={() => setBulkArchiveConfirm(false)}
+              onCancel={() => setBulkArchiveConfirm(null)}
               onConfirm={executeBulkArchive}
             />
           </>
