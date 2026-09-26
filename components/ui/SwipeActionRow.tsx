@@ -1,5 +1,15 @@
-import { useRef, type ComponentType, type ReactNode } from "react";
-import { Animated, PanResponder, StyleSheet, Text, TouchableOpacity, View, type StyleProp, type ViewStyle } from "react-native";
+import { useCallback, useEffect, useMemo, type ComponentType, type ReactNode } from "react";
+import { StyleSheet, Text, TouchableOpacity, View, type StyleProp, type ViewStyle } from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import Animated, {
+  cancelAnimation,
+  interpolate,
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  Extrapolation,
+} from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS } from "../../constants/theme";
@@ -35,6 +45,38 @@ type Props = {
   children: ReactNode | ((args: RenderContentArgs) => ReactNode);
 };
 
+/**
+ * Cuánto se mueve el dedo en horizontal antes de que el gesto sea de la fila, y cuánto en
+ * vertical antes de ceder el toque a la lista. Mismo criterio que `useSwipeTab`.
+ */
+const ACTIVATE_X = 12;
+const FAIL_Y = 10;
+
+/** Resorte del snap: firme, sin rebote que haga dudar si quedó abierta. */
+const SPRING = { damping: 24, stiffness: 260, mass: 0.9 } as const;
+
+/** Cuánto deja estirar más allá de la acción, como tope elástico. */
+const OVERSHOOT = 1.4;
+
+/** 0 = cerrada, 1 = abierta a la derecha (acción izquierda), -1 = abierta a la izquierda. */
+type OpenDir = 0 | 1 | -1;
+
+/**
+ * Fila deslizable con una acción a cada lado.
+ *
+ * **El gesto corre en el hilo nativo** (react-native-gesture-handler + Reanimated). La versión
+ * anterior usaba `PanResponder`: cada movimiento del dedo cruzaba al hilo de JavaScript, y con JS
+ * ocupado —cargando la lista, por ejemplo— se saltaban fotogramas. De ahí lo entrecortado.
+ *
+ * **Y ya no puede quedarse a medias.** Con `PanResponder`, si el dedo se desviaba en vertical la
+ * lista reclamaba el toque para hacer scroll; el componente no se lo negaba ni manejaba la
+ * interrupción, así que la fila se congelaba donde estaba el dedo — medio abierta, con el monto
+ * cortado. Aquí un gesto interrumpido también se resuelve: vuelve a cerrada o a abierta, nunca a
+ * mitad.
+ *
+ * La regla de dónde queda al soltar sigue siendo `resolveSwipeTarget`, sin cambios y con sus
+ * tests; solo que ahora corre como worklet.
+ */
 export function SwipeActionRow({
   leftAction,
   rightAction,
@@ -44,104 +86,72 @@ export function SwipeActionRow({
   contentContainerStyle,
   children,
 }: Props) {
-  const translateX = useRef(new Animated.Value(0)).current;
-  const openDir = useRef<"right" | "left" | null>(null);
-  /**
-   * Dónde está la fila de verdad, en píxeles.
-   *
-   * Antes la posición se deducía de `openDir` —0 o ±revealWidth—, que es el **destino** de la
-   * última animación, no dónde está el dedo. Agarrar una fila a mitad de la animación partía de
-   * un número que no era el real.
-   */
-  const currentX = useRef(0);
-  /**
-   * Las acciones de ESTE render.
-   *
-   * El PanResponder se crea una sola vez, así que su closure se quedaba con las acciones del
-   * primer render: una fila que gana o pierde una acción —una cuenta que se archiva y estrena
-   * "Eliminar"— seguía calculando los topes con las de antes.
-   */
-  const actions = useRef({ leftAction, rightAction });
-  actions.current = { leftAction, rightAction };
+  const translateX = useSharedValue(0);
+  const grabbedAt = useSharedValue(0);
+  const openDir = useSharedValue<OpenDir>(0);
+  // Las acciones de ESTE render: una fila que gana o pierde una acción (una cuenta que se archiva
+  // y estrena "Eliminar") debe calcular sus topes con las de ahora, no con las del primer render.
+  const hasLeft = useSharedValue(Boolean(leftAction));
+  const hasRight = useSharedValue(Boolean(rightAction));
+  useEffect(() => {
+    hasLeft.value = Boolean(leftAction);
+    hasRight.value = Boolean(rightAction);
+  }, [leftAction, rightAction, hasLeft, hasRight]);
 
-  const leftOpacity = translateX.interpolate({
-    inputRange: [0, 16, revealWidth],
-    outputRange: [0, 0.6, 1],
-    extrapolate: "clamp",
-  });
-  const rightOpacity = translateX.interpolate({
-    inputRange: [-revealWidth, -16, 0],
-    outputRange: [1, 0.6, 0],
-    extrapolate: "clamp",
-  });
+  const lightHaptic = useCallback(() => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }, []);
 
-  const snapTo = (toValue: number, cb?: () => void) => {
-    if (toValue === 0) openDir.current = null;
-    else if (toValue > 0) openDir.current = "right";
-    else openDir.current = "left";
-    currentX.current = toValue;
-    Animated.spring(translateX, {
-      toValue,
-      useNativeDriver: true,
-      tension: 80,
-      friction: 11,
-    }).start(cb);
-  };
+  const snapTo = useCallback(
+    (toValue: number, onDone?: () => void) => {
+      openDir.value = toValue === 0 ? 0 : toValue > 0 ? 1 : -1;
+      translateX.value = withSpring(toValue, SPRING, (finished) => {
+        if (finished && onDone) runOnJS(onDone)();
+      });
+    },
+    [openDir, translateX],
+  );
 
-  const close = () => snapTo(0);
-  const isOpen = () => openDir.current !== null;
+  const close = useCallback(() => snapTo(0), [snapTo]);
+  const isOpen = useCallback(() => openDir.value !== 0, [openDir]);
 
-  function runActionHaptic(action: SwipeAction) {
-    if (action.haptic === "warning") {
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-      return;
-    }
-    void Haptics.impactAsync(
-      action.haptic === "medium"
-        ? Haptics.ImpactFeedbackStyle.Medium
-        : Haptics.ImpactFeedbackStyle.Light,
-    );
-  }
+  const pan = useMemo(() => Gesture.Pan()
+    .activeOffsetX([-ACTIVATE_X, ACTIVATE_X])
+    .failOffsetY([-FAIL_Y, FAIL_Y])
+    .onStart(() => {
+      // Si estaba animando, el dedo la agarra donde está de verdad, no en su destino.
+      cancelAnimation(translateX);
+      grabbedAt.value = translateX.value;
+    })
+    .onUpdate((e) => {
+      const minX = hasRight.value ? -revealWidth * OVERSHOOT : Math.min(0, grabbedAt.value);
+      const maxX = hasLeft.value ? revealWidth * OVERSHOOT : Math.max(0, grabbedAt.value);
+      translateX.value = Math.min(maxX, Math.max(minX, grabbedAt.value + e.translationX));
+    })
+    .onEnd((e, success) => {
+      const target = resolveSwipeTarget({
+        grabbedAt: grabbedAt.value,
+        dx: e.translationX,
+        // Gesture Handler da px/s; la regla está calibrada en px/ms. Un gesto interrumpido (la
+        // lista reclamó el toque) no tiene impulso válido: se decide solo por la posición.
+        vx: success ? e.velocityX / 1000 : 0,
+        openDir: openDir.value === 0 ? null : openDir.value > 0 ? "right" : "left",
+        hasLeftAction: hasLeft.value,
+        hasRightAction: hasRight.value,
+        revealWidth,
+      });
+      if (target !== 0 && openDir.value === 0) runOnJS(lightHaptic)();
+      openDir.value = target === 0 ? 0 : target > 0 ? 1 : -1;
+      translateX.value = withSpring(target, SPRING);
+    }), [grabbedAt, hasLeft, hasRight, lightHaptic, openDir, revealWidth, translateX]);
 
-  /** Dónde estaba la fila cuando el dedo la agarró. Todo el gesto se mide desde ahí. */
-  const grabbedAt = useRef(0);
-
-  const panResponder = useRef(
-    PanResponder.create({
-      onMoveShouldSetPanResponder: (_, { dx, dy }) =>
-        Math.abs(dx) > Math.abs(dy) * 1.5 && Math.abs(dx) > 10,
-      onPanResponderGrant: () => {
-        // El valor exacto en el que se quedó: si estaba animando, ahí es donde arranca el dedo.
-        translateX.stopAnimation((value) => { currentX.current = value; });
-        grabbedAt.current = currentX.current;
-      },
-      onPanResponderMove: (_, { dx }) => {
-        const { leftAction: left, rightAction: right } = actions.current;
-        const raw = grabbedAt.current + dx;
-        const minX = right ? -revealWidth * 1.4 : Math.min(0, grabbedAt.current);
-        const maxX = left ? revealWidth * 1.4 : Math.max(0, grabbedAt.current);
-        const next = Math.min(maxX, Math.max(minX, raw));
-        currentX.current = next;
-        translateX.setValue(next);
-      },
-      // Dónde se queda al soltar lo decide `resolveSwipeTarget`, que es puro y tiene sus tests:
-      // es la regla que estaba mal y la que no puede volver a romperse en silencio.
-      onPanResponderRelease: (_, { dx, vx }) => {
-        const { leftAction: left, rightAction: right } = actions.current;
-        const target = resolveSwipeTarget({
-          grabbedAt: grabbedAt.current,
-          dx,
-          vx,
-          openDir: openDir.current,
-          hasLeftAction: Boolean(left),
-          hasRightAction: Boolean(right),
-          revealWidth,
-        });
-        if (target !== 0) void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        snapTo(target);
-      },
-    }),
-  ).current;
+  const contentStyle = useAnimatedStyle(() => ({ transform: [{ translateX: translateX.value }] }));
+  const leftBgStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(translateX.value, [0, 16, revealWidth], [0, 0.6, 1], Extrapolation.CLAMP),
+  }));
+  const rightBgStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(translateX.value, [-revealWidth, -16, 0], [1, 0.6, 0], Extrapolation.CLAMP),
+  }));
 
   function handleActionPress(action: SwipeAction) {
     runActionHaptic(action);
@@ -155,12 +165,12 @@ export function SwipeActionRow({
           style={[
             styles.leftActionBg,
             {
-              opacity: leftOpacity,
               width: revealWidth,
               backgroundColor: leftAction.backgroundColor ?? COLORS.pine + "30",
               borderTopRightRadius: borderRadius,
               borderBottomRightRadius: borderRadius,
             },
+            leftBgStyle,
           ]}
         >
           <ActionButton action={leftAction} onPress={() => handleActionPress(leftAction)} />
@@ -172,25 +182,34 @@ export function SwipeActionRow({
           style={[
             styles.rightActionBg,
             {
-              opacity: rightOpacity,
               width: revealWidth,
               backgroundColor: rightAction.backgroundColor ?? COLORS.danger + "28",
               borderTopLeftRadius: borderRadius,
               borderBottomLeftRadius: borderRadius,
             },
+            rightBgStyle,
           ]}
         >
           <ActionButton action={rightAction} onPress={() => handleActionPress(rightAction)} />
         </Animated.View>
       ) : null}
 
-      <Animated.View
-        style={[styles.contentContainer, { transform: [{ translateX }] }, contentContainerStyle]}
-        {...panResponder.panHandlers}
-      >
-        {typeof children === "function" ? children({ close, isOpen }) : children}
-      </Animated.View>
+      <GestureDetector gesture={pan}>
+        <Animated.View style={[styles.contentContainer, contentStyle, contentContainerStyle]}>
+          {typeof children === "function" ? children({ close, isOpen }) : children}
+        </Animated.View>
+      </GestureDetector>
     </View>
+  );
+}
+
+function runActionHaptic(action: SwipeAction) {
+  if (action.haptic === "warning") {
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    return;
+  }
+  void Haptics.impactAsync(
+    action.haptic === "medium" ? Haptics.ImpactFeedbackStyle.Medium : Haptics.ImpactFeedbackStyle.Light,
   );
 }
 

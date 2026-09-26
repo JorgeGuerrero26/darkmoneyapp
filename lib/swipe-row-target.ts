@@ -3,7 +3,7 @@ export type SwipeReleaseInput = {
   grabbedAt: number;
   /** Cuánto se movió el dedo. Positivo hacia la derecha. */
   dx: number;
-  /** Velocidad al soltar. Positiva hacia la derecha. */
+  /** Velocidad al soltar, en px/ms. Positiva hacia la derecha. */
   vx: number;
   /** `"right"` = abierta hacia la derecha (se ve la acción izquierda). `null` = en el centro. */
   openDir: "right" | "left" | null;
@@ -36,6 +36,8 @@ export function resolveSwipeTarget({
   hasRightAction,
   revealWidth,
 }: SwipeReleaseInput): number {
+  // Corre en el hilo nativo del gesto (SwipeActionRow). Fuera de un worklet la directiva no hace nada.
+  "worklet";
   const finalX = grabbedAt + dx;
   const fling = Math.abs(vx) > FLING_VELOCITY ? Math.sign(vx) : 0;
 
