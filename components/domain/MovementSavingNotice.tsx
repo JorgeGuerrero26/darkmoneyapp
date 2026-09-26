@@ -16,21 +16,26 @@ type Props = {
 export function MovementSavingNotice({ savingCount }: Props) {
   if (savingCount <= 0) return null;
   return (
-    <View style={styles.container}>
-      <ActivityIndicator size="small" color={COLORS.primary} />
-      <View style={styles.textWrap}>
-        <Text style={styles.title}>
-          {savingCount === 1 ? "Guardando movimiento…" : `Guardando ${savingCount} movimientos…`}
-        </Text>
-        <Text style={styles.body}>
-          Aún se está enviando al servidor. No lo registres de nuevo; aparecerá en la lista al confirmarse.
-        </Text>
+    <View style={styles.outer}>
+      <View style={styles.container}>
+        <ActivityIndicator size="small" color={COLORS.primary} />
+        <View style={styles.textWrap}>
+          <Text style={styles.title}>
+            {savingCount === 1 ? "Guardando movimiento…" : `Guardando ${savingCount} movimientos…`}
+          </Text>
+          <Text style={styles.body}>
+            Aún se está enviando al servidor. No lo registres de nuevo; aparecerá en la lista al confirmarse.
+          </Text>
+        </View>
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  /* Margen de pantalla, igual que ResourceContextNote y ActiveFilterBar, que comparten esta zona:
+     sin él el aviso llegaba hasta el borde del teléfono mientras todo lo demás respira. */
+  outer: { paddingHorizontal: SPACING.lg },
   container: {
     flexDirection: "row",
     alignItems: "flex-start",

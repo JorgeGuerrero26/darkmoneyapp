@@ -28,67 +28,69 @@ export function DetectionBackgroundSavesNotice({ pendingSaves, lastErrorMessage,
   const exhausted = pendingSaves.filter((item) => item.exhausted);
 
   return (
-    <View style={styles.container}>
-      {sending.length > 0 ? (
-        <View style={styles.row}>
-          <ActivityIndicator size="small" color={COLORS.primary} />
-          <View style={styles.textWrap}>
-            <Text style={styles.title}>
-              {sending.length === 1
-                ? "Registrando 1 movimiento detectado…"
-                : `Registrando ${sending.length} movimientos detectados…`}
-            </Text>
-            <Text style={styles.body}>
-              {describeEntries(sending)}
-              {"El envío falló por conexión y se reintenta automáticamente. No lo registres de nuevo a mano."}
-            </Text>
-            {onRetryNow ? (
-              <TouchableOpacity
-                style={styles.retryButton}
-                onPress={onRetryNow}
-                disabled={Boolean(isRetrying)}
-                accessibilityLabel="Reintentar el envío ahora"
-              >
-                <Text style={styles.retryButtonText}>
-                  {isRetrying ? "Reintentando…" : "Reintentar ahora"}
-                </Text>
-              </TouchableOpacity>
-            ) : null}
-          </View>
-        </View>
-      ) : null}
-      {exhausted.map((entry) => (
-        <View key={entry.suggestionId} style={styles.row}>
-          <AlertTriangle size={16} color={COLORS.warning} />
-          <View style={styles.textWrap}>
-            <Text style={styles.title}>Un movimiento detectado no se pudo registrar</Text>
-            <Text style={styles.body}>
-              {lastErrorMessage ? `${lastErrorMessage}. ` : ""}
-              Se agotaron los reintentos automáticos. Complétalo o descártalo.
-            </Text>
-            <View style={styles.actionsRow}>
-              <TouchableOpacity
-                style={styles.retryButton}
-                // La pantalla puente resuelve la sugerencia y abre su formulario directo,
-                // aunque la notificación de la campana ya haya sido eliminada.
-                onPress={() => router.push(`/detected-suggestion/${encodeURIComponent(entry.suggestionId)}` as never)}
-                accessibilityLabel="Completar el registro del movimiento detectado"
-              >
-                <Text style={styles.retryButtonText}>Completar registro</Text>
-              </TouchableOpacity>
-              {onDiscard ? (
+    <View style={styles.outer}>
+      <View style={styles.container}>
+        {sending.length > 0 ? (
+          <View style={styles.row}>
+            <ActivityIndicator size="small" color={COLORS.primary} />
+            <View style={styles.textWrap}>
+              <Text style={styles.title}>
+                {sending.length === 1
+                  ? "Registrando 1 movimiento detectado…"
+                  : `Registrando ${sending.length} movimientos detectados…`}
+              </Text>
+              <Text style={styles.body}>
+                {describeEntries(sending)}
+                {"El envío falló por conexión y se reintenta automáticamente. No lo registres de nuevo a mano."}
+              </Text>
+              {onRetryNow ? (
                 <TouchableOpacity
-                  style={styles.discardButton}
-                  onPress={() => onDiscard(entry.suggestionId)}
-                  accessibilityLabel="Descartar el movimiento detectado pendiente"
+                  style={styles.retryButton}
+                  onPress={onRetryNow}
+                  disabled={Boolean(isRetrying)}
+                  accessibilityLabel="Reintentar el envío ahora"
                 >
-                  <Text style={styles.discardButtonText}>Descartar</Text>
+                  <Text style={styles.retryButtonText}>
+                    {isRetrying ? "Reintentando…" : "Reintentar ahora"}
+                  </Text>
                 </TouchableOpacity>
               ) : null}
             </View>
           </View>
-        </View>
-      ))}
+        ) : null}
+        {exhausted.map((entry) => (
+          <View key={entry.suggestionId} style={styles.row}>
+            <AlertTriangle size={16} color={COLORS.warning} />
+            <View style={styles.textWrap}>
+              <Text style={styles.title}>Un movimiento detectado no se pudo registrar</Text>
+              <Text style={styles.body}>
+                {lastErrorMessage ? `${lastErrorMessage}. ` : ""}
+                Se agotaron los reintentos automáticos. Complétalo o descártalo.
+              </Text>
+              <View style={styles.actionsRow}>
+                <TouchableOpacity
+                  style={styles.retryButton}
+                  // La pantalla puente resuelve la sugerencia y abre su formulario directo,
+                  // aunque la notificación de la campana ya haya sido eliminada.
+                  onPress={() => router.push(`/detected-suggestion/${encodeURIComponent(entry.suggestionId)}` as never)}
+                  accessibilityLabel="Completar el registro del movimiento detectado"
+                >
+                  <Text style={styles.retryButtonText}>Completar registro</Text>
+                </TouchableOpacity>
+                {onDiscard ? (
+                  <TouchableOpacity
+                    style={styles.discardButton}
+                    onPress={() => onDiscard(entry.suggestionId)}
+                    accessibilityLabel="Descartar el movimiento detectado pendiente"
+                  >
+                    <Text style={styles.discardButtonText}>Descartar</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            </View>
+          </View>
+        ))}
+      </View>
     </View>
   );
 }
@@ -105,6 +107,9 @@ function describeEntries(entries: DetectionBackgroundSave[]): string {
 }
 
 const styles = StyleSheet.create({
+  /* Margen de pantalla, igual que ResourceContextNote y ActiveFilterBar, que comparten esta zona:
+     sin él el aviso llegaba hasta el borde del teléfono mientras todo lo demás respira. */
+  outer: { paddingHorizontal: SPACING.lg },
   container: {
     gap: SPACING.sm,
     borderRadius: RADIUS.md,
