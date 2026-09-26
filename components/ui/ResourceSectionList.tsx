@@ -1,7 +1,6 @@
 import { useRef } from "react";
 import {
   ActivityIndicator,
-  Platform,
   Pressable,
   RefreshControl,
   SectionList,
@@ -18,6 +17,7 @@ import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING, SURFACE } from "../../constant
 import { IOS_FLOATING_TAB_BAR_SPACE } from "../../constants/floating-tab-bar";
 import { EmptyState } from "./EmptyState";
 import { StaggeredItem } from "./StaggeredItem";
+import { SwipeRowContext, useSwipeRowScope } from "./SwipeRowScope";
 
 export type ResourceSection<T, K extends string = string> = {
   key: K;
@@ -107,95 +107,101 @@ export function ResourceSectionList<T, S extends ResourceSection<T> = ResourceSe
   stickyHeaders = false,
 }: Props<T, S>) {
   const entranceDeadlineRef = useRef(Date.now() + 700);
+  const { scope, reset } = useSwipeRowScope();
 
   return (
-    <SectionList<T, S>
-      sections={sections}
-      keyExtractor={keyExtractor}
-      renderItem={(info) => {
-        const content = renderItem(info);
-        if (!animateItems || !content) return content;
-        // La entrada escalonada es para el primer dibujo de la lista, no para cada celda que
-        // la virtualizacion monta al bajar. En Movimientos las secciones son de un dia, asi
-        // que casi toda fila cae bajo `maxStagger` y se deslizaba 14px al entrar: bajando, un
-        // temblor continuo; al llegar una pagina, treinta filas moviendose a la vez. Pasada la
-        // ventana, la fila se dibuja quieta. Leer el reloj en render evita el re-render que
-        // costaria guardarlo en estado.
-        if (Date.now() > entranceDeadlineRef.current) return content;
-        return (
-          <StaggeredItem index={info.index} maxStagger={itemAnimationMaxStagger}>
-            {content}
-          </StaggeredItem>
-        );
-      }}
-      renderSectionHeader={({ section }) => <ResourceSectionHeader section={section as ResourceSection<T>} />}
-      stickySectionHeadersEnabled={stickyHeaders}
-      ListHeaderComponent={
-        <>
-          {listHeaderComponent}
-          {loading.isLoading ? (
-            loading.skeleton ? <>{loading.skeleton}</> : null
-          ) : loading.secondaryLoading && sections.length === 0 ? (
-            <View style={styles.secondaryLoading}>
-              <ActivityIndicator color={COLORS.primary} />
-              <Text style={styles.secondaryLoadingText}>{loading.secondaryMessage ?? "Cargando..."}</Text>
-            </View>
-          ) : null}
-        </>
-      }
-      ListFooterComponent={
-        <>
-          {listFooterComponent}
-          {loading.fetchingMore ? (
-            <View style={styles.footer}>
-              <ActivityIndicator color={COLORS.primary} size="small" />
-              <Text style={styles.footerText}>{loading.footerMessage ?? "Cargando más..."}</Text>
-            </View>
-          ) : loading.endReached && sections.some((section) => section.data.length > 0) ? (
-            <View style={styles.footer}>
-              <Text style={styles.footerEnd}>· · ·</Text>
-            </View>
-          ) : null}
-        </>
-      }
-      ListEmptyComponent={
-        !loading.isLoading && !loading.secondaryLoading && empty ? (
-          <EmptyState
-            icon={empty.icon}
-            variant={empty.variant}
-            title={empty.title}
-            description={empty.description}
-            action={empty.action}
-          />
-        ) : null
-      }
-      ItemSeparatorComponent={() => <View style={{ height: itemSeparatorHeight }} />}
-      SectionSeparatorComponent={() => <View style={{ height: sectionSeparatorHeight }} />}
-      refreshControl={
-        onRefresh ? (
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            // iOS usa tintColor; Android usa colors[] + progressBackgroundColor. Sin esto, en
-            // Android el spinner salía con color por defecto (poco visible en tema oscuro), por lo
-            // que el arrastre no daba feedback. Ahora el indicador es visible en todos los módulos.
-            tintColor={COLORS.primary}
-            colors={[COLORS.primary]}
-            progressBackgroundColor={SURFACE.deepNavy}
-          />
-        ) : undefined
-      }
-      /* En iOS, el valor por defecto de React Native (false): recortar subvistas desengancha y
-         reengancha las filas nativas al hacer scroll, y con gestos nativos (SwipeActionRow) el
-         gesto de una fila podía quedar apuntando a la vista de otra. Android conserva el recorte. */
-      removeClippedSubviews={Platform.OS === "android" && !stickyHeaders}
-      maxToRenderPerBatch={10}
-      windowSize={5}
-      initialNumToRender={15}
-      onEndReached={onEndReached}
-      onEndReachedThreshold={onEndReachedThreshold}
-      contentContainerStyle={[styles.contentContainer, contentContainerStyle]}
-    />
+    <SwipeRowContext.Provider value={scope}>
+      <SectionList<T, S>
+        sections={sections}
+        keyExtractor={keyExtractor}
+        renderItem={(info) => {
+          const content = renderItem(info);
+          if (!content) return content;
+          // La entrada escalonada es para el primer dibujo de la lista, no para cada celda que
+          // la virtualizacion monta al bajar. En Movimientos las secciones son de un dia, asi
+          // que casi toda fila cae bajo `maxStagger` y se deslizaba 14px al entrar: bajando, un
+          // temblor continuo; al llegar una pagina, treinta filas moviendose a la vez. Pasada la
+          // ventana, la fila se dibuja quieta. Leer el reloj en render evita el re-render que
+          // costaria guardarlo en estado.
+          return (
+            <StaggeredItem
+              index={info.index}
+              maxStagger={itemAnimationMaxStagger}
+              enabled={animateItems && Date.now() <= entranceDeadlineRef.current}
+            >
+              {content}
+            </StaggeredItem>
+          );
+        }}
+        renderSectionHeader={({ section }) => <ResourceSectionHeader section={section as ResourceSection<T>} />}
+        stickySectionHeadersEnabled={stickyHeaders}
+        ListHeaderComponent={
+          <>
+            {listHeaderComponent}
+            {loading.isLoading ? (
+              loading.skeleton ? <>{loading.skeleton}</> : null
+            ) : loading.secondaryLoading && sections.length === 0 ? (
+              <View style={styles.secondaryLoading}>
+                <ActivityIndicator color={COLORS.primary} />
+                <Text style={styles.secondaryLoadingText}>{loading.secondaryMessage ?? "Cargando..."}</Text>
+              </View>
+            ) : null}
+          </>
+        }
+        ListFooterComponent={
+          <>
+            {listFooterComponent}
+            {loading.fetchingMore ? (
+              <View style={styles.footer}>
+                <ActivityIndicator color={COLORS.primary} size="small" />
+                <Text style={styles.footerText}>{loading.footerMessage ?? "Cargando más..."}</Text>
+              </View>
+            ) : loading.endReached && sections.some((section) => section.data.length > 0) ? (
+              <View style={styles.footer}>
+                <Text style={styles.footerEnd}>· · ·</Text>
+              </View>
+            ) : null}
+          </>
+        }
+        ListEmptyComponent={
+          !loading.isLoading && !loading.secondaryLoading && empty ? (
+            <EmptyState
+              icon={empty.icon}
+              variant={empty.variant}
+              title={empty.title}
+              description={empty.description}
+              action={empty.action}
+            />
+          ) : null
+        }
+        ItemSeparatorComponent={() => <View style={{ height: itemSeparatorHeight }} />}
+        SectionSeparatorComponent={() => <View style={{ height: sectionSeparatorHeight }} />}
+        refreshControl={
+          onRefresh ? (
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              // iOS usa tintColor; Android usa colors[] + progressBackgroundColor. Sin esto, en
+              // Android el spinner salía con color por defecto (poco visible en tema oscuro), por lo
+              // que el arrastre no daba feedback. Ahora el indicador es visible en todos los módulos.
+              tintColor={COLORS.primary}
+              colors={[COLORS.primary]}
+              progressBackgroundColor={SURFACE.deepNavy}
+            />
+          ) : undefined
+        }
+        // Keep native gesture hosts attached on both platforms; virtualization still limits cells.
+        removeClippedSubviews={false}
+        onScrollBeginDrag={reset}
+        onMomentumScrollBegin={reset}
+        maxToRenderPerBatch={10}
+        windowSize={5}
+        initialNumToRender={15}
+        onEndReached={onEndReached}
+        onEndReachedThreshold={onEndReachedThreshold}
+        contentContainerStyle={[styles.contentContainer, contentContainerStyle]}
+      />
+    </SwipeRowContext.Provider>
   );
 }
 

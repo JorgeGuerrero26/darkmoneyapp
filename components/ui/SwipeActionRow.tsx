@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useMemo, type ComponentType, type ReactNode } from "react";
+import { useCallback, useContext, useEffect, useId, useMemo, useRef, type ComponentType, type ReactNode } from "react";
 import { StyleSheet, Text, TouchableOpacity, View, type StyleProp, type ViewStyle } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   cancelAnimation,
   interpolate,
   runOnJS,
+  runOnUI,
   useAnimatedStyle,
+  useAnimatedReaction,
   useSharedValue,
   withSpring,
   Extrapolation,
@@ -13,6 +15,7 @@ import Animated, {
 import * as Haptics from "expo-haptics";
 
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS } from "../../constants/theme";
+import { SwipeRowContext } from "./SwipeRowScope";
 import { resolveSwipeTarget } from "../../lib/swipe-row-target";
 
 type SwipeActionIcon = ComponentType<{
@@ -45,38 +48,13 @@ type Props = {
   children: ReactNode | ((args: RenderContentArgs) => ReactNode);
 };
 
-/**
- * Cuánto se mueve el dedo en horizontal antes de que el gesto sea de la fila, y cuánto en
- * vertical antes de ceder el toque a la lista. Mismo criterio que `useSwipeTab`.
- */
+// Horizontal intent must win before the list starts scrolling.
 const ACTIVATE_X = 12;
 const FAIL_Y = 10;
-
-/** Resorte del snap: firme, sin rebote que haga dudar si quedó abierta. */
-const SPRING = { damping: 24, stiffness: 260, mass: 0.9 } as const;
-
-/** Cuánto deja estirar más allá de la acción, como tope elástico. */
-const OVERSHOOT = 1.4;
-
-/** 0 = cerrada, 1 = abierta a la derecha (acción izquierda), -1 = abierta a la izquierda. */
+const SPRING = { damping: 24, stiffness: 260, mass: 0.9, overshootClamping: true } as const;
 type OpenDir = 0 | 1 | -1;
 
-/**
- * Fila deslizable con una acción a cada lado.
- *
- * **El gesto corre en el hilo nativo** (react-native-gesture-handler + Reanimated). La versión
- * anterior usaba `PanResponder`: cada movimiento del dedo cruzaba al hilo de JavaScript, y con JS
- * ocupado —cargando la lista, por ejemplo— se saltaban fotogramas. De ahí lo entrecortado.
- *
- * **Y ya no puede quedarse a medias.** Con `PanResponder`, si el dedo se desviaba en vertical la
- * lista reclamaba el toque para hacer scroll; el componente no se lo negaba ni manejaba la
- * interrupción, así que la fila se congelaba donde estaba el dedo — medio abierta, con el monto
- * cortado. Aquí un gesto interrumpido también se resuelve: vuelve a cerrada o a abierta, nunca a
- * mitad.
- *
- * La regla de dónde queda al soltar sigue siendo `resolveSwipeTarget`, sin cambios y con sus
- * tests; solo que ahora corre como worklet.
- */
+/** A fixed native host owns the gesture; only its content moves. */
 export function SwipeActionRow({
   leftAction,
   rightAction,
@@ -86,66 +64,122 @@ export function SwipeActionRow({
   contentContainerStyle,
   children,
 }: Props) {
+  const rowId = useId();
+  const scope = useContext(SwipeRowContext);
+  const localOwner = useSharedValue<string | null>(null);
+  const localRevision = useSharedValue(0);
+  const owner = scope?.owner ?? localOwner;
+  const revision = scope?.revision ?? localRevision;
+  const gestureRevision = useSharedValue(0);
   const translateX = useSharedValue(0);
   const grabbedAt = useSharedValue(0);
   const openDir = useSharedValue<OpenDir>(0);
-  // Las acciones de ESTE render: una fila que gana o pierde una acción (una cuenta que se archiva
-  // y estrena "Eliminar") debe calcular sus topes con las de ahora, no con las del primer render.
-  const hasLeft = useSharedValue(Boolean(leftAction));
-  const hasRight = useSharedValue(Boolean(rightAction));
+  const dragging = useSharedValue(false);
+  const actionLocked = useSharedValue(false);
+  const hasLeft = Boolean(leftAction);
+  const hasRight = Boolean(rightAction);
+
+  const closeOnUI = useCallback(() => {
+    "worklet";
+    dragging.value = false;
+    openDir.value = 0;
+    translateX.value = withSpring(0, SPRING);
+  }, [dragging, openDir, translateX]);
+  const close = useCallback(() => runOnUI(closeOnUI)(), [closeOnUI]);
+  const isOpen = useCallback(
+    () => dragging.value || openDir.value !== 0 || Math.abs(translateX.value) > 1,
+    [dragging, openDir, translateX],
+  );
+
+  useAnimatedReaction(
+    () => ({ owner: owner.value, revision: revision.value }),
+    (current, previous) => {
+      const invalidated = current.owner !== rowId || (previous && current.revision !== previous.revision);
+      if (invalidated && (dragging.value || openDir.value !== 0 || translateX.value !== 0)) {
+        closeOnUI();
+      }
+    },
+    [rowId, closeOnUI],
+  );
+
+  // Action availability/width changes invalidate an in-flight drag too.
   useEffect(() => {
-    hasLeft.value = Boolean(leftAction);
-    hasRight.value = Boolean(rightAction);
-  }, [leftAction, rightAction, hasLeft, hasRight]);
+    close();
+  }, [hasLeft, hasRight, revealWidth, close]);
+  useEffect(() => () => {
+    runOnUI(() => {
+      "worklet";
+      if (owner.value === rowId) owner.value = null;
+      cancelAnimation(translateX);
+    })();
+  }, [owner, rowId, translateX]);
 
   const lightHaptic = useCallback(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   }, []);
 
-  const snapTo = useCallback(
-    (toValue: number, onDone?: () => void) => {
-      openDir.value = toValue === 0 ? 0 : toValue > 0 ? 1 : -1;
-      translateX.value = withSpring(toValue, SPRING, (finished) => {
-        if (finished && onDone) runOnJS(onDone)();
-      });
-    },
-    [openDir, translateX],
-  );
-
-  const close = useCallback(() => snapTo(0), [snapTo]);
-  const isOpen = useCallback(() => openDir.value !== 0, [openDir]);
-
   const pan = useMemo(() => Gesture.Pan()
+    .enabled(hasLeft || hasRight)
     .activeOffsetX([-ACTIVATE_X, ACTIVATE_X])
     .failOffsetY([-FAIL_Y, FAIL_Y])
+    .maxPointers(1)
+    .onTouchesDown((event, manager) => {
+      if (event.numberOfTouches > 1) {
+        closeOnUI();
+        manager.fail();
+      }
+    })
+    .onBegin(() => {
+      owner.value = rowId;
+      gestureRevision.value = revision.value;
+    })
     .onStart(() => {
-      // Si estaba animando, el dedo la agarra donde está de verdad, no en su destino.
+      if (owner.value !== rowId || gestureRevision.value !== revision.value) return;
       cancelAnimation(translateX);
       grabbedAt.value = translateX.value;
+      dragging.value = true;
+      actionLocked.value = false;
     })
     .onUpdate((e) => {
-      const minX = hasRight.value ? -revealWidth * OVERSHOOT : Math.min(0, grabbedAt.value);
-      const maxX = hasLeft.value ? revealWidth * OVERSHOOT : Math.max(0, grabbedAt.value);
-      translateX.value = Math.min(maxX, Math.max(minX, grabbedAt.value + e.translationX));
+      if (!dragging.value || owner.value !== rowId || gestureRevision.value !== revision.value) return;
+      translateX.value = Math.min(hasLeft ? revealWidth : 0,
+        Math.max(hasRight ? -revealWidth : 0, grabbedAt.value + e.translationX));
     })
     .onEnd((e, success) => {
+      if (!success || !dragging.value || owner.value !== rowId || gestureRevision.value !== revision.value) return;
       const target = resolveSwipeTarget({
         grabbedAt: grabbedAt.value,
         dx: e.translationX,
-        // Gesture Handler da px/s; la regla está calibrada en px/ms. Un gesto interrumpido (la
-        // lista reclamó el toque) no tiene impulso válido: se decide solo por la posición.
-        vx: success ? e.velocityX / 1000 : 0,
+        vx: e.velocityX / 1000,
         openDir: openDir.value === 0 ? null : openDir.value > 0 ? "right" : "left",
-        hasLeftAction: hasLeft.value,
-        hasRightAction: hasRight.value,
+        hasLeftAction: hasLeft,
+        hasRightAction: hasRight,
         revealWidth,
       });
       if (target !== 0 && openDir.value === 0) runOnJS(lightHaptic)();
       openDir.value = target === 0 ? 0 : target > 0 ? 1 : -1;
       translateX.value = withSpring(target, SPRING);
-    }), [grabbedAt, hasLeft, hasRight, lightHaptic, openDir, revealWidth, translateX]);
+    })
+    .onFinalize((_e, success) => {
+      if (!success && dragging.value) closeOnUI();
+      dragging.value = false;
+    }), [actionLocked, closeOnUI, dragging, gestureRevision, grabbedAt, hasLeft, hasRight,
+      lightHaptic, openDir, owner, revealWidth, revision, rowId, translateX]);
 
-  const contentStyle = useAnimatedStyle(() => ({ transform: [{ translateX: translateX.value }] }));
+  // Consume taps on open content before child buttons can navigate.
+  const tap = useMemo(() => Gesture.Tap()
+    .onTouchesDown((_event, manager) => {
+      if (openDir.value === 0 && Math.abs(translateX.value) <= 1) manager.fail();
+    })
+    .onEnd((_e, success) => {
+      if (success && (openDir.value !== 0 || Math.abs(translateX.value) > 1)) closeOnUI();
+    }), [closeOnUI, openDir, translateX]);
+
+  const contentStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: translateX.value }],
+    pointerEvents: openDir.value !== 0 || dragging.value || Math.abs(translateX.value) > 1
+      ? "box-only" : "auto",
+  }));
   const leftBgStyle = useAnimatedStyle(() => ({
     opacity: interpolate(translateX.value, [0, 16, revealWidth], [0, 0.6, 1], Extrapolation.CLAMP),
   }));
@@ -153,59 +187,66 @@ export function SwipeActionRow({
     opacity: interpolate(translateX.value, [-revealWidth, -16, 0], [1, 0.6, 0], Extrapolation.CLAMP),
   }));
 
-  function handleActionPress(action: SwipeAction) {
+  const latestActions = useRef({ leftAction, rightAction });
+  latestActions.current = { leftAction, rightAction };
+  function handleActionPress(direction: OpenDir) {
+    if (actionLocked.value || dragging.value || owner.value !== rowId || openDir.value !== direction) return;
+    const action = direction > 0 ? latestActions.current.leftAction : latestActions.current.rightAction;
+    if (!action) return;
+    actionLocked.value = true;
+    close();
     runActionHaptic(action);
-    snapTo(0, action.onPress);
+    // Business actions must not depend on an uninterrupted spring completion.
+    action.onPress();
   }
 
   return (
-    <View style={[styles.container, { borderRadius }, style]}>
-      {leftAction ? (
-        <Animated.View
-          style={[
-            styles.leftActionBg,
-            {
-              width: revealWidth,
-              backgroundColor: leftAction.backgroundColor ?? COLORS.pine + "30",
-              borderTopRightRadius: borderRadius,
-              borderBottomRightRadius: borderRadius,
-            },
-            leftBgStyle,
-          ]}
-        >
-          <ActionButton action={leftAction} onPress={() => handleActionPress(leftAction)} />
-        </Animated.View>
-      ) : null}
+    <GestureDetector gesture={pan} touchAction="pan-y">
+      <View collapsable={false} style={[styles.container, { borderRadius }, style]}>
+        {leftAction ? (
+          <Animated.View
+            style={[
+              styles.leftActionBg,
+              {
+                width: revealWidth,
+                backgroundColor: leftAction.backgroundColor ?? COLORS.pine + "30",
+                borderTopRightRadius: borderRadius,
+                borderBottomRightRadius: borderRadius,
+              },
+              leftBgStyle,
+            ]}
+          >
+            <ActionButton action={leftAction} onPress={() => handleActionPress(1)} />
+          </Animated.View>
+        ) : null}
 
-      {rightAction ? (
-        <Animated.View
-          style={[
-            styles.rightActionBg,
-            {
-              width: revealWidth,
-              backgroundColor: rightAction.backgroundColor ?? COLORS.danger + "28",
-              borderTopLeftRadius: borderRadius,
-              borderBottomLeftRadius: borderRadius,
-            },
-            rightBgStyle,
-          ]}
-        >
-          <ActionButton action={rightAction} onPress={() => handleActionPress(rightAction)} />
-        </Animated.View>
-      ) : null}
+        {rightAction ? (
+          <Animated.View
+            style={[
+              styles.rightActionBg,
+              {
+                width: revealWidth,
+                backgroundColor: rightAction.backgroundColor ?? COLORS.danger + "28",
+                borderTopLeftRadius: borderRadius,
+                borderBottomLeftRadius: borderRadius,
+              },
+              rightBgStyle,
+            ]}
+          >
+            <ActionButton action={rightAction} onPress={() => handleActionPress(-1)} />
+          </Animated.View>
+        ) : null}
 
-      <GestureDetector gesture={pan}>
-        {/* collapsable={false}: requisito de GestureDetector con la nueva arquitectura. Sin él, la
-            plataforma puede aplanar esta vista y el gesto se engancha a otra del árbol: el deslizar
-            respondía varias filas más abajo de la fila que se movía (reportado 2026-09-26). */}
-        <Animated.View
-          collapsable={false}
-          style={[styles.contentContainer, contentStyle, contentContainerStyle]}
-        >
-          {typeof children === "function" ? children({ close, isOpen }) : children}
-        </Animated.View>
-      </GestureDetector>
-    </View>
+        <GestureDetector gesture={tap} touchAction="pan-y">
+          <Animated.View
+            collapsable={false}
+            style={[styles.contentContainer, contentStyle, contentContainerStyle]}
+          >
+            {typeof children === "function" ? children({ close, isOpen }) : children}
+          </Animated.View>
+        </GestureDetector>
+      </View>
+    </GestureDetector>
   );
 }
 
@@ -223,7 +264,7 @@ function ActionButton({ action, onPress }: { action: SwipeAction; onPress: () =>
   const Icon = action.icon;
   const color = action.color ?? COLORS.danger;
   return (
-    <TouchableOpacity style={styles.actionBtn} onPress={onPress} activeOpacity={0.8}>
+    <TouchableOpacity accessibilityRole="button" accessibilityLabel={action.label} style={styles.actionBtn} onPress={onPress} activeOpacity={0.8}>
       <Icon size={20} color={color} strokeWidth={2} />
       <Text style={[styles.actionLabel, { color }]}>{action.label}</Text>
     </TouchableOpacity>
