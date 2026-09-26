@@ -195,7 +195,13 @@ export function SwipeActionRow({
       ) : null}
 
       <GestureDetector gesture={pan}>
-        <Animated.View style={[styles.contentContainer, contentStyle, contentContainerStyle]}>
+        {/* collapsable={false}: requisito de GestureDetector con la nueva arquitectura. Sin él, la
+            plataforma puede aplanar esta vista y el gesto se engancha a otra del árbol: el deslizar
+            respondía varias filas más abajo de la fila que se movía (reportado 2026-09-26). */}
+        <Animated.View
+          collapsable={false}
+          style={[styles.contentContainer, contentStyle, contentContainerStyle]}
+        >
           {typeof children === "function" ? children({ close, isOpen }) : children}
         </Animated.View>
       </GestureDetector>

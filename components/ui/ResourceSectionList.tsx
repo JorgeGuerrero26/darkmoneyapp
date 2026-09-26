@@ -1,6 +1,7 @@
 import { useRef } from "react";
 import {
   ActivityIndicator,
+  Platform,
   Pressable,
   RefreshControl,
   SectionList,
@@ -184,7 +185,10 @@ export function ResourceSectionList<T, S extends ResourceSection<T> = ResourceSe
           />
         ) : undefined
       }
-      removeClippedSubviews={!stickyHeaders}
+      /* En iOS, el valor por defecto de React Native (false): recortar subvistas desengancha y
+         reengancha las filas nativas al hacer scroll, y con gestos nativos (SwipeActionRow) el
+         gesto de una fila podía quedar apuntando a la vista de otra. Android conserva el recorte. */
+      removeClippedSubviews={Platform.OS === "android" && !stickyHeaders}
       maxToRenderPerBatch={10}
       windowSize={5}
       initialNumToRender={15}
