@@ -13,6 +13,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "1.0.10",
     title: "DarkMoney estrena look",
     changes: [
+      "Al abrir un movimiento, el detalle entra con la misma transición lateral que al abrir una suscripción.",
       "En Cuentas, al seleccionar varias, el botón ahora dice lo que va a hacer: \"Archivar\" si elegiste activas y \"Restaurar\" si elegiste archivadas. Antes ofrecía archivar otra vez una cuenta que ya estaba archivada.",
       "Ajustamos el deslizamiento de filas al cambiar de módulo, para evitar que deje de responder o mueva otra fila. También revisamos el cierre cuando se interrumpe el gesto.",
       "Archivar, desarchivar y eliminar cuentas vuelve a funcionar, igual que fijar una suscripción o un ingreso fijo arriba de la lista. Antes salía un mensaje de error y no pasaba nada.",
