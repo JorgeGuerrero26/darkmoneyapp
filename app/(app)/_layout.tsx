@@ -138,7 +138,10 @@ export default function AppLayout() {
   };
   return (
     <Tabs
-      detachInactiveScreens={false}
+      // Fabric/iOS can lose Gesture Handler bindings when hidden tabs stay attached.
+      // Keep native detachment enabled; React preserves tab state and scroll position.
+      // https://github.com/software-mansion/react-native-gesture-handler/issues/3560
+      detachInactiveScreens
       screenOptions={{
         headerShown: false,
         tabBarStyle,

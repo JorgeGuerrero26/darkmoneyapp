@@ -14,7 +14,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     title: "DarkMoney estrena look",
     changes: [
       "En Cuentas, al seleccionar varias, el botón ahora dice lo que va a hacer: \"Archivar\" si elegiste activas y \"Restaurar\" si elegiste archivadas. Antes ofrecía archivar otra vez una cuenta que ya estaba archivada.",
-      "Deslizar una fila para archivar, eliminar o marcar ahora sigue tu dedo sin tirones, a la primera. Y ya no puede quedarse abierta a medias: si sueltas a mitad de camino, termina de abrirse o vuelve a su sitio.",
+      "Ajustamos el deslizamiento de filas al cambiar de módulo, para evitar que deje de responder o mueva otra fila. También revisamos el cierre cuando se interrumpe el gesto.",
       "Archivar, desarchivar y eliminar cuentas vuelve a funcionar, igual que fijar una suscripción o un ingreso fijo arriba de la lista. Antes salía un mensaje de error y no pasaba nada.",
       "En el asistente, el color vuelve a significar una sola cosa. El violeta es suyo —su ícono y el botón de enviar—, y el verde y el terracota quedan para lo que de verdad es dinero: la cifra de cada tarjeta se pinta según entre o salga. \"Guardar\" pasa a ser un botón normal. Y al guardar, la tarjeta se encoge a una línea con el visto y el monto, en vez de quedarse ocupando media pantalla.",
       "Mientras el asistente trabaja ahora te dice lo que está haciendo de verdad: si le dictaste un gasto dice que lo está anotando, en vez de decir que busca en tus movimientos.",
