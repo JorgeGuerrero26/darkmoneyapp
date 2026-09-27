@@ -68,6 +68,19 @@ No crear otro orden salvo una razon funcional explicita. Si un modulo no usa alg
 - `CurrencySelector`: selector de moneda soportada. No usar texto libre para moneda base.
 - `useOriginBackNavigation`: hook estandar para volver desde pantallas abiertas por origen (`?from=more`, `?from=dashboard`, etc.). No usar `router.back()` directo en modulos abiertos desde `Mas`.
 
+## Deslizamiento En iOS Al Cambiar De Modulo
+
+Incidente del 2026-09-26: después de cambiar entre Movimientos y Cuentas y volver, deslizar una fila movía otra más abajo o dejaba de responder. **El toque normal abría el registro correcto.** El problema aparecía al cambiar de pestaña, aunque el swipe funcionase al abrir la app.
+
+- **Mantener `detachInactiveScreens={true}` en `app/(app)/_layout.tsx`** (la forma abreviada `detachInactiveScreens` también vale). No volver a ponerlo en `false` como optimización. En iOS con Fabric, Gesture Handler, Reanimated y react-native-screens existe un fallo documentado de gestos al regresar a una pestaña con esa configuración.
+- Desacoplar la pantalla nativa inactiva conserva sus componentes y estado React. No hace falta `false` para mantener el estado de los módulos.
+- Si reaparece el síntoma «toque correcto, swipe sobre otra fila después de navegar», revisar primero esta configuración y el ciclo de vida de las pantallas antes de ajustar umbrales o reescribir `SwipeActionRow`.
+- La corrección de navegación es `fea0ba31`. Tras recibirla por OTA, el usuario reportó el 2026-09-27 que «parece que ya funciona bien». Es una comprobación inicial en el iPhone; no una garantía para cualquier versión de las dependencias.
+- Al modificar pestañas, listas o gestos, comprobar en iOS las filas 1, 2 y 4 antes y después de alternar Movimientos → Cuentas → Movimientos durante varios ciclos, con y sin scroll previo. La fila tocada y la desplazada deben coincidir. Revisar también fila abierta al salir, regreso desde segundo plano y conservación de filtros/scroll.
+- **Las pruebas Jest con gestos simulados no verifican las coordenadas ni la asociación detector/vista nativa.** La primera corrección pasó 19 pruebas y el fallo seguía en el teléfono. Registrar por separado la validación automatizada y la prueba en dispositivo; si esta última no se pudo hacer, indicarlo.
+
+Diagnóstico, referencias de las librerías y prueba completa: [docs/swipe-audit-2026-09-26.md](docs/swipe-audit-2026-09-26.md).
+
 ## Reglas De Arquitectura
 
 - `app/*` orquesta estado, queries, callbacks y slots de la plantilla; no debe contener cards, rows o modals grandes inline.
@@ -109,6 +122,7 @@ No crear otro orden salvo una razon funcional explicita. Si un modulo no usa alg
 - No hay animaciones manuales de items en pantallas de modulo; la animacion vive en `ResourceSectionList`.
 - No hay cards nuevas que dupliquen `ResourceCard`.
 - No hay acciones swipe nuevas fuera de `SwipeActionRow`.
+- Si se tocaron pestañas, listas o gestos, se conserva `detachInactiveScreens` activo y se registra el resultado de la prueba de swipe tras cambiar de módulo en iOS (o que sigue pendiente).
 - Los filtros aparecen en `FilterToolbar` y sus chips en `ActiveFilterBar`.
 - El resumen usa `MetricSummaryBar` o un wrapper fino sobre ese componente.
 - `npm run typecheck` pasa.

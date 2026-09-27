@@ -2,6 +2,10 @@
 
 ## Estado tras la prueba real del usuario
 
+**Actualización del 2026-09-27:** después de la OTA con `fea0ba31`, el usuario reportó: «parece que ya funciona bien». La entrega activa `detachInactiveScreens` en el navegador de pestañas. Esta comprobación inicial en su iPhone respalda la corrección; no consta que se haya ejecutado toda la matriz de regresión descrita abajo.
+
+OTA del iPhone (runtime `1.0.8`): [grupo f0bba1ee-5dc4-4364-baed-e6a618dc49e3](https://expo.dev/accounts/adriangmori/projects/darkmoney/updates/f0bba1ee-5dc4-4364-baed-e6a618dc49e3). Se comprobó que el servidor entregaba la actualización iOS `01a0e138-8dfa-7435-83ea-6ee1dfe3d8c5`. Las reglas para evitar reintroducir la configuración están en `AGENTS.md` y `CLAUDE.md`.
+
 La primera entrega (`63a0e3a`) **no resolvió el fallo en el iPhone**. Tras instalarla por OTA, el usuario confirmó que tocar una fila abre el movimiento correcto, pero deslizarla puede mover otra. El desencadenante es cambiar de módulo y volver. La última captura muestra la segunda fila resaltada mientras la cuarta expone una acción.
 
 Las 19 pruebas anteriores simulan los gestos. Comprueban el estado y la coordinación, pero no la asociación entre un detector nativo de iOS y la vista que recibe el dedo. No se deben usar como prueba de que el fallo observado está resuelto.
@@ -10,7 +14,7 @@ Las 19 pruebas anteriores simulan los gestos. Comprueban el estado y la coordina
 
 `app/(app)/_layout.tsx` forzaba `detachInactiveScreens={false}`. Esa configuración se introdujo en `f23a1eb` y seguía presente en la primera corrección. El proyecto usa Fabric, Gesture Handler, Reanimated y react-native-screens.
 
-Hay un [reporte reproducible de Gesture Handler #3560](https://github.com/software-mansion/react-native-gesture-handler/issues/3560) con esa combinación: en iOS, los gestos dejan de reconocerse después de cambiar de pestaña cuando `detachInactiveScreens` es `false`. El reporte se probó con versiones anteriores a las instaladas aquí y describe pérdida del gesto, no específicamente el desplazamiento de otra fila. Es una hipótesis bien respaldada para este caso, todavía pendiente de confirmación en el iPhone.
+Hay un [reporte reproducible de Gesture Handler #3560](https://github.com/software-mansion/react-native-gesture-handler/issues/3560) con esa combinación: en iOS, los gestos dejan de reconocerse después de cambiar de pestaña cuando `detachInactiveScreens` es `false`. El reporte se probó con versiones anteriores a las instaladas aquí y describe pérdida del gesto, no específicamente el desplazamiento de otra fila. La mejora reportada por el usuario tras activar la propiedad respalda este diagnóstico. No se capturó una traza nativa que demuestre el mecanismo exacto del cruce entre filas.
 
 Un [reporte relacionado de Reanimated #7627](https://github.com/software-mansion/react-native-reanimated/issues/7627) documenta que esa configuración pierde información de animaciones al salir de la pantalla y no la restaura al volver. Su reproducción funciona al devolver la propiedad a `true`.
 
@@ -52,9 +56,9 @@ El componente compartido se usa en movimientos, movimientos de una cuenta, cuent
 - `npm.cmd run typecheck` y `git diff --check`: aprobados.
 - ESLint está bloqueado por la ausencia de `eslint.config.js`, `.mjs` o `.cjs` en el repositorio.
 
-## Prueba pendiente en dispositivo
+## Validación en dispositivo y prueba de regresión
 
-No se dispone de un iPhone ni de un simulador iOS en este entorno Windows. La prueba de aceptación de esta segunda entrega está pendiente en el dispositivo que reproduce el fallo:
+El usuario reportó una mejora inicial en su iPhone el 2026-09-27. No se dispone de un iPhone ni de un simulador iOS en este entorno Windows y no consta una ejecución completa de los siguientes pasos. Conservarlos como prueba de regresión para futuros cambios en navegación, listas o gestos:
 
 1. Reiniciar la aplicación después de instalar la actualización. En Movimientos, deslizar las filas 1, 2 y 4 en ambos sentidos y comprobar que la fila resaltada coincide con la que se desplaza.
 2. Alternar Movimientos → Cuentas → Movimientos → Créditos/Deudas → Movimientos durante 20 ciclos. Repetir los gestos en cuanto se abre cada pestaña, tanto al inicio de la lista como después de hacer scroll.
