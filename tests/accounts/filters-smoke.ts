@@ -1,4 +1,4 @@
-import { applyAccountFilter, type AccountTypeFilter } from "../../features/accounts/lib/filters";
+import { applyAccountFilter, buildAccountInstitutionOptions, type AccountTypeFilter } from "../../features/accounts/lib/filters";
 import type { AccountSummary } from "../../types/domain";
 
 function assert(condition: unknown, message: string): asserts condition {
@@ -135,6 +135,36 @@ function testSearchPlusTypeMismatch() {
 // ── Runner ───────────────────────────────────────────────────────────────────
 
 const tests: { name: string; fn: () => void }[] = [
+  { name: "archived-only combines with institution and search", fn: () => {
+    const accounts = [
+      acc({ id: 1, name: "BCP Soles", institutionCode: "bcp" }),
+      acc({ id: 2, name: "BCP Dólares", institutionCode: "bcp", isArchived: true }),
+      acc({ id: 3, name: "Interbank Dólares", institutionCode: "interbank", isArchived: true }),
+    ];
+    const out = applyAccountFilter(accounts, { searchText: "dólares", typeFilters: [], status: "archived", institutions: ["bcp"] });
+    assert(out.length === 1 && out[0].id === 2, "only matching archived BCP account remains");
+  } },
+  { name: "multiple institutions include unassigned and respect type", fn: () => {
+    const accounts = [
+      acc({ id: 1, institutionCode: "bcp" }),
+      acc({ id: 2, institutionCode: null, isArchived: true }),
+      acc({ id: 3, institutionCode: "interbank" }),
+      acc({ id: 4, institutionCode: "bcp", type: "cash" }),
+    ];
+    const out = applyAccountFilter(accounts, { searchText: "", typeFilters: ["bank"], status: "all", institutions: ["bcp", null] });
+    assert(out.map((account) => account.id).join(",") === "1,2", "OR across institutions, AND with account type");
+    assert(applyAccountFilter(accounts, { searchText: "", typeFilters: [], status: "all", institutions: [] }).length === 4, "clearing institutions restores all matches");
+  } },
+  { name: "institution options retain archived and unknown institutions without duplicates", fn: () => {
+    const options = buildAccountInstitutionOptions([
+      acc({ institutionCode: "bcp" }), acc({ institutionCode: "bcp" }),
+      acc({ institutionCode: null }), acc({ institutionCode: undefined }),
+      acc({ institutionCode: "custom-bank", isArchived: true }),
+    ]);
+    assert(options.length === 3, "each institution appears once, including unassigned");
+    assert(options.some((option) => option.value === null && option.label === "Sin institución"), "unassigned accounts can be selected");
+    assert(options.some((option) => option.value === "custom-bank" && option.label === "custom-bank"), "unknown code remains selectable");
+  } },
   { name: "hides archived by default", fn: testHidesArchivedByDefault },
   { name: "shows archived when requested", fn: testShowsArchivedWhenRequested },
   { name: "empty type filters matches all", fn: testEmptyTypeFiltersMatchesAll },

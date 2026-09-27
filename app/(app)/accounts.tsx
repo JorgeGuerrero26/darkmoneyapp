@@ -42,7 +42,8 @@ import { DEFAULT_EXCHANGE_CURRENCY } from "../../constants/currencies";
 import { buildRateMap, hasConversionRate } from "../../lib/exchange-rate-map";
 import { useDisplayCurrency } from "../../features/accounts/lib/display-currency-context";
 import { buildAccountCSV } from "../../features/accounts/lib/csv";
-import { applyAccountFilter } from "../../features/accounts/lib/filters";
+import { applyAccountFilter, buildAccountInstitutionOptions, type AccountInstitutionFilter, type AccountStatusFilter } from "../../features/accounts/lib/filters";
+import { AccountFilterSheet } from "../../features/accounts/components/AccountFilterSheet";
 import { buildAccountSections } from "../../features/accounts/lib/buildAccountSections";
 import { computeNetWorth } from "../../features/accounts/lib/net-worth";
 import { computeComposition } from "../../features/accounts/lib/composition";
@@ -161,7 +162,11 @@ function AccountsScreen() {
   const [editAccount, setEditAccount] = useState<AccountSummary | null>(null);
   const [searchText, setSearchText] = useState("");
   const [typeFilters, setTypeFilters] = useState<AccountTypeFilter[]>([]);
-  const [showArchived, setShowArchived] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<AccountStatusFilter>("active");
+  const [institutionFilters, setInstitutionFilters] = useState<AccountInstitutionFilter[]>([]);
+  const [filterSheetOpen, setFilterSheetOpen] = useState(false);
+  const showArchived = statusFilter !== "active";
+  const extraFiltersCount = Number(showArchived) + institutionFilters.length;
   const [compositionExpanded, setCompositionExpanded] = useState(false);
 
   // Load the persisted composition toggle.
@@ -217,6 +222,7 @@ function AccountsScreen() {
 
   // ── Data ──────────────────────────────────────────────────────────────────
   const allAccounts = snapshot?.accounts ?? [];
+  const institutionOptions = useMemo(() => buildAccountInstitutionOptions(allAccounts), [allAccounts]);
   const totalNetWorth = useMemo(
     () => computeNetWorth({
       accounts: allAccounts,
@@ -231,9 +237,10 @@ function AccountsScreen() {
     () => applyAccountFilter(allAccounts, {
       searchText,
       typeFilters,
-      showArchived,
+      status: statusFilter,
+      institutions: institutionFilters,
     }),
-    [allAccounts, searchText, typeFilters, showArchived],
+    [allAccounts, searchText, typeFilters, statusFilter, institutionFilters],
   );
 
   const activeFiltered = filtered.filter((a) => !a.isArchived);
@@ -258,8 +265,16 @@ function AccountsScreen() {
     if (showArchived) {
       items.push({
         key: "archived",
-        label: "Archivadas",
-        onRemove: () => setShowArchived(false),
+        label: statusFilter === "archived" ? "Solo archivadas" : "Incluye archivadas",
+        onRemove: () => setStatusFilter("active"),
+      });
+    }
+
+    for (const institution of institutionFilters) {
+      items.push({
+        key: `institution-${institution ?? "__none__"}`,
+        label: institutionOptions.find((option) => option.value === institution)?.label ?? institution ?? "Sin institución",
+        onRemove: () => setInstitutionFilters((current) => current.filter((value) => value !== institution)),
       });
     }
 
@@ -272,11 +287,12 @@ function AccountsScreen() {
     }
 
     return items;
-  }, [searchText, showArchived, typeFilters]);
+  }, [searchText, showArchived, statusFilter, typeFilters, institutionFilters, institutionOptions]);
 
   function clearAccountFilters() {
     setTypeFilters([]);
-    setShowArchived(false);
+    setStatusFilter("active");
+    setInstitutionFilters([]);
     setSearchText("");
   }
 
@@ -285,7 +301,7 @@ function AccountsScreen() {
     () => allAccounts.filter((a) => a.isArchived).length,
     [allAccounts],
   );
-  const hasActiveFilter = typeFilters.length > 0 || showArchived || searchText.trim().length > 0;
+  const hasActiveFilter = typeFilters.length > 0 || extraFiltersCount > 0 || searchText.trim().length > 0;
 
   const emptyConfig = useMemo(() => {
     if (totalAccountsCount === 0) {
@@ -309,7 +325,7 @@ function AccountsScreen() {
       return {
         title: "Sin cuentas activas",
         description: `Tienes ${totalArchivedCount} cuenta${totalArchivedCount === 1 ? "" : "s"} archivada${totalArchivedCount === 1 ? "" : "s"}. Restaura alguna para que vuelva al patrimonio.`,
-        action: { label: "Ver archivadas", onPress: () => setShowArchived(true) },
+        action: { label: "Ver archivadas", onPress: () => setStatusFilter("archived") },
       };
     }
     return {
@@ -528,15 +544,11 @@ function AccountsScreen() {
             searchValue={searchText}
             onSearchChange={setSearchText}
             searchPlaceholder="Buscar cuentas..."
-            actions={[
-              {
-                key: "archived",
-                icon: Archive,
-                onPress: () => setShowArchived((v) => !v),
-                active: showArchived,
-                accessibilityLabel: showArchived ? "Ocultar archivadas" : "Mostrar cuentas archivadas",
-              },
-            ]}
+            extraAction={{
+              label: extraFiltersCount > 0 ? `${extraFiltersCount} filtros` : "Filtros",
+              active: extraFiltersCount > 0,
+              onPress: () => setFilterSheetOpen(true),
+            }}
           />
         }
         activeFilters={
@@ -638,6 +650,16 @@ function AccountsScreen() {
                   onPress: () => { setMenuOpen(false); setSelectMode(true); },
                 },
               ]}
+            />
+            <AccountFilterSheet
+              visible={filterSheetOpen}
+              onClose={() => setFilterSheetOpen(false)}
+              status={statusFilter}
+              onStatusChange={setStatusFilter}
+              institutionOptions={institutionOptions}
+              institutions={institutionFilters}
+              onInstitutionsChange={setInstitutionFilters}
+              onClear={clearAccountFilters}
             />
             <AccountForm
               visible={formVisible}
