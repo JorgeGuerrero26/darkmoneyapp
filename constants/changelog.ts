@@ -13,6 +13,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "1.0.10",
     title: "DarkMoney estrena look",
     changes: [
+      "Tus cuentas aparecen agrupadas por tipo: bancos, ahorro, tarjetas, efectivo y los demás. Las archivadas siguen al final cuando eliges mostrarlas.",
       "Al abrir un movimiento, el detalle entra con la misma transición lateral que al abrir una suscripción.",
       "En Cuentas, al seleccionar varias, el botón ahora dice lo que va a hacer: \"Archivar\" si elegiste activas y \"Restaurar\" si elegiste archivadas. Antes ofrecía archivar otra vez una cuenta que ya estaba archivada.",
       "Ajustamos el deslizamiento de filas al cambiar de módulo, para evitar que deje de responder o mueva otra fila. También revisamos el cierre cuando se interrumpe el gesto.",

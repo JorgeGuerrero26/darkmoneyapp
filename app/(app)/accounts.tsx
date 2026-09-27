@@ -6,7 +6,7 @@ import { IOS_FLOATING_TAB_BAR_SPACE } from "../../constants/floating-tab-bar";
 import { useRouter } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Archive, ArchiveRestore, CheckSquare, ChevronDown, ChevronUp, Download, Layers, MoreVertical, PieChart, X } from "lucide-react-native";
+import { Archive, ArchiveRestore, CheckSquare, ChevronDown, ChevronUp, Download, MoreVertical, PieChart, X } from "lucide-react-native";
 import { format } from "date-fns";
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -43,6 +43,7 @@ import { buildRateMap, hasConversionRate } from "../../lib/exchange-rate-map";
 import { useDisplayCurrency } from "../../features/accounts/lib/display-currency-context";
 import { buildAccountCSV } from "../../features/accounts/lib/csv";
 import { applyAccountFilter } from "../../features/accounts/lib/filters";
+import { buildAccountSections } from "../../features/accounts/lib/buildAccountSections";
 import { computeNetWorth } from "../../features/accounts/lib/net-worth";
 import { computeComposition } from "../../features/accounts/lib/composition";
 import { NetWorthCompositionChart } from "../../features/accounts/components/NetWorthCompositionChart";
@@ -63,19 +64,6 @@ const TYPE_FILTERS: { label: string; value: AccountTypeFilter }[] = [
   { label: "Otro",        value: "other" },
 ];
 
-// Labels and visual order for "group by type" mode.
-const TYPE_GROUP_ORDER: { value: string; label: string }[] = [
-  { value: "bank",        label: "Bancos" },
-  { value: "savings",     label: "Ahorro" },
-  { value: "credit_card", label: "Tarjetas" },
-  { value: "cash",        label: "Efectivo" },
-  { value: "investment",  label: "Inversiones" },
-  { value: "loan",        label: "Préstamos" },
-  { value: "loan_wallet", label: "Cartera de préstamos" },
-  { value: "other",       label: "Otras" },
-];
-
-const ACCOUNTS_GROUPING_KEY = "darkmoney.accounts.groupByType";
 const ACCOUNTS_COMPOSITION_EXPANDED_KEY = "darkmoney.accounts.compositionExpanded";
 
 function AccountsScreen() {
@@ -174,24 +162,12 @@ function AccountsScreen() {
   const [searchText, setSearchText] = useState("");
   const [typeFilters, setTypeFilters] = useState<AccountTypeFilter[]>([]);
   const [showArchived, setShowArchived] = useState(false);
-  const [groupByType, setGroupByType] = useState(false);
   const [compositionExpanded, setCompositionExpanded] = useState(false);
 
-  // Load persisted toggles.
+  // Load the persisted composition toggle.
   useEffect(() => {
-    void AsyncStorage.getItem(ACCOUNTS_GROUPING_KEY).then((stored) => {
-      if (stored === "1") setGroupByType(true);
-    });
     void AsyncStorage.getItem(ACCOUNTS_COMPOSITION_EXPANDED_KEY).then((stored) => {
       if (stored === "1") setCompositionExpanded(true);
-    });
-  }, []);
-
-  const toggleGroupByType = useCallback(() => {
-    setGroupByType((prev) => {
-      const next = !prev;
-      void AsyncStorage.setItem(ACCOUNTS_GROUPING_KEY, next ? "1" : "0");
-      return next;
     });
   }, []);
 
@@ -261,46 +237,12 @@ function AccountsScreen() {
   );
 
   const activeFiltered = filtered.filter((a) => !a.isArchived);
-  const archivedFiltered = filtered.filter((a) => a.isArchived);
-  const accountSections = useMemo<AccountListSection[]>(() => {
-    const sections: AccountListSection[] = [];
-
-    if (groupByType) {
-      // Group active accounts by type, following TYPE_GROUP_ORDER. Unknown types fall under "other".
-      const buckets = new Map<string, AccountSummary[]>();
-      for (const account of activeFiltered) {
-        const known = TYPE_GROUP_ORDER.some((g) => g.value === account.type);
-        const key = known ? account.type : "other";
-        const bucket = buckets.get(key);
-        if (bucket) bucket.push(account);
-        else buckets.set(key, [account]);
-      }
-      for (const group of TYPE_GROUP_ORDER) {
-        const data = buckets.get(group.value);
-        if (data && data.length > 0) {
-          sections.push({
-            key: `type-${group.value}`,
-            label: `${group.label} (${data.length})`,
-            data,
-            headerVariant: "divider",
-          });
-        }
-      }
-    } else if (activeFiltered.length > 0) {
-      sections.push({ key: "active", label: "Activas", data: activeFiltered, headerVariant: "hidden" });
-    }
-
-    if (archivedFiltered.length > 0) {
-      sections.push({
-        key: "archived",
-        label: `Archivadas (${archivedFiltered.length})`,
-        data: archivedFiltered,
-        headerVariant: "divider",
-        headerIcon: Archive,
-      });
-    }
-    return sections;
-  }, [activeFiltered, archivedFiltered, groupByType]);
+  const accountSections = useMemo<AccountListSection[]>(
+    () => buildAccountSections(filtered).map((section) => (
+      section.key === "archived" ? { ...section, headerIcon: Archive } : section
+    )),
+    [filtered],
+  );
 
   const activeFilterItems = useMemo<ActiveFilterItem[]>(() => {
     const items: ActiveFilterItem[] = [];
@@ -321,14 +263,6 @@ function AccountsScreen() {
       });
     }
 
-    if (groupByType) {
-      items.push({
-        key: "group-by-type",
-        label: "Agrupado por tipo",
-        onRemove: toggleGroupByType,
-      });
-    }
-
     if (searchText.trim()) {
       items.push({
         key: "search",
@@ -338,13 +272,12 @@ function AccountsScreen() {
     }
 
     return items;
-  }, [groupByType, searchText, showArchived, toggleGroupByType, typeFilters]);
+  }, [searchText, showArchived, typeFilters]);
 
   function clearAccountFilters() {
     setTypeFilters([]);
     setShowArchived(false);
     setSearchText("");
-    if (groupByType) toggleGroupByType();
   }
 
   const totalAccountsCount = allAccounts.length;
@@ -352,7 +285,7 @@ function AccountsScreen() {
     () => allAccounts.filter((a) => a.isArchived).length,
     [allAccounts],
   );
-  const hasActiveFilter = typeFilters.length > 0 || showArchived || searchText.trim().length > 0 || groupByType;
+  const hasActiveFilter = typeFilters.length > 0 || showArchived || searchText.trim().length > 0;
 
   const emptyConfig = useMemo(() => {
     if (totalAccountsCount === 0) {
@@ -453,8 +386,8 @@ function AccountsScreen() {
   const selectedActiveCount = selectedAccounts.filter((a) => !a.isArchived).length;
   const selectedArchivedCount = selectedAccounts.length - selectedActiveCount;
 
-  const renderAccount: SectionListRenderItem<AccountSummary, AccountListSection> = useCallback(({ item: account, section }) => (
-    section.key === "active" ? (
+  const renderAccount: SectionListRenderItem<AccountSummary, AccountListSection> = useCallback(({ item: account }) => (
+    !account.isArchived ? (
       <AccountCard
         account={account}
         baseCurrencyCode={baseCurrency}
@@ -595,19 +528,7 @@ function AccountsScreen() {
             searchValue={searchText}
             onSearchChange={setSearchText}
             searchPlaceholder="Buscar cuentas..."
-            /* Las dos palancas que cambian CÓMO se ve la lista viven juntas, aquí y en Créditos
-               y deudas: agrupar y ver archivadas. Archivadas estaba en el encabezado con
-               etiqueta y en el otro módulo era un icono al lado de los filtros; dos sitios para
-               lo mismo obliga a buscarla dos veces. Lo que está activo lo dice la barra de
-               filtros de abajo, que es donde se quita. */
             actions={[
-              {
-                key: "group-by-type",
-                icon: Layers,
-                onPress: toggleGroupByType,
-                active: groupByType,
-                accessibilityLabel: "Agrupar por tipo de cuenta",
-              },
               {
                 key: "archived",
                 icon: Archive,
