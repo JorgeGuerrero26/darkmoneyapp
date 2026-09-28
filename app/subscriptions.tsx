@@ -72,7 +72,7 @@ function SubscriptionsScreen() {
   const { handleBack } = useOriginBackNavigation();
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
-  const { showToast } = useToast();
+  const { showToast, showErrorToast } = useToast();
   const { reason: notificationReason } = useNotificationReason();
 
   const { data: snapshot, isLoading, isRefetching, refetch } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
@@ -218,7 +218,7 @@ function SubscriptionsScreen() {
     pendingDeleteLabels.current.set(subscription.id, subscription.name);
     const run = () => {
       deleteMutation.mutate(subscription.id, {
-        onError: (error) => showToast(error.message, "error"),
+        onError: (error) => showErrorToast(`No se pudo eliminar «${subscription.name}»`, error),
       });
       setPendingDeleteIds((prev) => {
         const next = new Set(prev);
@@ -254,7 +254,7 @@ function SubscriptionsScreen() {
   const handleTogglePin = useCallback((subscription: SubscriptionSummary) => {
     togglePinMutation.mutate(
       { id: subscription.id, isPinned: !subscription.isPinned },
-      { onError: (err) => showToast(err.message, "error") },
+      { onError: (err) => showErrorToast(subscription.isPinned ? "No se pudo desfijar la suscripción" : "No se pudo fijar la suscripción", err) },
     );
   }, [showToast, togglePinMutation]);
 
@@ -275,12 +275,13 @@ function SubscriptionsScreen() {
       { id: subscription.id, input: { status: newStatus, ...(nextDueDate ? { nextDueDate } : {}) } },
       {
         onSuccess: () => showToast(
-          newStatus === "paused"
-            ? "Suscripción pausada"
-            : `Reactivada. Próximo pago: ${formatSubscriptionYmd(nextDueDate ?? subscription.nextDueDate)}`,
+          newStatus === "paused" ? "Suscripción pausada" : "Suscripción reactivada",
           "success",
+          newStatus === "paused"
+            ? subscription.name
+            : `${subscription.name} · próximo pago ${formatSubscriptionYmd(nextDueDate ?? subscription.nextDueDate)}`,
         ),
-        onError: (error) => showToast(error.message, "error"),
+        onError: (error) => showErrorToast(newStatus === "paused" ? "No se pudo pausar la suscripción" : "No se pudo reactivar la suscripción", error),
       },
     );
   }, [showToast, updateMutation]);
@@ -296,9 +297,9 @@ function SubscriptionsScreen() {
           accountId: args.accountId,
         });
         setMarkPaidTarget(null);
-        showToast(`Pago registrado · Próximo cobro: ${nextDueDate}`, "success");
+        showToast("Pago registrado", "success", `${markPaidTarget.name} · próximo cobro ${formatSubscriptionYmd(nextDueDate)}`);
       } catch (error: unknown) {
-        showToast(error instanceof Error ? error.message : "No se pudo registrar el pago", "error");
+        showErrorToast("No se pudo registrar el pago", error);
       }
     },
     [markPaidMutation, markPaidTarget, showToast],
@@ -317,7 +318,7 @@ function SubscriptionsScreen() {
         await updateMutation.mutateAsync({ id: sub.id, input: { status: "paused" } });
         pausedCount += 1;
       } catch (err: unknown) {
-        showToast(err instanceof Error ? err.message : "Error al pausar", "error");
+        showErrorToast(`No se pudo pausar «${sub.name}»`, err);
       }
     }
     exitSelectMode();
@@ -343,7 +344,7 @@ function SubscriptionsScreen() {
       const csv = buildSubscriptionsCsv(subscriptionsToExport);
       await shareCsvAsFile(csv, `suscripciones-${activeWorkspace?.name?.replace(/\s+/g, "_") ?? "workspace"}.csv`);
     } catch (error: unknown) {
-      showToast(error instanceof Error ? error.message : "Error al exportar", "error");
+      showErrorToast("No se pudo exportar el CSV", error);
     }
   }, [activeWorkspace?.name, showToast]);
 

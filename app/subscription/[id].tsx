@@ -63,7 +63,7 @@ function SubscriptionDetailScreen() {
   const { reason: notificationReason, dismiss: dismissNotificationReason } = useNotificationReason();
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
-  const { showToast } = useToast();
+  const { showToast, showErrorToast } = useToast();
 
   const [editFormVisible, setEditFormVisible] = useState(false);
   const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
@@ -121,12 +121,13 @@ function SubscriptionDetailScreen() {
       { id: subscription.id, input: { status: newStatus, ...(nextDueDate ? { nextDueDate } : {}) } },
       {
         onSuccess: () => showToast(
-          newStatus === "paused"
-            ? "Pausada"
-            : `Reactivada. Próximo pago: ${formatSubscriptionYmd(nextDueDate ?? subscription.nextDueDate)}`,
+          newStatus === "paused" ? "Suscripción pausada" : "Suscripción reactivada",
           "success",
+          newStatus === "paused"
+            ? subscription.name
+            : `${subscription.name} · próximo pago ${formatSubscriptionYmd(nextDueDate ?? subscription.nextDueDate)}`,
         ),
-        onError: (e) => showToast(e.message, "error"),
+        onError: (e) => showErrorToast(newStatus === "paused" ? "No se pudo pausar la suscripción" : "No se pudo reactivar la suscripción", e),
       },
     );
   }, [subscription, updateMutation, showToast]);
@@ -137,8 +138,8 @@ function SubscriptionDetailScreen() {
     updateMutation.mutate(
       { id: subscription.id, input: { status: "cancelled" } },
       {
-        onSuccess: () => showToast("Suscripción cancelada. Su historial se conserva.", "success"),
-        onError: (e) => showToast(e.message, "error"),
+        onSuccess: () => showToast("Suscripción cancelada", "success", "Su historial se conserva"),
+        onError: (e) => showErrorToast("No se pudo cancelar la suscripción", e),
       },
     );
   }, [subscription, updateMutation, showToast]);
@@ -147,7 +148,7 @@ function SubscriptionDetailScreen() {
     if (!subscription) return;
     togglePinMutation.mutate(
       { id: subscription.id, isPinned: !subscription.isPinned },
-      { onError: (err) => showToast(err.message, "error") },
+      { onError: (err) => showErrorToast(subscription.isPinned ? "No se pudo desfijar la suscripción" : "No se pudo fijar la suscripción", err) },
     );
   }, [subscription, showToast, togglePinMutation]);
 
@@ -159,7 +160,7 @@ function SubscriptionDetailScreen() {
       showToast("Suscripción eliminada", "success");
       handleBack();
     } catch (err: unknown) {
-      showToast(err instanceof Error ? err.message : "No se pudo eliminar", "error");
+      showErrorToast("No se pudo eliminar la suscripción", err);
     }
   }, [subscription, deleteMutation, handleBack, showToast]);
 
@@ -169,7 +170,7 @@ function SubscriptionDetailScreen() {
     if (!subscription) return;
     updateMutation.mutate(
       { id: subscription.id, input: { accountId } },
-      { onError: (err) => showToast(err.message, "error") },
+      { onError: (err) => showErrorToast("No se pudo cambiar la cuenta", err) },
     );
   }, [subscription, updateMutation, showToast]);
 
@@ -177,7 +178,7 @@ function SubscriptionDetailScreen() {
     if (!subscription) return;
     updateMutation.mutate(
       { id: subscription.id, input: { categoryId } },
-      { onError: (err) => showToast(err.message, "error") },
+      { onError: (err) => showErrorToast("No se pudo cambiar la categoría", err) },
     );
   }, [subscription, updateMutation, showToast]);
 
@@ -192,9 +193,9 @@ function SubscriptionDetailScreen() {
           accountId: args.accountId,
         });
         setMarkPaidVisible(false);
-        showToast(`Pago registrado · Próximo cobro: ${nextDueDate}`, "success");
+        showToast("Pago registrado", "success", `${subscription.name} · próximo cobro ${formatSubscriptionYmd(nextDueDate)}`);
       } catch (err: unknown) {
-        showToast(err instanceof Error ? err.message : "No se pudo registrar el pago", "error");
+        showErrorToast("No se pudo registrar el pago", err);
       }
     },
     [markPaidMutation, showToast, subscription],
