@@ -192,7 +192,7 @@ function MovementsScreen() {
   const [amountMax, setAmountMax] = useState("");
 
   // ── Delete / undo ─────────────────────────────────────────────────────────
-  const { showToast, showRichToast } = useToast();
+  const { showToast, showRichToast, showErrorToast } = useToast();
   const deleteMutation = useDeleteMovementMutation(activeWorkspaceId);
   const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<number>>(new Set());
   const deleteTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
@@ -202,7 +202,7 @@ function MovementsScreen() {
     setPendingDeleteIds((prev) => new Set(prev).add(item.id));
     const run = () => {
       deleteMutation.mutate(item.id, {
-        onError: (e) => showToast(e.message, "error"),
+        onError: (e) => showErrorToast("No se pudo eliminar el movimiento", e),
       });
       setPendingDeleteIds((prev) => {
         const next = new Set(prev);
@@ -1157,7 +1157,7 @@ function MovementsScreen() {
               }}
               onDeleteTemplate={(template) => {
                 deleteTemplate.mutate(template.id, {
-                  onError: (err) => showToast(err instanceof Error ? err.message : "No se pudo eliminar", "error"),
+                  onError: (err) => showErrorToast(`No se pudo eliminar «${template.name}»`, err),
                 });
               }}
               onRenameTemplate={(template) => setRenameTemplateTarget(template)}
@@ -1172,8 +1172,8 @@ function MovementsScreen() {
                 renameTemplate.mutate(
                   { templateId: renameTemplateTarget.id, name },
                   {
-                    onSuccess: () => { setRenameTemplateTarget(null); showToast("Plantilla renombrada", "success"); },
-                    onError: (err) => showToast(err instanceof Error ? err.message : "No se pudo renombrar", "error"),
+                    onSuccess: () => { setRenameTemplateTarget(null); showToast("Plantilla renombrada", "success", name); },
+                    onError: (err) => showErrorToast("No se pudo renombrar la plantilla", err),
                   },
                 );
               }}

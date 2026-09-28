@@ -82,7 +82,7 @@ function MovementDetailScreen() {
   const queryClient = useQueryClient();
   const { profile } = useAuth();
   const { activeWorkspace, activeWorkspaceId } = useWorkspace();
-  const { showToast } = useToast();
+  const { showToast, showErrorToast } = useToast();
   const voidMutation = useVoidMovementMutation(activeWorkspaceId);
   const linkMutation = useLinkMovementToObligationMutation(activeWorkspaceId);
   const { data: snapshot } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
@@ -123,8 +123,8 @@ function MovementDetailScreen() {
            de siempre», que era el rótulo de la fila — y ese rótulo se quitó en la revisión 31,
            así que mandaba a un sitio que ya no se llama así. Ahora dice dónde aparece y qué
            hace, que es lo único que no cambia con el diseño. */
-        onSuccess: () => showToast("Guardado como atajo. Aparece en el inicio, listo para anotar de un toque.", "success"),
-        onError: (err) => showToast(err instanceof Error ? err.message : "No se pudo guardar la plantilla", "error"),
+        onSuccess: () => showToast("Guardado como atajo", "success", "Aparece en el inicio, listo para anotar de un toque"),
+        onError: (err) => showErrorToast("No se pudo guardar el atajo", err),
       },
     );
   }
@@ -268,8 +268,8 @@ function MovementDetailScreen() {
         installmentNo: nextInstallment,
       },
       {
-        onSuccess: () => showToast("Vinculado a obligacion OK", "success"),
-        onError: (e) => showToast((e as Error).message, "error"),
+        onSuccess: () => showToast("Vinculado a la obligación", "success"),
+        onError: (e) => showErrorToast("No se pudo vincular a la obligación", e),
       },
     );
   }
@@ -282,7 +282,7 @@ function MovementDetailScreen() {
         showToast("Movimiento anulado", "success");
         void queryClient.invalidateQueries({ queryKey: ["movement", movement.id] });
       },
-      onError: (e) => showToast(e.message, "error"),
+      onError: (e) => showErrorToast("No se pudo anular el movimiento", e),
     });
   }
 
