@@ -15,7 +15,6 @@ import { useWorkspace } from "../../lib/workspace-context";
 import { useAuth } from "../../lib/auth-context";
 import { useToast } from "../../hooks/useToast";
 import { useHaptics } from "../../hooks/useHaptics";
-import { humanizeError } from "../../lib/errors";
 import { getAccountIcon, getAccountIconOption, ACCOUNT_ICON_OPTIONS } from "../../lib/account-icons";
 import { parseDisplayDate } from "../../lib/date";
 import {
@@ -58,7 +57,7 @@ function parseCreditLimit(value: string): number | null {
 export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props) {
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
   const { user } = useAuth();
-  const { showToast, showRichToast } = useToast();
+  const { showToast, showRichToast, showErrorToast } = useToast();
   const haptics = useHaptics();
   const createMutation = useCreateAccountMutation(activeWorkspaceId);
   const updateMutation = useUpdateAccountMutation(activeWorkspaceId);
@@ -290,7 +289,7 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
       onClose();
     } catch (err: unknown) {
       haptics.error();
-      showToast(humanizeError(err), "error");
+      showErrorToast(editAccount ? "No se pudo guardar la cuenta" : "No se pudo crear la cuenta", err);
     } finally {
       submittingRef.current = false;
     }

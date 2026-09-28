@@ -148,7 +148,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
   const router = useRouter();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
   const { profile } = useAuth();
-  const { showToast } = useToast();
+  const { showToast, showErrorToast } = useToast();
   const haptics = useHaptics();
   const createMutation = useCreateObligationMutation(activeWorkspaceId);
   const updateMutation = useUpdateObligationMutation(activeWorkspaceId);
@@ -706,7 +706,7 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
                   onSuccess?.();
                   onClose();
                 } catch (err: unknown) {
-                  showToast(humanizeError(err), "error");
+                  showErrorToast("No se pudo compartir la obligación", err);
                 }
               }}
               onDismiss={() => {

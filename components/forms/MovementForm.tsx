@@ -135,7 +135,7 @@ export type MovementDuplicateSource = Pick<
 export function MovementForm({ visible, onClose, onSuccess, defaultType = "expense", initialAccountId, editMovement, duplicateMovement }: Props) {
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
-  const { showToast, showRichToast } = useToast();
+  const { showToast, showRichToast, showErrorToast } = useToast();
   const haptics = useHaptics();
   const queryClient = useQueryClient();
 
@@ -662,9 +662,9 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
       });
       patch({ counterpartyId: created.id });
       haptics.success();
-      showToast(`Contraparte "${suggestion.newCounterpartyName}" creada`, "success");
+      showToast("Contacto creado", "success", suggestion.newCounterpartyName);
     } catch (error) {
-      showToast(humanizeError(error) || "No se pudo crear la contraparte.", "error");
+      showErrorToast("No se pudo crear el contacto", error);
     }
   }
 
@@ -721,7 +721,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
       }
       haptics.success();
     } catch (error) {
-      showToast(humanizeError(error) || "No se pudo crear el recurrente.", "error");
+      showErrorToast("No se pudo crear el pago recurrente", error);
     }
   }
 

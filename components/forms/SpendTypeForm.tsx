@@ -33,7 +33,7 @@ type Props = {
 export function SpendTypeForm({ visible, onClose, editSpendType }: Props) {
   const { profile } = useAuth();
   const { activeWorkspaceId } = useWorkspace();
-  const { showToast } = useToast();
+  const { showToast, showErrorToast } = useToast();
   const createMutation = useCreateSpendTypeMutation(activeWorkspaceId, profile?.id);
   const updateMutation = useUpdateSpendTypeMutation(activeWorkspaceId);
 
@@ -62,11 +62,11 @@ export function SpendTypeForm({ visible, onClose, editSpendType }: Props) {
         showToast("Tipo actualizado", "warning");
       } else {
         await createMutation.mutateAsync({ name: trimmed, color });
-        showToast("Tipo creado", "success");
+        showToast("Tipo de gasto creado", "success", trimmed);
       }
       onClose();
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "No se pudo guardar", "error");
+      showErrorToast(isEditing ? "No se pudo guardar el tipo de gasto" : "No se pudo crear el tipo de gasto", error);
     } finally {
       submittingRef.current = false;
     }

@@ -4,7 +4,6 @@ import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useWorkspace } from "../../lib/workspace-context";
 import { useToast } from "../../hooks/useToast";
 import { useHaptics } from "../../hooks/useHaptics";
-import { humanizeError } from "../../lib/errors";
 import {
   useCreateCounterpartyMutation,
   useUpdateCounterpartyMutation,
@@ -38,7 +37,7 @@ type Props = {
 
 export function ContactForm({ visible, onClose, onSuccess, editContact }: Props) {
   const { activeWorkspaceId } = useWorkspace();
-  const { showToast } = useToast();
+  const { showToast, showErrorToast } = useToast();
   const haptics = useHaptics();
   const createMutation = useCreateCounterpartyMutation(activeWorkspaceId);
   const updateMutation = useUpdateCounterpartyMutation(activeWorkspaceId);
@@ -130,7 +129,7 @@ export function ContactForm({ visible, onClose, onSuccess, editContact }: Props)
       onClose();
     } catch (err: unknown) {
       haptics.error();
-      showToast(humanizeError(err), "error");
+      showErrorToast(isEditing ? "No se pudo guardar el contacto" : "No se pudo crear el contacto", err);
     } finally {
       submittingRef.current = false;
     }

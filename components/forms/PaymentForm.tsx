@@ -64,7 +64,7 @@ function capitalizeMonth(isoDate: string) {
 export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent }: Props) {
   const { activeWorkspaceId } = useWorkspace();
   const { profile } = useAuth();
-  const { showToast } = useToast();
+  const { showToast, showErrorToast } = useToast();
   const haptics = useHaptics();
   const { showActivityNotice, dismissActivityNotice } = useUiStore();
   const queryClient = useQueryClient();
@@ -453,7 +453,7 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent
               }
             })
             .catch((error) => {
-              showToast(humanizeError(error), "error");
+              showErrorToast("Los comprobantes no se copiaron", error);
             })
             .finally(() => dismissActivityNotice(noticeId));
         };
