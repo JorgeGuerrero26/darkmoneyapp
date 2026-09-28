@@ -54,7 +54,7 @@ type CurrencyFilter = string;
 function ExchangeRatesScreen() {
   const insets = useSafeAreaInsets();
   const { handleBack } = useOriginBackNavigation();
-  const { showToast } = useToast();
+  const { showToast, showErrorToast } = useToast();
   const { profile } = useAuth();
   const { activeWorkspace } = useWorkspace();
   const baseCurrencyCode = (activeWorkspace?.baseCurrencyCode ?? profile?.baseCurrencyCode ?? "PEN").toUpperCase();
@@ -139,7 +139,7 @@ function ExchangeRatesScreen() {
       const csv = buildExchangeRatesCsv(ratesToExport);
       await shareCsvAsFile(csv, `tipos-de-cambio-${activeWorkspace?.name?.replace(/\s+/g, "_") ?? "workspace"}.csv`);
     } catch (error: unknown) {
-      showToast(error instanceof Error ? error.message : "Error al exportar", "error");
+      showErrorToast("No se pudo exportar el CSV", error);
     }
   }, [activeWorkspace?.name, showToast]);
 
@@ -217,7 +217,7 @@ function ExchangeRatesScreen() {
     pendingDeleteLabels.current.set(item.id, label);
     const run = () => {
       deleteRate.mutate(item.id, {
-        onError: (error: Error) => showToast(error.message, "error"),
+        onError: (error: Error) => showErrorToast(`No se pudo eliminar ${label}`, error),
       });
       setPendingDeleteIds((prev) => {
         const next = new Set(prev);
@@ -253,7 +253,7 @@ function ExchangeRatesScreen() {
   const handleTogglePin = useCallback((item: ExchangeRateRecord) => {
     togglePin.mutate(
       { id: item.id, isPinned: !item.isPinned },
-      { onError: (err: Error) => showToast(err.message, "error") },
+      { onError: (err: Error) => showErrorToast(item.isPinned ? "No se pudo desfijar el tipo de cambio" : "No se pudo fijar el tipo de cambio", err) },
     );
   }, [showToast, togglePin]);
 
@@ -272,7 +272,7 @@ function ExchangeRatesScreen() {
         });
         count += 1;
       } catch (err: unknown) {
-        showToast(err instanceof Error ? err.message : "No se pudo sincronizar uno", "error");
+        showErrorToast(`No se pudo sincronizar ${item.fromCurrencyCode} → ${item.toCurrencyCode}`, err);
       }
     }
     exitSelectMode();
@@ -300,7 +300,7 @@ function ExchangeRatesScreen() {
       }
       closeForm();
     } catch (error: unknown) {
-      showToast(error instanceof Error ? error.message : "No se pudo guardar el tipo de cambio", "error");
+      showErrorToast("No se pudo guardar el tipo de cambio", error);
     }
   }, [createRate, editItem, showToast, updateRate]);
 
@@ -325,7 +325,7 @@ function ExchangeRatesScreen() {
       }));
       if (!silent) showToast("Tipos de cambio actualizados", "success");
     } catch (error: unknown) {
-      if (!silent) showToast(error instanceof Error ? error.message : "No se pudo actualizar tipos de cambio", "error");
+      if (!silent) showErrorToast("No se pudieron actualizar los tipos de cambio", error);
     }
   }, [activeRates, refetch, showToast, syncRatePair]);
 
