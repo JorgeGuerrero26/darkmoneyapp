@@ -3,6 +3,7 @@ import { format } from "date-fns";
 
 import { useConfirmRecurringIncomeArrivalMutation } from "../../../services/queries/workspace-data";
 import { useToast } from "../../../hooks/useToast";
+import { humanizeError } from "../../../lib/errors";
 import type { RecurringIncomeSummary } from "../../../types/domain";
 import {
   parseMoneyInput,
@@ -17,7 +18,7 @@ import {
  */
 export function useArrivalSheetController(workspaceId: number | null) {
   const confirmArrivalMutation = useConfirmRecurringIncomeArrivalMutation(workspaceId);
-  const { showToast } = useToast();
+  const { showToast, showErrorToast } = useToast();
 
   const [target, setTarget] = useState<RecurringIncomeSummary | null>(null);
   const [date, setDate] = useState(format(new Date(), "yyyy-MM-dd"));
@@ -95,11 +96,10 @@ export function useArrivalSheetController(workspaceId: number | null) {
       setTarget(null);
       showToast("Llegada confirmada", "success");
     } catch (err) {
-      const message = err instanceof Error ? err.message : "No pudimos confirmar la llegada";
-      setError(message);
-      showToast(message, "error");
+      setError(humanizeError(err));
+      showErrorToast("No se pudo confirmar la llegada", err);
     }
-  }, [accountId, amount, baseChangeMode, confirmArrivalMutation, date, notes, showToast, target]);
+  }, [accountId, amount, baseChangeMode, confirmArrivalMutation, date, notes, showToast, showErrorToast, target]);
 
   return {
     target,
