@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "../components/ui/ErrorBoundary";
+import { summarizeNames } from "../lib/summarize-names";
 import { UndoBanner } from "../components/ui/UndoBanner";
 import { BulkActionBar } from "../components/ui/BulkActionBar";
 import { ScreenHeader } from "../components/layout/ScreenHeader";
@@ -60,7 +61,7 @@ function CategoriesScreen() {
   const queryClient = useQueryClient();
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
-  const { showToast } = useToast();
+  const { showToast, showErrorToast } = useToast();
 
   const { data: snapshot } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const { data: overviewList = [], isLoading } = useCategoriesOverviewQuery(profile, activeWorkspaceId);
@@ -186,7 +187,7 @@ function CategoriesScreen() {
     pendingDeleteLabels.current.set(category.id, category.name);
     const run = () => {
       deleteMutation.mutate(category.id, {
-        onError: (error) => showToast(error.message, "error"),
+        onError: (error) => showErrorToast(`No se pudo eliminar «${category.name}»`, error),
       });
       setPendingDeleteIds((prev) => {
         const next = new Set(prev);
@@ -222,9 +223,12 @@ function CategoriesScreen() {
   const handleTogglePin = useCallback((category: CategoryOverview) => {
     togglePinMutation.mutate(
       { id: category.id, isPinned: !category.isPinned },
-      { onError: (err) => showToast(err.message, "error") },
+      {
+        onError: (err) =>
+          showErrorToast(category.isPinned ? "No se pudo desfijar la categoría" : "No se pudo fijar la categoría", err),
+      },
     );
-  }, [showToast, togglePinMutation]);
+  }, [showErrorToast, togglePinMutation]);
 
   const handleToggleActive = useCallback((category: CategoryOverview) => {
     if (category.isSystem) return;
@@ -232,11 +236,12 @@ function CategoriesScreen() {
     toggleMutation.mutate(
       { id: category.id, isActive },
       {
-        onSuccess: () => showToast(isActive ? "Categoría activada" : "Categoría desactivada", "success"),
-        onError: (error) => showToast(error.message, "error"),
+        onSuccess: () => showToast(isActive ? "Categoría activada" : "Categoría desactivada", "success", category.name),
+        onError: (error) =>
+          showErrorToast(isActive ? "No se pudo activar la categoría" : "No se pudo desactivar la categoría", error),
       },
     );
-  }, [showToast, toggleMutation]);
+  }, [showErrorToast, showToast, toggleMutation]);
 
   const exportCSV = useCallback(async (rows: CategoryOverview[]) => {
     if (rows.length === 0) {
@@ -247,9 +252,9 @@ function CategoriesScreen() {
       const csv = buildCategoriesCsv(rows);
       await shareCsvAsFile(csv, `categorias-${activeWorkspace?.name?.replace(/\s+/g, "_") ?? "workspace"}.csv`);
     } catch (error: unknown) {
-      showToast(error instanceof Error ? error.message : "Error al exportar", "error");
+      showErrorToast("No se pudo exportar el CSV", error);
     }
-  }, [activeWorkspace?.name, showToast]);
+  }, [activeWorkspace?.name, showErrorToast, showToast]);
 
   const selectedItems = useMemo(
     () => filteredCategories.filter((item) => selectedIds.has(item.id)),
@@ -257,26 +262,25 @@ function CategoriesScreen() {
   );
 
   const handleBulkToggleActive = useCallback(async () => {
-    let toggledCount = 0;
+    const toggled: string[] = [];
     for (const item of selectedItems) {
       if (item.isSystem) continue;
       try {
         await toggleMutation.mutateAsync({ id: item.id, isActive: !item.isActive });
-        toggledCount += 1;
+        toggled.push(item.name);
       } catch (err: unknown) {
-        showToast(err instanceof Error ? err.message : "Error al cambiar estado", "error");
+        showErrorToast(`No se pudo cambiar «${item.name}»`, err);
       }
     }
     exitSelectMode();
-    if (toggledCount > 0) {
+    if (toggled.length > 0) {
       showToast(
-        toggledCount === 1
-          ? "1 categoría actualizada"
-          : `${toggledCount} categorías actualizadas`,
+        toggled.length === 1 ? "1 categoría actualizada" : `${toggled.length} categorías actualizadas`,
         "success",
+        summarizeNames(toggled),
       );
     }
-  }, [exitSelectMode, selectedItems, showToast, toggleMutation]);
+  }, [exitSelectMode, selectedItems, showErrorToast, showToast, toggleMutation]);
 
   const handleBulkDelete = useCallback(() => {
     const deletable = selectedItems.filter((item) => categoryCanDelete(item, overviewList));
@@ -284,9 +288,11 @@ function CategoriesScreen() {
     deletable.forEach(startUndoDelete);
     exitSelectMode();
     if (skipped > 0) {
+      // Lo que bloquea el borrado, dicho con la regla real (categoryCanDelete).
       showToast(
-        `${skipped} con relaciones no se pueden eliminar`,
+        skipped === 1 ? "1 categoría no se puede eliminar" : `${skipped} categorías no se pueden eliminar`,
         "warning",
+        "Son del sistema o tienen movimientos, suscripciones o subcategorías",
       );
     }
   }, [exitSelectMode, overviewList, selectedItems, showToast, startUndoDelete]);
@@ -483,13 +489,13 @@ function CategoriesScreen() {
             visible={pendingDeleteIds.size > 0}
             message={(() => {
               if (pendingDeleteIds.size === 0) return "";
-              if (pendingDeleteIds.size === 1) {
-                const [onlyId] = pendingDeleteIds;
-                const label = pendingDeleteLabels.current.get(onlyId) ?? "";
-                return label ? `Se eliminó «${label}»` : "Categoría eliminada";
-              }
+              // El nombre va en la segunda línea (detail), no dentro del titular.
+              if (pendingDeleteIds.size === 1) return "Categoría eliminada";
               return `${pendingDeleteIds.size} categorías eliminadas`;
             })()}
+            detail={summarizeNames(
+              [...pendingDeleteIds].map((id) => pendingDeleteLabels.current.get(id) ?? ""),
+            )}
             onUndo={() => pendingDeleteIds.forEach((id) => undoDelete(id))}
             durationMs={5000}
             bottomOffset={insets.bottom + 80}

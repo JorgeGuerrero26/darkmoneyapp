@@ -3,7 +3,6 @@ import { StyleSheet, Switch, Text, View } from "react-native";
 
 import { useWorkspace } from "../../lib/workspace-context";
 import { useAuth } from "../../lib/auth-context";
-import { humanizeError } from "../../lib/errors";
 import { useToast } from "../../hooks/useToast";
 import { useHaptics } from "../../hooks/useHaptics";
 import {
@@ -56,7 +55,7 @@ type Props = {
 export function CategoryForm({ visible, onClose, onSuccess, editCategory }: Props) {
   const { activeWorkspaceId } = useWorkspace();
   const { profile } = useAuth();
-  const { showToast } = useToast();
+  const { showToast, showErrorToast } = useToast();
   const haptics = useHaptics();
   const createMutation = useCreateCategoryMutation(activeWorkspaceId);
   const updateMutation = useUpdateCategoryMutation(activeWorkspaceId);
@@ -172,7 +171,7 @@ export function CategoryForm({ visible, onClose, onSuccess, editCategory }: Prop
             isActive,
           },
         });
-        showToast("Categoría actualizada", "success");
+        showToast("Categoría actualizada", "success", trimmed);
       } else {
         await createMutation.mutateAsync({
           name: trimmed,
@@ -184,14 +183,14 @@ export function CategoryForm({ visible, onClose, onSuccess, editCategory }: Prop
           // Al crear lo resuelve el servidor con max(sort_order)+10; nadie elige 280 a conciencia.
           isActive: true,
         });
-        showToast("Categoría creada", "success");
+        showToast("Categoría creada", "success", trimmed);
       }
       haptics.success();
       onSuccess?.();
       onClose();
     } catch (err: unknown) {
       haptics.error();
-      showToast(humanizeError(err), "error");
+      showErrorToast(isEditing ? "No se pudo actualizar la categoría" : "No se pudo crear la categoría", err);
     } finally {
       submittingRef.current = false;
     }
