@@ -757,7 +757,7 @@ export function AdvancedDashboard({
   const [movementPreview, setMovementPreview] = useState<MovementPreviewSheetState | null>(null);
   const [applyingSuggestionMovementId, setApplyingSuggestionMovementId] = useState<number | null>(null);
   const queryClient = useQueryClient();
-  const { showToast } = useToast();
+  const { showToast, showErrorToast } = useToast();
   const updateMovementMutation = useUpdateMovementMutation(workspaceId);
   const persistDashboardAnalyticsMutation = usePersistDashboardAnalyticsMutation(workspaceId);
   const persistLearningFeedbackMutation = usePersistLearningFeedbackMutation(workspaceId, userId);
@@ -1243,10 +1243,9 @@ export function AdvancedDashboard({
         queryClient.invalidateQueries({ queryKey: ["dashboard-analytics"] }),
         queryClient.invalidateQueries({ queryKey: ["movement", suggestion.movementId] }),
       ]);
-      showToast(`Categoría aplicada: ${suggestion.categoryName}`, "success");
+      showToast("Categoría aplicada", "success", suggestion.categoryName);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "No se pudo aplicar la categoría.";
-      showToast(message, "error");
+      showErrorToast("No se pudo aplicar la categoría", error);
     } finally {
       setApplyingSuggestionMovementId(null);
     }
@@ -2935,11 +2934,11 @@ export function AdvancedDashboard({
   );
   const handleRequestDashboardAiSummary = useCallback(async () => {
     if (!workspaceId) {
-      showToast("No se encontró el workspace activo.", "error");
+      showToast("No se pudo pedir la explicación", "error", "No hay un espacio activo. Vuelve a abrir la app");
       return;
     }
     if (dashboardAiLimitReached) {
-      showToast("Ya usaste tu explicación de IA de hoy. Podrás pedir otra mañana.", "error");
+      showToast("Ya usaste la explicación de hoy", "warning", "Podrás pedir otra mañana");
       return;
     }
     try {
@@ -2963,16 +2962,16 @@ export function AdvancedDashboard({
         },
       }));
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "No se pudo consultar a la IA.", "error");
+      showErrorToast("No se pudo pedir la explicación", error);
     }
   }, [dashboardAiLimitReached, dashboardAiSummaryMutation, dashboardAiSummaryPayload, dashboardAiTone, dashboardAiUsageDate, showToast, workspaceId]);
   const handleRequestDashboardAiFlow = useCallback(async () => {
     if (!workspaceId) {
-      showToast("No se encontró el workspace activo.", "error");
+      showToast("No se pudo pedir la explicación", "error", "No hay un espacio activo. Vuelve a abrir la app");
       return;
     }
     if (dashboardAiFlowLimitReached) {
-      showToast("Ya usaste tu explicación de IA de hoy. Podrás pedir otra mañana.", "error");
+      showToast("Ya usaste la explicación de hoy", "warning", "Podrás pedir otra mañana");
       return;
     }
     try {
@@ -2996,16 +2995,16 @@ export function AdvancedDashboard({
         },
       }));
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "No se pudo consultar a la IA de flujo.", "error");
+      showErrorToast("No se pudo pedir la explicación del flujo", error);
     }
   }, [dashboardAiFlowLimitReached, dashboardAiFlowMutation, dashboardAiFlowPayload, dashboardAiTone, dashboardAiUsageDate, showToast, workspaceId]);
   const handleRequestDashboardAiHealth = useCallback(async () => {
     if (!workspaceId) {
-      showToast("No se encontró el workspace activo.", "error");
+      showToast("No se pudo pedir la explicación", "error", "No hay un espacio activo. Vuelve a abrir la app");
       return;
     }
     if (dashboardAiHealthLimitReached) {
-      showToast("Ya usaste tu explicación de IA de hoy. Podrás pedir otra mañana.", "error");
+      showToast("Ya usaste la explicación de hoy", "warning", "Podrás pedir otra mañana");
       return;
     }
     try {
@@ -3029,16 +3028,16 @@ export function AdvancedDashboard({
         },
       }));
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "No se pudo consultar a la IA de salud.", "error");
+      showErrorToast("No se pudo pedir la explicación de salud", error);
     }
   }, [dashboardAiHealthLimitReached, dashboardAiHealthMutation, dashboardAiHealthPayload, dashboardAiTone, dashboardAiUsageDate, showToast, workspaceId]);
   const handleRequestDashboardAiHistory = useCallback(async () => {
     if (!workspaceId) {
-      showToast("No se encontró el workspace activo.", "error");
+      showToast("No se pudo pedir la explicación", "error", "No hay un espacio activo. Vuelve a abrir la app");
       return;
     }
     if (dashboardAiHistoryLimitReached) {
-      showToast("Ya usaste tu explicación de IA de hoy. Podrás pedir otra mañana.", "error");
+      showToast("Ya usaste la explicación de hoy", "warning", "Podrás pedir otra mañana");
       return;
     }
     try {
@@ -3062,16 +3061,16 @@ export function AdvancedDashboard({
         },
       }));
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "No se pudo consultar a la IA de historial.", "error");
+      showErrorToast("No se pudo pedir la explicación del historial", error);
     }
   }, [dashboardAiHistoryLimitReached, dashboardAiHistoryMutation, dashboardAiHistoryPayload, dashboardAiTone, dashboardAiUsageDate, showToast, workspaceId]);
   const handleRequestDashboardAiPatterns = useCallback(async () => {
     if (!workspaceId) {
-      showToast("No se encontró el workspace activo.", "error");
+      showToast("No se pudo pedir la explicación", "error", "No hay un espacio activo. Vuelve a abrir la app");
       return;
     }
     if (dashboardAiPatternsLimitReached) {
-      showToast("Ya usaste tu explicación de IA de hoy. Podrás pedir otra mañana.", "error");
+      showToast("Ya usaste la explicación de hoy", "warning", "Podrás pedir otra mañana");
       return;
     }
     try {
@@ -3095,7 +3094,7 @@ export function AdvancedDashboard({
         },
       }));
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "No se pudo consultar a la IA de patrones.", "error");
+      showErrorToast("No se pudo pedir la explicación de patrones", error);
     }
   }, [dashboardAiPatternsLimitReached, dashboardAiPatternsMutation, dashboardAiPatternsPayload, dashboardAiTone, dashboardAiUsageDate, showToast, workspaceId]);
 
