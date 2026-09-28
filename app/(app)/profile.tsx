@@ -37,7 +37,7 @@ function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const { handleBack } = useOriginBackNavigation({ originRoutes: { settings: "/(app)/settings" } });
   const { profile, saveProfile, saveAvatar, removeAvatar } = useAuth();
-  const { showToast } = useToast();
+  const { showToast, showErrorToast } = useToast();
   const syncExchangeRatePair = useSyncExchangeRatePairMutation();
 
   const [fullName, setFullName] = useState(profile?.fullName ?? "");
@@ -73,7 +73,7 @@ function ProfileScreen() {
       await syncDefaultExchangeCurrency(baseCurrencyCode);
       showToast("Perfil guardado", "success");
     } catch (err: unknown) {
-      showToast(humanizeError(err), "error");
+      showErrorToast("No se pudo guardar el perfil", err);
     } finally {
       setIsSaving(false);
     }
@@ -97,7 +97,7 @@ function ProfileScreen() {
       await saveAvatar(result.assets[0].uri);
       showToast("Foto de perfil actualizada", "success");
     } catch (err: unknown) {
-      showToast(humanizeError(err), "error");
+      showErrorToast("No se pudo cambiar la foto", err);
     } finally {
       setIsUploadingAvatar(false);
     }

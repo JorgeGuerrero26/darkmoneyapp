@@ -151,7 +151,7 @@ function SettingsScreen() {
   const { profile, saveProfile, signOut } = useAuth();
   const { activeWorkspace, activeWorkspaceId, setActiveWorkspaceId, setWorkspaces } = useWorkspace();
   const { workspaces } = useWorkspaceListStore();
-  const { showToast } = useToast();
+  const { showToast, showErrorToast } = useToast();
   const detectionSettingsQuery = useNotificationDetectionSettingsQuery(profile?.id, activeWorkspaceId);
   const notificationPreferencesQuery = useNotificationPreferencesQuery(profile?.id ?? null);
   const updateNotificationPreferencesMutation = useUpdateNotificationPreferencesMutation(profile?.id ?? null);
@@ -173,9 +173,9 @@ function SettingsScreen() {
   const handleRotateInboundAlias = async () => {
     try {
       await rotateInboundAlias.mutateAsync();
-      showToast("Dirección lista. Actualiza el filtro de Gmail.", "success");
+      showToast("Dirección nueva lista", "success", "Actualiza el filtro de Gmail");
     } catch (err) {
-      showToast(humanizeError(err), "error");
+      showErrorToast("No se pudo crear la dirección nueva", err);
     }
   };
 
@@ -288,14 +288,14 @@ function SettingsScreen() {
       const result = await inviteMutation.mutateAsync(input);
       setInviteSheetOpen(false);
       if (result.alreadyMember) {
-        showToast(`${result.invitedEmail} ya es miembro`, "info");
+        showToast("Ya es miembro", "info", result.invitedEmail);
       } else if (result.emailSent) {
-        showToast(`Invitación enviada a ${result.invitedEmail}`, "success");
+        showToast("Invitación enviada", "success", result.invitedEmail);
       } else {
-        showToast("Invitación creada (sin email)", "success");
+        showToast("Invitación creada", "success", "No se envió correo");
       }
     } catch (err: unknown) {
-      showToast(humanizeError(err), "error");
+      showErrorToast("No se pudo enviar la invitación", err);
     }
   }
 
@@ -340,9 +340,9 @@ function SettingsScreen() {
       setWorkspaces(refreshedWorkspaces);
       setActiveWorkspaceId(workspace.id);
       setCreateWsSheetOpen(false);
-      showToast("Workspace creado", "success");
+      showToast("Workspace creado", "success", workspace.name);
     } catch (err: unknown) {
-      showToast(humanizeError(err), "error");
+      showErrorToast("No se pudo crear el workspace", err);
     }
   }
 
@@ -364,9 +364,9 @@ function SettingsScreen() {
         timezone: profile?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
       });
       await syncDefaultExchangeCurrency(normalized);
-      showToast(`Moneda base: ${normalized}`, "success");
+      showToast("Moneda base actualizada", "success", normalized);
     } catch (err: unknown) {
-      showToast(humanizeError(err), "error");
+      showErrorToast("No se pudo cambiar la moneda base", err);
     }
   }
 
@@ -410,7 +410,7 @@ function SettingsScreen() {
         setPushPermissionBlocked(false);
         showToast("Avisos desactivados en este teléfono", "success");
       } catch (err: unknown) {
-        showToast(humanizeError(err), "error");
+        showErrorToast("No se pudieron desactivar los avisos", err);
       }
       return;
     }
@@ -439,7 +439,7 @@ function SettingsScreen() {
           break;
       }
     } catch (err: unknown) {
-      showToast(humanizeError(err), "error");
+      showErrorToast("No se pudieron activar los avisos", err);
     }
   }
 
@@ -454,7 +454,7 @@ function SettingsScreen() {
         "success",
       );
     } catch (err: unknown) {
-      showToast(humanizeError(err), "error");
+      showErrorToast(nextValue ? "No se pudo activar el digest diario" : "No se pudo desactivar el digest diario", err);
     }
   }
 
@@ -469,7 +469,7 @@ function SettingsScreen() {
         "success",
       );
     } catch (err: unknown) {
-      showToast(humanizeError(err), "error");
+      showErrorToast(nextValue ? "No se pudieron activar las alertas predictivas" : "No se pudieron desactivar las alertas predictivas", err);
     }
   }
 
