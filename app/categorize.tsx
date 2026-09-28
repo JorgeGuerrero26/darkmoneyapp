@@ -72,7 +72,7 @@ function CategorizeScreen() {
   const { handleBack } = useOriginBackNavigation({ defaultRoute: "/(app)/dashboard" });
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
-  const { showToast, showRichToast } = useToast();
+  const { showToast, showRichToast, showErrorToast } = useToast();
 
   const { data: rows = [], isLoading } = useUncategorizedMovementsQuery(activeWorkspaceId);
   const { data: patternRows = [] } = useMovementPatternsQuery(activeWorkspaceId);
@@ -129,7 +129,7 @@ function CategorizeScreen() {
       {
         onSuccess: (suggestions) => {
           if (suggestions.length === 0) {
-            showToast("La IA no supo proponer nada para estos grupos.", "info");
+            showToast("Sin propuestas nuevas", "info", "La IA no supo proponer nada para estos grupos");
             return;
           }
           setAiSuggestions((previous) => {
@@ -138,13 +138,12 @@ function CategorizeScreen() {
             return next;
           });
           showToast(
-            suggestions.length === 1
-              ? "1 propuesta nueva. Revísala antes de aplicarla."
-              : `${suggestions.length} propuestas nuevas. Revísalas antes de aplicarlas.`,
+            suggestions.length === 1 ? "1 propuesta nueva" : `${suggestions.length} propuestas nuevas`,
             "success",
+            suggestions.length === 1 ? "Revísala antes de aplicarla" : "Revísalas antes de aplicarlas",
           );
         },
-        onError: (error: Error) => showToast(error.message, "error"),
+        onError: (error: Error) => showErrorToast("No se pudieron pedir propuestas", error),
       },
     );
   }, [activeWorkspaceId, askAi, categories, showToast, sinPropuesta]);
