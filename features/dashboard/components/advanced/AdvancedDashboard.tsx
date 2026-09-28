@@ -3136,7 +3136,7 @@ export function AdvancedDashboard({
       {shortcuts ? <View style={{ height: SPACING.sm }} /> : null}
       {shortcuts}
       <View style={{ height: SPACING.sm }} />
-      <Card>
+      <View>
         <SectionTitle>Resumen ejecutivo</SectionTitle>
         <View style={subStyles.executiveGrid}>
           <TouchableOpacity style={subStyles.executiveCard} activeOpacity={0.84} onPress={() => setExecutiveDetail("focus")}>
@@ -3203,7 +3203,7 @@ export function AdvancedDashboard({
             <Text style={[subStyles.executiveDeltaChip, { color: cashCushion.color }]}>Caja libre: {cashCushion.days}d · {cashCushion.label}</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={[subStyles.executiveCard, subStyles.executiveCardWide]} activeOpacity={0.84} onPress={() => setExecutiveDetail("month")}>
+          <TouchableOpacity style={subStyles.executiveCard} activeOpacity={0.84} onPress={() => setExecutiveDetail("month")}>
             <View style={subStyles.executiveTop}>
               <Text style={subStyles.executiveLabel}>Fin de mes</Text>
               <View style={[subStyles.executiveTonePill, monthStatus === "Bajo presión" && subStyles.executiveTonePillWarning]}>
@@ -3220,11 +3220,10 @@ export function AdvancedDashboard({
             <Text style={[subStyles.executiveDeltaChip, { color: monthEndDelta >= 0 ? COLORS.income : COLORS.expense }]}>Vs hoy: {formatCurrency(monthEndDelta, activeCurrency)}</Text>
           </TouchableOpacity>
         </View>
-      </Card>
+      </View>
 
       <View style={{ height: SPACING.sm }} />
-      <Card>
-        <View style={subStyles.aiSummaryShellWrap}>
+      <View style={subStyles.aiSummaryShellWrap}>
         <View style={subStyles.aiSummaryShell}>
           {/* Una linea de que hace, y ya. Antes lo explicaba tres veces —insignia, titulo y dos
               parrafos— con borde degradado, cuatro orbes animados y un halo. Es una funcion de
@@ -3297,8 +3296,7 @@ export function AdvancedDashboard({
             <Text style={subStyles.aiSummaryFooterText}>Gemini mejora la lectura del sistema, pero usa solo los datos que ya existen en DarkMoney.</Text>
           </View>
         </View>
-        </View>
-      </Card>
+      </View>
 
       {financialGraphRank.length > 0 ? (
         <>
@@ -4757,4 +4755,3 @@ const advancedPrivacyStyles = StyleSheet.create({
     marginTop: SPACING.xs,
   },
 });
-

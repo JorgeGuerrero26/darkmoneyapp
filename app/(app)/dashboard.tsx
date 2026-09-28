@@ -944,10 +944,6 @@ function DashboardScreen() {
               </DashboardSectionBoundary>
             ) : null}
 
-            {/* Justo bajo el balance: es lo que se viene a hacer, y a esta altura todavía no
-                hay que desplazarse. */}
-            {quickHabitsRow}
-
             <DashboardSectionBoundary sectionLabel="Alertas urgentes">
               <UrgentAlertsCard
                 obligations={obligationsMerged}
@@ -959,19 +955,11 @@ function DashboardScreen() {
               />
             </DashboardSectionBoundary>
 
-            {hasPeriodActivity ? (
-              <DashboardSectionBoundary sectionLabel="Flujo reciente">
-                <MiniBarChart
-                  data={stats.chartDays}
-                  onSelectDay={(d) => setDaySheet({ dayStart: d.dayStart, dayEnd: d.dayEnd, mode: "all" })}
-                />
-              </DashboardSectionBoundary>
-            ) : null}
-
             <DashboardSectionBoundary sectionLabel="Cuentas">
               <AccountsScroll
                 accounts={activeAccounts}
                 onPress={(id) => router.push(`/account/${id}?from=dashboard`)}
+                onViewAll={() => router.push("/accounts")}
               />
               <AccountsBreakdown
                 accounts={snapshot?.accounts ?? []}
@@ -980,6 +968,17 @@ function DashboardScreen() {
                 exchangeRateMap={exchangeRateMap}
               />
             </DashboardSectionBoundary>
+
+            {quickHabitsRow}
+
+            {hasPeriodActivity ? (
+              <DashboardSectionBoundary sectionLabel="Flujo reciente">
+                <MiniBarChart
+                  data={stats.chartDays}
+                  onSelectDay={(d) => setDaySheet({ dayStart: d.dayStart, dayEnd: d.dayEnd, mode: "all" })}
+                />
+              </DashboardSectionBoundary>
+            ) : null}
 
             <DashboardSectionBoundary sectionLabel="Agenda y presupuestos">
               <LeadersRow obligations={obligationsMerged} router={router} />

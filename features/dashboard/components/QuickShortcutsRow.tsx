@@ -20,32 +20,7 @@ type Props = {
   onRegister: (entry: QuickEntry) => void;
 };
 
-/**
- * Los gastos que repites, a un toque, en mosaicos de un tercio.
- *
- * **Por qué existe.** Registrar los S/ 2 de la moto al trabajo son cinco pasos —abrir el
- * formulario, tipo, monto, cuenta, categoría— para un dato que se repite veintiocho veces al mes
- * y siempre igual. La app ya sabe cuál es: está en tus propios movimientos.
- *
- * **Por qué no lleva rótulo.** Tenía uno —"LO DE SIEMPRE"— y entre el rótulo y una tarjeta se
- * comían ~130px del sitio más caro de la app para ahorrar un toque. Un mosaico que dice
- * "+ Moto · S/ 4.00" no necesita que le expliquen qué es; el rótulo pesaba más que el dato que
- * anunciaba. La fila entera cabe ahora en 52px, que sigue siendo objetivo táctil de sobra.
- *
- * **Por qué tercios fijos y no una fila que crece.** Con cinco atajos, una fila de cápsulas se
- * convierte en un desplazamiento horizontal cortado en el borde — la misma cápsula a medias que
- * se sacó de siete formularios y cuatro listas. Tres tercios no saltan de línea ni se cortan:
- * un nombre largo se recorta con puntos suspensivos dentro de su tercio. Cuando hay más de los
- * que caben, el tercer sitio es la puerta al resto.
- *
- * **Y la fila no tiene que estar llena.** Con uno se pinta uno, del mismo ancho de tercio. Entre
- * las 5 y las 9 de la mañana solo encaja la moto —el atajo con más repeticiones de los nueve— y
- * esconderla por no tener compañía era tapar el mejor dato en el momento exacto en que se usa.
- * Ver [[buildQuickRow]].
- *
- * **Y por qué no hay IA aquí.** Es contar repeticiones y mirar la hora. Así es instantáneo,
- * gratis y funciona sin señal: tres cosas que una llamada a un modelo no da.
- */
+/** Atajos de movimientos frecuentes, presentados como filas del resumen. */
 function QuickShortcutsRowBase({
   entries,
   pool,
@@ -61,6 +36,7 @@ function QuickShortcutsRowBase({
 
   return (
     <>
+      <Text style={styles.heading}>Anotar de nuevo</Text>
       <View style={styles.row}>
         {tiles.map((entry) => (
           <Tile
@@ -150,32 +126,27 @@ function Tile({
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: "row", gap: SPACING.sm },
+  heading: {
+    fontFamily: FONT_FAMILY.bodySemibold,
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.storm,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+    marginBottom: SPACING.sm,
+  },
+  row: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: SURFACE.separator },
   tile: {
-    /* Un tercio SIEMPRE, haya uno o tres.
-       `flexBasis` en vez de `flex: 1` porque la fila ya no tiene que estar llena: con `flex: 1`
-       un atajo solo se estiraría a lo ancho y volvería a ser la tarjeta pesada que quitamos —
-       un chip suelto son 44px, no una barra. Con tres, `flexShrink` los encoge lo justo para
-       que quepan los huecos, así que siguen siendo tercios iguales.
-       `minWidth: 0` es lo que hace que un nombre largo se recorte DENTRO de su tercio en vez de
-       empujar al siguiente y desbordar la fila. */
-    flexBasis: "33.33%",
-    flexGrow: 0,
-    flexShrink: 1,
-    minWidth: 0,
+    flexDirection: "row",
+    alignItems: "center",
     minHeight: 52,
-    justifyContent: "center",
-    gap: 2,
-    paddingHorizontal: SPACING.sm,
+    gap: SPACING.sm,
     paddingVertical: SPACING.xs,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: SURFACE.cardBorder,
-    backgroundColor: SURFACE.card,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: SURFACE.separator,
   },
   tilePressed: { opacity: 0.7 },
   tileSaving: { opacity: 0.6 },
-  tileHead: { flexDirection: "row", alignItems: "center", gap: SPACING.xs },
+  tileHead: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: SPACING.xs },
   tileLabel: {
     flexShrink: 1,
     fontFamily: FONT_FAMILY.bodyMedium,
@@ -186,9 +157,8 @@ const styles = StyleSheet.create({
     fontFamily: FONT_FAMILY.heading,
     fontSize: FONT_SIZE.xs,
     color: COLORS.storm,
-    paddingLeft: 20,
   },
-  moreTile: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: SPACING.xs },
+  moreTile: { justifyContent: "space-between" },
   moreLabel: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.sm, color: COLORS.fog },
   sheetList: {
     borderRadius: RADIUS.lg,

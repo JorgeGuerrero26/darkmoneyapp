@@ -30,7 +30,7 @@ export function CategoryComparison({ catTotals, prevCatTotals, categories, curre
   const maxVal = Math.max(...entries.flatMap((e) => [e.current, e.prev]), 1);
 
   return (
-    <Card>
+    <Card style={subStyles.ledgerCard}>
       <SectionTitle>Comparación de gastos por categoría</SectionTitle>
       <View style={subStyles.catCompLegend}>
         <View style={subStyles.legendItem}>

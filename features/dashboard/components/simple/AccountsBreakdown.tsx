@@ -56,7 +56,7 @@ export function AccountsBreakdown({
   }
 
   return (
-    <Card>
+    <Card style={subStyles.ledgerCard}>
       <SectionTitle>Distribución por cuenta</SectionTitle>
       <View style={subStyles.breakdownWrap}>
         <RingChart segments={segments} size={108} thickness={20} masked={privacyMode} />

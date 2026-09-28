@@ -62,7 +62,7 @@ export function FinancialGraphCard({
   }
 
   return (
-    <Card>
+    <Card style={subStyles.ledgerCard}>
       <SectionTitle>Nodos que más mueven tu sistema</SectionTitle>
       <Text style={subStyles.executiveIntro}>
         Une cuenta, categoría, contacto y tipo de movimiento. Si algo aparece arriba, está muy conectado con tu dinero reciente.
@@ -72,7 +72,7 @@ export function FinancialGraphCard({
       </Text>
       <View style={subStyles.commandActions}>
         {nodes.map((node) => (
-          <TouchableOpacity key={node.id} style={subStyles.commandActionRow} onPress={() => onOpenNode(node)} activeOpacity={0.82}>
+          <TouchableOpacity key={node.id} style={[subStyles.commandActionRow, subStyles.ledgerActionRow]} onPress={() => onOpenNode(node)} activeOpacity={0.82}>
             <View style={subStyles.commandActionCopy}>
               <View style={subStyles.suggestionRowTop}>
                 <Text style={subStyles.commandActionTitle} numberOfLines={1}>{node.label}</Text>

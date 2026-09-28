@@ -5,6 +5,7 @@ import { formatCurrency } from "../../../../components/ui/AmountDisplay";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../../../constants/theme";
 import type { SpendTypeMix } from "../../lib/spendTypeMix";
 import { SectionTitle } from "./SectionTitle";
+import { dashboardSimpleStyles as subStyles } from "./styles";
 
 type Props = {
   mix: SpendTypeMix;
@@ -30,7 +31,7 @@ export function SpendTypeMixCard({ mix, currency, onPressClassify }: Props) {
     /* Una línea, no un gráfico: con nada clasificado el gráfico sería un solo bloque gris. Se
        apaga sola en cuanto una categoría tenga tipo. */
     return (
-      <Card>
+      <Card style={subStyles.ledgerCard}>
         <Pressable onPress={onPressClassify} accessibilityRole="button">
           <SectionTitle>De qué tipo fue tu gasto</SectionTitle>
           <Text style={styles.invite}>
@@ -45,7 +46,7 @@ export function SpendTypeMixCard({ mix, currency, onPressClassify }: Props) {
   }
 
   return (
-    <Card>
+    <Card style={subStyles.ledgerCard}>
       <SectionTitle>De qué tipo fue tu gasto</SectionTitle>
 
       <View style={styles.bar}>

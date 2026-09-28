@@ -19,7 +19,7 @@ export function MiniBarChart({ data, onSelectDay }: MiniBarChartProps) {
 
   if (privacyMode) {
     return (
-      <Card>
+      <Card style={subStyles.ledgerCard}>
         <SectionTitle>Últimos 7 días - flujo diario</SectionTitle>
         <View
           style={{
@@ -40,7 +40,7 @@ export function MiniBarChart({ data, onSelectDay }: MiniBarChartProps) {
   }
 
   return (
-    <Card>
+    <Card style={subStyles.ledgerCard}>
       <SectionTitle>Últimos 7 días - flujo diario</SectionTitle>
       <Text style={subStyles.chronoHint}>
         Toca un día: verás ingresos, gastos, ahorro del día (neto) y cada movimiento que lo explica.

@@ -141,7 +141,7 @@ export function UpcomingSection({ obligations, subscriptions, recurringIncome, c
 
   if (visible.length === 0) return null;
   return (
-    <Card>
+    <Card style={subStyles.ledgerCard}>
       <Text style={subStyles.upcomingKicker}>Agenda próxima</Text>
       <SectionTitle>Compromisos y cobros esperados</SectionTitle>
       <Text style={subStyles.upcomingIntro}>

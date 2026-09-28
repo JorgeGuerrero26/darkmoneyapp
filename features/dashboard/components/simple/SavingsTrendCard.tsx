@@ -23,7 +23,7 @@ export function SavingsTrendCard({ monthlyPulse, currency }: SavingsTrendCardPro
   const trendUp = lastNet >= firstNet;
 
   return (
-    <Card>
+    <Card style={subStyles.ledgerCard}>
       <View style={subStyles.trendHeader}>
         <SectionTitle>Ahorro mensual (6 meses)</SectionTitle>
         <Text style={[subStyles.trendBadge, { color: trendUp ? COLORS.pine : COLORS.rosewood }]}>

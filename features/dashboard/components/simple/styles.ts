@@ -21,11 +21,9 @@ export const dashboardSimpleStyles = StyleSheet.create({
     marginBottom: SPACING.sm,
   },
   macroCard: {
-    backgroundColor: SURFACE.card,
-    borderRadius: RADIUS.lg,
-    borderWidth: 1,
-    borderColor: SURFACE.cardBorder,
-    padding: SPACING.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: SURFACE.separator,
+    paddingTop: SPACING.md,
     gap: SPACING.md,
   },
   macroHeader: {
@@ -178,7 +176,7 @@ export const dashboardSimpleStyles = StyleSheet.create({
   toggleTextActive: { fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.ink },
   proBadge: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.xs - 1, color: COLORS.pro },
 
-  // Hero card - most prominent, gets the full premium glass treatment
+  // The balance is the one prominent surface; the rest of the summary reads as a ledger.
   heroCard: {
     backgroundColor: SURFACE.card,
     borderRadius: RADIUS.xl,
@@ -186,7 +184,6 @@ export const dashboardSimpleStyles = StyleSheet.create({
     gap: SPACING.xs,
     borderWidth: 1,
     borderColor: SURFACE.cardBorder,
-    ...ELEVATION[3],
   },
   heroTopRow: {
     flexDirection: "row",
@@ -198,38 +195,36 @@ export const dashboardSimpleStyles = StyleSheet.create({
   },
   heroPeriodRow: {
     flexDirection: "row",
-    gap: 3,
-    backgroundColor: "rgba(0,0,0,0.25)",
-    borderRadius: RADIUS.full,
-    padding: 3,
+    gap: SPACING.sm,
     alignSelf: "flex-start",
+    marginTop: SPACING.sm,
   },
   heroPeriodBtn: {
     paddingHorizontal: SPACING.sm,
     paddingVertical: 5,
-    borderRadius: RADIUS.full,
+    borderRadius: RADIUS.sm,
     backgroundColor: "transparent",
   },
   heroPeriodBtnActive: {
-    backgroundColor: COLORS.pine,
+    backgroundColor: SURFACE.cardActive,
   },
   heroPeriodText: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.xs, color: COLORS.storm },
-  heroPeriodTextActive: { fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.textInverse },
+  heroPeriodTextActive: { fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.ink },
   heroCurrencyRow: {
     flexDirection: "row",
     gap: 3,
     backgroundColor: "rgba(0,0,0,0.25)",
-    borderRadius: RADIUS.full,
+    borderRadius: RADIUS.sm,
     padding: 3,
   },
   heroCurrencyBtn: {
     paddingHorizontal: SPACING.sm,
     paddingVertical: 5,
-    borderRadius: RADIUS.full,
+    borderRadius: RADIUS.sm,
     backgroundColor: "transparent",
   },
   heroCurrencyBtnActive: {
-    backgroundColor: COLORS.ember,
+    backgroundColor: COLORS.action,
   },
   heroCurrencyText: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.xs, color: COLORS.storm },
   heroCurrencyTextActive: { fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.textInverse },
@@ -246,13 +241,7 @@ export const dashboardSimpleStyles = StyleSheet.create({
     letterSpacing: -0.035 * FONT_SIZE.display,
     marginTop: 2,
   },
-  heroNetPill: {
-    alignSelf: "flex-start",
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 3,
-    borderRadius: RADIUS.full,
-    marginTop: SPACING.xs,
-  },
+  heroNetPill: { alignSelf: "flex-start", marginTop: SPACING.xs },
   heroNetText: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.xs },
   heroFlow: {
     flexDirection: "row",
@@ -261,7 +250,8 @@ export const dashboardSimpleStyles = StyleSheet.create({
     borderTopWidth: 0.5,
     borderTopColor: SURFACE.separator,
   },
-  heroFlowItem: { flex: 1, gap: 4 },
+  heroFlowItem: { flex: 1, gap: 4, paddingLeft: SPACING.lg },
+  heroFlowItemFirst: { paddingLeft: 0, paddingRight: SPACING.lg, borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: SURFACE.separator },
   heroFlowIconWrap: {
     width: 28,
     height: 28,
@@ -330,18 +320,32 @@ export const dashboardSimpleStyles = StyleSheet.create({
   legendText: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
 
   // Accounts
-  accountsRow: { flexDirection: "row", gap: SPACING.sm, paddingVertical: SPACING.xs },
+  ledgerSectionHeading: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  ledgerSectionAction: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.xs, color: COLORS.fog },
+  ledgerRowBorder: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: SURFACE.separator },
+  ledgerCard: {
+    backgroundColor: "transparent",
+    borderWidth: 0,
+    borderRadius: 0,
+    padding: 0,
+    elevation: 0,
+    shadowOpacity: 0,
+  },
+  ledgerActionRow: {
+    backgroundColor: "transparent",
+    borderWidth: 0,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: SURFACE.separator,
+    borderRadius: 0,
+    paddingHorizontal: 0,
+  },
+  accountsRow: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: SURFACE.separator },
   accountChip: {
-    backgroundColor: SURFACE.card,
-    borderRadius: RADIUS.xl,
-    padding: SPACING.md,
+    flexDirection: "row",
     alignItems: "center",
-    gap: SPACING.xs,
-    minWidth: 100,
-    maxWidth: 130,
-    borderWidth: 1,
-    borderColor: SURFACE.cardBorder,
-    ...ELEVATION[2],
+    minHeight: 64,
+    gap: SPACING.md,
+    paddingVertical: SPACING.sm,
   },
   accountChipIcon: {
     width: 30,
@@ -350,8 +354,10 @@ export const dashboardSimpleStyles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  accountChipName: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm, textAlign: "center" },
-  accountChipBalance: { fontFamily: FONT_FAMILY.heading, fontSize: FONT_SIZE.sm, color: COLORS.ink, textAlign: "center" },
+  accountChipCopy: { flex: 1, minWidth: 0, gap: 2 },
+  accountChipName: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.sm, color: COLORS.ink },
+  accountChipType: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
+  accountChipBalance: { fontFamily: FONT_FAMILY.heading, fontSize: FONT_SIZE.sm, color: COLORS.ink, textAlign: "right" },
 
   // Upcoming
   upcomingKicker: {
@@ -375,13 +381,7 @@ export const dashboardSimpleStyles = StyleSheet.create({
   },
   upcomingSummaryCard: {
     flex: 1,
-    minHeight: 70,
-    paddingVertical: SPACING.md,
-    paddingHorizontal: SPACING.md,
-    borderRadius: RADIUS.xl,
-    backgroundColor: "rgba(244,241,236,0.055)",
-    borderWidth: 1,
-    borderColor: "rgba(244,241,236,0.09)",
+    paddingVertical: SPACING.sm,
     gap: 6,
     justifyContent: "space-between",
   },
@@ -395,16 +395,12 @@ export const dashboardSimpleStyles = StyleSheet.create({
     fontFamily: FONT_FAMILY.heading,
     fontSize: 22,
   },
-  upcomingList: {
-    gap: SPACING.md,
-  },
+  upcomingList: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: SURFACE.separator },
   upcomingRow: {
-    gap: SPACING.lg,
-    padding: SPACING.lg,
-    borderRadius: RADIUS.xl,
-    backgroundColor: "rgba(244,241,236,0.04)",
-    borderWidth: 1,
-    borderColor: SURFACE.track,
+    gap: SPACING.sm,
+    paddingVertical: SPACING.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: SURFACE.separator,
   },
   upcomingRowTop: {
     flexDirection: "row",
@@ -485,14 +481,10 @@ export const dashboardSimpleStyles = StyleSheet.create({
 
   // Budgets
   budgetRow: {
-    backgroundColor: SURFACE.card,
-    borderRadius: RADIUS.xl,
-    padding: SPACING.md,
+    paddingVertical: SPACING.md,
     gap: SPACING.xs,
-    marginBottom: SPACING.sm,
-    borderWidth: 1,
-    borderColor: SURFACE.cardBorder,
-    ...ELEVATION[2],
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: SURFACE.separator,
   },
   budgetHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   budgetName: { flex: 1, fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.sm, color: COLORS.ink },
@@ -500,16 +492,12 @@ export const dashboardSimpleStyles = StyleSheet.create({
   budgetMeta: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
 
   // Leaders (receivable/payable top 3)
-  leadersRowContainer: { flexDirection: "row", gap: SPACING.sm },
+  leadersRowContainer: { gap: SPACING.md },
   leadersCard: {
-    flex: 1,
-    backgroundColor: SURFACE.card,
-    borderRadius: RADIUS.xl,
-    padding: SPACING.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: SURFACE.separator,
+    paddingTop: SPACING.sm,
     gap: SPACING.xs,
-    borderWidth: 1,
-    borderColor: SURFACE.cardBorder,
-    ...ELEVATION[2],
   },
   leadersTitle: {
     fontFamily: FONT_FAMILY.bodySemibold,
@@ -1197,22 +1185,14 @@ export const dashboardSimpleStyles = StyleSheet.create({
     marginBottom: SPACING.md,
   },
   executiveGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: SPACING.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: SURFACE.separator,
   },
   executiveCard: {
-    flex: 1,
-    minWidth: "46%",
-    padding: SPACING.md,
-    borderRadius: RADIUS.xl,
-    backgroundColor: "rgba(20,19,18,0.92)",
-    borderWidth: 1,
-    borderColor: SURFACE.softBorder,
+    paddingVertical: SPACING.lg,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: SURFACE.separator,
     gap: SPACING.xs,
-  },
-  executiveCardWide: {
-    minWidth: "100%",
   },
   executiveTop: {
     flexDirection: "row",
