@@ -35,7 +35,6 @@ import { AccountForm } from "../../components/forms/AccountForm";
 import { MovementForm } from "../../components/forms/MovementForm";
 import { AmountDisplay, formatCurrency } from "../../components/ui/AmountDisplay";
 import { useToast } from "../../hooks/useToast";
-import { humanizeError } from "../../lib/errors";
 import { findInstitution } from "../../lib/account-institutions";
 import { parseDisplayDate } from "../../lib/date";
 import { useAccountsRealtimeSync } from "../../features/accounts/hooks/useAccountsRealtimeSync";
@@ -83,7 +82,7 @@ function AccountDetailScreen() {
   const [archiveConfirmVisible, setArchiveConfirmVisible] = useState(false);
   const [deleteMovementTarget, setDeleteMovementTarget] = useState<{ id: number; description?: string | null } | null>(null);
 
-  const { showToast } = useToast();
+  const { showToast, showErrorToast } = useToast();
   const archiveAccount = useArchiveAccountMutation(activeWorkspaceId);
   const deleteMovement = useDeleteMovementMutation(activeWorkspaceId);
 
@@ -117,13 +116,13 @@ function AccountDetailScreen() {
     if (!account) return;
     try {
       await archiveAccount.mutateAsync({ id: account.id, archived: !account.isArchived });
-      showToast(account.isArchived ? "Cuenta restaurada" : "Cuenta archivada", "success");
+      showToast(account.isArchived ? "Cuenta restaurada" : "Cuenta archivada", "success", account.name);
       setArchiveConfirmVisible(false);
       if (!account.isArchived) {
         router.back();
       }
     } catch (err: unknown) {
-      showToast(humanizeError(err), "error");
+      showErrorToast(account.isArchived ? "No se pudo restaurar la cuenta" : "No se pudo archivar la cuenta", err);
       setArchiveConfirmVisible(false);
     }
   }
@@ -403,7 +402,7 @@ function AccountDetailScreen() {
               if (!deleteMovementTarget) return;
               deleteMovement.mutate(deleteMovementTarget.id, {
                 onSuccess: () => showToast("Movimiento eliminado", "success"),
-                onError: (e) => showToast(e.message, "error"),
+                onError: (e) => showErrorToast("No se pudo eliminar el movimiento", e),
               });
               setDeleteMovementTarget(null);
             }}

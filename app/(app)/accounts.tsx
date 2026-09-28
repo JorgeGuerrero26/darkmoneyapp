@@ -76,7 +76,7 @@ function AccountsScreen() {
   const queryClient = useQueryClient();
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
-  const { showToast } = useToast();
+  const { showToast, showErrorToast } = useToast();
   const { reason: notificationReason } = useNotificationReason();
 
   const { data: snapshot, isLoading, isRefetching, refetch, dataUpdatedAt } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
@@ -141,7 +141,7 @@ function AccountsScreen() {
       },
       {
         onError: (err: unknown) => {
-          showToast(humanizeError(err), "warning");
+          showToast(`No se pudo sincronizar ${baseCurrency}/${DEFAULT_EXCHANGE_CURRENCY}`, "warning", humanizeError(err));
         },
       },
     );
@@ -344,9 +344,9 @@ function AccountsScreen() {
   const handleArchive = useCallback(async (account: AccountSummary) => {
     try {
       await archiveAccount.mutateAsync({ id: account.id, archived: !account.isArchived });
-      showToast(account.isArchived ? "Cuenta restaurada" : "Cuenta archivada", "success");
+      showToast(account.isArchived ? "Cuenta restaurada" : "Cuenta archivada", "success", account.name);
     } catch (err: unknown) {
-      showToast(humanizeError(err), "error");
+      showErrorToast(account.isArchived ? `No se pudo restaurar «${account.name}»` : `No se pudo archivar «${account.name}»`, err);
     }
   }, [archiveAccount, showToast]);
 
@@ -356,9 +356,9 @@ function AccountsScreen() {
     setDeleteTarget(null);
     try {
       await deleteAccount.mutateAsync(target.id);
-      showToast("Cuenta eliminada", "success");
+      showToast("Cuenta eliminada", "success", target.name);
     } catch (err: unknown) {
-      showToast(humanizeError(err), "error");
+      showErrorToast(`No se pudo eliminar «${target.name}»`, err);
     }
   }
 
