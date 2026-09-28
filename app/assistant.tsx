@@ -55,7 +55,6 @@ import {
 import { useCreateObligationPaymentMutation, useCreateObligationMutation } from "../services/queries/obligations-impl";
 import { useCreateBudgetMutation } from "../services/queries/budgets";
 import { parseBoldSegments } from "../lib/assistant-text";
-import { humanizeError } from "../lib/errors";
 import { formatCurrency } from "../lib/format-currency";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../constants/theme";
 
@@ -141,7 +140,7 @@ function AssistantScreen() {
   const [thinkingText, setThinkingText] = useState(THINKING_SEARCH);
   const [remainingToday, setRemainingToday] = useState<number | null>(null);
   const { profile } = useAuth();
-  const { showToast } = useToast();
+  const { showToast, showErrorToast } = useToast();
   const { data: snapshot } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const createMovement = useCreateMovementMutation(activeWorkspaceId);
   const markSubPaid = useMarkSubscriptionPaidMutation(activeWorkspaceId);
@@ -452,7 +451,7 @@ function AssistantScreen() {
       }
       showToast("Movimiento guardado", "success");
     } catch (error) {
-      showToast(humanizeError(error), "error");
+      showErrorToast("No se pudo guardar el movimiento", error);
     } finally {
       setSavingDraftId(null);
     }
@@ -476,7 +475,7 @@ function AssistantScreen() {
       setDraftStatus(item.id, "saved");
       showToast("Presupuesto creado", "success");
     } catch (error) {
-      showToast(humanizeError(error), "error");
+      showErrorToast("No se pudo crear el presupuesto", error);
     } finally {
       setSavingDraftId(null);
     }
@@ -510,7 +509,7 @@ function AssistantScreen() {
       setDraftStatus(item.id, "saved");
       showToast(ob.direction === "receivable" ? "Crédito registrado" : "Deuda registrada", "success");
     } catch (error) {
-      showToast(humanizeError(error), "error");
+      showErrorToast(ob.direction === "receivable" ? "No se pudo registrar el crédito" : "No se pudo registrar la deuda", error);
     } finally {
       setSavingDraftId(null);
     }
@@ -558,7 +557,7 @@ function AssistantScreen() {
       setDraftStatus(item.id, "saved");
       showToast(r.kind === "subscription" ? "Suscripción creada" : "Ingreso fijo creado", "success");
     } catch (error) {
-      showToast(humanizeError(error), "error");
+      showErrorToast(r.kind === "subscription" ? "No se pudo crear la suscripción" : "No se pudo crear el ingreso fijo", error);
     } finally {
       setSavingDraftId(null);
     }
