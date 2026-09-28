@@ -1,4 +1,6 @@
 type Args = {
+  /** "updated" = se editó uno existente (revisión 41b): mismo detalle, otro titular. */
+  action?: "saved" | "updated";
   movementType?: string | null;
   description?: string | null;
   sourceAmount?: number | null;
@@ -25,6 +27,7 @@ const TITLE: Record<string, string> = {
  * Hermano de `describeDeletedMovement`, que hace lo mismo al borrar.
  */
 export function describeSavedMovement({
+  action = "saved",
   movementType,
   description,
   sourceAmount,
@@ -33,7 +36,8 @@ export function describeSavedMovement({
   destinationCurrency,
   formatAmount,
 }: Args): { title: string; subtitle: string | null } {
-  const title = TITLE[movementType ?? ""] ?? "Movimiento guardado";
+  const title =
+    action === "updated" ? "Movimiento actualizado" : (TITLE[movementType ?? ""] ?? "Movimiento guardado");
 
   const isIncome = movementType === "income";
   const amount = Number(isIncome ? destinationAmount : sourceAmount);

@@ -56,4 +56,17 @@ describe("describeSavedMovement", () => {
       "Movimiento guardado",
     );
   });
+
+  it("al editar cambia el titular y conserva detalle y monto (revisión 41b)", () => {
+    expect(
+      describeSavedMovement({
+        action: "updated",
+        movementType: "expense",
+        description: "Agua",
+        sourceAmount: 1.5,
+        sourceCurrency: "PEN",
+        formatAmount: fmt,
+      }),
+    ).toEqual({ title: "Movimiento actualizado", subtitle: "Agua · −S/ 1.50" });
+  });
 });

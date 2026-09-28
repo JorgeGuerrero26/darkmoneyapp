@@ -995,15 +995,28 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
           onClose();
           return;
         }
+        const updateInput = buildMovementUpdateInput(movementContract);
         await updateMovement.mutateAsync({
           id: editMovement.id,
-          input: buildMovementUpdateInput(movementContract),
+          input: updateInput,
         });
         persistCategoryLearning(editMovement.id, autoDesc);
         if (activeWorkspaceId && linkedEventId && hasAttachmentChanges) {
           backgroundAttachmentSync = () => attachmentSync.mirrorToObligationEvent(editMovement.id, linkedEventId);
         }
-        showToast("Movimiento actualizado", "warning");
+        // Revisión 41b: qué quedó y cuánto, igual que al guardar. Sin Deshacer: revertir una
+        // edición exige restaurar los valores anteriores, y eso todavía no existe.
+        const updated = describeSavedMovement({
+          action: "updated",
+          movementType: form.movementType,
+          description: updateInput.description,
+          sourceAmount: updateInput.sourceAmount,
+          destinationAmount: updateInput.destinationAmount,
+          sourceCurrency: sourceAccount?.currencyCode ?? null,
+          destinationCurrency: destinationAccount?.currencyCode ?? null,
+          formatAmount: formatCurrency,
+        });
+        showRichToast({ type: "update", title: updated.title, subtitle: updated.subtitle ?? undefined });
         if (linkedEventId && activeWorkspaceId) {
           void queryClient.invalidateQueries({ queryKey: ["obligation-events"] });
           void queryClient.invalidateQueries({ queryKey: ["entity-attachments", activeWorkspaceId, "obligation-event", linkedEventId] });
