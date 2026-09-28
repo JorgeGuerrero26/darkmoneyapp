@@ -361,7 +361,7 @@ function DashboardScreen() {
 
   useDashboardRealtimeSync({ workspaceId: activeWorkspaceId });
 
-  const { showToast, showRichToast } = useToast();
+  const { showToast, showRichToast, showErrorToast } = useToast();
   const markPaidMutation = useMarkSubscriptionPaidMutation(activeWorkspaceId);
   const [dashboardPayTarget, setDashboardPayTarget] = useState<SubscriptionSummary | null>(null);
   const arrival = useArrivalSheetController(activeWorkspaceId);
@@ -377,9 +377,9 @@ function DashboardScreen() {
           accountId: args.accountId,
         });
         setDashboardPayTarget(null);
-        showToast(`Pago registrado · Próximo cobro: ${nextDueDate}`, "success");
+        showToast("Pago registrado", "success", `Próximo cobro: ${nextDueDate}`);
       } catch (error: unknown) {
-        showToast(error instanceof Error ? error.message : "No se pudo registrar el pago", "error");
+        showErrorToast("No se pudo registrar el pago", error);
       }
     },
     [dashboardPayTarget, markPaidMutation, showToast],
@@ -628,7 +628,7 @@ function DashboardScreen() {
         },
         onError: (error: Error) => {
           setSavingHabitKey(null);
-          showToast(error.message, "error");
+          showErrorToast(`No se pudo anotar «${habit.label}»`, error);
         },
       },
     );
