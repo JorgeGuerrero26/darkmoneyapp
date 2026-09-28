@@ -22,6 +22,7 @@ import { ResourceContextNote } from "../../components/ui/ResourceContextNote";
 import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTemplate";
 import { ResourceSectionList } from "../../components/ui/ResourceSectionList";
 import { SkeletonCard, SkeletonList } from "../../components/ui/Skeleton";
+import { summarizeNames } from "../../lib/summarize-names";
 import { UndoBanner } from "../../components/ui/UndoBanner";
 import { BudgetQuickEditSheet } from "../../features/budgets/components/BudgetQuickEditSheet";
 import { MetricSummaryBar } from "../../components/ui/MetricSummaryBar";
@@ -80,7 +81,7 @@ function BudgetsScreen() {
   });
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
-  const { showToast } = useToast();
+  const { showToast, showErrorToast } = useToast();
   const { reason: notificationReason } = useNotificationReason();
 
   const [formVisible, setFormVisible] = useState(false);
@@ -351,7 +352,7 @@ function BudgetsScreen() {
     pendingDeleteLabels.current.set(budget.id, budget.name);
     const run = () => {
       deleteMutation.mutate(budget.id, {
-        onError: (error) => showToast(error.message, "error"),
+        onError: (error) => showErrorToast(`No se pudo eliminar «${budget.name}»`, error),
       });
       setPendingDeleteIds((prev) => {
         const next = new Set(prev);
@@ -397,7 +398,8 @@ function BudgetsScreen() {
     togglePinMutation.mutate(
       { id: budget.id, isPinned: !budget.isPinned },
       {
-        onError: (err) => showToast(err.message, "error"),
+        onError: (err) =>
+          showErrorToast(budget.isPinned ? "No se pudo desfijar el presupuesto" : "No se pudo fijar el presupuesto", err),
       },
     );
   }, [showToast, togglePinMutation]);
@@ -405,40 +407,41 @@ function BudgetsScreen() {
   const handleDuplicate = useCallback(async (budget: BudgetOverview) => {
     try {
       await duplicateMutation.mutateAsync(budget);
-      showToast(`"${budget.name}" duplicado al próximo período`, "success");
+      showToast("Presupuesto duplicado", "success", `${budget.name} · al próximo período`);
     } catch (err: unknown) {
-      showToast(err instanceof Error ? err.message : "No se pudo duplicar", "error");
+      showErrorToast(`No se pudo duplicar «${budget.name}»`, err);
     }
-  }, [duplicateMutation, showToast]);
+  }, [duplicateMutation, showErrorToast, showToast]);
 
   const handleBulkDuplicate = useCallback(async () => {
-    let count = 0;
+    const duplicated: string[] = [];
     for (const budget of selectedBudgets) {
       try {
         await duplicateMutation.mutateAsync(budget);
-        count += 1;
+        duplicated.push(budget.name);
       } catch (err: unknown) {
-        showToast(err instanceof Error ? err.message : "No se pudo duplicar uno", "error");
+        showErrorToast(`No se pudo duplicar «${budget.name}»`, err);
       }
     }
     exitSelectMode();
-    if (count > 0) {
+    if (duplicated.length > 0) {
       showToast(
-        count === 1
+        duplicated.length === 1
           ? "1 presupuesto duplicado al próximo período"
-          : `${count} presupuestos duplicados al próximo período`,
+          : `${duplicated.length} presupuestos duplicados al próximo período`,
         "success",
+        summarizeNames(duplicated),
       );
     }
-  }, [duplicateMutation, exitSelectMode, selectedBudgets, showToast]);
+  }, [duplicateMutation, exitSelectMode, selectedBudgets, showErrorToast, showToast]);
 
   const exportCSV = useCallback(async (budgetsToExport: BudgetOverview[]) => {
     const csv = buildBudgetCSV(budgetsToExport);
     const fileName = `presupuestos_${format(new Date(), "yyyyMMdd")}.csv`;
     try {
       await shareCsvAsFile(csv, fileName);
-    } catch {
-      showToast("No se pudo exportar", "error");
+    } catch (err) {
+      showErrorToast("No se pudo exportar el CSV", err);
     }
   }, [showToast]);
 
@@ -690,13 +693,13 @@ function BudgetsScreen() {
             visible={pendingDeleteIds.size > 0}
             message={(() => {
               if (pendingDeleteIds.size === 0) return "";
-              if (pendingDeleteIds.size === 1) {
-                const [onlyId] = pendingDeleteIds;
-                const label = pendingDeleteLabels.current.get(onlyId) ?? "";
-                return label ? `Se eliminó «${label}»` : "Presupuesto eliminado";
-              }
+              // El nombre va en la segunda línea (detail), no dentro del titular.
+              if (pendingDeleteIds.size === 1) return "Presupuesto eliminado";
               return `${pendingDeleteIds.size} presupuestos eliminados`;
             })()}
+            detail={summarizeNames(
+              [...pendingDeleteIds].map((id) => pendingDeleteLabels.current.get(id) ?? ""),
+            )}
             onUndo={() => pendingDeleteIds.forEach((id) => undoDelete(id))}
             durationMs={5000}
             bottomOffset={insets.bottom + 80}

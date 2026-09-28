@@ -12,6 +12,7 @@ import { useWorkspace } from "../../lib/workspace-context";
 import { useSpendTypesQuery } from "../../services/queries/spend-types";
 import { useAuth } from "../../lib/auth-context";
 import { useToast } from "../../hooks/useToast";
+import { formatCurrency } from "../../lib/format-currency";
 import { useHaptics } from "../../hooks/useHaptics";
 import {
   useCreateBudgetMutation,
@@ -70,7 +71,7 @@ type Props = {
 export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateBudget }: Props) {
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
   const { profile } = useAuth();
-  const { showToast } = useToast();
+  const { showToast, showErrorToast } = useToast();
   const haptics = useHaptics();
   const createMutation = useCreateBudgetMutation(activeWorkspaceId);
   const updateMutation = useUpdateBudgetMutation(activeWorkspaceId);
@@ -233,18 +234,18 @@ export function BudgetForm({ visible, onClose, onSuccess, editBudget, duplicateB
     try {
       if (isEditing && editBudget) {
         await updateMutation.mutateAsync({ id: editBudget.id, input });
-        showToast("Presupuesto actualizado", "warning");
+        // Qué presupuesto y con qué tope. Antes "actualizado" salía como aviso de cuidado.
+        showToast("Presupuesto actualizado", "success", `${input.name} · tope ${formatCurrency(input.limitAmount, input.currencyCode)}`);
       } else {
         await createMutation.mutateAsync(input);
-        showToast("Presupuesto creado", "success");
+        showToast("Presupuesto creado", "success", `${input.name} · tope ${formatCurrency(input.limitAmount, input.currencyCode)}`);
       }
       haptics.success();
       onSuccess?.();
       onClose();
     } catch (err: unknown) {
       haptics.error();
-      const msg = err instanceof Error ? err.message : "Error desconocido";
-      showToast(msg, "error");
+      showErrorToast(isEditing ? "No se pudo actualizar el presupuesto" : "No se pudo crear el presupuesto", err);
     } finally {
       submittingRef.current = false;
     }
