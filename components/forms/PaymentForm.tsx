@@ -270,12 +270,7 @@ export function PaymentForm({ visible, onClose, onSuccess, obligation, editEvent
       })
       .catch((error) => {
         lastMirroredAttachmentSignatureRef.current = null;
-        showToast(
-          error instanceof Error
-            ? error.message
-            : "No pudimos sincronizar el comprobante con el movimiento vinculado.",
-          "error",
-        );
+        showErrorToast("El comprobante no se copió al movimiento", error);
       });
   }, [
     attachmentSignature,

@@ -657,8 +657,9 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
         eventDate: req.event?.eventDate ?? req.payload.eventDate,
       });
       showToast(
-        req.event ? "Solicitud aprobada y evento eliminado" : "Solicitud aprobada y pendiente resuelta",
+        "Solicitud aprobada",
         "success",
+        req.event ? "Evento eliminado" : "Pendiente resuelta",
       );
     } catch (err: unknown) {
       showErrorToast("No se pudo aprobar la solicitud", err);

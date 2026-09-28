@@ -47,7 +47,7 @@ export function ObligationInviteFlow({ token }: Props) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { session } = useAuth();
-  const { showToast } = useToast();
+  const { showToast, showErrorToast } = useToast();
 
   const [isLoading, setIsLoading] = useState(true);
   const [invite, setInvite] = useState<InvitePreview | null>(null);
@@ -117,9 +117,8 @@ export function ObligationInviteFlow({ token }: Props) {
       setAccepted(true);
       setTimeout(() => router.replace("/(app)/obligations"), 1500);
     } catch (err: unknown) {
-      const message = humanizeError(err);
-      setError(message);
-      showToast(message, "error");
+      setError(humanizeError(err));
+      showErrorToast("No se pudo aceptar la invitación", err);
     } finally {
       setIsAccepting(false);
     }
@@ -155,9 +154,8 @@ export function ObligationInviteFlow({ token }: Props) {
       showToast(data?.alreadyDeclined ? "Esta solicitud ya estaba rechazada" : "Solicitud rechazada", "success");
       setDeclined(true);
     } catch (err: unknown) {
-      const message = humanizeError(err);
-      setError(message);
-      showToast(message, "error");
+      setError(humanizeError(err));
+      showErrorToast("No se pudo rechazar la solicitud", err);
     } finally {
       setIsDeclining(false);
     }

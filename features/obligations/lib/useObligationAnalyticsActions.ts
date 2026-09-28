@@ -20,7 +20,7 @@ type ObligationLike = ObligationSummary | SharedObligationSummary;
 type Args = {
   liveAnalyticsObligation: ObligationLike | null;
   ownerUserId: string | null | undefined;
-  showToast: (message: string, tone?: "success" | "error" | "info") => void;
+  showToast: (message: string, tone?: "success" | "error" | "info", detail?: string | null) => void;
 };
 
 export function useObligationAnalyticsActions({
@@ -115,7 +115,7 @@ export function useObligationAnalyticsActions({
             "success",
           );
         },
-        onError: (err) => showToast(humanizeError(err), "error"),
+        onError: (err) => showToast("No se pudo eliminar el evento", "error", humanizeError(err)),
       },
     );
   }
@@ -166,7 +166,7 @@ export function useObligationAnalyticsActions({
       }
       showToast("Comprobante eliminado", "success");
     } catch (err: unknown) {
-      showToast(humanizeError(err), "error");
+      showToast("No se pudo eliminar el comprobante", "error", humanizeError(err));
     } finally {
       setDeletingAnalyticsAttachmentPath(null);
     }

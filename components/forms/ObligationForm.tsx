@@ -315,10 +315,9 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
         message: shareMessage.trim() || null,
       });
       showToast(
-        result.emailSent
-          ? `Invitación enviada a ${result.invitedEmail}`
-          : "Invitación registrada",
+        result.emailSent ? "Invitación enviada" : "Invitación registrada",
         "success",
+        result.invitedEmail,
       );
     } catch (err: unknown) {
       setSubmitError(humanizeError(err));
@@ -525,10 +524,9 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
             message: shareMessage.trim() || null,
           });
           showToast(
-            r.emailSent
-              ? `Obligación creada. Invitación enviada a ${r.invitedEmail}.`
-              : "Obligación creada. Invitación registrada.",
+            "Obligación creada",
             "success",
+            r.emailSent ? `Invitación enviada a ${r.invitedEmail}` : "Invitación registrada",
           );
         } else {
           showToast("Obligación creada", "success");
@@ -699,8 +697,9 @@ export function ObligationForm({ visible, onClose, onSuccess, editObligation, on
                     message: shareMessage.trim() || null,
                   });
                   showToast(
-                    r.emailSent ? `Invitación enviada a ${r.invitedEmail}` : "Invitación registrada",
+                    r.emailSent ? "Invitación enviada" : "Invitación registrada",
                     "success",
+                    r.invitedEmail,
                   );
                   setCreatedObligation(null);
                   onSuccess?.();

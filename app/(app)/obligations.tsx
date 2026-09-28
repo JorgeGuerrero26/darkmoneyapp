@@ -512,14 +512,12 @@ function ObligationsScreen() {
     setBulkDeleteConfirm(false);
     if (deletedCount > 0) {
       const msg = deletedCount === 1 ? "1 obligación eliminada" : `${deletedCount} obligaciones eliminadas`;
-      showToast(
-        skipped > 0 ? `${msg}. ${skipped} con eventos no se eliminaron.` : msg,
-        "success",
-      );
+      showToast(msg, "success", skipped > 0 ? `${skipped} con eventos no se eliminaron` : null);
     } else if (skipped > 0) {
       showToast(
-        "Ninguna se eliminó: todas tienen eventos. Archívalas o borra sus eventos primero.",
+        "Ninguna obligación se eliminó",
         "error",
+        "Tienen eventos. Archívalas o borra sus eventos primero",
       );
     }
   }
