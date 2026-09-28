@@ -1,5 +1,3 @@
-import { Archive, Layers } from "lucide-react-native";
-
 import { FilterToolbar } from "../../../components/ui/FilterToolbar";
 import {
   OBLIGATION_FILTER_CHIPS,
@@ -8,25 +6,20 @@ import {
 
 type Props = {
   activeFilters: ObligationFilterValue[];
-  showArchived: boolean;
   searchValue?: string;
   onSearchChange?: (value: string) => void;
   onFiltersChange: (filters: ObligationFilterValue[]) => void;
-  onToggleArchived: () => void;
-  /** Separa la lista en "Me deben" y "Yo debo", como Cuentas separa por tipo. */
-  groupByDirection: boolean;
-  onToggleGrouping: () => void;
+  extraFiltersCount: number;
+  onOpenFilters: () => void;
 };
 
 export function ObligationFilterBar({
   activeFilters,
-  showArchived,
   searchValue,
   onSearchChange,
   onFiltersChange,
-  onToggleArchived,
-  groupByDirection,
-  onToggleGrouping,
+  extraFiltersCount,
+  onOpenFilters,
 }: Props) {
   return (
     <FilterToolbar
@@ -39,23 +32,11 @@ export function ObligationFilterBar({
       searchValue={searchValue}
       onSearchChange={onSearchChange}
       searchPlaceholder="Buscar créditos o deudas..."
-      /* Los mismos dos controles que en Cuentas y en el mismo sitio: agrupar y archivadas. */
-      actions={[
-        {
-          key: "group-by-direction",
-          icon: Layers,
-          active: groupByDirection,
-          onPress: onToggleGrouping,
-          accessibilityLabel: groupByDirection ? "No agrupar" : "Agrupar por tipo",
-        },
-        {
-          key: "archived",
-          icon: Archive,
-          active: showArchived,
-          onPress: onToggleArchived,
-          accessibilityLabel: showArchived ? "Ocultar archivadas" : "Mostrar archivadas",
-        },
-      ]}
+      extraAction={{
+        label: extraFiltersCount > 0 ? `${extraFiltersCount} filtros` : "Filtros",
+        active: extraFiltersCount > 0,
+        onPress: onOpenFilters,
+      }}
     />
   );
 }

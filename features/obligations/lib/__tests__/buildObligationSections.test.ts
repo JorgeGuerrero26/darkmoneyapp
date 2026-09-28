@@ -72,4 +72,18 @@ describe("secciones de créditos y deudas", () => {
     ]);
     expect(sections[1].data.map((item) => item.id)).toEqual([2]);
   });
+
+  it("solo archivadas omite los grupos activos y conserva las compartidas", () => {
+    const sections = buildObligationSections({
+      workspaceObligations: [...workspaceObligations, obligation(4, "payable", "cancelled")],
+      sharedObligations: [...sharedObligations, { ...shared(5, "receivable"), status: "cancelled" }],
+      showArchived: true,
+      onlyArchived: true,
+      groupByDirection: true,
+    });
+    expect(sections.map((section) => section.key)).toEqual([
+      "archived-divider", "workspace-archived", "shared-archived",
+    ]);
+    expect(sections.flatMap((section) => section.data.map((item) => item.id))).toEqual([4, 5]);
+  });
 });

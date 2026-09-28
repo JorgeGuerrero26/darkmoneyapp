@@ -7,11 +7,10 @@ import type {
   ObligationListItem,
   ObligationListSection,
 } from "../lib/buildObligationSections";
-import type { ObligationFilterValue } from "../lib/obligationFilters";
 
 type Props = {
   sections: ObligationListSection[];
-  activeFilters: ObligationFilterValue[];
+  hasActiveFilters: boolean;
   loading: boolean;
   /** La consulta diferida se rindió sin datos: error con reintentar, no "no tienes nada". */
   failed: boolean;
@@ -26,7 +25,7 @@ type Props = {
 
 export function ObligationList({
   sections,
-  activeFilters,
+  hasActiveFilters,
   loading,
   failed,
   onRetry,
@@ -47,7 +46,7 @@ export function ObligationList({
     }
     return section;
   });
-  const hasFilters = activeFilters.length > 0;
+  const hasFilters = hasActiveFilters;
 
   return (
     <ResourceSectionList

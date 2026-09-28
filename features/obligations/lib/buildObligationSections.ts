@@ -22,6 +22,7 @@ type BuildObligationSectionsInput = {
   workspaceObligations: ObligationSummary[];
   sharedObligations: SharedObligationSummary[];
   showArchived: boolean;
+  onlyArchived?: boolean;
   /**
    * Agrupa lo activo por dirección —"Me deben" / "Yo debo"— en vez de por dueño.
    *
@@ -36,13 +37,14 @@ export function buildObligationSections({
   workspaceObligations,
   sharedObligations,
   showArchived,
+  onlyArchived = false,
   groupByDirection = false,
 }: BuildObligationSectionsInput): ObligationListSection[] {
-  const activeWorkspaceData = workspaceObligations.filter((obligation) => obligation.status !== "cancelled");
+  const activeWorkspaceData = onlyArchived ? [] : workspaceObligations.filter((obligation) => obligation.status !== "cancelled");
   const archivedWorkspaceData = showArchived
     ? workspaceObligations.filter((obligation) => obligation.status === "cancelled")
     : [];
-  const activeSharedData = sharedObligations.filter((obligation) => obligation.status !== "cancelled");
+  const activeSharedData = onlyArchived ? [] : sharedObligations.filter((obligation) => obligation.status !== "cancelled");
   const archivedSharedData = showArchived
     ? sharedObligations.filter((obligation) => obligation.status === "cancelled")
     : [];

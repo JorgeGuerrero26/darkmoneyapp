@@ -5,7 +5,6 @@ import { FAB } from "../../components/ui/FAB";
 import { UndoBanner } from "../../components/ui/UndoBanner";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Archive, CheckSquare, Download, MoreVertical, Trash2, X } from "lucide-react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { format } from "date-fns";
@@ -55,6 +54,7 @@ import { COLORS } from "../../constants/theme";
 import { IOS_FLOATING_TAB_BAR_SPACE } from "../../constants/floating-tab-bar";
 import { shareCsvAsFile } from "../../lib/share-csv-file";
 import { ObligationFilterBar } from "../../features/obligations/components/ObligationFilterBar";
+import { ObligationFilterSheet, type ObligationArchiveView } from "../../features/obligations/components/ObligationFilterSheet";
 import { ObligationList } from "../../features/obligations/components/ObligationList";
 import { ObligationSummaryBar } from "../../features/obligations/components/ObligationSummaryBar";
 import {
@@ -86,8 +86,6 @@ import {
 const UNDO_DELETE_MS = 5000;
 
 // ─── Screen ──────────────────────────────────────────────────────────────────
-
-const OBLIGATIONS_GROUPING_KEY = "darkmoney.obligations.groupByDirection";
 
 function ObligationsScreen() {
   // Fuerza el re-render de la pantalla al alternar modo privacidad (la máscara
@@ -138,8 +136,10 @@ function ObligationsScreen() {
   );
 
   const [activeFilters, setActiveFilters] = useState<ObligationFilterValue[]>([]);
-  const [showArchived, setShowArchived] = useState(false);
-  const [groupByDirection, setGroupByDirection] = useState(false);
+  const [archiveView, setArchiveView] = useState<ObligationArchiveView>("active");
+  const [filterSheetOpen, setFilterSheetOpen] = useState(false);
+  const showArchived = archiveView !== "active";
+  const extraFiltersCount = Number(showArchived);
   const [searchText, setSearchText] = useState("");
   const [createFormVisible, setCreateFormVisible] = useState(false);
   const [paymentObligation, setPaymentObligation] = useState<ObligationSummary | null>(null);
@@ -390,26 +390,11 @@ function ObligationsScreen() {
         workspaceObligations: workspaceData,
         sharedObligations: filteredShared,
         showArchived,
-        groupByDirection,
+        onlyArchived: archiveView === "archived",
+        groupByDirection: true,
       }),
-    [filteredShared, groupByDirection, showArchived, workspaceData],
+    [archiveView, filteredShared, showArchived, workspaceData],
   );
-
-  // Se recuerda entre sesiones, igual que el agrupado de Cuentas: es una preferencia de cómo
-  // mirar la lista, no un filtro que uno pone y quita.
-  useEffect(() => {
-    void AsyncStorage.getItem(OBLIGATIONS_GROUPING_KEY).then((stored) => {
-      if (stored === "1") setGroupByDirection(true);
-    });
-  }, []);
-
-  const toggleGroupByDirection = useCallback(() => {
-    setGroupByDirection((previous) => {
-      const next = !previous;
-      void AsyncStorage.setItem(OBLIGATIONS_GROUPING_KEY, next ? "1" : "0");
-      return next;
-    });
-  }, []);
 
   const activeFilterItems = useMemo<ActiveFilterItem[]>(() => {
     const items = activeFilters.map((filter) => ({
@@ -421,16 +406,8 @@ function ObligationsScreen() {
     if (showArchived) {
       items.push({
         key: "archived",
-        label: "Archivadas",
-        onRemove: () => setShowArchived(false),
-      });
-    }
-
-    if (groupByDirection) {
-      items.push({
-        key: "grouped",
-        label: "Agrupado por tipo",
-        onRemove: toggleGroupByDirection,
+        label: archiveView === "archived" ? "Solo archivadas" : "Incluye archivadas",
+        onRemove: () => setArchiveView("active"),
       });
     }
 
@@ -443,11 +420,11 @@ function ObligationsScreen() {
     }
 
     return items;
-  }, [activeFilters, groupByDirection, searchText, showArchived, toggleGroupByDirection]);
+  }, [activeFilters, archiveView, searchText, showArchived]);
 
   function clearObligationFilters() {
     setActiveFilters([]);
-    setShowArchived(false);
+    setArchiveView("active");
     setSearchText("");
   }
 
@@ -665,13 +642,11 @@ function ObligationsScreen() {
           !selectMode ? (
             <ObligationFilterBar
               activeFilters={activeFilters}
-              showArchived={showArchived}
               searchValue={searchText}
               onSearchChange={setSearchText}
               onFiltersChange={setActiveFilters}
-              onToggleArchived={() => setShowArchived((value) => !value)}
-              groupByDirection={groupByDirection}
-              onToggleGrouping={toggleGroupByDirection}
+              extraFiltersCount={extraFiltersCount}
+              onOpenFilters={() => setFilterSheetOpen(true)}
             />
           ) : null
         }
@@ -732,7 +707,7 @@ function ObligationsScreen() {
           <ObligationList
             sections={obligationSections}
             renderItem={renderObligationItem}
-            activeFilters={activeFilters}
+            hasActiveFilters={activeFilters.length > 0 || showArchived || searchText.trim().length > 0}
             loading={isLoading}
             failed={deferredFailed}
             onRetry={retryDeferred}
@@ -772,6 +747,13 @@ function ObligationsScreen() {
               visible={createFormVisible}
               onClose={() => setCreateFormVisible(false)}
               onSuccess={() => setCreateFormVisible(false)}
+            />
+            <ObligationFilterSheet
+              visible={filterSheetOpen}
+              onClose={() => setFilterSheetOpen(false)}
+              archiveView={archiveView}
+              onArchiveViewChange={setArchiveView}
+              onClear={clearObligationFilters}
             />
             {paymentRequestObligation ? (
               <PaymentRequestForm
@@ -918,7 +900,7 @@ function ObligationsScreen() {
                 archiveTarget
                   ? archiveTarget.status === "cancelled"
                     ? `"${archiveTarget.title}" ya está archivada.`
-                    : `Se archivará "${archiveTarget.title}". No se elimina; podrás verla activando el icono de archivadas.`
+                    : `Se archivará "${archiveTarget.title}". No se elimina; podrás verla desde Filtros.`
                   : ""
               }
               confirmLabel={archiveTarget?.status === "cancelled" ? "Entendido" : "Archivar"}
@@ -934,7 +916,7 @@ function ObligationsScreen() {
             <ConfirmDialog
               visible={bulkArchiveConfirm}
               title={`Archivar ${selectedIds.size} obligaciones`}
-              body="Las obligaciones seleccionadas pasarán a estado archivado. Podrás verlas activando el icono de archivadas."
+              body="Las obligaciones seleccionadas pasarán a estado archivado. Podrás verlas desde Filtros."
               confirmLabel="Archivar"
               cancelLabel="Cancelar"
               onCancel={() => setBulkArchiveConfirm(false)}
