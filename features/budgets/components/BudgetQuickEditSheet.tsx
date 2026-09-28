@@ -26,7 +26,7 @@ type Props = {
 
 export function BudgetQuickEditSheet({ visible, budget, onClose, onSuccess }: Props) {
   const { activeWorkspaceId } = useWorkspace();
-  const { showToast } = useToast();
+  const { showToast, showErrorToast } = useToast();
   const updateMutation = useUpdateBudgetMutation(activeWorkspaceId);
 
   const [limitAmount, setLimitAmount] = useState("");
@@ -56,7 +56,7 @@ export function BudgetQuickEditSheet({ visible, budget, onClose, onSuccess }: Pr
       onSuccess?.();
       onClose();
     } catch (err: unknown) {
-      showToast(err instanceof Error ? err.message : "Error al guardar", "error");
+      showErrorToast("No se pudo guardar el presupuesto", err);
     }
   }
 

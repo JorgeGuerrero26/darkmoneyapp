@@ -42,7 +42,7 @@ export function ClassifyCategoriesSheet({
   workspaceId,
 }: Props) {
   const rows = orderCategoriesToClassify(categories, spendByCategory);
-  const { showToast } = useToast();
+  const { showToast, showErrorToast } = useToast();
   const setDefault = useSetCategoryDefaultSpendTypeMutation(workspaceId);
   const [pickerFor, setPickerFor] = useState<CategorySummary | null>(null);
   /* Lo elegido en esta pasada manda sobre lo que trae la copia local: el snapshot se refresca en
@@ -71,7 +71,7 @@ export function ClassifyCategoriesSheet({
         delete next[category.id];
         return next;
       });
-      showToast(error instanceof Error ? error.message : "No se pudo guardar", "error");
+      showErrorToast(`No se pudo clasificar «${category.name}»`, error);
     }
   }
 
