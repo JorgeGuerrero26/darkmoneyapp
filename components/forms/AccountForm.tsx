@@ -33,6 +33,7 @@ import { CurrencySelectOverlay, CustomCurrencyField } from "./CurrencySelectOver
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { CurrencyInput } from "../ui/CurrencyInput";
 import { formatCurrency } from "../ui/AmountDisplay";
+import { describeSavedAccount } from "../../features/accounts/lib/describeSavedAccount";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { currencyPluralTitle } from "../../constants/currencies";
 import { ACCOUNT_INSTITUTIONS, findInstitution } from "../../lib/account-institutions";
@@ -57,7 +58,7 @@ function parseCreditLimit(value: string): number | null {
 export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props) {
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
   const { user } = useAuth();
-  const { showToast } = useToast();
+  const { showToast, showRichToast } = useToast();
   const haptics = useHaptics();
   const createMutation = useCreateAccountMutation(activeWorkspaceId);
   const updateMutation = useUpdateAccountMutation(activeWorkspaceId);
@@ -258,11 +259,31 @@ export function AccountForm({ visible, onClose, onSuccess, editAccount }: Props)
     try {
       if (editAccount) {
         await updateMutation.mutateAsync({ id: editAccount.id, input });
-        showToast("Cuenta actualizada", "success");
+        // Dos líneas, como "Gasto guardado": a qué cuenta y con cuánto quedó tras guardar.
+        showRichToast({
+          type: "success",
+          title: "Cuenta actualizada",
+          subtitle: describeSavedAccount({
+            name: input.name,
+            currencyCode: input.currencyCode,
+            openingBalance: input.openingBalance,
+            previous: editAccount,
+            formatAmount: formatCurrency,
+          }),
+        });
       } else {
         await createMutation.mutateAsync(input);
         await clearDraft();
-        showToast("Cuenta creada", "success");
+        showRichToast({
+          type: "success",
+          title: "Cuenta creada",
+          subtitle: describeSavedAccount({
+            name: input.name,
+            currencyCode: input.currencyCode,
+            openingBalance: input.openingBalance,
+            formatAmount: formatCurrency,
+          }),
+        });
       }
       haptics.success();
       onSuccess?.();
