@@ -9,9 +9,11 @@ import React, {
 } from "react";
 import { AccessibilityInfo, Animated, PanResponder, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { AlertTriangle, Check } from "lucide-react-native";
 
 import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING } from "../constants/theme";
 import { useUiStore } from "../store/ui-store";
+import { SafeBlurView } from "./ui/SafeBlurView";
 
 /**
  * El aviso de confirmación: el componente más repetido de la app.
@@ -50,15 +52,11 @@ export interface ToastConfig {
   onRetry?: () => void;
 }
 
-/** Los cuatro casos. Idénticos salvo el alto y quién lleva botón. */
+/** Los cuatro casos. Idénticos salvo quién lleva botón e ícono. */
 type ToastKind = "notice" | "undo" | "detail" | "failed";
 
-const HEIGHT: Record<ToastKind, number> = {
-  notice: 46,
-  undo: 56,
-  detail: 60,
-  failed: 60,
-};
+/** Revisión 41: una sola forma, píldora de 60 de alto, sea cual sea el caso. */
+const PILL_HEIGHT = 60;
 
 function kindOf(config: ToastConfig): ToastKind {
   if (config.type === "error") return "failed";
@@ -67,8 +65,13 @@ function kindOf(config: ToastConfig): ToastKind {
   return "notice";
 }
 
-const SURFACE_BG = "#2A2825";
-const UNDO_BG = "#3A3733";
+/**
+ * Revisión 41: un gris más claro que el lienzo, casi opaco, sobre desenfoque. Así se lee como capa
+ * flotante —un banner del sistema— y no como una tarjeta más de la app. Deshacer va un paso más
+ * claro que la píldora: el tono anterior era idéntico a esta superficie y el botón desaparecía.
+ */
+const SURFACE_BG = "rgba(58,55,51,0.92)";
+const UNDO_BG = "rgba(244,241,236,0.10)";
 
 export function DarkMoneyToast({
   config,
@@ -83,7 +86,6 @@ export function DarkMoneyToast({
   const translateY = useRef(new Animated.Value(-20)).current;
   const networkBannerHeight = useUiStore((state) => state.networkBannerHeight);
   const dragY = useRef(new Animated.Value(0)).current;
-  const progress = useRef(new Animated.Value(1)).current;
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dismissingRef = useRef(false);
 
@@ -124,7 +126,6 @@ export function DarkMoneyToast({
     opacity.setValue(0);
     translateY.setValue(-20);
     dragY.setValue(0);
-    progress.setValue(1);
 
     const duration = config.duration ?? (config.onUndo ? 5000 : 3500);
 
@@ -133,11 +134,8 @@ export function DarkMoneyToast({
       Animated.spring(translateY, { toValue: 0, useNativeDriver: true, tension: 120, friction: 10 }),
     ]).start();
 
-    // El plazo de deshacer se agota a la vista: sin esto, el aviso y la posibilidad de
-    // deshacer desaparecen a la vez y sin previo aviso.
-    if (config.onUndo) {
-      Animated.timing(progress, { toValue: 0, duration, useNativeDriver: false }).start();
-    }
+    // Sin barra de progreso (revisión 41). Deshacer conserva sus 5 s: sin la barra ya no hay
+    // señal de cuánto queda, así que acortarlo iría en contra.
 
     // Un banner que aparece arriba y se va solo no existe para quien usa lector de pantalla si
     // no se anuncia. El botón de deshacer sigue siendo alcanzable mientras dura.
@@ -166,14 +164,17 @@ export function DarkMoneyToast({
     runHide();
   };
 
+  // Check en todo lo que salió bien; alerta en el fallo; nada en los avisos informativos, que no
+  // confirman ninguna acción.
+  const badge = failed ? "alert" : config.type === "info" ? null : "check";
+
   return (
     <Animated.View
       {...panResponder.panHandlers}
       accessibilityLiveRegion="polite"
       style={[
-        styles.toast,
+        styles.shell,
         {
-          minHeight: HEIGHT[kind],
           /* Bajo la barra de estado (la Dynamic Island en iPhone). Si la píldora de red está a
              la vista, debajo de ella: la conexión es el contexto de todo lo demás, y las dos
              comparten franja. */
@@ -184,54 +185,53 @@ export function DarkMoneyToast({
           opacity,
           transform: [{ translateY: Animated.add(translateY, dragY) }],
         },
-        failed && styles.toastFailed,
       ]}
     >
-      <View style={styles.body}>
-        {/* Sin ícono: una papelera al lado de "se eliminó" repite la palabra en dibujo, y el
-            espacio que ocupaba lo gana el texto. */}
-        <Text style={[styles.title, failed && styles.titleFailed]} numberOfLines={2}>
-          {config.title}
-        </Text>
-        {detail ? (
-          <Text style={styles.detail} numberOfLines={2}>
-            {detail}
+      {/* Dos capas: esta recorta el desenfoque a la píldora; la de fuera lleva la sombra, que en
+          iOS desaparece bajo overflow: hidden. */}
+      <View style={[styles.pill, failed && styles.pillFailed]}>
+        <SafeBlurView blur intensity={20} tint="dark" fallbackColor={SURFACE_BG} style={StyleSheet.absoluteFill} />
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: SURFACE_BG }]} />
+        {badge ? (
+          <View style={[styles.badge, badge === "alert" && styles.badgeFailed]}>
+            {badge === "alert" ? (
+              <AlertTriangle size={17} color={COLORS.rosewood} strokeWidth={2.2} />
+            ) : (
+              <Check size={17} color={COLORS.pine} strokeWidth={2.6} />
+            )}
+          </View>
+        ) : null}
+        <View style={styles.body}>
+          {/* El ícono de la izquierda dice si salió bien, no qué se hizo: una papelera al lado
+              de "se eliminó" repetiría la palabra en dibujo. */}
+          <Text style={[styles.title, failed && styles.titleFailed]} numberOfLines={2}>
+            {config.title}
           </Text>
+          {detail ? (
+            <Text style={styles.detail} numberOfLines={2}>
+              {detail}
+            </Text>
+          ) : null}
+        </View>
+
+        {config.onUndo ? (
+          <Pressable
+            onPress={handleUndo}
+            style={({ pressed }) => [styles.action, pressed && styles.actionPressed]}
+            accessibilityRole="button"
+          >
+            <Text style={styles.actionText}>Deshacer</Text>
+          </Pressable>
+        ) : failed && config.onRetry ? (
+          <Pressable
+            onPress={handleRetry}
+            style={({ pressed }) => [styles.action, pressed && styles.actionPressed]}
+            accessibilityRole="button"
+          >
+            <Text style={styles.actionText}>Reintentar</Text>
+          </Pressable>
         ) : null}
       </View>
-
-      {config.onUndo ? (
-        <Pressable
-          onPress={handleUndo}
-          style={({ pressed }) => [styles.action, pressed && styles.actionPressed]}
-          accessibilityRole="button"
-        >
-          <Text style={styles.actionText}>Deshacer</Text>
-        </Pressable>
-      ) : failed && config.onRetry ? (
-        <Pressable
-          onPress={handleRetry}
-          style={({ pressed }) => [styles.action, pressed && styles.actionPressed]}
-          accessibilityRole="button"
-        >
-          <Text style={styles.actionText}>Reintentar</Text>
-        </Pressable>
-      ) : null}
-
-      {config.onUndo ? (
-        <Animated.View
-          pointerEvents="none"
-          style={[
-            styles.progress,
-            {
-              width: progress.interpolate({
-                inputRange: [0, 1],
-                outputRange: ["0%", "100%"],
-              }),
-            },
-          ]}
-        />
-      ) : null}
     </Animated.View>
   );
 }
@@ -265,29 +265,45 @@ export function useDarkMoneyToast() {
 }
 
 const styles = StyleSheet.create({
-  toast: {
+  /** Posición y sombra. Sin overflow: en iOS lo recortado no proyecta sombra. */
+  shell: {
     position: "absolute",
-    left: 14,
-    right: 14,
-    borderRadius: 13,
-    backgroundColor: SURFACE_BG,
+    left: SPACING.md,
+    right: SPACING.md,
+    borderRadius: PILL_HEIGHT / 2,
+    zIndex: 9999,
+    elevation: 20,
+    // Revisión 41: 0 14px 36px rgba(0,0,0,.6). En RN el radio de sombra es la mitad del blur CSS.
+    shadowColor: "#000",
+    shadowOpacity: 0.6,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 14 },
+  },
+  /** La píldora en sí: recorta el desenfoque y lleva el contenido. */
+  pill: {
+    minHeight: PILL_HEIGHT,
+    borderRadius: PILL_HEIGHT / 2,
     borderWidth: 1,
     borderColor: "rgba(244,241,236,0.10)",
     flexDirection: "row",
     alignItems: "center",
     gap: SPACING.md,
-    paddingHorizontal: SPACING.md,
+    paddingLeft: SPACING.sm,
+    paddingRight: SPACING.sm,
     paddingVertical: SPACING.sm,
     overflow: "hidden",
-    zIndex: 9999,
-    elevation: 20,
-    shadowColor: "#000",
-    shadowOpacity: 0.5,
-    shadowRadius: 28,
-    shadowOffset: { width: 0, height: 10 },
   },
   /** El único caso con color: hay algo que el usuario tiene que hacer. */
-  toastFailed: { borderColor: "rgba(226,160,126,0.35)" },
+  pillFailed: { borderColor: "rgba(226,160,126,0.35)" },
+  badge: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.pine + "26",
+  },
+  badgeFailed: { backgroundColor: COLORS.rosewood + "26" },
   body: { flex: 1, minWidth: 0 },
   title: {
     fontFamily: FONT_FAMILY.bodySemibold,
@@ -303,10 +319,10 @@ const styles = StyleSheet.create({
   },
   action: {
     flexShrink: 0,
-    minHeight: 34,
-    paddingHorizontal: SPACING.md,
+    minHeight: 44,
+    paddingHorizontal: SPACING.lg,
     justifyContent: "center",
-    borderRadius: 8,
+    borderRadius: 22,
     backgroundColor: UNDO_BG,
   },
   actionPressed: { opacity: 0.7 },
@@ -314,12 +330,5 @@ const styles = StyleSheet.create({
     fontFamily: FONT_FAMILY.bodySemibold,
     fontSize: FONT_SIZE.sm,
     color: COLORS.ink,
-  },
-  progress: {
-    position: "absolute",
-    left: 0,
-    bottom: 0,
-    height: 2,
-    backgroundColor: "rgba(244,241,236,0.35)",
   },
 });

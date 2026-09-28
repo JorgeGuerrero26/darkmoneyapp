@@ -5,8 +5,9 @@ const ROOT = join(__dirname, "..");
 const SCAN_DIRS = ["app", "components", "features"];
 
 /**
- * Rediseño fase 3: el vidrio esmerilado sale de todas partes menos DOS sitios — la barra
- * inferior y el fondo de las hojas —, los únicos donde algo pasa realmente por detrás.
+ * Rediseño fase 3: el vidrio esmerilado sale de todas partes menos los sitios donde algo pasa
+ * realmente por detrás — la barra inferior, el fondo de las hojas y, desde la revisión 41, el
+ * banner de confirmación.
  *
  * En el resto era ruido caro: cuesta legibilidad al sol (el fondo cambia bajo el texto),
  * cuesta batería en listas largas y sugiere que la superficie es un efecto y no un dato.
@@ -21,6 +22,9 @@ const ALLOWED = new Set([
   "app/(app)/_layout.tsx",
   // El backdrop de las hojas: tapa la pantalla que sigue viva detrás.
   "components/ui/BottomSheet.tsx",
+  // El banner de confirmación (revisión 41): flota sobre la pantalla viva, que sigue ahí debajo
+  // mientras dura. Es el mismo criterio que los otros dos, no una excepción a él.
+  "components/DarkMoneyToast.tsx",
 ]);
 
 function walk(dir: string, out: string[] = []): string[] {
