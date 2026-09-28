@@ -51,7 +51,7 @@ type Params = {
   categories: CategorySummary[];
   counterparties: CounterpartySummary[];
   accounts: AccountSummary[];
-  baseCurrency: string;
+  suggestionCurrency: string;
   activeWorkspaceId: number | null;
   proAccessEnabled: boolean | undefined;
 };
@@ -82,7 +82,7 @@ export function useMovementFormSuggestions({
   categories,
   counterparties,
   accounts,
-  baseCurrency,
+  suggestionCurrency,
   activeWorkspaceId,
   proAccessEnabled,
 }: Params) {
@@ -184,7 +184,7 @@ export function useMovementFormSuggestions({
       surface: "movement_form" as const,
       movementType: movementType === "income" ? "income" as const : "expense" as const,
       amount: currentSuggestionMovement.amount > 0 ? currentSuggestionMovement.amount : null,
-      currencyCode: baseCurrency,
+      currencyCode: suggestionCurrency,
       description: trimmedDescription,
       occurredAt: currentSuggestionMovement.occurredAt,
       categories: categoriesForPicker.map((category) => ({
@@ -203,7 +203,7 @@ export function useMovementFormSuggestions({
     };
   }, [
     activeWorkspaceId,
-    baseCurrency,
+    suggestionCurrency,
     categoriesForPicker,
     currentSuggestionMovement,
     categoryId,

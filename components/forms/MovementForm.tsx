@@ -305,6 +305,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
       }));
   }, [editMovement?.id, patternMovements]);
   const descriptionCleanupAmount = form.movementType === "income" ? destinationAmountNum : sourceAmountNum;
+  const suggestionCurrency = (form.movementType === "income" ? destinationAccount : sourceAccount)?.currencyCode ?? baseCurrency;
   // Memoize to avoid dateStrToISO (which includes current ms) from producing a
   // new string on every render and invalidating AI hook stable keys.
   const occurredAtISO = useMemo(() => dateTimeStrToISO(form.occurredAt, form.occurredTime), [form.occurredAt, form.occurredTime]);
@@ -314,7 +315,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     surface: "movement_form",
     rawDescription: form.description,
     amount: descriptionCleanupAmount > 0 ? descriptionCleanupAmount : null,
-    currencyCode: baseCurrency,
+    currencyCode: suggestionCurrency,
     proAccessEnabled: entitlementQuery.data?.proAccessEnabled,
   });
   const counterpartyDescriptionForSuggestion = descriptionCleanup?.cleanedDescription ?? form.description;
@@ -325,7 +326,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     description: counterpartyDescriptionForSuggestion,
     movementType: form.movementType === "income" ? "income" : "expense",
     amount: descriptionCleanupAmount > 0 ? descriptionCleanupAmount : null,
-    currencyCode: baseCurrency,
+    currencyCode: suggestionCurrency,
     occurredAt: occurredAtISO,
     category: selectedRecurringCategory,
     counterparty: selectedRecurringCounterparty,
@@ -367,7 +368,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     description: counterpartyDescriptionForSuggestion,
     movementType: form.movementType === "income" ? "income" : "expense",
     amount: descriptionCleanupAmount > 0 ? descriptionCleanupAmount : null,
-    currencyCode: baseCurrency,
+    currencyCode: suggestionCurrency,
     counterparties: counterpartiesSorted,
     proAccessEnabled: entitlementQuery.data?.proAccessEnabled,
   });
@@ -398,7 +399,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
     categories,
     counterparties,
     accounts,
-    baseCurrency,
+    suggestionCurrency,
     activeWorkspaceId,
     proAccessEnabled: entitlementQuery.data?.proAccessEnabled,
   });
@@ -682,7 +683,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
           accountId: form.sourceAccountId,
           categoryId: form.categoryId,
           amount: descriptionCleanupAmount,
-          currencyCode: baseCurrency,
+          currencyCode: suggestionCurrency,
           frequency: fields.frequency,
           intervalCount: fields.intervalCount,
           dayOfMonth: fields.frequency === "monthly" || fields.frequency === "quarterly" || fields.frequency === "yearly" ? dayOfMonth : null,
@@ -704,7 +705,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
           accountId: form.destinationAccountId,
           categoryId: form.categoryId,
           amount: descriptionCleanupAmount,
-          currencyCode: baseCurrency,
+          currencyCode: suggestionCurrency,
           frequency: fields.frequency,
           intervalCount: fields.intervalCount,
           dayOfMonth: fields.frequency === "monthly" || fields.frequency === "quarterly" || fields.frequency === "yearly" ? dayOfMonth : null,
