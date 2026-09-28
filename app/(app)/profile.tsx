@@ -55,8 +55,9 @@ function ProfileScreen() {
       });
     } catch (err: unknown) {
       showToast(
-        `No se pudo sincronizar ${normalized}/${DEFAULT_EXCHANGE_CURRENCY}: ${humanizeError(err)}`,
+        `No se pudo sincronizar ${normalized}/${DEFAULT_EXCHANGE_CURRENCY}`,
         "warning",
+        humanizeError(err),
       );
     }
   }

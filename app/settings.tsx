@@ -321,7 +321,7 @@ function SettingsScreen() {
         toCurrencyCode: DEFAULT_EXCHANGE_CURRENCY,
       });
     } catch (err: unknown) {
-      showToast(`No se pudo sincronizar ${normalized}/${DEFAULT_EXCHANGE_CURRENCY}: ${humanizeError(err)}`, "warning");
+      showToast(`No se pudo sincronizar ${normalized}/${DEFAULT_EXCHANGE_CURRENCY}`, "warning", humanizeError(err));
     }
   }
 
