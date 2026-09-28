@@ -5,6 +5,8 @@ import { useToast } from "../../hooks/useToast";
 type Props = {
   visible: boolean;
   message: string;
+  /** Segunda línea: qué se eliminó ("Comida", "Comida, Taxi y 2 más"). */
+  detail?: string | null;
   onUndo: () => void;
   /** Debe coincidir con el temporizador de borrado de quien lo llama. */
   durationMs?: number;
@@ -32,7 +34,7 @@ type Props = {
  * del aviso (`showRichToast`). Las siete pantallas se quedan como estaban y el aspecto lo
  * decide un solo sitio.
  */
-export function UndoBanner({ visible, message, onUndo, durationMs = 5000 }: Props) {
+export function UndoBanner({ visible, message, detail, onUndo, durationMs = 5000 }: Props) {
   const { showRichToast } = useToast();
 
   // Refs para que el aviso use SIEMPRE el callback y el texto de ahora, sin re-dispararse
@@ -48,16 +50,19 @@ export function UndoBanner({ visible, message, onUndo, durationMs = 5000 }: Prop
     }
     // Si se borra otra fila mientras el aviso sigue en pantalla, el texto cambia ("2
     // eliminadas") y toca reemplazarlo, reiniciando el plazo con él.
-    if (shownMessageRef.current === message) return;
-    shownMessageRef.current = message;
+    const key = `${message}
+${detail ?? ""}`;
+    if (shownMessageRef.current === key) return;
+    shownMessageRef.current = key;
 
     showRichToast({
       type: "delete",
       title: message,
+      subtitle: detail?.trim() || undefined,
       duration: durationMs,
       onUndo: () => onUndoRef.current(),
     });
-  }, [visible, message, durationMs, showRichToast]);
+  }, [visible, message, detail, durationMs, showRichToast]);
 
   return null;
 }
