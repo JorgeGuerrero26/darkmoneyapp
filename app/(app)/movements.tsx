@@ -10,7 +10,7 @@ import {
 import { useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useIsMutating, useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { startOfMonth, endOfMonth, subMonths, format } from "date-fns";
+import { format } from "date-fns";
 
 import { useAuth } from "../../lib/auth-context";
 import { useWorkspace } from "../../lib/workspace-context";
@@ -59,6 +59,7 @@ import type { MovementRecord, MovementType, MovementStatus } from "../../types/d
 type FilterType = MovementType | "all";
 type FilterStatus = MovementStatus | "all";
 import { groupMovementsByDate, type MovementListSection } from "../../features/movements/lib/group-by-date";
+import { buildMovementDatePresets } from "../../features/movements/lib/date-presets";
 import { summarizeMovements } from "../../features/movements/lib/summary";
 import { useMovementsFilteredSummaryQuery } from "../../services/queries/movements";
 import { useMovementsRealtimeSync } from "../../features/movements/hooks/useMovementsRealtimeSync";
@@ -90,17 +91,7 @@ const STATUS_FILTERS: { label: string; value: FilterStatus }[] = [
   { label: "Planificado", value: "planned" },
 ];
 
-function buildDatePresets() {
-  const now = new Date();
-  return [
-    { label: "Este mes", from: format(startOfMonth(now), "yyyy-MM-dd"), to: format(endOfMonth(now), "yyyy-MM-dd") },
-    { label: "Mes anterior", from: format(startOfMonth(subMonths(now, 1)), "yyyy-MM-dd"), to: format(endOfMonth(subMonths(now, 1)), "yyyy-MM-dd") },
-    { label: "Últimos 3 meses", from: format(startOfMonth(subMonths(now, 2)), "yyyy-MM-dd"), to: format(endOfMonth(now), "yyyy-MM-dd") },
-    { label: "Últimos 6 meses", from: format(startOfMonth(subMonths(now, 5)), "yyyy-MM-dd"), to: format(endOfMonth(now), "yyyy-MM-dd") },
-    { label: "Este año", from: `${now.getFullYear()}-01-01`, to: format(endOfMonth(now), "yyyy-MM-dd") },
-  ];
-}
-const DATE_PRESETS = buildDatePresets();
+const DATE_PRESETS = buildMovementDatePresets();
 
 // ── CSV helper ──────────────────────────────────────────────────────────────
 function buildCSV(movements: MovementRecord[]): string {
