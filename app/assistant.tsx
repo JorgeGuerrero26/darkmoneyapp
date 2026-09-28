@@ -56,6 +56,7 @@ import { useCreateObligationPaymentMutation, useCreateObligationMutation } from 
 import { useCreateBudgetMutation } from "../services/queries/budgets";
 import { parseBoldSegments } from "../lib/assistant-text";
 import { formatCurrency } from "../lib/format-currency";
+import { humanizeError } from "../lib/errors";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../constants/theme";
 
 type ChatItem = {
@@ -359,7 +360,7 @@ function AssistantScreen() {
           {
             id: `e${idRef.current}`,
             role: "assistant",
-            content: error instanceof Error ? error.message : "No se pudo responder. Inténtalo de nuevo.",
+            content: humanizeError(error),
             error: true,
           },
         ]);
