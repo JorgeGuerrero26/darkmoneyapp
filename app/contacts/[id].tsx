@@ -8,7 +8,6 @@ import { MoreVertical } from "lucide-react-native";
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { useOriginBackNavigation } from "../../hooks/useOriginBackNavigation";
 import { useAuth } from "../../lib/auth-context";
-import { humanizeError } from "../../lib/errors";
 import { useWorkspace } from "../../lib/workspace-context";
 import {
   useToggleCounterpartyPinMutation,
@@ -46,7 +45,7 @@ function ContactDetailScreen() {
   const { handleBack } = useOriginBackNavigation();
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
-  const { showToast } = useToast();
+  const { showToast, showErrorToast } = useToast();
   const [menuOpen, setMenuOpen] = useState(false);
 
   const [editFormVisible, setEditFormVisible] = useState(false);
@@ -76,10 +75,10 @@ function ContactDetailScreen() {
       { id: contact.id, input: { isArchived: true } },
       {
         onSuccess: () => {
-          showToast("Contacto archivado", "success");
+          showToast("Contacto archivado", "success", contact.name);
           void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
         },
-        onError: (err) => showToast(humanizeError(err), "error"),
+        onError: (err) => showErrorToast("No se pudo archivar el contacto", err),
       },
     );
   }
@@ -90,10 +89,10 @@ function ContactDetailScreen() {
       { id: contact.id, input: { isArchived: false } },
       {
         onSuccess: () => {
-          showToast("Contacto restaurado", "success");
+          showToast("Contacto restaurado", "success", contact.name);
           void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
         },
-        onError: (err) => showToast(humanizeError(err), "error"),
+        onError: (err) => showErrorToast("No se pudo restaurar el contacto", err),
       },
     );
   }
@@ -102,7 +101,7 @@ function ContactDetailScreen() {
     if (!contact) return;
     togglePinMutation.mutate(
       { id: contact.id, isPinned: !contact.isPinned },
-      { onError: (err) => showToast(humanizeError(err), "error") },
+      { onError: (err) => showErrorToast(contact.isPinned ? "No se pudo desfijar el contacto" : "No se pudo fijar el contacto", err) },
     );
   }
 

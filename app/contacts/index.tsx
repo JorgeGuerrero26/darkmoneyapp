@@ -23,7 +23,6 @@ import { UndoBanner } from "../../components/ui/UndoBanner";
 import { ContactCard, type ContactMetrics } from "../../components/domain/ContactCard";
 import { ContactForm } from "../../components/forms/ContactForm";
 import { useAuth } from "../../lib/auth-context";
-import { humanizeError } from "../../lib/errors";
 import { shareCsvAsFile } from "../../lib/share-csv-file";
 import { useWorkspace } from "../../lib/workspace-context";
 import {
@@ -54,7 +53,7 @@ function ContactsScreen() {
   const queryClient = useQueryClient();
   const { profile } = useAuth();
   const { activeWorkspaceId } = useWorkspace();
-  const { showToast } = useToast();
+  const { showToast, showErrorToast } = useToast();
 
   const { data: snapshot, isLoading } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const archiveMutation = useUpdateCounterpartyMutation(activeWorkspaceId);
@@ -115,7 +114,7 @@ function ContactsScreen() {
     });
     if (!pending) return;
     deleteMutation.mutate(pending.id, {
-      onError: (err) => showToast(humanizeError(err), "error"),
+      onError: (err) => showErrorToast("No se pudo eliminar el contacto", err),
     });
   }, [deleteMutation, showToast]);
 
@@ -306,7 +305,7 @@ function ContactsScreen() {
       { id, input: { isArchived: true } },
       {
         onSuccess: () => showToast("Contacto archivado", "success"),
-        onError: (error) => showToast(error.message, "error"),
+        onError: (error) => showErrorToast("No se pudo archivar el contacto", error),
       },
     );
   }, [archiveMutation, showToast]);
@@ -316,7 +315,7 @@ function ContactsScreen() {
       { id, input: { isArchived: false } },
       {
         onSuccess: () => showToast("Contacto restaurado", "success"),
-        onError: (error) => showToast(error.message, "error"),
+        onError: (error) => showErrorToast("No se pudo restaurar el contacto", error),
       },
     );
   }, [archiveMutation, showToast]);
@@ -324,7 +323,7 @@ function ContactsScreen() {
   const handleTogglePin = useCallback((contact: CounterpartyOverview) => {
     togglePinMutation.mutate(
       { id: contact.id, isPinned: !contact.isPinned },
-      { onError: (error) => showToast(error.message, "error") },
+      { onError: (error) => showErrorToast(contact.isPinned ? "No se pudo desfijar el contacto" : "No se pudo fijar el contacto", error) },
     );
   }, [showToast, togglePinMutation]);
 
@@ -369,7 +368,7 @@ function ContactsScreen() {
         await archiveMutation.mutateAsync({ id: contact.id, input: { isArchived: true } });
         archivedCount += 1;
       } catch (err: unknown) {
-        showToast(humanizeError(err), "error");
+        showErrorToast(`No se pudo archivar «${contact.name}»`, err);
       }
     }
     setBulkArchiveConfirm(false);
