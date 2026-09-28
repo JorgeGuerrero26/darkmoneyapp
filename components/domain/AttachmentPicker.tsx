@@ -21,7 +21,6 @@ import {
   buildEntityAttachmentDraftDir,
   type AttachmentEntityType,
 } from "../../lib/entity-attachments";
-import { humanizeError } from "../../lib/errors";
 import { useToast } from "../../hooks/useToast";
 import { useWorkspace } from "../../lib/workspace-context";
 import { useUserEntitlementQuery } from "../../services/queries/workspace-data";
@@ -120,7 +119,7 @@ export function AttachmentPicker({
 }: Props) {
   const { activeWorkspaceId } = useWorkspace();
   const { profile } = useAuth();
-  const { showToast } = useToast();
+  const { showToast, showErrorToast } = useToast();
   const queryClient = useQueryClient();
   const [uploading, setUploading] = useState(false);
   const [sourceSheetVisible, setSourceSheetVisible] = useState(false);
@@ -314,7 +313,7 @@ export function AttachmentPicker({
           fileName: asset.fileName,
           error: error instanceof Error ? error.message : String(error),
         });
-        showToast(humanizeError(error), "error");
+        showErrorToast("No se pudo subir el comprobante", error);
       }
     }
 
@@ -344,7 +343,7 @@ export function AttachmentPicker({
         invalidateAttachmentQueries();
       }
     } catch (error) {
-      showToast(humanizeError(error), "error");
+      showErrorToast("No se pudo quitar el comprobante", error);
     }
   }
 
