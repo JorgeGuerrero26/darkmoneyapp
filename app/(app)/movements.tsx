@@ -308,6 +308,10 @@ function MovementsScreen() {
   // ── Query ─────────────────────────────────────────────────────────────────
   const selectedPreset = DATE_PRESETS.find((p) => p.label === activeDatePreset);
   const isCustomRange = activeDatePreset === "Rango…";
+  const parsedAmountMin = Number(amountMin.replace(",", "."));
+  const parsedAmountMax = Number(amountMax.replace(",", "."));
+  const filterAmountMin = Number.isFinite(parsedAmountMin) && parsedAmountMin > 0 ? parsedAmountMin : null;
+  const filterAmountMax = Number.isFinite(parsedAmountMax) && parsedAmountMax > 0 ? parsedAmountMax : null;
 
   const filters = useMemo(() => ({
     ...(activeTypeFilters.length > 0 ? { types: activeTypeFilters } : {}),
@@ -322,7 +326,9 @@ function MovementsScreen() {
     ...(activeAccountId ? { accountId: activeAccountId } : {}),
     ...(activeMovementIds?.length ? { movementIds: activeMovementIds } : {}),
     ...(debouncedSearch ? { search: debouncedSearch } : {}),
-  }), [activeTypeFilters, activeStatusFilter, selectedPreset, isCustomRange, customDateFrom, customDateTo, activeCategoryId, activeCategoryScope, activeAccountId, activeMovementIds, debouncedSearch]);
+    ...(filterAmountMin != null ? { amountMin: filterAmountMin } : {}),
+    ...(filterAmountMax != null ? { amountMax: filterAmountMax } : {}),
+  }), [activeTypeFilters, activeStatusFilter, selectedPreset, isCustomRange, customDateFrom, customDateTo, activeCategoryId, activeCategoryScope, activeAccountId, activeMovementIds, debouncedSearch, filterAmountMin, filterAmountMax]);
 
   const {
     data,
@@ -338,23 +344,8 @@ function MovementsScreen() {
   const loadFailed = data === undefined && isError;
 
   const allMovements = useMemo(() => {
-    const base = (data?.pages.flatMap((p) => p.data) ?? []).filter((m) => !pendingDeleteIds.has(m.id));
-    const min = Number(amountMin.replace(",", "."));
-    const max = Number(amountMax.replace(",", "."));
-    const hasMin = Number.isFinite(min) && min > 0;
-    const hasMax = Number.isFinite(max) && max > 0;
-    if (!hasMin && !hasMax) return base;
-    return base.filter((m) => {
-      // Comparamos contra el monto "principal" del movimiento según el tipo.
-      // Para income/refund usamos destinationAmount; para el resto, sourceAmount.
-      const amount = m.movementType === "income" || m.movementType === "refund"
-        ? Math.abs(Number(m.destinationAmount ?? 0))
-        : Math.abs(Number(m.sourceAmount ?? 0));
-      if (hasMin && amount < min) return false;
-      if (hasMax && amount > max) return false;
-      return true;
-    });
-  }, [data, pendingDeleteIds, amountMin, amountMax]);
+    return (data?.pages.flatMap((p) => p.data) ?? []).filter((m) => !pendingDeleteIds.has(m.id));
+  }, [data, pendingDeleteIds]);
 
   const allMovementIds = useMemo(() => allMovements.map((m) => m.id), [allMovements]);
   const afterFirstPaint = useAfterFirstPaint();

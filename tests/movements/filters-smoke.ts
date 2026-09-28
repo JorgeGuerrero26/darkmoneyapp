@@ -167,6 +167,18 @@ function runFiltroMovementIdsVacioNoEmite() {
   assert(b.calls.length === 0, "movementIds vacío no emite llamada");
 }
 
+function runFiltroAmountRangeEnServidor() {
+  const b = run({ amountMin: 10.5, amountMax: 200 });
+  assert(
+    methodCalls(b, "gte").some((c) => c[1] === "movement_filter_amount" && c[2] === "10.5"),
+    "el mínimo se aplica antes de paginar",
+  );
+  assert(
+    methodCalls(b, "lte").some((c) => c[1] === "movement_filter_amount" && c[2] === "200"),
+    "el máximo se aplica antes de paginar",
+  );
+}
+
 function runCombinacionRicaTypesStatusSearchDateRange() {
   const b = run({
     types: ["expense", "income"],
@@ -200,6 +212,7 @@ function main() {
     ["search emite ilike con %wildcards%", runFiltroSearchIlikeConWildcards],
     ["movementIds emite in id", runFiltroMovementIdsIn],
     ["movementIds vacío no emite", runFiltroMovementIdsVacioNoEmite],
+    ["rango de montos se filtra en el servidor", runFiltroAmountRangeEnServidor],
     ["combinación rica de filtros", runCombinacionRicaTypesStatusSearchDateRange],
   ];
 

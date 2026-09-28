@@ -203,6 +203,8 @@ export function useMovementsFilteredSummaryQuery(
         p_date_to: filters.dateTo ? filterDateTo(filters.dateTo) : null,
         p_search: filters.search?.trim() ? filters.search.trim() : null,
         p_movement_ids: filters.movementIds?.length ? filters.movementIds : null,
+        p_amount_min: filters.amountMin ?? null,
+        p_amount_max: filters.amountMax ?? null,
       });
       if (error) throw error;
 

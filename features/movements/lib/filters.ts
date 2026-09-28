@@ -17,6 +17,8 @@ export type MovementFilters = {
   dateTo?: string;
   search?: string;
   movementIds?: number[];
+  amountMin?: number;
+  amountMax?: number;
 };
 
 /**
@@ -71,5 +73,7 @@ export function applyMovementFilters<T extends MovementFiltersBuilder<T>>(
   if (filters.movementIds?.length) {
     q = q.in("id", filters.movementIds);
   }
+  if (filters.amountMin != null) q = q.gte("movement_filter_amount", String(filters.amountMin));
+  if (filters.amountMax != null) q = q.lte("movement_filter_amount", String(filters.amountMax));
   return q;
 }
