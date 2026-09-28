@@ -70,7 +70,7 @@ function NotificationsScreen() {
   const router = useRouter();
   const { handleBack } = useOriginBackNavigation();
   const { user, profile } = useAuth();
-  const { showToast, showRichToast } = useToast();
+  const { showToast, showRichToast, showErrorToast } = useToast();
   const [selectedNotificationIds, setSelectedNotificationIds] = useState<number[]>([]);
   // Notifs whose delete has been requested but not yet committed (5s undo window).
   // Filtered out of the visible list so the row "vanishes" immediately; if the user
@@ -326,7 +326,7 @@ function NotificationsScreen() {
     if (unreadCount === 0) return;
     markAllRead.mutate(undefined, {
       onSuccess: () => showToast("Todas quedaron como leídas", "success"),
-      onError: (error: unknown) => showToast(error instanceof Error ? error.message : "No se pudo actualizar", "error"),
+      onError: (error: unknown) => showErrorToast("No se pudieron marcar como leídas", error),
     });
   }
 
@@ -334,7 +334,7 @@ function NotificationsScreen() {
     if (readCount === 0) return;
     markAllUnread.mutate(undefined, {
       onSuccess: () => showToast("Todas quedaron como no leídas", "success"),
-      onError: (error: unknown) => showToast(error instanceof Error ? error.message : "No se pudo actualizar", "error"),
+      onError: (error: unknown) => showErrorToast("No se pudieron marcar como no leídas", error),
     });
   }
 
@@ -345,7 +345,7 @@ function NotificationsScreen() {
       await deleteSelectedNotifications.mutateAsync(readIds);
       showToast(`${readIds.length} notificación${readIds.length !== 1 ? "es" : ""} eliminada${readIds.length !== 1 ? "s" : ""}`, "success");
     } catch (error: unknown) {
-      showToast(error instanceof Error ? error.message : "No se pudo eliminar", "error");
+      showErrorToast("No se pudieron eliminar las notificaciones", error);
     }
   }
 
@@ -361,7 +361,7 @@ function NotificationsScreen() {
       }
       clearSelection();
     } catch (error: unknown) {
-      showToast(error instanceof Error ? error.message : "No se pudo actualizar", "error");
+      showErrorToast("No se pudieron actualizar las notificaciones", error);
     }
   }
 
@@ -372,7 +372,7 @@ function NotificationsScreen() {
       showToast("Notificaciones archivadas", "success");
       clearSelection();
     } catch (error: unknown) {
-      showToast(error instanceof Error ? error.message : "No se pudo archivar", "error");
+      showErrorToast("No se pudieron archivar las notificaciones", error);
     }
   }
 
@@ -419,7 +419,7 @@ function NotificationsScreen() {
             for (const id of ids) next.delete(id);
             return next;
           });
-          showToast(error instanceof Error ? error.message : "No se pudo eliminar", "error");
+          showErrorToast(ids.length === 1 ? "No se pudo eliminar la notificación" : "No se pudieron eliminar las notificaciones", error);
         }
       })();
     }, 5000);
@@ -448,7 +448,7 @@ function NotificationsScreen() {
   const handleArchiveSingle = useCallback((notificationId: number) => {
     markRead.mutate(notificationId, {
       onSuccess: () => showToast("Notificación archivada", "success"),
-      onError: (error: unknown) => showToast(error instanceof Error ? error.message : "No se pudo archivar", "error"),
+      onError: (error: unknown) => showErrorToast("No se pudo archivar la notificación", error),
     });
   }, [markRead, showToast]);
 
