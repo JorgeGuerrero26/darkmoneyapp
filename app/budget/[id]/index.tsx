@@ -71,7 +71,7 @@ function BudgetDetailScreen() {
   const { reason: notificationReason, dismiss: dismissNotificationReason } = useNotificationReason();
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
-  const { showToast } = useToast();
+  const { showToast, showErrorToast } = useToast();
 
   const [editVisible, setEditVisible] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -127,9 +127,9 @@ function BudgetDetailScreen() {
     if (!budget) return;
     try {
       await duplicateMutation.mutateAsync(budget);
-      showToast("Presupuesto duplicado al próximo período", "success");
+      showToast("Presupuesto duplicado", "success", `${budget.name} · al próximo período`);
     } catch (err: unknown) {
-      showToast(err instanceof Error ? err.message : "No se pudo duplicar", "error");
+      showErrorToast("No se pudo duplicar el presupuesto", err);
     }
   }, [budget, duplicateMutation, showToast]);
 
@@ -137,7 +137,7 @@ function BudgetDetailScreen() {
     if (!budget) return;
     togglePinMutation.mutate(
       { id: budget.id, isPinned: !budget.isPinned },
-      { onError: (err) => showToast(err.message, "error") },
+      { onError: (err) => showErrorToast(budget.isPinned ? "No se pudo desfijar el presupuesto" : "No se pudo fijar el presupuesto", err) },
     );
   }, [budget, showToast, togglePinMutation]);
 
@@ -146,11 +146,11 @@ function BudgetDetailScreen() {
     setDeleteConfirmVisible(false);
     try {
       await deleteMutation.mutateAsync(budget.id);
-      showToast("Presupuesto eliminado", "success");
+      showToast("Presupuesto eliminado", "success", budget.name);
       void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
       handleBack();
     } catch (err: unknown) {
-      showToast(err instanceof Error ? err.message : "No se pudo eliminar", "error");
+      showErrorToast("No se pudo eliminar el presupuesto", err);
     }
   }, [budget, deleteMutation, handleBack, queryClient, showToast]);
 
