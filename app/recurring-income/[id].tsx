@@ -67,7 +67,7 @@ function RecurringIncomeDetailScreen() {
   });
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
-  const { showToast } = useToast();
+  const { showToast, showErrorToast } = useToast();
 
   const [editFormVisible, setEditFormVisible] = useState(false);
   const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
@@ -118,7 +118,7 @@ function RecurringIncomeDetailScreen() {
     if (!item) return;
     updateMutation.mutate(
       { id: item.id, input: { payerPartyId } },
-      { onError: (err) => showToast(err.message, "error") },
+      { onError: (err) => showErrorToast("No se pudo cambiar quién paga", err) },
     );
   }, [item, showToast, updateMutation]);
 
@@ -128,8 +128,8 @@ function RecurringIncomeDetailScreen() {
     updateMutation.mutate(
       { id: item.id, input: { status: newStatus } },
       {
-        onSuccess: () => showToast(newStatus === "paused" ? "Pausado" : "Reactivado", "success"),
-        onError: (e) => showToast(e.message, "error"),
+        onSuccess: () => showToast(newStatus === "paused" ? "Ingreso pausado" : "Ingreso reactivado", "success", item.name),
+        onError: (e) => showErrorToast(newStatus === "paused" ? "No se pudo pausar el ingreso" : "No se pudo reactivar el ingreso", e),
       },
     );
   }, [item, updateMutation, showToast]);
@@ -138,7 +138,7 @@ function RecurringIncomeDetailScreen() {
     if (!item) return;
     togglePinMutation.mutate(
       { id: item.id, isPinned: !item.isPinned },
-      { onError: (err) => showToast(err.message, "error") },
+      { onError: (err) => showErrorToast(item.isPinned ? "No se pudo desfijar el ingreso" : "No se pudo fijar el ingreso", err) },
     );
   }, [item, showToast, togglePinMutation]);
 
@@ -150,7 +150,7 @@ function RecurringIncomeDetailScreen() {
       showToast("Ingreso fijo eliminado", "success");
       handleBack();
     } catch (err: unknown) {
-      showToast(err instanceof Error ? err.message : "No se pudo eliminar", "error");
+      showErrorToast("No se pudo eliminar el ingreso fijo", err);
     }
   }, [item, deleteMutation, handleBack, showToast]);
 

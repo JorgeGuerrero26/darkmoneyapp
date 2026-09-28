@@ -75,7 +75,7 @@ function RecurringIncomeScreen() {
   const { handleBack } = useOriginBackNavigation();
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
-  const { showToast } = useToast();
+  const { showToast, showErrorToast } = useToast();
   const { reason: notificationReason } = useNotificationReason();
 
   const { data: snapshot, isLoading } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
@@ -323,7 +323,7 @@ function RecurringIncomeScreen() {
     pendingDeleteLabels.current.set(item.id, item.name);
     const run = () => {
       deleteMutation.mutate(item.id, {
-        onError: (error) => showToast(error.message, "error"),
+        onError: (error) => showErrorToast(`No se pudo eliminar «${item.name}»`, error),
       });
       setPendingDeleteIds((prev) => {
         const next = new Set(prev);
@@ -359,7 +359,7 @@ function RecurringIncomeScreen() {
   const handleTogglePin = useCallback((item: RecurringIncomeSummary) => {
     togglePinMutation.mutate(
       { id: item.id, isPinned: !item.isPinned },
-      { onError: (err) => showToast(err.message, "error") },
+      { onError: (err) => showErrorToast(item.isPinned ? "No se pudo desfijar el ingreso" : "No se pudo fijar el ingreso", err) },
     );
   }, [showToast, togglePinMutation]);
 
@@ -368,8 +368,8 @@ function RecurringIncomeScreen() {
     updateMutation.mutate(
       { id: item.id, input: { status: nextStatus } },
       {
-        onSuccess: () => showToast(nextStatus === "paused" ? "Ingreso pausado" : "Ingreso reactivado", "success"),
-        onError: (error) => showToast(error.message, "error"),
+        onSuccess: () => showToast(nextStatus === "paused" ? "Ingreso pausado" : "Ingreso reactivado", "success", item.name),
+        onError: (error) => showErrorToast(nextStatus === "paused" ? "No se pudo pausar el ingreso" : "No se pudo reactivar el ingreso", error),
       },
     );
   }, [showToast, updateMutation]);
@@ -387,7 +387,7 @@ function RecurringIncomeScreen() {
         await updateMutation.mutateAsync({ id: item.id, input: { status: "paused" } });
         pausedCount += 1;
       } catch (err: unknown) {
-        showToast(err instanceof Error ? err.message : "Error al pausar", "error");
+        showErrorToast(`No se pudo pausar «${item.name}»`, err);
       }
     }
     exitSelectMode();
@@ -413,7 +413,7 @@ function RecurringIncomeScreen() {
       const csv = buildRecurringIncomeCsv(rows);
       await shareCsvAsFile(csv, `ingresos-fijos-${activeWorkspace?.name?.replace(/\s+/g, "_") ?? "workspace"}.csv`);
     } catch (error: unknown) {
-      showToast(error instanceof Error ? error.message : "Error al exportar", "error");
+      showErrorToast("No se pudo exportar el CSV", error);
     }
   }, [activeWorkspace?.name, showToast]);
 
