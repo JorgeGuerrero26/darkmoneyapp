@@ -2,10 +2,6 @@ import { useEffect, useRef } from "react";
 import { Plus } from "lucide-react-native";
 import { Animated, StyleSheet, TouchableOpacity, View } from "react-native";
 import { COLORS, RADIUS, SHADOW, SPACING } from "../../constants/theme";
-import { useUiStore } from "../../store/ui-store";
-
-/** Lo que sube el botón cuando hay un aviso debajo: su alto máximo más el aire. */
-const TOAST_CLEARANCE = 72;
 
 type Props = {
   onPress: () => void;
@@ -19,10 +15,6 @@ type Props = {
 
 export function FAB({ onPress, bottom, onLongPress, accessibilityLabel = "Agregar", accessibilityHint }: Props) {
   const scale = useRef(new Animated.Value(0)).current;
-  /* El aviso de confirmación se pinta justo encima de la barra y el botón le quedaba solapado.
-     Se aparta mientras dure, en vez de competir por el mismo sitio. */
-  const toastVisible = useUiStore((state) => state.toastVisible);
-  const lift = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.spring(scale, {
@@ -33,17 +25,12 @@ export function FAB({ onPress, bottom, onLongPress, accessibilityLabel = "Agrega
     }).start();
   }, [scale]);
 
-  useEffect(() => {
-    Animated.spring(lift, {
-      toValue: toastVisible ? -TOAST_CLEARANCE : 0,
-      tension: 90,
-      friction: 12,
-      useNativeDriver: true,
-    }).start();
-  }, [lift, toastVisible]);
+  /* El botón ya no se aparta cuando hay un aviso (revisión 40). Subirlo era el patrón de
+     snackbar de Android: el control se movía justo cuando el usuario iba a tocarlo otra vez. El
+     aviso ahora baja desde arriba y el + se queda quieto. */
 
   return (
-    <Animated.View style={[styles.glowWrap, { bottom, transform: [{ translateY: lift }, { scale }] }]}>
+    <Animated.View style={[styles.glowWrap, { bottom, transform: [{ scale }] }]}>
       <TouchableOpacity
         style={styles.fab}
         onPress={onPress}

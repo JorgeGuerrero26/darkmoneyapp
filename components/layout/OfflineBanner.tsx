@@ -15,6 +15,7 @@ import {
 } from "../../lib/slow-network-signal";
 import { isStartupComplete } from "../../lib/startup-timing";
 import { SafeBlurView } from "../ui/SafeBlurView";
+import { useUiStore } from "../../store/ui-store";
 
 /** Las queries que ahora mismo dejan al usuario esperando algo que no puede ver. */
 function blockedQueriesNow(queryClient: ReturnType<typeof useQueryClient>) {
@@ -97,6 +98,13 @@ export function OfflineBanner() {
   const visible = !isConnected || isSlow;
   const anim = useRef(new Animated.Value(visible ? 1 : 0)).current;
 
+  // El aviso de confirmación comparte esta franja de arriba y se coloca debajo de la píldora.
+  const [pillHeight, setPillHeight] = useState(0);
+  const setNetworkBannerHeight = useUiStore((state) => state.setNetworkBannerHeight);
+  useEffect(() => {
+    setNetworkBannerHeight(visible ? pillHeight : 0);
+  }, [visible, pillHeight, setNetworkBannerHeight]);
+
   useEffect(() => {
     Animated.timing(anim, {
       toValue: visible ? 1 : 0,
@@ -114,7 +122,10 @@ export function OfflineBanner() {
       pointerEvents="none"
       style={[styles.overlay, { top: insets.top + SPACING.sm }]}
     >
-      <Animated.View style={[styles.pill, { opacity: anim, transform: [{ translateY }] }]}>
+      <Animated.View
+        onLayout={(e) => setPillHeight(e.nativeEvent.layout.height)}
+        style={[styles.pill, { opacity: anim, transform: [{ translateY }] }]}
+      >
         <SafeBlurView
           intensity={26}
           tint="dark"

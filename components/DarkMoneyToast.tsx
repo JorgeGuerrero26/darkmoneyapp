@@ -7,11 +7,10 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { Animated, PanResponder, Pressable, StyleSheet, Text, View } from "react-native";
+import { AccessibilityInfo, Animated, PanResponder, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING } from "../constants/theme";
-import { TAB_BAR_CONTENT_HEIGHT } from "../constants/floating-tab-bar";
 import { useUiStore } from "../store/ui-store";
 
 /**
@@ -29,6 +28,12 @@ import { useUiStore } from "../store/ui-store";
  * Un aviso tiene dos trabajos: decir qué pasó y ofrecer deshacerlo. **Los dos son texto.** El
  * color se reserva para el único caso en que el usuario tiene que reaccionar: que la operación
  * falle. Así, ver color en un aviso significa una sola cosa.
+ *
+ * **Baja desde arriba** (revisión 40). Antes aparecía abajo, sobre la barra de pestañas, y
+ * empujaba el botón + hacia arriba: el snackbar de Material Design, que es un patrón de Android.
+ * iOS no tiene aviso propio abajo; confirma con un banner arriba, y ningún control se desplaza.
+ * Ahora nada se mueve: el + se queda quieto justo cuando uno va a tocarlo para registrar el
+ * siguiente. Se descarta deslizándolo hacia arriba.
  */
 
 export type ToastType = "success" | "update" | "transfer" | "delete" | "info" | "error";
@@ -74,7 +79,9 @@ export function DarkMoneyToast({
 }) {
   const insets = useSafeAreaInsets();
   const opacity = useRef(new Animated.Value(0)).current;
-  const translateY = useRef(new Animated.Value(20)).current;
+  /** Entra y sale por arriba: el valor negativo es "fuera de la pantalla, hacia arriba". */
+  const translateY = useRef(new Animated.Value(-20)).current;
+  const networkBannerHeight = useUiStore((state) => state.networkBannerHeight);
   const dragY = useRef(new Animated.Value(0)).current;
   const progress = useRef(new Animated.Value(1)).current;
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -86,7 +93,7 @@ export function DarkMoneyToast({
     if (timerRef.current) clearTimeout(timerRef.current);
     Animated.parallel([
       Animated.timing(opacity, { toValue: 0, duration: 180, useNativeDriver: true }),
-      Animated.timing(translateY, { toValue: 24, duration: 180, useNativeDriver: true }),
+      Animated.timing(translateY, { toValue: -24, duration: 180, useNativeDriver: true }),
       Animated.timing(dragY, { toValue: 0, duration: 180, useNativeDriver: true }),
     ]).start(() => {
       dismissingRef.current = false;
@@ -97,10 +104,11 @@ export function DarkMoneyToast({
   const panResponder = useMemo(
     () =>
       PanResponder.create({
-        onMoveShouldSetPanResponder: (_e, gs) => gs.dy > 6 && Math.abs(gs.dy) > Math.abs(gs.dx),
-        onPanResponderMove: (_e, gs) => dragY.setValue(Math.max(0, gs.dy)),
+        // Hacia arriba, por donde vino. Hacia abajo no se mueve: no hay nada que descubrir ahí.
+        onMoveShouldSetPanResponder: (_e, gs) => gs.dy < -6 && Math.abs(gs.dy) > Math.abs(gs.dx),
+        onPanResponderMove: (_e, gs) => dragY.setValue(Math.min(0, gs.dy)),
         onPanResponderRelease: (_e, gs) => {
-          if (gs.dy > 40 || gs.vy > 0.6) runHide();
+          if (gs.dy < -30 || gs.vy < -0.5) runHide();
           else Animated.spring(dragY, { toValue: 0, useNativeDriver: true, tension: 80, friction: 10 }).start();
         },
         onPanResponderTerminate: () =>
@@ -114,7 +122,7 @@ export function DarkMoneyToast({
 
     dismissingRef.current = false;
     opacity.setValue(0);
-    translateY.setValue(20);
+    translateY.setValue(-20);
     dragY.setValue(0);
     progress.setValue(1);
 
@@ -130,6 +138,12 @@ export function DarkMoneyToast({
     if (config.onUndo) {
       Animated.timing(progress, { toValue: 0, duration, useNativeDriver: false }).start();
     }
+
+    // Un banner que aparece arriba y se va solo no existe para quien usa lector de pantalla si
+    // no se anuncia. El botón de deshacer sigue siendo alcanzable mientras dura.
+    AccessibilityInfo.announceForAccessibility(
+      [config.title, config.subtitle ?? config.amount].filter(Boolean).join(". "),
+    );
 
     timerRef.current = setTimeout(runHide, duration);
     return () => {
@@ -160,9 +174,13 @@ export function DarkMoneyToast({
         styles.toast,
         {
           minHeight: HEIGHT[kind],
-          /* Sobre la barra: antes tapaba dos íconos de navegación y, por arriba, la fila que
-             acababa de cambiar — justo la que uno quiere mirar. */
-          bottom: insets.bottom + TAB_BAR_CONTENT_HEIGHT + SPACING.sm,
+          /* Bajo la barra de estado (la Dynamic Island en iPhone). Si la píldora de red está a
+             la vista, debajo de ella: la conexión es el contexto de todo lo demás, y las dos
+             comparten franja. */
+          top:
+            insets.top +
+            SPACING.xs +
+            (networkBannerHeight > 0 ? networkBannerHeight + SPACING.xs : 0),
           opacity,
           transform: [{ translateY: Animated.add(translateY, dragY) }],
         },
@@ -226,7 +244,6 @@ const ToastContext = createContext<ToastContextValue>({ show: () => {} });
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [config, setConfig] = useState<ToastConfig | null>(null);
-  const setToastVisible = useUiStore((state) => state.setToastVisible);
 
   const show = useCallback((cfg: ToastConfig) => {
     setConfig(null);
@@ -234,11 +251,6 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const hide = useCallback(() => setConfig(null), []);
-
-  // El botón flotante sube mientras el aviso está en pantalla, en vez de quedar solapado.
-  useEffect(() => {
-    setToastVisible(config != null);
-  }, [config, setToastVisible]);
 
   return (
     <ToastContext.Provider value={{ show }}>

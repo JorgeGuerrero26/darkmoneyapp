@@ -43,9 +43,13 @@ type UiState = {
   /** Incrementing token — each new value triggers the SuccessGlow animation. */
   successGlowToken: number;
   showToast: (message: string, variant?: ToastVariant) => void;
-  /** Hay un aviso de confirmación en pantalla: el botón flotante se aparta. */
-  toastVisible: boolean;
-  setToastVisible: (visible: boolean) => void;
+  /**
+   * Alto de la píldora "Sin conexión" / "tardando más de lo normal", o 0 si no está. El aviso
+   * de confirmación vive en la misma franja de arriba y se coloca debajo de ella. Transitorio:
+   * no entra en `partialize`, así que no se guarda en disco.
+   */
+  networkBannerHeight: number;
+  setNetworkBannerHeight: (height: number) => void;
   dismissToast: (id: string) => void;
   showActivityNotice: (message: string, description?: string) => string;
   dismissActivityNotice: (id?: string) => void;
@@ -61,7 +65,7 @@ export const useUiStore = create<UiState>()(
   persist(
     (set) => ({
       toasts: [],
-      toastVisible: false,
+      networkBannerHeight: 0,
       activityNotice: null,
       isBiometricLocked: false,
       biometricEnabled: false,
@@ -73,7 +77,7 @@ export const useUiStore = create<UiState>()(
       togglePrivacyMode: () => set((state) => ({ privacyMode: !state.privacyMode })),
       successGlowToken: 0,
 
-      setToastVisible: (visible) => set({ toastVisible: visible }),
+      setNetworkBannerHeight: (height) => set({ networkBannerHeight: height }),
       showToast: (message, variant = "success") =>
         set((state) => ({
           toasts: [
