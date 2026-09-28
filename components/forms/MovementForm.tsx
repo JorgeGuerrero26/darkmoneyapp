@@ -75,6 +75,8 @@ import { hasSplitGroup, splitLineDescription, splitLineMetadata, validateSplit, 
 import { useMovementFormSuggestions } from "../../features/movements/hooks/useMovementFormSuggestions";
 import { useMovementAttachmentSync } from "../../features/movements/hooks/useMovementAttachmentSync";
 import { buildMovementCreateInput, buildMovementUpdateInput } from "../../features/movements/lib/movement-save-contract";
+import { describeSavedMovement } from "../../features/movements/lib/describeSavedMovement";
+import { formatCurrency } from "../../lib/format-currency";
 import { useFrequentTransferPairQuery } from "../../services/queries/notification-detection";
 import {
   validateMovementForm,
@@ -1075,10 +1077,20 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         persistCategoryLearning(created.id, autoDesc);
         // Los comprobantes se sincronizan después de cerrar el formulario para no bloquear la UI.
         // Deshacer elimina el movimiento recién creado (la dedupe key se libera con la fila).
+        // Qué se guardó y cuánto (revisión 40): es cuando uno comprueba que registró lo que creía.
+        const saved = describeSavedMovement({
+          movementType: form.movementType,
+          description: payload.description,
+          sourceAmount: payload.sourceAmount,
+          destinationAmount: payload.destinationAmount,
+          sourceCurrency: sourceAccount?.currencyCode ?? null,
+          destinationCurrency: destinationAccount?.currencyCode ?? null,
+          formatAmount: formatCurrency,
+        });
         showRichToast({
           type: "success",
-          title: "Movimiento guardado",
-          subtitle: "Toca deshacer si fue un error",
+          title: saved.title,
+          subtitle: saved.subtitle ?? undefined,
           onUndo: () => deleteMovement.mutate(created.id),
         });
         setLastMovementAccountId(form.sourceAccountId);

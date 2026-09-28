@@ -13,6 +13,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "1.0.10",
     title: "DarkMoney estrena look",
     changes: [
+      "Al guardar algo, el aviso ahora baja desde arriba y dice qué guardaste y cuánto —\"Gasto guardado · Cebada · −S/ 3.00\"—, con Deshacer a mano. El botón + ya no se mueve de su sitio mientras se ve el aviso, así puedes registrar el siguiente sin buscarlo. Para quitarlo antes, deslízalo hacia arriba.",
       "En Cuentas, el botón Filtros junto al buscador permite elegir activas, archivadas o todas, y filtrar por una o varias instituciones.",
       "Tus cuentas aparecen agrupadas por tipo: bancos, ahorro, tarjetas, efectivo y los demás. Las archivadas siguen al final cuando eliges mostrarlas.",
       "Al abrir un movimiento o una cuenta, el detalle entra con la misma transición lateral que al abrir una suscripción.",
