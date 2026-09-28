@@ -55,7 +55,7 @@ function SpendTypesScreen() {
   const { handleBack } = useOriginBackNavigation({ defaultRoute: "/(app)/more" });
   const { profile } = useAuth();
   const { activeWorkspaceId } = useWorkspace();
-  const { showToast } = useToast();
+  const { showToast, showErrorToast } = useToast();
 
   const { data: spendTypes = [], isLoading } = useSpendTypesQuery(activeWorkspaceId);
   const { data: snapshot } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
@@ -113,9 +113,9 @@ function SpendTypesScreen() {
       for (const [index, starter] of STARTERS.entries()) {
         await createMutation.mutateAsync({ ...starter, sortOrder: index });
       }
-      showToast("Listo: necesidades, deseos y ahorros", "success");
+      showToast("Tipos de gasto creados", "success", "Necesidades, deseos y ahorros");
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "No se pudieron crear", "error");
+      showErrorToast("No se pudieron crear los tipos de gasto", error);
     }
   }, [createMutation, showToast]);
 
@@ -125,9 +125,9 @@ function SpendTypesScreen() {
     setDeleteTarget(null);
     try {
       await deleteMutation.mutateAsync(target.id);
-      showToast(`Se eliminó «${target.name}»`, "success");
+      showToast("Tipo de gasto eliminado", "success", target.name);
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "No se pudo eliminar", "error");
+      showErrorToast(`No se pudo eliminar «${target.name}»`, error);
     }
   }, [deleteMutation, deleteTarget, showToast]);
 
