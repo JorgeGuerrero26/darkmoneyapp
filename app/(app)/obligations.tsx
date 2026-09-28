@@ -10,7 +10,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { useAuth } from "../../lib/auth-context";
-import { humanizeError } from "../../lib/errors";
 import { parseDisplayDate } from "../../lib/date";
 import { useWorkspace } from "../../lib/workspace-context";
 import { useUiStore } from "../../store/ui-store";
@@ -96,7 +95,7 @@ function ObligationsScreen() {
   const queryClient = useQueryClient();
   const { profile, session } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
-  const { showToast } = useToast();
+  const { showToast, showErrorToast } = useToast();
   const { reason: notificationReason } = useNotificationReason();
   const deleteMutation = useDeleteObligationMutation(activeWorkspaceId);
   const archiveMutation = useArchiveObligationMutation(activeWorkspaceId);
@@ -194,9 +193,9 @@ function ObligationsScreen() {
     }
     try {
       await archiveMutation.mutateAsync({ id: ob.id, archived: true });
-      showToast("Obligación archivada. Para eliminarla, primero borra sus eventos.", "success");
+      showToast("Obligación archivada", "success", "Para eliminarla, primero borra sus eventos");
     } catch (err: unknown) {
-      showToast(humanizeError(err), "error");
+      showErrorToast(`No se pudo archivar «${ob.title}»`, err);
     }
   }
 
@@ -221,7 +220,7 @@ function ObligationsScreen() {
     });
     if (!pending) return;
     deleteMutation.mutate(pending.id, {
-      onError: (e) => showToast(e.message, "error"),
+      onError: (e) => showErrorToast("No se pudo eliminar la obligación", e),
     });
   }, [deleteMutation, showToast]);
 
@@ -484,7 +483,7 @@ function ObligationsScreen() {
         await archiveMutation.mutateAsync({ id: ob.id, archived: true });
         archivedCount += 1;
       } catch (err: unknown) {
-        showToast(humanizeError(err), "error");
+        showErrorToast(`No se pudo archivar «${ob.title}»`, err);
       }
     }
     exitSelectMode();
@@ -506,7 +505,7 @@ function ObligationsScreen() {
         await deleteMutation.mutateAsync(ob.id);
         deletedCount += 1;
       } catch (err: unknown) {
-        showToast(humanizeError(err), "error");
+        showErrorToast(`No se pudo eliminar «${ob.title}»`, err);
       }
     }
     exitSelectMode();
@@ -545,7 +544,7 @@ function ObligationsScreen() {
       });
       showToast("Ya no verás esta cuenta", "success");
     } catch (error) {
-      showToast(humanizeError(error), "error");
+      showErrorToast("No se pudo quitar la cuenta compartida", error);
     }
   }
 

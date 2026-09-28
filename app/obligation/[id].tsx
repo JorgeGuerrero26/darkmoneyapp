@@ -21,7 +21,6 @@ import { useAuth } from "../../lib/auth-context";
 import { useUiStore } from "../../store/ui-store";
 import { removeAttachmentFile } from "../../lib/entity-attachments";
 import { useWorkspace } from "../../lib/workspace-context";
-import { humanizeError } from "../../lib/errors";
 import { sortByName } from "../../lib/sort-locale";
 import { sortObligationEventsNewestFirst } from "../../lib/sort-obligation-events";
 import {
@@ -166,7 +165,7 @@ function ObligationDetailScreen() {
   const { profile, session } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
 
-  const { showToast, showRichToast } = useToast();
+  const { showToast, showRichToast, showErrorToast } = useToast();
   const [editFormVisible, setEditFormVisible] = useState(false);
   const [detailMenuOpen, setDetailMenuOpen] = useState(false);
   /** El historial completo se abre desde "Ver los N movimientos". */
@@ -755,7 +754,7 @@ function ObligationDetailScreen() {
         duration: 5000,
       });
     } catch (err) {
-      showToast(humanizeError(err), "error");
+      showErrorToast("No se pudo enviar la invitación", err);
     }
   }
 
@@ -782,7 +781,7 @@ function ObligationDetailScreen() {
     try {
       await sharePdfFromHtml(reportResult.html, reportResult.fileName, "Compartir reporte");
     } catch (err) {
-      showToast(humanizeError(err), "error");
+      showErrorToast("No se pudo compartir el reporte", err);
     } finally {
       setIsSharingReport(false);
     }
@@ -874,7 +873,7 @@ function ObligationDetailScreen() {
           data?.deletedOwnerMovementId ? "Evento y movimiento eliminados" : "Evento eliminado",
           "success",
         ),
-        onError: (err) => showToast(humanizeError(err), "error"),
+        onError: (err) => showErrorToast("No se pudo eliminar el evento", err),
       },
     );
   }
@@ -979,7 +978,7 @@ function ObligationDetailScreen() {
       }
       showToast("Comprobante eliminado", "success");
     } catch (err: unknown) {
-      showToast(humanizeError(err), "error");
+      showErrorToast("No se pudo eliminar el comprobante", err);
     } finally {
       setDeletingEventAttachmentPath(null);
     }
