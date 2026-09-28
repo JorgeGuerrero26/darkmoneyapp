@@ -1,4 +1,5 @@
 import * as Haptics from "expo-haptics";
+import { humanizeError } from "../lib/errors";
 import { InteractionManager } from "react-native";
 import { useUiStore } from "../store/ui-store";
 import type { ToastVariant } from "../store/ui-store";
@@ -18,7 +19,11 @@ export function useToast() {
   const { dismissToast, triggerSuccessGlow } = useUiStore();
   const { show } = useDarkMoneyToast();
 
-  function showToast(message: string, variant?: ToastVariant) {
+  /**
+   * `detail` es la segunda línea: a qué afectó ("Transporte", "Cuenta Sueldo · S/ 35.29"). Un
+   * aviso con una sola línea dice qué pasó pero no a qué, justo cuando uno quiere comprobarlo.
+   */
+  function showToast(message: string, variant?: ToastVariant, detail?: string | null) {
     if (variant === "success") {
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       triggerSuccessGlow();
@@ -31,6 +36,7 @@ export function useToast() {
       show({
         type: VARIANT_TO_TYPE[variant ?? "info"] ?? "success",
         title: message,
+        subtitle: detail?.trim() || undefined,
       });
     });
   }
@@ -52,5 +58,20 @@ export function useToast() {
     });
   }
 
-  return { showToast, showRichToast, dismissToast };
+  /**
+   * Error en dos líneas: qué no se pudo hacer, y por qué en palabras.
+   *
+   * Sustituye a `showToast(error.message, "error")`, que ponía el mensaje técnico como TÍTULO:
+   * el aviso no decía qué se intentaba hacer y lo que explicaba era texto de programador.
+   * `action` se escribe como el usuario lo diría: "No se pudo archivar la cuenta".
+   */
+  function showErrorToast(action: string, err?: unknown) {
+    showRichToast({
+      type: "error",
+      title: action,
+      subtitle: err === undefined ? undefined : humanizeError(err),
+    });
+  }
+
+  return { showToast, showRichToast, showErrorToast, dismissToast };
 }

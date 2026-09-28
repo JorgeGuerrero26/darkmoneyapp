@@ -2,6 +2,13 @@
  * Maps Supabase/PostgreSQL error codes and common error messages
  * to human-readable Spanish strings.
  */
+/** Lo que se dice cuando no hay nada útil que traducir. */
+const GENERIC_ERROR = "Algo salió mal. Inténtalo de nuevo";
+
+/** Firmas de errores internos de JavaScript: nunca se muestran tal cual. */
+const JS_RUNTIME_ERROR =
+  /cannot read propert|cannot set propert|undefined is not|null is not|is not a function|is not an object|is not defined|unexpected token|maximum call stack|\[object object\]/i;
+
 export function humanizeError(err: unknown): string {
   const msg: string =
     err instanceof Error
@@ -12,8 +19,13 @@ export function humanizeError(err: unknown): string {
           ? err
           : "";
 
-  if (!msg) return "Error desconocido";
+  if (!msg) return GENERIC_ERROR;
   const lowerMsg = msg.toLowerCase();
+
+  // Un fallo interno de la app no le dice nada al usuario. "Cannot read property 'map' of
+  // undefined" llegaba entero a un aviso al desarchivar una cuenta: medía 40 caracteres y el
+  // último recurso de abajo deja pasar cualquier mensaje corto.
+  if (JS_RUNTIME_ERROR.test(msg)) return GENERIC_ERROR;
 
   if (msg.includes("23505") || lowerMsg.includes("unique") || lowerMsg.includes("duplicate")) {
     if (lowerMsg.includes("email")) return "Ya existe una cuenta con ese correo";
@@ -90,7 +102,8 @@ export function humanizeError(err: unknown): string {
     return "Sin conexión. Revisa tu internet e intenta de nuevo";
   }
   if (lowerMsg.includes("invalid jwt")) {
-    return "La Edge Function rechazó el JWT actual. Revisa la sesión activa o la configuración verify_jwt de esa función.";
+    // Antes nombraba la Edge Function y verify_jwt: texto para quien programa, no para quien usa.
+    return "Tu sesión expiró. Vuelve a iniciar sesión";
   }
   if (msg.includes("JWT") || lowerMsg.includes("session") || lowerMsg.includes("token")) {
     return "Tu sesión expiró. Vuelve a iniciar sesión";
