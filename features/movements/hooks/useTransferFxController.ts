@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useSyncExchangeRatePairMutation } from "../../../services/queries/workspace-data";
+import { humanizeError } from "../../../lib/errors";
 import type { AccountSummary, ExchangeRateSummary, MovementType } from "../../../types/domain";
 import {
   findTransferExchangeRate,
@@ -106,7 +107,7 @@ export function useTransferFxController({
       })
       .catch((error) => {
         if (cancelled) return;
-        setTransferRateError(error instanceof Error ? error.message : "No se pudo actualizar el tipo de cambio");
+        setTransferRateError(humanizeError(error));
       });
 
     return () => {

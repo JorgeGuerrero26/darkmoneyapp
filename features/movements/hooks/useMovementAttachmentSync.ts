@@ -5,7 +5,6 @@ import {
   mirrorMovementAttachmentsToObligationEvent,
   promoteDraftAttachmentsToEntity,
 } from "../../../lib/entity-attachments";
-import { humanizeError } from "../../../lib/errors";
 import { useToast } from "../../../hooks/useToast";
 import { useUiStore } from "../../../store/ui-store";
 
@@ -18,7 +17,7 @@ import { useUiStore } from "../../../store/ui-store";
  */
 export function useMovementAttachmentSync(workspaceId: number | null) {
   const queryClient = useQueryClient();
-  const { showToast } = useToast();
+  const { showToast, showErrorToast } = useToast();
   const { showActivityNotice, dismissActivityNotice } = useUiStore();
 
   /** Copia los borradores locales al storage del movimiento recién creado. */
@@ -40,7 +39,7 @@ export function useMovementAttachmentSync(workspaceId: number | null) {
         });
       })
       .catch((attachmentError) => {
-        showToast(humanizeError(attachmentError), "error");
+        showErrorToast("Los comprobantes no se copiaron", attachmentError);
       })
       .finally(() => dismissActivityNotice(noticeId));
   }
@@ -71,7 +70,7 @@ export function useMovementAttachmentSync(workspaceId: number | null) {
         ]);
       })
       .catch((attachmentError) => {
-        showToast(humanizeError(attachmentError), "error");
+        showErrorToast("Los comprobantes no se copiaron", attachmentError);
       })
       .finally(() => dismissActivityNotice(noticeId));
   }
