@@ -195,9 +195,9 @@ export function DarkMoneyToast({
         {badge ? (
           <View style={[styles.badge, badge === "alert" && styles.badgeFailed]}>
             {badge === "alert" ? (
-              <AlertTriangle size={17} color={COLORS.rosewood} strokeWidth={2.2} />
+              <AlertTriangle size={16} color={COLORS.rosewood} strokeWidth={2.2} />
             ) : (
-              <Check size={17} color={COLORS.pine} strokeWidth={2.6} />
+              <Check size={16} color={COLORS.pine} strokeWidth={2.6} />
             )}
           </View>
         ) : null}
@@ -295,15 +295,17 @@ const styles = StyleSheet.create({
   },
   /** El único caso con color: hay algo que el usuario tiene que hacer. */
   pillFailed: { borderColor: "rgba(226,160,126,0.35)" },
+  /* 36 y un tinte más leve (12 %, antes 40 al 15 %): a 40 el círculo pesaba más que el texto en
+     una píldora de 60 y se leía como un botón oscuro. El check conserva su verde entero. */
   badge: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: COLORS.pine + "26",
+    backgroundColor: COLORS.pine + "1F",
   },
-  badgeFailed: { backgroundColor: COLORS.rosewood + "26" },
+  badgeFailed: { backgroundColor: COLORS.rosewood + "1F" },
   body: { flex: 1, minWidth: 0 },
   title: {
     fontFamily: FONT_FAMILY.bodySemibold,
