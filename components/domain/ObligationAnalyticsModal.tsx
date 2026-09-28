@@ -31,7 +31,6 @@ import { DatePickerInput } from "../ui/DatePickerInput";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { parseDisplayDate, todayPeru } from "../../lib/date";
 import { useAuth } from "../../lib/auth-context";
-import { humanizeError } from "../../lib/errors";
 import { useWorkspace } from "../../lib/workspace-context";
 import { sortByName } from "../../lib/sort-locale";
 import { COLORS, ELEVATION, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
@@ -128,7 +127,7 @@ type EventTypeFilter = "all" | "approved" | "pending" | "rejected";
 export function ObligationAnalyticsModal({ visible, obligation, onClose, onEventTap, userId }: Props) {
   const { profile } = useAuth();
   const { activeWorkspaceId } = useWorkspace();
-  const { showToast } = useToast();
+  const { showToast, showErrorToast } = useToast();
   const [historyPreset, setHistoryPreset] = useState<HistoryPreset>("month");
   const [historyFrom, setHistoryFrom] = useState("");
   const [historyTo, setHistoryTo] = useState("");
@@ -384,7 +383,8 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
                 "success",
               );
               if (data?.attachmentSyncError) {
-                showToast(data.attachmentSyncError, "error");
+                // El movimiento sí se creó: lo que falló fue solo copiar los comprobantes.
+                showErrorToast("Los comprobantes no se copiaron", data.attachmentSyncError);
               }
             },
           },
@@ -543,7 +543,7 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
           showToast("Solicitud aceptada", "success");
         },
         onError: (err) => {
-          showToast(humanizeError(err), "error");
+          showErrorToast("No se pudo aceptar la solicitud", err);
         },
       },
     );
@@ -565,7 +565,7 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
       setRejectReason("");
       showToast("Solicitud rechazada", "success");
     } catch (err: unknown) {
-      showToast(humanizeError(err), "error");
+      showErrorToast("No se pudo rechazar la solicitud", err);
     }
   }
 
@@ -612,10 +612,11 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
         "success",
       );
       if (result.attachmentSyncError) {
-        showToast(result.attachmentSyncError, "error");
+        // El movimiento sí quedó asociado: lo que falló fue solo copiar los comprobantes.
+        showErrorToast("Los comprobantes no se copiaron", result.attachmentSyncError);
       }
     } catch (err: unknown) {
-      showToast(humanizeError(err), "error");
+      showErrorToast("No se pudo asociar a tu cuenta", err);
     }
   }
 
@@ -636,9 +637,9 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
       });
       setViewerDeleteRequestEvent(null);
       setSelectedViewerEvent(null);
-      showToast("Solicitud de eliminacion enviada", "success");
+      showToast("Solicitud de eliminación enviada", "success");
     } catch (err: unknown) {
-      showToast(humanizeError(err), "error");
+      showErrorToast("No se pudo enviar la solicitud de eliminación", err);
     }
   }
 
@@ -660,7 +661,7 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
         "success",
       );
     } catch (err: unknown) {
-      showToast(humanizeError(err), "error");
+      showErrorToast("No se pudo aprobar la solicitud", err);
     }
   }
 
@@ -677,9 +678,9 @@ export function ObligationAnalyticsModal({ visible, obligation, onClose, onEvent
         eventDate: req.payload.eventDate,
         obligationTitle: obligation.title,
       });
-      showToast("Solicitud de eliminacion rechazada", "success");
+      showToast("Solicitud de eliminación rechazada", "success");
     } catch (err: unknown) {
-      showToast(humanizeError(err), "error");
+      showErrorToast("No se pudo rechazar la solicitud de eliminación", err);
     }
   }
 
