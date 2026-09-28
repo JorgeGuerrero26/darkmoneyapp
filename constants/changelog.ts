@@ -13,6 +13,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "1.0.10",
     title: "DarkMoney estrena look",
     changes: [
+      "En Presupuestos y Categorías los avisos ahora dicen a qué afectó lo que hiciste —\"Categoría desactivada · Transporte\"—, y cuando algo falla te explican qué no se pudo hacer y por qué, en palabras normales en vez de un mensaje técnico.",
       "Créditos y Deudas muestra «Me deben» y «Yo debo» en grupos. El botón Filtros junto al buscador permite elegir activas, archivadas o todas.",
       "Al editar un gasto, la app ya no te avisa de que supera el saldo de la cuenta por el simple hecho de abrirlo: ese dinero ya estaba descontado. Solo avisa si el nuevo monto pide más de lo que de verdad te queda.",
       "Al editar un movimiento, el aviso ahora te dice cómo quedó —\"Agua · −S/ 1.50\"— en vez de solo \"Movimiento actualizado\".",
