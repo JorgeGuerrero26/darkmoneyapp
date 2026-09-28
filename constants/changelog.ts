@@ -13,6 +13,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "1.0.10",
     title: "DarkMoney estrena look",
     changes: [
+      "Al editar un gasto, la app ya no te avisa de que supera el saldo de la cuenta por el simple hecho de abrirlo: ese dinero ya estaba descontado. Solo avisa si el nuevo monto pide más de lo que de verdad te queda.",
       "Al editar un movimiento, el aviso ahora te dice cómo quedó —\"Agua · −S/ 1.50\"— en vez de solo \"Movimiento actualizado\".",
       "Al guardar algo, el aviso ahora baja desde arriba y dice qué guardaste y cuánto —\"Gasto guardado · Cebada · −S/ 3.00\"—, con Deshacer a mano. El botón + ya no se mueve de su sitio mientras se ve el aviso, así puedes registrar el siguiente sin buscarlo. Para quitarlo antes, deslízalo hacia arriba.",
       "En Cuentas, el botón Filtros junto al buscador permite elegir activas, archivadas o todas, y filtrar por una o varias instituciones.",

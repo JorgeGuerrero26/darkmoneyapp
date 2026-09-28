@@ -76,6 +76,7 @@ import { useMovementFormSuggestions } from "../../features/movements/hooks/useMo
 import { useMovementAttachmentSync } from "../../features/movements/hooks/useMovementAttachmentSync";
 import { buildMovementCreateInput, buildMovementUpdateInput } from "../../features/movements/lib/movement-save-contract";
 import { describeSavedMovement } from "../../features/movements/lib/describeSavedMovement";
+import { availableSourceBalance } from "../../features/movements/lib/available-balance";
 import { formatCurrency } from "../../lib/format-currency";
 import { useFrequentTransferPairQuery } from "../../services/queries/notification-detection";
 import {
@@ -794,6 +795,15 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   });
   const hasAttachmentChanges = attachmentSignature !== initialAttachmentSignatureRef.current;
 
+  /* Saldo contra el que se avisa "supera el saldo". Al editar suma de vuelta lo que el propio
+     movimiento ya descontó de la cuenta; sin eso, abrir un gasto ya registrado avisaba de que
+     superaba el saldo. Ver features/movements/lib/available-balance.ts. */
+  const sourceAvailableBalance = availableSourceBalance({
+    currentBalance: sourceAccount?.currentBalance ?? null,
+    selectedSourceAccountId: form.sourceAccountId,
+    editing: isEditing ? editMovement ?? null : null,
+  });
+
   // Live warnings (overdraft, fecha futura) — barato, pura, sin re-render extra.
   useEffect(() => {
     const result = validateMovementForm(
@@ -810,7 +820,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         sourceCurrencyCode: sourceAccount?.currencyCode ?? null,
         destinationCurrencyCode: destinationAccount?.currencyCode ?? null,
         hasTransferFxAvailable: Boolean(fx.transferManualRate || fx.transferBaseFxSuggestion),
-        sourceAccountBalance: sourceAccount?.currentBalance ?? null,
+        sourceAccountBalance: sourceAvailableBalance,
         todayYmd: todayPeru(),
       },
     );
@@ -818,6 +828,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   }, [
     form,
     sourceAccount,
+    sourceAvailableBalance,
     destinationAccount,
     fx.transferManualRate,
     fx.transferBaseFxSuggestion,
@@ -846,7 +857,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         sourceCurrencyCode: sourceAccount?.currencyCode ?? null,
         destinationCurrencyCode: destinationAccount?.currencyCode ?? null,
         hasTransferFxAvailable: Boolean(fx.transferManualRate || fx.transferBaseFxSuggestion),
-        sourceAccountBalance: sourceAccount?.currentBalance ?? null,
+        sourceAccountBalance: sourceAvailableBalance,
         todayYmd: todayPeru(),
       },
     );
