@@ -389,8 +389,9 @@ function ContactsScreen() {
     if (deletable.length === 0) {
       if (skipped > 0) {
         showToast(
-          "Ninguno se eliminó: todos tienen movimientos o créditos/deudas. Archívalos en su lugar.",
+          "Ningún contacto se eliminó",
           "error",
+          "Tienen movimientos o créditos/deudas. Archívalos en su lugar",
         );
       }
       return;

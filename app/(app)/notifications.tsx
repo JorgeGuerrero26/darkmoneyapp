@@ -103,10 +103,7 @@ function NotificationsScreen() {
         notificationDetection.clearLastSaveError();
         return;
       }
-      showToast(
-        `No pudimos guardar el ultimo movimiento detectado. Revisa la sugerencia. (${lastError.message})`,
-        "error",
-      );
+      showToast("No se guardó el último movimiento detectado", "error", "Revisa la sugerencia");
       notificationDetection.clearLastSaveError();
     })();
     return () => {

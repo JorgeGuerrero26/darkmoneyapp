@@ -23,7 +23,7 @@ export default function WorkspaceInviteScreen() {
   const { session } = useAuth();
   const queryClient = useQueryClient();
   const { setActiveWorkspaceId, setWorkspaces } = useWorkspace();
-  const { showToast } = useToast();
+  const { showToast, showErrorToast } = useToast();
 
   const [isLoading, setIsLoading] = useState(true);
   const [invite, setInvite] = useState<any>(null);
@@ -80,9 +80,8 @@ export default function WorkspaceInviteScreen() {
       setAccepted(true);
       setTimeout(() => router.replace("/(app)/dashboard"), 1500);
     } catch (err: unknown) {
-      const message = humanizeError(err);
-      setError(message);
-      showToast(message, "error");
+      setError(humanizeError(err));
+      showErrorToast("No se pudo aceptar la invitación", err);
     } finally {
       setIsAccepting(false);
     }

@@ -189,10 +189,7 @@ function CategorizeScreen() {
             });
           },
           onError: (error: unknown) => {
-            showToast(
-              error instanceof Error ? error.message : "No se pudo guardar la categoría.",
-              "error",
-            );
+            showErrorToast("No se pudo guardar la categoría", error);
           },
         },
       );
