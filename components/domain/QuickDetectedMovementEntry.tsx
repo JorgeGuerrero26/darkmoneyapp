@@ -120,7 +120,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
   const router = useRouter();
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
-  const { showToast, showRichToast } = useToast();
+  const { showToast, showRichToast, showErrorToast } = useToast();
   const haptics = useHaptics();
   const suggestionQuery = useDetectedMovementSuggestionQuery(suggestionId);
   const suggestion = suggestionQuery.data;
@@ -566,9 +566,9 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
         type: suggestionState.counterpartyType,
       });
       setCounterpartyId(created.id);
-      showToast(`Contraparte "${suggestionState.newCounterpartyName}" creada`, "success");
+      showToast("Contacto creado", "success", suggestionState.newCounterpartyName);
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "No se pudo crear la contraparte.", "error");
+      showErrorToast("No se pudo crear el contacto", error);
     }
   }
 
@@ -626,7 +626,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
         showToast("Ingreso fijo creado", "success");
       }
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "No se pudo crear el recurrente.", "error");
+      showErrorToast("No se pudo crear el pago recurrente", error);
     }
   }
 
@@ -655,7 +655,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
       showToast("Sugerencia descartada", "info");
       onClose();
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "No se pudo descartar", "error");
+      showErrorToast("No se pudo descartar la sugerencia", error);
     } finally {
       setIsDiscarding(false);
     }
@@ -780,7 +780,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
         onClose();
       } catch (error) {
         haptics.error();
-        showToast(error instanceof Error ? error.message : "No se pudo guardar la transferencia", "error");
+        showErrorToast("No se pudo guardar la transferencia", error);
       }
       return;
     }
@@ -925,7 +925,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
         await finishRegistration(firstCreatedId!, null);
       } catch (error) {
         haptics.error();
-        showToast(error instanceof Error ? error.message : "No se pudo guardar el movimiento", "error");
+        showErrorToast("No se pudo guardar el movimiento", error);
       }
       return;
     }
@@ -954,7 +954,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
       await finishRegistration(created.id, categoryFeedbackIntent);
     } catch (error) {
       haptics.error();
-      showToast(error instanceof Error ? error.message : "No se pudo guardar el movimiento", "error");
+      showErrorToast("No se pudo guardar el movimiento", error);
     }
   }
 
@@ -1047,7 +1047,7 @@ export function QuickDetectedMovementEntry({ visible, suggestionId, notification
         markSuggestion.mutate({ suggestionId: suggestion.id, status: "pending", movementId: null });
       },
       onError: (error) => {
-        showToast(error instanceof Error ? error.message : "No se pudo deshacer", "error");
+        showErrorToast("No se pudo deshacer el registro", error);
       },
     });
   }
