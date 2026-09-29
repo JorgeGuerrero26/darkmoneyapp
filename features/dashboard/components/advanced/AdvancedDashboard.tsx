@@ -828,6 +828,10 @@ export function AdvancedDashboard({
    * veintitrés veces— y los resuelve de grupo en grupo, con la categoría ya propuesta.
    */
   const openSummaryUncategorizedPreview = useCallback(() => {
+    setExecutiveDetail(null);
+    setAdvancedDetail(null);
+    setProjectionDetail(null);
+    setMovementPreview(null);
     router.push("/categorize" as never);
   }, [router]);
 

@@ -13,6 +13,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "1.0.10",
     title: "DarkMoney estrena look",
     changes: [
+      "Al abrir los movimientos sin categoría desde Estado del sistema, se cierra la hoja de detalle y ves la bandeja sin nada encima. (Pro)",
       "Mientras se prepara el informe con IA, las líneas de carga ahora se mueven para mostrar que sigue trabajando. (Pro)",
       "Arreglado: a veces abrías la app y los datos tardaban hasta un minuto en llegar, aunque tu internet anduviera bien. Lo provocaba la actualización en vivo, que al encenderse podía dejar el servidor congelado unos minutos, así que la quitamos. A cambio, lo que registre otra persona o tu otro teléfono aparece al volver a la app, no al instante.",
       "En toda la app los avisos ahora dicen a qué afectó lo que hiciste —\"Categoría desactivada · Transporte\", \"Suscripción pausada · Netflix\"—, y cuando algo falla te explican qué no se pudo hacer y por qué, en palabras normales en vez de un mensaje técnico.",
