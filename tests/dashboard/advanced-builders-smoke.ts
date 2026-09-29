@@ -1,6 +1,7 @@
 import {
   buildAnomalyFindings,
   buildCategorySuggestions,
+  buildMonthProjectionModel,
 } from "../../features/dashboard/lib/advanced-builders";
 import type { ConversionCtx } from "../../features/dashboard/lib/types";
 import { buildSystemState } from "../../features/dashboard/lib/system-state";
@@ -114,6 +115,20 @@ runCategorySuggestionsEmpty();
 runCategorySuggestionsLearned();
 runAnomalyFindingsEmpty();
 runAnomalyFindingsShape();
+
+const closeDate = new Date(2026, 8, 29, 12);
+const monthProjection = buildMonthProjectionModel(
+  [{ ...expense(10, 0, "2026-09-01T12:00:00Z", "Ingreso"), movementType: "income", sourceAmount: 0, destinationAmount: 29 }] as never,
+  [
+    { direction: "payable", pendingAmount: 10, currencyCode: "PEN", dueDate: "2026-09-30", status: "active" },
+    { direction: "payable", pendingAmount: 999, currencyCode: "PEN", dueDate: "2026-10-01", status: "active" },
+  ],
+  [], [], 100, ctx(), closeDate,
+);
+assert(monthProjection.remainingDays === 1, "el 29 de septiembre queda un día para el cierre");
+assert(monthProjection.committedOutflow === 10, "el cierre excluye pagos posteriores al fin del mes");
+assert(monthProjection.variableIncomeProjection === 1, "el ritmo mensual observado se proyecta solo por el día restante");
+assert(monthProjection.expectedBalance === 91, "cierre = saldo + compromisos + ritmo restante");
 
 const systemState = buildSystemState(83, 596, 127);
 assert(systemState.status === "Confiable" && systemState.threshold === 75, "el estado y la marca usan el mismo umbral de 75%");

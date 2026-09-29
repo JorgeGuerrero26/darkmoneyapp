@@ -1,4 +1,4 @@
-import { addDays, differenceInDays, endOfDay, endOfMonth, format, getDay, startOfDay, startOfMonth, subDays } from "date-fns";
+import { addDays, differenceInCalendarDays, differenceInDays, endOfDay, endOfMonth, format, getDay, startOfDay, startOfMonth, subDays } from "date-fns";
 import { es } from "date-fns/locale";
 
 import { formatCurrency } from "../../../lib/format-currency";
@@ -20,7 +20,7 @@ import {
   isCategorizedCashflow,
   isExpense,
 } from "./aggregations";
-import { buildFutureFlowWindows } from "./dashboard-builders";
+import { buildFutureFlowItems } from "./dashboard-builders";
 import type {
   DashboardAnomalyFinding,
   DashboardCategorySuggestion,
@@ -144,19 +144,19 @@ export function buildMonthProjectionModel(
   const today = now;
   const monthStart = startOfMonth(today);
   const monthEnd = endOfMonth(today);
-  const remainingDays = Math.max(0, differenceInDays(monthEnd, today));
+  const remainingDays = Math.max(0, differenceInCalendarDays(monthEnd, today));
   const daysElapsed = Math.max(1, differenceInDays(today, monthStart) + 1);
-  const futureWindows = buildFutureFlowWindows(
+  const monthItems = buildFutureFlowItems(
     obligations,
     subscriptions,
     recurringIncome,
     ctx.displayCurrency,
     ctx.exchangeRateMap,
-    currentVisibleBalance,
     ctx.baseCurrency,
     now,
-  );
-  const monthWindow = futureWindows[2];
+  ).filter((item) => item.date <= monthEnd);
+  const committedInflow = monthItems.filter((item) => item.direction === "inflow").reduce((sum, item) => sum + (item.amount ?? 0), 0);
+  const committedOutflow = monthItems.filter((item) => item.direction === "outflow").reduce((sum, item) => sum + (item.amount ?? 0), 0);
 
   const variableIncomeObserved = movements
     .filter((movement) => inRange(movement, monthStart, today))
@@ -229,26 +229,26 @@ export function buildMonthProjectionModel(
 
   const expectedBalance =
     currentVisibleBalance +
-    monthWindow.expectedInflow -
-    monthWindow.expectedOutflow +
+    committedInflow -
+    committedOutflow +
     variableIncomeProjection -
     variableExpenseProjection;
   const conservativeBalance =
     currentVisibleBalance +
-    monthWindow.expectedInflow * 0.9 -
-    monthWindow.expectedOutflow * 1.03 +
+    committedInflow * 0.9 -
+    committedOutflow * 1.03 +
     variableIncomeProjection * Math.max(0.45, 0.78 - incomeVolatility) -
     variableExpenseProjection * (1.04 + expenseVolatility);
   const optimisticBalance =
     currentVisibleBalance +
-    monthWindow.expectedInflow * 1.02 -
-    monthWindow.expectedOutflow +
+    committedInflow * 1.02 -
+    committedOutflow +
     variableIncomeProjection * (1.05 + incomeVolatility * 0.35) -
     variableExpenseProjection * Math.max(0.72, 0.92 - expenseVolatility * 0.25);
   const monteCarlo = simulateMonthEndCashflow({
     currentBalance: currentVisibleBalance,
-    committedInflow: monthWindow.expectedInflow,
-    committedOutflow: monthWindow.expectedOutflow,
+    committedInflow,
+    committedOutflow,
     dailySamples: lastThirtyDays,
     incomeDailyAverage: incomeDailyAvg,
     expenseDailyAverage: expenseDailyAvg,
@@ -278,8 +278,8 @@ export function buildMonthProjectionModel(
     monteCarloHighBalance: monteCarlo.highBalance,
     pressureThreshold: monteCarlo.pressureThreshold,
     pressureProbability: monteCarlo.pressureProbability,
-    committedInflow: monthWindow.expectedInflow,
-    committedOutflow: monthWindow.expectedOutflow,
+    committedInflow,
+    committedOutflow,
     variableIncomeProjection,
     variableExpenseProjection,
     confidence,

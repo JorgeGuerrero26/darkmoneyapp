@@ -107,6 +107,7 @@ import { DashboardSectionBoundary } from "../shared/DashboardSectionBoundary";
 import { AiResponseSkeleton } from "./AiResponseSkeleton";
 import { SystemStateSheet } from "./SystemStateSheet";
 import { WeekOutlookSheet } from "./WeekOutlookSheet";
+import { MonthEndSheet, type MonthRhythmMovement } from "./MonthEndSheet";
 import {
   buildDashboardAiTextParts,
   ensureDashboardAiComplexTerms,
@@ -297,18 +298,6 @@ export function AdvancedDashboard({
     const expense = movements.filter((movement) => inRange(movement, start, now) && isExpense(movement)).reduce((sum, movement) => sum + expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency }), 0);
     return { income, expense, net: income - expense, daysElapsed: Math.max(1, differenceInDays(now, start) + 1) };
   }, [accountCurrencyMap, activeCurrency, exchangeRateMap, movements]);
-
-  const monthRecurringIncomeProjection = useMemo(() => {
-    const now = new Date();
-    const monthEnd = endOfMonth(now);
-    return recurringIncome
-      .filter((income) => income.status === "active")
-      .reduce((sum, income) => {
-        const expectedDate = parseDisplayDate(income.nextExpectedDate);
-        if (expectedDate < now || expectedDate > monthEnd) return sum;
-        return sum + (convertDashboardCurrency(income.amount, income.currencyCode, activeCurrency, exchangeRateMap, baseCurrency) ?? 0);
-      }, 0);
-  }, [activeCurrency, baseCurrency, exchangeRateMap, recurringIncome]);
 
   // A3: Cash Cushion — días de caja libre al ritmo actual
   const cashCushion = useMemo(() => {
@@ -1299,8 +1288,9 @@ export function AdvancedDashboard({
     snapshot?.categories,
   ]);
 
-  const projectionModel = useMemo(() => {
-    return buildMonthProjectionModel(
+  const { projectionModel, monthItems, projectionAsOf } = useMemo(() => {
+    const now = new Date();
+    return { projectionAsOf: now, projectionModel: buildMonthProjectionModel(
       movements,
       obligations,
       subscriptions,
@@ -1312,7 +1302,9 @@ export function AdvancedDashboard({
         displayCurrency: activeCurrency,
         baseCurrency,
       },
-    );
+      now,
+    ), monthItems: buildFutureFlowItems(obligations, subscriptions, recurringIncome, activeCurrency, exchangeRateMap, baseCurrency, now)
+      .filter((item) => item.date <= endOfMonth(now)) };
   }, [
     accountCurrencyMap,
     activeCurrency,
@@ -1649,14 +1641,34 @@ export function AdvancedDashboard({
   }, [activeAccounts]);
   const visibleAccountBreakdown = useMemo(() => (
     activeAccounts
+      .filter((account) => account.includeInNetWorth)
       .map((account) => ({
         id: account.id,
         name: account.name,
         amount:
-          convertDashboardCurrency(account.currentBalance, account.currencyCode, activeCurrency, exchangeRateMap, baseCurrency) ?? 0,
+          convertDashboardCurrency(account.currentBalanceInBaseCurrency ?? account.currentBalance, baseCurrency, activeCurrency, exchangeRateMap, baseCurrency) ?? 0,
       }))
       .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
   ), [activeAccounts, activeCurrency, baseCurrency, exchangeRateMap]);
+  const monthRhythmMovements = useMemo<MonthRhythmMovement[]>(() => {
+    const now = projectionAsOf;
+    return movements
+      .filter((movement) => movement.status === "posted" && inRange(movement, startOfMonth(now), now)
+        && (movement.movementType === "income" || movement.movementType === "refund" || movement.movementType === "expense"))
+      .map((movement) => {
+        const isOutflow = movement.movementType === "expense";
+        return {
+          id: movement.id,
+          title: movement.description.trim() || (isOutflow ? "Gasto sin descripción" : "Ingreso sin descripción"),
+          date: new Date(movement.occurredAt),
+          direction: isOutflow ? "outflow" as const : "inflow" as const,
+          amount: isOutflow
+            ? expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency })
+            : incomeAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency }),
+        };
+      })
+      .sort((a, b) => b.date.getTime() - a.date.getTime());
+  }, [accountCurrencyMap, activeCurrency, baseCurrency, exchangeRateMap, movements, projectionAsOf]);
   const visibleAccountSummary = useMemo(() => {
     if (visibleAccountBreakdown.length === 0) return "No hay cuentas visibles incluidas en esta lectura.";
     const preview = visibleAccountBreakdown
@@ -2040,86 +2052,6 @@ export function AdvancedDashboard({
     review.uncategorizedCount,
   ]);
 
-  const executiveDetails = useMemo(() => ({
-    month: {
-      title: "Fin de mes",
-      summary: "Te ayuda a decidir si el mes cierra con margen, ajustado o bajo presión según lo ya comprometido y tu ritmo reciente.",
-      meaning: [
-        "No intenta adivinar exacto cuánto tendrás; te da una lectura operativa para saber si puedes sostener el ritmo actual o si conviene corregir ya.",
-        "Es útil para decisiones de gasto, ahorro, compras no urgentes y limpieza de datos que afectan la proyección.",
-      ],
-      calculation: [
-        `Partimos de ${visibleBalanceLabel}: ${visibleAccountSummary}. Esa base suma ${formatCurrency(currentVisibleBalance, activeCurrency)}.`,
-        "Usamos una proyección por escenarios: no prometemos un número exacto; armamos un cierre esperado, uno defensivo y uno más favorable para que veas el rango posible.",
-        `Después aplicamos la fórmula: saldo visible + comprometido neto (${formatCurrency(projectionCommittedNet, activeCurrency)}) + variable neto (${formatCurrency(projectionVariableNet, activeCurrency)}) = ${formatCurrency(projectionModel.expectedBalance, activeCurrency)}.`,
-        `El rango defensivo queda en ${formatCurrency(projectionModel.conservativeBalance, activeCurrency)} y el escenario alto en ${formatCurrency(projectionModel.optimisticBalance, activeCurrency)}.`,
-        `Además simulamos muchos cierres posibles con tu ritmo diario reciente. Hoy la probabilidad de cerrar por debajo de ${formatCurrency(projectionModel.pressureThreshold, activeCurrency)} es ${projectionModel.pressureProbability}%.`,
-      ],
-      actions: [
-        review.uncategorizedCount > 0
-          ? { label: "Limpiar movimientos sin categoría", onPress: openSummaryUncategorizedPreview }
-          : null,
-        monthRecurringIncomeProjection > 0
-          ? { label: "Revisar ingresos fijos del mes", onPress: () => { setExecutiveDetail(null); router.push("/recurring-income" as never); } }
-          : null,
-      ].filter((action): action is { label: string; onPress: () => void } => Boolean(action)),
-    },
-  }), [
-    activeCurrency,
-    monthRecurringIncomeProjection,
-    openSummaryUncategorizedPreview,
-    projectionModel.conservativeBalance,
-    projectionModel.committedInflow,
-    projectionModel.committedOutflow,
-    projectionModel.expectedBalance,
-    projectionModel.optimisticBalance,
-    projectionModel.pressureProbability,
-    projectionModel.pressureThreshold,
-    projectionModel.variableExpenseProjection,
-    projectionModel.variableIncomeProjection,
-    projectionCommittedNet,
-    projectionVariableNet,
-    review.uncategorizedCount,
-    router,
-    currentVisibleBalance,
-    visibleAccountSummary,
-    visibleBalanceLabel,
-  ]);
-  const activeExecutiveDetail = executiveDetail === "month" ? executiveDetails.month : null;
-  const executiveResultMeaning = useMemo(() => ({
-    month: [
-      monthStatus === "Bajo presión"
-        ? "Este resultado significa que, si no cambias algo, el cierre del mes ya se ve apretado frente a tu saldo y ritmo actual."
-        : monthStatus === "Ajustado"
-          ? "Este resultado significa que el cierre todavia es viable, pero con poco margen para errores o gastos extra."
-          : "Este resultado significa que hoy el mes se perfila mejor que tu saldo visible actual.",
-      `La lectura esperada de cierre hoy es ${formatCurrency(monthEndReading, activeCurrency)}.`,
-    ],
-  }), [
-    activeCurrency,
-    monthEndReading,
-    monthStatus,
-  ]);
-  const activeExecutiveResultMeaning = executiveDetail === "month" ? executiveResultMeaning.month : [];
-  const resolvedExecutiveResultMeaning = executiveDetail === "month"
-    ? [
-      monthStatus === "Cerrando mejor"
-        ? "Este resultado significa que hoy el mes se perfila mejor que tu saldo visible actual."
-        : monthStatus === "Ajustado"
-          ? "Este resultado significa que el cierre todavia es viable, pero con poco margen para errores o gastos extra."
-          : "Este resultado significa que, si no cambias algo, el cierre del mes ya se ve apretado frente a tu saldo y ritmo actual.",
-      `Cuando aquí hablamos de saldo visible actual, nos referimos a ${visibleBalanceLabel} convertida a ${activeCurrency}: hoy eso suma ${formatCurrency(currentVisibleBalance, activeCurrency)}.`,
-      `No es una cuenta puntual. Está compuesto por: ${visibleAccountSummary}.`,
-      `La lectura esperada de cierre hoy es ${formatCurrency(monthEndReading, activeCurrency)}. Eso implica un cambio de ${formatCurrency(monthEndDelta, activeCurrency)} frente a lo que hoy ya tienes visible.`,
-      `Fórmula usada: ${formatCurrency(currentVisibleBalance, activeCurrency)} + comprometido neto ${formatCurrency(projectionCommittedNet, activeCurrency)} + variable neto ${formatCurrency(projectionVariableNet, activeCurrency)}.`,
-    ]
-    : activeExecutiveResultMeaning;
-  const executiveResultTone = useMemo(() => ({
-    month: monthStatus === "Cerrando mejor" ? "positive" : monthStatus === "Ajustado" ? "warning" : "danger",
-  } as const), [
-    monthStatus,
-  ]);
-  const activeExecutiveResultTone = executiveDetail === "month" ? executiveResultTone.month : "warning";
   const advancedDetails = useMemo(() => ({
     focusCenter: {
       title: "Centro de foco",
@@ -3265,29 +3197,35 @@ export function AdvancedDashboard({
         />
       ) : null}
 
-      <BottomSheet
-        visible={executiveDetail === "month"}
-        onClose={() => setExecutiveDetail(null)}
-        title={activeExecutiveDetail?.title}
-        snapHeight={0.78}
-        blurBackdrop={false}
-        backdropColor="rgba(0,0,0,0.68)"
-      >
-        {activeExecutiveDetail ? (
-          <View style={subStyles.explanationSheetContent}>
-            <ExplanationIntro kicker="Resumen ejecutivo" summary={activeExecutiveDetail.summary} />
-            <ExplanationVisualSummary
-              tone={activeExecutiveResultTone}
-              actionsCount={activeExecutiveDetail.actions.length}
-              detailCount={activeExecutiveDetail.meaning.length + activeExecutiveDetail.calculation.length + resolvedExecutiveResultMeaning.length}
-            />
-            <ExplanationSection index="01" title="Para qué te sirve" items={activeExecutiveDetail.meaning} />
-            <ExplanationSection index="02" title="Cómo llegamos a este dato" items={activeExecutiveDetail.calculation} />
-            <ExplanationResult tone={activeExecutiveResultTone} items={resolvedExecutiveResultMeaning} />
-            <ExplanationActions actions={activeExecutiveDetail.actions} />
-          </View>
-        ) : null}
-      </BottomSheet>
+      {executiveDetail === "month" ? (
+        <MonthEndSheet
+          currency={activeCurrency}
+          balance={currentVisibleBalance}
+          accounts={visibleAccountBreakdown}
+          committedNet={projectionCommittedNet}
+          variableNet={projectionVariableNet}
+          projectedIncome={projectionModel.variableIncomeProjection}
+          projectedExpense={projectionModel.variableExpenseProjection}
+          estimatedBalance={monthEndReading}
+          status={monthStatus}
+          remainingDays={projectionModel.remainingDays}
+          commitments={monthItems}
+          rhythmMovements={monthRhythmMovements}
+          asOfDate={projectionAsOf}
+          onClose={() => setExecutiveDetail(null)}
+          onOpenCommitment={(item) => {
+            setExecutiveDetail(null);
+            const route = item.source === "subscription" ? `/subscription/${item.id}` : item.source === "obligation" ? `/obligation/${item.id}` : `/recurring-income/${item.id}`;
+            router.push(`${route}?from=dashboard` as never);
+          }}
+          onOpenMovement={(id) => { setExecutiveDetail(null); router.push(`/movement/${id}?from=dashboard` as never); }}
+          onOpenAllMovements={() => {
+            setExecutiveDetail(null);
+            const today = projectionAsOf;
+            router.push(`/movements?from=dashboard&quickScope=month-rhythm&quickStatus=posted&quickDateFrom=${format(startOfMonth(today), "yyyy-MM-dd")}&quickDateTo=${format(today, "yyyy-MM-dd")}&quickLabel=Ritmo%20del%20mes` as never);
+          }}
+        />
+      ) : null}
 
       <BottomSheet
         visible={Boolean(activeAdvancedDetail)}

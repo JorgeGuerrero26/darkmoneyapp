@@ -10,7 +10,7 @@ type Props = {
   subtitle?: string;
   onClose: () => void;
   children: ReactNode;
-  calculation: string;
+  calculation?: string;
   actionLabel: string;
   onAction: () => void;
 };
@@ -36,11 +36,15 @@ export function SummaryDetailSheet({ title, subtitle, onClose, children, calcula
     >
       {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
       {children}
-      <TouchableOpacity style={styles.calculationRow} onPress={() => setExpanded((current) => !current)} activeOpacity={0.82} accessibilityRole="button" accessibilityState={{ expanded }}>
-        <Text style={styles.calculationTitle}>Cómo se calcula</Text>
-        <ChevronDown size={16} color={COLORS.textDisabled} style={expanded && styles.chevronOpen} />
-      </TouchableOpacity>
-      {expanded ? <Text style={styles.calculationCopy}>{calculation}</Text> : null}
+      {calculation ? (
+        <>
+          <TouchableOpacity style={styles.calculationRow} onPress={() => setExpanded((current) => !current)} activeOpacity={0.82} accessibilityRole="button" accessibilityState={{ expanded }}>
+            <Text style={styles.calculationTitle}>Cómo se calcula</Text>
+            <ChevronDown size={16} color={COLORS.textDisabled} style={expanded && styles.chevronOpen} />
+          </TouchableOpacity>
+          {expanded ? <Text style={styles.calculationCopy}>{calculation}</Text> : null}
+        </>
+      ) : null}
     </BottomSheet>
   );
 }

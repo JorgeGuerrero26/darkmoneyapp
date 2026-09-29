@@ -13,6 +13,8 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "1.0.10",
     title: "DarkMoney estrena look",
     changes: [
+      "Fin de mes ahora muestra cómo se suma el cierre: saldo de tus cuentas, compromisos pendientes y ritmo proyectado. También puedes abrir los compromisos y movimientos que forman el cálculo. (Pro)",
+      "Corregimos el cierre estimado para que cuente solo compromisos hasta el último día del mes y proyecte el ritmo únicamente por los días que faltan. (Pro)",
       "En Créditos y Deudas, Me deben y Yo debo ahora se distinguen con las mismas barras de sección que usan Movimientos y Cuentas.",
       "Separamos mejor el Informe con IA de la lista Dónde se mueve tu dinero para que cada sección se lea con claridad. (Pro)",
       "Próximos 7 días ahora muestra qué pagos y cobros vienen, en qué fecha caen y si el dinero disponible alcanza para cubrirlos. Puedes abrir cada compromiso desde la lista. (Pro)",
