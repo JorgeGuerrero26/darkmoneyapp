@@ -58,34 +58,24 @@ export function FinancialGraphCard({
     if (node.kind === "account") return "Cuenta";
     if (node.kind === "category") return "Categoría";
     if (node.kind === "counterparty") return "Contacto";
-    return "Flujo";
+    return "Tipo";
   }
 
   return (
     <Card style={subStyles.ledgerCard}>
-      <SectionTitle>Nodos que más mueven tu sistema</SectionTitle>
-      <Text style={subStyles.executiveIntro}>
-        Une cuenta, categoría, contacto y tipo de movimiento. Si algo aparece arriba, está muy conectado con tu dinero reciente.
-      </Text>
-      <Text style={subStyles.scopeHint}>
-        Alcance: movimientos confirmados de los últimos 90 días cargados por el dashboard.
-      </Text>
-      <View style={subStyles.commandActions}>
+      <Text style={subStyles.graphHeading}>Dónde se mueve tu dinero</Text>
+      <Text style={subStyles.graphSubtitle}>Últimos 90 días</Text>
+      <View style={subStyles.graphList}>
         {nodes.map((node) => (
-          <TouchableOpacity key={node.id} style={[subStyles.commandActionRow, subStyles.ledgerActionRow]} onPress={() => onOpenNode(node)} activeOpacity={0.82}>
-            <View style={subStyles.commandActionCopy}>
-              <View style={subStyles.suggestionRowTop}>
-                <Text style={subStyles.commandActionTitle} numberOfLines={1}>{node.label}</Text>
-                <View style={subStyles.miniChip}>
-                  <Text style={subStyles.miniChipText}>{node.score}/100</Text>
-                </View>
-              </View>
-              <Text style={subStyles.commandActionBody}>
-                {kindLabel(node)} · {node.movementCount} movimiento{node.movementCount === 1 ? "" : "s"} · {formatCurrency(node.amount, currency)}
+          <TouchableOpacity key={node.id} style={subStyles.graphRow} onPress={() => onOpenNode(node)} activeOpacity={0.82} accessibilityRole="button">
+            <View style={subStyles.graphRowCopy}>
+              <Text style={subStyles.graphRowTitle} numberOfLines={1}>{node.label}</Text>
+              <Text style={subStyles.graphRowMeta} numberOfLines={1}>
+                {kindLabel(node)} · {node.movementCount} movimiento{node.movementCount === 1 ? "" : "s"}
               </Text>
-              <Text style={subStyles.commandActionBody}>{node.reason}</Text>
             </View>
-            <ArrowRight size={15} color={COLORS.storm} />
+            <Text style={subStyles.graphRowAmount} numberOfLines={1}>{formatCurrency(node.amount, currency)}</Text>
+            <ArrowRight size={14} color={COLORS.storm} />
           </TouchableOpacity>
         ))}
       </View>

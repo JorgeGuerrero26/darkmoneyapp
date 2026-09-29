@@ -13,6 +13,8 @@ type Props = {
   style?: StyleProp<ViewStyle>;
   withSafeArea?: boolean;
   showPlanBadge?: boolean;
+  compactPlanBadge?: boolean;
+  fullWidthMeta?: boolean;
 };
 
 export function ScreenHeader({
@@ -23,6 +25,8 @@ export function ScreenHeader({
   style,
   withSafeArea = false,
   showPlanBadge = false,
+  compactPlanBadge = false,
+  fullWidthMeta = false,
 }: Props) {
   const insets = useSafeAreaInsets();
   const haptics = useHaptics();
@@ -31,35 +35,44 @@ export function ScreenHeader({
     <View
       style={[
         styles.container,
+        fullWidthMeta && styles.containerStack,
         withSafeArea ? { paddingTop: insets.top + SPACING.md } : null,
         style,
       ]}
     >
-      {onBack ? (
-        <TouchableOpacity
-          onPress={() => { haptics.light(); onBack(); }}
-          style={styles.backBtn}
-          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-        >
-          <ChevronLeft size={22} color={COLORS.ink} strokeWidth={2} />
-        </TouchableOpacity>
-      ) : null}
-      <View style={[styles.left, onBack ? styles.leftWithBack : null]}>
-        <Text style={styles.title} numberOfLines={1}>
-          {title}
-        </Text>
-        {(subtitle || showPlanBadge) ? (
-          <View style={styles.metaRow}>
-            {subtitle ? (
-              <Text style={styles.subtitle} numberOfLines={1}>
-                {subtitle}
-              </Text>
-            ) : null}
-            {showPlanBadge ? <PlanStatusBadge /> : null}
-          </View>
+      <View style={styles.mainRow}>
+        {onBack ? (
+          <TouchableOpacity
+            onPress={() => { haptics.light(); onBack(); }}
+            style={styles.backBtn}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          >
+            <ChevronLeft size={22} color={COLORS.ink} strokeWidth={2} />
+          </TouchableOpacity>
         ) : null}
+        <View style={[styles.left, onBack ? styles.leftWithBack : null]}>
+          <Text style={styles.title} numberOfLines={1}>
+            {title}
+          </Text>
+          {!fullWidthMeta && (subtitle || showPlanBadge) ? (
+            <View style={styles.metaRow}>
+              {subtitle ? (
+                <Text style={styles.subtitle} numberOfLines={1}>
+                  {subtitle}
+                </Text>
+              ) : null}
+              {showPlanBadge ? <PlanStatusBadge compact={compactPlanBadge} /> : null}
+            </View>
+          ) : null}
+        </View>
+        {rightAction ? <View style={styles.right}>{rightAction}</View> : null}
       </View>
-      {rightAction ? <View style={styles.right}>{rightAction}</View> : null}
+      {fullWidthMeta && (subtitle || showPlanBadge) ? (
+        <View style={styles.metaRow}>
+          {subtitle ? <Text style={styles.subtitle} numberOfLines={1}>{subtitle}</Text> : null}
+          {showPlanBadge ? <PlanStatusBadge compact={compactPlanBadge} /> : null}
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -75,6 +88,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 0.5,
     borderBottomColor: SURFACE.sheetBorder,
   },
+  containerStack: { flexDirection: "column", alignItems: "stretch" },
+  mainRow: { width: "100%", flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   backBtn: {
     marginRight: SPACING.sm,
     width: 32,

@@ -25,6 +25,7 @@ type BuildFinancialGraphRankInput<TMovement> = {
   categoryNames?: ReadonlyMap<number, string>;
   counterpartyNames?: ReadonlyMap<number, string>;
   limit?: number;
+  sortBy?: "score" | "amount";
 };
 
 type RawNode = {
@@ -90,6 +91,7 @@ export function buildFinancialGraphRank<TMovement>({
   categoryNames,
   counterpartyNames,
   limit = 4,
+  sortBy = "score",
 }: BuildFinancialGraphRankInput<TMovement>): FinancialGraphRankNode[] {
   const nodeStats = new Map<string, NodeStats>();
   const adjacency = new Map<string, Map<string, number>>();
@@ -204,7 +206,9 @@ export function buildFinancialGraphRank<TMovement>({
       };
       return { ...item, reason: reasonForNode(item) };
     })
-    .sort((a, b) => b.score - a.score || b.amount - a.amount || b.movementCount - a.movementCount);
+    .sort((a, b) => sortBy === "amount"
+      ? b.amount - a.amount || b.movementCount - a.movementCount || b.score - a.score
+      : b.score - a.score || b.amount - a.amount || b.movementCount - a.movementCount);
 
   const result: FinancialGraphRankNode[] = [];
   let flowIncluded = false;

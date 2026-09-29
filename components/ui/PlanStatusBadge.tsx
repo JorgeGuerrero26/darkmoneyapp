@@ -2,7 +2,7 @@ import { StyleSheet, Text, View } from "react-native";
 
 import { useAuth } from "../../lib/auth-context";
 import { useUserEntitlementQuery } from "../../services/queries/workspace-data";
-import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS } from "../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SURFACE } from "../../constants/theme";
 
 type Props = {
   compact?: boolean;
@@ -51,8 +51,8 @@ const styles = StyleSheet.create({
     borderColor: COLORS.pro + "44",
   },
   badgeFree: {
-    backgroundColor: COLORS.gold + "14",
-    borderColor: COLORS.gold + "3A",
+    backgroundColor: SURFACE.subtle,
+    borderColor: SURFACE.cardBorder,
   },
   label: {
     fontFamily: FONT_FAMILY.bodySemibold,
@@ -63,6 +63,6 @@ const styles = StyleSheet.create({
     color: COLORS.pro,
   },
   labelFree: {
-    color: COLORS.gold,
+    color: COLORS.fog,
   },
 });

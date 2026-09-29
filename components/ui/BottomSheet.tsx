@@ -13,6 +13,8 @@ import {
   Text,
   TouchableOpacity,
   View,
+  type StyleProp,
+  type ViewStyle,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChevronDown, X } from "lucide-react-native";
@@ -60,6 +62,8 @@ type Props = {
    * con el sheet cuando entra el teclado.
    */
   footer?: React.ReactNode;
+  headerStyle?: StyleProp<ViewStyle>;
+  contentStyle?: StyleProp<ViewStyle>;
 };
 
 export function BottomSheet({
@@ -74,6 +78,8 @@ export function BottomSheet({
   blurBackdrop = true,
   overlay,
   footer,
+  headerStyle,
+  contentStyle,
 }: Props) {
   const insets = useSafeAreaInsets();
   const translateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
@@ -233,7 +239,7 @@ export function BottomSheet({
 
           {/* Header */}
           {title || keyboardHeight > 0 ? (
-            <View style={styles.header}>
+            <View style={[styles.header, headerStyle]}>
               <Text style={styles.title}>{title}</Text>
               {headerAction}
               {/* Cerrar el teclado, junto a la × y con su mismo tratamiento.
@@ -270,7 +276,7 @@ export function BottomSheet({
           // Se encoge para dejar sitio a la barra: sin esto el scroll empuja el pie fuera del
           // alto máximo del sheet.
           style={styles.scroll}
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[styles.content, contentStyle]}
         >
           {children}
         </ScrollView>

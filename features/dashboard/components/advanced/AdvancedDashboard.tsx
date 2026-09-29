@@ -1,11 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { obligationViewerDirection } from "../../../../lib/obligation-viewer-labels";
 import {
   Animated,
   Easing,
   InteractionManager,
-  Modal,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -35,7 +33,6 @@ import {
   Sparkles,
   Tag,
   TrendingUp,
-  X,
   type LucideIcon,
 } from "lucide-react-native";
 
@@ -113,7 +110,6 @@ import {
   type DashboardAiToneResponse,
 } from "../../lib/dashboard-ai-content";
 import { useDashboardStats } from "../../hooks/useDashboardStats";
-import { movementPreviewActionLabel } from "../../lib/aggregations";
 
 import { SectionTitle } from "../simple/SectionTitle";
 import { CashflowProjectionSection } from "../simple/CashflowProjectionSection";
@@ -158,7 +154,7 @@ import {
   SavingsMomentumChart,
   type AnnualHistoryMonth,
 } from "./DashboardCharts";
-import { ADVANCED_TABS, DashboardTabBar, type AdvancedTab, type TabIndicator } from "./DashboardTabBar";
+import { DashboardTabBar, type AdvancedTab } from "./DashboardTabBar";
 
 export function AdvancedDashboard({
   movements,
@@ -755,6 +751,7 @@ export function AdvancedDashboard({
   const [advancedDetail, setAdvancedDetail] = useState<"focusCenter" | "projection" | "review" | "advancedMetrics" | "quality" | "categoryConcentration" | "savingsRate" | "incomeStability" | "seasonalComparison" | "collectionEfficiency" | null>(null);
   const [projectionDetail, setProjectionDetail] = useState<"conservative" | "expected" | "included" | null>(null);
   const [movementPreview, setMovementPreview] = useState<MovementPreviewSheetState | null>(null);
+  const graphWindowStart = startOfDay(subDays(new Date(), 89)).getTime();
   const [applyingSuggestionMovementId, setApplyingSuggestionMovementId] = useState<number | null>(null);
   const queryClient = useQueryClient();
   const { showToast, showErrorToast } = useToast();
@@ -937,7 +934,7 @@ export function AdvancedDashboard({
   const openFinancialGraphNodePreview = useCallback((node: FinancialGraphRankNode) => {
     const nodeMovements = sortMovementsRecentFirst(
       movements.filter((movement) => {
-        if (movement.status !== "posted") return false;
+        if (movement.status !== "posted" || new Date(movement.occurredAt).getTime() < graphWindowStart) return false;
         if (node.kind === "account") {
           return node.entityId != null && (movement.sourceAccountId === node.entityId || movement.destinationAccountId === node.entityId);
         }
@@ -956,31 +953,18 @@ export function AdvancedDashboard({
         return false;
       }),
     );
-    const total = nodeMovements.reduce((sum, movement) => {
-      if (isTransfer(movement)) return sum + transferAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency });
-      return sum + (movementActsAsIncome(movement)
-        ? incomeAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency })
-        : expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency }));
-    }, 0);
-
-    const kindLabel =
-      node.kind === "account" ? "cuenta" :
-      node.kind === "category" ? "categoría" :
-      node.kind === "counterparty" ? "contacto" :
-      "tipo de movimiento";
-
     openMovementPreview({
       title: node.label,
-      subtitle: `${nodeMovements.length} movimiento${nodeMovements.length === 1 ? "" : "s"} conectado${nodeMovements.length === 1 ? "" : "s"} a este ${kindLabel}. En valor absoluto suman ${formatCurrency(total, activeCurrency)}.`,
+      subtitle: `${nodeMovements.length} movimiento${nodeMovements.length === 1 ? "" : "s"} · últimos 90 días`,
       scopeLabel: "Alcance: movimientos confirmados de los últimos 90 días cargados por el dashboard avanzado.",
+      variant: "graph",
+      graphAccountId: node.kind === "account" ? node.entityId : null,
       emptyTitle: "No encontramos movimientos para este nodo",
       emptyBody: "Puede pasar si la lista se actualizó después de calcular el grafo.",
       movements: nodeMovements,
     });
   }, [
-    accountCurrencyMap,
-    activeCurrency,
-    exchangeRateMap,
+    graphWindowStart,
     movements,
     openMovementPreview,
   ]);
@@ -1430,7 +1414,7 @@ export function AdvancedDashboard({
 
   const financialGraphRank = useMemo(() => (
     buildFinancialGraphRank<DashboardMovementRow>({
-      movements: movements.filter((movement) => movement.status === "posted"),
+      movements: movements.filter((movement) => movement.status === "posted" && new Date(movement.occurredAt).getTime() >= graphWindowStart),
       getAmount: (movement) => {
         if (isTransfer(movement)) return transferAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency });
         return movementActsAsIncome(movement)
@@ -1448,6 +1432,7 @@ export function AdvancedDashboard({
       categoryNames: categoryMap,
       counterpartyNames: counterpartyMap,
       limit: 4,
+      sortBy: "amount",
     })
   ), [
     accountCurrencyMap,
@@ -1456,6 +1441,7 @@ export function AdvancedDashboard({
     categoryMap,
     counterpartyMap,
     exchangeRateMap,
+    graphWindowStart,
     movements,
   ]);
 
@@ -1499,11 +1485,17 @@ export function AdvancedDashboard({
     setAdvancedDetail(null);
     if (focusAction.key === "liquidity" || focusAction.key === "cash" || focusAction.key === "spending" || focusAction.key === "projection-risk") {
       setActiveTab("Flujo");
+      onScrollToTop?.();
+      return;
+    }
+    if (focusAction.key === "stable") {
+      setActiveTab("Salud");
+      onScrollToTop?.();
       return;
     }
     if (focusAction.route === "/dashboard") return;
     router.push(focusAction.route as never);
-  }, [focusAction.key, focusAction.quickFilter, focusAction.route, openSummaryUncategorizedPreview, router]);
+  }, [focusAction.key, focusAction.quickFilter, focusAction.route, onScrollToTop, openSummaryUncategorizedPreview, router]);
 
   const lastPersistedAnalyticsKeyRef = useRef<string | null>(null);
 
@@ -2749,24 +2741,12 @@ export function AdvancedDashboard({
   const activeProjectionDetail = projectionDetail ? projectionDetails[projectionDetail] : null;
   const movementPreviewStats = useMemo(() => {
     if (!movementPreview) return null;
-    const total = movementPreview.movements.reduce((sum, movement) => {
-      if (movementActsAsIncome(movement)) {
-        return sum + incomeAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency });
-      }
-      if (movementActsAsExpense(movement)) {
-        return sum + expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency });
-      }
-      return sum + transferAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency });
-    }, 0);
-    const pending = movementPreview.movements.filter((movement) => movement.status === "pending" || movement.status === "planned").length;
     const uncategorized = movementPreview.movements.filter((movement) => isCategorizedCashflow(movement) && movement.categoryId == null).length;
     return {
-      total,
-      pending,
       uncategorized,
       count: movementPreview.movements.length,
     };
-  }, [accountCurrencyMap, activeCurrency, exchangeRateMap, movementPreview]);
+  }, [movementPreview]);
   const dashboardAi = useDashboardAiOrchestration({ userId, userEmail });
   const dashboardAiFlowMutation = dashboardAi.mutations.flow;
   const dashboardAiHealthMutation = dashboardAi.mutations.health;
@@ -2805,6 +2785,7 @@ export function AdvancedDashboard({
     [dashboardAi],
   );
   const [activeDashboardAiTerm, setActiveDashboardAiTerm] = useState<DashboardAiComplexTerm | null>(null);
+  const [summaryAiSheetOpen, setSummaryAiSheetOpen] = useState(false);
   const dashboardAiTone = dashboardAi.tone;
   const setDashboardAiTone = dashboardAi.setTone;
   const dashboardAiBreath = useRef(new Animated.Value(0)).current;
@@ -2815,6 +2796,8 @@ export function AdvancedDashboard({
     onActiveTabChange?.(activeTab);
   }, [activeTab, onActiveTabChange]);
   const weekHasSchedule = weekWindow.expectedInflow > 0 || weekWindow.expectedOutflow > 0;
+  const weekNet = weekWindow.expectedInflow - weekWindow.expectedOutflow;
+  const reviewDelta = review.totalIssues - priorWeekReview.totalIssues;
   useEffect(() => {
     const animation = Animated.loop(
       Animated.sequence([
@@ -2862,7 +2845,10 @@ export function AdvancedDashboard({
     inputRange: [0, 1],
     outputRange: [0, -5],
   });
-  const dashboardAiCurrentToneResponse = dashboardAiDailyCache?.responses?.[dashboardAiTone] ?? null;
+  const dashboardAiCurrentToneResponse = dashboardAiDailyCache?.responses?.[dashboardAiTone]
+    ?? dashboardAiDailyCache?.responses?.managerial
+    ?? dashboardAiDailyCache?.responses?.personal
+    ?? null;
   const dashboardAiReply = dashboardAiCurrentToneResponse?.reply ?? null;
   const dashboardAiComplexTerms = dashboardAiCurrentToneResponse?.complexTerms ?? [];
   const dashboardAiFlowCurrentToneResponse = dashboardAiFlowCache?.responses?.[dashboardAiTone] ?? null;
@@ -3115,13 +3101,6 @@ export function AdvancedDashboard({
       <DashboardTabBar
         activeTab={activeTab}
         onTabChange={handleTabChange}
-        // Un solo aviso a la vez: si todo llama, nada llama. Sobrevive el contador de Salud,
-        // que es el unico que apunta a trabajo concreto ("91 movimientos por categorizar").
-        // Los puntos de Patrones y Flujo solo decian "aqui hay algo", que es lo que ya dice
-        // estar en un dashboard.
-        indicators={[
-          ...(review.totalIssues > 0 ? [{ tab: 'Salud' as AdvancedTab, count: review.totalIssues }] : []),
-        ]}
       />
 
       {/* Hay agenda real esta semana? Distinto de "todo suma cero": si no hay ni cobros ni
@@ -3129,15 +3108,7 @@ export function AdvancedDashboard({
       {activeTab === 'Resumen' && (
         <DashboardSectionBoundary sectionLabel="Resumen">
         <>
-      {/* Primer bloque de Resumen, no cromo entre el encabezado y las pestañas: ahí se leía
-          como si perteneciera a las pestañas y las despegaba del título. Dentro de una pestaña
-          es contenido, y desaparecer en Patrones o Flujo es correcto — cuando analizas no
-          estás anotando. */}
-      {shortcuts ? <View style={{ height: SPACING.sm }} /> : null}
-      {shortcuts}
-      <View style={{ height: SPACING.sm }} />
       <View>
-        <SectionTitle>Resumen ejecutivo</SectionTitle>
         <View style={subStyles.executiveGrid}>
           <TouchableOpacity style={subStyles.executiveCard} activeOpacity={0.84} onPress={() => setExecutiveDetail("focus")}>
             <View style={subStyles.executiveTop}>
@@ -3149,31 +3120,19 @@ export function AdvancedDashboard({
               </View>
             </View>
             <Text style={subStyles.executiveValue}>{learning.readinessScore}%</Text>
-            <Text style={subStyles.executiveCaption}>
-              {review.totalIssues > 0 ? `${review.totalIssues} punto${review.totalIssues === 1 ? "" : "s"} sin resolver` : "Sin issues pendientes"}
-            </Text>
-            <Text style={subStyles.executiveInterpret}>
-              {learning.readinessScore >= 75
-                ? "Los números son confiables para tomar decisiones."
-                : review.totalIssues > 0
-                ? "Conviene limpiar datos antes de confiar en las métricas."
-                : "Base suficiente, aunque hay margen para mejorar."}
-            </Text>
-            {(() => {
-              const delta = review.totalIssues - priorWeekReview.totalIssues;
-              if (delta === 0) return null;
-              const isImproving = delta < 0;
-              return (
-                <Text style={[subStyles.executiveDeltaChip, { color: isImproving ? COLORS.income : COLORS.expense }]}>
-                  {isImproving ? `v ${Math.abs(delta)} resuelto${Math.abs(delta) === 1 ? "" : "s"}` : `^ ${delta} nuevo${delta === 1 ? "" : "s"}`}
+            <Text style={subStyles.executiveCaption} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85}>
+              {review.totalIssues > 0 ? `${review.totalIssues} punto${review.totalIssues === 1 ? "" : "s"} por revisar` : "Sin pendientes"}
+              {reviewDelta !== 0 ? (
+                <Text style={{ color: reviewDelta < 0 ? COLORS.income : COLORS.expense }}>
+                  {reviewDelta < 0 ? ` · ${Math.abs(reviewDelta)} resueltos` : ` · ${reviewDelta} nuevos`}
                 </Text>
-              );
-            })()}
+              ) : null}
+            </Text>
           </TouchableOpacity>
 
           <TouchableOpacity style={subStyles.executiveCard} activeOpacity={0.84} onPress={() => setExecutiveDetail("risk")}>
             <View style={subStyles.executiveTop}>
-              <Text style={subStyles.executiveLabel}>Riesgo 7 días</Text>
+              <Text style={subStyles.executiveLabel}>Próximos 7 días</Text>
               <View style={[subStyles.executiveTonePill, pressureStatus === "Bajo presión" && subStyles.executiveTonePillWarning]}>
                 <Text style={[subStyles.executiveToneText, pressureStatus === "Bajo presión" && subStyles.executiveToneTextWarning]}>{pressureStatus}</Text>
               </View>
@@ -3184,23 +3143,19 @@ export function AdvancedDashboard({
                 El cero vuelve a aparecer solo cuando significa cero. */}
             {weekHasSchedule ? (
               <>
-                <Text style={subStyles.executiveValue}>{formatCurrency(weekWindow.expectedInflow - weekWindow.expectedOutflow, activeCurrency)}</Text>
-                <Text style={subStyles.executiveCaption}>Entran {formatCurrency(weekWindow.expectedInflow, activeCurrency)} · salen {formatCurrency(weekWindow.expectedOutflow, activeCurrency)}</Text>
-                <Text style={subStyles.executiveInterpret}>
-                  {weekWindow.expectedInflow >= weekWindow.expectedOutflow
-                    ? "Semana con margen positivo — sin presión inmediata."
-                    : "Más compromisos que ingresos esta semana — revisa el flujo."}
+                <Text style={[subStyles.executiveValue, weekNet < 0 && { color: COLORS.expense }]}>
+                  {weekNet < 0 ? "−" : weekNet > 0 ? "+" : ""}{formatCurrency(Math.abs(weekNet), activeCurrency)}
+                </Text>
+                <Text style={subStyles.executiveCaption} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85}>
+                  Entran {formatCurrency(weekWindow.expectedInflow, activeCurrency)} · salen {formatCurrency(weekWindow.expectedOutflow, activeCurrency)} · caja para {cashCushion.days} días
                 </Text>
               </>
             ) : (
               <>
                 <Text style={subStyles.executiveEmptyValue}>Sin movimientos previstos</Text>
-                <Text style={subStyles.executiveInterpret}>
-                  No hay cobros ni pagos agendados para los próximos 7 días.
-                </Text>
+                <Text style={subStyles.executiveCaption} numberOfLines={1}>Caja para {cashCushion.days} días</Text>
               </>
             )}
-            <Text style={[subStyles.executiveDeltaChip, { color: cashCushion.color }]}>Caja libre: {cashCushion.days}d · {cashCushion.label}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity style={subStyles.executiveCard} activeOpacity={0.84} onPress={() => setExecutiveDetail("month")}>
@@ -3211,92 +3166,53 @@ export function AdvancedDashboard({
               </View>
             </View>
             <Text style={subStyles.executiveValue}>{formatCurrency(monthEndReading, activeCurrency)}</Text>
-            <Text style={subStyles.executiveCaption}>Hoy: {formatCurrency(currentVisibleBalance, activeCurrency)} · {activeAccounts.length} cuenta{activeAccounts.length === 1 ? "" : "s"}</Text>
-            <Text style={subStyles.executiveInterpret}>
-              {monthEndDelta >= 0
-                ? `Cerrarías el mes con ${formatCurrency(monthEndDelta, activeCurrency)} más que hoy.`
-                : `Se proyecta consumir ${formatCurrency(Math.abs(monthEndDelta), activeCurrency)} del saldo actual.`}
+            <Text style={subStyles.executiveCaption} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85}>
+              <Text style={{ color: monthEndDelta >= 0 ? COLORS.income : COLORS.expense }}>
+                {monthEndDelta >= 0 ? "+" : "−"}{formatCurrency(Math.abs(monthEndDelta), activeCurrency)}
+              </Text>
+              {` sobre hoy (${formatCurrency(currentVisibleBalance, activeCurrency)} en ${activeAccounts.length} cuenta${activeAccounts.length === 1 ? "" : "s"})`}
             </Text>
-            <Text style={[subStyles.executiveDeltaChip, { color: monthEndDelta >= 0 ? COLORS.income : COLORS.expense }]}>Vs hoy: {formatCurrency(monthEndDelta, activeCurrency)}</Text>
           </TouchableOpacity>
         </View>
       </View>
 
       <View style={{ height: SPACING.sm }} />
-      <View style={subStyles.aiSummaryShellWrap}>
-        <View style={subStyles.aiSummaryShell}>
-          {/* Una linea de que hace, y ya. Antes lo explicaba tres veces —insignia, titulo y dos
-              parrafos— con borde degradado, cuatro orbes animados y un halo. Es una funcion de
-              la app, no una marca aparte. */}
-          <View style={subStyles.aiSummaryCompactHeader}>
-            <Sparkles size={14} color={COLORS.pro} />
-            <Text style={subStyles.aiSummaryCompactTitle}>Explica tu situación con IA</Text>
-          </View>
-          <TouchableOpacity
-            activeOpacity={0.86}
-            onPress={() => void handleRequestDashboardAiSummary()}
-            disabled={dashboardAiSummaryMutation.isPending || dashboardAiLimitReached}
-            style={[
-              subStyles.aiSummaryButton,
-              (dashboardAiSummaryMutation.isPending || dashboardAiLimitReached) && subStyles.aiSummaryButtonDisabled,
-            ]}
-          >
-            <View style={subStyles.aiSummaryButtonAccent} />
-            <View style={subStyles.aiSummaryButtonInner}>
-              <Sparkles size={16} color={dashboardAiSummaryMutation.isPending || dashboardAiLimitReached ? "rgba(244,241,236,0.4)" : COLORS.pro} />
-              <Text style={subStyles.aiSummaryButtonLabel}>
-                {dashboardAiSummaryMutation.isPending
-                  ? "Preparando explicacion..."
-                  : dashboardAiLimitReached
-                    ? "Consulta de hoy usada"
-                    : dashboardAiTone === "managerial"
-                      ? "Ver informe gerencial"
-                      : "Hablar con mi asesor personal"}
-              </Text>
-            </View>
-          </TouchableOpacity>
-          {dashboardAiSummaryMutation.isPending && !dashboardAiReply ? <AiResponseSkeleton /> : null}
-          {dashboardAiReply ? (
-            <View style={subStyles.aiSummaryResponseCard}>
-              <View style={subStyles.aiSummaryResponseAiTag}>
-                <Sparkles size={11} color={COLORS.pro} />
-                <Text style={subStyles.aiSummaryResponseLabel}>
-                  {dashboardAiTone === "managerial" ? "Gemini · Modo gerencial" : "Gemini · Modo asesor"}
-                </Text>
-              </View>
-              {dashboardAiResolvedTerms.length > 0 ? (
-                <Text style={subStyles.aiSummaryGlossaryHint}>
-                  Toca las palabras resaltadas para ver su explicación.
-                </Text>
-              ) : null}
-              <Text style={subStyles.aiSummaryResponseText}>
-                {dashboardAiTextParts.map((part, index) => (
-                  part.type === "term" ? (
-                    <Text
-                      key={`${part.term.term}-${index}`}
-                      style={subStyles.aiSummaryResponseTerm}
-                      onPress={() => setActiveDashboardAiTerm(part.term)}
-                    >
-                      {part.value}
-                    </Text>
-                  ) : (
-                    <Text key={`text-${index}`}>{part.value}</Text>
-                  )
-                ))}
-              </Text>
-            </View>
-          ) : (
-            <Text style={subStyles.aiSummaryHint}>
-              {dashboardAiLimitReached
-                ? "Ya usaste tu explicación de IA de hoy en este módulo. Podrás pedir otra mañana."
-                : "Gemini interpreta tu resumen actual y siempre cierra con una recomendación concreta para hoy."}
-            </Text>
-          )}
-          <View style={subStyles.aiSummaryFooterRow}>
-            <Text style={subStyles.aiSummaryFooterText}>Gemini mejora la lectura del sistema, pero usa solo los datos que ya existen en DarkMoney.</Text>
-          </View>
-        </View>
+      <View style={subStyles.nextStepCard}>
+        <Text style={subStyles.nextStepKicker}>Siguiente paso</Text>
+        <Text style={subStyles.nextStepTitle}>{focusAction.title}</Text>
+        <Text style={subStyles.nextStepDetail}>{focusAction.body}</Text>
+        <TouchableOpacity
+          style={subStyles.nextStepButton}
+          onPress={openFocusActionDestination}
+          activeOpacity={0.84}
+          accessibilityRole="button"
+        >
+          <Text style={subStyles.nextStepButtonText}>
+            {focusAction.key === "uncategorized" ? "Categorizar ahora" : focusAction.key === "stable" ? "Ver salud" : "Revisar ahora"}
+          </Text>
+        </TouchableOpacity>
       </View>
+
+      <View style={{ height: SPACING.sm }} />
+      <TouchableOpacity
+        style={subStyles.summaryAiRow}
+        onPress={() => {
+          setSummaryAiSheetOpen(true);
+          if (!dashboardAiReply && !dashboardAiLimitReached && !dashboardAiSummaryMutation.isPending) {
+            void handleRequestDashboardAiSummary();
+          }
+        }}
+        activeOpacity={0.84}
+        accessibilityRole="button"
+        accessibilityLabel="Abrir informe con IA"
+      >
+        <View style={subStyles.summaryAiIcon}><Sparkles size={18} color={COLORS.pro} /></View>
+        <View style={subStyles.summaryAiCopy}>
+          <Text style={subStyles.summaryAiTitle}>Informe con IA</Text>
+          <Text style={subStyles.summaryAiSubtitle}>Explica este resumen en palabras</Text>
+        </View>
+        <ArrowRight size={16} color={COLORS.storm} />
+      </TouchableOpacity>
 
       {financialGraphRank.length > 0 ? (
         <>
@@ -3309,12 +3225,64 @@ export function AdvancedDashboard({
         </>
       ) : null}
 
+      {showAdvancedGift ? (
+        <>
+          <View style={{ height: SPACING.sm }} />
+          <AdvancedGiftCard />
+        </>
+      ) : null}
+
+      {shortcuts ? (
+        <>
+          <View style={{ height: SPACING.sm }} />
+          {shortcuts}
+        </>
+      ) : null}
+
       </>
       </DashboardSectionBoundary>
       )}
 
       <BottomSheet
-        visible={Boolean(activeDashboardAiTerm)}
+        visible={summaryAiSheetOpen}
+        onClose={() => { setSummaryAiSheetOpen(false); setActiveDashboardAiTerm(null); }}
+        title={activeDashboardAiTerm ? "Explicación" : "Informe con IA"}
+        snapHeight={0.82}
+        blurBackdrop={false}
+        headerStyle={subStyles.summarySheetHeader}
+        contentStyle={subStyles.summarySheetContent}
+      >
+        {activeDashboardAiTerm ? (
+          <View style={subStyles.aiSummaryTermSheet}>
+            <TouchableOpacity onPress={() => setActiveDashboardAiTerm(null)} accessibilityRole="button">
+              <Text style={subStyles.summaryAiBack}>Volver al informe</Text>
+            </TouchableOpacity>
+            <Text style={subStyles.aiSummaryTermSheetTitle}>{activeDashboardAiTerm.term}</Text>
+            <Text style={subStyles.aiSummaryTermSheetBody}>{activeDashboardAiTerm.explanation}</Text>
+          </View>
+        ) : dashboardAiSummaryMutation.isPending && !dashboardAiReply ? (
+          <AiResponseSkeleton />
+        ) : dashboardAiReply ? (
+          <Text style={subStyles.summaryAiReportText}>
+            {dashboardAiTextParts.map((part, index) => part.type === "term" ? (
+              <Text
+                key={`${part.term.term}-${index}`}
+                style={subStyles.summaryAiReportTerm}
+                onPress={() => setActiveDashboardAiTerm(part.term)}
+              >
+                {part.value}
+              </Text>
+            ) : <Text key={`text-${index}`}>{part.value}</Text>)}
+          </Text>
+        ) : (
+          <Text style={subStyles.summaryAiReportText}>
+            {dashboardAiLimitReached ? "La consulta de hoy ya se usó. Podrás pedir otro informe mañana." : "No se pudo preparar el informe. Cierra la hoja y vuelve a intentarlo."}
+          </Text>
+        )}
+      </BottomSheet>
+
+      <BottomSheet
+        visible={Boolean(activeDashboardAiTerm) && !summaryAiSheetOpen}
         onClose={() => setActiveDashboardAiTerm(null)}
         title="Explicación"
         snapHeight={0.42}
@@ -3405,31 +3373,23 @@ export function AdvancedDashboard({
         ) : null}
       </BottomSheet>
 
-      <Modal
+      <BottomSheet
         visible={Boolean(movementPreview)}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setMovementPreview(null)}
+        onClose={() => setMovementPreview(null)}
+        title={movementPreview?.title ?? "Movimientos"}
+        snapHeight={0.88}
+        blurBackdrop={false}
+        headerStyle={subStyles.summarySheetHeader}
+        contentStyle={subStyles.summarySheetContent}
       >
-        <View style={subStyles.movementPreviewOverlay}>
-          <Pressable style={subStyles.movementPreviewBackdrop} onPress={() => setMovementPreview(null)} />
-          <View style={subStyles.movementPreviewCard}>
-            <View style={subStyles.movementPreviewHeader}>
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={subStyles.movementPreviewKicker}>Movimientos del dashboard</Text>
-                <Text style={subStyles.movementPreviewTitle}>{movementPreview?.title}</Text>
-              </View>
-              <TouchableOpacity
-                style={subStyles.movementPreviewClose}
-                onPress={() => setMovementPreview(null)}
-                activeOpacity={0.82}
-              >
-                <X size={18} color={COLORS.ink} />
-              </TouchableOpacity>
-            </View>
-
-            <Text style={subStyles.movementPreviewSubtitle}>{movementPreview?.subtitle}</Text>
-            <Text style={subStyles.movementPreviewScope}>{movementPreview?.scopeLabel}</Text>
+            <Text style={subStyles.movementPreviewSubtitle}>
+              {movementPreview?.variant === "graph"
+                ? `${movementPreviewStats?.count ?? 0} movimientos · últimos 90 días`
+                : movementPreview?.subtitle}
+            </Text>
+            {movementPreview?.variant === "graph" ? null : (
+              <Text style={subStyles.movementPreviewScope}>{movementPreview?.scopeLabel}</Text>
+            )}
             {movementPreview?.suggestion ? (
               <TouchableOpacity
                 style={[
@@ -3453,36 +3413,28 @@ export function AdvancedDashboard({
                 </View>
               </TouchableOpacity>
             ) : null}
-            {movementPreviewStats && movementPreviewStats.count > 0 ? (
-              <View style={subStyles.movementPreviewStatsRow}>
-                <View style={subStyles.movementPreviewStatPill}>
-                  <Text style={subStyles.movementPreviewStatLabel}>Movimientos</Text>
-                  <Text style={subStyles.movementPreviewStatValue}>{movementPreviewStats.count}</Text>
-                </View>
-                <View style={subStyles.movementPreviewStatPill}>
-                  <Text style={subStyles.movementPreviewStatLabel}>Total listado</Text>
-                  <Text style={subStyles.movementPreviewStatValue}>{formatCurrency(movementPreviewStats.total, activeCurrency)}</Text>
-                </View>
-                {movementPreviewStats.uncategorized > 0 ? (
-                  <View style={subStyles.movementPreviewStatPill}>
-                    <Text style={subStyles.movementPreviewStatLabel}>Sin categoría</Text>
-                    <Text style={subStyles.movementPreviewStatValue}>{movementPreviewStats.uncategorized}</Text>
-                  </View>
-                ) : null}
-                {movementPreviewStats.pending > 0 ? (
-                  <View style={subStyles.movementPreviewStatPill}>
-                    <Text style={subStyles.movementPreviewStatLabel}>Pendientes</Text>
-                    <Text style={subStyles.movementPreviewStatValue}>{movementPreviewStats.pending}</Text>
-                  </View>
-                ) : null}
-              </View>
+            {movementPreviewStats && movementPreviewStats.uncategorized > 0 ? (
+              <TouchableOpacity
+                style={subStyles.movementPreviewCategorizeRow}
+                onPress={() => { setMovementPreview(null); openSummaryUncategorizedPreview(); }}
+                activeOpacity={0.82}
+                accessibilityRole="button"
+              >
+                <Text style={subStyles.movementPreviewCategorizeCount}>{movementPreviewStats.uncategorized} sin categoría</Text>
+                <Text style={subStyles.movementPreviewCategorizeAction}>Categorizar</Text>
+              </TouchableOpacity>
             ) : null}
 
             {movementPreview && movementPreview.movements.length > 0 ? (
-              <ScrollView style={subStyles.movementPreviewList} contentContainerStyle={subStyles.movementPreviewListContent}>
-                {movementPreview.movements.map((movement) => {
+              <View style={subStyles.movementPreviewListContent}>
+                {movementPreview.movements.map((movement, index) => {
+                  const occurredAt = new Date(movement.occurredAt);
+                  const monthKey = format(occurredAt, "yyyy-MM");
+                  const previousMonthKey = index > 0 ? format(new Date(movementPreview.movements[index - 1].occurredAt), "yyyy-MM") : null;
                   const incomeLike = movementActsAsIncome(movement);
                   const expenseLike = movementActsAsExpense(movement);
+                  const transferIncoming = movement.movementType === "transfer" && movementPreview.graphAccountId != null && movement.destinationAccountId === movementPreview.graphAccountId;
+                  const transferOutgoing = movement.movementType === "transfer" && movementPreview.graphAccountId != null && movement.sourceAccountId === movementPreview.graphAccountId;
                   const amount = incomeLike
                     ? incomeAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency })
                     : expenseLike
@@ -3491,41 +3443,40 @@ export function AdvancedDashboard({
                   const accountId = movementDisplayAccountId(movement);
                   const accountName = accountId ? accountMap.get(accountId) ?? "Cuenta" : "Sin cuenta";
                   const categoryName = movement.categoryId != null ? categoryMap.get(movement.categoryId) ?? "Categoría" : "Sin categoría";
-                  const amountColor = incomeLike ? COLORS.income : expenseLike ? COLORS.expense : COLORS.storm;
-                  const sign = incomeLike ? "+" : expenseLike ? "-" : "";
+                  const needsCategory = isCategorizedCashflow(movement) && movement.categoryId == null;
+                  const statusLabel = movement.status === "posted" ? "" : movement.status === "pending" ? "Pendiente" : movement.status === "planned" ? "Planificado" : "Anulado";
+                  const amountColor = incomeLike || transferIncoming ? COLORS.income : expenseLike || transferOutgoing ? COLORS.expense : COLORS.storm;
+                  const sign = incomeLike || transferIncoming ? "+" : expenseLike || transferOutgoing ? "−" : "";
 
                   return (
-                    <View key={movement.id} style={subStyles.movementPreviewRow}>
+                    <Fragment key={movement.id}>
+                    {monthKey !== previousMonthKey ? (
+                      <Text style={subStyles.movementPreviewMonth}>{format(occurredAt, "MMMM", { locale: es })}</Text>
+                    ) : null}
+                    <TouchableOpacity
+                      style={subStyles.movementPreviewRow}
+                      onPress={() => { setMovementPreview(null); router.push(`/movement/${movement.id}?from=dashboard` as never); }}
+                      activeOpacity={0.82}
+                      accessibilityRole="button"
+                    >
                       <View style={{ flex: 1, minWidth: 0 }}>
                         <Text style={subStyles.movementPreviewRowTitle} numberOfLines={1}>
-                          {movement.description.trim() || "Movimiento sin descripción"}
+                          {movement.description.trim() || (incomeLike ? "Ingreso sin descripción" : expenseLike ? "Gasto sin descripción" : "Movimiento sin descripción")}
                         </Text>
                         <Text style={subStyles.movementPreviewRowMeta} numberOfLines={1}>
-                          {format(new Date(movement.occurredAt), "d MMM yyyy", { locale: es })} · {categoryName} · {accountName}
-                        </Text>
-                        <Text style={subStyles.movementPreviewRowStatus} numberOfLines={1}>
-                          {movement.status === "posted" ? "Confirmado" : movement.status === "pending" ? "Pendiente" : movement.status === "planned" ? "Planificado" : "Anulado"}
+                          {format(new Date(movement.occurredAt), "d MMM", { locale: es })} · <Text style={needsCategory && { color: COLORS.expense }}>
+                            {movement.movementType === "transfer" ? "Transferencia" : categoryName}
+                          </Text>{movementPreview.variant === "graph" ? "" : ` · ${accountName}`}{statusLabel ? ` · ${statusLabel}` : ""}
                         </Text>
                       </View>
-                      <View style={subStyles.movementPreviewRowSide}>
-                        <Text style={[subStyles.movementPreviewAmount, { color: amountColor }]} numberOfLines={1}>
-                          {sign}{formatCurrency(amount, activeCurrency)}
-                        </Text>
-                        <TouchableOpacity
-                          style={subStyles.movementPreviewEditBtn}
-                          onPress={() => {
-                            setMovementPreview(null);
-                            router.push(`/movement/${movement.id}?from=dashboard&edit=1` as never);
-                          }}
-                          activeOpacity={0.84}
-                        >
-                          <Text style={subStyles.movementPreviewEditText}>{movementPreviewActionLabel(movement)}</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
+                      <Text style={[subStyles.movementPreviewAmount, { color: amountColor }]} numberOfLines={1}>
+                        {sign}{formatCurrency(amount, activeCurrency)}
+                      </Text>
+                    </TouchableOpacity>
+                    </Fragment>
                   );
                 })}
-              </ScrollView>
+              </View>
             ) : (
               <View style={subStyles.movementPreviewEmpty}>
                 <Text style={subStyles.movementPreviewEmptyTitle}>
@@ -3536,9 +3487,7 @@ export function AdvancedDashboard({
                 </Text>
               </View>
             )}
-          </View>
-        </View>
-      </Modal>
+      </BottomSheet>
 
       <BottomSheet
         visible={Boolean(selectedAnnualMonthDetail)}
@@ -3712,59 +3661,6 @@ export function AdvancedDashboard({
           </View>
         ) : null}
       </BottomSheet>
-
-      {activeTab === 'Resumen' && (
-        <DashboardSectionBoundary sectionLabel="Resumen">
-        <>
-      {showAdvancedGift ? (
-        <>
-          <View style={{ height: SPACING.sm }} />
-          <AdvancedGiftCard />
-        </>
-      ) : null}
-      <View style={{ height: SPACING.sm }} />
-      <Card>
-        <View style={subStyles.cardHeaderWithAction}>
-          <Text style={subStyles.layerKicker}>Centro de foco</Text>
-          <TouchableOpacity style={subStyles.inlineExplainBtn} onPress={() => setAdvancedDetail("focusCenter")} activeOpacity={0.82}>
-            <Text style={subStyles.inlineExplainBtnText}>Entender</Text>
-          </TouchableOpacity>
-        </View>
-        <Text style={subStyles.layerHeroBody}>
-          Aquí va lo que más importa ahora. La idea es que no tengas que interpretar diez tarjetas antes de decidir qué mirar.
-        </Text>
-        <TouchableOpacity style={subStyles.focusHeroCard} onPress={() => setAdvancedDetail("focusCenter")} activeOpacity={0.84}>
-          <View style={subStyles.focusHeroTop}>
-            <Text style={subStyles.focusHeroLabel}>Tu siguiente mejor acción</Text>
-            <View style={subStyles.focusHeroPills}>
-              <View style={subStyles.focusHeroTonePill}><Text style={subStyles.focusHeroToneText} numberOfLines={1}>{focusAction.tag}</Text></View>
-              <View style={subStyles.focusHeroTonePillMuted}><Text style={subStyles.focusHeroToneTextMuted} numberOfLines={1}>{focusAction.scorePill}</Text></View>
-            </View>
-          </View>
-          <View style={subStyles.focusHeroMiddle}>
-            <View style={{ flex: 1, gap: SPACING.xs }}>
-              <Text style={subStyles.focusHeroTitle}>{focusAction.title}</Text>
-              <Text style={subStyles.focusHeroValue}>{focusAction.body}</Text>
-              <Text style={subStyles.focusHeroBody}>{focusAction.detail}</Text>
-              <Text style={subStyles.focusHeroReason}>{focusAction.reason}</Text>
-            </View>
-            <ArrowRight size={20} color={COLORS.primary} />
-          </View>
-        </TouchableOpacity>
-
-        <View style={subStyles.coachChipList}>
-          {panelCoachChips.map((chip, i) => (
-            <View key={i} style={[subStyles.coachChip, { borderLeftColor: chip.color }]}>
-              <chip.icon size={13} color={chip.color} strokeWidth={2} />
-              <Text style={[subStyles.coachChipText, chip.weight === "high" && { color: COLORS.ink }]}>{chip.label}</Text>
-            </View>
-          ))}
-        </View>
-      </Card>
-
-      </>
-      </DashboardSectionBoundary>
-      )}
 
       {activeTab === 'Patrones' && (
         <DashboardSectionBoundary sectionLabel="Patrones">

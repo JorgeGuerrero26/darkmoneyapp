@@ -181,6 +181,18 @@ function runFinancialGraphTest() {
   assert(rank.length > 0, "debe devolver nodos rankeados");
   assert(rank.some((node) => node.label === "Transporte"), "debe incluir la categoría con más conexiones");
   assert(rank[0].score >= rank[rank.length - 1].score, "debe ordenar por score descendente");
+
+  const byAmount = buildFinancialGraphRank({
+    movements,
+    getAmount: (movement) => movement.amount,
+    getAccountIds: (movement) => [movement.sourceAccountId, movement.destinationAccountId],
+    getCategoryId: (movement) => movement.categoryId,
+    getCounterpartyId: (movement) => movement.counterpartyId,
+    getFlowKind: (movement) => movement.movementType === "income" ? "income" : "expense",
+    limit: 8,
+    sortBy: "amount",
+  });
+  assert(byAmount.every((node, index) => index === 0 || byAmount[index - 1].amount >= node.amount), "la vista por monto debe ordenar de mayor a menor");
 }
 
 function runFocusAndPaymentTests() {

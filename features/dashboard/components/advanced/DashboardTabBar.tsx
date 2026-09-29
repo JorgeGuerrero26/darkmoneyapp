@@ -77,7 +77,6 @@ export function DashboardTabBar({
 const tabBarStyles = StyleSheet.create({
   container: {
     flexDirection: "row",
-    paddingHorizontal: SPACING.xl,
     marginBottom: SPACING.sm,
   },
   tab: {

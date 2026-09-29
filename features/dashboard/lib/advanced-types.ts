@@ -45,6 +45,8 @@ export type MovementPreviewSheetState = {
   title: string;
   subtitle: string;
   scopeLabel: string;
+  variant?: "graph";
+  graphAccountId?: number | null;
   emptyTitle?: string;
   emptyBody?: string;
   movements: DashboardMovementRow[];

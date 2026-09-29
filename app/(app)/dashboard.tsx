@@ -81,7 +81,7 @@ import { MovementForm } from "../../components/forms/MovementForm";
 import { BottomSheet } from "../../components/ui/BottomSheet";
 import { WorkspaceSelector } from "../../components/layout/WorkspaceSelector";
 import { COLORS, ELEVATION, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
-import { IOS_FLOATING_TAB_BAR_SPACE } from "../../constants/floating-tab-bar";
+import { IOS_FLOATING_TAB_BAR_SPACE, TAB_BAR_CONTENT_HEIGHT } from "../../constants/floating-tab-bar";
 import { FAB } from "../../components/ui/FAB";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { DayMovementsSheet, type DaySheetMode } from "../../components/dashboard/DayMovementsSheet";
@@ -478,14 +478,7 @@ function DashboardScreen() {
 
   const lastUpdateLabel = useMemo(() => {
     if (!dataUpdatedAt) return "";
-    const seconds = Math.floor((Date.now() - dataUpdatedAt) / 1000);
-    if (seconds < 10) return "Ahora";
-    if (seconds < 60) return `Actualizado hace ${seconds}s`;
-    const minutes = Math.floor(seconds / 60);
-    if (minutes < 60) return `Actualizado hace ${minutes}min`;
-    const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `Actualizado hace ${hours}h`;
-    return `Actualizado hace ${Math.floor(hours / 24)}d`;
+    return `actualizado ${format(new Date(dataUpdatedAt), "H:mm")}`;
   }, [dataUpdatedAt]);
 
   const obligationsMerged = useMemo(
@@ -631,7 +624,6 @@ function DashboardScreen() {
       },
     );
   }, [activeWorkspaceId, baseCurrency, createMovementForHabit, deleteMovementForHabit, savingHabitKey, showRichToast, showToast, snapshot?.accounts]);
-  const workspaceDisplayName = resolvedActiveWorkspace?.name ?? "Tu workspace";
   const snapshotBudgets = useMemo(() => snapshot?.budgets ?? [], [snapshot?.budgets]);
 
   const {
@@ -794,8 +786,11 @@ function DashboardScreen() {
       <View style={[styles.screen, { paddingTop: insets.top }]}>
         <ScreenHeader
           title={`Hola, ${profile?.fullName?.split(" ")[0] ?? "usuario"}`}
-          subtitle={`${workspaceDisplayName} · ${format(new Date(), "d MMM yyyy", { locale: es })}${lastUpdateLabel ? ` · ${lastUpdateLabel}` : ""}`}
+          subtitle={`${format(new Date(), "d MMM", { locale: es })}${lastUpdateLabel ? ` · ${lastUpdateLabel}` : ""}`}
           showPlanBadge
+          compactPlanBadge
+          fullWidthMeta
+          style={styles.header}
         />
         <ScrollView contentContainerStyle={styles.content}>
           <SkeletonList>
@@ -822,8 +817,11 @@ function DashboardScreen() {
       <View style={[styles.screen, { paddingTop: insets.top }]}>
         <ScreenHeader
           title={`Hola, ${profile?.fullName?.split(" ")[0] ?? "usuario"}`}
-          subtitle={format(new Date(), "d MMM yyyy", { locale: es })}
+          subtitle={format(new Date(), "d MMM", { locale: es })}
           showPlanBadge
+          compactPlanBadge
+          fullWidthMeta
+          style={styles.header}
         />
         <ScrollView contentContainerStyle={styles.content}>
           <EmptyState
@@ -856,14 +854,18 @@ function DashboardScreen() {
       {isAdvancedCollapsedHeader ? (
         <ScreenHeader
           title={advancedTab}
+          style={styles.header}
           rightAction={<DashboardHeaderRight onSignOut={handleSignOut} privacyMode={privacyMode} onTogglePrivacy={() => { void Haptics.selectionAsync(); togglePrivacyMode(); }} />}
         />
       ) : (
         <ScreenHeader
           title={`Hola, ${profile?.fullName?.split(" ")[0] ?? "usuario"}`}
-          subtitle={`${workspaceDisplayName} · ${format(new Date(), "d MMM yyyy", { locale: es })}${lastUpdateLabel ? ` · ${lastUpdateLabel}` : ""}`}
+          subtitle={`${format(new Date(), "d MMM", { locale: es })}${lastUpdateLabel ? ` · ${lastUpdateLabel}` : ""}`}
           rightAction={<DashboardHeaderRight onSignOut={handleSignOut} privacyMode={privacyMode} onTogglePrivacy={() => { void Haptics.selectionAsync(); togglePrivacyMode(); }} />}
           showPlanBadge
+          compactPlanBadge
+          fullWidthMeta
+          style={styles.header}
         />
       )}
 
@@ -1140,8 +1142,9 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.md,
   },
   screen: { flex: 1, backgroundColor: COLORS.canvas },
+  header: { paddingHorizontal: SPACING.xl },
   // paddingBottom deja libre la franja de la barra flotante de iOS (0 en Android).
-  content: { padding: SPACING.lg, gap: SPACING.xl, paddingBottom: 100 + IOS_FLOATING_TAB_BAR_SPACE },
+  content: { padding: SPACING.xl, gap: SPACING.xl, paddingBottom: TAB_BAR_CONTENT_HEIGHT + 96 + IOS_FLOATING_TAB_BAR_SPACE },
 });
 
 // --- Dashboard header right actions -------------------------------------------
