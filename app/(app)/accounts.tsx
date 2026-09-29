@@ -78,7 +78,7 @@ function AccountsScreen() {
   const { showToast, showErrorToast } = useToast();
   const { reason: notificationReason } = useNotificationReason();
 
-  const { data: snapshot, isLoading, isRefetching, refetch, dataUpdatedAt } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
+  const { data: snapshot, isLoading, refetch, dataUpdatedAt } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const archiveAccount = useArchiveAccountMutation(activeWorkspaceId);
   const deleteAccount = useDeleteAccountMutation(activeWorkspaceId);
   const syncExchangeRatePair = useSyncExchangeRatePairMutation();
@@ -615,7 +615,6 @@ function AccountsScreen() {
               ),
             }}
             empty={emptyConfig}
-            refreshing={isRefetching}
             onRefresh={onRefresh}
             contentContainerStyle={localStyles.listContent}
           />

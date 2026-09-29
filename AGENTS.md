@@ -81,6 +81,10 @@ Incidente del 2026-09-26: después de cambiar entre Movimientos y Cuentas y volv
 
 Diagnóstico, referencias de las librerías y prueba completa: [docs/swipe-audit-2026-09-26.md](docs/swipe-audit-2026-09-26.md).
 
+### Indicador de actualizar listas
+
+El `RefreshControl` solo debe mostrarse tras el gesto de tirar de la lista. `ResourceSectionList` gestiona su estado con `useGestureRefresh`; las pantallas deben pasar un `onRefresh` que devuelva la promesa de actualización. No conectar `isLoading`, `isFetching`, `isRefetching` ni estados de mutaciones a `refreshing`: también cambian por actualizaciones automáticas al entrar, volver a la app o invalidar consultas, y pueden dejar el indicador visible sin gesto. Las actualizaciones automáticas siguen en segundo plano. El hook cierra el indicador a los 15 segundos si la petición se atasca. El Dashboard, que usa un `RefreshControl` propio, debe usar el mismo hook.
+
 ## Reglas De Arquitectura
 
 - `app/*` orquesta estado, queries, callbacks y slots de la plantilla; no debe contener cards, rows o modals grandes inline.

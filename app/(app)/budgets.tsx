@@ -110,7 +110,6 @@ function BudgetsScreen() {
     deferredLoading,
     deferredFailed,
     retryDeferred,
-    isRefetching: snapshotRefetching,
     refetch: refetchSnapshot,
     dataUpdatedAt,
   } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
@@ -628,7 +627,6 @@ function BudgetsScreen() {
                   },
                 }
           }
-          refreshing={snapshotRefetching || movementsLoading}
           onRefresh={onRefresh}
         />
       }

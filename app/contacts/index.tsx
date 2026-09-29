@@ -336,7 +336,7 @@ function ContactsScreen() {
   }, [canDeleteContact, showToast]);
 
   const onRefresh = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+    return queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
   }, [queryClient]);
 
   function clearContactFilters() {
@@ -547,7 +547,6 @@ function ContactsScreen() {
               : "Agrega clientes, proveedores y más.",
             action: !hasFilters ? { label: "Nuevo contacto", onPress: () => setCreateFormVisible(true) } : undefined,
           }}
-          refreshing={isLoading}
           onRefresh={onRefresh}
         />
       }

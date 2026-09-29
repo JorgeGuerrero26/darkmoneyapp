@@ -74,6 +74,7 @@ import { ProgressBar } from "../../components/ui/ProgressBar";
 import { SkeletonCard, SkeletonKpi, SkeletonList } from "../../components/ui/Skeleton";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { useAfterFirstPaint } from "../../hooks/useAfterFirstPaint";
+import { useGestureRefresh } from "../../hooks/useGestureRefresh";
 import { isDashboardDataUnavailable } from "../../features/dashboard/lib/dashboardDataAvailability";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { formatCurrency } from "../../components/ui/AmountDisplay";
@@ -745,17 +746,15 @@ function DashboardScreen() {
     (day) => day.income > 0 || day.expense > 0 || day.transferTotal > 0,
   );
 
-  const [isRefreshing, setIsRefreshing] = useState(false);
-
-  const onRefresh = useCallback(() => {
-    setIsRefreshing(true);
-    Promise.all([
+  const onRefresh = useCallback(async () => {
+    await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] }),
       queryClient.invalidateQueries({ queryKey: ["dashboard-movements"] }),
       queryClient.invalidateQueries({ queryKey: ["budget-scope-movements"] }),
       queryClient.invalidateQueries({ queryKey: ["shared-obligations"] }),
-    ]).finally(() => setIsRefreshing(false));
+    ]);
   }, [queryClient]);
+  const { refreshing: isRefreshing, refreshByGesture } = useGestureRefresh(onRefresh);
 
   const activeAccounts = useMemo(
     () => (snapshot?.accounts ?? []).filter((a) => !a.isArchived),
@@ -882,7 +881,7 @@ function DashboardScreen() {
         refreshControl={
           <RefreshControl
             refreshing={isRefreshing}
-            onRefresh={onRefresh}
+            onRefresh={refreshByGesture}
             tintColor={COLORS.pine}
             colors={[COLORS.pine]}
             progressBackgroundColor={SURFACE.deepNavy}

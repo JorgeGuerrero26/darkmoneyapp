@@ -297,7 +297,7 @@ function RecurringIncomeScreen() {
   }, []);
 
   const onRefresh = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+    return queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
   }, [queryClient]);
 
   const clearFilters = useCallback(() => {
@@ -562,7 +562,6 @@ function RecurringIncomeScreen() {
               : "Registra tu sueldo, renta u otros ingresos recurrentes para seguir lo que entra cada mes.",
             action: !hasFilters ? { label: "Agregar ingreso fijo", onPress: () => setCreateFormVisible(true) } : undefined,
           }}
-          refreshing={isLoading}
           onRefresh={onRefresh}
         />
       }

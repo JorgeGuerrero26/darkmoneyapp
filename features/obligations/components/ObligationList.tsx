@@ -17,8 +17,7 @@ type Props = {
   onRetry: () => void;
   sharedLoading: boolean;
   hasActiveSharedItems: boolean;
-  refreshing: boolean;
-  onRefresh: () => void;
+  onRefresh: () => void | Promise<unknown>;
   onCreateFirst: () => void;
   renderItem: SectionListRenderItem<ObligationListItem, ObligationListSection>;
 };
@@ -31,7 +30,6 @@ export function ObligationList({
   onRetry,
   sharedLoading,
   hasActiveSharedItems,
-  refreshing,
   onRefresh,
   onCreateFirst,
   renderItem,
@@ -92,7 +90,6 @@ export function ObligationList({
                   : undefined,
             }
       }
-      refreshing={refreshing}
       onRefresh={onRefresh}
     />
   );

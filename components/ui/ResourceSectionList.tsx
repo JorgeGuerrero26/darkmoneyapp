@@ -18,6 +18,7 @@ import { IOS_FLOATING_TAB_BAR_SPACE } from "../../constants/floating-tab-bar";
 import { EmptyState } from "./EmptyState";
 import { StaggeredItem } from "./StaggeredItem";
 import { SwipeRowContext, useSwipeRowScope } from "./SwipeRowScope";
+import { useGestureRefresh } from "../../hooks/useGestureRefresh";
 
 export type ResourceSection<T, K extends string = string> = {
   key: K;
@@ -65,8 +66,7 @@ type Props<T, S extends ResourceSection<T> = ResourceSection<T>> = {
   keyExtractor: (item: T, index: number) => string;
   loading: LoadingConfig;
   empty: EmptyConfig | null;
-  refreshing?: boolean;
-  onRefresh?: () => void;
+  onRefresh?: () => void | Promise<unknown>;
   contentContainerStyle?: StyleProp<ViewStyle>;
   listHeaderComponent?: React.ReactNode;
   listFooterComponent?: React.ReactNode;
@@ -85,7 +85,6 @@ export function ResourceSectionList<T, S extends ResourceSection<T> = ResourceSe
   keyExtractor,
   loading,
   empty,
-  refreshing = false,
   onRefresh,
   contentContainerStyle,
   listHeaderComponent,
@@ -108,6 +107,7 @@ export function ResourceSectionList<T, S extends ResourceSection<T> = ResourceSe
 }: Props<T, S>) {
   const entranceDeadlineRef = useRef(Date.now() + 700);
   const { scope, reset } = useSwipeRowScope();
+  const { refreshing, refreshByGesture } = useGestureRefresh(onRefresh);
 
   return (
     <SwipeRowContext.Provider value={scope}>
@@ -180,7 +180,7 @@ export function ResourceSectionList<T, S extends ResourceSection<T> = ResourceSe
           onRefresh ? (
             <RefreshControl
               refreshing={refreshing}
-              onRefresh={onRefresh}
+              onRefresh={refreshByGesture}
               // iOS usa tintColor; Android usa colors[] + progressBackgroundColor. Sin esto, en
               // Android el spinner salía con color por defecto (poco visible en tema oscuro), por lo
               // que el arrastre no daba feedback. Ahora el indicador es visible en todos los módulos.

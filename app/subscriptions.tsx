@@ -75,7 +75,7 @@ function SubscriptionsScreen() {
   const { showToast, showErrorToast } = useToast();
   const { reason: notificationReason } = useNotificationReason();
 
-  const { data: snapshot, isLoading, isRefetching, refetch } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
+  const { data: snapshot, isLoading, refetch } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const updateMutation = useUpdateSubscriptionMutation(activeWorkspaceId);
   const deleteMutation = useDeleteSubscriptionMutation(activeWorkspaceId);
   const togglePinMutation = useToggleSubscriptionPinMutation(activeWorkspaceId);
@@ -522,7 +522,6 @@ function SubscriptionsScreen() {
               : "Lleva el control de Netflix, Spotify y todo lo que pagas cada mes.",
             action: !hasFilters ? { label: "Agregar suscripción", onPress: () => setCreateFormVisible(true) } : undefined,
           }}
-          refreshing={isRefetching}
           onRefresh={onRefresh}
         />
       }

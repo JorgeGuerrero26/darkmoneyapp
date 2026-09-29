@@ -105,9 +105,11 @@ function AccountDetailScreen() {
     [data],
   );
 
-  const onRefresh = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: ["movements"] });
-    void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+  const onRefresh = useCallback(async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["movements"] }),
+      queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] }),
+    ]);
   }, [queryClient]);
 
   async function handleToggleArchive() {
@@ -316,7 +318,6 @@ function AccountDetailScreen() {
               </>
             ) : null
           }
-          refreshing={isLoading && !isFetchingNextPage}
           onRefresh={onRefresh}
           onEndReached={() => {
             if (hasNextPage && !isFetchingNextPage) void fetchNextPage();

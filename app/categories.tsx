@@ -171,9 +171,11 @@ function CategoriesScreen() {
     pendingDeleteLabels.current.clear();
   }, []);
 
-  const onRefresh = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
-    void queryClient.invalidateQueries({ queryKey: ["categories-overview", activeWorkspaceId] });
+  const onRefresh = useCallback(async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] }),
+      queryClient.invalidateQueries({ queryKey: ["categories-overview", activeWorkspaceId] }),
+    ]);
   }, [activeWorkspaceId, queryClient]);
 
   const clearFilters = useCallback(() => {
@@ -439,7 +441,6 @@ function CategoriesScreen() {
               : "Crea tu primera categoría con el botón +",
             action: !hasFilters ? { label: "Nueva categoría", onPress: () => setCreateFormVisible(true) } : undefined,
           }}
-          refreshing={isLoading}
           onRefresh={onRefresh}
         />
       }

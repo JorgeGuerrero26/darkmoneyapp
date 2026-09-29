@@ -333,7 +333,6 @@ function MovementsScreen() {
     isLoading,
     isError,
     isFetchingNextPage,
-    isRefetching,
     hasNextPage,
     fetchNextPage,
     refetch,
@@ -997,7 +996,6 @@ function MovementsScreen() {
             keyExtractor={(item) => String(item.id)}
             renderItem={renderItem}
             stickyHeaders
-            refreshing={isRefetching && !isFetchingNextPage}
             onRefresh={onRefresh}
             onEndReached={() => {
               if (hasNextPage && !isFetchingNextPage) void fetchNextPage();

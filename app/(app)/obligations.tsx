@@ -357,13 +357,16 @@ function ObligationsScreen() {
   const listRefreshing = isLoading || sharedFetching;
 
   const refreshTriggeredRef = useRef(false);
-  const onRefreshOrig = useCallback(() => {
+  const onRefreshOrig = useCallback(async () => {
     refreshTriggeredRef.current = true;
-    void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
-    void queryClient.invalidateQueries({ queryKey: ["shared-obligations"] });
+    const requests = [
+      queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] }),
+      queryClient.invalidateQueries({ queryKey: ["shared-obligations"] }),
+    ];
     if (activeWorkspaceId) {
-      void queryClient.invalidateQueries({ queryKey: ["obligation-shares", activeWorkspaceId] });
+      requests.push(queryClient.invalidateQueries({ queryKey: ["obligation-shares", activeWorkspaceId] }));
     }
+    await Promise.all(requests);
   }, [queryClient, activeWorkspaceId]);
 
 
@@ -710,7 +713,6 @@ function ObligationsScreen() {
             onRetry={retryDeferred}
             sharedLoading={sharedLoading}
             hasActiveSharedItems={activeSharedData.length > 0}
-            refreshing={listRefreshing}
             onRefresh={onRefreshOrig}
             onCreateFirst={() => setCreateFormVisible(true)}
           />

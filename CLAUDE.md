@@ -216,6 +216,10 @@ Incidente del 2026-09-26: después de cambiar entre Movimientos y Cuentas y volv
 
 Diagnóstico, referencias de las librerías y prueba completa: [docs/swipe-audit-2026-09-26.md](docs/swipe-audit-2026-09-26.md).
 
+### Pull-to-refresh de listas
+
+`RefreshControl.refreshing` representa únicamente un refresco iniciado por el gesto del usuario. `ResourceSectionList` usa `useGestureRefresh`; cada pantalla debe pasar un `onRefresh` que devuelva la promesa de actualización. No vincular el spinner con `isLoading`, `isFetching`, `isRefetching` ni mutaciones: también se activan al volver a la app, cambiar de módulo o invalidar consultas, y pueden dejar la lista con el indicador visible sin gesto. El Dashboard usa el mismo hook para su control propio. El hook cierra el indicador a los 15 segundos ante una consulta atascada.
+
 ## Android notification detection
 
 El sistema de detección de notificaciones tiene una arquitectura dual que es fácil de romper. Reglas críticas:

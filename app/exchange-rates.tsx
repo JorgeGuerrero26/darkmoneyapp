@@ -467,8 +467,7 @@ function ExchangeRatesScreen() {
               : "Agrega el primer par para convertir saldos entre monedas.",
             action: !hasFilters ? { label: "Nuevo tipo de cambio", onPress: openNew } : undefined,
           }}
-          refreshing={isLoading || syncRatePair.isPending}
-          onRefresh={() => void handleRefreshRates()}
+          onRefresh={() => handleRefreshRates()}
         />
       }
       fab={!selectMode ? <FAB onPress={openNew} bottom={insets.bottom + 16} /> : null}

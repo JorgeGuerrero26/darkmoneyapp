@@ -133,7 +133,6 @@ function NotificationsScreen() {
     return raw.filter((item) => !pendingDeleteIds.has(item.id));
   }, [notificationsQuery.data, pendingDeleteIds]);
   const isLoading = notificationsQuery.isLoading;
-  const isRefetching = notificationsQuery.isRefetching;
   const refetch = notificationsQuery.refetch;
 
   const pendingInvitesQuery = usePendingObligationShareInvitesQuery(user?.id, profile?.email);
@@ -141,7 +140,6 @@ function NotificationsScreen() {
   const pendingInvites: PendingObligationShareInviteItem[] = pendingInvitesQuery.data ?? [];
   const refetchInvites = pendingInvitesQuery.refetch;
   const loadingPendingInvites = pendingInvitesQuery.isLoading;
-  const isRefetchingInvites = pendingInvitesQuery.isRefetching;
 
   const markRead = useMarkNotificationReadMutation(user?.id ?? null);
   const markAllRead = useMarkAllNotificationsReadMutation(user?.id ?? null);
@@ -650,7 +648,6 @@ function NotificationsScreen() {
               ),
             }}
             empty={emptyConfig}
-            refreshing={isRefetching || isRefetchingInvites}
             onRefresh={onRefresh}
           />
         }
