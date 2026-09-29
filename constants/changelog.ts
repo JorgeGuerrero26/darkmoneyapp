@@ -13,6 +13,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "1.0.10",
     title: "DarkMoney estrena look",
     changes: [
+      "Arreglado: a veces abrías la app y los datos tardaban hasta un minuto en llegar, aunque tu internet anduviera bien. Lo provocaba la actualización en vivo, que al encenderse podía dejar el servidor congelado unos minutos, así que la quitamos. A cambio, lo que registre otra persona o tu otro teléfono aparece al volver a la app, no al instante.",
       "En toda la app los avisos ahora dicen a qué afectó lo que hiciste —\"Categoría desactivada · Transporte\", \"Suscripción pausada · Netflix\"—, y cuando algo falla te explican qué no se pudo hacer y por qué, en palabras normales en vez de un mensaje técnico.",
       "Créditos y Deudas muestra «Me deben» y «Yo debo» en grupos. El botón Filtros junto al buscador permite elegir activas, archivadas o todas.",
       "Al editar un gasto, la app ya no te avisa de que supera el saldo de la cuenta por el simple hecho de abrirlo: ese dinero ya estaba descontado. Solo avisa si el nuevo monto pide más de lo que de verdad te queda.",
