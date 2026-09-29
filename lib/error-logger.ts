@@ -4,6 +4,7 @@ import Constants from "expo-constants";
 
 import { isAuthLikeError } from "./auth-error";
 import { appendBounded, MAX_PENDING_LOGS } from "./log-queue";
+import { createLogRateLimiter } from "./log-rate-limit";
 import { supabase } from "./supabase";
 
 type LogLevel = "error" | "warn" | "info";
@@ -125,6 +126,27 @@ function flushPending(): Promise<void> {
   });
 }
 
+/** 3 filas por fuente cada 30 s; el resto de la ráfaga va en una fila de resumen. */
+const limiter = createLogRateLimiter({
+  windowMs: 30_000,
+  maxPerWindow: 3,
+  maxSamples: 10,
+  onSummary: (key, summary) => {
+    const [level, ...rest] = key.split(":");
+    void persist(
+      level as LogLevel,
+      rest.join(":"),
+      `${summary.suppressed} registros más en ${summary.windowMs / 1000} s (omitidos por ráfaga)`,
+      { suppressed: summary.suppressed, samples: summary.samples },
+    );
+  },
+});
+
+function burstSample(message: string, context?: LogContext): string {
+  const key = context && "queryKey" in context ? JSON.stringify(context.queryKey).slice(0, 120) : "";
+  return `${message.slice(0, 100)}${key ? ` ${key}` : ""}`;
+}
+
 async function send(
   level: LogLevel,
   source: string,
@@ -135,6 +157,17 @@ async function send(
     level === "error" ? console.error : level === "warn" ? console.warn : console.log;
   consoleFn(`[${source}] ${message}`, context ?? "");
 
+  if (!supabase) return;
+  if (!limiter.take(`${level}:${source}`, burstSample(message, context))) return;
+  await persist(level, source, message, context);
+}
+
+async function persist(
+  level: LogLevel,
+  source: string,
+  message: string,
+  context?: LogContext,
+): Promise<void> {
   if (!supabase) return;
 
   const row: LogRow = {
