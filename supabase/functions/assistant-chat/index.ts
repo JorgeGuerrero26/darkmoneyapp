@@ -686,7 +686,7 @@ async function runProjectCashflow(
       .eq("status", "active"),
     client
       .from("v_obligation_summary")
-      .select("title, direction, status, currency_code, pending_amount, principal_current_amount, start_date, due_date, payment_plan, installment_amount")
+      .select("id, title, direction, status, currency_code, pending_amount, principal_initial_amount, principal_current_amount, start_date, due_date, payment_plan, installment_amount, last_payment_date")
       .eq("workspace_id", workspaceId),
   ]);
 
@@ -788,6 +788,24 @@ async function runProjectCashflow(
   const today = new Date();
   const fromDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
 
+  // Los cobros con fecha: sin ellos no se sabe qué cuotas quedan, y la regla de "lo cobrado antes
+  // del plan no adelanta cuotas" necesita saber CUÁNDO entró cada uno.
+  const obligationIds = (obligations.data ?? []).map((row) => Number(row.id)).filter((id) => Number.isFinite(id));
+  const paymentsByObligation = new Map<number, { amount: number; date: string }[]>();
+  if (obligationIds.length > 0) {
+    const { data: paymentRows } = await client
+      .from("obligation_events")
+      .select("obligation_id, amount, event_date")
+      .eq("event_type", "payment")
+      .in("obligation_id", obligationIds);
+    for (const row of paymentRows ?? []) {
+      const id = Number(row.obligation_id);
+      const list = paymentsByObligation.get(id) ?? [];
+      list.push({ amount: Number(row.amount ?? 0), date: String(row.event_date ?? "") });
+      paymentsByObligation.set(id, list);
+    }
+  }
+
   const projection = buildCashflowCalendar({
     startingBalance,
     fromDate,
@@ -815,6 +833,7 @@ async function runProjectCashflow(
       status: String(row.status ?? ""),
     })),
     obligations: (obligations.data ?? []).map((row) => ({
+      id: Number(row.id),
       title: String(row.title ?? "Deuda"),
       direction: String(row.direction ?? ""),
       status: String(row.status ?? ""),
@@ -825,6 +844,10 @@ async function runProjectCashflow(
       dueDate: row.due_date == null ? null : String(row.due_date),
       paymentPlan: row.payment_plan,
       installmentAmount: row.installment_amount == null ? null : Number(row.installment_amount),
+      openingPrincipal: row.principal_initial_amount == null ? null : Number(row.principal_initial_amount),
+      lastPaymentDate: row.last_payment_date == null ? null : String(row.last_payment_date),
+      // Los mismos cobros con los que el dashboard y el detalle de la deuda cruzan el plan.
+      payments: paymentsByObligation.get(Number(row.id)) ?? [],
     })),
     creditCards,
     plannedMovements: historyMovements
