@@ -41,6 +41,9 @@ export function ObligationList({
     if (section.key === "archived-divider") {
       return { ...section, headerVariant: "divider" as const, headerIcon: Archive };
     }
+    if (section.key === "receivable" || section.key === "payable") {
+      return { ...section, headerVariant: "divider" as const };
+    }
     if (visibleDataSectionCount === 1 && section.key === "workspace") {
       return { ...section, headerVariant: "hidden" as const };
     }

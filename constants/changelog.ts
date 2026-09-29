@@ -13,6 +13,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "1.0.10",
     title: "DarkMoney estrena look",
     changes: [
+      "En Créditos y Deudas, Me deben y Yo debo ahora se distinguen con las mismas barras de sección que usan Movimientos y Cuentas.",
       "Separamos mejor el Informe con IA de la lista Dónde se mueve tu dinero para que cada sección se lea con claridad. (Pro)",
       "Próximos 7 días ahora muestra qué pagos y cobros vienen, en qué fecha caen y si el dinero disponible alcanza para cubrirlos. Puedes abrir cada compromiso desde la lista. (Pro)",
       "Estado del sistema ahora muestra su porcentaje, qué puntos necesitan revisión y un botón para ordenar los movimientos sin categoría. La explicación del cálculo queda disponible al tocarla. (Pro)",
