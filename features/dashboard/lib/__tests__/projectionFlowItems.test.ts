@@ -5,11 +5,11 @@ import { projectionFlowItems } from "../projectionFlowItems";
 const TODAY = new Date(2026, 8, 29, 12);
 
 /** Setiembre 29: Kevin con cuota del 15 sin cobrar, sueldo el 30, Sergio el 20 de octubre. */
-function calendar() {
+function calendar(months = 2) {
   return buildCashflowCalendar({
     startingBalance: 1000,
     fromDate: "2026-09-29",
-    months: 2,
+    months,
     typicalDiscretionarySpend: 4675,
     convert: (amount) => amount,
     recurringIncome: [
@@ -83,6 +83,10 @@ describe("projectionFlowItems", () => {
 });
 
 describe("windowsFromFlowItems con las líneas del motor", () => {
+  it("el cierre del primer mes coincide entre el horizonte de Resumen y el de Flujo", () => {
+    expect(calendar(2).months[0].closingBalance).toBeCloseTo(calendar(6).months[0].closingBalance, 2);
+  });
+
   it("la semana ya cuenta la cuota atrasada de Kevin, que la lectura vieja no veía", () => {
     const [week] = windowsFromFlowItems(projectionFlowItems(calendar().months, TODAY), 1000, TODAY);
     // En 7 días: Kevin atrasada (580) y YouTube el 5 (53.90). Sueldo y Sergio caen más tarde.

@@ -110,6 +110,7 @@ import { SystemStateSheet } from "./SystemStateSheet";
 import { WeekOutlookSheet } from "./WeekOutlookSheet";
 import { MonthEndSheet } from "./MonthEndSheet";
 import { PatternsTab } from "./PatternsTab";
+import { FlowTab } from "./FlowTab";
 import {
   buildDashboardAiTextParts,
   ensureDashboardAiComplexTerms,
@@ -123,12 +124,10 @@ import { buildSystemState } from "../../lib/system-state";
 import { expenseTitle, habitPresentation, weeklySpendPattern } from "../../lib/patterns-view";
 
 import { SectionTitle } from "../simple/SectionTitle";
-import { CashflowProjectionSection } from "../simple/CashflowProjectionSection";
 import { useCashflowProjection, type CashflowProjectionInputs } from "../../hooks/useCashflowProjection";
 import { isLiquidAccount } from "../../../projection/lib/liquid-balance";
 import type { ProjectionLine } from "../../../projection/lib/cashflow-calendar";
 import { projectionFlowItems } from "../../lib/projectionFlowItems";
-import { FutureFlowPreview } from "../simple/FutureFlowPreview";
 import { ReviewInbox } from "../simple/ReviewInbox";
 import { dashboardSimpleStyles as subStyles } from "../simple/styles";
 
@@ -144,13 +143,10 @@ import {
   CategoryBreakdown,
   MonthlyPulse,
   ObligationsSection,
-  SubscriptionsSummary,
 } from "./AdvancedSections";
 import {
   AlertCenter,
   HealthScore,
-  ObligationWatch,
-  PaymentOptimizationCard,
 } from "./HealthAndAlerts";
 import {
   AdvancedGiftCard,
@@ -158,11 +154,9 @@ import {
   CurrencyExposure,
   FinancialGraphCard,
   PeriodRadar,
-  TransferSnapshot,
 } from "./AdvancedCards";
 import {
   AnnualHistoryPanel,
-  ProjectionBridgeChart,
   SavingsMomentumChart,
   type AnnualHistoryMonth,
 } from "./DashboardCharts";
@@ -834,18 +828,6 @@ export function AdvancedDashboard({
     return sortMovementsRecentFirst(movements.filter((movement) => inRange(movement, monthStart, now)));
   }, [movements]);
 
-  const currentMonthVariableMovements = useMemo(() => {
-    const now = new Date();
-    const monthStart = startOfMonth(now);
-    return sortMovementsRecentFirst(
-      movements.filter((movement) =>
-        movement.status === "posted" &&
-        inRange(movement, monthStart, now) &&
-        (movement.movementType === "income" || movement.movementType === "refund" || movement.movementType === "expense")
-      ),
-    );
-  }, [movements]);
-
   const pendingReviewMovements = useMemo(() => (
     sortMovementsRecentFirst(movements.filter((movement) => movement.status === "pending"))
   ), [movements]);
@@ -915,29 +897,6 @@ export function AdvancedDashboard({
       movements: currentMonthMovements,
     });
   }, [currentMonthMovements, openMovementPreview]);
-
-  const openFlowVariableMovementsPreview = useCallback(() => {
-    const income = currentMonthVariableMovements
-      .filter((movement) => movementActsAsIncome(movement))
-      .reduce((sum, movement) => sum + incomeAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency }), 0);
-    const expense = currentMonthVariableMovements
-      .filter((movement) => movementActsAsExpense(movement))
-      .reduce((sum, movement) => sum + expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency }), 0);
-    openMovementPreview({
-      title: "Ritmo variable del mes",
-      subtitle: `${currentMonthVariableMovements.length} movimiento${currentMonthVariableMovements.length === 1 ? "" : "s"} variable${currentMonthVariableMovements.length === 1 ? "" : "s"} ya registrado${currentMonthVariableMovements.length === 1 ? "" : "s"} este mes. Entran ${formatCurrency(income, activeCurrency)} y salen ${formatCurrency(expense, activeCurrency)}.`,
-      scopeLabel: "Alcance: ingresos, devoluciones y gastos confirmados del mes actual. No incluye transferencias ni agenda fija.",
-      emptyTitle: "No hay ritmo variable este mes",
-      emptyBody: "Cuando registres ingresos o gastos variables confirmados, aparecerán aquí.",
-      movements: currentMonthVariableMovements,
-    });
-  }, [
-    accountCurrencyMap,
-    activeCurrency,
-    currentMonthVariableMovements,
-    exchangeRateMap,
-    openMovementPreview,
-  ]);
 
   const openPatternHabitPreview = useCallback((pattern: { title: string; count: number; total: number; average: number; movementIds: number[] }) => {
     const patternMovements = getMovementsByIds(pattern.movementIds);
@@ -1521,24 +1480,6 @@ export function AdvancedDashboard({
       overdueCount,
     };
   }, [activeCurrency, advancedStats.monthlyPulse, baseCurrency, exchangeRateMap, monthToDate.expense, monthToDate.income, obligationsForHealth, snapshot?.accounts]);
-
-  // SubscriptionsSummary suma mensualidades: convertir monto y reflejar la moneda activa.
-  const subscriptionsForSummary = useMemo(
-    () =>
-      subscriptions.map((subscription) => ({
-        ...subscription,
-        amount:
-          convertDashboardCurrency(
-            subscription.amount,
-            subscription.currencyCode,
-            activeCurrency,
-            exchangeRateMap,
-            baseCurrency,
-          ) ?? 0,
-        currencyCode: activeCurrency,
-      })),
-    [activeCurrency, baseCurrency, exchangeRateMap, subscriptions],
-  );
 
   const financialGraphRank = useMemo(() => (
     buildFinancialGraphRank<DashboardMovementRow>({
@@ -2752,6 +2693,7 @@ export function AdvancedDashboard({
   const [activeDashboardAiTerm, setActiveDashboardAiTerm] = useState<DashboardAiComplexTerm | null>(null);
   const [summaryAiSheetOpen, setSummaryAiSheetOpen] = useState(false);
   const [patternsAiSheetOpen, setPatternsAiSheetOpen] = useState(false);
+  const [flowAiSheetOpen, setFlowAiSheetOpen] = useState(false);
   const dashboardAiTone = dashboardAi.tone;
   const setDashboardAiTone = dashboardAi.setTone;
   const dashboardAiBreath = useRef(new Animated.Value(0)).current;
@@ -3281,7 +3223,39 @@ export function AdvancedDashboard({
       </BottomSheet>
 
       <BottomSheet
-        visible={Boolean(activeDashboardAiTerm) && !summaryAiSheetOpen && !patternsAiSheetOpen}
+        visible={flowAiSheetOpen}
+        onClose={() => { setFlowAiSheetOpen(false); setActiveDashboardAiTerm(null); }}
+        title={activeDashboardAiTerm ? "Explicación" : "Informe de flujo con IA"}
+        snapHeight={0.82}
+        blurBackdrop={false}
+        headerStyle={subStyles.summarySheetHeader}
+        contentStyle={subStyles.summarySheetContent}
+      >
+        {activeDashboardAiTerm ? (
+          <View style={subStyles.aiSummaryTermSheet}>
+            <TouchableOpacity onPress={() => setActiveDashboardAiTerm(null)} accessibilityRole="button">
+              <Text style={subStyles.summaryAiBack}>Volver al informe</Text>
+            </TouchableOpacity>
+            <Text style={subStyles.aiSummaryTermSheetTitle}>{activeDashboardAiTerm.term}</Text>
+            <Text style={subStyles.aiSummaryTermSheetBody}>{activeDashboardAiTerm.explanation}</Text>
+          </View>
+        ) : dashboardAiFlowMutation.isPending && !dashboardAiFlowReply ? (
+          <AiResponseSkeleton />
+        ) : dashboardAiFlowReply ? (
+          <Text style={subStyles.summaryAiReportText}>
+            {dashboardAiFlowTextParts.map((part, index) => part.type === "term" ? (
+              <Text key={`${part.term.term}-flow-${index}`} style={subStyles.summaryAiReportTerm} onPress={() => setActiveDashboardAiTerm(part.term)}>{part.value}</Text>
+            ) : <Text key={`flow-text-${index}`}>{part.value}</Text>)}
+          </Text>
+        ) : (
+          <Text style={subStyles.summaryAiReportText}>
+            {dashboardAiFlowLimitReached ? "La consulta de hoy ya se usó. Podrás pedir otro informe mañana." : "No se pudo preparar el informe. Cierra la hoja y vuelve a intentarlo."}
+          </Text>
+        )}
+      </BottomSheet>
+
+      <BottomSheet
+        visible={Boolean(activeDashboardAiTerm) && !summaryAiSheetOpen && !patternsAiSheetOpen && !flowAiSheetOpen}
         onClose={() => setActiveDashboardAiTerm(null)}
         title="Explicación"
         snapHeight={0.42}
@@ -3726,137 +3700,25 @@ export function AdvancedDashboard({
       )}
       {activeTab === 'Flujo' && (
         <DashboardSectionBoundary sectionLabel="Flujo">
-        <>
-      <View style={{ height: SPACING.sm }} />
-      <ProjectionBridgeChart
-        currentVisibleBalance={currentVisibleBalance}
-        committedNet={projectionCommittedNet}
-        variableNet={projectionVariableNet}
-        expectedBalance={projectionModel.expectedBalance}
-        currency={activeCurrency}
-        onOpenAccounts={() => router.push("/accounts" as never)}
-        onExplainProjection={() => setAdvancedDetail("projection")}
-        onOpenMonthMovements={openFlowVariableMovementsPreview}
-      />
-      <View style={{ height: SPACING.sm }} />
-      <Card>
-        <View style={subStyles.aiSummaryShellWrap}>
-          <View style={subStyles.aiSummaryShell}>
-            {/* Una linea de que hace, y ya. Antes lo explicaba tres veces —insignia, titulo y dos
-                parrafos— con borde degradado, cuatro orbes animados y un halo. Es una funcion de
-                la app, no una marca aparte. */}
-            <View style={subStyles.aiSummaryCompactHeader}>
-              <Sparkles size={14} color={COLORS.pro} />
-              <Text style={subStyles.aiSummaryCompactTitle}>Explica tu situación con IA</Text>
-            </View>
-            <TouchableOpacity
-              activeOpacity={0.86}
-              onPress={() => void handleRequestDashboardAiFlow()}
-              disabled={dashboardAiFlowMutation.isPending || dashboardAiFlowLimitReached}
-              style={[
-                subStyles.aiSummaryButton,
-                (dashboardAiFlowMutation.isPending || dashboardAiFlowLimitReached) && subStyles.aiSummaryButtonDisabled,
-              ]}
-            >
-              <View style={subStyles.aiSummaryButtonAccent} />
-              <View style={subStyles.aiSummaryButtonInner}>
-                <Sparkles size={16} color={dashboardAiFlowMutation.isPending || dashboardAiFlowLimitReached ? "rgba(244,241,236,0.4)" : COLORS.pro} />
-                <Text style={subStyles.aiSummaryButtonLabel}>
-                  {dashboardAiFlowMutation.isPending
-                    ? "Preparando explicacion..."
-                    : dashboardAiFlowLimitReached
-                      ? "Consulta de hoy usada"
-                      : dashboardAiTone === "managerial"
-                        ? "Ver informe de flujo"
-                        : "Hablar con mi asesor de flujo"}
-                </Text>
-              </View>
-            </TouchableOpacity>
-            {dashboardAiFlowMutation.isPending && !dashboardAiFlowReply ? <AiResponseSkeleton /> : null}
-            {dashboardAiFlowReply ? (
-              <View style={subStyles.aiSummaryResponseCard}>
-                <View style={subStyles.aiSummaryResponseAiTag}>
-                  <Sparkles size={11} color={COLORS.pro} />
-                  <Text style={subStyles.aiSummaryResponseLabel}>
-                    {dashboardAiTone === "managerial" ? "Gemini · Flujo gerencial" : "Gemini · Flujo en modo asesor"}
-                  </Text>
-                </View>
-                {dashboardAiFlowResolvedTerms.length > 0 ? (
-                  <Text style={subStyles.aiSummaryGlossaryHint}>
-                    Toca las palabras resaltadas para ver su explicación.
-                  </Text>
-                ) : null}
-                <Text style={subStyles.aiSummaryResponseText}>
-                  {dashboardAiFlowTextParts.map((part, index) => (
-                    part.type === "term" ? (
-                      <Text
-                        key={`${part.term.term}-flow-${index}`}
-                        style={subStyles.aiSummaryResponseTerm}
-                        onPress={() => setActiveDashboardAiTerm(part.term)}
-                      >
-                        {part.value}
-                      </Text>
-                    ) : (
-                      <Text key={`flow-text-${index}`}>{part.value}</Text>
-                    )
-                  ))}
-                </Text>
-              </View>
-            ) : (
-              <Text style={subStyles.aiSummaryHint}>
-                {dashboardAiFlowLimitReached
-                  ? "Ya usaste tu explicación de IA de hoy en este módulo. Podrás pedir otra mañana."
-                  : "Gemini interpreta tu caja, tus compromisos y la proyección actual para explicarte el flujo con lenguaje claro."}
-              </Text>
-            )}
-            <View style={subStyles.aiSummaryFooterRow}>
-              <Text style={subStyles.aiSummaryFooterText}>La explicación usa solo la información de flujo visible en esta pestaña.</Text>
-            </View>
-          </View>
-        </View>
-      </Card>
-      <View style={{ height: SPACING.sm }} />
-      <FutureFlowPreview windows={windows} displayCurrency={activeCurrency} />
-      <View style={{ height: SPACING.sm }} />
-      <CashflowProjectionSection {...projectionInputs} />
-      <View style={{ height: SPACING.sm }} />
-      <PaymentOptimizationCard
-        recommendations={paymentOptimization}
-        currency={activeCurrency}
-        router={router}
-      />
-      {paymentOptimization.length > 0 ? <View style={{ height: SPACING.sm }} /> : null}
-      <Card>
-        <Text style={subStyles.layerKicker}>Salud de caja</Text>
-        <Text style={subStyles.layerHeroBody}>
-          Un score saludable es 70+. Por debajo de 50 suele indicar gastos cerca o por encima del ingreso, obligaciones sin cubrir, o caja insuficiente para 1 mes de gasto.
-        </Text>
-      </Card>
-      <View style={{ height: SPACING.sm }} />
-      <HealthScore
-        liquidMoney={healthInputs.liquidMoney}
-        averageMonthlyExpense={healthInputs.averageMonthlyExpense}
-        periodIncome={healthInputs.periodIncome}
-        periodNet={healthInputs.periodNet}
-        totalPayable={healthInputs.totalPayable}
-        overdueCount={healthInputs.overdueCount}
-      />
-      <View style={{ height: SPACING.sm }} />
-      <SubscriptionsSummary subscriptions={subscriptionsForSummary} currency={activeCurrency} />
-      <View style={{ height: SPACING.sm }} />
-      <ObligationWatch obligations={obligations} router={router} />
-      <View style={{ height: SPACING.sm }} />
-      <TransferSnapshot
-        movements={movements}
-        accounts={activeAccounts}
-        ctx={{ accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency }}
-        onOpenRoute={openTransferRoutePreview}
-      />
-
-      </>
-      </DashboardSectionBoundary>
+          <FlowTab
+            projectionInputs={projectionInputs}
+            windows={windows}
+            obligations={obligations}
+            movements={movements}
+            accounts={activeAccounts}
+            conversionCtx={{ accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency }}
+            onOpenAi={() => {
+              setFlowAiSheetOpen(true);
+              if (!dashboardAiFlowReply && !dashboardAiFlowLimitReached && !dashboardAiFlowMutation.isPending) {
+                void handleRequestDashboardAiFlow();
+              }
+            }}
+            onOpenObligation={(id) => router.push(`/obligation/${id}`)}
+            onOpenSubscription={(id) => router.push(`/subscription/${id}`)}
+            onOpenRoute={openTransferRoutePreview}
+          />
+        </DashboardSectionBoundary>
       )}
-
       {activeTab === 'Historial' && (
         <DashboardSectionBoundary sectionLabel="Historial">
         <>
@@ -4283,6 +4145,16 @@ export function AdvancedDashboard({
           Por debajo de 80% las proyecciones dejan de ser fiables.
         </Text>
       </Card>
+
+      <View style={{ height: SPACING.sm }} />
+      <HealthScore
+        liquidMoney={healthInputs.liquidMoney}
+        averageMonthlyExpense={healthInputs.averageMonthlyExpense}
+        periodIncome={healthInputs.periodIncome}
+        periodNet={healthInputs.periodNet}
+        totalPayable={healthInputs.totalPayable}
+        overdueCount={healthInputs.overdueCount}
+      />
 
       <View style={{ height: SPACING.sm }} />
       <ReviewInbox
