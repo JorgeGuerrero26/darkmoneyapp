@@ -13,6 +13,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "1.0.10",
     title: "DarkMoney estrena look",
     changes: [
+      "Estado del sistema ahora muestra su porcentaje, qué puntos necesitan revisión y un botón para ordenar los movimientos sin categoría. La explicación del cálculo queda disponible al tocarla. (Pro)",
       "Al abrir los movimientos sin categoría desde Estado del sistema, se cierra la hoja de detalle y ves la bandeja sin nada encima. (Pro)",
       "Mientras se prepara el informe con IA, las líneas de carga ahora se mueven para mostrar que sigue trabajando. (Pro)",
       "Arreglado: a veces abrías la app y los datos tardaban hasta un minuto en llegar, aunque tu internet anduviera bien. Lo provocaba la actualización en vivo, que al encenderse podía dejar el servidor congelado unos minutos, así que la quitamos. A cambio, lo que registre otra persona o tu otro teléfono aparece al volver a la app, no al instante.",

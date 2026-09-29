@@ -3,6 +3,7 @@ import {
   buildCategorySuggestions,
 } from "../../features/dashboard/lib/advanced-builders";
 import type { ConversionCtx } from "../../features/dashboard/lib/types";
+import { buildSystemState } from "../../features/dashboard/lib/system-state";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -113,5 +114,11 @@ runCategorySuggestionsEmpty();
 runCategorySuggestionsLearned();
 runAnomalyFindingsEmpty();
 runAnomalyFindingsShape();
+
+const systemState = buildSystemState(83, 596, 127);
+assert(systemState.status === "Confiable" && systemState.threshold === 75, "el estado y la marca usan el mismo umbral de 75%");
+assert(systemState.totalIssues === systemState.uncategorizedCount + systemState.otherIssuesCount, "los dos grupos suman el total del resumen");
+assert(systemState.otherIssuesCount === 469, "596 puntos menos 127 sin categoría deja 469 para Salud");
+assert(buildSystemState(74, 1, 1).status === "Por limpiar", "74% queda bajo el umbral confiable");
 
 console.log("advanced builders smoke tests passed");

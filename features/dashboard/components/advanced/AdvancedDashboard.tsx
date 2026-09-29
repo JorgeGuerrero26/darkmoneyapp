@@ -101,6 +101,7 @@ import {
 import { useDashboardAiOrchestration } from "../../hooks/useDashboardAiOrchestration";
 import { DashboardSectionBoundary } from "../shared/DashboardSectionBoundary";
 import { AiResponseSkeleton } from "./AiResponseSkeleton";
+import { SystemStateSheet } from "./SystemStateSheet";
 import {
   buildDashboardAiTextParts,
   ensureDashboardAiComplexTerms,
@@ -110,6 +111,7 @@ import {
   type DashboardAiToneResponse,
 } from "../../lib/dashboard-ai-content";
 import { useDashboardStats } from "../../hooks/useDashboardStats";
+import { buildSystemState } from "../../lib/system-state";
 
 import { SectionTitle } from "../simple/SectionTitle";
 import { CashflowProjectionSection } from "../simple/CashflowProjectionSection";
@@ -589,6 +591,10 @@ export function AdvancedDashboard({
     );
     return { categorizedRate, historyDays, readinessScore, potentialScore, usefulCount: useful.length };
   }, [movements]);
+  const systemState = useMemo(
+    () => buildSystemState(learning.readinessScore, review.totalIssues, review.uncategorizedCount),
+    [learning.readinessScore, review.totalIssues, review.uncategorizedCount],
+  );
 
   const anomalySignals = useMemo(
     () => buildAnomalyFindings(
@@ -2026,25 +2032,6 @@ export function AdvancedDashboard({
   ]);
 
   const executiveDetails = useMemo(() => ({
-    focus: {
-      title: "Estado del sistema",
-      summary: "Te dice qué tan confiable es la lectura general antes de tomar decisiones con el dashboard.",
-      meaning: [
-        "Esta tarjeta no te dice qué hacer ahora; solo mide si la base de datos permite confiar en los análisis.",
-        "Sirve para saber si las demás lecturas salen de información suficientemente ordenada o si todavía hay ruido que puede distorsionar comparativos y proyecciones.",
-      ],
-      calculation: [
-        "Usamos un resumen de señales: la app junta muchos movimientos y los convierte en pocos datos fáciles de leer, como separar una libreta de ventas en ventas, gastos, pendientes y errores.",
-        `La confianza actual es ${learning.readinessScore}%. Se calcula con historia observada (${learning.historyDays} días), movimientos útiles (${learning.usefulCount}) y categorías útiles (${Math.round(learning.categorizedRate * 100)}%).`,
-        `Además revisamos fricción operativa: ${review.uncategorizedCount} movimientos sin categoría, ${review.overdueObligationsCount} obligaciones vencidas, ${review.subscriptionsAttentionCount} suscripciones con atención y ${review.pendingMovementsCount} movimientos pendientes.`,
-      ],
-      actions: [
-        review.uncategorizedCount > 0
-          ? { label: `Abrir ${review.uncategorizedCount} sin categoría`, onPress: openSummaryUncategorizedPreview }
-          : null,
-        { label: "Ir a Salud", onPress: openPrecisionLayer },
-      ].filter((action): action is { label: string; onPress: () => void } => Boolean(action)),
-    },
     risk: {
       title: "Riesgo 7 días",
       summary: "Te ayuda a decidir si la próxima semana se ve tranquila o si conviene mover foco a liquidez antes de que falte caja.",
@@ -2091,12 +2078,7 @@ export function AdvancedDashboard({
     },
   }), [
     activeCurrency,
-    learning.categorizedRate,
-    learning.historyDays,
-    learning.readinessScore,
-    learning.usefulCount,
     monthRecurringIncomeProjection,
-    openPrecisionLayer,
     openSummaryUncategorizedPreview,
     projectionModel.conservativeBalance,
     projectionModel.committedInflow,
@@ -2109,8 +2091,6 @@ export function AdvancedDashboard({
     projectionModel.variableIncomeProjection,
     projectionCommittedNet,
     projectionVariableNet,
-    review.overdueObligationsCount,
-    review.pendingMovementsCount,
     review.subscriptionsAttentionCount,
     review.uncategorizedCount,
     router,
@@ -2123,18 +2103,8 @@ export function AdvancedDashboard({
     visibleAccountSummary,
     visibleBalanceLabel,
   ]);
-  const activeExecutiveDetail = executiveDetail ? executiveDetails[executiveDetail] : null;
+  const activeExecutiveDetail = executiveDetail === "risk" || executiveDetail === "month" ? executiveDetails[executiveDetail] : null;
   const executiveResultMeaning = useMemo(() => ({
-    focus: [
-      learning.readinessScore >= 75
-        ? "Este resultado significa que el dashboard ya tiene una base suficientemente confiable para lecturas avanzadas."
-        : learning.readinessScore >= 45
-          ? "Este resultado significa que el dashboard ya orienta, pero todavía hay ruido que puede afectar conclusiones finas."
-          : "Este resultado significa que la lectura todavía es frágil y conviene limpiar datos antes de confiar demasiado en los análisis.",
-      review.totalIssues > 0
-        ? `Hoy hay ${review.totalIssues} punto${review.totalIssues === 1 ? "" : "s"} que pueden bajar precisión. La acción exacta queda en Centro de foco.`
-        : "Hoy la base se ve ordenada; Centro de foco queda libre para recomendar la siguiente acción operativa.",
-    ],
     risk: [
       weekWindow.expectedOutflow > weekWindow.expectedInflow
         ? "Este resultado significa que en la proxima semana tu agenda exige mas caja de la que hoy se ve entrar."
@@ -2153,15 +2123,13 @@ export function AdvancedDashboard({
     ],
   }), [
     activeCurrency,
-    learning.readinessScore,
     monthEndReading,
     monthStatus,
-    review.totalIssues,
     weekWindow.expectedInflow,
     weekWindow.expectedOutflow,
     weekWindow.scheduledCount,
   ]);
-  const activeExecutiveResultMeaning = executiveDetail ? executiveResultMeaning[executiveDetail] : [];
+  const activeExecutiveResultMeaning = executiveDetail === "risk" || executiveDetail === "month" ? executiveResultMeaning[executiveDetail] : [];
   const resolvedExecutiveResultMeaning = executiveDetail === "month"
     ? [
       monthStatus === "Cerrando mejor"
@@ -2176,18 +2144,15 @@ export function AdvancedDashboard({
     ]
     : activeExecutiveResultMeaning;
   const executiveResultTone = useMemo(() => ({
-    focus: learning.readinessScore >= 75 && review.totalIssues === 0 ? "positive" : learning.readinessScore >= 45 ? "warning" : "danger",
     risk: weekWindow.expectedOutflow > weekWindow.expectedInflow ? "danger" : weekWindow.scheduledCount > 0 ? "warning" : "positive",
     month: monthStatus === "Cerrando mejor" ? "positive" : monthStatus === "Ajustado" ? "warning" : "danger",
   } as const), [
-    learning.readinessScore,
     monthStatus,
-    review.totalIssues,
     weekWindow.expectedOutflow,
     weekWindow.expectedInflow,
     weekWindow.scheduledCount,
   ]);
-  const activeExecutiveResultTone = executiveDetail ? executiveResultTone[executiveDetail] : "warning";
+  const activeExecutiveResultTone = executiveDetail === "risk" || executiveDetail === "month" ? executiveResultTone[executiveDetail] : "warning";
   const advancedDetails = useMemo(() => ({
     focusCenter: {
       title: "Centro de foco",
@@ -3119,13 +3084,13 @@ export function AdvancedDashboard({
               <Text style={subStyles.executiveLabel}>Estado del sistema</Text>
               <View style={subStyles.executiveTonePill}>
                 <Text style={subStyles.executiveToneText} numberOfLines={1}>
-                  {learning.readinessScore >= 75 ? "Confiable" : review.totalIssues > 0 ? "Por limpiar" : "Base media"}
+                  {systemState.status}
                 </Text>
               </View>
             </View>
-            <Text style={subStyles.executiveValue}>{learning.readinessScore}%</Text>
+            <Text style={subStyles.executiveValue}>{systemState.score}%</Text>
             <Text style={subStyles.executiveCaption} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85}>
-              {review.totalIssues > 0 ? `${review.totalIssues} punto${review.totalIssues === 1 ? "" : "s"} por revisar` : "Sin pendientes"}
+              {systemState.totalIssues > 0 ? `${systemState.totalIssues} punto${systemState.totalIssues === 1 ? "" : "s"} por revisar` : "Sin pendientes"}
               {reviewDelta !== 0 ? (
                 <Text style={{ color: reviewDelta < 0 ? COLORS.income : COLORS.expense }}>
                   {reviewDelta < 0 ? ` · ${Math.abs(reviewDelta)} resueltos` : ` · ${reviewDelta} nuevos`}
@@ -3305,8 +3270,17 @@ export function AdvancedDashboard({
         ) : null}
       </BottomSheet>
 
+      {executiveDetail === "focus" ? (
+        <SystemStateSheet
+          state={systemState}
+          onClose={() => setExecutiveDetail(null)}
+          onCategorize={openSummaryUncategorizedPreview}
+          onOpenHealth={openPrecisionLayer}
+        />
+      ) : null}
+
       <BottomSheet
-        visible={Boolean(activeExecutiveDetail)}
+        visible={Boolean(activeExecutiveDetail) && executiveDetail !== "focus"}
         onClose={() => setExecutiveDetail(null)}
         title={activeExecutiveDetail?.title}
         snapHeight={0.78}
