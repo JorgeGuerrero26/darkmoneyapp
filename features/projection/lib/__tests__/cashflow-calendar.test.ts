@@ -124,6 +124,7 @@ describe("buildCashflowCalendar", () => {
             principalCurrentAmount: 22610,
             startDate: "2026-05-15",
             dueDate: null,
+            payments: [],
             paymentPlan: {
               mode: "custom",
               firstDueDate: "2026-10-15",
@@ -165,6 +166,7 @@ describe("buildCashflowCalendar", () => {
             principalCurrentAmount: 1000,
             startDate: "2026-06-15",
             dueDate: null,
+            payments: [{ amount: 300, date: "2026-07-01" }],
             paymentPlan: { mode: "equal", count: 4, firstDueDate: "2026-07-15" },
           },
         ],
@@ -188,6 +190,7 @@ describe("buildCashflowCalendar", () => {
             principalCurrentAmount: 900,
             startDate: "2026-09-01",
             dueDate: null,
+            payments: [],
             paymentPlan: { mode: "equal", count: 3, firstDueDate: "2026-10-01" },
           },
         ],
@@ -198,7 +201,7 @@ describe("buildCashflowCalendar", () => {
     expect(result.endingBalance).toBe(3200 - 900);
   });
 
-  it("sin plan pero con cuota pactada, repite la cuota hasta cubrir el saldo", () => {
+  it("sin plan, sin pagos: las cuotas empiezan en el mes de inicio, no en el vencimiento", () => {
     const result = buildCashflowCalendar(
       baseInput({
         obligations: [
@@ -211,6 +214,7 @@ describe("buildCashflowCalendar", () => {
             principalCurrentAmount: 120,
             startDate: "2026-09-20",
             dueDate: "2026-10-20",
+            payments: [],
             paymentPlan: null,
             installmentAmount: 50,
           },
@@ -218,8 +222,74 @@ describe("buildCashflowCalendar", () => {
       }),
     );
 
-    // 50 + 50 + 20: la última cuota es lo que queda, no otra de 50.
-    expect(result.months.map((m) => m.inflowTotal)).toEqual([0, 50, 50, 20]);
+    // Empieza el 20 de setiembre. 50 + 50 + 20: la última cuota es lo que queda, no otra de 50.
+    expect(result.months.map((m) => m.inflowTotal)).toEqual([50, 50, 20, 0]);
+  });
+
+  it("sin plan, la próxima cuota es el mes siguiente al último pago (el caso de Sergio)", () => {
+    // Antes contaba desde el VENCIMIENTO (20 nov) y le ponía la cuota de octubre en noviembre.
+    const result = buildCashflowCalendar(
+      baseInput({
+        obligations: [
+          {
+            title: "Sergio",
+            direction: "receivable",
+            status: "active",
+            currencyCode: "PEN",
+            pendingAmount: 180,
+            principalCurrentAmount: 380,
+            startDate: "2026-08-20",
+            dueDate: "2026-11-20",
+            installmentAmount: 100,
+            lastPaymentDate: "2026-09-21",
+            payments: [],
+            paymentPlan: null,
+          },
+        ],
+      }),
+    );
+    expect(result.months.map((m) => m.inflowTotal)).toEqual([0, 100, 80, 0]);
+  });
+
+  it("una cuota vencida y sin cobrar entra en el mes en curso, marcada como atrasada", () => {
+    // El caso que lo destapó: la cuota de Kevin del 15 de setiembre, a día 29, sin cobrar.
+    const result = buildCashflowCalendar(
+      baseInput({
+        fromDate: "2026-09-29",
+        obligations: [
+          {
+            title: "Kevin",
+            direction: "receivable",
+            status: "active",
+            currencyCode: "PEN",
+            pendingAmount: 22610,
+            principalCurrentAmount: 25765,
+            openingPrincipal: 7175,
+            startDate: "2026-03-15",
+            dueDate: "2027-01-31",
+            // Todo cobrado ANTES del plan: no adelanta cuotas.
+            payments: [
+              { amount: 2465, date: "2026-07-31" },
+              { amount: 690, date: "2026-08-31" },
+            ],
+            paymentPlan: {
+              mode: "custom",
+              firstDueDate: "2026-09-15",
+              agreed: [
+                { amount: 580, dueDate: "2026-09-15" },
+                { amount: 500, dueDate: "2026-10-15" },
+              ],
+              tail: 610,
+            },
+          },
+        ],
+      }),
+    );
+
+    const setiembre = result.months[0];
+    expect(setiembre.inflowTotal).toBe(580);
+    expect(setiembre.inflows[0]).toMatchObject({ label: "Kevin (atrasada)", source: "estimated" });
+    expect(result.months[1].inflowTotal).toBe(500);
   });
 
   it("el mes en curso solo carga el gasto típico que le queda por delante", () => {

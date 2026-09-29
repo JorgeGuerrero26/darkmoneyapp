@@ -75,6 +75,7 @@ const SCENARIOS: Scenario[] = [
           principalCurrentAmount: 22610,
           startDate: "2026-05-15",
           dueDate: null,
+          payments: [],
           paymentPlan: {
             mode: "custom",
             firstDueDate: "2026-10-15",
@@ -103,6 +104,7 @@ const SCENARIOS: Scenario[] = [
           principalCurrentAmount: 1000,
           startDate: "2026-06-15",
           dueDate: null,
+          payments: [],
           paymentPlan: { mode: "equal", count: 4, firstDueDate: "2026-07-15" },
         },
       ],
@@ -121,6 +123,7 @@ const SCENARIOS: Scenario[] = [
           principalCurrentAmount: 1500,
           startDate: "2026-08-10",
           dueDate: null,
+          payments: [],
           paymentPlan: { mode: "custom", agreed: [300, 400], tail: 200 },
         },
       ],
@@ -139,6 +142,7 @@ const SCENARIOS: Scenario[] = [
           principalCurrentAmount: 120,
           startDate: "2026-09-20",
           dueDate: "2026-10-20",
+          payments: [],
           paymentPlan: null,
           installmentAmount: 50,
         },
@@ -158,6 +162,7 @@ const SCENARIOS: Scenario[] = [
           principalCurrentAmount: 900,
           startDate: "2026-09-01",
           dueDate: "2026-11-30",
+          payments: [],
           paymentPlan: null,
         },
       ],
@@ -296,6 +301,7 @@ const SCENARIOS: Scenario[] = [
           principalCurrentAmount: 25765,
           startDate: "2026-05-15",
           dueDate: null,
+          payments: [],
           paymentPlan: {
             mode: "custom",
             firstDueDate: "2026-05-15",
@@ -348,6 +354,106 @@ const SCENARIOS: Scenario[] = [
       ],
     }),
   },
+  {
+    name: "plan a medida con cobros antes y despues del plan, y cuota atrasada",
+    input: base({
+      fromDate: "2026-09-29",
+      months: 8,
+      recurringIncome: [{ ...sueldo, id: 11 }],
+      subscriptions: [
+        { id: 12, name: "YouTube", amount: 53.9, currencyCode: "PEN", frequency: "monthly", nextDueDate: "2026-10-05", status: "active" },
+      ],
+      creditCards: [{ id: 13, name: "Visa", currencyCode: "PEN", currentDebt: 872, paymentDay: 15, typicalMonthlySpend: 600 }],
+      plannedMovements: [{ id: 14, description: "Maestría", signedAmount: -3000, currencyCode: "PEN", occurredAt: "2027-04-10" }],
+      obligations: [
+        {
+          id: 3,
+          title: "Kevin",
+          direction: "receivable",
+          status: "active",
+          currencyCode: "PEN",
+          pendingAmount: 22030,
+          principalCurrentAmount: 25765,
+          openingPrincipal: 7175,
+          startDate: "2026-03-15",
+          dueDate: "2027-01-31",
+          payments: [
+            { amount: 330, date: "2026-03-31" },
+            { amount: 2825, date: "2026-08-31" },
+            { amount: 300, date: "2026-09-02" },
+            { amount: 280, date: "2026-09-20" },
+          ],
+          paymentPlan: {
+            mode: "custom",
+            firstDueDate: "2026-09-15",
+            agreed: [
+              { amount: 580, dueDate: "2026-09-15" },
+              { amount: 500, dueDate: "2026-10-15" },
+              { amount: 750, dueDate: "2026-11-15" },
+            ],
+            tail: 610,
+          },
+        },
+      ],
+    }),
+  },
+  {
+    name: "cuotas iguales con la deuda aumentada despues de cobrar (opcion B)",
+    input: base({
+      fromDate: "2026-08-01",
+      obligations: [
+        {
+          title: "Prestamo que crecio",
+          direction: "payable",
+          status: "active",
+          currencyCode: "PEN",
+          pendingAmount: 1100,
+          principalCurrentAmount: 1500,
+          openingPrincipal: 1000,
+          startDate: "2026-05-10",
+          dueDate: null,
+          payments: [{ amount: 400, date: "2026-06-10" }],
+          paymentPlan: { mode: "equal", count: 5, firstDueDate: "2026-06-10" },
+        },
+      ],
+    }),
+  },
+  {
+    name: "sin plan, con ultimo pago y cuota atrasada",
+    input: base({
+      fromDate: "2026-09-29",
+      obligations: [
+        {
+          title: "Primo",
+          direction: "receivable",
+          status: "active",
+          currencyCode: "PEN",
+          pendingAmount: 741.4,
+          principalCurrentAmount: 1450,
+          startDate: "2026-03-15",
+          dueDate: "2026-10-31",
+          installmentAmount: 50,
+          lastPaymentDate: "2026-08-29",
+          payments: [],
+          paymentPlan: null,
+        },
+        {
+          title: "Sergio",
+          direction: "receivable",
+          status: "active",
+          currencyCode: "PEN",
+          pendingAmount: 180,
+          principalCurrentAmount: 380,
+          startDate: "2026-08-31",
+          dueDate: "2026-11-20",
+          installmentAmount: 100,
+          lastPaymentDate: "2026-09-21",
+          payments: [],
+          paymentPlan: null,
+        },
+      ],
+    }),
+  },
   { name: "fecha ilegible", input: base({ fromDate: "no es una fecha" }) },
   { name: "horizonte de un solo mes", input: base({ months: 1, recurringIncome: [sueldo] }) },
 ];
@@ -375,7 +481,9 @@ describe("paridad entre el motor de la app y el de la Edge Function", () => {
         // Las líneas, con etiqueta y origen: dos motores pueden cuadrar en el total y estar
         // contando cosas distintas.
         const shape = (lines: typeof month.inflows) =>
-          lines.map((line) => `${line.kind}|${line.label}|${line.source}|${line.amount.toFixed(4)}`);
+          lines.map(
+            (line) => `${line.kind}|${line.label}|${line.source}|${line.amount.toFixed(4)}|${line.dueDate}|${line.refId}`,
+          );
         expect(shape(mirror.inflows)).toEqual(shape(month.inflows));
         expect(shape(mirror.outflows)).toEqual(shape(month.outflows));
       });

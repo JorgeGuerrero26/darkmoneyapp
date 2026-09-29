@@ -44,6 +44,10 @@ export type ProjectionLine = {
   label: string;
   amount: number;
   source: "scheduled" | "estimated";
+  /** Fecha del compromiso, `yyyy-MM-dd`. En una cuota atrasada es la fecha en que venció. */
+  dueDate?: string;
+  /** El registro del que sale la línea, para poder abrirlo al tocarla. */
+  refId?: number;
 };
 
 export type ProjectedMonth = {
@@ -61,6 +65,7 @@ export type ProjectedMonth = {
 };
 
 export type ProjectionRecurringIncome = {
+  id?: number;
   name: string;
   amount: number;
   currencyCode: string;
@@ -72,6 +77,7 @@ export type ProjectionRecurringIncome = {
 };
 
 export type ProjectionSubscription = {
+  id?: number;
   name: string;
   amount: number;
   currencyCode: string;
@@ -83,19 +89,25 @@ export type ProjectionSubscription = {
 };
 
 export type ProjectionObligation = {
+  id?: number;
   title: string;
   direction: string;
   status: string;
   currencyCode: string;
   pendingAmount: number;
   principalCurrentAmount: number;
+  openingPrincipal?: number | null;
   startDate: string | null;
   dueDate: string | null;
   paymentPlan: unknown;
   installmentAmount?: number | null;
+  /** Cobros o pagos reales con fecha: el plan se cruza igual que en `coverPlan`. */
+  payments: readonly { amount: number; date: string }[];
+  lastPaymentDate?: string | null;
 };
 
 export type ProjectionPlannedMovement = {
+  id?: number;
   description: string;
   signedAmount: number;
   currencyCode: string;
@@ -108,6 +120,7 @@ export type ProjectionPlannedMovement = {
  * `statementDay` no hace falta aqui y vive en la cuenta para mostrarlo y avisar.
  */
 export type ProjectionCreditCard = {
+  id?: number;
   name: string;
   currencyCode: string;
   /** Lo que se debe hoy, positivo. Sale en el PROXIMO dia de pago y va como `scheduled`. */
@@ -509,44 +522,128 @@ function viewerCollects(obligation: ProjectionObligation): boolean {
   return obligation.direction === "receivable" ? !isSharedViewer : isSharedViewer;
 }
 
-function pendingInstallments(obligation: ProjectionObligation): ScheduledPayment[] {
-  const plan = parsePaymentPlan(obligation.paymentPlan);
-  const principal = obligation.principalCurrentAmount;
-  const pending = obligation.pendingAmount;
+/**
+ * Espejo de `expandOverCurrentDebt` (payment-plan.ts): el plan sobre la deuda de hoy. A medida
+ * mueve la cola; cuotas iguales conserva el numero y reparte solo lo que no esta cubierto.
+ */
+function expandOverCurrentDebt(
+  plan: PaymentPlan,
+  openingPrincipal: number,
+  currentDebt: number,
+  startDate: Ymd,
+  paidToDate: number,
+): ScheduledPayment[] {
+  if (plan.mode === "custom") return expandPaymentPlan(plan, currentDebt, startDate);
 
-  if (!plan || principal <= EPSILON) {
-    if (obligation.installmentAmount && obligation.installmentAmount > EPSILON) {
-      const start = parseYmd(obligation.dueDate ?? obligation.startDate);
-      if (!start) return [];
-      const rows: ScheduledPayment[] = [];
-      let remaining = pending;
-      for (let i = 0; i < MAX_OCCURRENCES && remaining > EPSILON; i += 1) {
-        const amount = Math.min(obligation.installmentAmount, remaining);
-        rows.push({ dueDate: addMonthsYmd(start, i), amount });
-        remaining -= amount;
-      }
-      return rows;
-    }
-    const dueDate = parseYmd(obligation.dueDate);
-    if (!dueDate || pending <= EPSILON) return [];
-    return [{ dueDate, amount: pending }];
+  const original = expandPaymentPlan(plan, openingPrincipal, startDate);
+  if (original.length === 0) return [];
+  if (toCents(currentDebt) === toCents(openingPrincipal)) return original;
+
+  let budget = toCents(paidToDate);
+  let settled = 0;
+  for (const payment of original) {
+    const cost = toCents(payment.amount);
+    if (budget < cost) break;
+    budget -= cost;
+    settled += 1;
   }
+  if (settled >= original.length) return original;
 
-  const startDate = parseYmd(obligation.startDate) ?? { y: 1970, m: 1, d: 1 };
-  const schedule = expandPaymentPlan(plan, principal, startDate);
-  let alreadyPaid = Math.max(0, principal - pending);
+  const settledCents = original.slice(0, settled).reduce((sum, payment) => sum + toCents(payment.amount), 0);
+  const pendingCents = Math.max(0, toCents(currentDebt) - settledCents);
+  const rest = original.length - settled;
+  const share = Math.round(pendingCents / rest);
+  let assigned = 0;
+  return original.map((payment, index) => {
+    if (index < settled) return payment;
+    const isLast = index === original.length - 1;
+    const cents = isLast ? pendingCents - assigned : share;
+    assigned += cents;
+    return { ...payment, amount: fromCents(Math.max(0, cents)) };
+  });
+}
 
+/**
+ * Espejo de lo que `coverPlan` deja sin cubrir, con la regla del 2026-09-29: lo cobrado en meses
+ * anteriores al primer vencimiento reduce la deuda del plan y no adelanta cuotas.
+ */
+function uncoveredInstallments(
+  plan: PaymentPlan,
+  openingPrincipal: number,
+  currentDebt: number,
+  startDate: Ymd,
+  payments: readonly { amount: number; date: string }[],
+): ScheduledPayment[] {
+  const planMonth = monthKeyOf(anchorFor(plan, startDate));
+  let beforeCents = 0;
+  let afterCents = 0;
+  for (const payment of payments) {
+    const date = parseYmd(payment.date);
+    if (!date) continue;
+    if (monthKeyOf(date) < planMonth) beforeCents += toCents(payment.amount);
+    else afterCents += toCents(payment.amount);
+  }
+  const scheduled = expandOverCurrentDebt(
+    plan,
+    Math.max(0, fromCents(toCents(openingPrincipal) - beforeCents)),
+    Math.max(0, fromCents(toCents(currentDebt) - beforeCents)),
+    startDate,
+    fromCents(afterCents),
+  );
+
+  let budget = afterCents;
   const rows: ScheduledPayment[] = [];
-  for (const payment of schedule) {
-    if (alreadyPaid >= payment.amount - EPSILON) {
-      alreadyPaid -= payment.amount;
-      continue;
-    }
-    const remainingOnThis = payment.amount - alreadyPaid;
-    alreadyPaid = 0;
-    if (remainingOnThis > EPSILON) rows.push({ dueDate: payment.dueDate, amount: remainingOnThis });
+  for (const payment of scheduled) {
+    const cost = toCents(payment.amount);
+    const covered = Math.max(0, Math.min(cost, budget));
+    budget -= covered;
+    const remaining = fromCents(cost - covered);
+    if (remaining > EPSILON) rows.push({ dueDate: payment.dueDate, amount: remaining });
   }
   return rows;
+}
+
+/**
+ * Espejo de `pendingInstallments`. Con plan, lo que `coverPlan` deja abierto. Sin plan y con
+ * cuota, desde el mes siguiente al ultimo pago en el dia en que empezo la deuda. Sin nada, el
+ * saldo entero en su vencimiento.
+ */
+function pendingInstallments(obligation: ProjectionObligation): ScheduledPayment[] {
+  const plan = parsePaymentPlan(obligation.paymentPlan);
+  const pending = obligation.pendingAmount;
+  if (pending <= EPSILON) return [];
+  const start = parseYmd(obligation.startDate);
+
+  if (plan && start) {
+    const currentDebt = obligation.principalCurrentAmount;
+    return uncoveredInstallments(
+      plan,
+      obligation.openingPrincipal ?? currentDebt,
+      currentDebt,
+      start,
+      obligation.payments,
+    );
+  }
+
+  if (obligation.installmentAmount && obligation.installmentAmount > EPSILON && start) {
+    const last = parseYmd(obligation.lastPaymentDate);
+    const firstMonth: Ymd = last
+      ? addMonthsYmd({ y: last.y, m: last.m, d: 1 }, 1)
+      : { y: start.y, m: start.m, d: 1 };
+    const rows: ScheduledPayment[] = [];
+    let remaining = pending;
+    for (let i = 0; i < MAX_OCCURRENCES && remaining > EPSILON; i += 1) {
+      const month = addMonthsYmd(firstMonth, i);
+      const amount = Math.min(obligation.installmentAmount, remaining);
+      rows.push({ dueDate: { y: month.y, m: month.m, d: Math.min(start.d, daysInMonth(month.y, month.m)) }, amount });
+      remaining -= amount;
+    }
+    return rows;
+  }
+
+  const dueDate = parseYmd(obligation.dueDate);
+  if (!dueDate) return [];
+  return [{ dueDate, amount: pending }];
 }
 
 type MonthBucket = {
@@ -575,6 +672,7 @@ export function buildCashflowCalendar(input: ProjectionInput): ProjectionResult 
   }
 
   const push = (date: Ymd, line: ProjectionLine, into: "inflows" | "outflows", converted: number | null) => {
+    if (!line.dueDate) line.dueDate = toIso(date);
     const bucket = buckets.get(monthKeyOf(date));
     if (!bucket) return;
     if (converted === null) bucket.unconvertedCount += 1;
@@ -594,7 +692,7 @@ export function buildCashflowCalendar(input: ProjectionInput): ProjectionResult 
       fromDate,
       horizonDate,
     )) {
-      push(date, { kind: "recurring_income", label: income.name, amount, source: "scheduled" }, "inflows", converted);
+      push(date, { kind: "recurring_income", label: income.name, amount, source: "scheduled", refId: income.id }, "inflows", converted);
     }
   }
 
@@ -612,7 +710,7 @@ export function buildCashflowCalendar(input: ProjectionInput): ProjectionResult 
     )) {
       push(
         date,
-        { kind: "subscription", label: subscription.name, amount, source: "scheduled" },
+        { kind: "subscription", label: subscription.name, amount, source: "scheduled", refId: subscription.id },
         "outflows",
         converted,
       );
@@ -623,15 +721,19 @@ export function buildCashflowCalendar(input: ProjectionInput): ProjectionResult 
     if (obligation.status !== "active" && obligation.status !== "defaulted") continue;
     const collects = viewerCollects(obligation);
     for (const installment of pendingInstallments(obligation)) {
-      if (compareYmd(installment.dueDate, fromDate) < 0 || compareYmd(installment.dueDate, horizonDate) > 0) continue;
+      if (compareYmd(installment.dueDate, horizonDate) > 0) continue;
+      // Vencida y sin cobrar: se sigue debiendo, entra en el mes en curso marcada y estimada.
+      const overdue = compareYmd(installment.dueDate, fromDate) < 0;
       const converted = input.convert(installment.amount, obligation.currencyCode);
       const line: ProjectionLine = {
         kind: collects ? "obligation_receivable" : "obligation_payable",
-        label: obligation.title,
+        label: overdue ? `${obligation.title} (atrasada)` : obligation.title,
         amount: converted ?? 0,
-        source: "scheduled",
+        source: overdue ? "estimated" : "scheduled",
+        refId: obligation.id,
+        dueDate: toIso(installment.dueDate),
       };
-      push(installment.dueDate, line, collects ? "inflows" : "outflows", converted);
+      push(overdue ? fromDate : installment.dueDate, line, collects ? "inflows" : "outflows", converted);
     }
   }
 
@@ -658,6 +760,7 @@ export function buildCashflowCalendar(input: ProjectionInput): ProjectionResult 
           {
             kind: "credit_card_payment",
             label: card.name,
+            refId: card.id,
             amount: converted ?? 0,
             source: isFirst ? "scheduled" : "estimated",
           },
@@ -675,6 +778,7 @@ export function buildCashflowCalendar(input: ProjectionInput): ProjectionResult 
     const line: ProjectionLine = {
       kind: "planned_movement",
       label: planned.description,
+      refId: planned.id,
       amount: converted ?? 0,
       source: "scheduled",
     };
