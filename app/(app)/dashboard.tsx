@@ -278,7 +278,6 @@ import {
 } from "../../features/dashboard/components/advanced/AdvancedCards";
 
 import {
-  AnnualHistoryPanel,
   CategoryDonutChart,
   ProjectionBridgeChart,
   SavingsMomentumChart,

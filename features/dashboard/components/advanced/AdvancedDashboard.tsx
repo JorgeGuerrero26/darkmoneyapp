@@ -49,6 +49,7 @@ import {
   movementDisplayAmount,
 } from "../../../../lib/movement-display";
 import { parseDisplayDate } from "../../../../lib/date";
+import { displayCategoryName } from "../../../../lib/category-display-name";
 import { normalizeAnalyticsText } from "../../../../services/analytics/movement-features";
 import { buildFinancialGraphRank, type FinancialGraphRankNode } from "../../../../services/analytics/financial-graph";
 import { buildFocusActionRanking } from "../../../../services/analytics/focus-scoring";
@@ -111,6 +112,7 @@ import { WeekOutlookSheet } from "./WeekOutlookSheet";
 import { MonthEndSheet } from "./MonthEndSheet";
 import { PatternsTab } from "./PatternsTab";
 import { FlowTab } from "./FlowTab";
+import { HistoryTab } from "./HistoryTab";
 import {
   buildDashboardAiTextParts,
   ensureDashboardAiComplexTerms,
@@ -122,6 +124,7 @@ import {
 import { useDashboardStats } from "../../hooks/useDashboardStats";
 import { buildSystemState } from "../../lib/system-state";
 import { expenseTitle, habitPresentation, weeklySpendPattern } from "../../lib/patterns-view";
+import { periodSavingsRate } from "../../lib/history-view";
 
 import { SectionTitle } from "../simple/SectionTitle";
 import { useCashflowProjection, type CashflowProjectionInputs } from "../../hooks/useCashflowProjection";
@@ -141,7 +144,6 @@ import {
 import { ProCommandCenter } from "./ProCommandCenter";
 import {
   CategoryBreakdown,
-  MonthlyPulse,
   ObligationsSection,
 } from "./AdvancedSections";
 import {
@@ -150,14 +152,11 @@ import {
 } from "./HealthAndAlerts";
 import {
   AdvancedGiftCard,
-  AlgorithmReadinessCard,
   CurrencyExposure,
   FinancialGraphCard,
   PeriodRadar,
 } from "./AdvancedCards";
 import {
-  AnnualHistoryPanel,
-  SavingsMomentumChart,
   type AnnualHistoryMonth,
 } from "./DashboardCharts";
 import { DashboardTabBar, type AdvancedTab } from "./DashboardTabBar";
@@ -386,7 +385,7 @@ export function AdvancedDashboard({
   // N1: Tasa de ahorro mensual - (ingreso - gasto) / ingreso para cada uno de los últimos 6 meses
   const categoryMap = useMemo(() => {
     const map = new Map<number, string>();
-    for (const category of snapshot?.categories ?? []) map.set(category.id, category.name);
+    for (const category of snapshot?.categories ?? []) map.set(category.id, displayCategoryName(category.name));
     return map;
   }, [snapshot?.categories]);
 
@@ -509,21 +508,32 @@ export function AdvancedDashboard({
     };
   }, [accountCurrencyMap, accountMap, activeCurrency, annualHistory, baseCurrency, categoryMap, exchangeRateMap, historyMovements, selectedAnnualMonth]);
 
+  // Esta query cubre seis meses completos; la lista base de 90 días dejaba abril-junio vacíos.
+  const recentHistoryMovements = useMemo(() => {
+    const byId = new Map<number, DashboardMovementRow>();
+    for (const movement of projectionHistory ?? []) byId.set(movement.id, movement);
+    for (const movement of movements) byId.set(movement.id, movement);
+    return [...byId.values()];
+  }, [movements, projectionHistory]);
+
   const monthlySavingsRate = useMemo(() => {
     const now = new Date();
-    const months = Array.from({ length: 6 }, (_, i) => {
-      const mDate = subMonths(now, 5 - i);
+    const months = Array.from({ length: 7 }, (_, i) => {
+      const mDate = subMonths(now, 6 - i);
       const mStart = startOfMonth(mDate);
-      const mEnd = i === 5 ? now : endOfMonth(mDate);
-      const mMvs = movements.filter((m) => inRange(m, mStart, mEnd));
+      const mEnd = i === 6 ? now : endOfMonth(mDate);
+      const mMvs = recentHistoryMovements.filter((m) => inRange(m, mStart, mEnd));
       const inc = mMvs.filter(isIncome).reduce((s, m) => s + incomeAmt(m, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency }), 0);
       const exp = mMvs.filter(isExpense).reduce((s, m) => s + expenseAmt(m, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency }), 0);
       const rate = inc > 0 ? ((inc - exp) / inc) * 100 : null;
       return { label: format(mDate, "MMM", { locale: es }), income: inc, expense: exp, rate };
     });
-    const validRates = months.map((m) => m.rate).filter((r): r is number => r !== null);
-    const avgRate = validRates.length > 0 ? validRates.reduce((s, r) => s + r, 0) / validRates.length : null;
-    const lastRate = months[5].rate;
+    // Ahorro del período / ingresos del período: pondera los meses por dinero real y evita que
+    // uno sin ingresos aparezca como 0% y tire el promedio hacia abajo.
+    const completeMonths = months.slice(0, -1);
+    const validRates = completeMonths.map((month) => month.rate).filter((rate): rate is number => rate !== null);
+    const avgRate = projectionHistory ? periodSavingsRate(completeMonths) : null;
+    const lastRate = months[6].rate;
     const trend = validRates.length >= 3
       ? (validRates[validRates.length - 1] - validRates[0]) > 3 ? "mejorando"
         : (validRates[validRates.length - 1] - validRates[0]) < -3 ? "empeorando"
@@ -531,12 +541,12 @@ export function AdvancedDashboard({
       : "insuficiente";
     const color = lastRate == null ? COLORS.storm : lastRate >= 20 ? COLORS.income : lastRate >= 0 ? COLORS.storm : COLORS.expense;
     return { months, avgRate, lastRate, trend, color };
-  }, [accountCurrencyMap, activeCurrency, exchangeRateMap, movements]);
+  }, [accountCurrencyMap, activeCurrency, exchangeRateMap, projectionHistory, recentHistoryMovements]);
 
   // N2: Score de estabilidad de ingresos - coeficiente de variación sobre 6 meses (bajo CV = estable)
   const incomeStabilityScore = useMemo(() => {
-    const incomes = advancedStats.monthlyPulse.map((m) => m.income).filter((v) => v > 0);
-    if (incomes.length < 3) return { score: null, cvPct: null, label: "Historial insuficiente", color: COLORS.storm };
+    const incomes = monthlySavingsRate.months.slice(0, -1).map((month) => month.income);
+    if (!projectionHistory || incomes.filter((income) => income > 0).length < 3) return { score: null, cvPct: null, label: "Historial insuficiente", color: COLORS.storm };
     const mean = incomes.reduce((s, v) => s + v, 0) / incomes.length;
     const variance = incomes.reduce((s, v) => s + Math.pow(v - mean, 2), 0) / incomes.length;
     const std = Math.sqrt(variance);
@@ -546,7 +556,7 @@ export function AdvancedDashboard({
     const label = score >= 75 ? "Muy estable" : score >= 50 ? "Moderado" : "Variable";
     const color = score >= 75 ? COLORS.income : score >= 50 ? COLORS.storm : COLORS.expense;
     return { score, cvPct, label, color };
-  }, [advancedStats.monthlyPulse]);
+  }, [monthlySavingsRate.months, projectionHistory]);
 
   // N3: Índice de concentración de gasto Herfindahl-Hirschman (HHI) - diversificación entre categorías
   const categoryConcentration = useMemo(() => {
@@ -610,6 +620,17 @@ export function AdvancedDashboard({
     const expenseColor = expenseDelta == null ? COLORS.storm : expenseDelta > 10 ? COLORS.expense : expenseDelta < -10 ? COLORS.income : COLORS.storm;
     return { hasHistory, curIncome, curExpense, prevIncome, prevExpense, expenseDelta, incomeDelta, expenseLabel, expenseColor };
   }, [accountCurrencyMap, activeCurrency, baseCurrency, exchangeRateMap, historyMovements]);
+
+  const hasSeasonalHistory = useMemo(() => {
+    if (selectedHistoryYear !== new Date().getFullYear() || !yearMovementsQuery.data) return false;
+    const months = new Set(
+      historyMovements
+        .filter((movement) => movement.status === "posted" && (isIncome(movement) || isExpense(movement)))
+        .map((movement) => format(new Date(movement.occurredAt), "yyyy-MM")),
+    );
+    return Array.from({ length: 12 }, (_, index) => format(subMonths(new Date(), index), "yyyy-MM"))
+      .every((monthKey) => months.has(monthKey));
+  }, [historyMovements, selectedHistoryYear, yearMovementsQuery.data]);
 
   // U1: review de la semana anterior para mostrar delta en Executive Summary
   const priorWeekReview = useMemo(() => {
@@ -1461,7 +1482,7 @@ export function AdvancedDashboard({
         const raw = a.currentBalanceInBaseCurrency ?? a.currentBalance;
         return sum + (convertDashboardCurrency(raw, baseCurrency, activeCurrency, exchangeRateMap, baseCurrency) ?? 0);
       }, 0);
-    const expenses = advancedStats.monthlyPulse.map((m) => m.expense);
+    const expenses = projectionHistory ? monthlySavingsRate.months.slice(0, -1).map((month) => month.expense) : [];
     const averageMonthlyExpense =
       expenses.length > 0 ? expenses.reduce((s, v) => s + v, 0) / expenses.length : 0;
     let totalPayable = 0;
@@ -1479,7 +1500,7 @@ export function AdvancedDashboard({
       totalPayable,
       overdueCount,
     };
-  }, [activeCurrency, advancedStats.monthlyPulse, baseCurrency, exchangeRateMap, monthToDate.expense, monthToDate.income, obligationsForHealth, snapshot?.accounts]);
+  }, [activeCurrency, baseCurrency, exchangeRateMap, monthToDate.expense, monthToDate.income, monthlySavingsRate.months, obligationsForHealth, projectionHistory, snapshot?.accounts]);
 
   const financialGraphRank = useMemo(() => (
     buildFinancialGraphRank<DashboardMovementRow>({
@@ -2227,7 +2248,7 @@ export function AdvancedDashboard({
       ],
       calculation: [
         monthlySavingsRate.lastRate != null
-          ? `Este mes la tasa va en ${monthlySavingsRate.lastRate.toFixed(1)}%. El promedio de los últimos 6 meses es ${monthlySavingsRate.avgRate?.toFixed(1) ?? "–"}%.`
+          ? `Este mes la tasa va en ${monthlySavingsRate.lastRate.toFixed(1)}%. ${monthlySavingsRate.avgRate == null ? "El historial de seis meses completos aún está cargando." : `En los seis meses completos anteriores retuviste el ${monthlySavingsRate.avgRate.toFixed(1)}% de lo que entró.`}`
           : "Registra ingresos y gastos en al menos 2 meses para activar este indicador.",
         monthlySavingsRate.trend !== "insuficiente"
           ? `La tendencia de los últimos 6 meses es ${monthlySavingsRate.trend}: ${monthlySavingsRate.trend === "mejorando" ? "la tasa ha subido más de 3 puntos desde el mes más antiguo del período." : monthlySavingsRate.trend === "empeorando" ? "la tasa ha bajado más de 3 puntos desde el mes más antiguo del período." : "la variación entre el mes más antiguo y el actual es menor a 3 puntos."}`
@@ -2694,6 +2715,7 @@ export function AdvancedDashboard({
   const [summaryAiSheetOpen, setSummaryAiSheetOpen] = useState(false);
   const [patternsAiSheetOpen, setPatternsAiSheetOpen] = useState(false);
   const [flowAiSheetOpen, setFlowAiSheetOpen] = useState(false);
+  const [historyAiSheetOpen, setHistoryAiSheetOpen] = useState(false);
   const dashboardAiTone = dashboardAi.tone;
   const setDashboardAiTone = dashboardAi.setTone;
   const dashboardAiBreath = useRef(new Animated.Value(0)).current;
@@ -3255,7 +3277,39 @@ export function AdvancedDashboard({
       </BottomSheet>
 
       <BottomSheet
-        visible={Boolean(activeDashboardAiTerm) && !summaryAiSheetOpen && !patternsAiSheetOpen && !flowAiSheetOpen}
+        visible={historyAiSheetOpen}
+        onClose={() => { setHistoryAiSheetOpen(false); setActiveDashboardAiTerm(null); }}
+        title={activeDashboardAiTerm ? "Explicación" : "Informe de historial con IA"}
+        snapHeight={0.82}
+        blurBackdrop={false}
+        headerStyle={subStyles.summarySheetHeader}
+        contentStyle={subStyles.summarySheetContent}
+      >
+        {activeDashboardAiTerm ? (
+          <View style={subStyles.aiSummaryTermSheet}>
+            <TouchableOpacity onPress={() => setActiveDashboardAiTerm(null)} accessibilityRole="button">
+              <Text style={subStyles.summaryAiBack}>Volver al informe</Text>
+            </TouchableOpacity>
+            <Text style={subStyles.aiSummaryTermSheetTitle}>{activeDashboardAiTerm.term}</Text>
+            <Text style={subStyles.aiSummaryTermSheetBody}>{activeDashboardAiTerm.explanation}</Text>
+          </View>
+        ) : dashboardAiHistoryMutation.isPending && !dashboardAiHistoryReply ? (
+          <AiResponseSkeleton />
+        ) : dashboardAiHistoryReply ? (
+          <Text style={subStyles.summaryAiReportText}>
+            {dashboardAiHistoryTextParts.map((part, index) => part.type === "term" ? (
+              <Text key={`${part.term.term}-history-${index}`} style={subStyles.summaryAiReportTerm} onPress={() => setActiveDashboardAiTerm(part.term)}>{part.value}</Text>
+            ) : <Text key={`history-text-${index}`}>{part.value}</Text>)}
+          </Text>
+        ) : (
+          <Text style={subStyles.summaryAiReportText}>
+            {dashboardAiHistoryLimitReached ? "La consulta de hoy ya se usó. Podrás pedir otro informe mañana." : "No se pudo preparar el informe. Cierra la hoja y vuelve a intentarlo."}
+          </Text>
+        )}
+      </BottomSheet>
+
+      <BottomSheet
+        visible={Boolean(activeDashboardAiTerm) && !summaryAiSheetOpen && !patternsAiSheetOpen && !flowAiSheetOpen && !historyAiSheetOpen}
         onClose={() => setActiveDashboardAiTerm(null)}
         title="Explicación"
         snapHeight={0.42}
@@ -3536,7 +3590,7 @@ export function AdvancedDashboard({
               </View>
               <View style={subStyles.annualSummaryCard}>
                 <Text style={subStyles.savingsStatLabel}>Ahorro</Text>
-                <Text style={[subStyles.annualSummaryValue, { color: selectedAnnualMonthDetail.savingsRate == null ? COLORS.storm : selectedAnnualMonthDetail.savingsRate >= 0 ? COLORS.expense : COLORS.expense }]}>
+                <Text style={[subStyles.annualSummaryValue, { color: selectedAnnualMonthDetail.savingsRate == null ? COLORS.storm : selectedAnnualMonthDetail.savingsRate >= 0 ? COLORS.income : COLORS.expense }]}>
                   {selectedAnnualMonthDetail.savingsRate == null ? "-" : `${selectedAnnualMonthDetail.savingsRate.toFixed(1)}%`}
                 </Text>
               </View>
@@ -3721,402 +3775,32 @@ export function AdvancedDashboard({
       )}
       {activeTab === 'Historial' && (
         <DashboardSectionBoundary sectionLabel="Historial">
-        <>
-      <View style={{ height: SPACING.sm }} />
-      <AnnualHistoryPanel
-        years={historyYears}
-        selectedYear={selectedHistoryYear}
-        onSelectYear={setSelectedHistoryYear}
-        data={annualHistory}
-        currency={activeCurrency}
-        onSelectMonth={setSelectedAnnualMonth}
-      />
-      <View style={{ height: SPACING.sm }} />
-      <Card>
-        <View style={subStyles.aiSummaryShellWrap}>
-          <View style={subStyles.aiSummaryShell}>
-            {/* Una linea de que hace, y ya. Antes lo explicaba tres veces —insignia, titulo y dos
-                parrafos— con borde degradado, cuatro orbes animados y un halo. Es una funcion de
-                la app, no una marca aparte. */}
-            <View style={subStyles.aiSummaryCompactHeader}>
-              <Sparkles size={14} color={COLORS.pro} />
-              <Text style={subStyles.aiSummaryCompactTitle}>Explica tu situación con IA</Text>
-            </View>
-            <TouchableOpacity
-              activeOpacity={0.86}
-              onPress={() => void handleRequestDashboardAiHistory()}
-              disabled={dashboardAiHistoryMutation.isPending || dashboardAiHistoryLimitReached}
-              style={[
-                subStyles.aiSummaryButton,
-                (dashboardAiHistoryMutation.isPending || dashboardAiHistoryLimitReached) && subStyles.aiSummaryButtonDisabled,
-              ]}
-            >
-              <View style={subStyles.aiSummaryButtonAccent} />
-              <View style={subStyles.aiSummaryButtonInner}>
-                <Sparkles size={16} color={dashboardAiHistoryMutation.isPending || dashboardAiHistoryLimitReached ? "rgba(244,241,236,0.4)" : COLORS.pro} />
-                <Text style={subStyles.aiSummaryButtonLabel}>
-                  {dashboardAiHistoryMutation.isPending
-                    ? "Preparando explicacion..."
-                    : dashboardAiHistoryLimitReached
-                      ? "Consulta de hoy usada"
-                      : dashboardAiTone === "managerial"
-                        ? "Ver informe histórico"
-                        : "Hablar con mi asesor histórico"}
-                </Text>
-              </View>
-            </TouchableOpacity>
-            {dashboardAiHistoryMutation.isPending && !dashboardAiHistoryReply ? <AiResponseSkeleton /> : null}
-            {dashboardAiHistoryReply ? (
-              <View style={subStyles.aiSummaryResponseCard}>
-                <View style={subStyles.aiSummaryResponseAiTag}>
-                  <Sparkles size={11} color={COLORS.pro} />
-                  <Text style={subStyles.aiSummaryResponseLabel}>
-                    {dashboardAiTone === "managerial" ? "Gemini · Historial gerencial" : "Gemini · Historial en modo asesor"}
-                  </Text>
-                </View>
-                {dashboardAiHistoryResolvedTerms.length > 0 ? (
-                  <Text style={subStyles.aiSummaryGlossaryHint}>
-                    Toca las palabras resaltadas para ver su explicación.
-                  </Text>
-                ) : null}
-                <Text style={subStyles.aiSummaryResponseText}>
-                  {dashboardAiHistoryTextParts.map((part, index) => (
-                    part.type === "term" ? (
-                      <Text
-                        key={`${part.term.term}-history-${index}`}
-                        style={subStyles.aiSummaryResponseTerm}
-                        onPress={() => setActiveDashboardAiTerm(part.term)}
-                      >
-                        {part.value}
-                      </Text>
-                    ) : (
-                      <Text key={`history-text-${index}`}>{part.value}</Text>
-                    )
-                  ))}
-                </Text>
-              </View>
-            ) : (
-              <Text style={subStyles.aiSummaryHint}>
-                {dashboardAiHistoryLimitReached
-                  ? "Ya usaste tu explicación de IA de hoy en este módulo. Podrás pedir otra mañana."
-                  : "Gemini usa los meses del año seleccionado, los cambios de comportamiento y las métricas históricas para contarte cómo ha evolucionado tu situación."}
-              </Text>
+          <HistoryTab
+            years={historyYears}
+            selectedYear={selectedHistoryYear}
+            onSelectYear={setSelectedHistoryYear}
+            months={annualHistory}
+            currency={activeCurrency}
+            loading={yearMovementsQuery.isPending && Boolean(workspaceId && userId)}
+            error={Boolean(yearMovementsQuery.error)}
+            onRetry={() => { void yearMovementsQuery.refetch(); }}
+            factorAnalysis={historyFactorAnalysis}
+            seasonalComparison={hasSeasonalHistory && seasonalComparison.hasHistory ? seasonalComparison : null}
+            onOpenMonth={setSelectedAnnualMonth}
+            onOpenCategory={(categoryId, name) => openHistoryRangePreview(
+              `${selectedHistoryYear}-01-01`,
+              `${selectedHistoryYear}-12-31`,
+              { kind: "expense", categoryId, title: `${displayCategoryName(name)} en ${selectedHistoryYear}` },
             )}
-            <View style={subStyles.aiSummaryFooterRow}>
-              <Text style={subStyles.aiSummaryFooterText}>La explicación usa solo las señales históricas visibles dentro de esta pestaña.</Text>
-            </View>
-          </View>
-        </View>
-      </Card>
-      {historyChangePoint ? (
-        <>
-          <View style={{ height: SPACING.sm }} />
-          <Card>
-            <SectionTitle>Cambio detectado</SectionTitle>
-            <Text style={subStyles.executiveIntro}>
-              {historyChangePoint.body}
-            </Text>
-            <View style={subStyles.commandMetricGrid}>
-              <View style={subStyles.commandMetricCard}>
-                <Text style={subStyles.commandMetricLabel}>Señal principal</Text>
-                <Text style={subStyles.commandMetricValue}>{historyChangePoint.title}</Text>
-                <Text style={subStyles.commandMetricHint}>
-                  Promedio reciente: {formatCurrency(historyChangePoint.recentAverage, activeCurrency)}
-                </Text>
-              </View>
-              <View style={subStyles.commandMetricCard}>
-                <Text style={subStyles.commandMetricLabel}>Referencia anterior</Text>
-                <Text style={subStyles.commandMetricValue}>{formatCurrency(historyChangePoint.previousAverage, activeCurrency)}</Text>
-                <Text style={subStyles.commandMetricHint}>
-                  Esto ayuda a separar cambio real de un pico aislado.
-                </Text>
-              </View>
-            </View>
-          </Card>
-        </>
-      ) : null}
-      {monthClusters.length > 0 ? (
-        <>
-          <View style={{ height: SPACING.sm }} />
-          <Card>
-            <SectionTitle>Tipos de meses</SectionTitle>
-            <Text style={subStyles.executiveIntro}>
-              Agrupa meses parecidos para que no tengas que leer doce barras una por una. Toca un grupo para abrir un mes representativo.
-            </Text>
-            <View style={subStyles.commandActions}>
-              {monthClusters.slice(0, 4).map((cluster) => (
-                <TouchableOpacity
-                  key={cluster.kind}
-                  style={subStyles.commandActionRow}
-                  onPress={() => openHistoryRangePreview(cluster.representativeMonth.dateFrom, cluster.representativeMonth.dateTo, { title: cluster.title })}
-                  activeOpacity={0.82}
-                >
-                  <View style={subStyles.commandActionCopy}>
-                    <View style={subStyles.suggestionRowTop}>
-                      <Text style={subStyles.commandActionTitle} numberOfLines={1}>{cluster.title}</Text>
-                      <View style={subStyles.miniChip}>
-                        <Text style={subStyles.miniChipText}>{cluster.count} mes{cluster.count === 1 ? "" : "es"}</Text>
-                      </View>
-                    </View>
-                    <Text style={subStyles.commandActionBody}>{cluster.description}</Text>
-                    <Text style={subStyles.commandActionBody}>
-                      {cluster.monthLabels.join(", ")} · neto promedio {formatCurrency(cluster.averageNet, activeCurrency)}
-                    </Text>
-                  </View>
-                  <ArrowRight size={15} color={COLORS.storm} />
-                </TouchableOpacity>
-              ))}
-            </View>
-          </Card>
-        </>
-      ) : null}
-      {historyFactorAnalysis ? (
-        <>
-          <View style={{ height: SPACING.sm }} />
-          <Card>
-            <SectionTitle>Qué partidas explican el año</SectionTitle>
-            <Text style={subStyles.executiveIntro}>
-              {historyFactorAnalysis.body}
-            </Text>
-            <Text style={subStyles.scopeHint}>
-              Alcance: gastos del año seleccionado. Es como revisar qué productos hacen que una tienda tenga meses tranquilos o meses pesados.
-            </Text>
-            <View style={subStyles.commandMetricGrid}>
-              <View style={[subStyles.commandMetricCard, subStyles.focusMetricCardWide]}>
-                <Text style={subStyles.commandMetricLabel}>Factor principal</Text>
-                <Text style={subStyles.commandMetricValue}>{historyFactorAnalysis.title}</Text>
-                <Text style={subStyles.commandMetricHint}>
-                  Explica {historyFactorAnalysis.explainedVariancePct}% de los cambios entre meses.
-                </Text>
-              </View>
-            </View>
-            <View style={subStyles.commandActions}>
-              {historyFactorAnalysis.topCategories.map((category) => (
-                <TouchableOpacity
-                  key={`${category.categoryId ?? "none"}-${category.name}`}
-                  style={subStyles.commandActionRow}
-                  onPress={() => openHistoryRangePreview(
-                    `${selectedHistoryYear}-01-01`,
-                    `${selectedHistoryYear}-12-31`,
-                    { kind: "expense", categoryId: category.categoryId, title: `${category.name} en ${selectedHistoryYear}` },
-                  )}
-                  activeOpacity={0.82}
-                >
-                  <View style={subStyles.commandActionCopy}>
-                    <View style={subStyles.suggestionRowTop}>
-                      <Text style={subStyles.commandActionTitle} numberOfLines={1}>{category.name}</Text>
-                      <View style={subStyles.miniChip}>
-                        <Text style={subStyles.miniChipText}>{category.weight}%</Text>
-                      </View>
-                    </View>
-                    <Text style={subStyles.commandActionBody}>
-                      Total anual {formatCurrency(category.amount, activeCurrency)} · {category.direction === "sube_con_el_cambio" ? "sube cuando el factor pesa más" : "baja cuando el factor pesa más"}
-                    </Text>
-                  </View>
-                  <ArrowRight size={15} color={COLORS.storm} />
-                </TouchableOpacity>
-              ))}
-            </View>
-            {historyFactorAnalysis.activeMonths.length > 0 ? (
-              <View style={subStyles.commandActions}>
-                {historyFactorAnalysis.activeMonths.map((month) => (
-                  <TouchableOpacity
-                    key={`${month.dateFrom}-${month.dateTo}`}
-                    style={subStyles.commandActionRow}
-                    onPress={() => openHistoryRangePreview(month.dateFrom, month.dateTo, { title: `Movimientos de ${month.label}` })}
-                    activeOpacity={0.82}
-                  >
-                    <View style={subStyles.commandActionCopy}>
-                      <Text style={subStyles.commandActionTitle} numberOfLines={1}>Mes donde más se nota: {month.label}</Text>
-                      <Text style={subStyles.commandActionBody}>
-                        Toca para ver qué movimientos hicieron que este mes se aleje del promedio.
-                      </Text>
-                    </View>
-                    <ArrowRight size={15} color={COLORS.storm} />
-                  </TouchableOpacity>
-                ))}
-              </View>
-            ) : null}
-          </Card>
-        </>
-      ) : null}
-      {!historyReadiness.allReady ? (
-        <>
-          <View style={{ height: SPACING.sm }} />
-          <AlgorithmReadinessCard
-            title="Análisis histórico preparado"
-            body="Estos cálculos ya están listos. Si todavía no aparecen arriba, no es porque falten funciones: el sistema está esperando más meses y categorías para no inventar conclusiones."
-            checks={[
-              {
-                label: "Cambio de comportamiento",
-                current: historyReadiness.observedMonths,
-                required: 6,
-                detail: "Necesita 6 meses con actividad para comparar 3 meses recientes contra 3 anteriores.",
-              },
-              {
-                label: "Tipos de meses",
-                current: historyReadiness.observedMonths,
-                required: 3,
-                detail: "Necesita al menos 3 meses con movimientos para separar meses normales, caros o ajustados.",
-              },
-              {
-                label: "Partidas que explican el año",
-                current: [
-                  historyReadiness.observedMonths >= 3,
-                  historyReadiness.expenseCategoryCount >= 2,
-                  historyReadiness.movementCount >= 8,
-                ].filter(Boolean).length,
-                required: 3,
-                detail: `${historyReadiness.observedMonths}/3 meses, ${historyReadiness.expenseCategoryCount}/2 categorías y ${historyReadiness.movementCount}/8 movimientos del año seleccionado.`,
-              },
-            ]}
+            onOpenAi={() => {
+              setHistoryAiSheetOpen(true);
+              if (!dashboardAiHistoryReply && !dashboardAiHistoryLimitReached && !dashboardAiHistoryMutation.isPending) {
+                void handleRequestDashboardAiHistory();
+              }
+            }}
           />
-        </>
-      ) : null}
-      <View style={{ height: SPACING.sm }} />
-      <MonthlyPulse
-        data={advancedStats.monthlyPulse}
-        currency={activeCurrency}
-        onOpenMonth={(dateFrom, dateTo) => openHistoryRangePreview(dateFrom, dateTo, { title: "Pulso mensual" })}
-      />
-
-      {/* N1-N5: Métricas avanzadas - tasa de ahorro, estabilidad, concentración, cobranza, estacional */}
-      <View style={{ height: SPACING.sm }} />
-      <Card>
-        <View style={subStyles.cardHeaderWithAction}>
-          <SectionTitle>Métricas avanzadas</SectionTitle>
-          <TouchableOpacity style={subStyles.inlineExplainBtn} onPress={() => setAdvancedDetail("advancedMetrics")} activeOpacity={0.82}>
-            <Text style={subStyles.inlineExplainBtnText}>Entender</Text>
-          </TouchableOpacity>
-        </View>
-        <Text style={subStyles.executiveIntro}>
-          Indicadores estadísticos sobre tus patrones: ahorro, estabilidad de ingresos, concentración de gasto, eficiencia de cobranza y comparación estacional.
-        </Text>
-
-        {/* N1: Tasa de ahorro mensual */}
-        <TouchableOpacity style={subStyles.advMetricSection} onPress={() => setAdvancedDetail("savingsRate")} activeOpacity={0.84}>
-          <View style={subStyles.advMetricHeader}>
-            <Text style={subStyles.advMetricTitle}>Tasa de ahorro mensual</Text>
-            {monthlySavingsRate.lastRate != null ? (
-              <Text style={[subStyles.advMetricBadge, { color: monthlySavingsRate.color }]}>
-                {monthlySavingsRate.lastRate.toFixed(1)}% este mes
-              </Text>
-            ) : null}
-          </View>
-          <Text style={subStyles.advMetricBody}>
-            {monthlySavingsRate.avgRate != null
-              ? `Promedio 6 meses: ${monthlySavingsRate.avgRate.toFixed(1)}% · tendencia ${monthlySavingsRate.trend}`
-              : "Registra al menos 2 meses de movimientos para ver tu promedio de ahorro."}
-          </Text>
-          {monthlySavingsRate.lastRate != null && monthlySavingsRate.avgRate != null ? (
-            <Text style={[subStyles.advMetricInterpret, { color: monthlySavingsRate.lastRate >= monthlySavingsRate.avgRate ? COLORS.income : COLORS.expense }]}>
-              {monthlySavingsRate.lastRate > monthlySavingsRate.avgRate + 1
-                ? `Este mes ahorras ${(monthlySavingsRate.lastRate - monthlySavingsRate.avgRate).toFixed(1)}% más que tu promedio — por encima de lo habitual.`
-                : monthlySavingsRate.lastRate < monthlySavingsRate.avgRate - 1
-                ? `Este mes ahorras ${(monthlySavingsRate.avgRate - monthlySavingsRate.lastRate).toFixed(1)}% menos que tu promedio — mes de mayor gasto.`
-                : "Este mes está en línea con tu promedio histórico."}
-            </Text>
-          ) : null}
-          <View style={subStyles.advMetricBarRow}>
-            {monthlySavingsRate.months.map((m, i) => {
-              const pct = m.rate;
-              const barH = pct == null ? 4 : Math.min(40, Math.max(4, Math.abs(pct) * 0.8));
-              const barColor = pct == null ? COLORS.storm : pct >= 20 ? COLORS.income : pct >= 0 ? COLORS.storm : COLORS.expense;
-              return (
-                <View key={i} style={subStyles.advMetricBarItem}>
-                  <View style={[subStyles.advMetricBar, { height: barH, backgroundColor: barColor }]} />
-                  <Text style={subStyles.advMetricBarLabel}>{m.label}</Text>
-                </View>
-              );
-            })}
-          </View>
-        </TouchableOpacity>
-
-        {/* N2: Score de estabilidad de ingresos */}
-        <TouchableOpacity style={[subStyles.advMetricSection, subStyles.advMetricSectionBorder]} onPress={() => setAdvancedDetail("incomeStability")} activeOpacity={0.84}>
-          <View style={subStyles.advMetricHeader}>
-            <Text style={subStyles.advMetricTitle}>Estabilidad de ingresos</Text>
-            {incomeStabilityScore.score != null ? (
-              <Text style={[subStyles.advMetricBadge, { color: incomeStabilityScore.color }]}>
-                {incomeStabilityScore.score}/100
-              </Text>
-            ) : null}
-          </View>
-          <Text style={subStyles.advMetricBody}>
-            {incomeStabilityScore.score != null
-              ? `${incomeStabilityScore.label} · variación del ${incomeStabilityScore.cvPct}% entre meses`
-              : "Registra ingresos en al menos 2 meses para calcular la estabilidad."}
-          </Text>
-          {incomeStabilityScore.score != null ? (
-            <View style={subStyles.advScoreBar}>
-              <View style={[subStyles.advScoreFill, { width: `${incomeStabilityScore.score}%` as any, backgroundColor: incomeStabilityScore.color }]} />
-            </View>
-          ) : null}
-          {incomeStabilityScore.score != null ? (
-            <Text style={[subStyles.advMetricInterpret, { color: incomeStabilityScore.color }]}>
-              {incomeStabilityScore.score >= 75
-                ? "Ingreso predecible — las proyecciones de cierre son más fiables."
-                : incomeStabilityScore.score >= 50
-                ? "Cierta variación mes a mes — las proyecciones son aproximadas."
-                : "Ingreso muy variable — toma el estimado de fin de mes con cautela."}
-            </Text>
-          ) : null}
-        </TouchableOpacity>
-
-        {/* N5: Comparación estacional */}
-        <TouchableOpacity style={[subStyles.advMetricSection, subStyles.advMetricSectionBorder]} onPress={() => setAdvancedDetail("seasonalComparison")} activeOpacity={0.84}>
-          <View style={subStyles.advMetricHeader}>
-            <Text style={subStyles.advMetricTitle}>Comparación estacional</Text>
-            {seasonalComparison.hasHistory ? (
-              <Text style={[subStyles.advMetricBadge, { color: seasonalComparison.expenseColor }]}>
-                {seasonalComparison.expenseLabel}
-              </Text>
-            ) : null}
-          </View>
-          {seasonalComparison.hasHistory ? (
-            <>
-              <Text style={subStyles.advMetricBody}>
-                Gasto: {formatCurrency(seasonalComparison.curExpense, activeCurrency)} este mes vs {formatCurrency(seasonalComparison.prevExpense, activeCurrency)} mismo mes año pasado.
-              </Text>
-              {seasonalComparison.incomeDelta != null ? (
-                <Text style={subStyles.advMetricBody}>
-                  Ingreso: {seasonalComparison.incomeDelta > 0 ? "+" : ""}{seasonalComparison.incomeDelta.toFixed(0)}% vs año pasado.
-                </Text>
-              ) : null}
-              {seasonalComparison.expenseDelta != null ? (
-                <Text style={[subStyles.advMetricInterpret, { color: seasonalComparison.expenseColor }]}>
-                  {seasonalComparison.expenseDelta <= -5
-                    ? `Gastaste ${Math.abs(seasonalComparison.expenseDelta).toFixed(0)}% menos que en este mes el año pasado — buen control.`
-                    : seasonalComparison.expenseDelta <= 5
-                    ? "Gasto similar al mismo mes del año pasado — patrón estable."
-                    : `Gastaste ${seasonalComparison.expenseDelta.toFixed(0)}% más que en este mes el año pasado — revisa qué cambió.`}
-                </Text>
-              ) : null}
-            </>
-          ) : (
-            <Text style={subStyles.advMetricBody}>
-              Necesitas 12 meses de movimientos registrados para activar esta comparación. Registra ingresos y gastos de meses anteriores para verla.
-            </Text>
-          )}
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[subStyles.advMetricSection, subStyles.advMetricSectionBorder, { flexDirection: "row", alignItems: "center", justifyContent: "space-between" }]}
-          onPress={() => setActiveTab('Flujo')}
-          activeOpacity={0.84}
-        >
-          <View style={{ flex: 1 }}>
-            <Text style={subStyles.advMetricTitle}>¿Cómo va este mes?</Text>
-            <Text style={subStyles.advMetricBody}>Compara tu ritmo actual con este historial — ve a Flujo para ver la proyección de cierre.</Text>
-          </View>
-          <ArrowRight size={16} color={COLORS.primary} />
-        </TouchableOpacity>
-      </Card>
-
-      </>
-      </DashboardSectionBoundary>
+        </DashboardSectionBoundary>
       )}
-
       {activeTab === 'Salud' && (
         <DashboardSectionBoundary sectionLabel="Salud">
         <>
@@ -4155,6 +3839,27 @@ export function AdvancedDashboard({
         totalPayable={healthInputs.totalPayable}
         overdueCount={healthInputs.overdueCount}
       />
+
+      <View style={{ height: SPACING.sm }} />
+      <Card>
+        <SectionTitle>Ahorro y estabilidad</SectionTitle>
+        <TouchableOpacity style={subStyles.advMetricSection} onPress={() => setAdvancedDetail("savingsRate")} activeOpacity={0.84}>
+          <View style={subStyles.advMetricHeader}>
+            <Text style={subStyles.advMetricTitle}>Tasa de ahorro</Text>
+            {monthlySavingsRate.avgRate != null ? <Text style={[subStyles.advMetricBadge, { color: monthlySavingsRate.avgRate >= 0 ? COLORS.income : COLORS.expense }]}>{monthlySavingsRate.avgRate.toFixed(1)}%</Text> : null}
+          </View>
+          <Text style={subStyles.advMetricBody}>
+            {monthlySavingsRate.avgRate == null ? "Esperando seis meses completos de historial." : `En los últimos seis meses completos · este mes ${monthlySavingsRate.lastRate == null ? "sin ingresos" : `${monthlySavingsRate.lastRate.toFixed(1)}%`}`}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[subStyles.advMetricSection, subStyles.advMetricSectionBorder]} onPress={() => setAdvancedDetail("incomeStability")} activeOpacity={0.84}>
+          <View style={subStyles.advMetricHeader}>
+            <Text style={subStyles.advMetricTitle}>Estabilidad de ingresos</Text>
+            {incomeStabilityScore.score != null ? <Text style={[subStyles.advMetricBadge, { color: incomeStabilityScore.color }]}>{incomeStabilityScore.score}/100</Text> : null}
+          </View>
+          <Text style={subStyles.advMetricBody}>{incomeStabilityScore.score == null ? "Se necesitan ingresos en al menos tres meses completos." : incomeStabilityScore.label}</Text>
+        </TouchableOpacity>
+      </Card>
 
       <View style={{ height: SPACING.sm }} />
       <ReviewInbox

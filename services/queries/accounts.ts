@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { supabase } from "../../lib/supabase";
+import { displayCategoryName } from "../../lib/category-display-name";
 import { withTimeout } from "../../lib/promise-utils";
 import { formatSupabaseError, runBackgroundQueryRefresh } from "./_shared";
 import { isCoreSnapshot } from "./snapshot-cache";
@@ -232,7 +233,7 @@ export function useAccountAnalyticsQuery(
         destinationAccountId: r.destination_account_id,
         destinationAmount: r.destination_amount ? Number(r.destination_amount) : null,
         categoryId: r.category_id,
-        categoryName: r.categories?.name ?? null,
+        categoryName: r.categories?.name == null ? null : displayCategoryName(r.categories.name),
       })) as AccountMovementAnalytics[];
     },
   });

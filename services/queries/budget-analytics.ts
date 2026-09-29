@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { STALE } from "../../lib/query-client";
 import { filterDateFrom, filterDateTo } from "../../lib/date";
 import { supabase } from "../../lib/supabase";
+import { displayCategoryName } from "../../lib/category-display-name";
 import type { BudgetOverview } from "../../types/domain";
 import type { BudgetScopedMovement } from "../../lib/budget-metrics";
 
@@ -63,7 +64,7 @@ async function fetchBudgetScopeMovements(
       occurredAt: row.occurred_at,
       description: typeof row.description === "string" ? row.description : null,
       categoryId: row.category_id ?? null,
-      categoryName: row.category?.name ?? null,
+      categoryName: row.category?.name == null ? null : displayCategoryName(row.category.name),
       spendTypeId: row.spend_type_id ?? null,
       categoryDefaultSpendTypeId: row.category?.default_spend_type_id ?? null,
       sourceAccountId: row.source_account_id ?? null,

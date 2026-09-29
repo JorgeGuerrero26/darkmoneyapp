@@ -16,6 +16,7 @@ import {
 import { logWarn } from "../../lib/error-logger";
 import { retryOnceIfSessionStale } from "../../lib/session-retry";
 import { dateStrToISO, filterDateFrom, filterDateTo } from "../../lib/date";
+import { displayCategoryName } from "../../lib/category-display-name";
 import { notificationDetection } from "../../lib/notification-detection-native";
 import { scheduleCoalescedTask } from "../../lib/query-refresh-coalescer";
 import {
@@ -562,7 +563,7 @@ function mapBudget(row: BudgetProgressRow): BudgetOverview {
     periodEnd: row.period_end,
     currencyCode: row.currency_code,
     categoryId: row.category_id,
-    categoryName: row.category_name,
+    categoryName: row.category_name == null ? null : displayCategoryName(row.category_name),
     accountId: row.account_id,
     accountName: row.account_name,
     spendTypeId: row.spend_type_id ?? null,
@@ -993,11 +994,11 @@ export async function fetchWorkspaceSnapshot(
     updated_at: string;
   }[];
   const categoryIdToName = new Map<number, string>();
-  for (const row of categoryRowsRaw) categoryIdToName.set(row.id, row.name);
+  for (const row of categoryRowsRaw) categoryIdToName.set(row.id, displayCategoryName(row.name));
   const categoryMap = categoryIdToName;
   const categories: CategorySummary[] = categoryRowsRaw.map((row) => ({
     id: row.id,
-    name: row.name,
+    name: displayCategoryName(row.name),
     kind: row.kind,
     isActive: row.is_active,
     workspaceId: row.workspace_id,
