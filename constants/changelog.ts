@@ -13,6 +13,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "1.0.10",
     title: "DarkMoney estrena look",
     changes: [
+      "Las figuras de carga del inicio ahora pulsan mientras llegan los datos, para que se vea que la app sigue trabajando.",
       "El indicador de actualizar listas ahora aparece solo cuando deslizas hacia abajo. Las actualizaciones automáticas siguen en segundo plano y el indicador se cierra si la conexión tarda demasiado.",
       "Fin de mes ahora muestra cómo se suma el cierre: saldo de tus cuentas, compromisos pendientes y ritmo proyectado. También puedes abrir los compromisos y movimientos que forman el cálculo. (Pro)",
       "Corregimos el cierre estimado para que cuente solo compromisos hasta el último día del mes y proyecte el ritmo únicamente por los días que faltan. (Pro)",

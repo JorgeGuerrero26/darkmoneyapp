@@ -69,7 +69,18 @@ export function Skeleton({ width = "100%", height = 16, borderRadius = RADIUS.sm
 }
 
 export function SkeletonList({ children, style }: { children: React.ReactNode; style?: StyleProp<ViewStyle> }) {
-  return <View style={[skStyles.list, style]}>{children}</View>;
+  const opacity = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    const pulse = Animated.loop(Animated.sequence([
+      Animated.timing(opacity, { toValue: 0.55, duration: 700, useNativeDriver: true }),
+      Animated.timing(opacity, { toValue: 1, duration: 700, useNativeDriver: true }),
+    ]));
+    pulse.start();
+    return () => pulse.stop();
+  }, [opacity]);
+
+  return <Animated.View style={[skStyles.list, style, { opacity }]}>{children}</Animated.View>;
 }
 
 export function SkeletonCard({ style }: { style?: StyleProp<ViewStyle> }) {
