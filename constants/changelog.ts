@@ -13,6 +13,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "1.0.10",
     title: "DarkMoney estrena look",
     changes: [
+      "En \"Fin de mes\", lo que antes se llamaba \"Tu ritmo habitual\" ahora dice lo que es: tu gasto típico de los días que quedan. Al tocarlo te enseña de dónde sale —tu mes típico y los meses con que se midió— en vez de una lista de gastos que no era ese número. Y el mes típico se mide sobre seis meses en lugar de dos, así que un par de meses con compras grandes ya no inflan todo lo que viene.",
       "\"Fin de mes\" en el inicio y la proyección de la pestaña Flujo ahora dan el mismo cierre: antes eran dos cálculos distintos y podían no coincidir. Y los dos cuentan por fin las cuotas que te deben: si alguien te paga en cuotas, la de este mes aparece como entrada, y si ya venció sin que te pagaran sigue ahí, marcada como atrasada.",
       "Lo que alguien te pagó antes de que acordaran un plan de cuotas ya no cuenta como cuotas adelantadas: se descuenta de la deuda. Antes, lo que te pagaron de marzo a agosto aparecía como si hubiera cubierto las cuotas de setiembre en adelante.",
       "Tu saldo de hoy en el inicio cuenta solo la plata que puedes gastar —banco, efectivo y ahorros—. Antes sumaba también inversiones y restaba lo que debes en la tarjeta.",

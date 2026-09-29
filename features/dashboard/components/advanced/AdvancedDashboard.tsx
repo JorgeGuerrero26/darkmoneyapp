@@ -110,7 +110,7 @@ import { DashboardSectionBoundary } from "../shared/DashboardSectionBoundary";
 import { AiResponseSkeleton } from "./AiResponseSkeleton";
 import { SystemStateSheet } from "./SystemStateSheet";
 import { WeekOutlookSheet } from "./WeekOutlookSheet";
-import { MonthEndSheet, type MonthRhythmMovement } from "./MonthEndSheet";
+import { MonthEndSheet } from "./MonthEndSheet";
 import {
   buildDashboardAiTextParts,
   ensureDashboardAiComplexTerms,
@@ -254,7 +254,7 @@ export function AdvancedDashboard({
     accountCurrencyMap,
     accounts: activeAccounts,
   }), [movements, projectionHistory, obligations, subscriptions, recurringIncome, activeCurrency, baseCurrency, exchangeRateMap, accountCurrencyMap, activeAccounts]);
-  const { projection: monthCalendar, liquid: liquidToday } = useCashflowProjection(projectionInputs, 1);
+  const { projection: monthCalendar, liquid: liquidToday, typicalSpend: monthTypicalSpend } = useCashflowProjection(projectionInputs, 1);
 
   /*
    * "Cuánta plata tengo" en todo el dashboard avanzado es el saldo LÍQUIDO, con la misma
@@ -1752,25 +1752,6 @@ export function AdvancedDashboard({
       }))
       .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
   ), [liquidAccounts, activeCurrency, baseCurrency, exchangeRateMap]);
-  const monthRhythmMovements = useMemo<MonthRhythmMovement[]>(() => {
-    const now = projectionAsOf;
-    return movements
-      .filter((movement) => movement.status === "posted" && inRange(movement, startOfMonth(now), now)
-        && (movement.movementType === "income" || movement.movementType === "refund" || movement.movementType === "expense"))
-      .map((movement) => {
-        const isOutflow = movement.movementType === "expense";
-        return {
-          id: movement.id,
-          title: movement.description.trim() || (isOutflow ? "Gasto sin descripción" : "Ingreso sin descripción"),
-          date: new Date(movement.occurredAt),
-          direction: isOutflow ? "outflow" as const : "inflow" as const,
-          amount: isOutflow
-            ? expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency })
-            : incomeAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency }),
-        };
-      })
-      .sort((a, b) => b.date.getTime() - a.date.getTime());
-  }, [accountCurrencyMap, activeCurrency, baseCurrency, exchangeRateMap, movements, projectionAsOf]);
   const visibleAccountSummary = useMemo(() => {
     if (visibleAccountBreakdown.length === 0) return "No hay cuentas visibles incluidas en esta lectura.";
     const preview = visibleAccountBreakdown
@@ -2191,7 +2172,7 @@ export function AdvancedDashboard({
       ],
       calculation: [
         `Lectura comprometida del mes: entran ${formatCurrency(projectionModel.committedInflow, activeCurrency)} y salen ${formatCurrency(projectionModel.committedOutflow, activeCurrency)} por obligaciones, suscripciones e ingresos fijos.`,
-        `Luego se suma el ritmo variable reciente: entran ${formatCurrency(projectionModel.variableIncomeProjection, activeCurrency)} y salen ${formatCurrency(projectionModel.variableExpenseProjection, activeCurrency)}. Con eso el esperado es ${formatCurrency(projectionModel.expectedBalance, activeCurrency)}, con piso conservador de ${formatCurrency(projectionModel.conservativeBalance, activeCurrency)}.`,
+        `Luego se resta tu gasto típico de los días que quedan: ${formatCurrency(projectionModel.variableExpenseProjection, activeCurrency)}, sacado de la mediana de tus meses anteriores. Con eso el esperado es ${formatCurrency(projectionModel.expectedBalance, activeCurrency)}, con piso conservador de ${formatCurrency(projectionModel.conservativeBalance, activeCurrency)}.`,
         `Monte Carlo: probamos muchos cierres posibles tomando días parecidos de tu historial reciente. La banda simulada va de ${formatCurrency(projectionModel.monteCarloLowBalance, activeCurrency)} a ${formatCurrency(projectionModel.monteCarloHighBalance, activeCurrency)}, con mediana de ${formatCurrency(projectionModel.monteCarloMedianBalance, activeCurrency)}.`,
       ],
       actions: [
@@ -2549,7 +2530,7 @@ export function AdvancedDashboard({
         ? [
           `Esta proyección parte de ${visibleBalanceLabel} convertida a ${activeCurrency}: hoy eso suma ${formatCurrency(currentVisibleBalance, activeCurrency)}.`,
           `Detalle de esa base: ${visibleAccountSummary}.`,
-          `Luego suma la agenda comprometida del mes (${formatCurrency(projectionCommittedNet, activeCurrency)} neto) y tu ritmo variable reciente (${formatCurrency(projectionVariableNet, activeCurrency)} neto) para estimar un cierre esperado de ${formatCurrency(projectionModel.expectedBalance, activeCurrency)}.`,
+          `Luego suma la agenda comprometida del mes (${formatCurrency(projectionCommittedNet, activeCurrency)} neto) y tu gasto típico de los días que quedan (${formatCurrency(projectionVariableNet, activeCurrency)}) para estimar un cierre esperado de ${formatCurrency(projectionModel.expectedBalance, activeCurrency)}.`,
           `Frente a lo que hoy ya tienes visible, eso implica un cambio de ${formatCurrency(projectionModel.expectedBalance - currentVisibleBalance, activeCurrency)}. El piso conservador es ${formatCurrency(projectionModel.conservativeBalance, activeCurrency)} y el escenario alto ${formatCurrency(projectionModel.optimisticBalance, activeCurrency)}.`,
           projectionModel.expectedBalance >= currentVisibleBalance
             ? "Eso significa que, si el ritmo actual se sostiene, el mes deberia cerrar con mas caja que la que hoy ves acumulada."
@@ -2653,7 +2634,7 @@ export function AdvancedDashboard({
       calculation: [
         `Base inicial: ${formatCurrency(currentVisibleBalance, activeCurrency)} desde ${visibleBalanceLabel}.`,
         `Agenda comprometida neta: ${formatCurrency(projectionCommittedNet, activeCurrency)}. Ahí entran ingresos fijos esperados, obligaciones y suscripciones del mes.`,
-        `Ritmo variable neto: ${formatCurrency(projectionVariableNet, activeCurrency)}. Ahí se estima lo que falta del mes con tu comportamiento reciente.`,
+        `Gasto típico del resto del mes: ${formatCurrency(projectionVariableNet, activeCurrency)}. Es tu mes típico —la mediana de tus meses anteriores— repartido en los días que quedan.`,
         `Fórmula: ${formatCurrency(currentVisibleBalance, activeCurrency)} + ${formatCurrency(projectionCommittedNet, activeCurrency)} + ${formatCurrency(projectionVariableNet, activeCurrency)} = ${formatCurrency(projectionModel.expectedBalance, activeCurrency)}.`,
       ],
       result: [
@@ -2691,8 +2672,8 @@ export function AdvancedDashboard({
           ? `La agenda comprometida hoy suma a favor: ${formatCurrency(projectionCommittedNet, activeCurrency)} neto.`
           : `La agenda comprometida hoy presiona la caja: ${formatCurrency(projectionCommittedNet, activeCurrency)} neto.`,
         projectionVariableNet >= 0
-          ? `El ritmo variable también suma a favor: ${formatCurrency(projectionVariableNet, activeCurrency)} neto.`
-          : `El ritmo variable consume caja: ${formatCurrency(projectionVariableNet, activeCurrency)} neto.`,
+          ? `El gasto típico también suma a favor: ${formatCurrency(projectionVariableNet, activeCurrency)} neto.`
+          : `El gasto típico de los días que quedan consume caja: ${formatCurrency(projectionVariableNet, activeCurrency)}.`,
       ],
       actions: [
         { label: "Ver ingresos fijos", onPress: () => { setProjectionDetail(null); router.push("/recurring-income" as never); } },
@@ -3316,7 +3297,7 @@ export function AdvancedDashboard({
           status={monthStatus}
           remainingDays={projectionModel.remainingDays}
           commitments={monthItems}
-          rhythmMovements={monthRhythmMovements}
+          typicalSpend={monthTypicalSpend}
           asOfDate={projectionAsOf}
           onClose={() => setExecutiveDetail(null)}
           onOpenCommitment={(item) => {
@@ -3327,12 +3308,6 @@ export function AdvancedDashboard({
               : item.source === "planned" ? `/movement/${item.id}`
               : `/recurring-income/${item.id}`;
             router.push(`${route}?from=dashboard` as never);
-          }}
-          onOpenMovement={(id) => { setExecutiveDetail(null); router.push(`/movement/${id}?from=dashboard` as never); }}
-          onOpenAllMovements={() => {
-            setExecutiveDetail(null);
-            const today = projectionAsOf;
-            router.push(`/movements?from=dashboard&quickScope=month-rhythm&quickStatus=posted&quickDateFrom=${format(startOfMonth(today), "yyyy-MM-dd")}&quickDateTo=${format(today, "yyyy-MM-dd")}&quickLabel=Ritmo%20del%20mes` as never);
           }}
         />
       ) : null}
