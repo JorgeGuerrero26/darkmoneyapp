@@ -35,9 +35,11 @@ describe("coverPlan — la cascada", () => {
       openingPrincipal: 1800,
       currentDebt: 1800,
       startDate: START,
+      // Dentro del mes del plan: lo que se prueba es que dos cobros del mismo dia se suman.
+      // (Fechados en agosto, hoy serian cobros anteriores al plan: ver el caso real abajo.)
       payments: [
-        { amount: 30, date: "2026-08-31" },
-        { amount: 690, date: "2026-08-31" },
+        { amount: 30, date: "2026-09-12" },
+        { amount: 690, date: "2026-09-12" },
       ],
     });
     // 720 sobre cuotas de 600: cierra la primera y deja 120 en la segunda.
@@ -189,42 +191,47 @@ describe("el caso real de 'Diversas Ventas de Productos'", () => {
     { amount: 30, date: "2026-08-31" },
   ];
 
-  it("con los 3.155 cobrados, la que toca es la quinta y le faltan 15", () => {
-    const rows = coverPlan({
+  /*
+   * Hasta el 2026-09-29 estos tests fijaban la regla contraria: los 3.155 cobrados de marzo a
+   * agosto llenaban las cuotas de setiembre a enero, y la que tocaba era la quinta. El usuario la
+   * revirtio: un plan pactado en setiembre reparte lo que se debia en setiembre, y lo cobrado
+   * antes ya salio de la deuda. Con la regla vieja la proyeccion dejaba de esperar la cuota del
+   * mes, que seguia sin cobrarse.
+   */
+  const run = (extra: { amount: number; date: string }[] = []) =>
+    coverPlan({
       plan,
       openingPrincipal: 7175,
       currentDebt: 25355,
       startDate: "2026-03-15",
-      payments,
+      payments: [...payments, ...extra],
     });
-    const next = nextUncoveredPayment(rows);
-    // Acumulado de cuotas: 540 / 1.150 / 1.900 / 2.510 / 3.170. Los 3.155 caen en la quinta.
-    expect(next?.seq).toBe(5);
-    expect(next?.dueDate).toBe("2027-01-15");
-    expect(next?.covered).toBe(645);
-    expect(next?.remaining).toBe(15);
+
+  it("lo cobrado antes del plan no adelanta cuotas: la que toca es la primera", () => {
+    const next = nextUncoveredPayment(run());
+    expect(next?.seq).toBe(1);
+    expect(next?.dueDate).toBe("2026-09-15");
+    expect(next?.remaining).toBe(540);
   });
 
-  it("cuatro cubiertas, no nueve como decia el emparejamiento por orden", () => {
-    const rows = coverPlan({
-      plan,
-      openingPrincipal: 7175,
-      currentDebt: 25355,
-      startDate: "2026-03-15",
-      payments,
-    });
-    expect(rows.filter((row) => row.status === "covered")).toHaveLength(4);
+  it("ninguna cuota cubierta con solo cobros anteriores al plan", () => {
+    expect(run().filter((row) => row.status === "covered")).toHaveLength(0);
   });
 
-  it("el plan reparte la deuda entera, no solo la primera venta", () => {
-    const rows = coverPlan({
-      plan,
-      openingPrincipal: 7175,
-      currentDebt: 25355,
-      startDate: "2026-03-15",
-      payments,
-    });
-    const total = rows.reduce((sum, row) => sum + row.amount, 0);
-    expect(Math.round(total)).toBe(25355);
+  it("el plan reparte lo que se debia al empezar, no la deuda entera", () => {
+    // 25.355 - 3.155 cobrados antes = 22.200. La cola termina antes, no se inventa deuda.
+    const total = run().reduce((sum, row) => sum + row.amount, 0);
+    expect(Math.round(total)).toBe(22200);
+  });
+
+  it("un cobro dentro del mes del plan si cubre la cuota", () => {
+    const next = nextUncoveredPayment(run([{ amount: 540, date: "2026-09-20" }]));
+    expect(next?.seq).toBe(2);
+    expect(next?.dueDate).toBe("2026-10-15");
+  });
+
+  it("pagar la cuota unos dias antes de su fecha sigue siendo un adelanto de esa cuota", () => {
+    const rows = run([{ amount: 540, date: "2026-09-02" }]);
+    expect(rows[0].status).toBe("covered");
   });
 });

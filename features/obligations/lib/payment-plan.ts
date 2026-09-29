@@ -379,6 +379,16 @@ function expandOverCurrentDebt({
  * Aquí manda **una sola cifra: el total acumulado**. El dinero llena cuotas en orden, venga en un
  * pago o en veinte, y un cobro puede cerrar una cuota y adelantar parte de la siguiente. Lo
  * acordado no se reescribe: lo que fluye es lo cubierto.
+ *
+ * **Salvo lo cobrado antes de que empezara el plan** (2026-09-29). Un plan pactado a mitad de la
+ * deuda reparte lo que se debía ESE día; lo cobrado antes ya salió de la deuda y no adelanta
+ * cuotas. Antes sí las adelantaba: los 3.155 cobrados de marzo a agosto daban por pagadas las
+ * cuotas de setiembre a enero de un plan que empezaba en setiembre, y la proyección dejaba de
+ * esperar el cobro del mes.
+ *
+ * La frontera es el MES del primer vencimiento, no el día: pagar la cuota del 15 el día 10 es un
+ * adelanto de esa cuota y la cubre. Lo cobrado en meses anteriores reduce la deuda sobre la que
+ * se expande el plan, y por eso la cola termina antes.
  */
 export function coverPlan({
   plan,
@@ -395,12 +405,17 @@ export function coverPlan({
   startDate: string;
   payments: readonly ActualPayment[];
 }): PlanCoverage[] {
-  const ordered = [...payments].sort((a, b) => a.date.localeCompare(b.date));
+  const planMonth = monthKey(anchorFor(plan, startDate));
+  const sorted = [...payments].sort((a, b) => a.date.localeCompare(b.date));
+  const before = sorted.filter((payment) => monthKey(payment.date) < planMonth);
+  const ordered = sorted.filter((payment) => monthKey(payment.date) >= planMonth);
+  const paidBefore = fromCents(before.reduce((sum, payment) => sum + toCents(payment.amount), 0));
   const paidToDate = fromCents(ordered.reduce((sum, payment) => sum + toCents(payment.amount), 0));
   const scheduled = expandOverCurrentDebt({
     plan,
-    openingPrincipal,
-    currentDebt,
+    // El plan reparte lo que se debía cuando empezó, no lo que ya se había cobrado.
+    openingPrincipal: Math.max(0, fromCents(toCents(openingPrincipal) - toCents(paidBefore))),
+    currentDebt: Math.max(0, fromCents(toCents(currentDebt) - toCents(paidBefore))),
     startDate,
     paidToDate,
   });
