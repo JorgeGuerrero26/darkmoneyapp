@@ -1,53 +1,22 @@
-import { useMemo } from "react";
 import { Text, View } from "react-native";
 
 import { Card } from "../../../../components/ui/Card";
 import { formatCurrency } from "../../../../components/ui/AmountDisplay";
 import { COLORS } from "../../../../constants/theme";
-import { buildFutureFlowWindows } from "../../lib/dashboard-builders";
+import type { FutureFlowWindow } from "../../lib/dashboard-builders";
 import { SectionTitle } from "./SectionTitle";
 import { dashboardSimpleStyles as subStyles } from "./styles";
 
 type FutureFlowPreviewProps = {
-  obligations: Array<{
-    direction: string;
-    pendingAmount: number;
-    installmentAmount?: number | null;
-    currencyCode: string;
-    dueDate: string | null;
-    status: string;
-  }>;
-  subscriptions: Array<{ amount: number; currencyCode: string; nextDueDate: string; status: string }>;
-  recurringIncome: Array<{ amount: number; currencyCode: string; nextExpectedDate: string; status: string }>;
+  /**
+   * Las ventanas ya calculadas. Antes las calculaba aquí con la lectura vieja de compromisos,
+   * que no veía cuotas; ahora salen del motor de proyección, como todo el dashboard avanzado.
+   */
+  windows: FutureFlowWindow[];
   displayCurrency: string;
-  baseCurrency: string;
-  exchangeRateMap: Map<string, number>;
-  currentVisibleBalance: number;
 };
 
-export function FutureFlowPreview({
-  obligations,
-  subscriptions,
-  recurringIncome,
-  displayCurrency,
-  baseCurrency,
-  exchangeRateMap,
-  currentVisibleBalance,
-}: FutureFlowPreviewProps) {
-  const windows = useMemo(
-    () =>
-      buildFutureFlowWindows(
-        obligations,
-        subscriptions,
-        recurringIncome,
-        displayCurrency,
-        exchangeRateMap,
-        currentVisibleBalance,
-        baseCurrency,
-      ),
-    [baseCurrency, currentVisibleBalance, displayCurrency, exchangeRateMap, obligations, recurringIncome, subscriptions],
-  );
-
+export function FutureFlowPreview({ windows, displayCurrency }: FutureFlowPreviewProps) {
   return (
     <Card>
       <SectionTitle>Flujo futuro</SectionTitle>

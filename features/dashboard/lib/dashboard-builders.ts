@@ -232,7 +232,22 @@ export function buildFutureFlowWindows(
   now: Date = new Date(),
 ): FutureFlowWindow[] {
   const items = buildFutureFlowItems(obligations, subscriptions, recurringIncome, displayCurrency, exchangeRateMap, baseCurrency, now);
+  return windowsFromFlowItems(items, currentVisibleBalance, now);
+}
 
+/**
+ * Las ventanas de 7, 15 y 30 días a partir de compromisos ya colocados en el calendario.
+ *
+ * Separada de `buildFutureFlowWindows` para que el dashboard avanzado pueda armarlas con las
+ * líneas del motor de proyección —que sí ve cuotas, atrasadas, tarjetas y lo planificado— en vez
+ * de con la lectura vieja, que solo miraba la fecha final de cada deuda. Un compromiso atrasado
+ * tiene fecha pasada y entra en las tres ventanas: se sigue debiendo.
+ */
+export function windowsFromFlowItems(
+  items: readonly FutureFlowItem[],
+  currentVisibleBalance: number,
+  now: Date = new Date(),
+): FutureFlowWindow[] {
   return [7, 15, 30].map((days) => {
     const windowItems = items.filter((item) => item.date <= addDays(now, days));
     const expectedInflow = windowItems.filter((item) => item.direction === "inflow").reduce((sum, item) => sum + (item.amount ?? 0), 0);

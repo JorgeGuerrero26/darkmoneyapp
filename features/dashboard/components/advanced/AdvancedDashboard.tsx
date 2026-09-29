@@ -87,8 +87,7 @@ import {
   transferAmt,
 } from "../../lib/aggregations";
 import {
-  buildFutureFlowWindows,
-  buildFutureFlowItems,
+  windowsFromFlowItems,
   buildReviewInboxSnapshot,
   convertDashboardCurrency,
   getWeekCoverageStatus,
@@ -127,6 +126,7 @@ import { CashflowProjectionSection } from "../simple/CashflowProjectionSection";
 import { useCashflowProjection, type CashflowProjectionInputs } from "../../hooks/useCashflowProjection";
 import { isLiquidAccount } from "../../../projection/lib/liquid-balance";
 import type { ProjectionLine } from "../../../projection/lib/cashflow-calendar";
+import { projectionFlowItems } from "../../lib/projectionFlowItems";
 import { FutureFlowPreview } from "../simple/FutureFlowPreview";
 import { ReviewInbox } from "../simple/ReviewInbox";
 import { dashboardSimpleStyles as subStyles } from "../simple/styles";
@@ -254,7 +254,7 @@ export function AdvancedDashboard({
     accountCurrencyMap,
     accounts: activeAccounts,
   }), [movements, projectionHistory, obligations, subscriptions, recurringIncome, activeCurrency, baseCurrency, exchangeRateMap, accountCurrencyMap, activeAccounts]);
-  const { projection: monthCalendar, liquid: liquidToday, typicalSpend: monthTypicalSpend } = useCashflowProjection(projectionInputs, 1);
+  const { projection: monthCalendar, liquid: liquidToday, typicalSpend: monthTypicalSpend } = useCashflowProjection(projectionInputs, 2);
 
   /*
    * "Cuánta plata tengo" en todo el dashboard avanzado es el saldo LÍQUIDO, con la misma
@@ -331,14 +331,19 @@ export function AdvancedDashboard({
     [annualHistory],
   );
   const review = useMemo(() => buildReviewInboxSnapshot(movements, subscriptions, obligations), [movements, obligations, subscriptions]);
+  /*
+   * "Esta semana" y las ventanas de 7/15/30 días salen de las líneas del motor, igual que Fin de
+   * mes y la Proyección. Antes usaban la lectura vieja, que solo miraba la fecha FINAL de cada
+   * deuda: ninguna cuota entraba y la semana no veía el cobro atrasado de Kevin.
+   */
   const { windows, weekItems } = useMemo(() => {
     const now = new Date();
+    const items = projectionFlowItems(monthCalendar.months, now);
     return {
-      windows: buildFutureFlowWindows(obligations, subscriptions, recurringIncome, activeCurrency, exchangeRateMap, currentVisibleBalance, baseCurrency, now),
-      weekItems: buildFutureFlowItems(obligations, subscriptions, recurringIncome, activeCurrency, exchangeRateMap, baseCurrency, now)
-        .filter((item) => item.date <= addDays(now, 7)),
+      windows: windowsFromFlowItems(items, currentVisibleBalance, now),
+      weekItems: items.filter((item) => item.date <= addDays(now, 7)),
     };
-  }, [activeCurrency, baseCurrency, currentVisibleBalance, exchangeRateMap, obligations, recurringIncome, subscriptions]);
+  }, [monthCalendar, currentVisibleBalance]);
   const weekWindow = windows[0];
   const pressureStatus = getWeekCoverageStatus(weekItems, currentVisibleBalance);
 
@@ -1397,27 +1402,10 @@ export function AdvancedDashboard({
   }, [firstMonth, legacyProjectionModel]);
 
   /** La lista de "Compromisos pendientes", sacada de las mismas líneas que suman el cierre. */
-  const monthItems = useMemo<FutureFlowItem[]>(() => {
-    if (!firstMonth) return [];
-    const sourceOf = (kind: ProjectionLine["kind"]): FutureFlowItem["source"] =>
-      kind === "subscription" ? "subscription"
-        : kind === "recurring_income" ? "recurring-income"
-        : kind === "credit_card_payment" ? "card"
-        : kind === "planned_movement" ? "planned"
-        : "obligation";
-    const toItem = (line: ProjectionLine, direction: "inflow" | "outflow"): FutureFlowItem => ({
-      source: sourceOf(line.kind),
-      id: line.refId ?? 0,
-      title: line.label,
-      date: line.dueDate ? parseISO(line.dueDate) : projectionAsOf,
-      direction,
-      amount: line.amount,
-    });
-    return [
-      ...firstMonth.inflows.filter((line) => line.kind !== "typical_spend").map((line) => toItem(line, "inflow")),
-      ...firstMonth.outflows.filter((line) => line.kind !== "typical_spend").map((line) => toItem(line, "outflow")),
-    ].sort((a, b) => a.date.getTime() - b.date.getTime() || a.title.localeCompare(b.title));
-  }, [firstMonth, projectionAsOf]);
+  const monthItems = useMemo<FutureFlowItem[]>(
+    () => (firstMonth ? projectionFlowItems([firstMonth], projectionAsOf) : []),
+    [firstMonth, projectionAsOf],
+  );
 
   const paymentOptimization = useMemo(() => (
     buildPaymentOptimizationPlan({
@@ -4026,15 +4014,7 @@ export function AdvancedDashboard({
         </View>
       </Card>
       <View style={{ height: SPACING.sm }} />
-      <FutureFlowPreview
-        obligations={obligations}
-        subscriptions={subscriptions}
-        recurringIncome={recurringIncome}
-        displayCurrency={activeCurrency}
-        baseCurrency={baseCurrency}
-        exchangeRateMap={exchangeRateMap}
-        currentVisibleBalance={currentVisibleBalance}
-      />
+      <FutureFlowPreview windows={windows} displayCurrency={activeCurrency} />
       <View style={{ height: SPACING.sm }} />
       <CashflowProjectionSection {...projectionInputs} />
       <View style={{ height: SPACING.sm }} />
