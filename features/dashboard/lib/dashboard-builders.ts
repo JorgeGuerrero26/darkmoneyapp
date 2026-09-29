@@ -132,6 +132,67 @@ export type FutureFlowWindow = {
   unconvertedCount: number;
 };
 
+export type FutureFlowItem = {
+  source: "obligation" | "subscription" | "recurring-income";
+  id: number;
+  title: string;
+  date: Date;
+  direction: "inflow" | "outflow";
+  amount: number | null;
+};
+
+/** Shared ledger for the totals and the detail sheet. A missing exchange rate stays visible. */
+export function buildFutureFlowItems(
+  obligations: Array<{ id?: number; title?: string; direction: string; pendingAmount: number; installmentAmount?: number | null; currencyCode: string; dueDate: string | null; status: string }>,
+  subscriptions: Array<{ id?: number; name?: string; amount: number; currencyCode: string; nextDueDate: string; status: string }>,
+  recurringIncome: Array<{ id?: number; name?: string; amount: number; currencyCode: string; nextExpectedDate: string; status: string }>,
+  displayCurrency: string,
+  exchangeRateMap: Map<string, number>,
+  baseCurrency: string,
+  now: Date = new Date(),
+): FutureFlowItem[] {
+  const horizon = addDays(now, 30);
+  const inWindow = (date: Date) => date >= now && date <= horizon;
+  const items: FutureFlowItem[] = [];
+  for (const obligation of obligations) {
+    if (!obligation.dueDate || obligation.pendingAmount <= 0.009 || obligation.status === "paid") continue;
+    const date = parseDisplayDate(obligation.dueDate);
+    if (!inWindow(date)) continue;
+    const amount = obligation.installmentAmount && obligation.installmentAmount > 0
+      ? Math.min(obligation.pendingAmount, obligation.installmentAmount) : obligation.pendingAmount;
+    items.push({ source: "obligation", id: obligation.id ?? 0, title: obligation.title || "Crédito o deuda", date,
+      direction: obligationViewerDirection(obligation) === "receivable" ? "inflow" : "outflow",
+      amount: convertDashboardCurrency(amount, obligation.currencyCode, displayCurrency, exchangeRateMap, baseCurrency) });
+  }
+  for (const subscription of subscriptions) {
+    if (subscription.status !== "active") continue;
+    const date = parseDisplayDate(subscription.nextDueDate);
+    if (!inWindow(date)) continue;
+    items.push({ source: "subscription", id: subscription.id ?? 0, title: subscription.name || "Suscripción", date,
+      direction: "outflow", amount: convertDashboardCurrency(subscription.amount, subscription.currencyCode, displayCurrency, exchangeRateMap, baseCurrency) });
+  }
+  for (const income of recurringIncome) {
+    if (income.status !== "active") continue;
+    const date = parseDisplayDate(income.nextExpectedDate);
+    if (!inWindow(date)) continue;
+    items.push({ source: "recurring-income", id: income.id ?? 0, title: income.name || "Ingreso fijo", date,
+      direction: "inflow", amount: convertDashboardCurrency(income.amount, income.currencyCode, displayCurrency, exchangeRateMap, baseCurrency) });
+  }
+  return items.sort((a, b) => a.date.getTime() - b.date.getTime() || a.title.localeCompare(b.title));
+}
+
+export function getWeekCoverageStatus(items: FutureFlowItem[], availableBalance: number): "Bajo presión" | "Cubierto" | "Estable" | "Por revisar" {
+  if (items.some((item) => item.amount === null)) return "Por revisar";
+  if (items.length === 0) return "Estable";
+  let balance = availableBalance;
+  // Payments can fall before expected income on the same date. Check the lowest balance each day.
+  for (const item of [...items].sort((a, b) => a.date.getTime() - b.date.getTime() || (a.direction === "outflow" ? -1 : 1))) {
+    balance += item.direction === "inflow" ? item.amount ?? 0 : -(item.amount ?? 0);
+    if (balance < -0.009) return "Bajo presión";
+  }
+  return "Cubierto";
+}
+
 export function convertDashboardCurrency(
   amount: number,
   fromCurrency: string,
@@ -169,77 +230,16 @@ export function buildFutureFlowWindows(
   baseCurrency: string = displayCurrency,
   now: Date = new Date(),
 ): FutureFlowWindow[] {
-  const today = now;
-
-  function obligationDueAmount(obligation: { pendingAmount: number; installmentAmount?: number | null }) {
-    if (obligation.installmentAmount && obligation.installmentAmount > 0) {
-      return Math.min(obligation.pendingAmount, obligation.installmentAmount);
-    }
-    return obligation.pendingAmount;
-  }
+  const items = buildFutureFlowItems(obligations, subscriptions, recurringIncome, displayCurrency, exchangeRateMap, baseCurrency, now);
 
   return [7, 15, 30].map((days) => {
-    const horizon = addDays(today, days);
-    let expectedInflow = 0;
-    let expectedOutflow = 0;
-    let receivableCount = 0;
-    let payableCount = 0;
-    let scheduledCount = 0;
-    let unconvertedCount = 0;
-
-    for (const obligation of obligations) {
-      if (!obligation.dueDate || obligation.pendingAmount <= 0.009 || obligation.status === "paid") continue;
-      const dueDate = parseDisplayDate(obligation.dueDate);
-      if (dueDate < today || dueDate > horizon) continue;
-      const convertedAmount = convertDashboardCurrency(
-        obligationDueAmount(obligation),
-        obligation.currencyCode,
-        displayCurrency,
-        exchangeRateMap,
-        baseCurrency,
-      );
-      if (convertedAmount === null) unconvertedCount += 1;
-      scheduledCount += 1;
-      if (obligationViewerDirection(obligation) === "receivable") {
-        receivableCount += 1;
-        expectedInflow += convertedAmount ?? 0;
-      } else {
-        payableCount += 1;
-        expectedOutflow += convertedAmount ?? 0;
-      }
-    }
-
-    for (const subscription of subscriptions) {
-      if (subscription.status !== "active") continue;
-      const dueDate = parseDisplayDate(subscription.nextDueDate);
-      if (dueDate < today || dueDate > horizon) continue;
-      scheduledCount += 1;
-      const convertedAmount = convertDashboardCurrency(
-        subscription.amount,
-        subscription.currencyCode,
-        displayCurrency,
-        exchangeRateMap,
-        baseCurrency,
-      );
-      if (convertedAmount === null) unconvertedCount += 1;
-      expectedOutflow += convertedAmount ?? 0;
-    }
-
-    for (const income of recurringIncome) {
-      if (income.status !== "active") continue;
-      const expectedDate = parseDisplayDate(income.nextExpectedDate);
-      if (expectedDate < today || expectedDate > horizon) continue;
-      scheduledCount += 1;
-      const convertedAmount = convertDashboardCurrency(
-        income.amount,
-        income.currencyCode,
-        displayCurrency,
-        exchangeRateMap,
-        baseCurrency,
-      );
-      if (convertedAmount === null) unconvertedCount += 1;
-      expectedInflow += convertedAmount ?? 0;
-    }
+    const windowItems = items.filter((item) => item.date <= addDays(now, days));
+    const expectedInflow = windowItems.filter((item) => item.direction === "inflow").reduce((sum, item) => sum + (item.amount ?? 0), 0);
+    const expectedOutflow = windowItems.filter((item) => item.direction === "outflow").reduce((sum, item) => sum + (item.amount ?? 0), 0);
+    const receivableCount = windowItems.filter((item) => item.source === "obligation" && item.direction === "inflow").length;
+    const payableCount = windowItems.filter((item) => item.source === "obligation" && item.direction === "outflow").length;
+    const scheduledCount = windowItems.length;
+    const unconvertedCount = windowItems.filter((item) => item.amount === null).length;
 
     return {
       days,

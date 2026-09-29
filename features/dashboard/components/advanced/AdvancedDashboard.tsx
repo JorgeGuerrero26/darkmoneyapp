@@ -14,6 +14,7 @@ import type { useRouter } from "expo-router";
 import { useIsFetching, useIsMutating, useQueryClient } from "@tanstack/react-query";
 import { LinearGradient } from "expo-linear-gradient";
 import {
+  addDays,
   differenceInDays,
   endOfDay,
   endOfMonth,
@@ -84,8 +85,11 @@ import {
 } from "../../lib/aggregations";
 import {
   buildFutureFlowWindows,
+  buildFutureFlowItems,
   buildReviewInboxSnapshot,
   convertDashboardCurrency,
+  getWeekCoverageStatus,
+  type FutureFlowItem,
 } from "../../lib/dashboard-builders";
 import {
   buildAnomalyFindings,
@@ -102,6 +106,7 @@ import { useDashboardAiOrchestration } from "../../hooks/useDashboardAiOrchestra
 import { DashboardSectionBoundary } from "../shared/DashboardSectionBoundary";
 import { AiResponseSkeleton } from "./AiResponseSkeleton";
 import { SystemStateSheet } from "./SystemStateSheet";
+import { WeekOutlookSheet } from "./WeekOutlookSheet";
 import {
   buildDashboardAiTextParts,
   ensureDashboardAiComplexTerms,
@@ -274,11 +279,16 @@ export function AdvancedDashboard({
     [annualHistory],
   );
   const review = useMemo(() => buildReviewInboxSnapshot(movements, subscriptions, obligations), [movements, obligations, subscriptions]);
-  const windows = useMemo(
-    () => buildFutureFlowWindows(obligations, subscriptions, recurringIncome, activeCurrency, exchangeRateMap, currentVisibleBalance, baseCurrency),
-    [activeCurrency, baseCurrency, currentVisibleBalance, exchangeRateMap, obligations, recurringIncome, subscriptions],
-  );
+  const { windows, weekItems } = useMemo(() => {
+    const now = new Date();
+    return {
+      windows: buildFutureFlowWindows(obligations, subscriptions, recurringIncome, activeCurrency, exchangeRateMap, currentVisibleBalance, baseCurrency, now),
+      weekItems: buildFutureFlowItems(obligations, subscriptions, recurringIncome, activeCurrency, exchangeRateMap, baseCurrency, now)
+        .filter((item) => item.date <= addDays(now, 7)),
+    };
+  }, [activeCurrency, baseCurrency, currentVisibleBalance, exchangeRateMap, obligations, recurringIncome, subscriptions]);
   const weekWindow = windows[0];
+  const pressureStatus = getWeekCoverageStatus(weekItems, currentVisibleBalance);
 
   const monthToDate = useMemo(() => {
     const now = new Date();
@@ -742,8 +752,8 @@ export function AdvancedDashboard({
       chips.push({ icon: Tag, color: COLORS.expense, label: `${review.uncategorizedCount} sin categoría · comparativos imprecisos`, weight: "high" });
     if (review.overdueObligationsCount > 0)
       chips.push({ icon: AlertTriangle, color: COLORS.expense, label: `${review.overdueObligationsCount} vencimiento${review.overdueObligationsCount === 1 ? "" : "s"} · cartera desactualizada`, weight: "high" });
-    if (weekWindow.expectedOutflow > weekWindow.expectedInflow)
-      chips.push({ icon: TrendingUp, color: COLORS.expense, label: "Semana: más sale que entra", weight: "medium" });
+    if (pressureStatus === "Bajo presión")
+      chips.push({ icon: TrendingUp, color: COLORS.expense, label: "Semana: la caja no cubre los pagos", weight: "medium" });
     if (spendingTrend.expenseTrendPct > 5)
       chips.push({ icon: TrendingUp, color: COLORS.expense, label: `Gasto acelerando +${spendingTrend.expenseTrendPct.toFixed(0)}% esta semana`, weight: "medium" });
     if (cashCushion.days < 30)
@@ -751,7 +761,7 @@ export function AdvancedDashboard({
     if (chips.length === 0)
       chips.push({ icon: Sparkles, color: COLORS.income, label: "Base sana · sin fricción fuerte hoy", weight: "low" });
     return chips.slice(0, 4);
-  }, [cashCushion.days, review.overdueObligationsCount, review.uncategorizedCount, spendingTrend.expenseTrendPct, weekWindow.expectedInflow, weekWindow.expectedOutflow]);
+  }, [cashCushion.days, pressureStatus, review.overdueObligationsCount, review.uncategorizedCount, spendingTrend.expenseTrendPct]);
 
   const [executiveDetail, setExecutiveDetail] = useState<"focus" | "risk" | "month" | null>(null);
   const [advancedDetail, setAdvancedDetail] = useState<"focusCenter" | "projection" | "review" | "advancedMetrics" | "quality" | "categoryConcentration" | "savingsRate" | "incomeStability" | "seasonalComparison" | "collectionEfficiency" | null>(null);
@@ -1628,7 +1638,6 @@ export function AdvancedDashboard({
   const projectionCommittedNet = projectionModel.committedInflow - projectionModel.committedOutflow;
   const projectionVariableNet = projectionModel.variableIncomeProjection - projectionModel.variableExpenseProjection;
   const projectionConservativeVariableNet = projectionModel.conservativeBalance - currentVisibleBalance - projectionCommittedNet;
-  const pressureStatus = weekWindow.expectedOutflow > weekWindow.expectedInflow ? "Bajo presión" : weekWindow.scheduledCount > 0 ? "Controlado" : "Estable";
   const monthStatus: string = monthEndReading >= currentVisibleBalance ? "Cerrando mejor" : monthEndReading >= currentVisibleBalance * 0.92 ? "Ajustado" : "Bajo presión";
   const visibleBalanceLabel = useMemo(() => {
     if (activeAccounts.length === 0) return "tus cuentas visibles";
@@ -2032,27 +2041,6 @@ export function AdvancedDashboard({
   ]);
 
   const executiveDetails = useMemo(() => ({
-    risk: {
-      title: "Riesgo 7 días",
-      summary: "Te ayuda a decidir si la próxima semana se ve tranquila o si conviene mover foco a liquidez antes de que falte caja.",
-      meaning: [
-        "Sirve para decisiones de corto plazo: si conviene pagar ya, esperar, reprogramar o revisar una cuenta antes de comprometerte.",
-        "Cuando sale en rojo o muy ajustado, el problema no es el cierre del mes: es la próxima semana.",
-      ],
-      calculation: [
-        "Usamos una ventana de tiempo: en vez de mezclar todo el mes, miramos solo lo que cae en los próximos 7 días, como revisar la caja necesaria para esta semana.",
-        `Tomamos obligaciones con vencimiento dentro de 7 días, suscripciones activas por cobrar y los ingresos fijos esperados en ese mismo rango.`,
-        `Con eso hoy vemos ${weekWindow.payableCount} pagos, ${weekWindow.receivableCount} cobros y ${weekWindow.scheduledCount} compromisos programados. Entran ${formatCurrency(weekWindow.expectedInflow, activeCurrency)} y salen ${formatCurrency(weekWindow.expectedOutflow, activeCurrency)}.`,
-      ],
-      actions: [
-        weekWindow.payableCount > 0
-          ? { label: "Ver obligaciones próximas", onPress: () => { setExecutiveDetail(null); router.push("/obligations" as never); } }
-          : null,
-        review.subscriptionsAttentionCount > 0
-          ? { label: "Corregir suscripciones activas", onPress: () => { setExecutiveDetail(null); router.push("/subscriptions" as never); } }
-          : null,
-      ].filter((action): action is { label: string; onPress: () => void } => Boolean(action)),
-    },
     month: {
       title: "Fin de mes",
       summary: "Te ayuda a decidir si el mes cierra con margen, ajustado o bajo presión según lo ya comprometido y tu ritmo reciente.",
@@ -2091,28 +2079,14 @@ export function AdvancedDashboard({
     projectionModel.variableIncomeProjection,
     projectionCommittedNet,
     projectionVariableNet,
-    review.subscriptionsAttentionCount,
     review.uncategorizedCount,
     router,
-    weekWindow.expectedInflow,
-    weekWindow.expectedOutflow,
-    weekWindow.payableCount,
-    weekWindow.receivableCount,
-    weekWindow.scheduledCount,
     currentVisibleBalance,
     visibleAccountSummary,
     visibleBalanceLabel,
   ]);
-  const activeExecutiveDetail = executiveDetail === "risk" || executiveDetail === "month" ? executiveDetails[executiveDetail] : null;
+  const activeExecutiveDetail = executiveDetail === "month" ? executiveDetails.month : null;
   const executiveResultMeaning = useMemo(() => ({
-    risk: [
-      weekWindow.expectedOutflow > weekWindow.expectedInflow
-        ? "Este resultado significa que en la proxima semana tu agenda exige mas caja de la que hoy se ve entrar."
-        : weekWindow.scheduledCount > 0
-          ? "Este resultado significa que la semana se ve manejable, pero ya hay compromisos que vale la pena vigilar."
-          : "Este resultado significa que no se ve una tension fuerte de liquidez en los proximos 7 dias.",
-      `La lectura actual deja un neto de ${formatCurrency(weekWindow.expectedInflow - weekWindow.expectedOutflow, activeCurrency)} para la ventana cercana.`,
-    ],
     month: [
       monthStatus === "Bajo presión"
         ? "Este resultado significa que, si no cambias algo, el cierre del mes ya se ve apretado frente a tu saldo y ritmo actual."
@@ -2125,11 +2099,8 @@ export function AdvancedDashboard({
     activeCurrency,
     monthEndReading,
     monthStatus,
-    weekWindow.expectedInflow,
-    weekWindow.expectedOutflow,
-    weekWindow.scheduledCount,
   ]);
-  const activeExecutiveResultMeaning = executiveDetail === "risk" || executiveDetail === "month" ? executiveResultMeaning[executiveDetail] : [];
+  const activeExecutiveResultMeaning = executiveDetail === "month" ? executiveResultMeaning.month : [];
   const resolvedExecutiveResultMeaning = executiveDetail === "month"
     ? [
       monthStatus === "Cerrando mejor"
@@ -2144,15 +2115,11 @@ export function AdvancedDashboard({
     ]
     : activeExecutiveResultMeaning;
   const executiveResultTone = useMemo(() => ({
-    risk: weekWindow.expectedOutflow > weekWindow.expectedInflow ? "danger" : weekWindow.scheduledCount > 0 ? "warning" : "positive",
     month: monthStatus === "Cerrando mejor" ? "positive" : monthStatus === "Ajustado" ? "warning" : "danger",
   } as const), [
     monthStatus,
-    weekWindow.expectedOutflow,
-    weekWindow.expectedInflow,
-    weekWindow.scheduledCount,
   ]);
-  const activeExecutiveResultTone = executiveDetail === "risk" || executiveDetail === "month" ? executiveResultTone[executiveDetail] : "warning";
+  const activeExecutiveResultTone = executiveDetail === "month" ? executiveResultTone.month : "warning";
   const advancedDetails = useMemo(() => ({
     focusCenter: {
       title: "Centro de foco",
@@ -2197,7 +2164,7 @@ export function AdvancedDashboard({
         review.uncategorizedCount > 0
           ? { label: `Limpiar ${review.uncategorizedCount} sin categoría`, onPress: openSummaryUncategorizedPreview }
           : null,
-        weekWindow.expectedOutflow > weekWindow.expectedInflow
+        pressureStatus === "Bajo presión"
           ? { label: "Revisar obligaciones próximas", onPress: () => { setAdvancedDetail(null); router.push("/obligations" as never); } }
           : null,
       ].filter((action): action is { label: string; onPress: () => void } => Boolean(action)),
@@ -2406,6 +2373,7 @@ export function AdvancedDashboard({
     projectionModel.variableIncomeProjection,
     qualitySnapshot.noCategoryCount,
     qualitySnapshot.noCounterpartyCount,
+    pressureStatus,
     review.overdueObligationsCount,
     review.subscriptionsAttentionCount,
     review.uncategorizedCount,
@@ -2634,7 +2602,7 @@ export function AdvancedDashboard({
       ],
       actions: [
         { label: "Ver cálculo completo", onPress: () => { setProjectionDetail(null); setAdvancedDetail("projection"); } },
-        weekWindow.expectedOutflow > weekWindow.expectedInflow
+        pressureStatus === "Bajo presión"
           ? { label: "Revisar obligaciones próximas", onPress: () => { setProjectionDetail(null); router.push("/obligations" as never); } }
           : null,
       ].filter((action): action is { label: string; onPress: () => void } => Boolean(action)),
@@ -2764,7 +2732,7 @@ export function AdvancedDashboard({
   useEffect(() => {
     onActiveTabChange?.(activeTab);
   }, [activeTab, onActiveTabChange]);
-  const weekHasSchedule = weekWindow.expectedInflow > 0 || weekWindow.expectedOutflow > 0;
+  const weekHasSchedule = weekWindow.scheduledCount > 0;
   const weekNet = weekWindow.expectedInflow - weekWindow.expectedOutflow;
   const reviewDelta = review.totalIssues - priorWeekReview.totalIssues;
   useEffect(() => {
@@ -3279,8 +3247,26 @@ export function AdvancedDashboard({
         />
       ) : null}
 
+      {executiveDetail === "risk" ? (
+        <WeekOutlookSheet
+          items={weekItems}
+          window={weekWindow}
+          status={pressureStatus}
+          availableBalance={currentVisibleBalance}
+          cushionDays={cashCushion.days}
+          currency={activeCurrency}
+          onClose={() => setExecutiveDetail(null)}
+          onReviewSubscriptions={() => { setExecutiveDetail(null); router.push("/subscriptions" as never); }}
+          onOpenItem={(item: FutureFlowItem) => {
+            setExecutiveDetail(null);
+            const route = item.source === "subscription" ? `/subscription/${item.id}` : item.source === "obligation" ? `/obligation/${item.id}` : `/recurring-income/${item.id}`;
+            router.push(`${route}?from=dashboard` as never);
+          }}
+        />
+      ) : null}
+
       <BottomSheet
-        visible={Boolean(activeExecutiveDetail) && executiveDetail !== "focus"}
+        visible={executiveDetail === "month"}
         onClose={() => setExecutiveDetail(null)}
         title={activeExecutiveDetail?.title}
         snapHeight={0.78}

@@ -13,6 +13,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "1.0.10",
     title: "DarkMoney estrena look",
     changes: [
+      "Próximos 7 días ahora muestra qué pagos y cobros vienen, en qué fecha caen y si el dinero disponible alcanza para cubrirlos. Puedes abrir cada compromiso desde la lista. (Pro)",
       "Estado del sistema ahora muestra su porcentaje, qué puntos necesitan revisión y un botón para ordenar los movimientos sin categoría. La explicación del cálculo queda disponible al tocarla. (Pro)",
       "Al abrir los movimientos sin categoría desde Estado del sistema, se cierra la hoja de detalle y ves la bandeja sin nada encima. (Pro)",
       "Mientras se prepara el informe con IA, las líneas de carga ahora se mueven para mostrar que sigue trabajando. (Pro)",

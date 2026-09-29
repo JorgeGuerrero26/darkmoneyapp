@@ -1,7 +1,9 @@
 import {
+  buildFutureFlowItems,
   buildFutureFlowWindows,
   buildReviewInboxSnapshot,
   convertDashboardCurrency,
+  getWeekCoverageStatus,
 } from "../../features/dashboard/lib/dashboard-builders";
 import { buildExchangeRateMap } from "../../features/dashboard/lib/aggregations";
 
@@ -170,6 +172,26 @@ function runFutureFlowInstallmentCap() {
   assert(w7.expectedOutflow === 200, `installment cap aplicado: 200, fue ${w7.expectedOutflow}`);
 }
 
+function runWeekCoverage() {
+  const map = buildExchangeRateMap([] as never);
+  const obligations = [
+    { id: 1, title: "Pago", direction: "payable", pendingAmount: 100, currencyCode: "PEN", dueDate: dateOnlyFromNow(1), status: "active" },
+  ];
+  const incomes = [
+    { id: 2, name: "Sueldo", amount: 200, currencyCode: "PEN", nextExpectedDate: dateOnlyFromNow(3), status: "active" },
+  ];
+  const items = buildFutureFlowItems(obligations, [], incomes, "PEN", map, "PEN");
+  const week = buildFutureFlowWindows(obligations, [], incomes, "PEN", map, 500)[0];
+  assert(week.expectedOutflow === 100 && week.expectedInflow === 200, "el desglose y los totales usan los mismos compromisos");
+  assert(items.length === week.scheduledCount, "cada compromiso aparece en la hoja");
+  assert(getWeekCoverageStatus(items, 500) === "Cubierto", "la caja cubre los pagos de la semana");
+  assert(getWeekCoverageStatus(items.filter((item) => item.direction === "outflow"), 500) === "Cubierto", "un neto negativo no implica presión si hay caja");
+  assert(getWeekCoverageStatus(items, 50) === "Bajo presión", "un pago anterior al cobro supera la caja disponible");
+  assert(getWeekCoverageStatus([], 50) === "Estable", "sin agenda la semana es estable");
+  const missingRate = buildFutureFlowItems([{ ...obligations[0], currencyCode: "USD" }], [], [], "PEN", map, "PEN");
+  assert(getWeekCoverageStatus(missingRate, 500) === "Por revisar", "sin tipo de cambio no se afirma que la caja cubre todo");
+}
+
 runConvertDashboardCurrency();
 runReviewInboxEmpty();
 runReviewInboxUncategorized();
@@ -178,5 +200,6 @@ runReviewInboxObligations();
 runReviewInboxSubscriptionsAttention();
 runFutureFlowWindows();
 runFutureFlowInstallmentCap();
+runWeekCoverage();
 
 console.log("dashboard builders smoke tests passed");
