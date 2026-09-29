@@ -1,4 +1,5 @@
-import { View, StyleSheet } from "react-native";
+import { useEffect, useRef } from "react";
+import { Animated, View, StyleSheet } from "react-native";
 
 import { Skeleton } from "../../../../components/ui/Skeleton";
 import { RADIUS, SPACING, SURFACE } from "../../../../constants/theme";
@@ -9,8 +10,19 @@ import { RADIUS, SPACING, SURFACE } from "../../../../constants/theme";
  * de texto + bullets) para evitar que el layout salte cuando la respuesta llega.
  */
 export function AiResponseSkeleton() {
+  const opacity = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    const pulse = Animated.loop(Animated.sequence([
+      Animated.timing(opacity, { toValue: 0.45, duration: 650, useNativeDriver: true }),
+      Animated.timing(opacity, { toValue: 1, duration: 650, useNativeDriver: true }),
+    ]));
+    pulse.start();
+    return () => pulse.stop();
+  }, [opacity]);
+
   return (
-    <View style={styles.card}>
+    <Animated.View style={[styles.card, { opacity }]}>
       <View style={styles.headerRow}>
         <Skeleton width={14} height={14} borderRadius={999} />
         <Skeleton width={140} height={12} borderRadius={4} />
@@ -24,7 +36,7 @@ export function AiResponseSkeleton() {
       <View style={styles.footer}>
         <Skeleton width="60%" height={11} borderRadius={4} />
       </View>
-    </View>
+    </Animated.View>
   );
 }
 
