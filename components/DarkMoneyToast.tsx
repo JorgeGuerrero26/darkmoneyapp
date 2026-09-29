@@ -57,6 +57,11 @@ type ToastKind = "notice" | "undo" | "detail" | "failed";
 
 /** Revisión 41: una sola forma, píldora de 60 de alto, sea cual sea el caso. */
 const PILL_HEIGHT = 60;
+/**
+ * Extremos siempre en semicírculo, mida lo que mida la píldora: RN recorta el radio a la mitad del
+ * alto. Con PILL_HEIGHT / 2 fijo, el aviso de dos líneas crecía y cada capa redondeaba distinto.
+ */
+const PILL_RADIUS = 999;
 
 function kindOf(config: ToastConfig): ToastKind {
   if (config.type === "error") return "failed";
@@ -189,9 +194,9 @@ export function DarkMoneyToast({
     >
       {/* Dos capas: esta recorta el desenfoque a la píldora; la de fuera lleva la sombra, que en
           iOS desaparece bajo overflow: hidden. */}
-      <View style={[styles.pill, failed && styles.pillFailed]}>
-        <SafeBlurView blur intensity={20} tint="dark" fallbackColor={SURFACE_BG} style={StyleSheet.absoluteFill} />
-        <View style={[StyleSheet.absoluteFill, { backgroundColor: SURFACE_BG }]} />
+      <View style={styles.pill}>
+        <SafeBlurView blur intensity={20} tint="dark" fallbackColor={SURFACE_BG} style={styles.layer} />
+        <View style={[styles.layer, { backgroundColor: SURFACE_BG }]} />
         {badge ? (
           <View style={[styles.badge, badge === "alert" && styles.badgeFailed]}>
             {badge === "alert" ? (
@@ -231,6 +236,10 @@ export function DarkMoneyToast({
             <Text style={styles.actionText}>Reintentar</Text>
           </Pressable>
         ) : null}
+        {/* El borde va encima y del mismo tamaño que las capas de fondo. En la propia píldora
+            desplazaba 1 px hacia adentro al desenfoque y al fondo, y en los extremos sus curvas
+            ya no coincidían: se veía un anillo más claro a izquierda y derecha. */}
+        <View pointerEvents="none" style={[styles.layer, styles.outline, failed && styles.outlineFailed]} />
       </View>
     </Animated.View>
   );
@@ -270,7 +279,7 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: SPACING.md,
     right: SPACING.md,
-    borderRadius: PILL_HEIGHT / 2,
+    borderRadius: PILL_RADIUS,
     zIndex: 9999,
     elevation: 20,
     // Revisión 41: 0 14px 36px rgba(0,0,0,.6). En RN el radio de sombra es la mitad del blur CSS.
@@ -282,9 +291,7 @@ const styles = StyleSheet.create({
   /** La píldora en sí: recorta el desenfoque y lleva el contenido. */
   pill: {
     minHeight: PILL_HEIGHT,
-    borderRadius: PILL_HEIGHT / 2,
-    borderWidth: 1,
-    borderColor: "rgba(244,241,236,0.10)",
+    borderRadius: PILL_RADIUS,
     flexDirection: "row",
     alignItems: "center",
     gap: SPACING.md,
@@ -294,7 +301,14 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   /** El único caso con color: hay algo que el usuario tiene que hacer. */
-  pillFailed: { borderColor: "rgba(226,160,126,0.35)" },
+  /** Fondo y borde: misma caja y mismo radio que la píldora, para que las curvas coincidan. */
+  layer: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: PILL_RADIUS,
+    overflow: "hidden",
+  },
+  outline: { borderWidth: 1, borderColor: "rgba(244,241,236,0.10)" },
+  outlineFailed: { borderColor: "rgba(226,160,126,0.35)" },
   /* 36 y un tinte más leve (12 %, antes 40 al 15 %): a 40 el círculo pesaba más que el texto en
      una píldora de 60 y se leía como un botón oscuro. El check conserva su verde entero. */
   badge: {
