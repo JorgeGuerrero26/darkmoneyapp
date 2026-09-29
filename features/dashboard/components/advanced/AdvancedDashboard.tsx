@@ -3153,7 +3153,7 @@ export function AdvancedDashboard({
 
       {financialGraphRank.length > 0 ? (
         <>
-          <View style={{ height: SPACING.sm }} />
+          <View style={{ height: SPACING.xxl + SPACING.xs }} />
           <FinancialGraphCard
             nodes={financialGraphRank}
             currency={activeCurrency}
