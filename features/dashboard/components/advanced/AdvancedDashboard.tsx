@@ -64,6 +64,8 @@ import { detectHistoryChangePoint } from "../../../../services/analytics/history
 import { findProbableDuplicateGroups } from "../../../../services/analytics/duplicate-detection";
 import {
   useDashboardYearMovementsQuery,
+  useProjectionHistoryQuery,
+  projectionHistoryStart,
   usePersistDashboardAnalyticsMutation,
   usePersistLearningFeedbackMutation,
   useUpdateMovementMutation,
@@ -227,8 +229,14 @@ export function AdvancedDashboard({
    * contaba ninguna cuota (miraba solo la fecha final de cada deuda). Ahora las dos pantallas
    * leen esto, así que el cierre de este mes es el mismo número en las dos.
    */
+  // Seis meses terminados para el gasto típico: con los 90 días de la query base la mediana
+  // salía de dos meses, que es su promedio, y no descartaba nada.
+  const projectionHistoryQuery = useProjectionHistoryQuery(workspaceId, userId);
+  const projectionHistory = projectionHistoryQuery.data;
   const projectionInputs = useMemo<CashflowProjectionInputs>(() => ({
     movements,
+    historyMovements: projectionHistory,
+    historyCoveredFrom: projectionHistory ? projectionHistoryStart() : null,
     obligations: obligations.map((obligation) => ({
       ...obligation,
       principalAmount: obligation.principalAmount ?? obligation.pendingAmount,
@@ -245,7 +253,7 @@ export function AdvancedDashboard({
     exchangeRateMap,
     accountCurrencyMap,
     accounts: activeAccounts,
-  }), [movements, obligations, subscriptions, recurringIncome, activeCurrency, baseCurrency, exchangeRateMap, accountCurrencyMap, activeAccounts]);
+  }), [movements, projectionHistory, obligations, subscriptions, recurringIncome, activeCurrency, baseCurrency, exchangeRateMap, accountCurrencyMap, activeAccounts]);
   const { projection: monthCalendar, liquid: liquidToday } = useCashflowProjection(projectionInputs, 1);
 
   /*

@@ -1766,6 +1766,65 @@ export function useDashboardYearMovementsQuery(
   });
 }
 
+/**
+ * Meses TERMINADOS que mide la proyección para el gasto típico. El mismo número que usa el
+ * asistente (`PROJECTION_HISTORY_MONTHS` en la edge function): si midieran ventanas distintas,
+ * el dashboard y el chat darían gastos típicos distintos.
+ */
+export const PROJECTION_HISTORY_MONTHS = 6;
+
+/** Primer día del mes que abre la ventana del historial de la proyección. */
+export function projectionHistoryStart(now: Date = new Date()): Date {
+  return new Date(now.getFullYear(), now.getMonth() - PROJECTION_HISTORY_MONTHS, 1);
+}
+
+/**
+ * El historial con el que la proyección mide el gasto típico: seis meses terminados enteros.
+ *
+ * Existe aparte de la query base (90 días) porque con 90 días la mediana se medía sobre DOS
+ * meses, y la mediana de dos es su promedio: no descartaba nada. Un julio con compras que no
+ * se repiten subía el gasto típico a 9.500 al mes con un sueldo de 3.659.
+ */
+export function useProjectionHistoryQuery(
+  workspaceId: number | null,
+  // Obligatorio a propósito: forma parte de la queryKey (ver query-key-enabled-consistency).
+  userScopeKey: string | null | undefined,
+) {
+  const from = projectionHistoryStart();
+  const fromKey = `${from.getFullYear()}-${String(from.getMonth() + 1).padStart(2, "0")}`;
+  return useQuery({
+    queryKey: ["projection-history", userScopeKey ?? null, workspaceId, fromKey],
+    queryFn: async (): Promise<DashboardMovementRow[]> => {
+      if (!supabase || !workspaceId) return [];
+      const { data, error } = await supabase
+        .from("movements")
+        .select("id, movement_type, status, occurred_at, source_amount, destination_amount, source_account_id, destination_account_id, category_id, spend_type_id, counterparty_id, description")
+        .eq("workspace_id", workspaceId)
+        .gte("occurred_at", from.toISOString())
+        .order("occurred_at", { ascending: false })
+        .order("id", { ascending: false });
+      if (error) throw new Error(error.message ?? "Error al cargar el historial de la proyección");
+      return (data ?? []).map((row: any): DashboardMovementRow => ({
+        id: row.id,
+        movementType: row.movement_type,
+        status: row.status,
+        occurredAt: row.occurred_at,
+        sourceAmount: toNum(row.source_amount),
+        destinationAmount: toNum(row.destination_amount),
+        sourceAccountId: row.source_account_id ?? null,
+        destinationAccountId: row.destination_account_id ?? null,
+        categoryId: row.category_id ?? null,
+        spendTypeId: row.spend_type_id ?? null,
+        counterpartyId: row.counterparty_id ?? null,
+        description: typeof row.description === "string" ? row.description : "",
+      }));
+    },
+    enabled: Boolean(workspaceId && userScopeKey),
+    staleTime: STALE.long,
+    retry: 1,
+  });
+}
+
 export function useDashboardAnalyticsQuery(
   workspaceId: number | null,
   // Obligatorio a proposito, aunque acepte undefined: forma parte de la queryKey, asi que un

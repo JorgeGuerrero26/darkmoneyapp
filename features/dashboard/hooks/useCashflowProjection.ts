@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 
 import { movementActsAsIncome, movementDisplayAccountId, movementDisplayAmount } from "../../../lib/movement-amounts";
-import { DASHBOARD_MOVEMENTS_WINDOW_DAYS } from "../../../services/queries/workspace-data";
+import { DASHBOARD_MOVEMENTS_WINDOW_DAYS, PROJECTION_HISTORY_MONTHS } from "../../../services/queries/workspace-data";
 import { buildCashflowCalendar, typicalMonthlySpend } from "../../projection/lib/cashflow-calendar";
 import { monthlyDiscretionarySpend } from "../../projection/lib/discretionary-history";
 import { liquidBalance } from "../../projection/lib/liquid-balance";
@@ -9,8 +9,7 @@ import { convertAmt, expenseAmt, isExpense } from "../lib/aggregations";
 import type { DashboardMovementRow } from "../lib/dashboard-row";
 import type { ConversionCtx } from "../lib/types";
 
-/** Cuántos meses TERMINADOS se miran para sacar la mediana del gasto típico. */
-export const PROJECTION_HISTORY_MONTHS = 6;
+export { PROJECTION_HISTORY_MONTHS };
 
 export type ProjectionObligationInput = {
   id?: number;
@@ -31,6 +30,14 @@ export type ProjectionObligationInput = {
 
 export type CashflowProjectionInputs = {
   movements: DashboardMovementRow[];
+  /**
+   * Seis meses terminados para medir el gasto típico (`useProjectionHistoryQuery`). Sin él se
+   * cae a los 90 días de `movements`, que dan solo dos meses: la mediana de dos es su promedio y
+   * no descarta nada. Mientras llega, se usa lo que hay.
+   */
+  historyMovements?: DashboardMovementRow[];
+  /** Desde cuándo está cargado `historyMovements`. */
+  historyCoveredFrom?: Date | null;
   obligations: ProjectionObligationInput[];
   subscriptions: Array<{
     id?: number;
@@ -83,6 +90,8 @@ export type CashflowProjectionInputs = {
 export function useCashflowProjection(inputs: CashflowProjectionInputs, months: number) {
   const {
     movements,
+    historyMovements,
+    historyCoveredFrom,
     obligations,
     subscriptions,
     recurringIncome,
@@ -116,16 +125,23 @@ export function useCashflowProjection(inputs: CashflowProjectionInputs, months: 
     [cardAccounts],
   );
 
-  const typicalSpend = useMemo(() => {
-    // La query base del dashboard trae una ventana fija. Pedirle seis meses devolvería los
-    // cargados más ceros, y esos ceros partirían la mediana por la mitad sin que se note.
-    const coveredFrom = new Date();
-    coveredFrom.setDate(coveredFrom.getDate() - DASHBOARD_MOVEMENTS_WINDOW_DAYS);
+  /*
+   * De dónde sale el historial y hasta dónde llega. Un mes anterior a lo cargado no es un mes sin
+   * gasto: es un mes que no se cargó, y tratarlo como cero parte la mediana.
+   */
+  const historySource = historyMovements ?? movements;
+  const coveredFrom = useMemo(() => {
+    if (historyMovements && historyCoveredFrom) return historyCoveredFrom;
+    const from = new Date();
+    from.setDate(from.getDate() - DASHBOARD_MOVEMENTS_WINDOW_DAYS);
+    return from;
+  }, [historyMovements, historyCoveredFrom]);
 
+  const typicalSpend = useMemo(() => {
     // Lo cargado a una tarjeta NO entra aquí: sale por su propia línea, en el mes en que se
     // paga. Si se colara, se restaría dos veces y además en el mes equivocado.
     const history = monthlyDiscretionarySpend({
-      movements,
+      movements: historySource,
       months: PROJECTION_HISTORY_MONTHS,
       earliestCoveredDate: coveredFrom,
       expenseAmountOf: (movement) => {
@@ -135,18 +151,24 @@ export function useCashflowProjection(inputs: CashflowProjectionInputs, months: 
         return expenseAmt(movement, conversionCtx);
       },
     });
-    return { typical: typicalMonthlySpend(history), monthsUsed: history.length };
-  }, [movements, conversionCtx, cardIds]);
+    // Los meses medidos, con su nombre: la pantalla los enseña para que el número se pueda
+    // auditar en vez de creerlo. `monthlyDiscretionarySpend` devuelve los últimos meses
+    // terminados cubiertos, del más viejo al más reciente.
+    const now = new Date();
+    const months = history.map((total, index) => {
+      const back = history.length - index;
+      const date = new Date(now.getFullYear(), now.getMonth() - back, 1);
+      return { monthKey: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`, total };
+    });
+    return { typical: typicalMonthlySpend(history), monthsUsed: history.length, months };
+  }, [historySource, coveredFrom, conversionCtx, cardIds]);
 
   /** Una entrada por tarjeta: lo que ya se debe y lo que se le suele cargar al mes. */
   const creditCards = useMemo(() => {
-    const coveredFrom = new Date();
-    coveredFrom.setDate(coveredFrom.getDate() - DASHBOARD_MOVEMENTS_WINDOW_DAYS);
-
     return cardAccounts.map((account) => {
       const id = Number(account.id);
       const perCard = monthlyDiscretionarySpend({
-        movements,
+        movements: historySource,
         months: PROJECTION_HISTORY_MONTHS,
         earliestCoveredDate: coveredFrom,
         expenseAmountOf: (movement) => {
@@ -165,7 +187,7 @@ export function useCashflowProjection(inputs: CashflowProjectionInputs, months: 
         typicalMonthlySpend: typicalMonthlySpend(perCard),
       };
     });
-  }, [cardAccounts, movements, conversionCtx, baseCurrency]);
+  }, [cardAccounts, historySource, coveredFrom, conversionCtx, baseCurrency]);
 
   /** Lo anotado con fecha futura: la maestría de abril entra en abril. */
   const plannedMovements = useMemo(() => {
