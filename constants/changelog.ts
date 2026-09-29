@@ -13,6 +13,9 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "1.0.10",
     title: "DarkMoney estrena look",
     changes: [
+      "\"Fin de mes\" en el inicio y la proyección de la pestaña Flujo ahora dan el mismo cierre: antes eran dos cálculos distintos y podían no coincidir. Y los dos cuentan por fin las cuotas que te deben: si alguien te paga en cuotas, la de este mes aparece como entrada, y si ya venció sin que te pagaran sigue ahí, marcada como atrasada.",
+      "Lo que alguien te pagó antes de que acordaran un plan de cuotas ya no cuenta como cuotas adelantadas: se descuenta de la deuda. Antes, lo que te pagaron de marzo a agosto aparecía como si hubiera cubierto las cuotas de setiembre en adelante.",
+      "Tu saldo de hoy en el inicio cuenta solo la plata que puedes gastar —banco, efectivo y ahorros—. Antes sumaba también inversiones y restaba lo que debes en la tarjeta.",
       "Las figuras de carga del inicio ahora pulsan mientras llegan los datos, para que se vea que la app sigue trabajando.",
       "El indicador de actualizar listas ahora aparece solo cuando deslizas hacia abajo. Las actualizaciones automáticas siguen en segundo plano y el indicador se cierra si la conexión tarda demasiado.",
       "Fin de mes ahora muestra cómo se suma el cierre: saldo de tus cuentas, compromisos pendientes y ritmo proyectado. También puedes abrir los compromisos y movimientos que forman el cálculo. (Pro)",
