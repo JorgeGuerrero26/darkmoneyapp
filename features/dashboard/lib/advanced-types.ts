@@ -34,6 +34,9 @@ export type DashboardAnomalyFinding = {
   key: string;
   movementId: number;
   title: string;
+  amount: number;
+  baselineAmount: number | null;
+  occurredAt: string | null;
   body: string;
   meta: string;
   level: "strong" | "review";

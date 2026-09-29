@@ -19,7 +19,6 @@ import {
   endOfDay,
   endOfMonth,
   format,
-  getDay,
   startOfDay,
   parseISO,
   startOfMonth,
@@ -110,6 +109,7 @@ import { AiResponseSkeleton } from "./AiResponseSkeleton";
 import { SystemStateSheet } from "./SystemStateSheet";
 import { WeekOutlookSheet } from "./WeekOutlookSheet";
 import { MonthEndSheet } from "./MonthEndSheet";
+import { PatternsTab } from "./PatternsTab";
 import {
   buildDashboardAiTextParts,
   ensureDashboardAiComplexTerms,
@@ -120,6 +120,7 @@ import {
 } from "../../lib/dashboard-ai-content";
 import { useDashboardStats } from "../../hooks/useDashboardStats";
 import { buildSystemState } from "../../lib/system-state";
+import { expenseTitle, habitPresentation, weeklySpendPattern } from "../../lib/patterns-view";
 
 import { SectionTitle } from "../simple/SectionTitle";
 import { CashflowProjectionSection } from "../simple/CashflowProjectionSection";
@@ -154,16 +155,13 @@ import {
 import {
   AdvancedGiftCard,
   AlgorithmReadinessCard,
-  AnomalyWatch,
   CurrencyExposure,
   FinancialGraphCard,
   PeriodRadar,
   TransferSnapshot,
-  WeeklyPattern,
 } from "./AdvancedCards";
 import {
   AnnualHistoryPanel,
-  CategoryDonutChart,
   ProjectionBridgeChart,
   SavingsMomentumChart,
   type AnnualHistoryMonth,
@@ -190,7 +188,6 @@ export function AdvancedDashboard({
   accountCurrencyMap,
   onRequestPrecisionFocus,
   onScrollToTop,
-  onActiveTabChange,
 }: {
   movements: DashboardMovementRow[];
   // `paymentPlan`, `principalAmount` y las cadencias las pide la proyección mes a mes: sin el
@@ -215,8 +212,6 @@ export function AdvancedDashboard({
   /** Los atajos de un toque. Se pintan como primer bloque de Resumen; ver el comentario allí. */
   shortcuts?: React.ReactNode;
   accountCurrencyMap: Map<number, string>;
-  /** Avisa a la PANTALLA en que pestaña estamos, para que colapse su encabezado. */
-  onActiveTabChange?: (tab: AdvancedTab) => void;
   onRequestPrecisionFocus?: () => void;
   onScrollToTop?: () => void;
 }) {
@@ -406,6 +401,7 @@ export function AdvancedDashboard({
     for (const account of snapshot?.accounts ?? []) map.set(account.id, account.name);
     return map;
   }, [snapshot?.accounts]);
+  const patternMovementMap = useMemo(() => new Map(movements.map((movement) => [movement.id, movement])), [movements]);
 
   const counterpartyMap = useMemo(() => {
     const map = new Map<number, string>();
@@ -651,6 +647,17 @@ export function AdvancedDashboard({
     [learning.readinessScore, review.totalIssues, review.uncategorizedCount],
   );
 
+  const getPatternExpense = useCallback(
+    (movement: DashboardMovementRow) => expenseAmt(movement, {
+      accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency,
+    }),
+    [accountCurrencyMap, activeCurrency, baseCurrency, exchangeRateMap],
+  );
+  const weeklySpend = useMemo(
+    () => weeklySpendPattern(movements, (movement) => isExpense(movement) ? getPatternExpense(movement) : 0),
+    [getPatternExpense, movements],
+  );
+
   const anomalySignals = useMemo(
     () => buildAnomalyFindings(
       movements,
@@ -674,18 +681,19 @@ export function AdvancedDashboard({
       categoryNames: categoryMap,
       now,
       sinceDays: 90,
-      limit: 4,
+      limit: movements.length,
     }).map((cluster) => ({
       ...cluster,
+      ...habitPresentation(cluster, patternMovementMap, accountMap),
       lastLabel: format(new Date(cluster.lastAt), "d MMM", { locale: es }),
-    }));
-  }, [accountCurrencyMap, activeCurrency, categoryMap, exchangeRateMap, movements]);
+    })).sort((a, b) => b.total - a.total).slice(0, 4);
+  }, [accountCurrencyMap, accountMap, activeCurrency, categoryMap, exchangeRateMap, movements, patternMovementMap]);
 
   const risingCategoryPatterns = useMemo(() => {
     const now = new Date();
-    const currentStart = subDays(now, 13);
-    const previousStart = subDays(now, 27);
-    const previousEnd = subDays(now, 14);
+    const currentStart = startOfDay(subDays(now, 13));
+    const previousStart = startOfDay(subDays(now, 27));
+    const previousEnd = endOfDay(subDays(now, 14));
     const ctx = { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency };
     const currentTotals = new Map<number | null, number>();
     const previousTotals = new Map<number | null, number>();
@@ -720,7 +728,7 @@ export function AdvancedDashboard({
     const topRise = risingCategoryPatterns[0] ?? null;
     const topAnomaly = anomalySignals[0] ?? null;
     return {
-      repeatTitle: topRepeat ? topRepeat.label : "Sin hábito repetido claro",
+      repeatTitle: topRepeat ? topRepeat.title : "Sin hábito repetido claro",
       repeatBody: topRepeat
         ? `${topRepeat.count} veces en 90 días · promedio ${formatCurrency(topRepeat.average, activeCurrency)}`
         : "Aún falta repetición para reconocer un hábito.",
@@ -931,10 +939,10 @@ export function AdvancedDashboard({
     openMovementPreview,
   ]);
 
-  const openPatternHabitPreview = useCallback((pattern: { label: string; count: number; total: number; average: number; movementIds: number[] }) => {
+  const openPatternHabitPreview = useCallback((pattern: { title: string; count: number; total: number; average: number; movementIds: number[] }) => {
     const patternMovements = getMovementsByIds(pattern.movementIds);
     openMovementPreview({
-      title: pattern.label,
+      title: pattern.title,
       subtitle: `${pattern.count} movimiento${pattern.count === 1 ? "" : "s"} parecido${pattern.count === 1 ? "" : "s"} en los últimos 90 días. En total suman ${formatCurrency(pattern.total, activeCurrency)} y el promedio es ${formatCurrency(pattern.average, activeCurrency)}.`,
       scopeLabel: "Alcance: selección exacta detectada como hábito repetido en los últimos 90 días.",
       emptyTitle: "No encontramos movimientos para este hábito",
@@ -996,6 +1004,24 @@ export function AdvancedDashboard({
     openMovementPreview,
   ]);
 
+  const openRemainingCategoriesPreview = useCallback((categoryIds: Array<number | null>) => {
+    const selected = new Set(categoryIds);
+    const categoryMovements = sortMovementsRecentFirst(movements.filter((movement) =>
+      isExpense(movement) &&
+      inRange(movement, advancedStats.curStart, advancedStats.curEnd) &&
+      selected.has(movement.categoryId ?? null),
+    ));
+    const total = categoryMovements.reduce((sum, movement) => sum + expenseAmt(movement, {
+      accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency,
+    }), 0);
+    openMovementPreview({
+      title: categoryIds.length === 1 ? "1 categoría más" : `${categoryIds.length} categorías más`,
+      subtitle: `${categoryMovements.length} gastos del mes suman ${formatCurrency(total, activeCurrency)}.`,
+      scopeLabel: `Alcance: ${format(advancedStats.curStart, "d MMM", { locale: es })} - ${format(advancedStats.curEnd, "d MMM yyyy", { locale: es })}.`,
+      movements: categoryMovements,
+    });
+  }, [accountCurrencyMap, activeCurrency, advancedStats.curEnd, advancedStats.curStart, baseCurrency, exchangeRateMap, movements, openMovementPreview]);
+
   const openFinancialGraphNodePreview = useCallback((node: FinancialGraphRankNode) => {
     const nodeMovements = sortMovementsRecentFirst(
       movements.filter((movement) => {
@@ -1039,13 +1065,12 @@ export function AdvancedDashboard({
     total: number;
     average: number;
     count: number;
-    weekCount: number;
     movements: DashboardMovementRow[];
   }) => {
     openMovementPreview({
       title: `Gastos de ${day.fullLabel}`,
-      subtitle: `${day.count} movimiento${day.count === 1 ? "" : "s"} registrado${day.count === 1 ? "" : "s"} en ${day.fullLabel}. En total suman ${formatCurrency(day.total, activeCurrency)}; promedio semanal: ${formatCurrency(day.average, activeCurrency)}.`,
-      scopeLabel: `Alcance: todos los ${day.fullLabel} cargados en el dashboard, promediados sobre ${day.weekCount} semana${day.weekCount === 1 ? "" : "s"} observada${day.weekCount === 1 ? "" : "s"}.`,
+      subtitle: `${day.count} movimiento${day.count === 1 ? "" : "s"} registrado${day.count === 1 ? "" : "s"} en ${day.fullLabel}. En total suman ${formatCurrency(day.total, activeCurrency)}; promedio por ${day.fullLabel}: ${formatCurrency(day.average, activeCurrency)}.`,
+      scopeLabel: `Alcance: últimos 90 días. El promedio incluye los ${day.fullLabel} sin gastos.`,
       emptyTitle: `Sin gastos de ${day.fullLabel}`,
       emptyBody: "No hay movimientos para este día de la semana.",
       movements: day.movements,
@@ -1701,18 +1726,11 @@ export function AdvancedDashboard({
   }, [afterFirstPaint, anomalySignals, categorySuggestions, persistDashboardAnalyticsMutation, projectionModel, queriesInFlight, userWritesInFlight, workspaceId]);
 
   const weeklyPatternInsight = useMemo(() => {
-    const totals = Array.from({ length: 7 }, () => 0);
-    for (const movement of movements.filter(isExpense)) {
-      const day = getDay(new Date(movement.occurredAt));
-      const normalized = day === 0 ? 6 : day - 1;
-      totals[normalized] += expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency });
-    }
-    const totalSpent = totals.reduce((sum, value) => sum + value, 0);
-    if (totalSpent <= 0) return null;
+    if (!weeklySpend.hasExpenses) return null;
+    const totalSpent = weeklySpend.days.reduce((sum, day) => sum + day.total, 0);
     const labels = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"];
-    const maxIndex = totals.reduce((best, value, index, arr) => value > arr[best] ? index : best, 0);
-    return { dayLabel: labels[maxIndex], share: Math.round((totals[maxIndex] / totalSpent) * 100) };
-  }, [accountCurrencyMap, activeCurrency, exchangeRateMap, movements]);
+    return { dayLabel: labels[weeklySpend.top.index], share: Math.round((weeklySpend.top.total / totalSpent) * 100) };
+  }, [weeklySpend]);
 
   const monthEndReading = projectionModel.expectedBalance;
   const monthEndDelta = monthEndReading - currentVisibleBalance;
@@ -1807,7 +1825,7 @@ export function AdvancedDashboard({
     currency: activeCurrency,
     repeatedPatternsCount: repeatedPatterns.length,
     repeatedPatternsTop: repeatedPatterns.slice(0, 4).map((pattern) => ({
-      label: pattern.label,
+      label: pattern.title,
       type: pattern.type,
       category: pattern.category,
       count: pattern.count,
@@ -1826,16 +1844,21 @@ export function AdvancedDashboard({
       pct: item.pct == null ? null : Number(item.pct.toFixed(1)),
     })),
     anomalySignalsCount: anomalySignals.length,
-    anomalySignalsTop: anomalySignals.slice(0, 4).map((item) => ({
-      title: item.title,
-      body: item.body,
-      meta: item.meta,
-      level: item.level,
-      reasons: item.reasons,
-    })),
+    anomalySignalsTop: anomalySignals.slice(0, 4).map((item) => {
+      const movement = patternMovementMap.get(item.movementId);
+      const accountId = movement ? movementDisplayAccountId(movement) : null;
+      const accountName = accountId == null ? null : accountMap.get(accountId);
+      return {
+        title: expenseTitle(movement?.description ?? item.title, accountName),
+        body: item.body,
+        meta: item.meta,
+        level: item.level,
+        reasons: item.reasons,
+      };
+    }),
     topHabit: repeatedPatterns[0]
       ? {
-          label: repeatedPatterns[0].label,
+          label: repeatedPatterns[0].title,
           count: repeatedPatterns[0].count,
           average: formatCurrency(repeatedPatterns[0].average, activeCurrency),
           total: formatCurrency(repeatedPatterns[0].total, activeCurrency),
@@ -1863,12 +1886,14 @@ export function AdvancedDashboard({
     },
   }), [
     activeCurrency,
+    accountMap,
     anomalySignals,
     categoryConcentration.hhi,
     categoryConcentration.label,
     categoryConcentration.topCategory,
     categoryConcentration.topShare,
     patternQuickRead,
+    patternMovementMap,
     repeatedPatterns,
     risingCategoryPatterns,
     weeklyPatternInsight,
@@ -2726,15 +2751,13 @@ export function AdvancedDashboard({
   );
   const [activeDashboardAiTerm, setActiveDashboardAiTerm] = useState<DashboardAiComplexTerm | null>(null);
   const [summaryAiSheetOpen, setSummaryAiSheetOpen] = useState(false);
+  const [patternsAiSheetOpen, setPatternsAiSheetOpen] = useState(false);
   const dashboardAiTone = dashboardAi.tone;
   const setDashboardAiTone = dashboardAi.setTone;
   const dashboardAiBreath = useRef(new Animated.Value(0)).current;
   const dashboardAiUsageDate = dashboardAi.usageDate;
   const dashboardAiIsAdmin = dashboardAi.isAdmin;
   const [activeTab, setActiveTab] = useState<AdvancedTab>('Resumen');
-  useEffect(() => {
-    onActiveTabChange?.(activeTab);
-  }, [activeTab, onActiveTabChange]);
   const weekHasSchedule = weekWindow.scheduledCount > 0;
   const weekNet = weekWindow.expectedInflow - weekWindow.expectedOutflow;
   const reviewDelta = review.totalIssues - priorWeekReview.totalIssues;
@@ -3222,7 +3245,43 @@ export function AdvancedDashboard({
       </BottomSheet>
 
       <BottomSheet
-        visible={Boolean(activeDashboardAiTerm) && !summaryAiSheetOpen}
+        visible={patternsAiSheetOpen}
+        onClose={() => { setPatternsAiSheetOpen(false); setActiveDashboardAiTerm(null); }}
+        title={activeDashboardAiTerm ? "Explicación" : "Informe de patrones con IA"}
+        snapHeight={0.82}
+        blurBackdrop={false}
+        headerStyle={subStyles.summarySheetHeader}
+        contentStyle={subStyles.summarySheetContent}
+      >
+        {activeDashboardAiTerm ? (
+          <View style={subStyles.aiSummaryTermSheet}>
+            <TouchableOpacity onPress={() => setActiveDashboardAiTerm(null)} accessibilityRole="button">
+              <Text style={subStyles.summaryAiBack}>Volver al informe</Text>
+            </TouchableOpacity>
+            <Text style={subStyles.aiSummaryTermSheetTitle}>{activeDashboardAiTerm.term}</Text>
+            <Text style={subStyles.aiSummaryTermSheetBody}>{activeDashboardAiTerm.explanation}</Text>
+          </View>
+        ) : dashboardAiPatternsMutation.isPending && !dashboardAiPatternsReply ? (
+          <AiResponseSkeleton />
+        ) : dashboardAiPatternsReply ? (
+          <Text style={subStyles.summaryAiReportText}>
+            {dashboardAiPatternsTextParts.map((part, index) => part.type === "term" ? (
+              <Text
+                key={`${part.term.term}-patterns-${index}`}
+                style={subStyles.summaryAiReportTerm}
+                onPress={() => setActiveDashboardAiTerm(part.term)}
+              >{part.value}</Text>
+            ) : <Text key={`patterns-text-${index}`}>{part.value}</Text>)}
+          </Text>
+        ) : (
+          <Text style={subStyles.summaryAiReportText}>
+            {dashboardAiPatternsLimitReached ? "La consulta de hoy ya se usó. Podrás pedir otro informe mañana." : "No se pudo preparar el informe. Cierra la hoja y vuelve a intentarlo."}
+          </Text>
+        )}
+      </BottomSheet>
+
+      <BottomSheet
+        visible={Boolean(activeDashboardAiTerm) && !summaryAiSheetOpen && !patternsAiSheetOpen}
         onClose={() => setActiveDashboardAiTerm(null)}
         title="Explicación"
         snapHeight={0.42}
@@ -3639,289 +3698,32 @@ export function AdvancedDashboard({
 
       {activeTab === 'Patrones' && (
         <DashboardSectionBoundary sectionLabel="Patrones">
-        <>
-      <View style={{ height: SPACING.sm }} />
-      <Card>
-        <SectionTitle>Lectura rápida de patrones</SectionTitle>
-        <Text style={subStyles.executiveIntro}>
-          La app busca costumbres, no términos técnicos: qué se repite, qué subió y qué gasto no parece normal para tu historial.
-        </Text>
-        <Text style={subStyles.scopeHint}>
-          Alcance: hábitos y gastos raros usan últimos 90 días; subidas usa últimos 14 días contra los 14 días anteriores; categoría del mes usa el mes actual.
-        </Text>
-        <View style={subStyles.commandMetricGrid}>
-          <TouchableOpacity
-            style={subStyles.commandMetricCard}
-            onPress={() => {
-              const pattern = repeatedPatterns[0];
-              if (!pattern) return;
-              openPatternHabitPreview(pattern);
+          <PatternsTab
+            anomalies={anomalySignals}
+            rises={risingCategoryPatterns}
+            habits={repeatedPatterns}
+            categoryTotals={advancedStats.catTotals}
+            categoryNames={categoryMap}
+            accountNames={accountMap}
+            movements={movements}
+            currency={activeCurrency}
+            weeklySpend={weeklySpend}
+            onReviewAnomalies={(ids) => openAnomalyMovementsPreview(ids)}
+            onOpenAnomaly={(id) => openAnomalyMovementsPreview([id], "Movimiento fuera de costumbre")}
+            onOpenAi={() => {
+              setPatternsAiSheetOpen(true);
+              if (!dashboardAiPatternsReply && !dashboardAiPatternsLimitReached && !dashboardAiPatternsMutation.isPending) {
+                void handleRequestDashboardAiPatterns();
+              }
             }}
-            disabled={!repeatedPatterns[0]}
-            activeOpacity={0.82}
-          >
-            <Text style={subStyles.commandMetricLabel}>Hábito más repetido</Text>
-            <Text style={subStyles.commandMetricValue} numberOfLines={1}>{patternQuickRead.repeatTitle}</Text>
-            <Text style={subStyles.commandMetricHint}>{patternQuickRead.repeatBody}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={subStyles.commandMetricCard}
-            onPress={() => {
-              const item = risingCategoryPatterns[0];
-              if (!item) return;
-              openRisingCategoryPreview(item);
-            }}
-            disabled={!risingCategoryPatterns[0]}
-            activeOpacity={0.82}
-          >
-            <Text style={subStyles.commandMetricLabel}>Mayor subida</Text>
-            <Text style={subStyles.commandMetricValue} numberOfLines={1}>{patternQuickRead.riseTitle}</Text>
-            <Text style={subStyles.commandMetricHint}>{patternQuickRead.riseBody}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[subStyles.commandMetricCard, subStyles.focusMetricCardWide]}
-            onPress={() => {
-              const ids = anomalySignals.map((item) => item.movementId);
-              if (ids.length === 0) return;
-              openAnomalyMovementsPreview(ids);
-            }}
-            disabled={anomalySignals.length === 0}
-            activeOpacity={0.82}
-          >
-            <Text style={subStyles.commandMetricLabel}>Gastos fuera de costumbre</Text>
-            <Text style={subStyles.commandMetricValue}>{patternQuickRead.anomalyTitle}</Text>
-            <Text style={subStyles.commandMetricHint}>{patternQuickRead.anomalyBody}</Text>
-          </TouchableOpacity>
-        </View>
-      </Card>
-
-      <View style={{ height: SPACING.sm }} />
-      <Card>
-        <View style={subStyles.aiSummaryShellWrap}>
-          <View style={subStyles.aiSummaryShell}>
-            {/* Una linea de que hace, y ya. Antes lo explicaba tres veces —insignia, titulo y dos
-                parrafos— con borde degradado, cuatro orbes animados y un halo. Es una funcion de
-                la app, no una marca aparte. */}
-            <View style={subStyles.aiSummaryCompactHeader}>
-              <Sparkles size={14} color={COLORS.pro} />
-              <Text style={subStyles.aiSummaryCompactTitle}>Explica tu situación con IA</Text>
-            </View>
-            <TouchableOpacity
-              activeOpacity={0.86}
-              onPress={() => void handleRequestDashboardAiPatterns()}
-              disabled={dashboardAiPatternsMutation.isPending || dashboardAiPatternsLimitReached}
-              style={[
-                subStyles.aiSummaryButton,
-                (dashboardAiPatternsMutation.isPending || dashboardAiPatternsLimitReached) && subStyles.aiSummaryButtonDisabled,
-              ]}
-            >
-              <View style={subStyles.aiSummaryButtonAccent} />
-              <View style={subStyles.aiSummaryButtonInner}>
-                <Sparkles size={16} color={dashboardAiPatternsMutation.isPending || dashboardAiPatternsLimitReached ? "rgba(244,241,236,0.4)" : COLORS.pro} />
-                <Text style={subStyles.aiSummaryButtonLabel}>
-                  {dashboardAiPatternsMutation.isPending
-                    ? "Preparando explicacion..."
-                    : dashboardAiPatternsLimitReached
-                      ? "Consulta de hoy usada"
-                      : dashboardAiTone === "managerial"
-                        ? "Ver informe de patrones"
-                        : "Hablar con mi asesor de patrones"}
-                </Text>
-              </View>
-            </TouchableOpacity>
-            {dashboardAiPatternsMutation.isPending && !dashboardAiPatternsReply ? <AiResponseSkeleton /> : null}
-            {dashboardAiPatternsReply ? (
-              <View style={subStyles.aiSummaryResponseCard}>
-                <View style={subStyles.aiSummaryResponseAiTag}>
-                  <Sparkles size={11} color={COLORS.pro} />
-                  <Text style={subStyles.aiSummaryResponseLabel}>
-                    {dashboardAiTone === "managerial" ? "Gemini · Patrones gerenciales" : "Gemini · Patrones en modo asesor"}
-                  </Text>
-                </View>
-                {dashboardAiPatternsResolvedTerms.length > 0 ? (
-                  <Text style={subStyles.aiSummaryGlossaryHint}>
-                    Toca las palabras resaltadas para ver su explicación.
-                  </Text>
-                ) : null}
-                <Text style={subStyles.aiSummaryResponseText}>
-                  {dashboardAiPatternsTextParts.map((part, index) => (
-                    part.type === "term" ? (
-                      <Text
-                        key={`${part.term.term}-patterns-${index}`}
-                        style={subStyles.aiSummaryResponseTerm}
-                        onPress={() => setActiveDashboardAiTerm(part.term)}
-                      >
-                        {part.value}
-                      </Text>
-                    ) : (
-                      <Text key={`patterns-text-${index}`}>{part.value}</Text>
-                    )
-                  ))}
-                </Text>
-              </View>
-            ) : (
-              <Text style={subStyles.aiSummaryHint}>
-                {dashboardAiPatternsLimitReached
-                  ? "Ya usaste tu explicación de IA de hoy en este módulo. Podrás pedir otra mañana."
-                  : "Gemini toma tus hábitos, variaciones y anomalías recientes para explicarte qué patrones ya importan en tus finanzas."}
-              </Text>
-            )}
-            <View style={subStyles.aiSummaryFooterRow}>
-              <Text style={subStyles.aiSummaryFooterText}>La explicación usa solo los patrones detectados por DarkMoney dentro de esta pestaña.</Text>
-            </View>
-          </View>
-        </View>
-      </Card>
-
-      <View style={{ height: SPACING.sm }} />
-      <CategoryDonutChart
-        catTotals={advancedStats.catTotals}
-        categories={snapshot?.categories ?? []}
-        currency={activeCurrency}
-        onOpenCategory={(categoryId) => openCategoryPeriodPreview(categoryId)}
-      />
-
-      <View style={{ height: SPACING.sm }} />
-      <Card>
-        <TouchableOpacity style={subStyles.advMetricSection} onPress={() => setAdvancedDetail("categoryConcentration")} activeOpacity={0.84}>
-          <View style={subStyles.advMetricHeader}>
-            <Text style={subStyles.advMetricTitle}>Concentración de gasto</Text>
-            {categoryConcentration.hhi != null ? (
-              <Text style={[subStyles.advMetricBadge, { color: categoryConcentration.color }]}>
-                {categoryConcentration.label}
-              </Text>
-            ) : null}
-          </View>
-          <Text style={subStyles.advMetricBody}>
-            {categoryConcentration.hhi != null
-              ? `HHI: ${categoryConcentration.hhi.toFixed(3)}${categoryConcentration.topCategory ? ` · mayor partida: ${categoryConcentration.topCategory} (${categoryConcentration.topShare ?? 0}%)` : ""}`
-              : "Categoriza movimientos para ver cómo se distribuye tu gasto entre categorías."}
-          </Text>
-          {categoryConcentration.hhi != null ? (
-            <Text style={[subStyles.advMetricInterpret, { color: categoryConcentration.color }]}>
-              {categoryConcentration.hhi > 0.25
-                ? `Tu gasto está muy concentrado. Si ${categoryConcentration.topCategory} sube, mueve fuerte todo el mes.`
-                : categoryConcentration.hhi > 0.15
-                ? `Concentración moderada. Hay una categoría dominante pero con cierta diversidad.`
-                : "Gasto bien distribuido entre categorías — menor riesgo de sorpresas por una sola partida."}
-            </Text>
-          ) : null}
-        </TouchableOpacity>
-      </Card>
-
-      <View style={{ height: SPACING.sm }} />
-      <WeeklyPattern
-        movements={movements}
-        ctx={{ accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency }}
-        onOpenDay={openWeeklyDayPreview}
-      />
-
-      <View style={{ height: SPACING.sm }} />
-      <Card>
-        <SectionTitle>Hábitos que se repiten</SectionTitle>
-        <Text style={subStyles.executiveIntro}>
-          Agrupamos movimientos parecidos por nombre, categoría, contacto, monto y día. Es como juntar tickets similares para ver qué se volvió costumbre aunque no estén escritos igual.
-        </Text>
-        <Text style={subStyles.scopeHint}>Alcance: últimos 90 días. Al tocar, se abre la lista exacta dentro del dashboard.</Text>
-        {repeatedPatterns.length === 0 ? (
-          <View style={subStyles.richEmptyState}>
-            <Sparkles size={18} color={COLORS.primary} />
-            <Text style={subStyles.richEmptyTitle}>Sin repeticiones claras todavía</Text>
-            <Text style={subStyles.richEmptyBody}>El motor de clustering ya está listo. Se activará cuando encuentre al menos 2 movimientos parecidos en los últimos 90 días.</Text>
-          </View>
-        ) : (
-          <View style={subStyles.commandActions}>
-            {repeatedPatterns.map((pattern) => (
-              <TouchableOpacity
-                key={`${pattern.type}-${pattern.label}-${pattern.movementIds.join("-")}`}
-                style={subStyles.commandActionRow}
-                onPress={() => openPatternHabitPreview(pattern)}
-                activeOpacity={0.82}
-              >
-                <View style={subStyles.commandActionCopy}>
-                  <View style={subStyles.suggestionRowTop}>
-                    <Text style={subStyles.commandActionTitle} numberOfLines={1}>{pattern.label}</Text>
-                    <View style={subStyles.miniChip}>
-                      <Text style={subStyles.miniChipText}>{pattern.count}x</Text>
-                    </View>
-                  </View>
-                  <Text style={subStyles.commandActionBody}>
-                    {pattern.type} · {pattern.category} · promedio {formatCurrency(pattern.average, activeCurrency)} · confianza {pattern.confidence}%
-                  </Text>
-                  <Text style={subStyles.commandActionBody}>
-                    Total observado {formatCurrency(pattern.total, activeCurrency)} · última vez {pattern.lastLabel} · {pattern.variantCount} nombre{pattern.variantCount === 1 ? "" : "s"}
-                  </Text>
-                  <Text style={subStyles.commandActionBody}>{pattern.reason}</Text>
-                </View>
-                <ArrowRight size={15} color={COLORS.storm} />
-              </TouchableOpacity>
-            ))}
-          </View>
-        )}
-      </Card>
-
-      <View style={{ height: SPACING.sm }} />
-      <Card>
-        <SectionTitle>Categorías que subieron</SectionTitle>
-        <Text style={subStyles.executiveIntro}>
-          Comparamos los últimos 14 días contra los 14 días anteriores. Si una categoría sube bastante, la marcamos para que sepas dónde se está moviendo la caja.
-        </Text>
-        <Text style={subStyles.scopeHint}>Alcance: últimos 14 días. Al tocar, se abre la lista exacta dentro del dashboard.</Text>
-        {risingCategoryPatterns.length === 0 ? (
-          <View style={subStyles.richEmptyState}>
-            <TrendingUp size={18} color={COLORS.primary} />
-            <Text style={subStyles.richEmptyTitle}>Sin subidas fuertes</Text>
-            <Text style={subStyles.richEmptyBody}>El comparador ya revisa 14 días contra los 14 anteriores. Se mostrará cuando una categoría suba lo suficiente como para afectar tu lectura.</Text>
-          </View>
-        ) : (
-          <View style={subStyles.commandActions}>
-            {risingCategoryPatterns.map((item) => {
-              const pctText = item.pct == null ? "nuevo gasto reciente" : `+${item.pct.toFixed(0)}%`;
-              return (
-                <TouchableOpacity
-                  key={`${item.categoryId ?? "none"}-${item.name}`}
-                  style={subStyles.commandActionRow}
-                  onPress={() => openRisingCategoryPreview(item)}
-                  activeOpacity={0.82}
-                >
-                  <View style={subStyles.commandActionCopy}>
-                    <View style={subStyles.suggestionRowTop}>
-                      <Text style={subStyles.commandActionTitle} numberOfLines={1}>{item.name}</Text>
-                      <View style={subStyles.miniChip}>
-                        <Text style={subStyles.miniChipText}>{pctText}</Text>
-                      </View>
-                    </View>
-                    <Text style={subStyles.commandActionBody}>
-                      Últimos 14 días: {formatCurrency(item.current, activeCurrency)} · antes: {formatCurrency(item.previous, activeCurrency)}
-                    </Text>
-                    <Text style={subStyles.commandActionBody}>
-                      Subió {formatCurrency(item.delta, activeCurrency)}. Revísalo si no fue una compra planificada.
-                    </Text>
-                  </View>
-                  <ArrowRight size={15} color={COLORS.storm} />
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        )}
-      </Card>
-
-      <View style={{ height: SPACING.sm }} />
-      <AnomalyWatch
-        movements={movements}
-        ctx={{ accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency }}
-        categoryMap={categoryMap}
-        accountMap={accountMap}
-        onExplainPress={() => setAdvancedDetail("review")}
-        onOpenMovement={(movementId) => openAnomalyMovementsPreview([movementId], "Movimiento fuera de costumbre")}
-        onOpenAll={(movementIds) => openAnomalyMovementsPreview(movementIds)}
-        router={router}
-      />
-
-      </>
-      </DashboardSectionBoundary>
+            onOpenRise={openRisingCategoryPreview}
+            onOpenCategory={(id) => openCategoryPeriodPreview(id)}
+            onOpenRemainingCategories={openRemainingCategoriesPreview}
+            onOpenDay={openWeeklyDayPreview}
+            onOpenHabit={openPatternHabitPreview}
+          />
+        </DashboardSectionBoundary>
       )}
-
       {activeTab === 'Flujo' && (
         <DashboardSectionBoundary sectionLabel="Flujo">
         <>

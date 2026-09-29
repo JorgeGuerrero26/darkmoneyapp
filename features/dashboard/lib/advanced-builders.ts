@@ -322,6 +322,9 @@ export function buildAnomalyFindings(
       key: finding.key,
       movementId: finding.movementId,
       title,
+      amount,
+      baselineAmount: finding.baselineAmount ?? null,
+      occurredAt: movement?.occurredAt ?? null,
       body,
       meta: `${finding.kind === "description_spike" ? accountLabel : categoryLabel} · ${amountLabel} · ${
         movement ? format(new Date(movement.occurredAt), "d MMM", { locale: es }) : "fecha reciente"
