@@ -1378,9 +1378,8 @@ export function useWorkspaceSnapshotQuery(
     // del anterior mientras carga la nueva key. Las refetch de la misma key ya conservan data.
     placeholderData: undefined,
     // 30s: snapshot core (saldos, categorías). Al entrar a un módulo, si pasaron
-    // >30s refetch en background conservando el cache de esa misma key. Realtime lo
-    // mantiene fresco con la app abierta; esto cubre el hueco al volver de background / otra
-    // pantalla / otro dispositivo, sin polling.
+    // >30s refetch en background conservando el cache de esa misma key. Al volver de
+    // background o con un push, useForegroundDataRefresh refresca los dominios calientes.
     staleTime: STALE.short,
     refetchOnReconnect: true,
     retry: 1,

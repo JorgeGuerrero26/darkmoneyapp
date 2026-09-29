@@ -37,7 +37,6 @@ import { AmountDisplay, formatCurrency } from "../../components/ui/AmountDisplay
 import { useToast } from "../../hooks/useToast";
 import { findInstitution } from "../../lib/account-institutions";
 import { parseDisplayDate } from "../../lib/date";
-import { useAccountsRealtimeSync } from "../../features/accounts/hooks/useAccountsRealtimeSync";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { es } from "date-fns/locale";
 import { buildRateMap, hasConversionRate, resolveConversion } from "../../lib/exchange-rate-map";
@@ -88,7 +87,6 @@ function AccountDetailScreen() {
 
   const accountId = id ? parseInt(id) : null;
   const { data: snapshot } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
-  useAccountsRealtimeSync({ workspaceId: activeWorkspaceId });
   const account = useMemo(
     () => snapshot?.accounts.find((a) => a.id === accountId) ?? null,
     [snapshot, accountId],

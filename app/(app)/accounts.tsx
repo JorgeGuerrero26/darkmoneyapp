@@ -48,7 +48,6 @@ import { buildAccountSections } from "../../features/accounts/lib/buildAccountSe
 import { computeNetWorth } from "../../features/accounts/lib/net-worth";
 import { computeComposition } from "../../features/accounts/lib/composition";
 import { NetWorthCompositionChart } from "../../features/accounts/components/NetWorthCompositionChart";
-import { useAccountsRealtimeSync } from "../../features/accounts/hooks/useAccountsRealtimeSync";
 import type { AccountSummary } from "../../types/domain";
 
 type AccountTypeFilter = "all" | "bank" | "cash" | "savings" | "credit_card" | "investment" | "loan" | "other";
@@ -80,7 +79,6 @@ function AccountsScreen() {
   const { reason: notificationReason } = useNotificationReason();
 
   const { data: snapshot, isLoading, isRefetching, refetch, dataUpdatedAt } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
-  useAccountsRealtimeSync({ workspaceId: activeWorkspaceId });
   const archiveAccount = useArchiveAccountMutation(activeWorkspaceId);
   const deleteAccount = useDeleteAccountMutation(activeWorkspaceId);
   const syncExchangeRatePair = useSyncExchangeRatePairMutation();

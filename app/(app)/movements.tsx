@@ -62,7 +62,6 @@ import { groupMovementsByDate, type MovementListSection } from "../../features/m
 import { buildMovementDatePresets } from "../../features/movements/lib/date-presets";
 import { summarizeMovements } from "../../features/movements/lib/summary";
 import { useMovementsFilteredSummaryQuery } from "../../services/queries/movements";
-import { useMovementsRealtimeSync } from "../../features/movements/hooks/useMovementsRealtimeSync";
 import { buildExchangeRateMap, resolveRate } from "../../features/dashboard/lib/aggregations";
 import { COLORS, SPACING } from "../../constants/theme";
 import { maskedCurrencyLabel } from "../../lib/format-currency";
@@ -151,7 +150,6 @@ function MovementsScreen() {
   const queryClient = useQueryClient();
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
-  useMovementsRealtimeSync({ workspaceId: activeWorkspaceId });
   const { data: snapshot, dataUpdatedAt } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
 
   const lastUpdateLabel = useMemo(() => {

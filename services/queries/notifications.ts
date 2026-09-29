@@ -134,8 +134,8 @@ export function useNotificationsQuery(userId: string | null) {
     staleTime: STALE.short,
     refetchOnReconnect: true,
     refetchOnWindowFocus: true,
-    // Realtime global es la vía principal. Este intervalo solo es una red de seguridad si el
-    // socket estuvo degradado; 10 s generaba hasta 360 lecturas por hora sin aportar frescura.
+    // Sin Realtime, este intervalo trae lo nuevo con la app abierta; useForegroundDataRefresh cubre
+    // el regreso a la app y los push. 10 s generaba hasta 360 lecturas por hora sin aportar frescura.
     refetchInterval: userId ? 60_000 : false,
   });
 }

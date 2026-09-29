@@ -295,7 +295,7 @@ export function usePaginatedMovements(
       lastPage.hasMore ? lastPage.nextPage : undefined,
     enabled: Boolean(workspaceId && userScopeKey),
     // 30s + refetch al reconectar: al volver al módulo o recuperar red, si pasaron >30s
-    // refetch en background. Realtime cubre el live mientras está abierto.
+    // refetch en background. useForegroundDataRefresh lo pone al día al volver a la app o con un push.
     staleTime: STALE.short,
     refetchOnReconnect: true,
   });

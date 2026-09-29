@@ -170,7 +170,6 @@ import {
 // --- Stats --------------------------------------------------------------------
 
 import { useDashboardStats } from "../../features/dashboard/hooks/useDashboardStats";
-import { useDashboardRealtimeSync } from "../../features/dashboard/hooks/useDashboardRealtimeSync";
 import { useDashboardEntitlement } from "../../features/dashboard/hooks/useDashboardEntitlement";
 import { DashboardSectionBoundary } from "../../features/dashboard/components/shared/DashboardSectionBoundary";
 
@@ -359,7 +358,6 @@ function DashboardScreen() {
   const afterFirstPaint = useAfterFirstPaint();
   const dismissedAlerts = useDismissedDashboardAlerts(activeWorkspaceId);
 
-  useDashboardRealtimeSync({ workspaceId: activeWorkspaceId });
 
   const { showToast, showRichToast, showErrorToast } = useToast();
   const markPaidMutation = useMarkSubscriptionPaidMutation(activeWorkspaceId);

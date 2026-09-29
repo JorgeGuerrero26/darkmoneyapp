@@ -72,7 +72,7 @@ import {
   scheduleBudgetEndedReminders,
 } from "../hooks/usePushNotifications";
 import { useNotificationGenerator } from "../hooks/useNotificationGenerator";
-import { useNotificationsRealtimeSync } from "../hooks/useNotificationsRealtimeSync";
+import { useForegroundDataRefresh } from "../hooks/useForegroundDataRefresh";
 import { BiometricLock } from "../components/ui/BiometricLock";
 import { getNotificationsModule } from "../lib/notifications-runtime";
 import { hasSavedAuthOnDevice } from "../lib/device-auth-state";
@@ -282,9 +282,8 @@ function NotificationSetup() {
   const { data: snapshot, isLoading: snapshotLoading } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const { data: notifications = [] } = useNotificationsQuery(profile?.id ?? null);
   const { data: sharedObligations = [] } = useSharedObligationsQuery(session?.user?.id ?? null);
-  // Un solo canal global mantiene campana, badge y lista al día. Antes Realtime vivía solo
-  // dentro de la pantalla Notificaciones y el resto de la app hacía polling cada 10 segundos.
-  useNotificationsRealtimeSync(profile?.id ?? null);
+  // Sin Realtime: los datos se ponen al día al volver a la app y al llegar un push.
+  useForegroundDataRefresh(profile?.id ?? null, activeWorkspaceId);
 
   const resolvedActiveWorkspace =
     activeWorkspace ??

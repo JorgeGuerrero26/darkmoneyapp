@@ -18,7 +18,7 @@ function timersFor<T extends object>(
 }
 
 /**
- * Agrupa invalidaciones Realtime iguales que llegan por varios canales montados. La invalidación
+ * Agrupa invalidaciones iguales que llegan en ráfaga (p. ej. volver a la app y un push). La invalidación
  * conserva el comportamiento autoritativo de React Query: si había una refetch anterior que pudo
  * empezar antes del evento, se reemplaza para no aceptar una respuesta ya obsoleta.
  */
