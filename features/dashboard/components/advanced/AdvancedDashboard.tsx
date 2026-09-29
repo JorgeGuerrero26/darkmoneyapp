@@ -21,6 +21,7 @@ import {
   format,
   getDay,
   startOfDay,
+  parseISO,
   startOfMonth,
   subDays,
   subMonths,
@@ -121,6 +122,9 @@ import { buildSystemState } from "../../lib/system-state";
 
 import { SectionTitle } from "../simple/SectionTitle";
 import { CashflowProjectionSection } from "../simple/CashflowProjectionSection";
+import { useCashflowProjection, type CashflowProjectionInputs } from "../../hooks/useCashflowProjection";
+import { isLiquidAccount } from "../../../projection/lib/liquid-balance";
+import type { ProjectionLine } from "../../../projection/lib/cashflow-calendar";
 import { FutureFlowPreview } from "../simple/FutureFlowPreview";
 import { ReviewInbox } from "../simple/ReviewInbox";
 import { dashboardSimpleStyles as subStyles } from "../simple/styles";
@@ -174,7 +178,6 @@ export function AdvancedDashboard({
   activeCurrency,
   baseCurrency,
   exchangeRateMap,
-  currentVisibleBalance,
   workspaceId,
   userId,
   userEmail,
@@ -216,6 +219,46 @@ export function AdvancedDashboard({
   onScrollToTop?: () => void;
 }) {
   const privacyMode = useUiStore((state) => state.privacyMode);
+
+  /*
+   * La proyección, UNA vez, para Resumen y para Flujo.
+   *
+   * "Fin de mes" tenía su propio cálculo y daba otro cierre que la pestaña Flujo; además no
+   * contaba ninguna cuota (miraba solo la fecha final de cada deuda). Ahora las dos pantallas
+   * leen esto, así que el cierre de este mes es el mismo número en las dos.
+   */
+  const projectionInputs = useMemo<CashflowProjectionInputs>(() => ({
+    movements,
+    obligations: obligations.map((obligation) => ({
+      ...obligation,
+      principalAmount: obligation.principalAmount ?? obligation.pendingAmount,
+      startDate: obligation.startDate ?? "",
+    })),
+    subscriptions,
+    recurringIncome: recurringIncome.map((income) => ({
+      ...income,
+      // Un ingreso fijo sin cadencia declarada es mensual: es lo que son casi todos.
+      frequency: income.frequency ?? "monthly",
+    })),
+    displayCurrency: activeCurrency,
+    baseCurrency,
+    exchangeRateMap,
+    accountCurrencyMap,
+    accounts: activeAccounts,
+  }), [movements, obligations, subscriptions, recurringIncome, activeCurrency, baseCurrency, exchangeRateMap, accountCurrencyMap, activeAccounts]);
+  const { projection: monthCalendar, liquid: liquidToday } = useCashflowProjection(projectionInputs, 1);
+
+  /*
+   * "Cuánta plata tengo" en todo el dashboard avanzado es el saldo LÍQUIDO, con la misma
+   * definición que la proyección. Antes era el patrimonio neto: sumaba la cuenta de inversión y
+   * restaba el saldo de la tarjeta, así que el cierre de mes, la cobertura de la semana y los
+   * días de colchón partían de plata que no se puede gastar.
+   */
+  const currentVisibleBalance = liquidToday.total;
+  const liquidAccounts = useMemo(
+    () => activeAccounts.filter((account) => !account.isArchived && isLiquidAccount(account.type)),
+    [activeAccounts],
+  );
   const advancedStats = useDashboardStats(movements, "month", {
     accountCurrencyMap,
     exchangeRateMap,
@@ -1288,7 +1331,7 @@ export function AdvancedDashboard({
     snapshot?.categories,
   ]);
 
-  const { projectionModel, monthItems, projectionAsOf } = useMemo(() => {
+  const { projectionModel: legacyProjectionModel, projectionAsOf } = useMemo(() => {
     const now = new Date();
     return { projectionAsOf: now, projectionModel: buildMonthProjectionModel(
       movements,
@@ -1303,8 +1346,7 @@ export function AdvancedDashboard({
         baseCurrency,
       },
       now,
-    ), monthItems: buildFutureFlowItems(obligations, subscriptions, recurringIncome, activeCurrency, exchangeRateMap, baseCurrency, now)
-      .filter((item) => item.date <= endOfMonth(now)) };
+    ) };
   }, [
     accountCurrencyMap,
     activeCurrency,
@@ -1315,6 +1357,59 @@ export function AdvancedDashboard({
     recurringIncome,
     subscriptions,
   ]);
+
+  /*
+   * Los números de "Fin de mes" son los del primer mes de la proyección. Del modelo anterior se
+   * conserva solo el ancho de las bandas (escenario defensivo, optimista, Monte Carlo), corrido
+   * para que quede centrado en el mismo cierre: sin eso, la banda y el número dirían cosas
+   * distintas.
+   */
+  const firstMonth = monthCalendar.months[0];
+  const projectionModel = useMemo(() => {
+    if (!firstMonth) return legacyProjectionModel;
+    const sum = (lines: ProjectionLine[]) => lines.reduce((total, line) => total + line.amount, 0);
+    const committedInflow = sum(firstMonth.inflows.filter((line) => line.kind !== "typical_spend"));
+    const committedOutflow = sum(firstMonth.outflows.filter((line) => line.kind !== "typical_spend"));
+    const typicalSpend = sum(firstMonth.outflows.filter((line) => line.kind === "typical_spend"));
+    const expectedBalance = firstMonth.closingBalance;
+    const shift = expectedBalance - legacyProjectionModel.expectedBalance;
+    return {
+      ...legacyProjectionModel,
+      expectedBalance,
+      conservativeBalance: legacyProjectionModel.conservativeBalance + shift,
+      optimisticBalance: legacyProjectionModel.optimisticBalance + shift,
+      monteCarloLowBalance: legacyProjectionModel.monteCarloLowBalance + shift,
+      monteCarloMedianBalance: legacyProjectionModel.monteCarloMedianBalance + shift,
+      monteCarloHighBalance: legacyProjectionModel.monteCarloHighBalance + shift,
+      committedInflow,
+      committedOutflow,
+      variableIncomeProjection: 0,
+      variableExpenseProjection: typicalSpend,
+    };
+  }, [firstMonth, legacyProjectionModel]);
+
+  /** La lista de "Compromisos pendientes", sacada de las mismas líneas que suman el cierre. */
+  const monthItems = useMemo<FutureFlowItem[]>(() => {
+    if (!firstMonth) return [];
+    const sourceOf = (kind: ProjectionLine["kind"]): FutureFlowItem["source"] =>
+      kind === "subscription" ? "subscription"
+        : kind === "recurring_income" ? "recurring-income"
+        : kind === "credit_card_payment" ? "card"
+        : kind === "planned_movement" ? "planned"
+        : "obligation";
+    const toItem = (line: ProjectionLine, direction: "inflow" | "outflow"): FutureFlowItem => ({
+      source: sourceOf(line.kind),
+      id: line.refId ?? 0,
+      title: line.label,
+      date: line.dueDate ? parseISO(line.dueDate) : projectionAsOf,
+      direction,
+      amount: line.amount,
+    });
+    return [
+      ...firstMonth.inflows.filter((line) => line.kind !== "typical_spend").map((line) => toItem(line, "inflow")),
+      ...firstMonth.outflows.filter((line) => line.kind !== "typical_spend").map((line) => toItem(line, "outflow")),
+    ].sort((a, b) => a.date.getTime() - b.date.getTime() || a.title.localeCompare(b.title));
+  }, [firstMonth, projectionAsOf]);
 
   const paymentOptimization = useMemo(() => (
     buildPaymentOptimizationPlan({
@@ -1632,16 +1727,15 @@ export function AdvancedDashboard({
   const projectionConservativeVariableNet = projectionModel.conservativeBalance - currentVisibleBalance - projectionCommittedNet;
   const monthStatus: string = monthEndReading >= currentVisibleBalance ? "Cerrando mejor" : monthEndReading >= currentVisibleBalance * 0.92 ? "Ajustado" : "Bajo presión";
   const visibleBalanceLabel = useMemo(() => {
-    if (activeAccounts.length === 0) return "tus cuentas visibles";
-    if (activeAccounts.length === 1) return `tu cuenta visible ${activeAccounts[0].name}`;
-    const names = activeAccounts.slice(0, 3).map((account) => account.name).join(", ");
-    return activeAccounts.length <= 3
-      ? `la suma de tus cuentas visibles (${names})`
-      : `la suma de tus ${activeAccounts.length} cuentas visibles (${names} y otras)`;
-  }, [activeAccounts]);
+    if (liquidAccounts.length === 0) return "tus cuentas de banco y efectivo";
+    if (liquidAccounts.length === 1) return `tu cuenta ${liquidAccounts[0].name}`;
+    const names = liquidAccounts.slice(0, 3).map((account) => account.name).join(", ");
+    return liquidAccounts.length <= 3
+      ? `la suma de tus cuentas de banco y efectivo (${names})`
+      : `la suma de tus ${liquidAccounts.length} cuentas de banco y efectivo (${names} y otras)`;
+  }, [liquidAccounts]);
   const visibleAccountBreakdown = useMemo(() => (
-    activeAccounts
-      .filter((account) => account.includeInNetWorth)
+    liquidAccounts
       .map((account) => ({
         id: account.id,
         name: account.name,
@@ -1649,7 +1743,7 @@ export function AdvancedDashboard({
           convertDashboardCurrency(account.currentBalanceInBaseCurrency ?? account.currentBalance, baseCurrency, activeCurrency, exchangeRateMap, baseCurrency) ?? 0,
       }))
       .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
-  ), [activeAccounts, activeCurrency, baseCurrency, exchangeRateMap]);
+  ), [liquidAccounts, activeCurrency, baseCurrency, exchangeRateMap]);
   const monthRhythmMovements = useMemo<MonthRhythmMovement[]>(() => {
     const now = projectionAsOf;
     return movements
@@ -3039,7 +3133,7 @@ export function AdvancedDashboard({
               <Text style={{ color: monthEndDelta >= 0 ? COLORS.income : COLORS.expense }}>
                 {monthEndDelta >= 0 ? "+" : "−"}{formatCurrency(Math.abs(monthEndDelta), activeCurrency)}
               </Text>
-              {` sobre hoy (${formatCurrency(currentVisibleBalance, activeCurrency)} en ${activeAccounts.length} cuenta${activeAccounts.length === 1 ? "" : "s"})`}
+              {` sobre hoy (${formatCurrency(currentVisibleBalance, activeCurrency)} en ${liquidAccounts.length} cuenta${liquidAccounts.length === 1 ? "" : "s"})`}
             </Text>
           </TouchableOpacity>
         </View>
@@ -3191,7 +3285,11 @@ export function AdvancedDashboard({
           onReviewSubscriptions={() => { setExecutiveDetail(null); router.push("/subscriptions" as never); }}
           onOpenItem={(item: FutureFlowItem) => {
             setExecutiveDetail(null);
-            const route = item.source === "subscription" ? `/subscription/${item.id}` : item.source === "obligation" ? `/obligation/${item.id}` : `/recurring-income/${item.id}`;
+            const route = item.source === "subscription" ? `/subscription/${item.id}`
+              : item.source === "obligation" ? `/obligation/${item.id}`
+              : item.source === "card" ? "/(app)/accounts"
+              : item.source === "planned" ? `/movement/${item.id}`
+              : `/recurring-income/${item.id}`;
             router.push(`${route}?from=dashboard` as never);
           }}
         />
@@ -3215,7 +3313,11 @@ export function AdvancedDashboard({
           onClose={() => setExecutiveDetail(null)}
           onOpenCommitment={(item) => {
             setExecutiveDetail(null);
-            const route = item.source === "subscription" ? `/subscription/${item.id}` : item.source === "obligation" ? `/obligation/${item.id}` : `/recurring-income/${item.id}`;
+            const route = item.source === "subscription" ? `/subscription/${item.id}`
+              : item.source === "obligation" ? `/obligation/${item.id}`
+              : item.source === "card" ? "/(app)/accounts"
+              : item.source === "planned" ? `/movement/${item.id}`
+              : `/recurring-income/${item.id}`;
             router.push(`${route}?from=dashboard` as never);
           }}
           onOpenMovement={(id) => { setExecutiveDetail(null); router.push(`/movement/${id}?from=dashboard` as never); }}
@@ -3951,26 +4053,7 @@ export function AdvancedDashboard({
         currentVisibleBalance={currentVisibleBalance}
       />
       <View style={{ height: SPACING.sm }} />
-      <CashflowProjectionSection
-        movements={movements}
-        obligations={obligations.map((obligation) => ({
-          ...obligation,
-          principalAmount: obligation.principalAmount ?? obligation.pendingAmount,
-          startDate: obligation.startDate ?? "",
-        }))}
-        subscriptions={subscriptions}
-        recurringIncome={recurringIncome.map((income) => ({
-          ...income,
-          // Un ingreso fijo sin cadencia declarada es mensual: es lo que son casi todos, y
-          // dejarlo fuera de la proyección sería peor que asumirlo.
-          frequency: income.frequency ?? "monthly",
-        }))}
-        displayCurrency={activeCurrency}
-        baseCurrency={baseCurrency}
-        exchangeRateMap={exchangeRateMap}
-        accountCurrencyMap={accountCurrencyMap}
-        accounts={activeAccounts}
-      />
+      <CashflowProjectionSection {...projectionInputs} />
       <View style={{ height: SPACING.sm }} />
       <PaymentOptimizationCard
         recommendations={paymentOptimization}

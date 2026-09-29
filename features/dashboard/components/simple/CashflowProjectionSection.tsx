@@ -4,80 +4,13 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Card } from "../../../../components/ui/Card";
 import { formatCurrency } from "../../../../components/ui/AmountDisplay";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../../../constants/theme";
-import {
-  buildCashflowCalendar,
-  typicalMonthlySpend,
-  type ProjectedMonth,
-  type ProjectionLine,
-} from "../../../projection/lib/cashflow-calendar";
-import { monthlyDiscretionarySpend } from "../../../projection/lib/discretionary-history";
-import { liquidBalance } from "../../../projection/lib/liquid-balance";
-import { convertAmt, expenseAmt, isExpense } from "../../lib/aggregations";
-import type { DashboardMovementRow } from "../../lib/dashboard-row";
-import { movementActsAsIncome, movementDisplayAccountId, movementDisplayAmount } from "../../../../lib/movement-amounts";
-import type { ConversionCtx } from "../../lib/types";
+import { type ProjectedMonth, type ProjectionLine } from "../../../projection/lib/cashflow-calendar";
 import { SectionTitle } from "./SectionTitle";
-import { DASHBOARD_MOVEMENTS_WINDOW_DAYS } from "../../../../services/queries/workspace-data";
+import { useCashflowProjection, type CashflowProjectionInputs } from "../../hooks/useCashflowProjection";
 
-/** Cuántos meses TERMINADOS se miran para sacar la mediana del gasto típico. */
-const HISTORY_MONTHS = 6;
 const HORIZON_OPTIONS = [3, 6, 12] as const;
 
-type ProjectionObligationInput = {
-  title: string;
-  direction: string;
-  status: string;
-  currencyCode: string;
-  pendingAmount: number;
-  currentPrincipalAmount?: number | null;
-  principalAmount: number;
-  startDate: string;
-  dueDate: string | null;
-  paymentPlan?: unknown;
-  installmentAmount?: number | null;
-};
-
-type CashflowProjectionSectionProps = {
-  movements: DashboardMovementRow[];
-  obligations: ProjectionObligationInput[];
-  subscriptions: Array<{
-    name: string;
-    amount: number;
-    currencyCode: string;
-    frequency: string;
-    intervalCount?: number | null;
-    nextDueDate: string;
-    endDate?: string | null;
-    status: string;
-  }>;
-  recurringIncome: Array<{
-    name: string;
-    amount: number;
-    currencyCode: string;
-    frequency: string;
-    intervalCount?: number | null;
-    nextExpectedDate: string;
-    endDate?: string | null;
-    status: string;
-  }>;
-  displayCurrency: string;
-  baseCurrency: string;
-  exchangeRateMap: Map<string, number>;
-  accountCurrencyMap: Map<number, string>;
-  /**
-   * Las cuentas con su tipo. La proyección arranca del saldo LÍQUIDO, no del patrimonio neto:
-   * lo que está en una cuenta de inversión no es plata gastable el mes que viene.
-   */
-  accounts: Array<{
-    id?: number;
-    name?: string;
-    type?: string | null;
-    currencyCode?: string | null;
-    currentBalance?: number | null;
-    isArchived?: boolean | null;
-    paymentDay?: number | null;
-  }>;
-};
+type CashflowProjectionSectionProps = CashflowProjectionInputs;
 
 function monthLabel(monthKey: string): string {
   const [year, month] = monthKey.split("-").map(Number);
@@ -212,146 +145,22 @@ export function CashflowProjectionSection({
   const [horizon, setHorizon] = useState<number>(6);
   const [openMonth, setOpenMonth] = useState<string | null>(null);
 
-  const liquid = useMemo(
-    () =>
-      liquidBalance(accounts, (amount, currency) =>
-        convertAmt(amount, currency, displayCurrency, exchangeRateMap, baseCurrency),
-      ),
-    [accounts, displayCurrency, exchangeRateMap, baseCurrency],
-  );
-
-  const conversionCtx = useMemo<ConversionCtx>(
-    () => ({ accountCurrencyMap, exchangeRateMap, displayCurrency, baseCurrency }),
-    [accountCurrencyMap, exchangeRateMap, displayCurrency, baseCurrency],
-  );
-
-  /** Tarjetas activas con ciclo. El resto de cuentas no gasta en un mes y cobra en otro. */
-  const cardAccounts = useMemo(
-    () => accounts.filter((account) => !account.isArchived && account.type === "credit_card"),
-    [accounts],
-  );
-  const cardIds = useMemo(
-    () => new Set(cardAccounts.map((account) => Number(account.id)).filter((id) => Number.isFinite(id))),
-    [cardAccounts],
-  );
-
-  const typicalSpend = useMemo(() => {
-    // La query base del dashboard trae una ventana fija. Pedirle seis meses devolvería los
-    // cargados más ceros, y esos ceros partirían la mediana por la mitad sin que se note.
-    const coveredFrom = new Date();
-    coveredFrom.setDate(coveredFrom.getDate() - DASHBOARD_MOVEMENTS_WINDOW_DAYS);
-
-    // Lo cargado a una tarjeta NO entra aquí: sale por su propia línea, en el mes en que se
-    // paga. Si se colara, se restaría dos veces y además en el mes equivocado.
-    const history = monthlyDiscretionarySpend({
+  // El cálculo vive en el hook: "Fin de mes" en Resumen usa el mismo, y así el cierre de este
+  // mes es el mismo número en las dos pantallas.
+  const { projection, liquid, typicalSpend } = useCashflowProjection(
+    {
       movements,
-      months: HISTORY_MONTHS,
-      earliestCoveredDate: coveredFrom,
-      expenseAmountOf: (movement) => {
-        if (!isExpense(movement)) return 0;
-        const accountId = movementDisplayAccountId(movement);
-        if (accountId != null && cardIds.has(accountId)) return 0;
-        return expenseAmt(movement, conversionCtx);
-      },
-    });
-    return { typical: typicalMonthlySpend(history), monthsUsed: history.length };
-  }, [movements, conversionCtx, cardIds]);
-
-  /** Una entrada por tarjeta: lo que ya se debe y lo que se le suele cargar al mes. */
-  const creditCards = useMemo(() => {
-    const coveredFrom = new Date();
-    coveredFrom.setDate(coveredFrom.getDate() - DASHBOARD_MOVEMENTS_WINDOW_DAYS);
-
-    return cardAccounts.map((account) => {
-      const id = Number(account.id);
-      const perCard = monthlyDiscretionarySpend({
-        movements,
-        months: HISTORY_MONTHS,
-        earliestCoveredDate: coveredFrom,
-        expenseAmountOf: (movement) => {
-          if (!isExpense(movement)) return 0;
-          return movementDisplayAccountId(movement) === id ? expenseAmt(movement, conversionCtx) : 0;
-        },
-      });
-      // El saldo de una tarjeta es negativo cuando se debe. Un saldo a favor no es una deuda.
-      const balance = Number(account.currentBalance ?? 0);
-      return {
-        name: account.name ?? "Tarjeta",
-        currencyCode: account.currencyCode ?? baseCurrency,
-        currentDebt: Math.max(0, -balance),
-        paymentDay: account.paymentDay ?? null,
-        typicalMonthlySpend: typicalMonthlySpend(perCard),
-      };
-    });
-  }, [cardAccounts, movements, conversionCtx, baseCurrency]);
-
-  /**
-   * Los gastos e ingresos que el usuario dejó anotados con fecha futura.
-   *
-   * Hasta ahora el estado `planned` existía en el formulario y no se leía en ninguna parte: se
-   * registraba la maestría de abril y desaparecía. Aquí es donde por fin cuenta.
-   */
-  const plannedMovements = useMemo(() => {
-    const now = new Date();
-    return movements
-      .filter((movement) => movement.status === "planned" && new Date(movement.occurredAt) > now)
-      .map((movement) => {
-        const income = movementActsAsIncome(movement);
-        const accountId = movementDisplayAccountId(movement);
-        return {
-          description: movement.description || (income ? "Ingreso planificado" : "Gasto planificado"),
-          signedAmount: movementDisplayAmount(movement) * (income ? 1 : -1),
-          currencyCode: (accountId ? accountCurrencyMap.get(accountId) : undefined) ?? baseCurrency,
-          occurredAt: movement.occurredAt,
-        };
-      });
-  }, [movements, accountCurrencyMap, baseCurrency]);
-
-  const projection = useMemo(() => {
-    const today = new Date();
-    const fromDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(
-      today.getDate(),
-    ).padStart(2, "0")}`;
-
-    return buildCashflowCalendar({
-      startingBalance: liquid.total,
-      fromDate,
-      months: horizon,
-      typicalDiscretionarySpend: typicalSpend.typical,
-      convert: (amount, fromCurrency) =>
-        convertAmt(amount, fromCurrency, displayCurrency, exchangeRateMap, baseCurrency),
-      recurringIncome,
+      obligations,
       subscriptions,
-      obligations: obligations.map((obligation) => ({
-        title: obligation.title,
-        direction: obligation.direction,
-        status: obligation.status,
-        currencyCode: obligation.currencyCode,
-        pendingAmount: obligation.pendingAmount,
-        // El principal vigente es el que manda: con aumentos o reducciones, el de apertura ya
-        // no dice cuánto se lleva pagado y las cuotas saldrían corridas.
-        principalCurrentAmount: obligation.currentPrincipalAmount ?? obligation.principalAmount,
-        startDate: obligation.startDate,
-        dueDate: obligation.dueDate,
-        paymentPlan: obligation.paymentPlan,
-        installmentAmount: obligation.installmentAmount,
-      })),
-      plannedMovements,
-      creditCards,
-    });
-  }, [
-    baseCurrency,
-    liquid.total,
-    displayCurrency,
-    exchangeRateMap,
+      recurringIncome,
+      displayCurrency,
+      baseCurrency,
+      exchangeRateMap,
+      accountCurrencyMap,
+      accounts,
+    },
     horizon,
-    obligations,
-    creditCards,
-    plannedMovements,
-    recurringIncome,
-    subscriptions,
-    typicalSpend,
-  ]);
+  );
 
   const lastMonth = projection.months[projection.months.length - 1];
   const scheduledPercent = Math.round(projection.overallScheduledShare * 100);

@@ -133,7 +133,8 @@ export type FutureFlowWindow = {
 };
 
 export type FutureFlowItem = {
-  source: "obligation" | "subscription" | "recurring-income";
+  /** `card` y `planned` solo los produce la proyección: el pago de una tarjeta y lo anotado a futuro. */
+  source: "obligation" | "subscription" | "recurring-income" | "card" | "planned";
   id: number;
   title: string;
   date: Date;
