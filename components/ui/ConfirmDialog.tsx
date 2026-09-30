@@ -69,7 +69,7 @@ export function ConfirmDialog({
         tension: SHORT_SHEET_ENTRANCE.tension,
         friction: SHORT_SHEET_ENTRANCE.friction,
       }),
-      ...(inline ? [Animated.timing(opacity, { toValue: 1, duration: 250, useNativeDriver: true })] : []),
+      ...(inline ? [Animated.timing(opacity, { toValue: 1, duration: SHORT_SHEET_ENTRANCE.fadeDuration, useNativeDriver: true })] : []),
     ]).start();
   }, [entranceAnimation, inline, opacity, translateY, visible]);
 

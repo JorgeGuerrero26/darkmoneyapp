@@ -4,8 +4,8 @@ import { Animated, Dimensions, PanResponder } from "react-native";
 const SCREEN_HEIGHT = Dimensions.get("window").height;
 const DISMISS_THRESHOLD = 88;
 
-/** Entrada corta con resorte, usada por la hoja para asociar un crédito. */
-export const SHORT_SHEET_ENTRANCE = { offset: 36, tension: 72, friction: 12 } as const;
+/** Entrada corta con resorte compartida por las hojas del dashboard y el detalle del movimiento. */
+export const SHORT_SHEET_ENTRANCE = { offset: 36, tension: 110, friction: 16, fadeDuration: 190 } as const;
 
 /** La misma entrada cuando la hoja vive dentro de un Modal ya abierto. */
 export function useInlineSpringFade(visible: boolean, enabled: boolean) {
@@ -24,7 +24,7 @@ export function useInlineSpringFade(visible: boolean, enabled: boolean) {
     opacity.setValue(0);
     translateY.setValue(SHORT_SHEET_ENTRANCE.offset);
     Animated.parallel([
-      Animated.timing(opacity, { toValue: 1, duration: 250, useNativeDriver: true }),
+      Animated.timing(opacity, { toValue: 1, duration: SHORT_SHEET_ENTRANCE.fadeDuration, useNativeDriver: true }),
       Animated.spring(translateY, {
         toValue: 0,
         useNativeDriver: true,
