@@ -55,9 +55,9 @@
     }
   ],
   "monthProjection": {
-    "expectedBalance": 7002.143333,
-    "committedInflow": 2066.666667,
-    "committedOutflow": 207.323333,
+    "expectedBalance": 6042.143333,
+    "committedInflow": 1000,
+    "committedOutflow": 100.656667,
     "variableIncomeProjection": 1106.666667,
     "variableExpenseProjection": 174.533333,
     "remainingDays": 15
