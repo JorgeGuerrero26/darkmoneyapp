@@ -20,6 +20,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChevronDown, X } from "lucide-react-native";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SHADOW, SPACING, SURFACE } from "../../constants/theme";
 import { SafeBlurView } from "./SafeBlurView";
+import { SHORT_SHEET_ENTRANCE } from "./useDismissibleSheet";
 
 const SCREEN_HEIGHT = Dimensions.get("window").height;
 const DISMISS_THRESHOLD = 80;
@@ -37,6 +38,8 @@ type Props = {
   headerAction?: React.ReactNode;
   children: React.ReactNode;
   snapHeight?: number;
+  /** La misma entrada breve con fundido que usa la hoja para asociar un crédito. */
+  entranceAnimation?: "slide" | "springFade";
   scrollRef?: React.RefObject<ScrollView | null>;
   backdropColor?: string;
   blurBackdrop?: boolean;
@@ -73,6 +76,7 @@ export function BottomSheet({
   headerAction,
   children,
   snapHeight = 0.75,
+  entranceAnimation = "slide",
   scrollRef,
   backdropColor = "rgba(0,0,0,0.45)",
   blurBackdrop = true,
@@ -82,7 +86,7 @@ export function BottomSheet({
   contentStyle,
 }: Props) {
   const insets = useSafeAreaInsets();
-  const translateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
+  const translateY = useRef(new Animated.Value(entranceAnimation === "springFade" ? 0 : SCREEN_HEIGHT)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
   const isSwiping = useRef(false);
   // El sheet es position:absolute dentro de un Modal, y el posicionamiento absoluto
@@ -125,6 +129,19 @@ export function BottomSheet({
   useEffect(() => {
     if (visible) {
       isSwiping.current = false;
+      if (entranceAnimation === "springFade") {
+        // Modal hace el fundido; la hoja solo sube 36 pt con el mismo resorte que crédito.
+        backdropOpacity.setValue(1);
+        translateY.stopAnimation();
+        translateY.setValue(SHORT_SHEET_ENTRANCE.offset);
+        Animated.spring(translateY, {
+          toValue: 0,
+          useNativeDriver: true,
+          tension: SHORT_SHEET_ENTRANCE.tension,
+          friction: SHORT_SHEET_ENTRANCE.friction,
+        }).start();
+        return;
+      }
       Animated.parallel([
         Animated.timing(backdropOpacity, {
           toValue: 1,
@@ -138,7 +155,7 @@ export function BottomSheet({
           friction: 13,
         }),
       ]).start();
-    } else if (!isSwiping.current) {
+    } else if (!isSwiping.current && entranceAnimation === "slide") {
       Animated.parallel([
         Animated.timing(backdropOpacity, {
           toValue: 0,
@@ -152,7 +169,7 @@ export function BottomSheet({
         }),
       ]).start();
     }
-  }, [visible, translateY, backdropOpacity]);
+  }, [visible, entranceAnimation, translateY, backdropOpacity]);
 
   const panResponder = useRef(
     PanResponder.create({
@@ -195,7 +212,7 @@ export function BottomSheet({
     <Modal
       visible={visible}
       transparent
-      animationType="none"
+      animationType={entranceAnimation === "springFade" ? "fade" : "none"}
       onRequestClose={onClose}
       statusBarTranslucent
     >

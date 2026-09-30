@@ -76,7 +76,13 @@ export function MovementAttachmentsSheet({
   }
 
   return (
-    <BottomSheet visible={visible} onClose={handleClose} title="Comprobantes" snapHeight={0.6}>
+    <BottomSheet
+      visible={visible}
+      onClose={handleClose}
+      title="Comprobantes"
+      snapHeight={0.6}
+      entranceAnimation="springFade"
+    >
       {preview ? (
         <View style={styles.preview}>
           <TouchableOpacity

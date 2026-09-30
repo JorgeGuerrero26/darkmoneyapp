@@ -4,6 +4,9 @@ import { Animated, Dimensions, PanResponder } from "react-native";
 const SCREEN_HEIGHT = Dimensions.get("window").height;
 const DISMISS_THRESHOLD = 88;
 
+/** Entrada corta con resorte, usada por la hoja para asociar un crédito. */
+export const SHORT_SHEET_ENTRANCE = { offset: 36, tension: 72, friction: 12 } as const;
+
 type Options = {
   visible: boolean;
   onClose: () => void;
@@ -18,12 +21,12 @@ export function useDismissibleSheet({ visible, onClose, enabled = true }: Option
     if (!visible) return;
     closingRef.current = false;
     translateY.stopAnimation();
-    translateY.setValue(36);
+    translateY.setValue(SHORT_SHEET_ENTRANCE.offset);
     Animated.spring(translateY, {
       toValue: 0,
       useNativeDriver: true,
-      tension: 72,
-      friction: 12,
+      tension: SHORT_SHEET_ENTRANCE.tension,
+      friction: SHORT_SHEET_ENTRANCE.friction,
     }).start();
   }, [translateY, visible]);
 
