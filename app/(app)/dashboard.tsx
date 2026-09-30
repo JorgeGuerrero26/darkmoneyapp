@@ -186,14 +186,14 @@ import { SectionTitle } from "../../features/dashboard/components/simple/Section
 import { SimpleDashboard } from "../../features/dashboard/components/simple/SimpleDashboard";
 import { simpleBudgetWarnings, simpleReceivables, simpleTopCategories, simpleUpcomingItems, type SimpleAgendaItem } from "../../features/dashboard/lib/simple-view";
 import { isHistoryBalanceCorrection } from "../../features/dashboard/lib/history-view";
-import { QuickShortcutsRow } from "../../features/dashboard/components/QuickShortcutsRow";
+import { QuickShortcutsRow, type QuickRegistrationStatus } from "../../features/dashboard/components/QuickShortcutsRow";
 import { useMovementPatternsQuery } from "../../services/queries/movement-patterns";
 import { useCreateMovementMutation, useDeleteMovementMutation } from "../../services/queries/workspace-data";
 import { detectSpendingHabits, habitsForNow } from "../../features/movements/lib/spendingHabits";
 import { buildQuickEntries, type QuickEntry } from "../../features/movements/lib/quickEntries";
 import { useMovementTemplatesQuery } from "../../services/queries/movement-templates";
 import { buildMovementCreateInput } from "../../features/movements/lib/movement-save-contract";
-import { newClientDedupeKey } from "../../lib/idempotency";
+import { isAmbiguousTransportError, newClientDedupeKey } from "../../lib/idempotency";
 import { GettingStartedCard } from "../../features/dashboard/components/simple/GettingStartedCard";
 
 import {
@@ -303,7 +303,7 @@ function DashboardScreen() {
   // "tablero limpio". React Query comparte la caché, así que esto no añade una petición.
   const { data: knownWorkspaces } = useUserWorkspacesQuery(profile?.id ?? null);
   const afterFirstPaint = useAfterFirstPaint();
-  const { showToast, showRichToast, showErrorToast } = useToast();
+  const { showRichToast, showErrorToast } = useToast();
 
   const [signOutVisible, setSignOutVisible] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
@@ -484,11 +484,20 @@ function DashboardScreen() {
   /* Los gastos que repites, a un toque. La consulta de patrones ya trae los 300 movimientos
      recientes con fecha, monto, categoría y cuenta: no hace falta pedir nada nuevo. */
   const { data: patternMovements } = useMovementPatternsQuery(activeWorkspaceId);
-  const [savingHabitKey, setSavingHabitKey] = useState<string | null>(null);
+  const [habitRegistrationStatus, setHabitRegistrationStatus] = useState<QuickRegistrationStatus | null>(null);
+  // El bloqueo vive en un ref: dos toques pueden llegar antes de que React pinte el estado.
+  const habitSaveInFlightRef = useRef(false);
+  const habitRecentlySavedKeyRef = useRef<string | null>(null);
+  // Tras un timeout no sabemos si el servidor guardó. Reintentar con la misma clave recupera
+  // el movimiento original y evita que un segundo toque cree otro.
+  const habitAttemptsRef = useRef(new Map<string, { dedupeKey: string; occurredAt: string }>());
+  const habitFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const createMovementForHabit = useCreateMovementMutation(activeWorkspaceId);
   const deleteMovementForHabit = useDeleteMovementMutation(activeWorkspaceId);
   const { data: quickTemplates } = useMovementTemplatesQuery(activeWorkspaceId);
-  const [savedHabitKey, setSavedHabitKey] = useState<string | null>(null);
+  useEffect(() => () => {
+    if (habitFeedbackTimerRef.current) clearTimeout(habitFeedbackTimerRef.current);
+  }, []);
   const allHabits = useMemo(
     () => (patternMovements?.length ? detectSpendingHabits(patternMovements) : []),
     [patternMovements],
@@ -505,13 +514,23 @@ function DashboardScreen() {
   );
 
   const registerHabit = useCallback((habit: QuickEntry) => {
-    if (!activeWorkspaceId || savingHabitKey) return;
-    setSavingHabitKey(habit.key);
+    if (!activeWorkspaceId) return;
+    const attemptKey = `${activeWorkspaceId}:${habit.key}`;
+    if (habitSaveInFlightRef.current || habitRecentlySavedKeyRef.current === attemptKey) return;
+    habitSaveInFlightRef.current = true;
+    habitRecentlySavedKeyRef.current = null;
+    if (habitFeedbackTimerRef.current) clearTimeout(habitFeedbackTimerRef.current);
+    setHabitRegistrationStatus({ key: habit.key, label: habit.label, amount: habit.amount, phase: "saving" });
+    const attempt = habitAttemptsRef.current.get(attemptKey) ?? {
+      dedupeKey: newClientDedupeKey("habit"),
+      occurredAt: new Date().toISOString(),
+    };
+    habitAttemptsRef.current.set(attemptKey, attempt);
     createMovementForHabit.mutate(
       buildMovementCreateInput({
         movementType: habit.movementType,
         status: "posted",
-        occurredAt: new Date().toISOString(),
+        occurredAt: attempt.occurredAt,
         description: habit.label,
         sourceAccountId: habit.sourceAccountId,
         sourceAmount: habit.amount,
@@ -520,14 +539,24 @@ function DashboardScreen() {
         categoryId: habit.categoryId,
         counterpartyId: habit.counterpartyId,
         notes: habit.notes,
-        dedupeKey: newClientDedupeKey("habit"),
+        dedupeKey: attempt.dedupeKey,
       }),
       {
         onSuccess: (created) => {
-          setSavingHabitKey(null);
-          /* La marca vuelve sola: confirma el toque sin convertirse en un estado permanente. */
-          setSavedHabitKey(habit.key);
-          setTimeout(() => setSavedHabitKey((key) => (key === habit.key ? null : key)), 2200);
+          habitSaveInFlightRef.current = false;
+          habitAttemptsRef.current.delete(attemptKey);
+          habitRecentlySavedKeyRef.current = attemptKey;
+          setHabitRegistrationStatus({
+            key: habit.key,
+            label: habit.label,
+            amount: habit.amount,
+            phase: "saved",
+            movementId: created.id,
+          });
+          habitFeedbackTimerRef.current = setTimeout(() => {
+            habitRecentlySavedKeyRef.current = null;
+            setHabitRegistrationStatus((status) => status?.key === habit.key ? null : status);
+          }, 8000);
           /* El aviso dice qué se anotó, cuánto y de dónde salió, con deshacer: es lo que hace
              seguro que un toque escriba directo. Si el taxi costó 6 y no 4, se deshace. */
           const cuenta = snapshot?.accounts.find((account) => account.id === habit.sourceAccountId)?.name;
@@ -535,16 +564,36 @@ function DashboardScreen() {
             type: "success",
             title: `Se anotó «${habit.label}»`,
             subtitle: `${formatCurrency(habit.amount, baseCurrency)}${cuenta ? ` · restado de ${cuenta}` : ""}`,
-            onUndo: () => deleteMovementForHabit.mutate(created.id),
+            onUndo: () => {
+              if (habitFeedbackTimerRef.current) clearTimeout(habitFeedbackTimerRef.current);
+              habitRecentlySavedKeyRef.current = null;
+              setHabitRegistrationStatus((status) =>
+                status?.phase === "saved" && status.movementId === created.id ? null : status,
+              );
+              deleteMovementForHabit.mutate(created.id);
+            },
           });
         },
         onError: (error: Error) => {
-          setSavingHabitKey(null);
-          showErrorToast(`No se pudo anotar «${habit.label}»`, error);
+          habitSaveInFlightRef.current = false;
+          const uncertain = isAmbiguousTransportError(error);
+          setHabitRegistrationStatus({
+            key: habit.key,
+            label: habit.label,
+            amount: habit.amount,
+            phase: uncertain ? "uncertain" : "error",
+          });
+          habitFeedbackTimerRef.current = setTimeout(() => {
+            setHabitRegistrationStatus((status) => status?.key === habit.key ? null : status);
+          }, 8000);
+          showErrorToast(
+            uncertain ? `No pudimos confirmar «${habit.label}»` : `No se pudo anotar «${habit.label}»`,
+            error,
+          );
         },
       },
     );
-  }, [activeWorkspaceId, baseCurrency, createMovementForHabit, deleteMovementForHabit, savingHabitKey, showRichToast, showToast, snapshot?.accounts]);
+  }, [activeWorkspaceId, baseCurrency, createMovementForHabit, deleteMovementForHabit, showRichToast, showErrorToast, snapshot?.accounts]);
   const snapshotBudgets = useMemo(() => snapshot?.budgets ?? [], [snapshot?.budgets]);
 
   const {
@@ -785,9 +834,9 @@ function DashboardScreen() {
         entries={quickEntries}
         pool={quickPool}
         currencyCode={baseCurrency}
-        savingKey={savingHabitKey}
-        savedKey={savedHabitKey}
+        registrationStatus={habitRegistrationStatus}
         onRegister={registerHabit}
+        onViewSaved={(id) => router.push(`/movement/${id}?from=dashboard` as never)}
       />
     </DashboardSectionBoundary>
   );
