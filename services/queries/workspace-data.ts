@@ -647,8 +647,18 @@ type CounterpartyDbRow = {
   notes: string | null;
 };
 
-/** Fila de `counterparties` → overview para snapshot (métricas financieras: 0 hasta enlazar v_counterparty_summary). */
-function mapCounterpartyFromRow(row: CounterpartyDbRow): CounterpartyOverview {
+type CounterpartyFinancialRow = {
+  counterparty_id: number;
+  roles: CounterpartyRoleType[] | null;
+  receivable_count: NumericLike; receivable_principal_total: NumericLike; receivable_pending_total: NumericLike;
+  payable_count: NumericLike; payable_principal_total: NumericLike; payable_pending_total: NumericLike;
+  net_pending_amount: NumericLike; movement_count: NumericLike;
+  inflow_total: NumericLike; outflow_total: NumericLike; net_flow_amount: NumericLike;
+  last_activity_at: string | null;
+};
+
+/** Same persisted summary source used by the web contact overview; no placeholder financial metrics. */
+function mapCounterpartyFromRow(row: CounterpartyDbRow, summary?: CounterpartyFinancialRow): CounterpartyOverview {
   return {
     id: row.id,
     name: row.name,
@@ -660,18 +670,19 @@ function mapCounterpartyFromRow(row: CounterpartyDbRow): CounterpartyOverview {
     email: row.email ?? null,
     documentNumber: row.document_number ?? null,
     notes: row.notes ?? null,
-    roles: [] as CounterpartyRoleType[],
-    receivableCount: 0,
-    receivablePrincipalTotal: 0,
-    receivablePendingTotal: 0,
-    payableCount: 0,
-    payablePrincipalTotal: 0,
-    payablePendingTotal: 0,
-    netPendingAmount: 0,
-    movementCount: 0,
-    inflowTotal: 0,
-    outflowTotal: 0,
-    netFlowAmount: 0,
+    roles: (summary?.roles ?? []).filter(Boolean),
+    receivableCount: toNum(summary?.receivable_count ?? 0),
+    receivablePrincipalTotal: toNum(summary?.receivable_principal_total ?? 0),
+    receivablePendingTotal: toNum(summary?.receivable_pending_total ?? 0),
+    payableCount: toNum(summary?.payable_count ?? 0),
+    payablePrincipalTotal: toNum(summary?.payable_principal_total ?? 0),
+    payablePendingTotal: toNum(summary?.payable_pending_total ?? 0),
+    netPendingAmount: toNum(summary?.net_pending_amount ?? 0),
+    movementCount: toNum(summary?.movement_count ?? 0),
+    inflowTotal: toNum(summary?.inflow_total ?? 0),
+    outflowTotal: toNum(summary?.outflow_total ?? 0),
+    netFlowAmount: toNum(summary?.net_flow_amount ?? 0),
+    lastActivityAt: summary?.last_activity_at ?? null,
   };
 }
 
@@ -882,6 +893,7 @@ export async function fetchWorkspaceSnapshot(
     accountBalancesResult,
     categoriesResult,
     counterpartiesResult,
+    counterpartyFinancialResult,
     subscriptionsResult,
     recurringIncomeResult,
     subscriptionMovementsResult,
@@ -915,6 +927,10 @@ export async function fetchWorkspaceSnapshot(
       .order("is_archived", { ascending: true })
       .order("is_pinned", { ascending: false })
       .order("name", { ascending: true }),
+    supabase
+      .from("v_counterparty_summary")
+      .select("workspace_id, counterparty_id, roles, receivable_count, receivable_principal_total, receivable_pending_total, payable_count, payable_principal_total, payable_pending_total, net_pending_amount, movement_count, inflow_total, outflow_total, net_flow_amount, last_activity_at")
+      .eq("workspace_id", activeWorkspaceId),
     supabase
       .from("subscriptions")
       .select("id, workspace_id, name, vendor_party_id, account_id, category_id, currency_code, amount, frequency, interval_count, day_of_month, day_of_week, start_date, next_due_date, end_date, status, remind_days_before, auto_create_movement, description, notes, is_pinned")
@@ -955,6 +971,7 @@ export async function fetchWorkspaceSnapshot(
     [accountBalancesResult, "saldos"],
     [categoriesResult, "categorías"],
     [counterpartiesResult, "contrapartes"],
+    [counterpartyFinancialResult, "resumen de contactos"],
     [subscriptionsResult, "suscripciones"],
     [recurringIncomeResult, "ingresos fijos"],
     [exchangeRatesResult, "tipos de cambio"],
@@ -1013,8 +1030,9 @@ export async function fetchWorkspaceSnapshot(
   }));
 
   const counterpartyMap = new Map<number, string>();
+  const counterpartyFinancialById = new Map(((counterpartyFinancialResult.data ?? []) as CounterpartyFinancialRow[]).map((row) => [row.counterparty_id, row]));
   const counterparties: CounterpartyOverview[] = (counterpartiesResult.data ?? []).map((row: any) => {
-    const mapped = mapCounterpartyFromRow(row as CounterpartyDbRow);
+    const mapped = mapCounterpartyFromRow(row as CounterpartyDbRow, counterpartyFinancialById.get(row.id));
     counterpartyMap.set(mapped.id, mapped.name);
     return mapped;
   });

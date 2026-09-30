@@ -1,0 +1,24 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import ts from "typescript";
+
+const path = new URL("../services/queries/workspace-data.ts", import.meta.url);
+const source = readFileSync(path, "utf8");
+const ast = ts.createSourceFile(path.pathname, source, ts.ScriptTarget.Latest, true);
+const nodes = ast.statements.filter((node) => ts.isFunctionDeclaration(node) && ["toNum", "mapCounterpartyFromRow"].includes(node.name?.text));
+const js = ts.transpileModule(nodes.map((node) => node.getText(ast).replace(/^export /, "")).join("\n"), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
+const map = new Function(`${js}; return mapCounterpartyFromRow;`)();
+const contact = { id: 7, workspace_id: 1, name: "Prueba local", type: "person", is_archived: false, is_pinned: true };
+const summary = { counterparty_id: 7, roles: ["borrower"], movement_count: "12", inflow_total: "150.50", outflow_total: "50.25", net_flow_amount: "100.25", receivable_count: "2", receivable_principal_total: "300", receivable_pending_total: "180", payable_count: 1, payable_principal_total: "70", payable_pending_total: "10", net_pending_amount: "170", last_activity_at: "2026-09-30T12:00:00Z" };
+const mapped = map(contact, summary);
+assert.equal(mapped.id, 7); assert.equal(mapped.isPinned, true);
+assert.equal(mapped.movementCount, 12); assert.equal(mapped.inflowTotal, 150.5); assert.equal(mapped.outflowTotal, 50.25); assert.equal(mapped.netFlowAmount, 100.25);
+assert.equal(mapped.receivableCount, 2); assert.equal(mapped.receivablePendingTotal, 180); assert.equal(mapped.payablePendingTotal, 10); assert.equal(mapped.netPendingAmount, 170);
+assert.equal(mapped.lastActivityAt, summary.last_activity_at); assert.deepEqual(mapped.roles, ["borrower"]);
+assert.equal(map(contact).movementCount, 0); assert.equal(map(contact).inflowTotal, 0);
+assert.equal(map(contact, { ...summary, inflow_total: null }).inflowTotal, 0);
+const snapshot = ast.statements.find((node) => ts.isFunctionDeclaration(node) && node.name?.text === "fetchWorkspaceSnapshot").getText(ast);
+assert.match(snapshot, /\.from\("v_counterparty_summary"\)[\s\S]*?\.eq\("workspace_id", activeWorkspaceId\)/);
+assert.match(snapshot, /\[counterpartyFinancialResult, "resumen de contactos"\]/);
+assert.match(snapshot, /mapCounterpartyFromRow\(row as CounterpartyDbRow, counterpartyFinancialById.get\(row.id\)\)/);
+console.log("counterparty-snapshot: OK — persisted contact metrics, pins, roles, history, workspace scope and error propagation");
