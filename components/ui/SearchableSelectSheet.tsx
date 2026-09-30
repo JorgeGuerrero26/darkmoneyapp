@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Dimensions, FlatList, Keyboard, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Animated, Dimensions, FlatList, Keyboard, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Check, Search, X } from "lucide-react-native";
 
@@ -8,6 +8,7 @@ import { SafeBlurView } from "./SafeBlurView";
 import { TextField } from "./TextField";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { useKeyboardHeight } from "../../hooks/useKeyboardHeight";
+import { useInlineSpringFade } from "./useDismissibleSheet";
 
 const SCREEN_HEIGHT = Dimensions.get("window").height;
 
@@ -33,6 +34,7 @@ type Props<T = number | null> = {
    * pasan por la prop `overlay` de `BottomSheet`.
    */
   inline?: boolean;
+  entranceAnimation?: "none" | "springFade";
 };
 
 export function SearchableSelectSheet<T = number | null>({
@@ -43,10 +45,12 @@ export function SearchableSelectSheet<T = number | null>({
   onChange,
   onClose,
   inline = false,
+  entranceAnimation = "none",
 }: Props<T>) {
   const insets = useSafeAreaInsets();
   const keyboardHeight = useKeyboardHeight();
   const [query, setQuery] = useState("");
+  const motion = useInlineSpringFade(visible && inline, entranceAnimation === "springFade");
 
   /**
    * Al abrirse, se cierra el teclado que dejó abierto el campo anterior.
@@ -129,12 +133,12 @@ export function SearchableSelectSheet<T = number | null>({
   if (inline) {
     if (!visible) return null;
     return (
-      <View style={styles.inlineRoot}>
+      <Animated.View style={[styles.inlineRoot, entranceAnimation === "springFade" && motion.backdropStyle]}>
         <SafeBlurView intensity={45} tint="dark" style={StyleSheet.absoluteFillObject} />
         <TouchableOpacity style={styles.inlineBackdrop} onPress={handleClose} activeOpacity={1} />
         {/* La capa sube con el teclado. Sin esto, al escribir para buscar una categoría el
             teclado tapaba el propio buscador y no se veía lo que se estaba escribiendo. */}
-        <View
+        <Animated.View
           style={[
             styles.inlineCard,
             {
@@ -142,6 +146,7 @@ export function SearchableSelectSheet<T = number | null>({
               maxHeight: SCREEN_HEIGHT - keyboardHeight - insets.top - SPACING.xl,
               paddingBottom: keyboardHeight > 0 ? SPACING.lg : SPACING.xxxl,
             },
+            entranceAnimation === "springFade" && motion.sheetStyle,
           ]}
         >
           <View style={styles.inlineHeader}>
@@ -151,13 +156,13 @@ export function SearchableSelectSheet<T = number | null>({
             </TouchableOpacity>
           </View>
           {body}
-        </View>
-      </View>
+        </Animated.View>
+      </Animated.View>
     );
   }
 
   return (
-    <BottomSheet visible={visible} onClose={handleClose} title={title} snapHeight={0.6}>
+    <BottomSheet visible={visible} onClose={handleClose} title={title} snapHeight={0.6} entranceAnimation={entranceAnimation === "springFade" ? "springFade" : "slide"}>
       {body}
     </BottomSheet>
   );

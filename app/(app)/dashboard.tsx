@@ -78,7 +78,6 @@ import { isDashboardDataUnavailable } from "../../features/dashboard/lib/dashboa
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { formatCurrency } from "../../components/ui/AmountDisplay";
 import { MovementForm } from "../../components/forms/MovementForm";
-import { BottomSheet } from "../../components/ui/BottomSheet";
 import { WorkspaceSelector } from "../../components/layout/WorkspaceSelector";
 import { COLORS, ELEVATION, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { IOS_FLOATING_TAB_BAR_SPACE, TAB_BAR_CONTENT_HEIGHT } from "../../constants/floating-tab-bar";
@@ -973,6 +972,7 @@ function DashboardScreen() {
 
       <MovementForm
         visible={formVisible}
+        entranceAnimation="springFade"
         onClose={() => setFormVisible(false)}
         onSuccess={() => {
           setFormVisible(false);
@@ -1002,6 +1002,7 @@ function DashboardScreen() {
       ) : null}
       <ConfirmDialog
         visible={signOutVisible}
+        entranceAnimation="springFade"
         title="Cerrar sesión"
         body="¿Estás seguro que deseas salir de tu cuenta?"
         confirmLabel="Salir"
@@ -1064,7 +1065,7 @@ function DashboardHeaderRight({
 
   return (
     <View style={hdrStyles.row}>
-      {workspaces.length > 1 && <WorkspaceSelector />}
+      {workspaces.length > 1 && <WorkspaceSelector entranceAnimation="springFade" />}
       <TouchableOpacity
         style={hdrStyles.iconBtn}
         onPress={onTogglePrivacy}

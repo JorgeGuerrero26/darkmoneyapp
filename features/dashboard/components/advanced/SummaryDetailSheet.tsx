@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import { StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
 import { ChevronDown } from "lucide-react-native";
 
-import { BottomSheet } from "../../../../components/ui/BottomSheet";
+import { DashboardBottomSheet } from "../shared/DashboardBottomSheet";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../../../constants/theme";
 
 type Props = {
@@ -20,7 +20,7 @@ export function SummaryDetailSheet({ title, subtitle, onClose, children, calcula
   const [expanded, setExpanded] = useState(false);
   const { height } = useWindowDimensions();
   return (
-    <BottomSheet
+    <DashboardBottomSheet
       visible
       onClose={onClose}
       title={title}
@@ -45,7 +45,7 @@ export function SummaryDetailSheet({ title, subtitle, onClose, children, calcula
           {expanded ? <Text style={styles.calculationCopy}>{calculation}</Text> : null}
         </>
       ) : null}
-    </BottomSheet>
+    </DashboardBottomSheet>
   );
 }
 

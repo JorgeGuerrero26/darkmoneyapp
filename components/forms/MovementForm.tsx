@@ -49,7 +49,7 @@ import {
   type MovementRecurringSuggestionResult,
 } from "../../lib/movement-recurring-suggestions";
 import type { MovementRiskItem } from "../../lib/movement-risk-analysis";
-import { BottomSheet } from "../ui/BottomSheet";
+import { BottomSheet, type BottomSheetEntranceAnimation } from "../ui/BottomSheet";
 import { Button } from "../ui/Button";
 import { FormOptionRow } from "../ui/FormOptionRow";
 import { SearchableSelectSheet } from "../ui/SearchableSelectSheet";
@@ -110,6 +110,7 @@ type Props = {
   visible: boolean;
   onClose: () => void;
   onSuccess?: () => void;
+  entranceAnimation?: BottomSheetEntranceAnimation;
   defaultType?: MovementType;
   initialAccountId?: number;
   editMovement?: MovementRecord;
@@ -132,7 +133,7 @@ export type MovementDuplicateSource = Pick<
   | "notes"
 >;
 
-export function MovementForm({ visible, onClose, onSuccess, defaultType = "expense", initialAccountId, editMovement, duplicateMovement }: Props) {
+export function MovementForm({ visible, onClose, onSuccess, entranceAnimation, defaultType = "expense", initialAccountId, editMovement, duplicateMovement }: Props) {
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
   const { showToast, showRichToast, showErrorToast } = useToast();
@@ -1175,12 +1176,14 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
   const stepTitle = isEditing
     ? step === 1 ? "Editar movimiento" : "Detalles"
     : step === 1 ? "Nuevo movimiento" : "Detalles";
+  const overlayEntranceAnimation = entranceAnimation === "springFade" ? "springFade" : "none";
 
   return (
     <>
     <BottomSheet
       visible={visible}
       onClose={handleClose}
+      entranceAnimation={entranceAnimation}
       title={stepTitle}
       snapHeight={0.85}
       scrollRef={sheetScrollRef}
@@ -1216,6 +1219,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         {splitLines ? (
           <SplitCategoriesSheet
             visible={splitSheetOpen}
+            entranceAnimation={overlayEntranceAnimation}
             onClose={() => setSplitSheetOpen(false)}
             lines={splitLines}
             onChangeLines={setSplitLines}
@@ -1229,6 +1233,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         ) : null}
         <DateTimeSheet
           visible={dateTimeOpen}
+          entranceAnimation={overlayEntranceAnimation}
           date={form.occurredAt}
           time={form.occurredTime}
           onBack={() => setDateTimeOpen(false)}
@@ -1240,6 +1245,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         <SearchableSelectSheet
           inline
           visible={categoryPickerOpen}
+          entranceAnimation={overlayEntranceAnimation}
           title="Categoría"
           options={[
             { value: null as number | null, label: "Sin asignar" },
@@ -1252,6 +1258,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         <SearchableSelectSheet
           inline
           visible={spendTypePickerOpen}
+          entranceAnimation={overlayEntranceAnimation}
           title="Tipo de gasto"
           options={[
             {
@@ -1270,6 +1277,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         <SearchableSelectSheet
           inline
           visible={counterpartyPickerOpen}
+          entranceAnimation={overlayEntranceAnimation}
           title="Contraparte"
           options={[
             { value: null as number | null, label: "Ninguna" },
@@ -1282,6 +1290,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         <SearchableSelectSheet
           inline
           visible={sourceAccountPickerOpen}
+          entranceAnimation={overlayEntranceAnimation}
           title={form.movementType === "transfer" ? "Sale de" : "Cuenta"}
           options={activeAccountsSorted.map((a) => ({ value: a.id as number | null, label: a.name }))}
           value={form.sourceAccountId}
@@ -1295,6 +1304,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         <SearchableSelectSheet
           inline
           visible={destinationAccountPickerOpen}
+          entranceAnimation={overlayEntranceAnimation}
           title={form.movementType === "transfer" ? "Entra a" : "Cuenta"}
           options={destinationAccountsSorted.map((a) => ({ value: a.id as number | null, label: a.name }))}
           value={form.destinationAccountId}
@@ -1308,6 +1318,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         <ConfirmDialog
           inline
           visible={discardVisible}
+          entranceAnimation={entranceAnimation === "springFade" ? "springFade" : "fade"}
           title="¿Descartar cambios?"
           body="Los datos ingresados se perderán."
           confirmLabel="Descartar"
@@ -1446,6 +1457,7 @@ export function MovementForm({ visible, onClose, onSuccess, defaultType = "expen
         return (
           <StepDetails
             scrollRef={sheetScrollRef}
+            attachmentSheetEntranceAnimation={entranceAnimation}
             splitLines={splitUiEnabled ? splitLines : null}
             onChangeSplitLines={splitUiEnabled && form.movementType !== "transfer" ? setSplitLines : undefined}
             splitTotalAmount={form.movementType === "income" ? destinationAmountNum : sourceAmountNum}

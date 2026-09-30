@@ -37,7 +37,7 @@ import {
   type LucideIcon,
 } from "lucide-react-native";
 
-import { BottomSheet } from "../../../../components/ui/BottomSheet";
+import { DashboardBottomSheet as BottomSheet } from "../shared/DashboardBottomSheet";
 import { Card } from "../../../../components/ui/Card";
 import { formatCurrency } from "../../../../components/ui/AmountDisplay";
 import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING } from "../../../../constants/theme";

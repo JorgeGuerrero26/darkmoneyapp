@@ -1,11 +1,12 @@
 import type { ReactNode } from "react";
-import { Dimensions, Keyboard, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Animated, Dimensions, Keyboard, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChevronDown, ChevronLeft } from "lucide-react-native";
 
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { SafeBlurView } from "./SafeBlurView";
 import { useKeyboardHeight } from "../../hooks/useKeyboardHeight";
+import { useInlineSpringFade } from "./useDismissibleSheet";
 
 const SCREEN_HEIGHT = Dimensions.get("window").height;
 
@@ -31,6 +32,7 @@ type Props = {
   overlay?: ReactNode;
   /** Alto máximo como fracción de la pantalla. */
   height?: `${number}%`;
+  entranceAnimation?: "none" | "springFade";
 };
 
 /**
@@ -54,21 +56,23 @@ export function InlineFormSheet({
   footer,
   overlay,
   height = "92%",
+  entranceAnimation = "none",
 }: Props) {
   const insets = useSafeAreaInsets();
   /* Sin esto, el pie quedaba pegado al borde del teléfono y el teclado tapaba el campo en vez
      de empujar la hoja: la capa es `position: absolute` y el padding del padre no la mueve. */
   const keyboardHeight = useKeyboardHeight();
+  const motion = useInlineSpringFade(visible, entranceAnimation === "springFade");
 
   if (!visible) return null;
 
   const maxRatio = Number(height.replace("%", "")) / 100;
 
   return (
-    <View style={styles.root}>
+    <Animated.View style={[styles.root, entranceAnimation === "springFade" && motion.backdropStyle]}>
       <SafeBlurView intensity={45} tint="dark" style={StyleSheet.absoluteFillObject} />
       <TouchableOpacity style={StyleSheet.absoluteFillObject} onPress={onBack} activeOpacity={1} />
-      <View
+      <Animated.View
         style={[
           styles.card,
           {
@@ -81,6 +85,7 @@ export function InlineFormSheet({
             // barra no está y el hueco sobraría.
             paddingBottom: keyboardHeight > 0 ? SPACING.md : insets.bottom + SPACING.md,
           },
+          entranceAnimation === "springFade" && motion.sheetStyle,
         ]}
       >
         <View style={styles.header}>
@@ -129,10 +134,10 @@ export function InlineFormSheet({
         </ScrollView>
 
         {footer}
-      </View>
+      </Animated.View>
 
       {overlay}
-    </View>
+    </Animated.View>
   );
 }
 

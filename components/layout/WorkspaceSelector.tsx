@@ -1,5 +1,6 @@
 import { useState } from "react";
 import {
+  Animated,
   Modal,
   Pressable,
   ScrollView,
@@ -13,12 +14,14 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useWorkspace, useWorkspaceListStore } from "../../lib/workspace-context";
 import type { Workspace } from "../../types/domain";
 import { COLORS, FONT_SIZE, FONT_WEIGHT, RADIUS, SPACING } from "../../constants/theme";
+import { useDismissibleSheet } from "../ui/useDismissibleSheet";
 
-export function WorkspaceSelector() {
+export function WorkspaceSelector({ entranceAnimation = "fade" }: { entranceAnimation?: "fade" | "springFade" }) {
   const { activeWorkspace, setActiveWorkspaceId } = useWorkspace();
   const { workspaces } = useWorkspaceListStore();
   const [open, setOpen] = useState(false);
   const insets = useSafeAreaInsets();
+  const dismiss = useDismissibleSheet({ visible: open, onClose: () => setOpen(false), enabled: false });
 
   if (!activeWorkspace) return null;
 
@@ -46,9 +49,14 @@ export function WorkspaceSelector() {
         animationType="fade"
         onRequestClose={() => setOpen(false)}
       >
-        <Pressable style={styles.overlay} onPress={() => setOpen(false)}>
-          <View
-            style={[styles.sheet, { paddingBottom: insets.bottom + SPACING.md }]}
+        <Animated.View style={[styles.overlay, entranceAnimation === "springFade" && dismiss.backdropStyle]}>
+          <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setOpen(false)} />
+          <Animated.View
+            style={[
+              styles.sheet,
+              { paddingBottom: insets.bottom + SPACING.md },
+              entranceAnimation === "springFade" && dismiss.sheetStyle,
+            ]}
             onStartShouldSetResponder={() => true}
           >
             <Text style={styles.sheetTitle}>Cambiar workspace</Text>
@@ -77,8 +85,8 @@ export function WorkspaceSelector() {
                 </TouchableOpacity>
               ))}
             </ScrollView>
-          </View>
-        </Pressable>
+          </Animated.View>
+        </Animated.View>
       </Modal>
     </>
   );

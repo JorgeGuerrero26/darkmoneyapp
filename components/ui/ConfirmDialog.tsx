@@ -1,7 +1,9 @@
-import { Modal, StyleSheet, Text, View } from "react-native";
+import { useEffect, useRef } from "react";
+import { Animated, Modal, StyleSheet, Text, View } from "react-native";
 import { COLORS, ELEVATION, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { SafeBlurView } from "./SafeBlurView";
 import { Button } from "./Button";
+import { SHORT_SHEET_ENTRANCE } from "./useDismissibleSheet";
 
 type Props = {
   visible: boolean;
@@ -17,6 +19,8 @@ type Props = {
   destructive?: boolean;
   confirmLoading?: boolean;
   confirmLoadingLabel?: string;
+  /** Fundido con subida breve y resorte, para los diálogos abiertos desde el dashboard. */
+  entranceAnimation?: "fade" | "springFade";
   /**
    * Renderiza sin `Modal`, como capa absoluta sobre su contenedor.
    *
@@ -43,12 +47,36 @@ export function ConfirmDialog({
   destructive = true,
   confirmLoading = false,
   confirmLoadingLabel,
+  entranceAnimation = "fade",
   inline = false,
 }: Props) {
+  const translateY = useRef(new Animated.Value(0)).current;
+  const opacity = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (entranceAnimation !== "springFade") return;
+    translateY.stopAnimation();
+    opacity.stopAnimation();
+    if (!visible) {
+      if (inline) opacity.setValue(0);
+      return;
+    }
+    translateY.setValue(SHORT_SHEET_ENTRANCE.offset);
+    if (inline) opacity.setValue(0);
+    Animated.parallel([
+      Animated.spring(translateY, {
+        toValue: 0,
+        useNativeDriver: true,
+        tension: SHORT_SHEET_ENTRANCE.tension,
+        friction: SHORT_SHEET_ENTRANCE.friction,
+      }),
+      ...(inline ? [Animated.timing(opacity, { toValue: 1, duration: 250, useNativeDriver: true })] : []),
+    ]).start();
+  }, [entranceAnimation, inline, opacity, translateY, visible]);
+
   const content = (
-    <View style={[styles.overlay, inline ? styles.overlayInline : null]}>
+    <Animated.View style={[styles.overlay, inline ? styles.overlayInline : null, inline && entranceAnimation === "springFade" && { opacity }]}>
       <SafeBlurView intensity={45} tint="dark" style={StyleSheet.absoluteFillObject} />
-      <View style={styles.card}>
+      <Animated.View style={[styles.card, entranceAnimation === "springFade" && { transform: [{ translateY }] }]}>
         {icon ? (
           <View style={styles.iconWrap}>
             <Text style={styles.icon}>{icon}</Text>
@@ -74,8 +102,8 @@ export function ConfirmDialog({
             disabled={confirmLoading}
           />
         </View>
-      </View>
-    </View>
+      </Animated.View>
+    </Animated.View>
   );
 
   // Sin Modal: el contenedor decide dónde va. Ver la nota de la prop `inline`.

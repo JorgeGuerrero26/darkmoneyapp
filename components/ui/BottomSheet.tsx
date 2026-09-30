@@ -25,6 +25,8 @@ import { SHORT_SHEET_ENTRANCE } from "./useDismissibleSheet";
 const SCREEN_HEIGHT = Dimensions.get("window").height;
 const DISMISS_THRESHOLD = 80;
 
+export type BottomSheetEntranceAnimation = "slide" | "springFade";
+
 type Props = {
   visible: boolean;
   onClose: () => void;
@@ -39,7 +41,7 @@ type Props = {
   children: React.ReactNode;
   snapHeight?: number;
   /** La misma entrada breve con fundido que usa la hoja para asociar un crédito. */
-  entranceAnimation?: "slide" | "springFade";
+  entranceAnimation?: BottomSheetEntranceAnimation;
   scrollRef?: React.RefObject<ScrollView | null>;
   backdropColor?: string;
   blurBackdrop?: boolean;

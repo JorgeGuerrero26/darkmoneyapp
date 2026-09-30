@@ -7,6 +7,39 @@ const DISMISS_THRESHOLD = 88;
 /** Entrada corta con resorte, usada por la hoja para asociar un crédito. */
 export const SHORT_SHEET_ENTRANCE = { offset: 36, tension: 72, friction: 12 } as const;
 
+/** La misma entrada cuando la hoja vive dentro de un Modal ya abierto. */
+export function useInlineSpringFade(visible: boolean, enabled: boolean) {
+  const opacity = useRef(new Animated.Value(0)).current;
+  const translateY = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!enabled) return;
+    opacity.stopAnimation();
+    translateY.stopAnimation();
+    if (!visible) {
+      opacity.setValue(0);
+      translateY.setValue(0);
+      return;
+    }
+    opacity.setValue(0);
+    translateY.setValue(SHORT_SHEET_ENTRANCE.offset);
+    Animated.parallel([
+      Animated.timing(opacity, { toValue: 1, duration: 250, useNativeDriver: true }),
+      Animated.spring(translateY, {
+        toValue: 0,
+        useNativeDriver: true,
+        tension: SHORT_SHEET_ENTRANCE.tension,
+        friction: SHORT_SHEET_ENTRANCE.friction,
+      }),
+    ]).start();
+  }, [enabled, opacity, translateY, visible]);
+
+  return {
+    backdropStyle: { opacity },
+    sheetStyle: { transform: [{ translateY }] },
+  };
+}
+
 type Options = {
   visible: boolean;
   onClose: () => void;

@@ -10,6 +10,7 @@ import { todayPeru } from "../../lib/date";
 
 type Props = {
   visible: boolean;
+  entranceAnimation?: "none" | "springFade";
   /** `yyyy-MM-dd`. */
   date: string;
   /** `HH:mm`, o `null` si este campo no lleva hora. */
@@ -50,6 +51,7 @@ function dateToTime(date: Date) {
  */
 export function DateTimeSheet({
   visible,
+  entranceAnimation = "none",
   date,
   time = null,
   minimumDate,
@@ -75,6 +77,7 @@ export function DateTimeSheet({
   return (
     <InlineFormSheet
       visible={visible}
+      entranceAnimation={entranceAnimation}
       title={draftTime != null ? "Fecha y hora" : "Fecha"}
       onBack={onBack}
       height="88%"
@@ -116,6 +119,7 @@ export function DateTimeSheet({
       {Platform.OS === "ios" ? (
         <InlineFormSheet
           visible={hourOpen}
+          entranceAnimation={entranceAnimation}
           title="Hora"
           onBack={() => setHourOpen(false)}
           height="52%"

@@ -16,6 +16,7 @@ import type { SpendType } from "../../../../services/queries/spend-types";
 
 type Props = {
   visible: boolean;
+  entranceAnimation?: "none" | "springFade";
   onClose: () => void;
   lines: SplitLine[];
   onChangeLines: (lines: SplitLine[] | null) => void;
@@ -45,6 +46,7 @@ type Props = {
  */
 export function SplitCategoriesSheet({
   visible,
+  entranceAnimation = "none",
   onClose,
   lines,
   onChangeLines,
@@ -101,6 +103,7 @@ export function SplitCategoriesSheet({
   return (
     <InlineFormSheet
       visible={visible}
+      entranceAnimation={entranceAnimation}
       title="Dividir en categorías"
       onBack={onClose}
       overlay={
@@ -108,6 +111,7 @@ export function SplitCategoriesSheet({
         <ConfirmDialog
           inline
           visible={confirmRemove}
+          entranceAnimation={entranceAnimation === "springFade" ? "springFade" : "fade"}
           title="¿Quitar la división?"
           body={`Se pierden las ${lines.length} partes que armaste. El gasto vuelve a ser uno solo, con la categoría que tenía.`}
           confirmLabel="Quitar"
@@ -123,6 +127,7 @@ export function SplitCategoriesSheet({
         <SearchableSelectSheet
           inline
           visible={pickerIndex !== null}
+          entranceAnimation={entranceAnimation}
           title="Categoría de esta parte"
           options={categories.map((category) => ({ value: category.id as number | null, label: category.name }))}
           value={pickerIndex !== null ? lines[pickerIndex]?.categoryId ?? null : null}
@@ -135,6 +140,7 @@ export function SplitCategoriesSheet({
         <SearchableSelectSheet
           inline
           visible={typePickerIndex !== null}
+          entranceAnimation={entranceAnimation}
           title="Tipo de esta parte"
           options={[
             {

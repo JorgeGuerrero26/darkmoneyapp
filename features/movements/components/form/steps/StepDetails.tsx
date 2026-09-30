@@ -126,6 +126,7 @@ type Props = {
   onChangeAttachments: (next: Attachment[]) => void;
   savedMovementId: number | undefined;
   isHydratingExistingAttachments: boolean;
+  attachmentSheetEntranceAnimation?: "slide" | "springFade";
 
   // Selectores de categoría y contraparte: los abre el formulario, porque su capa tiene que
   // ir en la ranura `overlay` del sheet (iOS presenta un Modal a la vez).
@@ -194,6 +195,7 @@ export const StepDetails = memo(function StepDetails({
   onChangeAttachments,
   savedMovementId,
   isHydratingExistingAttachments,
+  attachmentSheetEntranceAnimation,
   onOpenCategory,
   onOpenCounterparty,
   onOpenDateTime,
@@ -368,6 +370,7 @@ export const StepDetails = memo(function StepDetails({
 
       <AttachmentPicker
         movementId={savedMovementId}
+        entranceAnimation={attachmentSheetEntranceAnimation}
         attachments={attachments}
         onChange={onChangeAttachments}
         isHydratingExisting={isEditing && isHydratingExistingAttachments}

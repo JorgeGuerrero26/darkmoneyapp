@@ -44,6 +44,7 @@ export type Attachment = {
 
 type Props = {
   movementId?: number;
+  entranceAnimation?: "slide" | "springFade";
   entityType?: AttachmentEntityType;
   entityId?: number | null;
   attachments: Attachment[];
@@ -109,6 +110,7 @@ function base64ToArrayBuffer(base64: string): ArrayBuffer {
 
 export function AttachmentPicker({
   movementId,
+  entranceAnimation,
   entityType = "movement",
   entityId,
   attachments,
@@ -481,6 +483,7 @@ export function AttachmentPicker({
         onClose={() => setSourceSheetVisible(false)}
         title="Adjuntar imagen"
         snapHeight={0.48}
+        entranceAnimation={entranceAnimation}
       >
         <View style={styles.sheetHero}>
           <Text style={styles.sheetEyebrow}>Comprobantes</Text>
@@ -527,6 +530,7 @@ export function AttachmentPicker({
 
       <ConfirmDialog
         visible={pendingDeleteIndex !== null}
+        entranceAnimation={entranceAnimation === "springFade" ? "springFade" : "fade"}
         title="Eliminar comprobante"
         body="Quitaremos esta imagen del movimiento actual."
         confirmLabel="Eliminar"

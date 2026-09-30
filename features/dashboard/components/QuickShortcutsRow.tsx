@@ -2,7 +2,7 @@ import { memo, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { Check, ChevronRight, Plus } from "lucide-react-native";
 
-import { BottomSheet } from "../../../components/ui/BottomSheet";
+import { DashboardBottomSheet } from "./shared/DashboardBottomSheet";
 import { formatCurrency } from "../../../components/ui/AmountDisplay";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../../constants/theme";
 import { buildQuickRow, type QuickEntry } from "../../movements/lib/quickEntries";
@@ -99,7 +99,7 @@ function QuickShortcutsRowBase({
         </View>
       ) : null}
 
-      <BottomSheet visible={allOpen} onClose={() => setAllOpen(false)} title="Tus atajos" snapHeight={0.7}>
+      <DashboardBottomSheet visible={allOpen} onClose={() => setAllOpen(false)} title="Tus atajos" snapHeight={0.7}>
         {feedback}
         <View style={styles.sheetList}>
           {pool.map((entry, index) => (
@@ -127,7 +127,7 @@ function QuickShortcutsRowBase({
             </Pressable>
           ))}
         </View>
-      </BottomSheet>
+      </DashboardBottomSheet>
     </>
   );
 }
