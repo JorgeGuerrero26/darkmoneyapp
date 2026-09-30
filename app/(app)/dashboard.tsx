@@ -66,11 +66,10 @@ import {
   mergeWorkspaceAndSharedObligations,
 } from "../../services/queries/obligations";
 import { useBudgetScopeMovementsQuery } from "../../services/queries/budget-analytics";
-import type { BudgetOverview, ExchangeRateSummary, SubscriptionSummary } from "../../types/domain";
+import type { BudgetOverview, ExchangeRateSummary } from "../../types/domain";
 import { useUiStore } from "../../store/ui-store";
 import { Card } from "../../components/ui/Card";
 import { Button } from "../../components/ui/Button";
-import { ProgressBar } from "../../components/ui/ProgressBar";
 import { SkeletonCard, SkeletonKpi, SkeletonList } from "../../components/ui/Skeleton";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { useAfterFirstPaint } from "../../hooks/useAfterFirstPaint";
@@ -98,14 +97,8 @@ import {
   applyBudgetComputedMetrics,
   buildBudgetMetricsMap,
 } from "../../lib/budget-metrics";
-import { RingChart, type RingSegment } from "../../components/ui/RingChart";
-import { SparkLine } from "../../components/ui/SparkLine";
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import { useToast } from "../../hooks/useToast";
-import { MarkSubscriptionPaidSheet } from "../../features/subscriptions/components/MarkSubscriptionPaidSheet";
-import { RecurringIncomeArrivalSheet } from "../../features/recurring-income/components/RecurringIncomeArrivalSheet";
-import { useArrivalSheetController } from "../../features/recurring-income/lib/useArrivalSheetController";
-import { useMarkSubscriptionPaidMutation } from "../../services/queries/subscriptions-recurring-income";
 import { buildCategorySuggestionCandidates } from "../../services/analytics/category-suggestions";
 import { detectMovementAnomalies } from "../../services/analytics/anomaly-detection";
 import { simulateMonthEndCashflow } from "../../services/analytics/cashflow-forecast";
@@ -118,8 +111,6 @@ import { clusterHistoryMonths } from "../../services/analytics/month-clustering"
 import { buildPaymentOptimizationPlan, type PaymentOptimizationRecommendation } from "../../services/analytics/payment-optimization";
 import { buildPatternClusters } from "../../services/analytics/pattern-clustering";
 import { normalizeAnalyticsText } from "../../services/analytics/movement-features";
-import { useBcrpMacroIndicatorsQuery } from "../../services/queries/bcrp-data";
-import { LinearGradient } from "expo-linear-gradient";
 
 // --- Constants & helpers (extraídos a features/dashboard/lib) -----------------
 
@@ -132,13 +123,10 @@ import {
   DASHBOARD_AI_SUMMARY_CACHE_KEY_PREFIX,
   DASHBOARD_AI_TONE_KEY_PREFIX,
   DASHBOARD_CURRENCY_KEY,
-  PERIOD_LABELS,
-  UPCOMING_DAYS,
 } from "../../features/dashboard/lib/constants";
 import type {
   ConversionCtx,
   DashboardChartDay,
-  Period,
 } from "../../features/dashboard/lib/types";
 import {
   buildExchangeRateMap,
@@ -195,8 +183,9 @@ import {
 // --- Sub-components -----------------------------------------------------------
 
 import { SectionTitle } from "../../features/dashboard/components/simple/SectionTitle";
-import { MacroContextCard } from "../../features/dashboard/components/simple/MacroContextCard";
-import { HeroCard } from "../../features/dashboard/components/simple/HeroCard";
+import { SimpleDashboard } from "../../features/dashboard/components/simple/SimpleDashboard";
+import { simpleBudgetWarnings, simpleReceivables, simpleTopCategories, simpleUpcomingItems, type SimpleAgendaItem } from "../../features/dashboard/lib/simple-view";
+import { isHistoryBalanceCorrection } from "../../features/dashboard/lib/history-view";
 import { QuickShortcutsRow } from "../../features/dashboard/components/QuickShortcutsRow";
 import { useMovementPatternsQuery } from "../../services/queries/movement-patterns";
 import { useCreateMovementMutation, useDeleteMovementMutation } from "../../services/queries/workspace-data";
@@ -205,41 +194,7 @@ import { buildQuickEntries, type QuickEntry } from "../../features/movements/lib
 import { useMovementTemplatesQuery } from "../../services/queries/movement-templates";
 import { buildMovementCreateInput } from "../../features/movements/lib/movement-save-contract";
 import { newClientDedupeKey } from "../../lib/idempotency";
-import { MiniBarChart } from "../../features/dashboard/components/simple/MiniBarChart";
-import { AccountsScroll } from "../../features/dashboard/components/simple/AccountsScroll";
-import { UpcomingSection } from "../../features/dashboard/components/simple/UpcomingSection";
-import { UrgentAlertsCard } from "../../features/dashboard/components/simple/UrgentAlertsCard";
-import { useDismissedDashboardAlerts } from "../../hooks/useDismissedDashboardAlerts";
-import { BudgetsSection } from "../../features/dashboard/components/simple/BudgetsSection";
-import { LeadersRow } from "../../features/dashboard/components/simple/LeadersRow";
-import { CategoryComparison } from "../../features/dashboard/components/simple/CategoryComparison";
-import { SpendTypeMixCard } from "../../features/dashboard/components/simple/SpendTypeMixCard";
-import { buildSpendTypeMix } from "../../features/dashboard/lib/spendTypeMix";
-import { useSpendTypesQuery } from "../../services/queries/spend-types";
-import { AccountsBreakdown } from "../../features/dashboard/components/simple/AccountsBreakdown";
-import { SavingsTrendCard } from "../../features/dashboard/components/simple/SavingsTrendCard";
-import { ReviewInbox } from "../../features/dashboard/components/simple/ReviewInbox";
-import { FutureFlowPreview } from "../../features/dashboard/components/simple/FutureFlowPreview";
 import { GettingStartedCard } from "../../features/dashboard/components/simple/GettingStartedCard";
-import {
-  buildFutureFlowWindows,
-  buildReviewInboxSnapshot,
-  convertDashboardCurrency,
-  type DashboardReviewInbox,
-  type FutureFlowWindow,
-} from "../../features/dashboard/lib/dashboard-builders";
-
-// MacroContextCard, ModeToggle, useCountUp, HeroCard, FlowRow/FlowCard, MiniBarChart extraídos a features/dashboard/
-
-// MiniBarChart extraído a features/dashboard/components/simple/MiniBarChart.tsx
-
-// ChronologyStrip / AccountsScroll / UpcomingSection / UrgentAlertsCard extraídos a features/dashboard/components/simple/
-
-// BudgetsSection / LeadersRow / CategoryComparison / AccountsBreakdown / SavingsTrendCard extraídos a features/dashboard/components/simple/
-
-// ReviewInbox / FutureFlowPreview / ProjectionFormulaBreakdown extraídos a features/dashboard/components/simple/
-
-// ExplanationTone + explanationToneLabel extraídos a features/dashboard/lib/advanced-types.ts
 
 import {
   ExplanationActions,
@@ -348,32 +303,7 @@ function DashboardScreen() {
   // "tablero limpio". React Query comparte la caché, así que esto no añade una petición.
   const { data: knownWorkspaces } = useUserWorkspacesQuery(profile?.id ?? null);
   const afterFirstPaint = useAfterFirstPaint();
-  const dismissedAlerts = useDismissedDashboardAlerts(activeWorkspaceId);
-
-
   const { showToast, showRichToast, showErrorToast } = useToast();
-  const markPaidMutation = useMarkSubscriptionPaidMutation(activeWorkspaceId);
-  const [dashboardPayTarget, setDashboardPayTarget] = useState<SubscriptionSummary | null>(null);
-  const arrival = useArrivalSheetController(activeWorkspaceId);
-
-  const handleDashboardMarkPaid = useCallback(
-    async (args: { paidDate: string; amount: number; accountId: number }) => {
-      if (!dashboardPayTarget) return;
-      try {
-        const { nextDueDate } = await markPaidMutation.mutateAsync({
-          subscription: dashboardPayTarget,
-          paidDate: args.paidDate,
-          amount: args.amount,
-          accountId: args.accountId,
-        });
-        setDashboardPayTarget(null);
-        showToast("Pago registrado", "success", `Próximo cobro: ${nextDueDate}`);
-      } catch (error: unknown) {
-        showErrorToast("No se pudo registrar el pago", error);
-      }
-    },
-    [dashboardPayTarget, markPaidMutation, showToast],
-  );
 
   const [signOutVisible, setSignOutVisible] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
@@ -425,7 +355,7 @@ function DashboardScreen() {
     }, []),
   );
 
-  const [period, setPeriod] = useState<Period>("month");
+  const [period, setPeriod] = useState<"week" | "month">("month");
   const [formVisible, setFormVisible] = useState(false);
   const [daySheet, setDaySheet] = useState<{
     dayStart: Date;
@@ -699,6 +629,16 @@ function DashboardScreen() {
   }, []);
 
   const activeCurrency = displayCurrency ?? baseCurrency;
+  const simpleAccountCurrencies = useMemo(() => [...new Set((snapshot?.accounts ?? [])
+    .filter((account) => account.includeInNetWorth && !account.isArchived)
+    .map((account) => account.currencyCode.toUpperCase()))], [snapshot?.accounts]);
+  const simpleCurrencyOptions = useMemo(() => simpleAccountCurrencies.length > 1
+    ? [baseCurrency, ...simpleAccountCurrencies.filter((code) => code !== baseCurrency)]
+      .filter((code) => code === baseCurrency || resolveRate(exchangeRateMap, baseCurrency, code, baseCurrency) != null)
+    : [], [baseCurrency, exchangeRateMap, simpleAccountCurrencies]);
+  const simpleCurrency = simpleAccountCurrencies.length === 1
+    ? simpleAccountCurrencies[0]
+    : simpleCurrencyOptions.includes(activeCurrency) ? activeCurrency : baseCurrency;
 
   // Conversion context passed to all amount functions
   const conversionCtx = useMemo<ConversionCtx>(
@@ -717,24 +657,11 @@ function DashboardScreen() {
       }, 0);
   }, [snapshot, baseCurrency, activeCurrency, exchangeRateMap]);
 
-  const stats = useDashboardStats(movements, period, conversionCtx);
-
-  const { data: spendTypes = [] } = useSpendTypesQuery(activeWorkspaceId);
-  const spendTypeMix = useMemo(() => {
-    const defaults = new Map<number, number | null>(
-      (snapshot?.categories ?? []).map((category) => [category.id, category.defaultSpendTypeId ?? null]),
-    );
-    return buildSpendTypeMix(
-      stats.spendCarriers,
-      defaults,
-      spendTypes,
-      (value) => formatCurrency(value, activeCurrency),
-    );
-  }, [stats.spendCarriers, snapshot?.categories, spendTypes, activeCurrency]);
+  const simpleConversionCtx = useMemo<ConversionCtx>(() => ({ ...conversionCtx, displayCurrency: simpleCurrency }), [conversionCtx, simpleCurrency]);
+  const simpleMovements = useMemo(() => movements.filter((movement) => !isHistoryBalanceCorrection(movement)), [movements]);
+  const simpleStats = useDashboardStats(simpleMovements, period, simpleConversionCtx);
+  const simpleMonthStats = useDashboardStats(simpleMovements, "month", simpleConversionCtx);
   const hasAnyMovement = movements.length > 0;
-  const hasPeriodActivity = stats.chartDays.some(
-    (day) => day.income > 0 || day.expense > 0 || day.transferTotal > 0,
-  );
 
   const onRefresh = useCallback(async () => {
     await Promise.all([
@@ -750,6 +677,33 @@ function DashboardScreen() {
     () => (snapshot?.accounts ?? []).filter((a) => !a.isArchived),
     [snapshot],
   );
+
+  const simpleAccounts = useMemo(() => activeAccounts
+    .filter((account) => account.includeInNetWorth)
+    .map((account) => ({
+      id: account.id,
+      name: account.name,
+      nativeAmount: account.currentBalance,
+      nativeCurrency: account.currencyCode,
+      amount: account.currentBalanceInBaseCurrency != null
+        ? convertAmt(account.currentBalanceInBaseCurrency, baseCurrency, simpleCurrency, exchangeRateMap, baseCurrency)
+        : convertAmt(account.currentBalance, account.currencyCode, simpleCurrency, exchangeRateMap, baseCurrency),
+    }))
+    .sort((a, b) => (b.amount ?? b.nativeAmount) - (a.amount ?? a.nativeAmount)), [activeAccounts, baseCurrency, exchangeRateMap, simpleCurrency]);
+  const simpleAccountTotal = simpleAccounts.every((account) => account.amount != null)
+    ? simpleAccounts.reduce((sum, account) => sum + (account.amount ?? 0), 0) : null;
+  const simpleBudgets = useMemo(() => simpleBudgetWarnings(correctedDashboardBudgets, new Date()), [correctedDashboardBudgets]);
+  const simpleAgenda = useMemo(() => simpleUpcomingItems({
+    obligations: obligationsMerged,
+    subscriptions: snapshot?.subscriptions ?? [],
+    recurringIncome: snapshot?.recurringIncome ?? [],
+    creditCards: activeAccounts,
+    now: new Date(),
+  }), [activeAccounts, obligationsMerged, snapshot?.recurringIncome, snapshot?.subscriptions]);
+  const simpleReceivableSummary = useMemo(() => simpleReceivables(obligationsMerged,
+    (amount, currency) => convertAmt(amount, currency, simpleCurrency, exchangeRateMap, baseCurrency)),
+  [baseCurrency, exchangeRateMap, obligationsMerged, simpleCurrency]);
+  const simpleCategories = useMemo(() => simpleTopCategories(simpleMonthStats.catTotals, new Map((snapshot?.categories ?? []).map((category) => [category.id, category.name]))), [simpleMonthStats.catTotals, snapshot?.categories]);
 
   const categoryMap = useMemo(() => {
     const m = new Map<number, string>();
@@ -900,111 +854,36 @@ function DashboardScreen() {
         ) : (
           <>
 
-        {!isAdvanced ? (
-          <>
-            <DashboardSectionBoundary sectionLabel="Balance">
-              <HeroCard
-                netWorth={netWorth}
-                income={stats.income}
-                expense={stats.expense}
-                currency={activeCurrency}
-                period={period}
-                setPeriod={setPeriod}
-                currencyOptions={currencyOptions}
-                onCurrencyChange={handleCurrencyChange}
-              />
-            </DashboardSectionBoundary>
-
-            {!hasAnyMovement ? (
-              <DashboardSectionBoundary sectionLabel="Primer movimiento">
-                <GettingStartedCard
-                  hasAccounts={activeAccounts.length > 0}
-                  onCreateMovement={() => setFormVisible(true)}
-                  onOpenAccounts={() => router.push("/accounts" as never)}
-                />
-              </DashboardSectionBoundary>
-            ) : null}
-
-            <DashboardSectionBoundary sectionLabel="Alertas urgentes">
-              <UrgentAlertsCard
-                obligations={obligationsMerged}
-                budgets={correctedDashboardBudgets}
-                subscriptions={snapshot?.subscriptions ?? []}
-                router={router}
-                isDismissed={dismissedAlerts.isDismissed}
-                onDismiss={dismissedAlerts.dismiss}
-              />
-            </DashboardSectionBoundary>
-
-            <DashboardSectionBoundary sectionLabel="Cuentas">
-              <AccountsScroll
-                accounts={activeAccounts}
-                onPress={(id) => router.push(`/account/${id}?from=dashboard`)}
-                onViewAll={() => router.push("/accounts")}
-              />
-              <AccountsBreakdown
-                accounts={snapshot?.accounts ?? []}
-                displayCurrency={activeCurrency}
-                baseCurrency={baseCurrency}
-                exchangeRateMap={exchangeRateMap}
-              />
-            </DashboardSectionBoundary>
-
-            {quickHabitsRow}
-
-            {hasPeriodActivity ? (
-              <DashboardSectionBoundary sectionLabel="Flujo reciente">
-                <MiniBarChart
-                  data={stats.chartDays}
-                  onSelectDay={(d) => setDaySheet({ dayStart: d.dayStart, dayEnd: d.dayEnd, mode: "all" })}
-                />
-              </DashboardSectionBoundary>
-            ) : null}
-
-            <DashboardSectionBoundary sectionLabel="Agenda y presupuestos">
-              <LeadersRow obligations={obligationsMerged} router={router} />
-              <UpcomingSection
-                obligations={obligationsMerged}
-                subscriptions={snapshot?.subscriptions ?? []}
-                recurringIncome={snapshot?.recurringIncome ?? []}
-                creditCards={activeAccounts}
-                router={router}
-                onPaySubscription={(id) => {
-                  const sub = (snapshot?.subscriptions ?? []).find((s) => s.id === id);
-                  if (sub) setDashboardPayTarget(sub);
-                }}
-                onConfirmIncome={(id) => {
-                  const item = (snapshot?.recurringIncome ?? []).find((r) => r.id === id);
-                  if (item) arrival.open(item);
-                }}
-              />
-              <BudgetsSection budgets={correctedDashboardBudgets} router={router} />
-            </DashboardSectionBoundary>
-
-            {hasAnyMovement ? (
-              <DashboardSectionBoundary sectionLabel="Categorías y ahorro">
-                <CategoryComparison
-                  catTotals={stats.catTotals}
-                  prevCatTotals={stats.prevCatTotals}
-                  categories={snapshot?.categories ?? []}
-                  currency={activeCurrency}
-                />
-                <SpendTypeMixCard
-                  mix={spendTypeMix}
-                  currency={activeCurrency}
-                  onPressClassify={() => router.push("/spend-types?from=more")}
-                />
-                <SavingsTrendCard monthlyPulse={stats.monthlyPulse} currency={activeCurrency} />
-              </DashboardSectionBoundary>
-            ) : null}
-
-            {hasAnyMovement ? (
-              <DashboardSectionBoundary sectionLabel="Contexto macro">
-                <MacroContextCard />
-              </DashboardSectionBoundary>
-            ) : null}
-          </>
-        ) : null}
+        {!isAdvanced ? <DashboardSectionBoundary sectionLabel="Inicio simple">
+          <SimpleDashboard
+            now={new Date()}
+            currency={simpleCurrency}
+            currencyOptions={simpleCurrencyOptions}
+            onCurrencyChange={handleCurrencyChange}
+            accountTotal={simpleAccountTotal}
+            accounts={simpleAccounts}
+            period={period}
+            onPeriodChange={setPeriod}
+            income={simpleStats.income}
+            expense={simpleStats.expense}
+            budgets={simpleBudgets}
+            agenda={simpleAgenda}
+            receivables={simpleReceivableSummary}
+            categories={simpleCategories}
+            onOpenAccount={(id) => router.push(`/account/${id}?from=dashboard`)}
+            onOpenAccounts={() => router.push("/accounts")}
+            onOpenBudgets={() => router.push("/budgets?from=dashboard")}
+            onOpenAgenda={(item: SimpleAgendaItem) => {
+              if (item.kind === "obligation") router.push(`/obligation/${item.id}`);
+              else if (item.kind === "subscription") router.push(`/subscription/${item.id}`);
+              else if (item.kind === "card") router.push(`/account/${item.id}?from=dashboard`);
+              else router.push("/recurring-income?from=dashboard" as never);
+            }}
+            onOpenReceivables={() => router.push(`/obligations?quickFilter=receivable&quickToken=${Date.now()}` as never)}
+            onOpenAdvanced={() => { setDashboardMode("advanced"); scrollRef.current?.scrollTo({ y: 0, animated: true }); }}
+          />
+          {!hasAnyMovement ? <GettingStartedCard hasAccounts={activeAccounts.length > 0} onCreateMovement={() => setFormVisible(true)} onOpenAccounts={() => router.push("/accounts" as never)} /> : null}
+        </DashboardSectionBoundary> : null}
 
         {/* -- Advanced section -- */}
         {isAdvanced && hasAdvancedDashboardAccess && (
@@ -1072,18 +951,6 @@ function DashboardScreen() {
           }}
         />
       ) : null}
-      <MarkSubscriptionPaidSheet
-        visible={Boolean(dashboardPayTarget)}
-        subscription={dashboardPayTarget}
-        accounts={snapshot?.accounts ?? []}
-        isPending={markPaidMutation.isPending}
-        onClose={() => setDashboardPayTarget(null)}
-        onConfirm={(args) => void handleDashboardMarkPaid(args)}
-      />
-      <RecurringIncomeArrivalSheet
-        {...arrival.sheetProps}
-        accounts={activeAccounts}
-      />
       <ConfirmDialog
         visible={signOutVisible}
         title="Cerrar sesión"

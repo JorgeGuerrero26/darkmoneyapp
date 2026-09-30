@@ -1,4 +1,4 @@
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
 import * as Haptics from "expo-haptics";
 import { FAB } from "../../components/ui/FAB";
@@ -92,6 +92,8 @@ function ObligationsScreen() {
   useUiStore((state) => state.privacyMode);
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const params = useLocalSearchParams<{ quickFilter?: string | string[]; quickToken?: string | string[] }>();
+  const quickFilter = Array.isArray(params.quickFilter) ? params.quickFilter[0] : params.quickFilter;
   const queryClient = useQueryClient();
   const { profile, session } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
@@ -134,7 +136,10 @@ function ObligationsScreen() {
     [obligationShares],
   );
 
-  const [activeFilters, setActiveFilters] = useState<ObligationFilterValue[]>([]);
+  const [activeFilters, setActiveFilters] = useState<ObligationFilterValue[]>(quickFilter === "receivable" ? ["receivable", "active"] : []);
+  useEffect(() => {
+    if (quickFilter === "receivable") setActiveFilters(["receivable", "active"]);
+  }, [quickFilter, params.quickToken]);
   const [archiveView, setArchiveView] = useState<ObligationArchiveView>("active");
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const showArchived = archiveView !== "active";
