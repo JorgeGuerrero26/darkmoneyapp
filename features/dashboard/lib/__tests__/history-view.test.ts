@@ -1,5 +1,5 @@
 import { displayCategoryName } from "../../../../lib/category-display-name";
-import { historyYearTotals, monthReading, observedHistoryMonths, periodSavingsRate, recentNetComparison, type HistoryMonth } from "../history-view";
+import { historyYearTotals, isHistoryBalanceCorrection, monthReading, observedHistoryMonths, periodSavingsRate, recentNetComparison, type HistoryMonth } from "../history-view";
 
 function month(index: number, income: number, expense: number): HistoryMonth {
   const key = `2026-${String(index).padStart(2, "0")}`;
@@ -7,6 +7,14 @@ function month(index: number, income: number, expense: number): HistoryMonth {
 }
 
 describe("lecturas de Historial", () => {
+  it("reconoce ajustes y correcciones heredadas sin ocultar ingresos ordinarios", () => {
+    expect(isHistoryBalanceCorrection({ movementType: "adjustment", description: "Ajuste bancario" })).toBe(true);
+    expect(isHistoryBalanceCorrection({ movementType: "income", description: "Corrección · Intereses" })).toBe(true);
+    expect(isHistoryBalanceCorrection({ movementType: "expense", description: "Corrección - Impuestos" })).toBe(true);
+    expect(isHistoryBalanceCorrection({ movementType: "income", description: "Intereses" })).toBe(false);
+    expect(isHistoryBalanceCorrection({ movementType: "expense", description: "Corrección de examen" })).toBe(false);
+  });
+
   it("reconcilia el neto anual y el ahorro desde los mismos meses que dibuja", () => {
     const months = [month(1, 100, 60), month(2, 50, 70), { ...month(3, 0, 0), isFuture: true }];
     expect(observedHistoryMonths(months)).toHaveLength(2);

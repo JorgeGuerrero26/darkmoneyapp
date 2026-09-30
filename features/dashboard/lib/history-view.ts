@@ -1,3 +1,5 @@
+import type { DashboardMovementRow } from "./dashboard-row";
+
 export type HistoryMonth = {
   label: string;
   income: number;
@@ -9,6 +11,12 @@ export type HistoryMonth = {
 };
 
 const HAS_ACTIVITY = 0.009;
+
+/** Ajustes de saldo no son dinero ganado ni gastado. Los registros antiguos se guardaron
+ * como ingresos/gastos con la descripción «Corrección · …»; los nuevos usan su tipo propio. */
+export function isHistoryBalanceCorrection(movement: Pick<DashboardMovementRow, "movementType" | "description">): boolean {
+  return movement.movementType === "adjustment" || /^correcci[oó]n\s*[·:—-]\s*\S/i.test(movement.description.trim());
+}
 
 export function periodSavingsRate(months: readonly { income: number; expense: number }[]): number | null {
   const income = months.reduce((sum, month) => sum + month.income, 0);

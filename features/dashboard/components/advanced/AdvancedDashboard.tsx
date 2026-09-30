@@ -113,6 +113,7 @@ import { MonthEndSheet } from "./MonthEndSheet";
 import { PatternsTab } from "./PatternsTab";
 import { FlowTab } from "./FlowTab";
 import { HistoryTab } from "./HistoryTab";
+import { HistoryMonthSheet } from "./HistoryMonthSheet";
 import {
   buildDashboardAiTextParts,
   ensureDashboardAiComplexTerms,
@@ -124,7 +125,7 @@ import {
 import { useDashboardStats } from "../../hooks/useDashboardStats";
 import { buildSystemState } from "../../lib/system-state";
 import { expenseTitle, habitPresentation, weeklySpendPattern } from "../../lib/patterns-view";
-import { periodSavingsRate } from "../../lib/history-view";
+import { isHistoryBalanceCorrection, periodSavingsRate } from "../../lib/history-view";
 
 import { SectionTitle } from "../simple/SectionTitle";
 import { useCashflowProjection, type CashflowProjectionInputs } from "../../hooks/useCashflowProjection";
@@ -293,7 +294,7 @@ export function AdvancedDashboard({
       const monthEnd = endOfMonth(monthDate);
       const cappedEnd = selectedHistoryYear === now.getFullYear() && monthIndex === now.getMonth() ? now : monthEnd;
       const isFuture = monthStart > now;
-      const monthMovements = isFuture ? [] : historyMovements.filter((movement) => inRange(movement, monthStart, cappedEnd));
+      const monthMovements = isFuture ? [] : historyMovements.filter((movement) => !isHistoryBalanceCorrection(movement) && inRange(movement, monthStart, cappedEnd));
       const income = monthMovements.filter(isIncome).reduce((sum, movement) => sum + incomeAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency }), 0);
       const expense = monthMovements.filter(isExpense).reduce((sum, movement) => sum + expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency }), 0);
       const net = income - expense;
@@ -413,7 +414,7 @@ export function AdvancedDashboard({
       const isFuture = monthStart > now;
       const totals = new Map<number | null, number>();
       if (!isFuture) {
-        for (const movement of historyMovements.filter((item) => isExpense(item) && inRange(item, monthStart, cappedEnd))) {
+        for (const movement of historyMovements.filter((item) => !isHistoryBalanceCorrection(item) && isExpense(item) && inRange(item, monthStart, cappedEnd))) {
           const key = movement.categoryId ?? null;
           totals.set(key, (totals.get(key) ?? 0) + expenseAmt(movement, ctx));
         }
@@ -437,7 +438,7 @@ export function AdvancedDashboard({
     const observedMonths = annualHistory.filter((month) => !month.isFuture && (month.income > 0.009 || month.expense > 0.009)).length;
     const yearStart = startOfDay(new Date(selectedHistoryYear, 0, 1));
     const yearEnd = endOfDay(new Date(selectedHistoryYear, 11, 31));
-    const yearMovements = historyMovements.filter((movement) => movement.status === "posted" && inRange(movement, yearStart, yearEnd));
+    const yearMovements = historyMovements.filter((movement) => movement.status === "posted" && !isHistoryBalanceCorrection(movement) && inRange(movement, yearStart, yearEnd));
     const expenseCategoryIds = new Set(
       yearMovements
         .filter(isExpense)
@@ -454,26 +455,14 @@ export function AdvancedDashboard({
 
   const selectedAnnualMonthDetail = useMemo(() => {
     if (!selectedAnnualMonth) return null;
-    const from = startOfDay(parseDisplayDate(selectedAnnualMonth.dateFrom));
-    const to = endOfDay(parseDisplayDate(selectedAnnualMonth.dateTo));
-    const monthMovements = historyMovements.filter((movement) => inRange(movement, from, to));
+    const monthIndex = annualHistory.findIndex((item) => item.dateFrom === selectedAnnualMonth.dateFrom);
+    const month = monthIndex >= 0 ? annualHistory[monthIndex] : selectedAnnualMonth;
+    const from = startOfDay(parseDisplayDate(month.dateFrom));
+    const to = endOfDay(parseDisplayDate(month.dateTo));
+    const monthMovements = historyMovements.filter((movement) => movement.status === "posted" && inRange(movement, from, to));
+    const cashflowMovements = monthMovements.filter((movement) => !isHistoryBalanceCorrection(movement));
+    const correctionMovements = monthMovements.filter(isHistoryBalanceCorrection);
     const ctx = { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency };
-    const categoryTotals = new Map<number | null, number>();
-
-    for (const movement of monthMovements.filter(isExpense)) {
-      const key = movement.categoryId ?? null;
-      categoryTotals.set(key, (categoryTotals.get(key) ?? 0) + expenseAmt(movement, ctx));
-    }
-
-    let topCategoryId: number | null = null;
-    let topCategoryAmount = 0;
-    for (const [categoryId, amount] of categoryTotals.entries()) {
-      if (amount > topCategoryAmount) {
-        topCategoryId = categoryId;
-        topCategoryAmount = amount;
-      }
-    }
-
     const relevantMovements = monthMovements
       .filter((movement) => isIncome(movement) || isExpense(movement))
       .map((movement) => {
@@ -484,29 +473,28 @@ export function AdvancedDashboard({
           title: movement.description.trim() || (income ? "Ingreso" : "Gasto"),
           amount,
           income,
+          correction: isHistoryBalanceCorrection(movement),
+          expenseShare: !income && !isHistoryBalanceCorrection(movement) && month.expense > 0 ? amount / month.expense * 100 : null,
           date: format(new Date(movement.occurredAt), "d MMM", { locale: es }),
           accountName: accountMap.get(movementDisplayAccountId(movement) ?? -1) ?? "Cuenta",
-          categoryName: movement.categoryId != null ? (categoryMap.get(movement.categoryId) ?? "Categoría") : "Sin categoría",
         };
       })
       .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
       .slice(0, 4);
 
-    const savingsRate = selectedAnnualMonth.income > 0 ? (selectedAnnualMonth.net / selectedAnnualMonth.income) * 100 : null;
-    const monthIndex = annualHistory.findIndex((m) => m.dateFrom === selectedAnnualMonth.dateFrom);
+    const savingsRate = month.income > 0 ? (month.net / month.income) * 100 : null;
     const prevMonth = monthIndex > 0 ? annualHistory[monthIndex - 1] : null;
     return {
-      month: selectedAnnualMonth,
-      incomeCount: monthMovements.filter(isIncome).length,
-      expenseCount: monthMovements.filter(isExpense).length,
-      topCategoryId,
-      topCategoryName: topCategoryAmount > 0 ? (topCategoryId != null ? (categoryMap.get(topCategoryId) ?? "Categoría") : "Sin categoría") : "Sin gasto categorizado",
-      topCategoryAmount,
+      month,
+      incomeCount: cashflowMovements.filter(isIncome).length,
+      expenseCount: cashflowMovements.filter(isExpense).length,
+      totalCount: monthMovements.length,
+      correctionIds: correctionMovements.map((movement) => movement.id),
       largestMovements: relevantMovements,
       savingsRate,
       prevMonth,
     };
-  }, [accountCurrencyMap, accountMap, activeCurrency, annualHistory, baseCurrency, categoryMap, exchangeRateMap, historyMovements, selectedAnnualMonth]);
+  }, [accountCurrencyMap, accountMap, activeCurrency, annualHistory, baseCurrency, exchangeRateMap, historyMovements, selectedAnnualMonth]);
 
   // Esta query cubre seis meses completos; la lista base de 90 días dejaba abril-junio vacíos.
   const recentHistoryMovements = useMemo(() => {
@@ -522,7 +510,7 @@ export function AdvancedDashboard({
       const mDate = subMonths(now, 6 - i);
       const mStart = startOfMonth(mDate);
       const mEnd = i === 6 ? now : endOfMonth(mDate);
-      const mMvs = recentHistoryMovements.filter((m) => inRange(m, mStart, mEnd));
+      const mMvs = recentHistoryMovements.filter((m) => !isHistoryBalanceCorrection(m) && inRange(m, mStart, mEnd));
       const inc = mMvs.filter(isIncome).reduce((s, m) => s + incomeAmt(m, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency }), 0);
       const exp = mMvs.filter(isExpense).reduce((s, m) => s + expenseAmt(m, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency }), 0);
       const rate = inc > 0 ? ((inc - exp) / inc) * 100 : null;
@@ -604,8 +592,8 @@ export function AdvancedDashboard({
     const prevYearStart = startOfMonth(subMonths(now, 12));
     const prevYearEnd = endOfMonth(subMonths(now, 12));
     const ctx = { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency };
-    const curMvs = historyMovements.filter((m) => inRange(m, curStart, curEnd));
-    const prevMvs = historyMovements.filter((m) => inRange(m, prevYearStart, prevYearEnd));
+    const curMvs = historyMovements.filter((m) => !isHistoryBalanceCorrection(m) && inRange(m, curStart, curEnd));
+    const prevMvs = historyMovements.filter((m) => !isHistoryBalanceCorrection(m) && inRange(m, prevYearStart, prevYearEnd));
     const curIncome = curMvs.filter(isIncome).reduce((s, m) => s + incomeAmt(m, ctx), 0);
     const curExpense = curMvs.filter(isExpense).reduce((s, m) => s + expenseAmt(m, ctx), 0);
     const prevIncome = prevMvs.filter(isIncome).reduce((s, m) => s + incomeAmt(m, ctx), 0);
@@ -625,7 +613,7 @@ export function AdvancedDashboard({
     if (selectedHistoryYear !== new Date().getFullYear() || !yearMovementsQuery.data) return false;
     const months = new Set(
       historyMovements
-        .filter((movement) => movement.status === "posted" && (isIncome(movement) || isExpense(movement)))
+        .filter((movement) => movement.status === "posted" && !isHistoryBalanceCorrection(movement) && (isIncome(movement) || isExpense(movement)))
         .map((movement) => format(new Date(movement.occurredAt), "yyyy-MM")),
     );
     return Array.from({ length: 12 }, (_, index) => format(subMonths(new Date(), index), "yyyy-MM"))
@@ -892,6 +880,16 @@ export function AdvancedDashboard({
     setMovementPreview(preview);
   }, []);
 
+  // iOS no presenta dos Modal a la vez: cerramos la hoja del mes antes de abrir la lista.
+  const openHistorySheetPreview = useCallback((preview: MovementPreviewSheetState) => {
+    if (selectedAnnualMonth) {
+      setSelectedAnnualMonth(null);
+      setTimeout(() => openMovementPreview(preview), 350);
+      return;
+    }
+    openMovementPreview(preview);
+  }, [openMovementPreview, selectedAnnualMonth]);
+
   /**
    * Los sin categoría abren la bandeja, no una vista previa.
    *
@@ -1082,8 +1080,9 @@ export function AdvancedDashboard({
     const to = endOfDay(parseDisplayDate(dateTo));
     const kind = options?.kind ?? "all";
     const rangeMovements = sortMovementsRecentFirst(
-      movements.filter((movement) => {
+      historyMovements.filter((movement) => {
         if (!inRange(movement, from, to)) return false;
+        if (kind !== "all" && isHistoryBalanceCorrection(movement)) return false;
         if (kind === "income" && !isIncome(movement)) return false;
         if (kind === "expense" && !isExpense(movement)) return false;
         if (kind === "all" && movement.status !== "posted") return false;
@@ -1096,10 +1095,10 @@ export function AdvancedDashboard({
       }),
     );
     const income = rangeMovements
-      .filter((movement) => movementActsAsIncome(movement))
+      .filter((movement) => !isHistoryBalanceCorrection(movement) && movementActsAsIncome(movement))
       .reduce((sum, movement) => sum + incomeAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency }), 0);
     const expense = rangeMovements
-      .filter((movement) => movementActsAsExpense(movement))
+      .filter((movement) => !isHistoryBalanceCorrection(movement) && movementActsAsExpense(movement))
       .reduce((sum, movement) => sum + expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency }), 0);
     const rangeLabel = `${format(from, "d MMM", { locale: es })} - ${format(to, "d MMM yyyy", { locale: es })}`;
     const defaultTitle = kind === "income"
@@ -1108,7 +1107,7 @@ export function AdvancedDashboard({
         ? "Gastos del periodo"
         : "Movimientos del periodo";
 
-    openMovementPreview({
+    openHistorySheetPreview({
       title: options?.title ?? defaultTitle,
       subtitle: `${rangeMovements.length} movimiento${rangeMovements.length === 1 ? "" : "s"} en el periodo. Ingresos: ${formatCurrency(income, activeCurrency)}. Gastos: ${formatCurrency(expense, activeCurrency)}.`,
       scopeLabel: `Alcance: ${rangeLabel}.`,
@@ -1120,33 +1119,30 @@ export function AdvancedDashboard({
     accountCurrencyMap,
     activeCurrency,
     exchangeRateMap,
-    movements,
-    openMovementPreview,
+    historyMovements,
+    openHistorySheetPreview,
   ]);
 
-  const openAnnualMonthPreview = useCallback((month: AnnualHistoryMonth, kind: "all" | "income" | "expense" = "all") => {
+  const openAnnualMonthPreview = useCallback((month: AnnualHistoryMonth) => {
     const monthName = format(parseDisplayDate(month.dateFrom), "MMMM yyyy", { locale: es });
     openHistoryRangePreview(month.dateFrom, month.dateTo, {
-      kind,
-      title: kind === "income"
-        ? `Ingresos de ${monthName}`
-        : kind === "expense"
-          ? `Gastos de ${monthName}`
-          : `Movimientos de ${monthName}`,
+      title: `Movimientos de ${monthName}`,
     });
   }, [openHistoryRangePreview]);
 
-  const openAnnualTopCategoryPreview = useCallback((detail: NonNullable<typeof selectedAnnualMonthDetail>) => {
-    openHistoryRangePreview(detail.month.dateFrom, detail.month.dateTo, {
-      kind: "expense",
-      categoryId: detail.topCategoryId,
-      title: `${detail.topCategoryName} en ${format(parseDisplayDate(detail.month.dateFrom), "MMMM yyyy", { locale: es })}`,
+  const openAnnualCorrectionsPreview = useCallback((ids: number[]) => {
+    const idSet = new Set(ids);
+    openHistorySheetPreview({
+      title: "Correcciones de saldo",
+      subtitle: `${ids.length} correcciones que no cuentan como ingresos, gastos ni ahorro.`,
+      scopeLabel: "Estas correcciones sí modifican el saldo de sus cuentas.",
+      movements: sortMovementsRecentFirst(historyMovements.filter((movement) => idSet.has(movement.id))),
     });
-  }, [openHistoryRangePreview]);
+  }, [historyMovements, openHistorySheetPreview]);
 
   const openSingleMovementPreview = useCallback((movementId: number, title = "Movimiento del historial") => {
-    const movement = movementById.get(movementId);
-    openMovementPreview({
+    const movement = historyMovements.find((item) => item.id === movementId);
+    openHistorySheetPreview({
       title,
       subtitle: movement
         ? "Este movimiento fue uno de los que más peso tuvo en la lectura del mes."
@@ -1156,7 +1152,7 @@ export function AdvancedDashboard({
       emptyBody: "Puede pasar si los datos se actualizaron después de abrir el detalle.",
       movements: movement ? [movement] : [],
     });
-  }, [movementById, openMovementPreview]);
+  }, [historyMovements, openHistorySheetPreview]);
 
   const openPendingReviewPreview = useCallback(() => {
     openMovementPreview({
@@ -3551,179 +3547,16 @@ export function AdvancedDashboard({
             )}
       </BottomSheet>
 
-      <BottomSheet
-        visible={Boolean(selectedAnnualMonthDetail)}
-        onClose={() => setSelectedAnnualMonth(null)}
-        title={selectedAnnualMonthDetail ? `Detalle de ${selectedAnnualMonthDetail.month.label} ${selectedHistoryYear}` : "Detalle mensual"}
-        snapHeight={0.72}
-        blurBackdrop={false}
-        backdropColor="rgba(0,0,0,0.68)"
-      >
-        {selectedAnnualMonthDetail ? (
-          <View style={subStyles.annualDetailContent}>
-            <View style={subStyles.annualDetailHero}>
-              <Text style={subStyles.visualChartKicker}>Lectura del mes</Text>
-              <Text style={subStyles.annualDetailTitle}>
-                {selectedAnnualMonthDetail.month.net >= 0 ? "Este mes dejó margen" : "Este mes consumió caja"}
-              </Text>
-              <Text style={subStyles.visualChartIntro}>
-                La lectura usa movimientos reales del rango {selectedAnnualMonthDetail.month.dateFrom} al {selectedAnnualMonthDetail.month.dateTo}.
-              </Text>
-            </View>
-
-            <View style={subStyles.annualSummaryGrid}>
-              <View style={subStyles.annualSummaryCard}>
-                <Text style={subStyles.savingsStatLabel}>Ingresos</Text>
-                <Text style={[subStyles.annualSummaryValue, { color: COLORS.income }]}>{formatCurrency(selectedAnnualMonthDetail.month.income, activeCurrency)}</Text>
-                <Text style={subStyles.annualDetailMini}>{selectedAnnualMonthDetail.incomeCount} mov.</Text>
-              </View>
-              <View style={subStyles.annualSummaryCard}>
-                <Text style={subStyles.savingsStatLabel}>Gastos</Text>
-                <Text style={[subStyles.annualSummaryValue, { color: COLORS.expense }]}>{formatCurrency(selectedAnnualMonthDetail.month.expense, activeCurrency)}</Text>
-                <Text style={subStyles.annualDetailMini}>{selectedAnnualMonthDetail.expenseCount} mov.</Text>
-              </View>
-              <View style={subStyles.annualSummaryCard}>
-                <Text style={subStyles.savingsStatLabel}>Neto</Text>
-                <Text style={[subStyles.annualSummaryValue, { color: selectedAnnualMonthDetail.month.net >= 0 ? COLORS.income : COLORS.expense }]}>
-                  {selectedAnnualMonthDetail.month.net >= 0 ? "+" : ""}{formatCurrency(selectedAnnualMonthDetail.month.net, activeCurrency)}
-                </Text>
-              </View>
-              <View style={subStyles.annualSummaryCard}>
-                <Text style={subStyles.savingsStatLabel}>Ahorro</Text>
-                <Text style={[subStyles.annualSummaryValue, { color: selectedAnnualMonthDetail.savingsRate == null ? COLORS.storm : selectedAnnualMonthDetail.savingsRate >= 0 ? COLORS.income : COLORS.expense }]}>
-                  {selectedAnnualMonthDetail.savingsRate == null ? "-" : `${selectedAnnualMonthDetail.savingsRate.toFixed(1)}%`}
-                </Text>
-              </View>
-            </View>
-
-            {selectedAnnualMonthDetail.prevMonth && !selectedAnnualMonthDetail.prevMonth.isFuture ? (
-              <View style={subStyles.annualDetailSection}>
-                <Text style={subStyles.annualDetailSectionTitle}>Vs mes anterior ({selectedAnnualMonthDetail.prevMonth.label})</Text>
-                <View style={subStyles.annualSummaryGrid}>
-                  <View style={subStyles.annualSummaryCard}>
-                    <Text style={subStyles.savingsStatLabel}>Ingresos</Text>
-                    {(() => {
-                      const delta = selectedAnnualMonthDetail.month.income - selectedAnnualMonthDetail.prevMonth!.income;
-                      return (
-                        <Text style={[subStyles.annualSummaryValue, { color: delta >= 0 ? COLORS.income : COLORS.expense }]}>
-                          {delta >= 0 ? "+" : ""}{formatCurrency(delta, activeCurrency)}
-                        </Text>
-                      );
-                    })()}
-                  </View>
-                  <View style={subStyles.annualSummaryCard}>
-                    <Text style={subStyles.savingsStatLabel}>Gastos</Text>
-                    {(() => {
-                      const delta = selectedAnnualMonthDetail.month.expense - selectedAnnualMonthDetail.prevMonth!.expense;
-                      return (
-                        <Text style={[subStyles.annualSummaryValue, { color: delta <= 0 ? COLORS.income : COLORS.expense }]}>
-                          {delta >= 0 ? "+" : ""}{formatCurrency(delta, activeCurrency)}
-                        </Text>
-                      );
-                    })()}
-                  </View>
-                  <View style={subStyles.annualSummaryCard}>
-                    <Text style={subStyles.savingsStatLabel}>Neto</Text>
-                    {(() => {
-                      const delta = selectedAnnualMonthDetail.month.net - selectedAnnualMonthDetail.prevMonth!.net;
-                      return (
-                        <Text style={[subStyles.annualSummaryValue, { color: delta >= 0 ? COLORS.income : COLORS.expense }]}>
-                          {delta >= 0 ? "+" : ""}{formatCurrency(delta, activeCurrency)}
-                        </Text>
-                      );
-                    })()}
-                  </View>
-                  <View style={subStyles.annualSummaryCard}>
-                    <Text style={subStyles.savingsStatLabel}>Ahorro</Text>
-                    {(() => {
-                      const prevRate = selectedAnnualMonthDetail.prevMonth!.income > 0
-                        ? (selectedAnnualMonthDetail.prevMonth!.net / selectedAnnualMonthDetail.prevMonth!.income) * 100
-                        : null;
-                      const delta = selectedAnnualMonthDetail.savingsRate != null && prevRate != null
-                        ? selectedAnnualMonthDetail.savingsRate - prevRate
-                        : null;
-                      return (
-                        <Text style={[subStyles.annualSummaryValue, { color: delta == null ? COLORS.storm : delta >= 0 ? COLORS.income : COLORS.expense }]}>
-                          {delta == null ? "-" : `${delta >= 0 ? "+" : ""}${delta.toFixed(1)}pp`}
-                        </Text>
-                      );
-                    })()}
-                  </View>
-                </View>
-              </View>
-            ) : null}
-
-            <View style={subStyles.annualDetailSection}>
-              <Text style={subStyles.annualDetailSectionTitle}>Qué empujó el gasto</Text>
-              <TouchableOpacity
-                style={subStyles.annualDetailCategoryCard}
-                onPress={() => {
-                  if (!selectedAnnualMonthDetail) return;
-                  openAnnualTopCategoryPreview(selectedAnnualMonthDetail);
-                }}
-                activeOpacity={0.84}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={subStyles.annualDetailCategoryName}>{selectedAnnualMonthDetail.topCategoryName}</Text>
-                  <Text style={subStyles.annualDetailMini}>Toca para ver esos movimientos</Text>
-                </View>
-                <Text style={subStyles.annualDetailCategoryAmount}>{formatCurrency(selectedAnnualMonthDetail.topCategoryAmount, activeCurrency)}</Text>
-              </TouchableOpacity>
-            </View>
-
-            {selectedAnnualMonthDetail.largestMovements.length > 0 ? (
-              <View style={subStyles.annualDetailSection}>
-                <Text style={subStyles.annualDetailSectionTitle}>Movimientos que más pesan</Text>
-                {selectedAnnualMonthDetail.largestMovements.map((movement) => (
-                  <TouchableOpacity
-                    key={movement.id}
-                    style={subStyles.annualMovementRow}
-                    onPress={() => {
-                      openSingleMovementPreview(movement.id, movement.title);
-                    }}
-                    activeOpacity={0.84}
-                  >
-                    <View style={{ flex: 1 }}>
-                      <Text style={subStyles.annualMovementTitle} numberOfLines={1}>{movement.title}</Text>
-                      <Text style={subStyles.annualMovementMeta} numberOfLines={1}>{movement.categoryName} · {movement.accountName} · {movement.date}</Text>
-                    </View>
-                    <Text style={[subStyles.annualMovementAmount, { color: movement.income ? COLORS.income : COLORS.expense }]}>
-                      {movement.income ? "+" : "-"}{formatCurrency(movement.amount, activeCurrency)}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            ) : null}
-
-            <View style={subStyles.annualDetailActions}>
-              <TouchableOpacity
-                style={subStyles.annualDetailPrimaryBtn}
-                onPress={() => openAnnualMonthPreview(selectedAnnualMonthDetail.month)}
-                activeOpacity={0.84}
-              >
-                <Text style={subStyles.annualDetailPrimaryBtnText}>Abrir movimientos del mes</Text>
-              </TouchableOpacity>
-              <View style={subStyles.annualDetailSplitActions}>
-                <TouchableOpacity
-                  style={subStyles.annualDetailSecondaryBtn}
-                  onPress={() => openAnnualMonthPreview(selectedAnnualMonthDetail.month, "income")}
-                  activeOpacity={0.84}
-                >
-                  <Text style={subStyles.annualDetailSecondaryBtnText}>Solo ingresos</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={subStyles.annualDetailSecondaryBtn}
-                  onPress={() => openAnnualMonthPreview(selectedAnnualMonthDetail.month, "expense")}
-                  activeOpacity={0.84}
-                >
-                  <Text style={subStyles.annualDetailSecondaryBtnText}>Solo gastos</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        ) : null}
-      </BottomSheet>
-
+      {selectedAnnualMonthDetail ? (
+        <HistoryMonthSheet
+          detail={selectedAnnualMonthDetail}
+          currency={activeCurrency}
+          onClose={() => setSelectedAnnualMonth(null)}
+          onOpenAll={() => openAnnualMonthPreview(selectedAnnualMonthDetail.month)}
+          onOpenCorrections={() => openAnnualCorrectionsPreview(selectedAnnualMonthDetail.correctionIds)}
+          onOpenMovement={(movement) => openSingleMovementPreview(movement.id, movement.title)}
+        />
+      ) : null}
       {activeTab === 'Patrones' && (
         <DashboardSectionBoundary sectionLabel="Patrones">
           <PatternsTab
