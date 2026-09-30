@@ -1,4 +1,5 @@
 import type { ObligationSummary, SharedObligationSummary } from "../../../types/domain";
+import { obligationViewerDirection } from "../../../lib/obligation-viewer-labels";
 
 export type ObligationFilterValue =
   | "all"
@@ -45,7 +46,7 @@ export function filterObligations<T extends ObligationSummary | SharedObligation
 
   return obligations.filter((obligation) => {
     const matchesDirection =
-      directionFilters.length === 0 || directionFilters.includes(obligation.direction);
+      directionFilters.length === 0 || directionFilters.includes(obligationViewerDirection(obligation));
     const matchesStatus =
       statusFilters.length === 0 || statusFilters.some((status) => status === obligation.status);
     return matchesDirection && matchesStatus;

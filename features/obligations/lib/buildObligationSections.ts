@@ -1,4 +1,5 @@
 import type { ObligationSummary, SharedObligationSummary } from "../../../types/domain";
+import { obligationViewerDirection } from "../../../lib/obligation-viewer-labels";
 
 export type ObligationListItem = ObligationSummary | SharedObligationSummary;
 
@@ -53,8 +54,8 @@ export function buildObligationSections({
 
   if (groupByDirection) {
     const active: ObligationListItem[] = [...activeWorkspaceData, ...activeSharedData];
-    const receivable = active.filter((obligation) => obligation.direction === "receivable");
-    const payable = active.filter((obligation) => obligation.direction !== "receivable");
+    const receivable = active.filter((obligation) => obligationViewerDirection(obligation) === "receivable");
+    const payable = active.filter((obligation) => obligationViewerDirection(obligation) === "payable");
     if (receivable.length > 0) {
       sections.push({ key: "receivable", label: "Me deben", data: receivable });
     }

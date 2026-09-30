@@ -41,9 +41,9 @@ describe("secciones de créditos y deudas", () => {
     });
     expect(sections.map((section) => section.key)).toEqual(["receivable", "payable"]);
     expect(sections[0].label).toBe("Me deben");
-    // La compartida es un crédito: va con los créditos, y su fila lleva el distintivo.
-    expect(sections[0].data.map((item) => item.id)).toEqual([1, 3]);
-    expect(sections[1].data.map((item) => item.id)).toEqual([2]);
+    // La compartida es un crédito del dueño: para el invitado es una deuda.
+    expect(sections[0].data.map((item) => item.id)).toEqual([1]);
+    expect(sections[1].data.map((item) => item.id)).toEqual([2, 3]);
   });
 
   it("una sección vacía no se dibuja", () => {
@@ -70,7 +70,7 @@ describe("secciones de créditos y deudas", () => {
       "archived-divider",
       "workspace-archived",
     ]);
-    expect(sections[1].data.map((item) => item.id)).toEqual([2]);
+    expect(sections[1].data.map((item) => item.id)).toEqual([2, 3]);
   });
 
   it("solo archivadas omite los grupos activos y conserva las compartidas", () => {
