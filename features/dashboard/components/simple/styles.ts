@@ -556,25 +556,6 @@ export const dashboardSimpleStyles = StyleSheet.create({
   subName: { flex: 1, fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.sm, color: COLORS.ink },
   subAmt: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.storm },
 
-  // Health score
-  healthHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: SPACING.sm },
-  healthScore: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    borderWidth: 2,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  healthScoreNum: { fontFamily: FONT_FAMILY.heading, fontSize: FONT_SIZE.lg, lineHeight: FONT_SIZE.lg + 2 },
-  healthScoreOf: { fontFamily: FONT_FAMILY.body, fontSize: 9, color: COLORS.storm, lineHeight: 11 },
-  healthRow: { gap: 4, marginBottom: SPACING.sm },
-  healthLabelRow: { flexDirection: "row", justifyContent: "space-between" },
-  healthLabel: { fontFamily: FONT_FAMILY.bodyMedium, fontSize: FONT_SIZE.xs, color: COLORS.ink },
-  healthDesc: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
-  healthTrack: { height: 5, backgroundColor: SURFACE.track, borderRadius: RADIUS.full, overflow: "hidden" },
-  healthFill: { height: 5, borderRadius: RADIUS.full },
-
   // Alert center
   alertEmpty: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.storm },
   alertRow: { flexDirection: "row", alignItems: "center", gap: SPACING.sm, paddingVertical: SPACING.xs },
@@ -1714,30 +1695,6 @@ export const dashboardSimpleStyles = StyleSheet.create({
     fontSize: FONT_SIZE.xs,
     color: COLORS.storm,
     lineHeight: 18,
-  },
-  movementPreviewSuggestionAction: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: SPACING.sm,
-    padding: SPACING.sm,
-    borderRadius: RADIUS.lg,
-    backgroundColor: COLORS.primary + "18",
-    borderWidth: 1,
-    borderColor: COLORS.primary + "38",
-  },
-  movementPreviewSuggestionActionDisabled: {
-    opacity: 0.64,
-  },
-  movementPreviewSuggestionTitle: {
-    fontFamily: FONT_FAMILY.bodySemibold,
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.ink,
-  },
-  movementPreviewSuggestionBody: {
-    marginTop: 2,
-    fontFamily: FONT_FAMILY.body,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.storm,
   },
   movementPreviewListContent: {
     gap: 0,
@@ -3101,18 +3058,6 @@ export const dashboardSimpleStyles = StyleSheet.create({
     // Gris fijo, sin color de dato. El color lo lleva la cifra de arriba; la frase que la
     // explica es apoyo. Antes se teñia de menta o clay segun el signo y competia con ella.
     color: COLORS.storm,
-  },
-  healthScoreInterpret: {
-    fontFamily: FONT_FAMILY.body,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.storm,
-    lineHeight: 16,
-  },
-  healthInterpret: {
-    fontFamily: FONT_FAMILY.body,
-    fontSize: FONT_SIZE.xs,
-    lineHeight: 15,
-    marginTop: 3,
   },
   advMetricInterpret: {
     fontFamily: FONT_FAMILY.body,

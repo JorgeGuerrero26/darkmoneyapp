@@ -15,63 +15,6 @@ import { buildHealthScore } from "../../lib/health";
 import { SectionTitle } from "../simple/SectionTitle";
 import { dashboardSimpleStyles as subStyles } from "../simple/styles";
 
-export function HealthScore({
-  liquidMoney,
-  averageMonthlyExpense,
-  periodIncome,
-  periodNet,
-  totalPayable,
-  overdueCount,
-}: {
-  liquidMoney: number;
-  averageMonthlyExpense: number;
-  periodIncome: number;
-  periodNet: number;
-  totalPayable: number;
-  overdueCount: number;
-}) {
-  // Score unificado web/móvil (features/dashboard/lib/health.ts, espejo del paquete).
-  const health = buildHealthScore({
-    liquidMoney,
-    averageMonthlyExpense,
-    periodIncome,
-    periodNet,
-    totalPayable,
-    overdueCount,
-  });
-  const score = health.score;
-  const scoreColor = score >= 80 ? COLORS.income : score >= 60 ? COLORS.storm : COLORS.expense;
-
-  return (
-    <Card>
-      <View style={subStyles.healthHeader}>
-        <View style={{ gap: 2 }}>
-          <SectionTitle>Salud financiera</SectionTitle>
-          <Text style={subStyles.healthScoreInterpret}>{health.headline}</Text>
-        </View>
-        <View style={[subStyles.healthScore, { borderColor: scoreColor + "55" }]}>
-          <Text style={[subStyles.healthScoreNum, { color: scoreColor }]}>{score}</Text>
-          <Text style={subStyles.healthScoreOf}>/100</Text>
-        </View>
-      </View>
-      {health.indicators.map((ind) => (
-        <View key={ind.key} style={subStyles.healthRow}>
-          <View style={subStyles.healthLabelRow}>
-            <Text style={subStyles.healthLabel}>{ind.label}</Text>
-            <Text style={subStyles.healthDesc}>{ind.valueLabel}</Text>
-          </View>
-          <View style={subStyles.healthTrack}>
-            <View style={[subStyles.healthFill, { width: `${ind.score}%`, backgroundColor: ind.score >= 75 ? COLORS.income : ind.score >= 50 ? COLORS.storm : COLORS.expense }]} />
-          </View>
-          <Text style={[subStyles.healthInterpret, { color: ind.score >= 75 ? COLORS.income : ind.score >= 50 ? COLORS.storm : COLORS.expense }]}>
-            {ind.interpret}
-          </Text>
-        </View>
-      ))}
-    </Card>
-  );
-}
-
 type AlertItem = {
   key: string;
   icon: LucideIcon;

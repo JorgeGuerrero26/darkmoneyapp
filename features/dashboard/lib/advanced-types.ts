@@ -53,13 +53,6 @@ export type MovementPreviewSheetState = {
   emptyTitle?: string;
   emptyBody?: string;
   movements: DashboardMovementRow[];
-  suggestion?: {
-    movementId: number;
-    description: string;
-    categoryId: number;
-    categoryName: string;
-    confidencePct: number;
-  };
 };
 
 export type ExplanationTone = "positive" | "warning" | "danger";

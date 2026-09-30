@@ -114,6 +114,7 @@ import { PatternsTab } from "./PatternsTab";
 import { FlowTab } from "./FlowTab";
 import { HistoryTab } from "./HistoryTab";
 import { HistoryMonthSheet } from "./HistoryMonthSheet";
+import { HealthTab } from "./HealthTab";
 import {
   buildDashboardAiTextParts,
   ensureDashboardAiComplexTerms,
@@ -126,13 +127,13 @@ import { useDashboardStats } from "../../hooks/useDashboardStats";
 import { buildSystemState } from "../../lib/system-state";
 import { expenseTitle, habitPresentation, weeklySpendPattern } from "../../lib/patterns-view";
 import { isHistoryBalanceCorrection, periodSavingsRate } from "../../lib/history-view";
+import { healthBaselineFromMonths, reserveDays } from "../../lib/health-view";
 
 import { SectionTitle } from "../simple/SectionTitle";
 import { useCashflowProjection, type CashflowProjectionInputs } from "../../hooks/useCashflowProjection";
 import { isLiquidAccount } from "../../../projection/lib/liquid-balance";
 import type { ProjectionLine } from "../../../projection/lib/cashflow-calendar";
 import { projectionFlowItems } from "../../lib/projectionFlowItems";
-import { ReviewInbox } from "../simple/ReviewInbox";
 import { dashboardSimpleStyles as subStyles } from "../simple/styles";
 
 import {
@@ -147,13 +148,9 @@ import {
   CategoryBreakdown,
   ObligationsSection,
 } from "./AdvancedSections";
-import {
-  AlertCenter,
-  HealthScore,
-} from "./HealthAndAlerts";
+import { AlertCenter } from "./HealthAndAlerts";
 import {
   AdvancedGiftCard,
-  CurrencyExposure,
   FinancialGraphCard,
   PeriodRadar,
 } from "./AdvancedCards";
@@ -339,26 +336,10 @@ export function AdvancedDashboard({
   const monthToDate = useMemo(() => {
     const now = new Date();
     const start = startOfMonth(now);
-    const income = movements.filter((movement) => inRange(movement, start, now) && isIncome(movement)).reduce((sum, movement) => sum + incomeAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency }), 0);
-    const expense = movements.filter((movement) => inRange(movement, start, now) && isExpense(movement)).reduce((sum, movement) => sum + expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency }), 0);
+    const income = movements.filter((movement) => !isHistoryBalanceCorrection(movement) && inRange(movement, start, now) && isIncome(movement)).reduce((sum, movement) => sum + incomeAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency }), 0);
+    const expense = movements.filter((movement) => !isHistoryBalanceCorrection(movement) && inRange(movement, start, now) && isExpense(movement)).reduce((sum, movement) => sum + expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency }), 0);
     return { income, expense, net: income - expense, daysElapsed: Math.max(1, differenceInDays(now, start) + 1) };
   }, [accountCurrencyMap, activeCurrency, exchangeRateMap, movements]);
-
-  // A3: Cash Cushion — días de caja libre al ritmo actual
-  const cashCushion = useMemo(() => {
-    const now = new Date();
-    const thirtyDaysAgo = subDays(now, 29);
-    const totalExpenses30d = movements
-      .filter((m) => isExpense(m) && inRange(m, thirtyDaysAgo, now))
-      .reduce((sum, m) => sum + expenseAmt(m, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency }), 0);
-    const dailyBurn = totalExpenses30d / 30;
-    const days = Math.round(currentVisibleBalance / Math.max(dailyBurn, 1));
-    const adjustedDailyBurn = dailyBurn + (windows[2]?.expectedOutflow ?? 0) / 30;
-    const daysWithCommitments = Math.round(currentVisibleBalance / Math.max(adjustedDailyBurn, 1));
-    const label = days >= 90 ? "Sólido" : days >= 30 ? "Adecuado" : "Corto";
-    const color = days >= 90 ? COLORS.income : days >= 30 ? COLORS.storm : COLORS.expense;
-    return { days, daysWithCommitments, dailyBurn, label, color };
-  }, [accountCurrencyMap, activeCurrency, currentVisibleBalance, exchangeRateMap, movements, windows]);
 
   // A2: EMA de tendencia de gasto semanal (alpha=0.35, últimas 12 semanas)
   const spendingTrend = useMemo(() => {
@@ -530,6 +511,26 @@ export function AdvancedDashboard({
     const color = lastRate == null ? COLORS.storm : lastRate >= 20 ? COLORS.income : lastRate >= 0 ? COLORS.storm : COLORS.expense;
     return { months, avgRate, lastRate, trend, color };
   }, [accountCurrencyMap, activeCurrency, exchangeRateMap, projectionHistory, recentHistoryMovements]);
+
+  // Salud y caja usan los mismos meses completos. Un solo mes atípico ya no cambia
+  // la nota de ahorro ni hace que la reserva difiera entre pantallas.
+  const healthBaseline = useMemo(() => {
+    return healthBaselineFromMonths(monthlySavingsRate.months.slice(0, -1));
+  }, [monthlySavingsRate.months]);
+
+  const cashCushion = useMemo(() => {
+    const now = new Date();
+    const last30DaysExpense = movements
+      .filter((movement) => !isHistoryBalanceCorrection(movement) && isExpense(movement) && inRange(movement, subDays(now, 29), now))
+      .reduce((sum, movement) => sum + expenseAmt(movement, { accountCurrencyMap, exchangeRateMap, displayCurrency: activeCurrency, baseCurrency }), 0);
+    const monthlyExpense = healthBaseline.averageExpense > 0 ? healthBaseline.averageExpense : last30DaysExpense;
+    const dailyBurn = monthlyExpense / 30;
+    const days = reserveDays(currentVisibleBalance, monthlyExpense);
+    const daysWithCommitments = reserveDays(currentVisibleBalance, monthlyExpense + (windows[2]?.expectedOutflow ?? 0));
+    const label = days >= 90 ? "Sólido" : days >= 30 ? "Adecuado" : "Corto";
+    const color = days >= 90 ? COLORS.income : days >= 30 ? COLORS.storm : COLORS.expense;
+    return { days, daysWithCommitments, dailyBurn, monthlyExpense, label, color };
+  }, [accountCurrencyMap, activeCurrency, baseCurrency, currentVisibleBalance, exchangeRateMap, healthBaseline.averageExpense, movements, windows]);
 
   // N2: Score de estabilidad de ingresos - coeficiente de variación sobre 6 meses (bajo CV = estable)
   const incomeStabilityScore = useMemo(() => {
@@ -825,6 +826,9 @@ export function AdvancedDashboard({
   const [movementPreview, setMovementPreview] = useState<MovementPreviewSheetState | null>(null);
   const graphWindowStart = startOfDay(subDays(new Date(), 89)).getTime();
   const [applyingSuggestionMovementId, setApplyingSuggestionMovementId] = useState<number | null>(null);
+  const [acceptingAllSuggestions, setAcceptingAllSuggestions] = useState(false);
+  const [acceptedSuggestionIds, setAcceptedSuggestionIds] = useState<Set<number>>(() => new Set());
+  const suggestionApplyInFlightRef = useRef(false);
   const queryClient = useQueryClient();
   const { showToast, showErrorToast } = useToast();
   const updateMovementMutation = useUpdateMovementMutation(workspaceId);
@@ -1211,96 +1215,6 @@ export function AdvancedDashboard({
     ],
   );
 
-  const openCategorySuggestionPreview = useCallback((suggestion: DashboardCategorySuggestion) => {
-    const movement = movementById.get(suggestion.movementId);
-    const confidencePct = Math.round(suggestion.confidence * 100);
-    openMovementPreview({
-      title: "Sugerencia de categoría",
-      subtitle: movement
-        ? `La app sugiere "${suggestion.suggestedCategoryName}" para "${suggestion.description}" con ${confidencePct}% de confianza.`
-        : "No encontramos este movimiento en la lista actual del dashboard.",
-      scopeLabel: suggestion.reasons.length > 0
-        ? `Motivo: ${suggestion.reasons.join(" · ")}.`
-        : "Alcance: movimiento exacto sugerido por Salud.",
-      emptyTitle: "Movimiento no disponible",
-      emptyBody: "Puede pasar si los datos se actualizaron después de abrir la sugerencia.",
-      movements: movement ? [movement] : [],
-      suggestion: movement
-        ? {
-          movementId: suggestion.movementId,
-          description: suggestion.description,
-          categoryId: suggestion.suggestedCategoryId,
-          categoryName: suggestion.suggestedCategoryName,
-          confidencePct,
-        }
-        : undefined,
-    });
-  }, [movementById, openMovementPreview]);
-
-  const applyCategorySuggestionFromPreview = useCallback(async () => {
-    const suggestion = movementPreview?.suggestion;
-    if (!suggestion) return;
-    const currentMovement = movementPreview?.movements.find((movement) => movement.id === suggestion.movementId);
-    setApplyingSuggestionMovementId(suggestion.movementId);
-    try {
-      await updateMovementMutation.mutateAsync({
-        id: suggestion.movementId,
-        input: { categoryId: suggestion.categoryId },
-      });
-      await persistDashboardAnalyticsMutation.mutateAsync({
-        signals: [{
-          movementId: suggestion.movementId,
-          normalizedDescription: normalizeAnalyticsText(suggestion.description) || null,
-          suggestedCategoryId: suggestion.categoryId,
-          suggestedCategoryConfidence: 1,
-          signalReasons: [
-            "usuario aceptó sugerencia de categoría",
-            `categoría aplicada: ${suggestion.categoryName}`,
-          ],
-          analyticsVersion: "v2-feedback",
-        }],
-      });
-      await persistLearningFeedbackMutation.mutateAsync({
-        movementId: suggestion.movementId,
-        feedbackKind: "accepted_category_suggestion",
-        normalizedDescription: normalizeAnalyticsText(suggestion.description) || null,
-        previousCategoryId: currentMovement?.categoryId ?? null,
-        acceptedCategoryId: suggestion.categoryId,
-        confidence: suggestion.confidencePct / 100,
-        source: "dashboard-salud",
-        metadata: {
-          categoryName: suggestion.categoryName,
-          description: suggestion.description,
-        },
-      });
-      setMovementPreview((current) => {
-        if (!current) return current;
-        return {
-          ...current,
-          subtitle: `Listo: "${suggestion.categoryName}" quedó aplicado a este movimiento.`,
-          scopeLabel: "Categoría aplicada desde Salud. Puedes editar el movimiento si necesitas cambiar algo más.",
-          movements: current.movements.map((movement) =>
-            movement.id === suggestion.movementId
-              ? { ...movement, categoryId: suggestion.categoryId }
-              : movement,
-          ),
-          suggestion: undefined,
-        };
-      });
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["dashboard-movements"] }),
-        queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] }),
-        queryClient.invalidateQueries({ queryKey: ["dashboard-analytics"] }),
-        queryClient.invalidateQueries({ queryKey: ["movement", suggestion.movementId] }),
-      ]);
-      showToast("Categoría aplicada", "success", suggestion.categoryName);
-    } catch (error) {
-      showErrorToast("No se pudo aplicar la categoría", error);
-    } finally {
-      setApplyingSuggestionMovementId(null);
-    }
-  }, [movementPreview?.movements, movementPreview?.suggestion, persistDashboardAnalyticsMutation, persistLearningFeedbackMutation, queryClient, showToast, updateMovementMutation]);
-
   const openPrecisionLayer = useCallback(() => {
     setExecutiveDetail(null);
     setAdvancedDetail(null);
@@ -1329,21 +1243,79 @@ export function AdvancedDashboard({
     const seen = new Set<number>();
     return [...learningFeedbackCategorySuggestions, ...persistedCategorySuggestions, ...generated]
       .filter((suggestion) => {
+        const movement = movementById.get(suggestion.movementId);
+        if (!movement || !isCategorizedCashflow(movement) || movement.categoryId != null || acceptedSuggestionIds.has(suggestion.movementId)) return false;
         if (seen.has(suggestion.movementId)) return false;
         seen.add(suggestion.movementId);
         return true;
       })
-      .sort((a, b) => b.confidence - a.confidence || new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime())
+      .sort((a, b) => b.amount - a.amount || b.confidence - a.confidence)
       .slice(0, 4);
   }, [
     accountCurrencyMap,
     activeCurrency,
+    acceptedSuggestionIds,
     exchangeRateMap,
     learningFeedbackCategorySuggestions,
     movements,
+    movementById,
     persistedCategorySuggestions,
     snapshot?.categories,
   ]);
+
+  const acceptCategorySuggestions = useCallback(async (items: DashboardCategorySuggestion[]) => {
+    if (items.length === 0 || suggestionApplyInFlightRef.current) return;
+    suggestionApplyInFlightRef.current = true;
+    if (items.length > 1) setAcceptingAllSuggestions(true);
+    else setApplyingSuggestionMovementId(items[0].movementId);
+    const applied: DashboardCategorySuggestion[] = [];
+    let firstError: unknown = null;
+    try {
+      for (const suggestion of items) {
+        try {
+          await updateMovementMutation.mutateAsync({ id: suggestion.movementId, input: { categoryId: suggestion.suggestedCategoryId } });
+          applied.push(suggestion);
+          setAcceptedSuggestionIds((current) => new Set([...current, suggestion.movementId]));
+        } catch (error) {
+          firstError ??= error;
+        }
+      }
+      if (applied.length > 0) {
+        const signals = applied.map((suggestion) => ({
+          movementId: suggestion.movementId,
+          normalizedDescription: normalizeAnalyticsText(suggestion.description) || null,
+          suggestedCategoryId: suggestion.suggestedCategoryId,
+          suggestedCategoryConfidence: 1,
+          signalReasons: ["usuario aceptó sugerencia de categoría", `categoría aplicada: ${suggestion.suggestedCategoryName}`],
+          analyticsVersion: "v2-feedback",
+        }));
+        try { await persistDashboardAnalyticsMutation.mutateAsync({ signals }); } catch { /* La categoría ya quedó guardada. */ }
+        for (const suggestion of applied) {
+          try { await persistLearningFeedbackMutation.mutateAsync({
+            movementId: suggestion.movementId,
+            feedbackKind: "accepted_category_suggestion",
+            normalizedDescription: normalizeAnalyticsText(suggestion.description) || null,
+            previousCategoryId: null,
+            acceptedCategoryId: suggestion.suggestedCategoryId,
+            confidence: suggestion.confidence,
+            source: "dashboard-salud",
+            metadata: { categoryName: suggestion.suggestedCategoryName, description: suggestion.description },
+          }); } catch { /* La categoría ya quedó guardada. */ }
+        }
+        await Promise.allSettled([
+          queryClient.invalidateQueries({ queryKey: ["dashboard-movements"] }),
+          queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] }),
+          queryClient.invalidateQueries({ queryKey: ["dashboard-analytics"] }),
+        ]);
+        showToast(applied.length === 1 ? "Categoría aplicada" : "Categorías aplicadas", "success", `${applied.length} movimiento${applied.length === 1 ? "" : "s"}`);
+      }
+      if (firstError) showErrorToast("Algunas categorías no se pudieron aplicar", firstError);
+    } finally {
+      suggestionApplyInFlightRef.current = false;
+      setApplyingSuggestionMovementId(null);
+      setAcceptingAllSuggestions(false);
+    }
+  }, [persistDashboardAnalyticsMutation, persistLearningFeedbackMutation, queryClient, showToast, updateMovementMutation]);
 
   const { projectionModel: legacyProjectionModel, projectionAsOf } = useMemo(() => {
     const now = new Date();
@@ -1440,7 +1412,7 @@ export function AdvancedDashboard({
     weekWindow.expectedOutflow,
   ]);
 
-  // Paridad de moneda: HealthScore suma pendingAmount, así que se convierte ANTES
+  // Paridad de moneda: la nota suma pendingAmount, así que se convierte ANTES
   // de pasarlo (montos no convertibles cuentan como 0, nunca 1:1 silencioso).
   const obligationsForHealth = useMemo(
     () =>
@@ -1458,29 +1430,11 @@ export function AdvancedDashboard({
     [activeCurrency, baseCurrency, exchangeRateMap, obligations],
   );
 
-  // Inputs unificados de salud financiera (mismo contrato que web vía buildHealthScore).
-  // liquidMoney: solo dinero líquido (cash/bank/savings) no archivado, convertido a la
-  // moneda activa — paridad con la web (liquidAccountTypes). averageMonthlyExpense:
-  // promedio de gasto de los 6 meses de monthlyPulse (estable). periodIncome/periodNet:
-  // mes a la fecha (mismo período que la web). totalPayable/overdueCount: payable activas.
+  // La nota usa la misma caja líquida y el mismo gasto mensual que los días de reserva.
+  // Ingreso y neto son promedios de meses completos: su cociente es el ahorro ponderado
+  // de seis meses, no el porcentaje parcial de este mes.
   const healthInputs = useMemo(() => {
     const now = new Date();
-    const liquidAccountTypes = new Set(["cash", "bank", "savings"]);
-    type LiquidAccount = {
-      type: string;
-      isArchived: boolean;
-      currentBalance: number;
-      currentBalanceInBaseCurrency?: number | null;
-    };
-    const liquidMoney = ((snapshot?.accounts ?? []) as LiquidAccount[])
-      .filter((a) => liquidAccountTypes.has(a.type) && !a.isArchived)
-      .reduce((sum: number, a: LiquidAccount) => {
-        const raw = a.currentBalanceInBaseCurrency ?? a.currentBalance;
-        return sum + (convertDashboardCurrency(raw, baseCurrency, activeCurrency, exchangeRateMap, baseCurrency) ?? 0);
-      }, 0);
-    const expenses = projectionHistory ? monthlySavingsRate.months.slice(0, -1).map((month) => month.expense) : [];
-    const averageMonthlyExpense =
-      expenses.length > 0 ? expenses.reduce((s, v) => s + v, 0) / expenses.length : 0;
     let totalPayable = 0;
     let overdueCount = 0;
     for (const o of obligationsForHealth) {
@@ -1489,14 +1443,25 @@ export function AdvancedDashboard({
       if (o.dueDate && new Date(o.dueDate) < now) overdueCount += 1;
     }
     return {
-      liquidMoney,
-      averageMonthlyExpense,
-      periodIncome: monthToDate.income,
-      periodNet: monthToDate.income - monthToDate.expense,
+      liquidMoney: currentVisibleBalance,
+      averageMonthlyExpense: cashCushion.monthlyExpense,
+      periodIncome: healthBaseline.averageIncome,
+      periodNet: healthBaseline.averageNet,
       totalPayable,
       overdueCount,
     };
-  }, [activeCurrency, baseCurrency, exchangeRateMap, monthToDate.expense, monthToDate.income, monthlySavingsRate.months, obligationsForHealth, projectionHistory, snapshot?.accounts]);
+  }, [cashCushion.monthlyExpense, currentVisibleBalance, healthBaseline.averageIncome, healthBaseline.averageNet, obligationsForHealth]);
+
+  const currencyExposure = useMemo(() => {
+    const totals = new Map<string, number>();
+    for (const account of snapshot?.accounts ?? []) {
+      if (account.isArchived || account.currentBalance <= 0) continue;
+      const converted = convertDashboardCurrency(account.currentBalance, account.currencyCode, activeCurrency, exchangeRateMap, baseCurrency);
+      if (converted == null) return [];
+      totals.set(account.currencyCode, (totals.get(account.currencyCode) ?? 0) + converted);
+    }
+    return [...totals.entries()].map(([code, amount]) => ({ code, amount })).sort((a, b) => b.amount - a.amount);
+  }, [activeCurrency, baseCurrency, exchangeRateMap, snapshot?.accounts]);
 
   const financialGraphRank = useMemo(() => (
     buildFinancialGraphRank<DashboardMovementRow>({
@@ -2712,6 +2677,7 @@ export function AdvancedDashboard({
   const [patternsAiSheetOpen, setPatternsAiSheetOpen] = useState(false);
   const [flowAiSheetOpen, setFlowAiSheetOpen] = useState(false);
   const [historyAiSheetOpen, setHistoryAiSheetOpen] = useState(false);
+  const [healthAiSheetOpen, setHealthAiSheetOpen] = useState(false);
   const dashboardAiTone = dashboardAi.tone;
   const setDashboardAiTone = dashboardAi.setTone;
   const dashboardAiBreath = useRef(new Animated.Value(0)).current;
@@ -3305,7 +3271,33 @@ export function AdvancedDashboard({
       </BottomSheet>
 
       <BottomSheet
-        visible={Boolean(activeDashboardAiTerm) && !summaryAiSheetOpen && !patternsAiSheetOpen && !flowAiSheetOpen && !historyAiSheetOpen}
+        visible={healthAiSheetOpen}
+        onClose={() => { setHealthAiSheetOpen(false); setActiveDashboardAiTerm(null); }}
+        title={activeDashboardAiTerm ? "Explicación" : "Informe de salud con IA"}
+        snapHeight={0.82}
+        blurBackdrop={false}
+        headerStyle={subStyles.summarySheetHeader}
+        contentStyle={subStyles.summarySheetContent}
+      >
+        {activeDashboardAiTerm ? (
+          <View style={subStyles.aiSummaryTermSheet}>
+            <TouchableOpacity onPress={() => setActiveDashboardAiTerm(null)} accessibilityRole="button"><Text style={subStyles.summaryAiBack}>Volver al informe</Text></TouchableOpacity>
+            <Text style={subStyles.aiSummaryTermSheetTitle}>{activeDashboardAiTerm.term}</Text>
+            <Text style={subStyles.aiSummaryTermSheetBody}>{activeDashboardAiTerm.explanation}</Text>
+          </View>
+        ) : dashboardAiHealthMutation.isPending && !dashboardAiHealthReply ? (
+          <AiResponseSkeleton />
+        ) : dashboardAiHealthReply ? (
+          <Text style={subStyles.summaryAiReportText}>
+            {dashboardAiHealthTextParts.map((part, index) => part.type === "term" ? (
+              <Text key={`${part.term.term}-health-${index}`} style={subStyles.summaryAiReportTerm} onPress={() => setActiveDashboardAiTerm(part.term)}>{part.value}</Text>
+            ) : <Text key={`health-text-${index}`}>{part.value}</Text>)}
+          </Text>
+        ) : <Text style={subStyles.summaryAiReportText}>{dashboardAiHealthLimitReached ? "La consulta de hoy ya se usó. Podrás pedir otro informe mañana." : "No se pudo preparar el informe. Cierra la hoja y vuelve a intentarlo."}</Text>}
+      </BottomSheet>
+
+      <BottomSheet
+        visible={Boolean(activeDashboardAiTerm) && !summaryAiSheetOpen && !patternsAiSheetOpen && !flowAiSheetOpen && !historyAiSheetOpen && !healthAiSheetOpen}
         onClose={() => setActiveDashboardAiTerm(null)}
         title="Explicación"
         snapHeight={0.42}
@@ -3448,29 +3440,6 @@ export function AdvancedDashboard({
             {movementPreview?.variant === "graph" ? null : (
               <Text style={subStyles.movementPreviewScope}>{movementPreview?.scopeLabel}</Text>
             )}
-            {movementPreview?.suggestion ? (
-              <TouchableOpacity
-                style={[
-                  subStyles.movementPreviewSuggestionAction,
-                  applyingSuggestionMovementId === movementPreview.suggestion.movementId && subStyles.movementPreviewSuggestionActionDisabled,
-                ]}
-                onPress={applyCategorySuggestionFromPreview}
-                disabled={applyingSuggestionMovementId === movementPreview.suggestion.movementId}
-                activeOpacity={0.84}
-              >
-                <Tag size={15} color={COLORS.primary} />
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={subStyles.movementPreviewSuggestionTitle} numberOfLines={1}>
-                    {applyingSuggestionMovementId === movementPreview.suggestion.movementId
-                      ? "Aplicando sugerencia..."
-                      : `Aplicar ${movementPreview.suggestion.categoryName}`}
-                  </Text>
-                  <Text style={subStyles.movementPreviewSuggestionBody} numberOfLines={1}>
-                    Confianza {movementPreview.suggestion.confidencePct}% · no sales del dashboard.
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            ) : null}
             {movementPreviewStats && movementPreviewStats.uncategorized > 0 ? (
               <TouchableOpacity
                 style={subStyles.movementPreviewCategorizeRow}
@@ -3636,165 +3605,42 @@ export function AdvancedDashboard({
       )}
       {activeTab === 'Salud' && (
         <DashboardSectionBoundary sectionLabel="Salud">
-        <>
-      <View style={{ height: SPACING.sm }} />
-      {/* La pantalla decia 86% ("confianza actual", tres veces con tres nombres distintos),
-          68% ("proyeccion con bandas"), 78% ("categorias utiles") y 74% ("Fase 4"). Puestos
-          asi, no se sabe cual mirar ni por que difieren. Queda uno, con el umbral por debajo
-          del cual las proyecciones dejan de sostenerse. */}
-      <Card>
-        <View style={subStyles.precisionHeader}>
-          <Text style={subStyles.precisionLabel}>Precisión del dato</Text>
-          <Text style={subStyles.precisionDays}>{learning.historyDays} días observados</Text>
-        </View>
-        <Text
-          style={[
-            subStyles.precisionValue,
-            { color: learning.readinessScore >= 80 ? COLORS.income : COLORS.expense },
-          ]}
-        >
-          {learning.readinessScore}%
-        </Text>
-        <Text style={subStyles.precisionBody}>
-          {learning.potentialScore > learning.readinessScore
-            ? `Resolver los pendientes de abajo la lleva a ${learning.potentialScore}%. `
-            : ""}
-          Por debajo de 80% las proyecciones dejan de ser fiables.
-        </Text>
-      </Card>
-
-      <View style={{ height: SPACING.sm }} />
-      <HealthScore
-        liquidMoney={healthInputs.liquidMoney}
-        averageMonthlyExpense={healthInputs.averageMonthlyExpense}
-        periodIncome={healthInputs.periodIncome}
-        periodNet={healthInputs.periodNet}
-        totalPayable={healthInputs.totalPayable}
-        overdueCount={healthInputs.overdueCount}
-      />
-
-      <View style={{ height: SPACING.sm }} />
-      <Card>
-        <SectionTitle>Ahorro y estabilidad</SectionTitle>
-        <TouchableOpacity style={subStyles.advMetricSection} onPress={() => setAdvancedDetail("savingsRate")} activeOpacity={0.84}>
-          <View style={subStyles.advMetricHeader}>
-            <Text style={subStyles.advMetricTitle}>Tasa de ahorro</Text>
-            {monthlySavingsRate.avgRate != null ? <Text style={[subStyles.advMetricBadge, { color: monthlySavingsRate.avgRate >= 0 ? COLORS.income : COLORS.expense }]}>{monthlySavingsRate.avgRate.toFixed(1)}%</Text> : null}
-          </View>
-          <Text style={subStyles.advMetricBody}>
-            {monthlySavingsRate.avgRate == null ? "Esperando seis meses completos de historial." : `En los últimos seis meses completos · este mes ${monthlySavingsRate.lastRate == null ? "sin ingresos" : `${monthlySavingsRate.lastRate.toFixed(1)}%`}`}
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={[subStyles.advMetricSection, subStyles.advMetricSectionBorder]} onPress={() => setAdvancedDetail("incomeStability")} activeOpacity={0.84}>
-          <View style={subStyles.advMetricHeader}>
-            <Text style={subStyles.advMetricTitle}>Estabilidad de ingresos</Text>
-            {incomeStabilityScore.score != null ? <Text style={[subStyles.advMetricBadge, { color: incomeStabilityScore.color }]}>{incomeStabilityScore.score}/100</Text> : null}
-          </View>
-          <Text style={subStyles.advMetricBody}>{incomeStabilityScore.score == null ? "Se necesitan ingresos en al menos tres meses completos." : incomeStabilityScore.label}</Text>
-        </TouchableOpacity>
-      </Card>
-
-      <View style={{ height: SPACING.sm }} />
-      <ReviewInbox
-        movements={movements}
-        subscriptions={subscriptions}
-        obligations={obligations}
-        router={router}
-        onOpenMovementIssue={openHealthMovementIssuePreview}
-      />
-
-
-      <View style={{ height: SPACING.sm }} />
-      <Card>
-        <SectionTitle>Sugerencias de categoría</SectionTitle>
-        <Text style={subStyles.executiveIntro}>
-          Aquí DarkMoney ya se apoya en tu historial: descripciones repetidas, contraparte y montos parecidos para adelantarte categorías con confianza.
-        </Text>
-        {categorySuggestions.length === 0 ? (
-          <View style={subStyles.richEmptyState}>
-            <Brain size={18} color={COLORS.primary} />
-            <Text style={subStyles.richEmptyTitle}>Sin sugerencias por ahora</Text>
-            <Text style={subStyles.richEmptyBody}>El motor ya está preparado. Se activará cuando haya movimientos sin categoría y ejemplos parecidos ya corregidos o categorizados en tu historial.</Text>
-          </View>
-        ) : (
-          <View style={subStyles.commandActions}>
-            {categorySuggestions.map((suggestion) => (
-              <TouchableOpacity
-                key={suggestion.movementId}
-                style={subStyles.commandActionRow}
-                onPress={() => openCategorySuggestionPreview(suggestion)}
-                activeOpacity={0.82}
-              >
-                <View style={subStyles.commandActionCopy}>
-                  <View style={subStyles.suggestionRowTop}>
-                    <Text style={subStyles.commandActionTitle} numberOfLines={1}>{suggestion.description}</Text>
-                    <View style={subStyles.miniChip}>
-                      <Text style={subStyles.miniChipText}>{Math.round(suggestion.confidence * 100)}%</Text>
-                    </View>
-                  </View>
-                  <Text style={subStyles.commandActionBody}>
-                    {suggestion.suggestedCategoryName} · {formatCurrency(suggestion.amount, activeCurrency)} · {format(new Date(suggestion.occurredAt), "d MMM", { locale: es })}
-                  </Text>
-                  <Text style={subStyles.commandActionBody}>
-                    {suggestion.reasons.join(" · ")}
-                  </Text>
-                </View>
-                <ArrowRight size={15} color={COLORS.storm} />
-              </TouchableOpacity>
-            ))}
-          </View>
-        )}
-      </Card>
-
-      <View style={{ height: SPACING.sm }} />
-      <Card>
-        <View style={subStyles.cardHeaderWithAction}>
-          <SectionTitle>Eficiencia de cobro</SectionTitle>
-        </View>
-        <TouchableOpacity style={subStyles.advMetricSection} onPress={() => setAdvancedDetail("collectionEfficiency")} activeOpacity={0.84}>
-          <View style={subStyles.advMetricHeader}>
-            <Text style={subStyles.advMetricTitle}>Cobros resueltos (últimos 30 días)</Text>
-            {collectionEfficiency.rate != null ? (
-              <Text style={[subStyles.advMetricBadge, { color: collectionEfficiency.color }]}>
-                {collectionEfficiency.rate}% · {collectionEfficiency.label}
-              </Text>
-            ) : null}
-          </View>
-          <Text style={subStyles.advMetricBody}>
-            {collectionEfficiency.rate != null
-              ? `${collectionEfficiency.resolved} de ${collectionEfficiency.total} cobros resueltos`
-              : "Sin cobros registrados en los últimos 30 días. Agrega obligaciones de tipo receivable para activar esta métrica."}
-          </Text>
-          {collectionEfficiency.rate != null ? (
-            <View style={subStyles.advScoreBar}>
-              <View style={[subStyles.advScoreFill, { width: `${collectionEfficiency.rate}%` as any, backgroundColor: collectionEfficiency.color }]} />
-            </View>
-          ) : null}
-          {collectionEfficiency.rate != null ? (
-            <Text style={[subStyles.advMetricInterpret, { color: collectionEfficiency.color }]}>
-              {collectionEfficiency.rate >= 80
-                ? "Excelente — cobras la mayoría de lo que se te debe a tiempo."
-                : collectionEfficiency.rate >= 50
-                ? "Cobros parciales — algunos receivables siguen sin resolverse."
-                : "Baja eficiencia — hay dinero pendiente que no está volviendo."}
-            </Text>
-          ) : null}
-        </TouchableOpacity>
-      </Card>
-
-      <View style={{ height: SPACING.sm }} />
-      <CurrencyExposure accounts={snapshot?.accounts ?? []} />
-
-      {/* La proyección del cierre y sus bandas viven en Flujo; el relato del aprendizaje, en
-          Ajustes › Acerca de. Aquí solo queda lo que se puede arreglar. */}
-      <View style={{ height: SPACING.sm }} />
-      <Text style={subStyles.bridgeFootnote}>
-        La proyección del cierre y sus bandas viven en Flujo.
-      </Text>
-      </>
-      </DashboardSectionBoundary>
-      )}
-    </>
+          <HealthTab
+            healthInputs={healthInputs}
+            historyReady={Boolean(projectionHistory) && healthBaseline.monthsUsed > 0}
+            historyMonths={healthBaseline.monthsUsed}
+            savingsAverage={monthlySavingsRate.avgRate}
+            savingsCurrent={monthlySavingsRate.lastRate}
+            incomeStability={incomeStabilityScore.label}
+            system={systemState}
+            potentialScore={learning.potentialScore}
+            review={review}
+            suggestions={categorySuggestions}
+            currency={activeCurrency}
+            applyingSuggestionId={applyingSuggestionMovementId}
+            acceptingAll={acceptingAllSuggestions}
+            collectionRate={collectionEfficiency.rate}
+            collectionResolved={collectionEfficiency.resolved}
+            collectionTotal={collectionEfficiency.total}
+            exposure={currencyExposure}
+            onOpenAi={() => {
+              setHealthAiSheetOpen(true);
+              if (!dashboardAiHealthReply && !dashboardAiHealthLimitReached && !dashboardAiHealthMutation.isPending) {
+                void handleRequestDashboardAiHealth();
+              }
+            }}
+            onOpenSavings={() => setAdvancedDetail("savingsRate")}
+            onOpenIncome={() => setAdvancedDetail("incomeStability")}
+            onOpenIssue={(key) => {
+              if (key === "subscriptions") { router.push("/subscriptions" as never); return; }
+              if (key === "obligations") { router.push("/obligations" as never); return; }
+              openHealthMovementIssuePreview(key);
+            }}
+            onAcceptSuggestion={(suggestion) => { void acceptCategorySuggestions([suggestion]); }}
+            onAcceptAll={() => { void acceptCategorySuggestions(categorySuggestions); }}
+          />
+        </DashboardSectionBoundary>
+      )}   </>
   );
 }
 

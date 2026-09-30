@@ -1,4 +1,4 @@
-export const SYSTEM_CONFIDENT_THRESHOLD = 75;
+export const SYSTEM_CONFIDENT_THRESHOLD = 80;
 
 export function buildSystemState(readinessScore: number, totalIssues: number, uncategorizedCount: number) {
   const score = Math.max(0, Math.min(100, readinessScore));

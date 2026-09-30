@@ -131,7 +131,7 @@ assert(monthProjection.variableIncomeProjection === 1, "el ritmo mensual observa
 assert(monthProjection.expectedBalance === 91, "cierre = saldo + compromisos + ritmo restante");
 
 const systemState = buildSystemState(83, 596, 127);
-assert(systemState.status === "Confiable" && systemState.threshold === 75, "el estado y la marca usan el mismo umbral de 75%");
+assert(systemState.status === "Confiable" && systemState.threshold === 80, "el estado y la marca usan el mismo umbral de 80%");
 assert(systemState.totalIssues === systemState.uncategorizedCount + systemState.otherIssuesCount, "los dos grupos suman el total del resumen");
 assert(systemState.otherIssuesCount === 469, "596 puntos menos 127 sin categoría deja 469 para Salud");
 assert(buildSystemState(74, 1, 1).status === "Por limpiar", "74% queda bajo el umbral confiable");
