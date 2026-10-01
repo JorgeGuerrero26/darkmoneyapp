@@ -1,62 +1,36 @@
-import { ArrowDown, ArrowLeftRight, MoreVertical } from "lucide-react-native";
-import { EntityActionSheet } from "../../components/ui/EntityActionSheet";
-import { HeaderActionGroup } from "../../components/ui/HeaderActionGroup";
-import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTemplate";
-import { ResourceSectionList } from "../../components/ui/ResourceSectionList";
-import { useCallback, useMemo, useState } from "react";
-import {
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { useMemo, useState } from "react";
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useOriginBackNavigation } from "../../hooks/useOriginBackNavigation";
-import { useNotificationReason } from "../../hooks/useNotificationReason";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
+import { MoreVertical } from "lucide-react-native";
 
-import { useAuth } from "../../lib/auth-context";
-import { useWorkspace } from "../../lib/workspace-context";
-import { useUiStore } from "../../store/ui-store";
-import { useWorkspaceSnapshotQuery, useArchiveAccountMutation, useDeleteMovementMutation } from "../../services/queries/workspace-data";
-import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
-import { usePaginatedMovements } from "../../services/queries/movements";
-import { AccountMovementRow } from "../../features/accounts/components/AccountMovementRow";
-import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
-import { SkeletonAccountSummary } from "../../components/ui/Skeleton";
-import { BalanceEvolutionChart } from "../../features/accounts/components/BalanceEvolutionChart";
-import { AccountAnalyticsModal } from "../../components/domain/AccountAnalyticsModal";
-import { ScreenHeader } from "../../components/layout/ScreenHeader";
-import { currencyPluralTitle } from "../../constants/currencies";
-import type { MovementRecord } from "../../types/domain";
-import { NotificationReasonBanner } from "../../components/ui/NotificationReasonBanner";
 import { AccountForm } from "../../components/forms/AccountForm";
 import { MovementForm } from "../../components/forms/MovementForm";
-import { AmountDisplay, formatCurrency } from "../../components/ui/AmountDisplay";
-import { useToast } from "../../hooks/useToast";
-import { findInstitution } from "../../lib/account-institutions";
-import { parseDisplayDate } from "../../lib/date";
-import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
-import { es } from "date-fns/locale";
-import { buildRateMap, hasConversionRate, resolveConversion } from "../../lib/exchange-rate-map";
+import { ScreenHeader } from "../../components/layout/ScreenHeader";
+import { formatCurrency } from "../../components/ui/AmountDisplay";
+import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
+import { EntityActionSheet } from "../../components/ui/EntityActionSheet";
+import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
+import { HeaderActionGroup } from "../../components/ui/HeaderActionGroup";
+import { NotificationReasonBanner } from "../../components/ui/NotificationReasonBanner";
+import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTemplate";
+import { COLORS, FONT_SIZE, SPACING } from "../../constants/theme";
+import { AccountDetailActions } from "../../features/accounts/components/detail/AccountDetailActions";
+import { AccountDetailFields } from "../../features/accounts/components/detail/AccountDetailFields";
+import { AccountDetailHero } from "../../features/accounts/components/detail/AccountDetailHero";
+import { accountDetailTypeLabel } from "../../features/accounts/lib/account-detail-labels";
 import { useDisplayCurrency } from "../../features/accounts/lib/display-currency-context";
-
-const ACCOUNT_TYPE_LABEL: Record<string, string> = {
-  cash: "Efectivo",
-  bank: "Banco",
-  savings: "Ahorro",
-  credit_card: "Tarjeta de crédito",
-  investment: "Inversión",
-  loan: "Préstamo",
-  loan_wallet: "Cartera préstamos",
-  other: "Otro",
-};
-
+import { useNotificationReason } from "../../hooks/useNotificationReason";
+import { useOriginBackNavigation } from "../../hooks/useOriginBackNavigation";
+import { useToast } from "../../hooks/useToast";
+import { buildRateMap, hasConversionRate, resolveConversion } from "../../lib/exchange-rate-map";
+import { useAuth } from "../../lib/auth-context";
+import { useWorkspace } from "../../lib/workspace-context";
+import { useArchiveAccountMutation, useWorkspaceSnapshotQuery } from "../../services/queries/workspace-data";
+import { useUiStore } from "../../store/ui-store";
 
 function AccountDetailScreen() {
-  // Fuerza el re-render de la pantalla al alternar modo privacidad (la máscara
-  // vive en formatCurrency, que lee el store imperativamente).
   useUiStore((state) => state.privacyMode);
   const { id } = useLocalSearchParams<{ id: string; from?: string }>();
   const { handleBack } = useOriginBackNavigation({
@@ -72,80 +46,34 @@ function AccountDetailScreen() {
   const queryClient = useQueryClient();
   const { profile } = useAuth();
   const { activeWorkspaceId, activeWorkspace } = useWorkspace();
+  const { displayCurrency } = useDisplayCurrency();
+  const { showToast, showErrorToast } = useToast();
 
   const [editFormVisible, setEditFormVisible] = useState(false);
-  const [analyticsVisible, setAnalyticsVisible] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [movementFormVisible, setMovementFormVisible] = useState(false);
   const [movementFormType, setMovementFormType] = useState<"expense" | "transfer">("expense");
   const [archiveConfirmVisible, setArchiveConfirmVisible] = useState(false);
-  const [deleteMovementTarget, setDeleteMovementTarget] = useState<{ id: number; description?: string | null } | null>(null);
 
-  const { showToast, showErrorToast } = useToast();
   const archiveAccount = useArchiveAccountMutation(activeWorkspaceId);
-  const deleteMovement = useDeleteMovementMutation(activeWorkspaceId);
-
-  const accountId = id ? parseInt(id) : null;
-  const { data: snapshot } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
+  const accountId = id ? Number.parseInt(id, 10) : null;
+  const { data: snapshot, isLoading } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const account = useMemo(
-    () => snapshot?.accounts.find((a) => a.id === accountId) ?? null,
+    () => snapshot?.accounts.find((item) => item.id === accountId) ?? null,
     [snapshot, accountId],
   );
 
-  const {
-    data,
-    isLoading,
-    isFetchingNextPage,
-    hasNextPage,
-    fetchNextPage,
-  } = usePaginatedMovements(activeWorkspaceId, accountId ? { accountId } : {}, profile?.id);
-
-  const movements = useMemo(
-    () => data?.pages.flatMap((p) => p.data) ?? [],
-    [data],
-  );
-
-  const onRefresh = useCallback(async () => {
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ["movements"] }),
-      queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] }),
-    ]);
-  }, [queryClient]);
-
-  async function handleToggleArchive() {
-    if (!account) return;
-    try {
-      await archiveAccount.mutateAsync({ id: account.id, archived: !account.isArchived });
-      showToast(account.isArchived ? "Cuenta restaurada" : "Cuenta archivada", "success", account.name);
-      setArchiveConfirmVisible(false);
-      if (!account.isArchived) {
-        router.back();
-      }
-    } catch (err: unknown) {
-      showErrorToast(account.isArchived ? "No se pudo restaurar la cuenta" : "No se pudo archivar la cuenta", err);
-      setArchiveConfirmVisible(false);
-    }
-  }
-
   const baseCurrency = (activeWorkspace?.baseCurrencyCode ?? profile?.baseCurrencyCode ?? "PEN").toUpperCase();
-
-  // ── Display currency (shared via DisplayCurrencyProvider) ───────────────────
-  const { displayCurrency } = useDisplayCurrency();
-
   const exchangeRateMap = useMemo(
     () => buildRateMap(snapshot?.exchangeRates ?? []),
     [snapshot?.exchangeRates],
   );
-
-  // Effective display currency: only use the stored preference if we can convert into it.
   const effectiveDisplayCurrency = useMemo(() => {
     if (!displayCurrency || !account) return account?.currencyCode ?? baseCurrency;
     return hasConversionRate(exchangeRateMap, account.currencyCode, displayCurrency)
       ? displayCurrency
       : account.currencyCode;
   }, [account, baseCurrency, displayCurrency, exchangeRateMap]);
-
-  // Native balance converted to the effective display currency.
   const displayBalance = useMemo(() => {
     if (!account) return 0;
     if (effectiveDisplayCurrency === account.currencyCode) return account.currentBalance;
@@ -156,38 +84,12 @@ function AccountDetailScreen() {
     );
   }, [account, effectiveDisplayCurrency, exchangeRateMap]);
 
-  const showSecondaryBalance = Boolean(
-    account && effectiveDisplayCurrency !== account.currencyCode,
-  );
-
-  /**
-   * Lo que identifica la cuenta: banco, tipo y moneda. "BCP · Banco · soles".
-   *
-   * Decía además "actividad hace 3 meses" sobre una cuenta con un movimiento de hoy cuatrocientos
-   * píxeles más abajo. Una de las dos cosas era falsa y no había manera de saber cuál: si el dato
-   * medía otra cosa estaba mal etiquetado, y si medía actividad estaba mal calculado. En cualquier
-   * caso no puede convivir con una lista que lo contradice — **la actividad la cuenta la lista**.
-   *
-   * Y la moneda va en palabras, como en el resto de la app, no en código ISO.
-   */
-  const headerSubtitle = useMemo(() => {
-    if (!account) return undefined;
-    const institution = findInstitution(account.institutionCode)?.label ?? null;
-    const typeLabel = ACCOUNT_TYPE_LABEL[account.type] ?? account.type;
-    return [institution, typeLabel, currencyPluralTitle(account.currencyCode).toLowerCase()]
-      .filter(Boolean)
-      .join(" · ");
-  }, [account]);
-
-  // Enriched archive-confirmation body: when the account contributes to net worth,
-  // tell the user how much will disappear from it.
   const archiveConfirmBody = useMemo(() => {
     if (!account) return "";
     if (account.isArchived) {
       return "La cuenta volverá a aparecer en tu lista activa y en el patrimonio neto.";
     }
-    const contributesToNetWorth =
-      account.includeInNetWorth && Math.abs(account.currentBalance) > 0.0001;
+    const contributesToNetWorth = account.includeInNetWorth && Math.abs(account.currentBalance) > 0.0001;
     if (!contributesToNetWorth) {
       return "La cuenta quedará oculta de la vista principal. Sus movimientos se conservarán intactos.";
     }
@@ -197,16 +99,23 @@ function AccountDetailScreen() {
     return `Esta cuenta aporta ${formatted} a tu patrimonio neto. Al archivarla, tu patrimonio ${verb} en esa cantidad. Sus movimientos se conservarán intactos.`;
   }, [account, baseCurrency]);
 
-  const renderMovementItem = useCallback(({ item }: { item: MovementRecord }) => (
-    <AccountMovementRow
-      movement={item}
-      baseCurrencyCode={baseCurrency}
-      accountId={accountId ?? 0}
-      accountCurrencyCode={account?.currencyCode}
-      onPress={() => router.push(`/movement/${item.id}`)}
-      onDelete={() => setDeleteMovementTarget({ id: item.id, description: item.description })}
-    />
-  ), [account?.currencyCode, accountId, baseCurrency, router]);
+  function openMovementForm(type: "expense" | "transfer") {
+    setMovementFormType(type);
+    setMovementFormVisible(true);
+  }
+
+  async function handleToggleArchive() {
+    if (!account) return;
+    try {
+      await archiveAccount.mutateAsync({ id: account.id, archived: !account.isArchived });
+      showToast(account.isArchived ? "Cuenta restaurada" : "Cuenta archivada", "success", account.name);
+      setArchiveConfirmVisible(false);
+      if (!account.isArchived) router.back();
+    } catch (err: unknown) {
+      showErrorToast(account.isArchived ? "No se pudo restaurar la cuenta" : "No se pudo archivar la cuenta", err);
+      setArchiveConfirmVisible(false);
+    }
+  }
 
   return (
     <ResourceModuleTemplate
@@ -214,122 +123,48 @@ function AccountDetailScreen() {
       header={
         <>
           <ScreenHeader
-            title={account?.name ?? "Cuenta"}
-            subtitle={headerSubtitle}
+            title="Cuenta"
             onBack={handleBack}
-            /* Editar y archivar estaban aquí Y otra vez como botones grandes abajo. Lo
-               administrativo vive en el menú, donde archivar —que retira la cuenta de la app—
-               deja de estar al alcance del pulgar y del mismo tamaño que "Nuevo gasto". */
-            rightAction={
-              account ? (
-                <HeaderActionGroup
-                  actions={[{
-                    key: "menu",
-                    icon: MoreVertical,
-                    onPress: () => setMenuOpen(true),
-                    accessibilityLabel: "Más acciones",
-                  }]}
-                />
-              ) : null
-            }
+            rightAction={account ? (
+              <HeaderActionGroup
+                actions={[{
+                  key: "menu",
+                  icon: MoreVertical,
+                  onPress: () => setMenuOpen(true),
+                  accessibilityLabel: "Más acciones",
+                }]}
+              />
+            ) : null}
           />
           <NotificationReasonBanner reason={notificationReason} onDismiss={dismissNotificationReason} />
         </>
       }
-      summary={
-        account ? (
-          <View style={styles.hero}>
-            {/* La tarjeta de identidad repetía el nombre entero de la cuenta —que ya está en el
-                título, dos centímetros más arriba— para añadir un solo dato nuevo, el banco. Ese
-                dato subió al subtítulo del encabezado. */}
-            <Text style={styles.balanceLabel}>Saldo</Text>
-            <AmountDisplay
-              flat
-              amount={displayBalance}
-              currencyCode={effectiveDisplayCurrency}
-              size="display"
-              color={displayBalance < 0 ? COLORS.expense : COLORS.ink}
-              prefix=""
-            />
-            {showSecondaryBalance ? (
-              <Text style={styles.balanceNative}>
-                {formatCurrency(account.currentBalance, account.currencyCode)} nativo
-              </Text>
-            ) : null}
-            {!account.includeInNetWorth ? (
-              <Text style={styles.notInNetWorthNote}>No incluida en patrimonio neto</Text>
-            ) : null}
-
-            {!account.isArchived ? (
-              <View style={styles.heroActions}>
-                <TouchableOpacity
-                  style={[styles.heroBtn, styles.heroBtnPrimary]}
-                  onPress={() => { setMovementFormType("expense"); setMovementFormVisible(true); }}
-                  activeOpacity={0.85}
-                  accessibilityRole="button"
-                >
-                  <ArrowDown size={16} color={COLORS.actionText} />
-                  <Text style={[styles.heroBtnText, styles.heroBtnTextPrimary]}>Nuevo gasto</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.heroBtn, styles.heroBtnSecondary]}
-                  onPress={() => { setMovementFormType("transfer"); setMovementFormVisible(true); }}
-                  activeOpacity={0.85}
-                  accessibilityRole="button"
-                >
-                  <ArrowLeftRight size={16} color={COLORS.fog} />
-                  <Text style={[styles.heroBtnText, styles.heroBtnTextSecondary]}>Transferir</Text>
-                </TouchableOpacity>
-              </View>
-            ) : null}
-          </View>
-        ) : (
-          <SkeletonAccountSummary />
-        )
-      }
-      list={
-        <ResourceSectionList
-          sections={[{ key: "movements", label: "Movimientos", data: movements, headerVariant: "hidden" }]}
-          keyExtractor={(item) => String(item.id)}
-          renderItem={renderMovementItem}
-          listHeaderComponent={
-            account ? (
-              <>
-                <BalanceEvolutionChart
-                  accountId={account.id}
-                  currentBalance={account.currentBalance}
-                  currencyCode={account.currencyCode}
-                  movements={movements}
-                />
-                {/* La lista arrancaba sin rótulo justo después del gráfico, así que sus primeras
-                    filas parecían parte de él. */}
-                <View style={styles.listHeader}>
-                  <Text style={styles.listHeaderLabel}>Movimientos</Text>
-                  <TouchableOpacity
-                    onPress={() => router.push(
-                      `/(app)/movements?quickScope=account&quickAccountId=${account.id}&quickToken=${Date.now()}`,
-                    )}
-                    activeOpacity={0.7}
-                    accessibilityRole="button"
-                  >
-                    <Text style={styles.listHeaderLink}>Ver todos</Text>
-                  </TouchableOpacity>
-                </View>
-              </>
-            ) : null
-          }
-          onRefresh={onRefresh}
-          onEndReached={() => {
-            if (hasNextPage && !isFetchingNextPage) void fetchNextPage();
-          }}
-          onEndReachedThreshold={0.3}
-          loading={{ isLoading, fetchingMore: isFetchingNextPage, endReached: !hasNextPage }}
-          empty={{ variant: "empty", title: "Sin movimientos", description: "Registra el primer movimiento con el botón +" }}
+      list={isLoading ? (
+        <View style={styles.center}>
+          <ActivityIndicator color={COLORS.primary} />
+        </View>
+      ) : !account ? (
+        <View style={styles.center}>
+          <Text style={styles.errorText}>No se encontró la cuenta</Text>
+        </View>
+      ) : (
+        <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+          <AccountDetailHero
+            account={account}
+            displayBalance={displayBalance}
+            displayCurrency={effectiveDisplayCurrency}
+          />
+          <AccountDetailFields account={account} />
+        </ScrollView>
+      )}
+      fab={account ? (
+        <AccountDetailActions
+          bottomInset={insets.bottom}
+          isArchived={account.isArchived}
+          onEdit={() => setEditFormVisible(true)}
+          onNewExpense={() => openMovementForm("expense")}
         />
-      }
-      /* Sin botón flotante: tapaba el monto de la cuarta fila y media quinta, y lo que se crea
-         desde una cuenta —un gasto, una transferencia— ya está arriba, a la vista y sin cubrir
-         nada. */
+      ) : null}
       overlays={
         <>
           {account ? (
@@ -338,76 +173,47 @@ function AccountDetailScreen() {
               onClose={() => setMenuOpen(false)}
               sheetTitle="Más acciones"
               summaryTitle={account.name}
-              meta={[headerSubtitle]}
+              meta={[accountDetailTypeLabel(account.type)]}
               actions={[
-                {
-                  key: "edit",
-                  label: "Editar cuenta",
-                  variant: "secondary",
-                  onPress: () => { setMenuOpen(false); setEditFormVisible(true); },
-                },
-                {
-                  key: "analytics",
-                  label: "Analítica",
-                  variant: "secondary",
-                  onPress: () => { setMenuOpen(false); setAnalyticsVisible(true); },
-                },
+                ...(!account.isArchived ? [{
+                  key: "transfer",
+                  label: "Transferir",
+                  variant: "secondary" as const,
+                  onPress: () => { setMenuOpen(false); openMovementForm("transfer"); },
+                }] : []),
                 {
                   key: account.isArchived ? "restore" : "archive",
                   label: account.isArchived ? "Restaurar cuenta" : "Archivar cuenta",
-                  variant: "ghost",
+                  variant: "ghost" as const,
                   onPress: () => { setMenuOpen(false); setArchiveConfirmVisible(true); },
                 },
               ]}
             />
           ) : null}
 
-          <AccountAnalyticsModal
-            visible={analyticsVisible && Boolean(account)}
-            account={account ?? null}
-            onClose={() => setAnalyticsVisible(false)}
-          />
-
-          {/* Edit account form */}
           {account ? (
             <AccountForm
               visible={editFormVisible}
               onClose={() => setEditFormVisible(false)}
-              onSuccess={() => setEditFormVisible(false)}
+              onSuccess={() => {
+                setEditFormVisible(false);
+                void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
+              }}
               editAccount={account}
             />
           ) : null}
 
-          {/* New movement form (pre-filtered to this account; type depends on which CTA opened it) */}
           <MovementForm
             visible={movementFormVisible}
             onClose={() => setMovementFormVisible(false)}
             onSuccess={() => {
               setMovementFormVisible(false);
-              onRefresh();
+              void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });
             }}
             initialAccountId={accountId ?? undefined}
             defaultType={movementFormType}
           />
 
-          <ConfirmDialog
-            visible={Boolean(deleteMovementTarget)}
-            title="Eliminar movimiento"
-            body={deleteMovementTarget ? `¿Eliminar "${deleteMovementTarget.description ?? "este movimiento"}"? Esta acción no se puede deshacer.` : ""}
-            confirmLabel="Eliminar"
-            cancelLabel="Cancelar"
-            onCancel={() => setDeleteMovementTarget(null)}
-            onConfirm={() => {
-              if (!deleteMovementTarget) return;
-              deleteMovement.mutate(deleteMovementTarget.id, {
-                onSuccess: () => showToast("Movimiento eliminado", "success"),
-                onError: (e) => showErrorToast("No se pudo eliminar el movimiento", e),
-              });
-              setDeleteMovementTarget(null);
-            }}
-          />
-
-          {/* Archive / restore confirmation */}
           <ConfirmDialog
             visible={archiveConfirmVisible}
             icon={account?.isArchived ? "♻️" : "📦"}
@@ -428,56 +234,10 @@ function AccountDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  // La cifra con la que abre la pantalla, sin tarjeta, y debajo lo único que uno hace desde una
-  // cuenta: registrar un gasto y transferir.
-  hero: {
-    paddingHorizontal: SPACING.lg,
-    paddingTop: SPACING.sm,
-    paddingBottom: SPACING.md,
-    gap: SPACING.xs,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: SURFACE.separator,
-  },
-  balanceLabel: {
-    fontFamily: FONT_FAMILY.bodyMedium,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.storm,
-    textTransform: "uppercase",
-    letterSpacing: 1,
-  },
-  balanceNative: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
-  notInNetWorthNote: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
-  heroActions: { flexDirection: "row", gap: SPACING.sm, marginTop: SPACING.sm },
-  heroBtn: {
-    flex: 1,
-    minHeight: 48,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: SPACING.sm,
-    borderRadius: RADIUS.md,
-  },
-  heroBtnPrimary: { backgroundColor: COLORS.action },
-  heroBtnSecondary: { borderWidth: 1, borderColor: SURFACE.cardBorder, backgroundColor: SURFACE.card },
-  heroBtnText: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.md },
-  heroBtnTextPrimary: { color: COLORS.actionText },
-  heroBtnTextSecondary: { color: COLORS.fog },
-  listHeader: {
-    flexDirection: "row",
-    alignItems: "baseline",
-    justifyContent: "space-between",
-    paddingHorizontal: SPACING.lg,
-    paddingTop: SPACING.md,
-    paddingBottom: SPACING.xs,
-  },
-  listHeaderLabel: {
-    fontFamily: FONT_FAMILY.bodySemibold,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.storm,
-    textTransform: "uppercase",
-    letterSpacing: 1,
-  },
-  listHeaderLink: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.fog },
+  scroll: { flex: 1 },
+  content: { paddingHorizontal: SPACING.lg, paddingTop: SPACING.sm, paddingBottom: SPACING.lg },
+  center: { flex: 1, alignItems: "center", justifyContent: "center" },
+  errorText: { color: COLORS.storm, fontSize: FONT_SIZE.md },
 });
 
 export default function AccountDetailScreenRoot() {
