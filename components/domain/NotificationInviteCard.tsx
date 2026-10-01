@@ -24,6 +24,7 @@ export function NotificationInviteCard({ invite, onPress }: Props) {
 
   return (
     <ResourceCard
+      variant="row"
       title={`Tienes una ${kindLabel} compartida`}
       subtitle={invite.ownerDisplayName
         ? `${invite.ownerDisplayName} te envió una solicitud.`
@@ -36,7 +37,6 @@ export function NotificationInviteCard({ invite, onPress }: Props) {
           <ResourceCardMetaText>{title}</ResourceCardMetaText>
         </>
       }
-      footer={invite.message ? <ResourceCardMetaText>"{invite.message}"</ResourceCardMetaText> : null}
     />
   );
 }

@@ -2,10 +2,10 @@ import { startOfDay, differenceInCalendarDays } from "date-fns";
 import type { ResourceSection } from "../../../components/ui/ResourceSectionList";
 import {
   getNotificationPriority,
-  getNotificationPriorityMeta,
   type NotificationPriority,
 } from "../../../lib/notification-priority";
 import type { NotificationItem, PendingObligationShareInviteItem } from "../../../types/domain";
+import { payloadString } from "./notificationPresentation";
 
 export type NotificationFilter = "all" | NotificationPriority;
 
@@ -95,29 +95,37 @@ export function buildNotificationSections(
   activeFilter: NotificationFilter,
   unreadOnly?: boolean,
   kindGroup: NotificationKindGroup = "all",
+  searchText = "",
 ): NotificationListSection[] {
   const sections: NotificationListSection[] = [];
+  const search = searchText.trim().toLocaleLowerCase("es");
 
   const baseFiltered = unreadOnly ? notifications.filter((n) => n.status !== "read") : notifications;
   const filteredByPriority =
     activeFilter === "all"
       ? baseFiltered
       : baseFiltered.filter((n) => getNotificationPriority(n.kind) === activeFilter);
-  const filtered = kindGroup === "all"
+  const filteredByKind = kindGroup === "all"
     ? filteredByPriority
     : filteredByPriority.filter((n) => getNotificationKindGroup(n.kind) === kindGroup);
+  const filtered = search
+    ? filteredByKind.filter((n) => [n.title, n.body, payloadString(n.payload, "obligationTitle")]
+        .some((value) => value?.toLocaleLowerCase("es").includes(search)))
+    : filteredByKind;
 
   // Invites get their own section only when neither filter is narrowing.
-  if (invites.length > 0 && activeFilter === "all" && (kindGroup === "all" || kindGroup === "invites")) {
+  const visibleInvites = invites.filter((invite) => !search || [invite.obligationTitle, invite.ownerDisplayName, invite.message]
+    .some((value) => value?.toLocaleLowerCase("es").includes(search)));
+  if (visibleInvites.length > 0 && activeFilter === "all" && (kindGroup === "all" || kindGroup === "invites")) {
     sections.push({
       key: "invites",
-      label: `Invitaciones pendientes (${invites.length})`,
-      data: invites.map((invite) => ({
+      label: `Invitaciones pendientes (${visibleInvites.length})`,
+      data: visibleInvites.map((invite) => ({
         kind: "invite" as const,
         key: `invite-${invite.token}`,
         invite,
       })),
-      headerVariant: "default",
+      headerVariant: "divider",
     });
   }
 
@@ -139,14 +147,15 @@ export function buildNotificationSections(
     const unreadCount = items.filter((item) => item.status !== "read").length;
     sections.push({
       key: bucket,
-      label: `${DATE_BUCKET_LABELS[bucket]}${unreadCount > 0 ? ` · ${unreadCount} nuevas` : ""}`,
+      label: DATE_BUCKET_LABELS[bucket],
+      trailing: unreadCount > 0 ? `${unreadCount} sin leer` : undefined,
       data: items.map((notification) => ({
         kind: "notification" as const,
         key: `notification-${notification.id}`,
         notification,
         priority: getNotificationPriority(notification.kind),
       })),
-      headerVariant: "default",
+      headerVariant: "divider",
     });
   }
 

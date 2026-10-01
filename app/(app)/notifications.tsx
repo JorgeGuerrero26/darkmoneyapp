@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SectionListRenderItem } from "react-native";
-import { Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { Bell, CheckCheck, X } from "lucide-react-native";
+import { Platform } from "react-native";
+import { Bell, CheckCheck, MoreVertical, X } from "lucide-react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -22,13 +22,13 @@ import { NotificationCard } from "../../components/domain/NotificationCard";
 import { NotificationInviteCard } from "../../components/domain/NotificationInviteCard";
 import { QuickDetectedMovementEntry } from "../../components/domain/QuickDetectedMovementEntry";
 import { NotificationSummaryBar } from "../../features/notifications/components/NotificationSummaryBar";
+import { NotificationFilterSheet } from "../../features/notifications/components/NotificationFilterSheet";
+import { NotificationActionsSheet } from "../../features/notifications/components/NotificationActionsSheet";
 import {
   buildNotificationSections,
   getNotificationFilterLabel,
-  NOTIFICATION_KIND_GROUPS,
   getNotificationKindGroupLabel,
   type NotificationKindGroup,
-  NOTIFICATION_FILTERS,
   type NotificationFilter,
   type NotificationListItem,
   type NotificationListSection,
@@ -53,7 +53,6 @@ import { payloadString } from "../../features/notifications/lib/notificationPres
 import { getNotificationsModule } from "../../lib/notifications-runtime";
 import { useToast } from "../../hooks/useToast";
 import { useOriginBackNavigation } from "../../hooks/useOriginBackNavigation";
-import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING } from "../../constants/theme";
 
 const Notifications = getNotificationsModule();
 
@@ -80,6 +79,9 @@ function NotificationsScreen() {
   const [activeFilter, setActiveFilter] = useState<NotificationFilter>("all");
   const [activeKindGroup, setActiveKindGroup] = useState<NotificationKindGroup>("all");
   const [showUnreadOnly, setShowUnreadOnly] = useState(false);
+  const [searchText, setSearchText] = useState("");
+  const [filterSheetOpen, setFilterSheetOpen] = useState(false);
+  const [actionsSheetOpen, setActionsSheetOpen] = useState(false);
   const [quickEntry, setQuickEntry] = useState<{ suggestionId: number; notificationId: number } | null>(null);
 
   const ignoreTapAfterLongPressRef = useRef(false);
@@ -186,9 +188,10 @@ function NotificationsScreen() {
     deleteSelectedNotifications.isPending;
 
   const sections = useMemo(
-    () => buildNotificationSections(notificationList, pendingInvites, activeFilter, showUnreadOnly, activeKindGroup),
-    [activeFilter, activeKindGroup, notificationList, pendingInvites, showUnreadOnly],
+    () => buildNotificationSections(notificationList, pendingInvites, activeFilter, showUnreadOnly, activeKindGroup, searchText),
+    [activeFilter, activeKindGroup, notificationList, pendingInvites, searchText, showUnreadOnly],
   );
+  const extraFiltersCount = Number(showUnreadOnly) + Number(activeFilter !== "all") + Number(activeKindGroup !== "all");
 
   const activeFilterItems = useMemo<ActiveFilterItem[]>(() => {
     const items: ActiveFilterItem[] = [];
@@ -204,17 +207,13 @@ function NotificationsScreen() {
     return items;
   }, [activeFilter, activeKindGroup, showUnreadOnly]);
 
-  const filteredNotificationCount = useMemo(
-    () => sections.reduce((total, section) => total + section.data.filter((item) => item.kind === "notification").length, 0),
-    [sections],
-  );
   const hasContent = pendingInvites.length > 0 || notificationList.length > 0;
   const showSkeleton =
     (isLoading && notificationList.length === 0 && pendingInvites.length === 0) ||
     (loadingPendingInvites && !pendingInvites.length && notificationList.length === 0);
 
   const emptyConfig = useMemo(() => {
-    const resetFilters = () => { setActiveFilter("all"); setShowUnreadOnly(false); };
+    const resetFilters = () => { setActiveFilter("all"); setActiveKindGroup("all"); setShowUnreadOnly(false); setSearchText(""); };
     // Fetch inicial fallido (cold start con la red despertando): sin esto se mostraba
     // "Sin notificaciones", que se lee como que no hay nada — el usuario no sabía que
     // debía reintentar y la pantalla parecía nunca cargar.
@@ -226,12 +225,21 @@ function NotificationsScreen() {
         action: { label: "Reintentar", onPress: () => void refetch() },
       };
     }
-    if (notificationList.length === 0 && pendingInvites.length === 0) {
+    const hasFilters = Boolean(searchText.trim()) || activeKindGroup !== "all" || activeFilter !== "all" || showUnreadOnly;
+    if (notificationList.length === 0 && pendingInvites.length === 0 && !hasFilters) {
       return {
         icon: Bell,
         variant: "empty" as const,
         title: "Sin notificaciones",
         description: "Aquí verás alertas de presupuestos, suscripciones, obligaciones y movimientos detectados.",
+      };
+    }
+    if (searchText.trim() || activeKindGroup !== "all") {
+      return {
+        variant: "no-results" as const,
+        title: "Sin resultados",
+        description: "No hay notificaciones que coincidan con la búsqueda y los filtros.",
+        action: { label: "Quitar filtros", onPress: resetFilters },
       };
     }
     if (showUnreadOnly && unreadCount === 0) {
@@ -265,16 +273,12 @@ function NotificationsScreen() {
       description: "No hay notificaciones que coincidan con el filtro activo.",
       action: { label: "Quitar filtros", onPress: resetFilters },
     };
-  }, [notificationList.length, notificationsQuery.isError, pendingInvites.length, refetch, showUnreadOnly, unreadCount, activeFilter]);
+  }, [notificationList.length, notificationsQuery.isError, pendingInvites.length, refetch, showUnreadOnly, unreadCount, activeFilter, activeKindGroup, searchText]);
 
   const truncationNote = hiddenByLimit > 0
-    ? ` Se muestran las ${notificationList.length} más recientes de ${notificationCounts?.total ?? 0}.`
+    ? `Se muestran las ${notificationList.length} más recientes de ${notificationCounts?.total ?? 0}.`
     : "";
-  const contextNote = selectionMode
-    ? "Elige qué hacer con la selección."
-    : activeFilter === "all" && !showUnreadOnly
-      ? `Mantén presionada una notificación para seleccionar varias.${truncationNote}`
-      : `Mostrando ${filteredNotificationCount} notificación${filteredNotificationCount !== 1 ? "es" : ""}${showUnreadOnly ? " sin leer" : ""}${activeFilter !== "all" ? ` · ${getNotificationFilterLabel(activeFilter).toLowerCase()}` : ""}.${truncationNote}`;
+  const contextNote = truncationNote;
 
   useEffect(() => {
     setSelectedNotificationIds((current) =>
@@ -498,6 +502,7 @@ function NotificationsScreen() {
     setActiveFilter("all");
     setActiveKindGroup("all");
     setShowUnreadOnly(false);
+    setSearchText("");
   }, []);
 
   const renderItem: SectionListRenderItem<NotificationListItem, NotificationListSection> = useCallback(({ item }) => {
@@ -524,7 +529,6 @@ function NotificationsScreen() {
   }, [router, selectedIdSet, selectionMode, handleTap, handleNotificationLongPress, handleArchiveSingle, handleDeleteSingle]);
 
   return (
-    <>
       <ResourceModuleTemplate
         topInset={insets.top}
         header={
@@ -548,45 +552,36 @@ function NotificationsScreen() {
                     accessibilityLabel: "Cancelar selección",
                   }]}
                 />
-              ) : null
+              ) : (
+                <HeaderActionGroup actions={[{
+                  key: "menu",
+                  icon: MoreVertical,
+                  onPress: () => setActionsSheetOpen(true),
+                  accessibilityLabel: "Más acciones",
+                }]} />
+              )
             }
           />
         }
-        toolbar={
-          !selectionMode && notificationList.length > 0 ? (
-            <View>
-              <FilterToolbar
-                options={NOTIFICATION_FILTERS}
-                value={activeFilter}
-                onChange={setActiveFilter}
-              />
-              <FilterToolbar
-                options={NOTIFICATION_KIND_GROUPS}
-                value={activeKindGroup}
-                onChange={setActiveKindGroup}
-              />
-              {unreadCount > 0 ? (
-                <View style={notifStyles.unreadRow}>
-                  <TouchableOpacity
-                    onPress={() => setShowUnreadOnly((prev) => !prev)}
-                    style={[notifStyles.unreadChip, showUnreadOnly && notifStyles.unreadChipActive]}
-                    accessibilityLabel="Filtrar por no leídas"
-                  >
-                    <Text style={[notifStyles.unreadChipText, showUnreadOnly && notifStyles.unreadChipTextActive]}>
-                      {`No leídas (${unreadCount})`}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              ) : null}
-            </View>
-          ) : null
-        }
+        toolbar={!selectionMode ? (
+          <FilterToolbar
+            options={[]}
+            searchValue={searchText}
+            onSearchChange={setSearchText}
+            searchPlaceholder="Buscar notificaciones..."
+            extraAction={{
+              label: extraFiltersCount > 0 ? `${extraFiltersCount} filtros` : "Filtros",
+              active: extraFiltersCount > 0,
+              onPress: () => setFilterSheetOpen(true),
+            }}
+          />
+        ) : null}
         activeFilters={!selectionMode ? <ActiveFilterBar items={activeFilterItems} onClear={clearFilters} /> : null}
         context={
           hasContent ? (
             <>
               <AiQuotaWarningBanner usage={aiUsageQuery.data} />
-              <ResourceContextNote>{contextNote}</ResourceContextNote>
+              {contextNote ? <ResourceContextNote>{contextNote}</ResourceContextNote> : null}
             </>
           ) : null
         }
@@ -596,10 +591,6 @@ function NotificationsScreen() {
               unreadCount={unreadCount}
               readCount={readCount}
               inviteCount={pendingInvites.length}
-              onMarkAllRead={handleMarkAll}
-              onMarkAllUnread={handleMarkAllUnread}
-              onDeleteAllRead={handleDeleteAllRead}
-              actionsDisabled={bulkActionLoading}
             />
           ) : null
         }
@@ -651,45 +642,37 @@ function NotificationsScreen() {
             onRefresh={onRefresh}
           />
         }
+        overlays={<>
+          <QuickDetectedMovementEntry
+            visible={Boolean(quickEntry)}
+            suggestionId={quickEntry?.suggestionId ?? null}
+            notificationId={quickEntry?.notificationId ?? null}
+            onClose={() => setQuickEntry(null)}
+          />
+          <NotificationFilterSheet
+            visible={filterSheetOpen}
+            onClose={() => setFilterSheetOpen(false)}
+            priority={activeFilter}
+            onPriorityChange={setActiveFilter}
+            kind={activeKindGroup}
+            onKindChange={setActiveKindGroup}
+            unreadOnly={showUnreadOnly}
+            onUnreadOnlyChange={setShowUnreadOnly}
+          />
+          <NotificationActionsSheet
+            visible={actionsSheetOpen}
+            onClose={() => setActionsSheetOpen(false)}
+            unreadCount={unreadCount}
+            readCount={readCount}
+            disabled={bulkActionLoading}
+            onMarkAllRead={handleMarkAll}
+            onMarkAllUnread={handleMarkAllUnread}
+            onDeleteAllRead={() => void handleDeleteAllRead()}
+          />
+        </>}
       />
-      <QuickDetectedMovementEntry
-        visible={Boolean(quickEntry)}
-        suggestionId={quickEntry?.suggestionId ?? null}
-        notificationId={quickEntry?.notificationId ?? null}
-        onClose={() => setQuickEntry(null)}
-      />
-    </>
   );
 }
-
-const notifStyles = StyleSheet.create({
-  unreadRow: {
-    flexDirection: "row",
-    paddingHorizontal: SPACING.md,
-    paddingTop: SPACING.xs,
-    paddingBottom: SPACING.xs,
-  },
-  unreadChip: {
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 4,
-    borderRadius: RADIUS.full,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: "transparent",
-  },
-  unreadChipActive: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
-  },
-  unreadChipText: {
-    fontSize: FONT_SIZE.xs,
-    fontFamily: FONT_FAMILY.bodyMedium,
-    color: COLORS.storm,
-  },
-  unreadChipTextActive: {
-    color: COLORS.ink,
-  },
-});
 
 export default function NotificationsScreenRoot() {
   return (
