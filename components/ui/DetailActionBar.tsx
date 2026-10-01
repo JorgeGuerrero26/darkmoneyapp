@@ -14,19 +14,21 @@ type Props = {
   bottomInset?: number;
   primary?: Action;
   secondary?: Action;
+  primarySide?: "left" | "right";
   footNote?: string | null;
   footerAction?: { label: string; accessibilityLabel: string; onPress: () => void };
   showFooter?: boolean;
 };
 
 /** Acciones fijas de las pantallas de detalle; la acción principal siempre va en hueso. */
-export function DetailActionBar({ bottomInset = 0, primary, secondary, footNote, footerAction, showFooter = false }: Props) {
+export function DetailActionBar({ bottomInset = 0, primary, secondary, primarySide = "left", footNote, footerAction, showFooter = false }: Props) {
   return (
     <View style={[styles.bar, { paddingBottom: bottomInset + SPACING.xs }]}>
       {primary || secondary ? (
         <View style={styles.row}>
+          {primarySide === "right" && secondary ? <ActionButton action={secondary} /> : null}
           {primary ? <ActionButton action={primary} primary /> : null}
-          {secondary ? <ActionButton action={secondary} /> : null}
+          {primarySide === "left" && secondary ? <ActionButton action={secondary} /> : null}
         </View>
       ) : null}
       {showFooter || footNote || footerAction ? (

@@ -1226,6 +1226,7 @@ function ObligationDetailScreen() {
       fab={obligation && !pageLoading ? (
         <DetailActionBar
           bottomInset={insets.bottom}
+          primarySide="right"
           primary={obligation.status === "active" ? {
             label: isSharedViewer ? obligationViewerPaymentRequestTitle(obligation.direction) : `Registrar ${paymentWord.toLowerCase()}`,
             accessibilityLabel: isSharedViewer ? obligationViewerPaymentRequestTitle(obligation.direction) : `Registrar ${paymentWord.toLowerCase()}`,
