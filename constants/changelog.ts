@@ -243,6 +243,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "1.0.9",
     title: "Detecta tus pagos desde el correo",
     changes: [
+      "Arreglado: al empezar un mes nuevo, Movimientos seguía mostrando el mes anterior en «Este mes» si no habías cerrado la app del todo, así que los movimientos de hoy no aparecían. Ahora el mes cambia solo, a la medianoche de Lima.",
       "Ya puedes detectar tus pagos automáticamente desde el correo: en Configuración generas una dirección privada, reenvías ahí los correos que te manda tu banco y DarkMoney te sugiere el movimiento listo para confirmar. Es la forma de detectar pagos en iPhone.",
       "La app abre bastante más rápido y puedes registrar un movimiento de inmediato, sin esperar a que terminen de cargar tus créditos, deudas y presupuestos.",
       "Si tocas \"Guardar\" dos veces por nervios, ya no se registra dos veces.",
