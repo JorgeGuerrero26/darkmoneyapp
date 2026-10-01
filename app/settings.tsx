@@ -374,6 +374,9 @@ function SettingsScreen() {
   }
 
   const timeZone = resolveTimeZone(profile?.timezone);
+  // Solo Movimientos sigue hoy la zona del perfil; el resto de la app usa el reloj del teléfono.
+  // Mientras coincidan da igual, pero si el teléfono está en otra zona hay que decirlo.
+  const deviceTimeZone = resolveTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone);
   const timeZoneOptions = TIME_ZONE_OPTIONS.some((option) => option.id === timeZone)
     ? TIME_ZONE_OPTIONS
     : [{ id: timeZone, label: timeZoneLabel(timeZone) }, ...TIME_ZONE_OPTIONS];
@@ -540,6 +543,11 @@ function SettingsScreen() {
               onPress={() => setTimeZoneSheetOpen(true)}
               label="Zona horaria"
               value={timeZoneLabel(timeZone)}
+              support={
+                deviceTimeZone !== timeZone
+                  ? `Tu teléfono está en ${timeZoneLabel(deviceTimeZone)}`
+                  : undefined
+              }
             />
 
             <SettingsRow
