@@ -1,34 +1,45 @@
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { ChevronRight } from "lucide-react-native";
+import { StyleSheet, View } from "react-native";
+import { format } from "date-fns";
+import { es } from "date-fns/locale";
 
-import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../../constants/theme";
+import { DetailFieldRow } from "../../../components/ui/DetailFieldRow";
+import { currencyPluralTitle } from "../../../constants/currencies";
+import { SPACING } from "../../../constants/theme";
+import { parseDisplayDate } from "../../../lib/date";
 import { subscriptionRecurrencePhrase } from "../../../lib/subscription-helpers";
 import type { SubscriptionSummary } from "../../../types/domain";
 
 type Props = {
   subscription: SubscriptionSummary;
-  /** Los huecos se llenan aquí mismo: la fila sin valor abre su selector. */
   onPickAccount: () => void;
   onPickCategory: () => void;
 };
 
-/**
- * Los cuatro datos de la suscripción, en filas.
- *
- * Estaban en una cuadrícula de 2×2 con un separador vertical corto que no llegaba a los bordes,
- * y leerlos obligaba a ir en zigzag. Cuatro filas es como se leen los datos en el resto de la
- * app, y de paso caben los valores largos sin partirse.
- *
- * **"Sin cuenta" y "Sin categoría" son huecos con arreglo**, así que llevan chevrón y se llenan
- * desde aquí. El de la cuenta importa más de lo que parece: sin ella, "Anotar el gasto solo" no
- * puede funcionar, y esta pantalla era el único sitio donde eso se veía.
- */
+function displayDate(value: string): string {
+  return format(parseDisplayDate(value), "d MMM yyyy", { locale: es });
+}
+
+const STATUS_LABELS: Record<SubscriptionSummary["status"], string> = {
+  active: "Activa",
+  paused: "Pausada",
+  cancelled: "Cancelada",
+};
+
+/** Las características usan la misma fila de lectura de Movimientos y Cuentas. */
 export function SubscriptionDetailFacts({ subscription, onPickAccount, onPickCategory }: Props) {
   const remind = subscription.remindDaysBefore;
+  const accountName = subscription.accountName?.trim();
+  const categoryName = subscription.categoryName?.trim();
+  const description = subscription.description?.trim();
+  const notes = subscription.notes?.trim();
 
   return (
-    <View style={styles.group}>
-      <Fact
+    <View style={styles.list}>
+      <DetailFieldRow label="Nombre" value={subscription.name} />
+      {subscription.vendor?.trim() ? <DetailFieldRow label="Proveedor" value={subscription.vendor.trim()} /> : null}
+      <DetailFieldRow label="Estado" value={STATUS_LABELS[subscription.status]} />
+      <DetailFieldRow label="Moneda" value={currencyPluralTitle(subscription.currencyCode)} />
+      <DetailFieldRow
         label="Se repite"
         value={subscriptionRecurrencePhrase(
           subscription.intervalCount,
@@ -36,112 +47,37 @@ export function SubscriptionDetailFacts({ subscription, onPickAccount, onPickCat
           subscription.dayOfMonth,
         )}
       />
-      <Fact
+      <DetailFieldRow label="Fecha de inicio" value={displayDate(subscription.startDate)} />
+      <DetailFieldRow label="Próximo cobro" value={displayDate(subscription.nextDueDate)} />
+      {subscription.endDate ? <DetailFieldRow label="Fecha de fin" value={displayDate(subscription.endDate)} /> : null}
+      <DetailFieldRow
         label="Avisarme antes"
         value={remind > 0 ? `${remind} ${remind === 1 ? "día" : "días"}` : "Sin aviso"}
       />
-      <Fact
+      <DetailFieldRow
         label="Se paga con"
-        value={subscription.accountName ?? null}
-        empty="Sin cuenta"
-        support={
-          subscription.autoCreateMovement && !subscription.accountName
-            ? "Sin cuenta, el gasto no se anota solo"
-            : subscription.autoCreateMovement
-              ? "El gasto se anota solo"
-              : undefined
-        }
-        onPress={onPickAccount}
+        value={accountName || "Sin cuenta"}
+        muted={!accountName}
+        action={!accountName}
+        onPress={accountName ? undefined : onPickAccount}
       />
-      <Fact
+      <DetailFieldRow
         label="Categoría"
-        value={subscription.categoryName ?? null}
-        empty="Sin categoría"
-        onPress={onPickCategory}
-        last
+        value={categoryName || "Sin categoría"}
+        muted={!categoryName}
+        action={!categoryName}
+        onPress={categoryName ? undefined : onPickCategory}
       />
+      <DetailFieldRow
+        label="Anotar gasto solo"
+        value={subscription.autoCreateMovement ? (accountName ? "Sí" : "Requiere cuenta") : "No"}
+        muted={subscription.autoCreateMovement && !accountName}
+      />
+      {description ? <DetailFieldRow label="Descripción" value={description} valueLines={0} /> : null}
+      {notes ? <DetailFieldRow label="Notas" value={notes} valueLines={0} /> : null}
+      <DetailFieldRow label="Fijada en la lista" value={subscription.isPinned ? "Sí" : "No"} last />
     </View>
   );
 }
 
-function Fact({
-  label,
-  value,
-  empty,
-  support,
-  onPress,
-  last = false,
-}: {
-  label: string;
-  value: string | null;
-  /** Lo que dice la fila cuando no hay dato, con palabras. */
-  empty?: string;
-  support?: string;
-  onPress?: () => void;
-  last?: boolean;
-}) {
-  const filled = Boolean(value);
-  const body = (
-    <>
-      <View style={styles.copy}>
-        <Text style={styles.label}>{label}</Text>
-        {support ? <Text style={styles.support}>{support}</Text> : null}
-      </View>
-      <Text style={[styles.value, !filled && styles.valueEmpty]} numberOfLines={2}>
-        {value ?? empty}
-      </Text>
-      {/* El chevrón solo donde lleva a algo: un hueco que se puede llenar. */}
-      {!filled && onPress ? <ChevronRight size={16} color={COLORS.storm} /> : null}
-    </>
-  );
-
-  if (!filled && onPress) {
-    return (
-      <TouchableOpacity
-        style={[styles.row, !last && styles.rowDivided]}
-        onPress={onPress}
-        activeOpacity={0.78}
-        accessibilityRole="button"
-        accessibilityLabel={`${label}: ${empty}. Toca para elegir`}
-      >
-        {body}
-      </TouchableOpacity>
-    );
-  }
-
-  return <View style={[styles.row, !last && styles.rowDivided]}>{body}</View>;
-}
-
-const styles = StyleSheet.create({
-  group: {
-    borderRadius: RADIUS.lg,
-    borderWidth: 1,
-    borderColor: SURFACE.cardBorder,
-    backgroundColor: SURFACE.card,
-    overflow: "hidden",
-  },
-  row: {
-    minHeight: 56,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: SPACING.md,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-  },
-  rowDivided: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: SURFACE.separator,
-  },
-  copy: { flex: 1, gap: 2 },
-  label: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.md, color: COLORS.fog },
-  support: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
-  value: {
-    flexShrink: 1,
-    maxWidth: "50%",
-    textAlign: "right",
-    fontFamily: FONT_FAMILY.bodySemibold,
-    fontSize: FONT_SIZE.md,
-    color: COLORS.ink,
-  },
-  valueEmpty: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.storm },
-});
+const styles = StyleSheet.create({ list: { paddingTop: SPACING.xs } });

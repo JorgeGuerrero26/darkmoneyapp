@@ -1,12 +1,10 @@
 import { useCallback, useMemo, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ban, BarChart3, MoreVertical, Pause } from "lucide-react-native";
+import { MoreVertical } from "lucide-react-native";
 
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
-import { Button } from "../../components/ui/Button";
-import { Card } from "../../components/ui/Card";
 import { EntityActionSheet } from "../../components/ui/EntityActionSheet";
 import { SearchableSelectSheet } from "../../components/ui/SearchableSelectSheet";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
@@ -20,6 +18,7 @@ import { SubscriptionAnalyticsModal } from "../../components/domain/Subscription
 import { SubscriptionDetailHeader } from "../../features/subscriptions/components/SubscriptionDetailHeader";
 import { SubscriptionDetailFacts } from "../../features/subscriptions/components/SubscriptionDetailFacts";
 import { SubscriptionDetailMovements } from "../../features/subscriptions/components/SubscriptionDetailMovements";
+import { SubscriptionDetailActions } from "../../features/subscriptions/components/SubscriptionDetailActions";
 import { MarkSubscriptionPaidSheet } from "../../features/subscriptions/components/MarkSubscriptionPaidSheet";
 import { useOriginBackNavigation } from "../../hooks/useOriginBackNavigation";
 import { useNotificationReason } from "../../hooks/useNotificationReason";
@@ -38,7 +37,7 @@ import {
   useUpdateSubscriptionMutation,
 } from "../../services/queries/subscriptions-recurring-income";
 import { useToast } from "../../hooks/useToast";
-import { COLORS, FONT_FAMILY, FONT_SIZE, FONT_WEIGHT, RADIUS, SPACING, SURFACE } from "../../constants/theme";
+import { COLORS, FONT_SIZE, FONT_WEIGHT, SPACING } from "../../constants/theme";
 import type { SubscriptionSummary } from "../../types/domain";
 
 function parseSubscriptionId(raw: string | undefined): number | null {
@@ -206,30 +205,18 @@ function SubscriptionDetailScreen() {
       topInset={insets.top}
       header={
         <>
-          {/* Eran cuatro íconos sin etiqueta —uno de ellos un alfiler tachado que lo mismo
-              decía "está fijada" que "toca para fijarla"— comiéndose el sitio del nombre. Lo
-              administrativo baja al menú, donde cada acción se lee. El subtítulo era el dueño
-              de la cuenta: sale en todas las suscripciones y nunca cambia. */}
           <ScreenHeader
-            title={subscription?.name ?? "Suscripción"}
+            title="Suscripción"
             onBack={handleBack}
             rightAction={
               subscription ? (
                 <HeaderActionGroup
-                  actions={[
-                    {
-                      key: "analytics",
-                      icon: BarChart3,
-                      onPress: () => setAnalyticsOpen(true),
-                      accessibilityLabel: "Ver analítica",
-                    },
-                    {
-                      key: "menu",
-                      icon: MoreVertical,
-                      onPress: () => setMenuOpen(true),
-                      accessibilityLabel: "Más acciones",
-                    },
-                  ]}
+                  actions={[{
+                    key: "menu",
+                    icon: MoreVertical,
+                    onPress: () => setMenuOpen(true),
+                    accessibilityLabel: "Más acciones",
+                  }]}
                 />
               ) : null
             }
@@ -254,22 +241,8 @@ function SubscriptionDetailScreen() {
             </Text>
           </View>
         ) : (
-          <ScrollView contentContainerStyle={styles.content}>
+          <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
             <SubscriptionDetailHeader subscription={subscription} occurrences={occurrences} />
-
-            {/* Eran cuatro acciones del mismo tamaño y color: una es a lo que se viene, dos son
-                administrativas y una es irreversible. Y "Análisis" estaba dos veces en la misma
-                pantalla —aquí y como ícono del encabezado—. */}
-            {subscription.status === "active" ? (
-              <Button
-                label={isOverdue ? "Ponerla al día" : "Marcar como pagada"}
-                size="lg"
-                onPress={() => setMarkPaidVisible(true)}
-              />
-            ) : (
-              <Button label="Reactivar" size="lg" onPress={handleTogglePause} />
-            )}
-
             <SubscriptionDetailFacts
               subscription={subscription}
               onPickAccount={() => setAccountPickerOpen(true)}
@@ -282,36 +255,19 @@ function SubscriptionDetailScreen() {
               allPostedMovements={postedMovements}
             />
 
-            {subscription.description || subscription.notes ? (
-              <Card>
-                <Text style={styles.sectionTitle}>Detalles</Text>
-                {subscription.description ? (
-                  <Text style={styles.notes}>{subscription.description}</Text>
-                ) : null}
-                {subscription.notes ? (
-                  <>
-                    {subscription.description ? <View style={styles.notesDivider} /> : null}
-                    <Text style={styles.notesLabel}>Notas</Text>
-                    <Text style={styles.notes}>{subscription.notes}</Text>
-                  </>
-                ) : null}
-              </Card>
-            ) : null}
-
-            {/* Administrativas: bajan al final, separadas de lo que se viene a hacer. */}
-            <View style={styles.footerActions}>
-              {/* Reactivar ya es la acción primaria cuando está parada: aquí sobraría. */}
-              {subscription.status === "active" ? (
-                <FooterAction icon={Pause} label="Pausar" onPress={handleTogglePause} />
-              ) : null}
-              {subscription.status !== "cancelled" ? (
-                <FooterAction icon={Ban} label="Cancelar" onPress={() => setCancelConfirmVisible(true)} />
-              ) : null}
-            </View>
-
           </ScrollView>
         )
       }
+      fab={subscription ? (
+        <SubscriptionDetailActions
+          bottomInset={insets.bottom}
+          status={subscription.status}
+          isOverdue={isOverdue}
+          onEdit={() => setEditFormVisible(true)}
+          onMarkPaid={() => setMarkPaidVisible(true)}
+          onReactivate={handleTogglePause}
+        />
+      ) : null}
       overlays={
         <>
           {subscription ? (
@@ -364,10 +320,10 @@ function SubscriptionDetailScreen() {
               summaryTitle={subscription.name}
               actions={[
                 {
-                  key: "edit",
-                  label: "Editar suscripción",
+                  key: "analytics",
+                  label: "Ver analítica",
                   variant: "secondary",
-                  onPress: () => { setMenuOpen(false); setEditFormVisible(true); },
+                  onPress: () => { setMenuOpen(false); setAnalyticsOpen(true); },
                 },
                 {
                   key: "pin",
@@ -375,6 +331,18 @@ function SubscriptionDetailScreen() {
                   variant: "secondary",
                   onPress: () => { setMenuOpen(false); handleTogglePin(); },
                 },
+                ...(subscription.status === "active" ? [{
+                  key: "pause",
+                  label: "Pausar suscripción",
+                  variant: "secondary" as const,
+                  onPress: () => { setMenuOpen(false); handleTogglePause(); },
+                }] : []),
+                ...(subscription.status !== "cancelled" ? [{
+                  key: "cancel",
+                  label: "Cancelar suscripción",
+                  variant: "ghost" as const,
+                  onPress: () => { setMenuOpen(false); setCancelConfirmVisible(true); },
+                }] : []),
                 {
                   key: "delete",
                   label: "Eliminar suscripción",
@@ -420,33 +388,12 @@ function SubscriptionDetailScreen() {
   );
 }
 
-function FooterAction({
-  icon: Icon,
-  label,
-  onPress,
-}: {
-  icon: typeof Pause;
-  label: string;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [styles.footerAction, pressed && styles.footerActionPressed]}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-    >
-      <Icon size={15} color={COLORS.storm} strokeWidth={2} />
-      <Text style={styles.footerActionLabel}>{label}</Text>
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
+  scroll: { flex: 1 },
   content: {
-    padding: SPACING.lg,
-    gap: SPACING.md,
-    paddingBottom: SPACING.xxxl,
+    paddingHorizontal: SPACING.lg,
+    paddingTop: SPACING.sm,
+    paddingBottom: SPACING.lg,
   },
   center: {
     flex: 1,
@@ -464,49 +411,6 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
     fontSize: FONT_SIZE.sm,
     textAlign: "center",
-  },
-  footerActions: {
-    flexDirection: "row",
-    gap: SPACING.sm,
-    marginTop: SPACING.lg,
-  },
-  footerAction: {
-    flex: 1,
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: SPACING.xs,
-    minHeight: 48,
-    borderWidth: 1,
-    borderColor: SURFACE.cardBorder,
-    borderRadius: RADIUS.md,
-  },
-  footerActionPressed: { opacity: 0.6 },
-  footerActionLabel: {
-    fontFamily: FONT_FAMILY.bodyMedium,
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.fog,
-  },
-  sectionTitle: {
-    fontSize: FONT_SIZE.xs,
-    fontWeight: FONT_WEIGHT.semibold,
-    color: COLORS.textMuted,
-    textTransform: "uppercase",
-    marginBottom: SPACING.xs,
-  },
-  notes: { fontSize: FONT_SIZE.sm, color: COLORS.text, lineHeight: 20 },
-  notesLabel: {
-    fontFamily: FONT_FAMILY.bodySemibold,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.textMuted,
-    textTransform: "uppercase",
-    marginBottom: SPACING.xs,
-    marginTop: SPACING.sm,
-  },
-  notesDivider: {
-    height: 1,
-    backgroundColor: COLORS.border,
-    marginVertical: SPACING.sm,
   },
 });
 
