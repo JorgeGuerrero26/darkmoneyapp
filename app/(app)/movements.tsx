@@ -640,6 +640,10 @@ function MovementsScreen() {
           setActiveDatePreset(null);
           setCustomDateFrom("");
           setCustomDateTo("");
+        } else if (quickScope === "account" && parsedQuickAccountId) {
+          setActiveDatePreset("Este mes");
+          setCustomDateFrom("");
+          setCustomDateTo("");
         }
         if (quickSearch) {
           setSearchText(quickSearch);

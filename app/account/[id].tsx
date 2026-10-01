@@ -175,6 +175,15 @@ function AccountDetailScreen() {
               summaryTitle={account.name}
               meta={[accountDetailTypeLabel(account.type)]}
               actions={[
+                {
+                  key: "movements-this-month",
+                  label: "Ver movimientos de este mes",
+                  variant: "secondary" as const,
+                  onPress: () => {
+                    setMenuOpen(false);
+                    router.push(`/(app)/movements?quickScope=account&quickAccountId=${account.id}&quickToken=${Date.now()}`);
+                  },
+                },
                 ...(!account.isArchived ? [{
                   key: "transfer",
                   label: "Transferir",
