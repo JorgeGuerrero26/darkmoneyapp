@@ -16,6 +16,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useOriginBackNavigation } from "../../hooks/useOriginBackNavigation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
+import { CreditCard, MoreVertical, Pencil } from "lucide-react-native";
 
 import { useAuth } from "../../lib/auth-context";
 import { useUiStore } from "../../store/ui-store";
@@ -55,6 +56,7 @@ import type {
 import {
   obligationPerspectiveDirectionLabel,
   obligationViewerActsAsCollector,
+  obligationViewerPaymentRequestTitle,
 } from "../../lib/obligation-viewer-labels";
 import {
   ownerDefaultAccountId,
@@ -71,6 +73,9 @@ import {
   type PendingOwnerEditRequest,
 } from "../../lib/obligation-event-payloads";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
+import { DetailActionBar } from "../../components/ui/DetailActionBar";
+import { HeaderActionGroup } from "../../components/ui/HeaderActionGroup";
+import { ResourceModuleTemplate } from "../../components/ui/ResourceModuleTemplate";
 import { NotificationReasonBanner } from "../../components/ui/NotificationReasonBanner";
 import { useNotificationReason } from "../../hooks/useNotificationReason";
 import { ObligationForm } from "../../components/forms/ObligationForm";
@@ -99,16 +104,13 @@ import { ViewerRequestsSection } from "../../features/obligations/components/det
 import { EventHistoryContainer } from "../../features/obligations/components/detail/EventHistoryContainer";
 import { ViewerLinkAccountSheet } from "../../features/obligations/components/detail/ViewerLinkAccountSheet";
 import { OwnerRespondPaymentRequestSheet } from "../../features/obligations/components/detail/OwnerRespondPaymentRequestSheet";
-import { ObligationOverviewCards, obligationTermsLine } from "../../features/obligations/components/detail/ObligationOverviewCards";
-import { ObligationDetailInfoCard } from "../../features/obligations/components/detail/ObligationDetailInfoCard";
+import { ObligationOverviewCards } from "../../features/obligations/components/detail/ObligationOverviewCards";
+import { ObligationDetailFields } from "../../features/obligations/components/detail/ObligationDetailFields";
+import { ObligationDetailTabs, type ObligationDetailTab } from "../../features/obligations/components/detail/ObligationDetailTabs";
 import { PlanVsPaymentsCard } from "../../features/obligations/components/detail/PlanVsPaymentsCard";
-import { ObligationMovementsPreview } from "../../features/obligations/components/detail/ObligationMovementsPreview";
 import { balancesAfterEvents } from "../../features/obligations/lib/running-balance";
 import { OwnerRespondDeleteRequestSheet } from "../../features/obligations/components/detail/OwnerRespondDeleteRequestSheet";
 import { OwnerRespondEditRequestSheet } from "../../features/obligations/components/detail/OwnerRespondEditRequestSheet";
-import { ObligationDetailHeaderActions } from "../../features/obligations/components/detail/ObligationDetailHeaderActions";
-import { ViewerActivityTabs } from "../../features/obligations/components/detail/ViewerActivityTabs";
-import { RegisterPaymentButton } from "../../features/obligations/components/detail/RegisterPaymentButton";
 import { RejectRequestSheet } from "../../features/obligations/components/detail/RejectRequestSheet";
 import { ShareInviteBottomSheet } from "../../features/obligations/components/detail/ShareInviteBottomSheet";
 import { ObligationReportSheet } from "../../features/obligations/components/detail/ObligationReportSheet";
@@ -168,8 +170,7 @@ function ObligationDetailScreen() {
   const { showToast, showRichToast, showErrorToast } = useToast();
   const [editFormVisible, setEditFormVisible] = useState(false);
   const [detailMenuOpen, setDetailMenuOpen] = useState(false);
-  /** El historial completo se abre desde "Ver los N movimientos". */
-  const [historyExpanded, setHistoryExpanded] = useState(false);
+  const [detailTab, setDetailTab] = useState<ObligationDetailTab>("details");
   const [paymentFormVisible, setPaymentFormVisible] = useState(false);
   const [paymentRequestFormVisible, setPaymentRequestFormVisible] = useState(false);
   const [editRequestFormVisible, setEditRequestFormVisible] = useState(false);
@@ -192,7 +193,6 @@ function ObligationDetailScreen() {
   const [linkingAccountId, setLinkingAccountId] = useState<number | null>(null);
   const [viewerDeleteRequestEvent, setViewerDeleteRequestEvent] = useState<ObligationEventSummary | null>(null);
   const [detailViewportHeight, setDetailViewportHeight] = useState(0);
-  const [viewerDetailTab, setViewerDetailTab] = useState<"history" | "requests">("history");
   const [unlinkShareConfirmVisible, setUnlinkShareConfirmVisible] = useState(false);
   const [reportSheetOpen, setReportSheetOpen] = useState(false);
   const [reportResult, setReportResult] = useState<ObligationReportResult | null>(null);
@@ -520,8 +520,16 @@ function ObligationDetailScreen() {
           (viewerLinkByEventId.get(selectedEvent.id)?.accountId ?? null) != null,
         )
       : null;
-  const showViewerHistoryTab = !isSharedViewer || viewerDetailTab === "history";
-  const showViewerRequestsTab = isSharedViewer && viewerDetailTab === "requests";
+  const showHistoryTab = detailTab === "activity";
+  const showViewerRequestsTab = isSharedViewer && detailTab === "requests";
+  const requestCount = isSharedViewer
+    ? viewerRequests.length + viewerEditStatusByEventId.size + viewerDeleteStatusByEventId.size
+    : pendingOwnerDeleteRequests.length + pendingOwnerEditRequests.length + pendingRequests.length;
+  const showRequestsTab = requestCount > 0;
+  const selectNotificationTab = useMemo(
+    () => (tab: "history" | "requests") => setDetailTab(tab === "history" ? "activity" : "requests"),
+    [],
+  );
 
   const viewerEditRequests = useMemo(
     () =>
@@ -557,8 +565,18 @@ function ObligationDetailScreen() {
   });
 
   useEffect(() => {
-    setViewerDetailTab("history");
+    setDetailTab("details");
   }, [obligation?.id]);
+
+  useEffect(() => {
+    if (detailTab === "requests" && !showRequestsTab) setDetailTab("details");
+  }, [detailTab, showRequestsTab]);
+
+  useEffect(() => {
+    historySectionYRef.current = null;
+    eventRowLayoutsRef.current.clear();
+    detailScrollRef.current?.scrollTo({ y: 0, animated: false });
+  }, [detailTab, obligation?.id]);
 
   // Force-refetch attachment list every time the preview modal opens to bypass stale cache
   useEffect(() => {
@@ -649,7 +667,7 @@ function ObligationDetailScreen() {
     viewerLinkByEventId,
     eventsForDetail,
     filteredHistoryEvents,
-    showViewerHistoryTab,
+    showViewerHistoryTab: showHistoryTab,
     remoteEventsPending,
     historyPreset,
     historyFrom,
@@ -658,7 +676,7 @@ function ObligationDetailScreen() {
     setHistoryFrom,
     setHistoryTo,
     setHistoryGroupsCollapsed,
-    setViewerDetailTab,
+    setViewerDetailTab: selectNotificationTab,
     setNotificationRequestTarget,
     setOwnerResponseAccountId,
     setOwnerDeleteRequestTarget,
@@ -1058,86 +1076,72 @@ function ObligationDetailScreen() {
   );
 
   return (
-    <View style={[styles.screen, { paddingTop: insets.top }]}>
-      <ScreenHeader
-        title={obligation?.title ?? "Obligación"}
-        /* El contacto y la dirección de la deuda viven aquí, junto al título, en vez de apilarse
-           centrados sobre la cifra. */
-        subtitle={
-          isSharedViewer && obligation && "share" in obligation
-            ? `Compartido · ${(obligation as SharedObligationSummary).share.ownerDisplayName?.trim() || "Otro usuario"}`
-            : obligation
-              ? [obligation.counterparty || "Sin contacto", directionPerspectiveLabel.toLowerCase()]
-                  .filter(Boolean).join(" · ")
-              : activeWorkspace?.name
-        }
-        onBack={handleBack}
-        rightAction={
-          <ObligationDetailHeaderActions
-            styles={styles}
-            hasObligation={Boolean(obligation)}
-            isSharedViewer={isSharedViewer}
-            pendingRequestCount={pendingRequests.length}
-            onPressShare={() => { setShareEmail(""); setShareSheetOpen(true); }}
-            onPressReport={handleOpenReport}
-            onPressMenu={() => setDetailMenuOpen(true)}
-            onPressUnlink={() => setUnlinkShareConfirmVisible(true)}
-          />
-        }
-      />
-      <NotificationReasonBanner reason={notificationReason} onDismiss={dismissNotificationReason} />
+    <ResourceModuleTemplate
+      topInset={insets.top}
+      header={<>
+        <ScreenHeader
+          title={obligation ? (directionPerspectiveLabel === "Me deben" ? "Crédito" : "Deuda") : "Crédito o deuda"}
+          subtitle={obligation?.title ?? activeWorkspace?.name}
+          onBack={handleBack}
+          rightAction={obligation ? (
+            <HeaderActionGroup actions={[{
+              key: "menu",
+              icon: MoreVertical,
+              onPress: () => setDetailMenuOpen(true),
+              accessibilityLabel: "Más acciones",
+            }]} />
+          ) : null}
+        />
+        <NotificationReasonBanner reason={notificationReason} onDismiss={dismissNotificationReason} />
 
-      {pageLoading ? (
+        {obligation ? (
+          <View style={styles.detailTabs}>
+            <ObligationDetailTabs
+              activeTab={detailTab}
+              showRequests={showRequestsTab}
+              requestCount={requestCount}
+              onChange={setDetailTab}
+            />
+          </View>
+        ) : null}
+      </>}
+
+      list={pageLoading ? (
         <View style={styles.center}><ActivityIndicator color={COLORS.primary} /></View>
       ) : !obligation ? (
         <View style={styles.center}><Text style={styles.errorText}>No encontrada</Text></View>
       ) : (
         <ScrollView
           ref={detailScrollRef}
+          style={styles.detailScroll}
           onLayout={(event) => setDetailViewportHeight(event.nativeEvent.layout.height)}
           contentContainerStyle={styles.content}
         >
-          <ObligationOverviewCards
-            styles={styles}
-            obligation={obligation}
-            isSharedViewer={isSharedViewer}
-            capitalOverview={capitalOverview}
-            onPressCapitalIncreaseDetail={() => {
-              setCapitalChangesTab("increase");
-              setCapitalChangesVisible(true);
-            }}
-            onPressCapitalDecreaseDetail={() => {
-              setCapitalChangesTab("decrease");
-              setCapitalChangesVisible(true);
-            }}
-          />
-
-          <ObligationDetailInfoCard styles={styles} obligation={obligation} />
-
-          {/* El plan contra lo que de verdad entró. Solo aparece si la obligación tiene plan. */}
-          <PlanVsPaymentsCard obligation={obligation} />
-
-          {isSharedViewer ? (
-            <ViewerActivityTabs
-              styles={styles}
-              activeTab={viewerDetailTab}
-              historyCount={eventsForDetail.length}
-              requestsCount={viewerRequests.length + viewerEditRequests.length + viewerDeleteRequests.length}
-              onChangeTab={setViewerDetailTab}
-            />
+          {detailTab === "details" ? (
+            <>
+              <ObligationOverviewCards
+                styles={styles}
+                obligation={obligation}
+                isSharedViewer={isSharedViewer}
+                capitalOverview={capitalOverview}
+                onPressCapitalIncreaseDetail={() => {
+                  setCapitalChangesTab("increase");
+                  setCapitalChangesVisible(true);
+                }}
+                onPressCapitalDecreaseDetail={() => {
+                  setCapitalChangesTab("decrease");
+                  setCapitalChangesVisible(true);
+                }}
+              />
+              <ObligationDetailFields obligation={obligation} directionLabel={directionPerspectiveLabel} />
+            </>
           ) : null}
 
-          {showViewerHistoryTab && !historyExpanded && obligation ? (
-            <ObligationMovementsPreview
-              obligation={obligation}
-              events={eventsForDetail}
-              balances={balancesByEventId}
-              isReceivable={isReceivable}
-              onSeeAll={() => setHistoryExpanded(true)}
-            />
+          {showHistoryTab ? (
+            <PlanVsPaymentsCard obligation={obligation} />
           ) : null}
 
-          {showViewerHistoryTab && historyExpanded ? (
+          {showHistoryTab ? (
             <EventHistoryContainer
               styles={styles}
               historyPreset={historyPreset}
@@ -1158,7 +1162,7 @@ function ObligationDetailScreen() {
             />
           ) : null}
 
-          {!isSharedViewer && obligation ? (
+          {!isSharedViewer && detailTab === "requests" ? (
             <OwnerDeleteRequestList
               obligation={obligation}
               pendingDeleteRequests={pendingOwnerDeleteRequests}
@@ -1170,6 +1174,7 @@ function ObligationDetailScreen() {
               onReject={(req) => void handleRejectDeleteRequest(req)}
               onFocusEvent={(eventId) => {
                 setPendingFocusEventId(eventId);
+                setDetailTab("activity");
                 focusEventFromNotification(eventId, {
                   tone: "info",
                   message: "Evento de la solicitud resaltado en el historial.",
@@ -1179,7 +1184,7 @@ function ObligationDetailScreen() {
             />
           ) : null}
 
-          {!isSharedViewer && obligation ? (
+          {!isSharedViewer && detailTab === "requests" ? (
             <OwnerEditRequestList
               obligation={obligation}
               pendingEditRequests={pendingOwnerEditRequests}
@@ -1191,7 +1196,7 @@ function ObligationDetailScreen() {
             />
           ) : null}
 
-          {!isSharedViewer && obligation ? (
+          {!isSharedViewer && detailTab === "requests" ? (
             <OwnerPendingPaymentRequestList
               obligation={obligation}
               pendingRequests={pendingRequests}
@@ -1215,47 +1220,62 @@ function ObligationDetailScreen() {
             />
           ) : null}
 
-          {/* La cuota y el vencimiento se contradicen —a esa cuota, el saldo actual toma años—,
-              así que van como contexto al pie y con "pactada" diciendo que es lo acordado, no lo
-              que está pasando. */}
-          {obligation ? (
-            <Text style={styles.heroTerms}>{obligationTermsLine(obligation)}</Text>
-          ) : null}
-
-          <RegisterPaymentButton
-            styles={styles}
-            obligation={obligation}
-            isSharedViewer={isSharedViewer}
-            onPressViewerRequest={() => setPaymentRequestFormVisible(true)}
-            onPressOwnerRegister={() => setPaymentFormVisible(true)}
-            onPressAdjust={isSharedViewer ? undefined : () => {
-              setEditingAdjustmentEvent(null);
-              /* La hoja abre en "le debe más", que es lo que pasa doce de cada catorce veces, y
-                 el conmutador cambia el sentido sin salir de ella. */
-              setAdjustmentMode("increase");
-              setAdjustmentFormVisible(true);
-            }}
-          />
         </ScrollView>
       )}
 
-      {/* Lo administrativo vive aquí: editar era el botón más llamativo de la pantalla —menta
-          plena, ancho completo— para cambiar datos que casi nunca cambian. "Reducir monto"
-          estaba aquí y "Aumentar monto" al lado de "Registrar cobro": dos puertas al mismo
-          formulario desde que las dos hojas se unieron. Queda la de fuera, "Ajustar monto". */}
+      fab={obligation && !pageLoading ? (
+        <DetailActionBar
+          bottomInset={insets.bottom}
+          primary={obligation.status === "active" ? {
+            label: isSharedViewer ? obligationViewerPaymentRequestTitle(obligation.direction) : `Registrar ${paymentWord.toLowerCase()}`,
+            accessibilityLabel: isSharedViewer ? obligationViewerPaymentRequestTitle(obligation.direction) : `Registrar ${paymentWord.toLowerCase()}`,
+            icon: CreditCard,
+            onPress: () => isSharedViewer ? setPaymentRequestFormVisible(true) : setPaymentFormVisible(true),
+          } : !isSharedViewer ? {
+            label: "Editar", accessibilityLabel: "Editar crédito o deuda", icon: Pencil, onPress: () => setEditFormVisible(true),
+          } : undefined}
+          secondary={!isSharedViewer && obligation.status === "active" ? {
+            label: "Editar", accessibilityLabel: "Editar crédito o deuda", icon: Pencil, onPress: () => setEditFormVisible(true),
+          } : undefined}
+        />
+      ) : null}
+
+      overlays={<>
       <EntityActionSheet
         visible={detailMenuOpen}
         onClose={() => setDetailMenuOpen(false)}
         sheetTitle="Más acciones"
         summaryTitle={obligation?.title ?? "Obligación"}
         meta={[obligation?.counterparty]}
-        actions={[
+        actions={isSharedViewer ? [{
+          key: "unlink",
+          label: "Desvincular",
+          variant: "ghost",
+          onPress: () => { setDetailMenuOpen(false); setUnlinkShareConfirmVisible(true); },
+        }] : [
           {
-            key: "edit",
-            label: "Editar obligación",
+            key: "analytics",
+            label: "Ver analítica",
             variant: "secondary",
-            onPress: () => { setDetailMenuOpen(false); setEditFormVisible(true); },
+            onPress: () => { setDetailMenuOpen(false); setAnalyticsVisible(true); },
           },
+          {
+            key: "report",
+            label: "Generar reporte",
+            variant: "secondary",
+            onPress: () => { setDetailMenuOpen(false); handleOpenReport(); },
+          },
+          ...(obligation?.status === "active" ? [{
+            key: "adjust",
+            label: "Ajustar monto",
+            variant: "secondary" as const,
+            onPress: () => {
+              setDetailMenuOpen(false);
+              setEditingAdjustmentEvent(null);
+              setAdjustmentMode("increase");
+              setAdjustmentFormVisible(true);
+            },
+          }] : []),
           {
             key: "share",
             label: "Compartir",
@@ -1580,7 +1600,8 @@ function ObligationDetailScreen() {
         onSharePdf={() => void handleShareReportPdf()}
         onClose={() => setReportSheetOpen(false)}
       />
-    </View>
+      </>}
+    />
   );
 }
 

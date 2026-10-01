@@ -4,7 +4,9 @@ import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../
 
 export const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: COLORS.bg },
-  content: { padding: SPACING.lg, gap: SPACING.md, paddingBottom: SPACING.xl },
+  content: { paddingHorizontal: SPACING.xl, paddingTop: SPACING.lg, gap: SPACING.xl, paddingBottom: SPACING.xxxl },
+  detailTabs: { paddingHorizontal: SPACING.xl },
+  detailScroll: { flex: 1 },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   errorText: { color: COLORS.storm, fontSize: FONT_SIZE.md },
   headerActions: { flexDirection: "row", alignItems: "center", gap: SPACING.sm },
@@ -57,7 +59,7 @@ export const styles = StyleSheet.create({
   // El color estaba inline y venía de la dirección de la deuda —verde o rojo—; sin él el texto
   // se iba a negro sobre la tarjeta oscura. La cifra es hueso, como todas.
   pendingAmount: {
-    fontSize: 36,
+    fontSize: FONT_SIZE.display,
     fontFamily: FONT_FAMILY.heading,
     color: COLORS.ink,
     letterSpacing: -0.5,
@@ -71,9 +73,7 @@ export const styles = StyleSheet.create({
   },
   progress: { width: "100%", marginTop: SPACING.sm },
   progressLabel: { fontSize: FONT_SIZE.xs, color: COLORS.storm },
-  capitalSummaryCard: {
-    gap: SPACING.sm,
-  },
+  capitalSummaryCard: { gap: SPACING.sm, marginTop: SPACING.xl },
   heroTerms: {
     marginTop: SPACING.sm,
     fontFamily: FONT_FAMILY.body,

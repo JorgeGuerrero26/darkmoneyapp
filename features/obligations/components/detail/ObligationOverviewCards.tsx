@@ -7,12 +7,10 @@ import {
   type TextStyle,
 } from "react-native";
 
-import { Card } from "../../../../components/ui/Card";
 import { ProgressBar } from "../../../../components/ui/ProgressBar";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { parseDisplayDate } from "../../../../lib/date";
-import { getObligationStatusLabel } from "../../../../lib/obligation-labels";
 import { coverPlan, parsePaymentPlan, type ActualPayment } from "../../lib/payment-plan";
 import { formatAmountPlain, formatCurrency } from "../../../../components/ui/AmountDisplay";
 import { COLORS } from "../../../../constants/theme";
@@ -62,25 +60,6 @@ type Props = {
   onPressCapitalIncreaseDetail: () => void;
   onPressCapitalDecreaseDetail: () => void;
 };
-
-export function obligationTermsLine(
-  obligation: ObligationSummary | SharedObligationSummary,
-): string {
-  const since = format(parseDisplayDate(obligation.startDate), "d 'de' MMMM", { locale: es });
-  return [
-    /* "Activa desde el 15 de marzo" decía el estado de paso, pero solo era cierto para una
-       obligación activa: una liquidada leía "Activa" al pie. */
-    obligation.status === "active"
-      ? `Activa desde el ${since}`
-      : `${getObligationStatusLabel(obligation.status)} · desde el ${since}`,
-    obligation.installmentAmount
-      ? `cuota pactada ${formatCurrency(obligation.installmentAmount, obligation.currencyCode)}`
-      : null,
-    obligation.dueDate
-      ? `vence ${format(parseDisplayDate(obligation.dueDate), "d MMM yyyy", { locale: es })}`
-      : null,
-  ].filter(Boolean).join(" · ");
-}
 
 export function ObligationOverviewCards({
   styles,
@@ -170,7 +149,7 @@ export function ObligationOverviewCards({
           fueran cuatro indicadores independientes. Es una operación: se lee de arriba abajo y
           termina en el total, y el título dice qué pregunta responde. Sin verde y sin rojo —
           nadie perdió nada cuando le vendiste más. */}
-      <Card style={styles.capitalSummaryCard}>
+      <View style={styles.capitalSummaryCard}>
         <Text style={styles.sectionTitle}>
           Cómo llegó a {formatCurrency(capitalOverview.currentPrincipal, obligation.currencyCode)}
         </Text>
@@ -216,7 +195,7 @@ export function ObligationOverviewCards({
             {formatCurrency(capitalOverview.currentPrincipal, obligation.currencyCode)}
           </Text>
         </View>
-      </Card>
+      </View>
 
     </>
   );

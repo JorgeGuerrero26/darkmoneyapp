@@ -12,6 +12,7 @@ export type DetailFieldRowProps = {
   onPress?: () => void;
   last?: boolean;
   valueAdornment?: ReactNode;
+  valueLines?: number;
 };
 
 /** Fila de lectura compartida por los detalles de movimientos y cuentas. */
@@ -23,12 +24,13 @@ export function DetailFieldRow({
   onPress,
   last = false,
   valueAdornment,
+  valueLines = 2,
 }: DetailFieldRowProps) {
   const body = (
     <>
       <Text style={[styles.label, action && styles.labelAction]}>{label}</Text>
       {valueAdornment}
-      <Text style={[styles.value, (muted || action) && styles.valueMuted]} numberOfLines={2}>
+      <Text style={[styles.value, (muted || action) && styles.valueMuted]} numberOfLines={valueLines}>
         {value}
       </Text>
       {onPress ? <ChevronRight size={16} color={COLORS.storm} /> : null}
