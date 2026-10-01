@@ -141,6 +141,7 @@ function MovementsScreen() {
     quickCategoryId?: string | string[];
     quickDateFrom?: string | string[];
     quickDateTo?: string | string[];
+    quickDatePreset?: string | string[];
     quickType?: string | string[];
     quickSearch?: string | string[];
     quickMovementIds?: string | string[];
@@ -543,6 +544,7 @@ function MovementsScreen() {
       const quickCategoryId = Array.isArray(params.quickCategoryId) ? params.quickCategoryId[0] : params.quickCategoryId;
       const quickDateFrom = Array.isArray(params.quickDateFrom) ? params.quickDateFrom[0] : params.quickDateFrom;
       const quickDateTo = Array.isArray(params.quickDateTo) ? params.quickDateTo[0] : params.quickDateTo;
+      const quickDatePreset = Array.isArray(params.quickDatePreset) ? params.quickDatePreset[0] : params.quickDatePreset;
       const quickType = Array.isArray(params.quickType) ? params.quickType[0] : params.quickType;
       const quickSearch = Array.isArray(params.quickSearch) ? params.quickSearch[0] : params.quickSearch;
       const quickMovementIds = Array.isArray(params.quickMovementIds) ? params.quickMovementIds[0] : params.quickMovementIds;
@@ -572,6 +574,7 @@ function MovementsScreen() {
         quickCategoryId ?? "",
         quickDateFrom ?? "",
         quickDateTo ?? "",
+        quickDatePreset ?? "",
         quickType ?? "",
         quickSearch ?? "",
         quickMovementIds ?? "",
@@ -590,7 +593,7 @@ function MovementsScreen() {
               ? (quickStatus as FilterStatus)
               : null,
           type: scopedType,
-          dateRange: Boolean((quickDateFrom && quickDateTo) || quickSearch || parsedQuickMovementIds.length > 0),
+          dateRange: Boolean((quickDateFrom && quickDateTo) || quickDatePreset === "this_month" || quickSearch || parsedQuickMovementIds.length > 0),
           search: Boolean(quickSearch),
           movementIds: parsedQuickMovementIds.length > 0,
           quickLabel: Boolean(quickLabel),
@@ -640,7 +643,7 @@ function MovementsScreen() {
           setActiveDatePreset(null);
           setCustomDateFrom("");
           setCustomDateTo("");
-        } else if (quickScope === "account" && parsedQuickAccountId) {
+        } else if (quickDatePreset === "this_month") {
           setActiveDatePreset("Este mes");
           setCustomDateFrom("");
           setCustomDateTo("");
@@ -666,6 +669,7 @@ function MovementsScreen() {
       params.quickCategoryId,
       params.quickDateFrom,
       params.quickDateTo,
+      params.quickDatePreset,
       params.quickFilter,
       params.quickScope,
       params.quickSearch,

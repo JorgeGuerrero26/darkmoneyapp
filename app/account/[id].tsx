@@ -7,6 +7,7 @@ import { MoreVertical } from "lucide-react-native";
 
 import { AccountForm } from "../../components/forms/AccountForm";
 import { MovementForm } from "../../components/forms/MovementForm";
+import { AccountAnalyticsModal } from "../../components/domain/AccountAnalyticsModal";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { formatCurrency } from "../../components/ui/AmountDisplay";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
@@ -50,6 +51,7 @@ function AccountDetailScreen() {
   const { showToast, showErrorToast } = useToast();
 
   const [editFormVisible, setEditFormVisible] = useState(false);
+  const [analyticsVisible, setAnalyticsVisible] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [movementFormVisible, setMovementFormVisible] = useState(false);
   const [movementFormType, setMovementFormType] = useState<"expense" | "transfer">("expense");
@@ -181,8 +183,14 @@ function AccountDetailScreen() {
                   variant: "secondary" as const,
                   onPress: () => {
                     setMenuOpen(false);
-                    router.push(`/(app)/movements?quickScope=account&quickAccountId=${account.id}&quickToken=${Date.now()}`);
+                    router.push(`/(app)/movements?quickScope=account&quickAccountId=${account.id}&quickDatePreset=this_month&quickToken=${Date.now()}`);
                   },
+                },
+                {
+                  key: "analytics",
+                  label: "Ver analítica",
+                  variant: "secondary" as const,
+                  onPress: () => { setMenuOpen(false); setAnalyticsVisible(true); },
                 },
                 ...(!account.isArchived ? [{
                   key: "transfer",
@@ -199,6 +207,12 @@ function AccountDetailScreen() {
               ]}
             />
           ) : null}
+
+          <AccountAnalyticsModal
+            visible={analyticsVisible && Boolean(account)}
+            account={account}
+            onClose={() => setAnalyticsVisible(false)}
+          />
 
           {account ? (
             <AccountForm
