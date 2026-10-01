@@ -60,6 +60,8 @@ type FilterType = MovementType | "all";
 type FilterStatus = MovementStatus | "all";
 import { groupMovementsByDate, type MovementListSection } from "../../features/movements/lib/group-by-date";
 import { buildMovementDatePresets } from "../../features/movements/lib/date-presets";
+import { useCalendarDay } from "../../hooks/useCalendarDay";
+import { resolveTimeZone } from "../../lib/calendar-day";
 import { summarizeMovements } from "../../features/movements/lib/summary";
 import { useMovementsFilteredSummaryQuery } from "../../services/queries/movements";
 import { buildExchangeRateMap, resolveRate } from "../../features/dashboard/lib/aggregations";
@@ -90,7 +92,6 @@ const STATUS_FILTERS: { label: string; value: FilterStatus }[] = [
   { label: "Planificado", value: "planned" },
 ];
 
-const DATE_PRESETS = buildMovementDatePresets();
 
 // ── CSV helper ──────────────────────────────────────────────────────────────
 function buildCSV(movements: MovementRecord[]): string {
@@ -304,7 +305,16 @@ function MovementsScreen() {
   }, [selectMode, selectedIds.size]);
 
   // ── Query ─────────────────────────────────────────────────────────────────
-  const selectedPreset = DATE_PRESETS.find((p) => p.label === activeDatePreset);
+  // Los rangos siguen al día de hoy en la zona del perfil: una constante del módulo se quedaba en
+  // el mes en que arrancó la app (el 1 de octubre "Este mes" seguía siendo septiembre).
+  const timeZone = resolveTimeZone(profile?.timezone);
+  const today = useCalendarDay(timeZone);
+  const datePresets = useMemo(
+    () => buildMovementDatePresets(new Date(), timeZone),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `today` es el disparador
+    [today, timeZone],
+  );
+  const selectedPreset = datePresets.find((p) => p.label === activeDatePreset);
   const isCustomRange = activeDatePreset === "Rango…";
   const parsedAmountMin = Number(amountMin.replace(",", "."));
   const parsedAmountMax = Number(amountMax.replace(",", "."));
@@ -1079,7 +1089,7 @@ function MovementsScreen() {
               statusOptions={STATUS_FILTERS}
               statusFilter={activeStatusFilter}
               onStatusFilterChange={setActiveStatusFilter}
-              datePresets={DATE_PRESETS}
+              datePresets={datePresets}
               activeDatePreset={activeDatePreset}
               onDatePresetChange={setActiveDatePreset}
               customDateFrom={customDateFrom}
