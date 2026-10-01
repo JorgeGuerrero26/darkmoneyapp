@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SectionListRenderItem } from "react-native";
-import { CheckSquare, Download, MoreVertical, Pause, Trash2 } from "lucide-react-native";
+import { CheckSquare, Download, MoreVertical, Pause, Trash2, X } from "lucide-react-native";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -54,7 +54,6 @@ import {
 import {
   useDeleteSubscriptionMutation,
   useMarkSubscriptionPaidMutation,
-  useToggleSubscriptionPinMutation,
   useUpdateSubscriptionMutation,
 } from "../services/queries/subscriptions-recurring-income";
 import { useToast } from "../hooks/useToast";
@@ -78,7 +77,6 @@ function SubscriptionsScreen() {
   const { data: snapshot, isLoading, refetch } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const updateMutation = useUpdateSubscriptionMutation(activeWorkspaceId);
   const deleteMutation = useDeleteSubscriptionMutation(activeWorkspaceId);
-  const togglePinMutation = useToggleSubscriptionPinMutation(activeWorkspaceId);
   const markPaidMutation = useMarkSubscriptionPaidMutation(activeWorkspaceId);
 
   const [createFormVisible, setCreateFormVisible] = useState(false);
@@ -115,12 +113,6 @@ function SubscriptionsScreen() {
     setSelectedIds(new Set());
   }, []);
 
-  useEffect(() => {
-    if (selectMode && selectedIds.size === 0) {
-      setSelectMode(false);
-    }
-  }, [selectMode, selectedIds.size]);
-
   const subscriptions = useMemo(
     () => (snapshot?.subscriptions ?? []).filter((subscription) => !pendingDeleteIds.has(subscription.id)),
     [pendingDeleteIds, snapshot?.subscriptions],
@@ -140,14 +132,15 @@ function SubscriptionsScreen() {
     ),
     [activeFilters, dueDateRange, searchText, subscriptions],
   );
+  const hasFilters = activeFilters.length > 0 || Boolean(searchText.trim()) || Boolean(dueDateRange);
   const subscriptionSections = useMemo(
     () => buildSubscriptionSections({
       subscriptions: filteredSubscriptions,
       today: todayPeru(),
-      cancelledExpanded,
-      onToggleCancelled: () => setCancelledExpanded((open: boolean) => !open),
+      cancelledExpanded: cancelledExpanded || hasFilters,
+      onToggleCancelled: hasFilters ? undefined : () => setCancelledExpanded((open: boolean) => !open),
     }),
-    [cancelledExpanded, filteredSubscriptions],
+    [cancelledExpanded, filteredSubscriptions, hasFilters],
   );
 
   const activeFilterItems = useMemo<ActiveFilterItem[]>(() => {
@@ -251,13 +244,6 @@ function SubscriptionsScreen() {
     });
   }, []);
 
-  const handleTogglePin = useCallback((subscription: SubscriptionSummary) => {
-    togglePinMutation.mutate(
-      { id: subscription.id, isPinned: !subscription.isPinned },
-      { onError: (err) => showErrorToast(subscription.isPinned ? "No se pudo desfijar la suscripción" : "No se pudo fijar la suscripción", err) },
-    );
-  }, [showToast, togglePinMutation]);
-
   const handleTogglePause = useCallback((subscription: SubscriptionSummary) => {
     const newStatus = subscription.status === "active" ? "paused" : "active";
     // Al reactivar, la fecha stale del pasado se rueda a la primera ocurrencia >= hoy
@@ -309,6 +295,7 @@ function SubscriptionsScreen() {
     () => filteredSubscriptions.filter((s) => selectedIds.has(s.id)),
     [filteredSubscriptions, selectedIds],
   );
+  const selectedActiveCount = selectedSubscriptions.filter((subscription) => subscription.status === "active").length;
 
   const handleBulkPause = useCallback(async () => {
     let pausedCount = 0;
@@ -365,11 +352,10 @@ function SubscriptionsScreen() {
       onDelete={() => startUndoDelete(item)}
       onTogglePause={() => handleTogglePause(item)}
       onPay={() => setMarkPaidTarget(item)}
-      onTogglePin={selectMode ? undefined : () => handleTogglePin(item)}
       selected={selectedIds.has(item.id)}
       selectMode={selectMode}
     />
-  ), [handleTogglePause, handleTogglePin, router, selectMode, selectedIds, startUndoDelete, toggleSelect]);
+  ), [handleTogglePause, router, selectMode, selectedIds, startUndoDelete, toggleSelect]);
 
   const extraFiltersCount = dueDateRange ? 1 : 0;
   const filterEntranceLabel = (() => {
@@ -382,7 +368,6 @@ function SubscriptionsScreen() {
     }
     return `${applied} filtros`;
   })();
-  const hasFilters = activeFilters.length > 0 || Boolean(searchText.trim()) || extraFiltersCount > 0;
   /* El manual de gestos se muestra UNA vez y se marca como visto: fijo en pantalla era una
      instrucción permanente para algo que se aprende a la primera. Lo que sí cambia —"mostrando
      3 de 12"— se sigue enseñando siempre, porque describe el estado de ahora. */
@@ -406,10 +391,22 @@ function SubscriptionsScreen() {
       topInset={insets.top}
       header={
         <ScreenHeader
-          title={selectMode ? `${selectedIds.size} seleccionada${selectedIds.size === 1 ? "" : "s"}` : "Suscripciones"}
+          title={selectMode
+            ? selectedIds.size > 0
+              ? `${selectedIds.size} seleccionada${selectedIds.size === 1 ? "" : "s"}`
+              : "Seleccionar suscripciones"
+            : "Suscripciones"}
           onBack={selectMode ? exitSelectMode : handleBack}
           rightAction={
-            selectMode ? null : (
+            selectMode ? (
+              <HeaderActionGroup actions={[{
+                key: "cancel",
+                icon: X,
+                label: "Cancelar",
+                onPress: exitSelectMode,
+                accessibilityLabel: "Cancelar selección",
+              }]} />
+            ) : (
               /* El ícono de descarga no decía qué hacía. Baja al menú con su nombre, como en
                  el detalle; y los filtros dejan de tener dos puertas: la de aquí se va y queda
                  la del buscador. */
@@ -444,7 +441,9 @@ function SubscriptionsScreen() {
       )}
       activeFilters={selectMode ? null : <ActiveFilterBar items={activeFilterItems} onClear={clearFilters} />}
       context={
-        !selectMode && (notificationReason || subscriptions.length > 0) ? (
+        selectMode && selectedIds.size === 0 ? (
+          <ResourceContextNote>Toca las suscripciones que quieras seleccionar.</ResourceContextNote>
+        ) : !selectMode && (notificationReason || subscriptions.length > 0) ? (
           <ResourceContextNote>
             {notificationReason ??
               (filteredSubscriptions.length === subscriptions.length && !gestureHintOpen
@@ -482,13 +481,13 @@ function SubscriptionsScreen() {
                 tone: "primary",
                 onPress: () => exportCSV(selectedSubscriptions),
               },
-              {
+              ...(selectedActiveCount > 0 ? [{
                 key: "pause",
-                label: `Pausar (${selectedIds.size})`,
+                label: `Pausar (${selectedActiveCount})`,
                 icon: Pause,
-                tone: "neutral",
+                tone: "neutral" as const,
                 onPress: () => void handleBulkPause(),
-              },
+              }] : []),
               {
                 key: "delete",
                 label: `Eliminar (${selectedIds.size})`,
@@ -515,7 +514,7 @@ function SubscriptionsScreen() {
               </>
             ),
           }}
-          empty={{
+          empty={filteredSubscriptions.length > 0 ? null : {
             title: hasFilters ? "Sin resultados" : "Sin suscripciones",
             description: hasFilters
               ? "Prueba quitando filtros o ajustando la búsqueda."

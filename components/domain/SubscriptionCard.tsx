@@ -1,5 +1,6 @@
 import { memo } from "react";
-import { StyleSheet, Text } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
+import { ChevronRight } from "lucide-react-native";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
@@ -15,6 +16,7 @@ type Props = {
   onPress: () => void;
   onLongPress?: () => void;
   selected?: boolean;
+  showChevron?: boolean;
 };
 
 function formatYmdLocal(ymd: string) {
@@ -35,14 +37,15 @@ function formatYmdLocal(ymd: string) {
  * Y al salir la cápsula, el renglón clay deja de ser una línea suelta de ancho completo que
  * rompía el ritmo de la lista: pasa a ser la segunda línea de su propia fila.
  *
- * Se van también el recuadro del ícono —idéntico en todas las filas, así que no distinguía
- * nada—, el subtítulo "Suscripción" —lo dice el título de la pantalla— y el chevrón.
+ * El recuadro del ícono y el subtítulo "Suscripción" no aportan información. El chevron queda
+ * después del monto para indicar que toda la fila abre el detalle.
  */
 function SubscriptionCardBase({
   subscription,
   onPress,
   onLongPress,
   selected = false,
+  showChevron = true,
 }: Props) {
   const isActive = subscription.status === "active";
   const overdue = isActive && subscription.nextDueDate < todayPeru();
@@ -72,24 +75,29 @@ function SubscriptionCardBase({
       onPress={onPress}
       onLongPress={onLongPress}
       trailing={
-        <>
-          <Text style={[styles.amount, !isActive && styles.amountMuted]}>
-            {formatCurrency(subscription.amount, subscription.currencyCode)}
-          </Text>
-          <Text style={styles.cadence}>
-            {subscriptionRecurrencePhrase(
-              subscription.intervalCount,
-              subscription.frequency,
-              subscription.dayOfMonth,
-            ).toLowerCase()}
-          </Text>
-        </>
+        <View style={styles.trailing}>
+          <View style={styles.amountBlock}>
+            <Text style={[styles.amount, !isActive && styles.amountMuted]}>
+              {formatCurrency(subscription.amount, subscription.currencyCode)}
+            </Text>
+            <Text style={styles.cadence}>
+              {subscriptionRecurrencePhrase(
+                subscription.intervalCount,
+                subscription.frequency,
+                subscription.dayOfMonth,
+              ).toLowerCase()}
+            </Text>
+          </View>
+          {showChevron ? <ChevronRight size={18} color={COLORS.textDisabled} /> : null}
+        </View>
       }
     />
   );
 }
 
 const styles = StyleSheet.create({
+  trailing: { flexDirection: "row", alignItems: "center", gap: SPACING.sm },
+  amountBlock: { alignItems: "flex-end" },
   amount: {
     fontFamily: FONT_FAMILY.heading,
     fontSize: FONT_SIZE.md,

@@ -12,7 +12,6 @@ type Props = {
   onTogglePause: () => void;
   onPay: () => void;
   onLongPress?: () => void;
-  onTogglePin?: () => void;
   selected?: boolean;
   selectMode?: boolean;
 };
@@ -24,7 +23,6 @@ export function SubscriptionSwipeRow({
   onTogglePause,
   onPay,
   onLongPress,
-  onTogglePin,
   selected = false,
   selectMode = false,
 }: Props) {
@@ -58,6 +56,7 @@ export function SubscriptionSwipeRow({
         onPress={onPress}
         onLongPress={onLongPress}
         selected={selected}
+        showChevron={false}
       />
     );
   }
