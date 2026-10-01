@@ -62,6 +62,8 @@ import { DEFAULT_EXCHANGE_CURRENCY, SUPPORTED_CURRENCIES, normalizeSupportedCurr
 import type { WorkspaceRole } from "../types/domain";
 import { SafeBlurView } from "../components/ui/SafeBlurView";
 import { CHANGELOG, CHANGELOG_OLDER } from "../constants/changelog";
+import { TIME_ZONE_OPTIONS, timeZoneLabel } from "../constants/time-zones";
+import { resolveTimeZone } from "../lib/calendar-day";
 import { useOriginBackNavigation } from "../hooks/useOriginBackNavigation";
 import { registerForPushNotifications, savePushTokenToSupabase } from "../hooks/usePushNotifications";
 
@@ -262,6 +264,7 @@ function SettingsScreen() {
   const [inviteSheetOpen, setInviteSheetOpen] = useState(false);
   const [toneSheetOpen, setToneSheetOpen] = useState(false);
   const [currencySheetOpen, setCurrencySheetOpen] = useState(false);
+  const [timeZoneSheetOpen, setTimeZoneSheetOpen] = useState(false);
   const [workspaceSheetOpen, setWorkspaceSheetOpen] = useState(false);
   const [inboundSheetOpen, setInboundSheetOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
@@ -367,6 +370,25 @@ function SettingsScreen() {
       showToast("Moneda base actualizada", "success", normalized);
     } catch (err: unknown) {
       showErrorToast("No se pudo cambiar la moneda base", err);
+    }
+  }
+
+  const timeZone = resolveTimeZone(profile?.timezone);
+  const timeZoneOptions = TIME_ZONE_OPTIONS.some((option) => option.id === timeZone)
+    ? TIME_ZONE_OPTIONS
+    : [{ id: timeZone, label: timeZoneLabel(timeZone) }, ...TIME_ZONE_OPTIONS];
+
+  async function handleTimeZoneChange(nextZone: string) {
+    if (nextZone === timeZone) return;
+    try {
+      await saveProfile({
+        fullName: profile?.fullName ?? "",
+        baseCurrencyCode,
+        timezone: nextZone,
+      });
+      showToast("Zona horaria actualizada", "success", timeZoneLabel(nextZone));
+    } catch (err: unknown) {
+      showErrorToast("No se pudo cambiar la zona horaria", err);
     }
   }
 
@@ -512,6 +534,14 @@ function SettingsScreen() {
               value={baseCurrencyCode}
             />
 
+            {/* Decide cuándo empieza el día y el mes en toda la app: "Este mes", hoy, los
+                períodos de presupuesto. No el reloj del teléfono, que cambia al viajar. */}
+            <SettingsRow
+              onPress={() => setTimeZoneSheetOpen(true)}
+              label="Zona horaria"
+              value={timeZoneLabel(timeZone)}
+            />
+
             <SettingsRow
               onPress={openWorkspaceSheet}
               label="Workspace"
@@ -595,6 +625,36 @@ function SettingsScreen() {
         })}
         <Text style={styles.rowSupport}>
           Se sincronizará automáticamente contra {DEFAULT_EXCHANGE_CURRENCY}.
+        </Text>
+      </BottomSheet>
+
+      <BottomSheet
+        visible={timeZoneSheetOpen}
+        onClose={() => setTimeZoneSheetOpen(false)}
+        title="Zona horaria"
+        snapHeight={0.7}
+      >
+        {timeZoneOptions.map((option) => {
+          const active = option.id === timeZone;
+          return (
+            <TouchableOpacity
+              key={option.id}
+              style={styles.sheetOption}
+              onPress={() => {
+                setTimeZoneSheetOpen(false);
+                void handleTimeZoneChange(option.id);
+              }}
+              activeOpacity={0.82}
+            >
+              <View style={styles.rowCopy}>
+                <Text style={[styles.rowLabel, active && styles.sheetOptionActive]}>{option.label}</Text>
+              </View>
+              {active ? <Check size={16} color={COLORS.ink} /> : null}
+            </TouchableOpacity>
+          );
+        })}
+        <Text style={styles.rowSupport}>
+          Marca cuándo empieza el día y el mes en la app, aunque el teléfono tenga otra hora.
         </Text>
       </BottomSheet>
 
