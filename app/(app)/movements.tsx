@@ -737,7 +737,8 @@ function MovementsScreen() {
   // daria una cifra falsa, y es mejor ninguna que una inventada.
   const movementSections = useMemo<MovementListSection[]>(
     () =>
-      groupMovementsByDate(allMovements).map((section) => {
+      // `today` en las dependencias: pasada la medianoche, "Hoy" pasa a "Ayer" sin cerrar la app.
+      groupMovementsByDate(allMovements, { timeZone }).map((section) => {
         if (!section.netCurrencyCode || section.netAmount === 0) return section;
         const sign = section.netAmount > 0 ? "+" : "−";
         return {
@@ -748,7 +749,8 @@ function MovementsScreen() {
           trailingColor: section.netAmount > 0 ? COLORS.income : COLORS.expense,
         };
       }),
-    [allMovements, privacyMode],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `today` es el disparador del cambio de día
+    [allMovements, privacyMode, timeZone, today],
   );
 
   const activeFilterItems = useMemo<ActiveFilterItem[]>(() => {

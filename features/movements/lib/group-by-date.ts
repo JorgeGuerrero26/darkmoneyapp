@@ -4,6 +4,7 @@ import {
   movementIsTransfer,
 } from "../../../lib/movement-amounts";
 import type { MovementRecord } from "../../../types/domain";
+import { DEFAULT_TIME_ZONE, dayKeyIn } from "../../../lib/calendar-day";
 
 /**
  * Agrupa una lista plana de movimientos en secciones por fecha (formato fintech
@@ -38,15 +39,9 @@ export type MovementListSection = {
   netCurrencyCode: string | null;
 };
 
-function ymdInLima(date: Date): string {
-  // YYYY-MM-DD en zona Lima sin depender de date-fns para mantener el código
-  // testeable sin dependencias.
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Lima",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(date);
+/** YYYY-MM-DD en la zona del perfil (Lima por defecto), sin date-fns para seguir siendo puro. */
+function ymdInLima(date: Date, timeZone: string = DEFAULT_TIME_ZONE): string {
+  return dayKeyIn(date, timeZone);
 }
 
 function dayDiff(reference: string, target: string): number {
@@ -83,11 +78,12 @@ function formatDateLabel(ymd: string, todayYmd: string): string {
 
 export function groupMovementsByDate(
   movements: readonly MovementRecord[],
-  options?: { now?: Date },
+  options?: { now?: Date; timeZone?: string },
 ): MovementListSection[] {
   if (movements.length === 0) return [];
 
-  const todayYmd = ymdInLima(options?.now ?? new Date());
+  const timeZone = options?.timeZone ?? DEFAULT_TIME_ZONE;
+  const todayYmd = ymdInLima(options?.now ?? new Date(), timeZone);
   const sections: MovementListSection[] = [];
   let currentKey: string | null = null;
   let currentBucket: MovementRecord[] | null = null;
@@ -95,7 +91,7 @@ export function groupMovementsByDate(
   for (const movement of movements) {
     const occurredDate = new Date(movement.occurredAt);
     if (Number.isNaN(occurredDate.getTime())) continue;
-    const ymd = ymdInLima(occurredDate);
+    const ymd = ymdInLima(occurredDate, timeZone);
 
     if (ymd !== currentKey) {
       currentKey = ymd;
