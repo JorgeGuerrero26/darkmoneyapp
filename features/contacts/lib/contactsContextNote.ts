@@ -1,5 +1,6 @@
 import type { CounterpartyOverview } from "../../../types/domain";
 import type { ContactMetrics } from "../../../components/domain/ContactCard";
+import { contactHasOpenBalance } from "./contactMetrics";
 
 type Args = {
   filteredContacts: CounterpartyOverview[];
@@ -19,7 +20,7 @@ export function buildContactsContextNote({
   const withOpenBalances = filteredContacts.filter((contact) => {
     const metrics = metricsById.get(contact.id);
     if (!metrics) return false;
-    return metrics.receivablePendingTotal > 0 || metrics.payablePendingTotal > 0;
+    return contactHasOpenBalance(metrics);
   }).length;
 
   if (withOpenBalances > 0) {

@@ -502,6 +502,7 @@ function CategoriesScreen() {
             bottomOffset={insets.bottom + 80}
           />
           <CategoryAnalyticsModal
+            historyError={snapshot?.catalogHistoryErrors?.categories}
             visible={Boolean(analyticsTarget)}
             onClose={() => setAnalyticsTarget(null)}
             category={analyticsTarget}

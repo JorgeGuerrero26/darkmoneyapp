@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "noEmit": true },
+  "include": [
+    "app/categories.tsx", "app/contacts/**/*.tsx",
+    "components/domain/CategoryAnalyticsModal.tsx", "components/domain/ContactCard.tsx",
+    "features/categories/lib/category-analytics.ts", "features/contacts/**/*.ts", "features/contacts/**/*.tsx",
+    "services/queries/catalog-history.ts", "services/queries/workspace-data.ts",
+    "services/queries/snapshot-cache.ts", "services/queries/subscriptions-recurring-income.ts",
+    "hooks/useForegroundDataRefresh.ts", "lib/catalog-money.ts", "lib/analytics-currency.ts", "lib/query-client.ts",
+    "types/domain.ts", ".expo/types/**/*.ts", "expo-env.d.ts"
+  ],
+  "exclude": []
+}

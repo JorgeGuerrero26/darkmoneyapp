@@ -41,6 +41,7 @@ import type {
   CategoryOverview,
   CategorySummary,
   CounterpartyOverview,
+  CounterpartyPostedMovement,
   CounterpartyRoleType,
   CounterpartySummary,
   ExchangeRateSummary,
@@ -717,6 +718,9 @@ export type WorkspaceSnapshot = {
   subscriptionPostedMovements: SubscriptionPostedMovement[];
   /** Movimientos posted con category_id (analíticas categorías). */
   categoryPostedMovements: CategoryPostedMovement[];
+  /** Complete posted history for contact cashflow; undefined only for an old cache. */
+  counterpartyPostedMovements?: CounterpartyPostedMovement[];
+  catalogHistoryErrors?: Partial<Record<"categories" | "subscriptions" | "contacts", string>>;
   counterparties: CounterpartyOverview[];
   exchangeRates: ExchangeRateSummary[];
 };
@@ -844,10 +848,10 @@ function applyBaseCurrencyToAccounts(
   }
 }
 
-function buildPostedAnalyticsMovements<K extends "categoryId" | "subscriptionId">(
+function buildPostedAnalyticsMovements<K extends "categoryId" | "subscriptionId" | "counterpartyId">(
   rows: any[],
   outKey: K,
-  rowKey: "category_id" | "subscription_id",
+  rowKey: "category_id" | "subscription_id" | "counterparty_id",
   accountCurrencyMap: Map<number, string>,
   baseCurrency: string,
   exchangeRates: ExchangeRateSummary[],
@@ -896,6 +900,7 @@ export async function fetchWorkspaceSnapshot(
     recurringIncomeResult,
     subscriptionMovementsResult,
     categoryMovementsResult,
+    counterpartyMovementsResult,
     exchangeRatesResult,
   ] = await Promise.all([
     supabase
@@ -939,8 +944,9 @@ export async function fetchWorkspaceSnapshot(
       .select("id, workspace_id, name, payer_party_id, account_id, category_id, currency_code, amount, gross_amount, deductions, frequency, interval_count, day_of_month, day_of_week, start_date, next_expected_date, end_date, status, remind_days_before, description, notes, is_pinned")
       .eq("workspace_id", activeWorkspaceId)
       .order("next_expected_date", { ascending: true }),
-    fetchCatalogMovementRows(supabase, activeWorkspaceId, "subscription_id"),
-    fetchCatalogMovementRows(supabase, activeWorkspaceId, "category_id"),
+    fetchCatalogMovementRows(supabase, activeWorkspaceId, "subscription_id").catch((error: unknown) => ({ data: [], error })),
+    fetchCatalogMovementRows(supabase, activeWorkspaceId, "category_id").catch((error: unknown) => ({ data: [], error })),
+    fetchCatalogMovementRows(supabase, activeWorkspaceId, "counterparty_id").catch((error: unknown) => ({ data: [], error })),
     supabase
       .from("v_latest_exchange_rates")
       .select("from_currency_code, to_currency_code, rate, effective_at"),
@@ -1066,6 +1072,11 @@ export async function fetchWorkspaceSnapshot(
         exchangeRates,
       );
 
+  const counterpartyPostedMovements = counterpartyMovementsResult.error ? undefined : buildPostedAnalyticsMovements(
+    counterpartyMovementsResult.data, "counterpartyId", "counterparty_id",
+    accountCurrencyMap, baseCurrency, exchangeRates,
+  );
+
   const subscriptions: SubscriptionSummary[] = (subscriptionsResult.data ?? []).map(
     (row: any) =>
       mapSubscription(
@@ -1101,6 +1112,12 @@ export async function fetchWorkspaceSnapshot(
     recurringIncome,
     subscriptionPostedMovements,
     categoryPostedMovements,
+    counterpartyPostedMovements,
+    catalogHistoryErrors: {
+      ...(categoryMovementsResult.error ? { categories: "No se pudo cargar el historial completo de categorías." } : {}),
+      ...(subscriptionMovementsResult.error ? { subscriptions: "No se pudo cargar el historial completo de suscripciones." } : {}),
+      ...(counterpartyMovementsResult.error ? { contacts: "No se pudo cargar el historial completo de contactos." } : {}),
+    },
     counterparties,
     exchangeRates,
   };
@@ -1465,7 +1482,8 @@ export type SnapshotRefreshDomain =
   | "accounts"
   | "budgets"
   | "categoryMovements"
-  | "subscriptionMovements";
+  | "subscriptionMovements"
+  | "counterpartyMovements";
 
 /**
  * Refresca SOLO los dominios afectados por una mutación caliente (2-5 queries)
@@ -1497,8 +1515,9 @@ export async function refreshSnapshotDomains(
     const wantsBudgets = domains.includes("budgets");
     const wantsCatMovs = domains.includes("categoryMovements");
     const wantsSubMovs = domains.includes("subscriptionMovements");
+    const wantsContactMovs = domains.includes("counterpartyMovements");
 
-    const [accountsRes, balancesRes, budgetsRes, catMovsRes, subMovsRes] = await Promise.all([
+    const [accountsRes, balancesRes, budgetsRes, catMovsRes, subMovsRes, contactMovsRes] = await Promise.all([
       wantsAccounts
         ? supabase
             .from("accounts")
@@ -1525,9 +1544,17 @@ export async function refreshSnapshotDomains(
       wantsSubMovs
         ? fetchCatalogMovementRows(supabase, workspaceId, "subscription_id")
         : Promise.resolve(null),
+      wantsContactMovs
+        ? fetchCatalogMovementRows(supabase, workspaceId, "counterparty_id")
+        : Promise.resolve(null),
     ]);
 
     const patch: Partial<WorkspaceSnapshot> = {};
+    const historyErrors = { ...current.catalogHistoryErrors };
+    if (wantsCatMovs) delete historyErrors.categories;
+    if (wantsSubMovs) delete historyErrors.subscriptions;
+    if (wantsContactMovs) delete historyErrors.contacts;
+    patch.catalogHistoryErrors = historyErrors;
     if (accountsRes && balancesRes) {
       if (accountsRes.error) throw accountsRes.error;
       if (balancesRes.error) throw balancesRes.error;
@@ -1544,7 +1571,7 @@ export async function refreshSnapshotDomains(
       if (budgetsRes.error) throw budgetsRes.error;
       budgetsPatch = (budgetsRes.data ?? []).map((row: any) => mapBudget(row as BudgetProgressRow));
     }
-    if (catMovsRes || subMovsRes) {
+    if (catMovsRes || subMovsRes || contactMovsRes) {
       const accountsForCurrency = patch.accounts ?? current.accounts;
       const accountCurrencyMap = new Map<number, string>();
       for (const acc of accountsForCurrency) accountCurrencyMap.set(acc.id, acc.currencyCode.toUpperCase());
@@ -1570,6 +1597,9 @@ export async function refreshSnapshotDomains(
           current.exchangeRates,
         );
       }
+      if (contactMovsRes) patch.counterpartyPostedMovements = buildPostedAnalyticsMovements(
+        contactMovsRes.data, "counterpartyId", "counterparty_id", accountCurrencyMap, baseCurrency, current.exchangeRates,
+      );
     }
 
     // Una sola pasada sobre el prefijo: cada entrada recibe el patch que le toca.
@@ -2751,7 +2781,7 @@ export function useCreateMovementMutation(workspaceId: number | null) {
           () => refreshSnapshotDomains(
             queryClient,
             workspaceId,
-            ["accounts", "budgets", "categoryMovements", "subscriptionMovements"],
+            ["accounts", "budgets", "categoryMovements", "subscriptionMovements", "counterpartyMovements"],
           ),
         );
       } else {

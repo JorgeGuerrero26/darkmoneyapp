@@ -12,6 +12,7 @@ import { SwipeActionRow } from "../ui/SwipeActionRow";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS } from "../../constants/theme";
 import { TYPE_ICON, TYPE_LABELS } from "../../features/contacts/lib/contactsLabels";
 import type { CounterpartyOverview } from "../../types/domain";
+import type { CurrencyAmount } from "../../lib/catalog-money";
 
 export type ContactMetrics = {
   movementCount: number;
@@ -19,6 +20,10 @@ export type ContactMetrics = {
   payablePendingTotal: number;
   subscriptionCount: number;
   recurringIncomeCount: number;
+  receivable?: CurrencyAmount[];
+  payable?: CurrencyAmount[];
+  hasReceivable?: boolean;
+  hasPayable?: boolean;
 };
 
 type Props = {
@@ -79,8 +84,8 @@ function ContactCardContent({
       meta={
         <>
           {primaryDetail ? <ResourceCardBadge label={typeLabel} color={COLORS.storm} /> : null}
-          {metrics?.receivablePendingTotal ? <ResourceCardBadge label="Cobra" color={COLORS.storm} /> : null}
-          {metrics?.payablePendingTotal ? <ResourceCardBadge label="Debe" color={COLORS.storm} /> : null}
+          {(metrics?.hasReceivable ?? Boolean(metrics?.receivablePendingTotal)) ? <ResourceCardBadge label="Cobra" color={COLORS.storm} /> : null}
+          {(metrics?.hasPayable ?? Boolean(metrics?.payablePendingTotal)) ? <ResourceCardBadge label="Debe" color={COLORS.storm} /> : null}
           {movementCount > 0 ? <ResourceCardMetaText>{movementCount} mov.</ResourceCardMetaText> : null}
           {metrics?.subscriptionCount ? <ResourceCardMetaText>{metrics.subscriptionCount} subs.</ResourceCardMetaText> : null}
           {metrics?.recurringIncomeCount ? <ResourceCardMetaText>{metrics.recurringIncomeCount} ingresos</ResourceCardMetaText> : null}

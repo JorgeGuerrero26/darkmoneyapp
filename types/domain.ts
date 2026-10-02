@@ -256,6 +256,8 @@ export type CategoryOverview = CategorySummary & {
   lastActivityAt?: string | null;
 };
 
+export type CounterpartyPostedMovement = Omit<CategoryPostedMovement, "categoryId"> & { counterpartyId: number };
+
 export type BudgetScopeKind =
   | "general"
   | "category"

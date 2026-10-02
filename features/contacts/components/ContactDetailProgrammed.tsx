@@ -1,7 +1,7 @@
 import { StyleSheet, Text, View } from "react-native";
 
 import { Card } from "../../../components/ui/Card";
-import { formatCurrency } from "../../../components/ui/AmountDisplay";
+import { formatContactAmounts } from "../lib/contact-money";
 import { COLORS, FONT_FAMILY, FONT_SIZE, FONT_WEIGHT, RADIUS, SPACING } from "../../../constants/theme";
 import type { ContactAnalytics } from "../lib/useContactAnalytics";
 
@@ -25,24 +25,25 @@ export function ContactDetailProgrammed({ analytics, baseCurrency }: Props) {
         {analytics.relatedSubscriptions.length > 0 ? (
           <View style={styles.statCard}>
             <Text style={[styles.statAmount, { color: COLORS.expense }]}>
-              {formatCurrency(analytics.scheduledExpenseTotal, baseCurrency)}
+              {formatContactAmounts(analytics.scheduledExpense)}
             </Text>
             <Text style={styles.statLabel}>
-              {analytics.relatedSubscriptions.length} suscrip. activas
+              {analytics.relatedSubscriptions.filter((item) => item.status === "active").length} suscrip. activas
             </Text>
           </View>
         ) : null}
         {analytics.relatedRecurringIncome.length > 0 ? (
           <View style={styles.statCard}>
             <Text style={[styles.statAmount, { color: COLORS.income }]}>
-              {formatCurrency(analytics.scheduledIncomeTotal, baseCurrency)}
+              {formatContactAmounts(analytics.scheduledIncome)}
             </Text>
             <Text style={styles.statLabel}>
-              {analytics.relatedRecurringIncome.length} ingresos activos
+              {analytics.relatedRecurringIncome.filter((item) => item.status === "active").length} ingresos activos
             </Text>
           </View>
         ) : null}
       </View>
+      {analytics.unconvertedScheduled ? <Text style={styles.statLabel}>Sin tipo de cambio: se mantienen los importes originales, separados del total en {baseCurrency}.</Text> : null}
     </Card>
   );
 }

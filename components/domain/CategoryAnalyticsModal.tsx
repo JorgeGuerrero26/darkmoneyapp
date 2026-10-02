@@ -26,6 +26,7 @@ type Props = {
   category: CategoryOverview | null;
   movements: CategoryPostedMovement[];
   baseCurrencyCode: string;
+  historyError?: string;
 };
 
 function ymLabel(ym: string) {
@@ -40,6 +41,7 @@ export function CategoryAnalyticsModal({
   category,
   movements,
   baseCurrencyCode,
+  historyError,
 }: Props) {
   const insets = useSafeAreaInsets();
   const { backdropStyle, panHandlers, sheetStyle } = useDismissibleSheet({ visible, onClose });
@@ -85,6 +87,7 @@ export function CategoryAnalyticsModal({
           </View>
 
           <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
+            {historyError ? <Text style={styles.hint}>{historyError} Actualiza la lista para volver a intentarlo.</Text> : <>
             <View style={styles.heroCard}>
               <Text style={styles.heroEyebrow}>Lectura comparable</Text>
               <Text style={styles.heroAmount}>{formatCurrency(analytics.totalBase, baseCurrencyCode)}</Text>
@@ -200,6 +203,7 @@ export function CategoryAnalyticsModal({
             <Text style={styles.hint}>
               Los totales comparables y el gráfico se expresan en {baseCurrencyCode}. El desglose por moneda mantiene los importes originales para no perder contexto.
             </Text>
+            </>}
           </ScrollView>
         </Animated.View>
       </Animated.View>

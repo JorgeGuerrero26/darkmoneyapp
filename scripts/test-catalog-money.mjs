@@ -65,3 +65,88 @@ assert.deepEqual(category.spent, [{ currencyCode: "USD", amount: 10 }, { currenc
 assert.equal(currency.buildCurrencyBreakdown([{ amount: 10, currencyCode: "USD", amountInBaseCurrency: 38 }, { amount: 20, currencyCode: "USD", amountInBaseCurrency: null }])[0].totalInBaseCurrency, null);
 assert.equal(currency.buildCurrencyBreakdown([{ amount: 20, currencyCode: "USD", amountInBaseCurrency: null }, { amount: 10, currencyCode: "USD", amountInBaseCurrency: 38 }])[0].totalInBaseCurrency, null);
 console.log("catalog-money: OK — 1501 rows, old history, pagination failures, direction, FX and month boundary");
+
+const contacts = load(resolve(root, "features/contacts/lib/contact-money.ts"));
+const metrics = load(resolve(root, "features/contacts/lib/contactMetrics.ts"));
+const snapshotCache = load(resolve(root, "services/queries/snapshot-cache.ts"));
+const rates = [{ fromCurrencyCode: "USD", toCurrencyCode: "PEN", rate: 3.75, effectiveAt: "2026-10-01" }];
+const obligation = { counterpartyId: 7, direction: "receivable", pendingAmount: 100, principalAmount: 200, currencyCode: "USD", status: "active", pendingAmountInBaseCurrency: 100 };
+const snapshot = {
+  obligations: [obligation, { ...obligation, status: "cancelled", pendingAmount: 9999 }, { ...obligation, direction: "payable", currencyCode: "PEN", pendingAmount: 20 }],
+  subscriptions: [{ vendorPartyId: 7, status: "active", amount: 10, currencyCode: "USD", amountInBaseCurrency: 10 }, { vendorPartyId: 7, status: "paused", amount: 100, currencyCode: "PEN" }],
+  recurringIncome: [{ payerPartyId: 7, status: "active", amount: 50, currencyCode: "PEN" }],
+  exchangeRates: rates,
+  counterpartyPostedMovements: rows.map((item) => ({ ...item, counterpartyId: 7 })),
+};
+const contact = contacts.buildContactMoney(snapshot, 7, "PEN");
+assert.deepEqual(contact.receivable, [{ currencyCode: "PEN", amount: 375 }]);
+assert.deepEqual(contact.payable, [{ currencyCode: "PEN", amount: 20 }]);
+assert.equal(contact.receivablePrincipalTotal, 750);
+assert.deepEqual(contact.scheduledExpense, [{ currencyCode: "PEN", amount: 37.5 }]);
+assert.equal(contact.unconvertedExposure, 0);
+assert.equal(contact.unconvertedFlow, 1);
+assert.equal(contact.inflowTotal, 50);
+assert.equal(contact.outflowTotal, 200);
+const unconverted = contacts.buildContactMoney({ ...snapshot, exchangeRates: [] }, 7, "PEN");
+assert.deepEqual(unconverted.receivable, [{ currencyCode: "USD", amount: 100 }]);
+assert.equal(unconverted.receivablePendingTotal, 0);
+assert.equal(unconverted.unconvertedExposure, 1);
+assert.equal(unconverted.unconvertedScheduled, 1);
+assert.equal(unconverted.hasReceivable, true);
+assert.equal(contacts.buildContactMoney({ ...snapshot, counterpartyPostedMovements: undefined }, 7, "PEN").flowLoaded, false);
+assert.equal(contacts.buildContactMoney({ ...snapshot, obligations: undefined }, 7, "PEN").exposureLoaded, false);
+const resultMetrics = metrics.buildContactMetricsById({ ...snapshot, counterparties: [{ id: 7, movementCount: 3 }], baseCurrency: "PEN", exchangeRates: [] });
+assert.equal(metrics.contactHasOpenBalance(resultMetrics.get(7)), true);
+assert.deepEqual(resultMetrics.get(7).receivable, [{ currencyCode: "USD", amount: 100 }]);
+
+const csvPath = resolve(root, "features/contacts/lib/contactsCsv.ts");
+const csvSource = ts.createSourceFile(csvPath, readFileSync(csvPath, "utf8"), ts.ScriptTarget.Latest, true);
+const csvFunctions = csvSource.statements.filter(ts.isFunctionDeclaration).map((node) => node.getText(csvSource)).join("\n");
+const csvExports = {};
+new Function("TYPE_LABELS", "formatContactAmounts", "exports", ts.transpileModule(csvFunctions, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText)(
+  { person: "Persona" }, contacts.formatContactAmounts, csvExports,
+);
+const csv = csvExports.buildContactCSV([{ id: 7, type: "person", name: "Test", movementCount: 3 }], resultMetrics);
+assert.ok(csv.includes(contacts.formatContactAmounts([{ amount: 100, currencyCode: "USD" }])));
+assert.ok(!csv.includes('"100"')); // Never an unlabeled native amount posing as workspace currency.
+
+// Actual cache patch: correct destination currency, without applying a mutation to a server.
+const oldSnapshot = { ...snapshot, workspaces: [{ id: 42, baseCurrencyCode: "PEN" }],
+  accounts: [{ id: 1, currencyCode: "PEN", currentBalance: 20 }, { id: 2, currencyCode: "USD", currentBalance: 10 }],
+  categoryPostedMovements: [], subscriptionPostedMovements: [], counterpartyPostedMovements: [] };
+let patched;
+snapshotCache.patchSnapshotWithCreatedMovement({ setQueriesData: (_filter, updater) => { patched = updater(oldSnapshot); } }, 42, {
+  id: 1234, status: "posted", movementType: "obligation_payment", counterpartyId: 7,
+  categoryId: 7, occurredAt: "2026-10-02T12:00:00Z", sourceAmount: 0,
+  destinationAmount: 50, destinationAccountId: 2,
+});
+assert.equal(patched.counterpartyPostedMovements[0].amountCurrencyCode, "USD");
+assert.equal(patched.counterpartyPostedMovements[0].amountInBaseCurrency, 187.5);
+assert.equal(patched.categoryPostedMovements[0].amount, 50);
+assert.equal(patched.accounts[1].currentBalance, 60);
+console.log("contact-money: OK — conversions, cancelled, repayments, missing FX, active schedules and cache patch");
+
+// Compare the actual pure implementations of both clients, not two hand-coded expectations.
+const webRoot = resolve(root, "../DarkMoney");
+if (existsSync(resolve(webRoot, "src/lib/analytics-money.ts"))) {
+  const webMoney = load(resolve(webRoot, "src/lib/analytics-money.ts"));
+  const webContacts = load(resolve(webRoot, "src/modules/contacts/lib/contact-parity.ts"));
+  const adapted = rows.map((item) => ({ ...item, counterpartyId: 7,
+    sourceCurrencyCode: item.amountCurrencyCode, destinationCurrencyCode: item.amountCurrencyCode,
+    sourceAmountInBaseCurrency: item.amountInBaseCurrency, destinationAmountInBaseCurrency: item.amountInBaseCurrency,
+  })).sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
+  const normalize = (amounts) => [...amounts].sort((a, b) => a.currencyCode.localeCompare(b.currencyCode));
+  const direction = load(resolve(root, "lib/movement-amounts.ts"));
+  for (const incoming of [true, false]) {
+    const clientRows = adapted.filter((item) => direction.movementActsAsIncome(item) === incoming);
+    const webAmounts = webMoney.currencyTotals(clientRows.map((item) => webMoney.movementAnalyticsAmount(item, "PEN")), "PEN");
+    assert.deepEqual(normalize(incoming ? contact.inflow : contact.outflow), normalize(webAmounts));
+  }
+  const webExposure = webContacts.contactExposure(snapshot.obligations.map((item) => ({ ...item,
+    pendingAmountInBaseCurrency: item.currencyCode === "USD" ? item.pendingAmount * 3.75 : item.pendingAmount,
+  })), 7, "PEN");
+  assert.deepEqual(contact.receivable, webExposure.receivable);
+  assert.deepEqual(contact.payable, webExposure.payable);
+  assert.deepEqual(money.analyticsMonthKeys(new Date("2026-10-01T04:30:00Z")), webMoney.analyticsMonthKeys(new Date("2026-10-01T04:30:00Z")));
+  console.log("catalog cross-client: OK — actual web/mobile implementations agree on cashflow, exposure and months");
+} else console.log("catalog cross-client: not run — sibling web checkout unavailable");

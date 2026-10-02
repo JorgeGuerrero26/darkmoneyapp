@@ -67,7 +67,7 @@ function arrangeWorkspaceQueries(memberships: QueryResult, workspaces: QueryResu
 
 function createQueryChain(result: QueryResult) {
   const query: Record<string, unknown> = {};
-  for (const method of ["select", "eq", "order", "not", "gte", "limit", "in"]) {
+  for (const method of ["select", "eq", "order", "not", "gte", "limit", "in", "range"]) {
     query[method] = jest.fn(() => query);
   }
   query.then = (
@@ -159,6 +159,10 @@ describe("fetchWorkspaceSnapshot", () => {
       expect.objectContaining({
         subscriptionPostedMovements: [],
         categoryPostedMovements: [],
+        counterpartyPostedMovements: undefined,
+        catalogHistoryErrors: expect.objectContaining({
+          categories: expect.any(String), contacts: expect.any(String),
+        }),
       }),
     );
   });
@@ -322,7 +326,7 @@ describe("refreshSnapshotDomains", () => {
     mockFrom.mockReset();
   });
 
-  it("refresca también el historial de movimientos de suscripciones", async () => {
+  it("refresca los historiales de categorías, suscripciones y contactos", async () => {
     arrangeSnapshotQueries({
       movements: {
         data: [
@@ -330,6 +334,8 @@ describe("refreshSnapshotDomains", () => {
             id: 99,
             category_id: 4,
             subscription_id: 8,
+            counterparty_id: 5,
+            movement_type: "expense",
             status: "posted",
             occurred_at: "2026-07-29T12:00:00.000Z",
             source_amount: 25,
@@ -357,14 +363,15 @@ describe("refreshSnapshotDomains", () => {
     await refreshSnapshotDomains(
       queryClient as unknown as QueryClient,
       7,
-      ["categoryMovements", "subscriptionMovements"],
+      ["categoryMovements", "subscriptionMovements", "counterpartyMovements"],
     );
 
-    expect(mockFrom.mock.calls.filter(([table]) => table === "movements")).toHaveLength(2);
+    expect(mockFrom.mock.calls.filter(([table]) => table === "movements")).toHaveLength(3);
     expect(setQueriesData).toHaveBeenCalledTimes(1);
     const updater = setQueriesData.mock.calls[0][1] as (value: typeof current) => Record<string, unknown>;
     const updated = updater(current);
     expect(updated.categoryPostedMovements).toHaveLength(1);
     expect(updated.subscriptionPostedMovements).toHaveLength(1);
+    expect(updated.counterpartyPostedMovements).toHaveLength(1);
   });
 });

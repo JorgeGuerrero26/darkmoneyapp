@@ -42,7 +42,7 @@ import {
 } from "../../features/contacts/lib/contactsLabels";
 import { buildContactCSV } from "../../features/contacts/lib/contactsCsv";
 import { applyContactFilter } from "../../features/contacts/lib/contactsFilter";
-import { buildContactMetricsById } from "../../features/contacts/lib/contactMetrics";
+import { buildContactMetricsById, contactHasOpenBalance } from "../../features/contacts/lib/contactMetrics";
 import { buildContactsContextNote } from "../../features/contacts/lib/contactsContextNote";
 
 type ContactListSection = ResourceSection<CounterpartyOverview, "pinned" | "with-balance" | "active" | "archived">;
@@ -52,7 +52,7 @@ function ContactsScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { profile } = useAuth();
-  const { activeWorkspaceId } = useWorkspace();
+  const { activeWorkspaceId, activeWorkspace } = useWorkspace();
   const { showToast, showErrorToast } = useToast();
 
   const { data: snapshot, isLoading } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
@@ -160,10 +160,12 @@ function ContactsScreen() {
   const obligations = snapshot?.obligations ?? [];
   const subscriptions = snapshot?.subscriptions ?? [];
   const recurringIncome = snapshot?.recurringIncome ?? [];
+  const baseCurrency = activeWorkspace?.baseCurrencyCode ?? "PEN";
+  const exchangeRates = snapshot?.exchangeRates ?? [];
 
   const contactMetricsById = useMemo(
-    () => buildContactMetricsById({ counterparties, obligations, subscriptions, recurringIncome }),
-    [counterparties, obligations, recurringIncome, subscriptions],
+    () => buildContactMetricsById({ counterparties, obligations, subscriptions, recurringIncome, baseCurrency, exchangeRates }),
+    [counterparties, obligations, recurringIncome, subscriptions, baseCurrency, exchangeRates],
   );
 
   const filteredContacts = useMemo(() => {
@@ -195,7 +197,7 @@ function ContactsScreen() {
     // grupo se conserva el orden que traía, que ya venía ordenado.
     const conSaldo = unpinnedActiveContacts.filter((contact) => {
       const metrics = contactMetricsById.get(contact.id);
-      return Boolean(metrics && (metrics.receivablePendingTotal > 0 || metrics.payablePendingTotal > 0));
+      return contactHasOpenBalance(metrics);
     });
     const sinSaldo = unpinnedActiveContacts.filter((contact) => !conSaldo.includes(contact));
 
@@ -262,8 +264,7 @@ function ContactsScreen() {
         contact.receivableCount > 0 ||
         contact.payableCount > 0 ||
         Boolean(metrics && (
-          metrics.receivablePendingTotal > 0 ||
-          metrics.payablePendingTotal > 0 ||
+          contactHasOpenBalance(metrics) ||
           metrics.subscriptionCount > 0 ||
           metrics.recurringIncomeCount > 0
         ))
@@ -346,6 +347,10 @@ function ContactsScreen() {
   }
 
   async function exportCSV(contacts: CounterpartyOverview[]) {
+    if (snapshot?.obligations === undefined) {
+      showToast("Espera a que se carguen los saldos completos antes de exportar.", "error");
+      return;
+    }
     const csv = buildContactCSV(contacts, contactMetricsById);
     const fileName = `contactos_${format(new Date(), "yyyyMMdd")}.csv`;
     try {

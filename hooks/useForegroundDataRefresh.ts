@@ -49,7 +49,7 @@ export function useForegroundDataRefresh(userId: string | null, workspaceId: num
           () => refreshSnapshotDomains(
             queryClient,
             wsId,
-            ["accounts", "budgets", "categoryMovements", "subscriptionMovements"],
+            ["accounts", "budgets", "categoryMovements", "subscriptionMovements", "counterpartyMovements"],
           ),
           delayMs,
         );

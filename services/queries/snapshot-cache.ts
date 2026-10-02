@@ -1,6 +1,9 @@
 import type { QueryClient } from "@tanstack/react-query";
 
 import type { WorkspaceDeferred, WorkspaceSnapshot } from "./workspace-data";
+import { catalogMovementAmount } from "../../lib/catalog-money";
+import { movementActsAsIncome } from "../../lib/movement-amounts";
+import { convertAmountToWorkspaceBase } from "../../lib/subscription-helpers";
 
 /**
  * Bajo el prefijo `["workspace-snapshot", wsId]` cuelgan dos entradas: el núcleo
@@ -27,6 +30,8 @@ export type CreatedMovementPatch = {
   status: string;
   categoryId?: number | null;
   subscriptionId?: number | null;
+  counterpartyId?: number | null;
+  movementType?: string;
   occurredAt: string;
   sourceAccountId?: number | null;
   sourceAmount?: number | null;
@@ -46,6 +51,16 @@ export function patchSnapshotWithCreatedMovement(
     (old: unknown) => {
       if (!isCoreSnapshot(old)) return old;
       const baseCurrency = old.workspaces.find((w) => w.id === workspaceId)?.baseCurrencyCode;
+      const useDestination = movementActsAsIncome(movement) || (movement.movementType === "transfer" && !movement.sourceAmount);
+      const accountId = useDestination ? movement.destinationAccountId : movement.sourceAccountId;
+      const currencyCode = old.accounts.find((item) => item.id === accountId)?.currencyCode ?? baseCurrency ?? "PEN";
+      const amount = catalogMovementAmount({ ...movement, sourceAmount: movement.sourceAmount ?? null, destinationAmount: movement.destinationAmount ?? null });
+      const analyticsRow = {
+        id: movement.id, occurredAt: movement.occurredAt,
+        sourceAmount: movement.sourceAmount ?? null, destinationAmount: movement.destinationAmount ?? null,
+        movementType: movement.movementType, amount, amountCurrencyCode: currencyCode,
+        amountInBaseCurrency: convertAmountToWorkspaceBase(amount, currencyCode, baseCurrency ?? "PEN", old.exchangeRates),
+      };
       const accounts = old.accounts.map((acc) => {
         let delta = 0;
         if (acc.id === movement.sourceAccountId && movement.sourceAmount != null) delta -= movement.sourceAmount;
@@ -66,29 +81,26 @@ export function patchSnapshotWithCreatedMovement(
         movement.categoryId != null
           ? [
               {
-                id: movement.id,
+                ...analyticsRow,
                 categoryId: movement.categoryId,
-                occurredAt: movement.occurredAt,
-                sourceAmount: movement.sourceAmount ?? null,
-                destinationAmount: movement.destinationAmount ?? null,
               },
-              ...old.categoryPostedMovements,
+              ...old.categoryPostedMovements.filter((item) => item.id !== movement.id),
             ]
           : old.categoryPostedMovements;
       const subscriptionPostedMovements =
         movement.subscriptionId != null
           ? [
               {
-                id: movement.id,
+                ...analyticsRow,
                 subscriptionId: movement.subscriptionId,
-                occurredAt: movement.occurredAt,
-                sourceAmount: movement.sourceAmount ?? null,
-                destinationAmount: movement.destinationAmount ?? null,
               },
-              ...old.subscriptionPostedMovements,
+              ...old.subscriptionPostedMovements.filter((item) => item.id !== movement.id),
             ]
           : old.subscriptionPostedMovements;
-      return { ...old, accounts, categoryPostedMovements, subscriptionPostedMovements };
+      const counterpartyPostedMovements = movement.counterpartyId != null && old.counterpartyPostedMovements !== undefined
+        ? [{ ...analyticsRow, counterpartyId: movement.counterpartyId }, ...old.counterpartyPostedMovements.filter((item) => item.id !== movement.id)]
+        : old.counterpartyPostedMovements;
+      return { ...old, accounts, categoryPostedMovements, subscriptionPostedMovements, counterpartyPostedMovements };
     },
   );
 }

@@ -1,6 +1,8 @@
 import { useMemo } from "react";
 import { formatCurrency } from "../../../components/ui/AmountDisplay";
 import { COLORS } from "../../../constants/theme";
+import { buildContactMoney } from "./contact-money";
+import type { CurrencyAmount } from "../../../lib/catalog-money";
 import type { WorkspaceSnapshot } from "../../../services/queries/workspace-data";
 import type {
   CounterpartyOverview,
@@ -15,6 +17,18 @@ type Args = {
 };
 
 export type ContactAnalytics = {
+  receivable: CurrencyAmount[];
+  payable: CurrencyAmount[];
+  inflow: CurrencyAmount[];
+  outflow: CurrencyAmount[];
+  scheduledExpense: CurrencyAmount[];
+  scheduledIncome: CurrencyAmount[];
+  unconvertedExposure: number;
+  unconvertedFlow: number;
+  unconvertedScheduled: number;
+  flowLoaded: boolean;
+  exposureLoaded: boolean;
+  flowError?: string;
   receivableCount: number;
   payableCount: number;
   receivablePendingTotal: number;
@@ -57,27 +71,13 @@ export function useContactAnalytics({
       (income) => income.payerPartyId === contact.id,
     );
 
-    const inflowTotal = contact.inflowTotal ?? 0;
-    const outflowTotal = contact.outflowTotal ?? 0;
-    let receivableCount = 0;
-    let payableCount = 0;
-    let receivablePendingTotal = 0;
-    let payablePendingTotal = 0;
-    let receivablePrincipalTotal = 0;
-    let payablePrincipalTotal = 0;
+    const monetary = buildContactMoney(snapshot, contact.id, baseCurrency);
+    const { inflowTotal, outflowTotal, receivableCount, payableCount,
+      receivablePendingTotal, payablePendingTotal, receivablePrincipalTotal, payablePrincipalTotal,
+      scheduledExpenseTotal, scheduledIncomeTotal } = monetary;
     let latestObligationAt: string | null = null;
 
     for (const obligation of contactObligations) {
-      const currentPrincipal = obligation.currentPrincipalAmount ?? obligation.principalAmount;
-      if (obligation.direction === "receivable") {
-        receivableCount += 1;
-        receivablePendingTotal += obligation.pendingAmount;
-        receivablePrincipalTotal += currentPrincipal;
-      } else {
-        payableCount += 1;
-        payablePendingTotal += obligation.pendingAmount;
-        payablePrincipalTotal += currentPrincipal;
-      }
       const activityCandidate = obligation.lastPaymentDate ?? obligation.dueDate ?? obligation.startDate;
       if (activityCandidate && (!latestObligationAt || activityCandidate > latestObligationAt)) {
         latestObligationAt = activityCandidate;
@@ -86,15 +86,6 @@ export function useContactAnalytics({
 
     const netPendingAmount = receivablePendingTotal - payablePendingTotal;
     const netFlowAmount = inflowTotal - outflowTotal;
-    const scheduledExpenseTotal = relatedSubscriptions
-      .filter((subscription) => subscription.status === "active")
-      .reduce(
-        (sum, subscription) => sum + (subscription.amountInBaseCurrency ?? subscription.amount),
-        0,
-      );
-    const scheduledIncomeTotal = relatedRecurringIncome
-      .filter((income) => income.status === "active")
-      .reduce((sum, income) => sum + (income.amountInBaseCurrency ?? income.amount), 0);
     const lastActivityAt =
       [
         contact.lastActivityAt,
@@ -126,15 +117,23 @@ export function useContactAnalytics({
 
     let relationshipHeadline = "Sin relación financiera activa";
     let relationshipTone = COLORS.storm;
-    if (netPendingAmount > 0) {
+    if (!monetary.exposureLoaded) {
+      relationshipHeadline = "Saldos pendientes todavía no disponibles";
+    } else if (monetary.unconvertedExposure) {
+      relationshipHeadline = "Saldos pendientes sin conversión completa";
+    } else if (netPendingAmount > 0) {
       relationshipHeadline = `Te debe ${formatCurrency(netPendingAmount, baseCurrency)}`;
       relationshipTone = COLORS.income;
     } else if (netPendingAmount < 0) {
       relationshipHeadline = `Le debes ${formatCurrency(Math.abs(netPendingAmount), baseCurrency)}`;
       relationshipTone = COLORS.expense;
+    } else if (monetary.unconvertedScheduled) {
+      relationshipHeadline = "Relación programada en otras monedas";
     } else if (scheduledIncomeTotal > 0 || scheduledExpenseTotal > 0) {
       relationshipHeadline = "Relación activa programada";
       relationshipTone = scheduledIncomeTotal >= scheduledExpenseTotal ? COLORS.income : COLORS.expense;
+    } else if (monetary.unconvertedFlow || !monetary.flowLoaded) {
+      relationshipHeadline = monetary.flowLoaded ? "Flujo histórico sin conversión completa" : monetary.flowError ? "Historial no disponible" : "Cargando flujo histórico";
     } else if (totalFlow > 0) {
       relationshipHeadline = netFlowAmount >= 0
         ? "Relación con flujo favorable"
@@ -152,13 +151,14 @@ export function useContactAnalytics({
             : "La relación está repartida entre cobros y pagos.",
       );
     }
-    if (inflowTotal > 0 || outflowTotal > 0) {
+    if (monetary.flowLoaded && !monetary.unconvertedFlow && (inflowTotal > 0 || outflowTotal > 0)) {
       insightLines.push(
         netFlowAmount >= 0
           ? `El flujo histórico con este contacto termina a tu favor en la moneda base (${baseCurrency}).`
           : `El flujo histórico con este contacto termina más del lado de egresos en la moneda base (${baseCurrency}).`,
       );
     }
+    if (monetary.unconvertedExposure || monetary.unconvertedFlow || monetary.unconvertedScheduled) insightLines.push("Los importes sin tipo de cambio se muestran en su moneda original y no se suman a los totales comparables.");
     if (relatedSubscriptions.length > 0) {
       insightLines.push(
         `${relatedSubscriptions.length} suscripción${relatedSubscriptions.length === 1 ? "" : "es"} usa${relatedSubscriptions.length === 1 ? "" : "n"} este contacto como proveedor.`,
@@ -171,6 +171,7 @@ export function useContactAnalytics({
     }
 
     return {
+      ...monetary,
       receivableCount,
       payableCount,
       receivablePendingTotal,

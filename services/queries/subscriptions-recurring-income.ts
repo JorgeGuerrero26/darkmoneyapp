@@ -446,6 +446,8 @@ export function useMarkSubscriptionPaidMutation(workspaceId: number | null) {
             status: "posted",
             categoryId: variables.subscription.categoryId ?? null,
             subscriptionId: variables.subscription.id,
+            counterpartyId: variables.subscription.vendorPartyId ?? null,
+            movementType: "subscription_payment",
             occurredAt: result.occurredAt,
             sourceAccountId: variables.accountId,
             sourceAmount: variables.amount,
@@ -462,7 +464,7 @@ export function useMarkSubscriptionPaidMutation(workspaceId: number | null) {
         // valor crearía un ciclo en la inicialización.
         void import("./workspace-data")
           .then(({ refreshSnapshotDomains }) =>
-            refreshSnapshotDomains(queryClient, workspaceId, ["accounts", "budgets"]),
+            refreshSnapshotDomains(queryClient, workspaceId, ["accounts", "budgets", "counterpartyMovements"]),
           )
           .catch(() => {
             void queryClient.invalidateQueries({ queryKey: ["workspace-snapshot"] });

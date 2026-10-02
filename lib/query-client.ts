@@ -204,7 +204,8 @@ export const queryPersistOptions: Omit<PersistQueryClientOptions, "queryClient">
   // Bump 2026-09-01: el cache guardado en los telefonos trae TODAS las paginas de Movimientos
   // que se hayan cargado alguna vez. Sin bump, esas entradas viejas se seguirian hidratando
   // enteras y el arreglo no se notaria hasta que caduquen a las 24 h.
-  buster: "2026-09-01-v1",
+  // Complete catalog histories, direction-aware amounts and contact cashflow.
+  buster: "2026-10-02-catalog-parity-v1",
   dehydrateOptions: {
     serializeData: persistFirstPageOnly,
     shouldDehydrateQuery: (query) => {

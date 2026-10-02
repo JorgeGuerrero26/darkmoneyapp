@@ -8,6 +8,7 @@ import { formatCurrency } from "../../../components/ui/AmountDisplay";
 import { COLORS, FONT_FAMILY, FONT_SIZE, FONT_WEIGHT, RADIUS, SPACING } from "../../../constants/theme";
 import type { ContactAnalytics } from "../lib/useContactAnalytics";
 import type { CounterpartyOverview } from "../../../types/domain";
+import { formatContactAmounts } from "../lib/contact-money";
 
 type Props = {
   contact: CounterpartyOverview;
@@ -18,24 +19,25 @@ type Props = {
 export function ContactDetailFinancials({ contact, analytics, baseCurrency }: Props) {
   const hasFinancials =
     analytics.receivableCount > 0 || analytics.payableCount > 0 || contact.movementCount > 0;
-  const hasFlow = analytics.inflowTotal > 0 || analytics.outflowTotal > 0;
-  const hasHealth = analytics.receivableCount > 0 || analytics.payableCount > 0;
+  const hasFlow = contact.movementCount > 0;
+  const hasHealth = analytics.exposureLoaded && !analytics.unconvertedExposure && (analytics.receivableCount > 0 || analytics.payableCount > 0);
 
   if (!hasFinancials && !hasFlow && !hasHealth) return null;
 
   return (
     <>
+      {!analytics.exposureLoaded ? <Text style={styles.sectionSubtle}>Los créditos y deudas todavía no están disponibles. No se muestran saldos parciales.</Text> : null}
       {hasFinancials ? (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Resumen financiero</Text>
           <Text style={styles.sectionSubtle}>
-            Totales convertidos a {baseCurrency} para no mezclar monedas.
+            Importes comparables en {baseCurrency}; sin conversión, en su moneda original.
           </Text>
           <View style={styles.statsGrid}>
             {analytics.receivableCount > 0 ? (
               <View style={styles.statCard}>
                 <Text style={[styles.statAmount, { color: COLORS.income }]}>
-                  {formatCurrency(analytics.receivablePendingTotal, baseCurrency)}
+                  {formatContactAmounts(analytics.receivable)}
                 </Text>
                 <Text style={styles.statLabel}>{analytics.receivableCount} por cobrar</Text>
               </View>
@@ -43,7 +45,7 @@ export function ContactDetailFinancials({ contact, analytics, baseCurrency }: Pr
             {analytics.payableCount > 0 ? (
               <View style={styles.statCard}>
                 <Text style={[styles.statAmount, { color: COLORS.expense }]}>
-                  {formatCurrency(analytics.payablePendingTotal, baseCurrency)}
+                  {formatContactAmounts(analytics.payable)}
                 </Text>
                 <Text style={styles.statLabel}>{analytics.payableCount} por pagar</Text>
               </View>
@@ -65,35 +67,35 @@ export function ContactDetailFinancials({ contact, analytics, baseCurrency }: Pr
             <View style={styles.flowItem}>
               <Text style={styles.flowLabel}>Ingresos</Text>
               <Text style={[styles.flowAmount, { color: COLORS.income }]}>
-                {formatCurrency(analytics.inflowTotal, baseCurrency)}
+                {analytics.flowLoaded ? formatContactAmounts(analytics.inflow) : "Cargando…"}
               </Text>
             </View>
             <View style={styles.flowItem}>
               <Text style={styles.flowLabel}>Egresos</Text>
               <Text style={[styles.flowAmount, { color: COLORS.expense }]}>
-                {formatCurrency(analytics.outflowTotal, baseCurrency)}
+                {analytics.flowLoaded ? formatContactAmounts(analytics.outflow) : "Cargando…"}
               </Text>
             </View>
             <View style={styles.flowItem}>
-              <Text style={styles.flowLabel}>Neto</Text>
+              <Text style={styles.flowLabel}>Neto comparable</Text>
               <Text
                 style={[
                   styles.flowAmount,
                   { color: analytics.netFlowAmount >= 0 ? COLORS.income : COLORS.expense },
                 ]}
               >
-                {formatCurrency(analytics.netFlowAmount, baseCurrency)}
+                {analytics.flowLoaded && !analytics.unconvertedFlow ? formatCurrency(analytics.netFlowAmount, baseCurrency) : "—"}
               </Text>
             </View>
           </View>
-          <View style={styles.progressWrap}>
+          {analytics.flowLoaded && !analytics.unconvertedFlow ? <View style={styles.progressWrap}>
             <Text style={styles.progressCaption}>
               {analytics.inflowTotal >= analytics.outflowTotal
                 ? "Predominan ingresos"
                 : "Predominan egresos"}
             </Text>
             <ProgressBar percent={analytics.flowBalancePercent} alertPercent={100} />
-          </View>
+          </View> : <Text style={styles.sectionSubtle}>{analytics.flowLoaded ? "Hay importes sin conversión; no se calcula un neto entre monedas distintas." : analytics.flowError ?? "El historial todavía está cargando."}</Text>}
         </Card>
       ) : null}
 

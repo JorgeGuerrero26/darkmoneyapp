@@ -1,6 +1,7 @@
 import type { CounterpartyOverview } from "../../../types/domain";
 import type { ContactMetrics } from "../../../components/domain/ContactCard";
 import { TYPE_LABELS } from "./contactsLabels";
+import { formatContactAmounts } from "./contact-money";
 
 function csvEscape(value: unknown) {
   return `"${String(value ?? "").replace(/"/g, '""')}"`;
@@ -37,8 +38,8 @@ export function buildContactCSV(
       contact.isPinned ? "Si" : "No",
       contact.isArchived ? "Si" : "No",
       metrics?.movementCount ?? contact.movementCount,
-      metrics?.receivablePendingTotal ?? 0,
-      metrics?.payablePendingTotal ?? 0,
+      metrics?.receivable ? formatContactAmounts(metrics.receivable) : "—",
+      metrics?.payable ? formatContactAmounts(metrics.payable) : "—",
       metrics?.subscriptionCount ?? 0,
       metrics?.recurringIncomeCount ?? 0,
       contact.notes ?? "",
