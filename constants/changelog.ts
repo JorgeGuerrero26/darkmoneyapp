@@ -13,6 +13,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "1.0.10",
     title: "DarkMoney estrena look",
     changes: [
+      "El detalle de Ingresos fijos ahora muestra el importe y las características en filas, con Editar y Anotar llegada siempre accesibles abajo. Conserva el desglose del sueldo y las llegadas pendientes o anotadas en secciones más claras.",
       "Ingresos fijos ahora separa lo que falta confirmar de lo que está por llegar y muestra una entrada clara al detalle en cada fila. El total mensual respeta la frecuencia configurada y excluye otras monedas cuando falta una conversión confiable.",
       "La analítica de Créditos y Deudas ahora muestra primero lo pendiente, luego los importes acordados y pagados, la evolución mensual y toda la actividad en filas. En obligaciones compartidas puedes distinguir el avance de la deuda de los movimientos asociados a tus cuentas.",
       "La analítica de Suscripciones separa el costo del plan de los pagos reales, muestra su evolución mensual y mantiene cada moneda por separado cuando falta una conversión confiable.",

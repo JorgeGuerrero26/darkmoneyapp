@@ -2,12 +2,9 @@ import { useCallback, useMemo, useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { format } from "date-fns";
-import { MoreVertical, BarChart3 } from "lucide-react-native";
+import { MoreVertical } from "lucide-react-native";
 
 import { ErrorBoundary } from "../../components/ui/ErrorBoundary";
-import { Card } from "../../components/ui/Card";
-import { Button } from "../../components/ui/Button";
 import { SearchableSelectSheet } from "../../components/ui/SearchableSelectSheet";
 import { ScreenHeader } from "../../components/layout/ScreenHeader";
 import { EntityActionSheet } from "../../components/ui/EntityActionSheet";
@@ -19,9 +16,10 @@ import { RecurringIncomeForm } from "../../components/forms/RecurringIncomeForm"
 import { RecurringIncomeAnalyticsModal } from "../../components/domain/RecurringIncomeAnalyticsModal";
 import { RecurringIncomeArrivalSheet } from "../../features/recurring-income/components/RecurringIncomeArrivalSheet";
 import { useArrivalSheetController } from "../../features/recurring-income/lib/useArrivalSheetController";
-import { RecurringIncomeDetailHeader } from "../../features/recurring-income/components/RecurringIncomeDetailHeader";
-import { RecurringIncomeDetailFacts } from "../../features/recurring-income/components/RecurringIncomeDetailFacts";
-import { RecurringIncomeBreakdownCard } from "../../features/recurring-income/components/RecurringIncomeBreakdownCard";
+import { RecurringIncomeDetailHero } from "../../features/recurring-income/components/RecurringIncomeDetailHero";
+import { RecurringIncomeDetailFields } from "../../features/recurring-income/components/RecurringIncomeDetailFields";
+import { RecurringIncomeDetailBreakdown } from "../../features/recurring-income/components/RecurringIncomeDetailBreakdown";
+import { RecurringIncomeDetailActions } from "../../features/recurring-income/components/RecurringIncomeDetailActions";
 import { RecurringIncomeDetailHistory } from "../../features/recurring-income/components/RecurringIncomeDetailHistory";
 import { recurringIncomeStanding } from "../../features/recurring-income/lib/recurringIncomeStanding";
 import { formatCurrency } from "../../components/ui/AmountDisplay";
@@ -32,27 +30,19 @@ import { useOriginBackNavigation } from "../../hooks/useOriginBackNavigation";
 import { useAuth } from "../../lib/auth-context";
 import { useWorkspace } from "../../lib/workspace-context";
 import { useUiStore } from "../../store/ui-store";
-import {
-  useConfirmRecurringIncomeArrivalMutation,
-  useWorkspaceSnapshotQuery,
-} from "../../services/queries/workspace-data";
+import { useWorkspaceSnapshotQuery } from "../../services/queries/workspace-data";
 import {
   useDeleteRecurringIncomeMutation,
   useToggleRecurringIncomePinMutation,
   useUpdateRecurringIncomeMutation,
 } from "../../services/queries/subscriptions-recurring-income";
 import { useToast } from "../../hooks/useToast";
-import { COLORS, FONT_FAMILY, FONT_SIZE, FONT_WEIGHT, RADIUS, SPACING } from "../../constants/theme";
+import { COLORS, FONT_SIZE, FONT_WEIGHT, SPACING } from "../../constants/theme";
 import type { RecurringIncomeSummary } from "../../types/domain";
 
 function parseRecurringIncomeId(raw: string | undefined): number | null {
   if (!raw) return null;
   const parsed = parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
-}
-
-function parseMoneyInput(value: string) {
-  const parsed = Number(value.replace(",", "."));
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
@@ -74,6 +64,8 @@ function RecurringIncomeDetailScreen() {
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [payerPickerOpen, setPayerPickerOpen] = useState(false);
+  const [accountPickerOpen, setAccountPickerOpen] = useState(false);
+  const [categoryPickerOpen, setCategoryPickerOpen] = useState(false);
 
   /* El estado, la validación y el envío del sheet viven en useArrivalSheetController, que ya
      usan la lista y el dashboard. Aquí vivía una réplica con su propia validación. */
@@ -83,7 +75,6 @@ function RecurringIncomeDetailScreen() {
   const updateMutation = useUpdateRecurringIncomeMutation(activeWorkspaceId);
   const deleteMutation = useDeleteRecurringIncomeMutation(activeWorkspaceId);
   const togglePinMutation = useToggleRecurringIncomePinMutation(activeWorkspaceId);
-  const confirmArrivalMutation = useConfirmRecurringIncomeArrivalMutation(activeWorkspaceId);
 
   const itemId = parseRecurringIncomeId(id);
   const item: RecurringIncomeSummary | null = useMemo(() => {
@@ -100,9 +91,12 @@ function RecurringIncomeDetailScreen() {
     () => sortByName((snapshot?.counterparties ?? []).filter((party) => !party.isArchived)),
     [snapshot?.counterparties],
   );
+  const categories = useMemo(
+    () => snapshot?.categories.filter((category) => category.isActive && (category.kind === "income" || category.kind === "both")) ?? [],
+    [snapshot?.categories],
+  );
 
-  /* El mismo cálculo que pinta la cápsula: qué llegadas vencieron sin confirmar. La pantalla no
-     recalcula nada — sale entero de recurringIncomeStanding, que tiene sus tests. */
+  /* La hoja y la lista de llegadas comparten el mismo cálculo de fechas pendientes. */
   const standing = useMemo(() => {
     if (!item) return null;
     return recurringIncomeStanding({
@@ -120,10 +114,26 @@ function RecurringIncomeDetailScreen() {
       { id: item.id, input: { payerPartyId } },
       { onError: (err) => showErrorToast("No se pudo cambiar quién paga", err) },
     );
-  }, [item, showToast, updateMutation]);
+  }, [item, showErrorToast, updateMutation]);
+
+  const handlePickAccount = useCallback((accountId: number | null) => {
+    if (!item) return;
+    updateMutation.mutate(
+      { id: item.id, input: { accountId } },
+      { onError: (err) => showErrorToast("No se pudo cambiar la cuenta", err) },
+    );
+  }, [item, showErrorToast, updateMutation]);
+
+  const handlePickCategory = useCallback((categoryId: number | null) => {
+    if (!item) return;
+    updateMutation.mutate(
+      { id: item.id, input: { categoryId } },
+      { onError: (err) => showErrorToast("No se pudo cambiar la categoría", err) },
+    );
+  }, [item, showErrorToast, updateMutation]);
 
   const handleTogglePause = useCallback(() => {
-    if (!item) return;
+    if (!item || updateMutation.isPending) return;
     const newStatus = item.status === "active" ? "paused" : "active";
     updateMutation.mutate(
       { id: item.id, input: { status: newStatus } },
@@ -132,7 +142,7 @@ function RecurringIncomeDetailScreen() {
         onError: (e) => showErrorToast(newStatus === "paused" ? "No se pudo pausar el ingreso" : "No se pudo reactivar el ingreso", e),
       },
     );
-  }, [item, updateMutation, showToast]);
+  }, [item, updateMutation, showToast, showErrorToast]);
 
   const handleTogglePin = useCallback(() => {
     if (!item) return;
@@ -140,7 +150,7 @@ function RecurringIncomeDetailScreen() {
       { id: item.id, isPinned: !item.isPinned },
       { onError: (err) => showErrorToast(item.isPinned ? "No se pudo desfijar el ingreso" : "No se pudo fijar el ingreso", err) },
     );
-  }, [item, showToast, togglePinMutation]);
+  }, [item, showErrorToast, togglePinMutation]);
 
   const handleDelete = useCallback(async () => {
     if (!item) return;
@@ -152,40 +162,28 @@ function RecurringIncomeDetailScreen() {
     } catch (err: unknown) {
       showErrorToast("No se pudo eliminar el ingreso fijo", err);
     }
-  }, [item, deleteMutation, handleBack, showToast]);
+  }, [item, deleteMutation, handleBack, showErrorToast, showToast]);
 
   const openArrival = useCallback((date?: string) => {
     if (item) arrival.open(item, date);
   }, [arrival, item]);
-
-  const isPaused = item?.status === "paused";
 
   return (
     <ResourceModuleTemplate
       topInset={insets.top}
       header={
         <ScreenHeader
-          title={item?.name ?? "Ingreso fijo"}
+          title="Ingreso fijo"
           onBack={handleBack}
           rightAction={
             item ? (
-              /* Analítica se queda como ícono —es a lo que se entra a mirar— y lo
-                 administrativo baja al menú, donde se lee. Igual que en suscripción. */
               <HeaderActionGroup
-                actions={[
-                  {
-                    key: "analytics",
-                    icon: BarChart3,
-                    onPress: () => setAnalyticsOpen(true),
-                    accessibilityLabel: "Ver analítica",
-                  },
-                  {
-                    key: "menu",
-                    icon: MoreVertical,
-                    onPress: () => setMenuOpen(true),
-                    accessibilityLabel: "Más acciones",
-                  },
-                ]}
+                actions={[{
+                  key: "menu",
+                  icon: MoreVertical,
+                  onPress: () => setMenuOpen(true),
+                  accessibilityLabel: "Más acciones",
+                }]}
               />
             ) : null
           }
@@ -208,34 +206,15 @@ function RecurringIncomeDetailScreen() {
             </Text>
           </View>
         ) : (
-          <ScrollView contentContainerStyle={styles.content}>
-            <RecurringIncomeDetailHeader item={item} />
-
-            {/* Eran tres cajas iguales para tres cosas distintas: una es a lo que se viene, otra
-                es administrativa y "Análisis" ya estaba como ícono en el encabezado. Con dos
-                llegadas sin confirmar, "Marcar recibido" tampoco decía cuál: ahora lo dice. */}
-            {item.status === "active" ? (
-              <Button
-                label={
-                  pendingDates.length > 1
-                    ? `Anotar las ${pendingDates.length} llegadas`
-                    : "Anotar la llegada"
-                }
-                size="lg"
-                onPress={() => openArrival(pendingDates[0])}
-              />
-            ) : (
-              <Button label="Reactivar" size="lg" onPress={handleTogglePause} />
-            )}
-
-            <RecurringIncomeDetailFacts
+          <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+            <RecurringIncomeDetailHero item={item} />
+            <RecurringIncomeDetailFields
               item={item}
               onPickPayer={() => setPayerPickerOpen(true)}
+              onPickAccount={() => setAccountPickerOpen(true)}
+              onPickCategory={() => setCategoryPickerOpen(true)}
             />
-
-            {/* Justo debajo de los datos y antes del historial: quien entro a ver el sueldo
-                viene a esto, no a buscarlo detras de otro toque. */}
-            <RecurringIncomeBreakdownCard
+            <RecurringIncomeDetailBreakdown
               grossAmount={item.grossAmount}
               deductions={item.deductions}
               netAmount={item.amount}
@@ -248,28 +227,21 @@ function RecurringIncomeDetailScreen() {
               fallbackCurrencyCode={item.currencyCode}
               expectedAmount={item.amount}
               pendingDates={pendingDates}
-              remindDaysBefore={item.remindDaysBefore}
               onAnnotate={(date) => openArrival(date)}
             />
-
-            {item.description || item.notes ? (
-              <Card>
-                <Text style={styles.sectionTitle}>Detalles</Text>
-                {item.description ? (
-                  <Text style={styles.notes}>{item.description}</Text>
-                ) : null}
-                {item.notes ? (
-                  <>
-                    {item.description ? <View style={styles.notesDivider} /> : null}
-                    <Text style={styles.notesLabel}>Notas</Text>
-                    <Text style={styles.notes}>{item.notes}</Text>
-                  </>
-                ) : null}
-              </Card>
-            ) : null}
           </ScrollView>
         )
       }
+      fab={item ? (
+        <RecurringIncomeDetailActions
+          bottomInset={insets.bottom}
+          status={item.status}
+          pendingCount={pendingDates.length}
+          onEdit={() => setEditFormVisible(true)}
+          onAnnotate={() => openArrival(pendingDates[0])}
+          onReactivate={handleTogglePause}
+        />
+      ) : null}
       overlays={
         <>
           {item ? (
@@ -298,6 +270,28 @@ function RecurringIncomeDetailScreen() {
             onChange={handlePickPayer}
             onClose={() => setPayerPickerOpen(false)}
           />
+          <SearchableSelectSheet
+            visible={accountPickerOpen}
+            title="Entra a"
+            options={[
+              { value: null as number | null, label: "Sin cuenta" },
+              ...accounts.map((account) => ({ value: account.id as number | null, label: account.name })),
+            ]}
+            value={item?.accountId ?? null}
+            onChange={handlePickAccount}
+            onClose={() => setAccountPickerOpen(false)}
+          />
+          <SearchableSelectSheet
+            visible={categoryPickerOpen}
+            title="Categoría"
+            options={[
+              { value: null as number | null, label: "Sin categoría" },
+              ...categories.map((category) => ({ value: category.id as number | null, label: category.name })),
+            ]}
+            value={item?.categoryId ?? null}
+            onChange={handlePickCategory}
+            onClose={() => setCategoryPickerOpen(false)}
+          />
           <RecurringIncomeArrivalSheet
             {...arrival.sheetProps}
             accounts={accounts}
@@ -310,27 +304,27 @@ function RecurringIncomeDetailScreen() {
               summaryTitle={item.name}
               actions={[
                 {
-                  key: "edit",
-                  label: "Editar ingreso fijo",
-                  variant: "secondary" as const,
-                  onPress: () => { setMenuOpen(false); setEditFormVisible(true); },
-                },
-                {
-                  key: "pause",
-                  label: isPaused ? "Reactivar ingreso fijo" : "Pausar ingreso fijo",
-                  variant: "secondary" as const,
-                  onPress: () => { setMenuOpen(false); handleTogglePause(); },
+                  key: "analytics",
+                  label: "Ver analítica",
+                  variant: "secondary",
+                  onPress: () => { setMenuOpen(false); setAnalyticsOpen(true); },
                 },
                 {
                   key: "pin",
                   label: item.isPinned ? "Quitar de fijados" : "Fijar en la lista",
-                  variant: "secondary" as const,
+                  variant: "secondary",
                   onPress: () => { setMenuOpen(false); handleTogglePin(); },
                 },
+                ...(item.status === "active" ? [{
+                  key: "pause",
+                  label: "Pausar ingreso fijo",
+                  variant: "secondary" as const,
+                  onPress: () => { setMenuOpen(false); handleTogglePause(); },
+                }] : []),
                 {
                   key: "delete",
                   label: "Eliminar ingreso fijo",
-                  variant: "ghost" as const,
+                  variant: "ghost",
                   onPress: () => { setMenuOpen(false); setDeleteConfirmVisible(true); },
                 },
               ]}
@@ -348,6 +342,8 @@ function RecurringIncomeDetailScreen() {
             confirmLabel="Sí, eliminar"
             cancelLabel="Cancelar"
             destructive
+            confirmLoading={deleteMutation.isPending}
+            confirmLoadingLabel="Eliminando…"
             onCancel={() => setDeleteConfirmVisible(false)}
             onConfirm={() => void handleDelete()}
           />
@@ -359,10 +355,11 @@ function RecurringIncomeDetailScreen() {
 
 
 const styles = StyleSheet.create({
+  scroll: { flex: 1 },
   content: {
-    padding: SPACING.lg,
-    gap: SPACING.md,
-    paddingBottom: SPACING.xxxl,
+    paddingHorizontal: SPACING.lg,
+    paddingTop: SPACING.sm,
+    paddingBottom: SPACING.lg,
   },
   center: {
     flex: 1,
@@ -380,27 +377,6 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
     fontSize: FONT_SIZE.sm,
     textAlign: "center",
-  },
-  sectionTitle: {
-    fontSize: FONT_SIZE.xs,
-    fontWeight: FONT_WEIGHT.semibold,
-    color: COLORS.textMuted,
-    textTransform: "uppercase",
-    marginBottom: SPACING.xs,
-  },
-  notes: { fontSize: FONT_SIZE.sm, color: COLORS.text, lineHeight: 20 },
-  notesLabel: {
-    fontFamily: FONT_FAMILY.bodySemibold,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.textMuted,
-    textTransform: "uppercase",
-    marginBottom: SPACING.xs,
-    marginTop: SPACING.sm,
-  },
-  notesDivider: {
-    height: 1,
-    backgroundColor: COLORS.border,
-    marginVertical: SPACING.sm,
   },
 });
 

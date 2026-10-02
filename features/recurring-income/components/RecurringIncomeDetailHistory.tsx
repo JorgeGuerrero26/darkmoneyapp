@@ -3,13 +3,14 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
+import { ChevronRight } from "lucide-react-native";
 
 import { formatCurrency } from "../../../components/ui/AmountDisplay";
 import { useRecurringIncomeOccurrencesQuery } from "../../../services/queries/subscriptions-recurring-income";
 import { COLORS, FONT_FAMILY, FONT_SIZE, SPACING, SURFACE } from "../../../constants/theme";
 import { buildArrivalRows } from "../lib/arrivalHistory";
 
-const COLLAPSED_LIMIT = 12;
+const COLLAPSED_LIMIT = 5;
 
 type Props = {
   workspaceId: number | null;
@@ -19,7 +20,6 @@ type Props = {
   expectedAmount: number;
   /** Las que vencieron sin confirmar, calculadas en `recurringIncomeStanding`. */
   pendingDates: string[];
-  remindDaysBefore: number;
   /** Anotar una llegada concreta: abre la hoja con esa fecha ya puesta. */
   onAnnotate: (date: string) => void;
 };
@@ -34,29 +34,18 @@ function shortDate(ymd: string): string {
   return Number.isNaN(parsed.getTime()) ? ymd : format(parsed, "d MMM", { locale: es });
 }
 
-/**
- * Las llegadas: las que faltan y las que llegaron, en una sola lista.
- *
- * Se llamaba "HISTORIAL DE LLEGADAS · 3" y el conteo era el problema: contaba lo anotado, no lo
- * que debió llegar, así que los dos sueldos que nadie confirmó no salían ni en la lista ni en el
- * número. El conteo se va —el que importa está arriba, en la cápsula— y las que faltan entran en
- * la lista, en su fecha, con "Anotar" al lado.
- *
- * El aviso sube al encabezado de la sección: es lo que hace que estas fechas te lleguen al
- * teléfono, y estaba suelto al final de una cuadrícula de datos.
- */
+/** Llegadas pendientes en orden y llegadas anotadas debajo, en filas del detalle. */
 export function RecurringIncomeDetailHistory({
   workspaceId,
   recurringIncomeId,
   fallbackCurrencyCode,
   expectedAmount,
   pendingDates,
-  remindDaysBefore,
   onAnnotate,
 }: Props) {
   const router = useRouter();
   const [expanded, setExpanded] = useState(false);
-  const { data: occurrences = [], isLoading } = useRecurringIncomeOccurrencesQuery(
+  const { data: occurrences = [], isLoading, isError, refetch } = useRecurringIncomeOccurrencesQuery(
     workspaceId,
     recurringIncomeId,
   );
@@ -72,20 +61,16 @@ export function RecurringIncomeDetailHistory({
   const visible = expanded ? rows : rows.slice(0, COLLAPSED_LIMIT);
   const remaining = rows.length - visible.length;
 
-  const remindLabel =
-    remindDaysBefore > 0
-      ? `Aviso ${remindDaysBefore} ${remindDaysBefore === 1 ? "día" : "días"} antes`
-      : "Sin aviso";
-
   return (
     <View style={styles.group}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Llegadas</Text>
-        <Text style={styles.remind}>{remindLabel}</Text>
-      </View>
+      <Text style={styles.title}>Llegadas</Text>
 
       {isLoading && rows.length === 0 ? (
         <Text style={styles.empty}>Cargando…</Text>
+      ) : isError && rows.length === 0 ? (
+        <Pressable onPress={() => { void refetch(); }} style={styles.retry} accessibilityRole="button">
+          <Text style={styles.toggleText}>No se pudieron cargar las llegadas · Reintentar</Text>
+        </Pressable>
       ) : rows.length === 0 ? (
         <Text style={styles.empty}>
           Todavía no hay llegadas anotadas. La primera aparecerá aquí.
@@ -130,11 +115,18 @@ export function RecurringIncomeDetailHistory({
                 <Text style={styles.date}>{shortDate(row.date)}</Text>
                 {row.support ? <Text style={styles.support}>{row.support}</Text> : null}
               </View>
-              <Text style={styles.amount}>{formatCurrency(row.amount, row.currencyCode)}</Text>
+              <Text style={styles.amount}>+{formatCurrency(row.amount, row.currencyCode)}</Text>
+              {row.movementId != null ? <ChevronRight size={16} color={COLORS.storm} /> : null}
             </Pressable>
           ),
         )
       )}
+
+      {isError && rows.length > 0 ? (
+        <Pressable onPress={() => { void refetch(); }} style={styles.retry} accessibilityRole="button">
+          <Text style={styles.toggleText}>No se pudieron cargar las llegadas anotadas · Reintentar</Text>
+        </Pressable>
+      ) : null}
 
       {remaining > 0 ? (
         <Pressable onPress={() => setExpanded(true)} style={styles.toggle}>
@@ -150,24 +142,18 @@ export function RecurringIncomeDetailHistory({
 }
 
 const styles = StyleSheet.create({
-  group: { gap: 0 },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: SPACING.sm,
-    paddingBottom: SPACING.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: SURFACE.separator,
+  group: {
+    marginTop: SPACING.lg,
+    paddingTop: SPACING.lg,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: SURFACE.separator,
   },
   title: {
     fontFamily: FONT_FAMILY.bodySemibold,
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.storm,
-    textTransform: "uppercase",
-    letterSpacing: 0.8,
+    fontSize: FONT_SIZE.md,
+    color: COLORS.ink,
+    marginBottom: SPACING.sm,
   },
-  remind: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
   empty: {
     fontFamily: FONT_FAMILY.body,
     fontSize: FONT_SIZE.sm,
@@ -189,7 +175,8 @@ const styles = StyleSheet.create({
   pending: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.expense },
   support: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.xs, color: COLORS.storm },
   action: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.sm, color: COLORS.ink },
-  amount: { fontFamily: FONT_FAMILY.heading, fontSize: FONT_SIZE.md, color: COLORS.ink },
+  amount: { fontFamily: FONT_FAMILY.heading, fontSize: FONT_SIZE.md, color: COLORS.income },
+  retry: { minHeight: 48, justifyContent: "center" },
   toggle: { alignItems: "center", paddingVertical: SPACING.md },
   toggleText: { fontFamily: FONT_FAMILY.bodySemibold, fontSize: FONT_SIZE.sm, color: COLORS.fog },
 });
