@@ -22,7 +22,7 @@ import { RecurringIncomeForm } from "../components/forms/RecurringIncomeForm";
 import { RecurringIncomeArrivalSheet } from "../features/recurring-income/components/RecurringIncomeArrivalSheet";
 import { RecurringIncomeFilterSheet } from "../features/recurring-income/components/RecurringIncomeFilterSheet";
 import { RecurringIncomeSummaryBar } from "../features/recurring-income/components/RecurringIncomeSummaryBar";
-import { recurringIncomeStanding } from "../features/recurring-income/lib/recurringIncomeStanding";
+import { summarizeRecurringIncome } from "../features/recurring-income/lib/summarizeRecurringIncome";
 import { formatCurrency } from "../components/ui/AmountDisplay";
 import { todayPeru } from "../lib/date";
 import { RecurringIncomeSwipeRow } from "../features/recurring-income/components/RecurringIncomeSwipeRow";
@@ -32,9 +32,7 @@ import {
 } from "../features/recurring-income/lib/buildRecurringIncomeSections";
 import {
   filterRecurringIncome,
-  getMonthlyRecurringIncomeAmount,
   recurringIncomeFilterLabel,
-  ymdWithin30Days,
   type ActiveRecurringIncomeFilter,
   type RecurringIncomeAdvancedFilters,
   type RecurringIncomeFilter,
@@ -49,7 +47,6 @@ import { shareCsvAsFile } from "../lib/share-csv-file";
 import { useWorkspaceSnapshotQuery } from "../services/queries/workspace-data";
 import {
   useDeleteRecurringIncomeMutation,
-  useToggleRecurringIncomePinMutation,
   useUpdateRecurringIncomeMutation,
 } from "../services/queries/subscriptions-recurring-income";
 import { useToast } from "../hooks/useToast";
@@ -78,9 +75,8 @@ function RecurringIncomeScreen() {
   const { showToast, showErrorToast } = useToast();
   const { reason: notificationReason } = useNotificationReason();
 
-  const { data: snapshot, isLoading } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
+  const { data: snapshot, isLoading, isError, refetch } = useWorkspaceSnapshotQuery(profile, activeWorkspaceId);
   const updateMutation = useUpdateRecurringIncomeMutation(activeWorkspaceId);
-  const togglePinMutation = useToggleRecurringIncomePinMutation(activeWorkspaceId);
   const deleteMutation = useDeleteRecurringIncomeMutation(activeWorkspaceId);
   const arrival = useArrivalSheetController(activeWorkspaceId);
 
@@ -156,21 +152,10 @@ function RecurringIncomeScreen() {
     () => filterRecurringIncome(recurringIncome, effectiveFilters, searchText, advancedFilters),
     [advancedFilters, effectiveFilters, recurringIncome, searchText],
   );
-  /* Lo que está en juego: lo que suman las llegadas que nadie ha confirmado. Es el único total
-     de la pantalla que pide una acción, así que va al encabezado de su sección. */
-  const unconfirmedTotal = useMemo(() => {
-    const today = todayPeru();
-    return filteredRecurringIncome.reduce((total, item) => {
-      if (item.status !== "active" || item.nextExpectedDate >= today) return total;
-      const standing = recurringIncomeStanding({
-        item,
-        today,
-        formatAmount: (value) => formatCurrency(value, item.currencyCode),
-        formatDate: (ymd) => ymd,
-      });
-      return total + standing.missedAmount;
-    }, 0);
-  }, [filteredRecurringIncome]);
+  const summary = useMemo(
+    () => summarizeRecurringIncome(filteredRecurringIncome, baseCurrencyCode, todayPeru()),
+    [baseCurrencyCode, filteredRecurringIncome],
+  );
 
   const sections = useMemo(
     () => buildRecurringIncomeSections({
@@ -178,11 +163,11 @@ function RecurringIncomeScreen() {
       today: todayPeru(),
       cancelledExpanded,
       onToggleCancelled: () => setCancelledExpanded((open: boolean) => !open),
-      unconfirmedTotalLabel: unconfirmedTotal > 0
-        ? formatCurrency(unconfirmedTotal, baseCurrencyCode)
+      unconfirmedTotalLabel: summary.unconfirmedTotal > 0 && summary.excludedUnconfirmedCount === 0
+        ? formatCurrency(summary.unconfirmedTotal, baseCurrencyCode)
         : null,
     }),
-    [baseCurrencyCode, cancelledExpanded, filteredRecurringIncome, unconfirmedTotal],
+    [baseCurrencyCode, cancelledExpanded, filteredRecurringIncome, summary],
   );
 
   const activeFilterItems = useMemo<ActiveFilterItem[]>(() => {
@@ -237,21 +222,6 @@ function RecurringIncomeScreen() {
 
     return items;
   }, [activeAccounts, activeFilters, categories, categoryFilter, counterparties, frequencyFilter, payerFilter, searchText, accountFilter, upcomingOnly]);
-
-  const summary = useMemo(() => {
-    return filteredRecurringIncome.reduce(
-      (acc, item) => {
-        if (item.status === "active") {
-          acc.activeCount += 1;
-          acc.monthlyTotal += getMonthlyRecurringIncomeAmount(item, true);
-          if (ymdWithin30Days(item.nextExpectedDate)) acc.upcomingCount += 1;
-        }
-        if (item.status === "paused") acc.pausedCount += 1;
-        return acc;
-      },
-      { monthlyTotal: 0, activeCount: 0, upcomingCount: 0, pausedCount: 0 },
-    );
-  }, [filteredRecurringIncome]);
 
   const extraFiltersCount = [
     frequencyFilter !== "all",
@@ -310,14 +280,6 @@ function RecurringIncomeScreen() {
     setUpcomingOnly(false);
   }, []);
 
-  const clearAdvancedFilters = useCallback(() => {
-    setFrequencyFilter("all");
-    setPayerFilter(null);
-    setAccountFilter(null);
-    setCategoryFilter(null);
-    setUpcomingOnly(false);
-  }, []);
-
   const startUndoDelete = useCallback((item: RecurringIncomeSummary) => {
     setPendingDeleteIds((prev) => new Set(prev).add(item.id));
     pendingDeleteLabels.current.set(item.id, item.name);
@@ -356,28 +318,11 @@ function RecurringIncomeScreen() {
     });
   }, []);
 
-  const handleTogglePin = useCallback((item: RecurringIncomeSummary) => {
-    togglePinMutation.mutate(
-      { id: item.id, isPinned: !item.isPinned },
-      { onError: (err) => showErrorToast(item.isPinned ? "No se pudo desfijar el ingreso" : "No se pudo fijar el ingreso", err) },
-    );
-  }, [showToast, togglePinMutation]);
-
-  const handleToggleStatus = useCallback((item: RecurringIncomeSummary) => {
-    const nextStatus = item.status === "active" ? "paused" : "active";
-    updateMutation.mutate(
-      { id: item.id, input: { status: nextStatus } },
-      {
-        onSuccess: () => showToast(nextStatus === "paused" ? "Ingreso pausado" : "Ingreso reactivado", "success", item.name),
-        onError: (error) => showErrorToast(nextStatus === "paused" ? "No se pudo pausar el ingreso" : "No se pudo reactivar el ingreso", error),
-      },
-    );
-  }, [showToast, updateMutation]);
-
   const selectedItems = useMemo(
     () => filteredRecurringIncome.filter((item) => selectedIds.has(item.id)),
     [filteredRecurringIncome, selectedIds],
   );
+  const selectedActiveCount = selectedItems.filter((item) => item.status === "active").length;
 
   const handleBulkPause = useCallback(async () => {
     let pausedCount = 0;
@@ -420,7 +365,6 @@ function RecurringIncomeScreen() {
   const renderItem: SectionListRenderItem<RecurringIncomeSummary, RecurringIncomeListSection> = useCallback(({ item }) => (
     <RecurringIncomeSwipeRow
       item={item}
-      monthlyAmount={getMonthlyRecurringIncomeAmount(item)}
       onPress={() => {
         if (selectMode) {
           toggleSelect(item.id);
@@ -434,12 +378,10 @@ function RecurringIncomeScreen() {
       }}
       onDelete={() => startUndoDelete(item)}
       onConfirmArrival={() => arrival.open(item)}
-      onToggleStatus={() => handleToggleStatus(item)}
-      onTogglePin={selectMode ? undefined : () => handleTogglePin(item)}
       selected={selectedIds.has(item.id)}
       selectMode={selectMode}
     />
-  ), [arrival.open, handleTogglePin, handleToggleStatus, selectMode, selectedIds, startUndoDelete, toggleSelect]);
+  ), [arrival.open, router, selectMode, selectedIds, startUndoDelete, toggleSelect]);
 
   return (
     <ResourceModuleTemplate
@@ -493,10 +435,10 @@ function RecurringIncomeScreen() {
       summary={
         !selectMode && filteredRecurringIncome.length > 0 ? (
           <RecurringIncomeSummaryBar
-            monthlyTotal={summary.monthlyTotal}
+            monthlyTotal={summary.comparableActiveCount > 0 ? summary.monthlyTotal : null}
             activeCount={summary.activeCount}
-            upcomingCount={summary.upcomingCount}
-            pausedCount={summary.pausedCount}
+            unconfirmedCount={summary.unconfirmedCount}
+            excludedCount={summary.excludedActiveCount}
             currencyCode={baseCurrencyCode}
           />
         ) : null
@@ -520,13 +462,13 @@ function RecurringIncomeScreen() {
                 tone: "primary",
                 onPress: () => exportCSV(selectedItems),
               },
-              {
+              ...(selectedActiveCount > 0 ? [{
                 key: "pause",
-                label: `Pausar (${selectedIds.size})`,
+                label: `Pausar (${selectedActiveCount})`,
                 icon: Pause,
-                tone: "neutral",
+                tone: "neutral" as const,
                 onPress: () => void handleBulkPause(),
-              },
+              }] : []),
               {
                 key: "delete",
                 label: `Eliminar (${selectedIds.size})`,
@@ -544,7 +486,7 @@ function RecurringIncomeScreen() {
           keyExtractor={(item) => String(item.id)}
           renderItem={renderItem}
           loading={{
-            isLoading,
+            isLoading: isLoading && !snapshot,
             skeleton: (
               <>
                 <SkeletonCard />
@@ -553,7 +495,11 @@ function RecurringIncomeScreen() {
               </>
             ),
           }}
-          empty={{
+          empty={isError && !snapshot ? {
+            title: "No se pudieron cargar los ingresos",
+            description: "Comprueba tu conexión e inténtalo de nuevo.",
+            action: { label: "Reintentar", onPress: () => { void refetch(); } },
+          } : {
             icon: hasFilters ? undefined : TrendingUp,
             variant: hasFilters ? "no-results" : "empty",
             title: hasFilters ? "Sin resultados" : "Sin ingresos fijos",
@@ -615,7 +561,6 @@ function RecurringIncomeScreen() {
             accounts={activeAccounts}
             categories={categories}
             counterparties={counterparties}
-            onClear={clearAdvancedFilters}
           />
           <RecurringIncomeArrivalSheet
             {...arrival.sheetProps}

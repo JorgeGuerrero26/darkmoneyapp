@@ -94,17 +94,29 @@ export function getMonthlyRecurringIncomeAmount(item: RecurringIncomeSummary, us
     ? item.amountInBaseCurrency
     : item.amount;
 
-  switch (item.frequency) {
+  return monthlyRecurringIncomeEquivalent(amount, item.frequency, item.intervalCount);
+}
+
+/** A custom cadence uses intervalCount days, as shown in the income form. */
+export function monthlyRecurringIncomeEquivalent(
+  amount: number,
+  frequency: RecurringIncomeFrequency,
+  intervalCount: number,
+) {
+  const interval = Math.max(1, Math.floor(intervalCount) || 1);
+
+  switch (frequency) {
     case "yearly":
-      return amount / 12;
+      return amount / (12 * interval);
     case "weekly":
-      return (amount * 52) / 12;
+      return (amount * 52) / (12 * interval);
     case "quarterly":
-      return amount / 3;
+      return amount / (3 * interval);
     case "daily":
-      return amount * 30;
-    case "monthly":
     case "custom":
+      return (amount * 365) / (12 * interval);
+    case "monthly":
+      return amount / interval;
     default:
       return amount;
   }

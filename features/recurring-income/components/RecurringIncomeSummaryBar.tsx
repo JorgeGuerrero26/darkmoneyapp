@@ -1,30 +1,29 @@
-import { CalendarClock, Pause, TrendingUp } from "lucide-react-native";
-
 import { formatCurrency } from "../../../components/ui/AmountDisplay";
 import { MetricSummaryBar } from "../../../components/ui/MetricSummaryBar";
 import { COLORS } from "../../../constants/theme";
 
 type Props = {
-  monthlyTotal: number;
+  monthlyTotal: number | null;
   activeCount: number;
-  upcomingCount: number;
-  pausedCount: number;
+  unconfirmedCount: number;
+  excludedCount: number;
   currencyCode: string;
 };
 
 export function RecurringIncomeSummaryBar({
   monthlyTotal,
   activeCount,
-  upcomingCount,
-  pausedCount,
+  unconfirmedCount,
+  excludedCount,
   currencyCode,
 }: Props) {
-  const activos = activeCount === 1 ? "Uno activo" : `${activeCount} activos`;
-  const pausados = pausedCount === 0
-    ? null
-    : pausedCount === 1
-      ? "El pausado no suma."
-      : "Los pausados no suman.";
+  const activeLabel = `${activeCount} ${activeCount === 1 ? "ingreso activo" : "ingresos activos"}`;
+  const pendingLabel = unconfirmedCount > 0
+    ? ` · ${unconfirmedCount} por confirmar`
+    : " · todo al día";
+  const excludedLabel = excludedCount === 1
+    ? "1 ingreso en otra moneda sin conversión queda fuera del total."
+    : `${excludedCount} ingresos en otras monedas sin conversión quedan fuera del total.`;
 
   return (
     <MetricSummaryBar
@@ -32,12 +31,13 @@ export function RecurringIncomeSummaryBar({
          llega no es un ingreso: va en hueso y el rótulo lo dice. La menta se reserva para el
          ingreso ya confirmado, en Movimientos, que es donde significa algo. */
       label="Esperado al mes"
-      value={formatCurrency(monthlyTotal, currencyCode)}
+      value={monthlyTotal == null ? null : formatCurrency(monthlyTotal, currencyCode)}
       valueColor={COLORS.ink}
-      support={[`${activos}.`, pausados].filter(Boolean).join(" ")}
+      support={`${activeLabel}${pendingLabel}`}
+      footnote={excludedCount > 0 ? excludedLabel : null}
       help={{
         title: "Ingreso mensual esperado",
-        description: "Suma de tus ingresos fijos activos llevada a su equivalente mensual. No incluye los pausados ni confirma que hayan llegado.",
+        description: "Suma de tus ingresos fijos activos según la frecuencia de cada uno. No incluye ingresos pausados ni confirma que el dinero haya llegado.",
       }}
     />
   );

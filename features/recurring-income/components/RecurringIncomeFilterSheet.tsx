@@ -2,7 +2,7 @@ import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import { BottomSheet } from "../../../components/ui/BottomSheet";
 import { PillSelector, type PillSelectorOption } from "../../../components/ui/PillSelector";
-import { COLORS, FONT_FAMILY, FONT_SIZE, GLASS, RADIUS, SPACING } from "../../../constants/theme";
+import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../../constants/theme";
 import type {
   AccountSummary,
   CategorySummary,
@@ -30,7 +30,6 @@ type Props = {
   accounts: AccountSummary[];
   categories: CategorySummary[];
   counterparties: CounterpartySummary[];
-  onClear: () => void;
 };
 
 const FREQUENCY_OPTIONS: Array<PillSelectorOption<"all" | RecurringIncomeFrequency>> = [
@@ -72,32 +71,39 @@ export function RecurringIncomeFilterSheet({
   accounts,
   categories,
   counterparties,
-  onClear,
 }: Props) {
   return (
-    <BottomSheet visible={visible} onClose={onClose} title="Filtros" snapHeight={0.72}>
-      <View style={styles.statusBlock}>
-        <Text style={styles.statusLabel}>Estado</Text>
-        <View style={styles.statusChips}>
-          {statusOptions.map((option) => {
-            const active = activeStatusFilters.includes(option.value);
-            return (
-              <TouchableOpacity
-                key={option.value}
-                style={[styles.statusChip, active && styles.statusChipActive]}
-                onPress={() => onToggleStatusFilter(option.value)}
-                accessibilityRole="button"
-                accessibilityState={{ selected: active }}
-              >
-                <Text style={[styles.statusChipText, active && styles.statusChipTextActive]}>
-                  {option.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      </View>
+    <BottomSheet
+      visible={visible}
+      onClose={onClose}
+      title="Filtros"
+      snapHeight={0.8}
+      entranceAnimation="springFade"
+      headerStyle={styles.sheetHeader}
+      contentStyle={styles.sheetContent}
+    >
       <View style={styles.content}>
+        <View style={styles.statusBlock}>
+          <Text style={styles.statusLabel}>Estado</Text>
+          <View style={styles.statusChips}>
+            {statusOptions.map((option) => {
+              const active = activeStatusFilters.includes(option.value);
+              return (
+                <TouchableOpacity
+                  key={option.value}
+                  style={[styles.statusChip, active && styles.statusChipActive]}
+                  onPress={() => onToggleStatusFilter(option.value)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
+                >
+                  <Text style={[styles.statusChipText, active && styles.statusChipTextActive]}>
+                    {option.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
         <FilterSection
           label="Frecuencia"
           hint="Filtra por la periodicidad configurada del ingreso fijo."
@@ -156,9 +162,6 @@ export function RecurringIncomeFilterSheet({
         </TouchableOpacity>
 
         <View style={styles.actions}>
-          <TouchableOpacity style={styles.clearBtn} onPress={onClear} activeOpacity={0.84}>
-            <Text style={styles.clearText}>Limpiar</Text>
-          </TouchableOpacity>
           <TouchableOpacity style={styles.applyBtn} onPress={onClose} activeOpacity={0.84}>
             <Text style={styles.applyText}>Aplicar</Text>
           </TouchableOpacity>
@@ -189,7 +192,9 @@ function FilterSection({
 }
 
 const styles = StyleSheet.create({
-  statusBlock: { gap: SPACING.sm, marginBottom: SPACING.md },
+  sheetHeader: { paddingHorizontal: SPACING.xl },
+  sheetContent: { paddingHorizontal: SPACING.xl, paddingBottom: SPACING.xl },
+  statusBlock: { gap: SPACING.sm },
   statusLabel: {
     fontFamily: FONT_FAMILY.bodySemibold,
     fontSize: FONT_SIZE.xs,
@@ -203,14 +208,13 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.xs + 2,
     borderRadius: RADIUS.full,
     borderWidth: 1,
-    borderColor: GLASS.cardBorder,
+    borderColor: SURFACE.cardBorder,
+    backgroundColor: SURFACE.card,
   },
   statusChipActive: { borderColor: COLORS.ink, borderWidth: 1.5 },
   statusChipText: { fontFamily: FONT_FAMILY.body, fontSize: FONT_SIZE.sm, color: COLORS.storm },
   statusChipTextActive: { fontFamily: FONT_FAMILY.bodySemibold, color: COLORS.ink },
-  content: {
-    gap: SPACING.lg,
-  },
+  content: { gap: SPACING.xl },
   section: {
     gap: SPACING.sm,
   },
@@ -235,15 +239,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
     borderWidth: 1,
-    borderColor: GLASS.separator,
-    backgroundColor: GLASS.input,
+    borderColor: SURFACE.separator,
+    backgroundColor: SURFACE.card,
     flexDirection: "row",
     alignItems: "center",
     gap: SPACING.md,
   },
   toggleRowActive: {
-    borderColor: GLASS.cardActiveBorder,
-    backgroundColor: GLASS.cardActive,
+    borderColor: COLORS.ink,
   },
   toggleCopy: {
     flex: 1,
@@ -265,22 +268,12 @@ const styles = StyleSheet.create({
     color: COLORS.storm,
   },
   toggleValueActive: {
-    color: COLORS.pine,
+    color: COLORS.ink,
   },
   actions: {
     flexDirection: "row",
     gap: SPACING.sm,
     marginTop: SPACING.xs,
-  },
-  clearBtn: {
-    flex: 1,
-    minHeight: 46,
-    borderRadius: RADIUS.md,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: GLASS.sheetBorder,
-    backgroundColor: GLASS.input,
   },
   applyBtn: {
     flex: 1,
@@ -288,12 +281,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.md,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: COLORS.primary,
-  },
-  clearText: {
-    fontSize: FONT_SIZE.sm,
-    fontFamily: FONT_FAMILY.bodyMedium,
-    color: COLORS.ink,
+    backgroundColor: COLORS.ink,
   },
   applyText: {
     fontSize: FONT_SIZE.sm,

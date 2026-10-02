@@ -21,7 +21,7 @@ type Args = {
 /**
  * Las secciones de ingresos fijos, por estado.
  *
- * La primera se llama **"Sin confirmar"** y no "Atrasados": un ingreso pudo llegar y faltar
+ * La primera se llama **"Por confirmar"** y no "Atrasados": un ingreso pudo llegar y faltar
  * anotarlo, o no haber llegado nunca. La app no puede distinguirlas, y las dos piden lo mismo
  * —que alguien lo mire—, así que la sección nombra la acción y no una acusación.
  *
@@ -49,7 +49,7 @@ export function buildRecurringIncomeSections({
   if (unconfirmed.length > 0) {
     sections.push({
       key: "unconfirmed",
-      label: "Sin confirmar",
+      label: "Por confirmar",
       data: unconfirmed,
       headerVariant: "divider",
       trailing: unconfirmedTotalLabel ?? undefined,
@@ -59,7 +59,7 @@ export function buildRecurringIncomeSections({
   if (upcoming.length > 0) {
     sections.push({
       key: "upcoming",
-      label: "Próximos",
+      label: "Por llegar",
       data: upcoming,
       headerVariant:
         sections.length === 0 && paused.length === 0 && cancelled.length === 0 ? "hidden" : "divider",
@@ -67,7 +67,7 @@ export function buildRecurringIncomeSections({
   }
 
   if (paused.length > 0) {
-    sections.push({ key: "paused", label: "Pausados", data: paused, headerVariant: "divider" });
+    sections.push({ key: "paused", label: "En pausa", data: paused, headerVariant: "divider" });
   }
 
   if (cancelled.length > 0) {

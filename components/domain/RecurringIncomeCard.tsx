@@ -1,5 +1,6 @@
 import { memo } from "react";
-import { StyleSheet, Text } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
+import { ChevronRight } from "lucide-react-native";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
@@ -13,7 +14,6 @@ import type { RecurringIncomeSummary } from "../../types/domain";
 
 type Props = {
   item: RecurringIncomeSummary;
-  monthlyAmount: number;
   onPress: () => void;
   onLongPress?: () => void;
   selected?: boolean;
@@ -25,22 +25,9 @@ function formatYmdLocal(ymd: string) {
   return format(new Date(p[0], p[1] - 1, p[2]), "d MMM", { locale: es });
 }
 
-/**
- * Un ingreso fijo en la lista: la misma línea que suscripciones y movimientos.
- *
- * **La cápsula "Activo" en verde se va**, igual que en la revisión 25 — y aquí hacía más daño:
- * decía "Activo" mientras la fecha esperada llevaba treinta y seis días atrás, en gris y con el
- * mismo peso que cualquier otro dato. Nada distinguía "va a llegar el 29" de "se esperaba el 29
- * y no llegó". El estado lo dice ahora la sección, y el subtítulo dice la cuenta.
- *
- * **El equivalente mensual solo aparece cuando la cadencia no es mensual.** Al pie de cada fila
- * salía "~S/ 2,630.50/mes" para un ingreso mensual de S/ 2,630.50: el mismo número tres veces
- * en la misma pantalla —total, monto y pie— porque se calculaba el equivalente mensual de algo
- * que ya era mensual. Donde sí dice algo —un quincenal, uno anual— va pegado a la cadencia.
- */
+/** Fila de libro: nombre, fecha esperada, importe, frecuencia y acceso al detalle. */
 function RecurringIncomeCardBase({
   item,
-  monthlyAmount,
   onPress,
   onLongPress,
   selected = false,
@@ -54,10 +41,6 @@ function RecurringIncomeCardBase({
   });
 
   const cadence = subscriptionRecurrencePhrase(item.intervalCount, item.frequency, item.dayOfMonth);
-  const isMonthlyAlready = item.frequency === "monthly" && item.intervalCount <= 1;
-  const cadenceLine = isMonthlyAlready
-    ? cadence.toLowerCase()
-    : `${cadence.toLowerCase()} · ${formatCurrency(monthlyAmount, item.currencyCode)}/mes`;
 
   return (
     <ResourceCard
@@ -72,18 +55,23 @@ function RecurringIncomeCardBase({
       onPress={onPress}
       onLongPress={onLongPress}
       trailing={
-        <>
-          <Text style={[styles.amount, !isActive && styles.amountMuted]}>
-            {formatCurrency(item.amount, item.currencyCode)}
-          </Text>
-          <Text style={styles.cadence} numberOfLines={1}>{cadenceLine}</Text>
-        </>
+        <View style={styles.trailing}>
+          <View style={styles.amountBlock}>
+            <Text style={[styles.amount, !isActive && styles.amountMuted]}>
+              {formatCurrency(item.amount, item.currencyCode)}
+            </Text>
+            <Text style={styles.cadence} numberOfLines={1}>{cadence.toLowerCase()}</Text>
+          </View>
+          <ChevronRight size={18} color={COLORS.textDisabled} />
+        </View>
       }
     />
   );
 }
 
 const styles = StyleSheet.create({
+  trailing: { flexDirection: "row", alignItems: "center", gap: SPACING.sm },
+  amountBlock: { alignItems: "flex-end" },
   /* Hueso, no menta: la menta se reserva para el ingreso YA confirmado, en Movimientos. Aquí
      es lo que se espera, y esperar no es haber cobrado. */
   amount: { fontFamily: FONT_FAMILY.heading, fontSize: FONT_SIZE.md, color: COLORS.ink },

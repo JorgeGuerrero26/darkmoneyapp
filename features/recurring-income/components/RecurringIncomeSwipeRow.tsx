@@ -2,31 +2,25 @@ import { CalendarClock, Trash2 } from "lucide-react-native";
 
 import { RecurringIncomeCard } from "../../../components/domain/RecurringIncomeCard";
 import { SwipeActionRow } from "../../../components/ui/SwipeActionRow";
-import { COLORS, RADIUS } from "../../../constants/theme";
+import { COLORS } from "../../../constants/theme";
 import type { RecurringIncomeSummary } from "../../../types/domain";
 
 type Props = {
   item: RecurringIncomeSummary;
-  monthlyAmount: number;
   onPress: () => void;
   onDelete: () => void;
   onConfirmArrival: () => void;
-  onToggleStatus: () => void;
   onLongPress?: () => void;
-  onTogglePin?: () => void;
   selected?: boolean;
   selectMode?: boolean;
 };
 
 export function RecurringIncomeSwipeRow({
   item,
-  monthlyAmount,
   onPress,
   onDelete,
   onConfirmArrival,
-  onToggleStatus,
   onLongPress,
-  onTogglePin,
   selected = false,
   selectMode = false,
 }: Props) {
@@ -34,7 +28,6 @@ export function RecurringIncomeSwipeRow({
     return (
       <RecurringIncomeCard
         item={item}
-        monthlyAmount={monthlyAmount}
         onPress={onPress}
         onLongPress={onLongPress}
         selected={selected}
@@ -65,7 +58,6 @@ export function RecurringIncomeSwipeRow({
       {({ close, isOpen }) => (
         <RecurringIncomeCard
           item={item}
-          monthlyAmount={monthlyAmount}
           onPress={() => {
             if (isOpen()) {
               close();
