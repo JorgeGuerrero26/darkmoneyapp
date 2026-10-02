@@ -9,6 +9,9 @@ import { SAVE_CEILING_MS } from "../../lib/fetch-timeout-budget";
 import { withTimeout } from "../../lib/promise-utils";
 import { STALE, queryClient, recoverSession } from "../../lib/query-client";
 import { dropMovementFromPages } from "./drop-movement-from-pages";
+import { fetchCatalogMovementRows } from "./catalog-history";
+import { catalogMovementAmount } from "../../lib/catalog-money";
+import { movementActsAsIncome } from "../../lib/movement-amounts";
 import { isCoreSnapshot, patchSnapshotWithCreatedMovement } from "./snapshot-cache";
 import {
   resolveAiEdgeTimeoutMs,
@@ -29,7 +32,6 @@ import { useUiStore } from "../../store/ui-store";
 import {
   convertAmountToWorkspaceBase,
   computeNextRecurringDate,
-  movementAmountForSubscriptionAnalytics,
   subscriptionFrequencyListLabel,
 } from "../../lib/subscription-helpers";
 import type { AppProfile } from "../../lib/auth-context";
@@ -850,27 +852,28 @@ function buildPostedAnalyticsMovements<K extends "categoryId" | "subscriptionId"
   baseCurrency: string,
   exchangeRates: ExchangeRateSummary[],
 ): Array<
-  { id: number; occurredAt: string; sourceAmount: number | null; destinationAmount: number | null; amountCurrencyCode: string; amountInBaseCurrency: number } & Record<K, number>
+  { id: number; occurredAt: string; sourceAmount: number | null; destinationAmount: number | null; movementType: string; amount: number; amountCurrencyCode: string; amountInBaseCurrency: number | null } & Record<K, number>
 > {
   return rows.map((row: any) => {
     const sourceAmount = row.source_amount != null ? toNum(row.source_amount) : null;
     const destinationAmount = row.destination_amount != null ? toNum(row.destination_amount) : null;
-    const amount = movementAmountForSubscriptionAnalytics({ sourceAmount, destinationAmount });
+    const movementType = row.movement_type as string;
+    const amount = catalogMovementAmount({ movementType, sourceAmount, destinationAmount });
+    const useDestination = movementActsAsIncome({ movementType, sourceAmount, destinationAmount }) || (movementType === "transfer" && !sourceAmount);
     const amountCurrencyCode =
-      sourceAmount != null && sourceAmount !== 0
+      !useDestination
         ? accountCurrencyMap.get(row.source_account_id as number) ?? baseCurrency
-        : destinationAmount != null && destinationAmount !== 0
-          ? accountCurrencyMap.get(row.destination_account_id as number) ?? baseCurrency
-          : baseCurrency;
-    return {
+        : accountCurrencyMap.get(row.destination_account_id as number) ?? baseCurrency;
+    return Object.assign({
       id: row.id as number,
-      [outKey]: row[rowKey] as number,
       occurredAt: row.occurred_at as string,
       sourceAmount,
       destinationAmount,
+      movementType,
+      amount,
       amountCurrencyCode,
       amountInBaseCurrency: convertAmountToWorkspaceBase(amount, amountCurrencyCode, baseCurrency, exchangeRates),
-    } as { id: number; occurredAt: string; sourceAmount: number | null; destinationAmount: number | null; amountCurrencyCode: string; amountInBaseCurrency: number } & Record<K, number>;
+    }, { [outKey]: row[rowKey] as number } as Record<K, number>);
   });
 }
 
@@ -879,11 +882,6 @@ export async function fetchWorkspaceSnapshot(
   activeWorkspaceId: number,
 ): Promise<WorkspaceSnapshot> {
   if (!supabase) throw new Error("Supabase no está configurado.");
-
-  // Limit movement history to last 2 years to keep payload manageable
-  const twoYearsAgo = new Date();
-  twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
-  const twoYearsAgoIso = twoYearsAgo.toISOString().slice(0, 10);
 
   // Parallel fetch of all workspace data
   const [
@@ -941,24 +939,8 @@ export async function fetchWorkspaceSnapshot(
       .select("id, workspace_id, name, payer_party_id, account_id, category_id, currency_code, amount, gross_amount, deductions, frequency, interval_count, day_of_month, day_of_week, start_date, next_expected_date, end_date, status, remind_days_before, description, notes, is_pinned")
       .eq("workspace_id", activeWorkspaceId)
       .order("next_expected_date", { ascending: true }),
-    supabase
-      .from("movements")
-      .select("id, subscription_id, status, occurred_at, source_amount, destination_amount, source_account_id, destination_account_id")
-      .eq("workspace_id", activeWorkspaceId)
-      .not("subscription_id", "is", null)
-      .eq("status", "posted")
-      .gte("occurred_at", twoYearsAgoIso)
-      .order("occurred_at", { ascending: false })
-      .limit(1000),
-    supabase
-      .from("movements")
-      .select("id, category_id, status, occurred_at, source_amount, destination_amount, source_account_id, destination_account_id")
-      .eq("workspace_id", activeWorkspaceId)
-      .not("category_id", "is", null)
-      .eq("status", "posted")
-      .gte("occurred_at", twoYearsAgoIso)
-      .order("occurred_at", { ascending: false })
-      .limit(1000),
+    fetchCatalogMovementRows(supabase, activeWorkspaceId, "subscription_id"),
+    fetchCatalogMovementRows(supabase, activeWorkspaceId, "category_id"),
     supabase
       .from("v_latest_exchange_rates")
       .select("from_currency_code, to_currency_code, rate, effective_at"),
@@ -1234,11 +1216,7 @@ async function fetchCategoriesOverview(workspaceId: number): Promise<CategoryOve
       .eq("workspace_id", workspaceId)
       .order("sort_order", { ascending: true })
       .order("name", { ascending: true }),
-    supabase
-      .from("movements")
-      .select("category_id, occurred_at")
-      .eq("workspace_id", workspaceId)
-      .not("category_id", "is", null),
+    fetchCatalogMovementRows(supabase, workspaceId, "category_id", false),
     supabase
       .from("subscriptions")
       .select("category_id, updated_at")
@@ -1519,9 +1497,6 @@ export async function refreshSnapshotDomains(
     const wantsBudgets = domains.includes("budgets");
     const wantsCatMovs = domains.includes("categoryMovements");
     const wantsSubMovs = domains.includes("subscriptionMovements");
-    const twoYearsAgo = new Date();
-    twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
-    const twoYearsAgoIso = twoYearsAgo.toISOString().slice(0, 10);
 
     const [accountsRes, balancesRes, budgetsRes, catMovsRes, subMovsRes] = await Promise.all([
       wantsAccounts
@@ -1545,26 +1520,10 @@ export async function refreshSnapshotDomains(
             .eq("is_active", true)
         : Promise.resolve(null),
       wantsCatMovs
-        ? supabase
-            .from("movements")
-            .select("id, category_id, status, occurred_at, source_amount, destination_amount, source_account_id, destination_account_id")
-            .eq("workspace_id", workspaceId)
-            .not("category_id", "is", null)
-            .eq("status", "posted")
-            .gte("occurred_at", twoYearsAgoIso)
-            .order("occurred_at", { ascending: false })
-            .limit(1000)
+        ? fetchCatalogMovementRows(supabase, workspaceId, "category_id")
         : Promise.resolve(null),
       wantsSubMovs
-        ? supabase
-            .from("movements")
-            .select("id, subscription_id, status, occurred_at, source_amount, destination_amount, source_account_id, destination_account_id")
-            .eq("workspace_id", workspaceId)
-            .not("subscription_id", "is", null)
-            .eq("status", "posted")
-            .gte("occurred_at", twoYearsAgoIso)
-            .order("occurred_at", { ascending: false })
-            .limit(1000)
+        ? fetchCatalogMovementRows(supabase, workspaceId, "subscription_id")
         : Promise.resolve(null),
     ]);
 

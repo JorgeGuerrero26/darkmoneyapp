@@ -237,6 +237,8 @@ export type CategoryPostedMovement = {
   occurredAt: string;
   sourceAmount: number | null;
   destinationAmount: number | null;
+  movementType?: string;
+  amount?: number;
   amountCurrencyCode?: string | null;
   amountInBaseCurrency?: number | null;
 };

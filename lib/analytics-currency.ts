@@ -21,9 +21,10 @@ export function buildCurrencyBreakdown(items: AnalyticsCurrencyAmount[]): Curren
     if (previous) {
       previous.total += item.amount;
       previous.count += 1;
-      if (item.amountInBaseCurrency != null && Number.isFinite(item.amountInBaseCurrency)) {
-        previous.totalInBaseCurrency = (previous.totalInBaseCurrency ?? 0) + item.amountInBaseCurrency;
-      }
+      // A partial conversion is not an equivalence of the complete native sum.
+      previous.totalInBaseCurrency = previous.totalInBaseCurrency != null &&
+        item.amountInBaseCurrency != null && Number.isFinite(item.amountInBaseCurrency)
+          ? previous.totalInBaseCurrency + item.amountInBaseCurrency : null;
       continue;
     }
     map.set(currencyCode, {

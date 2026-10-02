@@ -13,8 +13,9 @@ import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
 import type { CategoryOverview, CategoryPostedMovement } from "../../types/domain";
-import { buildCurrencyBreakdown, formatCurrencyBreakdownLine } from "../../lib/analytics-currency";
-import { movementAmountForSubscriptionAnalytics } from "../../lib/subscription-helpers";
+import { formatCurrencyBreakdownLine } from "../../lib/analytics-currency";
+import { catalogMovementAmount } from "../../lib/catalog-money";
+import { buildCategoryAnalytics } from "../../features/categories/lib/category-analytics";
 import { formatCurrency } from "../ui/AmountDisplay";
 import { COLORS, FONT_FAMILY, FONT_SIZE, RADIUS, SPACING, SURFACE } from "../../constants/theme";
 import { useDismissibleSheet } from "../ui/useDismissibleSheet";
@@ -26,12 +27,6 @@ type Props = {
   movements: CategoryPostedMovement[];
   baseCurrencyCode: string;
 };
-
-function ymFromOccurredAt(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return format(d, "yyyy-MM");
-}
 
 function ymLabel(ym: string) {
   const [y, m] = ym.split("-").map(Number);
@@ -49,97 +44,30 @@ export function CategoryAnalyticsModal({
   const insets = useSafeAreaInsets();
   const { backdropStyle, panHandlers, sheetStyle } = useDismissibleSheet({ visible, onClose });
 
-  const filtered = useMemo(() => {
-    if (!category) return [];
-    return movements
-      .filter((movement) => movement.categoryId === category.id)
-      .sort((left, right) => right.occurredAt.localeCompare(left.occurredAt));
-  }, [movements, category]);
-
   const analytics = useMemo(() => {
-    if (!category) {
-      return null;
-    }
-
-    const now = new Date();
-    const monthKeys: string[] = [];
-    for (let i = 11; i >= 0; i -= 1) {
-      const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      monthKeys.push(format(date, "yyyy-MM"));
-    }
-
-    const totalsByMonth = new Map<string, number>();
-    for (const key of monthKeys) totalsByMonth.set(key, 0);
-
-    let totalBase = 0;
-    let totalNativeAbs = 0;
-    let comparableCount = 0;
-
-    for (const movement of filtered) {
-      const amount = movementAmountForSubscriptionAnalytics(movement);
-      totalNativeAbs += amount;
-      if (movement.amountInBaseCurrency != null && Number.isFinite(movement.amountInBaseCurrency)) {
-        totalBase += movement.amountInBaseCurrency;
-        comparableCount += 1;
-        const ym = ymFromOccurredAt(movement.occurredAt);
-        if (ym && totalsByMonth.has(ym)) {
-          totalsByMonth.set(ym, (totalsByMonth.get(ym) ?? 0) + movement.amountInBaseCurrency);
-        }
-      }
-    }
-
-    const last12 = monthKeys.map((ym) => ({ ym, totalBase: totalsByMonth.get(ym) ?? 0 }));
-    const activeMonths = last12.filter((item) => item.totalBase > 0);
-    const strongestMonth = activeMonths.reduce<{ ym: string; totalBase: number } | null>(
-      (best, current) => (!best || current.totalBase > best.totalBase ? current : best),
-      null,
-    );
-    const maxBar = Math.max(1, ...last12.map((item) => item.totalBase));
-    const breakdown = buildCurrencyBreakdown(
-      filtered.map((movement) => ({
-        currencyCode: movement.amountCurrencyCode ?? null,
-        amount: movementAmountForSubscriptionAnalytics(movement),
-        amountInBaseCurrency: movement.amountInBaseCurrency ?? null,
-      })),
-    );
-    const latestMovement = filtered[0] ?? null;
-    const averageBase = comparableCount > 0 ? totalBase / comparableCount : 0;
-    const averageActiveMonthBase = activeMonths.length > 0 ? totalBase / activeMonths.length : 0;
-
+    if (!category) return null;
+    const result = buildCategoryAnalytics(movements, category.id, baseCurrencyCode);
     const insightLines: string[] = [];
-    if (totalBase > 0) {
+    if (result.totalLast12 > 0) {
       insightLines.push(
-        `En los últimos 12 meses esta categoría movió ${formatCurrency(totalBase, baseCurrencyCode)} comparables en ${baseCurrencyCode}.`,
+        `En los últimos 12 meses esta categoría movió ${formatCurrency(result.totalLast12, baseCurrencyCode)} comparables en ${baseCurrencyCode}.`,
       );
     }
-    if (strongestMonth) {
+    if (result.strongestMonth) {
       insightLines.push(
-        `El mes más pesado fue ${ymLabel(strongestMonth.ym)} con ${formatCurrency(strongestMonth.totalBase, baseCurrencyCode)}.`,
+        `El mes más pesado fue ${ymLabel(result.strongestMonth.ym)} con ${formatCurrency(result.strongestMonth.totalBase, baseCurrencyCode)}.`,
       );
     }
-    if (breakdown.length > 1) {
+    if (result.unconvertedCount) insightLines.push(`${result.unconvertedCount} movimientos sin conversión: se conservan en su moneda original y no se suman al gráfico.`);
+    if (result.breakdown.length > 1) {
       insightLines.push(
-        `Se detectaron ${breakdown.length} monedas distintas, por eso el gráfico y los totales comparables se expresan en ${baseCurrencyCode}.`,
+        `Se detectaron ${result.breakdown.length} monedas distintas, por eso el gráfico y los totales comparables se expresan en ${baseCurrencyCode}.`,
       );
-    } else if (breakdown[0]) {
-      insightLines.push(`La actividad reciente se concentra en ${breakdown[0].currencyCode}.`);
+    } else if (result.breakdown[0]) {
+      insightLines.push(`La actividad reciente se concentra en ${result.breakdown[0].currencyCode}.`);
     }
-
-    return {
-      paymentCount: filtered.length,
-      totalBase,
-      totalNativeAbs,
-      comparableCount,
-      averageBase,
-      averageActiveMonthBase,
-      last12,
-      maxBar,
-      strongestMonth,
-      breakdown,
-      latestMovement,
-      insightLines,
-    };
-  }, [baseCurrencyCode, category, filtered]);
+    return { ...result, insightLines };
+  }, [baseCurrencyCode, category, movements]);
 
   if (!category || !analytics) return null;
 
@@ -161,7 +89,7 @@ export function CategoryAnalyticsModal({
               <Text style={styles.heroEyebrow}>Lectura comparable</Text>
               <Text style={styles.heroAmount}>{formatCurrency(analytics.totalBase, baseCurrencyCode)}</Text>
               <Text style={styles.heroCaption}>
-                Total acumulado en moneda base del workspace ({baseCurrencyCode})
+                Total histórico comparable en la moneda base del espacio ({baseCurrencyCode})
               </Text>
               <Text style={styles.heroNativeLine}>
                 Desglose nativo: {formatCurrencyBreakdownLine(analytics.breakdown)}
@@ -169,6 +97,8 @@ export function CategoryAnalyticsModal({
             </View>
 
             <View style={styles.metricsGrid}>
+              <Metric label="Gastos aplicados" value={analytics.spent.map((item) => formatCurrency(item.amount, item.currencyCode)).join(" · ")} />
+              <Metric label="Ingresos aplicados" value={analytics.received.map((item) => formatCurrency(item.amount, item.currencyCode)).join(" · ")} />
               <Metric label="Movimientos publicados" value={String(analytics.paymentCount)} />
               <Metric
                 label={`Promedio por movimiento (${baseCurrencyCode})`}
@@ -251,7 +181,7 @@ export function CategoryAnalyticsModal({
                 <View style={styles.latestCard}>
                   <Text style={styles.latestAmount}>
                     {formatCurrency(
-                      movementAmountForSubscriptionAnalytics(analytics.latestMovement),
+                      catalogMovementAmount(analytics.latestMovement),
                       analytics.latestMovement.amountCurrencyCode ?? baseCurrencyCode,
                     )}
                   </Text>
