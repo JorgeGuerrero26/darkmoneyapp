@@ -13,6 +13,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "1.0.10",
     title: "DarkMoney estrena look",
     changes: [
+      "La analítica de Suscripciones separa el costo del plan de los pagos reales, muestra su evolución mensual y mantiene cada moneda por separado cuando falta una conversión confiable.",
       "Al abrir una suscripción ves su importe y sus datos en filas. Editar y la acción principal quedan siempre a mano abajo; los pagos anotados siguen en el detalle.",
       "Patrones muestra primero los gastos fuera de costumbre y permite revisarlos juntos. Las subidas se comparan en soles, el gasto por categoría usa barras discretas y los hábitos sin descripción ya no llevan el nombre de la cuenta como título. (Pro)",
       "\"Esta semana\" y el flujo de los próximos 7, 15 y 30 días ahora cuentan también las cuotas que te deben, incluidas las atrasadas. Todo el inicio calcula igual: lo que ves en la semana, en Fin de mes y en la proyección de varios meses sale de las mismas cuentas.",
